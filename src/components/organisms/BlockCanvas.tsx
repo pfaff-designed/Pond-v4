@@ -1199,6 +1199,31 @@ export function BlockCanvas({
     onChange(spliced.map((b) => (nextWidth.has(b.id) ? { ...b, width: nextWidth.get(b.id) } : b)))
   }
 
+  /**
+   * Commits an own-line drop (6x): splices the dragged block before/after the
+   * TARGET'S ROW as a whole, not before/after the target block itself — so
+   * dropping below the second block of a ½+½ row lands after both, not
+   * between them. Only the dragged block's width changes, to `full`; every
+   * other block is the same object reference, untouched (AGENTS.md: Pond
+   * doesn't widen what's left behind).
+   */
+  function commitOwnLineDrop(fromIndex: number, targetIndex: number, zone: 'above' | 'below') {
+    const dragged = { ...blocks[fromIndex], width: 'full' as BlockWidth }
+    const target = blocks[targetIndex]
+    const withoutDragged = blocks.filter((_, i) => i !== fromIndex)
+    const row = layoutRows(withoutDragged).find((r) => r.some((b) => b.id === target.id))
+    if (!row) return
+    const rowIds = new Set(row.map((b) => b.id))
+    const rowAt = withoutDragged.reduce<number[]>(
+      (acc, b, i) => (rowIds.has(b.id) ? [...acc, i] : acc),
+      []
+    )
+    const insertAt = zone === 'above' ? rowAt[0] : rowAt[rowAt.length - 1] + 1
+    const spliced = [...withoutDragged]
+    spliced.splice(insertAt, 0, dragged)
+    onChange(spliced)
+  }
+
   // Stacking (6x): measured off the content column itself (ResizeObserver on the
   // canvas), not the viewport, so the side panel and window-narrowing both
   // trigger it. 0 means "not yet measured" (jsdom never measures) and is read as
@@ -1336,11 +1361,7 @@ export function BlockCanvas({
             setDraggingIndex(null)
             return
           }
-          // Move the dragged block to position i (splice, not swap).
-          const next = [...blocks]
-          const [moved] = next.splice(draggingIndex, 1)
-          next.splice(i, 0, moved)
-          onChange(next)
+          commitOwnLineDrop(draggingIndex, i, zone)
           setDraggingIndex(null)
         }}
       />
