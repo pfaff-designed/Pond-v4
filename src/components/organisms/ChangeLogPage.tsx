@@ -12,7 +12,7 @@ import { useMemo, useState, type ReactNode } from 'react'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { usePondId } from '@/lib/pond/context'
-import { useSurfaceColumn } from '@/lib/layout/surface-column'
+import { PAGE_COLUMN_PAD_PX, useSurfaceColumn } from '@/lib/layout/surface-column'
 import { countWaiting, listRecords } from '@/lib/change-log/store'
 import { changeLogKey } from '@/lib/change-log/keys'
 import { buildLogRows } from '@/lib/change-log/log-page'
@@ -50,10 +50,10 @@ function changeLogDeletedKey(pondId: string | null) {
 /** s6o1's content column (840px, left of the 1180px frame after the rail). */
 const CHANGE_LOG_COLUMN_PX = 840
 
-/** s6o6's content column (700px, left 290/top 64) — narrower than s6o1's, since
- *  the deleted view drops the lead paragraph and waiting-count figure that
- *  justify s6o1's wider column. */
-const DELETED_VIEW_COLUMN_PX = 700
+/** s6o6's content column is 700px wide — but `useSurfaceColumn`'s `maxWidth`
+ *  bounds the border-box column, which eats `PAGE_COLUMN_PAD_PX` on each side,
+ *  so the content box itself would land at 636px without adding it back. */
+const DELETED_VIEW_COLUMN_PX = 700 + 2 * PAGE_COLUMN_PAD_PX
 
 /**
  * s6o1's view bar. "all" and "deleted" (KAN-97, s6o6) are built; the rest are

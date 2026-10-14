@@ -259,7 +259,7 @@ describe('ChangeLogPage — the deleted view', () => {
     )
   })
 
-  it('narrows to s6o6’s 700px column, not s6o1’s 840px', async () => {
+  it('narrows to s6o6’s 700px content box, not s6o1’s 840px', async () => {
     mockListRecords.mockImplementation(async (_supabase, opts) => (isDeletedQuery(opts) ? [] : []))
     const user = userEvent.setup()
     renderPage()
@@ -268,8 +268,10 @@ describe('ChangeLogPage — the deleted view', () => {
 
     await user.click(screen.getByRole('button', { name: 'deleted' }))
 
+    // maxWidth bounds the border-box column, which eats PAGE_COLUMN_PAD_PX (32px)
+    // each side — 700 + 2 * 32 so the content box itself lands at exactly 700px.
     await waitFor(() =>
-      expect(screen.getByTestId('change-log-column')).toHaveStyle({ maxWidth: '700px' })
+      expect(screen.getByTestId('change-log-column')).toHaveStyle({ maxWidth: '764px' })
     )
   })
 })
