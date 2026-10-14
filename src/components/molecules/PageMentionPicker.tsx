@@ -27,7 +27,7 @@
  * has (its width IS its anchor's).
  */
 
-import { useEffect, useLayoutEffect, useState, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { AreaMark } from '@/components/atoms/AreaMark'
 import { ENTER } from './slash-row'
@@ -71,6 +71,17 @@ const ROW =
 
 const SUB = 'min-w-0 truncate text-[12.5px] text-mn-text-secondary'
 
+/** The anchor's live value, ref or raw — the one place both effects below (and the width effect) read it from. */
+function resolveAnchorBox(anchor: MentionAnchor): MentionAnchorBox | null {
+  return anchor && 'current' in anchor ? anchor.current : anchor
+}
+
+/** The anchor as a real element, when it is one — the test fixtures' plain `{getBoundingClientRect}` objects aren't. */
+function resolveAnchorElement(anchor: MentionAnchor): HTMLElement | null {
+  const el = resolveAnchorBox(anchor)
+  return el && typeof (el as Partial<HTMLElement>).contains === 'function' ? (el as unknown as HTMLElement) : null
+}
+
 export function PageMentionPicker({
   items,
   activeIndex,
@@ -87,8 +98,14 @@ export function PageMentionPicker({
       else if (e.key === 'ArrowUp') onHover(Math.max(activeIndex - 1, 0))
       else if (e.key === 'Escape') onClose()
       else if (e.key === 'Enter') {
+        // An IME commit also fires `Enter`; that keystroke is the composition's,
+        // not a pick. A query with zero matching rows has no active item to pick
+        // either way, and swallowing the key then would silently eat the
+        // composer's own send — fall through unhandled in both cases.
+        if (e.isComposing) return
         const item = items[activeIndex]
         if (item) onPick(item)
+        else handled = false
       } else handled = false
       if (handled) {
         e.preventDefault()
@@ -99,12 +116,42 @@ export function PageMentionPicker({
     return () => document.removeEventListener('keydown', onKey, true)
   })
 
+  // A press, or a focus change, that lands outside both the glass and the
+  // composer it hangs off closes it — `SourcePicker.tsx`'s own pointerdown
+  // pattern, plus a blur check this picker also needs: the composer's
+  // textarea never loses focus while a row is picked (rows preventDefault
+  // their own mousedown), so a real blur means focus left for the page.
+  const glassRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    function onPointerDown(e: PointerEvent) {
+      const target = e.target as Node | null
+      if (!target) return
+      if (glassRef.current?.contains(target)) return
+      if (resolveAnchorElement(anchor)?.contains(target)) return
+      onClose()
+    }
+    document.addEventListener('pointerdown', onPointerDown, true)
+    return () => document.removeEventListener('pointerdown', onPointerDown, true)
+  }, [anchor, onClose])
+
+  useEffect(() => {
+    const anchorEl = resolveAnchorElement(anchor)
+    if (!anchorEl) return
+    function onFocusOut(e: FocusEvent) {
+      const next = e.relatedTarget as Node | null
+      if (next && (glassRef.current?.contains(next) || anchorEl?.contains(next))) return
+      onClose()
+    }
+    anchorEl.addEventListener('focusout', onFocusOut)
+    return () => anchorEl.removeEventListener('focusout', onFocusOut)
+  }, [anchor, onClose])
+
   const position = useAnchoredBox(anchor, side, 0)
   // `useAnchoredBox` only tracks top/bottom/left; the glass's width is its
   // anchor's own, read the same way (initial rect, then resize/scroll).
   const [width, setWidth] = useState<number>()
   useLayoutEffect(() => {
-    const el = anchor && 'current' in anchor ? anchor.current : anchor
+    const el = resolveAnchorBox(anchor)
     if (!el) return
     const update = () => setWidth(el.getBoundingClientRect().width)
     update()
@@ -120,6 +167,7 @@ export function PageMentionPicker({
   const style = position && width !== undefined ? { ...position, width } : undefined
   return createPortal(
     <div
+      ref={glassRef}
       data-part="popover"
       className="mn-glass fixed z-[100] box-border rounded-[18px] p-[8px] font-sans text-mn-text"
       style={style}

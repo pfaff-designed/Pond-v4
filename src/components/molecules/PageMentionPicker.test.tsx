@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { render, screen } from '@testing-library/react'
+import { useRef, useState } from 'react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import {
   PageMentionPicker,
@@ -29,6 +29,29 @@ function Harness({ onPick, onClose }: { onPick: (item: PageMentionItem) => void;
       onClose={onClose}
       anchor={ANCHOR}
     />
+  )
+}
+
+/** A real composer (a div wrapping a textarea) plus a sibling the page editor
+ * stands in for, so the outside-click/blur close can be exercised against an
+ * anchor that is an actual DOM node — `ANCHOR` above is not one. */
+function OutsideHarness({ onClose }: { onClose: () => void }) {
+  const anchorRef = useRef<HTMLDivElement>(null)
+  return (
+    <div>
+      <button type="button">page editor</button>
+      <div ref={anchorRef} data-testid="composer">
+        <textarea data-testid="composer-input" />
+      </div>
+      <PageMentionPicker
+        items={ITEMS}
+        activeIndex={0}
+        onHover={jest.fn()}
+        onPick={jest.fn()}
+        onClose={onClose}
+        anchor={anchorRef}
+      />
+    </div>
   )
 }
 
@@ -102,5 +125,90 @@ describe('PageMentionPicker — the composer @ popover rows', () => {
 
     await user.keyboard('{Escape}')
     expect(onClose).toHaveBeenCalled()
+  })
+
+  it('does not swallow Enter when there are no matching rows, so the composer can still send', () => {
+    const onPick = jest.fn()
+    render(
+      <PageMentionPicker
+        items={[]}
+        activeIndex={0}
+        onHover={jest.fn()}
+        onPick={onPick}
+        onClose={jest.fn()}
+        anchor={ANCHOR}
+      />
+    )
+
+    const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    document.dispatchEvent(event)
+
+    expect(onPick).not.toHaveBeenCalled()
+    expect(event.defaultPrevented).toBe(false)
+  })
+
+  it('ignores Enter while composing (IME), leaving it for the composer', () => {
+    const onPick = jest.fn()
+    render(<Harness onPick={onPick} onClose={jest.fn()} />)
+
+    const event = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      isComposing: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    document.dispatchEvent(event)
+
+    expect(onPick).not.toHaveBeenCalled()
+    expect(event.defaultPrevented).toBe(false)
+  })
+
+  it('closes on a pointerdown outside the picker and the composer', async () => {
+    const user = userEvent.setup()
+    const onClose = jest.fn()
+    render(<OutsideHarness onClose={onClose} />)
+
+    await user.click(screen.getByText('page editor'))
+    expect(onClose).toHaveBeenCalled()
+  })
+
+  it('does not close on a pointerdown inside the composer', async () => {
+    const user = userEvent.setup()
+    const onClose = jest.fn()
+    render(<OutsideHarness onClose={onClose} />)
+
+    await user.click(screen.getByTestId('composer-input'))
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('does not close on a pointerdown on one of its own rows', async () => {
+    const user = userEvent.setup()
+    const onClose = jest.fn()
+    render(<OutsideHarness onClose={onClose} />)
+
+    await user.pointer({ target: screen.getByRole('option', { name: /budget/ }), keys: '[MouseLeft]' })
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('closes when the composer loses focus to the page', () => {
+    const onClose = jest.fn()
+    render(<OutsideHarness onClose={onClose} />)
+
+    const input = screen.getByTestId('composer-input')
+    input.focus()
+    fireEvent.focusOut(input, { relatedTarget: screen.getByText('page editor') })
+
+    expect(onClose).toHaveBeenCalled()
+  })
+
+  it('does not close when focus moves from the composer onto one of its own rows', () => {
+    const onClose = jest.fn()
+    render(<OutsideHarness onClose={onClose} />)
+
+    const input = screen.getByTestId('composer-input')
+    input.focus()
+    fireEvent.focusOut(input, { relatedTarget: screen.getByRole('option', { name: /budget/ }) })
+
+    expect(onClose).not.toHaveBeenCalled()
   })
 })
