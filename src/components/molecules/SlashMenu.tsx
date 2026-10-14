@@ -161,6 +161,19 @@ export function SlashMenu({
     setSeenQuery(query)
     if (pane === 'templates') setPane('rows')
   }
+  // A query change while previewing (the person keeps typing) drops the
+  // outline the same way an arrow key does (round 3 live finding 1) — else it
+  // sits over a filtered list it no longer matches. A ref, not the `seenQuery`
+  // comparison above: `onPreviewCancel` sets state in the PARENT, and calling
+  // it from this render-time check would be a cross-component setState during
+  // render, so it runs from an effect, after commit, instead.
+  const previewQueryRef = useRef(query)
+  useEffect(() => {
+    if (previewQueryRef.current !== query) {
+      previewQueryRef.current = query
+      if (previewing) onPreviewCancel?.()
+    }
+  }, [query, previewing, onPreviewCancel])
   // The selection is keyed to what it was made against, so a new query or pane
   // starts at the first row without an effect writing state. It is kept by the
   // row's own id, not its index: ranked rows (KAN-138) can slot in above the

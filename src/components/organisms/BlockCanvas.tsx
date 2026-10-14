@@ -170,6 +170,27 @@ function canvasListStyle(listStyle: CSSProperties | undefined): CSSProperties {
 }
 
 /**
+ * The same list, but visually gone while a template previews over it.
+ * `display:none`/`visibility:hidden` both blur a focused descendant the
+ * instant they apply — the person is typing `/query` into the host block right
+ * up to the moment it previews, and arrow/esc/typing afterward must keep
+ * reaching it (round 3 live finding 1) — so neither is used. `opacity:0` hides
+ * it without touching focusability; `height:0`/`overflow:hidden` collapse it
+ * out of the flow (it sits absolutely so it never widens the preview row);
+ * `pointerEvents:'none'` keeps a stray click from landing on it.
+ */
+function hiddenCanvasListStyle(listStyle: CSSProperties | undefined): CSSProperties {
+  return {
+    ...canvasListStyle(listStyle),
+    position: 'absolute',
+    opacity: 0,
+    height: 0,
+    overflow: 'hidden',
+    pointerEvents: 'none',
+  }
+}
+
+/**
  * Focus the neighbour of a removed block — the one before, else the one
  * after — the same way across every delete path. With no neighbour left (the
  * page's only block was removed), focus falls to the page title.
@@ -191,6 +212,23 @@ function focusBlockNeighbour(blocks: Block[], index: number) {
     if (neighbour.type === 'text' && focusTextBlock(element, index === 0 ? 'start' : 'end')) return
     if (element instanceof HTMLElement) element.focus()
   }, 0)
+}
+
+/**
+ * Belt and braces for a preview's end (round 3 live finding 1): with the
+ * block list never `display:none` any more, the host editor should simply
+ * never have lost focus — but if something else already did (the
+ * caret-chasing above, a browser quirk), this puts it back at the end of its
+ * `/query` text rather than leaving the person to click in again. A no-op
+ * whenever focus is already somewhere real.
+ */
+function restoreHostFocus(blocks: Block[], hostIndex: number | null) {
+  if (hostIndex === null) return
+  if (document.activeElement && document.activeElement !== document.body) return
+  const host = blocks[hostIndex]
+  if (!host) return
+  const element = document.getElementById(blockDomId(host.id))
+  if (host.type === 'text') focusTextBlock(element, 'end')
 }
 
 export interface BlockCanvasProps {
@@ -321,11 +359,12 @@ export function BlockCanvas({
     anchor: Element | null
   } | null>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
-  // While previewing, the block list `canvasRef` sits in is `hidden` (6f frame
-  // 3's outline swap), so its own rect — and every block's inside it — is the
-  // zeroed-out rect of a `display:none` ancestor. The glass needs a VISIBLE
-  // stand-in to anchor off instead: this slot, rendered beside the outline at
-  // the board's own 250px/gap-16 position.
+  // While previewing, `canvasRef` collapses to zero height (6f frame 3's
+  // outline swap, `hiddenCanvasListStyle` above) rather than going
+  // `display:none` — so its own rect, and every block's inside it, is a real
+  // but useless sliver. The glass needs a VISIBLE stand-in to anchor off
+  // instead: this slot, rendered beside the outline at the board's own
+  // 250px/gap-16 position.
   const previewAnchorRef = useRef<HTMLDivElement>(null)
   // A page with nothing on it yet opens the menu on its templates (6f). Read
   // here (not just below, where it's used again) because the pages query's
@@ -443,18 +482,20 @@ export function BlockCanvas({
     if (previewing) {
       setPreviewing(null)
       onPreviewNameChange?.(null)
+      setTimeout(() => restoreHostFocus(blocks, slashMenuOpenAt), 0)
     }
-  }, [previewing, onPreviewNameChange])
+  }, [previewing, onPreviewNameChange, blocks, slashMenuOpenAt])
 
   const handleSlashClose = useCallback(() => {
     previewTokenRef.current++
     if (previewing) {
       setPreviewing(null)
       onPreviewNameChange?.(null)
+      setTimeout(() => restoreHostFocus(blocks, slashMenuOpenAt), 0)
       return
     }
     closeSlashMenu()
-  }, [previewing, closeSlashMenu, onPreviewNameChange])
+  }, [previewing, closeSlashMenu, onPreviewNameChange, blocks, slashMenuOpenAt])
 
   // `DocumentPanel` stays mounted across ?nodeId changes and `BlockCanvas` is
   // never keyed by page, so a preview left running mid-navigation would
@@ -1170,11 +1211,13 @@ export function BlockCanvas({
             takes the full row instead and the glass anchors below it (the
             board's "moving onto a template" frame only ever shows the
             side-by-side layout at desktop width). The block list underneath
-            (the blank page's one line, hosting the open `SlashMenu`) stays
-            MOUNTED while previewing — `hidden`, not removed, so the menu's own
-            keydown handling and portal survive the preview untouched; only its
-            visible body (text, caret) disappears. A remount here would drop the
-            menu along with it, which is the bug this item replaces. */}
+            (the blank page's one line, hosting the open `SlashMenu` and its
+            focused editor) stays mounted and FOCUSABLE while previewing —
+            collapsed via `hiddenCanvasListStyle` (absolute, zero-height,
+            clipped), never `display:none`/`visibility:hidden`, both of which
+            blur a focused descendant the instant they apply (round 3 live
+            finding 1). A remount here would drop the menu along with it,
+            which is the bug this item replaces. */}
         <div
           style={
             previewing
@@ -1216,7 +1259,10 @@ export function BlockCanvas({
               style={{ width: 250, flexShrink: 0, alignSelf: 'flex-start' }}
             />
           )}
-          <div ref={canvasRef} hidden={!!previewing} style={canvasListStyle(listStyle)}>
+          <div
+            ref={canvasRef}
+            style={previewing ? hiddenCanvasListStyle(listStyle) : canvasListStyle(listStyle)}
+          >
             {/*
              * A single flat `.flatMap()`, not a `.map()` of each row's own
              * `.map()`: nested arrays give React an implicit key path scoped to

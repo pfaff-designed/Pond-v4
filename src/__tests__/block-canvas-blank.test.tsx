@@ -867,6 +867,76 @@ describe('→ on a template row previews it, writing nothing (KAN-131)', () => {
     expect(mockSaveBlocks).not.toHaveBeenCalled()
   })
 
+  it('round 3 fix (live finding 1): the host editor keeps focus through →, esc and ↓, and typing while previewing drops the outline and still filters', async () => {
+    const YOURS_TEMPLATE: PondTemplate = {
+      id: 'tpl-9',
+      name: 'recipe',
+      kind: 'notes',
+      blocks: [{ id: 'orig-1', type: 'text', content: 'already written' } as Block],
+      origin: 'yours',
+      createdAt: '2026-10-01T10:00:00.000Z',
+      updatedAt: '2026-10-01T10:00:00.000Z',
+    }
+    mockListTemplates.mockResolvedValue([YOURS_TEMPLATE])
+    const user = userEvent.setup()
+    renderBlankPageHarness()
+
+    const field = await findTextBlock()
+    writeInTextBlock(field, '/')
+    await screen.findByRole('listbox', { name: 'blocks' })
+    await screen.findByText('recipe')
+    field.focus()
+    expect(document.activeElement).toBe(field)
+
+    // `→` previews — the host editor must still be the focused element (not
+    // blurred to `<body>` by a `display:none` swap).
+    await user.keyboard('{ArrowRight}')
+    await waitFor(() =>
+      expect(document.querySelectorAll('[data-part="outline-row"]').length).toBe(1)
+    )
+    expect(document.activeElement).toBe(field)
+
+    // `esc` clears the outline — still focused.
+    await user.keyboard('{Escape}')
+    await waitFor(() =>
+      expect(document.querySelectorAll('[data-part="outline-row"]').length).toBe(0)
+    )
+    expect(document.activeElement).toBe(field)
+
+    // Typing (the query changing) reaches the still-focused field and filters
+    // the rows — the bug this item fixes left nothing focused to type into.
+    writeInTextBlock(field, '/rec')
+    await waitFor(() => expect(screen.getByRole('listbox', { name: 'blocks' })).toHaveTextContent('recipe'))
+    expect(document.activeElement).toBe(field)
+
+    // `→` previews again; a query change while previewing drops it the same
+    // way an arrow key does, so the outline never sits over a filtered list
+    // it no longer matches.
+    await user.keyboard('{ArrowRight}')
+    await waitFor(() =>
+      expect(document.querySelectorAll('[data-part="outline-row"]').length).toBe(1)
+    )
+    writeInTextBlock(field, '/re')
+    await waitFor(() =>
+      expect(document.querySelectorAll('[data-part="outline-row"]').length).toBe(0)
+    )
+    expect(document.activeElement).toBe(field)
+
+    // `→` then `↓` — still focused, and typing afterward still filters.
+    await user.keyboard('{ArrowRight}')
+    await waitFor(() =>
+      expect(document.querySelectorAll('[data-part="outline-row"]').length).toBe(1)
+    )
+    await user.keyboard('{ArrowDown}')
+    await waitFor(() =>
+      expect(document.querySelectorAll('[data-part="outline-row"]').length).toBe(0)
+    )
+    expect(document.activeElement).toBe(field)
+    writeInTextBlock(field, '/r')
+    await waitFor(() => expect(screen.getByRole('listbox', { name: 'blocks' })).toHaveTextContent('recipe'))
+    expect(document.activeElement).toBe(field)
+  })
+
   it("KAN-131 item 8: reports the previewed template's name, then null on esc, for the host's eyebrow", async () => {
     const YOURS_TEMPLATE: PondTemplate = {
       id: 'tpl-9',
