@@ -2,12 +2,11 @@
 
 /**
  * The change log record page (KAN-152; board `Pond 06.15 Change log`, frame
- * `s6o3`): "A record opens like a page" — title, then the fields grid
- * (status, proposed by, page › block, from thread, read). The before→after
- * card, the "this change" column and the action buttons land in later passes
- * of this ticket; this skeleton only needs the record (and its target page,
- * for the block/title resolution) to render, a loading placeholder, and the
- * not-found state for a record missing or hidden by RLS (AUDIT G6).
+ * `s6o3`): "A record opens like a page" — title, fields grid (status,
+ * proposed by, page › block, from thread, read, reverted by), the
+ * before→after card, the "this change" lineage column and the action
+ * buttons. A loading placeholder and the not-found state cover a record
+ * missing or hidden by RLS (AUDIT G6).
  */
 
 import { useCallback, useRef, useState, type ReactNode } from 'react'
@@ -17,7 +16,8 @@ import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { usePondId } from '@/lib/pond/context'
 import { workspaceUrl } from '@/lib/pages/nav'
 import { PAGE_COLUMN_PAD_PX, useSurfaceColumn } from '@/lib/layout/surface-column'
-import { getRecord } from '@/lib/change-log/store'
+import { getRecord, listRevertsOf, listRevisionsOf } from '@/lib/change-log/store'
+import type { ChangeLogRecord } from '@/lib/change-log/types'
 import { getPage } from '@/lib/pages/client'
 import { getThreadFirstQuestion } from '@/lib/conversation/client'
 import { describeChange } from '@/lib/change-log/page-changes'
@@ -30,13 +30,35 @@ import { ChangeLogAnswerActions } from '@/components/molecules/ChangeLogAnswerAc
 import { PondControl } from '@/components/atoms/PondControl'
 import { machineEyebrowClass } from '@/components/atoms/kicker'
 import {
+  buildChangeTimeline,
+  changeLogRecordUrl,
   pageBlockField,
   proposedByField,
   readChipsOf,
   recordDiffRows,
   recordTitle,
+  revertedByField,
   statusField,
 } from '@/lib/change-log/record-page'
+
+/**
+ * Finds a revision chain's root by walking `links.revisedFrom` backward one
+ * `getRecord` at a time. Stops at the first record with no `revisedFrom` (or
+ * whose linked record is gone) — that is the root `listRevisionsOf` then
+ * walks forward from, so the chain's middle is never fetched twice.
+ */
+async function findRevisionRoot(
+  supabase: ReturnType<ReturnType<typeof useLazySupabase>>,
+  record: ChangeLogRecord
+): Promise<ChangeLogRecord> {
+  let root = record
+  while (root.links.revisedFrom) {
+    const prev = await getRecord(supabase, root.links.revisedFrom)
+    if (!prev) break
+    root = prev
+  }
+  return root
+}
 
 /** s6o3's content column is 700px wide — the same `maxWidth` reasoning as
  *  every other change-log surface's own column constant (`ChangeLogPage`'s
@@ -50,6 +72,16 @@ function recordKey(recordId: string) {
 function threadFirstQuestionKey(threadId: string) {
   return ['change-log-record', 'thread-first-question', threadId] as const
 }
+
+function chainKey(recordId: string) {
+  return ['change-log-record', 'chain', recordId] as const
+}
+
+/** s6o3's "this change" column rows — 40px/1fr grid, 10px gap, 7px/8px
+ *  padding, 8px radius; the viewed record's own rows get the standard ink
+ *  wash fill (the same token every other "currently selected" row in the
+ *  product uses, not a one-off colour). */
+const TIMELINE_ROW_CLASS = 'grid grid-cols-[40px_minmax(0,1fr)] gap-2.5 rounded-lg px-2 py-[7px]'
 
 /** The fields grid's label/value row — 130px/1fr, 12px gap, 32px min-height;
  *  label 10.5px/.68/uppercase, value 13.5px (s6o3). */
@@ -102,6 +134,51 @@ export function ChangeLogRecordPage({ recordId }: { recordId: string }) {
     queryFn: () => getThreadFirstQuestion(getSupabase(), threadId as string),
   })
 
+  // "This change" column: the FULL revision lineage, root first — found by
+  // walking `links.revisedFrom` backward to the root, then `listRevisionsOf`
+  // forward from there (so the middle of the chain is fetched once, not once
+  // per direction).
+  const { data: chain = [] } = useQuery({
+    queryKey: chainKey(recordId),
+    enabled: record !== null && record !== undefined,
+    queryFn: async () => {
+      if (!record) return []
+      const supabase = getSupabase()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) return [record]
+      const root = await findRevisionRoot(supabase, record)
+      const forward = await listRevisionsOf(supabase, { userId: user.id, pondId, recordId: root.id })
+      return [root, ...forward]
+    },
+  })
+
+  // The "reverted by" field (fields grid) needs every chain record's own
+  // reverts, not just the viewed one's — a revert can target any record in
+  // the lineage.
+  const { data: revertsByRecordId } = useQuery({
+    queryKey: [...chainKey(recordId), 'reverts', chain.map((r) => r.id)] as const,
+    enabled: chain.length > 0,
+    queryFn: async () => {
+      const supabase = getSupabase()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) return new Map<string, ChangeLogRecord[]>()
+      const entries = await Promise.all(
+        chain.map(
+          async (r) =>
+            [r.id, await listRevertsOf(supabase, { userId: user.id, pondId, recordId: r.id })] as const
+        )
+      )
+      return new Map(entries)
+    },
+  })
+
+  const timeline = record ? buildChangeTimeline(chain, record.id) : []
+  const revertedBy = revertedByField(revertsByRecordId?.get(recordId) ?? [])
+
   const handleOpenPage = useCallback(() => {
     if (!targetPage) return
     router.push(workspaceUrl({ id: targetPage.id, type: targetPage.type, title: targetPage.title }))
@@ -110,8 +187,8 @@ export function ChangeLogRecordPage({ recordId }: { recordId: string }) {
   // Raises ONE new `proposed` revert record (`proposeRevert`), re-reading the
   // target page fresh rather than trusting a stale copy — the same reason
   // `PageChangesPanel`'s own revert re-reads before planning. Stays on this
-  // record; refetching it is what will surface "reverted by" once the "this
-  // change" column (a later item of this ticket) renders it.
+  // record; refetching it is what surfaces "reverted by" once the revert
+  // lands (the chain/reverts queries key off this record's own query).
   const handleRevert = useCallback(() => {
     if (revertingRef.current) return
     if (record === null || record === undefined || record.targetPageId === null) return
@@ -134,6 +211,10 @@ export function ChangeLogRecordPage({ recordId }: { recordId: string }) {
         })
         setActionError(null)
         await queryClient.invalidateQueries({ queryKey: recordKey(recordId) })
+        // A revert's a NEW record (`links.revertOf`), not a change to this
+        // one's own revision chain — `listRevertsOf` must be re-asked, since
+        // nothing about `chain`'s own query key changed.
+        await queryClient.invalidateQueries({ queryKey: [...chainKey(recordId), 'reverts'] })
       } catch (err) {
         setActionError(personFacingMessage(err))
       } finally {
@@ -222,6 +303,20 @@ export function ChangeLogRecordPage({ recordId }: { recordId: string }) {
                   ))}
                 </Field>
               )}
+              {revertedBy !== null && (
+                <Field label="reverted by">
+                  <button
+                    type="button"
+                    onClick={() => router.push(changeLogRecordUrl(revertedBy.recordId))}
+                    className="underline decoration-mn-mark-faint underline-offset-[3px]"
+                  >
+                    {revertedBy.clockLabel}
+                  </button>
+                  <span className="rounded-full px-2 py-0.5 font-mono text-[10.5px] text-mn-text ring-1 ring-inset ring-mn-mark-faint">
+                    {revertedBy.statusPillText}
+                  </span>
+                </Field>
+              )}
             </div>
             <div
               data-testid="change-log-record-diff-card"
@@ -260,6 +355,26 @@ export function ChangeLogRecordPage({ recordId }: { recordId: string }) {
                 {actionError}
               </p>
             )}
+          </div>
+          <div data-testid="change-log-record-timeline" className="flex flex-col gap-2">
+            <span className="text-[10.5px] font-medium tracking-[.1em] text-mn-text-secondary uppercase">
+              this change
+            </span>
+            {timeline.map((row, index) => (
+              <div
+                key={index}
+                data-testid="change-log-record-timeline-row"
+                className={`${TIMELINE_ROW_CLASS} ${row.highlighted ? 'bg-mn-hover-fill' : ''}`}
+              >
+                <span className="font-mono text-[10.5px] text-mn-text-secondary">{row.time}</span>
+                <span className="flex flex-col gap-0.5">
+                  <span className="text-[13px] text-mn-text">{row.event}</span>
+                  <span className="font-mono text-[10.5px] text-mn-text-secondary">
+                    {row.detail}
+                  </span>
+                </span>
+              </div>
+            ))}
           </div>
         </div>
       </div>
