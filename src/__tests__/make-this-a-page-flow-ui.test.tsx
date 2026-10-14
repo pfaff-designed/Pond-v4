@@ -273,6 +273,33 @@ describe('the answer in the thread (6a frames 2–3)', () => {
     expect(stamped[0].metadata).toEqual({ sentAt: '2026-09-22T07:12:00' })
   })
 
+  it('stamps a whole-page @-reference it fenced, and withholds the open page once that turn withheld it (KAN-99)', async () => {
+    const thread = answeredThread()
+    // This turn's question dismissed the current-page chip (`openPageContext:
+    // false`) and carried a whole-page `@`-reference to Budget — the shape
+    // `sendText` stamps onto the question's own metadata at send time.
+    thread[0].metadata = {
+      sentAt: '2026-09-22T07:12:00',
+      openPageContext: false,
+      wholePageRefPageIds: ['bud-1'],
+    }
+    thread[1].parts = [{ type: 'text', text: PROSE }]
+    delete thread[1].metadata
+    mockMessages = thread
+    renderTerminal()
+    await ready()
+
+    await waitFor(() => expect(mockSetMessages).toHaveBeenCalled())
+    const stamp = mockSetMessages.mock.calls
+      .map((c) => c[0])
+      .filter((arg): arg is (m: MockMessage[]) => MockMessage[] => typeof arg === 'function')
+      .at(-1)!
+    const stamped = stamp(thread)
+    // Budget (the fenced whole-page reference) is listed; Kitchen renovation
+    // (the open page, withheld this turn) is not.
+    expect(readStamp(stamped[1].metadata)).toEqual(['Budget'])
+  })
+
   it('an answer’s read chips never change when the person walks to another page', async () => {
     const qc = newQueryClient()
     const { rerender } = render(terminalTree(qc))

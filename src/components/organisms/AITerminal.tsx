@@ -41,9 +41,11 @@ import {
   formatThreadTime,
   openPageProposalIds,
   parsePlacementResponse,
+  precedingUserMessage,
   readChips,
   readPageIds,
   readStamp,
+  turnReadContext,
   withEarlierAnswer,
   withReadStamp,
   type EarlierAnswer,
@@ -1785,20 +1787,36 @@ export function AITerminal() {
       // the send (board 6e frame 4: the refs row still holds both references
       // and the passage stays highlighted) — removed only by its own × or by
       // the anchored text being edited away.
+      const sentReferences = dedupeWholePageReferences(references)
+      const openPageContext = dismissedCurrentRefNodeId !== nodeId
       const body = {
         nodeId,
         nodeType,
         pondId,
         resolutions: outgoing,
         research,
-        references: dedupeWholePageReferences(references),
+        references: sentReferences,
         // KAN-99: × on the current-page chip withholds the open page's
         // content from this and every turn until another page is opened.
-        openPageContext: dismissedCurrentRefNodeId !== nodeId,
+        openPageContext,
       }
       // #97: the thread shows when each line was said ("you · 07:12"), and a
       // page made from the answer carries that moment on its made-from chip.
-      const metadata = { sentAt: new Date().toISOString() }
+      // `openPageContext` and `wholePageRefPageIds` are this turn's own facts
+      // about what reached the model (PROJECT_RULES "sources are always
+      // shown") — stamped here, not read live off `references`/
+      // `dismissedCurrentRefNodeId` later, since either can change before the
+      // read-chip stamp runs (KAN-99). A whole-page ref to the open node
+      // itself is excluded: that page's content rides `openPageContext`, not
+      // a second fenced copy (route.ts never double-sends it either).
+      const metadata = {
+        sentAt: new Date().toISOString(),
+        openPageContext,
+        wholePageRefPageIds: sentReferences
+          .filter(isWholePageReference)
+          .filter((ref) => ref.pageId !== nodeId)
+          .map((ref) => ref.pageId),
+      }
       clearError?.()
       const outgoingFiles = fileParts
       if (outgoingFiles.length > 0) clearAttachments()
@@ -2785,20 +2803,25 @@ export function AITerminal() {
       return { ...m, metadata: { ...base, sentAt: landedAt } }
     }
     setMessages((prev) =>
-      prev.map((m) =>
-        ids.has(m.id)
-          ? withLandedAt(
-              withReadStamp(
-                m,
-                readChips({
-                  contextLabel: initialMessageIds.has(m.id) ? '' : contextLabel,
-                  parts: m.parts as ReadPartLike[],
-                  resolvePageName,
-                })
-              )
-            )
-          : m
-      )
+      prev.map((m, i) => {
+        if (!ids.has(m.id)) return m
+        const isInitial = initialMessageIds.has(m.id)
+        const turn = isInitial
+          ? { openPageContext: true, wholePageRefIds: [] }
+          : turnReadContext(precedingUserMessage(prev, i))
+        return withLandedAt(
+          withReadStamp(
+            m,
+            readChips({
+              contextLabel: isInitial ? '' : contextLabel,
+              parts: m.parts as ReadPartLike[],
+              resolvePageName,
+              openPageContext: turn.openPageContext,
+              wholePageRefIds: turn.wholePageRefIds,
+            })
+          )
+        )
+      })
     )
   }, [
     isStreaming,
@@ -2934,6 +2957,7 @@ export function AITerminal() {
             contextLabel,
             parts: message.parts as ReadPartLike[],
             resolvePageName,
+            ...turnReadContext(precedingUserMessage(messages, messageIndex)),
           }))
         : []
     const earlierFolds = [...earlierAnswers(message.metadata)].reverse().map((entry) => ({

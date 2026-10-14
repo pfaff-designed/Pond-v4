@@ -266,8 +266,12 @@ export interface ReadPartLike {
 
 /**
  * What Pond read before answering, as chip labels (S8: every answer shows
- * them — no exceptions). The page the question was asked from always leads
- * (6a frame 1: "the page you are on goes with the question"), then each
+ * them — no exceptions, and none it didn't). The page the question was asked
+ * from leads (6a frame 1: "the page you are on goes with the question") —
+ * UNLESS that turn withheld it (KAN-99's current-page ×, `openPageContext:
+ * false`), in which case it never led because its content never reached the
+ * model. Next, each whole-page `@`-reference (KAN-99) the turn fenced for
+ * the model, by id (never title — KAN-172: a title can collide). Then each
  * `read_page` call in the answer, resolved to its title; one chip per page.
  * With no context and no reads the row still renders — the pond's root.
  */
@@ -275,6 +279,8 @@ export function readChips(opts: {
   contextLabel: string
   parts: ReadPartLike[]
   resolvePageName: (id: string) => string | undefined
+  openPageContext?: boolean
+  wholePageRefIds?: string[]
 }): string[] {
   const out: string[] = []
   const seen = new Set<string>()
@@ -286,7 +292,10 @@ export function readChips(opts: {
     seen.add(key)
     out.push(l)
   }
-  push(opts.contextLabel)
+  if (opts.openPageContext ?? true) push(opts.contextLabel)
+  for (const id of opts.wholePageRefIds ?? []) {
+    push(opts.resolvePageName(id) ?? id)
+  }
   for (const part of opts.parts) {
     if (part.type !== 'tool-read_page' || part.state === 'input-streaming') continue
     const id = part.input?.pageId
@@ -340,6 +349,40 @@ export function withReadStamp<T extends { metadata?: unknown }>(message: T, read
   const base =
     typeof message.metadata === 'object' && message.metadata !== null ? message.metadata : {}
   return { ...message, metadata: { ...base, read } }
+}
+
+/** The nearest user message above `index` — the question a `turnReadContext` belongs to. */
+export function precedingUserMessage<T extends { role: string }>(
+  messages: readonly T[],
+  index: number
+): T | undefined {
+  for (let i = index - 1; i >= 0; i--) if (messages[i].role === 'user') return messages[i]
+  return undefined
+}
+
+/**
+ * What actually reached the model for a turn (KAN-99: "sources are always
+ * shown" — and never a source that wasn't one), read off the question's own
+ * metadata, stamped by `sendText` at send time. Never recomputed from live
+ * reference/dismissal state: that can move before a streaming answer's read
+ * chips render or its stamp effect runs. A question sent before this fix (or
+ * re-seeded from a saved transcript) carries neither field — defaults to the
+ * pre-KAN-99 behaviour (the open page always shown, no extra fenced pages)
+ * rather than hiding a page that genuinely was in context.
+ */
+export function turnReadContext(message: { metadata?: unknown } | undefined): {
+  openPageContext: boolean
+  wholePageRefIds: string[]
+} {
+  const meta = message?.metadata as
+    | { openPageContext?: unknown; wholePageRefPageIds?: unknown }
+    | undefined
+  return {
+    openPageContext: typeof meta?.openPageContext === 'boolean' ? meta.openPageContext : true,
+    wholePageRefIds: Array.isArray(meta?.wholePageRefPageIds)
+      ? meta.wholePageRefPageIds.filter((id): id is string => typeof id === 'string')
+      : [],
+  }
 }
 
 // ── Earlier answers (6a frame 3: ask again replaces in place, the old one folds) ──
