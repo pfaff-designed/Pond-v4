@@ -10,7 +10,7 @@
  * its hint and nothing underlined (the board's `entry log · dated table`).
  */
 
-import { TEMPLATE_KINDS, type TemplateKind } from '@/lib/templates/types'
+import { isTemplateKind, TEMPLATE_KINDS, type TemplateKind } from '@/lib/templates/types'
 import { BOX_HEIGHT, LIST_MAX_VH, SLASH_SIZES, type PickerSize } from './picker-chrome'
 
 export interface SlashIcon {
@@ -159,11 +159,14 @@ export function slashMenuHeight(
   size: PickerSize,
   viewportHeight: number,
   leadWithTemplates = false,
-  yours: readonly YourTemplate[] = []
+  yours: readonly YourTemplate[] = [],
+  siblingRanking: readonly string[] = [],
+  justSavedId: string | null = null,
+  parentTitle: string | null = null
 ): number {
   const cap = size === 'mobile' ? MOBILE_ROW_CAP : undefined
   const entries = leadWithTemplates
-    ? blankRowEntries(rows, yours, '', cap)
+    ? blankRowEntries(rows, yours, '', cap, siblingRanking, justSavedId, parentTitle)
     : rowEntries(rows, '', cap)
   const list = entries.reduce(
     (height, e) => height + (e.kind === 'group' ? BOX_HEIGHT.group : SLASH_SIZES[size].rowHeight),
@@ -263,29 +266,101 @@ export function templateRows(yours: readonly YourTemplate[]): SlashRow[] {
   return out
 }
 
+/**
+ * The blank-page list's `templates` group, ranked (KAN-138): (1) the template
+ * just saved this session and not yet applied, (2) `siblingRanking`'s ids in
+ * that order (a premade id already reads `premade:{kind}`, matching the stamp
+ * `applyTemplateInPlace` writes — see `src/lib/templates/apply.ts`), (3) your
+ * remaining templates, (4) the remaining premade twelve in canonical order.
+ * Deduped across tiers; a `siblingRanking` id with no matching row (its
+ * template was deleted) is skipped, never thrown.
+ */
+export function rankTemplateRows(
+  yours: readonly YourTemplate[],
+  siblingRanking: readonly string[] = [],
+  justSavedId: string | null = null,
+  parentTitle: string | null = null
+): SlashRow[] {
+  const yoursById = new Map(yours.map((t) => [t.id, t]))
+  const used = new Set<string>()
+  const out: SlashRow[] = []
+  const usedHint = parentTitle ? `used in ${parentTitle}` : 'used'
+
+  const pushYours = (t: YourTemplate, hint: string): void => {
+    out.push({
+      id: `yours:${t.id}`,
+      label: t.name,
+      group: 'templates',
+      key: hint,
+      icon: TPL_ICON,
+      template: { origin: 'yours', id: t.id },
+    })
+    used.add(t.id)
+  }
+  const pushPremade = (kind: TemplateKind, hint?: string): void => {
+    out.push({
+      id: `premade:${kind}`,
+      label: kind,
+      group: 'templates',
+      ...(hint ? { key: hint } : {}),
+      icon: kind === 'page' ? PAGE_ICON : TPL_ICON,
+      template: { origin: 'premade', kind },
+    })
+    used.add(`premade:${kind}`)
+  }
+
+  if (justSavedId) {
+    const t = yoursById.get(justSavedId)
+    if (t) pushYours(t, 'yours · just saved')
+  }
+
+  for (const id of siblingRanking) {
+    if (used.has(id)) continue
+    const kind = id.startsWith('premade:') ? id.slice('premade:'.length) : null
+    if (kind !== null) {
+      if (isTemplateKind(kind)) pushPremade(kind, usedHint)
+      continue
+    }
+    const t = yoursById.get(id)
+    if (t) pushYours(t, `yours · ${usedHint}`)
+  }
+
+  for (const t of yours) {
+    if (!used.has(t.id)) pushYours(t, 'yours')
+  }
+
+  for (const kind of TEMPLATE_KINDS) {
+    if (!used.has(`premade:${kind}`)) pushPremade(kind)
+  }
+
+  return out
+}
+
 /** The blank-page list's scroll cue (6f frame 2) — replaces the `text` group's own label when the query is empty. */
 export const BLANK_TEXT_GROUP = 'text — scroll for blocks, templates, pages'
 
 /**
- * The blank-page list (KAN-276): `templates` first (sibling-used ranking aside,
- * KAN-138), then the ordinary rows as they are today. At rest the leading `text`
- * group is relabeled with the scroll cue so the templates above don't read as
- * the whole list.
+ * The blank-page list (KAN-276): `templates` first, ranked (KAN-138:
+ * `rankTemplateRows`), then the ordinary rows as they are today. At rest the
+ * leading `text` group is relabeled with the scroll cue so the templates
+ * above don't read as the whole list.
  */
 export function blankRowEntries(
   rows: readonly SlashRow[],
   yours: readonly YourTemplate[],
   query: string,
-  cap: number = Infinity
+  cap: number = Infinity,
+  siblingRanking: readonly string[] = [],
+  justSavedId: string | null = null,
+  parentTitle: string | null = null
 ): SlashEntry[] {
-  if (normalizeQuery(query)) return rowEntries([...templateRows(yours), ...rows], query, cap)
+  const ranked = rankTemplateRows(yours, siblingRanking, justSavedId, parentTitle)
+  if (normalizeQuery(query)) return rowEntries([...ranked, ...rows], query, cap)
   // A query is never capped (`rowEntries` ignores `cap` once filtered), but at
   // rest the two groups are capped on their own: the templates group to its own
   // small mobile cap, the ordinary rows to `cap` — never the combined list, or
   // the templates alone could eat every row and leave nothing for `text`.
-  const templates = Number.isFinite(cap)
-    ? templateRows(yours).slice(0, MOBILE_TEMPLATE_CAP)
-    : templateRows(yours)
+  const templates = Number.isFinite(cap) ? ranked.slice(0, MOBILE_TEMPLATE_CAP) : ranked
   const templateHead = rowEntries(templates, '')
   const ordinary = rowEntries(rows, '', cap)
   const firstText = ordinary.findIndex((e) => e.kind === 'group' && e.label === 'text')

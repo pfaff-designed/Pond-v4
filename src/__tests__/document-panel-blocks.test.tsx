@@ -14,6 +14,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DocumentPanel } from '@/components/organisms/DocumentPanel'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import type { Block } from '@/lib/documents/types'
+import { justSaved } from '@/lib/templates/just-saved'
 import {
   findTextBlock,
   queryAllTextBlocks,
@@ -28,6 +29,15 @@ jest.mock('next/navigation', () => ({
 
 jest.mock('@/lib/supabase/client', () => ({
   createClient: () => ({ auth: { getUser: async () => ({ data: { user: { id: 'user-1' } } }) } }),
+}))
+
+// KAN-138: null by default (most tests render outside a PondProvider); the
+// `yours · just saved` clear-on-apply tests below override it, since the real
+// `justSaved` store needs a concrete pond id to key on.
+const mockUsePondId = jest.fn<string | null, []>(() => null)
+jest.mock('@/lib/pond/context', () => ({
+  ...jest.requireActual('@/lib/pond/context'),
+  usePondId: () => mockUsePondId(),
 }))
 
 // The composite surface (ticket-22) reads the flat page tree to derive this
@@ -104,6 +114,8 @@ function renderPanel() {
 
 beforeEach(() => {
   jest.clearAllMocks()
+  mockUsePondId.mockReturnValue(null)
+  justSaved.reset()
   mockListTemplates.mockResolvedValue([])
   mockCreatePage.mockResolvedValue({ id: 'made-1', type: 'page', title: 'untitled' })
   mockSaveBlocks.mockResolvedValue(undefined)
@@ -379,6 +391,9 @@ describe('the / menu on an empty page makes pages', () => {
       title: 'Health',
       blocks: [],
     })
+    // KAN-138: `t1` was this session's just-saved lead — applying it retires that.
+    mockUsePondId.mockReturnValue('pond-1')
+    justSaved.set('pond-1', 't1')
     renderWith({ id: 'page-1', parentId: null, type: 'page', title: 'Health', blocks: [] })
     const { editor } = await openSlash('')
     expect(editor).toBeInTheDocument()
@@ -396,6 +411,38 @@ describe('the / menu on an empty page makes pages', () => {
     expect(mockSaveProps.mock.calls[0][2]).toMatchObject({
       madeFromTemplate: { templateId: 't1', name: 'weeknight recipe' },
     })
+    expect(justSaved.get('pond-1')).toBeNull()
+  })
+
+  it('a failed in-place apply leaves `yours · just saved` in place for a retry', async () => {
+    mockListTemplates.mockResolvedValue([
+      {
+        id: 't1',
+        name: 'weeknight recipe',
+        kind: 'page',
+        origin: 'yours',
+        createdAt: NOW,
+        updatedAt: NOW,
+        blocks: [{ id: 'old-1', type: 'text', content: 'chickpeas, harissa' }],
+      },
+    ])
+    mockGetPage.mockResolvedValue({
+      id: 'page-1',
+      parentId: null,
+      type: 'page',
+      title: 'Health',
+      blocks: [],
+    })
+    mockUsePondId.mockReturnValue('pond-1')
+    justSaved.set('pond-1', 't1')
+    mockSaveBlocks.mockRejectedValueOnce(new Error('offline'))
+    renderWith({ id: 'page-1', parentId: null, type: 'page', title: 'Health', blocks: [] })
+    const { editor } = await openSlash('')
+    expect(editor).toBeInTheDocument()
+    fireEvent.click(await screen.findByText('weeknight recipe'))
+
+    await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalled())
+    expect(justSaved.get('pond-1')).toBe('t1')
   })
 })
 
@@ -425,6 +472,10 @@ describe('Return after a block, then `/`, lists what the `/` menu does', () => {
 
   it('offers yours and applies one as a child page', async () => {
     mockListTemplates.mockResolvedValue([yours])
+    // KAN-138: `t1` was this session's just-saved lead — applying it as a
+    // nested page retires that too.
+    mockUsePondId.mockReturnValue('pond-1')
+    justSaved.set('pond-1', 't1')
     renderWith({ id: 'page-1', parentId: null, type: 'page', title: 'Health', blocks: [tools] })
     await returnAfterTheTableThenSlash()
     const menu = await screen.findByRole('listbox', { name: 'blocks' })
@@ -440,6 +491,7 @@ describe('Return after a block, then `/`, lists what the `/` menu does', () => {
       parentId: 'page-1',
       title: 'weeknight recipe',
     })
+    expect(justSaved.get('pond-1')).toBeNull()
   })
 
   it('draws the mobile glass below the md breakpoint', async () => {

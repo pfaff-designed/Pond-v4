@@ -15,6 +15,8 @@ import { insertPageOptimistic } from '@/lib/pages/tree'
 import type { Block } from '@/lib/documents/types'
 import type { PondTemplate } from '@/lib/templates/types'
 import { findTextBlock, writeInTextBlock } from './helpers/text-block'
+import { TEMPLATE_KINDS } from '@/lib/templates/types'
+import { justSaved } from '@/lib/templates/just-saved'
 
 const blockRoot = (blockId: string) => document.getElementById(`block-${blockId}`)!
 const textBlockIn = (blockId: string) =>
@@ -35,6 +37,11 @@ const mockListTemplates = jest.fn()
 jest.mock('@/lib/templates/client', () => ({
   listTemplates: (...args: unknown[]) => mockListTemplates(...args),
   getTemplate: jest.fn().mockResolvedValue(null),
+}))
+const mockSiblingTemplateRanking = jest.fn()
+jest.mock('@/lib/templates/provenance', () => ({
+  ...jest.requireActual('@/lib/templates/provenance'),
+  siblingTemplateRanking: (...args: unknown[]) => mockSiblingTemplateRanking(...args),
 }))
 const mockFetchPages = jest.fn()
 jest.mock('@/lib/pages/tree', () => ({
@@ -100,6 +107,8 @@ beforeEach(() => {
   mockSaveBlocks.mockResolvedValue(undefined)
   mockAppendOwnEdit.mockResolvedValue({ id: 'record-1' })
   mockListTemplates.mockResolvedValue([])
+  mockSiblingTemplateRanking.mockResolvedValue([])
+  justSaved.reset()
 })
 
 describe('the `/` menu on an empty page leads with templates (KAN-276)', () => {
@@ -128,6 +137,175 @@ describe('the `/` menu on an empty page leads with templates (KAN-276)', () => {
       (g) => g.textContent
     )
     expect(groups).toEqual(['text', 'blocks', 'templates', 'pages'])
+  })
+})
+
+describe("the blank list ranks the parent's other children's template use first (KAN-138)", () => {
+  it('leads with the just-saved template, hinted `yours · just saved`', async () => {
+    const WEEKNIGHT: PondTemplate = {
+      id: 'weeknight-id',
+      name: 'weeknight recipe',
+      kind: 'notes',
+      blocks: [],
+      origin: 'yours',
+      createdAt: '2026-10-01T10:00:00.000Z',
+      updatedAt: '2026-10-01T10:00:00.000Z',
+    }
+    mockListTemplates.mockResolvedValue([WEEKNIGHT])
+    justSaved.set('pond-1', 'weeknight-id')
+    const user = userEvent.setup()
+    const emptyLine: Block = { id: 'b-empty', type: 'text', content: '' }
+    renderCanvas([emptyLine])
+    writeInTextBlock(await findTextBlock(), '/')
+
+    const menu = await screen.findByRole('listbox', { name: 'blocks' })
+    await screen.findByText('weeknight recipe')
+    // The leading row is selected by default, so its hint is hidden behind
+    // `↵` (slash-row.tsx, the PondPicker DC's hide-hint-on-selected rule) —
+    // move off it to read the hint underneath.
+    await user.keyboard('{ArrowDown}')
+    const firstRow = menu.querySelector('[data-part="row"]')!
+    expect(firstRow.querySelector('[data-part="label"]')!.textContent).toBe('weeknight recipe')
+    expect(firstRow.querySelector('[data-part="hint"]')!.textContent).toBe('yours · just saved')
+  })
+
+  it('leads with the sibling-used template, hinted `yours · used in {parent}`', async () => {
+    const YOURS_TEMPLATE: PondTemplate = {
+      id: 'recipe-id',
+      name: 'recipe',
+      kind: 'notes',
+      blocks: [],
+      origin: 'yours',
+      createdAt: '2026-10-01T10:00:00.000Z',
+      updatedAt: '2026-10-01T10:00:00.000Z',
+    }
+    mockListTemplates.mockResolvedValue([YOURS_TEMPLATE])
+    mockSiblingTemplateRanking.mockResolvedValue(['recipe-id'])
+    const user = userEvent.setup()
+    const emptyLine: Block = { id: 'b-empty', type: 'text', content: '' }
+    renderCanvas([emptyLine])
+    writeInTextBlock(await findTextBlock(), '/')
+
+    const menu = await screen.findByRole('listbox', { name: 'blocks' })
+    await screen.findByText('recipe')
+    // The ranked row leads and is selected by default, so its hint is hidden
+    // behind `↵` (slash-row.tsx) — move off it to read the hint underneath.
+    await user.keyboard('{ArrowDown}')
+    const firstRow = menu.querySelector('[data-part="row"]')!
+    expect(firstRow.querySelector('[data-part="label"]')!.textContent).toBe('recipe')
+    expect(firstRow.querySelector('[data-part="hint"]')!.textContent).toBe(
+      'yours · used in recipes'
+    )
+
+    expect(mockSiblingTemplateRanking).toHaveBeenCalledWith(
+      expect.anything(),
+      'user-1',
+      'pond-1',
+      'root-1'
+    )
+  })
+
+  it('does not rank before `pageRows` resolves, so it never ranks off a false `null` parentId', async () => {
+    let resolvePages: (rows: typeof pageRows) => void = () => {}
+    mockFetchPages.mockImplementation(() => new Promise((resolve) => (resolvePages = resolve)))
+    const emptyLine: Block = { id: 'b-empty', type: 'text', content: '' }
+    renderCanvas([emptyLine])
+    writeInTextBlock(await findTextBlock(), '/')
+
+    await screen.findByRole('listbox', { name: 'blocks' })
+    expect(mockSiblingTemplateRanking).not.toHaveBeenCalled()
+
+    resolvePages(pageRows)
+    await waitFor(() => expect(mockSiblingTemplateRanking).toHaveBeenCalled())
+    expect(mockSiblingTemplateRanking).toHaveBeenCalledWith(
+      expect.anything(),
+      'user-1',
+      'pond-1',
+      'root-1'
+    )
+  })
+
+  it('the path: a third blank child under `recipes` leads with `recipe` (used by its two siblings), `weeknight recipe` next, then premade in canonical order, foot reading apply-with-preview', async () => {
+    const RECIPE: PondTemplate = {
+      id: 'recipe-id',
+      name: 'recipe',
+      kind: 'notes',
+      blocks: [],
+      origin: 'yours',
+      createdAt: '2026-10-01T10:00:00.000Z',
+      updatedAt: '2026-10-01T10:00:00.000Z',
+    }
+    const WEEKNIGHT: PondTemplate = {
+      id: 'weeknight-id',
+      name: 'weeknight recipe',
+      kind: 'notes',
+      blocks: [],
+      origin: 'yours',
+      createdAt: '2026-10-01T10:00:00.000Z',
+      updatedAt: '2026-10-01T10:00:00.000Z',
+    }
+    mockListTemplates.mockResolvedValue([RECIPE, WEEKNIGHT])
+    mockSiblingTemplateRanking.mockResolvedValue(['recipe-id'])
+    mockFetchPages.mockResolvedValue([
+      { id: 'root-1', parent_id: null, type: 'page', title: 'recipes', order: 0, updated_at: '' },
+      {
+        id: 'page-sibling-1',
+        parent_id: 'root-1',
+        type: 'page',
+        title: 'sourdough, 78%',
+        order: 0,
+        updated_at: '',
+      },
+      {
+        id: 'page-sibling-2',
+        parent_id: 'root-1',
+        type: 'page',
+        title: 'weeknight pasta',
+        order: 1,
+        updated_at: '',
+      },
+      {
+        id: 'page-1',
+        parent_id: 'root-1',
+        type: 'page',
+        title: 'sourdough, 78%',
+        order: 2,
+        updated_at: '',
+      },
+    ])
+    const user = userEvent.setup()
+    const emptyLine: Block = { id: 'b-empty', type: 'text', content: '' }
+    renderCanvas([emptyLine])
+    writeInTextBlock(await findTextBlock(), '/')
+
+    const menu = await screen.findByRole('listbox', { name: 'blocks' })
+    await screen.findByText('recipe')
+
+    // `recipe` leads, selected — its foot already reads apply-with-preview.
+    expect(document.querySelector('[data-part="foot"]')!.textContent).toBe(
+      '↑↓ move→ preview↵ apply'
+    )
+
+    // Move off the leading row to read its hint (hidden behind `↵` while selected).
+    await user.keyboard('{ArrowDown}')
+    const rows = () => [...menu.querySelectorAll('[data-part="row"]')]
+    expect(rows()[0].querySelector('[data-part="label"]')!.textContent).toBe('recipe')
+    expect(rows()[0].querySelector('[data-part="hint"]')!.textContent).toBe(
+      'yours · used in recipes'
+    )
+
+    // Move again to read the second row's hint.
+    await user.keyboard('{ArrowDown}')
+    expect(rows()[1].querySelector('[data-part="label"]')!.textContent).toBe('weeknight recipe')
+    expect(rows()[1].querySelector('[data-part="hint"]')!.textContent).toBe('yours')
+
+    // The remaining twelve premade kinds follow, in their canonical order — the
+    // `templates` group ends where the next group (`text — scroll for …`) begins.
+    expect(
+      rows()
+        .slice(2, 2 + TEMPLATE_KINDS.length)
+        .map((r) => r.querySelector('[data-part="label"]')!.textContent)
+    ).toEqual([...TEMPLATE_KINDS])
   })
 })
 
@@ -334,7 +512,7 @@ describe('a template pick on a blank page applies in place (KAN-124)', () => {
     expect(mockSaveProps.mock.calls[0][2].kind).toBe('meeting notes')
   })
 
-  it("a `yours` template applies in place the same way, stamping its NAME as the kind, with its view block carrying no stale collectionId", async () => {
+  it('a `yours` template applies in place the same way, stamping its NAME as the kind, with its view block carrying no stale collectionId', async () => {
     const YOURS_TEMPLATE: PondTemplate = {
       id: 'tpl-9',
       name: 'weekly review',

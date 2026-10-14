@@ -603,6 +603,31 @@ describe('leads with templates (KAN-276, an empty page’s `/`)', () => {
     expect(labelOf(selected())).toBe('text')
     expect(glass().querySelector('[data-part="foot"]')!.textContent).toBe('↑↓ move↵ insert')
   })
+
+  it('the ranking slotting rows in above the pressed ↓ never moves the selection off the row the person picked (KAN-138)', () => {
+    const { rerender, anchor, onSelect, onClose, onPickTemplate } = renderMenu({
+      leadWithTemplates: true,
+    })
+    fireEvent.keyDown(anchor, { key: 'ArrowDown' })
+    expect(labelOf(selected())).toBe('notes')
+    // The ranking resolves: `journal` slots in ahead of `page` and `notes`.
+    rerender(
+      <SlashMenu
+        rows={slashRows}
+        query=""
+        anchor={anchor}
+        leadWithTemplates
+        siblingRanking={['premade:journal']}
+        onSelect={onSelect}
+        onClose={onClose}
+        onPickTemplate={onPickTemplate}
+      />
+    )
+    expect(labelOf(options()[0])).toBe('journal')
+    expect(labelOf(selected())).toBe('notes')
+    fireEvent.keyDown(anchor, { key: 'Enter' })
+    expect(onPickTemplate).toHaveBeenCalledWith({ origin: 'premade', kind: 'notes' })
+  })
 })
 
 // ── The keys, from the host’s own field ────────────────────────────────────────

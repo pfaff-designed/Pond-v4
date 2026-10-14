@@ -95,6 +95,12 @@ export interface SlashMenuProps {
   /** The blank-page list (KAN-276): the `rows` pane leads with `templates` — no head of its own, the glass opens straight on the `templates` group. */
   leadWithTemplates?: boolean
   yourTemplates?: readonly YourTemplate[]
+  /** The blank list's ranking (KAN-138): the parent's other children, by `siblingTemplateRanking` count. */
+  siblingRanking?: readonly string[]
+  /** The template saved this session and not yet applied. */
+  justSavedId?: string | null
+  /** The parent page's title, for the `used in {parent}` hint. */
+  parentTitle?: string | null
   /** Portal target; defaults to `document.body`. Stories theme it. */
   container?: HTMLElement | null
   /** The DC's `size`: touch rows, a wider glass, a shorter list. @default 'desktop' */
@@ -113,6 +119,9 @@ export function SlashMenu({
   onPreviewTemplate,
   leadWithTemplates,
   yourTemplates,
+  siblingRanking = [],
+  justSavedId = null,
+  parentTitle = null,
   container,
   size = 'desktop',
 }: SlashMenuProps) {
@@ -127,20 +136,39 @@ export function SlashMenu({
     if (pane === 'templates') setPane('rows')
   }
   // The selection is keyed to what it was made against, so a new query or pane
-  // starts at the first row without an effect writing state.
-  const [sel, setSel] = useState({ pane, query, index: 0 })
+  // starts at the first row without an effect writing state. It is kept by the
+  // row's own id, not its index: ranked rows (KAN-138) can slot in above the
+  // active row once the ranking resolves, and an index would then point at a
+  // different template than the one the person moved onto.
+  const [sel, setSel] = useState<{ pane: SlashPane; query: string; id: string | null }>({
+    pane,
+    query,
+    id: null,
+  })
   const entries =
     pane === 'templates'
       ? templateEntries(yourTemplates, mobile ? MOBILE_PREMADE_CAP : undefined)
       : leadWithTemplates
-        ? blankRowEntries(rows, yourTemplates ?? [], query, mobile ? MOBILE_ROW_CAP : undefined)
+        ? blankRowEntries(
+            rows,
+            yourTemplates ?? [],
+            query,
+            mobile ? MOBILE_ROW_CAP : undefined,
+            siblingRanking,
+            justSavedId,
+            parentTitle
+          )
         : rowEntries(rows, query, mobile ? MOBILE_ROW_CAP : undefined)
   const items = entries.filter((e): e is RowEntry => e.kind === 'row')
+  const selectedIndex =
+    sel.pane === pane && sel.query === query && sel.id !== null
+      ? items.findIndex((item) => item.id === sel.id)
+      : -1
   const active = Math.min(
-    sel.pane === pane && sel.query === query ? sel.index : 0,
+    selectedIndex === -1 ? 0 : selectedIndex,
     Math.max(0, items.length - 1)
   )
-  const select = (index: number) => setSel({ pane, query, index })
+  const select = (index: number) => setSel({ pane, query, id: items[index]?.id ?? null })
 
   const pick = (item: RowEntry) => {
     if (item.template) onPickTemplate?.(item.template)

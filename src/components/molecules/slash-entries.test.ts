@@ -15,6 +15,7 @@ import {
   type SlashRow,
   type YourTemplate,
 } from './slash-entries'
+import { TEMPLATE_KINDS } from '@/lib/templates/types'
 
 const YOURS: readonly YourTemplate[] = [{ id: 't1', name: 'weeknight recipe', hint: 'from chickpeas…' }]
 
@@ -103,6 +104,19 @@ describe('blankRowEntries', () => {
     expect(labels).toContain('text')
     expect(labels).toContain('table')
     expect(labels).toContain('page')
+  })
+
+  it('KAN-138: with no ranking data yet (defaults), yours lead then premade in canonical order, unmoved (G6)', () => {
+    const withDefaults = blankRowEntries(BLANK_ROWS, YOURS, '')
+    const withExplicitDefaults = blankRowEntries(BLANK_ROWS, YOURS, '', Infinity, [], null, null)
+    expect(withDefaults).toEqual(withExplicitDefaults)
+    const templateRowEntries = withDefaults.filter(
+      (e) => e.kind === 'row' && e.template !== undefined
+    )
+    expect(templateRowEntries.map((e) => e.kind === 'row' && e.id)).toEqual([
+      'yours:t1',
+      ...TEMPLATE_KINDS.map((k) => `premade:${k}`),
+    ])
   })
 })
 
