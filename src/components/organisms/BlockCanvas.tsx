@@ -1169,6 +1169,36 @@ export function BlockCanvas({
     return row.filter((b) => b.id !== draggedId).map((b) => b.width ?? 'full')
   }
 
+  /**
+   * Commits a beside drop (6x): splices the dragged block to sit immediately
+   * before (`left`) or after (`right`) the target block, reading order, and
+   * applies `widthsForDropBeside`'s widths to every block now in that row —
+   * including the ones whose width didn't change — in the one `onChange` call,
+   * so the move and the widths it sets are one change with one undo. Reads the
+   * real `blocks` (not the live-preview `blocksForLayout`), since this is the
+   * commit, not another preview.
+   */
+  function commitBesideDrop(fromIndex: number, targetIndex: number, zone: 'left' | 'right') {
+    const dragged = blocks[fromIndex]
+    const target = blocks[targetIndex]
+    const withoutDragged = blocks.filter((_, i) => i !== fromIndex)
+    const row = layoutRows(withoutDragged).find((r) => r.some((b) => b.id === target.id))
+    if (!row) return
+    const widths = widthsForDropBeside(row.map((b) => b.width ?? 'full'))
+    // `null` means the row already holds 4 — unreachable here, since the drop
+    // line (and so the drop itself) is never offered beside a full row.
+    if (!widths) return
+
+    const nextWidth = new Map(row.map((b, i) => [b.id, widths[i]]))
+    nextWidth.set(dragged.id, widths[widths.length - 1])
+
+    const targetAt = withoutDragged.findIndex((b) => b.id === target.id)
+    const spliced = [...withoutDragged]
+    spliced.splice(zone === 'left' ? targetAt : targetAt + 1, 0, dragged)
+
+    onChange(spliced.map((b) => (nextWidth.has(b.id) ? { ...b, width: nextWidth.get(b.id) } : b)))
+  }
+
   // Stacking (6x): measured off the content column itself (ResizeObserver on the
   // canvas), not the viewport, so the side panel and window-narrowing both
   // trigger it. 0 means "not yet measured" (jsdom never measures) and is read as
@@ -1296,6 +1326,13 @@ export function BlockCanvas({
           setDropIndicator(null)
           setPreviewWidth(null)
           if (draggingIndex === null || draggingIndex === i) {
+            setDraggingIndex(null)
+            return
+          }
+          const rect = e.currentTarget.getBoundingClientRect()
+          const zone = classifyDropZone(rect, { x: e.clientX, y: e.clientY })
+          if (zone === 'left' || zone === 'right') {
+            commitBesideDrop(draggingIndex, i, zone)
             setDraggingIndex(null)
             return
           }
