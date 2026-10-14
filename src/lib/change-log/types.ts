@@ -68,6 +68,9 @@ export type ChangeLogAction =
   | 'revert'
   | 'undo'
   | 'redo'
+  /** A page (and its trashed subtree) brought back out of trash (KAN-97);
+   *  before/after carry a {@link TrashSnapshot}. */
+  | 'restore'
   /** A person's own pick in the glyph picker (KAN-248); before/after are a
    *  glyph id or null (`automatic`) — never a `Block[]`, so this stays out of
    *  {@link BLOCK_ACTIONS}. */
@@ -104,6 +107,23 @@ export interface RowSnapshot {
    * record because a later rename of an option must not rewrite what was logged.
    */
   shown: Record<string, string>
+}
+
+/**
+ * A trashed (or restored) page's subtree as `delete`/`restore` store it: enough
+ * to render the deleted-view card (s6o6) and to put the root back where it was.
+ * `before` on a `delete` record; `after` on the `restore` that answers it.
+ */
+export interface TrashSnapshot {
+  title: string
+  parentId: string | null
+  order: number
+  /** The root and every descendant trashed together with it. */
+  pageIds: string[]
+  blockCount: number
+  nestedPageCount: number
+  /** The parent chain's titles, root first — "was in creativity › kitchen renovation". */
+  parentPath: string[]
 }
 
 /**

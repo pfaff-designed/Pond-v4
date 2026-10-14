@@ -153,4 +153,31 @@ describe('describeChange', () => {
       describeChange(record({ action: 'edit_area_role', before: null, after: 'area-unknown' }), null)
     ).toBe('changed the colour')
   })
+
+  it('names a delete and a restore from their trash snapshot, before and after respectively', () => {
+    const snapshot = {
+      title: 'old quotes',
+      parentId: 'page-parent',
+      order: 2,
+      pageIds: ['page-1', 'page-2'],
+      blockCount: 4,
+      nestedPageCount: 1,
+      parentPath: ['creativity', 'kitchen renovation'],
+    }
+    expect(
+      describeChange(record({ action: 'delete', before: snapshot, after: null }), null)
+    ).toBe('deleted old quotes')
+    expect(
+      describeChange(record({ action: 'restore', before: null, after: snapshot }), null)
+    ).toBe('restored old quotes')
+  })
+
+  it('falls back to the bare verb when a delete or restore carries no usable snapshot', () => {
+    expect(describeChange(record({ action: 'delete', before: null, after: null }), null)).toBe(
+      'deleted'
+    )
+    expect(describeChange(record({ action: 'restore', before: null, after: null }), null)).toBe(
+      'restored'
+    )
+  })
 })

@@ -6,11 +6,11 @@
  * choke point every write passes through; it now awaits `flushStagedDeletes`
  * first (see deletion-undo-wiring.test.tsx 3d for the staging-layer unit).
  *
- * `createPage`/`deletePage`/`fetchPages` are mocked against one shared
+ * `createPage`/`trashPage`/`fetchPages` are mocked against one shared
  * in-memory `mockPagesTable` (standing in for the `pages` row set a real
  * Postgres would hold) rather than fixed resolved values, so this file can
  * drive a REAL invalidate-and-refetch through Rail's own `withUser` — the
- * mocked `fetchPages` reads the SAME table `deletePage` just wrote to — and
+ * mocked `fetchPages` reads the SAME table `trashPage` just wrote to — and
  * reproduce the sibling-unique-title rule a stateless mock can't: an insert
  * of a taken title becomes "Untitled 2" only if that title is still in the
  * table when the insert runs. `createPage`'s mock commits every staged
@@ -29,7 +29,8 @@ import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { GRACE_WINDOW_MS } from '@/lib/deletion/deferred-commit'
 import { unstageId, flushStagedDeletes } from '@/lib/deletion/staged-ids'
 import { pagesKey } from '@/lib/pages/keys'
-import { createPage, deletePage } from '@/lib/pages/client'
+import { createPage } from '@/lib/pages/client'
+import { trashPage } from '@/lib/change-log/trash'
 import { fetchPages } from '@/lib/pages/tree'
 import type { PageRow } from '@/lib/pages/tree'
 import type { Pond } from '@/lib/pond/client'
@@ -86,11 +87,14 @@ jest.mock('@/lib/pages/client', () => ({
       return { id, title }
     }
   ),
-  deletePage: jest.fn(async (_sb: unknown, id: string) => {
-    mockPagesTable = mockPagesTable.filter((r) => r.id !== id)
-  }),
   movePage: jest.fn().mockResolvedValue(undefined),
   updateTitle: jest.fn().mockResolvedValue(undefined),
+}))
+
+jest.mock('@/lib/change-log/trash', () => ({
+  trashPage: jest.fn(async (_sb: unknown, id: string) => {
+    mockPagesTable = mockPagesTable.filter((r) => r.id !== id)
+  }),
 }))
 
 jest.mock('@/lib/pages/tree', () => ({
@@ -191,7 +195,7 @@ describe('Rail — delete then create (KAN-273)', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Add sub-page to life' }))
     })
 
-    expect(deletePage).toHaveBeenCalledWith(expect.anything(), 'sleep')
+    expect(trashPage).toHaveBeenCalledWith(expect.anything(), 'sleep')
     expect(fetchPages).toHaveBeenCalled()
     expect(mockPagesTable.some((r) => r.id === 'sleep')).toBe(false)
 
@@ -233,7 +237,7 @@ describe('Rail — delete then create (KAN-273)', () => {
       jest.advanceTimersByTime(GRACE_WINDOW_MS + 1000)
     })
 
-    expect(deletePage).not.toHaveBeenCalled()
+    expect(trashPage).not.toHaveBeenCalled()
     expect(screen.getByRole('treeitem', { name: /Sleep/ })).toBeInTheDocument()
   })
 
@@ -272,8 +276,8 @@ describe('Rail — delete then create (KAN-273)', () => {
       jest.advanceTimersByTime(GRACE_WINDOW_MS - 2000)
     })
 
-    expect(deletePage).toHaveBeenCalledWith(expect.anything(), 'sleep')
-    expect(deletePage).not.toHaveBeenCalledWith(expect.anything(), 'health')
+    expect(trashPage).toHaveBeenCalledWith(expect.anything(), 'sleep')
+    expect(trashPage).not.toHaveBeenCalledWith(expect.anything(), 'health')
 
     // B is still staged: its toast is showing, and Undo restores it.
     expect(screen.getByRole('status')).toHaveTextContent('Deleted "Health"')
@@ -283,7 +287,7 @@ describe('Rail — delete then create (KAN-273)', () => {
     await waitFor(() =>
       expect(screen.getByRole('treeitem', { name: /Health/ })).toBeInTheDocument()
     )
-    expect(deletePage).not.toHaveBeenCalledWith(expect.anything(), 'health')
+    expect(trashPage).not.toHaveBeenCalledWith(expect.anything(), 'health')
   })
 
   it('shows the title createPage actually returned, not a hardcoded Untitled', async () => {

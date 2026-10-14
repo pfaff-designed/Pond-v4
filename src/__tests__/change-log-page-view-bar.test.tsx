@@ -1,6 +1,7 @@
 /**
- * KAN-94 — the change log page's view bar (s6o1): six pills, only "all" is
- * interactive; the rest are drawn but inert (aria-disabled, no button role).
+ * KAN-94/KAN-97 — the change log page's view bar (s6o1): six pills. "all" and
+ * "deleted" are interactive; the rest are drawn but inert (aria-disabled, no
+ * button role).
  */
 
 import { render, screen } from '@testing-library/react'
@@ -32,13 +33,14 @@ function renderPage() {
 }
 
 describe('ChangeLogPage — the view bar', () => {
-  it('only "all" has an accessible button role; the rest are inert', () => {
+  it('"all" and "deleted" have an accessible button role; the rest are inert', () => {
     renderPage()
 
-    expect(screen.getAllByRole('button')).toHaveLength(1)
-    expect(screen.getByRole('button', { name: 'all' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button')).toHaveLength(2)
+    expect(screen.getByRole('button', { name: 'all' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'deleted' })).toHaveAttribute('aria-pressed', 'false')
 
-    for (const label of ['proposed', 'by page', 'memory', 'deleted', '＋ view']) {
+    for (const label of ['proposed', 'by page', 'memory', '＋ view']) {
       expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument()
       const pill = screen.getByText(label)
       expect(pill).toHaveAttribute('aria-disabled', 'true')

@@ -48,7 +48,7 @@ import {
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
-import { createPage, deletePage, movePage, updateTitle } from '@/lib/pages/client'
+import { createPage, movePage, updateTitle } from '@/lib/pages/client'
 import { DuplicateTitleError } from '@/lib/pages/dedupe-title'
 import {
   fetchPages,
@@ -62,6 +62,8 @@ import {
 import { setPageGlyph, setAreaRole } from '@/lib/pages/mark-client'
 import { appendOwnEdit } from '@/lib/change-log/store'
 import { sessionUndo } from '@/lib/change-log/session-undo'
+import { trashPage } from '@/lib/change-log/trash'
+import { TrashRefusedError } from '@/lib/change-log/errors'
 import { jsonEqual } from '@/lib/json-equal'
 import { pagesKey } from '@/lib/pages/keys'
 import { usePondId, usePond } from '@/lib/pond/context'
@@ -1450,7 +1452,7 @@ export function Rail() {
   // staged during this very script execution still has a live toast/undo
   // path somewhere, and an unrelated Rail remount must not hard-delete it out
   // from under that. `withUser` is deliberately not reused here: its `T` is
-  // `void` for `deletePage`, so a successful delete and "no signed-in user"
+  // `void` for `trashPage`, so a successful trash and "no signed-in user"
   // are both indistinguishable `undefined` returns, and it has no per-call
   // try/catch — both would silently mis-clear the backstop id.
   useEffect(() => {
@@ -1464,11 +1466,20 @@ export function Rail() {
             data: { user },
           } = await supabase.auth.getUser()
           if (!user) continue // no signed-in user — leave staged, retry on a later mount
-          await deletePage(supabase, id)
+          await trashPage(supabase, id)
           unstageId(id)
           queryClient.setQueryData<PageRow[]>(pagesKey(pondId), (rows) => removeRow(rows ?? [], id))
           queryClient.invalidateQueries({ queryKey: pagesKey() })
-        } catch {
+        } catch (err) {
+          // 'not-found' also covers an already-trashed page (trash_page's own
+          // refusal) — a pagehide flush that landed before this sweep ran, or a
+          // page already trashed again since. Either way this id's trash is
+          // done; unstaging it stops a later restore from being re-trashed by
+          // a stale sweep retry.
+          if (err instanceof TrashRefusedError && err.reason === 'not-found') {
+            unstageId(id)
+            continue
+          }
           // leave this id staged; a later mount retries it
         }
       }
@@ -1556,7 +1567,7 @@ export function Rail() {
   async function commitDelete(node: RailNode, removedRow?: PageRow) {
     try {
       await withUser(async (sb) => {
-        await deletePage(sb, node.id)
+        await trashPage(sb, node.id)
       })
       // if the open page was in the deleted subtree, clear the workspace
       const selected = selectedNodeIdRef.current
