@@ -38,6 +38,7 @@ import type { ModuleChange } from '@/lib/modules/ai-composition'
 import type { Block } from '@/lib/documents/types'
 import { applyProposedChanges } from '@/lib/pages/edits'
 import { createDeterministicMintId } from '@/lib/change-log/mint-id'
+import { changeLogKey } from '@/lib/change-log/keys'
 
 const mockedGetPage = getPage as jest.MockedFunction<typeof getPage>
 const mockedCommitBlocks = commitBlocks as jest.MockedFunction<typeof commitBlocks>
@@ -910,6 +911,55 @@ describe('writeAcceptedChanges — the change-log record', () => {
       expect(mockedAdvance).not.toHaveBeenCalled()
     }
   )
+})
+
+// ── KAN-316: the change log's count/list go stale after an accept ──
+//
+// Nothing invalidated `changeLogKey()` after an accept advanced (or, in the
+// all-skipped case, left untouched) a record, so the change log sat on its
+// 30s staleTime until the next unrelated refetch.
+
+describe('writeAcceptedChanges — invalidates the change log', () => {
+  it('invalidates changeLogKey() after an applied accept advances the record', async () => {
+    mockedLookup.mockResolvedValue(logRecord())
+    mockedAcceptRecord.mockResolvedValue(logRecord({ status: 'accepted' }))
+
+    await writeAcceptedChanges({
+      pondId: 'pond-1',
+      supabase,
+      queryClient,
+      userId: USER,
+      resolutions: stamped('pc1', 'stamped-id'),
+      toolCallId: 'pc1',
+      openNodeId: null,
+      changes,
+    })
+
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: changeLogKey() })
+  })
+
+  it('invalidates changeLogKey() even when every change was skipped', async () => {
+    mockedLookup.mockResolvedValue(logRecord({ targetPageId: 'ceramics-id' }))
+    mockedGetPage.mockResolvedValue({
+      id: 'ceramics-id',
+      blocks: [{ id: 'blk-target', type: 'text', content: 'plan' }],
+    } as unknown as Awaited<ReturnType<typeof getPage>>)
+
+    await writeAcceptedChanges({
+      pondId: 'pond-1',
+      supabase,
+      queryClient,
+      userId: USER,
+      resolutions: stamped('pc1', 'ceramics-id'),
+      toolCallId: 'pc1',
+      openNodeId: 'open-id',
+      changes: [
+        { op: 'edit', blockId: 'blk-open', data: { type: 'text', content: 'x' } },
+      ] as ModuleChange[],
+    })
+
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: changeLogKey() })
+  })
 })
 
 /**

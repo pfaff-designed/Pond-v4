@@ -105,8 +105,10 @@ export function PageChangesPanel({ pageId, className }: PageChangesPanelProps) {
   }, [getSupabase, pageId])
 
   const refresh = useCallback(async () => {
-    await queryClient.invalidateQueries({ queryKey: pageChangesKey(pondId, pageId) })
-  }, [queryClient, pondId, pageId])
+    // pageChangesKey() nests under changeLogKey() (same prefix), so this one
+    // invalidation also covers this panel's own query — no second call needed.
+    await queryClient.invalidateQueries({ queryKey: changeLogKey() })
+  }, [queryClient])
 
   /** Also pull the editor and the rail back in step — accept wrote pages.blocks. */
   const refreshPage = useCallback(async () => {

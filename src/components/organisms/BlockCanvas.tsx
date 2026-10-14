@@ -116,6 +116,7 @@ import { pagesKey } from '@/lib/pages/keys'
 import { usePagesRows } from '@/lib/pages/use-pages'
 import { flushPendingPageSave } from '@/lib/pages/page-flush'
 import { appendOwnEdit } from '@/lib/change-log/store'
+import { changeLogKey } from '@/lib/change-log/keys'
 import { sessionUndo } from '@/lib/change-log/session-undo'
 import { readSchema } from '@/lib/properties/schema'
 import type { ViewBlock } from '@/lib/modules/view/schema'
@@ -1023,6 +1024,7 @@ export function BlockCanvas({
             after: applied.blocks,
           })
           if (pondId) sessionUndo.remember({ pondId, recordIds: [record.id] })
+          await queryClient.invalidateQueries({ queryKey: changeLogKey() })
         } catch (err) {
           console.error('[change-log] template apply not logged', pageId, err)
         }

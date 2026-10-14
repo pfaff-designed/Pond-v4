@@ -477,6 +477,11 @@ export function AITerminal() {
   const loggedDecisions = useRef<Set<string>>(new Set())
   // Dedupes the open_change_log navigation effect (below) by toolCallId.
   const openedChangeLogRef = useRef<Set<string>>(new Set())
+  // Dedupes the propose-landing invalidation effect (below) by toolCallId.
+  const invalidatedProposalRef = useRef<Set<string>>(new Set())
+  // toolCallIds seen at 'input-available' whose invalidation is staged until
+  // the turn's stream reaches 'ready' (see the effect below).
+  const pendingProposalInvalidationRef = useRef<Set<string>>(new Set())
   const logDecision = useCallback(
     (toolCallId: string, decision: ProposalDecision) => {
       // A batch reject dispatches once per change index; the record advances once.
@@ -1651,6 +1656,43 @@ export function AITerminal() {
       }
     }
   }, [messages, router, initialMessageIds])
+
+  // ── A landed proposal invalidates the change log once the turn finishes (KAN-316) ───
+  // Records are written server-side in /api/chat's onStepFinish, which the AI SDK
+  // awaits before the stream closes — so invalidate only once `status` is `ready`
+  // (or `error`, so an errored turn's earlier-step records aren't stuck waiting for
+  // the next turn). Skip parts re-seeded from a saved transcript (`initialMessageIds`).
+  useEffect(() => {
+    for (const m of messages as Array<{ id: string; parts: Array<{ type: string }> }>) {
+      if (initialMessageIds.has(m.id)) continue
+      const parts = [
+        ...m.parts.filter(isProposeChangesPart),
+        ...m.parts.filter(isCreatePagePart),
+        ...m.parts.filter(isDefineSchemaPart),
+        ...m.parts.filter(isAddRowPart),
+        ...m.parts.filter(isPromoteTablePart),
+        ...m.parts.filter(isConfigureViewPart),
+        ...m.parts.filter(isLinkRecordsPart),
+      ]
+      for (const part of parts) {
+        if (
+          part.state !== 'input-available' ||
+          invalidatedProposalRef.current.has(part.toolCallId)
+        )
+          continue
+        pendingProposalInvalidationRef.current.add(part.toolCallId)
+      }
+    }
+    if (
+      (status !== 'ready' && status !== 'error') ||
+      pendingProposalInvalidationRef.current.size === 0
+    )
+      return
+    for (const toolCallId of pendingProposalInvalidationRef.current)
+      invalidatedProposalRef.current.add(toolCallId)
+    pendingProposalInvalidationRef.current.clear()
+    void queryClient.invalidateQueries({ queryKey: changeLogKey() })
+  }, [messages, initialMessageIds, status, queryClient])
 
   // ── Scroll to bottom on new messages ─────────────────────────────────────
   useEffect(() => {
@@ -2829,6 +2871,8 @@ export function AITerminal() {
           threadId: conversationId,
           proposal,
         })
+        // The record now exists server-side — only now may the change log say so.
+        void queryClient.invalidateQueries({ queryKey: changeLogKey() })
       })()
       // Pond's own name and placement, asked for in the background. The card
       // above already stands on the heuristic fallback, so a failed, timed-out
@@ -2884,7 +2928,16 @@ export function AITerminal() {
         }
       })()
     },
-    [nodeId, allPages, pageProposals, getSupabase, pondId, conversationId, editPageProposal]
+    [
+      nodeId,
+      allPages,
+      pageProposals,
+      getSupabase,
+      pondId,
+      conversationId,
+      editPageProposal,
+      queryClient,
+    ]
   )
 
   // Cancel returns to the thread and makes nothing (6a); the record is rejected.

@@ -61,6 +61,7 @@ import {
 } from '@/lib/pages/tree'
 import { setPageGlyph, setAreaRole } from '@/lib/pages/mark-client'
 import { appendOwnEdit } from '@/lib/change-log/store'
+import { changeLogKey } from '@/lib/change-log/keys'
 import { sessionUndo } from '@/lib/change-log/session-undo'
 import { trashPage } from '@/lib/change-log/trash'
 import { TrashRefusedError } from '@/lib/change-log/errors'
@@ -1789,6 +1790,7 @@ export function Rail() {
             after: glyph,
           })
           if (pondId) sessionUndo.remember({ pondId, recordIds: [record.id] })
+          await queryClient.invalidateQueries({ queryKey: changeLogKey() })
         } catch (err) {
           console.error('[change-log] glyph pick not logged', id, err)
         }
@@ -1827,6 +1829,7 @@ export function Rail() {
             after: role,
           })
           if (pondId) sessionUndo.remember({ pondId, recordIds: [record.id] })
+          await queryClient.invalidateQueries({ queryKey: changeLogKey() })
         } catch (err) {
           console.error('[change-log] colour pick not logged', id, err)
         }

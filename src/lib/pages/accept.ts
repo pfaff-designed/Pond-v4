@@ -22,6 +22,7 @@ import type { ModuleChange } from '@/lib/modules/ai-composition'
 import { resolveAcceptTarget, type ConversationResolutions } from '@/lib/conversation/resolutions'
 import { commitAcceptedEdit, readProposalForAccept } from '@/lib/change-log/resolve'
 import { createDeterministicMintId } from '@/lib/change-log/mint-id'
+import { changeLogKey } from '@/lib/change-log/keys'
 import { BLOCK_ACTIONS } from '@/lib/change-log/types'
 import { jsonEqual } from '@/lib/json-equal'
 import { applyProposedChanges } from './edits'
@@ -214,6 +215,11 @@ async function writeToTarget(
   // blocks (commitBlocks leaves that cache alone precisely so this stays the
   // caller's decision).
   await queryClient.invalidateQueries({ queryKey: ['page', target] })
+  // The record above may have advanced (or, in the all-skipped branch, stayed put)
+  // — either way the write this function was called to do has resolved, so the
+  // change log's count/list queries must refetch rather than sit on their 30s
+  // staleTime (KAN-316).
+  await queryClient.invalidateQueries({ queryKey: changeLogKey() })
   // Only an applied edit/revert is a step `sessionUndo` can later undo — an
   // add_row or a skipped-everything accept has nothing the RPC knows how to
   // set back, so remembering it would be a step that silently no-ops on ⌘Z.
