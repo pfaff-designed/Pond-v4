@@ -32,7 +32,7 @@ import { fetchNodeContext, formatNodeContext } from '@/lib/context/assemble'
 import { recordProposedToolCalls } from '@/lib/change-log/propose'
 import { resolveChangeLogRecord } from '@/lib/change-log/resolve'
 import { requestChangesContextNote } from './request-changes'
-import { referencesContextNote } from './references'
+import { referencesContextNote, wholePageReferenceNote } from './references'
 import { parseChatBody } from './body'
 
 /** Plain text of the most recent user message, for @mention parsing. */
@@ -94,22 +94,44 @@ export async function POST(req: Request) {
     // referenced page's current title (a rename since the chip was made must
     // still read right) and quote the passage back labelled with title +
     // block id — never interpolated into the prompt as instructions (KAN-309).
+    // A whole-page reference (KAN-99's `@`-picker chip, `blockId: null`) has no
+    // passage to quote, so it routes separately: its page's full content goes
+    // through fetchNodeContext/formatNodeContext instead, unless it points at
+    // the open node, whose content the auto-injected block above already carries.
     if (references.length > 0) {
-      const titles = new Map<string, string>()
-      await Promise.all(
-        [...new Set(references.map((r) => r.pageId))].map(async (pageId) => {
-          const data = await fetchNodeContext(supabase, user.id, pageId)
-          if (data) titles.set(pageId, data.title)
-        })
+      const passageRefs = references.filter((r) => r.blockId !== null)
+      const wholePageRefs = references.filter((r) => r.blockId === null)
+
+      if (passageRefs.length > 0) {
+        const titles = new Map<string, string>()
+        await Promise.all(
+          [...new Set(passageRefs.map((r) => r.pageId))].map(async (pageId) => {
+            const data = await fetchNodeContext(supabase, user.id, pageId)
+            if (data) titles.set(pageId, data.title)
+          })
+        )
+        const note = referencesContextNote(
+          passageRefs.map((r) => ({
+            pageTitle: titles.get(r.pageId) ?? r.pageId,
+            blockId: r.blockId ?? '',
+            quotedText: r.quotedText,
+          }))
+        )
+        if (note) contextBlocks.push(note)
+      }
+
+      const otherPageIds = [...new Set(wholePageRefs.map((r) => r.pageId))].filter(
+        (pageId) => pageId !== nodeId
       )
-      const note = referencesContextNote(
-        references.map((r) => ({
-          pageTitle: titles.get(r.pageId) ?? r.pageId,
-          blockId: r.blockId ?? '',
-          quotedText: r.quotedText,
-        }))
-      )
-      if (note) contextBlocks.push(note)
+      if (otherPageIds.length > 0) {
+        const pages = await Promise.all(
+          otherPageIds.map((pageId) => fetchNodeContext(supabase, user.id, pageId))
+        )
+        const note = wholePageReferenceNote(
+          pages.flatMap((data) => (data ? [{ pageTitle: data.title, context: formatNodeContext(data) }] : []))
+        )
+        if (note) contextBlocks.push(note)
+      }
     }
 
     // Request changes (#98, 6c frame 3): the note is the person's decision on
