@@ -66,7 +66,15 @@ import {
 } from '@/components/molecules/PondMenu'
 import { AddBlockButton } from '@/components/molecules/AddBlockButton'
 import { BlockWidthRow } from '@/components/molecules/BlockWidthRow'
-import { BLOCK_ROW_GAP_PX, blockWidthStyle, layoutRows, rowHolds } from '@/lib/modules/layout-rows'
+import {
+  BLOCK_ROW_GAP_PX,
+  blockWidthStyle,
+  classifyDropZone,
+  layoutRows,
+  rowHolds,
+  widthsForDropBeside,
+  type DropZone,
+} from '@/lib/modules/layout-rows'
 import { SlashLineContext, type SlashLineAt } from '@/lib/modules/text/slash-line'
 import { useSlashLine } from '@/components/organisms/use-slash-line'
 import { focusTextBlock, hasTextBeforeCaret } from '@/lib/modules/text/focus'
@@ -189,6 +197,28 @@ function hiddenCanvasListStyle(listStyle: CSSProperties | undefined): CSSPropert
     height: 0,
     overflow: 'hidden',
     pointerEvents: 'none',
+  }
+}
+
+/**
+ * The drop line's geometry, off `PondBlock.dc.html`'s `dropBar` (6x): beside
+ * sits 9px into the 16px gap off the block's own near edge, full height; an
+ * own-line drop sits 9px off the top/bottom edge, spanning `span` — the full
+ * content column, not just this block's width — when the caller supplied one.
+ */
+function dropBarGeometry(dropZone: {
+  zone: DropZone
+  span?: { left: number; width: number }
+}): CSSProperties {
+  switch (dropZone.zone) {
+    case 'left':
+      return { left: -9, top: 0, bottom: 0, width: 2 }
+    case 'right':
+      return { right: -9, top: 0, bottom: 0, width: 2 }
+    case 'above':
+      return { top: -9, height: 2, left: dropZone.span?.left ?? 0, width: dropZone.span?.width }
+    case 'below':
+      return { bottom: -9, height: 2, left: dropZone.span?.left ?? 0, width: dropZone.span?.width }
   }
 }
 
@@ -370,6 +400,17 @@ export function BlockCanvas({
   }, [openTemplatesFor, pageId, openSlashMenuAt])
   // Which block index is mid-drag (null = no drag).
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null)
+  // The drop line hovered during a drag: which block it's over, which edge
+  // (classifyDropZone), and — for an own-line (above/below) drop only — the
+  // span to stretch it across the FULL content column rather than just this
+  // one block's own width (6x: `PondBlock.dc.html`'s `dropSpan`), measured
+  // relative to the hovered block's own rect so it renders with no DOM
+  // ancestor but that block's root.
+  const [dropIndicator, setDropIndicator] = useState<{
+    index: number
+    zone: DropZone
+    span?: { left: number; width: number }
+  } | null>(null)
   // The source picker: which `/` pick summoned it, and where its view
   // lands. Table, gallery and chart all open the same picker.
   const [sourcePicker, setSourcePicker] = useState<{
@@ -1117,6 +1158,17 @@ export function BlockCanvas({
   )
   const blockRows = useMemo(() => layoutRows(blocksForLayout), [blocksForLayout])
 
+  // The dragged-block-excluded widths of the row block `index` sits in — what
+  // `widthsForDropBeside` needs to decide if that row still has room (`null`
+  // means it already holds 4, so no beside line is offered there).
+  function rowWidthsExcludingDragged(index: number): BlockWidth[] {
+    const target = blocks[index]
+    const row = blockRows.find((r) => r.some((b) => b.id === target.id))
+    if (!row) return []
+    const draggedId = draggingIndex !== null ? blocks[draggingIndex].id : null
+    return row.filter((b) => b.id !== draggedId).map((b) => b.width ?? 'full')
+  }
+
   // Stacking (6x): measured off the content column itself (ResizeObserver on the
   // canvas), not the viewport, so the side panel and window-narrowing both
   // trigger it. 0 means "not yet measured" (jsdom never measures) and is read as
@@ -1193,15 +1245,44 @@ export function BlockCanvas({
         onMenuOpenChange={(open) => handleMenuOpenChange(i, open)}
         onMenuSelect={(action) => handleMenuSelect(i, action)}
         isDragging={draggingIndex === i}
+        dropZone={dropIndicator?.index === i ? dropIndicator : undefined}
         onDragStart={() => {
           setMenuOpenAt(null)
           setPreviewWidth(null)
           setDraggingIndex(i)
         }}
-        onDragEnd={() => setDraggingIndex(null)}
-        onDragOver={(e) => e.preventDefault()}
+        onDragEnd={() => {
+          setDraggingIndex(null)
+          setDropIndicator(null)
+        }}
+        onDragOver={(e) => {
+          e.preventDefault()
+          if (draggingIndex === null || draggingIndex === i) return
+          const rect = e.currentTarget.getBoundingClientRect()
+          const zone = classifyDropZone(rect, { x: e.clientX, y: e.clientY })
+          if (zone === 'left' || zone === 'right') {
+            // 4 already fill the row (`widthsForDropBeside` → `null`): no beside
+            // line here, though the row's own-line (above/below) zone still works.
+            if (widthsForDropBeside(rowWidthsExcludingDragged(i)) === null) {
+              setDropIndicator((cur) => (cur?.index === i ? null : cur))
+              return
+            }
+            setDropIndicator({ index: i, zone })
+            return
+          }
+          const columnRect = canvasRef.current?.getBoundingClientRect()
+          setDropIndicator({
+            index: i,
+            zone,
+            span: columnRect
+              ? { left: columnRect.left - rect.left, width: columnRect.width }
+              : undefined,
+          })
+        }}
+        onDragLeave={() => setDropIndicator((cur) => (cur?.index === i ? null : cur))}
         onDrop={(e) => {
           e.preventDefault()
+          setDropIndicator(null)
           if (draggingIndex === null || draggingIndex === i) {
             setDraggingIndex(null)
             return
@@ -1495,9 +1576,11 @@ function BlockEditor({
   onMenuOpenChange,
   onMenuSelect,
   isDragging,
+  dropZone,
   onDragStart,
   onDragEnd,
   onDragOver,
+  onDragLeave,
   onDrop,
 }: {
   block: Block
@@ -1544,9 +1627,12 @@ function BlockEditor({
   onMenuOpenChange?: (open: boolean) => void
   onMenuSelect?: (action: BlockMenuAction) => void
   isDragging?: boolean
+  /** The drop line to draw on THIS block, if the drag is hovering it — `BlockCanvas` decides which block that is. */
+  dropZone?: { zone: DropZone; span?: { left: number; width: number } }
   onDragStart?: () => void
   onDragEnd?: () => void
   onDragOver?: (e: React.DragEvent) => void
+  onDragLeave?: () => void
   onDrop?: (e: React.DragEvent) => void
 }) {
   const [dragArmed, setDragArmed] = useState(false)
@@ -1703,10 +1789,34 @@ function BlockEditor({
         onDragEnd?.()
       }}
       onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
       onDrop={onDrop}
       onKeyDownCapture={handleKeyDownCapture}
       onKeyDown={handleKeyDown}
     >
+      {/* The drop line (6x `PondBlock.dc.html`'s `dropBar`): beside is a 2px bar
+          9px into the gap off this block's near edge; above/below is a 2px bar
+          9px off this block's top/bottom edge, spanning `dropZone.span` — the
+          full content column, not just this block's own width, since a block in
+          a row can be narrower than the column it belongs to. */}
+      {dropZone &&
+        (() => {
+          const geo = dropBarGeometry(dropZone)
+          return (
+            <span
+              data-part="drop-bar"
+              data-zone={dropZone.zone}
+              data-left={geo.left}
+              data-right={geo.right}
+              data-top={geo.top}
+              data-bottom={geo.bottom}
+              data-width={geo.width}
+              data-height={geo.height}
+              className="pointer-events-none absolute rounded-[1px] bg-mn-text"
+              style={geo}
+            />
+          )
+        })()}
       {/* The handle: the only block chrome. Desktop (KAN-43) sits OUTSIDE the
           card at `left -14`, revealed on hover and on keyboard focus. Phone
           (KAN-259) sits INSIDE the card at `right 2 · top 2 · 44x44` — a touch
