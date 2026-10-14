@@ -220,6 +220,11 @@ export function ChangeLogPage() {
   const { data: deletedCards = [], isLoading: deletedLoading } = useQuery({
     queryKey: changeLogDeletedKey(pondId),
     enabled: view === 'deleted',
+    // The client's own default staleTime (30s) would otherwise let the pill
+    // click re-enable this query against data still "fresh" from the last
+    // time it was open, so a page trashed in between wouldn't show until a
+    // reload. Always-stale means every switch to `deleted` refetches.
+    staleTime: 0,
     queryFn: async () => {
       const supabase = getSupabase()
       const {

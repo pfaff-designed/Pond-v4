@@ -259,6 +259,37 @@ describe('ChangeLogPage — the deleted view', () => {
     )
   })
 
+  it('refetches on each switch, picking up a page trashed since the last fetch — not just once', async () => {
+    let trashed = false
+    mockListRecords.mockImplementation(async (_supabase, opts) => {
+      if (!isDeletedQuery(opts)) return []
+      return trashed ? [DELETE_RECORD, LATER_DELETE_RECORD] : [DELETE_RECORD]
+    })
+    mockExistingPageIds.mockResolvedValue(new Set(['page-1', 'page-2']))
+
+    const user = userEvent.setup()
+    // A client with the app's own default staleTime (`Providers`, 30s) — the
+    // bug only shows once data from the first open is still "fresh".
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: 30 * 1000 } },
+    })
+    render(
+      <QueryClientProvider client={client}>
+        <ChangeLogPage />
+      </QueryClientProvider>
+    )
+
+    await user.click(screen.getByRole('button', { name: 'deleted' }))
+    expect(await screen.findByText('deleted page old quotes')).toBeInTheDocument()
+    expect(screen.queryByText('deleted page supplier list')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'all' }))
+    trashed = true // a page trashed through the mocked store while the deleted view was closed
+
+    await user.click(screen.getByRole('button', { name: 'deleted' }))
+    expect(await screen.findByText('deleted page supplier list')).toBeInTheDocument()
+  })
+
   it('narrows to s6o6’s 700px content box, not s6o1’s 840px', async () => {
     mockListRecords.mockImplementation(async (_supabase, opts) => (isDeletedQuery(opts) ? [] : []))
     const user = userEvent.setup()
