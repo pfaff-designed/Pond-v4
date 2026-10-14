@@ -57,7 +57,7 @@ import { PageProposalCard } from '@/components/molecules/PageProposalCard'
 import { toParentOptions, ancestorPathLabel } from '@/lib/pages/parent-options'
 import { workspaceHref } from '@/lib/pages/nav'
 import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
-import { insertPageOptimistic } from '@/lib/pages/tree'
+import { insertPageOptimistic, fetchPages } from '@/lib/pages/tree'
 import { writeAcceptedChanges } from '@/lib/pages/accept'
 import { sessionUndo } from '@/lib/change-log/session-undo'
 import {
@@ -88,7 +88,16 @@ import {
 } from '@/lib/attachments/html'
 import type { ReadHtmlError, ReadHtmlResult } from '@/lib/import/types'
 import { formatBytes } from '@/components/molecules/HtmlAttachmentPill'
-import { QuoteChip } from '@/components/atoms/QuoteChip'
+import type { PageReference } from '@/lib/references/reference'
+import { ReferencesRow, type ReferenceChip } from '@/components/molecules/ReferencesRow'
+import { editorForBlock, onTextEditorRegistered } from '@/lib/modules/text/active-editor'
+import {
+  onReferenceRangeDropped,
+  onReferenceRangeChanged,
+  type ReferenceHighlightEntry,
+} from '@/lib/modules/text/reference-highlight'
+import { markIndex, resolveMark } from '@/lib/pages/mark'
+import { markAccent } from '@/lib/rail/glyph-library'
 import { parseCsv } from '@/lib/csv/parse-csv'
 import {
   getInlineAttachmentDescriptor,
@@ -204,6 +213,10 @@ const HTML_IMPORT_CHIPS = ['make this a page', 'file it as it is']
 /** 06.25 frame 6's two unreadable-failure chips (`rg -o` on the board's own
  *  copy: "try another file", not the ticket's shorthand "try another"). */
 const HTML_UNREADABLE_CHIPS = ['keep it as a file', 'try another file']
+
+/** A reference chip's passage, cut to keep the pill one line (board `Pond
+ *  06.05` draws the fixture already short; no frame gives a char count). */
+const REFERENCE_PASSAGE_MAX = 60
 
 /** 06.25 frame 6's single too-large-failure chip — there is no "try another"
  *  here, since the file itself (not the attempt) is the problem. */
@@ -744,13 +757,143 @@ export function AITerminal() {
   const composerRef = useRef<HTMLDivElement>(null)
   const isStreaming = status === 'streaming' || status === 'submitted'
 
-  // ── Highlight-to-ask quote context (ticket-40 F20) ────────────────────────
-  const [quoteCtx, setQuoteCtx] = useState<SelectionContext | null>(null)
+  // ── Highlight-to-ask references (KAN-98, board 6e) ────────────────────────
+  const [references, setReferences] = useState<PageReference[]>([])
 
-  const handleAskFromSelection = useCallback((ctx: SelectionContext) => {
-    setQuoteCtx(ctx)
-    requestAnimationFrame(() => inputRef.current?.focus())
+  const handleAskFromSelection = useCallback(
+    (ctx: SelectionContext) => {
+      // A selection outside any block (no `data-block-id` ancestor) has no page
+      // to anchor a reference to — nothing is appended, but the composer still
+      // focuses so typing a question works either way.
+      const { blockId } = ctx
+      if (nodeId && blockId) {
+        const range = ctx.from !== undefined && ctx.to !== undefined ? { from: ctx.from, to: ctx.to } : null
+        setReferences((prev) => [
+          ...prev,
+          { id: crypto.randomUUID(), pageId: nodeId, blockId, range, quotedText: ctx.text },
+        ])
+      }
+      requestAnimationFrame(() => inputRef.current?.focus())
+    },
+    [nodeId]
+  )
+
+  // The refs row's marks come off the same `pagesKey()` cache the rail and
+  // breadcrumb already share (`allPages` above is a DIFFERENT, `'full'`-suffixed
+  // key carrying props but no glyph/area_role) — so a reference's glyph/colour
+  // always agrees with the page's row, and this read is a cache hit whenever
+  // the rail is already mounted.
+  const { data: markRows = [] } = useQuery({
+    queryKey: pagesKey(pondId),
+    queryFn: () => fetchPages(pondId),
+  })
+  const pageMarks = useMemo(() => markIndex(markRows), [markRows])
+
+  // A chip's title is resolved from `pageId` at render time (KAN-302's
+  // `contextLabel` precedent), never stamped once, so a live rename is
+  // reflected while the reference is still sitting above the composer text.
+  const referenceItems = useMemo<ReferenceChip[]>(
+    () =>
+      references.map((ref) => {
+        const title =
+          allPages.find((p) => p.id === ref.pageId)?.title ??
+          (ref.pageId === nodeId ? contextLabel : 'untitled')
+        const mark = resolveMark(ref.pageId, pageMarks)
+        const passage =
+          ref.quotedText.length > REFERENCE_PASSAGE_MAX
+            ? `${ref.quotedText.slice(0, REFERENCE_PASSAGE_MAX)}…`
+            : ref.quotedText
+        return {
+          key: ref.id,
+          glyph: mark.glyph,
+          accent: markAccent(mark.role),
+          label: `${title} — “${passage}”`,
+        }
+      }),
+    [references, allPages, nodeId, contextLabel, pageMarks]
+  )
+
+  const handleRemoveReference = useCallback((key: string) => {
+    setReferences((prev) => prev.filter((ref) => ref.id !== key))
   }, [])
+
+  // The passage a reference points at stays highlighted on the page while
+  // referenced (KAN-98, board 6e). Each block that currently owns a highlight
+  // is tracked so a reference removed from `references` (sent, or its ×
+  // clicked) clears that block's decoration too, not just the new set's.
+  // Keyed by the reference's own `id`, never array position — two live
+  // references in the same block, or a removal racing a re-render, would
+  // otherwise mis-key onto each other.
+  const highlightedBlocksRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    const byBlock = new Map<string, ReferenceHighlightEntry[]>()
+    references.forEach((ref) => {
+      if (!ref.range) return
+      const entries = byBlock.get(ref.blockId) ?? []
+      entries.push({ key: ref.id, range: ref.range })
+      byBlock.set(ref.blockId, entries)
+    })
+    for (const blockId of new Set([...highlightedBlocksRef.current, ...byBlock.keys()])) {
+      editorForBlock(blockId)?.commands.setReferenceHighlights(byBlock.get(blockId) ?? [])
+    }
+    highlightedBlocksRef.current = new Set(byBlock.keys())
+  }, [references])
+
+  // A block's editor remounting (navigating away and back) starts with
+  // empty plugin state, which the effect above never re-runs for since
+  // `references` itself hasn't changed. Subscribed once — `referencesRef`
+  // holds the latest `references` so this never closes over a stale array.
+  const referencesRef = useRef(references)
+  useEffect(() => {
+    referencesRef.current = references
+  }, [references])
+  useEffect(
+    () =>
+      onTextEditorRegistered((editor, blockId) => {
+        const entries = referencesRef.current.reduce<ReferenceHighlightEntry[]>((acc, ref) => {
+          if (ref.blockId === blockId && ref.range) acc.push({ key: ref.id, range: ref.range })
+          return acc
+        }, [])
+        if (entries.length > 0) editor.commands.setReferenceHighlights(entries)
+      }),
+    []
+  )
+
+  // An edit that destroys a reference's anchored text drops it — the
+  // extension only knows positions, so it reports here by key (the
+  // reference's `id`) for removal from `references` itself.
+  useEffect(
+    () =>
+      onReferenceRangeDropped((_blockId, keys) => {
+        setReferences((prev) => prev.filter((ref) => !keys.includes(ref.id)))
+      }),
+    []
+  )
+
+  // An edit that only shifts or grows a reference's anchored text re-anchors
+  // it — the plugin is the only place that re-anchored position exists until
+  // this writes it back, so `references` state above (and the request body
+  // built from it) never re-sends a stale, pre-edit range. A no-op update
+  // (same from/to) is skipped so this can't loop with the highlight effect
+  // above, which re-pushes `references` into the plugin on every change.
+  useEffect(
+    () =>
+      onReferenceRangeChanged((_blockId, entries) => {
+        setReferences((prev) => {
+          let changed = false
+          const next = prev.map((ref) => {
+            const entry = entries.find((e) => e.key === ref.id)
+            if (!entry || !ref.range || (ref.range.from === entry.range.from && ref.range.to === entry.range.to)) {
+              return ref
+            }
+            changed = true
+            return { ...ref, range: entry.range }
+          })
+          return changed ? next : prev
+        })
+      }),
+    []
+  )
 
   // ── CSV attachment (ticket-40 F16) ────────────────────────────────────────
   const {
@@ -1334,6 +1477,9 @@ export function AITerminal() {
     // A kept html turn anchors to this conversation's `messages`; a fresh
     // thread has none to anchor against.
     setKeptHtmlTurns([])
+    // References ride a thread, not the person: a new thread starts with
+    // none, and the highlight-sync effect clears their page decorations.
+    setReferences([])
   }, [conversationId, setMessages, resetResolutions, getSupabase, pondId])
 
   // ── Lifecycle advancement (ticket-39) ─────────────────────────────────────
@@ -1365,13 +1511,8 @@ export function AITerminal() {
         ? { ...resolutions, lifecycle: advanced }
         : { ...resolutions, lifecycle: undefined }
 
-      // Build the final message text, injecting quote + CSV context single-turn.
+      // Build the final message text, injecting CSV context single-turn.
       let finalText = text
-      if (quoteCtx) {
-        const blockNote = quoteCtx.blockId ? ` [block:${quoteCtx.blockId}]` : ''
-        finalText = `> "${quoteCtx.text}"${blockNote}\n\n${text}`
-        setQuoteCtx(null)
-      }
       if (csvAttachment) {
         const ctx = getInlineAttachmentDescriptor(csvAttachment.kind)?.formatContext?.(
           csvAttachment
@@ -1390,7 +1531,13 @@ export function AITerminal() {
       // proposal in this turn (#110 criterion 11) — it lives in a client context,
       // so without it every sandbox proposal would be filed into main.
       // #312: `pondId` so the route's context reads only this pond (`s6m5`).
-      const body = { nodeId, nodeType, pondId, resolutions: outgoing, research }
+      // KAN-98: references ride as structured data, not interpolated into the
+      // text, so the route can quote them back to the model labelled with
+      // page + block id (KAN-309 guard). Unlike csv/html, a reference survives
+      // the send (board 6e frame 4: the refs row still holds both references
+      // and the passage stays highlighted) — removed only by its own × or by
+      // the anchored text being edited away.
+      const body = { nodeId, nodeType, pondId, resolutions: outgoing, research, references }
       // #97: the thread shows when each line was said ("you · 07:12"), and a
       // page made from the answer carries that moment on its made-from chip.
       const metadata = { sentAt: new Date().toISOString() }
@@ -1429,12 +1576,12 @@ export function AITerminal() {
       nodeId,
       nodeType,
       pondId,
-      quoteCtx,
       csvAttachment,
       clearCsvAttachment,
       fileParts,
       clearAttachments,
       research,
+      references,
     ]
   )
 
@@ -3224,7 +3371,6 @@ export function AITerminal() {
       }}
       onDrop={handleDrop}
     >
-      {quoteCtx && <QuoteChip text={quoteCtx.text} onRemove={() => setQuoteCtx(null)} />}
       {csvAttachment && csvAttachmentDescriptor && (
         <csvAttachmentDescriptor.Pill attachment={csvAttachment} onRemove={clearCsvAttachment} />
       )}
@@ -3317,6 +3463,7 @@ export function AITerminal() {
           {composerNotice}
         </p>
       )}
+      <ReferencesRow items={referenceItems} onRemove={handleRemoveReference} />
       <ComposerLine
         value={input}
         placeholder={

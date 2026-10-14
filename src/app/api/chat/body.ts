@@ -1,8 +1,10 @@
 /** The chat request body, parsed. */
 import type { UIMessage } from 'ai'
 import type { NodeType } from '@/lib/supabase/types'
+import type { PageReference } from '@/lib/references/reference'
 import { parseResolutions, type ConversationResolutions } from '@/lib/conversation/resolutions'
 import { parseRequestChanges, type RequestChangesBody } from './request-changes'
+import { parseReferences } from './references'
 
 const NODE_TYPES: readonly NodeType[] = ['routine', 'project', 'action', 'page']
 
@@ -17,6 +19,8 @@ interface ChatBody {
   /** #98 — this turn is a request-changes note (or an outdated revise) on a
    *  propose_changes card; the reply must be a revised diff. */
   requestChanges?: RequestChangesBody
+  /** KAN-98 — page-plus-range references the user highlighted and asked about this turn. */
+  references: PageReference[]
 }
 
 /** Minimal body-shape guard: null unless `body` is an object carrying a
@@ -37,6 +41,7 @@ export function parseChatBody(body: unknown): ChatBody | null {
     nodeType,
     resolutions: parseResolutions(b.resolutions),
     research: b.research === true,
+    references: parseReferences(b.references),
     ...(requestChanges ? { requestChanges } : {}),
   }
 }

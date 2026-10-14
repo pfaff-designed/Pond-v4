@@ -25,7 +25,12 @@ describe('SelectionBar ask pond', () => {
     const onAsk = renderWithSelection()
     fireEvent.click(screen.getByRole('button', { name: 'ask pond' }))
     expect(onAsk).toHaveBeenCalledTimes(1)
-    expect(onAsk).toHaveBeenCalledWith({ text: 'select me', blockId: undefined })
+    expect(onAsk).toHaveBeenCalledWith({
+      text: 'select me',
+      blockId: undefined,
+      from: undefined,
+      to: undefined,
+    })
   })
 })
 

@@ -127,7 +127,7 @@ describe('source sweep — no fourth ink tier is used for type anywhere', () => 
     const hits = linesMatching(/mn-mark-faint/)
     for (const hit of hits) {
       expect(hit).toMatch(
-        /globals\.css|block-dom\.ts|PondAtom\.tsx|PondMolecule\.tsx|QuoteChip\.tsx|RelationChip\.tsx|Rail\.tsx|record-check\.tsx|text\/prose\.ts|ChangeLogPage\.tsx/
+        /globals\.css|block-dom\.ts|PondAtom\.tsx|PondMolecule\.tsx|RelationChip\.tsx|Rail\.tsx|record-check\.tsx|text\/prose\.ts|ChangeLogPage\.tsx/
       )
     }
     expect(linesMatching(/-mn-text\/30\b/)).toEqual([])
@@ -572,7 +572,6 @@ describe('source hygiene — no press-* class, no literal hex (#92)', () => {
   const HYGIENE = [
     { file: 'src/components/atoms/PondAtom.tsx', hex: true },
     { file: 'src/components/atoms/RelationChip.tsx', hex: false },
-    { file: 'src/components/atoms/QuoteChip.tsx', hex: false },
     { file: 'src/components/molecules/PondMolecule.tsx', hex: true },
   ]
 

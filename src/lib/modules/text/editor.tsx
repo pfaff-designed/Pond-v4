@@ -11,6 +11,7 @@ import { registerTextEditor } from './active-editor'
 import { proseExtensions } from './extensions'
 import { parseMarkdown, serializeMarkdown } from './markdown'
 import { TEXT_PROSE_CLASS, textPlaceholderFor } from './prose'
+import { ReferenceHighlight } from './reference-highlight'
 import type { TextBlock } from './schema'
 import { opensSlashLine, SlashLineContext, slashLineAt, type SlashLineAt } from './slash-line'
 
@@ -27,12 +28,13 @@ export interface Press {
  */
 const isUnwritten = (content: string): boolean => content.replace(/^#{1,6}\s*/, '').trim() === ''
 
-/** The block's own placeholder, fixed at mount — it is never typed over. */
-const buildExtensions = (placeholder: string | undefined) => [
+/** The block's own placeholder and id, fixed at mount — neither is ever typed over. */
+const buildExtensions = (placeholder: string | undefined, blockId: string) => [
   ...proseExtensions,
   Placeholder.configure({
     placeholder: ({ node }) => textPlaceholderFor(node.type.name, placeholder),
   }),
+  ReferenceHighlight.configure({ blockId }),
 ]
 
 /** A bare Tab over a selection — Shift-Tab and chorded Tab keep their meaning. */
@@ -148,7 +150,7 @@ const TextEditor = ({
   const [opening] = useState(() => ({
     content: parseMarkdown(data.content).toJSON(),
     autofocus: isUnwritten(data.content) ? ('end' as const) : false,
-    extensions: buildExtensions(data.placeholder),
+    extensions: buildExtensions(data.placeholder, data.id),
   }))
   const written = useRef(data.content)
   // What this editor wrote that the page hasn't rendered back yet. The page can
@@ -205,8 +207,8 @@ const TextEditor = ({
 
   useEffect(() => {
     if (!editor) return
-    return registerTextEditor(editor)
-  }, [editor])
+    return registerTextEditor(editor, data.id)
+  }, [editor, data.id])
 
   useEffect(() => {
     const at = pressRef.current
