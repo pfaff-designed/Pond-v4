@@ -29,6 +29,8 @@ export interface MadeFromThread {
   /** The question that answer replied to, and when it was asked (ISO, if known). */
   question: string
   askedAt: string | null
+  /** When the page itself was made (ISO), stamped once alongside the rest. */
+  madeAt: string
   /** Hidden from the page head by the person. Never removed. */
   hidden?: boolean
 }
@@ -53,6 +55,7 @@ export function readMadeFrom(props: Props | null | undefined): MadeFromThread | 
     messageId: v.messageId,
     question: typeof v.question === 'string' ? v.question : '',
     askedAt: typeof v.askedAt === 'string' ? v.askedAt : null,
+    madeAt: typeof v.madeAt === 'string' ? v.madeAt : '',
     ...(v.hidden === true ? { hidden: true } : {}),
   }
 }

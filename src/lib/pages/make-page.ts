@@ -98,6 +98,7 @@ export async function makePageFromAnswer(
         messageId: proposal.messageId,
         question: proposal.question,
         askedAt: proposal.askedAt,
+        madeAt: new Date().toISOString(),
       }
     ),
     (proposal.mentioned ?? []).map((m) => ({

@@ -154,6 +154,7 @@ describe('makePageFromAnswer', () => {
         messageId: 'a1',
         question: 'what is actually blocking the renovation?',
         askedAt: '2026-09-22T07:12:00Z',
+        madeAt: expect.any(String),
       },
       [MENTIONED_KEY]: [
         { title: 'Cabinet quote', ref: 'cq-1', note: 'the one everything waits on' },
@@ -370,7 +371,13 @@ describe('recordPageProposal — born `proposed`, in the proposed view', () => {
 })
 
 describe('made-from stamp — hideable, not removable', () => {
-  const stamp = { threadId: 'conv-1', messageId: 'a1', question: 'q?', askedAt: null }
+  const stamp = {
+    threadId: 'conv-1',
+    messageId: 'a1',
+    question: 'q?',
+    askedAt: null,
+    madeAt: '2026-09-22T07:12:00Z',
+  }
 
   it('stamps once and reads back', () => {
     const props = stampMadeFrom({ kind: 'page' }, stamp)
