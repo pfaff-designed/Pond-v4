@@ -105,8 +105,6 @@ import { markIndex, resolveMark } from '@/lib/pages/mark'
 import { markAccent } from '@/lib/rail/glyph-library'
 import { activeMentionQuery } from '@/lib/references/mention-query'
 import { PagesPicker, type PageMentionItem } from '@/components/molecules/PagesPicker'
-import { sideTowardFreeSpace } from '@/lib/layout/caret-anchor'
-import type { PickerSide } from '@/components/molecules/use-anchored-box'
 import { parseCsv } from '@/lib/csv/parse-csv'
 import {
   getInlineAttachmentDescriptor,
@@ -226,11 +224,6 @@ const HTML_UNREADABLE_CHIPS = ['keep it as a file', 'try another file']
 /** A reference chip's passage, cut to keep the pill one line (board `Pond
  *  06.05` draws the fixture already short; no frame gives a char count). */
 const REFERENCE_PASSAGE_MAX = 60
-
-/** `PagesPicker`'s chrome (head + glass padding) plus up to six rows —
- *  a close bound for the before-mount above/below choice (KAN-99), not a DC
- *  literal; nothing has rendered yet to measure. */
-const MENTION_POPOVER_ESTIMATE_PX = 46 + 6 * 38
 
 /** 06.25 frame 6's single too-large-failure chip — there is no "try another"
  *  here, since the file itself (not the attempt) is the problem. */
@@ -903,7 +896,6 @@ export function AITerminal() {
   // owns only its own keys and position.
   const [mentionQuery, setMentionQuery] = useState<{ start: number; query: string } | null>(null)
   const [mentionActiveIndex, setMentionActiveIndex] = useState(0)
-  const [mentionSide, setMentionSide] = useState<PickerSide>('top')
 
   // Esc doesn't move the caret or change the text, so the keyup that follows
   // it would otherwise see the caret still sitting inside the `@`-token and
@@ -918,8 +910,9 @@ export function AITerminal() {
   const lastMentionQueryRef = useRef<{ start: number; query: string } | null>(null)
 
   // One place sets `mentionQuery`, so narrowing (or opening on a fresh `@`)
-  // re-highlighting the first row (board 6e frame 3) and the open/close
-  // side choice both live here rather than in effects synced off it.
+  // re-highlighting the first row (board 6e frame 3) lives here rather than
+  // in an effect synced off it. `PagesPicker` measures its own anchor and
+  // picks its own side (round 3) — this host no longer estimates either.
   const updateMentionQuery = useCallback(() => {
     const el = inputRef.current
     if (!el) return
@@ -933,20 +926,6 @@ export function AITerminal() {
     lastMentionQueryRef.current = next
     setMentionQuery(next)
     if (tokenChanged) setMentionActiveIndex(0)
-    if (next) {
-      // The composer sits at the foot of the screen, so there is rarely room
-      // below it — `sideTowardFreeSpace` (Rail's own glass-side rule) defaults
-      // to `top` unless there is demonstrably more room below than above.
-      // `MENTION_POPOVER_ESTIMATE_PX` is a close bound on the glass's chrome
-      // (head + padding) plus up to six rows, good enough for a before-mount
-      // side choice — nothing has rendered yet to measure (`glyphPickerHeight`'s
-      // own precedent). Computed here, at caret-tracking time, rather than in
-      // render: `composerCardRef` is a ref, and reading one during render is
-      // unsafe.
-      const rect = composerCardRef.current?.getBoundingClientRect()
-      if (rect)
-        setMentionSide(sideTowardFreeSpace(rect, window.innerHeight, MENTION_POPOVER_ESTIMATE_PX))
-    }
   }, [])
 
   useEffect(() => {
@@ -3801,7 +3780,6 @@ export function AITerminal() {
           onPick={handleMentionPick}
           onClose={handleMentionClose}
           anchor={composerCardRef}
-          side={mentionSide}
         />
       )}
       {/* ⌘K's `import a page` (KAN-251) — a dedicated, html-only picker so

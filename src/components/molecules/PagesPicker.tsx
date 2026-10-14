@@ -37,6 +37,15 @@
  * width-clamp param: that param clamps `left` against a glass width
  * independent of its anchor, which this glass never has (its width IS its
  * anchor's, inset by 12 on each side).
+ *
+ * The glass measures itself for its own above/below choice and its own
+ * height cap (round 3) rather than taking a `side` prop computed before
+ * mount: `room above = anchor.top − gap − viewport margin`, `room below =
+ * innerHeight − anchor.bottom − gap − viewport margin`; it opens above when
+ * room above fits the head plus at least two rows, else on whichever side
+ * has more room, then clamps the row list to `min(six rows, that side's
+ * room − the glass's own non-list chrome)` so the glass is always wholly
+ * inside the viewport, however many pages match.
  */
 
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
@@ -58,7 +67,7 @@ export interface PageMentionItem {
   sub: string
 }
 
-/** The composer: its own rect gives the glass both its position and its width. */
+/** The composer: its own rect gives the glass its position, width and room. */
 export interface MentionAnchorBox {
   getBoundingClientRect(): Pick<DOMRect, 'top' | 'bottom' | 'left' | 'width'>
 }
@@ -71,23 +80,30 @@ export interface PagesPickerProps {
   onPick: (item: PageMentionItem) => void
   /** Esc — the host keeps the typed text. */
   onClose: () => void
-  /** The composer the glass hangs off. */
+  /** The composer the glass hangs off. It measures this anchor for its own side and height. */
   anchor: MentionAnchor
-  /** @default 'bottom' */
-  side?: PickerSide
 }
 
 /** `PondComposer.dc.html`'s `sPop`: `bottom: calc(100% + 10px)` off the anchor. */
 const POPOVER_GAP_PX = 10
 /** `PondComposer.dc.html`'s `sPop`: `left: 12, right: 12` off the anchor. */
 const POPOVER_INSET_PX = 12
+/** The margin the glass keeps off the top/bottom of the viewport itself, past its own gap off the anchor. */
+const VIEWPORT_MARGIN_PX = 8
 /** `COMPOSER_POP.row`'s measured height (`py-[8px]` + the `text-[13px]` line) — an
  * unfiltered `@` can list every page in the pond, so the row list caps at six and
- * scrolls the rest, per `MENTION_POPOVER_ESTIMATE_PX`'s own "up to six rows". */
+ * scrolls the rest. */
 const ROW_HEIGHT_PX = 35.5
 const MAX_VISIBLE_ROWS = 6
+/** The glass's own non-list chrome (the head plus `COMPOSER_POP.glass`'s `p-[8px]`),
+ *  independent of row count: measured live, a six-row glass is 258.75px tall —
+ *  258.75 − 6×35.5 = 45.75. */
+const GLASS_CHROME_PX = 45.75
+/** Below this many rows' worth of room above, the glass isn't worth opening upward
+ *  even when it technically has more room than below. */
+const MIN_ROWS_ABOVE = 2
 
-/** The anchor's live value, ref or raw — the one place both effects below (and the width effect) read it from. */
+/** The anchor's live value, ref or raw — the one place every effect below reads it from. */
 function resolveAnchorBox(anchor: MentionAnchor): MentionAnchorBox | null {
   return anchor && 'current' in anchor ? anchor.current : anchor
 }
@@ -109,7 +125,6 @@ export function PagesPicker({
   onPick,
   onClose,
   anchor,
-  side = 'bottom',
 }: PagesPickerProps) {
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -171,18 +186,36 @@ export function PagesPicker({
     return () => anchorEl.removeEventListener('focusout', onFocusOut)
   }, [anchor, onClose])
 
-  const position = useAnchoredBox(anchor, side, 0, POPOVER_GAP_PX)
-  // `useAnchoredBox`'s own `left` is the anchor's unclamped edge (width 0 skips
-  // its clamp); the DC insets 12px off each side of the anchor's own width, so
-  // both `left` and `width` are read here, off the anchor's own rect (initial,
-  // then resize/scroll), and override `position`'s `left` below.
-  const [box, setBox] = useState<{ left: number; width: number }>()
+  // The side (and how tall the row list is allowed to get) is the glass's
+  // own job now (round 3): measured off the anchor's rect against the real
+  // viewport, not handed down as a prop computed before anything has
+  // mounted. `left`/`width` are read the same pass, off the same rect.
+  const [layout, setLayout] = useState<{
+    side: PickerSide
+    left: number
+    width: number
+    maxListHeight: number
+  }>()
   useLayoutEffect(() => {
     const el = resolveAnchorBox(anchor)
     if (!el) return
     const update = () => {
       const r = el.getBoundingClientRect()
-      setBox({ left: r.left + POPOVER_INSET_PX, width: Math.max(0, r.width - POPOVER_INSET_PX * 2) })
+      const roomAbove = r.top - POPOVER_GAP_PX - VIEWPORT_MARGIN_PX
+      const roomBelow = window.innerHeight - r.bottom - POPOVER_GAP_PX - VIEWPORT_MARGIN_PX
+      const fitsAbove = roomAbove >= GLASS_CHROME_PX + MIN_ROWS_ABOVE * ROW_HEIGHT_PX
+      const side: PickerSide = fitsAbove || roomAbove > roomBelow ? 'top' : 'bottom'
+      const room = side === 'top' ? roomAbove : roomBelow
+      const maxListHeight = Math.min(
+        MAX_VISIBLE_ROWS * ROW_HEIGHT_PX,
+        Math.max(ROW_HEIGHT_PX, room - GLASS_CHROME_PX)
+      )
+      setLayout({
+        side,
+        left: r.left + POPOVER_INSET_PX,
+        width: Math.max(0, r.width - POPOVER_INSET_PX * 2),
+        maxListHeight,
+      })
     }
     update()
     window.addEventListener('resize', update)
@@ -191,10 +224,18 @@ export function PagesPicker({
       window.removeEventListener('resize', update)
       window.removeEventListener('scroll', update, true)
     }
-  }, [anchor])
+    // `items.length` isn't read above — room/side are a viewport question,
+    // not an item-count one — but narrowing the query is exactly when the
+    // row count changes, so this re-measures then too rather than trusting
+    // a layout read from before the narrower list existed.
+  }, [anchor, items.length])
+
+  // `useAnchoredBox`'s own `left` is the anchor's unclamped edge (width 0
+  // skips its clamp); `layout.left`/`width` (the DC's 12px inset) override it.
+  const position = useAnchoredBox(anchor, layout?.side ?? 'bottom', 0, POPOVER_GAP_PX)
 
   if (typeof document === 'undefined') return null
-  const style = position && box ? { ...position, ...box } : undefined
+  const style = position && layout ? { ...position, left: layout.left, width: layout.width } : undefined
   return createPortal(
     <div ref={glassRef} data-part="popover" className={COMPOSER_POP.glass} style={style}>
       <div data-part="head" className={COMPOSER_POP.head}>
@@ -204,7 +245,7 @@ export function PagesPicker({
         role="listbox"
         aria-label="pages"
         className="overflow-y-auto"
-        style={{ maxHeight: MAX_VISIBLE_ROWS * ROW_HEIGHT_PX }}
+        style={{ maxHeight: layout?.maxListHeight ?? MAX_VISIBLE_ROWS * ROW_HEIGHT_PX }}
       >
         {items.map((item, index) => {
           const active = index === activeIndex

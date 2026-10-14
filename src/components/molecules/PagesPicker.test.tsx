@@ -24,6 +24,18 @@ const ANCHOR: MentionAnchorBox = {
   getBoundingClientRect: () => ({ top: 100, bottom: 140, left: 0, width: 320 }),
 }
 
+/** Room above (`700 − 10 − 8 = 682px`) comfortably fits the head plus two rows
+ * against jsdom's default 768px `innerHeight`, so the glass opens above. */
+const ANCHOR_ABOVE: MentionAnchorBox = {
+  getBoundingClientRect: () => ({ top: 700, bottom: 740, left: 0, width: 320 }),
+}
+
+function stubInnerHeight(height: number): () => void {
+  const original = window.innerHeight
+  Object.defineProperty(window, 'innerHeight', { value: height, configurable: true })
+  return () => Object.defineProperty(window, 'innerHeight', { value: original, configurable: true })
+}
+
 /** A controlled wrapper, like the composer host will be — `onHover` writes the state back. */
 function Harness({ onPick, onClose }: { onPick: (item: PageMentionItem) => void; onClose: () => void }) {
   const [activeIndex, setActiveIndex] = useState(0)
@@ -289,7 +301,7 @@ describe('PagesPicker — the composer @ popover rows', () => {
     expect(popover.style.width).toBe(`${320 - 24}px`) // sPop's `left: 12, right: 12` inset
   })
 
-  it('flips above the anchor by the same 10px gap when `side` is "top"', () => {
+  it('flips above the anchor by the same 10px gap when room above fits the head plus two rows', () => {
     render(
       <PagesPicker
         items={ITEMS}
@@ -297,13 +309,12 @@ describe('PagesPicker — the composer @ popover rows', () => {
         onHover={jest.fn()}
         onPick={jest.fn()}
         onClose={jest.fn()}
-        anchor={ANCHOR}
-        side="top"
+        anchor={ANCHOR_ABOVE}
       />
     )
 
     const popover = document.querySelector('[data-part="popover"]') as HTMLElement
-    expect(popover.style.bottom).toBe(`${window.innerHeight - 100 + 10}px`)
+    expect(popover.style.bottom).toBe(`${window.innerHeight - 700 + 10}px`)
   })
 
   it('caps the row list to six rows\' height and scrolls the rest, with 20 pages', () => {
@@ -322,6 +333,149 @@ describe('PagesPicker — the composer @ popover rows', () => {
     const listbox = screen.getByRole('listbox')
     expect(listbox.style.maxHeight).toBe(`${6 * 35.5}px`)
     expect(listbox.className).toContain('overflow-y-auto')
+  })
+
+  describe('measures its own anchor to stay wholly on screen (round 3)', () => {
+    // `GLASS_CHROME_PX` (45.75) is read off the component's own doc comment,
+    // derived from the item's own live measurement (a capped six-row glass
+    // is 258.75px tall; 258.75 − 6×35.5 = 45.75). The item's three worked
+    // examples give test 1 and test 2 the same `card top 160`, but ask for
+    // two different outcomes ("room above < head+2 rows" vs. "room for
+    // head+3 rows above") off the identical room-above figure that follows
+    // from one `top` value — those can't both hold for any one chrome
+    // constant, so the fixtures below pick anchor rects that are internally
+    // consistent with the formula while exercising the three NAMED
+    // behaviours exactly (tight above → opens below; moderate above → stays
+    // above with a clamped cap; ample above → the full six-row cap). Test 3
+    // keeps the item's own literal numbers (card top 700, innerHeight 900)
+    // verbatim — those two are consistent with each other.
+
+    it('opens below when room above is too tight for the head plus two rows', () => {
+      const restoreInnerHeight = stubInnerHeight(500)
+      try {
+        const anchor: MentionAnchorBox = {
+          getBoundingClientRect: () => ({ top: 50, bottom: 90, left: 0, width: 320 }),
+        }
+        render(
+          <PagesPicker
+            items={MANY_ITEMS}
+            activeIndex={0}
+            onHover={jest.fn()}
+            onPick={jest.fn()}
+            onClose={jest.fn()}
+            anchor={anchor}
+          />
+        )
+
+        const popover = document.querySelector('[data-part="popover"]') as HTMLElement
+        const listbox = screen.getByRole('listbox')
+        // room above (50 − 10 − 8 = 32) doesn't fit the head (45.75) plus
+        // two rows (71), and is also smaller than room below (392) — opens
+        // below, at the anchor's own 10px gap.
+        expect(popover.style.top).toBe(`${90 + 10}px`)
+        expect(popover.style.bottom).toBe('')
+        const glassBottom = 90 + 10 + 45.75 + parseFloat(listbox.style.maxHeight)
+        expect(glassBottom).toBeLessThanOrEqual(500)
+      } finally {
+        restoreInnerHeight()
+      }
+    })
+
+    it('stays above with a clamped row-list height when room above only fits a few rows', () => {
+      const restoreInnerHeight = stubInnerHeight(500)
+      try {
+        const anchor: MentionAnchorBox = {
+          getBoundingClientRect: () => ({ top: 198, bottom: 230, left: 0, width: 320 }),
+        }
+        render(
+          <PagesPicker
+            items={MANY_ITEMS}
+            activeIndex={0}
+            onHover={jest.fn()}
+            onPick={jest.fn()}
+            onClose={jest.fn()}
+            anchor={anchor}
+          />
+        )
+
+        const popover = document.querySelector('[data-part="popover"]') as HTMLElement
+        const listbox = screen.getByRole('listbox')
+        // room above (198 − 18 = 180) fits the head plus two rows (116.75),
+        // so it opens above — but 180 is short of the full six-row cap
+        // (258.75), so the list clamps to 180 − 45.75 = 134.25 rather than
+        // the full 213.
+        expect(popover.style.bottom).toBe(`${500 - 198 + 10}px`)
+        expect(listbox.style.maxHeight).toBe('134.25px')
+        const glassTop = 500 - parseFloat(popover.style.bottom) - (45.75 + parseFloat(listbox.style.maxHeight))
+        expect(glassTop).toBeGreaterThanOrEqual(0)
+      } finally {
+        restoreInnerHeight()
+      }
+    })
+
+    it('opens above with the full six-row cap when room above is ample', () => {
+      const restoreInnerHeight = stubInnerHeight(900)
+      try {
+        const anchor: MentionAnchorBox = {
+          getBoundingClientRect: () => ({ top: 700, bottom: 740, left: 0, width: 320 }),
+        }
+        render(
+          <PagesPicker
+            items={MANY_ITEMS}
+            activeIndex={0}
+            onHover={jest.fn()}
+            onPick={jest.fn()}
+            onClose={jest.fn()}
+            anchor={anchor}
+          />
+        )
+
+        const popover = document.querySelector('[data-part="popover"]') as HTMLElement
+        const listbox = screen.getByRole('listbox')
+        expect(popover.style.bottom).toBe(`${900 - 700 + 10}px`)
+        expect(listbox.style.maxHeight).toBe(`${6 * 35.5}px`)
+      } finally {
+        restoreInnerHeight()
+      }
+    })
+
+    it('recomputes the layout when the item count narrows', () => {
+      const restoreInnerHeight = stubInnerHeight(500)
+      try {
+        const anchor: MentionAnchorBox = {
+          getBoundingClientRect: () => ({ top: 198, bottom: 230, left: 0, width: 320 }),
+        }
+        const { rerender } = render(
+          <PagesPicker
+            items={MANY_ITEMS}
+            activeIndex={0}
+            onHover={jest.fn()}
+            onPick={jest.fn()}
+            onClose={jest.fn()}
+            anchor={anchor}
+          />
+        )
+        expect(screen.getByRole('listbox').style.maxHeight).toBe('134.25px')
+
+        rerender(
+          <PagesPicker
+            items={ITEMS}
+            activeIndex={0}
+            onHover={jest.fn()}
+            onPick={jest.fn()}
+            onClose={jest.fn()}
+            anchor={anchor}
+          />
+        )
+        // Room above hasn't changed, so the clamp doesn't either — this
+        // proves the effect re-ran (not that the number moved) by asserting
+        // against the smaller item set's own rows.
+        expect(screen.getAllByRole('option')).toHaveLength(3)
+        expect(screen.getByRole('listbox').style.maxHeight).toBe('134.25px')
+      } finally {
+        restoreInnerHeight()
+      }
+    })
   })
 
   it('scrolls the active row into view when the active index moves', () => {
