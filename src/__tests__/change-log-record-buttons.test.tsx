@@ -28,6 +28,8 @@ jest.mock('@/lib/supabase/client', () => ({
 jest.mock('@/lib/change-log/store', () => ({
   ...jest.requireActual('@/lib/change-log/store'),
   getRecord: (...args: unknown[]) => mockGetRecord(...args),
+  listRevisionsOf: (...args: unknown[]) => mockListRevisionsOf(...args),
+  listRevertsOf: (...args: unknown[]) => mockListRevertsOf(...args),
 }))
 
 jest.mock('@/lib/pages/client', () => ({
@@ -51,6 +53,8 @@ const mockGetRecord = jest.fn()
 const mockGetPage = jest.fn()
 const mockGetThreadFirstQuestion = jest.fn()
 const mockProposeRevert = jest.fn()
+const mockListRevisionsOf = jest.fn()
+const mockListRevertsOf = jest.fn()
 
 function record(over: Partial<ChangeLogRecord> = {}): ChangeLogRecord {
   return {
@@ -97,6 +101,8 @@ beforeEach(() => {
     props: {},
   })
   mockGetThreadFirstQuestion.mockResolvedValue(null)
+  mockListRevisionsOf.mockResolvedValue([])
+  mockListRevertsOf.mockResolvedValue([])
 })
 
 describe('ChangeLogRecordPage — buttons', () => {
@@ -230,6 +236,26 @@ describe('ChangeLogRecordPage — buttons', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('that did not work')
     expect(mockProposeRevert).not.toHaveBeenCalled()
+  })
+
+  it('hides revert while the record already has a pending (proposed) revert in reverted-by', async () => {
+    mockGetRecord.mockResolvedValue(record())
+    mockListRevertsOf.mockResolvedValue([
+      record({
+        id: 'rec-revert',
+        status: 'proposed',
+        links: { revertOf: 'rec-1' },
+        createdAt: '2026-09-30T09:40:00.000Z',
+      }),
+    ])
+
+    renderPage()
+
+    await screen.findByTestId('change-log-record-title')
+    expect(screen.getByRole('button', { name: 'open page' })).toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'revert' })).not.toBeInTheDocument()
+    )
   })
 
   it('omits revert for a record canRevertRecord refuses', async () => {

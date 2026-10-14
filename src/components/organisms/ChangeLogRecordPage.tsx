@@ -197,13 +197,27 @@ export function ChangeLogRecordPage({ recordId }: { recordId: string }) {
     },
   })
 
+  // A REVERT record's own "this change" column must also show the record IT
+  // reverts (`links.revertOf`) — `chain`/`listRevisionsOf` only walk
+  // `revisedFrom`, so the reverted record is otherwise invisible from the
+  // revert's own page.
+  const revertOfId = record?.links.revertOf ?? null
+  const { data: revertedRecord } = useQuery({
+    queryKey: [...chainKey(recordId), 'revert-of'] as const,
+    enabled: revertOfId !== null,
+    queryFn: () => getRecord(getSupabase(), revertOfId as string),
+  })
+
   // "Linked records in order from listRevisionsOf / listRevertsOf / links" —
-  // every chain record's own reverts are rows here too, not just the viewed
-  // record's (the fields grid's "reverted by" is the one place that narrows
-  // to the viewed record alone).
+  // every chain record's own reverts, and the record a revert itself
+  // reverts, are rows here too, not just the viewed record's (the fields
+  // grid's "reverted by" is the one place that narrows to the viewed record
+  // alone).
   const allReverts = revertsByRecordId ? Array.from(revertsByRecordId.values()).flat() : []
-  const timeline = record ? buildChangeTimeline(chain, record.id, allReverts) : []
+  const linkedRecords = revertedRecord ? [...allReverts, revertedRecord] : allReverts
+  const timeline = record ? buildChangeTimeline(chain, record.id, linkedRecords) : []
   const revertedBy = revertedByField(revertsByRecordId?.get(recordId) ?? [])
+  const hasPendingRevert = revertedBy !== null && revertedBy.statusPillText === 'proposed'
 
   const handleOpenPage = useCallback(() => {
     if (!targetPage) return
@@ -378,7 +392,7 @@ export function ChangeLogRecordPage({ recordId }: { recordId: string }) {
             {WAITING_STATUSES.includes(record.status) ? (
               <ChangeLogAnswerActions record={record} pondId={pondId} onError={setActionError} />
             ) : (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 select-none">
                 <PondControl
                   kind="button"
                   variant="secondary"
@@ -387,7 +401,7 @@ export function ChangeLogRecordPage({ recordId }: { recordId: string }) {
                 >
                   open page
                 </PondControl>
-                {canRevertRecord(record) && (
+                {canRevertRecord(record) && !hasPendingRevert && (
                   <PondControl
                     kind="button"
                     variant="ghost"

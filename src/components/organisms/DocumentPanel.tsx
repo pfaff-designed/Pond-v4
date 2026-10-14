@@ -268,7 +268,7 @@ export function DocumentPanel() {
   // The record route's own title (`?record=`, KAN-152): read once here so the
   // breadcrumb's `current` can show it, same cache key `ChangeLogRecordPage`
   // itself reads with so the two never double-fetch.
-  const { data: breadcrumbRecord } = useQuery({
+  const { data: breadcrumbRecord, isLoading: breadcrumbRecordLoading } = useQuery({
     queryKey: recordKey(recordId ?? ''),
     queryFn: () => getRecord(getSupabase(), recordId as string),
     enabled: recordId !== null,
@@ -286,11 +286,16 @@ export function DocumentPanel() {
           // `viewTitle`'s own fallback (an ordinary page's title read off the
           // row until it lands) has no row to read here — a record's title
           // only exists once the record query resolves, so the placeholder is
-          // a loading word instead of a cached title.
+          // a loading word instead of a cached title. Once that query SETTLES
+          // with nothing (a missing or not-visible record, AUDIT G6), the
+          // crumb must not keep reading `loading…` forever — it names the
+          // not-found state instead.
           current: recordId
             ? breadcrumbRecord
               ? recordBreadcrumbTitle(breadcrumbRecord)
-              : 'loading…'
+              : breadcrumbRecordLoading
+                ? 'loading…'
+                : 'not found'
             : 'change log',
           role: null,
         }

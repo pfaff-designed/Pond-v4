@@ -145,4 +145,47 @@ describe('ChangeLogRecordPage — this change column', () => {
       expect.objectContaining({ recordId: 'rec-1' })
     )
   })
+
+  it("a revert record's column also lists the record it reverts (links.revertOf)", async () => {
+    const original = record({
+      id: 'rec-1',
+      status: 'reverted',
+      transitions: [
+        { status: 'proposed', at: '2026-09-30T09:12:00.000Z', actor: 'pond' },
+        { status: 'accepted', at: '2026-09-30T09:31:00.000Z', actor: 'you' },
+      ],
+    })
+    const revert = record({
+      id: 'rec-revert',
+      status: 'accepted',
+      links: { revertOf: 'rec-1' },
+      transitions: [
+        { status: 'proposed', at: '2026-09-30T10:02:00.000Z', actor: 'you' },
+        { status: 'accepted', at: '2026-09-30T10:05:00.000Z', actor: 'you' },
+      ],
+    })
+    const byId: Record<string, ChangeLogRecord> = { 'rec-1': original, 'rec-revert': revert }
+    mockGetRecord.mockImplementation((_supabase: unknown, id: string) =>
+      Promise.resolve(byId[id] ?? null)
+    )
+    mockListRevisionsOf.mockResolvedValue([])
+
+    renderPage('rec-revert')
+
+    await screen.findByTestId('change-log-record-title')
+    const rows = await screen.findAllByTestId('change-log-record-timeline-row')
+
+    // Time order: the original's own proposed/accepted rows, then the
+    // revert's own reverted/accepted rows — `links.revertOf` makes the
+    // reverted record visible from the revert's own page, not just the
+    // other way around.
+    expect(rows).toHaveLength(4)
+    expect(within(rows[0]).getByText('proposed')).toBeInTheDocument()
+    expect(within(rows[1]).getByText('accepted')).toBeInTheDocument()
+    expect(within(rows[2]).getByText('reverted')).toBeInTheDocument()
+    expect(within(rows[3]).getByText('accepted')).toBeInTheDocument()
+    expect(rows[3]).toHaveClass('bg-mn-hover-fill')
+
+    expect(mockGetRecord).toHaveBeenCalledWith(expect.anything(), 'rec-1')
+  })
 })

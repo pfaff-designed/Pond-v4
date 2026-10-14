@@ -117,6 +117,19 @@ describe('DocumentPanel — a change log record route', () => {
     expect(screen.getByTestId('change-log-record-title')).toHaveTextContent('apple')
   })
 
+  it('shows "not found" once a missing or invisible record resolves to null, not "loading…" forever', async () => {
+    mockGetRecord.mockResolvedValue(null)
+
+    renderPanel()
+
+    await waitFor(() =>
+      expect(screen.getByTestId('command-path')).toHaveTextContent(
+        'life › databases › change log › not found'
+      )
+    )
+    expect(screen.getByTestId('change-log-record-not-found')).toBeInTheDocument()
+  })
+
   it('never renders ChangeLogPage’s own surface for a record route', async () => {
     mockGetRecord.mockResolvedValue(record())
 
