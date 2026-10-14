@@ -3,6 +3,7 @@
  * `Pond 06.15 Change log`, frames `s6o3`/`s6o4`).
  */
 
+import type { UIMessage } from 'ai'
 import type { Block } from '@/lib/documents/types'
 import type { ChangePreview } from '@/lib/modules/preview'
 import { blockLabel } from '@/lib/modules/types'
@@ -164,6 +165,19 @@ export interface ChangeTimelineRow {
  * note travels live to the composer, never onto the record), so its detail
  * is the transition's own actor.
  */
+/** The fields grid's "from thread" chip: the thread's first question, joined
+ *  from its text parts — the same text-joining `AITerminal.tsx`'s own
+ *  `questionBefore` uses, but finding the FIRST user message rather than the
+ *  nearest one before some index. `null` with no user message at all. */
+export function firstQuestionFromMessages(messages: UIMessage[]): string | null {
+  const first = messages.find((m) => m.role === 'user')
+  if (first === undefined) return null
+  return first.parts
+    .filter((p) => p.type === 'text')
+    .map((p) => (p as { type: 'text'; text: string }).text)
+    .join('')
+}
+
 export function buildChangeTimeline(
   chain: ChangeLogRecord[],
   viewingId: string

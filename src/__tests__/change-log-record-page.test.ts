@@ -10,6 +10,7 @@ import { describeChange, formatClockTime } from '@/lib/change-log/page-changes'
 import {
   buildChangeTimeline,
   changeLogRecordUrl,
+  firstQuestionFromMessages,
   pageBlockField,
   proposedByField,
   readChipsOf,
@@ -21,6 +22,7 @@ import {
 } from '@/lib/change-log/record-page'
 import type { ChangeLogRecord } from '@/lib/change-log/types'
 import type { Block } from '@/lib/documents/types'
+import type { UIMessage } from 'ai'
 
 describe('changeLogRecordUrl', () => {
   it('builds the change log route with the record id as a query param', () => {
@@ -214,6 +216,35 @@ describe('recordDiffRows', () => {
       after: { id: 'row-1', title: 'chickpeas', values: {}, shown: {} },
     })
     expect(recordDiffRows(r)).toBeNull()
+  })
+})
+
+describe('firstQuestionFromMessages', () => {
+  it('returns null with no messages', () => {
+    expect(firstQuestionFromMessages([])).toBeNull()
+  })
+
+  it('returns null with no user message', () => {
+    const messages = [
+      { id: 'm1', role: 'assistant', parts: [{ type: 'text', text: 'hi' }] },
+    ] as UIMessage[]
+    expect(firstQuestionFromMessages(messages)).toBeNull()
+  })
+
+  it("joins the first user message's text parts", () => {
+    const messages = [
+      {
+        id: 'm1',
+        role: 'user',
+        parts: [
+          { type: 'text', text: 'change alpha ' },
+          { type: 'text', text: 'to apple' },
+        ],
+      },
+      { id: 'm2', role: 'assistant', parts: [{ type: 'text', text: 'done' }] },
+      { id: 'm3', role: 'user', parts: [{ type: 'text', text: 'and the rest' }] },
+    ] as UIMessage[]
+    expect(firstQuestionFromMessages(messages)).toBe('change alpha to apple')
   })
 })
 
