@@ -97,7 +97,9 @@ function withoutId(block: Block): Record<string, unknown> {
   return out
 }
 
-function indexById(blocks: Block[]): Map<string, Block> {
+/** Shared with `answer.ts`'s forward accept — the same by-id lookup either
+ *  direction of a diff keys its before/after comparison on. */
+export function indexById(blocks: Block[]): Map<string, Block> {
   const map = new Map<string, Block>()
   for (const block of blocks) map.set(block.id, block)
   return map

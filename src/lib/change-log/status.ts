@@ -13,7 +13,9 @@
  *   accepted ──▶ undone (session undo, #104) | reverted (revert-from-log, #103)
  *   changes_requested ──▶ ∅   revise inserts a NEW `proposed` record
  *                             (links.revisedFrom = this id); the original stays
- *   outdated ──▶ ∅            same: accept is withdrawn, revise inserts anew
+ *   outdated ──▶ rejected     accept is withdrawn, revise inserts anew, but the
+ *                             proposed view still needs a way to clear the card
+ *                             (KAN-96, s6o2's outdated row draws revise · reject)
  *   rejected · withdrawn · undone · reverted ──▶ ∅   settled for good
  *
  * Pure — no Supabase, no React.
@@ -30,7 +32,10 @@ export const LEGAL_TRANSITIONS: Readonly<Record<ChangeLogStatus, readonly Change
   rejected: [],
   // A revision is a new record; this one is finished either way.
   changes_requested: [],
-  outdated: [],
+  // The RPC is a status CAS and enforces no legality of its own — this one
+  // edge exists so the proposed view can clear a card it can no longer
+  // accept (reject), without touching the RPC or adding a migration.
+  outdated: ['rejected'],
   withdrawn: [],
   undone: [],
   reverted: [],
@@ -75,6 +80,15 @@ export function canAccept(status: ChangeLogStatus): boolean {
  */
 export function canRevise(status: ChangeLogStatus): boolean {
   return status === 'changes_requested' || status === 'outdated'
+}
+
+/**
+ * Can this record still be rejected? Both statuses `WAITING_STATUSES` keeps in
+ * the proposed view — a live `proposed` one, or an `outdated` one whose accept
+ * is withdrawn but still needs a way to leave the view (KAN-96).
+ */
+export function canReject(status: ChangeLogStatus): boolean {
+  return status === 'proposed' || status === 'outdated'
 }
 
 /**

@@ -26,12 +26,14 @@ import {
   FOCUS_TERMINAL_EVENT,
   HTML_IMPORT_PICKER_EVENT,
   OPEN_THREAD_MESSAGE_EVENT,
+  REQUEST_CHANGES_EVENT,
   TOGGLE_COMPOSER_EVENT,
   requestHtmlImportPicker,
   takePendingTerminalText,
   type ComposerNoticeDetail,
   type FocusTerminalDetail,
   type OpenThreadMessageDetail,
+  type RequestChangesDetail,
 } from '@/lib/terminal-focus'
 import { ParentGoneError, makePageFromAnswer, recordPageProposal } from '@/lib/pages/make-page'
 import {
@@ -191,16 +193,13 @@ import {
 } from '@/lib/conversation/proposal-store'
 import { resolveChangeLogRecord } from '@/lib/change-log/resolve'
 import { listRecordsByToolCalls, resolveChainStatuses } from '@/lib/change-log/store'
-import type { ChangeLogRecord } from '@/lib/change-log/types'
+import { changeLogKey, changeLogChainTipKey } from '@/lib/change-log/keys'
+import type { ChangeLogRecord, ChangeLogStatus } from '@/lib/change-log/types'
+import { REVISE_NOTE } from '@/lib/change-log/answer'
 import { previewForChange, type ChangePreview } from '@/lib/modules/preview'
 import type { ModuleChange } from '@/lib/modules/ai-composition'
 import type { Block } from '@/lib/documents/types'
 import { withSchema, isCollection, readSchema } from '@/lib/properties/schema'
-/** The canned note `revise` sends on an outdated card (#98, G2): Pond redrafts
- *  the diff against the page as it now stands. */
-const REVISE_NOTE =
-  'the page changed since this was proposed — revise it against the page as it now stands.'
-
 /** An ask again that ends without a replacement (failed, or stopped before its first
  *  chunk) puts the answer it was replacing back verbatim at its own index. It never
  *  left the person's thread, so it is not folded into `earlier`. */
@@ -486,9 +485,13 @@ export function AITerminal() {
           toolCallId,
           decision,
         })
+        // The record is now actually settled — only now do the proposed/'all'
+        // views (ChangeLogPage, mounted separately) have anything new to read.
+        // Invalidating before the await resolved would race the write itself.
+        void queryClient.invalidateQueries({ queryKey: changeLogKey() })
       })()
     },
-    [getSupabase, pondId]
+    [getSupabase, pondId, queryClient]
   )
 
   /**
@@ -516,6 +519,12 @@ export function AITerminal() {
   // the next propose_changes to stream in is Pond's revision of it. It lives for
   // exactly ONE turn; the effect below clears it when that turn settles.
   const pendingRevisionOf = useRef<string | null>(null)
+  // KAN-96 — a view-originated request names its own target page (sendRequestChanges'
+  // `targetPageId` param); the revising batch must stamp against THAT page, not
+  // whatever node happens to be open (e.g. the change log page itself). Lives
+  // alongside `pendingRevisionOf` for the same one turn; a thread-originated
+  // request never sets it, so the stamping effect falls back to the open node.
+  const pendingRevisionTargetPageId = useRef<string | null>(null)
   // KAN-302 — a settled card's "−"/"+" text must not keep tracking the live
   // page: once a batch's status leaves `pending`, its preview is frozen here
   // so a later edit doesn't rewrite an already-accepted card's diff. This is
@@ -1529,19 +1538,34 @@ export function AITerminal() {
       // #98 — the first batch to stream in after a request-changes note is
       // Pond's revision of that card. Write-once in the store.
       const revising = pendingRevisionOf.current
-      if (revising && revising !== part.toolCallId && !revisions[part.toolCallId]) {
+      const isRevisionOfThisPart =
+        !!revising && revising !== part.toolCallId && !revisions[part.toolCallId]
+      // KAN-96 — a view-originated revision's own target page: wait for
+      // `allPages` to load before resolving against it (same reasoning as
+      // `resolveStampTarget`'s own `pagesLoaded` gate) rather than clearing the
+      // pending refs and falling back to the ambient node for this one run.
+      const revisionTargetPageId = isRevisionOfThisPart
+        ? pendingRevisionTargetPageId.current
+        : null
+      if (revisionTargetPageId && !pagesLoaded) continue
+      if (isRevisionOfThisPart) {
         dispatch({ kind: 'noteRevision', id: part.toolCallId, revisedFrom: revising })
         pendingRevisionOf.current = null
+        pendingRevisionTargetPageId.current = null
       }
       const resolved = resolveStampTarget({
         targetPageId: part.input?.targetPageId,
         pages: allPages,
         pagesLoaded,
-        openNodeId: nodeId,
+        openNodeId: revisionTargetPageId ?? nodeId,
         // KAN-302: the live label, not the stale `nodeName` URL param — same
         // fix as `contextLabel` above, since this write-once stamp's name IS
-        // contextLabel's stand-in for the open page at stamp time.
-        openNodeName: contextLabel,
+        // contextLabel's stand-in for the open page at stamp time. KAN-96: a
+        // revision's own target page reads its live title off `allPages`
+        // instead, so the stamp never lands on the change log it was sent from.
+        openNodeName: revisionTargetPageId
+          ? allPages.find((p) => p.id === revisionTargetPageId)?.title ?? null
+          : contextLabel,
       })
       // 'defer' → stamp on a later run (pages still loading); null → leave
       // unstamped (no safe target; accept skips). The reducer's stampTarget is
@@ -1560,7 +1584,10 @@ export function AITerminal() {
   // when the turn settles, it goes. Declared AFTER the stamping effect above so
   // that effect still gets the ref on the commit the batch lands in.
   useEffect(() => {
-    if (status === 'ready') pendingRevisionOf.current = null
+    if (status === 'ready') {
+      pendingRevisionOf.current = null
+      pendingRevisionTargetPageId.current = null
+    }
   }, [status])
 
   // ── open_change_log navigates the moment it streams in (KAN-94) ───────────
@@ -2066,6 +2093,17 @@ export function AITerminal() {
         batch: allChanges,
         refIds: (proposalRefIds.current[toolCallId] ??= {}),
       })
+      if (result.applied === 0) {
+        // Nothing landed — the optimistic accept above must not stand: that
+        // decision rides the resolutions envelope and would tell Pond the
+        // batch applied when the page couldn't be read, was deleted, or every
+        // change was skipped. Un-decide so the card stays pending (same
+        // revert-on-failure shape the other accept handlers use in their
+        // catch blocks) and let the skip notice below say what happened.
+        for (const i of indices) {
+          dispatch({ kind: 'revert', type: 'changes', id: toolCallId, index: i })
+        }
+      }
       if (result.skipped > 0) {
         dispatch({
           kind: 'resolve',
@@ -2134,7 +2172,13 @@ export function AITerminal() {
   // links the revision it emits. `revise` on an outdated card is the same path
   // with a canned note — the record is already settled, so nothing re-decides.
   const sendRequestChanges = useCallback(
-    (toolCallId: string, count: number, note: string, reason: 'note' | 'outdated') => {
+    (
+      toolCallId: string,
+      count: number,
+      note: string,
+      reason: 'note' | 'outdated',
+      targetPageId?: string | null
+    ) => {
       if (!isReady) return
       let next = proposals
       if (reason === 'note') {
@@ -2153,24 +2197,80 @@ export function AITerminal() {
         logDecision(toolCallId, 'changes_requested')
       }
       pendingRevisionOf.current = toolCallId
+      // A view-originated request names its own target page (KAN-96) so the
+      // revised diff lands there, not on whatever node happens to be open —
+      // e.g. the change log page itself. A thread-originated card omits it
+      // and keeps riding the ambient nodeId, since it's already on its page.
+      // The stamping effect reads this same page id when it stamps the
+      // revised batch, so the card never reads 'revised edit — change log'.
+      pendingRevisionTargetPageId.current = targetPageId ?? null
       const body = {
-        nodeId,
-        nodeType,
+        nodeId: targetPageId ?? nodeId,
+        nodeType: targetPageId ? 'page' : nodeType,
         pondId,
         resolutions: projectResolutions(next),
         requestChanges: { toolCallId, note, reason },
       }
       // The thread shows the note under the card, not as a second "you" line;
       // the metadata is how the renderer knows this message is that note.
+      // A view-originated request names its own target page (see `body` above) —
+      // the revised answer's read chip must say so too, not the ambient
+      // contextLabel (e.g. the change log page the note was sent from).
       const metadata = {
         sentAt: new Date().toISOString(),
         requestChanges: { toolCallId, reason },
+        ...(targetPageId
+          ? { openPageContext: false, wholePageRefPageIds: [targetPageId] }
+          : {}),
       }
       clearError?.()
       sendMessage({ text: note, metadata }, { body })
     },
     [isReady, proposals, logDecision, nodeId, nodeType, pondId, sendMessage, clearError]
   )
+
+  // The proposed view's card has no mounted thread of its own to request
+  // changes through (#96) — it dispatches REQUEST_CHANGES_EVENT and this
+  // terminal, already mounted pond-wide, uncollapses and rides the note
+  // through its own sendRequestChanges, same as a card inside the thread.
+  // The event can land before the thread has loaded (`isReady` false, when
+  // `sendRequestChanges` itself is a no-op) — held here and flushed by the
+  // effect below once `isReady` flips true, so the note isn't silently
+  // dropped after its note box has already closed.
+  const pendingRequestChangesRef = useRef<RequestChangesDetail | null>(null)
+  useEffect(() => {
+    function onRequestChanges(e: Event) {
+      const detail = (e as CustomEvent<RequestChangesDetail>).detail
+      setIsCollapsed(false)
+      if (isReady) {
+        sendRequestChanges(
+          detail.toolCallId,
+          detail.count ?? 1,
+          detail.note,
+          detail.reason,
+          detail.targetPageId
+        )
+      } else {
+        pendingRequestChangesRef.current = detail
+      }
+    }
+    window.addEventListener(REQUEST_CHANGES_EVENT, onRequestChanges)
+    return () => window.removeEventListener(REQUEST_CHANGES_EVENT, onRequestChanges)
+  }, [isReady, sendRequestChanges])
+
+  useEffect(() => {
+    if (!isReady) return
+    const pending = pendingRequestChangesRef.current
+    if (!pending) return
+    pendingRequestChangesRef.current = null
+    sendRequestChanges(
+      pending.toolCallId,
+      pending.count ?? 1,
+      pending.note,
+      pending.reason,
+      pending.targetPageId
+    )
+  }, [isReady, sendRequestChanges])
 
   // ── Read the cards' records back (#98, G2) ────────────────────────────────
   // The change log is the durable record; the decision maps are a UI cache.
@@ -2196,21 +2296,46 @@ export function AITerminal() {
     }
     return counts
   }, [messages, changeDecisions])
-  useEffect(() => {
-    if (liveDiffCards.size === 0) return
-    let cancelled = false
-    ;(async () => {
+  // A real react-query entry (KAN-96) rather than a bare async effect: nesting
+  // its key under `changeLogChainTipKey(pondId)`, which sits under
+  // `changeLogKey()`, means every answer from the proposed view — which
+  // already invalidates `changeLogKey()` on accept/reject (ChangeLogPage) and
+  // on settle (`logDecision`, above) — refetches this card's status here too,
+  // with no remount of this terminal needed.
+  const liveDiffCardIds = useMemo(() => [...liveDiffCards.keys()].sort(), [liveDiffCards])
+  const chainTipQuery = useQuery({
+    queryKey: [...changeLogChainTipKey(pondId), liveDiffCardIds.join(',')],
+    queryFn: async () => {
       const supabase = getSupabase()
       const {
         data: { user },
       } = await supabase.auth.getUser()
-      if (!user || cancelled) return
+      if (!user)
+        return { records: [] as ChangeLogRecord[], tips: new Map<string, ChangeLogStatus>() }
       const records = await listRecordsByToolCalls(supabase, {
         userId: user.id,
         pondId,
-        toolCallIds: [...liveDiffCards.keys()],
+        toolCallIds: liveDiffCardIds,
       })
-      if (cancelled) return
+      // The record's own `status` only ever moves forward into `undone`; a
+      // redo lands on the chain's tip instead (KAN-302), so every card must
+      // follow its chain, not its row — walked for every record in one go.
+      const tips = await resolveChainStatuses(supabase, {
+        userId: user.id,
+        pondId,
+        records: records.map((record) => ({ id: record.id, status: record.status })),
+      })
+      return { records, tips }
+    },
+    enabled: liveDiffCardIds.length > 0,
+  })
+  useEffect(() => {
+    const { records, tips } = chainTipQuery.data ?? {}
+    if (!records) return
+    // Deferred a tick, same as the async IIFE this effect replaced: applying
+    // the already-fetched query data is a reaction to it settling, not the
+    // effect's own synchronous body.
+    queueMicrotask(() => {
       // KAN-302: keep the records themselves, not just their derived status —
       // a settled card's "−"/"+" text reads `record.before` (the diffCards
       // loop below), which survives a reload unlike the in-session freeze.
@@ -2224,35 +2349,29 @@ export function AITerminal() {
         }
         return next
       })
-      // The record's own `status` only ever moves forward into `undone`; a
-      // redo lands on the chain's tip instead (KAN-302), so every card must
-      // follow its chain, not its row — walked for every record in one go.
-      const tips = await resolveChainStatuses(supabase, {
-        userId: user.id,
-        pondId,
-        records: records.map((record) => ({ id: record.id, status: record.status })),
-      })
       for (const record of records) {
         const id = record.toolCallId
         if (!id) continue
         const count = liveDiffCards.get(id) ?? 0
-        const tip = tips.get(record.id) ?? record.status
+        const tip = tips?.get(record.id) ?? record.status
         const adopt = reconcileCardStatus(batchStatus(changeDecisions, id, count), tip)
         if (!adopt) continue
         for (let i = 0; i < count; i++) {
           dispatch({ kind: 'resolve', type: 'changes', id, index: i, decision: adopt })
         }
       }
-    })().catch((err) => console.error('[change-log] card record sync failed', err))
-    return () => {
-      cancelled = true
-    }
-    // `currentPage?.blocks` is the trigger: react-query hands back a new array only
-    // when the blocks actually changed (an own edit saved, an accept landed) or
-    // the person navigated to another page — which is when a card aimed at it can
-    // have gone stale. A record outdated from ANOTHER tab is read on the next of
-    // those, not live (no realtime subscription in M1).
-  }, [liveDiffCards, changeDecisions, currentPage?.blocks, pondId, getSupabase])
+    })
+  }, [chainTipQuery.data, liveDiffCards, changeDecisions])
+  // `currentPage?.blocks` is the OTHER trigger: react-query hands back a new
+  // array only when the blocks actually changed (an own edit saved, an accept
+  // landed) or the person navigated to another page — which is when a card
+  // aimed at it can have gone stale. A record outdated from ANOTHER tab is
+  // read on the next of those, not live (no realtime subscription in M1).
+  useEffect(() => {
+    if (liveDiffCardIds.length === 0) return
+    void queryClient.invalidateQueries({ queryKey: changeLogChainTipKey(pondId) })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally keyed off `currentPage?.blocks`, not `liveDiffCardIds`'s own change (that already drives the queryKey above).
+  }, [currentPage?.blocks, pondId, queryClient])
 
   // ── create_page resolution (M1) ───────────────────────────────────────────
   // Accept: mint block ids, resolve the user-chosen parent, write via createPage,

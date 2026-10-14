@@ -95,3 +95,30 @@ export const HTML_IMPORT_PICKER_EVENT = 'pond:html-import-picker'
 export function requestHtmlImportPicker() {
   window.dispatchEvent(new CustomEvent(HTML_IMPORT_PICKER_EVENT))
 }
+
+/**
+ * "Request changes on a diff with no mounted thread" (KAN-96). The proposed
+ * view's card asks; the composer owns `sendRequestChanges` and answers — the
+ * same decoupling as `requestTerminalFocus`, since the proposed view has no
+ * `useChat` of its own to post the note through.
+ */
+export const REQUEST_CHANGES_EVENT = 'pond:request-changes'
+
+export interface RequestChangesDetail {
+  toolCallId: string
+  note: string
+  reason: 'note' | 'outdated'
+  /** The batch's size, when the dispatcher knows it (a live thread's multi-
+   *  change card). Omitted — resolved as a single decision — by the proposed
+   *  view, which always dispatches for one change-log record. */
+  count?: number
+  /** The record's own target page, carried by the proposed view so the
+   *  revised diff lands on that page rather than whatever node the person
+   *  happens to be viewing (the change log page itself, `CHANGE_LOG_NODE_ID`).
+   *  Omitted by a thread-originated card, which is already on its page. */
+  targetPageId?: string | null
+}
+
+export function requestChanges(detail: RequestChangesDetail) {
+  window.dispatchEvent(new CustomEvent<RequestChangesDetail>(REQUEST_CHANGES_EVENT, { detail }))
+}

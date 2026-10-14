@@ -105,10 +105,15 @@ export async function writeAcceptedChanges(opts: {
  * every caller (accept-all, a second click, two open panels), which is exactly
  * what a per-process map of tails gives. Entries are dropped once their chain
  * drains, so the map does not grow with the session.
+ *
+ * Exported so the proposed view's no-thread accept (`change-log/answer.ts`,
+ * KAN-96) serialises against the SAME queue — a card in the proposed view and
+ * a diff card in the composer can name the same page, and both are a
+ * read-modify-write over its whole block array.
  */
 const pageWriteTails = new Map<string, Promise<unknown>>()
 
-function withPageWriteLock<T>(pageId: string, run: () => Promise<T>): Promise<T> {
+export function withPageWriteLock<T>(pageId: string, run: () => Promise<T>): Promise<T> {
   const previous = pageWriteTails.get(pageId) ?? Promise.resolve()
   // `.then(run, run)` so a failed predecessor does not wedge the queue: the next
   // write still runs, it just runs after.

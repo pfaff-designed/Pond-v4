@@ -32,14 +32,19 @@ export interface PageChangeRow {
   reverts: ChangeLogRecord | null
 }
 
-/** `09:31` — how a revert names the change it sets back; also the log table's
- *  "time" column, so there is one clock-formatting path, not two. */
-export const clockTime = (record: ChangeLogRecord): string =>
-  new Date(record.createdAt).toLocaleTimeString(undefined, {
+/** `09:31` for a raw ISO timestamp — split out from {@link clockTime} so a
+ *  surface naming a moment that isn't a record's own `createdAt` (a
+ *  transition's `at`, say) formats it the same way. */
+export const formatClockTime = (iso: string): string =>
+  new Date(iso).toLocaleTimeString(undefined, {
     hour: '2-digit',
     minute: '2-digit',
     hourCycle: 'h23',
   })
+
+/** `09:31` — how a revert names the change it sets back; also the log table's
+ *  "time" column, so there is one clock-formatting path, not two. */
+export const clockTime = (record: ChangeLogRecord): string => formatClockTime(record.createdAt)
 
 /** `flower-02`, `161`, or `automatic` for null — the library's label, unchanged. */
 const glyphName = (glyph: string | null): string => {

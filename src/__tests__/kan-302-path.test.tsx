@@ -46,6 +46,7 @@ import { createDeterministicMintId } from '@/lib/change-log/mint-id'
 import type { ModuleChange } from '@/lib/modules/ai-composition'
 import { pagesKey } from '@/lib/pages/keys'
 import { updateTitle } from '@/lib/pages/client'
+import { changeLogKey } from '@/lib/change-log/keys'
 
 // ── Shared fakes: one page, one change log ──────────────────────────────────
 
@@ -734,5 +735,33 @@ describe('KAN-302 path test harness', () => {
     })
 
     platform.mockRestore()
+  })
+
+  // KAN-96: the proposed view answers a diff through `answer.ts`, entirely
+  // outside this composer — it never calls AITerminal's own accept path. The
+  // composer's card must still pick up the settle, because the view's own
+  // `invalidateAfterAnswer` always invalidates `changeLogKey()`, which the
+  // chain-tip query (AITerminal.tsx) now sits under.
+  it("a view accept updates the composer's own card to accepted with no remount (KAN-96)", async () => {
+    fakePage.blocks = [{ id: 'b0', type: 'text', content: 'Hello world' }]
+    const record = seedEditRecord('pc1')
+    mockMessages = [{ id: 'm1', role: 'assistant', parts: [editBatch('pc1')] }]
+
+    const { queryClient } = renderPath()
+    await ready()
+
+    const card = screen.getByRole('group', { name: /proposed edit/ })
+    expect(card).toHaveAttribute('data-status', 'pending')
+
+    // The view's own accept (`acceptRecordFromLog`), simulated at the
+    // store boundary — settles the record and writes the page, exactly as
+    // `answer.ts` does, with no call into AITerminal at all.
+    record.status = 'accepted'
+    fakePage.blocks = record.after as Block[]
+    await queryClient.invalidateQueries({ queryKey: changeLogKey() })
+
+    await waitFor(() => expect(card).toHaveAttribute('data-status', 'accepted'))
+    // Same node, not a re-mounted replacement — the id survives in the DOM.
+    expect(screen.getByRole('group', { name: /proposed edit/ })).toBe(card)
   })
 })
