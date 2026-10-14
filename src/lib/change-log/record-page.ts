@@ -121,7 +121,7 @@ export function pageBlockField(
     snapshot?.find((b) => b.id === record.targetBlockId) ??
     blocks.find((b) => b.id === record.targetBlockId)
   if (block === undefined) return { page, block: null }
-  return { page, block: blockLabel(block) ?? (descriptorFor(block.type)?.label ?? block.type) }
+  return { page, block: blockLabel(block) ?? descriptorFor(block.type)?.label ?? block.type }
 }
 
 /** The "before → after" card's rows — only for a {@link BLOCK_ACTIONS} record
@@ -132,5 +132,52 @@ export function pageBlockField(
  *  already use, never a second diffing path. */
 export function recordDiffRows(record: ChangeLogRecord): ChangePreview[] | null {
   if (!BLOCK_ACTIONS.includes(record.action)) return null
-  return buildDiffRows(readBlockSnapshot(record.before) ?? [], readBlockSnapshot(record.after) ?? [])
+  return buildDiffRows(
+    readBlockSnapshot(record.before) ?? [],
+    readBlockSnapshot(record.after) ?? []
+  )
+}
+
+/** One row of the "this change" column — frame s6o3. */
+export interface ChangeTimelineRow {
+  /** "09:12" — the transition's own clock time, not the record's `createdAt`. */
+  time: string
+  /** "proposed" / "changes requested" / "revised" / "accepted" / … */
+  event: string
+  /** A short mono line under the event — a record's own short label for
+   *  `proposed`/`revised`, the actor for everything else. */
+  detail: string
+  /** Is this transition's own record the one the page is viewing? */
+  highlighted: boolean
+}
+
+/**
+ * The "this change" column: `chain`'s records, root first, each flattened
+ * into one row per `transitions` entry. A record's own first `proposed`
+ * transition reads as "revised" when `links.revisedFrom` names the record it
+ * revises — the same transition, just the word a revision earns over a fresh
+ * proposal.
+ *
+ * `detail` reuses `describeChange` (the record's own short label) for
+ * `proposed`/`revised` rather than a second description path; every other
+ * event has no stored note text to show (`changes_requested` included — the
+ * note travels live to the composer, never onto the record), so its detail
+ * is the transition's own actor.
+ */
+export function buildChangeTimeline(
+  chain: ChangeLogRecord[],
+  viewingId: string
+): ChangeTimelineRow[] {
+  return chain.flatMap((record) =>
+    record.transitions.map((transition, index) => {
+      const isRevision =
+        index === 0 && transition.status === 'proposed' && record.links.revisedFrom !== undefined
+      return {
+        time: formatClockTime(transition.at),
+        event: isRevision ? 'revised' : labelForStatus(transition.status),
+        detail: transition.status === 'proposed' ? describeChange(record, null) : transition.actor,
+        highlighted: record.id === viewingId,
+      }
+    })
+  )
 }

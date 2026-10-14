@@ -6,8 +6,9 @@
  * `describeChange`'s plain label when there is no live block to preview.
  */
 
-import { formatClockTime } from '@/lib/change-log/page-changes'
+import { describeChange, formatClockTime } from '@/lib/change-log/page-changes'
 import {
+  buildChangeTimeline,
   changeLogRecordUrl,
   pageBlockField,
   proposedByField,
@@ -140,7 +141,11 @@ describe('revertedByField', () => {
   })
 
   it('picks the newest (first) of two or more reverts', () => {
-    const newest = record({ id: 'rec-3', status: 'accepted', createdAt: '2026-09-30T11:00:00.000Z' })
+    const newest = record({
+      id: 'rec-3',
+      status: 'accepted',
+      createdAt: '2026-09-30T11:00:00.000Z',
+    })
     const older = record({ id: 'rec-2', status: 'proposed', createdAt: '2026-09-30T10:02:00.000Z' })
     expect(revertedByField([newest, older])?.recordId).toBe('rec-3')
     expect(revertedByField([newest, older])?.statusPillText).toBe('accepted')
@@ -209,5 +214,82 @@ describe('recordDiffRows', () => {
       after: { id: 'row-1', title: 'chickpeas', values: {}, shown: {} },
     })
     expect(recordDiffRows(r)).toBeNull()
+  })
+})
+
+describe('buildChangeTimeline', () => {
+  it('flattens a proposed → changes requested → revised → accepted chain, labelling the revision and highlighting the viewed record', () => {
+    const original = record({
+      id: 'rec-1',
+      status: 'changes_requested',
+      transitions: [
+        { status: 'proposed', at: '2026-09-30T09:12:00.000Z', actor: 'pond' },
+        { status: 'changes_requested', at: '2026-09-30T09:16:00.000Z', actor: 'you' },
+      ],
+    })
+    const revision = record({
+      id: 'rec-2',
+      status: 'accepted',
+      links: { revisedFrom: 'rec-1' },
+      transitions: [
+        { status: 'proposed', at: '2026-09-30T09:20:00.000Z', actor: 'pond' },
+        { status: 'accepted', at: '2026-09-30T09:31:00.000Z', actor: 'you' },
+      ],
+    })
+
+    const rows = buildChangeTimeline([original, revision], 'rec-2')
+
+    expect(rows).toEqual([
+      {
+        time: formatClockTime('2026-09-30T09:12:00.000Z'),
+        event: 'proposed',
+        detail: describeChange(original, null),
+        highlighted: false,
+      },
+      {
+        time: formatClockTime('2026-09-30T09:16:00.000Z'),
+        event: 'changes requested',
+        detail: 'you',
+        highlighted: false,
+      },
+      {
+        time: formatClockTime('2026-09-30T09:20:00.000Z'),
+        event: 'revised',
+        detail: describeChange(revision, null),
+        highlighted: true,
+      },
+      {
+        time: formatClockTime('2026-09-30T09:31:00.000Z'),
+        event: 'accepted',
+        detail: 'you',
+        highlighted: true,
+      },
+    ])
+  })
+
+  it('renders a single record with no revision as its own proposed/accepted rows', () => {
+    const r = record({
+      id: 'rec-1',
+      status: 'accepted',
+      transitions: [
+        { status: 'proposed', at: '2026-09-30T09:20:00.000Z', actor: 'pond' },
+        { status: 'accepted', at: '2026-09-30T09:31:00.000Z', actor: 'you' },
+      ],
+    })
+
+    expect(buildChangeTimeline([r], 'rec-1')).toEqual([
+      {
+        time: formatClockTime('2026-09-30T09:20:00.000Z'),
+        event: 'proposed',
+        detail: describeChange(r, null),
+        highlighted: true,
+      },
+      {
+        time: formatClockTime('2026-09-30T09:31:00.000Z'),
+        event: 'accepted',
+        detail: 'you',
+        highlighted: true,
+      },
+    ])
   })
 })
