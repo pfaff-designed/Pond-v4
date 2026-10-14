@@ -89,6 +89,44 @@ describe('getOrCreateConversation', () => {
     const result = await getOrCreateConversation(sb as never, 'user-1', 'pond-1')
     expect(result.messages).toEqual([])
   })
+
+  it('re-ids a later message that reuses an earlier message id (KAN-315)', async () => {
+    const stored = [
+      { id: 'msg-1', role: 'user', parts: [{ type: 'text', text: 'hi' }] },
+      { id: 'msg-2', role: 'assistant', parts: [{ type: 'text', text: 'first answer' }] },
+      { id: 'msg-2', role: 'assistant', parts: [{ type: 'text', text: 'second answer' }] },
+    ]
+    const chain = makeChain()
+    chain.maybeSingle.mockResolvedValue({ data: { id: 'conv-1', transcript: stored }, error: null })
+    const sb = makeSupabase(chain)
+
+    const result = await getOrCreateConversation(sb as never, 'user-1', 'pond-1')
+
+    const ids = result.messages.map((m) => m.id)
+    expect(new Set(ids).size).toBe(ids.length)
+    expect(result.messages[1].id).toBe('msg-2')
+    expect(result.messages[2].id).not.toBe('msg-2')
+  })
+
+  it('re-ids repeats inside the { messages, resolutions } envelope too', async () => {
+    const stored = {
+      messages: [
+        { id: 'msg-1', role: 'assistant', parts: [{ type: 'text', text: 'a' }] },
+        { id: 'msg-1', role: 'assistant', parts: [{ type: 'text', text: 'b' }] },
+        { id: 'msg-1', role: 'assistant', parts: [{ type: 'text', text: 'c' }] },
+      ],
+      resolutions: { changes: {}, creates: {}, skipped: {} },
+    }
+    const chain = makeChain()
+    chain.maybeSingle.mockResolvedValue({ data: { id: 'conv-1', transcript: stored }, error: null })
+    const sb = makeSupabase(chain)
+
+    const result = await getOrCreateConversation(sb as never, 'user-1', 'pond-1')
+
+    const ids = result.messages.map((m) => m.id)
+    expect(new Set(ids).size).toBe(3)
+    expect(ids[0]).toBe('msg-1')
+  })
 })
 
 describe('saveTranscript', () => {
