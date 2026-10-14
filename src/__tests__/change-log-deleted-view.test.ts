@@ -61,7 +61,7 @@ function record(over: Partial<ChangeLogRecord> = {}): ChangeLogRecord {
 
 describe('buildDeletedCards', () => {
   it("builds a card from the delete record's TrashSnapshot", () => {
-    const [card] = buildDeletedCards([record()], NOW, new Set())
+    const [card] = buildDeletedCards([record()], NOW, new Set(), 'life')
 
     expect(card.title).toBe('old quotes')
     expect(card.wasIn).toBe('creativity › kitchen renovation')
@@ -70,20 +70,20 @@ describe('buildDeletedCards', () => {
 
   it("reads yesterday's hour as `actor · yesterday HH:MM`, relative to now", () => {
     const createdAt = '2026-09-25T18:40:00.000Z'
-    const [card] = buildDeletedCards([record({ actor: 'you', createdAt })], NOW, new Set())
+    const [card] = buildDeletedCards([record({ actor: 'you', createdAt })], NOW, new Set(), 'life')
 
     expect(card.actorTime).toBe(`you · yesterday ${clockOf(createdAt)}`)
   })
 
   it('reads an older record as `actor · D mon`, no time', () => {
     const createdAt = '2026-08-12T12:00:00.000Z'
-    const [card] = buildDeletedCards([record({ createdAt })], NOW, new Set())
+    const [card] = buildDeletedCards([record({ createdAt })], NOW, new Set(), 'life')
 
     expect(card.actorTime).toBe(`you · ${shortDateOf(createdAt)}`)
   })
 
   it('offers restore and reads "restorable until" 30 days out while still in trash', () => {
-    const [card] = buildDeletedCards([record()], NOW, new Set())
+    const [card] = buildDeletedCards([record()], NOW, new Set(), 'life')
 
     expect(card.status).toEqual({
       kind: 'in_trash',
@@ -93,7 +93,7 @@ describe('buildDeletedCards', () => {
   })
 
   it('reads as emptied, offering no restore, once its page id is gone', () => {
-    const [card] = buildDeletedCards([record()], NOW, new Set(['page-1']))
+    const [card] = buildDeletedCards([record()], NOW, new Set(['page-1']), 'life')
 
     expect(card.status).toEqual({
       kind: 'emptied',
@@ -112,7 +112,7 @@ describe('buildDeletedCards', () => {
       after: snapshot(),
     })
 
-    const [card] = buildDeletedCards([deleteRecord, restoreRecord], NOW, new Set())
+    const [card] = buildDeletedCards([deleteRecord, restoreRecord], NOW, new Set(), 'life')
 
     expect(card.status).toEqual({ kind: 'restored', parentFallback: false })
     expect(card.restoreOffered).toBe(false)
@@ -128,7 +128,7 @@ describe('buildDeletedCards', () => {
       after: { ...snapshot(), parentFallback: true },
     })
 
-    const [card] = buildDeletedCards([deleteRecord, restoreRecord], NOW, new Set())
+    const [card] = buildDeletedCards([deleteRecord, restoreRecord], NOW, new Set(), 'life')
 
     expect(card.status).toEqual({ kind: 'restored', parentFallback: true })
   })
@@ -144,7 +144,7 @@ describe('buildDeletedCards', () => {
     })
     const secondDelete = record({ id: 'rec-3', createdAt: '2026-08-27T12:00:00.000Z' })
 
-    const cards = buildDeletedCards([firstDelete, firstRestore, secondDelete], NOW, new Set())
+    const cards = buildDeletedCards([firstDelete, firstRestore, secondDelete], NOW, new Set(), 'life')
     const byId = new Map(cards.map((c) => [c.record.id, c]))
 
     expect(byId.get('rec-1')?.status).toEqual({ kind: 'restored', parentFallback: false })
@@ -154,20 +154,47 @@ describe('buildDeletedCards', () => {
     })
   })
 
-  it('omits `wasIn` for a page that was already at the pond root', () => {
-    const [card] = buildDeletedCards([record({ before: snapshot({ parentPath: [] }) })], NOW, new Set())
+  it("reads `wasIn` as the caller's rootLabel for a page that was already at the pond root", () => {
+    const [card] = buildDeletedCards(
+      [record({ before: snapshot({ parentPath: [] }) })],
+      NOW,
+      new Set(),
+      'life'
+    )
 
-    expect(card.wasIn).toBeNull()
+    expect(card.wasIn).toBe('life')
+  })
+
+  it("passes the caller's rootLabel through verbatim, rather than a hard-coded word", () => {
+    const [card] = buildDeletedCards(
+      [record({ before: snapshot({ parentPath: [] }) })],
+      NOW,
+      new Set(),
+      'the garden'
+    )
+
+    expect(card.wasIn).toBe('the garden')
+  })
+
+  it('leaves a non-empty `parentPath` unaffected by rootLabel', () => {
+    const [card] = buildDeletedCards([record()], NOW, new Set(), 'the garden')
+
+    expect(card.wasIn).toBe('creativity › kitchen renovation')
   })
 
   it('renders no card for a delete record with no parseable TrashSnapshot', () => {
-    const cards = buildDeletedCards([record({ before: null })], NOW, new Set())
+    const cards = buildDeletedCards([record({ before: null })], NOW, new Set(), 'life')
 
     expect(cards).toEqual([])
   })
 
   it('ignores every record that is not a delete', () => {
-    const cards = buildDeletedCards([record({ action: 'edit', before: [], after: [] })], NOW, new Set())
+    const cards = buildDeletedCards(
+      [record({ action: 'edit', before: [], after: [] })],
+      NOW,
+      new Set(),
+      'life'
+    )
 
     expect(cards).toEqual([])
   })

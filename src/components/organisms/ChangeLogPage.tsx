@@ -23,7 +23,8 @@ import { existingPageIds, restorePage } from '@/lib/change-log/trash'
 import { personFacingMessage } from '@/lib/change-log/errors'
 import { PondControl } from '@/components/atoms/PondControl'
 import { listPages } from '@/lib/pages/client'
-import { pagesKey } from '@/lib/pages/keys'
+import { homeQueryKey, pagesKey } from '@/lib/pages/keys'
+import type { HomePage } from '@/lib/pages/home'
 
 /** s6o1's table: the five-column grid every header, day-group and record row shares. */
 const TABLE_COLUMNS = 'grid-cols-[52px_minmax(0,1fr)_150px_92px_118px]'
@@ -108,7 +109,7 @@ function DeletedRecordCard({
         <span className="font-mono text-[10.5px] text-mn-text-secondary">{card.actorTime}</span>
       </div>
       <div className="flex flex-col">
-        {card.wasIn !== null && <DeletedRow label="was in">{card.wasIn}</DeletedRow>}
+        <DeletedRow label="was in">{card.wasIn}</DeletedRow>
         {card.status.kind !== 'emptied' && <DeletedRow label="held">{card.held}</DeletedRow>}
         <DeletedRow label={card.status.kind === 'restored' ? 'restored' : 'in trash'}>
           {card.status.kind === 'in_trash' && (
@@ -240,7 +241,12 @@ export function ChangeLogPage() {
       ]
       const existing = await existingPageIds(supabase, rootIds)
       const goneIds = new Set(rootIds.filter((id) => !existing.has(id)))
-      return buildDeletedCards(trashRecords, new Date(), goneIds)
+      // The same cache `useChartProvenance` reads for its own root word — a
+      // read, not a subscription, since a rename re-renders this query's
+      // host (the pill click) just as readily as any other.
+      const rootLabel =
+        queryClient.getQueryData<HomePage | null>(homeQueryKey(pondId))?.title ?? 'life'
+      return buildDeletedCards(trashRecords, new Date(), goneIds, rootLabel)
     },
   })
 

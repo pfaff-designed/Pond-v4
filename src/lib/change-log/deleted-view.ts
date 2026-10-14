@@ -63,8 +63,10 @@ export interface DeletedCard {
   title: string
   /** `you · yesterday 18:40` / `you · 12 aug`. */
   actorTime: string
-  /** `creativity › kitchen renovation`, or null for a page that was already at the pond root. */
-  wasIn: string | null
+  /** `creativity › kitchen renovation`, or the pond root's own label (passed
+   *  in by the caller, who reads it the same way the rail/breadcrumb do) for
+   *  a page that was already at the pond root when trashed. */
+  wasIn: string
   /** `4 blocks, 1 nested page`. */
   held: string
   status: DeletedCardStatus
@@ -101,7 +103,11 @@ const groupByTarget = (records: ChangeLogRecord[]): Map<string, ChangeLogRecord[
 export function buildDeletedCards(
   records: ChangeLogRecord[],
   now: Date,
-  goneIds: ReadonlySet<string>
+  goneIds: ReadonlySet<string>,
+  /** The pond root's own label (the rail/breadcrumb's "life") — read by the
+   *  caller, never guessed here, since this module has no page tree to read
+   *  it from itself. */
+  rootLabel: string
 ): DeletedCard[] {
   const byTarget = groupByTarget(records)
 
@@ -126,7 +132,7 @@ export function buildDeletedCards(
       record,
       title: snapshot.title,
       actorTime: `${record.actor} · ${whenLabel(record.createdAt, now)}`,
-      wasIn: snapshot.parentPath.length > 0 ? snapshot.parentPath.join(' › ') : null,
+      wasIn: snapshot.parentPath.length > 0 ? snapshot.parentPath.join(' › ') : rootLabel,
       held: `${pluralCount(snapshot.blockCount, 'block')}, ${pluralCount(snapshot.nestedPageCount, 'nested page')}`,
       status,
       restoreOffered: status.kind === 'in_trash',
