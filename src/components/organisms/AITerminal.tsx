@@ -90,7 +90,7 @@ import type { ReadHtmlError, ReadHtmlResult } from '@/lib/import/types'
 import { formatBytes } from '@/components/molecules/HtmlAttachmentPill'
 import type { PageReference } from '@/lib/references/reference'
 import { ReferencesRow, type ReferenceChip } from '@/components/molecules/ReferencesRow'
-import { editorForBlock } from '@/lib/modules/text/active-editor'
+import { editorForBlock, onTextEditorRegistered } from '@/lib/modules/text/active-editor'
 import {
   onReferenceRangeDropped,
   onReferenceRangeChanged,
@@ -838,6 +838,26 @@ export function AITerminal() {
     }
     highlightedBlocksRef.current = new Set(byBlock.keys())
   }, [references])
+
+  // A block's editor remounting (navigating away and back) starts with
+  // empty plugin state, which the effect above never re-runs for since
+  // `references` itself hasn't changed. Subscribed once — `referencesRef`
+  // holds the latest `references` so this never closes over a stale array.
+  const referencesRef = useRef(references)
+  useEffect(() => {
+    referencesRef.current = references
+  }, [references])
+  useEffect(
+    () =>
+      onTextEditorRegistered((editor, blockId) => {
+        const entries = referencesRef.current.reduce<ReferenceHighlightEntry[]>((acc, ref) => {
+          if (ref.blockId === blockId && ref.range) acc.push({ key: ref.id, range: ref.range })
+          return acc
+        }, [])
+        if (entries.length > 0) editor.commands.setReferenceHighlights(entries)
+      }),
+    []
+  )
 
   // An edit that destroys a reference's anchored text drops it — the
   // extension only knows positions, so it reports here by key (the

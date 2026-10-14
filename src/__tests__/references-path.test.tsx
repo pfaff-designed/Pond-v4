@@ -239,4 +239,40 @@ describe('a reference survives a send, a removal and an edit (KAN-98 path test)'
       ])
     )
   })
+
+  it('restores a reference highlight after its page remounts (rail navigation away and back)', async () => {
+    const user = userEvent.setup()
+    mockGetPage.mockResolvedValue(PAGE)
+    mockListPages.mockResolvedValue([PAGE])
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const surface = (showPage: boolean) => (
+      <QueryClientProvider client={client}>
+        <DeletionUndoProvider>
+          {showPage && <DocumentPanel />}
+          <AITerminal />
+        </DeletionUndoProvider>
+      </QueryClientProvider>
+    )
+    const { rerender } = render(surface(true))
+    await waitComposerReady()
+    const field = await findTextBlock()
+
+    selectWord(field, 'wild')
+    await user.click(await screen.findByRole('button', { name: 'ask pond' }))
+    await flushAskFocus()
+    expect(await screen.findByText('Workshop — “wild”')).toBeInTheDocument()
+    expect(field.querySelectorAll('.mn-reference-highlight')).toHaveLength(1)
+
+    // Navigate away: the page's DocumentPanel (and its text block's editor) unmounts.
+    rerender(surface(false))
+    expect(screen.queryByRole('textbox', { name: 'text block' })).not.toBeInTheDocument()
+
+    // Navigate back: a fresh editor mounts for the same block, with no
+    // plugin state of its own — the highlight must be restored, not lost.
+    rerender(surface(true))
+    const newField = await findTextBlock()
+    await waitFor(() => expect(newField.querySelectorAll('.mn-reference-highlight')).toHaveLength(1))
+    expect(newField.querySelector('.mn-reference-highlight')?.textContent).toBe('wild')
+    expect(screen.getByText('Workshop — “wild”')).toBeInTheDocument()
+  })
 })
