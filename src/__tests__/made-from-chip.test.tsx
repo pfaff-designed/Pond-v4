@@ -54,6 +54,7 @@ const STAMP = {
   messageId: 'a1',
   question: 'what is actually blocking the renovation?',
   askedAt: '2026-09-22T07:12:00',
+  madeAt: '2026-09-22T07:13:00',
 }
 
 function renderPage(props: Record<string, unknown>) {
@@ -148,6 +149,12 @@ describe('the made-from chip', () => {
     await screen.findByDisplayValue('renovation blockers')
     expect(screen.queryByText('made from')).not.toBeInTheDocument()
     expect(screen.queryByText(/made from · show/)).not.toBeInTheDocument()
+  })
+
+  it('reads the title eyebrow as made hh:mm for an unedited made page', async () => {
+    renderPage({ kind: 'page', [MADE_FROM_THREAD_KEY]: STAMP })
+    const eyebrow = await screen.findByText('page — made 07:13')
+    expect(eyebrow).toHaveAttribute('data-part', 'title-eyebrow')
   })
 })
 
