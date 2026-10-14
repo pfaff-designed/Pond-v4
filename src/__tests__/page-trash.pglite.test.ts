@@ -353,7 +353,7 @@ async function deleteRecordFor(db: PGlite, rootId: string): Promise<string> {
 }
 
 describe('0027_page_trash — restore_page()', () => {
-  it('restores to the exact original parent and order, reindexing a later sibling', async () => {
+  it('restores to the exact original parent and order, a dense group left untouched', async () => {
     const db = await makeDb()
     await seedUser(db, USER)
     const pond = await lifePondId(db)
@@ -380,17 +380,22 @@ describe('0027_page_trash — restore_page()', () => {
       parent_id: string | null
       order: number
       deleted_at: string | null
-    }>('select id, parent_id, "order", deleted_at from public.pages where id in ($1, $2, $3)', [
+    }>('select id, parent_id, "order", deleted_at from public.pages where id in ($1, $2, $3, $4)', [
+      a,
       root,
       child,
       c,
     ])
     const byId = new Map(rows.rows.map((r) => [r.id, r]))
+    // The slot root vacated at trash time was never closed (trashing never
+    // renumbers the siblings it leaves behind), so restoring to order 1
+    // reopens that exact slot without shifting a or c.
+    expect(byId.get(a)?.order).toBe(0)
     expect(byId.get(root)?.parent_id).toBe(parent)
     expect(byId.get(root)?.order).toBe(1)
     expect(byId.get(root)?.deleted_at).toBeNull()
     expect(byId.get(child)?.deleted_at).toBeNull()
-    expect(byId.get(c)?.order).toBe(3)
+    expect(byId.get(c)?.order).toBe(2)
 
     const restoreLog = await db.query<{ action: string; after: { parentFallback: boolean } }>(
       `select action, after from public.change_log where action = 'restore' and target_page_id = $1`,
@@ -398,6 +403,46 @@ describe('0027_page_trash — restore_page()', () => {
     )
     expect(restoreLog.rows).toHaveLength(1)
     expect(restoreLog.rows[0].after.parentFallback).toBe(false)
+    await db.close()
+  })
+
+  it('restores a tied sibling to its recorded order, leaving the other ties byte-identical', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pond = await lifePondId(db)
+    const parent = await addPage(db, pond, { title: 'creativity' })
+    const a = await addPage(db, pond, { parentId: parent, title: 'a' })
+    const b = await addPage(db, pond, { parentId: parent, title: 'b' })
+    const c = await addPage(db, pond, { parentId: parent, title: 'c' })
+    // All three tie at order 0, as new pages are created today
+    // (src/lib/pages/client.ts) — the rail then sorts ties by title.
+
+    const before = await db.query<{ id: string; order: number }>(
+      'select id, "order" from public.pages where id in ($1, $2)',
+      [a, c]
+    )
+
+    await actAs(db, USER)
+    await db.query('select public.trash_page($1)', [b])
+    await db.exec('reset role;')
+    const recordId = await deleteRecordFor(db, b)
+
+    await actAs(db, USER)
+    await db.query('select public.restore_page($1)', [recordId])
+    await db.exec('reset role;')
+
+    const after = await db.query<{ id: string; title: string; order: number }>(
+      'select id, title, "order" from public.pages where id in ($1, $2, $3) order by "order", lower(title)',
+      [a, b, c]
+    )
+    expect(after.rows.map((r) => r.id)).toEqual([a, b, c])
+
+    const bRow = after.rows.find((r) => r.id === b)
+    expect(bRow?.order).toBe(0)
+    const afterSiblings = new Map(after.rows.map((r) => [r.id, r.order]))
+    const beforeSiblings = new Map(before.rows.map((r) => [r.id, r.order]))
+    expect(afterSiblings.get(a)).toBe(beforeSiblings.get(a))
+    expect(afterSiblings.get(c)).toBe(beforeSiblings.get(c))
     await db.close()
   })
 
@@ -564,7 +609,7 @@ describe('0027_page_trash — restore_page()', () => {
 })
 
 describe('0027_page_trash — restore_page() scopes siblings to the page\'s own pond', () => {
-  it('does not let another pond\'s root page force a title suffix or shift its order', async () => {
+  it('does not let another pond\'s root page force a title suffix', async () => {
     const db = await makeDb()
     await seedUser(db, USER)
     const pondA = await lifePondId(db)
@@ -602,7 +647,9 @@ describe('0027_page_trash — restore_page() scopes siblings to the page\'s own 
       'select "order" from public.pages where id = $1',
       [c]
     )
-    expect(cRow.rows[0].order).toBe(3)
+    // restore_page (0028) shifts nothing: c's own order is untouched by root's
+    // restore into the now-reopened slot at 1.
+    expect(cRow.rows[0].order).toBe(2)
 
     const pondBRows = await db.query<{ id: string; title: string; order: number }>(
       'select id, title, "order" from public.pages where id in ($1, $2)',
