@@ -67,11 +67,17 @@ describe('parseReferences', () => {
     expect(parseReferences([{ ...valid, range: null }])).toEqual([{ ...valid, range: null }])
   })
 
+  it('keeps a whole-page reference with no blockId or quoted text', () => {
+    const wholePage = { pageId: 'page-1', blockId: null, range: null, quotedText: '' }
+    expect(parseReferences([wholePage])).toEqual([wholePage])
+  })
+
   it('drops anything malformed rather than trusting it onto the wire', () => {
     expect(parseReferences(undefined)).toEqual([])
     expect(parseReferences('nope')).toEqual([])
     expect(parseReferences([{ ...valid, pageId: '' }])).toEqual([])
     expect(parseReferences([{ ...valid, blockId: undefined }])).toEqual([])
+    expect(parseReferences([{ ...valid, blockId: null }])).toEqual([])
     expect(parseReferences([{ ...valid, quotedText: '' }])).toEqual([])
     expect(parseReferences([{ ...valid, range: 'nope' }])).toEqual([])
   })

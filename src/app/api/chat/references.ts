@@ -19,9 +19,18 @@ function isPageReference(value: unknown): value is PageReference {
   if (typeof value !== 'object' || value === null) return false
   const v = value as Record<string, unknown>
   if (typeof v.pageId !== 'string' || v.pageId.length === 0) return false
+  if (v.range !== null && !isTextRange(v.range)) return false
+
+  // A whole-page reference (`range: null`) has no passage to anchor, so
+  // `blockId`/`quotedText` may be null/empty — a passage reference still
+  // requires both.
+  if (v.range === null) {
+    if (v.blockId !== null && typeof v.blockId !== 'string') return false
+    return typeof v.quotedText === 'string'
+  }
   if (typeof v.blockId !== 'string' || v.blockId.length === 0) return false
   if (typeof v.quotedText !== 'string' || v.quotedText.length === 0) return false
-  return v.range === null || isTextRange(v.range)
+  return true
 }
 
 /** Tolerant parse — a malformed entry is dropped, never trusted onto the wire. */

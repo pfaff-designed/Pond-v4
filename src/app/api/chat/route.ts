@@ -105,7 +105,7 @@ export async function POST(req: Request) {
       const note = referencesContextNote(
         references.map((r) => ({
           pageTitle: titles.get(r.pageId) ?? r.pageId,
-          blockId: r.blockId,
+          blockId: r.blockId ?? '',
           quotedText: r.quotedText,
         }))
       )

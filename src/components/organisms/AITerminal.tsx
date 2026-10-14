@@ -828,7 +828,7 @@ export function AITerminal() {
   useEffect(() => {
     const byBlock = new Map<string, ReferenceHighlightEntry[]>()
     references.forEach((ref) => {
-      if (!ref.range) return
+      if (!ref.range || ref.blockId === null) return
       const entries = byBlock.get(ref.blockId) ?? []
       entries.push({ key: ref.id, range: ref.range })
       byBlock.set(ref.blockId, entries)

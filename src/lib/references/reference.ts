@@ -10,7 +10,8 @@ export interface PageReference {
   /** Stable across re-renders, so a drop/removal/re-anchor report can key by it instead of array position. */
   id: string
   pageId: string
-  blockId: string
+  /** `null` for a whole-page reference (KAN-99's `@`-picker chip) — a passage reference always has one. */
+  blockId: string | null
   range: TextRange | null
   quotedText: string
 }
