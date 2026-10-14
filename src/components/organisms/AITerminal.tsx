@@ -3848,6 +3848,13 @@ export function AITerminal() {
             />
           )
         })}
+        {/* A tool-only answer (a card, no text, no sources) still has to show
+            what Pond read — the text and sources-only branches above cover
+            every other case, so this is the remaining one. */}
+        {message.role === 'assistant' &&
+          !text.trim() &&
+          sources.length === 0 &&
+          hasVisibleAssistantContent(message.parts) && <ReadChips read={read} />}
       </div>
     )
   }
