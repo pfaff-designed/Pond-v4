@@ -90,3 +90,25 @@ describe("the hint line draws in the machine surface's mono, scoped to that one 
     expect(field.className).toContain('font-serif')
   })
 })
+
+describe('the `pond` label over a made page\'s moved prose (6a frame 5, KAN-178)', () => {
+  it('shows `pond` and the formatted time for a block carrying `pondStampAt`', async () => {
+    const note: Block = {
+      id: 'b-made',
+      type: 'text',
+      content: 'The prose moves across word for word.',
+      pondStampAt: '2026-09-22T07:12:00',
+    }
+    renderCanvas([note])
+    await findTextBlock()
+    expect(screen.getByText('pond')).toBeInTheDocument()
+    expect(screen.getByText('07:12')).toBeInTheDocument()
+  })
+
+  it('shows neither for a bare-prose block with no `pondStampAt`', async () => {
+    const note: Block = { id: 'b-note', type: 'text', content: 'Cabinets are the only open cost.' }
+    renderCanvas([note])
+    await findTextBlock()
+    expect(screen.queryByText('pond')).not.toBeInTheDocument()
+  })
+})

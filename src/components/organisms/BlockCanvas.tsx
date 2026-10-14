@@ -96,6 +96,8 @@ import { isBlockMenuChord, isDeleteBlockChord } from '@/lib/shell-commands'
 import { slashRows, emptyBlockForType } from '@/lib/modules/palette'
 import { descriptorFor } from '@/lib/modules/registry'
 import { useBelowMd } from '@/lib/layout/use-below-md'
+import { pageEyebrowClass } from '@/components/atoms/kicker'
+import { formatThreadTime } from '@/lib/conversation/page-proposals'
 import { TEXT_BLOCK_INSET_PX } from '@/lib/layout/surface-column'
 import { PREMADE_TEMPLATES } from '@/lib/templates/premade'
 import { instantiateTemplate, type InstantiatedTemplate } from '@/lib/templates/instantiate'
@@ -2202,6 +2204,14 @@ function BlockEditor({
           className={cn('py-0.5', untouched && UNTOUCHED_HINT_CLASS)}
           style={{ paddingInline: TEXT_BLOCK_INSET_PX }}
         >
+          {block.pondStampAt && (
+            <div className="flex items-baseline gap-[10px] pb-1">
+              <span className={pageEyebrowClass}>pond</span>
+              <span className="text-[10.5px] font-medium text-mn-text-meta">
+                {formatThreadTime(block.pondStampAt)}
+              </span>
+            </div>
+          )}
           {view}
         </div>
       ) : (
