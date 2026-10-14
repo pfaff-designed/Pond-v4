@@ -147,6 +147,32 @@ describe('POST /api/chat with references', () => {
     expect(parseChatBody({ messages: [], references: refs })?.references).toEqual(refs)
   })
 
+  it('parses openPageContext, defaulting to true', () => {
+    expect(parseChatBody({ messages: [] })?.openPageContext).toBe(true)
+    expect(parseChatBody({ messages: [], openPageContext: false })?.openPageContext).toBe(false)
+    expect(parseChatBody({ messages: [], openPageContext: true })?.openPageContext).toBe(true)
+  })
+
+  it('a dismissed current-page chip (openPageContext: false) tells buildChatContext to skip the open node\'s content', async () => {
+    await post({
+      messages: [{ id: 'u1', role: 'user', parts: [{ type: 'text', text: 'what is this?' }] }],
+      nodeId: 'page-1',
+      openPageContext: false,
+    })
+    const [, , opts] = mockBuildChatContext.mock.calls[0] as [unknown, string, { nodeId?: string; skipNodeContext?: boolean }]
+    expect(opts.nodeId).toBe('page-1')
+    expect(opts.skipNodeContext).toBe(true)
+  })
+
+  it('an un-dismissed current-page chip (openPageContext: true, the default) leaves buildChatContext unchanged', async () => {
+    await post({
+      messages: [{ id: 'u1', role: 'user', parts: [{ type: 'text', text: 'what is this?' }] }],
+      nodeId: 'page-1',
+    })
+    const [, , opts] = mockBuildChatContext.mock.calls[0] as [unknown, string, { skipNodeContext?: boolean }]
+    expect(opts.skipNodeContext).toBe(false)
+  })
+
   it('resolves the page title and injects a labelled, quoted block into the system prompt', async () => {
     await post({
       messages: [{ id: 'u1', role: 'user', parts: [{ type: 'text', text: 'what does this mean?' }] }],

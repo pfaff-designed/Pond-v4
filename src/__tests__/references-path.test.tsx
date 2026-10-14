@@ -346,6 +346,20 @@ describe('the open page auto-references itself, deduped against a passage (KAN-9
     await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1))
     const [, { body }] = mockSendMessage.mock.calls[0]
     expect(body.references).toEqual([])
+    expect(body.openPageContext).toBe(false)
+  })
+
+  it('sends openPageContext: true while the current-page chip is still showing', async () => {
+    const user = userEvent.setup()
+    renderSurface()
+    await waitComposerReady()
+
+    await user.type(screen.getByRole('textbox', { name: 'Message Pond' }), 'hello?')
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1))
+    const [, { body }] = mockSendMessage.mock.calls[0]
+    expect(body.openPageContext).toBe(true)
   })
 
   it('walks the @ picker end to end: open, narrow, Escape, pick and send alongside the current page (PATH_STEPS 1-5)', async () => {

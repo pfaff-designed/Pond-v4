@@ -1763,6 +1763,9 @@ export function AITerminal() {
         resolutions: outgoing,
         research,
         references: dedupeWholePageReferences(references),
+        // KAN-99: × on the current-page chip withholds the open page's
+        // content from this and every turn until another page is opened.
+        openPageContext: dismissedCurrentRefNodeId !== nodeId,
       }
       // #97: the thread shows when each line was said ("you · 07:12"), and a
       // page made from the answer carries that moment on its made-from chip.
@@ -1808,6 +1811,7 @@ export function AITerminal() {
       clearAttachments,
       research,
       references,
+      dismissedCurrentRefNodeId,
     ]
   )
 

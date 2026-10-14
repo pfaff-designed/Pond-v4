@@ -429,6 +429,10 @@ export interface BuildChatContextOptions {
   latestUserText?: string
   /** #312: the pond whose pages the model may see. See `fetchPageSummaries`. */
   pondId: string | null
+  /** KAN-99: the person dismissed the open page's whole-page chip for this
+   *  visit — withhold its content block, even though `nodeId` itself still
+   *  rides the request (propose_changes still targets it). */
+  skipNodeContext?: boolean
 }
 
 /**
@@ -445,7 +449,7 @@ export async function buildChatContext(
   const blocks: string[] = []
   const pond = await resolvePond(sb, userId, opts.pondId)
 
-  if (opts.nodeId) {
+  if (opts.nodeId && !opts.skipNodeContext) {
     const data = await fetchNodeContext(sb, userId, opts.nodeId)
     // Current node only: expose block ids so the model can target one in propose_changes.
     if (data) blocks.push(formatNodeContext(data, { includeBlockIds: true }))

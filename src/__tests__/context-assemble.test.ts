@@ -19,11 +19,13 @@ import {
   formatNodeContext,
   formatSchemaLine,
   formatWorkspaceOutline,
+  buildChatContext,
   type NodeContextData,
   type PageSummary,
 } from '@/lib/context/assemble'
 import type { Block } from '@/lib/documents/types'
 import type { PropertySchema } from '@/lib/properties/schema'
+import { makeFakeSupabase, type Row } from './helpers/fake-supabase'
 
 // ── parseMentions ────────────────────────────────────────────────────────────
 
@@ -351,5 +353,44 @@ describe('formatWorkspaceOutline', () => {
 
   it('returns an empty string for an empty workspace', () => {
     expect(formatWorkspaceOutline([])).toBe('')
+  })
+})
+
+// ── buildChatContext: skipNodeContext (KAN-99, × on the current-page chip) ──
+
+describe('buildChatContext skipNodeContext', () => {
+  const page = (id: string, title: string): Row => ({
+    id,
+    user_id: 'user-1',
+    pond_id: 'pond-1',
+    parent_id: null,
+    type: 'page',
+    title,
+    blocks: [],
+    props: {},
+    order: 0,
+  })
+  const db = () =>
+    makeFakeSupabase([page('page-1', 'the wild places')], undefined, {
+      ponds: [{ id: 'pond-1', user_id: 'user-1', order: 0 }],
+    }) as never
+
+  it('withholds the open node\'s content block once its chip is dismissed', async () => {
+    const context = await buildChatContext(db(), 'user-1', {
+      nodeId: 'page-1',
+      pondId: 'pond-1',
+      skipNodeContext: true,
+    })
+    expect(context).not.toContain('[Current node]')
+  })
+
+  it('injects the open node\'s content block as before when not dismissed', async () => {
+    const context = await buildChatContext(db(), 'user-1', {
+      nodeId: 'page-1',
+      pondId: 'pond-1',
+      skipNodeContext: false,
+    })
+    expect(context).toContain('[Current node]')
+    expect(context).toContain('the wild places')
   })
 })

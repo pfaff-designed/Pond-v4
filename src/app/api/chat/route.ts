@@ -79,7 +79,8 @@ export async function POST(req: Request) {
   if (!parsed) {
     return Response.json({ error: 'Request body must include a messages array' }, { status: 400 })
   }
-  const { messages, nodeId, nodeType, resolutions, requestChanges, research, references } = parsed
+  const { messages, nodeId, nodeType, resolutions, requestChanges, research, references, openPageContext } =
+    parsed
   const pondId = parsed.pondId ?? null
 
   // Assemble node context (current node + @mentions) to inject into the prompt.
@@ -125,6 +126,9 @@ export async function POST(req: Request) {
       latestUserText: userTextForMentions,
       // #312: the composer reads only this pond (`s6m5`).
       pondId,
+      // KAN-99: `nodeId` still rides every other use (propose_changes targets
+      // it) — only its content block is withheld once its chip is dismissed.
+      skipNodeContext: !openPageContext,
     })
     if (context) contextBlocks.push(context)
 
