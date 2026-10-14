@@ -126,7 +126,7 @@ describe('applyResolutions', () => {
     expect(output.note).not.toMatch(/NOT applied/)
   })
 
-  it('the plain decision note warns the page may have changed and points at the latest message', () => {
+  it('the plain decision note warns the page may have changed, conditioned on the open page actually being attached', () => {
     const out = applyResolutions(proposalTranscript(), {
       ...emptyResolutions(),
       changes: { 'pc1:0': 'accepted' },
@@ -134,7 +134,9 @@ describe('applyResolutions', () => {
     const output = findPart(out, 'pc1').output as { note: string }
     expect(output.note).toMatch(/do not re-propose accepted or rejected/i)
     expect(output.note).toMatch(/page may have changed since/i)
-    expect(output.note).toMatch(/current text is attached to the latest message/i)
+    // Conditional ("if ... is attached"), not an unconditional claim — nothing is
+    // attached with no open page / no user message / an unowned page.
+    expect(output.note).toMatch(/if the open page's current text is attached to the latest message/i)
   })
 
   it('does not mutate the input messages', () => {
