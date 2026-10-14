@@ -63,9 +63,17 @@ jest.mock('@/lib/deletion/notify-bridge', () => ({
 }))
 
 const mockSendMessage = jest.fn()
+// Mutable, read fresh by `useChat` on every call — lets a test stream a
+// message in mid-test via `rerender` (KAN-96's revision-stamping test below),
+// while every other test here keeps the prior static `[]` by never touching it.
+let mockMessages: Array<{
+  id: string
+  role: string
+  parts: Array<Record<string, unknown>>
+}> = []
 jest.mock('@ai-sdk/react', () => ({
   useChat: jest.fn(() => ({
-    messages: [],
+    messages: mockMessages,
     sendMessage: mockSendMessage,
     addToolOutput: jest.fn(),
     setMessages: jest.fn(),
@@ -126,6 +134,7 @@ const smallHtmlFile = () =>
 beforeEach(() => {
   mockSendMessage.mockClear()
   mockAmbientNodeId = null
+  mockMessages = []
 })
 
 describe('AITerminal — html import path (KAN-251)', () => {
@@ -983,5 +992,62 @@ describe('AITerminal — REQUEST_CHANGES_EVENT before the thread is ready (KAN-9
         body: expect.objectContaining({ nodeId: 'page-77', nodeType: 'page' }),
       })
     )
+  })
+
+  // The revised propose_changes batch streams back with no `targetPageId` of
+  // its own (Pond's revision doesn't re-state it) — the stamping effect must
+  // still resolve it against the record's page, not the ambient '__change_log__'
+  // node the composer happened to be parked on when the note was sent.
+  it("stamps and labels a revised batch against the record's page, not the change log", async () => {
+    mockAmbientNodeId = CHANGE_LOG_NODE_ID
+    mockListPages.mockResolvedValueOnce([
+      { id: 'page-77', parentId: null, type: 'page', title: 'Recipe', blocks: [], order: 0, props: {} },
+    ])
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const { rerender } = render(
+      <QueryClientProvider client={queryClient}>
+        <AITerminal />
+      </QueryClientProvider>
+    )
+    await waitReady()
+    await waitFor(() => expect(mockListPages).toHaveBeenCalled())
+    await act(async () => {})
+
+    act(() => {
+      requestChanges({
+        toolCallId: 'tc-old',
+        note: 'please fix the heading',
+        reason: 'note',
+        targetPageId: 'page-77',
+      })
+    })
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1))
+
+    mockMessages = [
+      {
+        id: 'm-revision',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'tool-propose_changes',
+            toolCallId: 'tc-new',
+            state: 'input-available',
+            input: {
+              changes: [{ op: 'edit', blockId: 'b0', data: { type: 'text', content: 'Hello moon' } }],
+            },
+          },
+        ],
+      },
+    ]
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <AITerminal />
+      </QueryClientProvider>
+    )
+
+    await waitFor(() => expect(screen.getByText(/— Recipe/)).toBeInTheDocument())
+    expect(screen.queryByText(/— change log/)).not.toBeInTheDocument()
+
+    mockListPages.mockResolvedValue([])
   })
 })

@@ -519,6 +519,12 @@ export function AITerminal() {
   // the next propose_changes to stream in is Pond's revision of it. It lives for
   // exactly ONE turn; the effect below clears it when that turn settles.
   const pendingRevisionOf = useRef<string | null>(null)
+  // KAN-96 — a view-originated request names its own target page (sendRequestChanges'
+  // `targetPageId` param); the revising batch must stamp against THAT page, not
+  // whatever node happens to be open (e.g. the change log page itself). Lives
+  // alongside `pendingRevisionOf` for the same one turn; a thread-originated
+  // request never sets it, so the stamping effect falls back to the open node.
+  const pendingRevisionTargetPageId = useRef<string | null>(null)
   // KAN-302 — a settled card's "−"/"+" text must not keep tracking the live
   // page: once a batch's status leaves `pending`, its preview is frozen here
   // so a later edit doesn't rewrite an already-accepted card's diff. This is
@@ -1532,19 +1538,34 @@ export function AITerminal() {
       // #98 — the first batch to stream in after a request-changes note is
       // Pond's revision of that card. Write-once in the store.
       const revising = pendingRevisionOf.current
-      if (revising && revising !== part.toolCallId && !revisions[part.toolCallId]) {
+      const isRevisionOfThisPart =
+        !!revising && revising !== part.toolCallId && !revisions[part.toolCallId]
+      // KAN-96 — a view-originated revision's own target page: wait for
+      // `allPages` to load before resolving against it (same reasoning as
+      // `resolveStampTarget`'s own `pagesLoaded` gate) rather than clearing the
+      // pending refs and falling back to the ambient node for this one run.
+      const revisionTargetPageId = isRevisionOfThisPart
+        ? pendingRevisionTargetPageId.current
+        : null
+      if (revisionTargetPageId && !pagesLoaded) continue
+      if (isRevisionOfThisPart) {
         dispatch({ kind: 'noteRevision', id: part.toolCallId, revisedFrom: revising })
         pendingRevisionOf.current = null
+        pendingRevisionTargetPageId.current = null
       }
       const resolved = resolveStampTarget({
         targetPageId: part.input?.targetPageId,
         pages: allPages,
         pagesLoaded,
-        openNodeId: nodeId,
+        openNodeId: revisionTargetPageId ?? nodeId,
         // KAN-302: the live label, not the stale `nodeName` URL param — same
         // fix as `contextLabel` above, since this write-once stamp's name IS
-        // contextLabel's stand-in for the open page at stamp time.
-        openNodeName: contextLabel,
+        // contextLabel's stand-in for the open page at stamp time. KAN-96: a
+        // revision's own target page reads its live title off `allPages`
+        // instead, so the stamp never lands on the change log it was sent from.
+        openNodeName: revisionTargetPageId
+          ? allPages.find((p) => p.id === revisionTargetPageId)?.title ?? null
+          : contextLabel,
       })
       // 'defer' → stamp on a later run (pages still loading); null → leave
       // unstamped (no safe target; accept skips). The reducer's stampTarget is
@@ -1563,7 +1584,10 @@ export function AITerminal() {
   // when the turn settles, it goes. Declared AFTER the stamping effect above so
   // that effect still gets the ref on the commit the batch lands in.
   useEffect(() => {
-    if (status === 'ready') pendingRevisionOf.current = null
+    if (status === 'ready') {
+      pendingRevisionOf.current = null
+      pendingRevisionTargetPageId.current = null
+    }
   }, [status])
 
   // ── open_change_log navigates the moment it streams in (KAN-94) ───────────
@@ -2166,6 +2190,9 @@ export function AITerminal() {
       // revised diff lands there, not on whatever node happens to be open —
       // e.g. the change log page itself. A thread-originated card omits it
       // and keeps riding the ambient nodeId, since it's already on its page.
+      // The stamping effect reads this same page id when it stamps the
+      // revised batch, so the card never reads 'revised edit — change log'.
+      pendingRevisionTargetPageId.current = targetPageId ?? null
       const body = {
         nodeId: targetPageId ?? nodeId,
         nodeType: targetPageId ? 'page' : nodeType,
