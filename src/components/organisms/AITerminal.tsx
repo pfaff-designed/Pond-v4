@@ -744,6 +744,15 @@ export function AITerminal() {
     message: (typeof messages)[number]
     messageIndex: number
   } | null>(null)
+  // `isStreaming` only flips once `sendMessage()`/`regenerate()` itself runs; a
+  // pending `flushPendingPageSave` defers that call, so a second send or ask-again
+  // click in that window re-enters `sendText`/`handleAskAgain` while `isStreaming`
+  // is still false and queues a second overlapping request on the same `Chat`
+  // instance (KAN-315) — the SDK has no serialization across requests, so the two
+  // answers' writes collide on `state.messages` and repeat an id. One gate is
+  // shared by both dispatch paths: it closes the instant either's click passes,
+  // and opens again only once THAT request actually runs (or its flush rejects).
+  const dispatchGate = useRef(false)
   useEffect(() => {
     if (!error) {
       droppedForError.current = null
@@ -1760,7 +1769,10 @@ export function AITerminal() {
   // and clears the input.
   const sendText = useCallback(
     (text: string) => {
-      if (!isReady) return
+      // The gate rules out a second send overlapping this one's still-pending
+      // page-save flush, or a concurrent `handleAskAgain` dispatch (KAN-315).
+      if (!isReady || isStreaming || dispatchGate.current) return
+      dispatchGate.current = true
       const advanced = nextLifecycle(text)
       dispatch({ kind: 'advanceLifecycle', lifecycle: advanced })
       const outgoing: ConversationResolutions = isLifecycleActive(advanced)
@@ -1830,6 +1842,7 @@ export function AITerminal() {
       setResearch(false)
 
       const dispatchSend = () => {
+        dispatchGate.current = false
         if (outgoingFiles.length > 0) {
           sendMessage(
             finalText
@@ -1845,12 +1858,20 @@ export function AITerminal() {
       // in its save debounce — flush it to the DB before this turn's context
       // read, so Pond never sees the page as it stood before the last keystroke.
       // `undefined` means nothing was pending, so the send stays in this tick.
+      // A rejected flush must still reopen the gate (KAN-315) — otherwise a
+      // failed save latches sending closed for the rest of the session.
       const pendingFlush = flushPendingPageSave(nodeId)
-      if (pendingFlush) void pendingFlush.then(dispatchSend)
-      else dispatchSend()
+      if (pendingFlush) {
+        void pendingFlush.then(dispatchSend, () => {
+          dispatchGate.current = false
+        })
+      } else {
+        dispatchSend()
+      }
     },
     [
       isReady,
+      isStreaming,
       nextLifecycle,
       resolutions,
       sendMessage,
@@ -2974,14 +2995,17 @@ export function AITerminal() {
   // thread at once, and a failed run must be able to put it back verbatim.
   const handleAskAgain = (messageIndex: number) => {
     // Mid-switch the thread on screen is the previous pond's: regenerating would
-    // resend into it with the new pond's context (KAN-283).
-    if (!isReady || isStreaming) return
+    // resend into it with the new pond's context (KAN-283). The gate rules out a
+    // second click overlapping the first's still-pending page-save flush, or a
+    // concurrent `sendText` dispatch, (KAN-315).
+    if (!isReady || isStreaming || dispatchGate.current) return
     const message = messages[messageIndex]
     // regenerate() acts on the LAST message, so only an answer that is the last
     // message can be re-asked (a thread ending on a user line would resend that
     // line instead); the error row passes the trailing user line, which
     // regenerate() just resends.
     if (message?.role === 'assistant' && messageIndex !== messages.length - 1) return
+    dispatchGate.current = true
     pendingRegenerate.current = message?.role === 'assistant' ? { message, messageIndex } : null
     // The question was sent (and its lifecycle advanced) on the original turn, so
     // the phase rides along as it stands; the body is otherwise sendText's.
@@ -2989,13 +3013,22 @@ export function AITerminal() {
       ? { ...resolutions, lifecycle }
       : { ...resolutions, lifecycle: undefined }
     clearError?.()
-    const dispatchRegenerate = () =>
+    const dispatchRegenerate = () => {
+      dispatchGate.current = false
       regenerate({ body: { nodeId, nodeType, pondId, resolutions: outgoing, research } })
+    }
     // KAN-302: same flush as sendText — a re-ask must see the page as it
     // stands now, not as it stood before an edit still in its save debounce.
+    // A rejected flush must still reopen the gate (KAN-315) — otherwise a
+    // failed save latches ask again closed for the rest of the session.
     const pendingFlush = flushPendingPageSave(nodeId)
-    if (pendingFlush) void pendingFlush.then(dispatchRegenerate)
-    else dispatchRegenerate()
+    if (pendingFlush) {
+      void pendingFlush.then(dispatchRegenerate, () => {
+        dispatchGate.current = false
+      })
+    } else {
+      dispatchRegenerate()
+    }
     setResearch(false)
   }
 

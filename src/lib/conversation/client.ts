@@ -99,16 +99,43 @@ function deserializeTranscript(transcript: unknown): {
   resolutions: ConversationResolutions
 } {
   if (Array.isArray(transcript)) {
-    return { messages: transcript as UIMessage[], resolutions: emptyResolutions() }
+    return {
+      messages: normalizeDuplicateMessageIds(transcript as UIMessage[]),
+      resolutions: emptyResolutions(),
+    }
   }
   if (typeof transcript === 'object' && transcript !== null) {
     const t = transcript as { messages?: unknown; resolutions?: unknown }
     if (Array.isArray(t.messages)) {
       return {
-        messages: t.messages as UIMessage[],
+        messages: normalizeDuplicateMessageIds(t.messages as UIMessage[]),
         resolutions: parseResolutions(t.resolutions),
       }
     }
   }
   return { messages: [], resolutions: emptyResolutions() }
+}
+
+/**
+ * The first occurrence of a repeated id keeps it; only later repeats are
+ * renamed. Renaming is deterministic (derived from array position) and
+ * idempotent — re-running this on an already-normalized transcript is a
+ * no-op.
+ */
+function normalizeDuplicateMessageIds(messages: UIMessage[]): UIMessage[] {
+  const seen = new Set<string>()
+  return messages.map((message) => {
+    if (!seen.has(message.id)) {
+      seen.add(message.id)
+      return message
+    }
+    let occurrence = 1
+    let id = `${message.id}-dup${occurrence}`
+    while (seen.has(id)) {
+      occurrence += 1
+      id = `${message.id}-dup${occurrence}`
+    }
+    seen.add(id)
+    return { ...message, id }
+  })
 }
