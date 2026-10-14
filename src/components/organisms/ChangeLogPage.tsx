@@ -9,6 +9,7 @@
  */
 
 import { useMemo, useState, type ReactNode } from 'react'
+import { useRouter } from 'next/navigation'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { usePondId } from '@/lib/pond/context'
@@ -17,6 +18,7 @@ import { PAGE_COLUMN_PAD_PX, useSurfaceColumn } from '@/lib/layout/surface-colum
 import { countWaiting, listRecords } from '@/lib/change-log/store'
 import { changeLogKey } from '@/lib/change-log/keys'
 import { buildLogRows } from '@/lib/change-log/log-page'
+import { changeLogRecordUrl } from '@/lib/change-log/record-page'
 import { clockTime } from '@/lib/change-log/page-changes'
 import { labelForStatus, WAITING_STATUSES } from '@/lib/change-log/status'
 import { buildDeletedCards, type DeletedCard } from '@/lib/change-log/deleted-view'
@@ -165,6 +167,7 @@ function DeletedRecordCard({
 
 export function ChangeLogPage() {
   const getSupabase = useLazySupabase()
+  const router = useRouter()
   const pondId = usePondId()
   const pondName = usePondName()
   const queryClient = useQueryClient()
@@ -449,9 +452,11 @@ export function ChangeLogPage() {
                       {group.label}
                     </div>
                     {group.rows.map((row) => (
-                      <div
+                      <button
                         key={row.record.id}
-                        className={`grid ${TABLE_COLUMNS} min-h-[38px] items-center gap-x-[14px] border-b border-mn-hair px-[10px] text-[13.5px]`}
+                        type="button"
+                        onClick={() => router.push(changeLogRecordUrl(row.record.id))}
+                        className={`grid ${TABLE_COLUMNS} min-h-[38px] w-full items-center gap-x-[14px] border-b border-mn-hair px-[10px] text-left text-[13.5px]`}
                       >
                         <span className="font-mono text-[10.5px] text-mn-text-secondary">
                           {clockTime(row.record)}
@@ -474,7 +479,7 @@ export function ChangeLogPage() {
                             {labelForStatus(row.status.text)}
                           </span>
                         )}
-                      </div>
+                      </button>
                     ))}
                   </div>
                 ))}
@@ -517,7 +522,15 @@ export function ChangeLogPage() {
                     <div
                       key={card.record.id}
                       data-testid={`change-log-proposed-card-${card.record.id}`}
-                      className="flex flex-col gap-[10px] rounded-mn-card bg-mn-card px-4 py-3.5 font-mono shadow-mn-card"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => router.push(changeLogRecordUrl(card.record.id))}
+                      onKeyDown={(e) => {
+                        if (e.key !== 'Enter' && e.key !== ' ') return
+                        e.preventDefault()
+                        router.push(changeLogRecordUrl(card.record.id))
+                      }}
+                      className="flex cursor-pointer flex-col gap-[10px] rounded-mn-card bg-mn-card px-4 py-3.5 font-mono shadow-mn-card"
                     >
                       <div className="flex items-baseline gap-[8px]">
                         <span className="text-[11px] text-mn-text">{card.pageName}</span>
@@ -548,11 +561,18 @@ export function ChangeLogPage() {
                           {card.reasonLine}
                         </span>
                       )}
-                      <ChangeLogAnswerActions
-                        record={card.record}
-                        pondId={pondId}
-                        onError={setAnswerError}
-                      />
+                      {/* The card's own click/Enter/Space opens the record; answering it
+                        (including typing a space into the note box) must not. */}
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => e.stopPropagation()}
+                      >
+                        <ChangeLogAnswerActions
+                          record={card.record}
+                          pondId={pondId}
+                          onError={setAnswerError}
+                        />
+                      </div>
                     </div>
                   )
                 })}

@@ -62,7 +62,13 @@ describe('PageChangesSection — an undo/redo step', () => {
     const rows = buildPageChanges([redo, undo, original])
 
     render(
-      <PageChangesSection rows={rows} onRevert={jest.fn()} onAccept={jest.fn()} onReject={jest.fn()} />
+      <PageChangesSection
+        rows={rows}
+        onRevert={jest.fn()}
+        onAccept={jest.fn()}
+        onReject={jest.fn()}
+        onOpenRecord={jest.fn()}
+      />
     )
 
     expect(screen.getAllByRole('listitem')).toHaveLength(3)
@@ -101,7 +107,13 @@ describe('PageChangesSection — an undo/redo step', () => {
     const rows = buildPageChanges([undoOfRedo, redo, undo, original])
 
     render(
-      <PageChangesSection rows={rows} onRevert={jest.fn()} onAccept={jest.fn()} onReject={jest.fn()} />
+      <PageChangesSection
+        rows={rows}
+        onRevert={jest.fn()}
+        onAccept={jest.fn()}
+        onReject={jest.fn()}
+        onOpenRecord={jest.fn()}
+      />
     )
 
     expect(screen.getByText('mark → flower-02')).toBeInTheDocument()
@@ -126,7 +138,13 @@ describe('PageChangesSection — an undo/redo step', () => {
     const rows = buildPageChanges([redo, undo])
 
     render(
-      <PageChangesSection rows={rows} onRevert={jest.fn()} onAccept={jest.fn()} onReject={jest.fn()} />
+      <PageChangesSection
+        rows={rows}
+        onRevert={jest.fn()}
+        onAccept={jest.fn()}
+        onReject={jest.fn()}
+        onOpenRecord={jest.fn()}
+      />
     )
 
     expect(screen.getByText('undo')).toBeInTheDocument()

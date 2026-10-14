@@ -40,6 +40,7 @@ const meta = {
     onRevert: fn(),
     onAccept: fn(),
     onReject: fn(),
+    onOpenRecord: fn(),
   },
 } satisfies Meta<typeof PageChangesSection>
 

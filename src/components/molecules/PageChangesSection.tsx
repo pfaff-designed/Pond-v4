@@ -34,6 +34,8 @@ export interface PageChangesSectionProps {
   /** Answer a proposed revert. */
   onAccept: (recordId: string) => void
   onReject: (recordId: string) => void
+  /** Open the record's own page (KAN-152). */
+  onOpenRecord: (recordId: string) => void
   /** The record a write is in flight for — its controls go quiet. */
   busyId?: string | null
   /** Shown once, above the rows, when something failed. */
@@ -76,6 +78,7 @@ export function PageChangesSection({
   onRevert,
   onAccept,
   onReject,
+  onOpenRecord,
   busyId = null,
   error = null,
   className,
@@ -110,14 +113,29 @@ export function PageChangesSection({
           const outdated = record.action === 'revert' && record.status === 'outdated'
           return (
             <li key={record.id} className="flex flex-wrap items-center gap-3 py-2">
-              <span className="w-10 shrink-0 font-mono text-[0.65rem] text-mn-text-secondary">
-                {timeOf(record.createdAt)}
-              </span>
-              <span className="min-w-0 flex-1 truncate text-sm">{label}</span>
-              <span className="shrink-0 font-mono text-[0.65rem] text-mn-text-secondary">
-                {record.actor}
-              </span>
-              <Status status={record.status} />
+              {/* The row's own identity (not its controls) opens the record — a
+                sibling, not a wrapper, so revert/accept/reject stay their own
+                click/keyboard targets rather than needing to stop propagation. */}
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => onOpenRecord(record.id)}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter' && e.key !== ' ') return
+                  e.preventDefault()
+                  onOpenRecord(record.id)
+                }}
+                className="flex min-w-0 flex-1 cursor-pointer flex-wrap items-center gap-3"
+              >
+                <span className="w-10 shrink-0 font-mono text-[0.65rem] text-mn-text-secondary">
+                  {timeOf(record.createdAt)}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-sm">{label}</span>
+                <span className="shrink-0 font-mono text-[0.65rem] text-mn-text-secondary">
+                  {record.actor}
+                </span>
+                <Status status={record.status} />
+              </div>
 
               {answerable && (
                 // The same control row every other proposal uses. It was extracted

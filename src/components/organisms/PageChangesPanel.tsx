@@ -32,6 +32,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { usePondId } from '@/lib/pond/context'
@@ -41,6 +42,7 @@ import { listRecords, advanceStatus } from '@/lib/change-log/store'
 import { acceptRevert, proposeRevert } from '@/lib/change-log/revert'
 import { buildPageChanges } from '@/lib/change-log/page-changes'
 import { changeLogKey } from '@/lib/change-log/keys'
+import { changeLogRecordUrl } from '@/lib/change-log/record-page'
 import { personFacingMessage } from '@/lib/change-log/errors'
 import { PageChangesSection } from '@/components/molecules/PageChangesSection'
 import type { ChangeLogRecord } from '@/lib/change-log/types'
@@ -58,6 +60,7 @@ export function pageChangesKey(pondId: string | null, pageId: string | undefined
 
 export function PageChangesPanel({ pageId, className }: PageChangesPanelProps) {
   const getSupabase = useLazySupabase()
+  const router = useRouter()
   const pondId = usePondId()
   const queryClient = useQueryClient()
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -198,6 +201,7 @@ export function PageChangesPanel({ pageId, className }: PageChangesPanelProps) {
       onRevert={onRevert}
       onAccept={onAccept}
       onReject={onReject}
+      onOpenRecord={(recordId) => router.push(changeLogRecordUrl(recordId))}
       busyId={busyId}
       error={error}
       className={className}

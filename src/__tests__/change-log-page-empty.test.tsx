@@ -12,6 +12,10 @@ jest.mock('@/lib/pond/context', () => ({
   usePondId: () => 'pond-1',
 }))
 
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({ push: jest.fn() }),
+}))
+
 jest.mock('@/lib/pond/name', () => ({
   usePondName: () => 'life',
 }))
