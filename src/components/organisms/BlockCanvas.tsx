@@ -66,7 +66,15 @@ import {
 } from '@/components/molecules/PondMenu'
 import { AddBlockButton } from '@/components/molecules/AddBlockButton'
 import { BlockWidthRow } from '@/components/molecules/BlockWidthRow'
-import { BLOCK_ROW_GAP_PX, blockWidthStyle, layoutRows, rowHolds } from '@/lib/modules/layout-rows'
+import {
+  BLOCK_ROW_GAP_PX,
+  blockWidthStyle,
+  classifyDropZone,
+  layoutRows,
+  planBesideDrop,
+  rowHolds,
+  type DropZone,
+} from '@/lib/modules/layout-rows'
 import { SlashLineContext, type SlashLineAt } from '@/lib/modules/text/slash-line'
 import { useSlashLine } from '@/components/organisms/use-slash-line'
 import { focusTextBlock, hasTextBeforeCaret } from '@/lib/modules/text/focus'
@@ -189,6 +197,28 @@ function hiddenCanvasListStyle(listStyle: CSSProperties | undefined): CSSPropert
     height: 0,
     overflow: 'hidden',
     pointerEvents: 'none',
+  }
+}
+
+/**
+ * The drop line's geometry, off `PondBlock.dc.html`'s `dropBar` (6x): beside
+ * sits 9px into the 16px gap off the block's own near edge, full height; an
+ * own-line drop sits 9px off the top/bottom edge, spanning `span` — the full
+ * content column, not just this block's width — when the caller supplied one.
+ */
+function dropBarGeometry(dropZone: {
+  zone: DropZone
+  span?: { left: number; width: number }
+}): CSSProperties {
+  switch (dropZone.zone) {
+    case 'left':
+      return { left: -9, top: 0, bottom: 0, width: 2 }
+    case 'right':
+      return { right: -9, top: 0, bottom: 0, width: 2 }
+    case 'above':
+      return { top: -9, height: 2, left: dropZone.span?.left ?? 0, width: dropZone.span?.width }
+    case 'below':
+      return { bottom: -9, height: 2, left: dropZone.span?.left ?? 0, width: dropZone.span?.width }
   }
 }
 
@@ -370,6 +400,17 @@ export function BlockCanvas({
   }, [openTemplatesFor, pageId, openSlashMenuAt])
   // Which block index is mid-drag (null = no drag).
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null)
+  // The drop line hovered during a drag: which block it's over, which edge
+  // (classifyDropZone), and — for an own-line (above/below) drop only — the
+  // span to stretch it across the FULL content column rather than just this
+  // one block's own width (6x: `PondBlock.dc.html`'s `dropSpan`), measured
+  // relative to the hovered block's own rect so it renders with no DOM
+  // ancestor but that block's root.
+  const [dropIndicator, setDropIndicator] = useState<{
+    index: number
+    zone: DropZone
+    span?: { left: number; width: number }
+  } | null>(null)
   // The source picker: which `/` pick summoned it, and where its view
   // lands. Table, gallery and chart all open the same picker.
   const [sourcePicker, setSourcePicker] = useState<{
@@ -387,6 +428,24 @@ export function BlockCanvas({
   // instead: this slot, rendered beside the outline at the board's own
   // 250px/gap-16 position.
   const previewAnchorRef = useRef<HTMLDivElement>(null)
+  // An empty, invisible node to hand the browser as the drag image (below) —
+  // without it, the browser draws its own full-width snapshot of the dragged
+  // row, which would compete with the lifted copy this surface draws itself.
+  // Appended to the body (not this tree) so it has a layout box even while
+  // `canvasRef` is collapsed (previewing, above).
+  const dragImageRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    const el = document.createElement('div')
+    el.style.width = '1px'
+    el.style.height = '1px'
+    el.style.opacity = '0'
+    document.body.appendChild(el)
+    dragImageRef.current = el
+    return () => {
+      el.remove()
+      dragImageRef.current = null
+    }
+  }, [])
   // A page with nothing on it yet opens the menu on its templates (6f). Read
   // here (not just below, where it's used again) because the pages query's
   // `enabled` needs it: a non-blank `/` has no sibling ranking to look up, so
@@ -469,14 +528,17 @@ export function BlockCanvas({
   const [menuOpenAt, setMenuOpenAt] = useState<number | null>(null)
   useBlockLinkArrival(blocks)
 
-  // The width row's preview (6x): a page-local, transient width for whichever
-  // block's menu is open — never written to `blocks`. Cleared at every site
-  // that moves `menuOpenAt` (Esc and any other menu-close path all route
-  // through `onOpenChange` to `handleMenuOpenChange` below), so a stale
-  // preview can never survive the menu it came from.
-  const [previewWidth, setPreviewWidth] = useState<{ blockId: string; width: BlockWidth } | null>(
-    null
-  )
+  // The width row's preview (6x): page-local, transient widths that never
+  // write to `blocks`. The width row sets one entry (whichever block's menu
+  // is open); a beside drag-over sets one entry per block `planBesideDrop`
+  // changes, so a target row already shows the width it will take before the
+  // drop lands, not just the dragged block's own. Cleared at every site that
+  // moves `menuOpenAt` (Esc and any other menu-close path all route through
+  // `onOpenChange` to `handleMenuOpenChange` below) and at every drag exit, so
+  // a stale preview can never survive the menu or drag it came from.
+  const [previewWidth, setPreviewWidth] = useState<
+    { blockId: string; width: BlockWidth }[] | null
+  >(null)
 
   // 6f frame 3: the template under preview, as flat outlines over the blank
   // page — transient, never in `blocks`, the store or the change log.
@@ -964,6 +1026,61 @@ export function BlockCanvas({
     }
   }
 
+  /**
+   * Writes `after` directly — bypassing the debounced save — and logs it as
+   * one own-edit record, remembered with `sessionUndo`, so the write is ONE
+   * ⌘Z-undoable change (KAN-93's template-apply pattern, shared here with
+   * drag-drop's commits, KAN-247, so neither grows a second write path). The
+   * `['page', pageId]` cache carries `after` optimistically first, so
+   * `use-page-draft.ts`'s same-page "adopt" branch folds it into the open
+   * draft's baseline before the caller's own debounced save can schedule
+   * anything against stale blocks. Rolls the cache back to `before` and
+   * returns `false` only if `saveBlocks` itself fails; a failed `appendOwnEdit`
+   * does not roll back — the write already landed, only its own-edit log
+   * didn't, same as `applyTemplateInPlaceUnguarded` always treated it.
+   */
+  const persistBlocksAsOwnEdit = async (before: Block[], after: Block[]): Promise<boolean> => {
+    await flushPendingPageSave(pageId)
+    const supabase = getSupabase()
+    queryClient.setQueryData<PondPage | null>(['page', pageId], (prev) =>
+      prev ? { ...prev, blocks: after } : prev
+    )
+    try {
+      await saveBlocks(supabase, pageId, after)
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (user) {
+        try {
+          const record = await appendOwnEdit(supabase, {
+            userId: user.id,
+            pondId,
+            action: 'edit',
+            targetPageId: pageId,
+            before,
+            after,
+          })
+          if (pondId) sessionUndo.remember({ pondId, recordIds: [record.id] })
+          await queryClient.invalidateQueries({ queryKey: changeLogKey() })
+        } catch (err) {
+          console.error('[change-log] edit not logged', pageId, err)
+        }
+      }
+    } catch (err) {
+      console.error('Failed to save the blocks', pageId, err)
+      queryClient.setQueryData<PondPage | null>(['page', pageId], (prev) =>
+        prev ? { ...prev, blocks: before } : prev
+      )
+      return false
+    }
+    // Before `onChange`: the caller's own debounced save (if any) must see this
+    // write as its baseline, or it fires again with a stale `before` and logs a
+    // second own-edit record for the same write.
+    onBlocksPersisted?.(after)
+    onChange(after)
+    return true
+  }
+
   const applyTemplateInPlaceUnguarded = async (pick: TemplatePick, target: SlashTarget) => {
     previewTokenRef.current++
     const applyPick = await applyPickFor(pick)
@@ -997,45 +1114,12 @@ export function BlockCanvas({
           )
         : blocksRef.current
     // A fast `/` + pick can still have the slash keystroke's own debounced save
-    // pending in `use-page-draft.ts`. That save's cache write only happens once
-    // the draft is `saved` (it refuses to adopt over unsaved local edits) — so
-    // flushing it now, before this write, lets it land and settle `saved` first.
-    // Otherwise our cache write below is silently ignored by the draft (still
-    // unsaved), and the slash save later fires AFTER us with a stale baseline,
-    // double-logging this same apply.
-    await flushPendingPageSave(pageId)
+    // pending in `use-page-draft.ts` — `persistBlocksAsOwnEdit` flushes it
+    // before writing, so the slash save can't land after us with a stale
+    // baseline and double-log this same apply. Shared with drag-drop's
+    // commits (KAN-247), so this is the only direct-write path.
     const supabase = getSupabase()
-    queryClient.setQueryData<PondPage | null>(['page', pageId], (prev) =>
-      prev ? { ...prev, blocks: applied.blocks } : prev
-    )
-    try {
-      await saveBlocks(supabase, pageId, applied.blocks)
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (user) {
-        try {
-          const record = await appendOwnEdit(supabase, {
-            userId: user.id,
-            pondId,
-            action: 'edit',
-            targetPageId: pageId,
-            before,
-            after: applied.blocks,
-          })
-          if (pondId) sessionUndo.remember({ pondId, recordIds: [record.id] })
-          await queryClient.invalidateQueries({ queryKey: changeLogKey() })
-        } catch (err) {
-          console.error('[change-log] template apply not logged', pageId, err)
-        }
-      }
-    } catch (err) {
-      console.error('Failed to apply the template blocks', pageId, err)
-      queryClient.setQueryData<PondPage | null>(['page', pageId], (prev) =>
-        prev ? { ...prev, blocks: before } : prev
-      )
-      return
-    }
+    if (!(await persistBlocksAsOwnEdit(before, applied.blocks))) return
     // KAN-138: applying a `yours` template retires its "just saved" lead — but
     // only once the blocks write above actually landed; a failed apply keeps
     // the lead so the person's retry still sees it first.
@@ -1060,11 +1144,9 @@ export function BlockCanvas({
     } catch (err) {
       console.error('Failed to write the template props', err)
     }
-    // Before `onChange`: the caller's own debounced save (if any) must see this
-    // write as its baseline, or it fires again with a stale `before` and logs a
-    // second own-edit record for the same apply.
-    onBlocksPersisted?.(applied.blocks)
-    onChange(applied.blocks)
+    // `onBlocksPersisted`/`onChange` already ran inside `persistBlocksAsOwnEdit`,
+    // ahead of the schema/props writes above — this apply's own blocks are
+    // already the caller's baseline by the time those (independent) writes land.
     focusPageTitle()
   }
 
@@ -1099,23 +1181,174 @@ export function BlockCanvas({
   }
 
   // Rows are derived, never stored (6x): consecutive blocks whose widths add up
-  // to full or less share one row, in array order — so the flattened render
-  // below reproduces `blocks`' own order, and each block's position in it is
-  // its real index into `blocks`. Packing (and the sizing below) reads the
-  // PREVIEWED width for whichever one block has it, so hovering a width
-  // reflows the row live; rendering still passes the real `blocks[i]` to
-  // `renderBlockEditor`, so the previewed block's own content and its width
-  // row's filled cell are never touched by the preview.
+  // to full or less share one row, in array order. Packing (and the sizing
+  // below) reads the PREVIEWED width for whichever one block has it, so
+  // hovering a width reflows the row live; rendering still passes the real
+  // block (looked up by id, see `renderList` below) to `renderBlockEditor`, so
+  // the previewed block's own content and its width row's filled cell are
+  // never touched by the preview.
   const blocksForLayout = useMemo(
     () =>
       previewWidth
-        ? blocks.map((b) =>
-            b.id === previewWidth.blockId ? { ...b, width: previewWidth.width } : b
-          )
+        ? blocks.map((b) => {
+            const preview = previewWidth.find((p) => p.blockId === b.id)
+            return preview ? { ...b, width: preview.width } : b
+          })
         : blocks,
     [blocks, previewWidth]
   )
-  const blockRows = useMemo(() => layoutRows(blocksForLayout), [blocksForLayout])
+
+  // The row a beside hover would actually land in, from the SAME planner the
+  // commit uses (`planBesideDrop`) — not `blocksForLayout`'s per-block preview,
+  // which carries widths only, never a reorder. `null` off a drag, off an
+  // own-line hover, or wherever the planner itself returns `null` (a full row,
+  // or a repack that would split the planned row apart).
+  const besidePlan = useMemo(() => {
+    if (draggingIndex === null || !dropIndicator) return null
+    if (dropIndicator.zone !== 'left' && dropIndicator.zone !== 'right') return null
+    const target = blocks[dropIndicator.index]
+    if (!target) return null
+    return planBesideDrop(blocks, draggingIndex, target.id, dropIndicator.zone)
+  }, [blocks, draggingIndex, dropIndicator])
+
+  // The render order while a beside drop is planned (6x frame 3): the dragged
+  // block renders TWICE — a `::ghost`-suffixed id at the planned slot, at the
+  // planned width (the lifted copy), and the real id reinserted at its OLD
+  // slot, at its OLD width (the origin — opacity-40 only, never the preview
+  // width; applying the preview to the real block was the "shrinks the old
+  // place" bug). `besidePlan` already preserves every other block's relative
+  // order, so the ghost lands exactly where `besidePlan` already has it just
+  // by tagging its id. The origin's old slot is found by locating its old
+  // RIGHT neighbour's id in that same array and inserting right before it (or
+  // at the end with no neighbour) — but that slot can fall inside the row the
+  // ghost just joined (the neighbour is itself a row-mate), which would split
+  // the planned row apart in `layoutRows`' packing; when it does, the origin
+  // goes after the row's last member instead, so the planned row always
+  // renders as one unbroken run. Off a drag, or off anything but a beside
+  // hover, this is just `blocksForLayout`, one entry per block.
+  const renderList = useMemo<{ id: string; width: BlockWidth; ghost: boolean }[]>(() => {
+    if (!besidePlan || draggingIndex === null) {
+      return blocksForLayout.map((b) => ({ id: b.id, width: b.width ?? 'full', ghost: false }))
+    }
+    const dragged = blocks[draggingIndex]
+    const ghostId = `${dragged.id}::ghost`
+    const plannedWidth = besidePlan.find((b) => b.id === dragged.id)?.width ?? 'full'
+    const withGhost = besidePlan.map((b) =>
+      b.id === dragged.id
+        ? { id: ghostId, width: plannedWidth, ghost: true }
+        : { id: b.id, width: b.width ?? 'full', ghost: false }
+    )
+    const neighborId = draggingIndex < blocks.length - 1 ? blocks[draggingIndex + 1].id : null
+    const neighborAt = neighborId ? withGhost.findIndex((item) => item.id === neighborId) : -1
+    let insertAt = neighborId ? neighborAt : withGhost.length
+
+    const plannedRow = layoutRows(withGhost).find((row) =>
+      row.some((item) => item.id === ghostId)
+    )
+    let rowEnd = -1
+    if (plannedRow) {
+      const rowIndices = withGhost.reduce<number[]>((acc, item, i) => {
+        const inRow = plannedRow.some((rowItem) => rowItem.id === item.id)
+        return inRow ? [...acc, i] : acc
+      }, [])
+      const rowStart = rowIndices[0]
+      rowEnd = rowIndices[rowIndices.length - 1]
+      if (insertAt > rowStart && insertAt <= rowEnd) insertAt = rowEnd + 1
+    }
+
+    const origin = { id: dragged.id, width: dragged.width ?? 'full', ghost: false }
+    const withOrigin = [...withGhost]
+    withOrigin.splice(insertAt, 0, origin)
+
+    // The index guard above only catches an insertAt that falls strictly
+    // between the planned row's ends; it misses a narrow origin landing
+    // AT the row's own start, which can still pack into the row's first
+    // member (D 1/3 next to T 1/2 both fit in 12 twelfths) and push the
+    // ghost onto its own line. So re-pack the real render list and check
+    // the planned row's members (ghost included) are still one whole row
+    // — if not, the origin goes after the row's last member instead.
+    if (plannedRow) {
+      const keepsRowTogether = layoutRows(withOrigin).some(
+        (row) =>
+          row.length === plannedRow.length &&
+          plannedRow.every((item) => row.some((r) => r.id === item.id))
+      )
+      if (!keepsRowTogether) {
+        const fallback = [...withGhost]
+        fallback.splice(rowEnd + 1, 0, origin)
+        return fallback
+      }
+    }
+
+    return withOrigin
+  }, [besidePlan, draggingIndex, blocks, blocksForLayout])
+
+  const blockRows = useMemo(() => layoutRows(renderList), [renderList])
+
+  /**
+   * Commits a beside drop (6x): `planBesideDrop` (the same planner the hover
+   * line and preview read) splices the dragged block into the target's row
+   * and applies its widths to every block now in that row — including the
+   * ones whose width didn't change — in one `persistBlocksAsOwnEdit` write,
+   * so the move and the widths it sets are one change with one undo (KAN-247,
+   * routed through the same direct-write pattern as template apply —
+   * KAN-124). Reads the real `blocks` (not the live-preview `blocksForLayout`),
+   * since this is the commit, not another preview.
+   */
+  async function commitBesideDrop(fromIndex: number, targetIndex: number, zone: 'left' | 'right') {
+    const next = planBesideDrop(blocks, fromIndex, blocks[targetIndex].id, zone)
+    if (!next) return
+    await persistBlocksAsOwnEdit(blocks, next)
+  }
+
+  /**
+   * Commits an own-line drop (6x): splices the dragged block before/after the
+   * TARGET'S ROW as a whole, not before/after the target block itself — so
+   * dropping below the second block of a ½+½ row lands after both, not
+   * between them. Only the dragged block's width changes, to `full`; every
+   * other block is the same object reference, untouched (AGENTS.md: Pond
+   * doesn't widen what's left behind). One `persistBlocksAsOwnEdit` write, same
+   * as `commitBesideDrop` (KAN-247, KAN-124's direct-write pattern).
+   */
+  async function commitOwnLineDrop(fromIndex: number, targetIndex: number, zone: 'above' | 'below') {
+    const dragged = { ...blocks[fromIndex], width: 'full' as BlockWidth }
+    const target = blocks[targetIndex]
+    const withoutDragged = blocks.filter((_, i) => i !== fromIndex)
+    const row = layoutRows(withoutDragged).find((r) => r.some((b) => b.id === target.id))
+    if (!row) return
+    const rowIds = new Set(row.map((b) => b.id))
+    const rowAt = withoutDragged.reduce<number[]>(
+      (acc, b, i) => (rowIds.has(b.id) ? [...acc, i] : acc),
+      []
+    )
+    const insertAt = zone === 'above' ? rowAt[0] : rowAt[rowAt.length - 1] + 1
+    const spliced = [...withoutDragged]
+    spliced.splice(insertAt, 0, dragged)
+    await persistBlocksAsOwnEdit(blocks, spliced)
+  }
+
+  /**
+   * Commits exactly the `dropIndicator` currently shown — not a fresh
+   * classification of wherever the release landed. The lifted ghost is
+   * `pointer-events-none` and the gap between blocks has no handler of its
+   * own, so a release over either reaches no block's `onDrop`; the canvas
+   * root calls this directly for those. A block's own `onDrop` calls it too
+   * (and stops propagation first), so the canvas root's own listener never
+   * double-commits the same release.
+   */
+  function commitDropIndicator() {
+    const fromIndex = draggingIndex
+    const indicator = dropIndicator
+    setDropIndicator(null)
+    setPreviewWidth(null)
+    setDraggingIndex(null)
+    if (fromIndex === null || !indicator || indicator.index === fromIndex) return
+    if (indicator.zone === 'left' || indicator.zone === 'right') {
+      void commitBesideDrop(fromIndex, indicator.index, indicator.zone)
+      return
+    }
+    void commitOwnLineDrop(fromIndex, indicator.index, indicator.zone)
+  }
 
   // Stacking (6x): measured off the content column itself (ResizeObserver on the
   // canvas), not the viewport, so the side panel and window-narrowing both
@@ -1135,6 +1368,39 @@ export function BlockCanvas({
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
+
+  /**
+   * The lifted copy shown at the planned slot while a beside drop is hovered
+   * (6x frame 3, `PondBlock.dc.html`'s `lifted` state): a read-only render of
+   * the dragged block's own content — no handle, no drag wiring, no keyboard
+   * handling, since the origin node (the real, still-draggable block) is what
+   * the pointer and keyboard actually act on. `aria-hidden`/`inert` keep it
+   * out of the accessibility tree and the tab order entirely.
+   */
+  function renderGhostBlock(block: Block) {
+    const frame = blockFrame(block)
+    const view = <ModuleView type={block.type} data={block} editable={false} onChange={() => {}} />
+    return (
+      <div
+        id={blockDomId(`${block.id}::ghost`)}
+        aria-hidden
+        inert
+        className="pointer-events-none shadow-mn-lifted rotate-[-.6deg] translate-x-[12px] translate-y-[18px] z-[4]"
+      >
+        {frame ? (
+          <PondBlock kind={frame.kind} heading={frame.heading} headNote={frame.headNote} state="rest">
+            {view}
+          </PondBlock>
+        ) : block.type === 'text' ? (
+          <div className="py-0.5" style={{ paddingInline: TEXT_BLOCK_INSET_PX }}>
+            {view}
+          </div>
+        ) : (
+          view
+        )}
+      </div>
+    )
+  }
 
   function renderBlockEditor(block: Block, i: number) {
     const blank = isBlankBesides(i)
@@ -1182,7 +1448,7 @@ export function BlockCanvas({
                     size={slashSize}
                     onSelect={(width) => handleMenuSelect(i, { type: 'set-width', width })}
                     onPreview={(width) =>
-                      setPreviewWidth(width === null ? null : { blockId: block.id, width })
+                      setPreviewWidth(width === null ? null : [{ blockId: block.id, width }])
                     }
                   />
                 ),
@@ -1193,25 +1459,83 @@ export function BlockCanvas({
         onMenuOpenChange={(open) => handleMenuOpenChange(i, open)}
         onMenuSelect={(action) => handleMenuSelect(i, action)}
         isDragging={draggingIndex === i}
-        onDragStart={() => {
+        dropZone={dropIndicator?.index === i ? dropIndicator : undefined}
+        onDragStart={(e) => {
+          if (dragImageRef.current) e.dataTransfer?.setDragImage(dragImageRef.current, 0, 0)
           setMenuOpenAt(null)
           setPreviewWidth(null)
           setDraggingIndex(i)
         }}
-        onDragEnd={() => setDraggingIndex(null)}
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={(e) => {
+        onDragEnd={() => {
+          setDraggingIndex(null)
+          setDropIndicator(null)
+          setPreviewWidth(null)
+        }}
+        onDragOver={(e) => {
           e.preventDefault()
-          if (draggingIndex === null || draggingIndex === i) {
-            setDraggingIndex(null)
+          if (draggingIndex === null) return
+          if (draggingIndex === i) {
+            // Hovering the held block's own origin: no drop is offered here,
+            // so whatever indicator/preview the last hovered target left up
+            // must clear too — otherwise a release here would still commit
+            // that earlier target's plan (the drop just below commits
+            // whatever indicator is shown, not what's under the pointer now).
+            setDropIndicator(null)
+            setPreviewWidth(null)
             return
           }
-          // Move the dragged block to position i (splice, not swap).
-          const next = [...blocks]
-          const [moved] = next.splice(draggingIndex, 1)
-          next.splice(i, 0, moved)
-          onChange(next)
-          setDraggingIndex(null)
+          const rect = e.currentTarget.getBoundingClientRect()
+          const zone = classifyDropZone(rect, { x: e.clientX, y: e.clientY })
+          if (zone === 'left' || zone === 'right') {
+            const planned = planBesideDrop(blocks, draggingIndex, blocks[i].id, zone)
+            // `null`: the row already holds 4, or the widths this drop would
+            // set let `layoutRows` repack the planned row apart — no beside
+            // line here, though the row's own-line (above/below) zone still works.
+            // Clears unconditionally, same reason as the origin-hover branch
+            // above: a stale indicator from an earlier target must not survive
+            // into a zone that offers no plan of its own.
+            if (planned === null) {
+              setDropIndicator(null)
+              setPreviewWidth(null)
+              return
+            }
+            setDropIndicator({ index: i, zone })
+            // Every block `planned` sets a new width for previews live, not
+            // just the dragged block — so the target row already shows the
+            // width it will take while hovering, before the drop lands.
+            const changed = planned.reduce<{ blockId: string; width: BlockWidth }[]>(
+              (acc, next) => {
+                const current = blocks.find((b) => b.id === next.id)
+                const nextWidth = next.width ?? 'full'
+                if ((current?.width ?? 'full') !== nextWidth) {
+                  acc.push({ blockId: next.id, width: nextWidth })
+                }
+                return acc
+              },
+              []
+            )
+            setPreviewWidth(changed)
+            return
+          }
+          setPreviewWidth(null)
+          const columnRect = canvasRef.current?.getBoundingClientRect()
+          setDropIndicator({
+            index: i,
+            zone,
+            span: columnRect
+              ? { left: columnRect.left - rect.left, width: columnRect.width }
+              : undefined,
+          })
+        }}
+        onDrop={(e) => {
+          e.preventDefault()
+          // Stop here, not at the canvas root: the block that actually
+          // received the release already knows what to commit (the shown
+          // indicator), so the root's own `onDrop` — there for a release
+          // over the ghost or the gap, which reach no block — must not
+          // also fire for this same release.
+          e.stopPropagation()
+          commitDropIndicator()
         }}
       />
     )
@@ -1282,6 +1606,26 @@ export function BlockCanvas({
           <div
             ref={canvasRef}
             style={previewing ? hiddenCanvasListStyle(listStyle) : canvasListStyle(listStyle)}
+            // The ghost is `pointer-events-none` and the gap between blocks
+            // has no element of its own, so a release over either reaches no
+            // block's `onDrop` — this root commits the shown indicator for
+            // those (a block's own `onDrop` stops propagation first, so it
+            // never double-commits the same release). `onDragLeave` only
+            // clears the indicator when the drag leaves the canvas itself
+            // (`relatedTarget` outside it) — moving from a block into the
+            // ghost or a gap is still inside the canvas, so the indicator
+            // stays up rather than flickering off and on.
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault()
+              commitDropIndicator()
+            }}
+            onDragLeave={(e) => {
+              const related = e.relatedTarget as Node | null
+              if (related && canvasRef.current?.contains(related)) return
+              setDropIndicator(null)
+              setPreviewWidth(null)
+            }}
           >
             {/*
              * A single flat `.flatMap()`, not a `.map()` of each row's own
@@ -1292,7 +1636,7 @@ export function BlockCanvas({
              */}
             {blockRows
               .flatMap((row) => {
-                const widths = row.map((block) => block.width ?? 'full')
+                const widths = row.map((item) => item.width)
                 // Widths and rows are kept, not shown: a row that stacks renders
                 // each of its blocks' sizing divs at 100% width, which — because
                 // the list itself wraps — puts each on its own line, in reading
@@ -1301,21 +1645,32 @@ export function BlockCanvas({
                 // `blockRows` without touching any ancestor element, and a
                 // remount is impossible rather than merely untested.
                 const stacks = columnWidth > 0 && !rowHolds(columnWidth, widths)
-                return row.map((block) => ({ block, stacks }))
+                return row.map((item) => ({ item, stacks }))
               })
-              .map(({ block, stacks }, i) => {
-                const width = block.width ?? 'full'
-                const sizingWidth = stacks || width === 'full' ? '100%' : blockWidthStyle(width)
+              .map(({ item, stacks }) => {
+                const sizingWidth =
+                  stacks || item.width === 'full' ? '100%' : blockWidthStyle(item.width)
+                // The ghost's id has no entry in `blocks` — it renders the
+                // dragged block's own content read-only (`renderGhostBlock`),
+                // not through `renderBlockEditor`, which only real slots use.
+                if (item.ghost) {
+                  return draggingIndex === null ? null : (
+                    <div key={item.id} style={{ width: sizingWidth }}>
+                      {renderGhostBlock(blocks[draggingIndex])}
+                    </div>
+                  )
+                }
+                // Looked up by id, not position: `renderList` can hold one more
+                // entry than `blocks` (the ghost) while a beside drop is
+                // planned, so a flattened position no longer lines up with
+                // `blocks`' own index.
+                const i = blocks.findIndex((b) => b.id === item.id)
                 return (
                   <div
-                    key={block.id}
+                    key={item.id}
                     className="min-w-0 transition-[width] duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none"
                     style={{ width: sizingWidth }}
                   >
-                    {/* `blocks[i]`, not `block`: `block` here may carry the
-                        PREVIEWED width (sizing only, see `blocksForLayout`) — the
-                        editor and its width row must still see the block's real,
-                        kept width. */}
                     {renderBlockEditor(blocks[i], i)}
                   </div>
                 )
@@ -1495,6 +1850,7 @@ function BlockEditor({
   onMenuOpenChange,
   onMenuSelect,
   isDragging,
+  dropZone,
   onDragStart,
   onDragEnd,
   onDragOver,
@@ -1544,7 +1900,9 @@ function BlockEditor({
   onMenuOpenChange?: (open: boolean) => void
   onMenuSelect?: (action: BlockMenuAction) => void
   isDragging?: boolean
-  onDragStart?: () => void
+  /** The drop line to draw on THIS block, if the drag is hovering it — `BlockCanvas` decides which block that is. */
+  dropZone?: { zone: DropZone; span?: { left: number; width: number } }
+  onDragStart?: (e: React.DragEvent) => void
   onDragEnd?: () => void
   onDragOver?: (e: React.DragEvent) => void
   onDrop?: (e: React.DragEvent) => void
@@ -1685,7 +2043,11 @@ function BlockEditor({
           ? 'outline-none'
           : 'rounded-mn-card focus-visible:ring-2 focus-visible:ring-mn-text',
         settleOnMount && 'motion-settle-in',
-        isDragging && 'opacity-50',
+        // `origin` (old place) from `PondBlock.dc.html` is opacity .4 ONLY — the
+        // tilt and stepped-up shadow belong to the separate `lifted` copy, built
+        // where the drag preview is drawn (not this node).
+        isDragging &&
+          'opacity-40 transition-opacity duration-[var(--motion-quick)] ease-[var(--ease-mn)] motion-reduce:transition-none',
         menuOpen && 'rounded-[20px] [box-shadow:0_0_0_2px_rgb(from_var(--mn-text)_r_g_b/0.18)]'
       )}
       id={blockDomId(block.id)}
@@ -1707,6 +2069,29 @@ function BlockEditor({
       onKeyDownCapture={handleKeyDownCapture}
       onKeyDown={handleKeyDown}
     >
+      {/* The drop line (6x `PondBlock.dc.html`'s `dropBar`): beside is a 2px bar
+          9px into the gap off this block's near edge; above/below is a 2px bar
+          9px off this block's top/bottom edge, spanning `dropZone.span` — the
+          full content column, not just this block's own width, since a block in
+          a row can be narrower than the column it belongs to. */}
+      {dropZone &&
+        (() => {
+          const geo = dropBarGeometry(dropZone)
+          return (
+            <span
+              data-part="drop-bar"
+              data-zone={dropZone.zone}
+              data-left={geo.left}
+              data-right={geo.right}
+              data-top={geo.top}
+              data-bottom={geo.bottom}
+              data-width={geo.width}
+              data-height={geo.height}
+              className="pointer-events-none absolute rounded-[1px] bg-mn-text"
+              style={geo}
+            />
+          )
+        })()}
       {/* The handle: the only block chrome. Desktop (KAN-43) sits OUTSIDE the
           card at `left -14`, revealed on hover and on keyboard focus. Phone
           (KAN-259) sits INSIDE the card at `right 2 · top 2 · 44x44` — a touch
