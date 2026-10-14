@@ -73,10 +73,7 @@ import { configureViewFromProposal, resolveCollectionByName } from '@/lib/pages/
 import { promoteTableFromProposal, inferColumnType } from '@/lib/pages/promote-table'
 import { linkRecordsFromProposal } from '@/lib/pages/link-records'
 import { requestNotify } from '@/lib/deletion/notify-bridge'
-import {
-  SelectionBar,
-  type SelectionContext,
-} from '@/components/molecules/SelectionBar'
+import { SelectionBar, type SelectionContext } from '@/components/molecules/SelectionBar'
 import { FileAttachmentChip } from '@/components/molecules/FileAttachmentChip'
 import { useAttachments } from '@/lib/attachments/use-attachments'
 import { useInlineAttachment } from '@/lib/attachments/use-inline-attachment'
@@ -98,6 +95,10 @@ import {
 } from '@/lib/modules/text/reference-highlight'
 import { markIndex, resolveMark } from '@/lib/pages/mark'
 import { markAccent } from '@/lib/rail/glyph-library'
+import { activeMentionQuery } from '@/lib/references/mention-query'
+import { PageMentionPicker, type PageMentionItem } from '@/components/molecules/PageMentionPicker'
+import { sideTowardFreeSpace } from '@/lib/layout/caret-anchor'
+import type { PickerSide } from '@/components/molecules/use-anchored-box'
 import { parseCsv } from '@/lib/csv/parse-csv'
 import {
   getInlineAttachmentDescriptor,
@@ -217,6 +218,11 @@ const HTML_UNREADABLE_CHIPS = ['keep it as a file', 'try another file']
 /** A reference chip's passage, cut to keep the pill one line (board `Pond
  *  06.05` draws the fixture already short; no frame gives a char count). */
 const REFERENCE_PASSAGE_MAX = 60
+
+/** `PageMentionPicker`'s chrome (head + glass padding) plus up to six rows —
+ *  a close bound for the before-mount above/below choice (KAN-99), not a DC
+ *  literal; nothing has rendered yet to measure. */
+const MENTION_POPOVER_ESTIMATE_PX = 46 + 6 * 38
 
 /** 06.25 frame 6's single too-large-failure chip — there is no "try another"
  *  here, since the file itself (not the attempt) is the problem. */
@@ -767,7 +773,8 @@ export function AITerminal() {
       // focuses so typing a question works either way.
       const { blockId } = ctx
       if (nodeId && blockId) {
-        const range = ctx.from !== undefined && ctx.to !== undefined ? { from: ctx.from, to: ctx.to } : null
+        const range =
+          ctx.from !== undefined && ctx.to !== undefined ? { from: ctx.from, to: ctx.to } : null
         setReferences((prev) => [
           ...prev,
           { id: crypto.randomUUID(), pageId: nodeId, blockId, range, quotedText: ctx.text },
@@ -816,6 +823,96 @@ export function AITerminal() {
   const handleRemoveReference = useCallback((key: string) => {
     setReferences((prev) => prev.filter((ref) => ref.id !== key))
   }, [])
+
+  // ── @ mention picker (KAN-99, board 6e frame 3) ───────────────────────────
+  // The caret is tracked on every edit, click and key-up (arrow keys move it
+  // without changing the text) and resolved against the typed value through
+  // `activeMentionQuery` — the host owns the open/narrow state; the glass
+  // owns only its own keys and position.
+  const [mentionQuery, setMentionQuery] = useState<{ start: number; query: string } | null>(null)
+  const [mentionActiveIndex, setMentionActiveIndex] = useState(0)
+  const [mentionSide, setMentionSide] = useState<PickerSide>('top')
+
+  // Esc doesn't move the caret or change the text, so the keyup that follows
+  // it would otherwise see the caret still sitting inside the `@`-token and
+  // reopen the glass it just closed. Swallows exactly that one trailing call.
+  const suppressMentionReopenRef = useRef(false)
+
+  // One place sets `mentionQuery`, so narrowing (or opening on a fresh `@`)
+  // re-highlighting the first row (board 6e frame 3) and the open/close
+  // side choice both live here rather than in effects synced off it.
+  const updateMentionQuery = useCallback(() => {
+    const el = inputRef.current
+    if (!el) return
+    if (suppressMentionReopenRef.current) {
+      suppressMentionReopenRef.current = false
+      return
+    }
+    const next = activeMentionQuery(el.value, el.selectionStart ?? el.value.length)
+    setMentionQuery(next)
+    setMentionActiveIndex(0)
+    if (next) {
+      // The composer sits at the foot of the screen, so there is rarely room
+      // below it — `sideTowardFreeSpace` (Rail's own glass-side rule) defaults
+      // to `top` unless there is demonstrably more room below than above.
+      // `MENTION_POPOVER_ESTIMATE_PX` is a close bound on the glass's chrome
+      // (head + padding) plus up to six rows, good enough for a before-mount
+      // side choice — nothing has rendered yet to measure (`glyphPickerHeight`'s
+      // own precedent). Computed here, at caret-tracking time, rather than in
+      // render: `composerRef` is a ref, and reading one during render is unsafe.
+      const rect = composerRef.current?.getBoundingClientRect()
+      if (rect)
+        setMentionSide(sideTowardFreeSpace(rect, window.innerHeight, MENTION_POPOVER_ESTIMATE_PX))
+    }
+  }, [])
+
+  useEffect(() => {
+    const el = inputRef.current
+    if (!el) return
+    el.addEventListener('click', updateMentionQuery)
+    el.addEventListener('keyup', updateMentionQuery)
+    return () => {
+      el.removeEventListener('click', updateMentionQuery)
+      el.removeEventListener('keyup', updateMentionQuery)
+    }
+  }, [updateMentionQuery])
+
+  // No ordering/exclusion yet (the next item wires that in) — every title
+  // match, in `allPages`' own order. A page's glyph/area come off `pageMarks`
+  // (fetched separately from `allPages`, the same split `referenceItems`
+  // above already relies on).
+  const mentionItems = useMemo<PageMentionItem[]>(() => {
+    if (mentionQuery === null) return []
+    const q = mentionQuery.query.toLowerCase()
+    return allPages
+      .filter((p) => p.title.toLowerCase().includes(q))
+      .map((p) => {
+        const mark = resolveMark(p.id, pageMarks)
+        return {
+          id: p.id,
+          glyph: mark.glyph ?? '',
+          color: markAccent(mark.role),
+          label: p.title,
+          sub: areaOf(allPages, p.id) ?? '',
+        }
+      })
+  }, [mentionQuery, allPages, pageMarks])
+
+  const handleMentionClose = useCallback(() => {
+    suppressMentionReopenRef.current = true
+    setMentionQuery(null)
+  }, [])
+
+  // The DOM textarea's `selectionStart` already reflects the keystroke by the
+  // time this fires — same tick `onChange` reports the new `value` — so the
+  // mention query is read synchronously, no `requestAnimationFrame` needed.
+  const handleComposerChange = useCallback(
+    (value: string) => {
+      setInput(value)
+      updateMentionQuery()
+    },
+    [updateMentionQuery]
+  )
 
   // The passage a reference points at stays highlighted on the page while
   // referenced (KAN-98, board 6e). Each block that currently owns a highlight
@@ -883,7 +980,11 @@ export function AITerminal() {
           let changed = false
           const next = prev.map((ref) => {
             const entry = entries.find((e) => e.key === ref.id)
-            if (!entry || !ref.range || (ref.range.from === entry.range.from && ref.range.to === entry.range.to)) {
+            if (
+              !entry ||
+              !ref.range ||
+              (ref.range.from === entry.range.from && ref.range.to === entry.range.to)
+            ) {
               return ref
             }
             changed = true
@@ -1190,7 +1291,8 @@ export function AITerminal() {
     // order) is still waiting in the pending slot — claim it exactly like an
     // incoming event (KAN-195).
     const pending = takePendingTerminalText()
-    if (pending) onFocusRequest(new CustomEvent(FOCUS_TERMINAL_EVENT, { detail: { text: pending } }))
+    if (pending)
+      onFocusRequest(new CustomEvent(FOCUS_TERMINAL_EVENT, { detail: { text: pending } }))
     return () => window.removeEventListener(FOCUS_TERMINAL_EVENT, onFocusRequest)
   }, [focusInputSoon])
 
@@ -2294,7 +2396,10 @@ export function AITerminal() {
   // the reducer); the proposal is born as a `proposed` change-log record and rides
   // the resolutions envelope with the transcript, so closing Pond leaves it pending.
   const editPageProposal = useCallback(
-    (id: string, patch: Partial<Pick<PageProposal, 'name' | 'parentId' | 'kind' | 'mentioned'>>) => {
+    (
+      id: string,
+      patch: Partial<Pick<PageProposal, 'name' | 'parentId' | 'kind' | 'mentioned'>>
+    ) => {
       dispatch({ kind: 'editPageProposal', id, patch })
     },
     []
@@ -2750,7 +2855,7 @@ export function AITerminal() {
       // read the live title off `allPages` and only fall back to the stamp
       // when the page is gone (deleted since the stamp).
       const liveTargetName = target
-        ? allPages.find((p) => p.id === target.nodeId)?.title ?? target.nodeName
+        ? (allPages.find((p) => p.id === target.nodeId)?.title ?? target.nodeName)
         : undefined
       const status = batchStatus(changeDecisions, part.toolCallId, rawChanges.length)
       // KAN-302: `record.before` is the target page's blocks exactly as they
@@ -2959,7 +3064,11 @@ export function AITerminal() {
                   const recordIds: string[] = []
                   try {
                     for (const id of acceptablePendingDiffIds) {
-                      const recordId = await acceptChanges(id, batchById.get(id) ?? [], allIndices(id))
+                      const recordId = await acceptChanges(
+                        id,
+                        batchById.get(id) ?? [],
+                        allIndices(id)
+                      )
                       if (recordId) recordIds.push(recordId)
                     }
                   } catch (err) {
@@ -3478,7 +3587,7 @@ export function AITerminal() {
         anchorRef={composerRef}
         research={research}
         onToggleResearch={() => setResearch((on) => !on)}
-        onChange={setInput}
+        onChange={handleComposerChange}
         onKeyDown={handleKeyDown}
         onAttach={handleAttachClick}
         onSend={handleSend}
@@ -3500,6 +3609,19 @@ export function AITerminal() {
           />
         }
       />
+      {mentionQuery && (
+        <PageMentionPicker
+          items={mentionItems}
+          activeIndex={mentionActiveIndex}
+          onHover={setMentionActiveIndex}
+          // Picking a row is the next item's job — this one only opens, narrows
+          // and closes the glass.
+          onPick={() => {}}
+          onClose={handleMentionClose}
+          anchor={composerRef}
+          side={mentionSide}
+        />
+      )}
       {/* ⌘K's `import a page` (KAN-251) — a dedicated, html-only picker so
           that door never touches the general attach input above. */}
       <input
