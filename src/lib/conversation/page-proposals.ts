@@ -337,8 +337,12 @@ function exactPrefixLength(prose: string, leadIn: string): number {
  * lib/pages/mentioned.ts. Writing it as a second text block set the eyebrow as
  * 17.5px serif body copy and flattened the rows to bullets.
  */
-export function proposalBlocks(prose: string, mintId: () => string): Block[] {
-  return [{ id: mintId(), type: 'text', content: prose }]
+export function proposalBlocks(
+  prose: string,
+  mintId: () => string,
+  sentAt: string | null = null
+): Block[] {
+  return [{ id: mintId(), type: 'text', content: prose, ...(sentAt ? { pondStampAt: sentAt } : {}) }]
 }
 
 // ── Read chips (S8) ──────────────────────────────────────────────────────────

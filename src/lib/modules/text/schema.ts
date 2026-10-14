@@ -21,6 +21,12 @@ export const textSchema = z
       .describe(
         'Optional invitation shown at ink .68 while the block has no content — e.g. "write your notes here". Omit to use the generic empty-state copy.'
       ), // drawn at ink .68 while empty; never written to `content`
+    pondStampAt: z
+      .string()
+      .optional()
+      .describe(
+        'ISO timestamp, present only on the prose block a made page is born with (6a frame 5). Set once at make-page time; nothing else ever sets or clears it.'
+      ),
   })
   .extend(labelledBlockFields)
 

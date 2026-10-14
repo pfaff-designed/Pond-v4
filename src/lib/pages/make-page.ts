@@ -47,6 +47,10 @@ export interface MakePageInput {
   threadId: string | null
   /** The pond's pages, for the "mentioned" list. Rows only; nothing is written to them. */
   pages: MentionablePage[]
+  /** When the answer itself was sent — stamped onto the one block the page is
+   *  born with (`pondStampAt`), so it survives editing untouched. Omitted for
+   *  a proposal whose answer carries no `sentAt`. */
+  answerSentAt?: string | null
 }
 
 export interface MadePage {
@@ -64,7 +68,7 @@ export async function makePageFromAnswer(
   input: MakePageInput,
   mintId: () => string
 ): Promise<MadePage> {
-  const { proposal, threadId, pages } = input
+  const { proposal, threadId, pages, answerSentAt } = input
 
   const {
     data: { user },
@@ -84,7 +88,7 @@ export async function makePageFromAnswer(
   // (KAN-172), with `ref` re-checked against the live page list rather than
   // trusted, in case the target was deleted between propose-page and make page.
   const body = stripChatFraming(proposal.prose, proposal.leadIn, proposal.signOff)
-  const blocks = proposalBlocks(body, mintId)
+  const blocks = proposalBlocks(body, mintId, answerSentAt ?? null)
   const kind = proposal.kind.trim() || 'page'
   const props = stampMentioned(
     stampMadeFrom(

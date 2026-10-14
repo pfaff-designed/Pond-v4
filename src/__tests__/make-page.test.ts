@@ -126,6 +126,7 @@ describe('makePageFromAnswer', () => {
           { id: 'wt-1', title: 'Worktop template' },
         ],
         pondId: 'pond-1',
+        answerSentAt: '2026-09-22T07:12:00Z',
       },
       mint()
     )
@@ -138,8 +139,11 @@ describe('makePageFromAnswer', () => {
     expect(row.type).toBe('page')
     expect(row.title).toBe('renovation blockers')
     expect(row.pond_id).toBe('pond-1')
-    // The prose, word for word, is the page's ONLY block (6a frame 5).
-    expect(row.blocks).toEqual([{ id: 'b1', type: 'text', content: PROSE }])
+    // The prose, word for word, is the page's ONLY block (6a frame 5), stamped
+    // with when the answer itself was sent.
+    expect(row.blocks).toEqual([
+      { id: 'b1', type: 'text', content: PROSE, pondStampAt: '2026-09-22T07:12:00Z' },
+    ])
     // What the answer mentioned is a card, not prose, so it rides in props beside
     // the made-from stamp — carried from the proposal's own mentioned list
     // (KAN-172), not re-derived from the prose.
@@ -202,6 +206,10 @@ describe('makePageFromAnswer', () => {
       mint()
     )
     expect(inserts[0].row.blocks).toEqual([{ id: 'b1', type: 'text', content: PROSE }])
+    // No `answerSentAt` given — the block carries no `pondStampAt` key at all,
+    // not one written as `null`.
+    const block = (inserts[0].row.blocks as Record<string, unknown>[])[0]
+    expect(block).not.toHaveProperty('pondStampAt')
   })
 
   it('adds no mentioned list when the proposal carries no mentioned field', async () => {
