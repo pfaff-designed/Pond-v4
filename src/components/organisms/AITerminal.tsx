@@ -2213,9 +2213,15 @@ export function AITerminal() {
       }
       // The thread shows the note under the card, not as a second "you" line;
       // the metadata is how the renderer knows this message is that note.
+      // A view-originated request names its own target page (see `body` above) —
+      // the revised answer's read chip must say so too, not the ambient
+      // contextLabel (e.g. the change log page the note was sent from).
       const metadata = {
         sentAt: new Date().toISOString(),
         requestChanges: { toolCallId, reason },
+        ...(targetPageId
+          ? { openPageContext: false, wholePageRefPageIds: [targetPageId] }
+          : {}),
       }
       clearError?.()
       sendMessage({ text: note, metadata }, { body })

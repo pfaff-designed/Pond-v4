@@ -70,6 +70,7 @@ let mockMessages: Array<{
   id: string
   role: string
   parts: Array<Record<string, unknown>>
+  metadata?: unknown
 }> = []
 jest.mock('@ai-sdk/react', () => ({
   useChat: jest.fn(() => ({
@@ -955,6 +956,10 @@ describe('AITerminal — the @ mention picker opens, narrows and closes (KAN-99)
 })
 
 describe('AITerminal — REQUEST_CHANGES_EVENT before the thread is ready (KAN-96)', () => {
+  afterEach(() => {
+    mockListPages.mockResolvedValue([])
+  })
+
   it('a request made while still loading is sent once, once ready', async () => {
     renderTerminal()
 
@@ -1022,12 +1027,21 @@ describe('AITerminal — REQUEST_CHANGES_EVENT before the thread is ready (KAN-9
       })
     })
     await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1))
+    const [[sentMessage]] = mockSendMessage.mock.calls
+    const sentMetadata = sentMessage.metadata
 
     mockMessages = [
+      {
+        id: 'm-note',
+        role: 'user',
+        parts: [{ type: 'text', text: 'please fix the heading' }],
+        metadata: sentMetadata,
+      },
       {
         id: 'm-revision',
         role: 'assistant',
         parts: [
+          { type: 'text', text: 'Updated the heading.' },
           {
             type: 'tool-propose_changes',
             toolCallId: 'tc-new',
@@ -1048,6 +1062,9 @@ describe('AITerminal — REQUEST_CHANGES_EVENT before the thread is ready (KAN-9
     await waitFor(() => expect(screen.getByText(/— Recipe/)).toBeInTheDocument())
     expect(screen.queryByText(/— change log/)).not.toBeInTheDocument()
 
-    mockListPages.mockResolvedValue([])
+    // The revised answer's read chip must name the record's page, not the
+    // ambient pond/contextLabel it happened to stream back against (KAN-96).
+    const chipLabels = screen.getAllByTestId('read-chip').map((el) => el.textContent)
+    expect(chipLabels).toEqual(['Recipe'])
   })
 })
