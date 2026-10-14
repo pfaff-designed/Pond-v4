@@ -12,6 +12,7 @@ import { useMemo, useState, type ReactNode } from 'react'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { usePondId } from '@/lib/pond/context'
+import { usePondName } from '@/lib/pond/name'
 import { PAGE_COLUMN_PAD_PX, useSurfaceColumn } from '@/lib/layout/surface-column'
 import { countWaiting, listRecords } from '@/lib/change-log/store'
 import { changeLogKey } from '@/lib/change-log/keys'
@@ -23,8 +24,7 @@ import { existingPageIds, restorePage } from '@/lib/change-log/trash'
 import { personFacingMessage } from '@/lib/change-log/errors'
 import { PondControl } from '@/components/atoms/PondControl'
 import { listPages } from '@/lib/pages/client'
-import { homeQueryKey, pagesKey } from '@/lib/pages/keys'
-import type { HomePage } from '@/lib/pages/home'
+import { pagesKey } from '@/lib/pages/keys'
 
 /** s6o1's table: the five-column grid every header, day-group and record row shares. */
 const TABLE_COLUMNS = 'grid-cols-[52px_minmax(0,1fr)_150px_92px_118px]'
@@ -147,6 +147,7 @@ function DeletedRecordCard({
 export function ChangeLogPage() {
   const getSupabase = useLazySupabase()
   const pondId = usePondId()
+  const pondName = usePondName()
   const queryClient = useQueryClient()
   const [view, setView] = useState<ChangeLogView>('all')
   const { column } = useSurfaceColumn(
@@ -246,12 +247,7 @@ export function ChangeLogPage() {
       ]
       const existing = await existingPageIds(supabase, rootIds)
       const goneIds = new Set(rootIds.filter((id) => !existing.has(id)))
-      // The same cache `useChartProvenance` reads for its own root word — a
-      // read, not a subscription, since a rename re-renders this query's
-      // host (the pill click) just as readily as any other.
-      const rootLabel =
-        queryClient.getQueryData<HomePage | null>(homeQueryKey(pondId))?.title ?? 'life'
-      return buildDeletedCards(trashRecords, new Date(), goneIds, rootLabel)
+      return buildDeletedCards(trashRecords, new Date(), goneIds, pondName)
     },
   })
 

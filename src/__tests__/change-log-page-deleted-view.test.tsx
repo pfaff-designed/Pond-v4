@@ -15,6 +15,10 @@ jest.mock('@/lib/pond/context', () => ({
   usePondId: () => 'pond-1',
 }))
 
+jest.mock('@/lib/pond/name', () => ({
+  usePondName: () => 'the garden',
+}))
+
 jest.mock('@/lib/supabase/client', () => ({
   createClient: () => ({
     auth: { getUser: jest.fn().mockResolvedValue({ data: { user: { id: 'user-1' } } }) },
@@ -173,6 +177,20 @@ describe('ChangeLogPage — the deleted view', () => {
     await waitFor(() => {
       expect(screen.queryByRole('button', { name: 'restore' })).not.toBeInTheDocument()
     })
+  })
+
+  it("reads the top-level card's `was in` as the pond's real name, not the literal 'life'", async () => {
+    mockListRecords.mockImplementation(async (_supabase, opts) =>
+      isDeletedQuery(opts) ? [LATER_DELETE_RECORD] : []
+    )
+    mockExistingPageIds.mockResolvedValue(new Set(['page-2']))
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(screen.getByRole('button', { name: 'deleted' }))
+
+    expect(await screen.findByText('the garden')).toBeInTheDocument()
+    expect(screen.queryByText('life')).not.toBeInTheDocument()
   })
 
   it('says so, on the card and as a notice, when the restore fell back to the pond root', async () => {
