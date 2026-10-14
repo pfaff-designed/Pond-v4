@@ -6,19 +6,40 @@
  * it. This layer's own text is never shown — only the pill background is.
  */
 
+import { useEffect, useRef } from 'react'
+import type { RefObject } from 'react'
 import { mentionPillRuns } from '@/lib/references/mention-pill'
 
 export interface MentionPillOverlayProps {
   value: string
   /** Titles of the live whole-page references (KAN-99's `@`-picker). */
   titles: readonly string[]
+  /** The textarea this overlay sits behind — its scroll position drives the overlay's own. */
+  textareaRef: RefObject<HTMLTextAreaElement | null>
 }
 
 /** Mirrors `ComposerLine.tsx`'s textarea sizing/typography exactly, so the pill lands under the real text. */
 const MIRROR =
-  'pointer-events-none absolute inset-0 -z-10 block overflow-hidden px-1.5 py-0.5 font-mono text-[16px] leading-[1.5] tracking-[0.02em] whitespace-pre-wrap break-words text-transparent md:text-[14px]'
+  'pointer-events-none absolute inset-0 -z-10 block overflow-hidden px-1.5 py-0.5 font-mono text-[16px] leading-[1.5] tracking-[0.02em] whitespace-pre-wrap break-words text-transparent [scrollbar-gutter:stable] md:text-[14px]'
 
-export function MentionPillOverlay({ value, titles }: MentionPillOverlayProps) {
+export function MentionPillOverlay({ value, titles, textareaRef }: MentionPillOverlayProps) {
+  const overlayRef = useRef<HTMLDivElement>(null)
+
+  // The textarea scrolls past six lines (`max-h-[calc(6*1.5em_+_4px)]`); the
+  // overlay has no scrollbar of its own, so its scrollTop has to be driven
+  // from the textarea's rather than left to track it on its own.
+  useEffect(() => {
+    const textarea = textareaRef.current
+    const overlay = overlayRef.current
+    if (!textarea || !overlay) return
+    const syncScroll = () => {
+      overlay.scrollTop = textarea.scrollTop
+    }
+    syncScroll()
+    textarea.addEventListener('scroll', syncScroll)
+    return () => textarea.removeEventListener('scroll', syncScroll)
+  }, [textareaRef, value])
+
   const runs = mentionPillRuns(value, titles)
   if (runs.length === 0) return null
 
@@ -32,7 +53,7 @@ export function MentionPillOverlay({ value, titles }: MentionPillOverlayProps) {
   if (cursor < value.length) segments.push({ text: value.slice(cursor), pill: false })
 
   return (
-    <div aria-hidden className={MIRROR}>
+    <div ref={overlayRef} aria-hidden className={MIRROR}>
       {segments.map((seg, i) =>
         seg.pill ? (
           <span

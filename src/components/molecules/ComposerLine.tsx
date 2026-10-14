@@ -80,7 +80,7 @@ export const ComposerLine = ({
   return (
     <>
       <div ref={anchorRef} className="relative">
-        <MentionPillOverlay value={value} titles={mentionTitles} />
+        <MentionPillOverlay value={value} titles={mentionTitles} textareaRef={textareaRef} />
         <textarea
           ref={textareaRef}
           value={value}
@@ -91,7 +91,7 @@ export const ComposerLine = ({
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={onKeyDown}
           className={cn(
-            'block max-h-[calc(6*1.5em_+_4px)] w-full resize-none overflow-y-auto border-0 bg-transparent px-1.5 py-0.5 font-mono text-[16px] leading-[1.5] tracking-[0.02em] outline-none placeholder:text-mn-text-secondary disabled:opacity-60 md:text-[14px]',
+            'block max-h-[calc(6*1.5em_+_4px)] w-full resize-none overflow-y-auto border-0 bg-transparent px-1.5 py-0.5 font-mono text-[16px] leading-[1.5] tracking-[0.02em] outline-none [scrollbar-gutter:stable] placeholder:text-mn-text-secondary disabled:opacity-60 md:text-[14px]',
             value ? 'text-mn-text' : 'text-mn-text-secondary'
           )}
         />
