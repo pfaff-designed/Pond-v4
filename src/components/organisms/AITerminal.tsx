@@ -29,8 +29,11 @@ import {
   OPEN_THREAD_MESSAGE_EVENT,
   REQUEST_CHANGES_EVENT,
   TOGGLE_COMPOSER_EVENT,
+  notifyComposerOpenChange,
+  requestComposerToggle,
   requestHtmlImportPicker,
   takePendingTerminalText,
+  useComposerOpen,
   type ComposerNoticeDetail,
   type FocusTerminalDetail,
   type OpenThreadMessageDetail,
@@ -118,6 +121,7 @@ import {
 } from '@/lib/attachments/inline-attachment-kinds'
 import { TerminalDrawer } from '@/components/molecules/TerminalDrawer'
 import { useComposerHeight } from '@/lib/layout/composer-height'
+import { useZen } from '@/lib/layout/zen'
 import {
   AnswerError,
   EarlierAnswerFold,
@@ -436,6 +440,13 @@ export function AITerminal() {
   // does not hold (yet) resolves to null too; only an empty list means no pond scope.
   const pondSettled = !pondsLoading && (pond !== null || ponds.length === 0)
   const composerHeight = useComposerHeight()
+  // Zen's card has no ThreadHead until a second turn — "close" still has to
+  // reach the very first question (6q f8).
+  const { zen, composerAsked, askComposer, closeComposerAsk } = useZen()
+  const inZen = zen !== null
+  // Ask pond from the selection bar (KAN-186): in zen the card does not open
+  // itself, so the bar's own "ask pond" has to ask for it too.
+  const composerOpen = useComposerOpen()
 
   // A no-execute client tool's part stays `input-available` after addToolOutput,
   // so we can't drive the card's resolved state off the SDK part — the local maps
@@ -835,9 +846,13 @@ export function AITerminal() {
           { id: crypto.randomUUID(), pageId: nodeId, blockId, range, quotedText: ctx.text },
         ])
       }
+      if (inZen) {
+        askComposer()
+        if (!composerOpen) requestComposerToggle()
+      }
       requestAnimationFrame(() => inputRef.current?.focus())
     },
-    [nodeId]
+    [nodeId, inZen, composerOpen, askComposer]
   )
 
   // The refs row's marks come off the same `pagesKey()` cache the rail and
@@ -1357,7 +1372,23 @@ export function AITerminal() {
   const collapseComposer = useCallback(() => {
     setAnswerSeenAtCollapse(lastSettledAnswerId)
     setIsCollapsed(true)
-  }, [lastSettledAnswerId])
+    // Zen's card is only shown once asked (KAN-186) — every way of closing it
+    // (the card's "close", a second Esc's first rung, ⌘J) clears that ask and
+    // hands focus back to the pill's own ask-pond button, not <body>. Deferred
+    // a frame: called mid-Escape-keydown, a *synchronous* focus() here would
+    // blur the composer's still-mounted textarea before `zen.tsx`'s own
+    // window-level listener reads `document.activeElement`, tripping its
+    // "text field blurred on esc" exception (meant for the page's own editor)
+    // and leaving zen on the very same press instead of just closing the card.
+    if (inZen) {
+      closeComposerAsk()
+      requestAnimationFrame(() => {
+        document
+          .querySelector<HTMLButtonElement>('[data-part="zen-pill"] button[aria-label="ask pond"]')
+          ?.focus()
+      })
+    }
+  }, [lastSettledAnswerId, inZen, closeComposerAsk])
   const handleExpand = useCallback(() => setIsCollapsed(false), [])
 
   // Dedicated html-only picker (KAN-251): ⌘K's `import a page` fires
@@ -1674,6 +1705,20 @@ export function AITerminal() {
   // that would fire when the card resolves.
   useEffect(() => {
     const handleToggleRequest = () => {
+      // In zen, ⌘J is the person asking (KAN-186) — same door as the pill's
+      // own Pond mark: it asks/unasks rather than just opening/collapsing the
+      // ordinary composer, whose own open-by-default state answers a
+      // different question (see `composerAsked`, `zen.tsx`).
+      if (inZen) {
+        if (composerAsked) {
+          collapseComposer()
+        } else {
+          askComposer()
+          if (effectiveCollapsed) setIsCollapsed(false)
+          focusInputSoon()
+        }
+        return
+      }
       if (effectiveCollapsed) {
         setIsCollapsed(false)
         focusInputSoon()
@@ -1687,7 +1732,20 @@ export function AITerminal() {
     }
     window.addEventListener(TOGGLE_COMPOSER_EVENT, handleToggleRequest)
     return () => window.removeEventListener(TOGGLE_COMPOSER_EVENT, handleToggleRequest)
-  }, [effectiveCollapsed, hasUnresolvedProposal, collapseComposer, focusInputSoon])
+  }, [
+    inZen,
+    composerAsked,
+    askComposer,
+    effectiveCollapsed,
+    hasUnresolvedProposal,
+    collapseComposer,
+    focusInputSoon,
+  ])
+
+  // Zen's pill (KAN-186) reads this from outside without importing AITerminal.
+  useEffect(() => {
+    notifyComposerOpenChange(!effectiveCollapsed)
+  }, [effectiveCollapsed])
 
   // Fulfil a pending ⌘K focus once the input is actually mounted (i.e. the composer
   // finished uncollapsing). Runs after the commit that mounts the textarea.
@@ -1994,7 +2052,9 @@ export function AITerminal() {
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     // Esc stops a stream and keeps what arrived; else it leaves the field. It never
     // clears what was typed. An in-flight html read takes priority over both: it
-    // has made nothing yet, so Esc discards it outright.
+    // has made nothing yet, so Esc discards it outright. In zen, the field doesn't
+    // blur (blurring is what let this same esc also leave zen) — it closes the
+    // composer, and a second esc with nothing left to consume it leaves zen.
     if (e.key === 'Escape') {
       e.preventDefault()
       if (htmlReading) {
@@ -2002,6 +2062,7 @@ export function AITerminal() {
         return
       }
       if (isStreaming) stop()
+      else if (inZen) collapseComposer()
       else e.currentTarget.blur()
       return
     }
@@ -2038,6 +2099,7 @@ export function AITerminal() {
         target.blur()
         return
       }
+      e.preventDefault()
       collapseComposer()
     },
     [isStreaming, stop, collapseComposer, htmlReading, clearHtmlAttachment]
@@ -3953,6 +4015,21 @@ export function AITerminal() {
           e.target.value = ''
         }}
       />
+      {/* 6q f8 always draws "close" as the card's last row, regardless of
+          turn count — lives in the footer (always rendered) rather than the
+          messages gate above so it reaches a thread with no ThreadHead too.
+          ThreadHead's own × (turns > 1) is left in place alongside it. */}
+      {inZen && (
+        <div data-part="zen-close-row" className="flex justify-start">
+          <button
+            type="button"
+            onClick={collapseComposer}
+            className="cursor-pointer text-[11px] text-mn-text-secondary hover:text-mn-text"
+          >
+            close
+          </button>
+        </div>
+      )}
     </div>
   )
 

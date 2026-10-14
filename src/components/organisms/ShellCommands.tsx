@@ -23,9 +23,10 @@
  * row (the palette has no ＋ to anchor a menu to). `ask pond about “q”` lands in
  * the composer prefilled.
  *
- * Zen's rows, ⌘. and the breadcrumb in zen are `useZenCommands`. Zen hides the
- * composer and it must come back as it was left, so in zen ⌘J does nothing and
- * the palette mints no `ask pond about “q”`.
+ * Zen's rows, ⌘. and the breadcrumb in zen are `useZenCommands`. In zen ⌘J is
+ * the person asking (KAN-186) — same door, `AITerminal` routes it through the
+ * pill's own ask/close rather than the ordinary open/collapse; the palette
+ * still mints no `ask pond about “q”` there.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -225,7 +226,7 @@ export function ShellCommands() {
         e.preventDefault()
         e.stopPropagation()
         // A held key repeats keydown; it must not flap the card open and shut.
-        if (!e.repeat && !inZen) requestComposerToggle()
+        if (!e.repeat) requestComposerToggle()
         return
       }
       // Undo/redo belongs to an editable field first — Tiptap's own undo, an
@@ -253,7 +254,7 @@ export function ShellCommands() {
     }
     document.addEventListener('keydown', onKey, { capture: true })
     return () => document.removeEventListener('keydown', onKey, { capture: true })
-  }, [templateSheetOpen, pondSheetOpen, closeTemplateSheet, closeNewPondSheet, inZen, pondId, runUndoStep])
+  }, [templateSheetOpen, pondSheetOpen, closeTemplateSheet, closeNewPondSheet, pondId, runUndoStep])
 
   const handleOpenChange = useCallback(
     (next: boolean) => {

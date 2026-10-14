@@ -10,7 +10,8 @@ import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { NotifyBridge } from '@/lib/deletion/notify-bridge'
 import { CommandPathProvider } from '@/lib/layout/command-path'
 import { RAIL_WIDTH_PX } from '@/lib/layout/rail-width'
-import { useZen, ZenChrome, ZenProvider } from '@/lib/layout/zen'
+import { useZen, ZenChrome, ZenComposerChrome, ZenProvider } from '@/lib/layout/zen'
+import { ZenPill } from '@/components/organisms/ZenPill'
 
 /**
  * Client shell for the workspace UI. Scope is the POND, resolved once here from
@@ -74,11 +75,12 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
                       </Suspense>
                     </main>
                   </div>
-                  <ZenChrome>
+                  <ZenComposerChrome>
                     <Suspense fallback={null}>
                       <AITerminal />
                     </Suspense>
-                  </ZenChrome>
+                  </ZenComposerChrome>
+                  <ZenPill />
                   <Suspense fallback={null}>
                     <ShellCommands />
                   </Suspense>

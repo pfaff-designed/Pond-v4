@@ -18,12 +18,15 @@
  * textarea) is driven by real `userEvent`.
  */
 
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { createRef } from 'react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DocumentPanel } from '@/components/organisms/DocumentPanel'
 import { AITerminal } from '@/components/organisms/AITerminal'
+import { ZenPill } from '@/components/organisms/ZenPill'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
+import { useZen, ZenProvider } from '@/lib/layout/zen'
 import type { Block } from '@/lib/documents/types'
 import type { PondPage } from '@/lib/pages/client'
 import { clearSelection, selectWord } from './helpers/selection'
@@ -494,5 +497,80 @@ describe('the open page auto-references itself, deduped against a passage (KAN-9
     expect(refs).toHaveTextContent('Workshop')
     expect(screen.getByRole('button', { name: 'remove reference: Workshop' })).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: /remove reference/ })).toHaveLength(1)
+  })
+})
+
+describe('ask pond from the selection bar opens the card in zen (KAN-186)', () => {
+  function renderZenSurface() {
+    mockGetPage.mockResolvedValue(PAGE)
+    mockListPages.mockResolvedValue([PAGE])
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const root = createRef<HTMLDivElement>()
+    const Entered = () => {
+      const { enterZen } = useZen()
+      return (
+        <>
+          <button onClick={() => enterZen({ onInk: false })}>enter</button>
+          <ZenPill />
+          <DocumentPanel />
+          <AITerminal />
+        </>
+      )
+    }
+    const view = render(
+      <div ref={root}>
+        <QueryClientProvider client={client}>
+          <DeletionUndoProvider>
+            <ZenProvider scrollRoot={root}>
+              <Entered />
+            </ZenProvider>
+          </DeletionUndoProvider>
+        </QueryClientProvider>
+      </div>
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'enter' }))
+    return view
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks()
+    mockSendMessage.mockClear()
+    mockMessages = []
+  })
+  afterEach(() => clearSelection())
+
+  it('opens the card with the passage attached, even though the card is still the hidden zen-chrome ancestor', async () => {
+    const user = userEvent.setup()
+    renderZenSurface()
+    await waitComposerReady()
+    const field = await findTextBlock()
+
+    // Entering zen is quiet on its own (the composer's own open/closed state
+    // starts open regardless of zen, but nothing has asked for the card yet)
+    // — the pill's mark starts at rest.
+    const pill = document.querySelector('[data-part="zen-pill"]') as HTMLElement
+    expect(within(pill).getByRole('button', { name: 'ask pond' })).toHaveAttribute(
+      'aria-pressed',
+      'false'
+    )
+
+    selectWord(field, 'wild')
+    const toolbar = await screen.findByRole('toolbar', { name: 'selection' })
+    const askPondOnBar = within(toolbar).getByRole('button', { name: 'ask pond' })
+
+    // `SelectionBar` portals to `document.body` (`SelectionBar.tsx:679`), so
+    // it is never a DOM descendant of `ZenComposerChrome`'s hidden ancestor —
+    // confirmed structurally, not just by jsdom's lack of a real stylesheet.
+    expect(askPondOnBar.closest('[data-part="zen-chrome"]')).toBeNull()
+
+    await user.click(askPondOnBar)
+
+    expect(await screen.findByText('Workshop — “wild”')).toBeInTheDocument()
+    await waitFor(() =>
+      expect(within(pill).getByRole('button', { name: 'ask pond' })).toHaveAttribute(
+        'aria-pressed',
+        'true'
+      )
+    )
   })
 })

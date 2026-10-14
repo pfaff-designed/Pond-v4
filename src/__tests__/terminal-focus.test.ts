@@ -3,6 +3,7 @@
  * fires FOCUS_TERMINAL_EVENT; AITerminal listens for the same constant. Pinning
  * the string ensures they stay in sync across merges.
  */
+import { act, renderHook } from '@testing-library/react'
 import {
   COMPOSER_NOTICE_EVENT,
   FOCUS_TERMINAL_EVENT,
@@ -12,11 +13,13 @@ import {
   type ComposerNoticeDetail,
   type RequestChangesDetail,
   isComposerToggleKey,
+  notifyComposerOpenChange,
   requestChanges,
   requestComposerNotice,
   requestComposerToggle,
   requestHtmlImportPicker,
   requestTerminalFocus,
+  useComposerOpen,
 } from '@/lib/terminal-focus'
 
 describe('terminal-focus', () => {
@@ -55,6 +58,33 @@ describe('the composer notice bridge (KAN-93)', () => {
       "can't undo — the page changed since. revert it from the change log."
     )
     window.removeEventListener(COMPOSER_NOTICE_EVENT, listener)
+  })
+})
+
+describe("the composer's open state outside AITerminal (KAN-186)", () => {
+  it('useComposerOpen flips when notifyComposerOpenChange dispatches', () => {
+    const { result } = renderHook(() => useComposerOpen())
+    expect(result.current).toBe(false)
+
+    act(() => notifyComposerOpenChange(true))
+    expect(result.current).toBe(true)
+
+    act(() => notifyComposerOpenChange(false))
+    expect(result.current).toBe(false)
+  })
+
+  it('a listener that mounts after AITerminal already broadcast reads the true state, not the closed default', () => {
+    // Host order: AITerminal (the broadcaster) mounts and announces open
+    // before ZenComposerChrome/ZenPill (the listeners) ever subscribe. A
+    // useState(false)-backed hook would miss this — the CustomEvent already
+    // fired and isn't replayed — and read 'closed' until the next change.
+    notifyComposerOpenChange(true)
+
+    const { result } = renderHook(() => useComposerOpen())
+    expect(result.current).toBe(true)
+
+    act(() => notifyComposerOpenChange(false))
+    expect(result.current).toBe(false)
   })
 })
 
