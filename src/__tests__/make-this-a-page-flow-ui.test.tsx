@@ -129,6 +129,7 @@ import { AITerminal } from '@/components/organisms/AITerminal'
 import { ANSWER_PROSE_CLASS } from '@/components/molecules/Markdown'
 import { readStamp } from '@/lib/conversation/page-proposals'
 import { machineEyebrowClass, pageEyebrowClass } from '@/components/atoms/kicker'
+import { changeLogKey } from '@/lib/change-log/keys'
 
 // ── Fixtures ──────────────────────────────────────────────────────────────
 
@@ -479,6 +480,18 @@ describe('make this a page → the `new page — proposed` card', () => {
     // The card is a machine surface: mono, lowercase.
     expect(card.className).toMatch(/font-mono/)
     expect(card.className).toMatch(/lowercase/)
+  })
+
+  it('invalidates changeLogKey() once the proposal record write resolves — never before', async () => {
+    const qc = newQueryClient()
+    const invalidateSpy = jest.spyOn(qc, 'invalidateQueries')
+    render(terminalTree(qc))
+    await ready()
+    fireEvent.click(screen.getByRole('button', { name: 'make this a page' }))
+    await screen.findByRole('group', { name: /new page — proposed/i })
+
+    await waitFor(() => expect(mockAppendProposal).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: changeLogKey() }))
   })
 
   it('the under select shows the full ancestor path for a parent two levels deep, never the disambiguated single title', async () => {
