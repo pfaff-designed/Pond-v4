@@ -38,11 +38,14 @@ const mockFetchNodeContext = jest.fn(async (_sb: unknown, _userId: string, pageI
       }
     : null
 )
-jest.mock('@/lib/context/assemble', () => ({
-  buildChatContext: async () => null,
-  fetchNodeContext: (...args: [unknown, string, string]) => mockFetchNodeContext(...args),
-  formatNodeContext: () => '',
-}))
+jest.mock('@/lib/context/assemble', () => {
+  const actual = jest.requireActual('@/lib/context/assemble')
+  return {
+    ...actual,
+    buildChatContext: async () => null,
+    fetchNodeContext: (...args: [unknown, string, string]) => mockFetchNodeContext(...args),
+  }
+})
 jest.mock('@/lib/context/paste-link', () => ({ fetchLinkContext: async () => null }))
 jest.mock('@/lib/embeddings/retrieve', () => ({
   retrievePages: async () => [],
