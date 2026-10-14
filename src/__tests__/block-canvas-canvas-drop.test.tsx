@@ -156,3 +156,51 @@ describe('the canvas root keeps and commits the indicator the ghost would otherw
     expect(mockRemember).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('a zone that offers no plan clears the previous target\'s indicator', () => {
+  it('hovering back over the held block\'s own origin drops nothing', async () => {
+    const a: Block = { id: 'b-a', type: 'text', content: 'a' }
+    const b: Block = { id: 'b-b', type: 'text', content: 'b' }
+    const onChange = jest.fn()
+    renderCanvas([a, b], onChange)
+
+    fireEvent.dragStart(blockRoot('b-a'))
+    // x=360 of a 400-wide rect is 90% across: the outer-right 25%, beside-right of b.
+    dragOver('b-b', rect(0, 400), 360, 50)
+    expect(blockRoot('b-b').querySelector('[data-part="drop-bar"]')).not.toBeNull()
+
+    // Back over a's own origin node: no plan is offered there.
+    dragOver('b-a', rect(0, 400), 200, 50)
+    expect(blockRoot('b-b').querySelector('[data-part="drop-bar"]')).toBeNull()
+
+    dropAt(canvasRoot('b-b'), 200, 50)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(onChange).not.toHaveBeenCalled()
+    expect(mockAppendOwnEdit).not.toHaveBeenCalled()
+  })
+
+  it('hovering a row that already holds 4 clears an earlier target\'s indicator', async () => {
+    const a: Block = { id: 'b-a', type: 'text', content: 'a' }
+    const b: Block = { id: 'b-b', type: 'text', content: 'b' }
+    const c: Block = { id: 'b-c', type: 'text', content: 'c', width: '1/4' }
+    const d: Block = { id: 'b-d', type: 'text', content: 'd', width: '1/4' }
+    const e: Block = { id: 'b-e', type: 'text', content: 'e', width: '1/4' }
+    const f: Block = { id: 'b-f', type: 'text', content: 'f', width: '1/4' }
+    const onChange = jest.fn()
+    renderCanvas([a, b, c, d, e, f], onChange)
+
+    fireEvent.dragStart(blockRoot('b-a'))
+    dragOver('b-b', rect(0, 400), 360, 50)
+    expect(blockRoot('b-b').querySelector('[data-part="drop-bar"]')).not.toBeNull()
+
+    // c already sits in a full 4-block row: no beside plan exists here.
+    dragOver('b-c', rect(0, 400), 360, 50)
+    expect(blockRoot('b-b').querySelector('[data-part="drop-bar"]')).toBeNull()
+    expect(blockRoot('b-c').querySelector('[data-part="drop-bar"]')).toBeNull()
+
+    dropAt(canvasRoot('b-b'), 360, 50)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(onChange).not.toHaveBeenCalled()
+    expect(mockAppendOwnEdit).not.toHaveBeenCalled()
+  })
+})

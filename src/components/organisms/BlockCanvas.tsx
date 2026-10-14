@@ -1473,7 +1473,17 @@ export function BlockCanvas({
         }}
         onDragOver={(e) => {
           e.preventDefault()
-          if (draggingIndex === null || draggingIndex === i) return
+          if (draggingIndex === null) return
+          if (draggingIndex === i) {
+            // Hovering the held block's own origin: no drop is offered here,
+            // so whatever indicator/preview the last hovered target left up
+            // must clear too — otherwise a release here would still commit
+            // that earlier target's plan (the drop just below commits
+            // whatever indicator is shown, not what's under the pointer now).
+            setDropIndicator(null)
+            setPreviewWidth(null)
+            return
+          }
           const rect = e.currentTarget.getBoundingClientRect()
           const zone = classifyDropZone(rect, { x: e.clientX, y: e.clientY })
           if (zone === 'left' || zone === 'right') {
@@ -1481,8 +1491,11 @@ export function BlockCanvas({
             // `null`: the row already holds 4, or the widths this drop would
             // set let `layoutRows` repack the planned row apart — no beside
             // line here, though the row's own-line (above/below) zone still works.
+            // Clears unconditionally, same reason as the origin-hover branch
+            // above: a stale indicator from an earlier target must not survive
+            // into a zone that offers no plan of its own.
             if (planned === null) {
-              setDropIndicator((cur) => (cur?.index === i ? null : cur))
+              setDropIndicator(null)
               setPreviewWidth(null)
               return
             }
