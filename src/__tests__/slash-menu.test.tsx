@@ -693,7 +693,10 @@ describe('the component’s own source', () => {
     // `COMPOSER_POP` (KAN-99) is the sans `@` popover's own chrome, a different
     // register from this mono picker's (ADR 0004 §4) — its head is uppercase per
     // board 6e frame 3. This guard is about the shared MONO row/group only.
-    const mono = source.replace(/\/\*\*\s*\n \* The composer's `@` popover[\s\S]*?\n} as const/, '')
+    const mono = source.replace(
+      /\/\*\*(?:[^*]|\*(?!\/))*\*\/\s*const COMPOSER_POP_GLASS[\s\S]*?export const COMPOSER_POP = \{[\s\S]*?\} as const/,
+      ''
+    )
     expect(mono).not.toMatch(/uppercase/)
   })
 

@@ -912,7 +912,7 @@ export function AITerminal() {
   // One place sets `mentionQuery`, so narrowing (or opening on a fresh `@`)
   // re-highlighting the first row (board 6e frame 3) lives here rather than
   // in an effect synced off it. `PagesPicker` measures its own anchor and
-  // picks its own side (round 3) — this host no longer estimates either.
+  // picks its own side — this host doesn't duplicate either.
   const updateMentionQuery = useCallback(() => {
     const el = inputRef.current
     if (!el) return

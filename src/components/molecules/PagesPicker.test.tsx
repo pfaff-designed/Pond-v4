@@ -335,21 +335,7 @@ describe('PagesPicker — the composer @ popover rows', () => {
     expect(listbox.className).toContain('overflow-y-auto')
   })
 
-  describe('measures its own anchor to stay wholly on screen (round 3)', () => {
-    // `GLASS_CHROME_PX` (45.75) is read off the component's own doc comment,
-    // derived from the item's own live measurement (a capped six-row glass
-    // is 258.75px tall; 258.75 − 6×35.5 = 45.75). The item's three worked
-    // examples give test 1 and test 2 the same `card top 160`, but ask for
-    // two different outcomes ("room above < head+2 rows" vs. "room for
-    // head+3 rows above") off the identical room-above figure that follows
-    // from one `top` value — those can't both hold for any one chrome
-    // constant, so the fixtures below pick anchor rects that are internally
-    // consistent with the formula while exercising the three NAMED
-    // behaviours exactly (tight above → opens below; moderate above → stays
-    // above with a clamped cap; ample above → the full six-row cap). Test 3
-    // keeps the item's own literal numbers (card top 700, innerHeight 900)
-    // verbatim — those two are consistent with each other.
-
+  describe('measures its own anchor to stay wholly on screen', () => {
     it('opens below when room above is too tight for the head plus two rows', () => {
       const restoreInnerHeight = stubInnerHeight(500)
       try {
@@ -434,44 +420,6 @@ describe('PagesPicker — the composer @ popover rows', () => {
         const listbox = screen.getByRole('listbox')
         expect(popover.style.bottom).toBe(`${900 - 700 + 10}px`)
         expect(listbox.style.maxHeight).toBe(`${6 * 35.5}px`)
-      } finally {
-        restoreInnerHeight()
-      }
-    })
-
-    it('recomputes the layout when the item count narrows', () => {
-      const restoreInnerHeight = stubInnerHeight(500)
-      try {
-        const anchor: MentionAnchorBox = {
-          getBoundingClientRect: () => ({ top: 198, bottom: 230, left: 0, width: 320 }),
-        }
-        const { rerender } = render(
-          <PagesPicker
-            items={MANY_ITEMS}
-            activeIndex={0}
-            onHover={jest.fn()}
-            onPick={jest.fn()}
-            onClose={jest.fn()}
-            anchor={anchor}
-          />
-        )
-        expect(screen.getByRole('listbox').style.maxHeight).toBe('134.25px')
-
-        rerender(
-          <PagesPicker
-            items={ITEMS}
-            activeIndex={0}
-            onHover={jest.fn()}
-            onPick={jest.fn()}
-            onClose={jest.fn()}
-            anchor={anchor}
-          />
-        )
-        // Room above hasn't changed, so the clamp doesn't either — this
-        // proves the effect re-ran (not that the number moved) by asserting
-        // against the smaller item set's own rows.
-        expect(screen.getAllByRole('option')).toHaveLength(3)
-        expect(screen.getByRole('listbox').style.maxHeight).toBe('134.25px')
       } finally {
         restoreInnerHeight()
       }

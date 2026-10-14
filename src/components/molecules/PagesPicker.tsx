@@ -6,7 +6,7 @@
  * `activeIndex` and the `@`-query narrowing; this component owns only the
  * keys that work it and where it sits.
  *
- * `PondPicker` kind "pages" (round 3, conductor-approved): the glass is
+ * `PondPicker` kind "pages": the glass is
  * `COMPOSER_POP.glass`, the head `COMPOSER_POP.head`, and every row is
  * `slash-row.tsx`'s `Row` with `chrome={COMPOSER_POP.row}` — the shared
  * `PondPicker` row/chrome (`picker-chrome.ts`), not a hand-rolled list (two
@@ -39,7 +39,7 @@
  * anchor's, inset by 12 on each side).
  *
  * The glass measures itself for its own above/below choice and its own
- * height cap (round 3) rather than taking a `side` prop computed before
+ * height cap rather than taking a `side` prop computed before
  * mount: `room above = anchor.top − gap − viewport margin`, `room below =
  * innerHeight − anchor.bottom − gap − viewport margin`; it opens above when
  * room above fits the head plus at least two rows, else on whichever side
@@ -187,9 +187,9 @@ export function PagesPicker({
   }, [anchor, onClose])
 
   // The side (and how tall the row list is allowed to get) is the glass's
-  // own job now (round 3): measured off the anchor's rect against the real
-  // viewport, not handed down as a prop computed before anything has
-  // mounted. `left`/`width` are read the same pass, off the same rect.
+  // own job: measured off the anchor's rect against the real viewport, not
+  // handed down as a prop computed before anything has mounted. `left`/
+  // `width` are read the same pass, off the same rect.
   const [layout, setLayout] = useState<{
     side: PickerSide
     pinned: boolean
@@ -233,11 +233,7 @@ export function PagesPicker({
       window.removeEventListener('resize', update)
       window.removeEventListener('scroll', update, true)
     }
-    // `items.length` isn't read above — room/side are a viewport question,
-    // not an item-count one — but narrowing the query is exactly when the
-    // row count changes, so this re-measures then too rather than trusting
-    // a layout read from before the narrower list existed.
-  }, [anchor, items.length])
+  }, [anchor])
 
   // `useAnchoredBox`'s own `left` is the anchor's unclamped edge (width 0
   // skips its clamp); `layout.left`/`width` (the DC's 12px inset) override it.
@@ -251,7 +247,12 @@ export function PagesPicker({
         : { ...position, left: layout.left, width: layout.width }
       : undefined
   return createPortal(
-    <div ref={glassRef} data-part="popover" className={COMPOSER_POP.glass} style={style}>
+    <div
+      ref={glassRef}
+      data-part="popover"
+      className={layout?.side === 'top' ? COMPOSER_POP.glassAbove : COMPOSER_POP.glass}
+      style={style}
+    >
       <div data-part="head" className={COMPOSER_POP.head}>
         pages
       </div>

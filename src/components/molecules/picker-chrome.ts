@@ -35,7 +35,8 @@
 export const GLASS =
   'mn-glass rounded-mn-card motion-menu fixed z-[100] box-border flex flex-col gap-[1px] p-[8px] font-mono text-mn-text'
 /** Anchored above its field the glass grows from its bottom edge (ticket-41); `.motion-menu` reads this origin. */
-export const GLASS_ABOVE = `${GLASS} [--motion-menu-origin:bottom_left]`
+const MOTION_MENU_ORIGIN_ABOVE = '[--motion-menu-origin:bottom_left]'
+export const GLASS_ABOVE = `${GLASS} ${MOTION_MENU_ORIGIN_ABOVE}`
 const HEAD_BASE =
   'mb-[4px] flex items-center gap-[10px] border-b border-mn-text/[0.09] px-[10px] pt-[8px] pb-[10px] font-mono'
 export const HEAD = `${HEAD_BASE} text-[12px]`
@@ -110,13 +111,16 @@ export const LIST_MAX_VH = 0.6
  *   label     500
  *   sPopSub   12.5 · ink .68
  */
+const COMPOSER_POP_GLASS =
+  'mn-glass motion-menu fixed z-[100] box-border flex flex-col p-[8px] rounded-[18px] font-sans text-mn-text'
 export const COMPOSER_POP = {
-  glass:
-    'mn-glass motion-menu fixed z-[100] box-border flex flex-col p-[8px] rounded-[18px] font-sans text-mn-text',
+  glass: COMPOSER_POP_GLASS,
+  /** This glass opens above its anchor more often than below; `.motion-menu` grows it from that edge. */
+  glassAbove: `${COMPOSER_POP_GLASS} ${MOTION_MENU_ORIGIN_ABOVE}`,
   head: 'px-[10px] pt-[4px] pb-[8px] text-[10.5px] font-medium tracking-[.1em] uppercase text-mn-text-secondary',
   row: {
     row: 'flex cursor-default items-center gap-[10px] rounded-[14px] px-[10px] py-[8px] font-sans text-[13px] text-mn-text',
-    label: 'min-w-0 truncate font-medium',
+    label: 'font-medium',
     sub: 'min-w-0 truncate text-[12.5px] text-mn-text-secondary',
   },
 } as const

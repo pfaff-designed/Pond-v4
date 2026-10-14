@@ -443,9 +443,9 @@ describe('the open page auto-references itself, deduped against a passage (KAN-9
     await screen.findByText('pages')
 
     const popover = document.querySelector('[data-part="popover"]') as HTMLElement
-    // Round 3: the glass measures its own room off this same card rect, not
-    // a `side` computed elsewhere — room above (200 − 10 − 8 = 182px) fits
-    // the head plus two rows, so it opens above the card.
+    // The glass measures its own room off this same card rect, not a `side`
+    // computed elsewhere — room above (200 − 10 − 8 = 182px) fits the head
+    // plus two rows, so it opens above the card.
     expect(popover.style.bottom).toBe(`${window.innerHeight - 200 + 10}px`) // the card's top (200) + the DC's 10px gap
     expect(popover.style.left).toBe('52px') // the card's left (40) + the DC's 12px inset
     expect(popover.style.width).toBe('336px') // the card's width (360) − 12px off each side
