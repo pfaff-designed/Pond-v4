@@ -1,15 +1,20 @@
 /**
- * The side-by-side path (6x), minus ⌘Z (part 2 covers that): `DocumentPanel`
- * mounted with the real `BlockCanvas` it hosts, PLUS the real `PondCommand`
- * (for its mode toggle) — proves the drag beside, drop, own-line-drop, and
- * equal-share paths all fire from the surface a person actually reaches, not
- * `BlockCanvas` fed hand-picked props. Geometry mocking follows
- * `block-canvas-beside-drop.test.tsx`/`block-canvas-drop-line.test.tsx`'s own
- * pattern (jsdom has no layout); the handle press goes through `userEvent` on
- * the real "Block menu" button (`title="Block menu · drag to reorder"`) since
- * that is how a person arms the drag — the HTML5 drag sequence itself still
- * goes through `fireEvent`, since neither jsdom nor `userEvent` implements
- * native drag-and-drop.
+ * The side-by-side path (6x): `DocumentPanel` mounted with the real
+ * `BlockCanvas` it hosts, PLUS the real `PondCommand` (for its mode toggle) —
+ * proves the drag beside, drop, own-line-drop, and equal-share paths all fire
+ * from the surface a person actually reaches, not `BlockCanvas` fed hand-picked
+ * props. Geometry mocking follows `block-canvas-beside-drop.test.tsx`/
+ * `block-canvas-drop-line.test.tsx`'s own pattern (jsdom has no layout); the
+ * handle press goes through `userEvent` on the real "Block menu" button
+ * (`title="Block menu · drag to reorder"`) since that is how a person arms the
+ * drag — the HTML5 drag sequence itself still goes through `fireEvent`, since
+ * neither jsdom nor `userEvent` implements native drag-and-drop.
+ *
+ * Part 2, below: the real `ShellCommands` (the ⌘Z/⇧⌘Z owner) mounted beside
+ * `DocumentPanel`, pressing ⌘Z after a beside drop — proves the drop's
+ * `sessionUndo.remember` and the shell's `sessionUndo.undo` share one real
+ * stack (`session-undo.ts` is left real here, like `undo-accept-path.test.tsx`;
+ * only the RPC boundary, `@/lib/change-log/undo`, is mocked).
  */
 
 import React from 'react'
@@ -18,7 +23,10 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DocumentPanel } from '@/components/organisms/DocumentPanel'
 import { PondCommand } from '@/components/organisms/PondCommand'
+import { ShellCommands } from '@/components/organisms/ShellCommands'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
+import { sessionUndo } from '@/lib/change-log/session-undo'
+import { undoStep } from '@/lib/change-log/undo'
 import { blockWidthStyle } from '@/lib/modules/layout-rows'
 import type { Block } from '@/lib/documents/types'
 
@@ -31,9 +39,12 @@ jest.mock('@/lib/supabase/client', () => ({
   createClient: () => ({ auth: { getUser: async () => ({ data: { user: { id: 'user-1' } } }) } }),
 }))
 
+// Part 2 (⌘Z) overrides this to the pond `sessionUndo.remember`'s guard needs;
+// every other test here keeps the part-1 default (null skips `remember`).
+const mockUsePondId = jest.fn<string | null, []>(() => null)
 jest.mock('@/lib/pond/context', () => ({
   ...jest.requireActual('@/lib/pond/context'),
-  usePondId: () => null,
+  usePondId: () => mockUsePondId(),
 }))
 
 const mockFetchPages = jest.fn().mockResolvedValue([])
@@ -66,14 +77,22 @@ jest.mock('@/lib/pages/commit', () => ({
 jest.mock('@/lib/change-log/store', () => ({
   appendOwnEdit: jest.fn().mockResolvedValue({ id: 'record-1' }),
 }))
-jest.mock('@/lib/change-log/session-undo', () => ({
-  sessionUndo: { remember: jest.fn() },
+// `session-undo.ts` stays real here (unlike part 1, and like `undo-accept-path.test.tsx`):
+// part 2 proves the drop's `remember` and ⌘Z's `undo` share one real stack, not two
+// mocks that happen to agree. Only the RPC boundary is mocked.
+jest.mock('@/lib/change-log/undo', () => ({
+  ...jest.requireActual('@/lib/change-log/undo'),
+  undoStep: jest.fn(),
+  redoStep: jest.fn(),
 }))
 
 beforeEach(() => {
   jest.clearAllMocks()
   mockFetchPages.mockResolvedValue([])
   mockSaveBlocks.mockResolvedValue(undefined)
+  mockUsePondId.mockReturnValue(null)
+  jest.mocked(undoStep).mockResolvedValue({ outcome: 'done', records: [] })
+  sessionUndo.clear()
 })
 
 function renderPath(blocks: Block[]) {
@@ -239,5 +258,63 @@ describe('the side-by-side path (6x), minus ⌘Z', () => {
     expect(sizingWidth('b-right')).toBe(asInlineStyle(blockWidthStyle('1/3')))
     expect(sizingWidth('b-third')).toBe(asInlineStyle(blockWidthStyle('1/3')))
     expect(blockOrder()).toEqual(['b-left', 'b-right', 'b-third'])
+  })
+})
+
+function renderPathWithShell(blocks: Block[]) {
+  mockGetPage.mockResolvedValue({ id: 'page-1', title: 'Workshop', blocks })
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(
+    <QueryClientProvider client={client}>
+      <DeletionUndoProvider>
+        <ShellCommands />
+        <DocumentPanel />
+      </DeletionUndoProvider>
+    </QueryClientProvider>
+  )
+}
+
+const onPlatform = (platform: string) =>
+  jest.spyOn(window.navigator, 'platform', 'get').mockReturnValue(platform)
+
+describe('the side-by-side path (6x), part 2: ⌘Z after a beside drop', () => {
+  afterEach(() => jest.restoreAllMocks())
+
+  it('⌘Z runs sessionUndo.undo for this pond and steps back exactly the drop’s one record', async () => {
+    onPlatform('MacIntel')
+    mockUsePondId.mockReturnValue('pond-1')
+    const list: Block = {
+      id: 'b-list',
+      type: 'todo',
+      items: [{ id: 'item-1', label: 'Sand the top', checked: false }],
+    }
+    const table: Block = {
+      id: 'b-table',
+      type: 'table',
+      columns: ['Tool'],
+      rows: [{ id: 'r1', cells: ['Table Saw'] }],
+    }
+    renderPathWithShell([list, table])
+    await screen.findByLabelText('Page title')
+    const user = userEvent.setup()
+
+    await armHandle(user, 'b-table')
+    fireEvent.dragStart(blockRoot('b-table'))
+    // x=360 of a 400-wide rect is 90% across: the outer-right 25%, beside-right.
+    dragOverAt('b-list', rect(0, 400), 360, 50)
+    dropAt('b-list', rect(0, 400), 360, 50)
+
+    await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalledTimes(1))
+    // The revert's own block restore is `undo.ts`'s already-tested path; this
+    // proves only that the shell's ⌘Z reaches the real session stack the drop
+    // remembered, for this pond, with exactly the drop's one record.
+    await user.click(document.body)
+    await user.keyboard('{Meta>}z{/Meta}')
+
+    await waitFor(() => expect(undoStep).toHaveBeenCalledTimes(1))
+    expect(undoStep).toHaveBeenCalledWith(expect.anything(), {
+      pondId: 'pond-1',
+      recordIds: ['record-1'],
+    })
   })
 })
