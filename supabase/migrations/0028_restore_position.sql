@@ -189,9 +189,9 @@ commit;
 -- card still said "restorable until …".
 --
 -- What changed: `private.page_has_any_child` is SECURITY DEFINER, so it sees
--- every child row regardless of trash state (owner-scoped by the ROW's own
--- user_id, not the caller's session, since a definer function must name whose
--- rows it reads rather than trust auth.uid() to already be scoped by RLS).
+-- every child row regardless of trash state; owner-scoped by filtering on
+-- `auth.uid()` rather than trusting the caller, since a definer function must
+-- name whose rows it reads rather than rely on RLS to already scope them.
 -- `change_log_set_back` is re-created from 0024's body verbatim, with ONLY
 -- that one `exists(...)` replaced by a call to the helper — the errcode,
 -- DETAIL ('record-changed') and every other branch are unchanged, so
