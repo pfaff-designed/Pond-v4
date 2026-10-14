@@ -27,7 +27,7 @@ const kiwiPage: NodeContextData = {
 describe('formatOpenPageNow', () => {
   it('renders the title and a [blockId] (type) preview line per block', () => {
     const text = formatOpenPageNow(kiwiPage)
-    expect(text).toContain('Title: kan309 probe')
+    expect(text).toContain('Page: kan309 probe')
     expect(text).toContain('[b1] (text) Hello kiwi')
   })
 
