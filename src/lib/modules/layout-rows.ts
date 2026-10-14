@@ -91,6 +91,48 @@ export function widthsForDropBeside(existing: readonly BlockWidth[]): BlockWidth
   return [...existing.map(() => share), share]
 }
 
+/**
+ * Plans a beside drop (6x): splices `blocks[fromIndex]` into the row that
+ * holds `targetId`, on `zone`'s side, and applies `widthsForDropBeside`'s
+ * widths to every block now in that row. Returns `null` when the row already
+ * holds 4 (so there is nothing to plan), or when the widths it would set let
+ * `layoutRows` repack the planned row differently from what was planned — a
+ * neighbour shrinking enough to merge into the row before it, pushing part of
+ * the planned row out, so the row a person saw in the hover line is not the
+ * row they'd actually get. Both the hover (drop line + preview) and the
+ * commit call this one planner, so what's shown is exactly what's committed.
+ */
+export function planBesideDrop<T extends { id: string; width?: BlockWidth }>(
+  blocks: readonly T[],
+  fromIndex: number,
+  targetId: string,
+  zone: 'left' | 'right'
+): T[] | null {
+  const dragged = blocks[fromIndex]
+  const withoutDragged = blocks.filter((_, i) => i !== fromIndex)
+  const row = layoutRows(withoutDragged).find((r) => r.some((b) => b.id === targetId))
+  if (!row) return null
+
+  const widths = widthsForDropBeside(row.map((b) => b.width ?? 'full'))
+  if (!widths) return null
+
+  const nextWidth = new Map(row.map((b, i) => [b.id, widths[i]]))
+  nextWidth.set(dragged.id, widths[widths.length - 1])
+
+  const targetAt = withoutDragged.findIndex((b) => b.id === targetId)
+  const spliced = [...withoutDragged]
+  spliced.splice(zone === 'left' ? targetAt : targetAt + 1, 0, dragged)
+  const next = spliced.map((b) => (nextWidth.has(b.id) ? { ...b, width: nextWidth.get(b.id) } : b))
+
+  const plannedRowIds = new Set([...row.map((b) => b.id), dragged.id])
+  const keptTogether = layoutRows(next).some(
+    (r) => r.length === plannedRowIds.size && r.every((b) => plannedRowIds.has(b.id))
+  )
+  if (!keptTogether) return null
+
+  return next
+}
+
 /** The gap between blocks in a row, and between stacked blocks (6x). */
 export const BLOCK_ROW_GAP_PX = 16
 

@@ -71,8 +71,8 @@ import {
   blockWidthStyle,
   classifyDropZone,
   layoutRows,
+  planBesideDrop,
   rowHolds,
-  widthsForDropBeside,
   type DropZone,
 } from '@/lib/modules/layout-rows'
 import { SlashLineContext, type SlashLineAt } from '@/lib/modules/text/slash-line'
@@ -1178,49 +1178,20 @@ export function BlockCanvas({
   )
   const blockRows = useMemo(() => layoutRows(blocksForLayout), [blocksForLayout])
 
-  // The dragged-block-excluded widths of the row block `index` sits in — what
-  // `widthsForDropBeside` needs to decide if that row still has room (`null`
-  // means it already holds 4, so no beside line is offered there).
-  function rowWidthsExcludingDragged(index: number): BlockWidth[] {
-    const target = blocks[index]
-    const row = blockRows.find((r) => r.some((b) => b.id === target.id))
-    if (!row) return []
-    const draggedId = draggingIndex !== null ? blocks[draggingIndex].id : null
-    return row.filter((b) => b.id !== draggedId).map((b) => b.width ?? 'full')
-  }
-
   /**
-   * Commits a beside drop (6x): splices the dragged block to sit immediately
-   * before (`left`) or after (`right`) the target block, reading order, and
-   * applies `widthsForDropBeside`'s widths to every block now in that row —
-   * including the ones whose width didn't change — in one `persistBlocksAsOwnEdit`
-   * write, so the move and the widths it sets are one change with one undo
-   * (KAN-247, routed through the same direct-write pattern as template apply —
+   * Commits a beside drop (6x): `planBesideDrop` (the same planner the hover
+   * line and preview read) splices the dragged block into the target's row
+   * and applies its widths to every block now in that row — including the
+   * ones whose width didn't change — in one `persistBlocksAsOwnEdit` write,
+   * so the move and the widths it sets are one change with one undo (KAN-247,
+   * routed through the same direct-write pattern as template apply —
    * KAN-124). Reads the real `blocks` (not the live-preview `blocksForLayout`),
    * since this is the commit, not another preview.
    */
   async function commitBesideDrop(fromIndex: number, targetIndex: number, zone: 'left' | 'right') {
-    const dragged = blocks[fromIndex]
-    const target = blocks[targetIndex]
-    const withoutDragged = blocks.filter((_, i) => i !== fromIndex)
-    const row = layoutRows(withoutDragged).find((r) => r.some((b) => b.id === target.id))
-    if (!row) return
-    const widths = widthsForDropBeside(row.map((b) => b.width ?? 'full'))
-    // `null` means the row already holds 4 — unreachable here, since the drop
-    // line (and so the drop itself) is never offered beside a full row.
-    if (!widths) return
-
-    const nextWidth = new Map(row.map((b, i) => [b.id, widths[i]]))
-    nextWidth.set(dragged.id, widths[widths.length - 1])
-
-    const targetAt = withoutDragged.findIndex((b) => b.id === target.id)
-    const spliced = [...withoutDragged]
-    spliced.splice(zone === 'left' ? targetAt : targetAt + 1, 0, dragged)
-
-    await persistBlocksAsOwnEdit(
-      blocks,
-      spliced.map((b) => (nextWidth.has(b.id) ? { ...b, width: nextWidth.get(b.id) } : b))
-    )
+    const next = planBesideDrop(blocks, fromIndex, blocks[targetIndex].id, zone)
+    if (!next) return
+    await persistBlocksAsOwnEdit(blocks, next)
   }
 
   /**
@@ -1342,19 +1313,19 @@ export function BlockCanvas({
           const rect = e.currentTarget.getBoundingClientRect()
           const zone = classifyDropZone(rect, { x: e.clientX, y: e.clientY })
           if (zone === 'left' || zone === 'right') {
-            const widths = widthsForDropBeside(rowWidthsExcludingDragged(i))
-            // 4 already fill the row (`widthsForDropBeside` → `null`): no beside
+            const dragged = blocks[draggingIndex]
+            const planned = planBesideDrop(blocks, draggingIndex, blocks[i].id, zone)
+            // `null`: the row already holds 4, or the widths this drop would
+            // set let `layoutRows` repack the planned row apart — no beside
             // line here, though the row's own-line (above/below) zone still works.
-            if (widths === null) {
+            if (planned === null) {
               setDropIndicator((cur) => (cur?.index === i ? null : cur))
               setPreviewWidth(null)
               return
             }
             setDropIndicator({ index: i, zone })
-            // The dropped block is always last in `widthsForDropBeside`'s
-            // return (`[...existing, dropped]`) — so the held block's live
-            // preview is its final width.
-            setPreviewWidth({ blockId: blocks[draggingIndex].id, width: widths[widths.length - 1] })
+            const draggedNext = planned.find((b) => b.id === dragged.id)
+            setPreviewWidth({ blockId: dragged.id, width: draggedNext?.width ?? 'full' })
             return
           }
           setPreviewWidth(null)
@@ -1373,21 +1344,22 @@ export function BlockCanvas({
         }}
         onDrop={(e) => {
           e.preventDefault()
+          // Commit exactly the line a person was shown, not a fresh
+          // classification of the release point — a pointer that crosses
+          // zones between the last `dragOver` and release lands nowhere
+          // rather than somewhere it never saw a line for.
+          const indicator = dropIndicator
           setDropIndicator(null)
           setPreviewWidth(null)
-          if (draggingIndex === null || draggingIndex === i) {
-            setDraggingIndex(null)
-            return
-          }
-          const rect = e.currentTarget.getBoundingClientRect()
-          const zone = classifyDropZone(rect, { x: e.clientX, y: e.clientY })
-          if (zone === 'left' || zone === 'right') {
-            void commitBesideDrop(draggingIndex, i, zone)
-            setDraggingIndex(null)
-            return
-          }
-          void commitOwnLineDrop(draggingIndex, i, zone)
           setDraggingIndex(null)
+          if (draggingIndex === null || draggingIndex === i || !indicator || indicator.index !== i) {
+            return
+          }
+          if (indicator.zone === 'left' || indicator.zone === 'right') {
+            void commitBesideDrop(draggingIndex, i, indicator.zone)
+            return
+          }
+          void commitOwnLineDrop(draggingIndex, i, indicator.zone)
         }}
       />
     )

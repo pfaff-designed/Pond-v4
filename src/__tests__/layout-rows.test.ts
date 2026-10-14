@@ -2,7 +2,13 @@
  * `layoutRows` (6x) — packs consecutive blocks into a row while their widths add up
  * to full or less, in array order.
  */
-import { classifyDropZone, layoutRows, rowHolds, widthsForDropBeside } from '@/lib/modules/layout-rows'
+import {
+  classifyDropZone,
+  layoutRows,
+  planBesideDrop,
+  rowHolds,
+  widthsForDropBeside,
+} from '@/lib/modules/layout-rows'
 import type { BlockWidth } from '@/lib/modules/content'
 import type { Rect } from '@/lib/modules/layout-rows'
 
@@ -88,6 +94,34 @@ describe('widthsForDropBeside', () => {
 
   it('refuses a drop into a row that already holds 4', () => {
     expect(widthsForDropBeside(['1/4', '1/4', '1/4', '1/4'])).toBeNull()
+  })
+})
+
+describe('planBesideDrop', () => {
+  it('reads the row the same way for the dragged block as it would for the commit, when the dragged block currently sits inside it (A 1/3 / D full dragged / B 1/3): D lands at 1/3, not the pre-fix hover\'s 2/3', () => {
+    const a = { id: 'a', width: '1/3' as BlockWidth }
+    const d = { id: 'd', width: 'full' as BlockWidth }
+    const b = { id: 'b', width: '1/3' as BlockWidth }
+    const next = planBesideDrop([a, d, b], 1, 'b', 'right')
+    expect(next).toEqual([
+      { id: 'a', width: '1/3' },
+      { id: 'b', width: '1/3' },
+      { id: 'd', width: '1/3' },
+    ])
+  })
+
+  it('refuses a plan a repack would split apart (X 1/2 / A 2/3, B 1/3 + D beside B would otherwise become [X,A][B,D])', () => {
+    const x = { id: 'x', width: '1/2' as BlockWidth }
+    const a = { id: 'a', width: '2/3' as BlockWidth }
+    const b = { id: 'b', width: '1/3' as BlockWidth }
+    const d = { id: 'd', width: 'full' as BlockWidth }
+    expect(planBesideDrop([x, a, b, d], 3, 'b', 'right')).toBeNull()
+  })
+
+  it('refuses a plan beside a row that already holds 4', () => {
+    const quarters = ['q1', 'q2', 'q3', 'q4'].map((id) => ({ id, width: '1/4' as BlockWidth }))
+    const d = { id: 'd', width: 'full' as BlockWidth }
+    expect(planBesideDrop([...quarters, d], 4, 'q1', 'left')).toBeNull()
   })
 })
 
