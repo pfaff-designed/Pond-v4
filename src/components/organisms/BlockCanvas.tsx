@@ -1254,6 +1254,7 @@ export function BlockCanvas({
         onDragEnd={() => {
           setDraggingIndex(null)
           setDropIndicator(null)
+          setPreviewWidth(null)
         }}
         onDragOver={(e) => {
           e.preventDefault()
@@ -1261,15 +1262,22 @@ export function BlockCanvas({
           const rect = e.currentTarget.getBoundingClientRect()
           const zone = classifyDropZone(rect, { x: e.clientX, y: e.clientY })
           if (zone === 'left' || zone === 'right') {
+            const widths = widthsForDropBeside(rowWidthsExcludingDragged(i))
             // 4 already fill the row (`widthsForDropBeside` → `null`): no beside
             // line here, though the row's own-line (above/below) zone still works.
-            if (widthsForDropBeside(rowWidthsExcludingDragged(i)) === null) {
+            if (widths === null) {
               setDropIndicator((cur) => (cur?.index === i ? null : cur))
+              setPreviewWidth(null)
               return
             }
             setDropIndicator({ index: i, zone })
+            // The dropped block is always last in `widthsForDropBeside`'s
+            // return (`[...existing, dropped]`) — so the held block's live
+            // preview is its final width.
+            setPreviewWidth({ blockId: blocks[draggingIndex].id, width: widths[widths.length - 1] })
             return
           }
+          setPreviewWidth(null)
           const columnRect = canvasRef.current?.getBoundingClientRect()
           setDropIndicator({
             index: i,
@@ -1279,10 +1287,14 @@ export function BlockCanvas({
               : undefined,
           })
         }}
-        onDragLeave={() => setDropIndicator((cur) => (cur?.index === i ? null : cur))}
+        onDragLeave={() => {
+          setDropIndicator((cur) => (cur?.index === i ? null : cur))
+          setPreviewWidth(null)
+        }}
         onDrop={(e) => {
           e.preventDefault()
           setDropIndicator(null)
+          setPreviewWidth(null)
           if (draggingIndex === null || draggingIndex === i) {
             setDraggingIndex(null)
             return
