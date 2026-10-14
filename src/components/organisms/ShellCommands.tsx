@@ -50,6 +50,7 @@ import { useCommandPath } from '@/lib/layout/command-path'
 import { useZenCommands } from '@/lib/layout/use-zen-commands'
 import { workspaceUrl } from '@/lib/pages/nav'
 import { newPageParent, paletteItems, paletteScope, pondItems } from '@/lib/pages/palette-items'
+import { readRecentPageIds, writeRecent } from '@/lib/pages/recent-pages'
 import { usePaletteRecords } from '@/lib/pages/use-palette-records'
 import { fetchPages } from '@/lib/pages/tree'
 import { pagesKey } from '@/lib/pages/keys'
@@ -91,45 +92,12 @@ function noticeForReason(
   }
 }
 
-const RECENT_PAGES_KEY = 'pond:recent-pages'
-/** `Pond 02` 2g: "before anything is typed: the last three pages". */
-const RECENT_MAX = 3
-
 /** `Pond 05 Shell`'s placement: centred on the whole shell, 20px off its top. */
 const PLACEMENT = 'absolute top-5 left-[calc(50%_+_13px)] w-max -translate-x-1/2'
-
-interface RecentEntry {
-  id: string
-  type: string
-  title: string
-}
-
-function readRecents(): RecentEntry[] {
-  try {
-    // Capped on read as well as on write: a list written under an older, larger cap
-    // would otherwise list whole until the next page is opened from the palette.
-    const stored: RecentEntry[] = JSON.parse(window.localStorage.getItem(RECENT_PAGES_KEY) ?? '[]')
-    return stored.slice(0, RECENT_MAX)
-  } catch {
-    return []
-  }
-}
 
 /** Where ⌘Z/⇧⌘Z belongs to the field itself (Tiptap's own undo, an input, a select). */
 const isEditable = (el: Element | null): boolean =>
   el !== null && el.matches('input, textarea, select, [contenteditable]')
-
-function writeRecent(entry: RecentEntry) {
-  try {
-    const prev = readRecents().filter((r) => r.id !== entry.id)
-    window.localStorage.setItem(
-      RECENT_PAGES_KEY,
-      JSON.stringify([entry, ...prev].slice(0, RECENT_MAX))
-    )
-  } catch {
-    /* ignore */
-  }
-}
 
 export function ShellCommands() {
   const searchParams = useSearchParams()
@@ -222,11 +190,7 @@ export function ShellCommands() {
     () =>
       paletteOpen
         ? [
-            ...paletteItems(
-              pages,
-              readRecents().map((r) => r.id),
-              currentNodeId
-            ),
+            ...paletteItems(pages, readRecentPageIds(), currentNodeId),
             ...zenCommands.items,
             ...pondItems(ponds, pond?.id ?? null),
             ...records,
