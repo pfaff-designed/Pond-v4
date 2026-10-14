@@ -898,6 +898,22 @@ describe('AITerminal — the @ mention picker opens, narrows and closes (KAN-99)
     expect(options[2]).toHaveAttribute('aria-selected', 'false')
   })
 
+  it('zero matches: the glass does not open at all, and Enter sends (AUDIT G6)', async () => {
+    const user = userEvent.setup()
+    renderTerminal()
+    await waitReady()
+
+    const textbox = screen.getByRole('textbox', { name: 'Message Pond' })
+    await user.type(textbox, '@zzz')
+
+    expect(screen.queryByText('pages')).not.toBeInTheDocument()
+    expect(screen.queryByRole('option')).not.toBeInTheDocument()
+
+    await user.keyboard('{Enter}')
+
+    expect(mockSendMessage).toHaveBeenCalledTimes(1)
+  })
+
   it('sorts a recently-visited page above an unrelated match (orderMentionPages wiring)', async () => {
     window.localStorage.setItem(
       'pond:recent-pages',

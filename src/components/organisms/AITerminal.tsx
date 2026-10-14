@@ -3769,7 +3769,7 @@ export function AITerminal() {
           }
         />
       </div>
-      {mentionQuery && (
+      {mentionQuery && mentionItems.length > 0 && (
         <PageMentionPicker
           items={mentionItems}
           activeIndex={mentionActiveIndex}
