@@ -17,6 +17,7 @@
 import { useLayoutEffect } from 'react'
 import type { KeyboardEvent, ReactNode, RefObject } from 'react'
 import { cn } from '@/lib/utils'
+import { MentionPillOverlay } from './MentionPillOverlay'
 
 export interface ComposerLineProps {
   value: string
@@ -33,6 +34,8 @@ export interface ComposerLineProps {
   anchorRef: RefObject<HTMLDivElement | null>
   /** Deep research is on for the next question. */
   research: boolean
+  /** Titles of the live whole-page references (KAN-99's `@`-picker mention pill). */
+  mentionTitles: readonly string[]
   /** The hidden file input the ＋ opens. */
   attachInput?: ReactNode
   onToggleResearch: () => void
@@ -53,6 +56,7 @@ export const ComposerLine = ({
   textareaRef,
   anchorRef,
   research,
+  mentionTitles,
   attachInput,
   onToggleResearch,
   onChange,
@@ -76,6 +80,7 @@ export const ComposerLine = ({
   return (
     <>
       <div ref={anchorRef} className="relative">
+        <MentionPillOverlay value={value} titles={mentionTitles} />
         <textarea
           ref={textareaRef}
           value={value}

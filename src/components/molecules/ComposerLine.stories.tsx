@@ -52,6 +52,7 @@ const Composer = ({
               textareaRef={textareaRef}
               anchorRef={anchorRef}
               research={research}
+              mentionTitles={[]}
               onToggleResearch={() => setResearch((on) => !on)}
               onChange={setValue}
               onKeyDown={fn()}
@@ -85,6 +86,7 @@ const meta = {
     textareaRef: { current: null },
     anchorRef: { current: null },
     research: false,
+    mentionTitles: [],
     onToggleResearch: fn(),
     onChange: fn(),
     onKeyDown: fn(),

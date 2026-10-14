@@ -829,6 +829,22 @@ export function AITerminal() {
     setReferences((prev) => prev.filter((ref) => ref.id !== key))
   }, [])
 
+  // The mention pill (board 6e frame 4) paints under exactly the typed
+  // `@<title>` runs that still carry a live whole-page reference — the same
+  // title lookup `referenceItems` above uses for a whole-page chip's label.
+  const mentionTitles = useMemo(
+    () =>
+      references
+        .filter((ref) => ref.range === null)
+        .map(
+          (ref) =>
+            allPages.find((p) => p.id === ref.pageId)?.title ??
+            (ref.pageId === nodeId ? contextLabel : undefined)
+        )
+        .filter((title): title is string => Boolean(title)),
+    [references, allPages, nodeId, contextLabel]
+  )
+
   // ── @ mention picker (KAN-99, board 6e frame 3) ───────────────────────────
   // The caret is tracked on every edit, click and key-up (arrow keys move it
   // without changing the text) and resolved against the typed value through
@@ -3618,6 +3634,7 @@ export function AITerminal() {
         textareaRef={inputRef}
         anchorRef={composerRef}
         research={research}
+        mentionTitles={mentionTitles}
         onToggleResearch={() => setResearch((on) => !on)}
         onChange={handleComposerChange}
         onKeyDown={handleKeyDown}

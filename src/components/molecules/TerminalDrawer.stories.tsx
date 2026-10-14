@@ -34,6 +34,7 @@ const Footer = () => {
         textareaRef={textareaRef}
         anchorRef={anchorRef}
         research={research}
+        mentionTitles={[]}
         onToggleResearch={() => setResearch((on) => !on)}
         onChange={setValue}
         onKeyDown={fn()}
