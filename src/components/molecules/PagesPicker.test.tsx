@@ -2,10 +2,10 @@ import { useRef, useState } from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import {
-  PageMentionPicker,
+  PagesPicker,
   type PageMentionItem,
   type MentionAnchorBox,
-} from '@/components/molecules/PageMentionPicker'
+} from '@/components/molecules/PagesPicker'
 
 const ITEMS: PageMentionItem[] = [
   { id: 'a', glyph: 'heart', label: 'kitchen renovation', sub: 'home' },
@@ -28,7 +28,7 @@ const ANCHOR: MentionAnchorBox = {
 function Harness({ onPick, onClose }: { onPick: (item: PageMentionItem) => void; onClose: () => void }) {
   const [activeIndex, setActiveIndex] = useState(0)
   return (
-    <PageMentionPicker
+    <PagesPicker
       items={ITEMS}
       activeIndex={activeIndex}
       onHover={setActiveIndex}
@@ -50,7 +50,7 @@ function OutsideHarness({ onClose }: { onClose: () => void }) {
       <div ref={anchorRef} data-testid="composer">
         <textarea data-testid="composer-input" />
       </div>
-      <PageMentionPicker
+      <PagesPicker
         items={ITEMS}
         activeIndex={0}
         onHover={jest.fn()}
@@ -62,10 +62,10 @@ function OutsideHarness({ onClose }: { onClose: () => void }) {
   )
 }
 
-describe('PageMentionPicker — the composer @ popover rows', () => {
+describe('PagesPicker — the composer @ popover rows', () => {
   it('heads with "pages" and renders each row', () => {
     render(
-      <PageMentionPicker
+      <PagesPicker
         items={ITEMS}
         activeIndex={0}
         onHover={jest.fn()}
@@ -81,10 +81,54 @@ describe('PageMentionPicker — the composer @ popover rows', () => {
     expect(screen.getAllByText('home')).toHaveLength(2)
   })
 
+  it('renders each row through slash-row\'s Row, carrying the composer row chrome', () => {
+    render(
+      <PagesPicker
+        items={ITEMS}
+        activeIndex={0}
+        onHover={jest.fn()}
+        onPick={jest.fn()}
+        onClose={jest.fn()}
+        anchor={ANCHOR}
+      />
+    )
+
+    const row = screen.getByRole('option', { name: /kitchen renovation/ })
+    expect(row).toHaveAttribute('data-part', 'row')
+    expect(row.className).toContain('rounded-[14px]')
+    expect(row.className).toContain('text-[13px]')
+  })
+
+  it('leads a glyph row and a default-mark row with the same 13×13 icon slot', () => {
+    const items: PageMentionItem[] = [
+      { id: 'a', glyph: 'heart', label: 'kitchen renovation', sub: 'home' },
+      { id: 'd', glyph: null, label: 'shopping list', sub: 'home' },
+    ]
+    render(
+      <PagesPicker
+        items={items}
+        activeIndex={0}
+        onHover={jest.fn()}
+        onPick={jest.fn()}
+        onClose={jest.fn()}
+        anchor={ANCHOR}
+      />
+    )
+
+    const glyphRow = screen.getByRole('option', { name: /kitchen renovation/ })
+    const defaultRow = screen.getByRole('option', { name: /shopping list/ })
+    const glyphIcon = glyphRow.querySelector('[data-part="icon"]')
+    const defaultIcon = defaultRow.querySelector('[data-part="icon"]')
+    expect(glyphIcon?.className).toContain('h-[13px]')
+    expect(glyphIcon?.className).toContain('w-[13px]')
+    expect(defaultIcon?.className).toContain('h-[13px]')
+    expect(defaultIcon?.className).toContain('w-[13px]')
+  })
+
   it('draws the default mark, never a blank glyph, for a page with no stored glyph', () => {
     const items: PageMentionItem[] = [{ id: 'd', glyph: null, label: 'shopping list', sub: 'home' }]
     render(
-      <PageMentionPicker
+      <PagesPicker
         items={items}
         activeIndex={0}
         onHover={jest.fn()}
@@ -101,7 +145,7 @@ describe('PageMentionPicker — the composer @ popover rows', () => {
 
   it('highlights only the given activeIndex row', () => {
     render(
-      <PageMentionPicker
+      <PagesPicker
         items={ITEMS}
         activeIndex={1}
         onHover={jest.fn()}
@@ -155,7 +199,7 @@ describe('PageMentionPicker — the composer @ popover rows', () => {
   it('does not swallow Enter when there are no matching rows, so the composer can still send', () => {
     const onPick = jest.fn()
     render(
-      <PageMentionPicker
+      <PagesPicker
         items={[]}
         activeIndex={0}
         onHover={jest.fn()}
@@ -228,7 +272,7 @@ describe('PageMentionPicker — the composer @ popover rows', () => {
 
   it('positions off the given anchor with the DC\'s 10px gap and 12px inset', () => {
     render(
-      <PageMentionPicker
+      <PagesPicker
         items={ITEMS}
         activeIndex={0}
         onHover={jest.fn()}
@@ -247,7 +291,7 @@ describe('PageMentionPicker — the composer @ popover rows', () => {
 
   it('flips above the anchor by the same 10px gap when `side` is "top"', () => {
     render(
-      <PageMentionPicker
+      <PagesPicker
         items={ITEMS}
         activeIndex={0}
         onHover={jest.fn()}
@@ -264,7 +308,7 @@ describe('PageMentionPicker — the composer @ popover rows', () => {
 
   it('caps the row list to six rows\' height and scrolls the rest, with 20 pages', () => {
     render(
-      <PageMentionPicker
+      <PagesPicker
         items={MANY_ITEMS}
         activeIndex={0}
         onHover={jest.fn()}
@@ -291,7 +335,7 @@ describe('PageMentionPicker — the composer @ popover rows', () => {
           <button type="button" onClick={() => setActiveIndex(15)}>
             jump
           </button>
-          <PageMentionPicker
+          <PagesPicker
             items={MANY_ITEMS}
             activeIndex={activeIndex}
             onHover={setActiveIndex}

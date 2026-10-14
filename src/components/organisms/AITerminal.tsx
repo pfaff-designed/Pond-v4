@@ -104,7 +104,7 @@ import {
 import { markIndex, resolveMark } from '@/lib/pages/mark'
 import { markAccent } from '@/lib/rail/glyph-library'
 import { activeMentionQuery } from '@/lib/references/mention-query'
-import { PageMentionPicker, type PageMentionItem } from '@/components/molecules/PageMentionPicker'
+import { PagesPicker, type PageMentionItem } from '@/components/molecules/PagesPicker'
 import { sideTowardFreeSpace } from '@/lib/layout/caret-anchor'
 import type { PickerSide } from '@/components/molecules/use-anchored-box'
 import { parseCsv } from '@/lib/csv/parse-csv'
@@ -227,7 +227,7 @@ const HTML_UNREADABLE_CHIPS = ['keep it as a file', 'try another file']
  *  06.05` draws the fixture already short; no frame gives a char count). */
 const REFERENCE_PASSAGE_MAX = 60
 
-/** `PageMentionPicker`'s chrome (head + glass padding) plus up to six rows —
+/** `PagesPicker`'s chrome (head + glass padding) plus up to six rows —
  *  a close bound for the before-mount above/below choice (KAN-99), not a DC
  *  literal; nothing has rendered yet to measure. */
 const MENTION_POPOVER_ESTIMATE_PX = 46 + 6 * 38
@@ -910,7 +910,7 @@ export function AITerminal() {
   // reopen the glass it just closed. Swallows exactly that one trailing call.
   const suppressMentionReopenRef = useRef(false)
 
-  // The glass's own capture-phase keydown (`PageMentionPicker`) preventDefaults
+  // The glass's own capture-phase keydown (`PagesPicker`) preventDefaults
   // ↑/↓/Enter so the textarea's caret never moves for them, but the textarea
   // still fires a `keyup` right after — this `updateMentionQuery` call must
   // not re-highlight row 0 then, only when the `@`-token itself (its start or
@@ -3794,7 +3794,7 @@ export function AITerminal() {
         />
       </div>
       {mentionQuery && mentionItems.length > 0 && (
-        <PageMentionPicker
+        <PagesPicker
           items={mentionItems}
           activeIndex={mentionActiveIndex}
           onHover={setMentionActiveIndex}

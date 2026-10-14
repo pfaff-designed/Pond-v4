@@ -6,15 +6,18 @@
  * `activeIndex` and the `@`-query narrowing; this component owns only the
  * keys that work it and where it sits.
  *
- * Every literal is `PondComposer.dc.html`'s `specVals()` (`sPop`, `sPopHead`,
- * `r.st`, `sPopSub`): the sans register, not the mono `PondPicker` chrome
- * (`picker-chrome.ts`) — this popover is the composer's own (ADR 0004 §4
- * keeps the two apart). `sPopHead`'s colour is `a(.68)`, which the app's own
- * tokens map to `text-mn-text-secondary` (ink .68), not `text-mn-text-meta`
- * (ink .8) — see `slash-row.tsx`'s `SUB`/`GROUP` in `picker-chrome.ts` for the
- * same mapping. `sKey`'s `↵` is byte-identical to `slash-row.tsx`'s `ENTER`,
- * reused rather than restated. `sPop` has no `display`/`gap` of its own, so
- * the head and the rows simply stack — no `flex-col` wrapper here either.
+ * `PondPicker` kind "pages" (round 3, conductor-approved): the glass is
+ * `COMPOSER_POP.glass`, the head `COMPOSER_POP.head`, and every row is
+ * `slash-row.tsx`'s `Row` with `chrome={COMPOSER_POP.row}` — the shared
+ * `PondPicker` row/chrome (`picker-chrome.ts`), not a hand-rolled list (two
+ * Pond-level components doing one job is a duplicate, AGENTS.md). Every
+ * literal in `COMPOSER_POP` is `PondComposer.dc.html`'s `specVals()` (board
+ * 6e frame 3) — see `picker-chrome.ts`'s own doc comment for the board
+ * values. `Row`'s `mark` prop carries the page's `AreaMark`/`KindDot`
+ * (same choice `ReferencesRow`/the rail make) inside its 13×13 icon slot;
+ * `entry.hit`/`post` are empty — 6e frame 3 draws no match underline — and
+ * `entry.hint` is never set, so the selected row's `↵` is the only trailing
+ * mark (`Row`'s own selected/hint branch).
  *
  * The glass listens on the document in the capture phase so ↑↓↵esc reach it
  * before the composer's own textarea, which never loses focus (`SourcePicker
@@ -40,7 +43,8 @@ import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 're
 import { createPortal } from 'react-dom'
 import { AreaMark } from '@/components/atoms/AreaMark'
 import { KindDot } from '@/components/atoms/PondAtom'
-import { ENTER } from './slash-row'
+import { COMPOSER_POP } from './picker-chrome'
+import { Row, type RowEntry } from './slash-row'
 import { useAnchoredBox, type PickerSide } from './use-anchored-box'
 
 export interface PageMentionItem {
@@ -60,7 +64,7 @@ export interface MentionAnchorBox {
 }
 export type MentionAnchor = MentionAnchorBox | null | RefObject<MentionAnchorBox | null>
 
-export interface PageMentionPickerProps {
+export interface PagesPickerProps {
   items: readonly PageMentionItem[]
   activeIndex: number
   onHover: (index: number) => void
@@ -73,21 +77,13 @@ export interface PageMentionPickerProps {
   side?: PickerSide
 }
 
-const HEAD =
-  'px-[10px] pt-[4px] pb-[8px] font-sans text-[10.5px] font-medium tracking-[.1em] uppercase text-mn-text-secondary'
-
-const ROW =
-  'flex cursor-default items-center gap-[10px] rounded-[14px] px-[10px] py-[8px] font-sans text-[13px] text-mn-text'
-
-const SUB = 'min-w-0 truncate text-[12.5px] text-mn-text-secondary'
-
 /** `PondComposer.dc.html`'s `sPop`: `bottom: calc(100% + 10px)` off the anchor. */
 const POPOVER_GAP_PX = 10
 /** `PondComposer.dc.html`'s `sPop`: `left: 12, right: 12` off the anchor. */
 const POPOVER_INSET_PX = 12
-/** `ROW`'s measured height (`py-[8px]` + the `text-[13px]` line) — an unfiltered
- * `@` can list every page in the pond, so the row list caps at six and scrolls
- * the rest, per `MENTION_POPOVER_ESTIMATE_PX`'s own "up to six rows". */
+/** `COMPOSER_POP.row`'s measured height (`py-[8px]` + the `text-[13px]` line) — an
+ * unfiltered `@` can list every page in the pond, so the row list caps at six and
+ * scrolls the rest, per `MENTION_POPOVER_ESTIMATE_PX`'s own "up to six rows". */
 const ROW_HEIGHT_PX = 35.5
 const MAX_VISIBLE_ROWS = 6
 
@@ -102,7 +98,11 @@ function resolveAnchorElement(anchor: MentionAnchor): HTMLElement | null {
   return el && typeof (el as Partial<HTMLElement>).contains === 'function' ? (el as unknown as HTMLElement) : null
 }
 
-export function PageMentionPicker({
+function toRowEntry(item: PageMentionItem): RowEntry {
+  return { kind: 'row', id: item.id, label: item.label, pre: item.label, hit: '', post: '', sub: item.sub }
+}
+
+export function PagesPicker({
   items,
   activeIndex,
   onHover,
@@ -110,7 +110,7 @@ export function PageMentionPicker({
   onClose,
   anchor,
   side = 'bottom',
-}: PageMentionPickerProps) {
+}: PagesPickerProps) {
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       let handled = true
@@ -196,13 +196,8 @@ export function PageMentionPicker({
   if (typeof document === 'undefined') return null
   const style = position && box ? { ...position, ...box } : undefined
   return createPortal(
-    <div
-      ref={glassRef}
-      data-part="popover"
-      className="mn-glass fixed z-[100] box-border rounded-[18px] p-[8px] font-sans text-mn-text"
-      style={style}
-    >
-      <div data-part="head" className={HEAD}>
+    <div ref={glassRef} data-part="popover" className={COMPOSER_POP.glass} style={style}>
+      <div data-part="head" className={COMPOSER_POP.head}>
         pages
       </div>
       <div
@@ -214,34 +209,21 @@ export function PageMentionPicker({
         {items.map((item, index) => {
           const active = index === activeIndex
           return (
-            <div
-              key={item.id}
-              ref={active ? activeRowRef : undefined}
-              role="option"
-              aria-selected={active}
-              data-part="row"
-              className={`${ROW} ${active ? 'bg-mn-text/[0.07]' : 'bg-transparent'}`}
-              onMouseEnter={() => onHover(index)}
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => onPick(item)}
-            >
-              {item.glyph ? (
-                <AreaMark glyph={item.glyph} color={item.color} />
-              ) : (
-                <KindDot accent={item.color} className={!item.color ? 'bg-mn-text/50' : undefined} />
-              )}
-              <span data-part="label" className="min-w-0 truncate font-medium">
-                {item.label}
-              </span>
-              <span data-part="sub" className={SUB}>
-                {item.sub}
-              </span>
-              <span className="flex-1" />
-              {active && (
-                <span data-part="enter" className={ENTER}>
-                  ↵
-                </span>
-              )}
+            <div key={item.id} ref={active ? activeRowRef : undefined}>
+              <Row
+                entry={toRowEntry(item)}
+                selected={active}
+                onHover={() => onHover(index)}
+                onPick={() => onPick(item)}
+                chrome={COMPOSER_POP.row}
+                mark={
+                  item.glyph ? (
+                    <AreaMark glyph={item.glyph} color={item.color} />
+                  ) : (
+                    <KindDot accent={item.color} className={!item.color ? 'bg-mn-text/50' : undefined} />
+                  )
+                }
+              />
             </div>
           )
         })}
