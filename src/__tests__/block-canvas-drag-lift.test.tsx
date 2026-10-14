@@ -1,8 +1,7 @@
 /**
- * `isDragging` (6x) stands in for both `PondBlock.dc.html` states at once —
- * `origin` (the old place, held at .4 opacity so nothing moves under the
- * pointer) and `lifted` (stepped-up shadow, -.6deg tilt) — since there is no
- * second, custom drag-image element.
+ * `isDragging` (6x) is the `origin` state from `PondBlock.dc.html` — the old
+ * place held at .4 opacity so nothing moves under the pointer. `lifted`
+ * (stepped-up shadow, -.6deg tilt) belongs to a separate copy, not this node.
  */
 
 import React from 'react'
@@ -37,7 +36,7 @@ function renderCanvas(blocks: Block[]) {
 
 const blockRoot = (blockId: string) => document.getElementById(`block-${blockId}`)!
 
-describe('the dragged block: origin opacity + lifted shadow/tilt', () => {
+describe('the dragged block: origin opacity only, no lift', () => {
   it('is at rest with neither state before the drag starts', () => {
     const a: Block = { id: 'b-a', type: 'text', content: 'a' }
     renderCanvas([a])
@@ -57,17 +56,18 @@ describe('the dragged block: origin opacity + lifted shadow/tilt', () => {
     expect(blockRoot('b-a').className).not.toContain('opacity-50')
   })
 
-  it('also carries the lifted shadow and -.6deg tilt, transitioning over the quick token', () => {
+  it('does not carry the lifted shadow or tilt — those belong to a separate copy', () => {
     const a: Block = { id: 'b-a', type: 'text', content: 'a' }
     renderCanvas([a])
 
     fireEvent.dragStart(blockRoot('b-a'))
 
     const className = blockRoot('b-a').className
-    expect(className).toContain('shadow-mn-lifted')
-    expect(className).toContain('rotate-[-.6deg]')
+    expect(className).toContain('opacity-40')
     expect(className).toContain('duration-[var(--motion-quick)]')
     expect(className).toContain('ease-[var(--ease-mn)]')
+    expect(className).not.toContain('shadow-mn-lifted')
+    expect(className).not.toContain('rotate-[-.6deg]')
   })
 
   it('clears both states once the drag ends', () => {
