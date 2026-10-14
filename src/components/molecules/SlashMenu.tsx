@@ -49,6 +49,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 import { FOCUS_VISIBLE_RING } from '@/components/atoms/focus-ring'
+import { blockCountWords } from '@/lib/templates/summary'
 import {
   blankRowEntries,
   footItems,
@@ -339,7 +340,7 @@ export function SlashMenu({
           // is untouched.
           const previewHint =
             previewing && entry.template && sameTemplatePick(entry.template, previewing.pick)
-              ? `${previewing.blocks} blocks`
+              ? blockCountWords(previewing.blocks)
               : undefined
           return (
             <Row

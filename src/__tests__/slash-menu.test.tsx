@@ -583,6 +583,30 @@ describe('previewing (KAN-131)', () => {
     expect(footSpans.map((s) => s.textContent)).toEqual(['↵ apply', 'esc back'])
   })
 
+  it('reads "1 block" singular at one block', () => {
+    const { anchor } = renderMenu({
+      previewing: { pick: { origin: 'premade', kind: 'page' }, blocks: 1 },
+    })
+    const tpl = options().find((o) => labelOf(o as HTMLElement) === 'page from template')!
+    fireEvent.mouseEnter(tpl)
+    fireEvent.keyDown(anchor, { key: 'ArrowRight' })
+    fireEvent.mouseEnter(options().find((o) => labelOf(o as HTMLElement) === 'notes')!)
+    const page = options().find((o) => labelOf(o as HTMLElement) === 'page')!
+    expect(within(page).getByText('1 block')).toBeInTheDocument()
+  })
+
+  it('reads "5 blocks" plural at five blocks', () => {
+    const { anchor } = renderMenu({
+      previewing: { pick: { origin: 'premade', kind: 'page' }, blocks: 5 },
+    })
+    const tpl = options().find((o) => labelOf(o as HTMLElement) === 'page from template')!
+    fireEvent.mouseEnter(tpl)
+    fireEvent.keyDown(anchor, { key: 'ArrowRight' })
+    fireEvent.mouseEnter(options().find((o) => labelOf(o as HTMLElement) === 'notes')!)
+    const page = options().find((o) => labelOf(o as HTMLElement) === 'page')!
+    expect(within(page).getByText('5 blocks')).toBeInTheDocument()
+  })
+
   it('esc clears the preview instead of closing the glass; with none up esc still closes', () => {
     const onPreviewCancel = jest.fn()
     const { onClose, anchor } = renderMenu({
