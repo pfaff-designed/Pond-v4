@@ -155,3 +155,24 @@ export interface RequestChangesDetail {
 export function requestChanges(detail: RequestChangesDetail) {
   window.dispatchEvent(new CustomEvent<RequestChangesDetail>(REQUEST_CHANGES_EVENT, { detail }))
 }
+
+/**
+ * "Raise a record's card in the composer" (KAN-152, board `Pond 06.15`
+ * s6o4's f4) — the record page's revert button asks; the composer owns the
+ * only mounted thread to show the card in, so this stays the same
+ * decoupling as `requestTerminalFocus` rather than the record page reaching
+ * into `AITerminal`. Carries the RECORD's own id (e.g. the revert
+ * `proposeRevert` just raised), not a tool call — the card fetches and
+ * renders that record directly.
+ */
+export const RAISE_RECORD_CARD_EVENT = 'pond:raise-record-card'
+
+export interface RaiseRecordCardDetail {
+  recordId: string
+}
+
+export function raiseRecordCard(recordId: string) {
+  window.dispatchEvent(
+    new CustomEvent<RaiseRecordCardDetail>(RAISE_RECORD_CARD_EVENT, { detail: { recordId } })
+  )
+}

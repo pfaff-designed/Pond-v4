@@ -27,6 +27,7 @@ import {
   FOCUS_TERMINAL_EVENT,
   HTML_IMPORT_PICKER_EVENT,
   OPEN_THREAD_MESSAGE_EVENT,
+  RAISE_RECORD_CARD_EVENT,
   REQUEST_CHANGES_EVENT,
   TOGGLE_COMPOSER_EVENT,
   notifyComposerOpenChange,
@@ -37,8 +38,10 @@ import {
   type ComposerNoticeDetail,
   type FocusTerminalDetail,
   type OpenThreadMessageDetail,
+  type RaiseRecordCardDetail,
   type RequestChangesDetail,
 } from '@/lib/terminal-focus'
+import { ComposerRecordCard } from '@/components/molecules/ComposerRecordCard'
 import { ParentGoneError, makePageFromAnswer, recordPageProposal } from '@/lib/pages/make-page'
 import {
   DEFAULT_PAGE_KIND,
@@ -2339,6 +2342,23 @@ export function AITerminal() {
     return () => window.removeEventListener(REQUEST_CHANGES_EVENT, onRequestChanges)
   }, [isReady, sendRequestChanges])
 
+  // Raised record cards (KAN-152, s6o4 f4): the record page's revert button
+  // asks; this terminal — already mounted pond-wide — uncollapses and holds
+  // the raised ids until each card reports its own record settled.
+  const [raisedRecordIds, setRaisedRecordIds] = useState<string[]>([])
+  useEffect(() => {
+    function onRaiseRecordCard(e: Event) {
+      const { recordId } = (e as CustomEvent<RaiseRecordCardDetail>).detail
+      setIsCollapsed(false)
+      setRaisedRecordIds((prev) => (prev.includes(recordId) ? prev : [...prev, recordId]))
+    }
+    window.addEventListener(RAISE_RECORD_CARD_EVENT, onRaiseRecordCard)
+    return () => window.removeEventListener(RAISE_RECORD_CARD_EVENT, onRaiseRecordCard)
+  }, [])
+  const handleRecordCardSettled = useCallback((recordId: string) => {
+    setRaisedRecordIds((prev) => prev.filter((id) => id !== recordId))
+  }, [])
+
   useEffect(() => {
     if (!isReady) return
     const pending = pendingRequestChangesRef.current
@@ -3818,6 +3838,19 @@ export function AITerminal() {
     </>
   )
 
+  const raisedRecordCards = raisedRecordIds.length > 0 && (
+    <div className="flex flex-col gap-3">
+      {raisedRecordIds.map((recordId) => (
+        <ComposerRecordCard
+          key={recordId}
+          recordId={recordId}
+          pondId={pondId}
+          onSettled={() => handleRecordCardSettled(recordId)}
+        />
+      ))}
+    </div>
+  )
+
   // Send is off with nothing to send; mid-stream it is the stop square.
   const canSend = isReady && !isUploading && (input.trim().length > 0 || attachments.length > 0)
 
@@ -4048,6 +4081,7 @@ export function AITerminal() {
         cardRef={composerCardRef}
       >
         {messagesBody}
+        {raisedRecordCards}
       </TerminalDrawer>
     </>
   )

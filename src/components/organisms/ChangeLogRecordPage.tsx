@@ -23,6 +23,7 @@ import { getThreadFirstQuestion } from '@/lib/conversation/client'
 import { describeChange } from '@/lib/change-log/page-changes'
 import { chainKey, changeLogKey, recordKey, threadFirstQuestionKey } from '@/lib/change-log/keys'
 import { proposeRevert } from '@/lib/change-log/revert'
+import { raiseRecordCard } from '@/lib/terminal-focus'
 import { canRevertRecord } from '@/lib/change-log/revert-plan'
 import { WAITING_STATUSES } from '@/lib/change-log/status'
 import { personFacingMessage } from '@/lib/change-log/errors'
@@ -192,13 +193,16 @@ export function ChangeLogRecordPage({ recordId }: { recordId: string }) {
         if (!user) return
         const page = await getPage(supabase, toRevert.targetPageId as string)
         if (!page) return
-        await proposeRevert(supabase, {
+        const revert = await proposeRevert(supabase, {
           userId: user.id,
           pondId,
           record: toRevert,
           current: page.blocks,
         })
         setActionError(null)
+        // s6o4 f4: the revert record raises its own card in the composer,
+        // accept/reject alongside this page's own "reverted by" link.
+        raiseRecordCard(revert.id)
         await queryClient.invalidateQueries({ queryKey: recordKey(recordId) })
         // A revert's a NEW record (`links.revertOf`), not a change to this
         // one's own revision chain — `listRevertsOf` must be re-asked, since

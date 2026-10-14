@@ -8,6 +8,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ChangeLogRecordPage } from '@/components/organisms/ChangeLogRecordPage'
+import { RAISE_RECORD_CARD_EVENT, type RaiseRecordCardDetail } from '@/lib/terminal-focus'
 import type { ChangeLogRecord } from '@/lib/change-log/types'
 
 jest.mock('@/lib/pond/context', () => ({
@@ -167,6 +168,21 @@ describe('ChangeLogRecordPage — buttons', () => {
       settleRevert(record({ id: 'rec-revert', status: 'proposed', links: { revertOf: 'rec-1' } }))
       await Promise.resolve()
     })
+  })
+
+  it('revert raises the new revert record as a card in the composer (s6o4 f4)', async () => {
+    mockGetRecord.mockResolvedValue(record())
+    mockProposeRevert.mockResolvedValue(record({ id: 'rec-revert', status: 'proposed', links: { revertOf: 'rec-1' } }))
+    const raised: RaiseRecordCardDetail[] = []
+    const onRaise = (e: Event) => raised.push((e as CustomEvent<RaiseRecordCardDetail>).detail)
+    window.addEventListener(RAISE_RECORD_CARD_EVENT, onRaise)
+
+    renderPage()
+    const revertButton = await screen.findByRole('button', { name: 'revert' })
+    fireEvent.click(revertButton)
+
+    await waitFor(() => expect(raised).toEqual([{ recordId: 'rec-revert' }]))
+    window.removeEventListener(RAISE_RECORD_CARD_EVENT, onRaise)
   })
 
   it('omits revert for a record canRevertRecord refuses', async () => {
