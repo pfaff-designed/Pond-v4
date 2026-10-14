@@ -16,7 +16,7 @@ import { PondContext, type PondContextValue } from '@/lib/pond/context'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { unstageId } from '@/lib/deletion/staged-ids'
 import { pagesKey } from '@/lib/pages/keys'
-import { deletePage } from '@/lib/pages/client'
+import { trashPage } from '@/lib/change-log/trash'
 import type { PageRow } from '@/lib/pages/tree'
 import type { Pond } from '@/lib/pond/client'
 
@@ -37,12 +37,15 @@ jest.mock('@/lib/supabase/client', () => ({
 // without needing to mock the supabase update/sibling-lookup chain too.
 jest.mock('@/lib/pages/client', () => ({
   createPage: jest.fn().mockResolvedValue({ id: 'new-1', title: 'Untitled' }),
-  deletePage: jest.fn().mockResolvedValue(undefined),
   movePage: jest.fn().mockResolvedValue(undefined),
   updateTitle: jest.fn(async () => {
     const { flushStagedDeletes } = jest.requireActual('@/lib/deletion/staged-ids')
     await flushStagedDeletes()
   }),
+}))
+
+jest.mock('@/lib/change-log/trash', () => ({
+  trashPage: jest.fn().mockResolvedValue(undefined),
 }))
 
 jest.mock('@/lib/pages/mark-client', () => ({
@@ -136,7 +139,7 @@ describe('Rail — a flush-driven delete commit does not invalidate (KAN-273)', 
     })
 
     // The staged delete committed as part of the rename's flush.
-    expect(deletePage).toHaveBeenCalledWith(expect.anything(), 'sleep')
+    expect(trashPage).toHaveBeenCalledWith(expect.anything(), 'sleep')
 
     // Exactly one invalidate of the pages list — the rename's own (outer
     // write). The flush-driven delete commit, nested inside it, must not add

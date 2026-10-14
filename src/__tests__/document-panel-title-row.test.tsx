@@ -24,8 +24,12 @@ jest.mock('@/lib/pages/client', () => ({
 }))
 jest.mock('@/lib/pages/commit', () => ({ commitBlocks: jest.fn().mockResolvedValue(undefined) }))
 
-function renderWith(props: Record<string, unknown>) {
-  mockGetPage.mockResolvedValue({ id: 'page-1', title: 'Kitchen renovation', blocks: [], props })
+function renderWith(
+  props: Record<string, unknown>,
+  title = 'Kitchen renovation',
+  blocks: Array<Record<string, unknown>> = []
+) {
+  mockGetPage.mockResolvedValue({ id: 'page-1', title, blocks, props })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
@@ -82,6 +86,18 @@ describe('DocumentPanel — the title row', () => {
   it('treats a blank kind as no kind', async () => {
     renderWith({ kind: '   ' })
     expect(await screen.findByText('saved')).toBeInTheDocument()
+  })
+
+  it('placeholders an empty title with `{kind} name`, board 6f frame 4', async () => {
+    renderWith({ kind: 'notes' }, '')
+    const title = await screen.findByLabelText('Page title')
+    expect(title).toHaveAttribute('placeholder', 'notes name')
+  })
+
+  it('reads the kind after a template apply, not `new`, even with an empty title and one empty block', async () => {
+    renderWith({ kind: 'notes' }, '', [{ type: 'text', content: '' }])
+    expect(await screen.findByText(/^notes/)).toBeInTheDocument()
+    expect(screen.queryByText(/^new/)).toBeNull()
   })
 
   it('draws no separate `saved` span and no `changes` button', async () => {

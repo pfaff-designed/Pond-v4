@@ -1,12 +1,12 @@
 /**
  * The mount-time leftover sweep (KAN-300, Rail.tsx ~L1412) must catch a
- * failing `deletePage` per id rather than letting one rejection abort the
+ * failing `trashPage` per id rather than letting one rejection abort the
  * whole loop (or go unhandled) — see `rail-sweep-prior-life.test.tsx` for the
  * success path and file header.
  */
 import { waitFor } from '@testing-library/react'
 import { isStaged } from '@/lib/deletion/staged-ids'
-import { deletePage } from '@/lib/pages/client'
+import { trashPage } from '@/lib/change-log/trash'
 import { mountRail } from './helpers/rail-sweep-fixture'
 
 jest.mock('next/navigation', () => ({
@@ -22,12 +22,15 @@ jest.mock('@/lib/supabase/client', () => ({
 
 jest.mock('@/lib/pages/client', () => ({
   createPage: jest.fn().mockResolvedValue(undefined),
-  deletePage: jest
+  movePage: jest.fn().mockResolvedValue(undefined),
+  updateTitle: jest.fn().mockResolvedValue(undefined),
+}))
+
+jest.mock('@/lib/change-log/trash', () => ({
+  trashPage: jest
     .fn()
     .mockRejectedValueOnce(new Error('network'))
     .mockResolvedValue(undefined),
-  movePage: jest.fn().mockResolvedValue(undefined),
-  updateTitle: jest.fn().mockResolvedValue(undefined),
 }))
 
 jest.mock('@/lib/pages/mark-client', () => ({
@@ -48,7 +51,7 @@ it('catches a failing delete per id: a second leftover id still commits', async 
 
   mountRail()
 
-  await waitFor(() => expect(deletePage).toHaveBeenCalledTimes(2))
+  await waitFor(() => expect(trashPage).toHaveBeenCalledTimes(2))
   expect(isStaged('db-1')).toBe(true)
   await waitFor(() => expect(isStaged('root-db')).toBe(false))
 })

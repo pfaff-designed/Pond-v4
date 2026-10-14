@@ -252,6 +252,22 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
     scheduleSave(viewTitle, next)
   }
 
+  // A caller that just wrote blocks directly (KAN-124's template apply: its own
+  // `appendOwnEdit` + `sessionUndo.remember`, bypassing `scheduleSave` entirely)
+  // still goes on to call `commitLocalEdit` so the editor's local state reflects
+  // the write. Without this, `lastSaved` would still hold the baseline from
+  // BEFORE that write, so `commitLocalEdit`'s own debounced save would fire with
+  // a stale `before` and log a second own-edit record for the same change. Call
+  // this FIRST (synchronously, before `commitLocalEdit`) so that save's `before`
+  // is already the blocks just written — byte-equal to its `after`, so
+  // `recordOwnEdit` logs nothing for it.
+  function adoptSavedBlocks(blocks: Block[]) {
+    const id = loadedId.current
+    if (!id) return
+    lastSaved.current = { pageId: id, blocks }
+    serverSig.current = JSON.stringify(blocks)
+  }
+
   // Undo a block removal (ticket-44 review): re-insert against the LATEST blocks
   // via a functional update, so an edit made between the delete and the Undo
   // isn't clobbered by a re-base on the stale stage-time snapshot (the original
@@ -265,5 +281,15 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
     })
   }
 
-  return { viewTitle, viewBlocks, saved, savedAt, onTitle, onProperty, commitLocalEdit, undoRemove }
+  return {
+    viewTitle,
+    viewBlocks,
+    saved,
+    savedAt,
+    onTitle,
+    onProperty,
+    commitLocalEdit,
+    undoRemove,
+    adoptSavedBlocks,
+  }
 }

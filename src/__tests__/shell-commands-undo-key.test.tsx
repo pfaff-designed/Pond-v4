@@ -132,6 +132,38 @@ describe('ShellCommands — an editable keeps its own ⌘Z', () => {
   })
 })
 
+describe('ShellCommands — an empty page-title input has nothing of its own to undo', () => {
+  it('⌘Z runs the session undo when the marked title input is focused and empty', () => {
+    onPlatform('MacIntel')
+    const { container } = renderShell()
+    const title = document.createElement('input')
+    title.setAttribute('data-pond-page-title', '')
+    title.value = ''
+    container.appendChild(title)
+    title.focus()
+
+    const prevented = fireEvent.keyDown(title, { key: 'z', metaKey: true })
+
+    expect(sessionUndo.undo).toHaveBeenCalledWith('pond-1')
+    expect(prevented).toBe(false)
+  })
+
+  it('leaves the key alone when the marked title input is focused and has text', () => {
+    onPlatform('MacIntel')
+    const { container } = renderShell()
+    const title = document.createElement('input')
+    title.setAttribute('data-pond-page-title', '')
+    title.value = 'recipe name'
+    container.appendChild(title)
+    title.focus()
+
+    const prevented = fireEvent.keyDown(title, { key: 'z', metaKey: true })
+
+    expect(sessionUndo.undo).not.toHaveBeenCalled()
+    expect(prevented).toBe(true)
+  })
+})
+
 describe('ShellCommands — a landed step redraws the page, rail and change log', () => {
   const renderWithClient = () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })

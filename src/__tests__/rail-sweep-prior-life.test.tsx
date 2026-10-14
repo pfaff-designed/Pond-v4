@@ -11,7 +11,7 @@
  */
 import { screen, within, waitFor } from '@testing-library/react'
 import { isStaged } from '@/lib/deletion/staged-ids'
-import { deletePage } from '@/lib/pages/client'
+import { trashPage } from '@/lib/change-log/trash'
 import { mountRail } from './helpers/rail-sweep-fixture'
 
 jest.mock('next/navigation', () => ({
@@ -27,9 +27,12 @@ jest.mock('@/lib/supabase/client', () => ({
 
 jest.mock('@/lib/pages/client', () => ({
   createPage: jest.fn().mockResolvedValue(undefined),
-  deletePage: jest.fn().mockResolvedValue(undefined),
   movePage: jest.fn().mockResolvedValue(undefined),
   updateTitle: jest.fn().mockResolvedValue(undefined),
+}))
+
+jest.mock('@/lib/change-log/trash', () => ({
+  trashPage: jest.fn().mockResolvedValue(undefined),
 }))
 
 jest.mock('@/lib/pages/mark-client', () => ({
@@ -50,8 +53,8 @@ it('commits a leftover id from sessionStorage exactly once, drops it from the ra
 
   mountRail()
 
-  await waitFor(() => expect(deletePage).toHaveBeenCalledTimes(1))
-  expect(deletePage).toHaveBeenCalledWith(expect.anything(), 'db-1')
+  await waitFor(() => expect(trashPage).toHaveBeenCalledTimes(1))
+  expect(trashPage).toHaveBeenCalledWith(expect.anything(), 'db-1')
   await waitFor(() => expect(isStaged('db-1')).toBe(false))
   await waitFor(() =>
     expect(
