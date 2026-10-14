@@ -81,6 +81,24 @@ describe('PageMentionPicker — the composer @ popover rows', () => {
     expect(screen.getAllByText('home')).toHaveLength(2)
   })
 
+  it('draws the default mark, never a blank glyph, for a page with no stored glyph', () => {
+    const items: PageMentionItem[] = [{ id: 'd', glyph: null, label: 'shopping list', sub: 'home' }]
+    render(
+      <PageMentionPicker
+        items={items}
+        activeIndex={0}
+        onHover={jest.fn()}
+        onPick={jest.fn()}
+        onClose={jest.fn()}
+        anchor={ANCHOR}
+      />
+    )
+
+    const row = screen.getByRole('option', { name: /shopping list/ })
+    expect(row.querySelector('[data-part="dot"]')).toBeInTheDocument()
+    expect(row.querySelector('[data-area-mark]')).not.toBeInTheDocument()
+  })
+
   it('highlights only the given activeIndex row', () => {
     render(
       <PageMentionPicker

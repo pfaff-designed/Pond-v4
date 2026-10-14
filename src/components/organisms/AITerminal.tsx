@@ -998,7 +998,7 @@ export function AITerminal() {
       const mark = resolveMark(p.id, pageMarks)
       return {
         id: p.id,
-        glyph: mark.glyph ?? '',
+        glyph: mark.glyph,
         color: markAccent(mark.role),
         label: p.title,
         sub: areaOf(allPages, p.id) ?? '',

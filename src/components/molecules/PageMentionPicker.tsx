@@ -39,13 +39,14 @@
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { AreaMark } from '@/components/atoms/AreaMark'
+import { KindDot } from '@/components/atoms/PondAtom'
 import { ENTER } from './slash-row'
 import { useAnchoredBox, type PickerSide } from './use-anchored-box'
 
 export interface PageMentionItem {
   id: string
-  /** The page's mark glyph, from `areaGlyph`/`LIFE_GLYPH`. */
-  glyph: string
+  /** The page's mark glyph, from `resolveMark` — null draws the plain `KindDot`, same as `ReferencesRow`/the rail. */
+  glyph: string | null
   /** The page's area hue. Ink until an area sets one. */
   color?: string
   label: string
@@ -224,7 +225,11 @@ export function PageMentionPicker({
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => onPick(item)}
             >
-              <AreaMark glyph={item.glyph} color={item.color} />
+              {item.glyph ? (
+                <AreaMark glyph={item.glyph} color={item.color} />
+              ) : (
+                <KindDot accent={item.color} className={!item.color ? 'bg-mn-text/50' : undefined} />
+              )}
               <span data-part="label" className="min-w-0 truncate font-medium">
                 {item.label}
               </span>
