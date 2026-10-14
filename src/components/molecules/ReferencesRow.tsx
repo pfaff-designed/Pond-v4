@@ -52,7 +52,9 @@ export function ReferencesRow({ items, onRemove, className }: ReferencesRowProps
             onClick={() => onRemove(item.key)}
             className="flex-shrink-0 text-mn-text-secondary transition-colors hover:text-mn-text"
           >
-            ×
+            <svg width="10" height="10" viewBox="0 0 12 12" fill="none" aria-hidden>
+              <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+            </svg>
           </button>
         </span>
       ))}
