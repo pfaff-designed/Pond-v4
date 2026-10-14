@@ -2093,6 +2093,17 @@ export function AITerminal() {
         batch: allChanges,
         refIds: (proposalRefIds.current[toolCallId] ??= {}),
       })
+      if (result.applied === 0) {
+        // Nothing landed — the optimistic accept above must not stand: that
+        // decision rides the resolutions envelope and would tell Pond the
+        // batch applied when the page couldn't be read, was deleted, or every
+        // change was skipped. Un-decide so the card stays pending (same
+        // revert-on-failure shape the other accept handlers use in their
+        // catch blocks) and let the skip notice below say what happened.
+        for (const i of indices) {
+          dispatch({ kind: 'revert', type: 'changes', id: toolCallId, index: i })
+        }
+      }
       if (result.skipped > 0) {
         dispatch({
           kind: 'resolve',

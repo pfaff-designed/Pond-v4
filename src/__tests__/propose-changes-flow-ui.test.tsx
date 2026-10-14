@@ -268,6 +268,35 @@ describe('AITerminal — propose_changes card (#98)', () => {
     expect(screen.queryByRole('button', { name: 'accept all' })).not.toBeInTheDocument()
   })
 
+  // KAN-96 fix — a 0-write accept (the target page can't be loaded, e.g. a
+  // deleted page or a 400) must never settle the card to 'accepted': that
+  // decision rides the resolutions envelope and would tell Pond the batch
+  // landed when nothing was written. The card stays pending, with the
+  // existing skip notice.
+  it('a 0-write accept (target page cannot be loaded) never settles the card to accepted', async () => {
+    const user = userEvent.setup()
+    const pageB = { id: 'page-b', parentId: null, type: 'page', title: 'Page B' }
+    // Resolved for the stamp (so the card isn't `needsPlace`/`targetMissing`),
+    // but `mockGetPage` keeps its default `null` (beforeEach) for the WRITE —
+    // the page can't be loaded when accept actually tries to read it.
+    mockListPages.mockResolvedValue([pageB])
+    mockMessages = [{ id: 'm1', role: 'assistant', parts: [batch('pc1', pageB.id)] }]
+
+    renderWithQuery(<AITerminal />)
+    await ready()
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'accept' })).toBeEnabled())
+    await user.click(screen.getByRole('button', { name: 'accept' }))
+
+    await waitFor(() =>
+      expect(screen.getByText(/the target page no longer exists/)).toBeInTheDocument()
+    )
+    const card = screen.getByRole('group', { name: 'proposed edit' })
+    expect(card).toHaveAttribute('data-status', 'pending')
+    expect(screen.getByRole('button', { name: 'accept' })).toBeInTheDocument()
+    expect(mockAcceptRecord).not.toHaveBeenCalled()
+  })
+
   it('request changes sends the note to Pond and settles the card as changes requested', async () => {
     const user = userEvent.setup()
     renderWithQuery(<AITerminal />)
