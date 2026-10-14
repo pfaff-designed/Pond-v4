@@ -2993,9 +2993,17 @@ export function AITerminal() {
       makingPages.current.add(id)
       dispatch({ kind: 'settlePageProposal', id, status: 'accepted' })
       try {
+        const answerMessage = messages.find((m) => m.id === proposal.messageId)
+        const answerSentAt = (answerMessage?.metadata as { sentAt?: unknown } | undefined)?.sentAt
         const made = await makePageFromAnswer(
           getSupabase(),
-          { proposal, threadId: conversationId, pages: allPages, pondId },
+          {
+            proposal,
+            threadId: conversationId,
+            pages: allPages,
+            pondId,
+            answerSentAt: typeof answerSentAt === 'string' ? answerSentAt : null,
+          },
           () => crypto.randomUUID()
         )
         dispatch({ kind: 'notePageMade', id, pageId: made.id })
@@ -3034,7 +3042,17 @@ export function AITerminal() {
         makingPages.current.delete(id)
       }
     },
-    [pageProposals, getSupabase, conversationId, allPages, queryClient, router, pondId, logDecision]
+    [
+      pageProposals,
+      getSupabase,
+      conversationId,
+      allPages,
+      queryClient,
+      router,
+      pondId,
+      logDecision,
+      messages,
+    ]
   )
 
   const openMadePage = useCallback(

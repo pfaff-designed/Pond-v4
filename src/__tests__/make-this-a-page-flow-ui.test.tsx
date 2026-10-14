@@ -904,6 +904,9 @@ describe('make this a page → the `new page — proposed` card', () => {
         signOff: 'Want me to draft the email?',
       }),
     })
+    const thread = answeredThread()
+    thread[1].metadata = { ...(thread[1].metadata as object), sentAt: '2026-09-22T07:14:00' }
+    mockMessages = thread
     renderTerminal()
     await ready()
     fireEvent.click(screen.getByRole('button', { name: 'make this a page' }))
@@ -920,6 +923,8 @@ describe('make this a page → the `new page — proposed` card', () => {
       leadIn: 'Sure — here’s the blocker:',
       signOff: 'Want me to draft the email?',
     })
+    // The answer's own sentAt rides to the write, not the question's or a fresh one.
+    expect(mockMakePageFromAnswer.mock.calls[0][1].answerSentAt).toBe('2026-09-22T07:14:00')
   })
 
   it("fills in Pond's chosen name and the full ancestor path once resolved, and a double click still makes one page (path test)", async () => {
