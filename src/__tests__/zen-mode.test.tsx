@@ -598,20 +598,6 @@ describe('WorkspaceShell — zen from ⌘K, and back with esc', () => {
     expect(zenOf(container)).toBeUndefined()
   })
 
-  it('⌘. leaves zen alone while the new page dialog is open', async () => {
-    const { container } = renderShell()
-    await ready()
-    await palette('new page')
-    fireEvent.click((await screen.findAllByRole('option', { name: /new page/ }))[0])
-    await screen.findByRole('dialog')
-
-    act(() => {
-      fireEvent.keyDown(document, { key: '.', metaKey: true })
-    })
-    expect(zenOf(container)).toBeUndefined()
-    expect(screen.getByRole('dialog')).toBeTruthy()
-  })
-
   it('esc that closes the palette in zen only closes the palette', async () => {
     const { container } = renderShell()
     await ready()

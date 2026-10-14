@@ -223,15 +223,17 @@ describe('rail — row tools and capabilities', () => {
     expect(screen.getAllByRole('treeitem').filter((r) => r.tabIndex === 0)).toHaveLength(1)
   })
 
-  it('+ on the root adds a top-level page — the first one too, when the pond is empty', () => {
+  it('+ on the root opens the new-page menu, whose "page" row adds a top-level page — the first one too, when the pond is empty', async () => {
     const populated = setup()
     fireEvent.keyDown(row('life'), { key: '+' })
-    expect(populated.onAddChild).toHaveBeenCalledWith('__life__')
+    fireEvent.click(await screen.findByRole('menuitem', { name: /^page/ }))
+    expect(populated.onAddChild).toHaveBeenCalledWith('__life__', 'page')
     populated.unmount()
 
     const empty = setup([], true)
     fireEvent.keyDown(row('life'), { key: '+' })
-    expect(empty.onAddChild).toHaveBeenCalledWith('__life__')
+    fireEvent.click(await screen.findByRole('menuitem', { name: /^page/ }))
+    expect(empty.onAddChild).toHaveBeenCalledWith('__life__', 'page')
   })
 
   it('the databases row takes none of +, Delete or F2', () => {

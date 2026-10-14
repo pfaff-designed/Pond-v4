@@ -194,6 +194,9 @@ describe('Rail — delete then create (KAN-273)', () => {
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Add sub-page to life' }))
     })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('menuitem', { name: /^page/ }))
+    })
 
     expect(trashPage).toHaveBeenCalledWith(expect.anything(), 'sleep')
     expect(fetchPages).toHaveBeenCalled()
@@ -297,6 +300,9 @@ describe('Rail — delete then create (KAN-273)', () => {
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Add sub-page to life' }))
+    })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('menuitem', { name: /^page/ }))
     })
 
     expect(screen.getByRole('treeitem', { name: /Untitled 2/ })).toBeInTheDocument()

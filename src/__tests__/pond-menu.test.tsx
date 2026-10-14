@@ -340,3 +340,74 @@ describe('PondMenu kind block — dismissal and focus', () => {
     expect(screen.getByRole('button', { name: 'after' })).toHaveFocus()
   })
 })
+
+type NewPagePick = 'page' | 'template'
+
+const NEW_PAGE_GROUPS: PondMenuGroup<NewPagePick>[] = [
+  {
+    id: 'new-page',
+    label: 'new page',
+    items: [
+      { id: 'page', label: 'page', value: 'blocks, text, databases', action: 'page' },
+      { id: 'template', label: 'from a template', value: 'twelve to start from', action: 'template' },
+    ],
+  },
+]
+
+const NewPageHarness = () => {
+  const [open, setOpen] = useState(false)
+  const anchorRef = useRef<HTMLDivElement>(null)
+  return (
+    <div ref={anchorRef}>
+      <PondMenu
+        kind="newPage"
+        label="new page menu"
+        groups={NEW_PAGE_GROUPS}
+        open={open}
+        onOpenChange={setOpen}
+        onSelect={jest.fn()}
+        trigger={<button type="button">new page</button>}
+        placement={{ anchor: anchorRef, align: 'start', top: 40, alignOffset: -8 }}
+      />
+    </div>
+  )
+}
+
+describe('PondMenu kind newPage — the DC’s values', () => {
+  const classesOf = (el: Element) => (el.getAttribute('class') ?? '').split(' ')
+
+  it('the box: 300 wide', async () => {
+    const user = userEvent.setup()
+    render(<NewPageHarness />)
+    await user.click(screen.getByRole('button', { name: 'new page' }))
+    const menu = await screen.findByRole('menu', { name: 'new page menu' })
+    expect(classesOf(menu)).toContain('w-[300px]')
+  })
+
+  it('an item: 8px 10px, radius 10, gap 2, label over hint, highlighted adds font-medium to the label alone', async () => {
+    const user = userEvent.setup()
+    render(<NewPageHarness />)
+    await user.click(screen.getByRole('button', { name: 'new page' }))
+    const menu = await screen.findByRole('menu', { name: 'new page menu' })
+    const page = within(menu).getByRole('menuitem', { name: /^page/ })
+    for (const cls of [
+      'flex-col',
+      'py-[8px]',
+      'px-[10px]',
+      'rounded-[10px]',
+      'gap-[2px]',
+      'text-[13.5px]',
+      'data-[highlighted]:bg-mn-hover-fill',
+    ]) {
+      expect(classesOf(page)).toContain(cls)
+    }
+    expect(classesOf(page)).not.toContain('data-[highlighted]:font-medium')
+    const label = classesOf(within(page).getByText('page'))
+    expect(label).toContain('group-data-[highlighted]:font-medium')
+    const hint = classesOf(within(page).getByText('blocks, text, databases'))
+    for (const cls of ['font-mono', 'text-[10.5px]', 'text-mn-text-secondary']) {
+      expect(hint).toContain(cls)
+    }
+    expect(hint.some((cls) => cls.includes('font-medium'))).toBe(false)
+  })
+})

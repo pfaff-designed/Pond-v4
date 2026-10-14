@@ -8,7 +8,8 @@
  * wiring — each just passes the `pageId` it already owns as the parent for new child
  * pages. Resolution/search read the already-loaded `pagesKey()` cache the
  * rail/page surfaces populate (no extra fetch); create/rename reuse the same
- * `createPage`/`updateTitle` + optimistic-insert tail `CreatePageModal` uses.
+ * `createPage`/`updateTitle` + optimistic-insert tail the rail's new-page
+ * menu uses.
  */
 
 import { useMemo } from 'react'
