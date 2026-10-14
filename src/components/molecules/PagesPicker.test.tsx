@@ -476,6 +476,37 @@ describe('PagesPicker — the composer @ popover rows', () => {
         restoreInnerHeight()
       }
     })
+
+    it('pins to the viewport margin when neither side fits the head plus one row', () => {
+      const restoreInnerHeight = stubInnerHeight(500)
+      try {
+        // A composer dragged to its max height: card top 72, bottom 476.
+        // Room above (72 − 18 = 54) and room below (500 − 476 − 18 = 6) both
+        // fall short of the head plus one row (45.75 + 35.5 = 81.25).
+        const anchor: MentionAnchorBox = {
+          getBoundingClientRect: () => ({ top: 72, bottom: 476, left: 0, width: 320 }),
+        }
+        render(
+          <PagesPicker
+            items={MANY_ITEMS}
+            activeIndex={0}
+            onHover={jest.fn()}
+            onPick={jest.fn()}
+            onClose={jest.fn()}
+            anchor={anchor}
+          />
+        )
+
+        const popover = document.querySelector('[data-part="popover"]') as HTMLElement
+        const listbox = screen.getByRole('listbox')
+        expect(popover.style.top).toBe('8px')
+        expect(popover.style.bottom).toBe('')
+        const glassBottom = 8 + 45.75 + parseFloat(listbox.style.maxHeight)
+        expect(glassBottom).toBeLessThanOrEqual(500)
+      } finally {
+        restoreInnerHeight()
+      }
+    })
   })
 
   it('scrolls the active row into view when the active index moves', () => {

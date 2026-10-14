@@ -192,6 +192,7 @@ export function PagesPicker({
   // mounted. `left`/`width` are read the same pass, off the same rect.
   const [layout, setLayout] = useState<{
     side: PickerSide
+    pinned: boolean
     left: number
     width: number
     maxListHeight: number
@@ -206,12 +207,20 @@ export function PagesPicker({
       const fitsAbove = roomAbove >= GLASS_CHROME_PX + MIN_ROWS_ABOVE * ROW_HEIGHT_PX
       const side: PickerSide = fitsAbove || roomAbove > roomBelow ? 'top' : 'bottom'
       const room = side === 'top' ? roomAbove : roomBelow
-      const maxListHeight = Math.min(
-        MAX_VISIBLE_ROWS * ROW_HEIGHT_PX,
-        Math.max(ROW_HEIGHT_PX, room - GLASS_CHROME_PX)
-      )
+      // Neither side has room for the head plus even one row (a maxed-out
+      // composer can leave both this tight): the anchor-relative gap stops
+      // being meaningful, so the glass pins to the viewport's own margin
+      // instead of the anchor's edge.
+      const pinned = room < GLASS_CHROME_PX + ROW_HEIGHT_PX
+      const maxListHeight = pinned
+        ? Math.max(
+            ROW_HEIGHT_PX,
+            Math.min(MAX_VISIBLE_ROWS * ROW_HEIGHT_PX, window.innerHeight - 2 * VIEWPORT_MARGIN_PX - GLASS_CHROME_PX)
+          )
+        : Math.min(MAX_VISIBLE_ROWS * ROW_HEIGHT_PX, Math.max(ROW_HEIGHT_PX, room - GLASS_CHROME_PX))
       setLayout({
         side,
+        pinned,
         left: r.left + POPOVER_INSET_PX,
         width: Math.max(0, r.width - POPOVER_INSET_PX * 2),
         maxListHeight,
@@ -235,7 +244,12 @@ export function PagesPicker({
   const position = useAnchoredBox(anchor, layout?.side ?? 'bottom', 0, POPOVER_GAP_PX)
 
   if (typeof document === 'undefined') return null
-  const style = position && layout ? { ...position, left: layout.left, width: layout.width } : undefined
+  const style =
+    position && layout
+      ? layout.pinned
+        ? { top: VIEWPORT_MARGIN_PX, left: layout.left, width: layout.width }
+        : { ...position, left: layout.left, width: layout.width }
+      : undefined
   return createPortal(
     <div ref={glassRef} data-part="popover" className={COMPOSER_POP.glass} style={style}>
       <div data-part="head" className={COMPOSER_POP.head}>
