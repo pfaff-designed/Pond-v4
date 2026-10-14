@@ -942,6 +942,9 @@ describe('AITerminal — the @ mention picker opens, narrows and closes (KAN-99)
     const unrelatedIndex = options.findIndex((t) => t?.includes('kitchen renovation'))
     expect(recentIndex).toBeGreaterThanOrEqual(0)
     expect(recentIndex).toBeLessThan(unrelatedIndex)
+  })
+})
+
 describe('AITerminal — REQUEST_CHANGES_EVENT before the thread is ready (KAN-96)', () => {
   it('a request made while still loading is sent once, once ready', async () => {
     renderTerminal()
