@@ -850,4 +850,23 @@ describe('AITerminal — the @ mention picker opens, narrows and closes (KAN-99)
     expect(screen.queryByText('pages')).not.toBeInTheDocument()
     expect(textbox).toHaveValue('@kit')
   })
+
+  it('picking a row replaces the typed @query with the title and adds a title-only chip', async () => {
+    const user = userEvent.setup()
+    renderTerminal()
+    await waitReady()
+
+    const textbox = screen.getByRole('textbox', { name: 'Message Pond' })
+    await user.type(textbox, '@kit')
+    await screen.findByRole('option', { name: /kitchen renovation/ })
+
+    await user.keyboard('{Enter}')
+
+    expect(screen.queryByText('pages')).not.toBeInTheDocument()
+    expect(textbox).toHaveValue('@kitchen renovation')
+
+    const refs = screen.getByRole('group', { name: 'references' })
+    expect(refs).toHaveTextContent('kitchen renovation')
+    expect(refs).not.toHaveTextContent('—')
+  })
 })

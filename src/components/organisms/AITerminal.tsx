@@ -806,6 +806,11 @@ export function AITerminal() {
           allPages.find((p) => p.id === ref.pageId)?.title ??
           (ref.pageId === nodeId ? contextLabel : 'untitled')
         const mark = resolveMark(ref.pageId, pageMarks)
+        // A whole-page reference (KAN-99's `@`-picker, `range: null`) has no
+        // passage to quote — the chip reads as the title alone.
+        if (ref.range === null) {
+          return { key: ref.id, glyph: mark.glyph, accent: markAccent(mark.role), label: title }
+        }
         const passage =
           ref.quotedText.length > REFERENCE_PASSAGE_MAX
             ? `${ref.quotedText.slice(0, REFERENCE_PASSAGE_MAX)}…`
@@ -902,6 +907,33 @@ export function AITerminal() {
     suppressMentionReopenRef.current = true
     setMentionQuery(null)
   }, [])
+
+  // Picking a row (KAN-99, board 6e frame 4): the typed `@query` run becomes
+  // plain text `@<title>` — KAN-19's existing inline-mention text, no new
+  // fetch — and the page joins `references` as a whole-page chip (`blockId:
+  // null, range: null`, the discriminator item 2 settled on for routing).
+  const handleMentionPick = useCallback(
+    (item: PageMentionItem) => {
+      const el = inputRef.current
+      if (!el || !mentionQuery) return
+      const { start, query } = mentionQuery
+      const end = start + 1 + query.length
+      const mention = `@${item.label}`
+      setInput(el.value.slice(0, start) + mention + el.value.slice(end))
+      setReferences((prev) => [
+        ...prev,
+        { id: crypto.randomUUID(), pageId: item.id, blockId: null, range: null, quotedText: '' },
+      ])
+      suppressMentionReopenRef.current = true
+      setMentionQuery(null)
+      const caret = start + mention.length
+      requestAnimationFrame(() => {
+        el.focus()
+        el.setSelectionRange(caret, caret)
+      })
+    },
+    [mentionQuery]
+  )
 
   // The DOM textarea's `selectionStart` already reflects the keystroke by the
   // time this fires — same tick `onChange` reports the new `value` — so the
@@ -3614,9 +3646,7 @@ export function AITerminal() {
           items={mentionItems}
           activeIndex={mentionActiveIndex}
           onHover={setMentionActiveIndex}
-          // Picking a row is the next item's job — this one only opens, narrows
-          // and closes the glass.
-          onPick={() => {}}
+          onPick={handleMentionPick}
           onClose={handleMentionClose}
           anchor={composerRef}
           side={mentionSide}
