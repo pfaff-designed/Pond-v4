@@ -123,6 +123,25 @@ describe('ChangeLogRecordPage — loading', () => {
     await screen.findByText('when can the electrician come back?')
     expect(screen.getByText('from thread')).toBeInTheDocument()
   })
+
+  it('resolves a read id to its page title, alongside the from-thread chip', async () => {
+    mockGetRecord.mockResolvedValue(
+      record({ read: ['page-7', 'email · j. hart'], sourceThreadId: 'thread-1' })
+    )
+    mockGetThreadFirstQuestion.mockResolvedValue('when can the electrician come back?')
+    mockGetPage.mockImplementation(async (_supabase: unknown, id: string) =>
+      id === 'page-7'
+        ? { id: 'page-7', parentId: null, type: 'page', title: 'kitchen renovation', blocks: [], order: 0, props: {} }
+        : null
+    )
+
+    renderPage()
+
+    await screen.findByText('when can the electrician come back?')
+    expect(screen.getByText('from thread')).toBeInTheDocument()
+    expect(screen.getByText('kitchen renovation')).toBeInTheDocument()
+    expect(screen.getByText('email · j. hart')).toBeInTheDocument()
+  })
 })
 
 describe('ChangeLogRecordPage — not found', () => {

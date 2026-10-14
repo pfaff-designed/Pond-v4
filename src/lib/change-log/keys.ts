@@ -26,3 +26,9 @@ export const chainKey = (recordId: string) =>
 
 export const threadFirstQuestionKey = (threadId: string) =>
   [...changeLogKey(), 'record', 'thread-first-question', threadId] as const
+
+/** The "read" chips' page-title lookup (KAN-152) — `read` entries that
+ *  resolve to a real page id get the page's title; anything else falls back
+ *  to the stored string. */
+export const readTitlesKey = (recordId: string, read: readonly string[]) =>
+  [...recordKey(recordId), 'read-titles', read] as const

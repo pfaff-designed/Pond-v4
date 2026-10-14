@@ -1876,6 +1876,9 @@ export function AITerminal() {
         // KAN-99: × on the current-page chip withholds the open page's
         // content from this and every turn until another page is opened.
         openPageContext,
+        // KAN-152: lets the route stamp any record this turn writes with the
+        // thread it came from (the record page's "from thread" chip).
+        threadId: conversationId,
       }
       // #97: the thread shows when each line was said ("you · 07:12"), and a
       // page made from the answer carries that moment on its made-from chip.
@@ -1945,6 +1948,7 @@ export function AITerminal() {
       research,
       references,
       dismissedCurrentRefNodeId,
+      conversationId,
     ]
   )
 

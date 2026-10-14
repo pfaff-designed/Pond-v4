@@ -21,7 +21,13 @@ import type { ChangeLogRecord } from '@/lib/change-log/types'
 import { getPage } from '@/lib/pages/client'
 import { getThreadFirstQuestion } from '@/lib/conversation/client'
 import { describeChange } from '@/lib/change-log/page-changes'
-import { chainKey, changeLogKey, recordKey, threadFirstQuestionKey } from '@/lib/change-log/keys'
+import {
+  chainKey,
+  changeLogKey,
+  readTitlesKey,
+  recordKey,
+  threadFirstQuestionKey,
+} from '@/lib/change-log/keys'
 import { proposeRevert } from '@/lib/change-log/revert'
 import { raiseRecordCard } from '@/lib/terminal-focus'
 import { canRevertRecord } from '@/lib/change-log/revert-plan'
@@ -126,6 +132,26 @@ export function ChangeLogRecordPage({ recordId }: { recordId: string }) {
     queryKey: threadFirstQuestionKey(threadId ?? 'none'),
     enabled: threadId !== null,
     queryFn: () => getThreadFirstQuestion(getSupabase(), threadId as string),
+  })
+
+  // The "read" row's chips (KAN-47 provenance): a chip that names a page id
+  // resolves to that page's title; everything else (a non-page source like
+  // "email · j. hart") renders as the stored string. Declared ahead of the
+  // loading/not-found returns below so the hook always runs.
+  const readChips = record ? readChipsOf(record) : []
+  const { data: readPageTitles } = useQuery({
+    queryKey: readTitlesKey(recordId, readChips),
+    enabled: readChips.length > 0,
+    queryFn: async () => {
+      const supabase = getSupabase()
+      const entries = await Promise.all(
+        readChips.map(async (id) => {
+          const page = await getPage(supabase, id)
+          return page ? ([id, page.title] as const) : null
+        })
+      )
+      return new Map(entries.filter((e): e is readonly [string, string] => e !== null))
+    },
   })
 
   // "This change" column: the FULL revision lineage, root first — found by
@@ -271,9 +297,11 @@ export function ChangeLogRecordPage({ recordId }: { recordId: string }) {
     )
   }
 
-  const pageTitleById = new Map(targetPage ? [[targetPage.id, targetPage.title] as const] : [])
+  const pageTitleById = new Map<string, string>([
+    ...(targetPage ? [[targetPage.id, targetPage.title] as const] : []),
+    ...(readPageTitles ?? []),
+  ])
   const { page, block } = pageBlockField(record, pageTitleById, targetPage?.blocks ?? [])
-  const readChips = readChipsOf(record)
   const diffRows = recordDiffRows(record)
 
   return (
@@ -313,7 +341,7 @@ export function ChangeLogRecordPage({ recordId }: { recordId: string }) {
                 <Field label="read">
                   {readChips.map((chip, index) => (
                     <span key={index} className={RECORD_CHIP_CLASS}>
-                      {chip}
+                      {pageTitleById.get(chip) ?? chip}
                     </span>
                   ))}
                 </Field>

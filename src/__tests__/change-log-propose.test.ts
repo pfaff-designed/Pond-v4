@@ -100,6 +100,22 @@ describe('recordProposedToolCalls — criterion 2', () => {
     expect(JSON.stringify(rec.after)).not.toContain('the old line')
   })
 
+  it('carries sourceThreadId and read onto the written record (KAN-152 record-page chips)', async () => {
+    const { supabase, inserts } = makeSupabase({ blocks: BEFORE_BLOCKS })
+
+    await recordProposedToolCalls(supabase, {
+      userId: USER,
+      pondId: 'pond-1',
+      openPageId: PAGE,
+      sourceThreadId: 'thread-1',
+      read: ['page-7', 'page-8'],
+      toolCalls: [proposeChangesCall()],
+    })
+
+    expect(inserts[0].source_thread_id).toBe('thread-1')
+    expect(inserts[0].read).toEqual(['page-7', 'page-8'])
+  })
+
   it('files a cross-page proposal against the page it named, not the open one', async () => {
     const { supabase, inserts } = makeSupabase({ blocks: BEFORE_BLOCKS })
 
