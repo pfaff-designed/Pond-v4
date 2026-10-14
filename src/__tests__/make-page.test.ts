@@ -414,16 +414,16 @@ describe('made-from stamp — hideable, not removable', () => {
 // ── props.mentioned — the card's data (6a frame 5) ───────────────────────────
 
 describe('the mentioned list in props', () => {
-  it('writes pageId and title, and a note only when there is one', () => {
+  it('writes title, ref and note verbatim', () => {
     const props = stampMentioned({ kind: 'page' }, [
-      { pageId: 'cq-1', title: 'Cabinet quote' },
-      { pageId: 'wt-1', title: 'Worktop template', note: 'after the carcasses are measured' },
-      { pageId: 'el-1', title: 'Electrician', note: '   ' },
+      { title: 'Cabinet quote', ref: 'cq-1', note: '' },
+      { title: 'Worktop template', ref: 'wt-1', note: 'after the carcasses are measured' },
+      { title: 'Electrician', ref: null, note: '   ' },
     ])
     expect(props[MENTIONED_KEY]).toEqual([
-      { pageId: 'cq-1', title: 'Cabinet quote' },
-      { pageId: 'wt-1', title: 'Worktop template', note: 'after the carcasses are measured' },
-      { pageId: 'el-1', title: 'Electrician' },
+      { title: 'Cabinet quote', ref: 'cq-1', note: '' },
+      { title: 'Worktop template', ref: 'wt-1', note: 'after the carcasses are measured' },
+      { title: 'Electrician', ref: null, note: '   ' },
     ])
     // Everything else on props is left alone.
     expect(props.kind).toBe('page')
@@ -434,25 +434,29 @@ describe('the mentioned list in props', () => {
   })
 
   it('reads back what was written, and null when there is nothing to show', () => {
-    const items = [{ pageId: 'cq-1', title: 'Cabinet quote' }]
+    const items = [{ title: 'Cabinet quote', ref: 'cq-1', note: '' }]
     expect(readMentioned(stampMentioned({}, items))).toEqual(items)
     expect(readMentioned({})).toBeNull()
     expect(readMentioned(null)).toBeNull()
     expect(readMentioned({ [MENTIONED_KEY]: [] })).toBeNull()
   })
 
-  it('drops a malformed entry rather than throwing — a bad row shortens the list', () => {
+  it('drops a malformed entry rather than throwing — only a missing or blank title drops a row', () => {
     expect(
       readMentioned({
         [MENTIONED_KEY]: [
-          { pageId: 'ok-1', title: 'Budget' },
-          { title: 'no page id' },
-          { pageId: 'blank', title: '   ' },
+          { title: 'Budget', ref: 'ok-1', note: 'under review' },
+          { ref: 'no-title' },
+          { title: '   ', ref: 'blank' },
+          { title: 'No note', ref: null },
           'not an object',
           null,
         ],
       })
-    ).toEqual([{ pageId: 'ok-1', title: 'Budget' }])
+    ).toEqual([
+      { title: 'Budget', ref: 'ok-1', note: 'under review' },
+      { title: 'No note', ref: null, note: '' },
+    ])
     expect(readMentioned({ [MENTIONED_KEY]: 'not a list' })).toBeNull()
   })
 })
