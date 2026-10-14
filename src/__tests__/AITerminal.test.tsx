@@ -84,7 +84,7 @@ jest.mock('@ai-sdk/react', () => ({
 
 import { AITerminal } from '@/components/organisms/AITerminal'
 import { ZenPill } from '@/components/organisms/ZenPill'
-import { listPages } from '@/lib/pages/client'
+import { getPage, listPages } from '@/lib/pages/client'
 import {
   requestChanges,
   requestComposerNotice,
@@ -95,6 +95,7 @@ import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
 import { useZen, ZenComposerChrome, ZenProvider } from '@/lib/layout/zen'
 
 const mockListPages = listPages as jest.Mock
+const mockGetPage = getPage as jest.Mock
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -1068,6 +1069,167 @@ describe('AITerminal — REQUEST_CHANGES_EVENT before the thread is ready (KAN-9
     // ambient pond/contextLabel it happened to stream back against (KAN-96).
     const chipLabels = screen.getAllByTestId('read-chip').map((el) => el.textContent)
     expect(chipLabels).toEqual(['Recipe'])
+  })
+})
+
+describe('AITerminal — tool-only answers still show their read chips (KAN-317)', () => {
+  it('a propose_changes-only answer (no text, no sources) shows a read row under the card', async () => {
+    mockMessages = [
+      { id: 'm-ask', role: 'user', parts: [{ type: 'text', text: 'add a line saying hello' }] },
+      {
+        id: 'm-answer',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'tool-propose_changes',
+            toolCallId: 'tc-tool-only',
+            state: 'input-available',
+            input: {
+              changes: [{ op: 'edit', blockId: 'b0', data: { type: 'text', content: 'hello' } }],
+            },
+          },
+        ],
+      },
+    ]
+    renderTerminal()
+    await waitReady()
+
+    const card = screen.getByRole('group', { name: '1 diff' })
+    const readRow = screen.getByTestId('read-chips')
+    expect(screen.getAllByTestId('read-chip').length).toBeGreaterThan(0)
+    expect(card.compareDocumentPosition(readRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('a revised card with no text part still shows its read row under it, labeled for the record\'s page', async () => {
+    mockAmbientNodeId = CHANGE_LOG_NODE_ID
+    mockListPages.mockResolvedValueOnce([
+      { id: 'page-77', parentId: null, type: 'page', title: 'Recipe', blocks: [], order: 0, props: {} },
+    ])
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const { rerender } = render(
+      <QueryClientProvider client={queryClient}>
+        <AITerminal />
+      </QueryClientProvider>
+    )
+    await waitReady()
+    await waitFor(() => expect(mockListPages).toHaveBeenCalled())
+    await act(async () => {})
+
+    act(() => {
+      requestChanges({
+        toolCallId: 'tc-old',
+        note: 'please fix the heading',
+        reason: 'note',
+        targetPageId: 'page-77',
+      })
+    })
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1))
+    const [[sentMessage]] = mockSendMessage.mock.calls
+    const sentMetadata = sentMessage.metadata
+
+    mockMessages = [
+      {
+        id: 'm-note',
+        role: 'user',
+        parts: [{ type: 'text', text: 'please fix the heading' }],
+        metadata: sentMetadata,
+      },
+      {
+        id: 'm-revision',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'tool-propose_changes',
+            toolCallId: 'tc-new',
+            state: 'input-available',
+            input: {
+              changes: [{ op: 'edit', blockId: 'b0', data: { type: 'text', content: 'Hello moon' } }],
+            },
+          },
+        ],
+      },
+    ]
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <AITerminal />
+      </QueryClientProvider>
+    )
+
+    const card = await screen.findByRole('group', { name: '1 diff' })
+    const readRow = screen.getByTestId('read-chips')
+    expect(card.compareDocumentPosition(readRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    // The revised, text-less card's read chip must still name the record's
+    // page, not the ambient contextLabel/change-log node the note was sent
+    // against (KAN-96's rule, now also proven for a tool-only answer).
+    const chipLabels = screen.getAllByTestId('read-chip').map((el) => el.textContent)
+    expect(chipLabels).toEqual(['Recipe'])
+  })
+
+  // Path test (PATH_STEPS 1-3): a person types into the composer and sends —
+  // the stream resolving to a tool-only propose_changes answer must show its
+  // read row under the card in the live thread, not just in a hand-built fixture.
+  it('typing a question and sending it: a tool-only answer shows its read row in the live thread', async () => {
+    // PATH_STEP 1 — a page is open, so the turn has something to read.
+    mockAmbientNodeId = 'page-scratch'
+    mockGetPage.mockResolvedValueOnce({
+      id: 'page-scratch',
+      parentId: null,
+      type: 'page',
+      title: 'Scratch',
+      blocks: [],
+      order: 0,
+      props: {},
+    })
+    const user = userEvent.setup()
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const { rerender } = render(
+      <QueryClientProvider client={queryClient}>
+        <AITerminal />
+      </QueryClientProvider>
+    )
+    await waitReady()
+    await waitFor(() => expect(mockGetPage).toHaveBeenCalled())
+
+    const textbox = screen.getByRole('textbox', { name: 'Message Pond' })
+    await user.type(textbox, 'add a line saying hello to this page')
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1))
+    const [[sentMessage]] = mockSendMessage.mock.calls
+
+    mockMessages = [
+      {
+        id: 'm-ask',
+        role: 'user',
+        parts: [{ type: 'text', text: 'add a line saying hello to this page' }],
+        metadata: sentMessage.metadata,
+      },
+      {
+        id: 'm-answer',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'tool-propose_changes',
+            toolCallId: 'tc-live',
+            state: 'input-available',
+            input: {
+              changes: [{ op: 'edit', blockId: 'b0', data: { type: 'text', content: 'hello' } }],
+            },
+          },
+        ],
+      },
+    ]
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <AITerminal />
+      </QueryClientProvider>
+    )
+
+    const card = await screen.findByRole('group', { name: '1 diff' })
+    const readRow = screen.getByTestId('read-chips')
+    expect(screen.getAllByTestId('read-chip').length).toBeGreaterThan(0)
+    expect(card.compareDocumentPosition(readRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 })
 

@@ -298,10 +298,10 @@ type AssistantPart = UIMessage['parts'][number]
  * guard its card's render branch applies (the `*InputIsVisible` helpers
  * above — one guard, shared, not a second notion of "empty"). A part still
  * `input-streaming`; a `read_page`, `fetch_context`, or `open_change_log`
- * call (none of these ever render on their own — read chips only ever show
- * nested inside a text or sources block); `reasoning`, `file`, `data-*`, and
- * any tool type this module doesn't know how to draw all count as nothing to
- * show.
+ * call (none of these ever render on their own — read chips show nested
+ * inside a text or sources block, or under a tool-only card when there is
+ * neither); `reasoning`, `file`, `data-*`, and any tool type this module
+ * doesn't know how to draw all count as nothing to show.
  */
 export function hasVisibleAssistantContent(parts: AssistantPart[]): boolean {
   return parts.some(isVisiblePart)
