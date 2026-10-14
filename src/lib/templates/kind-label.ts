@@ -7,14 +7,16 @@
  * nothing else — no new column, no back-reference. Once written it is the
  * person's to change like any other label; it is not provenance (that is the
  * separate, one-way stamp in `provenance.ts`).
+ *
+ * Takes a plain `kind: string` rather than a `PondTemplate` — a `yours` template
+ * has no fixed `TemplateKind`, it writes its own free-text `name` as the kind
+ * (KAN-124).
  */
 
-import type { PondTemplate } from './types'
-
-/** Pure: returns new props with `kind` set to the template's kind; input untouched. */
+/** Pure: returns new props with `kind` set to the given kind; input untouched. */
 export function applyKindLabel(
   props: Record<string, unknown>,
-  template: Pick<PondTemplate, 'kind'>
+  kind: string
 ): Record<string, unknown> {
-  return { ...props, kind: template.kind }
+  return { ...props, kind }
 }

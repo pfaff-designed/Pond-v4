@@ -336,7 +336,9 @@ export function templateEntries(
  * The foot legend per pane and query — the board's own words. The blank list's
  * rest-state foot (KAN-276, `leadWithTemplates`) draws no `esc keep as text` —
  * 6f frame 2's empty-page foot is `↑↓ move · ↵ <verb>` only, with no `→ preview`
- * while `onPreviewTemplate` is unwired at that call site.
+ * while `onPreviewTemplate` is unwired at that call site — except when the
+ * active row is itself a template pick (KAN-124), whose foot is the board's
+ * `↑↓ move · → preview · ↵ apply`.
  */
 export function footItems(
   pane: SlashPane,
@@ -350,6 +352,7 @@ export function footItems(
     return preview ? ['↵ new nested page', '→ preview'] : ['↵ new nested page']
   const q = normalizeQuery(query)
   if (!q) {
+    if (leadWithTemplates && activeIsTemplate) return ['↑↓ move', '→ preview', '↵ apply']
     const verb = activeIsTemplate ? '↵ new nested page' : '↵ insert'
     return leadWithTemplates ? ['↑↓ move', verb] : ['↑↓ move', verb, 'esc keep as text']
   }

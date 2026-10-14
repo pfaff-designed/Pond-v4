@@ -587,11 +587,11 @@ describe('leads with templates (KAN-276, an empty page’s `/`)', () => {
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 'text', label: 'text' }))
   })
 
-  it('a template row selected: the foot reads `↵ new nested page` — no `esc keep as text`, no `→ preview`', () => {
+  it('a template row selected: the foot reads `↑↓ move · → preview · ↵ apply` — no `esc keep as text`', () => {
     renderMenu({ leadWithTemplates: true })
     expect(labelOf(selected())).toBe(TEMPLATE_KINDS[0])
     expect(glass().querySelector('[data-part="foot"]')!.textContent).toBe(
-      '↑↓ move↵ new nested page'
+      '↑↓ move→ preview↵ apply'
     )
   })
 
