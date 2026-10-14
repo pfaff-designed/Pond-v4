@@ -17,10 +17,14 @@ import { PAGE_COLUMN_PAD_PX, useSurfaceColumn } from '@/lib/layout/surface-colum
 import { getRecord } from '@/lib/change-log/store'
 import { getPage } from '@/lib/pages/client'
 import { getThreadFirstQuestion } from '@/lib/conversation/client'
+import { describeChange } from '@/lib/change-log/page-changes'
+import { ChangeRows } from '@/components/molecules/diff-card-parts'
+import { machineEyebrowClass } from '@/components/atoms/kicker'
 import {
   pageBlockField,
   proposedByField,
   readChipsOf,
+  recordDiffRows,
   recordTitle,
   statusField,
 } from '@/lib/change-log/record-page'
@@ -117,6 +121,7 @@ export function ChangeLogRecordPage({ recordId }: { recordId: string }) {
   const pageTitleById = new Map(targetPage ? [[targetPage.id, targetPage.title] as const] : [])
   const { page, block } = pageBlockField(record, pageTitleById, targetPage?.blocks ?? [])
   const readChips = readChipsOf(record)
+  const diffRows = recordDiffRows(record)
 
   return (
     <div className="h-full overflow-y-auto">
@@ -132,33 +137,48 @@ export function ChangeLogRecordPage({ recordId }: { recordId: string }) {
           {recordTitle(record, targetPage?.blocks)}
         </span>
         <div className="grid grid-cols-[minmax(0,1fr)_250px] items-start gap-7">
-          <div className="flex flex-col">
-            <Field label="status">{statusField(record)}</Field>
-            <Field label="proposed by">{proposedByField(record)}</Field>
-            <Field label="page">
-              <span className="underline decoration-mn-mark-faint underline-offset-[3px]">
-                {page}
-              </span>
-              {block !== null && (
-                <span className="font-mono text-[10.5px] text-mn-text-secondary">
-                  › {block}
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col">
+              <Field label="status">{statusField(record)}</Field>
+              <Field label="proposed by">{proposedByField(record)}</Field>
+              <Field label="page">
+                <span className="underline decoration-mn-mark-faint underline-offset-[3px]">
+                  {page}
                 </span>
-              )}
-            </Field>
-            {firstQuestion !== null && firstQuestion !== undefined && (
-              <Field label="from thread">
-                <span className={RECORD_CHIP_CLASS}>{firstQuestion}</span>
-              </Field>
-            )}
-            {readChips.length > 0 && (
-              <Field label="read">
-                {readChips.map((chip, index) => (
-                  <span key={index} className={RECORD_CHIP_CLASS}>
-                    {chip}
+                {block !== null && (
+                  <span className="font-mono text-[10.5px] text-mn-text-secondary">
+                    › {block}
                   </span>
-                ))}
+                )}
               </Field>
-            )}
+              {firstQuestion !== null && firstQuestion !== undefined && (
+                <Field label="from thread">
+                  <span className={RECORD_CHIP_CLASS}>{firstQuestion}</span>
+                </Field>
+              )}
+              {readChips.length > 0 && (
+                <Field label="read">
+                  {readChips.map((chip, index) => (
+                    <span key={index} className={RECORD_CHIP_CLASS}>
+                      {chip}
+                    </span>
+                  ))}
+                </Field>
+              )}
+            </div>
+            <div
+              data-testid="change-log-record-diff-card"
+              className="flex flex-col gap-[3px] rounded-mn-card bg-mn-card px-[10px] py-3 shadow-mn-card"
+            >
+              <span className={`${machineEyebrowClass} px-[10px] pb-1`}>before → after</span>
+              {diffRows !== null ? (
+                diffRows.map((row) => (
+                  <ChangeRows key={row.before?.id ?? row.after?.id} change={row} />
+                ))
+              ) : (
+                <p className="font-mono text-[12px] text-mn-text">{describeChange(record, null)}</p>
+              )}
+            </div>
           </div>
         </div>
       </div>
