@@ -97,10 +97,19 @@ const PAGE = {
   order: 0,
   props: {},
 } as PondPage
+const PAGE2 = {
+  id: 'page-2',
+  parentId: null,
+  type: 'page',
+  title: 'Kitchen renovation',
+  blocks: [],
+  order: 1,
+  props: {},
+} as PondPage
 
-function renderSurface() {
+function renderSurface(extraPages: PondPage[] = []) {
   mockGetPage.mockResolvedValue(PAGE)
-  mockListPages.mockResolvedValue([PAGE])
+  mockListPages.mockResolvedValue([PAGE, ...extraPages])
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
@@ -337,6 +346,59 @@ describe('the open page auto-references itself, deduped against a passage (KAN-9
     await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1))
     const [, { body }] = mockSendMessage.mock.calls[0]
     expect(body.references).toEqual([])
+  })
+
+  it('walks the @ picker end to end: open, narrow, Escape, pick and send alongside the current page (PATH_STEPS 1-5)', async () => {
+    const user = userEvent.setup()
+    renderSurface([PAGE2])
+    await waitComposerReady()
+    const textbox = screen.getByRole('textbox', { name: 'Message Pond' })
+
+    // 1: the open page is already the first, removable chip.
+    expect(screen.getByRole('button', { name: 'remove reference: Workshop' })).toBeInTheDocument()
+
+    // 2: @ opens the popover headed "pages", rows for every pickable page —
+    // Workshop itself is excluded, since it's already the current-page
+    // whole-page reference (no duplicate pick) — first row highlighted.
+    await user.type(textbox, 'a page on floorboards, with @')
+    expect(await screen.findByText('pages')).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: /Kitchen renovation/ })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: /Workshop/ })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('option')[0]).toHaveAttribute('aria-selected', 'true')
+
+    // 3: typing narrows the rows; Escape closes the popover and leaves the
+    // typed text in the composer.
+    await user.type(textbox, 'Kit')
+    expect(screen.getByRole('option', { name: /Kitchen renovation/ })).toBeInTheDocument()
+
+    await user.keyboard('{Escape}')
+    expect(screen.queryByText('pages')).not.toBeInTheDocument()
+    expect(textbox).toHaveValue('a page on floorboards, with @Kit')
+
+    // 4: typing again re-opens the glass on the still-active @-token; Enter
+    // picks the row — the typed query becomes the inline mention and the
+    // page joins the references row as a whole-page chip.
+    await user.type(textbox, 'c')
+    await screen.findByRole('option', { name: /Kitchen renovation/ })
+    await user.keyboard('{Enter}')
+    await flushAskFocus()
+
+    expect(screen.queryByText('pages')).not.toBeInTheDocument()
+    expect(textbox).toHaveValue('a page on floorboards, with @Kitchen renovation')
+    const refs = screen.getByRole('group', { name: 'references' })
+    expect(refs).toHaveTextContent('Kitchen renovation')
+
+    // 5: sending carries both the chosen page and the current page as
+    // whole-page references.
+    await user.type(textbox, ' does it fit?')
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1))
+    const [, { body }] = mockSendMessage.mock.calls[0]
+    expect(body.references).toEqual([
+      expect.objectContaining({ pageId: 'page-1', range: null }),
+      expect.objectContaining({ pageId: 'page-2', range: null }),
+    ])
   })
 
   it('a passage ask on the current page suppresses its whole-page chip without removing the passage chip', async () => {
