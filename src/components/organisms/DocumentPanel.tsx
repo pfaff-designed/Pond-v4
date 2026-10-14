@@ -57,8 +57,8 @@ import { DATABASES_ROOT_TITLE } from '@/lib/pages/databases-root'
 import { childCards } from '@/lib/pages/child-cards'
 import { isUntouchedPage, titleEyebrow } from '@/lib/pages/title-eyebrow'
 import { workspaceUrl, WORKSPACE_PATH, type WorkspaceNodeRef } from '@/lib/pages/nav'
-import { fetchPages } from '@/lib/pages/tree'
-import { homeQueryKey, pagesKey } from '@/lib/pages/keys'
+import { homeQueryKey } from '@/lib/pages/keys'
+import { usePagesRows } from '@/lib/pages/use-pages'
 import { usePond } from '@/lib/pond/context'
 import { PageCanvas } from '@/lib/modules/page-canvas'
 import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
@@ -192,10 +192,9 @@ export function DocumentPanel() {
   // per rows/node change, so the cards' "updated Xd ago" captions refresh with
   // the data rather than the wall clock. `rowsPending` holds the panel on the
   // loading state until they land, so a page never paints without its children.
-  const { data: rows = [], isPending: rowsPending } = useQuery({
-    queryKey: pagesKey(pondId),
-    queryFn: () => fetchPages(pondId),
-  })
+  // `usePagesRows` (KAN-310 gap 1) drops a staged-for-delete id at once, so a
+  // card a rail delete just staged disappears here with no refetch.
+  const { data: rows, isPending: rowsPending } = usePagesRows(pondId)
   // The root's children are the top-level pages (`null` parent); the home row is
   // never among the rows (fetchPages strips it), so it is never its own child.
   const cards = useMemo(() => childCards(rows, nodeId, new Date()), [rows, nodeId])

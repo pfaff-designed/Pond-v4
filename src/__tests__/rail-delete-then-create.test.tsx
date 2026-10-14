@@ -216,6 +216,70 @@ describe('Rail — delete then create (KAN-273)', () => {
     expect(screen.queryByRole('treeitem', { name: /Sleep/ })).not.toBeInTheDocument()
   })
 
+  it('＋ pressed while a grace-timer commit is in flight (toast already gone) still reads Untitled, not Untitled 2 (KAN-310 gap 2)', async () => {
+    // trashPage stays pending until resolveTrash() runs — the grace timer has
+    // fired (so commitDelete/trashPage has started and the toast is gone from
+    // toastsRef), but the write itself hasn't landed yet.
+    let resolveTrash: (() => void) | undefined
+    ;(trashPage as jest.Mock).mockImplementationOnce(
+      (_sb: unknown, id: string) =>
+        new Promise<void>((resolve) => {
+          resolveTrash = () => {
+            mockPagesTable = mockPagesTable.filter((r) => r.id !== id)
+            resolve()
+          }
+        })
+    )
+
+    // The staged leaf is itself titled "Untitled" — the ticket's literal
+    // symptom only reproduces if the row still sitting in the table when the
+    // create's dedupe check runs is the SAME title the new page defaults to.
+    // A "Sleep" row never collides with "Untitled" regardless of the fix.
+    const client = newClient([
+      { id: 'health', parent_id: null, type: 'page', title: 'Health', order: 0, updated_at: AT },
+      { id: 'untitled', parent_id: null, type: 'page', title: 'Untitled', order: 1, updated_at: AT },
+    ])
+    mount(client)
+
+    const untitledRow = screen.getByRole('treeitem', { name: /^Untitled$/ })
+    fireEvent.mouseEnter(untitledRow)
+    fireEvent.click(within(untitledRow).getByRole('button', { name: 'Delete Untitled' }))
+
+    await waitFor(() =>
+      expect(screen.queryByRole('treeitem', { name: /^Untitled$/ })).not.toBeInTheDocument()
+    )
+
+    // The grace window elapses: trashPage is called (and pending), but the
+    // toast is gone already.
+    await act(async () => {
+      jest.advanceTimersByTime(GRACE_WINDOW_MS + 1)
+    })
+    expect(trashPage).toHaveBeenCalledWith(expect.anything(), 'untitled')
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    expect(mockPagesTable.some((r) => r.id === 'untitled')).toBe(true)
+
+    // ＋ pressed on the parent before the in-flight commit resolves. createPage's
+    // own commit-first flush (flushStagedDeletes) must still be waiting on it.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Add sub-page to life' }))
+    })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('menuitem', { name: /^page/ }))
+    })
+    expect(screen.queryByRole('treeitem', { name: /^Untitled$/ })).not.toBeInTheDocument()
+
+    // The commit lands — the staged "Untitled" leaves the table before the
+    // create's dedupe check ever gets to read siblings.
+    await act(async () => {
+      resolveTrash?.()
+    })
+
+    await waitFor(() =>
+      expect(screen.getByRole('treeitem', { name: /^Untitled$/ })).toBeInTheDocument()
+    )
+    expect(screen.queryByRole('treeitem', { name: /Untitled 2/ })).not.toBeInTheDocument()
+  })
+
   it('restores the row when Undo is clicked within the grace window, and never commits the delete', async () => {
     const client = newClient(ROWS)
     mount(client)

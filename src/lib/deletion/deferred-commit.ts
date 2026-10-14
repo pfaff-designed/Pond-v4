@@ -22,9 +22,19 @@
 
 export const GRACE_WINDOW_MS = 6000
 
+/**
+ * Why a commit is running (KAN-310, replaces the old module-global
+ * `isFlushDrivenCommit` depth counter). `'flush-driven'` means ANOTHER
+ * write's `flushStagedDeletes()` forced this commit out of the way ahead of
+ * its own write — never the grace timer elapsing or the toast's own ×
+ * dismiss, which pass no reason. Threaded through so `Rail.tsx`'s `withUser`
+ * can decide, per call, whether to skip its own pages-query invalidate.
+ */
+export type CommitReason = 'flush-driven'
+
 export interface DeferredCommitOptions {
   /** The irreversible write, run when the grace window closes without an undo. */
-  commit: () => void | Promise<void>
+  commit: (reason?: CommitReason) => void | Promise<void>
   /** How long to hold the write before committing. Defaults to {@link GRACE_WINDOW_MS}. */
   graceMs?: number
   /** Injectable timers (jest passes fakes; the browser gets window.setTimeout). */
@@ -40,8 +50,11 @@ export interface DeferredCommit {
    * a call after the commit has already started returns the SAME in-flight
    * promise rather than `undefined`, so a concurrent flush (KAN-273: a tree
    * write racing the grace-timer commit) still waits for the real write.
+   * `reason` is forwarded to `commit` only on the FIRST call that actually
+   * starts it — a later idempotent call returning the same in-flight promise
+   * cannot retroactively change why that commit started.
    */
-  flush: () => Promise<void>
+  flush: (reason?: CommitReason) => Promise<void>
   /** True once the write has run (via window elapse or flush). */
   readonly isSettled: boolean
   /** True if undo ran before the write — the deletion was reverted. */
@@ -82,7 +95,7 @@ export function scheduleDeferredCommit(options: DeferredCommitOptions): Deferred
   // in-flight promise instead of `undefined` — see the `flush` doc above.
   let commitPromise: Promise<void> | null = null
 
-  function runCommit(): Promise<void> {
+  function runCommit(reason?: CommitReason): Promise<void> {
     if (undone) return Promise.resolve()
     if (settled) return commitPromise ?? Promise.resolve()
     settled = true
@@ -90,7 +103,7 @@ export function scheduleDeferredCommit(options: DeferredCommitOptions): Deferred
       clearTimer(handle)
       handle = null
     }
-    commitPromise = Promise.resolve(options.commit())
+    commitPromise = Promise.resolve(options.commit(reason))
     return commitPromise
   }
 
@@ -108,8 +121,8 @@ export function scheduleDeferredCommit(options: DeferredCommitOptions): Deferred
         handle = null
       }
     },
-    flush() {
-      return runCommit()
+    flush(reason) {
+      return runCommit(reason)
     },
     get isSettled() {
       return settled
