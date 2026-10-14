@@ -42,16 +42,26 @@ jest.mock('@/lib/templates/client', () => ({
 }))
 const mockGetPage = jest.fn()
 const mockCreatePage = jest.fn()
+const mockSaveBlocks = jest.fn().mockResolvedValue(undefined)
+const mockSaveProps = jest.fn().mockResolvedValue(undefined)
 jest.mock('@/lib/pages/client', () => ({
   getPage: (...args: unknown[]) => mockGetPage(...args),
   updateTitle: jest.fn().mockResolvedValue(undefined),
   createPage: (...args: unknown[]) => mockCreatePage(...args),
+  saveBlocks: (...args: unknown[]) => mockSaveBlocks(...args),
+  saveProps: (...args: unknown[]) => mockSaveProps(...args),
   defineSchema: jest.fn().mockResolvedValue(undefined),
   deletePage: jest.fn().mockResolvedValue(undefined),
 }))
 const mockCommitBlocks = jest.fn().mockResolvedValue(undefined)
 jest.mock('@/lib/pages/commit', () => ({
   commitBlocks: (...args: unknown[]) => mockCommitBlocks(...args),
+}))
+jest.mock('@/lib/change-log/store', () => ({
+  appendOwnEdit: jest.fn().mockResolvedValue({ id: 'record-1' }),
+}))
+jest.mock('@/lib/change-log/session-undo', () => ({
+  sessionUndo: { remember: jest.fn() },
 }))
 
 function renderPanel(page: Record<string, unknown>) {
@@ -70,10 +80,12 @@ beforeEach(() => {
   jest.clearAllMocks()
   mockFetchPages.mockResolvedValue([])
   mockCreatePage.mockResolvedValue({ id: 'made-1', type: 'page', title: 'notes' })
+  mockSaveBlocks.mockResolvedValue(undefined)
+  mockSaveProps.mockResolvedValue(undefined)
 })
 
 describe('applying `notes` through the real `/` menu leaves a placeholder, never content', () => {
-  it('the new page’s text block is empty with the placeholder; typing replaces it, deleting restores it', async () => {
+  it('the page’s own text block is empty with the placeholder; typing replaces it, deleting restores it', async () => {
     const user = userEvent.setup()
     renderPanel({ id: 'page-1', parentId: 'root-1', type: 'page', title: 'Health', blocks: [] })
 
@@ -86,12 +98,12 @@ describe('applying `notes` through the real `/` menu leaves a placeholder, never
       .getAllByRole('option')
       .find((o) => o.querySelector('[data-part="label"]')?.textContent === 'notes')!
 
-    // PATH_STEPS 3: pick `notes` — the premade template is instantiated and
-    // persisted through `createPage`, never through the slash line's own page.
+    // PATH_STEPS 3: pick `notes` — a blank page's pick applies in place (KAN-124):
+    // this page's own blocks become the instantiated stack, never a nested page.
     await user.click(notesRow)
-    await waitFor(() => expect(mockCreatePage).toHaveBeenCalled())
-    const [, , opts] = mockCreatePage.mock.calls[0] as [unknown, unknown, { blocks: Block[] }]
-    const madeBlocks = opts.blocks
+    await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalled())
+    expect(mockCreatePage).not.toHaveBeenCalled()
+    const madeBlocks = mockSaveBlocks.mock.calls[0][2] as Block[]
     expect(madeBlocks).toHaveLength(1)
     const textBlock = madeBlocks[0]
     // The persisted block never carries the placeholder copy in `content`.
@@ -101,43 +113,43 @@ describe('applying `notes` through the real `/` menu leaves a placeholder, never
       placeholder: 'anything, in any order',
     })
 
-    // PATH_STEPS 4: the new page opens — rendered here as its own real surface,
-    // seeded with exactly what was persisted.
-    renderPanel({
-      id: 'made-1',
-      parentId: 'root-1',
-      type: 'page',
-      title: 'notes',
-      blocks: madeBlocks,
-    })
+    // PATH_STEPS 4: the applied blocks render in place, on this same page.
     const field = await findTextBlock()
     const line = () => field.querySelector('p')!
     expect(line()).toHaveAttribute('data-placeholder', 'anything, in any order')
     expect(line()).toHaveClass('is-editor-empty')
 
     // PATH_STEPS 5: one character replaces the placeholder; the character is the content.
-    // The saved blocks array (unlike `commitBlocks`' args) is keyed to this page's id,
-    // never the original page the picker's own line was removed from.
     const savedFor = (id: string) =>
       mockCommitBlocks.mock.calls.filter((c) => c[2] === id).map((c) => c[3] as Block[])
     writeInTextBlock(field, 'x')
     expect(line()).not.toHaveClass('is-editor-empty')
     expect(field.textContent).toBe('x')
-    await waitFor(() => expect(savedFor('made-1').length).toBeGreaterThan(0), { timeout: 2000 })
-    expect(savedFor('made-1').at(-1)![0]).toMatchObject({
+    // The apply's own flush (KAN-124) already logged one save of the stale `/`
+    // content before this point — count from here, not from zero, so the wait
+    // below can't resolve on that earlier call.
+    const savesBeforeTyping = savedFor('page-1').length
+    await waitFor(
+      () => expect(savedFor('page-1').length).toBeGreaterThan(savesBeforeTyping),
+      { timeout: 2000 }
+    )
+    expect(savedFor('page-1').at(-1)![0]).toMatchObject({
       content: 'x',
       placeholder: 'anything, in any order',
     })
 
     // Deleting it restores the placeholder, and the save that follows persists
     // an empty block, still carrying its placeholder.
+    const savesBeforeDeleting = savedFor('page-1').length
     writeInTextBlock(field, '')
     expect(line()).toHaveClass('is-editor-empty')
     expect(line()).toHaveAttribute('data-placeholder', 'anything, in any order')
-    await waitFor(() => expect(savedFor('made-1').at(-1)![0]).toMatchObject({ content: '' }), {
-      timeout: 2000,
-    })
-    expect(savedFor('made-1').at(-1)![0]).toMatchObject({
+    await waitFor(
+      () => expect(savedFor('page-1').length).toBeGreaterThan(savesBeforeDeleting),
+      { timeout: 2000 }
+    )
+    expect(savedFor('page-1').at(-1)![0]).toMatchObject({ content: '' })
+    expect(savedFor('page-1').at(-1)![0]).toMatchObject({
       content: '',
       placeholder: 'anything, in any order',
     })

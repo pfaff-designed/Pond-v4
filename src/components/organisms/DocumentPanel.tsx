@@ -201,6 +201,7 @@ export function DocumentPanel() {
     onProperty,
     commitLocalEdit,
     undoRemove,
+    adoptSavedBlocks,
   } = usePageDraft({ page, pageId, pondId, getSupabase })
 
   // "Changes to this page" (#103, storyboard frame 8): the log filtered to this
@@ -214,7 +215,11 @@ export function DocumentPanel() {
   // of the usual kind/save-state eyebrow, until the person types anything.
   const untouched = isUntouchedPage(viewTitle, viewBlocks)
   const parentTitle = rows.find((r) => r.id === page?.parentId)?.title ?? null
-  const eyebrow = titleEyebrow(page?.props?.kind, saved, savedAt, untouched, parentTitle)
+  // A page with a kind (an applied template) is not "untouched" for the eyebrow, even
+  // if its blocks still read as the untouched shape — the eyebrow names the kind, not `new`.
+  const eyebrow = titleEyebrow(page?.props?.kind, saved, savedAt, untouched && !page?.props?.kind, parentTitle)
+  // Board 6f frame 4: an empty title after an apply names the kind, e.g. `recipe name`.
+  const titlePlaceholder = page?.props?.kind ? `${page.props.kind} name` : 'Untitled'
 
   // The shell's `PondCommand` reads this page's path at rest: the root, the
   // ancestors, then this page — its name read off the row until the page lands.
@@ -297,7 +302,7 @@ export function DocumentPanel() {
             className={`min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-mn-text-secondary ${zen ? ZEN_TITLE_CLASS : 'font-sans text-[38px] leading-[1.15] font-bold tracking-[-0.01em] uppercase'}`}
             value={viewTitle}
             onChange={(e) => onTitle(e.target.value)}
-            placeholder="Untitled"
+            placeholder={titlePlaceholder}
             aria-label="Page title"
             data-pond-page-title
           />
@@ -339,6 +344,7 @@ export function DocumentPanel() {
           pageId={page.id}
           pageTitle={viewTitle}
           onChange={commitLocalEdit}
+          onBlocksPersisted={adoptSavedBlocks}
           onUndoRemove={undoRemove}
           insertedIds={insertedIds}
           chrome={!zen}

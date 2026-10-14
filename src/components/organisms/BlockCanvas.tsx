@@ -92,13 +92,25 @@ import { instantiateTemplate, type InstantiatedTemplate } from '@/lib/templates/
 import { getTemplate, listTemplates } from '@/lib/templates/client'
 import { templateBlocksFrom } from '@/lib/templates/from-page'
 import { stampProvenance } from '@/lib/templates/provenance'
+import { applyTemplate, type TemplateApplyPick } from '@/lib/templates/apply'
 import { inferListDatabaseTitle } from '@/lib/pages/list-to-table'
 import { replaceBlockWithView } from '@/lib/pages/promote-table'
-import { createPage, defineSchema, deletePage, getPage } from '@/lib/pages/client'
+import {
+  createPage,
+  defineSchema,
+  deletePage,
+  getPage,
+  saveBlocks,
+  saveProps,
+  type PondPage,
+} from '@/lib/pages/client'
 import { createDatabase } from '@/lib/pages/create-database'
 import { fetchRecordCounts, sourceDatabases } from '@/lib/pages/source-databases'
 import { fetchPages, insertPageOptimistic } from '@/lib/pages/tree'
 import { pagesKey } from '@/lib/pages/keys'
+import { flushPendingPageSave } from '@/lib/pages/page-flush'
+import { appendOwnEdit } from '@/lib/change-log/store'
+import { sessionUndo } from '@/lib/change-log/session-undo'
 import { readSchema } from '@/lib/properties/schema'
 import type { ViewBlock } from '@/lib/modules/view/schema'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
@@ -190,6 +202,15 @@ export interface BlockCanvasProps {
   /** Emit the full next block array; the caller owns persistence (debounced save). */
   onChange: (next: Block[]) => void
   /**
+   * A write that already persisted directly (KAN-124's template apply: its own
+   * `saveBlocks` + `appendOwnEdit`, bypassing the debounced save). Call this
+   * BEFORE `onChange` so the caller's save baseline already matches what was
+   * just written — otherwise the save `onChange` triggers next fires with a
+   * stale `before` and double-logs the same change. Optional: a caller with no
+   * debounce to protect (the blank-page test harness) can leave it unset.
+   */
+  onBlocksPersisted?: (next: Block[]) => void
+  /**
    * Undo a block removal (ticket-44 review). The caller re-inserts `block` at
    * `index` via a FUNCTIONAL state update against its LATEST blocks — NOT through
    * `onChange`, which would re-base on the stale `blocks` snapshot captured when
@@ -230,6 +251,7 @@ export function BlockCanvas({
   pageId,
   pageTitle = '',
   onChange,
+  onBlocksPersisted,
   onUndoRemove,
   insertedIds,
   onMoveIntoNewPage,
@@ -249,6 +271,10 @@ export function BlockCanvas({
   useEffect(() => {
     blocksRef.current = blocks
   }, [blocks])
+  // G9: guards `applyTemplateInPlace` itself against a double ↵ — a ref, not
+  // state, since the second pick can land mid-await, before a state update
+  // guarding on a render would have committed.
+  const applyInFlightRef = useRef(false)
   // F27: link capabilities for card→page links, parented at THIS page. Provided to
   // every module view below via context — modules that don't link (all but kanban
   // today) simply never read it.
@@ -267,7 +293,7 @@ export function BlockCanvas({
     openSourcePicker,
     makePageFromRow: (placement, target) =>
       void makePage(instantiateTemplate(PREMADE_TEMPLATES.page), placement, target),
-    makePageFromTemplate: (pick, target) => void makePageFromTemplate(pick, target),
+    makePageFromTemplate: (pick, target, index) => void makePageFromTemplate(pick, target, index),
   })
   // Which block index is mid-drag (null = no drag).
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null)
@@ -710,8 +736,139 @@ export function BlockCanvas({
     }
   }
 
-  const makePageFromTemplate = async (pick: TemplatePick, target: SlashTarget) =>
-    makePage(await newPageFromPick(pick), 'child', target)
+  const applyPickFor = async (pick: TemplatePick): Promise<TemplateApplyPick | null> => {
+    if (pick.origin === 'premade') return { origin: 'premade', kind: pick.kind }
+    const template =
+      templates.find((t) => t.id === pick.id) ?? (await getTemplate(getSupabase(), pick.id))
+    return template ? { origin: 'yours', template } : null
+  }
+
+  // 6f: a blank page's own templates pick lands IN PLACE — this page's blocks
+  // become the instantiated stack, no nested page, no navigate.
+  //
+  // Apply is one undo step (KAN-93): the blocks write is logged directly as a
+  // single own-edit record and remembered with `sessionUndo`, the same way
+  // Rail's glyph/colour picks are — NOT the ordinary debounced save, which
+  // would log its own second record for the same change. The `['page', id]`
+  // cache carries the new blocks first, so `use-page-draft.ts`'s same-page
+  // "adopt" branch folds them into the open draft's own baseline (while it is
+  // still `saved`, before `onChange` below schedules anything) — by the time
+  // that debounced save fires, its before/after are both these blocks, so it
+  // logs nothing.
+  const applyTemplateInPlace = async (pick: TemplatePick, target: SlashTarget) => {
+    // G9: a second ↵ before this one finishes must not re-run the write — guard
+    // the function itself (not menu-close timing, which races the same awaits).
+    if (applyInFlightRef.current) return
+    applyInFlightRef.current = true
+    try {
+      await applyTemplateInPlaceUnguarded(pick, target)
+    } finally {
+      applyInFlightRef.current = false
+    }
+  }
+
+  const applyTemplateInPlaceUnguarded = async (pick: TemplatePick, target: SlashTarget) => {
+    const applyPick = await applyPickFor(pick)
+    if (!applyPick) return
+    const applied = applyTemplate(applyPick)
+    // `before` is the page as it read before the `/` was typed — not
+    // `blocksRef.current`, which still holds it. `landAtSlash(…, null)` isn't
+    // this: it strips the host outright, modeling content moving to a new page
+    // (`makePage`'s use), not reverting one still in place. The host stays here,
+    // just without its slash line — or, if it was edited since the pick began,
+    // `blocksRef.current` as it is now.
+    const host = blocksRef.current.find((b) => b.id === target.hostId)
+    const before =
+      host?.type === 'text' && host.content === target.content
+        ? blocksRef.current.map((b) =>
+            b.id !== target.hostId
+              ? b
+              : {
+                  ...b,
+                  content: target.line
+                    ? [target.line.before, target.line.after]
+                        .filter((s) => s.trim() !== '')
+                        .join('\n\n')
+                    : '',
+                }
+          )
+        : blocksRef.current
+    // A fast `/` + pick can still have the slash keystroke's own debounced save
+    // pending in `use-page-draft.ts`. That save's cache write only happens once
+    // the draft is `saved` (it refuses to adopt over unsaved local edits) — so
+    // flushing it now, before this write, lets it land and settle `saved` first.
+    // Otherwise our cache write below is silently ignored by the draft (still
+    // unsaved), and the slash save later fires AFTER us with a stale baseline,
+    // double-logging this same apply.
+    await flushPendingPageSave(pageId)
+    const supabase = getSupabase()
+    queryClient.setQueryData<PondPage | null>(['page', pageId], (prev) =>
+      prev ? { ...prev, blocks: applied.blocks } : prev
+    )
+    try {
+      await saveBlocks(supabase, pageId, applied.blocks)
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (user) {
+        try {
+          const record = await appendOwnEdit(supabase, {
+            userId: user.id,
+            pondId,
+            action: 'edit',
+            targetPageId: pageId,
+            before,
+            after: applied.blocks,
+          })
+          if (pondId) sessionUndo.remember({ pondId, recordIds: [record.id] })
+        } catch (err) {
+          console.error('[change-log] template apply not logged', pageId, err)
+        }
+      }
+    } catch (err) {
+      console.error('Failed to apply the template blocks', pageId, err)
+      queryClient.setQueryData<PondPage | null>(['page', pageId], (prev) =>
+        prev ? { ...prev, blocks: before } : prev
+      )
+      return
+    }
+    if (applied.schema) {
+      try {
+        await defineSchema(supabase, pageId, applied.schema)
+      } catch (err) {
+        console.error('Failed to define the template schema', err)
+      }
+    }
+    // Read-modify-write against whatever this page's props already carry (a
+    // glyph, an area role, …) rather than overwriting them with just the
+    // kind/stamp the template adds.
+    try {
+      const current = await getPage(supabase, pageId)
+      const nextProps = { ...(current?.props ?? {}), ...applied.props }
+      await saveProps(supabase, pageId, nextProps)
+      queryClient.setQueryData<PondPage | null>(['page', pageId], (prev) =>
+        prev ? { ...prev, props: nextProps } : prev
+      )
+    } catch (err) {
+      console.error('Failed to write the template props', err)
+    }
+    // Before `onChange`: the caller's own debounced save (if any) must see this
+    // write as its baseline, or it fires again with a stale `before` and logs a
+    // second own-edit record for the same apply.
+    onBlocksPersisted?.(applied.blocks)
+    onChange(applied.blocks)
+    focusPageTitle()
+  }
+
+  const makePageFromTemplate = async (pick: TemplatePick, target: SlashTarget, index: number) => {
+    // A `/` line has text around it, so the page is not blank — same guard
+    // the menu's own `leadWithTemplates` uses (`slash.line ? false : blank`).
+    if (isBlankBesides(index) && !target.line) {
+      await applyTemplateInPlace(pick, target)
+      return
+    }
+    return makePage(await newPageFromPick(pick), 'child', target)
+  }
 
   // The foot add (UI-audit Slice 2a): drop an empty text block at the end, ready
   // to type. Typing `/` in it summons the palette to swap to another block type.

@@ -133,6 +133,18 @@ describe('footItems', () => {
 
   it('leading with templates: no `esc keep as text` — 6f frame 2 draws no such key', () => {
     expect(footItems('rows', '', 3, false, false, true)).toEqual(['↑↓ move', '↵ insert'])
-    expect(footItems('rows', '', 3, false, true, true)).toEqual(['↑↓ move', '↵ new nested page'])
+  })
+
+  it('leading with templates, active row is a template pick: reads `apply`, not `new nested page`', () => {
+    expect(footItems('rows', '', 3, false, true, true)).toEqual([
+      '↑↓ move',
+      '→ preview',
+      '↵ apply',
+    ])
+  })
+
+  it('templates pane (non-empty page) keeps `new nested page` / `preview`, unchanged', () => {
+    expect(footItems('templates', '', 12, true)).toEqual(['↵ new nested page', '→ preview'])
+    expect(footItems('templates', '', 12, false)).toEqual(['↵ new nested page'])
   })
 })

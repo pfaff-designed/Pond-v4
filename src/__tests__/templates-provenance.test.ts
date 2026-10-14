@@ -119,7 +119,7 @@ describe('readProvenance', () => {
 describe('applyKindLabel', () => {
   it("writes the template's kind into the editable props.kind label and nothing else", () => {
     const props = { [SCHEMA_KEY]: [], stage: 'todo' }
-    const out = applyKindLabel(props, TEMPLATE)
+    const out = applyKindLabel(props, TEMPLATE.kind)
     expect(out).toEqual({ [SCHEMA_KEY]: [], stage: 'todo', kind: 'meeting notes' })
     // No back-reference: the kind label alone is not provenance.
     expect(out).not.toHaveProperty(MADE_FROM_TEMPLATE_KEY)
@@ -127,7 +127,7 @@ describe('applyKindLabel', () => {
   })
 
   it('overwrites a previous kind label (it is a plain editable label)', () => {
-    expect(applyKindLabel({ kind: 'recipe' }, TEMPLATE).kind).toBe('meeting notes')
+    expect(applyKindLabel({ kind: 'recipe' }, TEMPLATE.kind).kind).toBe('meeting notes')
   })
 })
 
