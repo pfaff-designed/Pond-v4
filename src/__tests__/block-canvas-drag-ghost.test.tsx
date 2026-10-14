@@ -172,4 +172,21 @@ describe('the ghost/origin split during a beside hover', () => {
 
     expect(renderedRows()).toEqual([['b-x', 'b-c', 'b-d', 'b-b::ghost'], ['b-b']])
   })
+
+  it('swaps two blocks that already share a row: the narrow origin never packs into the planned row', () => {
+    // D (1/3) and T (1/2) already share one row. Dragging D onto T's own
+    // right edge plans D and T beside each other at 1/2 each (unchanged for
+    // D is narrow enough that, if the origin were reinserted right before the
+    // row, it would pack INTO it (1/3 + 1/2 fits in 12 twelfths) and push the
+    // ghost onto a line of its own — the origin must land outside the row
+    // instead, however narrow it is.
+    const d: Block = { id: 'b-d', type: 'text', content: 'd', width: '1/3' }
+    const t: Block = { id: 'b-t', type: 'text', content: 't', width: '1/2' }
+    renderCanvas([d, t])
+
+    fireEvent.dragStart(blockRoot('b-d'))
+    dragOver('b-t', rect(0, 400), 360, 50)
+
+    expect(renderedRows()).toEqual([['b-t', 'b-d::ghost'], ['b-d']])
+  })
 })

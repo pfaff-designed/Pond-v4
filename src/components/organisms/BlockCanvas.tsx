@@ -1245,18 +1245,41 @@ export function BlockCanvas({
     const plannedRow = layoutRows(withGhost).find((row) =>
       row.some((item) => item.id === ghostId)
     )
+    let rowEnd = -1
     if (plannedRow) {
       const rowIndices = withGhost.reduce<number[]>((acc, item, i) => {
         const inRow = plannedRow.some((rowItem) => rowItem.id === item.id)
         return inRow ? [...acc, i] : acc
       }, [])
       const rowStart = rowIndices[0]
-      const rowEnd = rowIndices[rowIndices.length - 1]
+      rowEnd = rowIndices[rowIndices.length - 1]
       if (insertAt > rowStart && insertAt <= rowEnd) insertAt = rowEnd + 1
     }
 
+    const origin = { id: dragged.id, width: dragged.width ?? 'full', ghost: false }
     const withOrigin = [...withGhost]
-    withOrigin.splice(insertAt, 0, { id: dragged.id, width: dragged.width ?? 'full', ghost: false })
+    withOrigin.splice(insertAt, 0, origin)
+
+    // The index guard above only catches an insertAt that falls strictly
+    // between the planned row's ends; it misses a narrow origin landing
+    // AT the row's own start, which can still pack into the row's first
+    // member (D 1/3 next to T 1/2 both fit in 12 twelfths) and push the
+    // ghost onto its own line. So re-pack the real render list and check
+    // the planned row's members (ghost included) are still one whole row
+    // — if not, the origin goes after the row's last member instead.
+    if (plannedRow) {
+      const keepsRowTogether = layoutRows(withOrigin).some(
+        (row) =>
+          row.length === plannedRow.length &&
+          plannedRow.every((item) => row.some((r) => r.id === item.id))
+      )
+      if (!keepsRowTogether) {
+        const fallback = [...withGhost]
+        fallback.splice(rowEnd + 1, 0, origin)
+        return fallback
+      }
+    }
+
     return withOrigin
   }, [besidePlan, draggingIndex, blocks, blocksForLayout])
 
