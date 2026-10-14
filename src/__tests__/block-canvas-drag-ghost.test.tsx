@@ -13,8 +13,9 @@ import { fireEvent, render } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
-import { blockWidthStyle } from '@/lib/modules/layout-rows'
+import { blockWidthStyle, layoutRows } from '@/lib/modules/layout-rows'
 import type { Block } from '@/lib/documents/types'
+import type { BlockWidth } from '@/lib/modules/content'
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
@@ -62,6 +63,28 @@ function dragOver(targetId: string, targetRect: DOMRect, x: number, y: number) {
   Object.defineProperty(event, 'clientX', { value: x })
   Object.defineProperty(event, 'clientY', { value: y })
   fireEvent(target, event)
+}
+
+const ALL_WIDTHS: BlockWidth[] = ['1/4', '1/3', '1/2', '2/3', '3/4']
+
+/** Reads an `id^="block-"` node's own rendered width back into a `BlockWidth`. */
+function widthLabelOf(el: HTMLElement): BlockWidth {
+  const style = (el.parentElement as HTMLElement).style.width
+  if (style === '100%') return 'full'
+  const match = ALL_WIDTHS.find((width) => asInlineStyle(blockWidthStyle(width)) === style)
+  return match ?? 'full'
+}
+
+/**
+ * The actual row grouping a person would see: every `block-*` node (real and
+ * ghost) in DOM order, each paired with its own rendered width, packed through
+ * the same `layoutRows` the production row list uses. Proves row MEMBERSHIP —
+ * which ids land in the same row — not just each id's own width in isolation.
+ */
+function renderedRows(): string[][] {
+  const elements = Array.from(document.querySelectorAll<HTMLElement>('[id^="block-"]'))
+  const items = elements.map((el) => ({ id: el.id.replace(/^block-/, ''), width: widthLabelOf(el) }))
+  return layoutRows(items).map((row) => row.map((item) => item.id))
 }
 
 describe('the ghost/origin split during a beside hover', () => {
@@ -113,5 +136,40 @@ describe('the ghost/origin split during a beside hover', () => {
     )
     expect(ids).toEqual(['b-left', 'b-dragged', 'b-right'])
     expect(ghostRoot('b-dragged')).not.toBeNull()
+  })
+
+  it('drags UP (table onto log-right): the ghost rows with the log, the origin stays off on its own', () => {
+    // PATH step 3 / 6x frame 3: text, log, table — drag the table (last block)
+    // onto the log's right edge. The table's old right neighbour doesn't
+    // exist, so the origin belongs at the very end, never inside the row the
+    // log and the ghost just joined.
+    const text: Block = { id: 'b-text', type: 'text', content: 'text' }
+    const log: Block = { id: 'b-log', type: 'text', content: 'log' }
+    const table: Block = { id: 'b-table', type: 'text', content: 'table' }
+    renderCanvas([text, log, table])
+
+    fireEvent.dragStart(blockRoot('b-table'))
+    dragOver('b-log', rect(0, 400), 360, 50)
+
+    expect(renderedRows()).toEqual([['b-text'], ['b-log', 'b-table::ghost'], ['b-table']])
+  })
+
+  it('drags DOWN (a block before its target): the origin lands after the whole planned row, not inside it', () => {
+    // X, C and D already pack into one row (1/3 each); dragging B — sitting
+    // BEFORE that row — beside D widens the row to four quarters. B's old
+    // right neighbour (C) is itself the row's first member, so inserting
+    // right before C would land origin inside the row, splitting X off from
+    // C/D/ghost. The fix pushes origin past the row's last member instead.
+    const x: Block = { id: 'b-x', type: 'text', content: 'x', width: '1/3' }
+    const b: Block = { id: 'b-b', type: 'text', content: 'b' }
+    const c: Block = { id: 'b-c', type: 'text', content: 'c', width: '1/3' }
+    const d: Block = { id: 'b-d', type: 'text', content: 'd', width: '1/3' }
+    renderCanvas([x, b, c, d])
+
+    fireEvent.dragStart(blockRoot('b-b'))
+    // Beside-right of `d`.
+    dragOver('b-d', rect(0, 400), 360, 50)
+
+    expect(renderedRows()).toEqual([['b-x', 'b-c', 'b-d', 'b-b::ghost'], ['b-b']])
   })
 })

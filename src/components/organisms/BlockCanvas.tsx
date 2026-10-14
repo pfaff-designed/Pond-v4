@@ -1218,11 +1218,14 @@ export function BlockCanvas({
   // width; applying the preview to the real block was the "shrinks the old
   // place" bug). `besidePlan` already preserves every other block's relative
   // order, so the ghost lands exactly where `besidePlan` already has it just
-  // by tagging its id; the origin's old slot is found by locating its old
-  // left neighbour's id in that same array and inserting one past it (or at 0
-  // with no neighbour) — the only slot that keeps every other block's order
-  // intact. Off a drag, or off anything but a beside hover, this is just
-  // `blocksForLayout`, one entry per block.
+  // by tagging its id. The origin's old slot is found by locating its old
+  // RIGHT neighbour's id in that same array and inserting right before it (or
+  // at the end with no neighbour) — but that slot can fall inside the row the
+  // ghost just joined (the neighbour is itself a row-mate), which would split
+  // the planned row apart in `layoutRows`' packing; when it does, the origin
+  // goes after the row's last member instead, so the planned row always
+  // renders as one unbroken run. Off a drag, or off anything but a beside
+  // hover, this is just `blocksForLayout`, one entry per block.
   const renderList = useMemo<{ id: string; width: BlockWidth; ghost: boolean }[]>(() => {
     if (!besidePlan || draggingIndex === null) {
       return blocksForLayout.map((b) => ({ id: b.id, width: b.width ?? 'full', ghost: false }))
@@ -1235,9 +1238,23 @@ export function BlockCanvas({
         ? { id: ghostId, width: plannedWidth, ghost: true }
         : { id: b.id, width: b.width ?? 'full', ghost: false }
     )
-    const neighborId = draggingIndex > 0 ? blocks[draggingIndex - 1].id : null
+    const neighborId = draggingIndex < blocks.length - 1 ? blocks[draggingIndex + 1].id : null
     const neighborAt = neighborId ? withGhost.findIndex((item) => item.id === neighborId) : -1
-    const insertAt = neighborId ? neighborAt + 1 : 0
+    let insertAt = neighborId ? neighborAt : withGhost.length
+
+    const plannedRow = layoutRows(withGhost).find((row) =>
+      row.some((item) => item.id === ghostId)
+    )
+    if (plannedRow) {
+      const rowIndices = withGhost.reduce<number[]>((acc, item, i) => {
+        const inRow = plannedRow.some((rowItem) => rowItem.id === item.id)
+        return inRow ? [...acc, i] : acc
+      }, [])
+      const rowStart = rowIndices[0]
+      const rowEnd = rowIndices[rowIndices.length - 1]
+      if (insertAt > rowStart && insertAt <= rowEnd) insertAt = rowEnd + 1
+    }
+
     const withOrigin = [...withGhost]
     withOrigin.splice(insertAt, 0, { id: dragged.id, width: dragged.width ?? 'full', ghost: false })
     return withOrigin
