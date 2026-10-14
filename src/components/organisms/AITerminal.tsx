@@ -87,7 +87,11 @@ import {
 } from '@/lib/attachments/html'
 import type { ReadHtmlError, ReadHtmlResult } from '@/lib/import/types'
 import { formatBytes } from '@/components/molecules/HtmlAttachmentPill'
-import { dedupeWholePageReferences, type PageReference } from '@/lib/references/reference'
+import {
+  dedupeWholePageReferences,
+  isWholePageReference,
+  type PageReference,
+} from '@/lib/references/reference'
 import { ReferencesRow, type ReferenceChip } from '@/components/molecules/ReferencesRow'
 import { editorForBlock, onTextEditorRegistered } from '@/lib/modules/text/active-editor'
 import {
@@ -838,9 +842,9 @@ export function AITerminal() {
           allPages.find((p) => p.id === ref.pageId)?.title ??
           (ref.pageId === nodeId ? contextLabel : 'untitled')
         const mark = resolveMark(ref.pageId, pageMarks)
-        // A whole-page reference (KAN-99's `@`-picker, `range: null`) has no
+        // A whole-page reference (KAN-99's `@`-picker, `blockId: null`) has no
         // passage to quote — the chip reads as the title alone.
-        if (ref.range === null) {
+        if (isWholePageReference(ref)) {
           return { key: ref.id, glyph: mark.glyph, accent: markAccent(mark.role), label: title }
         }
         const passage =
@@ -873,7 +877,7 @@ export function AITerminal() {
   const mentionTitles = useMemo(
     () =>
       references
-        .filter((ref) => ref.range === null)
+        .filter(isWholePageReference)
         .map(
           (ref) =>
             allPages.find((p) => p.id === ref.pageId)?.title ??
@@ -955,7 +959,7 @@ export function AITerminal() {
 
   // Ordering (orchestrator decision 4): recent pages, then pages linked to the
   // existing references, then the rest — `excludeIds` drops a page that
-  // already carries a whole-page reference (`ref.range === null`, the same
+  // already carries a whole-page reference (`isWholePageReference`, the same
   // discriminator `referenceItems`/`mentionTitles` above use) so picking it
   // again can't duplicate the chip.
   const mentionItems = useMemo<PageMentionItem[]>(() => {
@@ -968,7 +972,7 @@ export function AITerminal() {
           mentionPageRows,
           references.map((ref) => ref.pageId)
         ),
-        excludeIds: references.filter((ref) => ref.range === null).map((ref) => ref.pageId),
+        excludeIds: references.filter(isWholePageReference).map((ref) => ref.pageId),
       },
       mentionQuery.query
     )

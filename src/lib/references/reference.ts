@@ -2,8 +2,8 @@
  * A reference is a page plus a range of text, not a pasted quote (#98, board
  * 6e). `reanchorRange` is the "survives edits around it" half: given an edit
  * made elsewhere in the same block, it relocates the range so a reference
- * keeps pointing at the same words. A `range` of `null` means "the whole
- * page" (KAN-99's `@`-picker chip) and never needs re-anchoring.
+ * keeps pointing at the same words. A whole-page reference (KAN-99's
+ * `@`-picker chip, `isWholePageReference`) has no range to re-anchor at all.
  */
 
 export interface PageReference {
@@ -17,16 +17,26 @@ export interface PageReference {
 }
 
 /**
- * A whole-page reference (`range: null`) for a page that also carries a
- * passage reference (`range` non-null) is redundant — the passage chip
- * already carries the page — so KAN-99's current-page auto-reference never
- * doubles up with a KAN-98 selection on the same page.
+ * The one discriminator between a whole-page reference and a passage
+ * reference: `blockId`, never `range` — a passage reference can itself carry
+ * `range: null` (the selection's position wasn't available), but it always
+ * sets a non-null `blockId`.
+ */
+export function isWholePageReference(ref: PageReference): boolean {
+  return ref.blockId === null
+}
+
+/**
+ * A whole-page reference for a page that also carries a passage reference is
+ * redundant — the passage chip already carries the page — so KAN-99's
+ * current-page auto-reference never doubles up with a KAN-98 selection on
+ * the same page.
  */
 export function dedupeWholePageReferences(references: readonly PageReference[]): PageReference[] {
   const passagePageIds = new Set(
-    references.filter((ref) => ref.range !== null).map((ref) => ref.pageId)
+    references.filter((ref) => !isWholePageReference(ref)).map((ref) => ref.pageId)
   )
-  return references.filter((ref) => ref.range !== null || !passagePageIds.has(ref.pageId))
+  return references.filter((ref) => !isWholePageReference(ref) || !passagePageIds.has(ref.pageId))
 }
 
 export interface TextRange {

@@ -79,4 +79,9 @@ describe('dedupeWholePageReferences', () => {
   it('keeps every passage reference regardless of other whole-page references', () => {
     expect(dedupeWholePageReferences([passage])).toEqual([passage])
   })
+
+  it('keeps a passage reference whose own range is null — blockId, never range, is the discriminator', () => {
+    const passageNoRange: PageReference = { ...passage, id: 'ref-2', range: null }
+    expect(dedupeWholePageReferences([wholePage, passageNoRange])).toEqual([passageNoRange])
+  })
 })

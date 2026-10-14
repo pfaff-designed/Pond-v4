@@ -7,7 +7,7 @@
  * command).
  */
 
-import type { PageReference, TextRange } from '@/lib/references/reference'
+import { isWholePageReference, type PageReference, type TextRange } from '@/lib/references/reference'
 
 function isTextRange(value: unknown): value is TextRange {
   if (typeof value !== 'object' || value === null) return false
@@ -21,11 +21,12 @@ function isPageReference(value: unknown): value is PageReference {
   if (typeof v.pageId !== 'string' || v.pageId.length === 0) return false
   if (v.range !== null && !isTextRange(v.range)) return false
 
-  // A whole-page reference (`range: null`) has no passage to anchor, so
-  // `blockId`/`quotedText` may be null/empty — a passage reference still
-  // requires both.
-  if (v.range === null) {
-    if (v.blockId !== null && typeof v.blockId !== 'string') return false
+  // `blockId`, never `range`, is the whole-page/passage discriminator
+  // (`isWholePageReference`) — a passage reference can itself carry
+  // `range: null` (the selection's position wasn't available), but it
+  // always sets a non-null `blockId`.
+  if (isWholePageReference(v as unknown as PageReference)) {
+    if (v.range !== null) return false
     return typeof v.quotedText === 'string'
   }
   if (typeof v.blockId !== 'string' || v.blockId.length === 0) return false

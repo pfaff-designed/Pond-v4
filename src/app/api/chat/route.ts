@@ -34,6 +34,7 @@ import { resolveChangeLogRecord } from '@/lib/change-log/resolve'
 import { requestChangesContextNote } from './request-changes'
 import { referencesContextNote, wholePageReferenceNote } from './references'
 import { parseChatBody } from './body'
+import { isWholePageReference } from '@/lib/references/reference'
 
 /** Plain text of the most recent user message, for @mention parsing. */
 function latestUserText(messages: UIMessage[]): string {
@@ -99,8 +100,8 @@ export async function POST(req: Request) {
     // through fetchNodeContext/formatNodeContext instead, unless it points at
     // the open node, whose content the auto-injected block above already carries.
     if (references.length > 0) {
-      const passageRefs = references.filter((r) => r.blockId !== null)
-      const wholePageRefs = references.filter((r) => r.blockId === null)
+      const passageRefs = references.filter((r) => !isWholePageReference(r))
+      const wholePageRefs = references.filter(isWholePageReference)
 
       if (passageRefs.length > 0) {
         const titles = new Map<string, string>()
