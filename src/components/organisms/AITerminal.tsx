@@ -1697,9 +1697,17 @@ export function AITerminal() {
     // thread has none to anchor against.
     setKeptHtmlTurns([])
     // References ride a thread, not the person: a new thread starts with
-    // none, and the highlight-sync effect clears their page decorations.
-    setReferences([])
-  }, [conversationId, setMessages, resetResolutions, getSupabase, pondId])
+    // only the current page back in context (KAN-99 PATH_STEPS 1), and the
+    // highlight-sync effect clears their page decorations. This clear
+    // changes neither `nodeId` nor `dismissedCurrentRefNodeId`, so the
+    // seeding effect above would not otherwise re-run — reseed directly.
+    setDismissedCurrentRefNodeId(null)
+    setReferences(
+      nodeId
+        ? [{ id: `current:${nodeId}`, pageId: nodeId, blockId: null, range: null, quotedText: '' }]
+        : []
+    )
+  }, [conversationId, setMessages, resetResolutions, getSupabase, pondId, nodeId])
 
   // ── Lifecycle advancement (ticket-39) ─────────────────────────────────────
   // The phase moves on the OUTGOING user message (the user calls the shot): if a

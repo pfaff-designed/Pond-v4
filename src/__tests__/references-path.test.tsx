@@ -431,4 +431,32 @@ describe('the open page auto-references itself, deduped against a passage (KAN-9
       screen.queryByRole('button', { name: 'remove reference: Workshop' })
     ).not.toBeInTheDocument()
   })
+
+  it('a new thread re-seeds exactly the current-page chip, dropping a passage reference', async () => {
+    const user = userEvent.setup()
+    mockMessages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'question 1' }] },
+      { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'answer 1' }] },
+      { id: 'u2', role: 'user', parts: [{ type: 'text', text: 'question 2' }] },
+      { id: 'a2', role: 'assistant', parts: [{ type: 'text', text: 'answer 2' }] },
+    ]
+    renderSurface()
+    await waitComposerReady()
+    const field = await findTextBlock()
+
+    selectWord(field, 'wild')
+    await user.click(await screen.findByRole('button', { name: 'ask pond' }))
+    await flushAskFocus()
+    expect(await screen.findByText('Workshop — “wild”')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'new thread' }))
+
+    await waitFor(() =>
+      expect(screen.queryByText('Workshop — “wild”')).not.toBeInTheDocument()
+    )
+    const refs = screen.getByRole('group', { name: 'references' })
+    expect(refs).toHaveTextContent('Workshop')
+    expect(screen.getByRole('button', { name: 'remove reference: Workshop' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /remove reference/ })).toHaveLength(1)
+  })
 })
