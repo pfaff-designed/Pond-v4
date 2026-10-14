@@ -428,6 +428,24 @@ export function BlockCanvas({
   // instead: this slot, rendered beside the outline at the board's own
   // 250px/gap-16 position.
   const previewAnchorRef = useRef<HTMLDivElement>(null)
+  // An empty, invisible node to hand the browser as the drag image (below) —
+  // without it, the browser draws its own full-width snapshot of the dragged
+  // row, which would compete with the lifted copy this surface draws itself.
+  // Appended to the body (not this tree) so it has a layout box even while
+  // `canvasRef` is collapsed (previewing, above).
+  const dragImageRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    const el = document.createElement('div')
+    el.style.width = '1px'
+    el.style.height = '1px'
+    el.style.opacity = '0'
+    document.body.appendChild(el)
+    dragImageRef.current = el
+    return () => {
+      el.remove()
+      dragImageRef.current = null
+    }
+  }, [])
   // A page with nothing on it yet opens the menu on its templates (6f). Read
   // here (not just below, where it's used again) because the pages query's
   // `enabled` needs it: a non-blank `/` has no sibling ranking to look up, so
@@ -1297,7 +1315,8 @@ export function BlockCanvas({
         onMenuSelect={(action) => handleMenuSelect(i, action)}
         isDragging={draggingIndex === i}
         dropZone={dropIndicator?.index === i ? dropIndicator : undefined}
-        onDragStart={() => {
+        onDragStart={(e) => {
+          if (dragImageRef.current) e.dataTransfer?.setDragImage(dragImageRef.current, 0, 0)
           setMenuOpenAt(null)
           setPreviewWidth(null)
           setDraggingIndex(i)
@@ -1696,7 +1715,7 @@ function BlockEditor({
   isDragging?: boolean
   /** The drop line to draw on THIS block, if the drag is hovering it — `BlockCanvas` decides which block that is. */
   dropZone?: { zone: DropZone; span?: { left: number; width: number } }
-  onDragStart?: () => void
+  onDragStart?: (e: React.DragEvent) => void
   onDragEnd?: () => void
   onDragOver?: (e: React.DragEvent) => void
   onDragLeave?: () => void

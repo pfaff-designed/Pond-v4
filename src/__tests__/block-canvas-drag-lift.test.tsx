@@ -81,4 +81,22 @@ describe('the dragged block: origin opacity only, no lift', () => {
     expect(blockRoot('b-a').className).not.toContain('opacity-40')
     expect(blockRoot('b-a').className).not.toContain('shadow-mn-lifted')
   })
+
+  it('suppresses the native drag-image snapshot with an off-screen element', () => {
+    const a: Block = { id: 'b-a', type: 'text', content: 'a' }
+    renderCanvas([a])
+
+    // jsdom's DragEvent carries no real `dataTransfer.setDragImage` — install
+    // a spy on the event itself so the handler's call is observable.
+    const setDragImage = jest.fn()
+    const event = new Event('dragstart', { bubbles: true, cancelable: true }) as unknown as Event & {
+      dataTransfer: { setDragImage: typeof setDragImage }
+    }
+    Object.defineProperty(event, 'dataTransfer', { value: { setDragImage } })
+    fireEvent(blockRoot('b-a'), event)
+
+    expect(setDragImage).toHaveBeenCalledTimes(1)
+    const [imageArg] = setDragImage.mock.calls[0]
+    expect(imageArg).toBeInstanceOf(HTMLElement)
+  })
 })
