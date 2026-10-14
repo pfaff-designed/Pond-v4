@@ -57,7 +57,9 @@ import { PageProposalCard } from '@/components/molecules/PageProposalCard'
 import { toParentOptions, ancestorPathLabel } from '@/lib/pages/parent-options'
 import { workspaceHref } from '@/lib/pages/nav'
 import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
-import { insertPageOptimistic, fetchPages } from '@/lib/pages/tree'
+import { insertPageOptimistic, fetchPages, type PageRow } from '@/lib/pages/tree'
+import { linkedPageIds, orderMentionPages } from '@/lib/pages/mention-pages'
+import { readRecentPageIds } from '@/lib/pages/recent-pages'
 import { writeAcceptedChanges } from '@/lib/pages/accept'
 import { sessionUndo } from '@/lib/change-log/session-undo'
 import {
@@ -898,26 +900,53 @@ export function AITerminal() {
     }
   }, [updateMentionQuery])
 
-  // No ordering/exclusion yet (the next item wires that in) — every title
-  // match, in `allPages`' own order. A page's glyph/area come off `pageMarks`
-  // (fetched separately from `allPages`, the same split `referenceItems`
-  // above already relies on).
+  // `allPages` (`listPages`'s `PondPage[]`, camelCase `parentId`) is bridged to
+  // `mention-pages.ts`'s `PageRow` shape (snake_case `parent_id`) here, at the
+  // one call site that needs it — `updated_at` carries no meaning for either
+  // function and is left empty.
+  const mentionPageRows = useMemo<PageRow[]>(
+    () =>
+      allPages.map((p) => ({
+        id: p.id,
+        parent_id: p.parentId,
+        type: p.type,
+        title: p.title,
+        order: p.order,
+        updated_at: '',
+      })),
+    [allPages]
+  )
+
+  // Ordering (orchestrator decision 4): recent pages, then pages linked to the
+  // existing references, then the rest — `excludeIds` drops a page that
+  // already carries a whole-page reference (`ref.range === null`, the same
+  // discriminator `referenceItems`/`mentionTitles` above use) so picking it
+  // again can't duplicate the chip.
   const mentionItems = useMemo<PageMentionItem[]>(() => {
     if (mentionQuery === null) return []
-    const q = mentionQuery.query.toLowerCase()
-    return allPages
-      .filter((p) => p.title.toLowerCase().includes(q))
-      .map((p) => {
-        const mark = resolveMark(p.id, pageMarks)
-        return {
-          id: p.id,
-          glyph: mark.glyph ?? '',
-          color: markAccent(mark.role),
-          label: p.title,
-          sub: areaOf(allPages, p.id) ?? '',
-        }
-      })
-  }, [mentionQuery, allPages, pageMarks])
+    const ordered = orderMentionPages(
+      mentionPageRows,
+      {
+        recentIds: readRecentPageIds(),
+        linkedIds: linkedPageIds(
+          mentionPageRows,
+          references.map((ref) => ref.pageId)
+        ),
+        excludeIds: references.filter((ref) => ref.range === null).map((ref) => ref.pageId),
+      },
+      mentionQuery.query
+    )
+    return ordered.map((p) => {
+      const mark = resolveMark(p.id, pageMarks)
+      return {
+        id: p.id,
+        glyph: mark.glyph ?? '',
+        color: markAccent(mark.role),
+        label: p.title,
+        sub: areaOf(allPages, p.id) ?? '',
+      }
+    })
+  }, [mentionQuery, mentionPageRows, pageMarks, allPages, references])
 
   const handleMentionClose = useCallback(() => {
     suppressMentionReopenRef.current = true

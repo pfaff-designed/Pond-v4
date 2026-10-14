@@ -822,10 +822,12 @@ describe('AITerminal — the @ mention picker opens, narrows and closes (KAN-99)
 
   beforeEach(() => {
     mockListPages.mockResolvedValue(MENTION_PAGES)
+    window.localStorage.clear()
   })
 
   afterEach(() => {
     mockListPages.mockResolvedValue([])
+    window.localStorage.clear()
   })
 
   it('opens headed "pages" on @, narrows on further typing, and Escape closes it keeping the text', async () => {
@@ -868,5 +870,25 @@ describe('AITerminal — the @ mention picker opens, narrows and closes (KAN-99)
     const refs = screen.getByRole('group', { name: 'references' })
     expect(refs).toHaveTextContent('kitchen renovation')
     expect(refs).not.toHaveTextContent('—')
+  })
+
+  it('sorts a recently-visited page above an unrelated match (orderMentionPages wiring)', async () => {
+    window.localStorage.setItem(
+      'pond:recent-pages',
+      JSON.stringify([{ id: 'p2', type: 'page', title: 'budget planning' }])
+    )
+    const user = userEvent.setup()
+    renderTerminal()
+    await waitReady()
+
+    const textbox = screen.getByRole('textbox', { name: 'Message Pond' })
+    await user.type(textbox, '@')
+    await screen.findByText('pages')
+
+    const options = screen.getAllByRole('option').map((o) => o.textContent)
+    const recentIndex = options.findIndex((t) => t?.includes('budget planning'))
+    const unrelatedIndex = options.findIndex((t) => t?.includes('kitchen renovation'))
+    expect(recentIndex).toBeGreaterThanOrEqual(0)
+    expect(recentIndex).toBeLessThan(unrelatedIndex)
   })
 })
