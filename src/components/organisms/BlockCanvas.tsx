@@ -1304,6 +1304,29 @@ export function BlockCanvas({
     await persistBlocksAsOwnEdit(blocks, spliced)
   }
 
+  /**
+   * Commits exactly the `dropIndicator` currently shown — not a fresh
+   * classification of wherever the release landed. The lifted ghost is
+   * `pointer-events-none` and the gap between blocks has no handler of its
+   * own, so a release over either reaches no block's `onDrop`; the canvas
+   * root calls this directly for those. A block's own `onDrop` calls it too
+   * (and stops propagation first), so the canvas root's own listener never
+   * double-commits the same release.
+   */
+  function commitDropIndicator() {
+    const fromIndex = draggingIndex
+    const indicator = dropIndicator
+    setDropIndicator(null)
+    setPreviewWidth(null)
+    setDraggingIndex(null)
+    if (fromIndex === null || !indicator || indicator.index === fromIndex) return
+    if (indicator.zone === 'left' || indicator.zone === 'right') {
+      void commitBesideDrop(fromIndex, indicator.index, indicator.zone)
+      return
+    }
+    void commitOwnLineDrop(fromIndex, indicator.index, indicator.zone)
+  }
+
   // Stacking (6x): measured off the content column itself (ResizeObserver on the
   // canvas), not the viewport, so the side panel and window-narrowing both
   // trigger it. 0 means "not yet measured" (jsdom never measures) and is read as
@@ -1339,7 +1362,7 @@ export function BlockCanvas({
         id={blockDomId(`${block.id}::ghost`)}
         aria-hidden
         inert
-        className="shadow-mn-lifted rotate-[-.6deg] translate-x-[12px] translate-y-[18px] z-[4]"
+        className="pointer-events-none shadow-mn-lifted rotate-[-.6deg] translate-x-[12px] translate-y-[18px] z-[4]"
       >
         {frame ? (
           <PondBlock kind={frame.kind} heading={frame.heading} headNote={frame.headNote} state="rest">
@@ -1468,28 +1491,15 @@ export function BlockCanvas({
               : undefined,
           })
         }}
-        onDragLeave={() => {
-          setDropIndicator((cur) => (cur?.index === i ? null : cur))
-          setPreviewWidth(null)
-        }}
         onDrop={(e) => {
           e.preventDefault()
-          // Commit exactly the line a person was shown, not a fresh
-          // classification of the release point — a pointer that crosses
-          // zones between the last `dragOver` and release lands nowhere
-          // rather than somewhere it never saw a line for.
-          const indicator = dropIndicator
-          setDropIndicator(null)
-          setPreviewWidth(null)
-          setDraggingIndex(null)
-          if (draggingIndex === null || draggingIndex === i || !indicator || indicator.index !== i) {
-            return
-          }
-          if (indicator.zone === 'left' || indicator.zone === 'right') {
-            void commitBesideDrop(draggingIndex, i, indicator.zone)
-            return
-          }
-          void commitOwnLineDrop(draggingIndex, i, indicator.zone)
+          // Stop here, not at the canvas root: the block that actually
+          // received the release already knows what to commit (the shown
+          // indicator), so the root's own `onDrop` — there for a release
+          // over the ghost or the gap, which reach no block — must not
+          // also fire for this same release.
+          e.stopPropagation()
+          commitDropIndicator()
         }}
       />
     )
@@ -1560,6 +1570,26 @@ export function BlockCanvas({
           <div
             ref={canvasRef}
             style={previewing ? hiddenCanvasListStyle(listStyle) : canvasListStyle(listStyle)}
+            // The ghost is `pointer-events-none` and the gap between blocks
+            // has no element of its own, so a release over either reaches no
+            // block's `onDrop` — this root commits the shown indicator for
+            // those (a block's own `onDrop` stops propagation first, so it
+            // never double-commits the same release). `onDragLeave` only
+            // clears the indicator when the drag leaves the canvas itself
+            // (`relatedTarget` outside it) — moving from a block into the
+            // ghost or a gap is still inside the canvas, so the indicator
+            // stays up rather than flickering off and on.
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault()
+              commitDropIndicator()
+            }}
+            onDragLeave={(e) => {
+              const related = e.relatedTarget as Node | null
+              if (related && canvasRef.current?.contains(related)) return
+              setDropIndicator(null)
+              setPreviewWidth(null)
+            }}
           >
             {/*
              * A single flat `.flatMap()`, not a `.map()` of each row's own
@@ -1788,7 +1818,6 @@ function BlockEditor({
   onDragStart,
   onDragEnd,
   onDragOver,
-  onDragLeave,
   onDrop,
 }: {
   block: Block
@@ -1840,7 +1869,6 @@ function BlockEditor({
   onDragStart?: (e: React.DragEvent) => void
   onDragEnd?: () => void
   onDragOver?: (e: React.DragEvent) => void
-  onDragLeave?: () => void
   onDrop?: (e: React.DragEvent) => void
 }) {
   const [dragArmed, setDragArmed] = useState(false)
@@ -2001,7 +2029,6 @@ function BlockEditor({
         onDragEnd?.()
       }}
       onDragOver={onDragOver}
-      onDragLeave={onDragLeave}
       onDrop={onDrop}
       onKeyDownCapture={handleKeyDownCapture}
       onKeyDown={handleKeyDown}
