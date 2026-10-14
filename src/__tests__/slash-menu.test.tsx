@@ -690,7 +690,14 @@ describe('the component’s own source', () => {
   it('keeps the .04em group label and the .01em row tracking the board draws', () => {
     expect(source).toMatch(/tracking-\[\.04em\]/)
     expect(source).toMatch(/tracking-\[\.01em\]/)
-    expect(source).not.toMatch(/uppercase/)
+    // `COMPOSER_POP` (KAN-99) is the sans `@` popover's own chrome, a different
+    // register from this mono picker's (ADR 0004 §4) — its head is uppercase per
+    // board 6e frame 3. This guard is about the shared MONO row/group only.
+    const mono = source.replace(
+      /\/\*\*(?:[^*]|\*(?!\/))*\*\/\s*const COMPOSER_POP_GLASS[\s\S]*?export const COMPOSER_POP = \{[\s\S]*?\} as const/,
+      ''
+    )
+    expect(mono).not.toMatch(/uppercase/)
   })
 
   it('sets the row’s line-height to CSS normal, not the page’s inherited 1.5', () => {

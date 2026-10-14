@@ -97,10 +97,19 @@ const PAGE = {
   order: 0,
   props: {},
 } as PondPage
+const PAGE2 = {
+  id: 'page-2',
+  parentId: null,
+  type: 'page',
+  title: 'Kitchen renovation',
+  blocks: [],
+  order: 1,
+  props: {},
+} as PondPage
 
-function renderSurface() {
+function renderSurface(extraPages: PondPage[] = []) {
   mockGetPage.mockResolvedValue(PAGE)
-  mockListPages.mockResolvedValue([PAGE])
+  mockListPages.mockResolvedValue([PAGE, ...extraPages])
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
@@ -301,5 +310,189 @@ describe('a reference survives a send, a removal and an edit (KAN-98 path test)'
 
     await waitFor(() => expect(screen.queryByText('Workshop — “wild”')).not.toBeInTheDocument())
     expect(field.querySelectorAll('.mn-reference-highlight')).toHaveLength(0)
+  })
+})
+
+describe('the open page auto-references itself, deduped against a passage (KAN-99)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks()
+    mockSendMessage.mockClear()
+    mockMessages = []
+  })
+  afterEach(() => clearSelection())
+
+  it('shows the current page first and lets it be removed', async () => {
+    const user = userEvent.setup()
+    renderSurface()
+    await waitComposerReady()
+
+    expect(screen.getByRole('button', { name: 'remove reference: Workshop' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'remove reference: Workshop' }))
+
+    expect(screen.queryByRole('group', { name: 'references' })).not.toBeInTheDocument()
+  })
+
+  it('removing the current page drops it from the next send', async () => {
+    const user = userEvent.setup()
+    renderSurface()
+    await waitComposerReady()
+
+    await user.click(screen.getByRole('button', { name: 'remove reference: Workshop' }))
+
+    await user.type(screen.getByRole('textbox', { name: 'Message Pond' }), 'hello?')
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1))
+    const [, { body }] = mockSendMessage.mock.calls[0]
+    expect(body.references).toEqual([])
+    expect(body.openPageContext).toBe(false)
+  })
+
+  it('sends openPageContext: true while the current-page chip is still showing', async () => {
+    const user = userEvent.setup()
+    renderSurface()
+    await waitComposerReady()
+
+    await user.type(screen.getByRole('textbox', { name: 'Message Pond' }), 'hello?')
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1))
+    const [, { body }] = mockSendMessage.mock.calls[0]
+    expect(body.openPageContext).toBe(true)
+  })
+
+  it('walks the @ picker end to end: open, narrow, Escape, pick and send alongside the current page (PATH_STEPS 1-5)', async () => {
+    const user = userEvent.setup()
+    renderSurface([PAGE2])
+    await waitComposerReady()
+    const textbox = screen.getByRole('textbox', { name: 'Message Pond' })
+
+    // 1: the open page is already the first, removable chip.
+    expect(screen.getByRole('button', { name: 'remove reference: Workshop' })).toBeInTheDocument()
+
+    // 2: @ opens the popover headed "pages", rows for every pickable page —
+    // Workshop itself is excluded, since it's already the current-page
+    // whole-page reference (no duplicate pick) — first row highlighted.
+    await user.type(textbox, 'a page on floorboards, with @')
+    expect(await screen.findByText('pages')).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: /Kitchen renovation/ })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: /Workshop/ })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('option')[0]).toHaveAttribute('aria-selected', 'true')
+
+    // 3: typing narrows the rows; Escape closes the popover and leaves the
+    // typed text in the composer.
+    await user.type(textbox, 'Kit')
+    expect(screen.getByRole('option', { name: /Kitchen renovation/ })).toBeInTheDocument()
+
+    await user.keyboard('{Escape}')
+    expect(screen.queryByText('pages')).not.toBeInTheDocument()
+    expect(textbox).toHaveValue('a page on floorboards, with @Kit')
+
+    // 4: typing again re-opens the glass on the still-active @-token; Enter
+    // picks the row — the typed query becomes the inline mention and the
+    // page joins the references row as a whole-page chip.
+    await user.type(textbox, 'c')
+    await screen.findByRole('option', { name: /Kitchen renovation/ })
+    await user.keyboard('{Enter}')
+    await flushAskFocus()
+
+    expect(screen.queryByText('pages')).not.toBeInTheDocument()
+    // The pick leaves a trailing space after the mention (799815d) so typing
+    // on stays outside the `@<title>` run instead of dissolving the pill.
+    expect(textbox).toHaveValue('a page on floorboards, with @Kitchen renovation ')
+    const refs = screen.getByRole('group', { name: 'references' })
+    expect(refs).toHaveTextContent('Kitchen renovation')
+
+    // 5: sending carries both the chosen page and the current page as
+    // whole-page references.
+    await user.type(textbox, 'does it fit?')
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1))
+    const [, { body }] = mockSendMessage.mock.calls[0]
+    expect(body.references).toEqual([
+      expect.objectContaining({ pageId: 'page-1', range: null }),
+      expect.objectContaining({ pageId: 'page-2', range: null }),
+    ])
+  })
+
+  it('anchors the @ picker to the visible composer card, not a transparent child of it', async () => {
+    const user = userEvent.setup()
+    renderSurface([PAGE2])
+    await waitComposerReady()
+
+    // The card (`TerminalDrawer`'s `[data-part="composer-card"]`) is the one
+    // element that carries the glass — a distinctive rect here, left at
+    // jsdom's all-zero default on every other element, proves the popover's
+    // position comes from the card and not the footer's own (invisible) wrap.
+    const card = document.querySelector('[data-part="composer-card"]') as HTMLElement
+    jest.spyOn(card, 'getBoundingClientRect').mockReturnValue({
+      top: 200,
+      bottom: 240,
+      left: 40,
+      right: 400,
+      width: 360,
+      height: 40,
+      x: 40,
+      y: 200,
+      toJSON: () => {},
+    })
+
+    await user.type(screen.getByRole('textbox', { name: 'Message Pond' }), '@')
+    await screen.findByText('pages')
+
+    const popover = document.querySelector('[data-part="popover"]') as HTMLElement
+    // The glass measures its own room off this same card rect, not a `side`
+    // computed elsewhere — room above (200 − 10 − 8 = 182px) fits the head
+    // plus two rows, so it opens above the card.
+    expect(popover.style.bottom).toBe(`${window.innerHeight - 200 + 10}px`) // the card's top (200) + the DC's 10px gap
+    expect(popover.style.left).toBe('52px') // the card's left (40) + the DC's 12px inset
+    expect(popover.style.width).toBe('336px') // the card's width (360) − 12px off each side
+  })
+
+  it('a passage ask on the current page suppresses its whole-page chip without removing the passage chip', async () => {
+    const user = userEvent.setup()
+    renderSurface()
+    await waitComposerReady()
+    const field = await findTextBlock()
+
+    expect(screen.getByRole('button', { name: 'remove reference: Workshop' })).toBeInTheDocument()
+
+    selectWord(field, 'wild')
+    await user.click(await screen.findByRole('button', { name: 'ask pond' }))
+
+    expect(await screen.findByText('Workshop — “wild”')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'remove reference: Workshop' })
+    ).not.toBeInTheDocument()
+  })
+
+  it('a new thread re-seeds exactly the current-page chip, dropping a passage reference', async () => {
+    const user = userEvent.setup()
+    mockMessages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'question 1' }] },
+      { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'answer 1' }] },
+      { id: 'u2', role: 'user', parts: [{ type: 'text', text: 'question 2' }] },
+      { id: 'a2', role: 'assistant', parts: [{ type: 'text', text: 'answer 2' }] },
+    ]
+    renderSurface()
+    await waitComposerReady()
+    const field = await findTextBlock()
+
+    selectWord(field, 'wild')
+    await user.click(await screen.findByRole('button', { name: 'ask pond' }))
+    await flushAskFocus()
+    expect(await screen.findByText('Workshop — “wild”')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'new thread' }))
+
+    await waitFor(() =>
+      expect(screen.queryByText('Workshop — “wild”')).not.toBeInTheDocument()
+    )
+    const refs = screen.getByRole('group', { name: 'references' })
+    expect(refs).toHaveTextContent('Workshop')
+    expect(screen.getByRole('button', { name: 'remove reference: Workshop' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /remove reference/ })).toHaveLength(1)
   })
 })

@@ -21,6 +21,9 @@ interface ChatBody {
   requestChanges?: RequestChangesBody
   /** KAN-98 — page-plus-range references the user highlighted and asked about this turn. */
   references: PageReference[]
+  /** KAN-99 — false once the person has dismissed the open page's whole-page
+   *  chip for this visit; withholds that page's content, default true. */
+  openPageContext: boolean
 }
 
 /** Minimal body-shape guard: null unless `body` is an object carrying a
@@ -42,6 +45,7 @@ export function parseChatBody(body: unknown): ChatBody | null {
     resolutions: parseResolutions(b.resolutions),
     research: b.research === true,
     references: parseReferences(b.references),
+    openPageContext: b.openPageContext !== false,
     ...(requestChanges ? { requestChanges } : {}),
   }
 }

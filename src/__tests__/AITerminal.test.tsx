@@ -15,6 +15,7 @@
 
 import React from 'react'
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 // ── Module mocks — must be defined before imports ─────────────────────────
@@ -66,11 +67,14 @@ jest.mock('@ai-sdk/react', () => ({
 }))
 
 import { AITerminal } from '@/components/organisms/AITerminal'
+import { listPages } from '@/lib/pages/client'
 import {
   requestComposerNotice,
   requestComposerToggle,
   requestHtmlImportPicker,
 } from '@/lib/terminal-focus'
+
+const mockListPages = listPages as jest.Mock
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -782,9 +786,7 @@ describe('AITerminal — the composer notice bridge (KAN-93)', () => {
     act(() => {
       requestComposerNotice("can't undo — the page changed since. revert it from the change log.")
     })
-    await screen.findByText(
-      "can't undo — the page changed since. revert it from the change log."
-    )
+    await screen.findByText("can't undo — the page changed since. revert it from the change log.")
 
     act(() => {
       requestComposerNotice('')
@@ -793,5 +795,142 @@ describe('AITerminal — the composer notice bridge (KAN-93)', () => {
     expect(
       screen.queryByText("can't undo — the page changed since. revert it from the change log.")
     ).not.toBeInTheDocument()
+  })
+})
+
+describe('AITerminal — the @ mention picker opens, narrows and closes (KAN-99)', () => {
+  const MENTION_PAGES = [
+    {
+      id: 'p1',
+      parentId: null,
+      type: 'page',
+      title: 'kitchen renovation',
+      blocks: [],
+      order: 0,
+      props: {},
+    },
+    {
+      id: 'p2',
+      parentId: null,
+      type: 'page',
+      title: 'budget planning',
+      blocks: [],
+      order: 1,
+      props: {},
+    },
+  ]
+
+  beforeEach(() => {
+    mockListPages.mockResolvedValue(MENTION_PAGES)
+    window.localStorage.clear()
+  })
+
+  afterEach(() => {
+    mockListPages.mockResolvedValue([])
+    window.localStorage.clear()
+  })
+
+  it('opens headed "pages" on @, narrows on further typing, and Escape closes it keeping the text', async () => {
+    const user = userEvent.setup()
+    renderTerminal()
+    await waitReady()
+
+    const textbox = screen.getByRole('textbox', { name: 'Message Pond' })
+    await user.type(textbox, '@')
+
+    expect(await screen.findByText('pages')).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: /kitchen renovation/ })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: /budget planning/ })).toBeInTheDocument()
+
+    await user.type(textbox, 'kit')
+
+    expect(screen.getByRole('option', { name: /kitchen renovation/ })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: /budget planning/ })).not.toBeInTheDocument()
+
+    await user.keyboard('{Escape}')
+
+    expect(screen.queryByText('pages')).not.toBeInTheDocument()
+    expect(textbox).toHaveValue('@kit')
+  })
+
+  it('picking a row replaces the typed @query with the title and adds a title-only chip', async () => {
+    const user = userEvent.setup()
+    renderTerminal()
+    await waitReady()
+
+    const textbox = screen.getByRole('textbox', { name: 'Message Pond' })
+    await user.type(textbox, '@kit')
+    await screen.findByRole('option', { name: /kitchen renovation/ })
+
+    await user.keyboard('{Enter}')
+
+    expect(screen.queryByText('pages')).not.toBeInTheDocument()
+    expect(textbox).toHaveValue('@kitchen renovation ')
+    await waitFor(() =>
+      expect((textbox as HTMLTextAreaElement).selectionStart).toBe('@kitchen renovation '.length)
+    )
+
+    const refs = screen.getByRole('group', { name: 'references' })
+    expect(refs).toHaveTextContent('kitchen renovation')
+    expect(refs).not.toHaveTextContent('—')
+  })
+
+  it('↓↓↑ leaves row 2 active — the keyup after an arrow key does not reset the highlight to row 1', async () => {
+    mockListPages.mockResolvedValue([
+      ...MENTION_PAGES,
+      { id: 'p3', parentId: null, type: 'page', title: 'garden layout', blocks: [], order: 2, props: {} },
+    ])
+    const user = userEvent.setup()
+    renderTerminal()
+    await waitReady()
+
+    const textbox = screen.getByRole('textbox', { name: 'Message Pond' })
+    await user.type(textbox, '@')
+    await screen.findByText('pages')
+
+    await user.keyboard('{ArrowDown}')
+    await user.keyboard('{ArrowDown}')
+    await user.keyboard('{ArrowUp}')
+
+    const options = screen.getAllByRole('option')
+    expect(options[1]).toHaveAttribute('aria-selected', 'true')
+    expect(options[0]).toHaveAttribute('aria-selected', 'false')
+    expect(options[2]).toHaveAttribute('aria-selected', 'false')
+  })
+
+  it('zero matches: the glass does not open at all, and Enter sends (AUDIT G6)', async () => {
+    const user = userEvent.setup()
+    renderTerminal()
+    await waitReady()
+
+    const textbox = screen.getByRole('textbox', { name: 'Message Pond' })
+    await user.type(textbox, '@zzz')
+
+    expect(screen.queryByText('pages')).not.toBeInTheDocument()
+    expect(screen.queryByRole('option')).not.toBeInTheDocument()
+
+    await user.keyboard('{Enter}')
+
+    expect(mockSendMessage).toHaveBeenCalledTimes(1)
+  })
+
+  it('sorts a recently-visited page above an unrelated match (orderMentionPages wiring)', async () => {
+    window.localStorage.setItem(
+      'pond:recent-pages',
+      JSON.stringify([{ id: 'p2', type: 'page', title: 'budget planning' }])
+    )
+    const user = userEvent.setup()
+    renderTerminal()
+    await waitReady()
+
+    const textbox = screen.getByRole('textbox', { name: 'Message Pond' })
+    await user.type(textbox, '@')
+    await screen.findByText('pages')
+
+    const options = screen.getAllByRole('option').map((o) => o.textContent)
+    const recentIndex = options.findIndex((t) => t?.includes('budget planning'))
+    const unrelatedIndex = options.findIndex((t) => t?.includes('kitchen renovation'))
+    expect(recentIndex).toBeGreaterThanOrEqual(0)
+    expect(recentIndex).toBeLessThan(unrelatedIndex)
   })
 })

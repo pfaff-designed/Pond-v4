@@ -55,6 +55,8 @@ describe('parseChatBody', () => {
       messages: [],
       nodeId: undefined,
       nodeType: undefined,
+      // KAN-99: the open-page chip is on unless the person dismissed it.
+      openPageContext: true,
       // #312: the pond scope of any change-log record this turn writes. Absent
       // when the body carries none — there is no default pond to fall back to.
       pondId: undefined,

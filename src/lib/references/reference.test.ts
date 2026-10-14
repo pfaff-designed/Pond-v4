@@ -1,4 +1,4 @@
-import { reanchorRange } from './reference'
+import { dedupeWholePageReferences, reanchorRange, type PageReference } from './reference'
 
 describe('reanchorRange', () => {
   it('shifts the range forward when text is inserted before it', () => {
@@ -48,5 +48,40 @@ describe('reanchorRange', () => {
     const edit = { from: 0, deleteCount: 30, insertedText: '' }
 
     expect(reanchorRange(range, edit)).toBeNull()
+  })
+})
+
+describe('dedupeWholePageReferences', () => {
+  const wholePage: PageReference = {
+    id: 'current:page-1',
+    pageId: 'page-1',
+    blockId: null,
+    range: null,
+    quotedText: '',
+  }
+  const passage: PageReference = {
+    id: 'ref-1',
+    pageId: 'page-1',
+    blockId: 'b-text',
+    range: { from: 0, to: 4 },
+    quotedText: 'wild',
+  }
+
+  it('drops a whole-page reference whose page also has a live passage reference', () => {
+    expect(dedupeWholePageReferences([wholePage, passage])).toEqual([passage])
+  })
+
+  it('keeps a whole-page reference whose page has no passage reference', () => {
+    const otherPage: PageReference = { ...wholePage, id: 'current:page-2', pageId: 'page-2' }
+    expect(dedupeWholePageReferences([otherPage, passage])).toEqual([otherPage, passage])
+  })
+
+  it('keeps every passage reference regardless of other whole-page references', () => {
+    expect(dedupeWholePageReferences([passage])).toEqual([passage])
+  })
+
+  it('keeps a passage reference whose own range is null — blockId, never range, is the discriminator', () => {
+    const passageNoRange: PageReference = { ...passage, id: 'ref-2', range: null }
+    expect(dedupeWholePageReferences([wholePage, passageNoRange])).toEqual([passageNoRange])
   })
 })

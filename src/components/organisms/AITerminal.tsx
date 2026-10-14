@@ -41,9 +41,11 @@ import {
   formatThreadTime,
   openPageProposalIds,
   parsePlacementResponse,
+  precedingUserMessage,
   readChips,
   readPageIds,
   readStamp,
+  turnReadContext,
   withEarlierAnswer,
   withReadStamp,
   type EarlierAnswer,
@@ -57,7 +59,9 @@ import { PageProposalCard } from '@/components/molecules/PageProposalCard'
 import { toParentOptions, ancestorPathLabel } from '@/lib/pages/parent-options'
 import { workspaceHref } from '@/lib/pages/nav'
 import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
-import { insertPageOptimistic, fetchPages } from '@/lib/pages/tree'
+import { insertPageOptimistic, fetchPages, type PageRow } from '@/lib/pages/tree'
+import { linkedPageIds, orderMentionPages } from '@/lib/pages/mention-pages'
+import { readRecentPageIds } from '@/lib/pages/recent-pages'
 import { writeAcceptedChanges } from '@/lib/pages/accept'
 import { sessionUndo } from '@/lib/change-log/session-undo'
 import {
@@ -73,10 +77,7 @@ import { configureViewFromProposal, resolveCollectionByName } from '@/lib/pages/
 import { promoteTableFromProposal, inferColumnType } from '@/lib/pages/promote-table'
 import { linkRecordsFromProposal } from '@/lib/pages/link-records'
 import { requestNotify } from '@/lib/deletion/notify-bridge'
-import {
-  SelectionBar,
-  type SelectionContext,
-} from '@/components/molecules/SelectionBar'
+import { SelectionBar, type SelectionContext } from '@/components/molecules/SelectionBar'
 import { FileAttachmentChip } from '@/components/molecules/FileAttachmentChip'
 import { useAttachments } from '@/lib/attachments/use-attachments'
 import { useInlineAttachment } from '@/lib/attachments/use-inline-attachment'
@@ -88,7 +89,11 @@ import {
 } from '@/lib/attachments/html'
 import type { ReadHtmlError, ReadHtmlResult } from '@/lib/import/types'
 import { formatBytes } from '@/components/molecules/HtmlAttachmentPill'
-import type { PageReference } from '@/lib/references/reference'
+import {
+  dedupeWholePageReferences,
+  isWholePageReference,
+  type PageReference,
+} from '@/lib/references/reference'
 import { ReferencesRow, type ReferenceChip } from '@/components/molecules/ReferencesRow'
 import { editorForBlock, onTextEditorRegistered } from '@/lib/modules/text/active-editor'
 import {
@@ -98,6 +103,8 @@ import {
 } from '@/lib/modules/text/reference-highlight'
 import { markIndex, resolveMark } from '@/lib/pages/mark'
 import { markAccent } from '@/lib/rail/glyph-library'
+import { activeMentionQuery } from '@/lib/references/mention-query'
+import { PagesPicker, type PageMentionItem } from '@/components/molecules/PagesPicker'
 import { parseCsv } from '@/lib/csv/parse-csv'
 import {
   getInlineAttachmentDescriptor,
@@ -755,10 +762,45 @@ export function AITerminal() {
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const composerRef = useRef<HTMLDivElement>(null)
+  // The glass the `@` picker hangs off (`PondComposer.dc.html`'s `sPop`, off
+  // the CARD) — `TerminalDrawer`'s own `[data-part="composer-card"]`, the one
+  // element that carries the glass whether or not a thread is open. Anchoring
+  // instead to the transparent wrapper around just `ReferencesRow` + the line
+  // + the toolbar sat the popover's bottom edge inside the visible card, over
+  // the thread, whenever one was open.
+  const composerCardRef = useRef<HTMLElement | null>(null)
   const isStreaming = status === 'streaming' || status === 'submitted'
 
   // ── Highlight-to-ask references (KAN-98, board 6e) ────────────────────────
   const [references, setReferences] = useState<PageReference[]>([])
+
+  // The open page goes with every question as the first chip (KAN-99, board
+  // 6e). `current:${nodeId}` is a stable id so it's addressable by × like any
+  // other reference; `dismissedCurrentRefNodeId` remembers that nodeId was
+  // dismissed for THIS visit, so this effect (which only re-runs on a real
+  // nodeId change) doesn't immediately reseed it — opening another page
+  // resets the dismissal, per the ticket's "state per page visit".
+  const [dismissedCurrentRefNodeId, setDismissedCurrentRefNodeId] = useState<string | null>(null)
+  // Guarded to fire once per `nodeId`/dismissal pair (both tracked in the
+  // dependency array, so this never cascades) — not a derived-state
+  // computation, so `react-hooks/set-state-in-effect` is disabled here, same
+  // as Rail.tsx's own "reveal the selection" effect.
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    const currentRefId = `current:${nodeId}`
+    setReferences((prev) => {
+      const withoutStaleCurrent = prev.filter(
+        (ref) => !ref.id.startsWith('current:') || ref.id === currentRefId
+      )
+      if (!nodeId || dismissedCurrentRefNodeId === nodeId) return withoutStaleCurrent
+      if (withoutStaleCurrent.some((ref) => ref.id === currentRefId)) return withoutStaleCurrent
+      return [
+        { id: currentRefId, pageId: nodeId, blockId: null, range: null, quotedText: '' },
+        ...withoutStaleCurrent,
+      ]
+    })
+  }, [nodeId, dismissedCurrentRefNodeId])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleAskFromSelection = useCallback(
     (ctx: SelectionContext) => {
@@ -767,7 +809,8 @@ export function AITerminal() {
       // focuses so typing a question works either way.
       const { blockId } = ctx
       if (nodeId && blockId) {
-        const range = ctx.from !== undefined && ctx.to !== undefined ? { from: ctx.from, to: ctx.to } : null
+        const range =
+          ctx.from !== undefined && ctx.to !== undefined ? { from: ctx.from, to: ctx.to } : null
         setReferences((prev) => [
           ...prev,
           { id: crypto.randomUUID(), pageId: nodeId, blockId, range, quotedText: ctx.text },
@@ -792,13 +835,20 @@ export function AITerminal() {
   // A chip's title is resolved from `pageId` at render time (KAN-302's
   // `contextLabel` precedent), never stamped once, so a live rename is
   // reflected while the reference is still sitting above the composer text.
+  // `dedupeWholePageReferences` drops the current-page chip once a passage
+  // reference on that same page is live (KAN-99) — never shown twice.
   const referenceItems = useMemo<ReferenceChip[]>(
     () =>
-      references.map((ref) => {
+      dedupeWholePageReferences(references).map((ref) => {
         const title =
           allPages.find((p) => p.id === ref.pageId)?.title ??
           (ref.pageId === nodeId ? contextLabel : 'untitled')
         const mark = resolveMark(ref.pageId, pageMarks)
+        // A whole-page reference (KAN-99's `@`-picker, `blockId: null`) has no
+        // passage to quote — the chip reads as the title alone.
+        if (isWholePageReference(ref)) {
+          return { key: ref.id, glyph: mark.glyph, accent: markAccent(mark.role), label: title }
+        }
         const passage =
           ref.quotedText.length > REFERENCE_PASSAGE_MAX
             ? `${ref.quotedText.slice(0, REFERENCE_PASSAGE_MAX)}…`
@@ -813,9 +863,175 @@ export function AITerminal() {
     [references, allPages, nodeId, contextLabel, pageMarks]
   )
 
-  const handleRemoveReference = useCallback((key: string) => {
-    setReferences((prev) => prev.filter((ref) => ref.id !== key))
+  const handleRemoveReference = useCallback(
+    (key: string) => {
+      setReferences((prev) => prev.filter((ref) => ref.id !== key))
+      // Removing the current-page chip dismisses it for this visit — the
+      // seeding effect above only reseeds it once `nodeId` itself changes.
+      if (key === `current:${nodeId}`) setDismissedCurrentRefNodeId(nodeId)
+    },
+    [nodeId]
+  )
+
+  // The mention pill (board 6e frame 4) paints under exactly the typed
+  // `@<title>` runs that still carry a live whole-page reference — the same
+  // title lookup `referenceItems` above uses for a whole-page chip's label.
+  const mentionTitles = useMemo(
+    () =>
+      references
+        .filter(isWholePageReference)
+        .map(
+          (ref) =>
+            allPages.find((p) => p.id === ref.pageId)?.title ??
+            (ref.pageId === nodeId ? contextLabel : undefined)
+        )
+        .filter((title): title is string => Boolean(title)),
+    [references, allPages, nodeId, contextLabel]
+  )
+
+  // ── @ mention picker (KAN-99, board 6e frame 3) ───────────────────────────
+  // The caret is tracked on every edit, click and key-up (arrow keys move it
+  // without changing the text) and resolved against the typed value through
+  // `activeMentionQuery` — the host owns the open/narrow state; the glass
+  // owns only its own keys and position.
+  const [mentionQuery, setMentionQuery] = useState<{ start: number; query: string } | null>(null)
+  const [mentionActiveIndex, setMentionActiveIndex] = useState(0)
+
+  // Esc doesn't move the caret or change the text, so the keyup that follows
+  // it would otherwise see the caret still sitting inside the `@`-token and
+  // reopen the glass it just closed. Swallows exactly that one trailing call.
+  const suppressMentionReopenRef = useRef(false)
+
+  // The glass's own capture-phase keydown (`PagesPicker`) preventDefaults
+  // ↑/↓/Enter so the textarea's caret never moves for them, but the textarea
+  // still fires a `keyup` right after — this `updateMentionQuery` call must
+  // not re-highlight row 0 then, only when the `@`-token itself (its start or
+  // text) actually changed from the last time this ran.
+  const lastMentionQueryRef = useRef<{ start: number; query: string } | null>(null)
+
+  // One place sets `mentionQuery`, so narrowing (or opening on a fresh `@`)
+  // re-highlighting the first row (board 6e frame 3) lives here rather than
+  // in an effect synced off it. `PagesPicker` measures its own anchor and
+  // picks its own side — this host doesn't duplicate either.
+  const updateMentionQuery = useCallback(() => {
+    const el = inputRef.current
+    if (!el) return
+    if (suppressMentionReopenRef.current) {
+      suppressMentionReopenRef.current = false
+      return
+    }
+    const next = activeMentionQuery(el.value, el.selectionStart ?? el.value.length)
+    const last = lastMentionQueryRef.current
+    const tokenChanged = next?.start !== last?.start || next?.query !== last?.query
+    lastMentionQueryRef.current = next
+    setMentionQuery(next)
+    if (tokenChanged) setMentionActiveIndex(0)
   }, [])
+
+  useEffect(() => {
+    const el = inputRef.current
+    if (!el) return
+    el.addEventListener('click', updateMentionQuery)
+    el.addEventListener('keyup', updateMentionQuery)
+    return () => {
+      el.removeEventListener('click', updateMentionQuery)
+      el.removeEventListener('keyup', updateMentionQuery)
+    }
+  }, [updateMentionQuery])
+
+  // `allPages` (`listPages`'s `PondPage[]`, camelCase `parentId`) is bridged to
+  // `mention-pages.ts`'s `PageRow` shape (snake_case `parent_id`) here, at the
+  // one call site that needs it — `updated_at` carries no meaning for either
+  // function and is left empty.
+  const mentionPageRows = useMemo<PageRow[]>(
+    () =>
+      allPages.map((p) => ({
+        id: p.id,
+        parent_id: p.parentId,
+        type: p.type,
+        title: p.title,
+        order: p.order,
+        updated_at: '',
+      })),
+    [allPages]
+  )
+
+  // Ordering (orchestrator decision 4): recent pages, then pages linked to the
+  // existing references, then the rest — `excludeIds` drops a page that
+  // already carries a whole-page reference (`isWholePageReference`, the same
+  // discriminator `referenceItems`/`mentionTitles` above use) so picking it
+  // again can't duplicate the chip.
+  const mentionItems = useMemo<PageMentionItem[]>(() => {
+    if (mentionQuery === null) return []
+    const ordered = orderMentionPages(
+      mentionPageRows,
+      {
+        recentIds: readRecentPageIds(),
+        linkedIds: linkedPageIds(
+          mentionPageRows,
+          references.map((ref) => ref.pageId)
+        ),
+        excludeIds: references.filter(isWholePageReference).map((ref) => ref.pageId),
+      },
+      mentionQuery.query
+    )
+    return ordered.map((p) => {
+      const mark = resolveMark(p.id, pageMarks)
+      return {
+        id: p.id,
+        glyph: mark.glyph,
+        color: markAccent(mark.role),
+        label: p.title,
+        sub: areaOf(allPages, p.id) ?? '',
+      }
+    })
+  }, [mentionQuery, mentionPageRows, pageMarks, allPages, references])
+
+  const handleMentionClose = useCallback(() => {
+    suppressMentionReopenRef.current = true
+    setMentionQuery(null)
+  }, [])
+
+  // Picking a row (KAN-99, board 6e frame 4): the typed `@query` run becomes
+  // plain text `@<title>` — KAN-19's existing inline-mention text, no new
+  // fetch — and the page joins `references` as a whole-page chip (`blockId:
+  // null, range: null`, the discriminator item 2 settled on for routing).
+  const handleMentionPick = useCallback(
+    (item: PageMentionItem) => {
+      const el = inputRef.current
+      if (!el || !mentionQuery) return
+      const { start, query } = mentionQuery
+      const end = start + 1 + query.length
+      // A trailing space keeps typing after the pick outside the `@<title>`
+      // run (`mentionPillRuns`'s `after` test needs a non-word char there),
+      // so the pill doesn't dissolve the moment the next letter lands.
+      const mention = `@${item.label} `
+      setInput(el.value.slice(0, start) + mention + el.value.slice(end))
+      setReferences((prev) => [
+        ...prev,
+        { id: crypto.randomUUID(), pageId: item.id, blockId: null, range: null, quotedText: '' },
+      ])
+      suppressMentionReopenRef.current = true
+      setMentionQuery(null)
+      const caret = start + mention.length
+      requestAnimationFrame(() => {
+        el.focus()
+        el.setSelectionRange(caret, caret)
+      })
+    },
+    [mentionQuery]
+  )
+
+  // The DOM textarea's `selectionStart` already reflects the keystroke by the
+  // time this fires — same tick `onChange` reports the new `value` — so the
+  // mention query is read synchronously, no `requestAnimationFrame` needed.
+  const handleComposerChange = useCallback(
+    (value: string) => {
+      setInput(value)
+      updateMentionQuery()
+    },
+    [updateMentionQuery]
+  )
 
   // The passage a reference points at stays highlighted on the page while
   // referenced (KAN-98, board 6e). Each block that currently owns a highlight
@@ -828,7 +1044,7 @@ export function AITerminal() {
   useEffect(() => {
     const byBlock = new Map<string, ReferenceHighlightEntry[]>()
     references.forEach((ref) => {
-      if (!ref.range) return
+      if (!ref.range || ref.blockId === null) return
       const entries = byBlock.get(ref.blockId) ?? []
       entries.push({ key: ref.id, range: ref.range })
       byBlock.set(ref.blockId, entries)
@@ -883,7 +1099,11 @@ export function AITerminal() {
           let changed = false
           const next = prev.map((ref) => {
             const entry = entries.find((e) => e.key === ref.id)
-            if (!entry || !ref.range || (ref.range.from === entry.range.from && ref.range.to === entry.range.to)) {
+            if (
+              !entry ||
+              !ref.range ||
+              (ref.range.from === entry.range.from && ref.range.to === entry.range.to)
+            ) {
               return ref
             }
             changed = true
@@ -1190,7 +1410,8 @@ export function AITerminal() {
     // order) is still waiting in the pending slot — claim it exactly like an
     // incoming event (KAN-195).
     const pending = takePendingTerminalText()
-    if (pending) onFocusRequest(new CustomEvent(FOCUS_TERMINAL_EVENT, { detail: { text: pending } }))
+    if (pending)
+      onFocusRequest(new CustomEvent(FOCUS_TERMINAL_EVENT, { detail: { text: pending } }))
     return () => window.removeEventListener(FOCUS_TERMINAL_EVENT, onFocusRequest)
   }, [focusInputSoon])
 
@@ -1478,9 +1699,17 @@ export function AITerminal() {
     // thread has none to anchor against.
     setKeptHtmlTurns([])
     // References ride a thread, not the person: a new thread starts with
-    // none, and the highlight-sync effect clears their page decorations.
-    setReferences([])
-  }, [conversationId, setMessages, resetResolutions, getSupabase, pondId])
+    // only the current page back in context (KAN-99 PATH_STEPS 1), and the
+    // highlight-sync effect clears their page decorations. This clear
+    // changes neither `nodeId` nor `dismissedCurrentRefNodeId`, so the
+    // seeding effect above would not otherwise re-run — reseed directly.
+    setDismissedCurrentRefNodeId(null)
+    setReferences(
+      nodeId
+        ? [{ id: `current:${nodeId}`, pageId: nodeId, blockId: null, range: null, quotedText: '' }]
+        : []
+    )
+  }, [conversationId, setMessages, resetResolutions, getSupabase, pondId, nodeId])
 
   // ── Lifecycle advancement (ticket-39) ─────────────────────────────────────
   // The phase moves on the OUTGOING user message (the user calls the shot): if a
@@ -1537,10 +1766,36 @@ export function AITerminal() {
       // the send (board 6e frame 4: the refs row still holds both references
       // and the passage stays highlighted) — removed only by its own × or by
       // the anchored text being edited away.
-      const body = { nodeId, nodeType, pondId, resolutions: outgoing, research, references }
+      const sentReferences = dedupeWholePageReferences(references)
+      const openPageContext = dismissedCurrentRefNodeId !== nodeId
+      const body = {
+        nodeId,
+        nodeType,
+        pondId,
+        resolutions: outgoing,
+        research,
+        references: sentReferences,
+        // KAN-99: × on the current-page chip withholds the open page's
+        // content from this and every turn until another page is opened.
+        openPageContext,
+      }
       // #97: the thread shows when each line was said ("you · 07:12"), and a
       // page made from the answer carries that moment on its made-from chip.
-      const metadata = { sentAt: new Date().toISOString() }
+      // `openPageContext` and `wholePageRefPageIds` are this turn's own facts
+      // about what reached the model (PROJECT_RULES "sources are always
+      // shown") — stamped here, not read live off `references`/
+      // `dismissedCurrentRefNodeId` later, since either can change before the
+      // read-chip stamp runs (KAN-99). A whole-page ref to the open node
+      // itself is excluded: that page's content rides `openPageContext`, not
+      // a second fenced copy (route.ts never double-sends it either).
+      const metadata = {
+        sentAt: new Date().toISOString(),
+        openPageContext,
+        wholePageRefPageIds: sentReferences
+          .filter(isWholePageReference)
+          .filter((ref) => ref.pageId !== nodeId)
+          .map((ref) => ref.pageId),
+      }
       clearError?.()
       const outgoingFiles = fileParts
       if (outgoingFiles.length > 0) clearAttachments()
@@ -1582,6 +1837,7 @@ export function AITerminal() {
       clearAttachments,
       research,
       references,
+      dismissedCurrentRefNodeId,
     ]
   )
 
@@ -2294,7 +2550,10 @@ export function AITerminal() {
   // the reducer); the proposal is born as a `proposed` change-log record and rides
   // the resolutions envelope with the transcript, so closing Pond leaves it pending.
   const editPageProposal = useCallback(
-    (id: string, patch: Partial<Pick<PageProposal, 'name' | 'parentId' | 'kind' | 'mentioned'>>) => {
+    (
+      id: string,
+      patch: Partial<Pick<PageProposal, 'name' | 'parentId' | 'kind' | 'mentioned'>>
+    ) => {
       dispatch({ kind: 'editPageProposal', id, patch })
     },
     []
@@ -2523,20 +2782,25 @@ export function AITerminal() {
       return { ...m, metadata: { ...base, sentAt: landedAt } }
     }
     setMessages((prev) =>
-      prev.map((m) =>
-        ids.has(m.id)
-          ? withLandedAt(
-              withReadStamp(
-                m,
-                readChips({
-                  contextLabel: initialMessageIds.has(m.id) ? '' : contextLabel,
-                  parts: m.parts as ReadPartLike[],
-                  resolvePageName,
-                })
-              )
-            )
-          : m
-      )
+      prev.map((m, i) => {
+        if (!ids.has(m.id)) return m
+        const isInitial = initialMessageIds.has(m.id)
+        const turn = isInitial
+          ? { openPageContext: true, wholePageRefIds: [] }
+          : turnReadContext(precedingUserMessage(prev, i))
+        return withLandedAt(
+          withReadStamp(
+            m,
+            readChips({
+              contextLabel: isInitial ? '' : contextLabel,
+              parts: m.parts as ReadPartLike[],
+              resolvePageName,
+              openPageContext: turn.openPageContext,
+              wholePageRefIds: turn.wholePageRefIds,
+            })
+          )
+        )
+      })
     )
   }, [
     isStreaming,
@@ -2672,6 +2936,7 @@ export function AITerminal() {
             contextLabel,
             parts: message.parts as ReadPartLike[],
             resolvePageName,
+            ...turnReadContext(precedingUserMessage(messages, messageIndex)),
           }))
         : []
     const earlierFolds = [...earlierAnswers(message.metadata)].reverse().map((entry) => ({
@@ -2750,7 +3015,7 @@ export function AITerminal() {
       // read the live title off `allPages` and only fall back to the stamp
       // when the page is gone (deleted since the stamp).
       const liveTargetName = target
-        ? allPages.find((p) => p.id === target.nodeId)?.title ?? target.nodeName
+        ? (allPages.find((p) => p.id === target.nodeId)?.title ?? target.nodeName)
         : undefined
       const status = batchStatus(changeDecisions, part.toolCallId, rawChanges.length)
       // KAN-302: `record.before` is the target page's blocks exactly as they
@@ -2959,7 +3224,11 @@ export function AITerminal() {
                   const recordIds: string[] = []
                   try {
                     for (const id of acceptablePendingDiffIds) {
-                      const recordId = await acceptChanges(id, batchById.get(id) ?? [], allIndices(id))
+                      const recordId = await acceptChanges(
+                        id,
+                        batchById.get(id) ?? [],
+                        allIndices(id)
+                      )
                       if (recordId) recordIds.push(recordId)
                     }
                   } catch (err) {
@@ -3463,43 +3732,56 @@ export function AITerminal() {
           {composerNotice}
         </p>
       )}
-      <ReferencesRow items={referenceItems} onRemove={handleRemoveReference} />
-      <ComposerLine
-        value={input}
-        placeholder={
-          htmlPlaceholder ??
-          (messages.length > 0 ? 'reply, or ask something else' : 'ask pond, or / for blocks')
-        }
-        disabled={!isReady}
-        streaming={isStreaming}
-        canSend={canSend}
-        attachDisabled={isStreaming || !isReady}
-        textareaRef={inputRef}
-        anchorRef={composerRef}
-        research={research}
-        onToggleResearch={() => setResearch((on) => !on)}
-        onChange={setInput}
-        onKeyDown={handleKeyDown}
-        onAttach={handleAttachClick}
-        onSend={handleSend}
-        onStop={stop}
-        // Images/pdf/txt/md upload to storage and ride the message; .csv keeps its
-        // inline-context path. The input is persistent so re-picking the same file
-        // re-fires.
-        attachInput={
-          <input
-            ref={attachInputRef}
-            type="file"
-            multiple
-            accept={`.html,.htm,text/html,.csv,text/csv,${ATTACHMENT_ACCEPT}`}
-            className="hidden"
-            onChange={(e) => {
-              handlePickedFiles(e.target.files)
-              e.target.value = ''
-            }}
-          />
-        }
-      />
+      <div className="flex flex-col gap-[14px]">
+        <ReferencesRow items={referenceItems} onRemove={handleRemoveReference} />
+        <ComposerLine
+          value={input}
+          placeholder={
+            htmlPlaceholder ??
+            (messages.length > 0 ? 'reply, or ask something else' : 'ask pond, or / for blocks')
+          }
+          disabled={!isReady}
+          streaming={isStreaming}
+          canSend={canSend}
+          attachDisabled={isStreaming || !isReady}
+          textareaRef={inputRef}
+          anchorRef={composerRef}
+          research={research}
+          mentionTitles={mentionTitles}
+          onToggleResearch={() => setResearch((on) => !on)}
+          onChange={handleComposerChange}
+          onKeyDown={handleKeyDown}
+          onAttach={handleAttachClick}
+          onSend={handleSend}
+          onStop={stop}
+          // Images/pdf/txt/md upload to storage and ride the message; .csv keeps its
+          // inline-context path. The input is persistent so re-picking the same file
+          // re-fires.
+          attachInput={
+            <input
+              ref={attachInputRef}
+              type="file"
+              multiple
+              accept={`.html,.htm,text/html,.csv,text/csv,${ATTACHMENT_ACCEPT}`}
+              className="hidden"
+              onChange={(e) => {
+                handlePickedFiles(e.target.files)
+                e.target.value = ''
+              }}
+            />
+          }
+        />
+      </div>
+      {mentionQuery && mentionItems.length > 0 && (
+        <PagesPicker
+          items={mentionItems}
+          activeIndex={mentionActiveIndex}
+          onHover={setMentionActiveIndex}
+          onPick={handleMentionPick}
+          onClose={handleMentionClose}
+          anchor={composerCardRef}
+        />
+      )}
       {/* ⌘K's `import a page` (KAN-251) — a dedicated, html-only picker so
           that door never touches the general attach input above. */}
       <input
@@ -3536,6 +3818,7 @@ export function AITerminal() {
         height={composerHeight.height}
         onHeightChange={composerHeight.setHeight}
         onHeightCommit={composerHeight.commitHeight}
+        cardRef={composerCardRef}
       >
         {messagesBody}
       </TerminalDrawer>

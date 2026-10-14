@@ -17,6 +17,7 @@
 import { useLayoutEffect } from 'react'
 import type { KeyboardEvent, ReactNode, RefObject } from 'react'
 import { cn } from '@/lib/utils'
+import { MentionPillOverlay } from './MentionPillOverlay'
 
 export interface ComposerLineProps {
   value: string
@@ -33,6 +34,8 @@ export interface ComposerLineProps {
   anchorRef: RefObject<HTMLDivElement | null>
   /** Deep research is on for the next question. */
   research: boolean
+  /** Titles of the live whole-page references (KAN-99's `@`-picker mention pill). */
+  mentionTitles: readonly string[]
   /** The hidden file input the ＋ opens. */
   attachInput?: ReactNode
   onToggleResearch: () => void
@@ -53,6 +56,7 @@ export const ComposerLine = ({
   textareaRef,
   anchorRef,
   research,
+  mentionTitles,
   attachInput,
   onToggleResearch,
   onChange,
@@ -76,6 +80,7 @@ export const ComposerLine = ({
   return (
     <>
       <div ref={anchorRef} className="relative">
+        <MentionPillOverlay value={value} titles={mentionTitles} textareaRef={textareaRef} />
         <textarea
           ref={textareaRef}
           value={value}
@@ -86,7 +91,7 @@ export const ComposerLine = ({
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={onKeyDown}
           className={cn(
-            'block max-h-[calc(6*1.5em_+_4px)] w-full resize-none overflow-y-auto border-0 bg-transparent px-1.5 py-0.5 font-mono text-[16px] leading-[1.5] tracking-[0.02em] outline-none placeholder:text-mn-text-secondary disabled:opacity-60 md:text-[14px]',
+            'block max-h-[calc(6*1.5em_+_4px)] w-full resize-none overflow-y-auto border-0 bg-transparent px-1.5 py-0.5 font-mono text-[16px] leading-[1.5] tracking-[0.02em] outline-none [scrollbar-gutter:stable] placeholder:text-mn-text-secondary disabled:opacity-60 md:text-[14px]',
             value ? 'text-mn-text' : 'text-mn-text-secondary'
           )}
         />

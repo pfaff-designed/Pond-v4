@@ -23,8 +23,10 @@ import {
   mentionedPages,
   openPageProposalIds,
   parsePageProposals,
+  precedingUserMessage,
   proposalBlocks,
   readChips,
+  turnReadContext,
   withEarlierAnswer,
   type EarlierAnswer,
   type PageProposal,
@@ -242,6 +244,56 @@ describe('readChips — S8, every answer shows what it read', () => {
         resolvePageName: resolve,
       })
     ).toEqual(['Life', 'gone'])
+  })
+
+  it('lists a whole-page @-reference the turn fenced for the model', () => {
+    expect(
+      readChips({
+        contextLabel: 'Life',
+        parts: [],
+        resolvePageName: resolve,
+        wholePageRefIds: ['kr-1'],
+      })
+    ).toEqual(['Life', 'Kitchen renovation'])
+  })
+
+  it('withholds the open page when that turn withheld it (openPageContext: false)', () => {
+    expect(
+      readChips({
+        contextLabel: 'Life',
+        parts: [],
+        resolvePageName: resolve,
+        openPageContext: false,
+        wholePageRefIds: ['kr-1'],
+      })
+    ).toEqual(['Kitchen renovation'])
+  })
+})
+
+describe('precedingUserMessage / turnReadContext — this turn’s own sources (KAN-99)', () => {
+  const thread = [
+    { id: 'u1', role: 'user', metadata: { openPageContext: false, wholePageRefPageIds: ['p-x'] } },
+    { id: 'a1', role: 'assistant', metadata: {} },
+    { id: 'u2', role: 'user', metadata: {} },
+    { id: 'a2', role: 'assistant', metadata: {} },
+  ]
+
+  it('finds the nearest user message above an index', () => {
+    expect(precedingUserMessage(thread, 1)?.id).toBe('u1')
+    expect(precedingUserMessage(thread, 3)?.id).toBe('u2')
+    expect(precedingUserMessage(thread, 0)).toBeUndefined()
+  })
+
+  it('reads openPageContext and wholePageRefPageIds off the question it belongs to', () => {
+    expect(turnReadContext(thread[0])).toEqual({
+      openPageContext: false,
+      wholePageRefIds: ['p-x'],
+    })
+  })
+
+  it('defaults to the pre-KAN-99 shape for a question stamped before this fix', () => {
+    expect(turnReadContext(thread[2])).toEqual({ openPageContext: true, wholePageRefIds: [] })
+    expect(turnReadContext(undefined)).toEqual({ openPageContext: true, wholePageRefIds: [] })
   })
 })
 

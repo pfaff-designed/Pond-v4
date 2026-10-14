@@ -22,8 +22,8 @@
  * also says `pond answered`, in a 6px dot and words — never a ping, badge or count.
  */
 
-import { useLayoutEffect, useRef } from 'react'
-import type { ReactNode } from 'react'
+import { useCallback, useLayoutEffect, useRef } from 'react'
+import type { ReactNode, RefObject } from 'react'
 import { ComposerHandle } from '@/components/molecules/ComposerHandle'
 import {
   COMPOSER_CLEARANCE_VAR,
@@ -48,6 +48,10 @@ export interface TerminalDrawerProps {
   onHeightChange?: (height: number) => void
   /** A finished resize gesture; `null` returns the card to its default. */
   onHeightCommit?: (height: number | null) => void
+  /** The card itself (`data-part="composer-card"`, the one element carrying the
+   *  glass in both states) — exposed so a sibling (the `@` picker, KAN-99) can
+   *  anchor to the visible glass rather than a transparent child of it. */
+  cardRef?: RefObject<HTMLElement | null>
 }
 
 const PLACEMENT =
@@ -69,14 +73,22 @@ export const TerminalDrawer = ({
   height = null,
   onHeightChange,
   onHeightCommit,
+  cardRef: externalCardRef,
 }: TerminalDrawerProps) => {
-  const cardRef = useRef<HTMLElement>(null)
+  const innerCardRef = useRef<HTMLElement>(null)
+  const setCardRef = useCallback(
+    (node: HTMLElement | null) => {
+      innerCardRef.current = node
+      if (externalCardRef) externalCardRef.current = node
+    },
+    [externalCardRef]
+  )
 
   // Publish the card's real footprint on the shell so the page surfaces pad
   // against it as the thread grows. Layout effect: the padding lands in the same
   // frame as the card. Outside a shell (Storybook) there is nothing to publish to.
   useLayoutEffect(() => {
-    const card = cardRef.current
+    const card = innerCardRef.current
     const shell = card?.closest<HTMLElement>('[data-part="shell"]')
     if (!card || !shell) return
     const publish = () =>
@@ -103,7 +115,7 @@ export const TerminalDrawer = ({
   if (collapsed) {
     return (
       <section
-        ref={cardRef}
+        ref={setCardRef}
         aria-label="composer"
         data-part="composer-card"
         data-state={landed ? 'landed' : 'collapsed'}
@@ -169,7 +181,7 @@ export const TerminalDrawer = ({
 
   return (
     <section
-      ref={cardRef}
+      ref={setCardRef}
       aria-label="composer"
       data-part="composer-card"
       data-sized={hasThread || undefined}
@@ -182,7 +194,7 @@ export const TerminalDrawer = ({
     >
       {hasThread && onHeightChange && onHeightCommit && (
         <ComposerHandle
-          cardRef={cardRef}
+          cardRef={innerCardRef}
           height={height}
           onHeightChange={onHeightChange}
           onHeightCommit={onHeightCommit}
