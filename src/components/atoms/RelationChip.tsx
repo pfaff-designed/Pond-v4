@@ -36,7 +36,7 @@ export function RelationChip({
   className,
 }: RelationChipProps) {
   // A container span (never a button) holds the atom + an optional ×, so the two
-  // interactive elements never nest (invalid HTML). QuoteChip follows the same shape.
+  // interactive elements never nest (invalid HTML).
   const base = 'inline-flex max-w-[24ch] items-center gap-1'
 
   const removeButton = onRemove ? (

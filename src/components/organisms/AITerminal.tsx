@@ -757,7 +757,7 @@ export function AITerminal() {
   const composerRef = useRef<HTMLDivElement>(null)
   const isStreaming = status === 'streaming' || status === 'submitted'
 
-  // ── Highlight-to-ask references (#98, board 6e) ───────────────────────────
+  // ── Highlight-to-ask references (KAN-98, board 6e) ────────────────────────
   const [references, setReferences] = useState<PageReference[]>([])
 
   const handleAskFromSelection = useCallback(
@@ -818,7 +818,7 @@ export function AITerminal() {
   }, [])
 
   // The passage a reference points at stays highlighted on the page while
-  // referenced (#98, board 6e). Each block that currently owns a highlight
+  // referenced (KAN-98, board 6e). Each block that currently owns a highlight
   // is tracked so a reference removed from `references` (sent, or its ×
   // clicked) clears that block's decoration too, not just the new set's.
   // Keyed by the reference's own `id`, never array position — two live

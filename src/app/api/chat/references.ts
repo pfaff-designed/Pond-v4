@@ -1,6 +1,6 @@
 /**
  * A reference rides the chat request body as structured data, not a markdown
- * quote prefix (#98, board 6e). `parseReferences` is the body-shape guard;
+ * quote prefix (KAN-98, board 6e). `parseReferences` is the body-shape guard;
  * `referencesContextNote` is the pure block the route injects into the system
  * prompt — the quoted passage is always framed as source material, never as
  * instructions (KAN-309 guard: Pond must not read a hostile reference as a

@@ -90,7 +90,7 @@ export async function POST(req: Request) {
     })
     if (context) contextBlocks.push(context)
 
-    // Highlight-to-ask references (#98, board 6e): resolve each distinct
+    // Highlight-to-ask references (KAN-98, board 6e): resolve each distinct
     // referenced page's current title (a rename since the chip was made must
     // still read right) and quote the passage back labelled with title +
     // block id — never interpolated into the prompt as instructions (KAN-309).

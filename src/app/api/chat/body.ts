@@ -19,7 +19,7 @@ interface ChatBody {
   /** #98 — this turn is a request-changes note (or an outdated revise) on a
    *  propose_changes card; the reply must be a revised diff. */
   requestChanges?: RequestChangesBody
-  /** #98 — page-plus-range references the user highlighted and asked about this turn. */
+  /** KAN-98 — page-plus-range references the user highlighted and asked about this turn. */
   references: PageReference[]
 }
 

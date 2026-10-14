@@ -3,8 +3,8 @@
 /**
  * The composer's `refs` section (`PondComposer` DC) — one pill per live
  * `PageReference`, above the composer text (board `Pond 06.05`, frames 1-2:
- * "references sit above the text and can be removed"). Replaces the old
- * single-slot `QuoteChip`; each item here is independently removable.
+ * "references sit above the text and can be removed"). Each item is
+ * independently removable; there is no single-slot limit.
  */
 
 import { AreaMark } from '@/components/atoms/AreaMark'
