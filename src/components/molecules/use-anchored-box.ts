@@ -1,10 +1,11 @@
 'use client'
 
 /**
- * Where a picker's glass sits: fixed coordinates 4px off its anchor's rect —
- * below it, or above it for a composer that sits at the foot of the screen —
- * tracked across scroll and resize. Given the glass's width, its left edge stays
- * 12px inside the viewport, the palette's clamp.
+ * Where a picker's glass sits: fixed coordinates a given gap (4px by default)
+ * off its anchor's rect — below it, or above it for a composer that sits at
+ * the foot of the screen — tracked across scroll and resize. Given the
+ * glass's width, its left edge stays 12px inside the viewport, the palette's
+ * clamp.
  *
  * The glass portals to `document.body`, so these are viewport coordinates.
  */
@@ -28,7 +29,8 @@ export const clampLeft = (left: number, width: number, viewportWidth: number): n
 export function useAnchoredBox(
   anchor: PickerAnchor,
   side: PickerSide,
-  width = 0
+  width = 0,
+  gap = 4
 ): CSSProperties | undefined {
   const [box, setBox] = useState<CSSProperties | undefined>(undefined)
   useLayoutEffect(() => {
@@ -39,8 +41,8 @@ export function useAnchoredBox(
       const left = width > 0 ? clampLeft(r.left, width, window.innerWidth) : r.left
       setBox(
         side === 'top'
-          ? { bottom: window.innerHeight - r.top + 4, left }
-          : { top: r.bottom + 4, left }
+          ? { bottom: window.innerHeight - r.top + gap, left }
+          : { top: r.bottom + gap, left }
       )
     }
     update()
@@ -50,6 +52,6 @@ export function useAnchoredBox(
       window.removeEventListener('resize', update)
       window.removeEventListener('scroll', update, true)
     }
-  }, [anchor, side, width])
+  }, [anchor, side, width, gap])
   return box
 }

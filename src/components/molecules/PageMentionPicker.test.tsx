@@ -201,6 +201,42 @@ describe('PageMentionPicker — the composer @ popover rows', () => {
     expect(onClose).toHaveBeenCalled()
   })
 
+  it('positions off the given anchor with the DC\'s 10px gap and 12px inset', () => {
+    render(
+      <PageMentionPicker
+        items={ITEMS}
+        activeIndex={0}
+        onHover={jest.fn()}
+        onPick={jest.fn()}
+        onClose={jest.fn()}
+        anchor={ANCHOR}
+      />
+    )
+
+    const popover = document.querySelector('[data-part="popover"]') as HTMLElement
+    // ANCHOR: top 100, bottom 140, left 0, width 320 — default side 'bottom'.
+    expect(popover.style.top).toBe(`${140 + 10}px`) // sPop's `calc(100% + 10px)` gap
+    expect(popover.style.left).toBe('12px') // sPop's `left: 12` inset off the anchor
+    expect(popover.style.width).toBe(`${320 - 24}px`) // sPop's `left: 12, right: 12` inset
+  })
+
+  it('flips above the anchor by the same 10px gap when `side` is "top"', () => {
+    render(
+      <PageMentionPicker
+        items={ITEMS}
+        activeIndex={0}
+        onHover={jest.fn()}
+        onPick={jest.fn()}
+        onClose={jest.fn()}
+        anchor={ANCHOR}
+        side="top"
+      />
+    )
+
+    const popover = document.querySelector('[data-part="popover"]') as HTMLElement
+    expect(popover.style.bottom).toBe(`${window.innerHeight - 100 + 10}px`)
+  })
+
   it('does not close when focus moves from the composer onto one of its own rows', () => {
     const onClose = jest.fn()
     render(<OutsideHarness onClose={onClose} />)

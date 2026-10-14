@@ -767,6 +767,11 @@ export function AITerminal() {
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const composerRef = useRef<HTMLDivElement>(null)
+  // The glass the `@` picker hangs off (`PondComposer.dc.html`'s `sPop`, off the
+  // composer wrap) — `ReferencesRow` + the line + the toolbar, not the line
+  // alone (`composerRef`), so sitting above it clears the references row's
+  // current-page chip instead of covering it.
+  const composerWrapRef = useRef<HTMLDivElement>(null)
   const isStreaming = status === 'streaming' || status === 'submitted'
 
   // ── Highlight-to-ask references (KAN-98, board 6e) ────────────────────────
@@ -922,8 +927,9 @@ export function AITerminal() {
       // (head + padding) plus up to six rows, good enough for a before-mount
       // side choice — nothing has rendered yet to measure (`glyphPickerHeight`'s
       // own precedent). Computed here, at caret-tracking time, rather than in
-      // render: `composerRef` is a ref, and reading one during render is unsafe.
-      const rect = composerRef.current?.getBoundingClientRect()
+      // render: `composerWrapRef` is a ref, and reading one during render is
+      // unsafe.
+      const rect = composerWrapRef.current?.getBoundingClientRect()
       if (rect)
         setMentionSide(sideTowardFreeSpace(rect, window.innerHeight, MENTION_POPOVER_ESTIMATE_PX))
     }
@@ -3708,44 +3714,48 @@ export function AITerminal() {
           {composerNotice}
         </p>
       )}
-      <ReferencesRow items={referenceItems} onRemove={handleRemoveReference} />
-      <ComposerLine
-        value={input}
-        placeholder={
-          htmlPlaceholder ??
-          (messages.length > 0 ? 'reply, or ask something else' : 'ask pond, or / for blocks')
-        }
-        disabled={!isReady}
-        streaming={isStreaming}
-        canSend={canSend}
-        attachDisabled={isStreaming || !isReady}
-        textareaRef={inputRef}
-        anchorRef={composerRef}
-        research={research}
-        mentionTitles={mentionTitles}
-        onToggleResearch={() => setResearch((on) => !on)}
-        onChange={handleComposerChange}
-        onKeyDown={handleKeyDown}
-        onAttach={handleAttachClick}
-        onSend={handleSend}
-        onStop={stop}
-        // Images/pdf/txt/md upload to storage and ride the message; .csv keeps its
-        // inline-context path. The input is persistent so re-picking the same file
-        // re-fires.
-        attachInput={
-          <input
-            ref={attachInputRef}
-            type="file"
-            multiple
-            accept={`.html,.htm,text/html,.csv,text/csv,${ATTACHMENT_ACCEPT}`}
-            className="hidden"
-            onChange={(e) => {
-              handlePickedFiles(e.target.files)
-              e.target.value = ''
-            }}
-          />
-        }
-      />
+      {/* The `@` picker's anchor: `ReferencesRow` + the line + the toolbar, so
+          it sits above (or below) this whole glass, not just the line. */}
+      <div ref={composerWrapRef} className="flex flex-col gap-[14px]">
+        <ReferencesRow items={referenceItems} onRemove={handleRemoveReference} />
+        <ComposerLine
+          value={input}
+          placeholder={
+            htmlPlaceholder ??
+            (messages.length > 0 ? 'reply, or ask something else' : 'ask pond, or / for blocks')
+          }
+          disabled={!isReady}
+          streaming={isStreaming}
+          canSend={canSend}
+          attachDisabled={isStreaming || !isReady}
+          textareaRef={inputRef}
+          anchorRef={composerRef}
+          research={research}
+          mentionTitles={mentionTitles}
+          onToggleResearch={() => setResearch((on) => !on)}
+          onChange={handleComposerChange}
+          onKeyDown={handleKeyDown}
+          onAttach={handleAttachClick}
+          onSend={handleSend}
+          onStop={stop}
+          // Images/pdf/txt/md upload to storage and ride the message; .csv keeps its
+          // inline-context path. The input is persistent so re-picking the same file
+          // re-fires.
+          attachInput={
+            <input
+              ref={attachInputRef}
+              type="file"
+              multiple
+              accept={`.html,.htm,text/html,.csv,text/csv,${ATTACHMENT_ACCEPT}`}
+              className="hidden"
+              onChange={(e) => {
+                handlePickedFiles(e.target.files)
+                e.target.value = ''
+              }}
+            />
+          }
+        />
+      </div>
       {mentionQuery && (
         <PageMentionPicker
           items={mentionItems}
@@ -3753,7 +3763,7 @@ export function AITerminal() {
           onHover={setMentionActiveIndex}
           onPick={handleMentionPick}
           onClose={handleMentionClose}
-          anchor={composerRef}
+          anchor={composerWrapRef}
           side={mentionSide}
         />
       )}

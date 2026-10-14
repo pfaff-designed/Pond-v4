@@ -19,12 +19,19 @@
  * The glass listens on the document in the capture phase so ↑↓↵esc reach it
  * before the composer's own textarea, which never loses focus (`SourcePicker
  * .tsx`'s own pattern). It portals to `document.body` at a fixed box off the
- * anchor's rect. The DC's `sPop` is `left: 12, right: 12` off the composer —
- * the composer's own width, not a fixed picker width like `SourcePicker`'s
- * 300/340 — so the glass's width is read straight off the anchor's own rect
- * rather than `useAnchoredBox`'s width-clamp param: that param clamps `left`
- * against a glass width independent of its anchor, which this glass never
- * has (its width IS its anchor's).
+ * anchor's rect. The anchor is the composer's own glass (the card that holds
+ * `ReferencesRow`, the line and the toolbar) — not the line alone — so that
+ * sitting above it (the usual case: the composer sits at the foot of the
+ * screen) clears the references row's current-page chip rather than
+ * covering it. The DC's `sPop` sits `bottom: calc(100% + 10px)` off that
+ * glass, inset `left: 12, right: 12` — a 10px gap (`POPOVER_GAP_PX`, not
+ * `useAnchoredBox`'s 4px default) and a 12px inset (`POPOVER_INSET_PX`) off
+ * each side of the anchor's own width, not a fixed picker width like
+ * `SourcePicker`'s 300/340 — so the glass's width is read straight off the
+ * anchor's own rect (minus the inset) rather than `useAnchoredBox`'s
+ * width-clamp param: that param clamps `left` against a glass width
+ * independent of its anchor, which this glass never has (its width IS its
+ * anchor's, inset by 12 on each side).
  */
 
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
@@ -70,6 +77,11 @@ const ROW =
   'flex cursor-default items-center gap-[10px] rounded-[14px] px-[10px] py-[8px] font-sans text-[13px] text-mn-text'
 
 const SUB = 'min-w-0 truncate text-[12.5px] text-mn-text-secondary'
+
+/** `PondComposer.dc.html`'s `sPop`: `bottom: calc(100% + 10px)` off the anchor. */
+const POPOVER_GAP_PX = 10
+/** `PondComposer.dc.html`'s `sPop`: `left: 12, right: 12` off the anchor. */
+const POPOVER_INSET_PX = 12
 
 /** The anchor's live value, ref or raw — the one place both effects below (and the width effect) read it from. */
 function resolveAnchorBox(anchor: MentionAnchor): MentionAnchorBox | null {
@@ -146,14 +158,19 @@ export function PageMentionPicker({
     return () => anchorEl.removeEventListener('focusout', onFocusOut)
   }, [anchor, onClose])
 
-  const position = useAnchoredBox(anchor, side, 0)
-  // `useAnchoredBox` only tracks top/bottom/left; the glass's width is its
-  // anchor's own, read the same way (initial rect, then resize/scroll).
-  const [width, setWidth] = useState<number>()
+  const position = useAnchoredBox(anchor, side, 0, POPOVER_GAP_PX)
+  // `useAnchoredBox`'s own `left` is the anchor's unclamped edge (width 0 skips
+  // its clamp); the DC insets 12px off each side of the anchor's own width, so
+  // both `left` and `width` are read here, off the anchor's own rect (initial,
+  // then resize/scroll), and override `position`'s `left` below.
+  const [box, setBox] = useState<{ left: number; width: number }>()
   useLayoutEffect(() => {
     const el = resolveAnchorBox(anchor)
     if (!el) return
-    const update = () => setWidth(el.getBoundingClientRect().width)
+    const update = () => {
+      const r = el.getBoundingClientRect()
+      setBox({ left: r.left + POPOVER_INSET_PX, width: Math.max(0, r.width - POPOVER_INSET_PX * 2) })
+    }
     update()
     window.addEventListener('resize', update)
     window.addEventListener('scroll', update, true)
@@ -164,7 +181,7 @@ export function PageMentionPicker({
   }, [anchor])
 
   if (typeof document === 'undefined') return null
-  const style = position && width !== undefined ? { ...position, width } : undefined
+  const style = position && box ? { ...position, ...box } : undefined
   return createPortal(
     <div
       ref={glassRef}
