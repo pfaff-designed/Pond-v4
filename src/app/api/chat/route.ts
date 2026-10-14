@@ -35,6 +35,25 @@ import { requestChangesContextNote } from './request-changes'
 import { referencesContextNote, wholePageReferenceNote } from './references'
 import { parseChatBody } from './body'
 import { isWholePageReference } from '@/lib/references/reference'
+import { mentionPillRuns } from '@/lib/references/mention-pill'
+
+/**
+ * Remove each `@<title>` run matching a whole-page reference's title (the same
+ * runs the composer's mention pill paints, KAN-99) before the text reaches
+ * parseMentions, so a picked page is never resolved twice — once as a
+ * structured reference, once again as a legacy KAN-19 @mention.
+ */
+function stripWholePageMentions(text: string, titles: readonly string[]): string {
+  const runs = mentionPillRuns(text, titles)
+  if (runs.length === 0) return text
+  let result = ''
+  let last = 0
+  for (const run of runs) {
+    result += text.slice(last, run.start)
+    last = run.end
+  }
+  return result + text.slice(last)
+}
 
 /** Plain text of the most recent user message, for @mention parsing. */
 function latestUserText(messages: UIMessage[]): string {
@@ -82,10 +101,28 @@ export async function POST(req: Request) {
     const linkContext = await fetchLinkContext(userText)
     if (linkContext) contextBlocks.push(linkContext)
 
+    // A whole-page reference (KAN-99's `@`-picker chip) inserts `@<title>` into
+    // the input as plain text, which the legacy KAN-19 @mention path below would
+    // otherwise resolve a SECOND time — and for a multi-word title, parseMentions'
+    // bare-word grammar only reads the first word, which can resolve a different
+    // page entirely. Fetch these pages once, up front, both to strip their
+    // mention text before it reaches buildChatContext/parseMentions and to reuse
+    // for the whole-page note below (no second fetch per page).
+    const wholePageRefs = references.filter(isWholePageReference)
+    const wholePageData = new Map<string, Awaited<ReturnType<typeof fetchNodeContext>>>()
+    await Promise.all(
+      [...new Set(wholePageRefs.map((r) => r.pageId))].map(async (pageId) => {
+        wholePageData.set(pageId, await fetchNodeContext(supabase, user.id, pageId))
+      })
+    )
+    const wholePageTitles = [...wholePageData.values()].flatMap((data) => (data ? [data.title] : []))
+    const userTextForMentions =
+      wholePageTitles.length > 0 ? stripWholePageMentions(userText, wholePageTitles) : userText
+
     const context = await buildChatContext(supabase, user.id, {
       nodeId,
       nodeType,
-      latestUserText: userText,
+      latestUserText: userTextForMentions,
       // #312: the composer reads only this pond (`s6m5`).
       pondId,
     })
@@ -101,7 +138,6 @@ export async function POST(req: Request) {
     // the open node, whose content the auto-injected block above already carries.
     if (references.length > 0) {
       const passageRefs = references.filter((r) => !isWholePageReference(r))
-      const wholePageRefs = references.filter(isWholePageReference)
 
       if (passageRefs.length > 0) {
         const titles = new Map<string, string>()
@@ -125,11 +161,11 @@ export async function POST(req: Request) {
         (pageId) => pageId !== nodeId
       )
       if (otherPageIds.length > 0) {
-        const pages = await Promise.all(
-          otherPageIds.map((pageId) => fetchNodeContext(supabase, user.id, pageId))
-        )
         const note = wholePageReferenceNote(
-          pages.flatMap((data) => (data ? [{ pageTitle: data.title, context: formatNodeContext(data) }] : []))
+          otherPageIds.flatMap((pageId) => {
+            const data = wholePageData.get(pageId)
+            return data ? [{ pageTitle: data.title, context: formatNodeContext(data) }] : []
+          })
         )
         if (note) contextBlocks.push(note)
       }

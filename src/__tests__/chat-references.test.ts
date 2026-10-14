@@ -28,8 +28,12 @@ jest.mock('@/lib/conversation/transcript', () => ({
 const mockFetchNodeContext = jest.fn(async (_sb: unknown, _userId: string, pageId: string) =>
   pageId === 'page-1' ? { type: 'page', title: 'the wild places', documents: [], children: [] } : null
 )
+const mockBuildChatContext = jest.fn(
+  async (_sb: unknown, _userId: string, _opts: { latestUserText?: string }) => null as string | null
+)
 jest.mock('@/lib/context/assemble', () => ({
-  buildChatContext: async () => null,
+  buildChatContext: (...args: [unknown, string, { latestUserText?: string }]) =>
+    mockBuildChatContext(...args),
   fetchNodeContext: (...args: [unknown, string, string]) => mockFetchNodeContext(...args),
   formatNodeContext: (data: { title: string }) => `CONTENT:${data.title}`,
 }))
@@ -189,6 +193,34 @@ describe('POST /api/chat with references', () => {
     })
     const args = mockedStreamText.mock.calls[0][0] as { system?: string }
     expect(args.system ?? '').not.toContain('(whole page)')
+  })
+
+  it('a whole-page reference fetches its page exactly once and strips its @mention text before parseMentions (never a double send)', async () => {
+    mockFetchNodeContext.mockImplementation(async (_sb, _userId, pageId) =>
+      pageId === 'page-1'
+        ? { type: 'page', title: 'the wild places', documents: [], children: [] }
+        : pageId === 'page-2'
+          ? { type: 'page', title: 'kitchen renovation', documents: [], children: [] }
+          : null
+    )
+    await post({
+      messages: [
+        { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'with @kitchen renovation' }] },
+      ],
+      nodeId: 'page-1',
+      references: [{ pageId: 'page-2', blockId: null, range: null, quotedText: '' }],
+    })
+
+    // Fetched exactly once for the whole-page note, not again for the (now
+    // stripped) @mention text.
+    expect(mockFetchNodeContext.mock.calls.filter(([, , pageId]) => pageId === 'page-2')).toHaveLength(1)
+
+    const [, , opts] = mockBuildChatContext.mock.calls[0] as [unknown, string, { latestUserText?: string }]
+    expect(opts.latestUserText).toBe('with ')
+
+    const args = mockedStreamText.mock.calls[0][0] as { system?: string }
+    expect(args.system).toContain('kitchen renovation')
+    expect(args.system ?? '').not.toContain('Referenced: @kitchen')
   })
 
   it('a reference with a non-empty blockId (the existing KAN-98 shape) still goes through referencesContextNote untouched', async () => {
