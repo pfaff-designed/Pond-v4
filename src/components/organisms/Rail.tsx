@@ -1855,6 +1855,7 @@ export function Rail() {
         }}
         title={`Delete "${confirmTarget?.title || 'Untitled'}"?`}
         blastRadius={blastRadiusLabel(confirmCount)}
+        consequence="It stays in the trash for 30 days. Restore it from the change log."
         onConfirm={handleConfirmDelete}
       />
     </>
