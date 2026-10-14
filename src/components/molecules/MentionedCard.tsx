@@ -35,10 +35,12 @@ export const MENTIONED_LABEL = 'mentioned'
 
 export interface MentionedCardProps {
   mentioned: MentionedPage[]
+  /** Open the row's own page — only called for a row whose `ref` resolves. */
+  onOpenMention?: (ref: string, title: string) => void
   className?: string
 }
 
-export function MentionedCard({ mentioned, className }: MentionedCardProps) {
+export function MentionedCard({ mentioned, onOpenMention, className }: MentionedCardProps) {
   if (mentioned.length === 0) return null
 
   return (
@@ -51,15 +53,25 @@ export function MentionedCard({ mentioned, className }: MentionedCardProps) {
       )}
     >
       <span className={pageEyebrowClass}>{MENTIONED_LABEL}</span>
-      {mentioned.map((m) => (
+      {mentioned.map((m, i) => (
         <div
-          key={m.pageId}
+          key={`${m.ref ?? m.title}-${i}`}
           data-part="mentioned-row"
           className="border-mn-hair flex items-baseline gap-3 border-b pb-[9px] text-[14px]"
         >
           <KindDot />
           <span data-part="mentioned-title" className="min-w-0 flex-1 text-foreground">
-            {m.title}
+            {m.ref ? (
+              <button
+                type="button"
+                onClick={() => onOpenMention?.(m.ref as string, m.title)}
+                className="underline-offset-2 transition-colors hover:text-mn-text-secondary hover:underline"
+              >
+                {m.title}
+              </button>
+            ) : (
+              m.title
+            )}
           </span>
           {m.note && (
             <span data-part="mentioned-note" className="text-mn-text-secondary text-[12.5px]">
