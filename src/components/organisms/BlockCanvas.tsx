@@ -91,8 +91,9 @@ import { PREMADE_TEMPLATES } from '@/lib/templates/premade'
 import { instantiateTemplate, type InstantiatedTemplate } from '@/lib/templates/instantiate'
 import { getTemplate, listTemplates } from '@/lib/templates/client'
 import { templateBlocksFrom } from '@/lib/templates/from-page'
-import { stampProvenance } from '@/lib/templates/provenance'
+import { stampProvenance, siblingTemplateRanking } from '@/lib/templates/provenance'
 import { applyTemplate, type TemplateApplyPick } from '@/lib/templates/apply'
+import { justSaved } from '@/lib/templates/just-saved'
 import { inferListDatabaseTitle } from '@/lib/pages/list-to-table'
 import { replaceBlockWithView } from '@/lib/pages/promote-table'
 import {
@@ -307,14 +308,22 @@ export function BlockCanvas({
     anchor: Element | null
   } | null>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
-  // What the picker lists, read only while it is open: the databases root's
-  // children off the shared ['pages'] cache, and one count query over the pond's
-  // records (`source-databases.ts`). Counts refetch on each open, so a record
-  // added through a view is reflected the next time the picker is summoned.
-  const { data: pageRows = [] } = useQuery({
+  // A page with nothing on it yet opens the menu on its templates (6f). Read
+  // here (not just below, where it's used again) because the pages query's
+  // `enabled` needs it: a non-blank `/` has no sibling ranking to look up, so
+  // it must not fetch `pageRows` at all.
+  const isBlankBesides = (index: number) =>
+    blocks.every((b, bi) => bi === index || (b.type === 'text' && b.content.trim() === ''))
+  const blankMenuOpen = slashMenuOpenAt !== null && isBlankBesides(slashMenuOpenAt)
+  // The shared ['pages'] cache: the source picker's databases root AND (KAN-138)
+  // the blank list's parent/sibling lookup, so it's read while either is open —
+  // the ranking query below needs this one's data `isSuccess` first, or a `/`
+  // opened before pageRows has ever loaded would rank off a `null` parentId
+  // (the pond's ROOT pages) and flash the wrong order once pageRows lands.
+  const { data: pageRows = [], isSuccess: pageRowsLoaded } = useQuery({
     queryKey: pagesKey(pondId),
     queryFn: () => fetchPages(pondId),
-    enabled: sourcePicker !== null,
+    enabled: sourcePicker !== null || blankMenuOpen,
   })
   const { data: recordCounts } = useQuery({
     queryKey: ['record-counts', pondId],
@@ -352,9 +361,32 @@ export function BlockCanvas({
     [templates]
   )
   const slashSize: PickerSize = useBelowMd() ? 'mobile' : 'desktop'
-  // A page with nothing on it yet opens the menu on its templates (6f).
-  const isBlankBesides = (index: number) =>
-    blocks.every((b, bi) => bi === index || (b.type === 'text' && b.content.trim() === ''))
+
+  // KAN-138: this page's parent and its title, off the same `pageRows` read
+  // above — `null` when this page has no parent at all (distinct from a real,
+  // title-less parent, which falls back to `Untitled` below).
+  const parentId = pageRows.find((r) => r.id === pageId)?.parent_id ?? null
+  const parentTitle = useMemo(() => {
+    if (parentId === null) return null
+    return pageRows.find((r) => r.id === parentId)?.title.trim() || 'Untitled'
+  }, [pageRows, parentId])
+
+  // The parent's other children's template use (KAN-138), read only while the
+  // blank list is open AND `pageRows` has resolved at least once — before
+  // that, `parentId` falls back to `null`, which would rank the pond's ROOT
+  // pages' template use, not this page's actual siblings.
+  const { data: siblingRanking = [] } = useQuery({
+    queryKey: ['sibling-template-ranking', pondId, parentId],
+    queryFn: async () => {
+      const supabase = getSupabase()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      return user ? siblingTemplateRanking(supabase, user.id, pondId, parentId) : []
+    },
+    enabled: blankMenuOpen && pageRowsLoaded,
+    staleTime: 0,
+  })
 
   // Which block index has the block menu open (null = closed).
   const [menuOpenAt, setMenuOpenAt] = useState<number | null>(null)
@@ -682,18 +714,20 @@ export function BlockCanvas({
   // copied with its content and stamped once with where it came from. Once the page
   // exists, the `/` that summoned the menu goes — read against the blocks as they
   // are then, since the awaits below outlive any snapshot. A failure leaves it.
+  // Returns whether the page actually got made — KAN-138's nested-page apply
+  // path needs this to know its write landed before retiring "just saved".
   const makePage = async (
     source: NewPage | null,
     placement: 'sibling' | 'child',
     target: SlashTarget
-  ) => {
-    if (!source) return
+  ): Promise<boolean> => {
+    if (!source) return false
     try {
       const supabase = getSupabase()
       const {
         data: { user },
       } = await supabase.auth.getUser()
-      if (!user) return
+      if (!user) return false
       const parentId =
         placement === 'child' ? pageId : ((await getPage(supabase, pageId))?.parentId ?? null)
       const created = await createPage(supabase, user.id, {
@@ -719,8 +753,10 @@ export function BlockCanvas({
       )
       void queryClient.invalidateQueries({ queryKey: pagesKey() })
       pageLinks.navigateToPage({ id: created.id, title: created.title, type: created.type })
+      return true
     } catch (err) {
       console.error('Failed to make the page', err)
+      return false
     }
   }
 
@@ -832,6 +868,10 @@ export function BlockCanvas({
       )
       return
     }
+    // KAN-138: applying a `yours` template retires its "just saved" lead — but
+    // only once the blocks write above actually landed; a failed apply keeps
+    // the lead so the person's retry still sees it first.
+    if (pick.origin === 'yours' && pondId) justSaved.clear(pondId, pick.id)
     if (applied.schema) {
       try {
         await defineSchema(supabase, pageId, applied.schema)
@@ -867,7 +907,10 @@ export function BlockCanvas({
       await applyTemplateInPlace(pick, target)
       return
     }
-    return makePage(await newPageFromPick(pick), 'child', target)
+    const made = await makePage(await newPageFromPick(pick), 'child', target)
+    // KAN-138: the nested-page apply path retires `yours · just saved` too —
+    // but only once the page actually got made; a failed apply keeps the lead.
+    if (made && pick.origin === 'yours' && pondId) justSaved.clear(pondId, pick.id)
   }
 
   // The foot add (UI-audit Slice 2a): drop an empty text block at the end, ready
@@ -945,6 +988,9 @@ export function BlockCanvas({
         blank={isBlankBesides(i)}
         slashSize={slashSize}
         yourTemplates={yourTemplates}
+        siblingRanking={siblingRanking}
+        justSavedId={pondId ? justSaved.get(pondId) : null}
+        parentTitle={parentTitle}
         onSlashSelect={(row, at) => handleSlashSelect(i, row, at)}
         onSlashPickTemplate={(pick, at) => handleSlashPickTemplate(i, pick, at)}
         onSlashClose={closeSlashMenu}
@@ -1198,6 +1244,9 @@ function BlockEditor({
   blank = false,
   slashSize = 'desktop',
   yourTemplates,
+  siblingRanking = [],
+  justSavedId = null,
+  parentTitle = null,
   onSlashSelect,
   onSlashClose,
   menuOpen,
@@ -1232,6 +1281,12 @@ function BlockEditor({
   blank?: boolean
   slashSize?: PickerSize
   yourTemplates?: readonly YourTemplate[]
+  /** The blank list's ranking (KAN-138): the parent's other children, by `siblingTemplateRanking` count. */
+  siblingRanking?: readonly string[]
+  /** The template saved this session and not yet applied. */
+  justSavedId?: string | null
+  /** The parent page's title, for the `used in {parent}` hint. */
+  parentTitle?: string | null
   /** `at` is the `/` line the menu opened on inside the block, if it did. */
   onSlashSelect?: (row: SlashRow, at: SlashLineAt | null) => void
   onSlashPickTemplate?: (pick: TemplatePick, at: SlashLineAt | null) => void
@@ -1459,6 +1514,9 @@ function BlockEditor({
           onSelect={(row) => onSlashSelect?.(row, slash.line)}
           onPickTemplate={onSlashPickTemplate && ((pick) => onSlashPickTemplate(pick, slash.line))}
           yourTemplates={yourTemplates}
+          siblingRanking={siblingRanking}
+          justSavedId={justSavedId}
+          parentTitle={parentTitle}
           // A `/` line has text around it, so the page is not blank.
           leadWithTemplates={slash.line ? false : blank}
           onClose={onSlashClose ?? (() => {})}

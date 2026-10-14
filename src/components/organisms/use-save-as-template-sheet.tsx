@@ -17,6 +17,7 @@ import { getPage } from '@/lib/pages/client'
 import { createClient } from '@/lib/supabase/client'
 import { createTemplate } from '@/lib/templates/client'
 import { templateBlocksFrom } from '@/lib/templates/from-page'
+import { justSaved } from '@/lib/templates/just-saved'
 import { templateSummary } from '@/lib/templates/summary'
 
 export const useSaveAsTemplateSheet = ({
@@ -82,7 +83,7 @@ export const useSaveAsTemplateSheet = ({
         data: { user },
       } = await supabase.auth.getUser()
       if (!user) throw new Error('Not signed in')
-      await createTemplate(supabase, user.id, {
+      const created = await createTemplate(supabase, user.id, {
         name,
         // Saved shapes are the generic `page` kind; the twelve specific kinds
         // belong to the premades (#155), which are code constants, not rows.
@@ -92,6 +93,9 @@ export const useSaveAsTemplateSheet = ({
         // invisible in every pond including this one.
         pondId,
       })
+      // KAN-138: leads the blank list, hinted `yours · just saved`, until it is
+      // first applied or the tab closes.
+      if (pondId) justSaved.set(pondId, created.id)
       close()
     } catch (err) {
       // A same-pond name collision is the person's to resolve — `createTemplate`
