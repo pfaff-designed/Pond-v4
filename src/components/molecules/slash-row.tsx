@@ -48,6 +48,8 @@ export function Row({
   onHover,
   onPick,
   size = 'desktop',
+  mark,
+  chrome,
 }: {
   entry: RowEntry
   selected: boolean
@@ -55,6 +57,10 @@ export function Row({
   size?: PickerSize
   onHover: () => void
   onPick: () => void
+  /** A 13×13 mark (e.g. `AreaMark`/`KindDot`) drawn when `entry.icon` is absent — the composer's `@` popover (board 6e frame 3). */
+  mark?: ReactNode
+  /** Overrides the row/label/sub classes for a kind that isn't the mono picker's own (the composer popover's sans row). */
+  chrome?: { row: string; label: string; sub: string }
 }) {
   const ink = entry.faint ? 'text-mn-text-meta' : 'text-mn-text'
   return (
@@ -62,17 +68,26 @@ export function Row({
       role="option"
       aria-selected={selected}
       data-part="row"
-      className={`${SLASH_SIZES[size].row} ${ink} ${selected ? 'bg-mn-text/[0.07]' : 'bg-transparent'}`}
+      className={`${chrome?.row ?? SLASH_SIZES[size].row} ${ink} ${selected ? 'bg-mn-text/[0.07]' : 'bg-transparent'}`}
       onMouseEnter={onHover}
       onMouseDown={(e) => e.preventDefault()}
       onClick={onPick}
     >
-      {entry.icon && (
+      {entry.icon ? (
         <span data-part="icon" className="flex text-mn-text-meta">
           <Mark d={entry.icon.d} filled={entry.icon.filled} />
         </span>
+      ) : (
+        mark && (
+          <span
+            data-part="icon"
+            className="flex h-[13px] w-[13px] flex-none items-center justify-center"
+          >
+            {mark}
+          </span>
+        )
       )}
-      <span data-part="label" className="min-w-0 truncate font-normal">
+      <span data-part="label" className={`min-w-0 truncate ${chrome?.label ?? 'font-normal'}`}>
         <span data-part="pre">{entry.pre}</span>
         <span data-part="hit" className={MATCH}>
           {entry.hit}
@@ -80,7 +95,7 @@ export function Row({
         <span data-part="post">{entry.post}</span>
       </span>
       {entry.sub && (
-        <span data-part="sub" className={SUB}>
+        <span data-part="sub" className={chrome?.sub ?? SUB}>
           {entry.sub}
         </span>
       )}
