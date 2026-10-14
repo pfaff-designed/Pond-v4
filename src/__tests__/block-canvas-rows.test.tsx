@@ -112,6 +112,23 @@ describe('rows in BlockCanvas', () => {
     }
   })
 
+  // 6x motion: room-making and drop-settling share the one width transition
+  // on each block's sizing div (not a drop-only special case) — it fires on
+  // every width change, which room-making and settling both are.
+  it("each block's sizing div transitions width over the 280ms settle token, with a reduced-motion opt-out", () => {
+    const half1: Block = { id: 'b-1', type: 'text', content: 'left', width: '1/2' }
+    const half2: Block = { id: 'b-2', type: 'text', content: 'right', width: '1/2' }
+    renderCanvas([half1, half2])
+
+    for (const id of ['b-1', 'b-2']) {
+      const className = blockRoot(id).parentElement!.className
+      expect(className).toContain('transition-[width]')
+      expect(className).toContain('duration-[var(--motion-settle)]')
+      expect(className).toContain('ease-[var(--ease-mn)]')
+      expect(className).toContain('motion-reduce:transition-none')
+    }
+  })
+
   it('draws a `full` block after a row as a flat sibling in the canvas, full width', () => {
     const half1: Block = { id: 'b-1', type: 'text', content: 'left', width: '1/2' }
     const half2: Block = { id: 'b-2', type: 'text', content: 'right', width: '1/2' }
