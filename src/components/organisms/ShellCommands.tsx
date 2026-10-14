@@ -115,9 +115,16 @@ function readRecents(): RecentEntry[] {
   }
 }
 
-/** Where ⌘Z/⇧⌘Z belongs to the field itself (Tiptap's own undo, an input, a select). */
+/** Where ⌘Z/⇧⌘Z belongs to the field itself (Tiptap's own undo, an input, a select) —
+ * except an empty page-title input (`data-pond-page-title`), which has nothing of
+ * its own to undo, so the chord falls through to the session step instead. */
 const isEditable = (el: Element | null): boolean =>
-  el !== null && el.matches('input, textarea, select, [contenteditable]')
+  el !== null &&
+  el.matches('input, textarea, select, [contenteditable]') &&
+  !isEmptyPageTitleInput(el)
+
+const isEmptyPageTitleInput = (el: Element): boolean =>
+  el.hasAttribute('data-pond-page-title') && (el as HTMLInputElement).value === ''
 
 function writeRecent(entry: RecentEntry) {
   try {

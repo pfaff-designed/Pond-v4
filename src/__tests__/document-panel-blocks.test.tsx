@@ -47,10 +47,14 @@ jest.mock('@/lib/templates/client', () => ({
 const mockGetPage = jest.fn()
 const mockUpdateTitle = jest.fn().mockResolvedValue(undefined)
 const mockCreatePage = jest.fn()
+const mockSaveBlocks = jest.fn().mockResolvedValue(undefined)
+const mockSaveProps = jest.fn().mockResolvedValue(undefined)
 jest.mock('@/lib/pages/client', () => ({
   getPage: (...args: unknown[]) => mockGetPage(...args),
   updateTitle: (...args: unknown[]) => mockUpdateTitle(...args),
   createPage: (...args: unknown[]) => mockCreatePage(...args),
+  saveBlocks: (...args: unknown[]) => mockSaveBlocks(...args),
+  saveProps: (...args: unknown[]) => mockSaveProps(...args),
   defineSchema: jest.fn().mockResolvedValue(undefined),
   deletePage: jest.fn().mockResolvedValue(undefined),
 }))
@@ -58,6 +62,12 @@ jest.mock('@/lib/pages/client', () => ({
 const mockCommitBlocks = jest.fn().mockResolvedValue(undefined)
 jest.mock('@/lib/pages/commit', () => ({
   commitBlocks: (...args: unknown[]) => mockCommitBlocks(...args),
+}))
+jest.mock('@/lib/change-log/store', () => ({
+  appendOwnEdit: jest.fn().mockResolvedValue({ id: 'record-1' }),
+}))
+jest.mock('@/lib/change-log/session-undo', () => ({
+  sessionUndo: { remember: jest.fn() },
 }))
 
 const blocks: Block[] = [
@@ -96,6 +106,8 @@ beforeEach(() => {
   jest.clearAllMocks()
   mockListTemplates.mockResolvedValue([])
   mockCreatePage.mockResolvedValue({ id: 'made-1', type: 'page', title: 'untitled' })
+  mockSaveBlocks.mockResolvedValue(undefined)
+  mockSaveProps.mockResolvedValue(undefined)
 })
 
 describe('DocumentPanel block rendering (via the module registry)', () => {
@@ -360,21 +372,30 @@ describe('the / menu on an empty page makes pages', () => {
         blocks: [{ id: 'old-1', type: 'text', content: 'chickpeas, harissa' }],
       },
     ])
+    mockGetPage.mockResolvedValue({
+      id: 'page-1',
+      parentId: null,
+      type: 'page',
+      title: 'Health',
+      blocks: [],
+    })
     renderWith({ id: 'page-1', parentId: null, type: 'page', title: 'Health', blocks: [] })
     const { editor } = await openSlash('')
     expect(editor).toBeInTheDocument()
     fireEvent.click(await screen.findByText('weeknight recipe'))
 
-    await waitFor(() => expect(mockCreatePage).toHaveBeenCalled())
-    const input = mockCreatePage.mock.calls[0][2]
-    expect(input).toMatchObject({
-      parentId: 'page-1',
-      title: 'weeknight recipe',
-      props: { madeFromTemplate: { templateId: 't1', name: 'weeknight recipe' } },
-    })
-    expect(input.blocks).toEqual([
+    // A blank page's pick applies in place (KAN-124): this page's own blocks
+    // become the template's stack, never a nested page.
+    await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalled())
+    expect(mockCreatePage).not.toHaveBeenCalled()
+    const appliedBlocks = mockSaveBlocks.mock.calls[0][2]
+    expect(appliedBlocks).toEqual([
       { id: expect.not.stringMatching(/^old-1$/), type: 'text', content: 'chickpeas, harissa' },
     ])
+    await waitFor(() => expect(mockSaveProps).toHaveBeenCalled())
+    expect(mockSaveProps.mock.calls[0][2]).toMatchObject({
+      madeFromTemplate: { templateId: 't1', name: 'weeknight recipe' },
+    })
   })
 })
 

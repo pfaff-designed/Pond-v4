@@ -499,7 +499,7 @@ export async function matchPages(
  * {@link defineSchema}, which read-modify-write through the merge helpers so the
  * reserved `_schema` key (and sibling values) can never be clobbered.
  */
-async function saveProps(
+export async function saveProps(
   supabase: SupabaseClient<Database>,
   id: string,
   props: Record<string, unknown>

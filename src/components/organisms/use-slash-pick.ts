@@ -123,7 +123,8 @@ interface SlashPickOptions {
   ) => void
   /** Makes a page; the page changes only once it is made. */
   makePageFromRow: (placement: 'sibling' | 'child', target: SlashTarget) => void
-  makePageFromTemplate: (pick: TemplatePick, target: SlashTarget) => void
+  /** `index` is the picked block's position — a blank page applies in place instead (KAN-124). */
+  makePageFromTemplate: (pick: TemplatePick, target: SlashTarget, index: number) => void
 }
 
 /**
@@ -174,7 +175,7 @@ export const useSlashPick = ({
     closeSlashMenu()
     const target = targetOf(index, at)
     if (!target) return
-    makePageFromTemplate(pick, target)
+    makePageFromTemplate(pick, target, index)
   }
 
   return {
