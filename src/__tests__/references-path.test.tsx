@@ -415,6 +415,37 @@ describe('the open page auto-references itself, deduped against a passage (KAN-9
     ])
   })
 
+  it('anchors the @ picker to the visible composer card, not a transparent child of it', async () => {
+    const user = userEvent.setup()
+    renderSurface([PAGE2])
+    await waitComposerReady()
+
+    // The card (`TerminalDrawer`'s `[data-part="composer-card"]`) is the one
+    // element that carries the glass — a distinctive rect here, left at
+    // jsdom's all-zero default on every other element, proves the popover's
+    // position comes from the card and not the footer's own (invisible) wrap.
+    const card = document.querySelector('[data-part="composer-card"]') as HTMLElement
+    jest.spyOn(card, 'getBoundingClientRect').mockReturnValue({
+      top: 200,
+      bottom: 240,
+      left: 40,
+      right: 400,
+      width: 360,
+      height: 40,
+      x: 40,
+      y: 200,
+      toJSON: () => {},
+    })
+
+    await user.type(screen.getByRole('textbox', { name: 'Message Pond' }), '@')
+    await screen.findByText('pages')
+
+    const popover = document.querySelector('[data-part="popover"]') as HTMLElement
+    expect(popover.style.top).toBe('250px') // the card's bottom (240) + the DC's 10px gap
+    expect(popover.style.left).toBe('52px') // the card's left (40) + the DC's 12px inset
+    expect(popover.style.width).toBe('336px') // the card's width (360) − 12px off each side
+  })
+
   it('a passage ask on the current page suppresses its whole-page chip without removing the passage chip', async () => {
     const user = userEvent.setup()
     renderSurface()

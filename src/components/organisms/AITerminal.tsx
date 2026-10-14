@@ -767,11 +767,13 @@ export function AITerminal() {
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const composerRef = useRef<HTMLDivElement>(null)
-  // The glass the `@` picker hangs off (`PondComposer.dc.html`'s `sPop`, off the
-  // composer wrap) — `ReferencesRow` + the line + the toolbar, not the line
-  // alone (`composerRef`), so sitting above it clears the references row's
-  // current-page chip instead of covering it.
-  const composerWrapRef = useRef<HTMLDivElement>(null)
+  // The glass the `@` picker hangs off (`PondComposer.dc.html`'s `sPop`, off
+  // the CARD) — `TerminalDrawer`'s own `[data-part="composer-card"]`, the one
+  // element that carries the glass whether or not a thread is open. Anchoring
+  // instead to the transparent wrapper around just `ReferencesRow` + the line
+  // + the toolbar sat the popover's bottom edge inside the visible card, over
+  // the thread, whenever one was open.
+  const composerCardRef = useRef<HTMLElement | null>(null)
   const isStreaming = status === 'streaming' || status === 'submitted'
 
   // ── Highlight-to-ask references (KAN-98, board 6e) ────────────────────────
@@ -937,9 +939,9 @@ export function AITerminal() {
       // (head + padding) plus up to six rows, good enough for a before-mount
       // side choice — nothing has rendered yet to measure (`glyphPickerHeight`'s
       // own precedent). Computed here, at caret-tracking time, rather than in
-      // render: `composerWrapRef` is a ref, and reading one during render is
+      // render: `composerCardRef` is a ref, and reading one during render is
       // unsafe.
-      const rect = composerWrapRef.current?.getBoundingClientRect()
+      const rect = composerCardRef.current?.getBoundingClientRect()
       if (rect)
         setMentionSide(sideTowardFreeSpace(rect, window.innerHeight, MENTION_POPOVER_ESTIMATE_PX))
     }
@@ -3724,9 +3726,7 @@ export function AITerminal() {
           {composerNotice}
         </p>
       )}
-      {/* The `@` picker's anchor: `ReferencesRow` + the line + the toolbar, so
-          it sits above (or below) this whole glass, not just the line. */}
-      <div ref={composerWrapRef} className="flex flex-col gap-[14px]">
+      <div className="flex flex-col gap-[14px]">
         <ReferencesRow items={referenceItems} onRemove={handleRemoveReference} />
         <ComposerLine
           value={input}
@@ -3773,7 +3773,7 @@ export function AITerminal() {
           onHover={setMentionActiveIndex}
           onPick={handleMentionPick}
           onClose={handleMentionClose}
-          anchor={composerWrapRef}
+          anchor={composerCardRef}
           side={mentionSide}
         />
       )}
@@ -3813,6 +3813,7 @@ export function AITerminal() {
         height={composerHeight.height}
         onHeightChange={composerHeight.setHeight}
         onHeightCommit={composerHeight.commitHeight}
+        cardRef={composerCardRef}
       >
         {messagesBody}
       </TerminalDrawer>

@@ -19,12 +19,14 @@
  * The glass listens on the document in the capture phase so ↑↓↵esc reach it
  * before the composer's own textarea, which never loses focus (`SourcePicker
  * .tsx`'s own pattern). It portals to `document.body` at a fixed box off the
- * anchor's rect. The anchor is the composer's own glass (the card that holds
- * `ReferencesRow`, the line and the toolbar) — not the line alone — so that
- * sitting above it (the usual case: the composer sits at the foot of the
- * screen) clears the references row's current-page chip rather than
- * covering it. The DC's `sPop` sits `bottom: calc(100% + 10px)` off that
- * glass, inset `left: 12, right: 12` — a 10px gap (`POPOVER_GAP_PX`, not
+ * anchor's rect. The anchor is the composer's own visible card — `Terminal
+ * Drawer`'s `[data-part="composer-card"]`, the element that carries the glass
+ * whether or not a thread is open above it — not a transparent child of it
+ * (the line, or the footer group alone), so that sitting above it (the usual
+ * case: the composer sits at the foot of the screen) clears the thread and
+ * the references row's current-page chip rather than covering either. The
+ * DC's `sPop` sits `bottom: calc(100% + 10px)` off that glass, inset
+ * `left: 12, right: 12` — a 10px gap (`POPOVER_GAP_PX`, not
  * `useAnchoredBox`'s 4px default) and a 12px inset (`POPOVER_INSET_PX`) off
  * each side of the anchor's own width, not a fixed picker width like
  * `SourcePicker`'s 300/340 — so the glass's width is read straight off the
