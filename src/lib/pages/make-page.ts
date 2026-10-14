@@ -22,7 +22,6 @@ import type { Database } from '@/lib/supabase/types'
 import { appendProposal } from '@/lib/change-log/store'
 import {
   clampPageName,
-  mentionedPages,
   proposalBlocks,
   stripChatFraming,
   type MentionablePage,
@@ -81,8 +80,9 @@ export async function makePageFromAnswer(
   // The prose, minus its chat framing (KAN-308), is the page's only block.
   // `proposal.prose` itself is untouched — it still rides the record verbatim.
   // What the answer mentioned is a card, not prose, so it rides in props beside
-  // the made-from stamp (6a frame 5). Notes are Pond's own characterisation and
-  // are not written yet.
+  // the made-from stamp (6a frame 5) — carried from the proposal's own record
+  // (KAN-172), with `ref` re-checked against the live page list rather than
+  // trusted, in case the target was deleted between propose-page and make page.
   const body = stripChatFraming(proposal.prose, proposal.leadIn, proposal.signOff)
   const blocks = proposalBlocks(body, mintId)
   const kind = proposal.kind.trim() || 'page'
@@ -96,7 +96,11 @@ export async function makePageFromAnswer(
         askedAt: proposal.askedAt,
       }
     ),
-    mentionedPages(proposal.prose, pages).map((m) => ({ pageId: m.id, title: m.title }))
+    (proposal.mentioned ?? []).map((m) => ({
+      title: m.title,
+      note: m.note,
+      ref: m.ref && pages.some((p) => p.id === m.ref) ? m.ref : null,
+    }))
   )
 
   const page = await createPage(supabase, user.id, {

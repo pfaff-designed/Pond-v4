@@ -113,7 +113,12 @@ describe('makePageFromAnswer', () => {
     const made = await makePageFromAnswer(
       supabase,
       {
-        proposal: proposal(),
+        proposal: proposal({
+          mentioned: [
+            { title: 'Cabinet quote', ref: 'cq-1', note: 'the one everything waits on' },
+            { title: 'Worktop template', ref: 'wt-1', note: 'after the carcasses are measured' },
+          ],
+        }),
         threadId: 'conv-1',
         pages: [
           { id: 'kr-1', title: 'Kitchen renovation' },
@@ -136,8 +141,8 @@ describe('makePageFromAnswer', () => {
     // The prose, word for word, is the page's ONLY block (6a frame 5).
     expect(row.blocks).toEqual([{ id: 'b1', type: 'text', content: PROSE }])
     // What the answer mentioned is a card, not prose, so it rides in props beside
-    // the made-from stamp. Notes are Pond's own characterisation of WHY a page is
-    // mentioned — model work, tracked separately, so none is written yet.
+    // the made-from stamp — carried from the proposal's own mentioned list
+    // (KAN-172), not re-derived from the prose.
     expect(row.props).toEqual({
       kind: 'page',
       [MADE_FROM_THREAD_KEY]: {
@@ -147,8 +152,8 @@ describe('makePageFromAnswer', () => {
         askedAt: '2026-09-22T07:12:00Z',
       },
       [MENTIONED_KEY]: [
-        { pageId: 'cq-1', title: 'Cabinet quote' },
-        { pageId: 'wt-1', title: 'Worktop template' },
+        { title: 'Cabinet quote', ref: 'cq-1', note: 'the one everything waits on' },
+        { title: 'Worktop template', ref: 'wt-1', note: 'after the carcasses are measured' },
       ],
     })
   })
@@ -199,7 +204,7 @@ describe('makePageFromAnswer', () => {
     expect(inserts[0].row.blocks).toEqual([{ id: 'b1', type: 'text', content: PROSE }])
   })
 
-  it('adds no mentioned list when the answer names none of the pond’s pages', async () => {
+  it('adds no mentioned list when the proposal carries no mentioned field', async () => {
     const { supabase, inserts } = makeSupabase({ existing: { 'kr-1': PARENT } })
     await makePageFromAnswer(
       supabase,
