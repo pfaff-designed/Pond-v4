@@ -26,6 +26,7 @@ import React, {
   useRef,
   useState,
   type CSSProperties,
+  type RefObject,
 } from 'react'
 import { SiblingBlocksProvider } from '@/lib/modules/sibling-context'
 import { blockDomId, focusPageTitle, scrollToBlock } from '@/lib/modules/block-dom'
@@ -54,6 +55,7 @@ import {
   type YourTemplate,
 } from '@/components/molecules/SlashMenu'
 import type { PickerSize } from '@/components/molecules/picker-chrome'
+import type { PickerAnchorBox } from '@/components/molecules/use-anchored-box'
 import { SourcePicker, type SourcePick } from '@/components/molecules/SourcePicker'
 import type { SourceBlock } from '@/components/molecules/source-entries'
 import {
@@ -94,6 +96,8 @@ import { templateBlocksFrom } from '@/lib/templates/from-page'
 import { stampProvenance, siblingTemplateRanking } from '@/lib/templates/provenance'
 import { applyTemplate, type TemplateApplyPick } from '@/lib/templates/apply'
 import { justSaved } from '@/lib/templates/just-saved'
+import { templateOutlineRows } from '@/lib/templates/preview'
+import { TemplatePreviewOutline } from '@/components/molecules/TemplatePreviewOutline'
 import { inferListDatabaseTitle } from '@/lib/pages/list-to-table'
 import { replaceBlockWithView } from '@/lib/pages/promote-table'
 import {
@@ -166,6 +170,27 @@ function canvasListStyle(listStyle: CSSProperties | undefined): CSSProperties {
 }
 
 /**
+ * The same list, but visually gone while a template previews over it.
+ * `display:none`/`visibility:hidden` both blur a focused descendant the
+ * instant they apply — the person is typing `/query` into the host block right
+ * up to the moment it previews, and arrow/esc/typing afterward must keep
+ * reaching it (round 3 live finding 1) — so neither is used. `opacity:0` hides
+ * it without touching focusability; `height:0`/`overflow:hidden` collapse it
+ * out of the flow (it sits absolutely so it never widens the preview row);
+ * `pointerEvents:'none'` keeps a stray click from landing on it.
+ */
+function hiddenCanvasListStyle(listStyle: CSSProperties | undefined): CSSProperties {
+  return {
+    ...canvasListStyle(listStyle),
+    position: 'absolute',
+    opacity: 0,
+    height: 0,
+    overflow: 'hidden',
+    pointerEvents: 'none',
+  }
+}
+
+/**
  * Focus the neighbour of a removed block — the one before, else the one
  * after — the same way across every delete path. With no neighbour left (the
  * page's only block was removed), focus falls to the page title.
@@ -187,6 +212,23 @@ function focusBlockNeighbour(blocks: Block[], index: number) {
     if (neighbour.type === 'text' && focusTextBlock(element, index === 0 ? 'start' : 'end')) return
     if (element instanceof HTMLElement) element.focus()
   }, 0)
+}
+
+/**
+ * Belt and braces for a preview's end (round 3 live finding 1): with the
+ * block list never `display:none` any more, the host editor should simply
+ * never have lost focus — but if something else already did (the
+ * caret-chasing above, a browser quirk), this puts it back at the end of its
+ * `/query` text rather than leaving the person to click in again. A no-op
+ * whenever focus is already somewhere real.
+ */
+function restoreHostFocus(blocks: Block[], hostIndex: number | null) {
+  if (hostIndex === null) return
+  if (document.activeElement && document.activeElement !== document.body) return
+  const host = blocks[hostIndex]
+  if (!host) return
+  const element = document.getElementById(blockDomId(host.id))
+  if (host.type === 'text') focusTextBlock(element, 'end')
 }
 
 export interface BlockCanvasProps {
@@ -240,6 +282,14 @@ export interface BlockCanvasProps {
   untouched?: boolean
   /** The block list's own layout, where a host spaces blocks its way. */
   listStyle?: CSSProperties
+  /**
+   * The previewed template's name (6f frame 3) — the premade kind label or a
+   * `yours` template's own name — so the host's title-row eyebrow can read
+   * `preview — {name}` in place of its own. Called with `null` once the
+   * preview clears (esc, apply, or a deleted-mid-preview no-op). Transient,
+   * like `previewing` itself — never read back from here.
+   */
+  onPreviewNameChange?: (name: string | null) => void
 }
 
 /**
@@ -259,6 +309,7 @@ export function BlockCanvas({
   chrome = true,
   untouched = false,
   listStyle,
+  onPreviewNameChange,
 }: BlockCanvasProps) {
   const { stageDeletion, stageUndo, notify } = useDeletionUndo()
   const getSupabase = useLazySupabase()
@@ -308,6 +359,13 @@ export function BlockCanvas({
     anchor: Element | null
   } | null>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
+  // While previewing, `canvasRef` collapses to zero height (6f frame 3's
+  // outline swap, `hiddenCanvasListStyle` above) rather than going
+  // `display:none` — so its own rect, and every block's inside it, is a real
+  // but useless sliver. The glass needs a VISIBLE stand-in to anchor off
+  // instead: this slot, rendered beside the outline at the board's own
+  // 250px/gap-16 position.
+  const previewAnchorRef = useRef<HTMLDivElement>(null)
   // A page with nothing on it yet opens the menu on its templates (6f). Read
   // here (not just below, where it's used again) because the pages query's
   // `enabled` needs it: a non-blank `/` has no sibling ranking to look up, so
@@ -400,6 +458,75 @@ export function BlockCanvas({
   const [previewWidth, setPreviewWidth] = useState<{ blockId: string; width: BlockWidth } | null>(
     null
   )
+
+  // 6f frame 3: the template under preview, as flat outlines over the blank
+  // page — transient, never in `blocks`, the store or the change log.
+  const [previewing, setPreviewing] = useState<{ pick: TemplatePick; blocks: Block[] } | null>(null)
+
+  // Bumped on every preview start and every cancel/apply — guards
+  // `handlePreviewTemplate`'s `await applyPickFor` against a stale resolution
+  // (esc/↓/↵, or a second `→`, landing first) setting state for a pick the
+  // person already left. `handlePreviewTemplate` only commits its result if
+  // the token it captured is still current.
+  const previewTokenRef = useRef(0)
+
+  // The slash menu's own close (esc, a press outside) drops the preview
+  // instead of the whole menu while one is up — the menu's place
+  // (`slashMenuOpenAt`) is left alone, so it reopens on `templates` once the
+  // outline clears and the block editor (and its menu) come back.
+  // The clear a preview alone needs — never the whole menu. Passed to
+  // `SlashMenu` as `onPreviewCancel`, which fires on every ↑↓← (6f frame 3:
+  // "moving onto a template"), so it must do nothing when there is none up.
+  const handlePreviewCancel = useCallback(() => {
+    previewTokenRef.current++
+    if (previewing) {
+      setPreviewing(null)
+      onPreviewNameChange?.(null)
+      setTimeout(() => restoreHostFocus(blocks, slashMenuOpenAt), 0)
+    }
+  }, [previewing, onPreviewNameChange, blocks, slashMenuOpenAt])
+
+  const handleSlashClose = useCallback(() => {
+    previewTokenRef.current++
+    if (previewing) {
+      setPreviewing(null)
+      onPreviewNameChange?.(null)
+      setTimeout(() => restoreHostFocus(blocks, slashMenuOpenAt), 0)
+      return
+    }
+    closeSlashMenu()
+  }, [previewing, closeSlashMenu, onPreviewNameChange, blocks, slashMenuOpenAt])
+
+  // `DocumentPanel` stays mounted across ?nodeId changes and `BlockCanvas` is
+  // never keyed by page, so a preview left running mid-navigation would
+  // otherwise carry its outline onto the next page. Adjusted during render
+  // (React's own pattern for resetting state on a prop change, not an effect
+  // — this is a plain comparison and a setState call, never a ref read/write,
+  // so it stays clear of `react-hooks/refs`), so it commits in the SAME
+  // render as the new `pageId` rather than flashing the stale preview for one
+  // extra paint. This resets only BlockCanvas's OWN state — calling
+  // `onPreviewNameChange` (DocumentPanel's `setPreviewName`) from here would
+  // be a parent setState during a different component's render (React:
+  // "Cannot update a component while rendering a different component").
+  // `DocumentPanel` clears `previewName` itself, the same way, on its own
+  // `nodeId` change.
+  const [previousPageId, setPreviousPageId] = useState(pageId)
+  if (pageId !== previousPageId) {
+    setPreviousPageId(pageId)
+    if (previewing) {
+      setPreviewing(null)
+    }
+  }
+
+  // The token itself is a ref (read inside an already-in-flight async
+  // closure, per its own doc above), so it is bumped from a layout effect
+  // instead of the render-phase check above — refs may not be touched during
+  // render. A layout effect (not a passive one) so the bump lands before any
+  // paint, closing the same race a passive effect would leave open for one
+  // frame.
+  useLayoutEffect(() => {
+    previewTokenRef.current++
+  }, [pageId])
 
   // Mark a freshly-inserted block on the PARENT-owned insertedIds Set (see the
   // prop doc): BlockCanvas doesn't own it, it just records into it.
@@ -779,6 +906,21 @@ export function BlockCanvas({
     return template ? { origin: 'yours', template } : null
   }
 
+  // 6f frame 3: resolves through the SAME builder `applyTemplateInPlace` uses
+  // (`applyPickFor` + `applyTemplate`) — no second instantiation path — and
+  // only sets state, so the preview writes nothing. A pick that no longer
+  // resolves (deleted mid-preview, AUDIT G2) leaves whatever was already
+  // previewed as it was.
+  const handlePreviewTemplate = async (pick: TemplatePick) => {
+    const token = ++previewTokenRef.current
+    const applyPick = await applyPickFor(pick)
+    // The person moved on (esc/↓/↵) or started a newer preview before this
+    // resolved — drop it rather than setting state for a pick nobody is on.
+    if (!applyPick || previewTokenRef.current !== token) return
+    setPreviewing({ pick, blocks: applyTemplate(applyPick).blocks })
+    onPreviewNameChange?.(applyPick.origin === 'premade' ? applyPick.kind : applyPick.template.name)
+  }
+
   // 6f: a blank page's own templates pick lands IN PLACE — this page's blocks
   // become the instantiated stack, no nested page, no navigate.
   //
@@ -804,7 +946,13 @@ export function BlockCanvas({
   }
 
   const applyTemplateInPlaceUnguarded = async (pick: TemplatePick, target: SlashTarget) => {
+    previewTokenRef.current++
     const applyPick = await applyPickFor(pick)
+    // Clear whether this resolves (a normal apply) or not (AUDIT G2: the
+    // template was deleted mid-preview) — the outline must never survive its
+    // own apply, applied or not.
+    setPreviewing(null)
+    onPreviewNameChange?.(null)
     if (!applyPick) return
     const applied = applyTemplate(applyPick)
     // `before` is the page as it read before the `/` was typed — not
@@ -969,6 +1117,7 @@ export function BlockCanvas({
   }, [])
 
   function renderBlockEditor(block: Block, i: number) {
+    const blank = isBlankBesides(i)
     return (
       <BlockEditor
         key={block.id}
@@ -985,7 +1134,7 @@ export function BlockCanvas({
         onMoveDown={() => moveBlockAt(i, 'down')}
         onSlashKey={() => openSlashMenuAt(i)}
         slashMenuOpen={slashMenuOpenAt === i}
-        blank={isBlankBesides(i)}
+        blank={blank}
         slashSize={slashSize}
         yourTemplates={yourTemplates}
         siblingRanking={siblingRanking}
@@ -993,7 +1142,13 @@ export function BlockCanvas({
         parentTitle={parentTitle}
         onSlashSelect={(row, at) => handleSlashSelect(i, row, at)}
         onSlashPickTemplate={(pick, at) => handleSlashPickTemplate(i, pick, at)}
-        onSlashClose={closeSlashMenu}
+        onPreviewTemplate={blank ? (pick) => void handlePreviewTemplate(pick) : undefined}
+        previewing={
+          previewing ? { pick: previewing.pick, blocks: previewing.blocks.length } : undefined
+        }
+        previewAnchorRef={previewAnchorRef}
+        onPreviewCancel={handlePreviewCancel}
+        onSlashClose={handleSlashClose}
         menuOpen={menuOpenAt === i}
         // Only the OPEN block's groups are derived: this render runs on every
         // keystroke anywhere on the page.
@@ -1049,51 +1204,112 @@ export function BlockCanvas({
           checklist toggle re-derives every metric in the same render. `pageId`
           lets a cross-page rollup metric find this page's children (ticket-38). */}
       <SiblingBlocksProvider value={{ blocks, scrollToBlock, pageId }}>
-        <div ref={canvasRef} style={canvasListStyle(listStyle)}>
-          {/*
-           * A single flat `.flatMap()`, not a `.map()` of each row's own
-           * `.map()`: nested arrays give React an implicit key path scoped to
-           * their outer array index, so a block moving from row 0 to row 1
-           * would still remount even though its own `key` is unchanged — the
-           * exact bug a flat array (one key namespace, block.id only) removes.
-           */}
-          {blockRows
-            .flatMap((row) => {
-              const widths = row.map((block) => block.width ?? 'full')
-              // Widths and rows are kept, not shown: a row that stacks renders
-              // each of its blocks' sizing divs at 100% width, which — because
-              // the list itself wraps — puts each on its own line, in reading
-              // order. That IS the stack; no row-level wrapper is rendered at
-              // all, so a block shifting from one row to another regroups
-              // `blockRows` without touching any ancestor element, and a
-              // remount is impossible rather than merely untested.
-              const stacks = columnWidth > 0 && !rowHolds(columnWidth, widths)
-              return row.map((block) => ({ block, stacks }))
-            })
-            .map(({ block, stacks }, i) => {
-              const width = block.width ?? 'full'
-              const sizingWidth = stacks || width === 'full' ? '100%' : blockWidthStyle(width)
-              return (
-                <div
-                  key={block.id}
-                  className="min-w-0 transition-[width] duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none"
-                  style={{ width: sizingWidth }}
-                >
-                  {/* `blocks[i]`, not `block`: `block` here may carry the
-                      PREVIEWED width (sizing only, see `blocksForLayout`) — the
-                      editor and its width row must still see the block's real,
-                      kept width. */}
-                  {renderBlockEditor(blocks[i], i)}
-                </div>
-              )
-            })}
+        {/* 6f frame 3's `s3.1.3`: on desktop, the outline pane (`flex:1`) and a
+            250px slot standing in for the still-open templates menu sit side
+            by side, gap 16px. At phone width the 250px slot would leave the
+            340px-wide glass overhanging the outline, so there the outline
+            takes the full row instead and the glass anchors below it (the
+            board's "moving onto a template" frame only ever shows the
+            side-by-side layout at desktop width). The block list underneath
+            (the blank page's one line, hosting the open `SlashMenu` and its
+            focused editor) stays mounted and FOCUSABLE while previewing —
+            collapsed via `hiddenCanvasListStyle` (absolute, zero-height,
+            clipped), never `display:none`/`visibility:hidden`, both of which
+            blur a focused descendant the instant they apply (round 3 live
+            finding 1). A remount here would drop the menu along with it,
+            which is the bug this item replaces. */}
+        <div
+          style={
+            previewing
+              ? {
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 16,
+                  flexDirection: slashSize === 'desktop' ? 'row' : 'column',
+                }
+              : undefined
+          }
+        >
+          {previewing && (
+            <div
+              // Mobile has no separate slot (below): the outline pane itself is
+              // the glass's anchor, so the glass lands right under it via the
+              // ordinary `bottom + 4` placement `useAnchoredBox` already gives
+              // any other anchor.
+              ref={slashSize === 'desktop' ? undefined : previewAnchorRef}
+              style={
+                slashSize === 'desktop'
+                  ? { flex: 1, minWidth: 0 }
+                  : { width: '100%', minWidth: 0 }
+              }
+            >
+              <TemplatePreviewOutline rows={templateOutlineRows(previewing.blocks)} />
+            </div>
+          )}
+          {/* Desktop only: a visible stand-in for the glass's anchor (see
+              `previewAnchorRef` above) — not the glass itself, which still
+              floats via its own portal/`useAnchoredBox`. Reserves the board's
+              own 250px so the row's layout matches 6f frame 3 even though
+              nothing is drawn here. */}
+          {previewing && slashSize === 'desktop' && (
+            <div
+              ref={previewAnchorRef}
+              aria-hidden
+              data-part="preview-anchor-slot"
+              style={{ width: 250, flexShrink: 0, alignSelf: 'flex-start' }}
+            />
+          )}
+          <div
+            ref={canvasRef}
+            style={previewing ? hiddenCanvasListStyle(listStyle) : canvasListStyle(listStyle)}
+          >
+            {/*
+             * A single flat `.flatMap()`, not a `.map()` of each row's own
+             * `.map()`: nested arrays give React an implicit key path scoped to
+             * their outer array index, so a block moving from row 0 to row 1
+             * would still remount even though its own `key` is unchanged — the
+             * exact bug a flat array (one key namespace, block.id only) removes.
+             */}
+            {blockRows
+              .flatMap((row) => {
+                const widths = row.map((block) => block.width ?? 'full')
+                // Widths and rows are kept, not shown: a row that stacks renders
+                // each of its blocks' sizing divs at 100% width, which — because
+                // the list itself wraps — puts each on its own line, in reading
+                // order. That IS the stack; no row-level wrapper is rendered at
+                // all, so a block shifting from one row to another regroups
+                // `blockRows` without touching any ancestor element, and a
+                // remount is impossible rather than merely untested.
+                const stacks = columnWidth > 0 && !rowHolds(columnWidth, widths)
+                return row.map((block) => ({ block, stacks }))
+              })
+              .map(({ block, stacks }, i) => {
+                const width = block.width ?? 'full'
+                const sizingWidth = stacks || width === 'full' ? '100%' : blockWidthStyle(width)
+                return (
+                  <div
+                    key={block.id}
+                    className="min-w-0 transition-[width] duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none"
+                    style={{ width: sizingWidth }}
+                  >
+                    {/* `blocks[i]`, not `block`: `block` here may carry the
+                        PREVIEWED width (sizing only, see `blocksForLayout`) — the
+                        editor and its width row must still see the block's real,
+                        kept width. */}
+                    {renderBlockEditor(blocks[i], i)}
+                  </div>
+                )
+              })}
+          </div>
         </div>
       </SiblingBlocksProvider>
 
       {/* The always-visible foot add (UI-audit Slice 2a): drops a text block; `/`
           in it summons the palette to swap type. Hidden on an untouched page
-          (6f) too — the blank body's only help is its one hint line. */}
-      <AddBlockButton onAdd={addTextBlock} hidden={!chrome || untouched} />
+          (6f) and while a template is previewing (6f frame 3's outline stack
+          replaces the whole body) too — the blank body's only help is its one
+          hint line. */}
+      <AddBlockButton onAdd={addTextBlock} hidden={!chrome || untouched || !!previewing} />
       {/* The source picker, hung off the `/` line that summoned it. */}
       {sourcePicker && (
         <SourcePicker
@@ -1240,6 +1456,10 @@ function BlockEditor({
   onMoveDown,
   onSlashKey,
   onSlashPickTemplate,
+  onPreviewTemplate,
+  previewing,
+  previewAnchorRef,
+  onPreviewCancel,
   slashMenuOpen,
   blank = false,
   slashSize = 'desktop',
@@ -1290,6 +1510,13 @@ function BlockEditor({
   /** `at` is the `/` line the menu opened on inside the block, if it did. */
   onSlashSelect?: (row: SlashRow, at: SlashLineAt | null) => void
   onSlashPickTemplate?: (pick: TemplatePick, at: SlashLineAt | null) => void
+  /** `/` → `→` on a template row (6f frame 3): previews it, in place of a pick. Only passed while the page is blank. */
+  onPreviewTemplate?: (pick: TemplatePick) => void
+  /** Set once a preview has resolved — threaded straight to `SlashMenu`'s own prop of the same name. */
+  previewing?: { pick: TemplatePick; blocks: number }
+  /** The visible slot standing in for this block's own (hidden-while-previewing) anchor. */
+  previewAnchorRef?: RefObject<HTMLDivElement | null>
+  onPreviewCancel?: () => void
   onSlashClose?: () => void
   menuOpen?: boolean
   menuGroups?: PondMenuGroup<BlockMenuAction>[]
@@ -1315,6 +1542,25 @@ function BlockEditor({
     onOpen: onSlashKey,
     onClose: onSlashClose,
   })
+  // While previewing, `rootRef`'s own rect is zeroed (its ancestor is
+  // `hidden`) — the glass anchors off the visible slot beside the outline
+  // instead, so it stays put rather than landing at the viewport origin.
+  const previewAnchor = useMemo<PickerAnchorBox>(
+    () => ({
+      getBoundingClientRect: () => {
+        const r =
+          previewAnchorRef?.current?.getBoundingClientRect() ?? document.body.getBoundingClientRect()
+        // Desktop: the slot is the zero-height stand-in beside the outline (board
+        // 6f frame 3 s3.1.3 top-aligns the glass with its row, not `bottom + 4`
+        // below it) — shift the rect up 4px so `useAnchoredBox`'s own, untouched
+        // `bottom + 4` placement lands exactly on the slot's top. Mobile anchors
+        // off the outline pane itself (real height), where landing 4px below its
+        // bottom IS the board's "glass below it, under the outline" — no shift.
+        return slashSize === 'desktop' ? { top: r.top - 4, bottom: r.top - 4, left: r.left } : r
+      },
+    }),
+    [previewAnchorRef, slashSize]
+  )
   const { state, onEmptyAction, emptyLine } = useBlockEmptyState(block, frame, pageId, onChange)
 
   const view = (
@@ -1508,11 +1754,14 @@ function BlockEditor({
         <SlashMenu
           rows={slashRows}
           query={slash.query}
-          anchor={slash.anchor}
+          anchor={previewing ? previewAnchor : slash.anchor}
           side={slash.side}
           size={slashSize}
           onSelect={(row) => onSlashSelect?.(row, slash.line)}
           onPickTemplate={onSlashPickTemplate && ((pick) => onSlashPickTemplate(pick, slash.line))}
+          onPreviewTemplate={onPreviewTemplate}
+          previewing={previewing}
+          onPreviewCancel={onPreviewCancel}
           yourTemplates={yourTemplates}
           siblingRanking={siblingRanking}
           justSavedId={justSavedId}

@@ -413,7 +413,9 @@ export function templateEntries(
  * 6f frame 2's empty-page foot is `↑↓ move · ↵ <verb>` only, with no `→ preview`
  * while `onPreviewTemplate` is unwired at that call site — except when the
  * active row is itself a template pick (KAN-124), whose foot is the board's
- * `↑↓ move · → preview · ↵ apply`.
+ * `↑↓ move · → preview · ↵ apply`. While a template is actually previewing
+ * (KAN-131), the board drops `↑↓ move` entirely: `↵ apply · esc back` only,
+ * ahead of every other branch.
  */
 export function footItems(
   pane: SlashPane,
@@ -421,8 +423,10 @@ export function footItems(
   matches: number,
   preview: boolean,
   activeIsTemplate = false,
-  leadWithTemplates = false
+  leadWithTemplates = false,
+  previewing = false
 ): string[] {
+  if (previewing) return ['↵ apply', 'esc back']
   if (pane === 'templates')
     return preview ? ['↵ new nested page', '→ preview'] : ['↵ new nested page']
   const q = normalizeQuery(query)

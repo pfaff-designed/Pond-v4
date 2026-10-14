@@ -192,6 +192,23 @@ export function DocumentPanel() {
   // mount across ?nodeId changes.
   const [insertedIds] = useState<Set<string>>(() => new Set())
 
+  // 6f frame 3: while a template previews, the eyebrow reads `preview —
+  // {name}` in place of its own save state — transient, set/cleared by
+  // `BlockCanvas` itself, never written through `titleEyebrow()`.
+  const [previewName, setPreviewName] = useState<string | null>(null)
+
+  // `BlockCanvas` is not keyed by page and never calls back into this panel's
+  // state from ITS OWN render (that was the setState-during-a-different-
+  // component's-render bug) — so a preview left running when the person
+  // navigates (`nodeId` changes, this panel stays mounted) is cleared here,
+  // on this panel's own render, the same way `BlockCanvas` resets its own
+  // `previewing` state on a `pageId` change.
+  const [previousNodeId, setPreviousNodeId] = useState(nodeId)
+  if (nodeId !== previousNodeId) {
+    setPreviousNodeId(nodeId)
+    if (previewName !== null) setPreviewName(null)
+  }
+
   const {
     viewTitle,
     viewBlocks,
@@ -312,7 +329,7 @@ export function DocumentPanel() {
             hidden={zen !== null}
             aria-live="polite"
           >
-            {eyebrow}
+            {previewName ? `preview — ${previewName}` : eyebrow}
           </span>
         </div>
 
@@ -350,6 +367,7 @@ export function DocumentPanel() {
           chrome={!zen}
           untouched={untouched}
           listStyle={zen ? ZEN_BLOCK_LIST_STYLE : undefined}
+          onPreviewNameChange={setPreviewName}
         />
 
         <div className={hiddenInZen}>

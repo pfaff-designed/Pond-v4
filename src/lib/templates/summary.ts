@@ -63,6 +63,11 @@ export function blockWord(block: Block): string {
   return block.type
 }
 
+/** `1 block` / `5 blocks` — singular only at exactly one. */
+export function blockCountWords(count: number): string {
+  return `${count} ${count === 1 ? 'block' : 'blocks'}`
+}
+
 /**
  * The board's line, whole: `6 blocks — big number, list, checklist, …`.
  *
@@ -72,6 +77,5 @@ export function blockWord(block: Block): string {
  */
 export function templateSummary(blocks: readonly Block[]): string {
   if (blocks.length === 0) return 'no blocks yet'
-  const noun = blocks.length === 1 ? 'block' : 'blocks'
-  return `${blocks.length} ${noun} — ${blocks.map(blockWord).join(', ')}`
+  return `${blockCountWords(blocks.length)} — ${blocks.map(blockWord).join(', ')}`
 }

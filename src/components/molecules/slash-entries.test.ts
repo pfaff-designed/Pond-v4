@@ -161,4 +161,13 @@ describe('footItems', () => {
     expect(footItems('templates', '', 12, true)).toEqual(['↵ new nested page', '→ preview'])
     expect(footItems('templates', '', 12, false)).toEqual(['↵ new nested page'])
   })
+
+  it('previewing overrides every branch: `↵ apply · esc back`, no `↑↓ move`', () => {
+    expect(footItems('rows', '', 3, false, true, false, true)).toEqual(['↵ apply', 'esc back'])
+    expect(footItems('rows', '', 3, false, false, false, true)).toEqual(['↵ apply', 'esc back'])
+    expect(footItems('rows', '', 3, false, false, true, true)).toEqual(['↵ apply', 'esc back'])
+    expect(footItems('rows', '', 3, false, true, true, true)).toEqual(['↵ apply', 'esc back'])
+    expect(footItems('templates', '', 12, true, false, false, true)).toEqual(['↵ apply', 'esc back'])
+    expect(footItems('templates', '', 12, false, false, false, true)).toEqual(['↵ apply', 'esc back'])
+  })
 })
