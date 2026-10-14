@@ -4080,8 +4080,17 @@ export function AITerminal() {
         onHeightCommit={composerHeight.commitHeight}
         cardRef={composerCardRef}
       >
-        {messagesBody}
-        {raisedRecordCards}
+        {/* A single expression child, not two siblings — JSX wraps multiple
+            expression children in an array, and TerminalDrawer's own
+            `Boolean(children)` reads any array (even of two `false`s) as
+            truthy, raising the resize handle and sizing a thread that isn't
+            there. */}
+        {(messagesBody || raisedRecordCards) && (
+          <>
+            {messagesBody}
+            {raisedRecordCards}
+          </>
+        )}
       </TerminalDrawer>
     </>
   )
