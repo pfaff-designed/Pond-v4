@@ -18,7 +18,7 @@ import type { TableBlock } from '@/lib/modules/table/schema'
 import { jsonEqual } from '@/lib/json-equal'
 import { OPENS_ON_A_HEADING } from '@/lib/templates/summary'
 import { readBlockSnapshot } from './revert-plan'
-import type { RowSnapshot } from './types'
+import type { RowSnapshot, TrashSnapshot } from './types'
 
 const count = (n: number, one: string, many: string = `${one}s`): string =>
   `${n} ${n === 1 ? one : many}`
@@ -235,4 +235,25 @@ export const summarizeRowEdit = (beforeValue: unknown, afterValue: unknown): str
     return `renamed ${recordName(before.title)} to ${after.title.trim() || 'untitled'}`
   }
   return 'edited a record'
+}
+
+export const readTrashSnapshot = (value: unknown): TrashSnapshot | null => {
+  if (!isPlainObject(value)) return null
+  const { title, parentId, order, pageIds, blockCount, nestedPageCount, parentPath } = value
+  if (typeof title !== 'string') return null
+  if (typeof parentId !== 'string' && parentId !== null) return null
+  if (typeof order !== 'number') return null
+  if (!Array.isArray(pageIds) || !pageIds.every((id) => typeof id === 'string')) return null
+  if (typeof blockCount !== 'number' || typeof nestedPageCount !== 'number') return null
+  if (!Array.isArray(parentPath) || !parentPath.every((title) => typeof title === 'string')) {
+    return null
+  }
+  return { title, parentId, order, pageIds, blockCount, nestedPageCount, parentPath }
+}
+
+/** `deleted old quotes` / `restored old quotes`, or the bare verb when the
+ *  snapshot is missing or carries no title. */
+export const summarizeTrash = (value: unknown, verb: 'deleted' | 'restored'): string => {
+  const title = readTrashSnapshot(value)?.title.trim()
+  return title ? `${verb} ${title}` : verb
 }

@@ -26,6 +26,10 @@ export interface ConfirmDialogProps {
   title: string
   /** The blast-radius line, e.g. `Deletes 3 pages inside.` Omit for a plain confirm. */
   blastRadius?: string
+  /** The line after `blastRadius` (or alone, with no `blastRadius`) stating what the
+   * action means. Defaults to the irreversible-delete copy; override it for an action
+   * with a different consequence, e.g. a delete that goes to trash instead. */
+  consequence?: string
   /** Label for the confirming (destructive) action. */
   confirmLabel?: string
   cancelLabel?: string
@@ -37,6 +41,7 @@ export function ConfirmDialog({
   onOpenChange,
   title,
   blastRadius,
+  consequence = "This can't be undone.",
   confirmLabel = 'Delete',
   cancelLabel = 'Cancel',
   onConfirm,
@@ -52,11 +57,10 @@ export function ConfirmDialog({
           <AlertDialog.Description className="mt-2 text-sm text-mn-text-secondary">
             {blastRadius ? (
               <>
-                <span className="font-medium text-mn-text">{blastRadius}</span> This can&apos;t
-                be undone.
+                <span className="font-medium text-mn-text">{blastRadius}</span> {consequence}
               </>
             ) : (
-              <>This can&apos;t be undone.</>
+              <>{consequence}</>
             )}
           </AlertDialog.Description>
           <div className="mt-5 flex justify-end gap-2">

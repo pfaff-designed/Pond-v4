@@ -17,7 +17,7 @@ import { PondContext, type PondContextValue } from '@/lib/pond/context'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { isStaged, unstageId } from '@/lib/deletion/staged-ids'
 import { pagesKey } from '@/lib/pages/keys'
-import { deletePage } from '@/lib/pages/client'
+import { trashPage } from '@/lib/change-log/trash'
 import type { PageRow } from '@/lib/pages/tree'
 import type { Pond } from '@/lib/pond/client'
 
@@ -37,9 +37,12 @@ jest.mock('@/lib/supabase/client', () => ({
 
 jest.mock('@/lib/pages/client', () => ({
   createPage: jest.fn().mockResolvedValue(undefined),
-  deletePage: jest.fn().mockResolvedValue(undefined),
   movePage: jest.fn().mockResolvedValue(undefined),
   updateTitle: jest.fn().mockResolvedValue(undefined),
+}))
+
+jest.mock('@/lib/change-log/trash', () => ({
+  trashPage: jest.fn().mockResolvedValue(undefined),
 }))
 
 jest.mock('@/lib/pages/mark-client', () => ({
@@ -143,13 +146,13 @@ describe('Rail — a database delete persists across navigation and reload (KAN-
 
     // (2) `pagehide` flushes the deferred commit ahead of the grace window,
     // but the request itself gets cancelled before it reaches the server —
-    // mirrored here by a `deletePage` that never settles. The backstop id
+    // mirrored here by a `trashPage` that never settles. The backstop id
     // must stay staged through that (KAN-300 fix).
-    ;(deletePage as jest.Mock).mockImplementation(() => new Promise(() => {}))
+    ;(trashPage as jest.Mock).mockImplementation(() => new Promise(() => {}))
     act(() => {
       window.dispatchEvent(new Event('pagehide'))
     })
-    await waitFor(() => expect(deletePage).toHaveBeenCalledWith(expect.anything(), 'db-1'))
+    await waitFor(() => expect(trashPage).toHaveBeenCalledWith(expect.anything(), 'db-1'))
     expect(isStaged('db-1')).toBe(true)
 
     // An in-app unmount/remount (no real page reload) is NOT a prior tab
@@ -159,7 +162,7 @@ describe('Rail — a database delete persists across navigation and reload (KAN-
     // seeded-sessionStorage-before-first-import setup is a genuine prior
     // life, and that is where PATH_STEPS B's actual reload case is covered.
     unmount()
-    ;(deletePage as jest.Mock).mockClear()
+    ;(trashPage as jest.Mock).mockClear()
 
     mount(newClient(ROWS))
     await waitFor(() =>
@@ -169,7 +172,7 @@ describe('Rail — a database delete persists across navigation and reload (KAN-
         })
       ).not.toBeInTheDocument()
     )
-    expect(deletePage).not.toHaveBeenCalled()
+    expect(trashPage).not.toHaveBeenCalled()
     expect(isStaged('db-1')).toBe(true)
   })
 
@@ -192,6 +195,6 @@ describe('Rail — a database delete persists across navigation and reload (KAN-
       expect(within(foot).getByRole('treeitem', { name: 'ingredients' })).toBeInTheDocument()
     )
     expect(isStaged('db-1')).toBe(false)
-    expect(deletePage).not.toHaveBeenCalled()
+    expect(trashPage).not.toHaveBeenCalled()
   })
 })

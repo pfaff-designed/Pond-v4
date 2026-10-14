@@ -37,9 +37,25 @@ export const Subtree: Story = {
     await expect(body.getByRole('alertdialog')).toBeInTheDocument()
     await expect(body.getByText('Deletes 3 pages inside.')).toBeInTheDocument()
     await expect(body.getByText('Delete "Health"?')).toBeInTheDocument()
+    // the default consequence line, unchanged for any caller that still hard-deletes.
+    await expect(body.getByText("This can't be undone.")).toBeInTheDocument()
     // confirming fires onConfirm
     await userEvent.click(body.getByRole('button', { name: 'Delete' }))
     await expect(args.onConfirm).toHaveBeenCalled()
+  },
+}
+
+/** A caller whose delete goes to trash, not permanent — e.g. Rail's page delete. */
+export const TrashConsequence: Story = {
+  args: {
+    consequence: 'It stays in the trash for 30 days. Restore it from the change log.',
+  },
+  play: async () => {
+    const body = within(document.body)
+    await expect(
+      body.getByText('It stays in the trash for 30 days. Restore it from the change log.')
+    ).toBeInTheDocument()
+    await expect(body.queryByText("This can't be undone.")).not.toBeInTheDocument()
   },
 }
 

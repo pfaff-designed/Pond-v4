@@ -17,7 +17,7 @@
 
 import { AREA_COLOUR_SWATCHES, GLYPH_LIBRARY, isAreaRole } from '@/lib/rail/glyph-library'
 import { canRevertRecord } from './revert-plan'
-import { summarizeAddedRow, summarizeBlockEdit, summarizeRowEdit } from './summary'
+import { summarizeAddedRow, summarizeBlockEdit, summarizeRowEdit, summarizeTrash } from './summary'
 import type { ChangeLogRecord } from './types'
 
 export interface PageChangeRow {
@@ -130,8 +130,13 @@ export function describeChange(
       return `mark → ${glyphName(typeof record.after === 'string' ? record.after : null)}`
     case 'edit_area_role':
       return areaRoleChange(record.after)
+    // `delete`'s snapshot is the subtree as it stood before trashing (`before`);
+    // `restore`'s is the subtree as it lands back (`after`) — the RPCs that
+    // write these records (KAN-97) mirror that split.
     case 'delete':
-      return 'deleted'
+      return summarizeTrash(record.before, 'deleted')
+    case 'restore':
+      return summarizeTrash(record.after, 'restored')
     case 'move':
       return 'moved'
     case 'undo': {

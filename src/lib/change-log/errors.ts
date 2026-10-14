@@ -43,6 +43,28 @@ export class RevertRefusedError extends Error {
   }
 }
 
+/** `trash_page` / `restore_page`'s own DETAIL reasons (KAN-97), read by `trash.ts`. */
+export type TrashRefusalReason = 'not-found' | 'page-gone' | 'already-restored' | 'not-trashable'
+
+const TRASH_REFUSAL_MESSAGES: Readonly<Record<TrashRefusalReason, string>> = {
+  'not-found': 'that page could not be found',
+  'page-gone': 'that page no longer exists',
+  'already-restored': 'that page has already been restored',
+  // `trash_page` raises this same DETAIL for both the pond's root page and
+  // its databases root — neither is ever trashable, so one line covers both.
+  'not-trashable': "the pond's root page or its databases root can't be moved to trash",
+}
+
+/** Raised by `trash.ts` once it has read a known DETAIL off `trash_page` /
+ *  `restore_page`'s own refusal — carries developer text as its `message`
+ *  (for logging) and a `reason` the panel maps to a line. */
+export class TrashRefusedError extends Error {
+  constructor(readonly reason: TrashRefusalReason, message: string) {
+    super(message)
+    this.name = 'TrashRefusedError'
+  }
+}
+
 /**
  * `57014` is Postgres's SQLSTATE for `query_canceled` — a bounded (~8s) lock
  * wait, not a hang, raised for a statement or lock timeout and reaching here
@@ -67,6 +89,9 @@ export function personFacingMessage(err: unknown): string {
   }
   if (err instanceof RevertRefusedError) {
     return REVERT_REFUSAL_MESSAGES[err.reason]
+  }
+  if (err instanceof TrashRefusedError) {
+    return TRASH_REFUSAL_MESSAGES[err.reason]
   }
   const code = postgresCode(err)
   if (code === '57014') return 'this page is busy — try again in a moment'

@@ -415,10 +415,15 @@ describe('source sweep — wheat is highlighted passages, burnt orange the dated
 
   it('raw-burnt-orange / signal-dated are consumed only by the due-dot', () => {
     const hits = linesMatching(/raw-burnt-orange|signal-dated/)
+    // Three legitimate owners: the due-dot itself (PondAtom/PondMolecule), and the
+    // deleted view's "restorable until" row (KAN-97; `Pond 06.15 Change log.dc.html`
+    // s6o6 frame 6 sets this span's inline color to #D96629 directly) — the one
+    // dated thing on THAT card, same rule, a different screen.
     const owners = [
       'src/app/globals.css',
       'src/components/atoms/PondAtom.tsx',
       'src/components/molecules/PondMolecule.tsx',
+      'src/components/organisms/ChangeLogPage.tsx',
     ]
     expect(hits.filter((h) => !owners.some((f) => h.startsWith(f)))).toEqual([])
   })
