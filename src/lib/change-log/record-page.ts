@@ -26,22 +26,75 @@ export function changeLogRecordUrl(recordId: string): string {
 }
 
 /**
+ * Which block a record actually changed, read from its OWN before/after
+ * snapshots — `null` when neither side is a block array (a collection-tool
+ * record) or nothing differs.
+ *
+ * `targetBlockId` is tried FIRST but is not load-bearing: `propose.ts` never
+ * sets it for a `propose_changes` call (the only tool that snapshots real
+ * blocks), so every composer-made edit's `targetBlockId` is `null` in
+ * storage. When it doesn't resolve, this zips `before`/`after` by id with
+ * `buildDiffRows` — the SAME diffing `recordDiffRows`'s own before→after card
+ * already uses — and takes its first row: a composer turn changes one block
+ * in practice, and "first" matches that row's own `after`-then-removed-from-
+ * `before` order.
+ */
+function resolvedBlockChange(record: ChangeLogRecord): ChangePreview | null {
+  const beforeBlocks = readBlockSnapshot(record.before)
+  const afterBlocks = readBlockSnapshot(record.after)
+  if (beforeBlocks === null && afterBlocks === null) return null
+  if (record.targetBlockId !== null) {
+    const before = beforeBlocks?.find((b) => b.id === record.targetBlockId) ?? null
+    const after = afterBlocks?.find((b) => b.id === record.targetBlockId) ?? null
+    if (before !== null || after !== null) {
+      return { op: before && after ? 'edit' : after ? 'create' : 'remove', before, after }
+    }
+  }
+  return buildDiffRows(beforeBlocks ?? [], afterBlocks ?? [])[0] ?? null
+}
+
+/** `~60`-char one-liner, since a text block carries no registry `preview`
+ *  facet (it falls back to its whole, unbounded `serialize`d markdown) —
+ *  the only block kind that needs trimming here, since every other
+ *  registered type's own `preview` already returns a short line. */
+const TITLE_PREVIEW_MAX_CHARS = 60
+
+function oneLineOf(text: string, max = TITLE_PREVIEW_MAX_CHARS): string {
+  const line =
+    text
+      .split('\n')
+      .map((l) => l.trim())
+      .find((l) => l.length > 0) ?? ''
+  return line.length <= max ? line : `${line.slice(0, max).trimEnd()}…`
+}
+
+/** A changed block's own title text — the registry's `preview` facet, or
+ *  (text has none) its plain content, trimmed to one line. */
+function blockPreviewText(block: Block, blocks?: readonly Block[]): string {
+  if (block.type === 'text') return oneLineOf('content' in block ? String(block.content) : '')
+  return resolveDescriptor(block.type).preview(block, blocks)
+}
+
+/**
  * The record page's title: the changed block's own preview text
  * ("electrician, second fix → w/c 6 oct"), through the block registry's
- * `preview` facet. Falls back to `describeChange`'s plain label for every
- * non-block action, and for a block action whose snapshot doesn't carry
- * `targetBlockId` (nothing live to preview).
+ * `preview` facet. An edit (both a before AND an after block) reads as
+ * "{before preview} → {after preview}"; an insert or removal (only one side)
+ * reads as that side's preview alone. Falls back to `describeChange`'s plain
+ * label for every non-block action, and for a block action with no live
+ * snapshot to diff.
  *
- * The block itself is read from the record's OWN `after` (falling back to
- * `before`) — the title names what this record changed, not the page as it
- * reads today. `blocks` are the target page's current page-mates (ticket-23
- * siblings), passed by a caller that has them in hand; omit when it doesn't.
+ * `blocks` are the target page's current page-mates (ticket-23 siblings),
+ * passed by a caller that has them in hand; omit when it doesn't.
  */
 export function recordTitle(record: ChangeLogRecord, blocks?: readonly Block[]): string {
-  const snapshot = readBlockSnapshot(record.after) ?? readBlockSnapshot(record.before)
-  const block = snapshot?.find((b) => b.id === record.targetBlockId)
-  if (block === undefined) return describeChange(record, null)
-  return resolveDescriptor(block.type).preview(block, blocks)
+  const change = resolvedBlockChange(record)
+  if (change === null) return describeChange(record, null)
+  const { before, after } = change
+  if (before !== null && after !== null) {
+    return `${blockPreviewText(before, blocks)} → ${blockPreviewText(after, blocks)}`
+  }
+  return blockPreviewText((after ?? before) as Block, blocks)
 }
 
 /**
@@ -134,11 +187,10 @@ export function pageBlockField(
   blocks: readonly Block[] = []
 ): PageBlockField {
   const page = pageLabel(record, pageTitleById)
-  const snapshot = readBlockSnapshot(record.after) ?? readBlockSnapshot(record.before)
+  const change = resolvedBlockChange(record)
   const block =
-    snapshot?.find((b) => b.id === record.targetBlockId) ??
-    blocks.find((b) => b.id === record.targetBlockId)
-  if (block === undefined) return { page, block: null }
+    change?.after ?? change?.before ?? blocks.find((b) => b.id === record.targetBlockId) ?? null
+  if (block === null) return { page, block: null }
   return { page, block: blockLabel(block) ?? descriptorFor(block.type)?.label ?? block.type }
 }
 

@@ -84,6 +84,53 @@ describe('recordTitle', () => {
     const r = record({ before: null, after: null })
     expect(recordTitle(r)).toBe('edited this page')
   })
+
+  it(
+    "reads 'before → after' for an edit, even with no targetBlockId — " +
+      'every composer-made edit stores targetBlockId: null (propose.ts never sets it)',
+    () => {
+      const r = record({
+        targetBlockId: null,
+        before: [{ id: 'a', type: 'text', content: 'alpha one' }],
+        after: [{ id: 'a', type: 'text', content: 'apple one' }],
+      })
+      expect(recordTitle(r)).toBe('alpha one → apple one')
+    }
+  )
+
+  it('reads the after preview alone for an insert (a block in after, not before), with no targetBlockId', () => {
+    const r = record({
+      targetBlockId: null,
+      before: [{ id: 'a', type: 'text', content: 'alpha one' }],
+      after: [
+        { id: 'a', type: 'text', content: 'alpha one' },
+        { id: 'b', type: 'text', content: 'a new paragraph' },
+      ],
+    })
+    expect(recordTitle(r)).toBe('a new paragraph')
+  })
+
+  it('reads the before preview alone for a removal (a block dropped from after), with no targetBlockId', () => {
+    const r = record({
+      targetBlockId: null,
+      before: [
+        { id: 'a', type: 'text', content: 'alpha one' },
+        { id: 'b', type: 'text', content: 'gone now' },
+      ],
+      after: [{ id: 'a', type: 'text', content: 'alpha one' }],
+    })
+    expect(recordTitle(r)).toBe('gone now')
+  })
+
+  it('trims a text block preview to one line, ~60 chars, with an ellipsis', () => {
+    const long = 'a'.repeat(80)
+    const r = record({
+      targetBlockId: null,
+      before: null,
+      after: [{ id: 'a', type: 'text', content: `${long}\nsecond line` }],
+    })
+    expect(recordTitle(r)).toBe(`${'a'.repeat(60)}…`)
+  })
 })
 
 describe('recordBreadcrumbTitle', () => {
@@ -218,6 +265,16 @@ describe('pageBlockField', () => {
       after: null,
     })
     expect(pageBlockField(r, pageTitleById).block).toBeNull()
+  })
+
+  it("resolves the changed block by diffing before/after when targetBlockId is null (every composer-made edit), never empty", () => {
+    const r = record({
+      targetPageId: 'page-1',
+      targetBlockId: null,
+      before: [{ id: 'a', type: 'text', content: 'alpha one' }],
+      after: [{ id: 'a', type: 'text', content: 'apple one' }],
+    })
+    expect(pageBlockField(r, pageTitleById)).toEqual({ page: 'kitchen renovation', block: 'text' })
   })
 })
 
