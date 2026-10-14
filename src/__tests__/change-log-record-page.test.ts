@@ -11,6 +11,7 @@ import {
   changeLogRecordUrl,
   pageBlockField,
   proposedByField,
+  readChipsOf,
   RECORD_PARAM,
   recordTitle,
   statusField,
@@ -105,6 +106,19 @@ describe('proposedByField', () => {
     const createdAt = '2026-09-30T09:20:00.000Z'
     const r = record({ actor: 'pond', createdAt })
     expect(proposedByField(r)).toBe(`pond · ${formatClockTime(createdAt)}`)
+  })
+})
+
+describe('readChipsOf', () => {
+  it('passes an array of strings through as-is', () => {
+    const r = record({ read: ['kitchen renovation', 'w/c 6 oct'] })
+    expect(readChipsOf(r)).toEqual(['kitchen renovation', 'w/c 6 oct'])
+  })
+
+  it('reads anything else as nothing to show', () => {
+    expect(readChipsOf(record({ read: null }))).toEqual([])
+    expect(readChipsOf(record({ read: { not: 'an array' } }))).toEqual([])
+    expect(readChipsOf(record({ read: ['ok', 42] }))).toEqual([])
   })
 })
 

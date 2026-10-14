@@ -72,6 +72,19 @@ export interface PageBlockField {
   block: string | null
 }
 
+/** The fields grid's "read" row: the chip strings Pond read before proposing
+ *  (KAN-47's provenance chips). `record.read` is `unknown` at the storage
+ *  boundary — a tolerant parse, not a schema: an array of strings passes
+ *  through as-is, anything else (null, a stray object, a malformed row) is
+ *  read as "nothing to show" rather than thrown. */
+export function readChipsOf(record: ChangeLogRecord): string[] {
+  const { read } = record
+  if (Array.isArray(read) && read.every((entry) => typeof entry === 'string')) {
+    return read as string[]
+  }
+  return []
+}
+
 export function pageBlockField(
   record: ChangeLogRecord,
   pageTitleById: Map<string, string>,
