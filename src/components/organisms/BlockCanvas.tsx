@@ -1783,7 +1783,12 @@ function BlockEditor({
           ? 'outline-none'
           : 'rounded-mn-card focus-visible:ring-2 focus-visible:ring-mn-text',
         settleOnMount && 'motion-settle-in',
-        isDragging && 'opacity-50',
+        // `origin` (old place, opacity .4) + `lifted` (stepped-up shadow, -.6deg
+        // tilt) from `PondBlock.dc.html` — this one node stands in for both
+        // states since there is no custom drag image (the browser's native
+        // ghost snapshot stands in for the held block, not a second element).
+        isDragging &&
+          'opacity-40 rotate-[-.6deg] shadow-mn-lifted transition-[opacity,box-shadow,transform] duration-[var(--motion-quick)] ease-[var(--ease-mn)] motion-reduce:transition-none',
         menuOpen && 'rounded-[20px] [box-shadow:0_0_0_2px_rgb(from_var(--mn-text)_r_g_b/0.18)]'
       )}
       id={blockDomId(block.id)}

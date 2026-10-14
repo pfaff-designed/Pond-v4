@@ -133,6 +133,7 @@
      Paper-not-frames: surfaces separate by shadow, not borders. */
   --shadow-mn-card: var(--mn-shadow-card);
   --shadow-mn-drag-ghost: var(--mn-shadow-drag-ghost);
+  --shadow-mn-lifted: var(--mn-shadow-lifted);
   --shadow-mn-sm: var(--mn-shadow-sm);
   --shadow-mn-md: var(--mn-shadow-md);
   --shadow-mn-lg: var(--mn-shadow-lg);
@@ -334,6 +335,8 @@
   /* ── Make Noise shadows (issue #89) — paper-not-frames: surfaces lift, not box ── */
   --mn-shadow-card: 0 1px 2px rgb(40 34 24 / 0.04), 0 8px 24px rgb(40 34 24 / 0.06);
   --mn-shadow-drag-ghost: 0 4px 12px rgb(27 29 20 / 0.1), 0 12px 32px rgb(27 29 20 / 0.14);
+  /* `lifted` (PondBlock.dc.html) — the dragged block stepped up off the paper. */
+  --mn-shadow-lifted: 0 2px 4px rgb(40 34 24 / 0.06), 0 20px 44px rgb(40 34 24 / 0.16);
   --mn-shadow-sm: 0 1px 2px 0 rgb(27 29 20 / 0.06);
   --mn-shadow-md: 0 4px 12px 0 rgb(27 29 20 / 0.1);
   --mn-shadow-lg: 0 12px 32px 0 rgb(27 29 20 / 0.14);
@@ -476,6 +479,7 @@
   /* Heavier MN shadows on the dark ground */
   --mn-shadow-card: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px rgb(0 0 0 / 0.34);
   --mn-shadow-drag-ghost: 0 8px 24px rgb(0 0 0 / 0.45);
+  --mn-shadow-lifted: 0 2px 4px rgb(0 0 0 / 0.34), 0 20px 44px rgb(0 0 0 / 0.5);
   --mn-shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.2);
   --mn-shadow-md: 0 4px 12px 0 rgb(0 0 0 / 0.3);
   --mn-shadow-lg: 0 12px 32px 0 rgb(0 0 0 / 0.4);
