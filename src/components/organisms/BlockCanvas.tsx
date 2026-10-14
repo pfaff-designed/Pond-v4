@@ -1181,13 +1181,12 @@ export function BlockCanvas({
   }
 
   // Rows are derived, never stored (6x): consecutive blocks whose widths add up
-  // to full or less share one row, in array order — so the flattened render
-  // below reproduces `blocks`' own order, and each block's position in it is
-  // its real index into `blocks`. Packing (and the sizing below) reads the
-  // PREVIEWED width for whichever one block has it, so hovering a width
-  // reflows the row live; rendering still passes the real `blocks[i]` to
-  // `renderBlockEditor`, so the previewed block's own content and its width
-  // row's filled cell are never touched by the preview.
+  // to full or less share one row, in array order. Packing (and the sizing
+  // below) reads the PREVIEWED width for whichever one block has it, so
+  // hovering a width reflows the row live; rendering still passes the real
+  // block (looked up by id, see `renderList` below) to `renderBlockEditor`, so
+  // the previewed block's own content and its width row's filled cell are
+  // never touched by the preview.
   const blocksForLayout = useMemo(
     () =>
       previewWidth
@@ -1198,7 +1197,53 @@ export function BlockCanvas({
         : blocks,
     [blocks, previewWidth]
   )
-  const blockRows = useMemo(() => layoutRows(blocksForLayout), [blocksForLayout])
+
+  // The row a beside hover would actually land in, from the SAME planner the
+  // commit uses (`planBesideDrop`) — not `blocksForLayout`'s per-block preview,
+  // which carries widths only, never a reorder. `null` off a drag, off an
+  // own-line hover, or wherever the planner itself returns `null` (a full row,
+  // or a repack that would split the planned row apart).
+  const besidePlan = useMemo(() => {
+    if (draggingIndex === null || !dropIndicator) return null
+    if (dropIndicator.zone !== 'left' && dropIndicator.zone !== 'right') return null
+    const target = blocks[dropIndicator.index]
+    if (!target) return null
+    return planBesideDrop(blocks, draggingIndex, target.id, dropIndicator.zone)
+  }, [blocks, draggingIndex, dropIndicator])
+
+  // The render order while a beside drop is planned (6x frame 3): the dragged
+  // block renders TWICE — a `::ghost`-suffixed id at the planned slot, at the
+  // planned width (the lifted copy), and the real id reinserted at its OLD
+  // slot, at its OLD width (the origin — opacity-40 only, never the preview
+  // width; applying the preview to the real block was the "shrinks the old
+  // place" bug). `besidePlan` already preserves every other block's relative
+  // order, so the ghost lands exactly where `besidePlan` already has it just
+  // by tagging its id; the origin's old slot is found by locating its old
+  // left neighbour's id in that same array and inserting one past it (or at 0
+  // with no neighbour) — the only slot that keeps every other block's order
+  // intact. Off a drag, or off anything but a beside hover, this is just
+  // `blocksForLayout`, one entry per block.
+  const renderList = useMemo<{ id: string; width: BlockWidth; ghost: boolean }[]>(() => {
+    if (!besidePlan || draggingIndex === null) {
+      return blocksForLayout.map((b) => ({ id: b.id, width: b.width ?? 'full', ghost: false }))
+    }
+    const dragged = blocks[draggingIndex]
+    const ghostId = `${dragged.id}::ghost`
+    const plannedWidth = besidePlan.find((b) => b.id === dragged.id)?.width ?? 'full'
+    const withGhost = besidePlan.map((b) =>
+      b.id === dragged.id
+        ? { id: ghostId, width: plannedWidth, ghost: true }
+        : { id: b.id, width: b.width ?? 'full', ghost: false }
+    )
+    const neighborId = draggingIndex > 0 ? blocks[draggingIndex - 1].id : null
+    const neighborAt = neighborId ? withGhost.findIndex((item) => item.id === neighborId) : -1
+    const insertAt = neighborId ? neighborAt + 1 : 0
+    const withOrigin = [...withGhost]
+    withOrigin.splice(insertAt, 0, { id: dragged.id, width: dragged.width ?? 'full', ghost: false })
+    return withOrigin
+  }, [besidePlan, draggingIndex, blocks, blocksForLayout])
+
+  const blockRows = useMemo(() => layoutRows(renderList), [renderList])
 
   /**
    * Commits a beside drop (6x): `planBesideDrop` (the same planner the hover
@@ -1260,6 +1305,39 @@ export function BlockCanvas({
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
+
+  /**
+   * The lifted copy shown at the planned slot while a beside drop is hovered
+   * (6x frame 3, `PondBlock.dc.html`'s `lifted` state): a read-only render of
+   * the dragged block's own content — no handle, no drag wiring, no keyboard
+   * handling, since the origin node (the real, still-draggable block) is what
+   * the pointer and keyboard actually act on. `aria-hidden`/`inert` keep it
+   * out of the accessibility tree and the tab order entirely.
+   */
+  function renderGhostBlock(block: Block) {
+    const frame = blockFrame(block)
+    const view = <ModuleView type={block.type} data={block} editable={false} onChange={() => {}} />
+    return (
+      <div
+        id={blockDomId(`${block.id}::ghost`)}
+        aria-hidden
+        inert
+        className="shadow-mn-lifted rotate-[-.6deg] translate-x-[12px] translate-y-[18px] z-[4]"
+      >
+        {frame ? (
+          <PondBlock kind={frame.kind} heading={frame.heading} headNote={frame.headNote} state="rest">
+            {view}
+          </PondBlock>
+        ) : block.type === 'text' ? (
+          <div className="py-0.5" style={{ paddingInline: TEXT_BLOCK_INSET_PX }}>
+            {view}
+          </div>
+        ) : (
+          view
+        )}
+      </div>
+    )
+  }
 
   function renderBlockEditor(block: Block, i: number) {
     const blank = isBlankBesides(i)
@@ -1475,7 +1553,7 @@ export function BlockCanvas({
              */}
             {blockRows
               .flatMap((row) => {
-                const widths = row.map((block) => block.width ?? 'full')
+                const widths = row.map((item) => item.width)
                 // Widths and rows are kept, not shown: a row that stacks renders
                 // each of its blocks' sizing divs at 100% width, which — because
                 // the list itself wraps — puts each on its own line, in reading
@@ -1484,21 +1562,32 @@ export function BlockCanvas({
                 // `blockRows` without touching any ancestor element, and a
                 // remount is impossible rather than merely untested.
                 const stacks = columnWidth > 0 && !rowHolds(columnWidth, widths)
-                return row.map((block) => ({ block, stacks }))
+                return row.map((item) => ({ item, stacks }))
               })
-              .map(({ block, stacks }, i) => {
-                const width = block.width ?? 'full'
-                const sizingWidth = stacks || width === 'full' ? '100%' : blockWidthStyle(width)
+              .map(({ item, stacks }) => {
+                const sizingWidth =
+                  stacks || item.width === 'full' ? '100%' : blockWidthStyle(item.width)
+                // The ghost's id has no entry in `blocks` — it renders the
+                // dragged block's own content read-only (`renderGhostBlock`),
+                // not through `renderBlockEditor`, which only real slots use.
+                if (item.ghost) {
+                  return draggingIndex === null ? null : (
+                    <div key={item.id} style={{ width: sizingWidth }}>
+                      {renderGhostBlock(blocks[draggingIndex])}
+                    </div>
+                  )
+                }
+                // Looked up by id, not position: `renderList` can hold one more
+                // entry than `blocks` (the ghost) while a beside drop is
+                // planned, so a flattened position no longer lines up with
+                // `blocks`' own index.
+                const i = blocks.findIndex((b) => b.id === item.id)
                 return (
                   <div
-                    key={block.id}
+                    key={item.id}
                     className="min-w-0 transition-[width] duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none"
                     style={{ width: sizingWidth }}
                   >
-                    {/* `blocks[i]`, not `block`: `block` here may carry the
-                        PREVIEWED width (sizing only, see `blocksForLayout`) — the
-                        editor and its width row must still see the block's real,
-                        kept width. */}
                     {renderBlockEditor(blocks[i], i)}
                   </div>
                 )

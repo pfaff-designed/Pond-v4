@@ -115,7 +115,10 @@ function renderPath(blocks: Block[]) {
 }
 
 const blockRoot = (blockId: string) => document.getElementById(`block-${blockId}`)!
+const ghostRoot = (blockId: string) => document.getElementById(`block-${blockId}::ghost`)
 const sizingWidth = (blockId: string) => (blockRoot(blockId).parentElement as HTMLElement).style.width
+const ghostSizingWidth = (blockId: string) =>
+  (ghostRoot(blockId)!.parentElement as HTMLElement).style.width
 const dropBar = (blockId: string) => blockRoot(blockId).querySelector('[data-part="drop-bar"]')
 const blockOrder = () =>
   Array.from(document.querySelectorAll<HTMLElement>('[data-block-id]')).map(
@@ -183,9 +186,11 @@ describe('the side-by-side path (6x), minus ⌘Z', () => {
     dragOverAt('b-list', rect(0, 400), 360, 50)
 
     expect(dropBar('b-list')!.getAttribute('data-zone')).toBe('right')
-    // Full + full, room < 1/4: equal share for two is 1/2 each — the held
-    // block's live preview, before drop.
-    expect(sizingWidth('b-table')).toBe(asInlineStyle(blockWidthStyle('1/2')))
+    // Full + full, room < 1/4: equal share for two is 1/2 each — the lifted
+    // ghost's live preview, before drop. The table's OLD place (origin) stays
+    // at its own full width until the drop actually lands.
+    expect(ghostSizingWidth('b-table')).toBe(asInlineStyle(blockWidthStyle('1/2')))
+    expect(sizingWidth('b-table')).toBe('100%')
 
     // 2. Drop: list and table land side by side at 1/2 each, list then table.
     dropAt('b-list', rect(0, 400), 360, 50)
