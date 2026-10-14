@@ -14,6 +14,7 @@ import {
   readChipsOf,
   RECORD_PARAM,
   recordTitle,
+  revertedByField,
   statusField,
 } from '@/lib/change-log/record-page'
 import type { ChangeLogRecord } from '@/lib/change-log/types'
@@ -119,6 +120,29 @@ describe('readChipsOf', () => {
     expect(readChipsOf(record({ read: null }))).toEqual([])
     expect(readChipsOf(record({ read: { not: 'an array' } }))).toEqual([])
     expect(readChipsOf(record({ read: ['ok', 42] }))).toEqual([])
+  })
+})
+
+describe('revertedByField', () => {
+  it('returns null with no reverts', () => {
+    expect(revertedByField([])).toBeNull()
+  })
+
+  it("names the one revert's clock time and current status", () => {
+    const createdAt = '2026-09-30T10:02:00.000Z'
+    const revert = record({ id: 'rec-2', action: 'revert', status: 'proposed', createdAt })
+    expect(revertedByField([revert])).toEqual({
+      recordId: 'rec-2',
+      clockLabel: `revert · ${formatClockTime(createdAt)}`,
+      statusPillText: 'proposed',
+    })
+  })
+
+  it('picks the newest (first) of two or more reverts', () => {
+    const newest = record({ id: 'rec-3', status: 'accepted', createdAt: '2026-09-30T11:00:00.000Z' })
+    const older = record({ id: 'rec-2', status: 'proposed', createdAt: '2026-09-30T10:02:00.000Z' })
+    expect(revertedByField([newest, older])?.recordId).toBe('rec-3')
+    expect(revertedByField([newest, older])?.statusPillText).toBe('accepted')
   })
 })
 

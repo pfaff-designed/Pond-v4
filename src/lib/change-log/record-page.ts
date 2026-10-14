@@ -85,6 +85,29 @@ export function readChipsOf(record: ChangeLogRecord): string[] {
   return []
 }
 
+/** The fields grid's "reverted by" row: the newest revert of this record,
+ *  when one exists — frame s6o4. `reverts` is `listRevertsOf`'s result
+ *  (newest first); only the first (newest) one is shown. */
+export interface RevertedByField {
+  recordId: string
+  /** "revert · 10:02" — the word, not just the clock time, since this is the
+   *  ONLY place a revert names itself that way (every other clock label on
+   *  the page is bare HH:MM). */
+  clockLabel: string
+  /** The linked pill's text — the revert record's own current status. */
+  statusPillText: string
+}
+
+export function revertedByField(reverts: ChangeLogRecord[]): RevertedByField | null {
+  const newest = reverts[0]
+  if (newest === undefined) return null
+  return {
+    recordId: newest.id,
+    clockLabel: `revert · ${clockTime(newest)}`,
+    statusPillText: labelForStatus(newest.status),
+  }
+}
+
 export function pageBlockField(
   record: ChangeLogRecord,
   pageTitleById: Map<string, string>,
