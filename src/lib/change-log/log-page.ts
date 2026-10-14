@@ -50,20 +50,27 @@ export interface LogDayGroup {
   rows: LogRow[]
 }
 
-const DAY_MS = 86_400_000
+export const DAY_MS = 86_400_000
 
 const startOfDay = (d: Date): number =>
   new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+
+/** Whole calendar days between two moments, local calendar (midnight is the
+ *  boundary) — the one day-math primitive every change-log surface rounds
+ *  with: `dayHeaderLabel` here, the page-changes panel's `panelTimeLabel`,
+ *  and the deleted view's `whenLabel`. */
+export function daysBetween(now: Date, iso: string): number {
+  return Math.round((startOfDay(now) - startOfDay(new Date(iso))) / DAY_MS)
+}
 
 /** `today` / `yesterday` / else a short date (`Sep 5`) — matching the register
  *  `RollupValue`'s date cells already use, not a new one. Local calendar days,
  *  so the boundary falls at the person's own midnight. */
 export function dayHeaderLabel(iso: string, now: Date): string {
-  const created = new Date(iso)
-  const diffDays = Math.round((startOfDay(now) - startOfDay(created)) / DAY_MS)
+  const diffDays = daysBetween(now, iso)
   if (diffDays === 0) return 'today'
   if (diffDays === 1) return 'yesterday'
-  return created.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
 /** `09:24` today, `yesterday 17:05` / `Sep 5 17:05` otherwise — for a surface

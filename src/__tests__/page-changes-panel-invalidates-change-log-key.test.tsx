@@ -1,13 +1,13 @@
 /**
- * KAN-316 — `refresh()`'s `finally` after every `run()` (revert/accept/reject)
- * invalidated only `pageChangesKey`, never the root `changeLogKey()`, so an
- * answer made from this panel never reached the main change-log page/count or
- * the proposed view within the app's 30s staleTime.
+ * KAN-316 — the rail's colour write invalidates the root `changeLogKey()`,
+ * not this panel's own key, so an already-open panel only picks the change
+ * up because `pageChangesKey()` nests under it. The panel itself answers
+ * nothing now (KAN-175, gutting the revert/accept/reject controls) — this
+ * pins the nesting, not a write path through the panel.
  */
 
-import { render, screen } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
-import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
+import { render, screen, act } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { PageChangesPanel } from '@/components/organisms/PageChangesPanel'
 import { changeLogKey } from '@/lib/change-log/keys'
 import type { ChangeLogRecord } from '@/lib/change-log/types'
@@ -34,33 +34,33 @@ jest.mock('@/lib/pages/client', () => ({
 }))
 
 const mockListRecords = jest.fn()
-const mockAdvanceStatus = jest.fn()
 jest.mock('@/lib/change-log/store', () => ({
   ...jest.requireActual('@/lib/change-log/store'),
   listRecords: (...args: unknown[]) => mockListRecords(...args),
-  advanceStatus: (...args: unknown[]) => mockAdvanceStatus(...args),
 }))
 
-// A `revert`/`proposed` record, like `page-changes-panel-reject-stale.test.tsx`
-// — the only shape `PageChangesSection` renders a reject control for.
-const REVERT_RECORD: ChangeLogRecord = {
-  id: 'revert-1',
-  userId: 'user-1',
-  pondId: 'pond-1',
-  status: 'proposed',
-  action: 'revert',
-  actor: 'you',
-  targetPageId: 'page-1',
-  targetBlockId: null,
-  before: [],
-  after: [],
-  sourceThreadId: null,
-  toolCallId: null,
-  read: null,
-  links: { revertOf: 'edit-1' },
-  transitions: [],
-  createdAt: '2026-10-01T09:31:00.000Z',
-  statusAt: '2026-10-01T09:31:00.000Z',
+// Different `action`s rather than different `before`/`after` so the two sets
+// render visibly distinct labels without depending on `summarizeBlockEdit`.
+function record(id: string, action: ChangeLogRecord['action']): ChangeLogRecord {
+  return {
+    id,
+    userId: 'user-1',
+    pondId: 'pond-1',
+    status: 'accepted',
+    action,
+    actor: 'you',
+    targetPageId: 'page-1',
+    targetBlockId: null,
+    before: [],
+    after: [],
+    sourceThreadId: null,
+    toolCallId: null,
+    read: null,
+    links: {},
+    transitions: [],
+    createdAt: '2026-10-01T09:31:00.000Z',
+    statusAt: '2026-10-01T09:31:00.000Z',
+  }
 }
 
 beforeEach(() => {
@@ -74,39 +74,27 @@ beforeEach(() => {
     props: {},
     order: 0,
   })
-  mockListRecords.mockResolvedValue([REVERT_RECORD])
-  mockAdvanceStatus.mockResolvedValue(undefined)
 })
 
-/** A probe standing in for every other change-log view hung off the root key. */
-function ChangeLogRootProbe() {
-  const { data } = useQuery({
-    queryKey: changeLogKey(),
-    queryFn: () => 'root-data',
-  })
-  return <div data-testid="root-probe">{data ?? 'none'}</div>
-}
-
-describe('PageChangesPanel — refresh() reaches the root change-log key', () => {
-  it('invalidates changeLogKey() when a reject from the panel settles', async () => {
+describe('PageChangesPanel — pageChangesKey nests under changeLogKey()', () => {
+  it('refetches when something else (the rail) invalidates the root changeLogKey()', async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    const invalidateSpy = jest.spyOn(queryClient, 'invalidateQueries')
 
-    const user = userEvent.setup()
+    mockListRecords.mockResolvedValue([record('edit-1', 'create_page')])
     render(
       <QueryClientProvider client={queryClient}>
-        <ChangeLogRootProbe />
         <PageChangesPanel pageId="page-1" />
       </QueryClientProvider>
     )
+    await screen.findByText('created this page')
+    expect(mockListRecords).toHaveBeenCalledTimes(1)
 
-    await screen.findByText('root-data')
+    mockListRecords.mockResolvedValue([record('edit-2', 'define_schema')])
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: changeLogKey() })
+    })
 
-    const reject = await screen.findByRole('button', { name: 'reject' })
-    await user.click(reject)
-
-    await screen.findByText('revert of an earlier change')
-
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: changeLogKey() })
+    expect(await screen.findByText('set up the fields')).toBeInTheDocument()
+    expect(mockListRecords).toHaveBeenCalledTimes(2)
   })
 })

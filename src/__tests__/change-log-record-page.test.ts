@@ -9,9 +9,11 @@
 import { describeChange, formatClockTime } from '@/lib/change-log/page-changes'
 import {
   buildChangeTimeline,
+  changeLogPageFilterUrl,
   changeLogRecordUrl,
   firstQuestionFromMessages,
   pageBlockField,
+  PAGE_FILTER_PARAM,
   proposedByField,
   readChipsOf,
   RECORD_PARAM,
@@ -31,6 +33,15 @@ describe('changeLogRecordUrl', () => {
     const params = new URLSearchParams(url.slice(1))
     expect(params.get('nodeId')).toBe('__change_log__')
     expect(params.get(RECORD_PARAM)).toBe('rec-1')
+  })
+})
+
+describe('changeLogPageFilterUrl', () => {
+  it('builds the change log route with the page id as a query param', () => {
+    const url = changeLogPageFilterUrl('page-1')
+    const params = new URLSearchParams(url.slice(1))
+    expect(params.get('nodeId')).toBe('__change_log__')
+    expect(params.get(PAGE_FILTER_PARAM)).toBe('page-1')
   })
 })
 
@@ -130,6 +141,16 @@ describe('recordTitle', () => {
       after: [{ id: 'a', type: 'text', content: `${long}\nsecond line` }],
     })
     expect(recordTitle(r)).toBe(`${'a'.repeat(60)}…`)
+  })
+
+  it("carries the untrimmed text with { full: true } — still first line only", () => {
+    const long = 'a'.repeat(80)
+    const r = record({
+      targetBlockId: null,
+      before: null,
+      after: [{ id: 'a', type: 'text', content: `${long}\nsecond line` }],
+    })
+    expect(recordTitle(r, undefined, { full: true })).toBe(long)
   })
 })
 

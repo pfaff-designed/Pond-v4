@@ -32,7 +32,8 @@ import { resolveChangeLogRecord } from '@/lib/change-log/resolve'
 import { writeAcceptedChanges } from '@/lib/pages/accept'
 import { commitBlocks } from '@/lib/pages/commit'
 import { acceptRevert, proposeRevert } from '@/lib/change-log/revert'
-import { buildPageChanges } from '@/lib/change-log/page-changes'
+import { canRevertRecord } from '@/lib/change-log/revert-plan'
+import { buildPageChangeRows } from '@/lib/change-log/page-change-rows'
 import {
   countProposed,
   listRecords,
@@ -551,10 +552,11 @@ describe('the change log', () => {
     expect(edit.status).toBe('accepted')
     expect(world.pageBlocks()).toHaveLength(2)
 
-    // The log lists it, and offers to set it back.
-    expect(buildPageChanges(await pageLog(world))).toMatchObject([
-      { record: { id: edit.id }, label: 'wrote 1 paragraph', revertable: true },
-    ])
+    // The log lists it, named from the page's own current blocks, and is
+    // structurally revertable — an accepted edit with a block snapshot.
+    const [editRow] = buildPageChangeRows(await pageLog(world), world.pageBlocks())
+    expect(editRow).toMatchObject({ record: { id: edit.id }, label: 'electrician booked' })
+    expect(canRevertRecord(edit)).toBe(true)
 
     // Revert raises a NEW record — the log only grows, the original is untouched.
     const revert = await proposeRevert(world.supabase, {
@@ -571,15 +573,19 @@ describe('the change log', () => {
     })
     expect(world.log()).toHaveLength(2)
     expect(world.at(edit.id).status).toBe('accepted')
-    // With one waiting, the row stops offering a second.
-    const rows = buildPageChanges(await pageLog(world))
-    expect(rows.find((r) => r.record.id === edit.id)).toMatchObject({
-      revertable: false,
-      revertBlockedBy: 'waiting',
-    })
+    // A second revert of the same record is refused while one is still waiting
+    // (`proposeRevert`'s own guard — `change-log-revert.test.ts` pins this).
+    await expect(
+      proposeRevert(world.supabase, {
+        userId: USER,
+        pondId: POND,
+        record: edit,
+        current: world.pageBlocks(),
+      })
+    ).rejects.toThrow(/already has a revert waiting/)
+    const rows = buildPageChangeRows(await pageLog(world), world.pageBlocks())
     expect(rows.find((r) => r.record.id === revert.id)).toMatchObject({
-      label: expect.stringMatching(/^revert of \d{2}:\d{2}$/),
-      reverts: { id: edit.id },
+      status: { kind: 'pill', text: 'proposed' },
     })
 
     // Accepting the revert restores the earlier blocks and marks the original.
@@ -638,8 +644,9 @@ describe('your own edits', () => {
     expect(world.log()[0].transitions.map((t) => t.status)).toEqual(['accepted'])
     expect(await countProposed(world.supabase, USER, POND)).toBe(0)
 
-    const [row] = buildPageChanges(await pageLog(world))
-    expect(`${row.label} · ${row.record.actor}`).toBe('wrote 3 paragraphs · you')
+    const [row] = buildPageChangeRows(await pageLog(world), world.pageBlocks())
+    expect(row.record.actor).toBe('you')
+    expect(row.label).toBe('wiring quote → wiring quote')
   })
 
   it('an unchanged re-save logs nothing', async () => {
@@ -657,8 +664,8 @@ describe('your own edits', () => {
 
   it('reverting your own edit adds the revert and nothing else', async () => {
     await typeAndPause(ORIGINAL, WROTE)
-    const [edit] = buildPageChanges(await pageLog(world))
-    expect(edit.revertable).toBe(true)
+    const [edit] = buildPageChangeRows(await pageLog(world), world.pageBlocks())
+    expect(canRevertRecord(edit.record)).toBe(true)
 
     const revert = await proposeRevert(world.supabase, {
       userId: USER,

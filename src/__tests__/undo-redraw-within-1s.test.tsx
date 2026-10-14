@@ -8,7 +8,7 @@
  */
 
 import React from 'react'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DocumentPanel } from '@/components/organisms/DocumentPanel'
 import { ShellCommands } from '@/components/organisms/ShellCommands'
@@ -144,10 +144,11 @@ describe('a landed ⇧⌘Z redraws the open page and its ⌥⌘H panel within ~1
     renderShell()
 
     await screen.findByText('before redo')
+    const pageColumn = within(screen.getByTestId('page-column'))
 
     // Open the "changes to this page" panel — it starts empty.
     fireEvent.keyDown(document.body, { key: 'h', altKey: true, metaKey: true, code: 'KeyH' })
-    await screen.findByText('nothing logged for this page yet')
+    await screen.findByText('no changes to this page yet')
 
     // The next reads of both queries reflect what the redo just landed.
     mockGetPage.mockResolvedValueOnce(page([{ id: 'b1', type: 'text', content: 'after redo' }]))
@@ -158,10 +159,10 @@ describe('a landed ⇧⌘Z redraws the open page and its ⌥⌘H panel within ~1
 
     // Both must redraw from this ONE chord, inside waitFor's own ~1s window —
     // no second ⇧⌘Z, no re-opening the panel.
-    await waitFor(() => expect(screen.queryByText('before redo')).not.toBeInTheDocument())
-    expect(screen.getByText('after redo')).toBeInTheDocument()
+    await waitFor(() => expect(pageColumn.queryByText('before redo')).not.toBeInTheDocument())
+    expect(pageColumn.getByText('after redo')).toBeInTheDocument()
     await waitFor(() =>
-      expect(screen.queryByText('nothing logged for this page yet')).not.toBeInTheDocument()
+      expect(screen.queryByText('no changes to this page yet')).not.toBeInTheDocument()
     )
   })
 
@@ -179,6 +180,7 @@ describe('a landed ⇧⌘Z redraws the open page and its ⌥⌘H panel within ~1
 
     renderShell()
     await screen.findByText('the new block')
+    const pageColumn = within(screen.getByTestId('page-column'))
     fireEvent.keyDown(document.body, { key: 'h', altKey: true, metaKey: true, code: 'KeyH' })
     await screen.findByText(/the new block/)
 
@@ -189,7 +191,7 @@ describe('a landed ⇧⌘Z redraws the open page and its ⌥⌘H panel within ~1
     ])
     fireEvent.keyDown(document.body, { key: 'z', metaKey: true })
     await waitFor(() => expect(mockUndo).toHaveBeenCalledTimes(1))
-    await waitFor(() => expect(screen.queryByText('the new block')).not.toBeInTheDocument())
+    await waitFor(() => expect(pageColumn.queryByText('the new block')).not.toBeInTheDocument())
 
     // ONE ⇧⌘Z: the block (and the row) must be back within this same waitFor pass.
     mockGetPage.mockResolvedValueOnce(page([created]))
@@ -201,7 +203,11 @@ describe('a landed ⇧⌘Z redraws the open page and its ⌥⌘H panel within ~1
     fireEvent.keyDown(document.body, { key: 'z', metaKey: true, shiftKey: true })
     await waitFor(() => expect(mockRedo).toHaveBeenCalledTimes(1))
 
-    await waitFor(() => expect(screen.getByText('the new block')).toBeInTheDocument())
-    expect(mockGetPage).toHaveBeenCalledTimes(3)
+    await waitFor(() => expect(pageColumn.getByText('the new block')).toBeInTheDocument())
+    // 4, not 3: `PageChangesPanel` now mounts its own `['page', pageId]`
+    // query (for `buildPageChangeRows`'s blocks) alongside `DocumentPanel`'s —
+    // a second observer on the same key refetches once on mount (react-query's
+    // default `refetchOnMount`), on top of the three staged reads above.
+    expect(mockGetPage).toHaveBeenCalledTimes(4)
   })
 })
