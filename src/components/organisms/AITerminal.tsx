@@ -1477,6 +1477,9 @@ export function AITerminal() {
     // A kept html turn anchors to this conversation's `messages`; a fresh
     // thread has none to anchor against.
     setKeptHtmlTurns([])
+    // References ride a thread, not the person: a new thread starts with
+    // none, and the highlight-sync effect clears their page decorations.
+    setReferences([])
   }, [conversationId, setMessages, resetResolutions, getSupabase, pondId])
 
   // ── Lifecycle advancement (ticket-39) ─────────────────────────────────────

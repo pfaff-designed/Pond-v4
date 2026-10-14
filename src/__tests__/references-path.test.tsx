@@ -69,10 +69,11 @@ jest.mock('@/lib/deletion/notify-bridge', () => ({
   requestNotify: jest.fn(),
 }))
 
+let mockMessages: unknown[] = []
 const mockSendMessage = jest.fn()
 jest.mock('@ai-sdk/react', () => ({
   useChat: jest.fn(() => ({
-    messages: [],
+    messages: mockMessages,
     sendMessage: mockSendMessage,
     addToolOutput: jest.fn(),
     setMessages: jest.fn(),
@@ -128,6 +129,7 @@ describe('a reference survives a send, a removal and an edit (KAN-98 path test)'
   beforeEach(() => {
     jest.clearAllMocks()
     mockSendMessage.mockClear()
+    mockMessages = []
   })
   afterEach(() => clearSelection())
 
@@ -274,5 +276,30 @@ describe('a reference survives a send, a removal and an edit (KAN-98 path test)'
     await waitFor(() => expect(newField.querySelectorAll('.mn-reference-highlight')).toHaveLength(1))
     expect(newField.querySelector('.mn-reference-highlight')?.textContent).toBe('wild')
     expect(screen.getByText('Workshop — “wild”')).toBeInTheDocument()
+  })
+
+  it('a new thread clears a reference — no chip, no highlight', async () => {
+    const user = userEvent.setup()
+    // A thread head (and its "new thread" control) only draws past one turn.
+    mockMessages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'question 1' }] },
+      { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'answer 1' }] },
+      { id: 'u2', role: 'user', parts: [{ type: 'text', text: 'question 2' }] },
+      { id: 'a2', role: 'assistant', parts: [{ type: 'text', text: 'answer 2' }] },
+    ]
+    renderSurface()
+    await waitComposerReady()
+    const field = await findTextBlock()
+
+    selectWord(field, 'wild')
+    await user.click(await screen.findByRole('button', { name: 'ask pond' }))
+    await flushAskFocus()
+    expect(await screen.findByText('Workshop — “wild”')).toBeInTheDocument()
+    expect(field.querySelectorAll('.mn-reference-highlight')).toHaveLength(1)
+
+    await user.click(screen.getByRole('button', { name: 'new thread' }))
+
+    await waitFor(() => expect(screen.queryByText('Workshop — “wild”')).not.toBeInTheDocument())
+    expect(field.querySelectorAll('.mn-reference-highlight')).toHaveLength(0)
   })
 })
