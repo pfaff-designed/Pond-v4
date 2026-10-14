@@ -55,6 +55,7 @@ import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
 import { ChangeLogPage } from '@/components/organisms/ChangeLogPage'
 import { ChangeLogRecordPage } from '@/components/organisms/ChangeLogRecordPage'
 import { RECORD_PARAM, recordTitle } from '@/lib/change-log/record-page'
+import { recordKey } from '@/lib/change-log/keys'
 import { getRecord } from '@/lib/change-log/store'
 import { DATABASES_ROOT_TITLE } from '@/lib/pages/databases-root'
 import { childCards } from '@/lib/pages/child-cards'
@@ -268,7 +269,7 @@ export function DocumentPanel() {
   // breadcrumb's `current` can show it, same cache key `ChangeLogRecordPage`
   // itself reads with so the two never double-fetch.
   const { data: breadcrumbRecord } = useQuery({
-    queryKey: ['change-log-record', recordId ?? ''],
+    queryKey: recordKey(recordId ?? ''),
     queryFn: () => getRecord(getSupabase(), recordId as string),
     enabled: recordId !== null,
   })

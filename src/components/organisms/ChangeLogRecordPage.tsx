@@ -21,6 +21,7 @@ import type { ChangeLogRecord } from '@/lib/change-log/types'
 import { getPage } from '@/lib/pages/client'
 import { getThreadFirstQuestion } from '@/lib/conversation/client'
 import { describeChange } from '@/lib/change-log/page-changes'
+import { chainKey, changeLogKey, recordKey, threadFirstQuestionKey } from '@/lib/change-log/keys'
 import { proposeRevert } from '@/lib/change-log/revert'
 import { canRevertRecord } from '@/lib/change-log/revert-plan'
 import { WAITING_STATUSES } from '@/lib/change-log/status'
@@ -64,18 +65,6 @@ async function findRevisionRoot(
  *  every other change-log surface's own column constant (`ChangeLogPage`'s
  *  `DELETED_VIEW_COLUMN_PX`/`PROPOSED_VIEW_COLUMN_PX`). */
 const RECORD_COLUMN_PX = 700 + 2 * PAGE_COLUMN_PAD_PX
-
-function recordKey(recordId: string) {
-  return ['change-log-record', recordId] as const
-}
-
-function threadFirstQuestionKey(threadId: string) {
-  return ['change-log-record', 'thread-first-question', threadId] as const
-}
-
-function chainKey(recordId: string) {
-  return ['change-log-record', 'chain', recordId] as const
-}
 
 /** s6o3's "this change" column rows — 40px/1fr grid, 10px gap, 7px/8px
  *  padding, 8px radius; the viewed record's own rows get the standard ink
@@ -215,6 +204,11 @@ export function ChangeLogRecordPage({ recordId }: { recordId: string }) {
         // one's own revision chain — `listRevertsOf` must be re-asked, since
         // nothing about `chain`'s own query key changed.
         await queryClient.invalidateQueries({ queryKey: [...chainKey(recordId), 'reverts'] })
+        // The new revert record is also a row in every OTHER change-log
+        // view (the "all" table, the waiting count, a page's changes panel)
+        // — none of which key off this record's id, so the shared root
+        // needs its own invalidation here too.
+        await queryClient.invalidateQueries({ queryKey: changeLogKey() })
       } catch (err) {
         setActionError(personFacingMessage(err))
       } finally {
