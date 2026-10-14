@@ -2,7 +2,7 @@
  * `layoutRows` (6x) — packs consecutive blocks into a row while their widths add up
  * to full or less, in array order.
  */
-import { layoutRows, rowHolds } from '@/lib/modules/layout-rows'
+import { layoutRows, rowHolds, widthsForDropBeside } from '@/lib/modules/layout-rows'
 import type { BlockWidth } from '@/lib/modules/content'
 
 function blocks(...widths: (BlockWidth | undefined)[]): { id: string; width?: BlockWidth }[] {
@@ -61,5 +61,31 @@ describe('rowHolds', () => {
 
   it('stacks a ⅓ + ½ row when the sixth-sized block is too narrow', () => {
     expect(rowHolds(700, ['1/3', '1/2'])).toBe(false)
+  })
+})
+
+describe('widthsForDropBeside', () => {
+  it('drops beside a full block into the equal-share branch, not a special case', () => {
+    expect(widthsForDropBeside(['full'])).toEqual(['1/2', '1/2'])
+  })
+
+  it('drops beside a lone ⅓ block, taking the room as ⅔', () => {
+    expect(widthsForDropBeside(['1/3'])).toEqual(['1/3', '2/3'])
+  })
+
+  it('drops into a ⅓ + ½ row with a sixth left over (room=2, < ¼) as ⅓ × 3', () => {
+    expect(widthsForDropBeside(['1/3', '1/2'])).toEqual(['1/3', '1/3', '1/3'])
+  })
+
+  it('drops into a full ½ + ½ row as ⅓ × 3 (Jira acceptance)', () => {
+    expect(widthsForDropBeside(['1/2', '1/2'])).toEqual(['1/3', '1/3', '1/3'])
+  })
+
+  it('drops into a full ⅓ × 3 row as ¼ × 4', () => {
+    expect(widthsForDropBeside(['1/3', '1/3', '1/3'])).toEqual(['1/4', '1/4', '1/4', '1/4'])
+  })
+
+  it('refuses a drop into a row that already holds 4', () => {
+    expect(widthsForDropBeside(['1/4', '1/4', '1/4', '1/4'])).toBeNull()
   })
 })

@@ -51,6 +51,46 @@ export function layoutRows<T extends { width?: BlockWidth }>(blocks: readonly T[
   return rows
 }
 
+/** Twelfths sorted ascending, so the widest fit for a given room is the last one that's `<= room`. */
+const TWELFTHS_ASCENDING = Object.entries(TWELFTHS).sort(([, a], [, b]) => a - b) as [
+  BlockWidth,
+  number,
+][]
+
+/** Equal share of a row's twelve twelfths across `count` blocks — only 2, 3 and 4 ever apply (6x). */
+const EQUAL_SHARE_WIDTH: Record<number, BlockWidth> = {
+  2: '1/2',
+  3: '1/3',
+  4: '1/4',
+}
+
+/** Below a quarter, a dropped block can't fit beside anything — the row shares equally instead (6x). */
+const MIN_ROOM_TWELFTHS = TWELFTHS['1/4']
+
+/**
+ * The widths for `[...existing, droppedBlock]` when a block is dropped beside a
+ * row, or `null` if the row already holds the max of four (6x). With room for at
+ * least a quarter, the dropped block takes the widest `BlockWidth` that fits the
+ * room and the existing blocks keep their widths untouched. With less room —
+ * including none, and the "sixth after ⅓ + ½" case — every block in the row,
+ * existing and dropped alike, becomes the equal share for the new count.
+ */
+export function widthsForDropBeside(existing: readonly BlockWidth[]): BlockWidth[] | null {
+  if (existing.length >= 4) return null
+
+  const used = existing.reduce((sum, width) => sum + toTwelfths(width), 0)
+  const room = 12 - used
+
+  if (room >= MIN_ROOM_TWELFTHS) {
+    const taken = TWELFTHS_ASCENDING.filter(([, twelfths]) => twelfths <= room).pop()
+    // room >= MIN_ROOM_TWELFTHS guarantees at least '1/4' fits, so `taken` always exists.
+    return [...existing, taken![0]]
+  }
+
+  const share = EQUAL_SHARE_WIDTH[existing.length + 1]
+  return [...existing.map(() => share), share]
+}
+
 /** The gap between blocks in a row, and between stacked blocks (6x). */
 export const BLOCK_ROW_GAP_PX = 16
 
