@@ -12,6 +12,10 @@ jest.mock('@/lib/pond/context', () => ({
   usePondId: () => 'pond-1',
 }))
 
+jest.mock('@/lib/pond/name', () => ({
+  usePondName: () => 'life',
+}))
+
 jest.mock('@/lib/supabase/client', () => ({
   createClient: () => ({
     auth: { getUser: jest.fn().mockResolvedValue({ data: { user: { id: 'user-1' } } }) },
