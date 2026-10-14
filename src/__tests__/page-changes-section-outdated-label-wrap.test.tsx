@@ -39,6 +39,7 @@ test('the outdated label wraps on its own line, not clipped, at the panel width'
         onRevert={jest.fn()}
         onAccept={jest.fn()}
         onReject={jest.fn()}
+        onOpenRecord={jest.fn()}
       />
     </div>,
   )

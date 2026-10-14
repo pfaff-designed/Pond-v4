@@ -127,7 +127,7 @@ describe('source sweep — no fourth ink tier is used for type anywhere', () => 
     const hits = linesMatching(/mn-mark-faint/)
     for (const hit of hits) {
       expect(hit).toMatch(
-        /globals\.css|block-dom\.ts|PondAtom\.tsx|PondMolecule\.tsx|RelationChip\.tsx|Rail\.tsx|record-check\.tsx|text\/prose\.ts|ChangeLogPage\.tsx/
+        /globals\.css|block-dom\.ts|PondAtom\.tsx|PondMolecule\.tsx|RelationChip\.tsx|Rail\.tsx|record-check\.tsx|text\/prose\.ts|ChangeLogPage\.tsx|ChangeLogRecordPage\.tsx/
       )
     }
     expect(linesMatching(/-mn-text\/30\b/)).toEqual([])

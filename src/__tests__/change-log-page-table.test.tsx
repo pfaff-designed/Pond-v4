@@ -5,13 +5,20 @@
  */
 
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ChangeLogPage } from '@/components/organisms/ChangeLogPage'
 import { clockTime } from '@/lib/change-log/page-changes'
+import { changeLogRecordUrl } from '@/lib/change-log/record-page'
 import type { ChangeLogRecord } from '@/lib/change-log/types'
 
 jest.mock('@/lib/pond/context', () => ({
   usePondId: () => 'pond-1',
+}))
+
+const mockPush = jest.fn()
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({ push: mockPush }),
 }))
 
 jest.mock('@/lib/pond/name', () => ({
@@ -153,5 +160,14 @@ describe('ChangeLogPage — table chrome', () => {
       expect.objectContaining({ userId: 'user-1', pondId: 'pond-1' })
     )
     expect(mockListPages).toHaveBeenCalledWith(expect.anything(), 'user-1', 'pond-1')
+  })
+
+  it('opens the record page when a row is clicked', async () => {
+    renderPage()
+    await screen.findByText('created this page')
+
+    await userEvent.click(screen.getByText('created this page'))
+
+    expect(mockPush).toHaveBeenCalledWith(changeLogRecordUrl('r1'))
   })
 })

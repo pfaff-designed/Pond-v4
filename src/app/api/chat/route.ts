@@ -81,8 +81,17 @@ export async function POST(req: Request) {
   if (!parsed) {
     return Response.json({ error: 'Request body must include a messages array' }, { status: 400 })
   }
-  const { messages, nodeId, nodeType, resolutions, requestChanges, research, references, openPageContext } =
-    parsed
+  const {
+    messages,
+    nodeId,
+    nodeType,
+    resolutions,
+    requestChanges,
+    research,
+    references,
+    openPageContext,
+    threadId,
+  } = parsed
   const pondId = parsed.pondId ?? null
 
   // Assemble node context (current node + @mentions) to inject into the prompt.
@@ -328,11 +337,34 @@ export async function POST(req: Request) {
     // turn, not a precondition for the reply.
     onStepFinish: async ({ toolCalls }) => {
       if (!user || toolCalls.length === 0) return
+      // KAN-152 — the record page's "read" chips: the open page (only once its
+      // context actually reached the model, KAN-99), every whole-page reference,
+      // and this step's own `read_page` calls. Recomputed per step rather than
+      // reused from the `if (user)` block above: `read_page` calls only exist
+      // once the model has made them, one step at a time.
+      const readPageIds = toolCalls
+        .filter((c) => c.toolName === 'read_page')
+        .map((c) => (c as { input?: unknown }).input)
+        .map((callInput) =>
+          typeof callInput === 'object' && callInput !== null
+            ? (callInput as Record<string, unknown>).pageId
+            : undefined
+        )
+        .filter((id): id is string => typeof id === 'string')
+      const read = [
+        ...(nodeId && openPageContext && openPageData ? [nodeId] : []),
+        ...references.filter(isWholePageReference).map((r) => r.pageId),
+        ...readPageIds,
+      ]
       await recordProposedToolCalls(supabase, {
         userId: user.id,
         // #312: the change log is per pond (`s6m5`).
         pondId,
         openPageId: nodeId ?? null,
+        // KAN-152: the thread this proposal came from, for the record page's
+        // "from thread" chip.
+        sourceThreadId: threadId ?? null,
+        read: read.length > 0 ? [...new Set(read)] : null,
         // #98 — a propose_changes emitted in answer to a request-changes note is
         // the revision of that card's record, linked through links.revisedFrom.
         revisesToolCallId: requestChanges?.toolCallId ?? null,

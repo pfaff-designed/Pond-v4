@@ -26,6 +26,10 @@ jest.mock('@/lib/pond/context', () => ({
   usePondId: () => 'pond-1',
 }))
 
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({ push: jest.fn() }),
+}))
+
 const mockGetPage = jest.fn()
 jest.mock('@/lib/pages/client', () => ({
   getPage: (...args: unknown[]) => mockGetPage(...args),

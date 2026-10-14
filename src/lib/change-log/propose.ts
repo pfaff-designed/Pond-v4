@@ -77,6 +77,11 @@ export interface RecordProposalsInput {
   openPageId: string | null
   /** The conversation the proposal came from, when the caller knows it. */
   sourceThreadId?: string | null
+  /** The record page's "read" chips (KAN-47 provenance) — the page ids Pond
+   *  read before proposing: the open page, whole-page references, and every
+   *  `read_page` call this turn. Carried through to every record this turn
+   *  writes, same as `sourceThreadId`. */
+  read?: unknown
   /**
    * #98 — this turn answers a request-changes note (or a revise on an outdated
    * card) on the propose_changes call with this id. The propose_changes this
@@ -131,6 +136,7 @@ export async function recordProposedToolCalls(
     pondId = null,
     openPageId,
     sourceThreadId = null,
+    read = null,
     revisesToolCallId = null,
     toolCalls,
   } = input
@@ -194,6 +200,7 @@ export async function recordProposedToolCalls(
         before,
         after,
         sourceThreadId,
+        read,
         toolCallId: call.toolCallId,
       }
       // Only a propose_changes revises a propose_changes; anything else emitted

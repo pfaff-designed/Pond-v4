@@ -27,6 +27,7 @@ import {
   FOCUS_TERMINAL_EVENT,
   HTML_IMPORT_PICKER_EVENT,
   OPEN_THREAD_MESSAGE_EVENT,
+  RAISE_RECORD_CARD_EVENT,
   REQUEST_CHANGES_EVENT,
   TOGGLE_COMPOSER_EVENT,
   notifyComposerOpenChange,
@@ -37,8 +38,10 @@ import {
   type ComposerNoticeDetail,
   type FocusTerminalDetail,
   type OpenThreadMessageDetail,
+  type RaiseRecordCardDetail,
   type RequestChangesDetail,
 } from '@/lib/terminal-focus'
+import { ComposerRecordCard } from '@/components/molecules/ComposerRecordCard'
 import { ParentGoneError, makePageFromAnswer, recordPageProposal } from '@/lib/pages/make-page'
 import {
   DEFAULT_PAGE_KIND,
@@ -1873,6 +1876,9 @@ export function AITerminal() {
         // KAN-99: × on the current-page chip withholds the open page's
         // content from this and every turn until another page is opened.
         openPageContext,
+        // KAN-152: lets the route stamp any record this turn writes with the
+        // thread it came from (the record page's "from thread" chip).
+        threadId: conversationId,
       }
       // #97: the thread shows when each line was said ("you · 07:12"), and a
       // page made from the answer carries that moment on its made-from chip.
@@ -1942,6 +1948,7 @@ export function AITerminal() {
       research,
       references,
       dismissedCurrentRefNodeId,
+      conversationId,
     ]
   )
 
@@ -2338,6 +2345,23 @@ export function AITerminal() {
     window.addEventListener(REQUEST_CHANGES_EVENT, onRequestChanges)
     return () => window.removeEventListener(REQUEST_CHANGES_EVENT, onRequestChanges)
   }, [isReady, sendRequestChanges])
+
+  // Raised record cards (KAN-152, s6o4 f4): the record page's revert button
+  // asks; this terminal — already mounted pond-wide — uncollapses and holds
+  // the raised ids until each card reports its own record settled.
+  const [raisedRecordIds, setRaisedRecordIds] = useState<string[]>([])
+  useEffect(() => {
+    function onRaiseRecordCard(e: Event) {
+      const { recordId } = (e as CustomEvent<RaiseRecordCardDetail>).detail
+      setIsCollapsed(false)
+      setRaisedRecordIds((prev) => (prev.includes(recordId) ? prev : [...prev, recordId]))
+    }
+    window.addEventListener(RAISE_RECORD_CARD_EVENT, onRaiseRecordCard)
+    return () => window.removeEventListener(RAISE_RECORD_CARD_EVENT, onRaiseRecordCard)
+  }, [])
+  const handleRecordCardSettled = useCallback((recordId: string) => {
+    setRaisedRecordIds((prev) => prev.filter((id) => id !== recordId))
+  }, [])
 
   useEffect(() => {
     if (!isReady) return
@@ -3818,6 +3842,19 @@ export function AITerminal() {
     </>
   )
 
+  const raisedRecordCards = raisedRecordIds.length > 0 && (
+    <div className="flex flex-col gap-3">
+      {raisedRecordIds.map((recordId) => (
+        <ComposerRecordCard
+          key={recordId}
+          recordId={recordId}
+          pondId={pondId}
+          onSettled={() => handleRecordCardSettled(recordId)}
+        />
+      ))}
+    </div>
+  )
+
   // Send is off with nothing to send; mid-stream it is the stop square.
   const canSend = isReady && !isUploading && (input.trim().length > 0 || attachments.length > 0)
 
@@ -4047,7 +4084,17 @@ export function AITerminal() {
         onHeightCommit={composerHeight.commitHeight}
         cardRef={composerCardRef}
       >
-        {messagesBody}
+        {/* A single expression child, not two siblings — JSX wraps multiple
+            expression children in an array, and TerminalDrawer's own
+            `Boolean(children)` reads any array (even of two `false`s) as
+            truthy, raising the resize handle and sizing a thread that isn't
+            there. */}
+        {(messagesBody || raisedRecordCards) && (
+          <>
+            {messagesBody}
+            {raisedRecordCards}
+          </>
+        )}
       </TerminalDrawer>
     </>
   )

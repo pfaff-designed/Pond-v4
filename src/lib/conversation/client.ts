@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
 import { inPond, resolvePond } from '@/lib/pond/scope'
 import type { UIMessage } from 'ai'
+import { firstQuestionFromMessages } from '@/lib/change-log/record-page'
 import { emptyResolutions, parseResolutions, type ConversationResolutions } from './resolutions'
 
 export interface ActiveConversation {
@@ -78,6 +79,24 @@ export async function saveTranscript(
     .from('conversations')
     .update({ transcript: { messages, resolutions } })
     .eq('id', conversationId)
+}
+
+/** The change log record page's "from thread" chip (KAN-152): the only
+ *  existing read path to a conversation's transcript, reused rather than
+ *  duplicated — `null` when the thread is gone or carries no question yet. */
+export async function getThreadFirstQuestion(
+  supabase: SupabaseClient<Database>,
+  threadId: string
+): Promise<string | null> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data } = await (supabase as any)
+    .from('conversations')
+    .select('transcript')
+    .eq('id', threadId)
+    .maybeSingle()
+  if (!data) return null
+  const { messages } = deserializeTranscript(data.transcript)
+  return firstQuestionFromMessages(messages)
 }
 
 export async function dissolveConversation(

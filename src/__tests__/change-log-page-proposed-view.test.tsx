@@ -11,11 +11,17 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ChangeLogPage } from '@/components/organisms/ChangeLogPage'
 import { REVISE_NOTE } from '@/lib/change-log/answer'
 import { changeLogKey } from '@/lib/change-log/keys'
+import { changeLogRecordUrl } from '@/lib/change-log/record-page'
 import { pagesKey } from '@/lib/pages/keys'
 import type { ChangeLogRecord } from '@/lib/change-log/types'
 
 jest.mock('@/lib/pond/context', () => ({
   usePondId: () => 'pond-1',
+}))
+
+const mockPush = jest.fn()
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({ push: mockPush }),
 }))
 
 jest.mock('@/lib/pond/name', () => ({
@@ -135,6 +141,23 @@ describe('ChangeLogPage — the proposed view', () => {
     expect(screen.getByText('newest first')).toBeInTheDocument()
     expect(await screen.findByTestId('change-log-proposed-card-rec-waiting')).toBeInTheDocument()
     expect(screen.queryByTestId('change-log-proposed-empty')).not.toBeInTheDocument()
+  })
+
+  it('opens the record page when a card is clicked, without answering it', async () => {
+    const PROPOSED_RECORD = record({ id: 'rec-open' })
+    mockListRecords.mockImplementation(async (_supabase, opts) =>
+      isProposedQuery(opts) ? [PROPOSED_RECORD] : []
+    )
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(screen.getByRole('button', { name: 'proposed' }))
+    const card = await screen.findByTestId('change-log-proposed-card-rec-open')
+
+    await user.click(within(card).getByText('deleted page'))
+
+    expect(mockPush).toHaveBeenCalledWith(changeLogRecordUrl('rec-open'))
+    expect(mockAcceptRecordFromLog).not.toHaveBeenCalled()
   })
 
   it('queries both proposed and outdated statuses — WAITING_STATUSES, not a literal proposed-only filter', async () => {

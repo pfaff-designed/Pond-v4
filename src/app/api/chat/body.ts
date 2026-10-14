@@ -24,6 +24,9 @@ interface ChatBody {
   /** KAN-99 — false once the person has dismissed the open page's whole-page
    *  chip for this visit; withholds that page's content, default true. */
   openPageContext: boolean
+  /** KAN-152 — the conversation this turn belongs to, so a record this turn
+   *  writes can carry `sourceThreadId` (the record page's "from thread" chip). */
+  threadId?: string
 }
 
 /** Minimal body-shape guard: null unless `body` is an object carrying a
@@ -46,6 +49,7 @@ export function parseChatBody(body: unknown): ChatBody | null {
     research: b.research === true,
     references: parseReferences(b.references),
     openPageContext: b.openPageContext !== false,
+    threadId: typeof b.threadId === 'string' ? b.threadId : undefined,
     ...(requestChanges ? { requestChanges } : {}),
   }
 }

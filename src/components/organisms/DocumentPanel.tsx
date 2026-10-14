@@ -53,6 +53,10 @@ import { commandPath } from '@/lib/pages/command-path'
 import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
 import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
 import { ChangeLogPage } from '@/components/organisms/ChangeLogPage'
+import { ChangeLogRecordPage } from '@/components/organisms/ChangeLogRecordPage'
+import { RECORD_PARAM, recordBreadcrumbTitle } from '@/lib/change-log/record-page'
+import { recordKey } from '@/lib/change-log/keys'
+import { getRecord } from '@/lib/change-log/store'
 import { DATABASES_ROOT_TITLE } from '@/lib/pages/databases-root'
 import { childCards } from '@/lib/pages/child-cards'
 import { isUntouchedPage, titleEyebrow } from '@/lib/pages/title-eyebrow'
@@ -80,6 +84,10 @@ export function DocumentPanel() {
   // it takes none of the getPage/rows-driven path below — rendered by
   // `ChangeLogPage` instead, further down.
   const isChangeLogNode = nodeId === CHANGE_LOG_NODE_ID
+  // A record route under the virtual change-log node (`?record=`, KAN-152):
+  // read here (not inside `ChangeLogRecordPage`) because the breadcrumb below
+  // needs the record's title before that component ever mounts.
+  const recordId = isChangeLogNode ? searchParams.get(RECORD_PARAM) : null
   // Lazily created on first use, not at render — so an envless mount (Storybook,
   // CI) never constructs a real client and throws (#38); the page query and the
   // save/property paths below construct it only when they actually run.
@@ -257,14 +265,38 @@ export function DocumentPanel() {
   // Board 6f frame 4: an empty title after an apply names the kind, e.g. `recipe name`.
   const titlePlaceholder = page?.props?.kind ? `${page.props.kind} name` : 'Untitled'
 
+  // The record route's own title (`?record=`, KAN-152): read once here so the
+  // breadcrumb's `current` can show it, same cache key `ChangeLogRecordPage`
+  // itself reads with so the two never double-fetch.
+  const { data: breadcrumbRecord, isLoading: breadcrumbRecordLoading } = useQuery({
+    queryKey: recordKey(recordId ?? ''),
+    queryFn: () => getRecord(getSupabase(), recordId as string),
+    enabled: recordId !== null,
+  })
+
   // The shell's `PondCommand` reads this page's path at rest: the root, the
   // ancestors, then this page — its name read off the row until the page lands.
   usePublishCommandPath(
     isChangeLogNode
       ? {
           glyph: pond?.glyph ?? LIFE_GLYPH,
-          trail: [home?.title || pondName || 'life', DATABASES_ROOT_TITLE],
-          current: 'change log',
+          trail: recordId
+            ? [home?.title || pondName || 'life', DATABASES_ROOT_TITLE, 'change log']
+            : [home?.title || pondName || 'life', DATABASES_ROOT_TITLE],
+          // `viewTitle`'s own fallback (an ordinary page's title read off the
+          // row until it lands) has no row to read here — a record's title
+          // only exists once the record query resolves, so the placeholder is
+          // a loading word instead of a cached title. Once that query SETTLES
+          // with nothing (a missing or not-visible record, AUDIT G6), the
+          // crumb must not keep reading `loading…` forever — it names the
+          // not-found state instead.
+          current: recordId
+            ? breadcrumbRecord
+              ? recordBreadcrumbTitle(breadcrumbRecord)
+              : breadcrumbRecordLoading
+                ? 'loading…'
+                : 'not found'
+            : 'change log',
           role: null,
         }
       : commandPath(rows, nodeId, {
@@ -275,10 +307,10 @@ export function DocumentPanel() {
   )
 
   // The virtual change-log page: the breadcrumb above has already taken effect;
-  // `ChangeLogPage` owns its own table/view-bar and data fetching — this surface
-  // takes none of the `getPage`/rows path below.
+  // `ChangeLogPage`/`ChangeLogRecordPage` own their own data fetching — this
+  // surface takes none of the `getPage`/rows path below.
   if (isChangeLogNode) {
-    return <ChangeLogPage />
+    return recordId ? <ChangeLogRecordPage recordId={recordId} /> : <ChangeLogPage />
   }
 
   if ((!nodeId && homePending) || isLoading || rowsPending || !page) {
