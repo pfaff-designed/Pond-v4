@@ -116,3 +116,32 @@ describe('PageProposalCard — name and kind commit on settle (KAN-290)', () => 
     expect(calls).toEqual(['name:renovation blockers renamed', 'make-page'])
   })
 })
+
+describe('PageProposalCard — accepted state goes dead-link-safe in trash (KAN-308)', () => {
+  it('renders "in trash" as plain text with no button when inTrash is true', () => {
+    render(
+      <PageProposalCard
+        {...baseProps}
+        status="accepted"
+        inTrash={true}
+        onOpenPage={jest.fn()}
+      />
+    )
+
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+    expect(screen.getByText(/in trash/)).toBeInTheDocument()
+  })
+
+  it('still renders the "open <name>" button when inTrash is false', () => {
+    render(
+      <PageProposalCard
+        {...baseProps}
+        status="accepted"
+        inTrash={false}
+        onOpenPage={jest.fn()}
+      />
+    )
+
+    expect(screen.getByRole('button', { name: `open ${baseProps.name}` })).toBeInTheDocument()
+  })
+})

@@ -84,7 +84,13 @@ describe('POST /api/chat/propose-page', () => {
     mockGenerateObject.mockRejectedValue(new Error('model unavailable'))
     const res = await post({ question: 'q', prose: 'p' })
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ name: null, parentId: null, mentioned: [] })
+    expect(await res.json()).toEqual({
+      name: null,
+      parentId: null,
+      mentioned: [],
+      leadIn: '',
+      signOff: '',
+    })
     expect(consoleErrorSpy).toHaveBeenCalledTimes(1)
     expect(consoleErrorSpy).toHaveBeenCalledWith('propose-page: placement model failed', 'model unavailable')
     consoleErrorSpy.mockRestore()
@@ -94,7 +100,13 @@ describe('POST /api/chat/propose-page', () => {
     mockGenerateObject.mockRejectedValue(new Error('response did not match schema'))
     const res = await post({ question: 'q', prose: 'p' })
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ name: null, parentId: null, mentioned: [] })
+    expect(await res.json()).toEqual({
+      name: null,
+      parentId: null,
+      mentioned: [],
+      leadIn: '',
+      signOff: '',
+    })
   })
 
   it('nulls a hallucinated parentId outside the candidates', async () => {
@@ -130,6 +142,24 @@ describe('POST /api/chat/propose-page', () => {
     })
   })
 
+  it('passes the model-named leadIn/signOff through verbatim', async () => {
+    mockListPages.mockResolvedValue([])
+    mockGenerateObject.mockResolvedValue({
+      object: {
+        name: 'renovation blockers',
+        parentId: null,
+        mentioned: [],
+        leadIn: "Sure — here's a rundown:",
+        signOff: 'Want me to go deeper on any of these?',
+      },
+    })
+    const res = await post({ question: 'q', prose: 'p' })
+    expect(res.status).toBe(200)
+    const json = (await res.json()) as { leadIn: string; signOff: string }
+    expect(json.leadIn).toBe("Sure — here's a rundown:")
+    expect(json.signOff).toBe('Want me to go deeper on any of these?')
+  })
+
   it('makes a read page a valid parentId when it is given by id (the real caller sends ids)', async () => {
     const area = page({ id: 'area-1', parentId: null, title: 'creativity' })
     const readPage = page({ id: 'kr-1', parentId: 'area-1', title: 'Kitchen renovation' })
@@ -155,7 +185,7 @@ describe('POST /api/chat/propose-page', () => {
 describe('validatePlacement', () => {
   it('nulls a parentId not in the candidate list', () => {
     const result = validatePlacement(
-      { name: 'n', parentId: 'outside', mentioned: [] },
+      { name: 'n', parentId: 'outside', mentioned: [], leadIn: '', signOff: '' },
       ['area-1']
     )
     expect(result.parentId).toBeNull()
@@ -163,7 +193,13 @@ describe('validatePlacement', () => {
 
   it('nulls a mentioned ref not in the candidate list while keeping title/note', () => {
     const result = validatePlacement(
-      { name: 'n', parentId: null, mentioned: [{ title: 't', ref: 'outside', note: 'note' }] },
+      {
+        name: 'n',
+        parentId: null,
+        mentioned: [{ title: 't', ref: 'outside', note: 'note' }],
+        leadIn: '',
+        signOff: '',
+      },
       ['area-1']
     )
     expect(result.mentioned).toEqual([{ title: 't', ref: null, note: 'note' }])
@@ -171,7 +207,13 @@ describe('validatePlacement', () => {
 
   it('passes through a parentId and ref that are in the candidate list', () => {
     const result = validatePlacement(
-      { name: 'n', parentId: 'area-1', mentioned: [{ title: 't', ref: 'area-1', note: 'note' }] },
+      {
+        name: 'n',
+        parentId: 'area-1',
+        mentioned: [{ title: 't', ref: 'area-1', note: 'note' }],
+        leadIn: '',
+        signOff: '',
+      },
       ['area-1']
     )
     expect(result.parentId).toBe('area-1')

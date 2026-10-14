@@ -59,6 +59,7 @@ import {
   withReadStamp,
   type EarlierAnswer,
   type PageProposal,
+  type PageProposalPatch,
   type ReadPartLike,
 } from '@/lib/conversation/page-proposals'
 import { pageEyebrowClass, chipBaseClass } from '@/components/atoms/kicker'
@@ -652,7 +653,7 @@ export function AITerminal() {
   // let React Query serve the props-less shape here, silently emptying the
   // collection picker. The extra key segment keeps them distinct while
   // prefix-based `invalidateQueries(['pages'])` still refreshes both.
-  const { data: allPages = [], isFetched: pagesLoaded } = useQuery({
+  const { data: allPages = [], isFetched: pagesLoaded, isError: pagesErrored } = useQuery({
     queryKey: [...pagesKey(pondId), 'full'],
     queryFn: async () => {
       const supabase = getSupabase()
@@ -2841,15 +2842,9 @@ export function AITerminal() {
   // `new page — proposed` card (one per answer — a second press is ignored by
   // the reducer); the proposal is born as a `proposed` change-log record and rides
   // the resolutions envelope with the transcript, so closing Pond leaves it pending.
-  const editPageProposal = useCallback(
-    (
-      id: string,
-      patch: Partial<Pick<PageProposal, 'name' | 'parentId' | 'kind' | 'mentioned'>>
-    ) => {
-      dispatch({ kind: 'editPageProposal', id, patch })
-    },
-    []
-  )
+  const editPageProposal = useCallback((id: string, patch: PageProposalPatch) => {
+    dispatch({ kind: 'editPageProposal', id, patch })
+  }, [])
 
   const proposePage = useCallback(
     (opts: {
@@ -2939,8 +2934,10 @@ export function AITerminal() {
           // non-null.
           const live = pageProposalsRef.current[proposal.id]
           if (!live) return
-          const patch: Partial<Pick<PageProposal, 'name' | 'parentId' | 'mentioned'>> = {
+          const patch: PageProposalPatch = {
             mentioned: placement.mentioned,
+            leadIn: placement.leadIn,
+            signOff: placement.signOff,
           }
           if (live.name === proposal.name) patch.name = placement.name
           if (placement.parentId !== null && live.parentId === proposal.parentId) {
@@ -2982,6 +2979,13 @@ export function AITerminal() {
   // deleted between proposal and make page resets the place to top level and
   // asks for another; nothing is half-made either way.
   const makingPages = useRef<Set<string>>(new Set())
+  // `insertPageOptimistic` only writes `pagesKey(pondId)` (the rail's lean
+  // cache), never this query's `[...pagesKey(pondId), 'full']` key — so a
+  // just-made page is briefly absent from `allPages` until the invalidated
+  // query refetches. Held here (state, not a ref — the trash check below
+  // reads it during render) so that gap never reads as "in trash"; pruned
+  // once `allPages` itself confirms the id (below).
+  const [madePageIds, setMadePageIds] = useState<ReadonlySet<string>>(() => new Set())
   const makePage = useCallback(
     async (id: string) => {
       const proposal = pageProposals[id]
@@ -2995,6 +2999,10 @@ export function AITerminal() {
           () => crypto.randomUUID()
         )
         dispatch({ kind: 'notePageMade', id, pageId: made.id })
+        setMadePageIds((prev) => {
+          if (prev.has(made.id)) return prev
+          return new Set(prev).add(made.id)
+        })
         // Rail entry at once (the correct parent), reconciled in the background.
         insertPageOptimistic(
           queryClient,
@@ -3036,6 +3044,30 @@ export function AITerminal() {
     },
     [router]
   )
+
+  // Once the refetched `allPages` confirms a page `madePageIds` is holding a
+  // seat for, drop it — otherwise a page made this session could never read
+  // as trashed again after a real delete. Guarded to return the SAME `prev`
+  // reference once every confirmed id has been dropped, so it settles rather
+  // than cascading — same guard shape as this file's "current ref" effect
+  // above, hence `react-hooks/set-state-in-effect` disabled here too.
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (!pagesLoaded) return
+    setMadePageIds((prev) => {
+      if (prev.size === 0) return prev
+      const next = new Set(prev)
+      let changed = false
+      for (const id of prev) {
+        if (allPages.some((p) => p.id === id)) {
+          next.delete(id)
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [allPages, pagesLoaded])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // ── Streaming stage text (ticket-32) ──────────────────────────────────────
   // A 25–30s generation used to show a bare "…". Derive a human stage line from the
@@ -3278,6 +3310,10 @@ export function AITerminal() {
     }))
     const cardsForMessage = Object.values(pageProposals).filter((p) => p.messageId === message.id)
     const hasOpenCard = cardsForMessage.some((p) => p.status === 'proposed')
+    // Once the card reads "page made", the action never comes back — only a
+    // cancelled ('rejected') proposal lets the person try again.
+    const hasMadeCard = cardsForMessage.some((p) => p.status === 'accepted')
+    const canMakePage = !!text && !hasOpenCard && !hasMadeCard
     // A sent message's file parts render as inert chips: the message is already out.
     const attachmentParts = (
       message.parts as Array<{
@@ -3476,28 +3512,43 @@ export function AITerminal() {
             </EarlierAnswerFold>
           ))}
         {/* Make-this-a-page cards: editable while pending; make page is the only write. */}
-        {cardsForMessage.map((proposal) => (
-          <PageProposalCard
-            key={proposal.id}
-            className="mn-arrive"
-            name={proposal.name}
-            parentId={proposal.parentId}
-            kind={proposal.kind}
-            parentOptions={proposalParentOptions}
-            status={proposal.status}
-            error={pageProposalErrors[proposal.id]}
-            onNameChange={(name) => editPageProposal(proposal.id, { name })}
-            onParentChange={(parentId) => editPageProposal(proposal.id, { parentId })}
-            onKindChange={(kind) => editPageProposal(proposal.id, { kind })}
-            onMakePage={() => void makePage(proposal.id)}
-            onCancel={() => cancelPageProposal(proposal.id)}
-            onOpenPage={proposal.pageId ? () => openMadePage(proposal) : undefined}
-          />
-        ))}
+        {cardsForMessage.map((proposal) => {
+          // No stored flag: membership in the live pages list is the trash
+          // signal, so a restored page flips the card back on its own. Never
+          // read that signal before the list has loaded (or past an error) —
+          // `allPages` defaults to `[]` until then, which would misread every
+          // made page as trashed. `madePageIds` covers the gap between a
+          // page's own write landing and this query's refetch.
+          const inTrash =
+            pagesLoaded &&
+            !pagesErrored &&
+            !!proposal.pageId &&
+            !madePageIds.has(proposal.pageId) &&
+            !allPages.some((p) => p.id === proposal.pageId)
+          return (
+            <PageProposalCard
+              key={proposal.id}
+              className="mn-arrive"
+              name={proposal.name}
+              parentId={proposal.parentId}
+              kind={proposal.kind}
+              parentOptions={proposalParentOptions}
+              status={proposal.status}
+              error={pageProposalErrors[proposal.id]}
+              inTrash={inTrash}
+              onNameChange={(name) => editPageProposal(proposal.id, { name })}
+              onParentChange={(parentId) => editPageProposal(proposal.id, { parentId })}
+              onKindChange={(kind) => editPageProposal(proposal.id, { kind })}
+              onMakePage={() => void makePage(proposal.id)}
+              onCancel={() => cancelPageProposal(proposal.id)}
+              onOpenPage={inTrash || !proposal.pageId ? undefined : () => openMadePage(proposal)}
+            />
+          )
+        })}
         {message.role === 'assistant' && isLastAssistant && (text || isStreaming) && (
           <AnswerActions
             streaming={answerStreaming}
-            canMakePage={!!text && !hasOpenCard}
+            canMakePage={canMakePage}
             onMakePage={() => {
               const q = questionBefore(messageIndex)
               // The open page plus every page the answer actually read, by id —

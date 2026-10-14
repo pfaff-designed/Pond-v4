@@ -67,10 +67,15 @@ const PAGES = [
 
 const mockCreatePage = jest.fn()
 const mockGetPage = jest.fn()
+const mockListPages = jest.fn()
+// A page `createPage` just made is live (not trashed) until a test says
+// otherwise — `listPages` must see it too, or every freshly-made page would
+// read as "in trash" the instant it lands.
+let createdPages: Array<Record<string, unknown>> = []
 jest.mock('@/lib/pages/client', () => ({
   createPage: (...args: unknown[]) => mockCreatePage(...args),
   getPage: (...args: unknown[]) => mockGetPage(...args),
-  listPages: jest.fn(async () => PAGES),
+  listPages: (...args: unknown[]) => mockListPages(...args),
 }))
 
 const mockInsertPageOptimistic = jest.fn()
@@ -125,11 +130,27 @@ jest.mock('@ai-sdk/react', () => ({
   })),
 }))
 
+// The real write path, wrapped so a test can inspect what reached it (KAN-308)
+// without changing its behaviour for every other test in this file.
+const mockMakePageFromAnswer = jest.fn()
+jest.mock('@/lib/pages/make-page', () => {
+  const actual = jest.requireActual('@/lib/pages/make-page')
+  return {
+    ...actual,
+    makePageFromAnswer: (...args: unknown[]) => {
+      mockMakePageFromAnswer(...args)
+      return actual.makePageFromAnswer(...args)
+    },
+  }
+})
+
 import { AITerminal } from '@/components/organisms/AITerminal'
 import { ANSWER_PROSE_CLASS } from '@/components/molecules/Markdown'
 import { readStamp } from '@/lib/conversation/page-proposals'
 import { machineEyebrowClass, pageEyebrowClass } from '@/components/atoms/kicker'
 import { changeLogKey } from '@/lib/change-log/keys'
+import { pagesKey } from '@/lib/pages/keys'
+import type { PageProposal } from '@/lib/conversation/page-proposals'
 
 // ── Fixtures ──────────────────────────────────────────────────────────────
 
@@ -211,11 +232,22 @@ beforeEach(() => {
   mockGetPage.mockImplementation(
     async (_sb: unknown, id: string) => PAGES.find((p) => p.id === id) ?? null
   )
+  createdPages = []
+  mockListPages.mockImplementation(async () => [...PAGES, ...createdPages])
   mockCreatePage.mockImplementation(
-    async (_sb: unknown, _uid: string, input: { title: string }) => ({
-      id: 'new-page-1',
-      title: input.title,
-    })
+    async (_sb: unknown, _uid: string, input: { title: string; parentId: string | null }) => {
+      const page = {
+        id: 'new-page-1',
+        parentId: input.parentId,
+        type: 'page',
+        title: input.title,
+        blocks: [],
+        props: {},
+        order: 99,
+      }
+      createdPages.push(page)
+      return page
+    }
   )
 })
 
@@ -517,6 +549,141 @@ describe('make this a page → the `new page — proposed` card', () => {
     expect(screen.getByRole('button', { name: 'ask again' })).toBeInTheDocument()
   })
 
+  it('the page made: "make this a page" never comes back once the card is accepted', async () => {
+    mockLoadedMessages = answeredThread()
+    mockLoadedResolutions = {
+      changes: {},
+      creates: {},
+      skipped: {},
+      pageProposals: {
+        'pp-made': {
+          id: 'pp-made',
+          messageId: 'a1',
+          question: QUESTION,
+          askedAt: '2026-09-22T07:12:00',
+          prose: PROSE,
+          read: ['Kitchen renovation'],
+          name: 'renovation blockers',
+          parentId: 'kr-1',
+          kind: 'page',
+          status: 'accepted',
+          pageId: 'new-page-1',
+        },
+      },
+    }
+    renderTerminal()
+    await ready()
+    expect(screen.queryByRole('button', { name: 'make this a page' })).not.toBeInTheDocument()
+  })
+
+  it('an accepted proposal whose page is gone from allPages reads "in trash", no open button', async () => {
+    mockLoadedMessages = answeredThread()
+    mockLoadedResolutions = {
+      changes: {},
+      creates: {},
+      skipped: {},
+      pageProposals: {
+        'pp-made': {
+          id: 'pp-made',
+          messageId: 'a1',
+          question: QUESTION,
+          askedAt: '2026-09-22T07:12:00',
+          prose: PROSE,
+          read: ['Kitchen renovation'],
+          name: 'renovation blockers',
+          parentId: 'kr-1',
+          kind: 'page',
+          status: 'accepted',
+          // Not one of PAGES's ids — the made page has been trashed.
+          pageId: 'gone-page-1',
+        },
+      },
+    }
+    renderTerminal()
+    await ready()
+    expect(screen.getByText('page made · renovation blockers · in trash')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^open /i })).not.toBeInTheDocument()
+  })
+
+  it('an accepted proposal whose page is still in allPages keeps its open link', async () => {
+    mockLoadedMessages = answeredThread()
+    mockLoadedResolutions = {
+      changes: {},
+      creates: {},
+      skipped: {},
+      pageProposals: {
+        'pp-made': {
+          id: 'pp-made',
+          messageId: 'a1',
+          question: QUESTION,
+          askedAt: '2026-09-22T07:12:00',
+          prose: PROSE,
+          read: ['Kitchen renovation'],
+          name: 'renovation blockers',
+          parentId: 'kr-1',
+          kind: 'page',
+          status: 'accepted',
+          // 'bud-1' is in PAGES — the made page is still live.
+          pageId: 'bud-1',
+        },
+      },
+    }
+    renderTerminal()
+    await ready()
+    expect(screen.queryByText(/in trash/)).not.toBeInTheDocument()
+    const openButton = screen.getByRole('button', { name: 'open renovation blockers' })
+    fireEvent.click(openButton)
+    await waitFor(() => expect(mockRouterPush).toHaveBeenCalledWith(expect.stringContaining('bud-1')))
+  })
+
+  it('while the pages list is still loading, an accepted proposal never reads "in trash"', async () => {
+    // Never resolves within the test — `allPages` stays `[]`, `pagesLoaded` stays false.
+    mockListPages.mockImplementation(() => new Promise(() => {}))
+    mockLoadedMessages = answeredThread()
+    mockLoadedResolutions = {
+      changes: {},
+      creates: {},
+      skipped: {},
+      pageProposals: {
+        'pp-made': {
+          id: 'pp-made',
+          messageId: 'a1',
+          question: QUESTION,
+          askedAt: '2026-09-22T07:12:00',
+          prose: PROSE,
+          read: ['Kitchen renovation'],
+          name: 'renovation blockers',
+          parentId: 'kr-1',
+          kind: 'page',
+          status: 'accepted',
+          // Would read as gone if `allPages`'s still-empty default were trusted.
+          pageId: 'gone-page-1',
+        },
+      },
+    }
+    renderTerminal()
+    await ready()
+    expect(screen.queryByText(/in trash/)).not.toBeInTheDocument()
+  })
+
+  it('right after make page, with a listPages mock that stays stale, the card reads "open <name>", not in trash', async () => {
+    // Simulates insertPageOptimistic writing a cache `allPages` doesn't read,
+    // with the refetch also never catching up — the made page must still
+    // read as live off the session's own `madePageIds` set.
+    mockListPages.mockImplementation(async () => [...PAGES])
+    renderTerminal()
+    await ready()
+    fireEvent.click(screen.getByRole('button', { name: 'make this a page' }))
+    const card = await screen.findByRole('group', { name: /new page — proposed/i })
+    fireEvent.click(within(card).getByRole('button', { name: 'make page' }))
+
+    await waitFor(() => expect(mockRouterPush).toHaveBeenCalledWith(expect.stringContaining('new-page-1')))
+    expect(screen.queryByText(/in trash/)).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'open what is actually blocking the renovation' })
+    ).toBeInTheDocument()
+  })
+
   it('cancel returns to the thread and makes nothing; the record is rejected', async () => {
     renderTerminal()
     await ready()
@@ -726,6 +893,35 @@ describe('make this a page → the `new page — proposed` card', () => {
     })
   })
 
+  it('carries the route’s leadIn/signOff onto the proposal record (KAN-308)', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        name: 'renovation blockers',
+        parentId: 'bud-1',
+        mentioned: [],
+        leadIn: 'Sure — here’s the blocker:',
+        signOff: 'Want me to draft the email?',
+      }),
+    })
+    renderTerminal()
+    await ready()
+    fireEvent.click(screen.getByRole('button', { name: 'make this a page' }))
+    const card = await screen.findByRole('group', { name: /new page — proposed/i })
+
+    // The route's reply lands — the same sync point the name/parent tests use.
+    const name = within(card).getByRole('textbox', { name: 'name' }) as HTMLInputElement
+    await waitFor(() => expect(name.value).toBe('renovation blockers'))
+
+    fireEvent.click(within(card).getByRole('button', { name: 'make page' }))
+    await waitFor(() => expect(mockMakePageFromAnswer).toHaveBeenCalledTimes(1))
+    const sentProposal = mockMakePageFromAnswer.mock.calls[0][1].proposal as PageProposal
+    expect(sentProposal).toMatchObject({
+      leadIn: 'Sure — here’s the blocker:',
+      signOff: 'Want me to draft the email?',
+    })
+  })
+
   it("fills in Pond's chosen name and the full ancestor path once resolved, and a double click still makes one page (path test)", async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
@@ -864,6 +1060,45 @@ describe('make this a page → the `new page — proposed` card', () => {
     await act(async () => {})
     expect(name.value).toBe('what is actually blocking the renovation')
     expect(under.value).toBe('kr-1')
+  })
+})
+
+// ── The person's path, end to end: ask → make → made → trashed (KAN-308) ────
+
+describe('the person’s path: make this a page → made → trashed (PATH_STEPS 2, 4, 5, 6)', () => {
+  it('drops "make this a page" once the page is made, then goes dead-link-safe once the page is trashed', async () => {
+    const qc = newQueryClient()
+    render(terminalTree(qc))
+    await ready()
+
+    fireEvent.click(screen.getByRole('button', { name: 'make this a page' }))
+    const card = await screen.findByRole('group', { name: /new page — proposed/i })
+    fireEvent.click(within(card).getByRole('button', { name: 'make page' }))
+    await waitFor(() => expect(mockCreatePage).toHaveBeenCalledTimes(1))
+    await waitFor(() =>
+      expect(mockAdvanceStatus).toHaveBeenCalledWith(expect.anything(), 'rec-1', 'accepted', 'you')
+    )
+
+    // The action never comes back for this answer, and the card settles as made.
+    expect(screen.queryByRole('button', { name: 'make this a page' })).not.toBeInTheDocument()
+    expect(screen.getByText('page made')).toBeInTheDocument()
+    const openButton = await screen.findByRole('button', {
+      name: 'open what is actually blocking the renovation',
+    })
+    expect(openButton).toBeInTheDocument()
+
+    // The page is deleted (trashed) — `allPages` no longer carries it.
+    createdPages = createdPages.filter((p) => p.id !== 'new-page-1')
+    await act(async () => {
+      await qc.invalidateQueries({ queryKey: pagesKey() })
+    })
+
+    await waitFor(() =>
+      expect(
+        screen.getByText('page made · what is actually blocking the renovation · in trash')
+      ).toBeInTheDocument()
+    )
+    expect(screen.queryByRole('button', { name: /^open /i })).not.toBeInTheDocument()
   })
 })
 

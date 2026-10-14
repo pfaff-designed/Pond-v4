@@ -55,7 +55,7 @@ export function buildCandidatePageIds(
   return [...ids]
 }
 
-const FALLBACK: PlacementResult = { name: null, parentId: null, mentioned: [] }
+const FALLBACK: PlacementResult = { name: null, parentId: null, mentioned: [], leadIn: '', signOff: '' }
 
 /** The model's raw (unvalidated) output — `parentId`/`mentioned[].ref` may name
  *  an id outside the candidate list; {@link validatePlacement} is the gate. */
@@ -69,6 +69,8 @@ const PlacementSchema = z.object({
       note: z.string(),
     })
   ),
+  leadIn: z.string(),
+  signOff: z.string(),
 })
 
 const MODEL_TIMEOUT_MS = 9000
@@ -106,6 +108,7 @@ function buildPlacementPrompt(opts: {
     `Answer: ${opts.prose}`,
     'Name the page the way Pond would: short, specific, not the question repeated verbatim.',
     'List what the answer mentioned as `mentioned`: for each, a `title`, a `ref` that is one of the candidate ids above if it resolves to one of them (otherwise null), and a short lowercase `note`.',
+    'Name the exact conversational lead-in substring the answer opens with (addressed to the person, e.g. "Sure — here\'s…") as `leadIn`, and the exact sign-off/offer substring it closes with (e.g. "Want me to…?") as `signOff` — copy them verbatim from the answer, or return "" for either if none is present.',
   ].join('\n')
 }
 
@@ -125,6 +128,8 @@ export function validatePlacement(
       ref: m.ref !== null && candidateSet.has(m.ref) ? m.ref : null,
       note: m.note,
     })),
+    leadIn: result.leadIn,
+    signOff: result.signOff,
   }
 }
 
