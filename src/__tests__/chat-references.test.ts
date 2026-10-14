@@ -23,7 +23,17 @@ jest.mock('@/lib/supabase/server', () => ({
 }))
 jest.mock('@/lib/conversation/transcript', () => ({
   ...jest.requireActual('@/lib/conversation/transcript'),
-  toModelMessages: async (m: unknown) => m,
+  // KAN-309: withOpenPageNow expects real ModelMessage shape (`content`, not
+  // `parts`) — an identity passthrough here fed it a UIMessage and crashed,
+  // since this test's nodeId ('page-1') resolves to real node data.
+  toModelMessages: async (m: Array<{ role: string; parts: Array<{ type: string; text?: string }> }>) =>
+    m.map((msg) => ({
+      role: msg.role,
+      content: msg.parts
+        .filter((p) => p.type === 'text')
+        .map((p) => p.text ?? '')
+        .join('\n'),
+    })),
 }))
 const mockFetchNodeContext = jest.fn(async (_sb: unknown, _userId: string, pageId: string) =>
   pageId === 'page-1' ? { type: 'page', title: 'the wild places', documents: [], children: [] } : null

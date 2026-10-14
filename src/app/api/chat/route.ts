@@ -29,6 +29,8 @@ import { webSearchTool } from './web-search'
 import { makeRepairToolCall } from '@/lib/ai/repair'
 import { fetchLinkContext } from '@/lib/context/paste-link'
 import { fetchNodeContext, formatNodeContext } from '@/lib/context/assemble'
+import type { NodeContextData } from '@/lib/context/assemble'
+import { withOpenPageNow } from './page-now'
 import { recordProposedToolCalls } from '@/lib/change-log/propose'
 import { resolveChangeLogRecord } from '@/lib/change-log/resolve'
 import { requestChangesContextNote } from './request-changes'
@@ -77,9 +79,14 @@ export async function POST(req: Request) {
   // the dev auto-login bypass (DEV_AUTOLOGIN) lets cookie-less calls through, and
   // an SSRF-adjacent fetch surface must never run for anonymous callers.
   const contextBlocks: string[] = []
+  // KAN-309: fetched once here (not inside buildChatContext) so the route can
+  // also hand it to withOpenPageNow below — one read, two uses.
+  let openPageData: NodeContextData | null = null
   if (user) {
     const linkContext = await fetchLinkContext(userText)
     if (linkContext) contextBlocks.push(linkContext)
+
+    openPageData = nodeId ? await fetchNodeContext(supabase, user.id, nodeId) : null
 
     const context = await buildChatContext(supabase, user.id, {
       nodeId,
@@ -87,6 +94,7 @@ export async function POST(req: Request) {
       latestUserText: userText,
       // #312: the composer reads only this pond (`s6m5`).
       pondId,
+      nodeData: openPageData,
     })
     if (context) contextBlocks.push(context)
 
@@ -159,12 +167,14 @@ export async function POST(req: Request) {
   // so a node switch rewrites the cache; within a node's thread every turn after
   // the first is a hit. Verify via usage.cacheReadInputTokens > 0 on turn 2.
   const resolved = applyResolutions(messages, resolutions)
-  const modelMessages = await toModelMessages(research ? resolved : withoutWebSearch(resolved))
+  const converted = await toModelMessages(research ? resolved : withoutWebSearch(resolved))
   // @ai-sdk/anthropic reads cacheControl from part.providerOptions (part-level),
   // NOT message-level — so the breakpoint must go on the last content PART of the
-  // last message. That caches the whole prefix up to it (tools + system + prior
-  // turns); next turn it reads back at ~0.1x and skips rate-limit accounting.
-  const lastMessage = modelMessages.at(-1) as
+  // last message. Tag BEFORE withOpenPageNow below appends its part: that part is
+  // rebuilt server-side from a DB read on every request and never comes back from
+  // the client, so a breakpoint on it can never hit a cached prefix on a later
+  // turn — it must land on a part the client actually resends.
+  const lastMessage = converted.at(-1) as
     { content: unknown; providerOptions?: Record<string, unknown> } | undefined
   if (lastMessage) {
     const cc = { anthropic: { cacheControl: { type: 'ephemeral' as const } } }
@@ -180,6 +190,10 @@ export async function POST(req: Request) {
       if (lastPart) lastPart.providerOptions = { ...(lastPart.providerOptions ?? {}), ...cc }
     }
   }
+  // KAN-309: the open page's current text rides next to the question, appended
+  // AFTER the cache tagging above, so this part carries no cacheControl — an
+  // uncached tail the model still reads every turn.
+  const modelMessages = withOpenPageNow(converted, openPageData)
 
   // Client-resolved tools have no `execute`: the call renders a proposal card and the
   // person's accept or reject rides the resolutions envelope. The web is not here —
