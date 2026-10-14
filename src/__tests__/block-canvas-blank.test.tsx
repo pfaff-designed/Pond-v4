@@ -372,22 +372,22 @@ function renderBlankPageHarness(
 
 /**
  * `DocumentPanel` stays mounted across `?nodeId` changes and `BlockCanvas` is
- * never keyed by page — this harness mirrors that exactly, owning
- * `previewName` itself (a REAL `useState` setter passed as
- * `onPreviewNameChange`, not a `jest.fn()` double) and resetting it on its
- * OWN render when `pageId` changes, the same render-phase pattern
- * `DocumentPanel` uses. A `jest.fn()` double can never reproduce React's
- * "Cannot update a component while rendering a different component" —
- * only a real parent `setState`, called from a child's render, triggers it.
+ * never keyed by page — this harness owns `previewName` itself (a REAL
+ * `useState` setter passed as `onPreviewNameChange`, not a `jest.fn()`
+ * double, since only a real parent `setState` called from a child's render
+ * can reproduce React's "Cannot update a component while rendering a
+ * different component"), but deliberately carries NO reset of its own on a
+ * `pageId` change — clearing `previewName` on a nodeId change is
+ * `DocumentPanel`'s own job (tested at that level), not something this
+ * harness should do on `BlockCanvas`'s behalf. A harness that mirrored
+ * `DocumentPanel`'s reset here would race it: its own reset would set
+ * `previewName` to `null` before `BlockCanvas` ever got a chance to, so the
+ * test could pass whether or not `BlockCanvas` still (wrongly) called
+ * `onPreviewNameChange` from its own render.
  */
 function PageSwitchableHarness({ pageId }: { pageId: string }) {
   const [blocks, setBlocks] = useState<Block[]>([{ id: 'b-empty', type: 'text', content: '' }])
   const [previewName, setPreviewName] = useState<string | null>(null)
-  const [previousPageId, setPreviousPageId] = useState(pageId)
-  if (pageId !== previousPageId) {
-    setPreviousPageId(pageId)
-    if (previewName !== null) setPreviewName(null)
-  }
   return (
     <>
       <input aria-label="title" data-pond-page-title />
@@ -1119,7 +1119,7 @@ describe('→ on a template row previews it, writing nothing (KAN-131)', () => {
     expect(onPreviewNameChange).not.toHaveBeenCalledWith('recipe')
   })
 
-  it('KAN-131 fix: leaving the page mid-preview (a pageId change, since DocumentPanel stays mounted) clears the outline and the eyebrow, with no cross-component render warning', async () => {
+  it('KAN-131 fix: leaving the page mid-preview (a pageId change, since DocumentPanel stays mounted) clears the outline with no cross-component render warning, even when the parent does not reset `previewName` on its own', async () => {
     const YOURS_TEMPLATE: PondTemplate = {
       id: 'tpl-9',
       name: 'recipe',
@@ -1153,9 +1153,12 @@ describe('→ on a template row previews it, writing nothing (KAN-131)', () => {
     // The person navigates to a different page — `BlockCanvas` is not keyed
     // by page, so this is a prop change on the same instance, not a remount.
     // `PageSwitchableHarness` owns `previewName` with a REAL `useState`
-    // setter (not a `jest.fn()`), so if `BlockCanvas` still called it from
-    // its own render phase, React's "Cannot update a component while
-    // rendering a different component" would fire here.
+    // setter (not a `jest.fn()`) and, unlike an earlier version of this
+    // harness, resets nothing of its own on the `pageId` change — so if
+    // `BlockCanvas` still (wrongly) called `onPreviewNameChange` from its own
+    // render-phase `pageId` reset, React's "Cannot update a component while
+    // rendering a different component" would fire here, and nothing else in
+    // this test would mask it.
     rerender(
       <QueryClientProvider client={client}>
         <DeletionUndoProvider>
@@ -1164,8 +1167,12 @@ describe('→ on a template row previews it, writing nothing (KAN-131)', () => {
       </QueryClientProvider>
     )
 
+    // The outline itself is `BlockCanvas`'s own `previewing` state, cleared by
+    // its own render-phase `pageId` reset — that still happens here. Whether
+    // `previewName` (the eyebrow, owned by the parent) also clears on a nodeId
+    // change is `DocumentPanel`'s own concern, covered at that level instead
+    // (see `document-panel-preview-nodeid-reset.test.tsx`).
     expect(document.querySelectorAll('[data-part="outline-row"]').length).toBe(0)
-    expect(screen.getByTestId('preview-name').textContent).toBe('')
     const renderWarnings = errorSpy.mock.calls.filter((call) =>
       call.some((arg) => typeof arg === 'string' && arg.includes('Cannot update a component'))
     )
