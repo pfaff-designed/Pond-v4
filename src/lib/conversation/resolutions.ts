@@ -363,7 +363,7 @@ function resolvePart(part: ToolPartLike, resolutions: ConversationResolutions): 
           // say so explicitly, or the model reads the acceptance stamp as success
           // and claims the dropped change landed (blank-slate findings BUG 2).
           `User decision per change, in order. Do not re-propose accepted or rejected changes. IMPORTANT: ${skipped} accepted change${skipped > 1 ? 's' : ''} could NOT be written and ${skipped > 1 ? 'were' : 'was'} NOT applied — do not claim ${skipped > 1 ? 'they' : 'it'} happened. Offer to re-propose when the user has the right page open.`
-        : 'User decision per change, in order. Do not re-propose accepted or rejected changes.'
+        : 'User decision per change, in order. Do not re-propose accepted or rejected changes. The page may have changed since: the current text is attached to the latest message — quote and target that, not this proposal.'
     return {
       ...part,
       state: 'output-available',
