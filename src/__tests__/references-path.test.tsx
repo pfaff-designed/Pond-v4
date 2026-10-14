@@ -398,13 +398,15 @@ describe('the open page auto-references itself, deduped against a passage (KAN-9
     await flushAskFocus()
 
     expect(screen.queryByText('pages')).not.toBeInTheDocument()
-    expect(textbox).toHaveValue('a page on floorboards, with @Kitchen renovation')
+    // The pick leaves a trailing space after the mention (799815d) so typing
+    // on stays outside the `@<title>` run instead of dissolving the pill.
+    expect(textbox).toHaveValue('a page on floorboards, with @Kitchen renovation ')
     const refs = screen.getByRole('group', { name: 'references' })
     expect(refs).toHaveTextContent('Kitchen renovation')
 
     // 5: sending carries both the chosen page and the current page as
     // whole-page references.
-    await user.type(textbox, ' does it fit?')
+    await user.type(textbox, 'does it fit?')
     await user.keyboard('{Enter}')
 
     await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1))
