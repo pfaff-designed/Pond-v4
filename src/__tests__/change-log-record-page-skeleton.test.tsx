@@ -124,6 +124,20 @@ describe('ChangeLogRecordPage — loading', () => {
     expect(screen.getByText('from thread')).toBeInTheDocument()
   })
 
+  it('truncates a long from-thread chip inside its field, keeping the full text as the title attribute', async () => {
+    const longQuestion =
+      'when can the electrician come back to finish the second fix on the upstairs bathroom and the kitchen renovation rewire before the inspection'
+    mockGetRecord.mockResolvedValue(record({ sourceThreadId: 'thread-1' }))
+    mockGetThreadFirstQuestion.mockResolvedValue(longQuestion)
+
+    renderPage()
+
+    const chip = await screen.findByText(longQuestion)
+    expect(chip).toHaveClass('max-w-full', 'truncate')
+    expect(chip).toHaveAttribute('title', longQuestion)
+    expect(chip.parentElement).toHaveClass('min-w-0')
+  })
+
   it('resolves a read id to its page title, alongside the from-thread chip', async () => {
     mockGetRecord.mockResolvedValue(
       record({ read: ['page-7', 'email · j. hart'], sourceThreadId: 'thread-1' })

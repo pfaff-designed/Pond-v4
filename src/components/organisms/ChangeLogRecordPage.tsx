@@ -88,7 +88,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
       <span className="text-[10.5px] font-medium tracking-[.1em] text-mn-text-secondary uppercase">
         {label}
       </span>
-      <span className="flex flex-wrap items-center gap-1.5 text-[13.5px]">{children}</span>
+      <span className="flex min-w-0 flex-wrap items-center gap-1.5 text-[13.5px]">{children}</span>
     </div>
   )
 }
@@ -96,7 +96,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 /** The read/from-thread chip's shared chrome — inset ring ink .2, mono
  *  10.5px, ink .8 (s6o3's "from thread" and "read" rows share one style). */
 const RECORD_CHIP_CLASS =
-  'rounded-full px-2 py-0.5 font-mono text-[10.5px] whitespace-nowrap text-mn-text-meta ring-1 ring-inset ring-mn-text/20'
+  'max-w-full truncate rounded-full px-2 py-0.5 font-mono text-[10.5px] whitespace-nowrap text-mn-text-meta ring-1 ring-inset ring-mn-text/20'
 
 export function ChangeLogRecordPage({ recordId }: { recordId: string }) {
   const getSupabase = useLazySupabase()
@@ -349,7 +349,9 @@ export function ChangeLogRecordPage({ recordId }: { recordId: string }) {
               </Field>
               {firstQuestion !== null && firstQuestion !== undefined && (
                 <Field label="from thread">
-                  <span className={RECORD_CHIP_CLASS}>{firstQuestion}</span>
+                  <span className={RECORD_CHIP_CLASS} title={firstQuestion}>
+                    {firstQuestion}
+                  </span>
                 </Field>
               )}
               {readChips.length > 0 && (
