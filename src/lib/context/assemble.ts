@@ -429,6 +429,13 @@ export interface BuildChatContextOptions {
   latestUserText?: string
   /** #312: the pond whose pages the model may see. See `fetchPageSummaries`. */
   pondId: string | null
+  /**
+   * KAN-309: the route also needs the open node's data (for `withOpenPageNow`),
+   * so it fetches it once and hands it in here rather than this function
+   * fetching it again. `undefined` (the default) means "fetch it yourself" —
+   * only a caller that already has the data passes it, `null` included.
+   */
+  nodeData?: NodeContextData | null
 }
 
 /**
@@ -446,7 +453,7 @@ export async function buildChatContext(
   const pond = await resolvePond(sb, userId, opts.pondId)
 
   if (opts.nodeId) {
-    const data = await fetchNodeContext(sb, userId, opts.nodeId)
+    const data = opts.nodeData !== undefined ? opts.nodeData : await fetchNodeContext(sb, userId, opts.nodeId)
     // Current node only: expose block ids so the model can target one in propose_changes.
     if (data) blocks.push(formatNodeContext(data, { includeBlockIds: true }))
   }

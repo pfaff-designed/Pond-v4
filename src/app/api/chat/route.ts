@@ -29,6 +29,8 @@ import { webSearchTool } from './web-search'
 import { makeRepairToolCall } from '@/lib/ai/repair'
 import { fetchLinkContext } from '@/lib/context/paste-link'
 import { fetchNodeContext, formatNodeContext } from '@/lib/context/assemble'
+import type { NodeContextData } from '@/lib/context/assemble'
+import { withOpenPageNow } from './page-now'
 import { recordProposedToolCalls } from '@/lib/change-log/propose'
 import { resolveChangeLogRecord } from '@/lib/change-log/resolve'
 import { requestChangesContextNote } from './request-changes'
@@ -77,9 +79,14 @@ export async function POST(req: Request) {
   // the dev auto-login bypass (DEV_AUTOLOGIN) lets cookie-less calls through, and
   // an SSRF-adjacent fetch surface must never run for anonymous callers.
   const contextBlocks: string[] = []
+  // KAN-309: fetched once here (not inside buildChatContext) so the route can
+  // also hand it to withOpenPageNow below — one read, two uses.
+  let openPageData: NodeContextData | null = null
   if (user) {
     const linkContext = await fetchLinkContext(userText)
     if (linkContext) contextBlocks.push(linkContext)
+
+    openPageData = nodeId ? await fetchNodeContext(supabase, user.id, nodeId) : null
 
     const context = await buildChatContext(supabase, user.id, {
       nodeId,
@@ -87,6 +94,7 @@ export async function POST(req: Request) {
       latestUserText: userText,
       // #312: the composer reads only this pond (`s6m5`).
       pondId,
+      nodeData: openPageData,
     })
     if (context) contextBlocks.push(context)
 
@@ -159,7 +167,14 @@ export async function POST(req: Request) {
   // so a node switch rewrites the cache; within a node's thread every turn after
   // the first is a hit. Verify via usage.cacheReadInputTokens > 0 on turn 2.
   const resolved = applyResolutions(messages, resolutions)
-  const modelMessages = await toModelMessages(research ? resolved : withoutWebSearch(resolved))
+  // KAN-309: the open page's current text rides next to the question, on the
+  // LAST user message — before the cache-breakpoint tagging below, so that
+  // tagging (which reads the overall last message) still lands on whichever
+  // content part ends up last.
+  const modelMessages = withOpenPageNow(
+    await toModelMessages(research ? resolved : withoutWebSearch(resolved)),
+    openPageData
+  )
   // @ai-sdk/anthropic reads cacheControl from part.providerOptions (part-level),
   // NOT message-level — so the breakpoint must go on the last content PART of the
   // last message. That caches the whole prefix up to it (tools + system + prior
