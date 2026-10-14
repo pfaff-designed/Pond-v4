@@ -111,8 +111,9 @@ import {
 } from '@/lib/pages/client'
 import { createDatabase } from '@/lib/pages/create-database'
 import { fetchRecordCounts, sourceDatabases } from '@/lib/pages/source-databases'
-import { fetchPages, insertPageOptimistic } from '@/lib/pages/tree'
+import { insertPageOptimistic } from '@/lib/pages/tree'
 import { pagesKey } from '@/lib/pages/keys'
+import { usePagesRows } from '@/lib/pages/use-pages'
 import { flushPendingPageSave } from '@/lib/pages/page-flush'
 import { appendOwnEdit } from '@/lib/change-log/store'
 import { sessionUndo } from '@/lib/change-log/session-undo'
@@ -397,9 +398,7 @@ export function BlockCanvas({
   // the ranking query below needs this one's data `isSuccess` first, or a `/`
   // opened before pageRows has ever loaded would rank off a `null` parentId
   // (the pond's ROOT pages) and flash the wrong order once pageRows lands.
-  const { data: pageRows = [], isSuccess: pageRowsLoaded } = useQuery({
-    queryKey: pagesKey(pondId),
-    queryFn: () => fetchPages(pondId),
+  const { data: pageRows, isSuccess: pageRowsLoaded } = usePagesRows(pondId, {
     enabled: sourcePicker !== null || blankMenuOpen,
   })
   const { data: recordCounts } = useQuery({

@@ -30,7 +30,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import type { PaletteItem } from '@/components/molecules/palette-entries'
 import { normalizeQuery } from '@/components/molecules/slash-entries'
 import { NewPondFlow } from '@/components/organisms/NewPondFlow'
@@ -53,8 +53,9 @@ import { newPageParent, paletteItems, paletteScope, pondItems } from '@/lib/page
 import { readRecentPageIds, writeRecent } from '@/lib/pages/recent-pages'
 import { usePaletteRecords } from '@/lib/pages/use-palette-records'
 import { createPage } from '@/lib/pages/client'
-import { fetchPages, insertPageOptimistic } from '@/lib/pages/tree'
+import { insertPageOptimistic } from '@/lib/pages/tree'
 import { pagesKey } from '@/lib/pages/keys'
+import { usePagesRows } from '@/lib/pages/use-pages'
 import { createClient } from '@/lib/supabase/client'
 import { instantiateTemplate } from '@/lib/templates/instantiate'
 import { PREMADE_TEMPLATES } from '@/lib/templates/premade'
@@ -123,10 +124,9 @@ export function ShellCommands() {
   const { pond, ponds } = usePond()
   const published = useCommandPath()
   const queryClient = useQueryClient()
-  const { data: pages = [] } = useQuery({
-    queryKey: pagesKey(pondId),
-    queryFn: () => fetchPages(pondId),
-  })
+  // `usePagesRows` (KAN-310 gap 1) drops a staged-for-delete id at once, so a
+  // page mid-delete is gone from the palette's listing, not just the rail.
+  const { data: pages } = usePagesRows(pondId)
   const records = usePaletteRecords(normalizeQuery(query))
 
   // What a landed ⌘Z/⇧⌘Z owes everything downstream: the sidebar/rail mark

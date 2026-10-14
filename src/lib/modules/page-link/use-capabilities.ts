@@ -14,11 +14,12 @@
 
 import { useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { createPage, updateTitle } from '@/lib/pages/client'
-import { fetchPages, insertPageOptimistic } from '@/lib/pages/tree'
+import { insertPageOptimistic } from '@/lib/pages/tree'
 import { pagesKey } from '@/lib/pages/keys'
+import { usePagesRows } from '@/lib/pages/use-pages'
 import { workspaceHref } from '@/lib/pages/nav'
 import { usePondId } from '@/lib/pond/context'
 import { resolvePageFromRows, searchPagesInRows } from './resolve'
@@ -34,10 +35,7 @@ export function usePageLinkCapabilities(containingPageId: string): PageLinkCapab
   const router = useRouter()
   // Reads the rail/page cache — this query is already populated, so it's a cache
   // hit, not a second fetch.
-  const { data: rows = [] } = useQuery({
-    queryKey: pagesKey(pondId),
-    queryFn: () => fetchPages(pondId),
-  })
+  const { data: rows } = usePagesRows(pondId)
 
   return useMemo<PageLinkCapabilities>(
     () => ({

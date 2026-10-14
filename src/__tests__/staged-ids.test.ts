@@ -63,6 +63,22 @@ describe('staged-ids', () => {
     getItem.mockRestore()
   })
 
+  it('subscribeStaged fires once per stageId/unstageId call, and not after unsubscribe', async () => {
+    const { stageId, unstageId, subscribeStaged } = await import('@/lib/deletion/staged-ids')
+    const listener = jest.fn()
+    const unsubscribe = subscribeStaged(listener)
+
+    stageId('page-1')
+    expect(listener).toHaveBeenCalledTimes(1)
+
+    unstageId('page-1')
+    expect(listener).toHaveBeenCalledTimes(2)
+
+    unsubscribe()
+    stageId('page-2')
+    expect(listener).toHaveBeenCalledTimes(2)
+  })
+
   it('priorLifeIds only counts ids present at this script\'s first hydrate, not ids staged afterward', async () => {
     sessionStorage.setItem('pond:pending-deletes', JSON.stringify(['leftover-1']))
     const { stageId, unstageId, priorLifeIds } = await import('@/lib/deletion/staged-ids')
@@ -119,5 +135,29 @@ describe('staged-flush registry (KAN-273)', () => {
 
     expect(first).not.toHaveBeenCalled()
     expect(second).toHaveBeenCalledTimes(1)
+  })
+
+  it('flushStagedDeletes awaits a commit tracked via trackCommit even with nothing in the provider\'s own pending list', async () => {
+    const { trackCommit, flushStagedDeletes } = await import('@/lib/deletion/staged-ids')
+    // No registerStagedFlush call here — standing in for a provider whose
+    // own toastsRef is already empty (the toast was removed when the grace
+    // timer fired), so only the tracked commit stands between flush and done.
+    let resolveCommit: () => void = () => {}
+    const commit = new Promise<void>((resolve) => {
+      resolveCommit = resolve
+    })
+    trackCommit('page-1', commit)
+
+    let flushed = false
+    const flush = flushStagedDeletes().then(() => {
+      flushed = true
+    })
+
+    await Promise.resolve()
+    expect(flushed).toBe(false)
+
+    resolveCommit()
+    await flush
+    expect(flushed).toBe(true)
   })
 })

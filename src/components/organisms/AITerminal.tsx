@@ -20,6 +20,7 @@ import { getPage, listPages } from '@/lib/pages/client'
 import { flushPendingPageSave } from '@/lib/pages/page-flush'
 import { usePond } from '@/lib/pond/context'
 import { pagesKey } from '@/lib/pages/keys'
+import { usePagesRows } from '@/lib/pages/use-pages'
 import { usePondName } from '@/lib/pond/name'
 import {
   COMPOSER_NOTICE_EVENT,
@@ -61,7 +62,7 @@ import { PageProposalCard } from '@/components/molecules/PageProposalCard'
 import { toParentOptions, ancestorPathLabel } from '@/lib/pages/parent-options'
 import { workspaceHref } from '@/lib/pages/nav'
 import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
-import { insertPageOptimistic, fetchPages, type PageRow } from '@/lib/pages/tree'
+import { insertPageOptimistic, type PageRow } from '@/lib/pages/tree'
 import { linkedPageIds, orderMentionPages } from '@/lib/pages/mention-pages'
 import { readRecentPageIds } from '@/lib/pages/recent-pages'
 import { writeAcceptedChanges } from '@/lib/pages/accept'
@@ -844,10 +845,7 @@ export function AITerminal() {
   // key carrying props but no glyph/area_role) — so a reference's glyph/colour
   // always agrees with the page's row, and this read is a cache hit whenever
   // the rail is already mounted.
-  const { data: markRows = [] } = useQuery({
-    queryKey: pagesKey(pondId),
-    queryFn: () => fetchPages(pondId),
-  })
+  const { data: markRows } = usePagesRows(pondId)
   const pageMarks = useMemo(() => markIndex(markRows), [markRows])
 
   // A chip's title is resolved from `pageId` at render time (KAN-302's

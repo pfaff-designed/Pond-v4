@@ -21,9 +21,15 @@ import {
   scheduleDeferredCommit,
   performUndo,
   GRACE_WINDOW_MS,
+  type CommitReason,
 } from '@/lib/deletion/deferred-commit'
 import { DeletionUndoProvider, useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
-import { isStaged, stagedIds, unstageId } from '@/lib/deletion/staged-ids'
+import {
+  isStaged,
+  stagedIds,
+  unstageId,
+  flushStagedDeletes as registryFlushStagedDeletes,
+} from '@/lib/deletion/staged-ids'
 import { NotifyBridge, requestNotify } from '@/lib/deletion/notify-bridge'
 
 // ── 1. Surgical restore: two overlapping deletes ────────────────────────────
@@ -251,7 +257,7 @@ function BackstopHarness({
   undo,
 }: {
   id: string
-  commit: () => void | Promise<void>
+  commit: (reason?: CommitReason, onWriteSettled?: () => void) => void | Promise<void>
   undo?: () => void
 }) {
   const { stageDeletion } = useDeletionUndo()
@@ -333,6 +339,116 @@ describe('backstop id threading (KAN-300)', () => {
   })
 })
 
+// ── 3c-bis. stage()'s commit wrapper tracks the in-flight commit (KAN-310) ──
+
+describe("stage()'s commit wrapper registers the commit before the toast is gone (KAN-310)", () => {
+  beforeEach(() => {
+    jest.useFakeTimers()
+    for (const id of stagedIds()) unstageId(id)
+  })
+  afterEach(() => jest.useRealTimers())
+
+  it('the registry flush awaits a grace-timer-fired commit after its toast has left toastsRef', async () => {
+    let resolveCommit: () => void = () => {}
+    const commit = jest.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveCommit = resolve
+        })
+    )
+    render(
+      <DeletionUndoProvider>
+        <BackstopHarness id="page-1" commit={commit} />
+      </DeletionUndoProvider>
+    )
+
+    fireEvent.click(screen.getByText('stage'))
+    act(() => jest.advanceTimersByTime(GRACE_WINDOW_MS))
+    expect(commit).toHaveBeenCalledTimes(1)
+    // The grace timer already fired: the toast is gone (and with it, the
+    // provider's own pending-toast list has nothing left to flush) while the
+    // commit itself is still pending.
+    expect(screen.queryByText('Deleted "X"')).not.toBeInTheDocument()
+
+    let flushed = false
+    void registryFlushStagedDeletes().then(() => {
+      flushed = true
+    })
+    await Promise.resolve()
+    expect(flushed).toBe(false)
+
+    resolveCommit()
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(flushed).toBe(true)
+  })
+})
+
+// ── 3c-ter. the tracked commit settles on the write, not the commit's own
+// follow-up work (KAN-310 gap 3) ────────────────────────────────────────────
+
+describe("stage()'s commit wrapper tracks the write, not the commit's own follow-up (KAN-310 gap 3)", () => {
+  beforeEach(() => {
+    jest.useFakeTimers()
+    for (const id of stagedIds()) unstageId(id)
+  })
+  afterEach(() => jest.useRealTimers())
+
+  it('a flush unblocks once onWriteSettled fires, even while the commit itself is still finishing a slow follow-up (standing in for Rail.tsx withUser\'s invalidate)', async () => {
+    // Mirrors Rail.tsx's `withUser`: the trash write lands, THEN a slower
+    // step (there, `queryClient.invalidateQueries`) runs before the commit's
+    // own promise resolves. A tree write (e.g. a rename's `updateTitle`,
+    // which calls `flushStagedDeletes` first) must proceed once the write
+    // itself has landed — waiting for that slower step too would let its own
+    // optimistic change get overwritten by the delete's stale-data refetch
+    // landing in between (KAN-310 gap 3).
+    let settleTrashWrite: () => void = () => {}
+    const commit = jest.fn(
+      (_reason?: CommitReason, onWriteSettled?: () => void) =>
+        new Promise<void>((resolve) => {
+          settleTrashWrite = () => {
+            onWriteSettled?.()
+            // The commit's own slow follow-up — not yet resolved when
+            // `onWriteSettled` fires, same as `withUser`'s invalidate.
+            setTimeout(resolve, 1000)
+          }
+        })
+    )
+    render(
+      <DeletionUndoProvider>
+        <BackstopHarness id="page-1" commit={commit} />
+      </DeletionUndoProvider>
+    )
+
+    fireEvent.click(screen.getByText('stage'))
+    act(() => jest.advanceTimersByTime(GRACE_WINDOW_MS))
+    expect(commit).toHaveBeenCalledTimes(1)
+
+    let flushed = false
+    void registryFlushStagedDeletes().then(() => {
+      flushed = true
+    })
+    await Promise.resolve()
+    expect(flushed).toBe(false)
+
+    settleTrashWrite()
+    // The write landed (onWriteSettled ran), but the commit's own 1000ms
+    // follow-up has NOT — only microtasks have flushed, no timer advanced.
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(flushed).toBe(true)
+
+    // Let the commit's own follow-up finish too, so nothing leaks a pending
+    // timer into the next test.
+    await act(async () => {
+      jest.advanceTimersByTime(1000)
+    })
+  })
+})
+
 // ── 3d. flushStagedDeletes — commit every staged deletion, any scope (KAN-273) ─
 
 function FlushStagedHarness({
@@ -342,7 +458,7 @@ function FlushStagedHarness({
   deleteCommit: () => void
   otherUndo: () => void
 }) {
-  const { stageDeletion, stageUndo, flushStagedDeletes } = useDeletionUndo()
+  const { stageDeletion, stageUndo } = useDeletionUndo()
   return (
     <>
       <button
@@ -355,7 +471,7 @@ function FlushStagedHarness({
       <button onClick={() => stageUndo({ message: 'Turned into a list', undo: otherUndo, scope: 'block' })}>
         stage-other
       </button>
-      <button onClick={() => void flushStagedDeletes()}>flush-staged</button>
+      <button onClick={() => void registryFlushStagedDeletes()}>flush-staged</button>
     </>
   )
 }
@@ -433,5 +549,73 @@ describe('NotifyBridge (accept receipts, Fix-1/F12)', () => {
     expect(screen.getByText('Added 1 block to Garage ✓')).toBeInTheDocument()
     act(() => jest.advanceTimersByTime(GRACE_WINDOW_MS))
     expect(screen.queryByText('Added 1 block to Garage ✓')).not.toBeInTheDocument()
+  })
+})
+
+// ── 5. Undo toast window never extends past GRACE_WINDOW_MS (KAN-310 review
+//      note: "a parent's undo toast was seen still up about 14s after its
+//      delete, past the 6s window") ────────────────────────────────────────
+//
+// `remove(id)` (the toast's own removal from `toastsRef`/state) runs
+// SYNCHRONOUSLY inside the deferred commit's `commit` closure, before
+// `input.commit?.()`'s returned promise is awaited — so the toast's visible
+// lifetime is tied only to the grace timer, never to how long the underlying
+// write takes. These pin that down under fake timers.
+
+describe('undo toast window does not extend past GRACE_WINDOW_MS (KAN-310 review note)', () => {
+  beforeEach(() => jest.useFakeTimers())
+  afterEach(() => jest.useRealTimers())
+
+  it('the toast closes exactly at GRACE_WINDOW_MS even when the commit write is still in flight', () => {
+    let resolveCommit!: () => void
+    const commit = () => new Promise<void>((resolve) => (resolveCommit = resolve))
+    renderHarness({ commit, undo: jest.fn() })
+
+    fireEvent.click(screen.getByText('stage'))
+    expect(screen.getByText('Deleted "X"')).toBeInTheDocument()
+
+    act(() => jest.advanceTimersByTime(GRACE_WINDOW_MS - 1))
+    expect(screen.getByText('Deleted "X"')).toBeInTheDocument()
+
+    act(() => jest.advanceTimersByTime(1))
+    expect(screen.queryByText('Deleted "X"')).not.toBeInTheDocument()
+
+    // The write is still unresolved — proves the toast's close isn't gated on it.
+    act(() => jest.advanceTimersByTime(8000))
+    expect(screen.queryByText('Deleted "X"')).not.toBeInTheDocument()
+    resolveCommit()
+  })
+
+  it('a second overlapping toast does not extend the first one past its own window', () => {
+    function TwoHarness() {
+      const { stageDeletion } = useDeletionUndo()
+      return (
+        <>
+          <button onClick={() => stageDeletion({ message: 'Deleted "A"', commit: jest.fn() })}>
+            stage-a
+          </button>
+          <button onClick={() => stageDeletion({ message: 'Deleted "B"', commit: jest.fn() })}>
+            stage-b
+          </button>
+        </>
+      )
+    }
+    render(
+      <DeletionUndoProvider>
+        <TwoHarness />
+      </DeletionUndoProvider>
+    )
+
+    fireEvent.click(screen.getByText('stage-a'))
+    act(() => jest.advanceTimersByTime(3000))
+    fireEvent.click(screen.getByText('stage-b'))
+    expect(screen.getByText('Deleted "A"')).toBeInTheDocument()
+    expect(screen.getByText('Deleted "B"')).toBeInTheDocument()
+
+    // A started at t=0, staged for GRACE_WINDOW_MS — closes at t=6000, while B
+    // (staged at t=3000) is still well inside its own window.
+    act(() => jest.advanceTimersByTime(GRACE_WINDOW_MS - 3000))
+    expect(screen.queryByText('Deleted "A"')).not.toBeInTheDocument()
+    expect(screen.getByText('Deleted "B"')).toBeInTheDocument()
   })
 })

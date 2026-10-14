@@ -21,12 +21,11 @@
  *  - `flushScope` — commit-and-clear every pending toast staged with a given
  *    `scope`. The editor uses this on page change so a block toast can never
  *    survive navigation and "undo" a block into the wrong page.
- *  - `flushStagedDeletes` — commit-and-clear every pending *tree deletion*
- *    toast (one staged via `stageDeletion` with a backstop `id`), regardless
- *    of scope, and await the commits (KAN-273). A tree write that reads
- *    sibling state (create, move, rename) calls this first so it never sees a
- *    row that is mid-delete. A `stageUndo` toast (no backstop id — a block
- *    edit, not a tree delete) is left alone.
+ *
+ * The provider also registers a commit-every-pending-tree-deletion callback
+ * with the shared `staged-ids.ts` registry (`registerStagedFlush`) rather
+ * than exposing it on this hook — see `flushStagedDeletes` there, the only
+ * one anything calls (KAN-273).
  *
  * See the crash-window caveat in deferred-commit.ts: deferral is client-side,
  * not durable soft-delete. On provider unmount all pending deletes are flushed
@@ -38,16 +37,30 @@ import {
   scheduleDeferredCommit,
   performUndo,
   type DeferredCommit,
+  type CommitReason,
   GRACE_WINDOW_MS,
 } from '@/lib/deletion/deferred-commit'
-import { stageId, unstageId, registerStagedFlush } from '@/lib/deletion/staged-ids'
+import { stageId, unstageId, registerStagedFlush, trackCommit } from '@/lib/deletion/staged-ids'
 import { UndoToast, UndoToastViewport } from '@/components/molecules/UndoToast'
 
 export interface StageDeletionInput {
   /** Toast copy, e.g. `Deleted "Scratchpad"`. */
   message: string
-  /** The irreversible write, run when the grace window closes without an undo. */
-  commit: () => void | Promise<void>
+  /**
+   * The irreversible write, run when the grace window closes without an
+   * undo. `reason` is `'flush-driven'` only when ANOTHER write's
+   * `flushStagedDeletes()` forced this commit ahead of time (KAN-310) — a
+   * plain timer elapse or × dismiss passes nothing.
+   *
+   * Call `onWriteSettled` the moment the underlying write itself lands
+   * (success or failure), before any follow-up cache invalidate — a tree
+   * write's own `flushStagedDeletes` only needs to know the write happened,
+   * not that this commit's invalidate has also run (KAN-310 gap 3: that
+   * invalidate's refetch can otherwise land after the tree write's own
+   * optimistic change and revert it). Omit it to settle on the commit's own
+   * full resolution, same as before.
+   */
+  commit: (reason?: CommitReason, onWriteSettled?: () => void) => void | Promise<void>
   /** Restore the optimistically-removed item — run on Undo. Omit for a notice. */
   undo?: () => void | Promise<void>
   /** Optional secondary action shown alongside dismiss (e.g. navigate to the page). */
@@ -100,12 +113,6 @@ interface DeletionUndoContextValue {
   notify: (message: string, action?: () => void, actionLabel?: string) => void
   /** Commit-and-clear every pending toast staged with this scope. */
   flushScope: (scope: string) => void
-  /**
-   * Commit-and-clear every pending staged deletion (any scope), and await
-   * every commit. Unlike `flushScope`, a toast staged via `stageUndo` (no
-   * backstop id) is untouched — only real tree deletions are forced.
-   */
-  flushStagedDeletes: () => Promise<void>
 }
 
 const DeletionUndoContext = createContext<DeletionUndoContextValue | null>(null)
@@ -134,10 +141,26 @@ export function DeletionUndoProvider({ children }: { children: React.ReactNode }
       if (input.id) stageId(input.id)
 
       const controller = scheduleDeferredCommit({
-        commit: () => {
-          remove(id)
-          const result = input.commit?.()
+        commit: (reason) => {
           const backstopId = input.id
+          let settleWrite: (() => void) | undefined
+          const writeSettled = new Promise<void>((resolve) => {
+            settleWrite = resolve
+          })
+          const result = Promise.resolve(input.commit?.(reason, () => settleWrite?.()))
+          // Track the commit before `remove(id)` drops this toast from
+          // `toastsRef` — the registry's `flushStagedDeletes` (KAN-310 gap 2)
+          // scans `toastsRef` for pending toasts, so a commit tracked after
+          // that removal would have a window where it's visible to neither.
+          // Race against `writeSettled` rather than tracking `result` alone
+          // (KAN-310 gap 3): `result` only resolves once the whole commit —
+          // including its own cache invalidate — has finished, so a renamer's
+          // `flushStagedDeletes` would wait on that invalidate too and let its
+          // refetch land after (and revert) the rename's own optimistic
+          // change. A `commit` that never calls `onWriteSettled` still
+          // settles via `result`, same as before.
+          if (backstopId) trackCommit(backstopId, Promise.race([writeSettled, result]))
+          remove(id)
           if (!backstopId) return result
           // Unstage only once the write settles (not before it starts) — a
           // pagehide that flushes this ahead of a reload must leave the
@@ -146,7 +169,7 @@ export function DeletionUndoProvider({ children }: { children: React.ReactNode }
           // retry. Unstage on failure too: the caller's own restore path
           // (e.g. Rail's commitDelete) puts the row back, and a still-staged
           // id would keep filtering a row that is visible again.
-          return Promise.resolve(result).finally(() => unstageId(backstopId))
+          return result.finally(() => unstageId(backstopId))
         },
         graceMs: GRACE_WINDOW_MS,
       })
@@ -224,7 +247,10 @@ export function DeletionUndoProvider({ children }: { children: React.ReactNode }
     return Promise.allSettled(
       pending.map((toast) => {
         remove(toast.id)
-        return Promise.resolve(toast.controller.flush())
+        // 'flush-driven' (KAN-310): this call only runs because SOME OTHER
+        // write needed every staged deletion out of the way first — never
+        // because this toast's own timer elapsed or its × was dismissed.
+        return Promise.resolve(toast.controller.flush('flush-driven'))
       })
     ).then(() => undefined)
   }, [remove])
@@ -257,8 +283,8 @@ export function DeletionUndoProvider({ children }: { children: React.ReactNode }
   }, [flushAll])
 
   const value = useMemo(
-    () => ({ stageDeletion, stageUndo, notify, flushScope, flushStagedDeletes }),
-    [stageDeletion, stageUndo, notify, flushScope, flushStagedDeletes]
+    () => ({ stageDeletion, stageUndo, notify, flushScope }),
+    [stageDeletion, stageUndo, notify, flushScope]
   )
 
   return (

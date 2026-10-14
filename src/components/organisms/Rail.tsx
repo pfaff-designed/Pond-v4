@@ -111,7 +111,8 @@ import {
 } from '@/lib/deletion/blast-radius'
 import { removeRow, restoreRow } from '@/lib/deletion/row-cache'
 import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
-import { isStaged, priorLifeIds, unstageId, isFlushDrivenCommit } from '@/lib/deletion/staged-ids'
+import { isStaged, priorLifeIds, unstageId } from '@/lib/deletion/staged-ids'
+import type { CommitReason } from '@/lib/deletion/deferred-commit'
 import { ConfirmDialog } from '@/components/molecules/ConfirmDialog'
 import { PondMolecule } from '@/components/molecules/PondMolecule'
 import { AreaMark } from '@/components/atoms/AreaMark'
@@ -1478,7 +1479,9 @@ export function Rail() {
 
   /** Run a mutation with a fresh client + user, refresh the tree, return its result. */
   async function withUser<T>(
-    fn: (sb: ReturnType<typeof createClient>, userId: string) => Promise<T>
+    fn: (sb: ReturnType<typeof createClient>, userId: string) => Promise<T>,
+    reason?: CommitReason,
+    onWriteSettled?: () => void
   ): Promise<T | undefined> {
     // withUser is also how a staged delete's OWN grace-timer commit runs
     // (commitDelete -> withUser). flushStagedDeletes forces every pending
@@ -1493,14 +1496,20 @@ export function Rail() {
     } = await supabase.auth.getUser()
     if (!user) return undefined
     const result = await fn(supabase, user.id)
+    // Signal the write itself has landed (KAN-310 gap 3) before the
+    // invalidate below — a staged delete's `trackCommit`'d promise settles
+    // here, not after this invalidate, so another write's
+    // `flushStagedDeletes` doesn't also wait on (and race) this one's.
+    onWriteSettled?.()
     // A flush-driven commit (another write's commit-first flushStagedDeletes,
     // KAN-273) runs nested inside THAT write's own withUser call. Its own
     // invalidate would refetch before the outer write's insert/update lands,
     // reverting the outer write's optimistic cache change. Skip it here; the
     // outer write's own invalidate (this same function, one stack frame up)
-    // still runs once the flush has unwound. A plain timer/dismiss-driven
-    // commit (isFlushDrivenCommit() false) invalidates as before.
-    if (!isFlushDrivenCommit()) {
+    // still runs once the flush has unwound. `reason` is threaded explicitly
+    // from the commit that triggered this call (KAN-310) — a plain
+    // timer/dismiss-driven commit passes nothing and invalidates as before.
+    if (reason !== 'flush-driven') {
       await queryClient.invalidateQueries({ queryKey: pagesKey() })
     }
     return result
@@ -1627,11 +1636,20 @@ export function Rail() {
    * fresh from the ref. On failure the removed row is restored and the failure
    * surfaced — never a silently ghosted cache.
    */
-  async function commitDelete(node: RailNode, removedRow?: PageRow) {
+  async function commitDelete(
+    node: RailNode,
+    removedRow?: PageRow,
+    reason?: CommitReason,
+    onWriteSettled?: () => void
+  ) {
     try {
-      await withUser(async (sb) => {
-        await trashPage(sb, node.id)
-      })
+      await withUser(
+        async (sb) => {
+          await trashPage(sb, node.id)
+        },
+        reason,
+        onWriteSettled
+      )
       // if the open page was in the deleted subtree, clear the workspace
       const selected = selectedNodeIdRef.current
       if (selected && subtreeIds(node).has(selected)) {
@@ -1662,7 +1680,7 @@ export function Rail() {
       message: `Deleted "${node.title || 'Untitled'}"`,
       scope: 'rail',
       id: node.id,
-      commit: () => commitDelete(node, removedRow),
+      commit: (reason, onWriteSettled) => commitDelete(node, removedRow, reason, onWriteSettled),
       undo: () => restoreDeletedRow(removedRow),
     })
   }
