@@ -2,8 +2,9 @@
  * `layoutRows` (6x) — packs consecutive blocks into a row while their widths add up
  * to full or less, in array order.
  */
-import { layoutRows, rowHolds, widthsForDropBeside } from '@/lib/modules/layout-rows'
+import { classifyDropZone, layoutRows, rowHolds, widthsForDropBeside } from '@/lib/modules/layout-rows'
 import type { BlockWidth } from '@/lib/modules/content'
+import type { Rect } from '@/lib/modules/layout-rows'
 
 function blocks(...widths: (BlockWidth | undefined)[]): { id: string; width?: BlockWidth }[] {
   return widths.map((width, i) => ({ id: `b${i}`, width }))
@@ -87,5 +88,48 @@ describe('widthsForDropBeside', () => {
 
   it('refuses a drop into a row that already holds 4', () => {
     expect(widthsForDropBeside(['1/4', '1/4', '1/4', '1/4'])).toBeNull()
+  })
+})
+
+describe('classifyDropZone', () => {
+  // width 100, height 200 — different axes catch a swapped width/height by construction.
+  const rect: Rect = { left: 0, right: 100, top: 0, bottom: 200 }
+
+  it('classifies the left zone\'s centre', () => {
+    expect(classifyDropZone(rect, { x: 12.5, y: 100 })).toBe('left')
+  })
+
+  it('classifies the right zone\'s centre', () => {
+    expect(classifyDropZone(rect, { x: 87.5, y: 100 })).toBe('right')
+  })
+
+  it("classifies the above zone's centre", () => {
+    expect(classifyDropZone(rect, { x: 50, y: 25 })).toBe('above')
+  })
+
+  it("classifies the below zone's centre", () => {
+    expect(classifyDropZone(rect, { x: 50, y: 175 })).toBe('below')
+  })
+
+  it('treats the 25% width boundary as beside-left', () => {
+    expect(classifyDropZone(rect, { x: 25, y: 100 })).toBe('left')
+  })
+
+  it('treats the 75% width boundary as beside-right', () => {
+    expect(classifyDropZone(rect, { x: 75, y: 100 })).toBe('right')
+  })
+
+  it('treats the 25% height boundary (within the middle width) as above', () => {
+    expect(classifyDropZone(rect, { x: 50, y: 50 })).toBe('above')
+  })
+
+  it('treats the 75% height boundary (within the middle width) as below', () => {
+    expect(classifyDropZone(rect, { x: 50, y: 150 })).toBe('below')
+  })
+
+  it('offsets by the rect\'s own position, not just its size', () => {
+    const offsetRect: Rect = { left: 50, right: 150, top: 20, bottom: 220 }
+    expect(classifyDropZone(offsetRect, { x: 62.5, y: 120 })).toBe('left')
+    expect(classifyDropZone(offsetRect, { x: 100, y: 45 })).toBe('above')
   })
 })

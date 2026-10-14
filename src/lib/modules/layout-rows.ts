@@ -108,6 +108,49 @@ export function blockWidthStyle(width: BlockWidth = 'full'): string {
   return `calc((100% + ${BLOCK_ROW_GAP_PX}px) * ${fraction} - ${BLOCK_ROW_GAP_PX}px)`
 }
 
+/** Which drop zone a pointer is over, relative to a block's rect (6x). */
+export type DropZone = 'left' | 'right' | 'above' | 'below'
+
+/** A block's bounding rect, independent of any DOM type (6x drop-zone classifying). */
+export interface Rect {
+  left: number
+  right: number
+  top: number
+  bottom: number
+}
+
+/** A pointer position, independent of any DOM event type (6x drop-zone classifying). */
+export interface Point {
+  x: number
+  y: number
+}
+
+/** Fraction of a rect's width/height given to the own-line (above/below) edges and the beside edges (6x). */
+const EDGE_FRACTION = 0.25
+
+/**
+ * Which drop zone a pointer point falls into over a block's rect. The outer 25%
+ * of the rect's width on each side is beside-left/right, full height. Within the
+ * middle 50% of the width, the top and bottom 25% of the height is above/below
+ * (own line). A point in neither — middle width, middle height — still falls
+ * beside, on whichever half of the width it's nearer to, since there's no third
+ * axis to resolve it on.
+ */
+export function classifyDropZone(rect: Rect, point: Point): DropZone {
+  const width = rect.right - rect.left
+  const height = rect.bottom - rect.top
+  const xFraction = (point.x - rect.left) / width
+  const yFraction = (point.y - rect.top) / height
+
+  const inMiddleWidth = xFraction > EDGE_FRACTION && xFraction < 1 - EDGE_FRACTION
+  if (inMiddleWidth) {
+    if (yFraction <= EDGE_FRACTION) return 'above'
+    if (yFraction >= 1 - EDGE_FRACTION) return 'below'
+  }
+
+  return xFraction < 0.5 ? 'left' : 'right'
+}
+
 /** Below this, a block in a row is too narrow to be useful, so the row stacks (6x). */
 const MIN_BLOCK_WIDTH_PX = 240
 
