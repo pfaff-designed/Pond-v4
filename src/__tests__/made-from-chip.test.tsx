@@ -18,10 +18,12 @@ import { MADE_FROM_THREAD_KEY } from '@/lib/pages/made-from'
 import { OPEN_THREAD_MESSAGE_EVENT } from '@/lib/terminal-focus'
 import { pageEyebrowClass } from '@/components/atoms/kicker'
 import { MENTIONED_KEY } from '@/lib/pages/mentioned'
+import { workspaceUrl } from '@/lib/pages/nav'
 
+const mockPush = jest.fn()
 jest.mock('next/navigation', () => ({
   useSearchParams: () => ({ get: (key: string) => (key === 'nodeId' ? 'page-1' : null) }),
-  useRouter: () => ({ push: jest.fn() }),
+  useRouter: () => ({ push: mockPush }),
 }))
 
 jest.mock('@/lib/supabase/client', () => ({ createClient: () => ({}) }))
@@ -157,8 +159,8 @@ describe('the mentioned card on a made page', () => {
       kind: 'page',
       [MADE_FROM_THREAD_KEY]: STAMP,
       [MENTIONED_KEY]: [
-        { pageId: 'cq-1', title: 'cabinet quote', note: 'the one everything waits on' },
-        { pageId: 'wt-1', title: 'worktop template' },
+        { title: 'cabinet quote', ref: 'cq-1', note: 'the one everything waits on' },
+        { title: 'worktop template', ref: null, note: '' },
       ],
     })
     const card = await screen.findByRole('region', { name: 'mentioned' })
@@ -179,5 +181,27 @@ describe('the mentioned card on a made page', () => {
     renderPage({ kind: 'page', [MADE_FROM_THREAD_KEY]: STAMP })
     await screen.findByText('made from')
     expect(screen.queryByRole('region', { name: 'mentioned' })).not.toBeInTheDocument()
+  })
+
+  it('opens a mentioned row that resolves to a page; a row that resolves to nothing has no button', async () => {
+    renderPage({
+      kind: 'page',
+      [MADE_FROM_THREAD_KEY]: STAMP,
+      [MENTIONED_KEY]: [
+        { title: 'cabinet quote', ref: 'cq-1', note: 'the one everything waits on' },
+        { title: 'worktop template', ref: null, note: '' },
+      ],
+    })
+    const card = await screen.findByRole('region', { name: 'mentioned' })
+
+    fireEvent.click(within(card).getByRole('button', { name: 'cabinet quote' }))
+    expect(mockPush).toHaveBeenCalledWith(
+      workspaceUrl({ id: 'cq-1', type: 'page', title: 'cabinet quote' })
+    )
+
+    expect(screen.getByText('worktop template')).toBeInTheDocument()
+    expect(
+      within(card).queryByRole('button', { name: 'worktop template' })
+    ).not.toBeInTheDocument()
   })
 })

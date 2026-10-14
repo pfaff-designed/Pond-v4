@@ -21,12 +21,14 @@
  * an envless mount (Storybook, CI) never constructs a real client.
  */
 
+import { useRouter } from 'next/navigation'
 import { useQueryClient } from '@tanstack/react-query'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { MadeFromChip } from '@/components/molecules/MadeFromChip'
 import { MentionedCard } from '@/components/molecules/MentionedCard'
 import { readMadeFrom, setMadeFromHidden, withMadeFromHidden } from '@/lib/pages/made-from'
 import { readMentioned } from '@/lib/pages/mentioned'
+import { workspaceUrl } from '@/lib/pages/nav'
 import { requestThreadMessage } from '@/lib/terminal-focus'
 
 export interface PageProvenanceProps {
@@ -80,7 +82,14 @@ export function PageMentioned({
   props: Record<string, unknown>
   className?: string
 }) {
+  const router = useRouter()
   const mentioned = readMentioned(props)
   if (!mentioned) return null
-  return <MentionedCard mentioned={mentioned} className={className} />
+  return (
+    <MentionedCard
+      mentioned={mentioned}
+      onOpenMention={(ref, title) => router.push(workspaceUrl({ id: ref, type: 'page', title }))}
+      className={className}
+    />
+  )
 }
