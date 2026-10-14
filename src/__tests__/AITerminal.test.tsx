@@ -872,6 +872,29 @@ describe('AITerminal — the @ mention picker opens, narrows and closes (KAN-99)
     expect(refs).not.toHaveTextContent('—')
   })
 
+  it('↓↓↑ leaves row 2 active — the keyup after an arrow key does not reset the highlight to row 1', async () => {
+    mockListPages.mockResolvedValue([
+      ...MENTION_PAGES,
+      { id: 'p3', parentId: null, type: 'page', title: 'garden layout', blocks: [], order: 2, props: {} },
+    ])
+    const user = userEvent.setup()
+    renderTerminal()
+    await waitReady()
+
+    const textbox = screen.getByRole('textbox', { name: 'Message Pond' })
+    await user.type(textbox, '@')
+    await screen.findByText('pages')
+
+    await user.keyboard('{ArrowDown}')
+    await user.keyboard('{ArrowDown}')
+    await user.keyboard('{ArrowUp}')
+
+    const options = screen.getAllByRole('option')
+    expect(options[1]).toHaveAttribute('aria-selected', 'true')
+    expect(options[0]).toHaveAttribute('aria-selected', 'false')
+    expect(options[2]).toHaveAttribute('aria-selected', 'false')
+  })
+
   it('sorts a recently-visited page above an unrelated match (orderMentionPages wiring)', async () => {
     window.localStorage.setItem(
       'pond:recent-pages',

@@ -906,6 +906,13 @@ export function AITerminal() {
   // reopen the glass it just closed. Swallows exactly that one trailing call.
   const suppressMentionReopenRef = useRef(false)
 
+  // The glass's own capture-phase keydown (`PageMentionPicker`) preventDefaults
+  // ↑/↓/Enter so the textarea's caret never moves for them, but the textarea
+  // still fires a `keyup` right after — this `updateMentionQuery` call must
+  // not re-highlight row 0 then, only when the `@`-token itself (its start or
+  // text) actually changed from the last time this ran.
+  const lastMentionQueryRef = useRef<{ start: number; query: string } | null>(null)
+
   // One place sets `mentionQuery`, so narrowing (or opening on a fresh `@`)
   // re-highlighting the first row (board 6e frame 3) and the open/close
   // side choice both live here rather than in effects synced off it.
@@ -917,8 +924,11 @@ export function AITerminal() {
       return
     }
     const next = activeMentionQuery(el.value, el.selectionStart ?? el.value.length)
+    const last = lastMentionQueryRef.current
+    const tokenChanged = next?.start !== last?.start || next?.query !== last?.query
+    lastMentionQueryRef.current = next
     setMentionQuery(next)
-    setMentionActiveIndex(0)
+    if (tokenChanged) setMentionActiveIndex(0)
     if (next) {
       // The composer sits at the foot of the screen, so there is rarely room
       // below it — `sideTowardFreeSpace` (Rail's own glass-side rule) defaults
