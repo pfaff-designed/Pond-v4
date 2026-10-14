@@ -56,10 +56,14 @@ export function MentionPillOverlay({ value, titles, textareaRef }: MentionPillOv
     <div ref={overlayRef} aria-hidden className={MIRROR}>
       {segments.map((seg, i) =>
         seg.pill ? (
+          // The pill's own text metrics must match the textarea's run exactly
+          // (no padding/margin on this span), or the two drift and the
+          // backdrop stops landing under the real text. The 1px/6px pill box
+          // is instead painted by a `::before` sized past this span's edges.
           <span
             key={i}
             data-part="mention-pill"
-            className="rounded-[6px] bg-mn-text/[0.07] px-[6px] py-[1px]"
+            className="relative before:absolute before:-top-[1px] before:-bottom-[1px] before:-left-[6px] before:-right-[6px] before:rounded-[6px] before:bg-mn-text/[0.07] before:content-['']"
           >
             {seg.text}
           </span>

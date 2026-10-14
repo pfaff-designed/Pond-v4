@@ -865,7 +865,10 @@ describe('AITerminal — the @ mention picker opens, narrows and closes (KAN-99)
     await user.keyboard('{Enter}')
 
     expect(screen.queryByText('pages')).not.toBeInTheDocument()
-    expect(textbox).toHaveValue('@kitchen renovation')
+    expect(textbox).toHaveValue('@kitchen renovation ')
+    await waitFor(() =>
+      expect((textbox as HTMLTextAreaElement).selectionStart).toBe('@kitchen renovation '.length)
+    )
 
     const refs = screen.getByRole('group', { name: 'references' })
     expect(refs).toHaveTextContent('kitchen renovation')

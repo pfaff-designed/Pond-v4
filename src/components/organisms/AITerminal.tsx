@@ -1021,7 +1021,10 @@ export function AITerminal() {
       if (!el || !mentionQuery) return
       const { start, query } = mentionQuery
       const end = start + 1 + query.length
-      const mention = `@${item.label}`
+      // A trailing space keeps typing after the pick outside the `@<title>`
+      // run (`mentionPillRuns`'s `after` test needs a non-word char there),
+      // so the pill doesn't dissolve the moment the next letter lands.
+      const mention = `@${item.label} `
       setInput(el.value.slice(0, start) + mention + el.value.slice(end))
       setReferences((prev) => [
         ...prev,
