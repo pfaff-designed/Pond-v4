@@ -2205,7 +2205,7 @@ function BlockEditor({
           style={{ paddingInline: TEXT_BLOCK_INSET_PX }}
         >
           {block.pondStampAt && (
-            <div className="flex items-baseline gap-[10px] pb-1">
+            <div className="flex items-baseline gap-[10px] pb-[10px]">
               <span className={pageEyebrowClass}>pond</span>
               <span className="text-[10.5px] font-medium text-mn-text-meta">
                 {formatThreadTime(block.pondStampAt)}
