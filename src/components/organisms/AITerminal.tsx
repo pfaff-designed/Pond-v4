@@ -31,6 +31,7 @@ import {
   REQUEST_CHANGES_EVENT,
   TOGGLE_COMPOSER_EVENT,
   notifyComposerOpenChange,
+  requestComposerNotice,
   requestComposerToggle,
   requestHtmlImportPicker,
   takePendingTerminalText,
@@ -66,14 +67,16 @@ import { pageEyebrowClass, chipBaseClass } from '@/components/atoms/kicker'
 import { ReadChips } from '@/components/molecules/ReadChips'
 import { AnswerActions } from '@/components/molecules/AnswerActions'
 import { PageProposalCard } from '@/components/molecules/PageProposalCard'
+import { MadePageActions } from '@/components/molecules/MadePageActions'
 import { toParentOptions, ancestorPathLabel } from '@/lib/pages/parent-options'
-import { workspaceHref } from '@/lib/pages/nav'
+import { workspaceHref, workspaceUrl } from '@/lib/pages/nav'
 import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
 import { insertPageOptimistic, type PageRow } from '@/lib/pages/tree'
 import { linkedPageIds, orderMentionPages } from '@/lib/pages/mention-pages'
 import { readRecentPageIds } from '@/lib/pages/recent-pages'
 import { writeAcceptedChanges } from '@/lib/pages/accept'
-import { sessionUndo } from '@/lib/change-log/session-undo'
+import { sessionUndo, useSessionUndo } from '@/lib/change-log/session-undo'
+import { applyUndoOutcome } from '@/lib/change-log/undo-outcome'
 import {
   createPageFromProposal,
   defineSchemaFromProposal,
@@ -211,7 +214,12 @@ import {
   type ProposalType,
 } from '@/lib/conversation/proposal-store'
 import { resolveChangeLogRecord } from '@/lib/change-log/resolve'
-import { listRecordsByToolCalls, resolveChainStatuses } from '@/lib/change-log/store'
+import {
+  acceptCreatePageRecord,
+  getRecordByToolCall,
+  listRecordsByToolCalls,
+  resolveChainStatuses,
+} from '@/lib/change-log/store'
 import { changeLogKey, changeLogChainTipKey } from '@/lib/change-log/keys'
 import type { ChangeLogRecord, ChangeLogStatus } from '@/lib/change-log/types'
 import { REVISE_NOTE } from '@/lib/change-log/answer'
@@ -652,7 +660,7 @@ export function AITerminal() {
   // let React Query serve the props-less shape here, silently emptying the
   // collection picker. The extra key segment keeps them distinct while
   // prefix-based `invalidateQueries(['pages'])` still refreshes both.
-  const { data: allPages = [], isFetched: pagesLoaded, isError: pagesErrored } = useQuery({
+  const { data: allPages = [], isFetched: pagesLoaded } = useQuery({
     queryKey: [...pagesKey(pondId), 'full'],
     queryFn: async () => {
       const supabase = getSupabase()
@@ -3054,13 +3062,6 @@ export function AITerminal() {
   // deleted between proposal and make page resets the place to top level and
   // asks for another; nothing is half-made either way.
   const makingPages = useRef<Set<string>>(new Set())
-  // `insertPageOptimistic` only writes `pagesKey(pondId)` (the rail's lean
-  // cache), never this query's `[...pagesKey(pondId), 'full']` key — so a
-  // just-made page is briefly absent from `allPages` until the invalidated
-  // query refetches. Held here (state, not a ref — the trash check below
-  // reads it during render) so that gap never reads as "in trash"; pruned
-  // once `allPages` itself confirms the id (below).
-  const [madePageIds, setMadePageIds] = useState<ReadonlySet<string>>(() => new Set())
   const makePage = useCallback(
     async (id: string) => {
       const proposal = pageProposals[id]
@@ -3082,10 +3083,6 @@ export function AITerminal() {
           () => crypto.randomUUID()
         )
         dispatch({ kind: 'notePageMade', id, pageId: made.id })
-        setMadePageIds((prev) => {
-          if (prev.has(made.id)) return prev
-          return new Set(prev).add(made.id)
-        })
         // Rail entry at once (the correct parent), reconciled in the background.
         insertPageOptimistic(
           queryClient,
@@ -3100,7 +3097,33 @@ export function AITerminal() {
         void queryClient.invalidateQueries({ queryKey: pagesKey() })
         router.push(workspaceHref({ id: made.id, type: 'page', title: made.title }))
         // The write landed — only now may the record say so (the log only grows).
-        logDecision(id, 'accepted')
+        // Not the generic logDecision path: a create_page record has to remember
+        // WHICH page it made, so undo (KAN-93) has something to trash —
+        // acceptCreatePageRecord stamps target_page_id and after.pageId in the
+        // same statement the status advances in.
+        void (async () => {
+          try {
+            const supabase = getSupabase()
+            const {
+              data: { user },
+            } = await supabase.auth.getUser()
+            if (!user) return
+            const record = await getRecordByToolCall(supabase, {
+              userId: user.id,
+              pondId,
+              toolCallId: id,
+            })
+            if (!record) return
+            if (loggedDecisions.current.has(id)) return
+            loggedDecisions.current.add(id)
+            await acceptCreatePageRecord(supabase, record.id, made.id)
+            void queryClient.invalidateQueries({ queryKey: changeLogKey() })
+            dispatch({ kind: 'notePageMade', id, pageId: made.id, recordId: record.id })
+            if (pondId) sessionUndo.remember({ pondId, recordIds: [record.id] })
+          } catch (err) {
+            console.error('[change-log] failed to accept create_page record', id, err)
+          }
+        })()
       } catch (err) {
         console.error('make page failed', err)
         if (err instanceof ParentGoneError) {
@@ -3125,42 +3148,9 @@ export function AITerminal() {
       queryClient,
       router,
       pondId,
-      logDecision,
       messages,
     ]
   )
-
-  const openMadePage = useCallback(
-    (proposal: PageProposal) => {
-      if (!proposal.pageId) return
-      router.push(workspaceHref({ id: proposal.pageId, type: 'page', title: proposal.name }))
-    },
-    [router]
-  )
-
-  // Once the refetched `allPages` confirms a page `madePageIds` is holding a
-  // seat for, drop it — otherwise a page made this session could never read
-  // as trashed again after a real delete. Guarded to return the SAME `prev`
-  // reference once every confirmed id has been dropped, so it settles rather
-  // than cascading — same guard shape as this file's "current ref" effect
-  // above, hence `react-hooks/set-state-in-effect` disabled here too.
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
-    if (!pagesLoaded) return
-    setMadePageIds((prev) => {
-      if (prev.size === 0) return prev
-      const next = new Set(prev)
-      let changed = false
-      for (const id of prev) {
-        if (allPages.some((p) => p.id === id)) {
-          next.delete(id)
-          changed = true
-        }
-      }
-      return changed ? next : prev
-    })
-  }, [allPages, pagesLoaded])
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   // ── Streaming stage text (ticket-32) ──────────────────────────────────────
   // A 25–30s generation used to show a bare "…". Derive a human stage line from the
@@ -3605,39 +3595,23 @@ export function AITerminal() {
             </EarlierAnswerFold>
           ))}
         {/* Make-this-a-page cards: editable while pending; make page is the only write. */}
-        {cardsForMessage.map((proposal) => {
-          // No stored flag: membership in the live pages list is the trash
-          // signal, so a restored page flips the card back on its own. Never
-          // read that signal before the list has loaded (or past an error) —
-          // `allPages` defaults to `[]` until then, which would misread every
-          // made page as trashed. `madePageIds` covers the gap between a
-          // page's own write landing and this query's refetch.
-          const inTrash =
-            pagesLoaded &&
-            !pagesErrored &&
-            !!proposal.pageId &&
-            !madePageIds.has(proposal.pageId) &&
-            !allPages.some((p) => p.id === proposal.pageId)
-          return (
-            <PageProposalCard
-              key={proposal.id}
-              className="mn-arrive"
-              name={proposal.name}
-              parentId={proposal.parentId}
-              kind={proposal.kind}
-              parentOptions={proposalParentOptions}
-              status={proposal.status}
-              error={pageProposalErrors[proposal.id]}
-              inTrash={inTrash}
-              onNameChange={(name) => editPageProposal(proposal.id, { name })}
-              onParentChange={(parentId) => editPageProposal(proposal.id, { parentId })}
-              onKindChange={(kind) => editPageProposal(proposal.id, { kind })}
-              onMakePage={() => void makePage(proposal.id)}
-              onCancel={() => cancelPageProposal(proposal.id)}
-              onOpenPage={inTrash || !proposal.pageId ? undefined : () => openMadePage(proposal)}
-            />
-          )
-        })}
+        {cardsForMessage.map((proposal) => (
+          <PageProposalCard
+            key={proposal.id}
+            className="mn-arrive"
+            name={proposal.name}
+            parentId={proposal.parentId}
+            kind={proposal.kind}
+            parentOptions={proposalParentOptions}
+            status={proposal.status}
+            error={pageProposalErrors[proposal.id]}
+            onNameChange={(name) => editPageProposal(proposal.id, { name })}
+            onParentChange={(parentId) => editPageProposal(proposal.id, { parentId })}
+            onKindChange={(kind) => editPageProposal(proposal.id, { kind })}
+            onMakePage={() => void makePage(proposal.id)}
+            onCancel={() => cancelPageProposal(proposal.id)}
+          />
+        ))}
         {message.role === 'assistant' && isLastAssistant && (text || isStreaming) && (
           <AnswerActions
             streaming={answerStreaming}
@@ -4034,6 +4008,116 @@ export function AITerminal() {
     )
   }
 
+  // 6a frame 5: once a page made this session is STILL THE TOP of the undo
+  // stack, the thread gives way to the composer's own chip row — no "turns"
+  // section at all, not a fold over the existing one. Binding to the top of
+  // the stack (not just `canUndo`) keeps the chip from undoing an unrelated
+  // later/earlier diff: it only ever offers to take back this proposal's own
+  // step, never whatever step happens to be on top.
+  // Defaulted: several suites still mock `useSessionUndo` as `{ canUndo: false }`
+  // only (pre-dating these two fields) — safe here since both default to "no
+  // step bound", the same as the real hook's own `EMPTY` snapshot.
+  const { topUndoRecordIds = [], redoRecordIds = [] } = useSessionUndo(pondId)
+  const madeProposal = Object.values(pageProposals)
+    .filter((p) => p.status === 'accepted' && p.pageId)
+    .at(-1)
+  const madeProposalRecordId = madeProposal?.recordId
+  const showMadePageActions =
+    !!madeProposal && !!madeProposalRecordId && topUndoRecordIds.includes(madeProposalRecordId)
+  const madeProposalParentName = madeProposal?.parentId
+    ? allPages.find((p) => p.id === madeProposal.parentId)?.title ?? null
+    : null
+  // The made record can leave the undo stack by a route this composer never
+  // sees — ⌘Z through ShellCommands' own `runUndoStep`, not just this chip —
+  // and land on redo. Either way the card is no longer applied, so the answer
+  // goes back to unfiled and "make this a page" is offered again. The redo
+  // stack is checked whole, not just its top: a step sinks below later ones as
+  // more get undone, but it still sits ON redo until something redoes it.
+  useEffect(() => {
+    if (!madeProposal || !madeProposalRecordId) return
+    if (redoRecordIds.includes(madeProposalRecordId)) {
+      dispatch({ kind: 'undoMadePage', id: madeProposal.id })
+    }
+  }, [madeProposal, madeProposalRecordId, redoRecordIds, dispatch])
+  // The backend record is already `undone` (the session-undo RPC did that) — this
+  // only takes the client's own card back to `rejected` (the terminal cancel
+  // already leaves it in) so the answer offers make this a page again, and
+  // returns to the node that was open when make this a page was pressed, which
+  // is exactly the parentId `proposePage` stamped onto the card at that moment.
+  const undoMadePageInFlightRef = useRef(false)
+  const undoMadePage = () => {
+    const proposal = madeProposal
+    const recordId = proposal?.recordId
+    if (!proposal || !recordId || !pondId) return
+    // G9 (double press, one record): the queue only guards against undoing
+    // an unrelated step — it still pops once per enqueued call, so a second
+    // press before the first settles would enqueue a second real undo. The
+    // in-flight ref blocks that before `sessionUndo.undo` is ever called,
+    // and the synchronous snapshot check (not the async result) stops a
+    // press that lands after this proposal's step has already left the top.
+    if (undoMadePageInFlightRef.current) return
+    if (!sessionUndo.getSnapshot(pondId).topUndoRecordIds.includes(recordId)) return
+    undoMadePageInFlightRef.current = true
+    void (async () => {
+      try {
+        const result = await sessionUndo.undo(pondId)
+        // Same caches and notices a ⌘Z through ShellCommands settles, so the
+        // rail/change-log don't read stale after the chip's own route (PATH_STEPS 6-7).
+        applyUndoOutcome('undo', result, queryClient)
+        // The queue pops at run time, not call time — by the time this
+        // resolves, the step that actually ran may not be this proposal's
+        // own. Check before acting.
+        if (result.outcome !== 'done' || !result.step.recordIds.includes(recordId)) return
+        dispatch({ kind: 'undoMadePage', id: proposal.id })
+        const parent = proposal.parentId
+          ? allPages.find((p) => p.id === proposal.parentId)
+          : null
+        router.push(
+          parent ? workspaceHref({ id: parent.id, type: 'page', title: parent.title }) : workspaceUrl(null)
+        )
+      } catch (err) {
+        console.error('[change-log] undo failed', err)
+        requestComposerNotice(`can't undo — try again.`)
+      } finally {
+        undoMadePageInFlightRef.current = false
+      }
+    })()
+  }
+  const openMadeProposalParent = () => {
+    const proposal = madeProposal
+    if (!proposal?.parentId) return
+    const parent = allPages.find((p) => p.id === proposal.parentId)
+    if (!parent) return
+    router.push(workspaceHref({ id: parent.id, type: 'page', title: parent.title }))
+  }
+  const madePageActionsNode = showMadePageActions && (
+    <MadePageActions
+      className="mn-arrive"
+      parentName={madeProposalParentName}
+      onUndo={undoMadePage}
+      onOpenParent={madeProposalParentName !== null ? openMadeProposalParent : undefined}
+    />
+  )
+
+  // Frame 5's fold is scoped to "until the next send", not to however long the
+  // record sits on top of undo — `showMadePageActions` (and so the chip row)
+  // can outlive it. `madePageCollapseBaseline` pins the message count at the
+  // moment THIS proposal's record became the made one; once `messages.length`
+  // grows past it the person already sent something new, so the thread
+  // renders normally again even while the chip is still offered.
+  const madePageCollapseRecordRef = useRef<string | null>(null)
+  const [madePageCollapseBaseline, setMadePageCollapseBaseline] = useState<number | null>(null)
+  useEffect(() => {
+    if (!madeProposalRecordId) return
+    if (madePageCollapseRecordRef.current === madeProposalRecordId) return
+    madePageCollapseRecordRef.current = madeProposalRecordId
+    setMadePageCollapseBaseline(messages.length)
+  }, [madeProposalRecordId, messages.length])
+  const threadFoldedForMadePage =
+    showMadePageActions &&
+    madePageCollapseBaseline !== null &&
+    messages.length <= madePageCollapseBaseline
+
   const turns = groupTurns(messages)
   const earlierOpen = earlierOpenFrom !== null && earlierOpenFrom === messages[0]?.id
   const foldedCount = earlierOpen ? 0 : foldedTurnCount(turns.length)
@@ -4065,7 +4149,9 @@ export function AITerminal() {
       />
     ))
 
-  const messagesBody = (messages.length > 0 || keptHtmlTurns.length > 0) && (
+  const messagesBody =
+    !threadFoldedForMadePage &&
+    (messages.length > 0 || keptHtmlTurns.length > 0) && (
     <>
       {turns.length > 1 && (
         <ThreadHead
@@ -4273,8 +4359,10 @@ export function AITerminal() {
         <ComposerLine
           value={input}
           placeholder={
-            htmlPlaceholder ??
-            (messages.length > 0 ? 'reply, or ask something else' : 'ask pond, or / for blocks')
+            threadFoldedForMadePage
+              ? 'ask about this page'
+              : (htmlPlaceholder ??
+                (messages.length > 0 ? 'reply, or ask something else' : 'ask pond, or / for blocks'))
           }
           disabled={!isReady}
           streaming={isStreaming}
@@ -4365,9 +4453,10 @@ export function AITerminal() {
             `Boolean(children)` reads any array (even of two `false`s) as
             truthy, raising the resize handle and sizing a thread that isn't
             there. */}
-        {(messagesBody || raisedRecordCards) && (
+        {(messagesBody || madePageActionsNode || raisedRecordCards) && (
           <>
             {messagesBody}
+            {madePageActionsNode}
             {raisedRecordCards}
           </>
         )}

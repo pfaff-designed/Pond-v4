@@ -74,6 +74,7 @@ jest.mock('@/lib/conversation/client', () => ({
 
 jest.mock('@/lib/change-log/session-undo', () => ({
   sessionUndo: { remember: jest.fn() },
+  useSessionUndo: () => ({ canUndo: false }),
 }))
 
 jest.mock('@/lib/deletion/notify-bridge', () => ({

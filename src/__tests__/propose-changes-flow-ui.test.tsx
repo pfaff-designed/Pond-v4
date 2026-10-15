@@ -119,6 +119,7 @@ jest.mock('@/lib/change-log/store', () => ({
 const mockRemember = jest.fn()
 jest.mock('@/lib/change-log/session-undo', () => ({
   sessionUndo: { remember: (...args: unknown[]) => mockRemember(...args) },
+  useSessionUndo: () => ({ canUndo: false }),
 }))
 
 // KAN-267: the receipt toast fires through the notify bridge (the terminal

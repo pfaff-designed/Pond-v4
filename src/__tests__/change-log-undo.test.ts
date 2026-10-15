@@ -209,7 +209,12 @@ describe('createSessionUndo', () => {
   it('starts with nothing to undo or redo', async () => {
     const { store, run } = makeStore()
 
-    expect(store.getSnapshot(POND)).toEqual({ canUndo: false, canRedo: false })
+    expect(store.getSnapshot(POND)).toEqual({
+      canUndo: false,
+      canRedo: false,
+      topUndoRecordIds: [],
+      redoRecordIds: [],
+    })
     await expect(store.undo(POND)).resolves.toEqual({ outcome: 'empty' })
     await expect(store.redo(POND)).resolves.toEqual({ outcome: 'empty' })
     expect(run.undo).not.toHaveBeenCalled()
@@ -277,7 +282,12 @@ describe('createSessionUndo', () => {
     await store.undo(POND)
 
     expect(run.undo).toHaveBeenCalledWith(STEP)
-    expect(store.getSnapshot(OTHER_POND)).toEqual({ canUndo: true, canRedo: false })
+    expect(store.getSnapshot(OTHER_POND)).toEqual({
+      canUndo: true,
+      canRedo: false,
+      topUndoRecordIds: ['b-1'],
+      redoRecordIds: [],
+    })
   })
 
   it('undoes the newest step first, then offers it for redo', async () => {
@@ -289,7 +299,12 @@ describe('createSessionUndo', () => {
 
     expect(run.undo).toHaveBeenCalledWith(STEP)
     expect(outcome).toMatchObject({ outcome: 'done', step: STEP })
-    expect(store.getSnapshot(POND)).toEqual({ canUndo: true, canRedo: true })
+    expect(store.getSnapshot(POND)).toEqual({
+      canUndo: true,
+      canRedo: true,
+      topUndoRecordIds: ['older'],
+      redoRecordIds: STEP.recordIds,
+    })
   })
 
   it('redoes the step it undid, and the redo records become the next undo', async () => {
@@ -300,7 +315,12 @@ describe('createSessionUndo', () => {
     await store.redo(POND)
 
     expect(run.redo).toHaveBeenCalledWith(STEP)
-    expect(store.getSnapshot(POND)).toEqual({ canUndo: true, canRedo: false })
+    expect(store.getSnapshot(POND)).toEqual({
+      canUndo: true,
+      canRedo: false,
+      topUndoRecordIds: ['r'],
+      redoRecordIds: [],
+    })
     await store.undo(POND)
     expect(run.undo).toHaveBeenLastCalledWith({ pondId: POND, recordIds: ['r'] })
   })
@@ -327,7 +347,12 @@ describe('createSessionUndo', () => {
     call.release()
     await pending
 
-    expect(store.getSnapshot(POND)).toEqual({ canUndo: true, canRedo: false })
+    expect(store.getSnapshot(POND)).toEqual({
+      canUndo: true,
+      canRedo: false,
+      topUndoRecordIds: ['new'],
+      redoRecordIds: [],
+    })
     await store.undo(POND)
     expect(run.undo).toHaveBeenLastCalledWith({ pondId: POND, recordIds: ['new'] })
   })
@@ -363,7 +388,12 @@ describe('createSessionUndo', () => {
     call.release()
     await pending
 
-    expect(store.getSnapshot(POND)).toEqual({ canUndo: false, canRedo: false })
+    expect(store.getSnapshot(POND)).toEqual({
+      canUndo: false,
+      canRedo: false,
+      topUndoRecordIds: [],
+      redoRecordIds: [],
+    })
   })
 
   it('drops a stale step and reports why — it cannot succeed later', async () => {
@@ -374,7 +404,12 @@ describe('createSessionUndo', () => {
     const outcome = await store.undo(POND)
 
     expect(outcome).toEqual({ outcome: 'stale', reason: 'page-changed', step: STEP })
-    expect(store.getSnapshot(POND)).toEqual({ canUndo: false, canRedo: false })
+    expect(store.getSnapshot(POND)).toEqual({
+      canUndo: false,
+      canRedo: false,
+      topUndoRecordIds: [],
+      redoRecordIds: [],
+    })
   })
 
   it('drops a refused step and reports why', async () => {
@@ -397,7 +432,12 @@ describe('createSessionUndo', () => {
     const outcome = await store.undo(POND)
 
     expect(outcome).toEqual({ outcome: 'blocked', reason: 'linked-elsewhere', step: STEP })
-    expect(store.getSnapshot(POND)).toEqual({ canUndo: true, canRedo: false })
+    expect(store.getSnapshot(POND)).toEqual({
+      canUndo: true,
+      canRedo: false,
+      topUndoRecordIds: STEP.recordIds,
+      redoRecordIds: [],
+    })
     await store.undo(POND)
     expect(run.undo).toHaveBeenLastCalledWith(STEP)
   })
@@ -417,7 +457,12 @@ describe('createSessionUndo', () => {
       reason: 'name-taken',
       step: { pondId: POND, recordIds: ['older'] },
     })
-    expect(store.getSnapshot(POND)).toEqual({ canUndo: false, canRedo: true })
+    expect(store.getSnapshot(POND)).toEqual({
+      canUndo: false,
+      canRedo: true,
+      topUndoRecordIds: [],
+      redoRecordIds: ['edit-1', 'older'],
+    })
     await store.redo(POND)
     expect(run.redo).toHaveBeenLastCalledWith({ pondId: POND, recordIds: ['older'] })
   })
@@ -509,8 +554,18 @@ describe('createSessionUndo', () => {
 
     store.clear()
 
-    expect(store.getSnapshot(POND)).toEqual({ canUndo: false, canRedo: false })
-    expect(store.getSnapshot(OTHER_POND)).toEqual({ canUndo: false, canRedo: false })
+    expect(store.getSnapshot(POND)).toEqual({
+      canUndo: false,
+      canRedo: false,
+      topUndoRecordIds: [],
+      redoRecordIds: [],
+    })
+    expect(store.getSnapshot(OTHER_POND)).toEqual({
+      canUndo: false,
+      canRedo: false,
+      topUndoRecordIds: [],
+      redoRecordIds: [],
+    })
   })
 })
 
@@ -520,7 +575,12 @@ describe('useSessionUndo', () => {
     expect(result.current.canUndo).toBe(false)
 
     act(() => sessionUndo.remember(STEP))
-    expect(result.current).toEqual({ canUndo: true, canRedo: false })
+    expect(result.current).toEqual({
+      canUndo: true,
+      canRedo: false,
+      topUndoRecordIds: STEP.recordIds,
+      redoRecordIds: [],
+    })
 
     act(() => sessionUndo.clear())
     expect(result.current.canUndo).toBe(false)
@@ -530,7 +590,12 @@ describe('useSessionUndo', () => {
     sessionUndo.remember(STEP)
     const { result } = renderHook(() => useSessionUndo(null))
 
-    expect(result.current).toEqual({ canUndo: false, canRedo: false })
+    expect(result.current).toEqual({
+      canUndo: false,
+      canRedo: false,
+      topUndoRecordIds: [],
+      redoRecordIds: [],
+    })
     sessionUndo.clear()
   })
 

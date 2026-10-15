@@ -523,6 +523,36 @@ export async function acceptRecord(
 }
 
 /**
+ * Accept a `create_page` proposal, stamping the made page's id onto the record
+ * in the same statement the status advances in — through `accept_create_page_record`
+ * from migration 0029. Unlike {@link acceptRecord}, there is no page write to
+ * commit alongside it (the page already exists by the time this is called); the
+ * record just needs to remember which page it made, so undo (KAN-93) has
+ * something to trash. Compare-and-swap on `proposed`, same as {@link advanceStatus} —
+ * raises {@link RecordChangedError} if the record was already decided.
+ */
+export async function acceptCreatePageRecord(
+  supabase: SupabaseClient<Database>,
+  id: string,
+  pageId: string,
+  actor: ChangeLogActor = ACTOR_YOU
+): Promise<ChangeLogRecord> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any).rpc('accept_create_page_record', {
+    p_record_id: id,
+    p_page_id: pageId,
+    p_actor: actor,
+  })
+  if (error) {
+    if (error.details === 'record-changed') throw new RecordChangedError()
+    throw error
+  }
+  const row = Array.isArray(data) ? data[0] : data
+  if (!row) throw new Error(`change log: accept of record ${id} returned no record`)
+  return mapChangeLogRow(row as ChangeLogRow)
+}
+
+/**
  * G2 — the outdated sweep. When a diff is accepted, every OTHER still-`proposed`
  * record aimed at the same blocks was written against a state that no longer
  * exists, so it goes `outdated`: its accept affordance is withdrawn and revise
