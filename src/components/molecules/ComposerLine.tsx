@@ -40,6 +40,8 @@ export interface ComposerLineProps {
   attachInput?: ReactNode
   onToggleResearch: () => void
   onChange: (value: string) => void
+  /** Focusing the line is itself a signal (e.g. un-minimizing, KAN-323). */
+  onFocus?: () => void
   onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void
   onAttach: () => void
   onSend: () => void
@@ -60,6 +62,7 @@ export const ComposerLine = ({
   attachInput,
   onToggleResearch,
   onChange,
+  onFocus,
   onKeyDown,
   onAttach,
   onSend,
@@ -89,6 +92,7 @@ export const ComposerLine = ({
           placeholder={placeholder}
           disabled={disabled}
           onChange={(e) => onChange(e.target.value)}
+          onFocus={onFocus}
           onKeyDown={onKeyDown}
           className={cn(
             'block max-h-[calc(6*1.5em_+_4px)] w-full resize-none overflow-y-auto border-0 bg-transparent px-1.5 py-0.5 font-mono text-[16px] leading-[1.5] tracking-[0.02em] outline-none [scrollbar-gutter:stable] placeholder:text-mn-text-secondary disabled:opacity-60 md:text-[14px]',

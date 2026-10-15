@@ -134,7 +134,7 @@ import {
   Turn,
   YouRow,
 } from '@/components/molecules/ComposerThread'
-import { ComposerCloseButton } from '@/components/molecules/ComposerCloseButton'
+import { ComposerWindowControls } from '@/components/molecules/ComposerWindowControls'
 import { foldedTurnCount, groupTurns } from '@/lib/conversation/turns'
 import { areaOf } from '@/lib/pages/crumbs'
 import { ComposerLine } from '@/components/molecules/ComposerLine'
@@ -454,8 +454,6 @@ export function AITerminal() {
   // does not hold (yet) resolves to null too; only an empty list means no pond scope.
   const pondSettled = !pondsLoading && (pond !== null || ponds.length === 0)
   const composerHeight = useComposerHeight()
-  // Zen's card has no ThreadHead until a second turn — "close" still has to
-  // reach the very first question (6q f8).
   const { zen, composerAsked, askComposer, closeComposerAsk } = useZen()
   const inZen = zen !== null
   // Ask pond from the selection bar (KAN-186): in zen the card does not open
@@ -829,6 +827,12 @@ export function AITerminal() {
     if (!last || last.role !== 'assistant') return false
     return !hasVisibleAssistantContent(last.parts)
   }, [messages])
+  // KAN-324: a failed ask-again can restore the real answer it was replacing
+  // (KAN-284) WITH an `error` still set, so the restored answer's own text
+  // gate (`text || isStreaming`) and this row's gate can both hold at once.
+  // The trailing error row wins the one close mark — `AnswerActions`'s own
+  // `onClose` below is withheld whenever this is also about to draw.
+  const trailingErrorRowShows = !isStreaming && (!!error || lastAssistantAnswerIsBlank)
 
   // ── Highlight-to-ask references (KAN-98, board 6e) ────────────────────────
   const [references, setReferences] = useState<PageReference[]>([])
@@ -1085,10 +1089,28 @@ export function AITerminal() {
   // The DOM textarea's `selectionStart` already reflects the keystroke by the
   // time this fires — same tick `onChange` reports the new `value` — so the
   // mention query is read synchronously, no `requestAnimationFrame` needed.
+  // The board's one-line resting composer, on screen, thread kept mounted but
+  // hidden (KAN-323). Typing or focusing the line is the only way back —
+  // there is no separate "expand" control for it.
+  // Fills the canvas beside the rail. A state, never a height: not persisted,
+  // and never the opening state — every mount starts unmaximized (KAN-323).
+  const [isMaximized, setIsMaximized] = useState(false)
+  const toggleMaximize = useCallback(() => setIsMaximized((prev) => !prev), [])
+  const [isMinimized, setIsMinimized] = useState(false)
+  // Minimize and maximize are mutually exclusive states (KAN-323) — without
+  // this, `TerminalDrawer`'s style check (maximized wins over `showThread`)
+  // leaves a canvas-sized empty slab instead of the one-line rest composer.
+  const handleMinimize = useCallback(() => {
+    setIsMinimized(true)
+    setIsMaximized(false)
+  }, [])
+  const unminimize = useCallback(() => setIsMinimized(false), [])
   const handleComposerChange = useCallback(
     (value: string) => {
       setInput(value)
       updateMentionQuery()
+      // Typing while minimized is the person asking for the thread back (KAN-323).
+      setIsMinimized(false)
     },
     [updateMentionQuery]
   )
@@ -1409,6 +1431,10 @@ export function AITerminal() {
   const collapseComposer = useCallback(() => {
     setAnswerSeenAtCollapse(lastSettledAnswerId)
     setIsCollapsed(true)
+    // Closing must not leave the composer reopening maximized or minimized
+    // (KAN-323) — both are session-only states, never carried past a close.
+    setIsMaximized(false)
+    setIsMinimized(false)
     // Zen's card is only shown once asked (KAN-186) — every way of closing it
     // (the card's "close", a second Esc's first rung, ⌘J) clears that ask and
     // hands focus back to the pill's own ask-pond button, not <body>. Deferred
@@ -1438,73 +1464,10 @@ export function AITerminal() {
   // Dedicated html-only picker (KAN-251): ⌘K's `import a page` fires
   // `HTML_IMPORT_PICKER_EVENT`; this is the one place that listens, so a
   // later door (zen's ＋, KAN-186/KAN-193) can dispatch the same event with
-  // no change here.
-  //
-  // Robustness (ticket-24, same shape as `pendingFocus` below): a *collapsed*
-  // composer unmounts this input, so a synchronous click() while collapsed
-  // finds nothing. Uncollapse and set a pending flag; the effect near
-  // `effectiveCollapsed` clicks once the input is back in the DOM.
+  // no change here. The listener itself registers below, once
+  // `effectiveCollapsedRef` exists (react-hooks/immutability wants the ref
+  // mutated before it's read by an earlier-registered effect).
   const pendingHtmlImport = useRef(false)
-  useEffect(() => {
-    function onHtmlImportPickerRequest() {
-      const el = htmlImportInputRef.current
-      if (el) {
-        el.click()
-        return
-      }
-      openComposer()
-      pendingHtmlImport.current = true
-    }
-    window.addEventListener(HTML_IMPORT_PICKER_EVENT, onHtmlImportPickerRequest)
-    return () => window.removeEventListener(HTML_IMPORT_PICKER_EVENT, onHtmlImportPickerRequest)
-  }, [openComposer])
-
-  // ⌘K (top bar icon or global hotkey) moves focus into the terminal input.
-  // Robustness (ticket-24): a *collapsed* input is unmounted, so a synchronous
-  // focus() finds nothing. We uncollapse and set a pending-focus flag; the effect
-  // below focuses once the textarea is mounted. When already open, focus is
-  // immediate. This closes every candidate cause of the "⌘K didn't focus" report.
-  const pendingFocus = useRef(false)
-  const focusInputSoon = useCallback(() => {
-    const el = inputRef.current
-    if (el) {
-      // Input is mounted: attempt focus and consume the request either way — a
-      // disabled input (mid-stream) silently drops it rather than leaving a
-      // stale flag that would steal focus on some later collapse/ready change.
-      el.focus()
-      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-      // Brief visual emphasis so the user knows focus arrived.
-      el.classList.add('ring-1', 'ring-mn-text')
-      setTimeout(() => el.classList.remove('ring-1', 'ring-mn-text'), 800)
-      pendingFocus.current = false
-      return
-    }
-    // Collapsed (input unmounted): fulfil after the uncollapse re-render.
-    pendingFocus.current = true
-  }, [])
-  useEffect(() => {
-    function onFocusRequest(e: Event) {
-      // The palette's `ask pond about “q”` (#279) arrives with the question typed —
-      // into an EMPTY composer only. A draft in progress is the person's and is
-      // never overwritten (there is no undo for it); the question still gets focus.
-      // A live listener handles the event directly, so the pending slot (KAN-195's
-      // late-mount replay path) must not keep this text around for a future mount.
-      takePendingTerminalText()
-      const text = (e as CustomEvent<FocusTerminalDetail>).detail?.text
-      if (text) setInput((prev) => (prev.trim() ? prev : text))
-      openComposer()
-      focusInputSoon()
-    }
-    window.addEventListener(FOCUS_TERMINAL_EVENT, onFocusRequest)
-    // A request dispatched before this listener attached (e.g. the cover's
-    // `?ask=` carry, which fires from an effect that runs earlier in tree
-    // order) is still waiting in the pending slot — claim it exactly like an
-    // incoming event (KAN-195).
-    const pending = takePendingTerminalText()
-    if (pending)
-      onFocusRequest(new CustomEvent(FOCUS_TERMINAL_EVENT, { detail: { text: pending } }))
-    return () => window.removeEventListener(FOCUS_TERMINAL_EVENT, onFocusRequest)
-  }, [focusInputSoon, openComposer])
 
   // A stale/blocked/refused ⌘Z or ⇧⌘Z (ShellCommands) says why in this one
   // line — the composer's only notice line, machine register. Replaces
@@ -1784,6 +1747,83 @@ export function AITerminal() {
   // explicit × click (`closedByPerson`) overrides the hold outright — the
   // boards draw a working close on the proposing composer, not a disabled one.
   const effectiveCollapsed = isCollapsed && (!hasUnresolvedProposal || closedByPerson)
+  // Mirrored into a ref so the html-import listener below (registered once,
+  // not re-subscribed on every collapse toggle) always reads the live value.
+  const effectiveCollapsedRef = useRef(effectiveCollapsed)
+  useEffect(() => {
+    effectiveCollapsedRef.current = effectiveCollapsed
+  }, [effectiveCollapsed])
+  useEffect(() => {
+    function onHtmlImportPickerRequest() {
+      // The dedicated input now stays mounted (hidden, not unmounted) while
+      // collapsed (KAN-323's persistent card), so its mere presence no longer
+      // means the composer is open — check `effectiveCollapsed` itself.
+      if (effectiveCollapsedRef.current) {
+        openComposer()
+        pendingHtmlImport.current = true
+        return
+      }
+      htmlImportInputRef.current?.click()
+    }
+    window.addEventListener(HTML_IMPORT_PICKER_EVENT, onHtmlImportPickerRequest)
+    return () => window.removeEventListener(HTML_IMPORT_PICKER_EVENT, onHtmlImportPickerRequest)
+  }, [openComposer])
+
+  // ⌘K (top bar icon or global hotkey) moves focus into the terminal input.
+  // Robustness (ticket-24): the input stays mounted (just inert) while
+  // collapsed (KAN-323's persistent card), so a `.focus()` call on it is a
+  // no-op in a real browser — and a no-op browser call still clears this
+  // flag below, so the retry effect never got a chance to run. Checking
+  // `effectiveCollapsedRef` first (declared above) means a request made
+  // while still collapsed only arms the flag; the retry effect fulfils it
+  // once `effectiveCollapsed` turns false. When already open, focus is
+  // immediate. This closes every candidate cause of the "⌘K didn't focus"
+  // report.
+  const pendingFocus = useRef(false)
+  const focusInputSoon = useCallback(() => {
+    if (effectiveCollapsedRef.current) {
+      pendingFocus.current = true
+      return
+    }
+    const el = inputRef.current
+    if (el) {
+      // Attempt focus and consume the request either way — a disabled input
+      // (mid-stream) silently drops it rather than leaving a stale flag that
+      // would steal focus on some later collapse/ready change.
+      el.focus()
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      // Brief visual emphasis so the user knows focus arrived.
+      el.classList.add('ring-1', 'ring-mn-text')
+      setTimeout(() => el.classList.remove('ring-1', 'ring-mn-text'), 800)
+      pendingFocus.current = false
+      return
+    }
+    // Not yet mounted (first render, ref not attached): fulfil once it is.
+    pendingFocus.current = true
+  }, [])
+  useEffect(() => {
+    function onFocusRequest(e: Event) {
+      // The palette's `ask pond about “q”` (#279) arrives with the question typed —
+      // into an EMPTY composer only. A draft in progress is the person's and is
+      // never overwritten (there is no undo for it); the question still gets focus.
+      // A live listener handles the event directly, so the pending slot (KAN-195's
+      // late-mount replay path) must not keep this text around for a future mount.
+      takePendingTerminalText()
+      const text = (e as CustomEvent<FocusTerminalDetail>).detail?.text
+      if (text) setInput((prev) => (prev.trim() ? prev : text))
+      openComposer()
+      focusInputSoon()
+    }
+    window.addEventListener(FOCUS_TERMINAL_EVENT, onFocusRequest)
+    // A request dispatched before this listener attached (e.g. the cover's
+    // `?ask=` carry, which fires from an effect that runs earlier in tree
+    // order) is still waiting in the pending slot — claim it exactly like an
+    // incoming event (KAN-195).
+    const pending = takePendingTerminalText()
+    if (pending)
+      onFocusRequest(new CustomEvent(FOCUS_TERMINAL_EVENT, { detail: { text: pending } }))
+    return () => window.removeEventListener(FOCUS_TERMINAL_EVENT, onFocusRequest)
+  }, [focusInputSoon, openComposer])
   const answerLanded =
     effectiveCollapsed &&
     lastSettledAnswerId !== null &&
@@ -1838,8 +1878,9 @@ export function AITerminal() {
     notifyComposerOpenChange(!effectiveCollapsed)
   }, [effectiveCollapsed])
 
-  // Fulfil a pending ⌘K focus once the input is actually mounted (i.e. the composer
-  // finished uncollapsing). Runs after the commit that mounts the textarea.
+  // Fulfil a pending ⌘K focus once the composer has actually finished
+  // uncollapsing — the input is mounted throughout, but `inert` while
+  // collapsed blocks `.focus()` from taking effect until this later commit.
   useEffect(() => {
     if (!effectiveCollapsed && pendingFocus.current) {
       const el = inputRef.current
@@ -1853,9 +1894,9 @@ export function AITerminal() {
     }
   }, [effectiveCollapsed, isReady])
 
-  // Fulfil a pending html-import click once the dedicated input is actually
-  // mounted (i.e. the composer finished uncollapsing). Same shape as the
-  // pending-focus effect above, for the same reason (ticket-24).
+  // Fulfil a pending html-import click once the composer has actually
+  // finished uncollapsing — same shape as the pending-focus effect above,
+  // for the same `inert`-while-collapsed reason (ticket-24).
   useEffect(() => {
     if (!effectiveCollapsed && pendingHtmlImport.current) {
       htmlImportInputRef.current?.click()
@@ -1876,6 +1917,10 @@ export function AITerminal() {
     setConversationId(fresh.id)
     pendingRegenerate.current = null
     setMessages([])
+    // A new thread never inherits the old one's maximized/minimized state
+    // (KAN-323) — both reset to the composer's ordinary opened shape.
+    setIsMaximized(false)
+    setIsMinimized(false)
     // Stale decisions must not leak into the fresh conversation's transcript.
     resetResolutions()
     // A kept html turn anchors to this conversation's `messages`; a fresh
@@ -2152,6 +2197,12 @@ export function AITerminal() {
     // composer, and a second esc with nothing left to consume it leaves zen.
     if (e.key === 'Escape') {
       e.preventDefault()
+      // Restoring from maximized outranks every other rung — it is an overlay
+      // state, not a step in the stream/field/composer chain below (KAN-323).
+      if (isMaximized) {
+        setIsMaximized(false)
+        return
+      }
       if (htmlReading) {
         clearHtmlAttachment()
         return
@@ -2179,6 +2230,11 @@ export function AITerminal() {
   const handleBodyKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
       if (e.key !== 'Escape' || e.defaultPrevented) return
+      if (isMaximized) {
+        e.preventDefault()
+        setIsMaximized(false)
+        return
+      }
       const target = e.target as HTMLElement
       if (target.tagName === 'TEXTAREA') return
       if (htmlReading) {
@@ -2197,7 +2253,7 @@ export function AITerminal() {
       e.preventDefault()
       collapseComposer()
     },
-    [isStreaming, stop, collapseComposer, htmlReading, clearHtmlAttachment]
+    [isMaximized, isStreaming, stop, collapseComposer, htmlReading, clearHtmlAttachment]
   )
 
   // Open the thread at a message (#97): a page's made-from chip asks for the
@@ -3608,8 +3664,16 @@ export function AITerminal() {
             }}
             onAskAgain={canAskAgain ? () => handleAskAgain(messageIndex) : undefined}
             onStop={stop}
-            // `ThreadHead` already draws the one close mark once there's a head to hold it.
-            onClose={turns.length <= 1 ? closeComposerByClick : undefined}
+            // `ThreadHead` already draws the one close mark once there's a head to
+            // hold it; the trailing error/blank row (KAN-324) draws the other one
+            // it can collide with, once this same restored answer also clears its
+            // own `text || isStreaming` gate.
+            onClose={
+              turns.length <= 1 && !trailingErrorRowShows ? closeComposerByClick : undefined
+            }
+            maximized={isMaximized}
+            onMaximize={toggleMaximize}
+            onMinimize={handleMinimize}
           />
         )}
         {diffCards.length > 0 && (
@@ -3675,10 +3739,16 @@ export function AITerminal() {
           !text.trim() &&
           !isStreaming &&
           diffCards.length > 0 &&
-          turns.length <= 1 && (
+          turns.length <= 1 &&
+          !trailingErrorRowShows && (
             <div className="flex items-center gap-[7px] font-mono text-[11px] lowercase tracking-[0.02em]">
               <div className="flex-1" />
-              <ComposerCloseButton onClick={closeComposerByClick} />
+              <ComposerWindowControls
+                maximized={isMaximized}
+                onMaximize={toggleMaximize}
+                onMinimize={handleMinimize}
+                onClose={closeComposerByClick}
+              />
             </div>
           )}
         {createPageParts.map((part) => {
@@ -4003,6 +4073,9 @@ export function AITerminal() {
           turns={turns.length}
           onNewThread={() => void handleClear()}
           onClose={closeComposerByClick}
+          maximized={isMaximized}
+          onMaximize={toggleMaximize}
+          onMinimize={handleMinimize}
         />
       )}
       <div
@@ -4032,13 +4105,16 @@ export function AITerminal() {
                         stream that finished with nothing to show (no error, no text,
                         no card — KAN-284) gets the same row: a blank answer is never
                         shown, or saved, as if it were a real empty reply. */}
-                    {!isStreaming && (error || lastAssistantAnswerIsBlank) && (
+                    {trailingErrorRowShows && (
                       <AnswerError
                         onAskAgain={
                           lastQuestion.text ? () => handleAskAgain(messages.length - 1) : undefined
                         }
                         // `ThreadHead` already draws the one close mark once there's a head to hold it.
                         onClose={turns.length <= 1 ? closeComposerByClick : undefined}
+                        maximized={isMaximized}
+                        onMaximize={toggleMaximize}
+                        onMinimize={handleMinimize}
                       />
                     )}
                   </>
@@ -4210,6 +4286,7 @@ export function AITerminal() {
           mentionTitles={mentionTitles}
           onToggleResearch={() => setResearch((on) => !on)}
           onChange={handleComposerChange}
+          onFocus={unminimize}
           onKeyDown={handleKeyDown}
           onAttach={handleAttachClick}
           onSend={handleSend}
@@ -4263,21 +4340,6 @@ export function AITerminal() {
           e.target.value = ''
         }}
       />
-      {/* 6q f8 always draws "close" as the card's last row, regardless of
-          turn count — lives in the footer (always rendered) rather than the
-          messages gate above so it reaches a thread with no ThreadHead too.
-          ThreadHead's own × (turns > 1) is left in place alongside it. */}
-      {inZen && (
-        <div data-part="zen-close-row" className="flex justify-start">
-          <button
-            type="button"
-            onClick={collapseComposer}
-            className="cursor-pointer text-[11px] text-mn-text-secondary hover:text-mn-text"
-          >
-            close
-          </button>
-        </div>
-      )}
     </div>
   )
 
@@ -4293,6 +4355,9 @@ export function AITerminal() {
         height={composerHeight.height}
         onHeightChange={composerHeight.setHeight}
         onHeightCommit={composerHeight.commitHeight}
+        maximized={isMaximized}
+        zen={inZen}
+        minimized={isMinimized}
         cardRef={composerCardRef}
       >
         {/* A single expression child, not two siblings — JSX wraps multiple

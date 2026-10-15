@@ -18,7 +18,7 @@
  */
 
 import { chipBaseClass } from '@/components/atoms/kicker'
-import { ComposerCloseButton } from '@/components/molecules/ComposerCloseButton'
+import { ComposerWindowControls } from '@/components/molecules/ComposerWindowControls'
 import { cn } from '@/lib/utils'
 
 export interface AnswerActionsProps {
@@ -30,9 +30,14 @@ export interface AnswerActionsProps {
   onStop: () => void
   /** Hide "make this a page" (e.g. a card for this answer is already open). */
   canMakePage?: boolean
-  /** Collapses the composer to its ⌘J tab. Omitted when a `ThreadHead` above
-   *  this row already draws the close mark (turns > 1). */
+  /** Draws the window controls. Omitted when a `ThreadHead` above this row
+   *  already draws them (turns > 1). */
   onClose?: () => void
+  /** Fills the canvas, or restores — paired with `onClose` (KAN-323). Required
+   *  alongside `onClose` so there is nothing for a stub fallback to cover. */
+  maximized?: boolean
+  onMaximize: () => void
+  onMinimize: () => void
   className?: string
 }
 
@@ -45,6 +50,9 @@ export function AnswerActions({
   onStop,
   canMakePage = true,
   onClose,
+  maximized = false,
+  onMaximize,
+  onMinimize,
   className,
 }: AnswerActionsProps) {
   return (
@@ -81,7 +89,12 @@ export function AnswerActions({
       {onClose && (
         <>
           <div className="flex-1" />
-          <ComposerCloseButton onClick={onClose} />
+          <ComposerWindowControls
+            maximized={maximized}
+            onMinimize={onMinimize}
+            onMaximize={onMaximize}
+            onClose={onClose}
+          />
         </>
       )}
     </div>
