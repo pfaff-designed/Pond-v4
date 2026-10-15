@@ -139,13 +139,14 @@ describe('ChangeLogRecordPage — loading', () => {
   })
 
   it('resolves a read id to its page title, alongside the from-thread chip', async () => {
+    const pageId = '7a7a7a7a-0000-4000-8000-000000000007'
     mockGetRecord.mockResolvedValue(
-      record({ read: ['page-7', 'email · j. hart'], sourceThreadId: 'thread-1' })
+      record({ read: [pageId, 'email · j. hart'], sourceThreadId: 'thread-1' })
     )
     mockGetThreadFirstQuestion.mockResolvedValue('when can the electrician come back?')
     mockGetPage.mockImplementation(async (_supabase: unknown, id: string) =>
-      id === 'page-7'
-        ? { id: 'page-7', parentId: null, type: 'page', title: 'kitchen renovation', blocks: [], order: 0, props: {} }
+      id === pageId
+        ? { id: pageId, parentId: null, type: 'page', title: 'kitchen renovation', blocks: [], order: 0, props: {} }
         : null
     )
 

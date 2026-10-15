@@ -3,7 +3,8 @@
  * rows (ticket-25; #101 review / ADR 0003: which ROOT the trail starts at).
  */
 
-import { ancestorPath, crumbTrail } from '@/lib/pages/crumbs'
+import { ancestorPath, areaOf, crumbTrail } from '@/lib/pages/crumbs'
+import type { AreaRow } from '@/lib/pages/crumbs'
 import type { PageRow } from '@/lib/pages/tree'
 
 const row = (
@@ -107,5 +108,45 @@ describe('crumbTrail', () => {
     const trail = crumbTrail(rows, 'under')
     expect(trail.root).toBeNull()
     expect(trail.crumbs.map((c) => c.title)).toEqual(['Health', 'databases'])
+  })
+})
+
+// ── areaOf — the composer thread head's area (KAN-331) ───────────────────────
+
+describe('areaOf', () => {
+  const AREA_ROWS: AreaRow[] = [
+    { id: 'health', parentId: null, title: 'Health' },
+    { id: 'marathon', parentId: 'health', title: 'Marathon Training' },
+    { id: 'week-1', parentId: 'marathon', title: 'Week 1' },
+    { id: 'personal', parentId: null, title: 'Personal' },
+  ]
+
+  it('is the page itself for a top-level page', () => {
+    expect(areaOf(AREA_ROWS, 'health')).toBe('Health')
+    expect(areaOf(AREA_ROWS, 'personal')).toBe('Personal')
+  })
+
+  it('is the topmost ancestor for a child page, however deep', () => {
+    expect(areaOf(AREA_ROWS, 'marathon')).toBe('Health')
+    expect(areaOf(AREA_ROWS, 'week-1')).toBe('Health')
+  })
+
+  it('is null for an unknown id', () => {
+    expect(areaOf(AREA_ROWS, 'nope')).toBeNull()
+  })
+
+  it('falls back to "Untitled" for a blank title', () => {
+    const rows: AreaRow[] = [{ id: 'blank', parentId: null, title: '' }]
+    expect(areaOf(rows, 'blank')).toBe('Untitled')
+  })
+
+  it('is cycle-guarded against malformed parent links', () => {
+    const cyclic: AreaRow[] = [
+      { id: 'a', parentId: 'b', title: 'A' },
+      { id: 'b', parentId: 'a', title: 'B' },
+    ]
+    // the walk stops the instant it revisits a seen node, landing back on 'a' —
+    // so the guard must return 'a's own title, not hang or fall through to null.
+    expect(areaOf(cyclic, 'a')).toBe('A')
   })
 })

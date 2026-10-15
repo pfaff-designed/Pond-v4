@@ -1530,3 +1530,72 @@ describe('reopening the composer actually moves focus into the input (KAN-323)',
     focusSpy.mockRestore()
   })
 })
+
+describe('the thread head names the CURRENT page\'s area, not where the thread began (KAN-331)', () => {
+  // A top-level page X (its own area) and a top-level page Y with a child
+  // under it (Y's area is Y, the topmost ancestor) — `areaOf`'s walk per
+  // `crumbs.ts`.
+  const pageX = {
+    id: 'page-x',
+    parentId: null,
+    type: 'page' as const,
+    title: 'Money',
+    blocks: [],
+    order: 0,
+    props: {},
+  }
+  const pageY = {
+    id: 'page-y',
+    parentId: null,
+    type: 'page' as const,
+    title: 'Creativity',
+    blocks: [],
+    order: 0,
+    props: {},
+  }
+  const pageYChild = {
+    id: 'page-y-child',
+    parentId: 'page-y',
+    type: 'page' as const,
+    title: 'Kitchen renovation',
+    blocks: [],
+    order: 1,
+    props: {},
+  }
+  const twoTurns = [
+    { id: 'm1', role: 'user', parts: [{ type: 'text', text: 'question 1' }] },
+    { id: 'm2', role: 'assistant', parts: [{ type: 'text', text: 'answer 1' }] },
+    { id: 'm3', role: 'user', parts: [{ type: 'text', text: 'question 2' }] },
+    { id: 'm4', role: 'assistant', parts: [{ type: 'text', text: 'answer 2' }] },
+  ]
+
+  it('reads X\'s own title on X, then Y\'s title after navigating to Y\'s child', async () => {
+    mockListPages.mockResolvedValue([pageX, pageY, pageYChild])
+    mockAmbientNodeId = pageX.id
+    mockMessages = twoTurns
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const tree = () => (
+      <QueryClientProvider client={queryClient}>
+        <AITerminal />
+      </QueryClientProvider>
+    )
+    const { rerender } = render(tree())
+    await waitReady()
+    await waitFor(() => expect(mockListPages).toHaveBeenCalled())
+
+    await waitFor(() =>
+      expect(document.querySelector('[data-part="thread-area"]')).toHaveTextContent(
+        `thread · ${pageX.title}`
+      )
+    )
+
+    mockAmbientNodeId = pageYChild.id
+    rerender(tree())
+
+    await waitFor(() =>
+      expect(document.querySelector('[data-part="thread-area"]')).toHaveTextContent(
+        `thread · ${pageY.title}`
+      )
+    )
+  })
+})
