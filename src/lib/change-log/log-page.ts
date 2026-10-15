@@ -10,7 +10,8 @@
  * and a page-title lookup it already resolved. No Supabase, no React.
  */
 
-import { describeChange, formatClockTime } from './page-changes'
+import { formatClockTime } from './page-changes'
+import { recordTitle } from './record-page'
 import { WAITING_STATUSES } from './status'
 import type { ChangeLogRecord, ChangeLogStatus } from './types'
 
@@ -33,7 +34,9 @@ export function isWaitingStatus(status: ChangeLogStatus): boolean {
 /** One record, shaped for the table: `s6o1`'s five columns. */
 export interface LogRow {
   record: ChangeLogRecord
-  /** The "what" column — through `describeChange`, never a second labelling path. */
+  /** The "what" column — `recordTitle`, the SAME string the record page's own
+   *  38px title shows, falling back through its own `describeChange` for a
+   *  non-block action or a block action with no live snapshot to diff. */
   label: string
   /** The "page" column. */
   page: string
@@ -104,15 +107,13 @@ export function buildLogRows(
   pageTitleById: Map<string, string>,
   now: Date = new Date()
 ): LogDayGroup[] {
-  const byId = new Map(records.map((r) => [r.id, r]))
   const groups: LogDayGroup[] = []
 
   for (const record of records) {
     const groupLabel = dayHeaderLabel(record.createdAt, now)
-    const reverts = byId.get(record.links.revertOf ?? '') ?? null
     const row: LogRow = {
       record,
-      label: describeChange(record, reverts, byId),
+      label: recordTitle(record),
       page: pageLabel(record, pageTitleById),
       by: record.actor,
       status: { kind: isWaitingStatus(record.status) ? 'pill' : 'plain', text: record.status },

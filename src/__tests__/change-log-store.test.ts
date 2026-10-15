@@ -339,7 +339,7 @@ describe('markOutdated (G2)', () => {
     expect(sb.rpc).toHaveBeenCalledTimes(2)
     expect(sb.rpc).toHaveBeenCalledWith(
       'advance_change_log_record',
-      expect.objectContaining({ p_to: 'outdated', p_actor: 'pond' })
+      expect.objectContaining({ p_to: 'outdated', p_actor: 'you' })
     )
     expect(sb._chain.update).not.toHaveBeenCalled()
   })

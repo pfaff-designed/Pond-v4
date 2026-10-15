@@ -134,6 +134,7 @@ import {
   Turn,
   YouRow,
 } from '@/components/molecules/ComposerThread'
+import { ComposerCloseButton } from '@/components/molecules/ComposerCloseButton'
 import { foldedTurnCount, groupTurns } from '@/lib/conversation/turns'
 import { areaOf } from '@/lib/pages/crumbs'
 import { ComposerLine } from '@/components/molecules/ComposerLine'
@@ -1383,6 +1384,14 @@ export function AITerminal() {
   // expanded every time. ⌘J, Esc and the thread head's × take it to the tab; the tab,
   // ⌘J and any request for the input bring it back.
   const [isCollapsed, setIsCollapsed] = useState(false)
+  // Set by an explicit × click so that close reaches a card an unresolved
+  // proposal would otherwise hold open (KAN-318) — cleared by `openComposer`,
+  // the one door every reopen goes through, so a later auto-hold still applies.
+  const [closedByPerson, setClosedByPerson] = useState(false)
+  const openComposer = useCallback(() => {
+    setIsCollapsed(false)
+    setClosedByPerson(false)
+  }, [])
   // The thread whose earlier turns have been opened (`N earlier turns`), named by
   // its first message — so a fresh thread folds again without anyone resetting it.
   const [earlierOpenFrom, setEarlierOpenFrom] = useState<string | null>(null)
@@ -1417,7 +1426,14 @@ export function AITerminal() {
       })
     }
   }, [lastSettledAnswerId, inZen, closeComposerAsk])
-  const handleExpand = useCallback(() => setIsCollapsed(false), [])
+  // The × itself, as opposed to ⌘J or the auto-hold's own release: marks the
+  // close as the person's so `effectiveCollapsed` honours it over an
+  // unresolved proposal.
+  const closeComposerByClick = useCallback(() => {
+    setClosedByPerson(true)
+    collapseComposer()
+  }, [collapseComposer])
+  const handleExpand = openComposer
 
   // Dedicated html-only picker (KAN-251): ⌘K's `import a page` fires
   // `HTML_IMPORT_PICKER_EVENT`; this is the one place that listens, so a
@@ -1436,12 +1452,12 @@ export function AITerminal() {
         el.click()
         return
       }
-      setIsCollapsed(false)
+      openComposer()
       pendingHtmlImport.current = true
     }
     window.addEventListener(HTML_IMPORT_PICKER_EVENT, onHtmlImportPickerRequest)
     return () => window.removeEventListener(HTML_IMPORT_PICKER_EVENT, onHtmlImportPickerRequest)
-  }, [])
+  }, [openComposer])
 
   // ⌘K (top bar icon or global hotkey) moves focus into the terminal input.
   // Robustness (ticket-24): a *collapsed* input is unmounted, so a synchronous
@@ -1476,7 +1492,7 @@ export function AITerminal() {
       takePendingTerminalText()
       const text = (e as CustomEvent<FocusTerminalDetail>).detail?.text
       if (text) setInput((prev) => (prev.trim() ? prev : text))
-      setIsCollapsed(false)
+      openComposer()
       focusInputSoon()
     }
     window.addEventListener(FOCUS_TERMINAL_EVENT, onFocusRequest)
@@ -1488,7 +1504,7 @@ export function AITerminal() {
     if (pending)
       onFocusRequest(new CustomEvent(FOCUS_TERMINAL_EVENT, { detail: { text: pending } }))
     return () => window.removeEventListener(FOCUS_TERMINAL_EVENT, onFocusRequest)
-  }, [focusInputSoon])
+  }, [focusInputSoon, openComposer])
 
   // A stale/blocked/refused ⌘Z or ⇧⌘Z (ShellCommands) says why in this one
   // line — the composer's only notice line, machine register. Replaces
@@ -1764,8 +1780,10 @@ export function AITerminal() {
   const hasUnresolvedProposal = unresolvedIds.length > 0
 
   // Held open while a proposal needs review. Derived, not an effect: the person's
-  // collapse is untouched, so it re-applies once the proposal resolves.
-  const effectiveCollapsed = isCollapsed && !hasUnresolvedProposal
+  // collapse is untouched, so it re-applies once the proposal resolves. An
+  // explicit × click (`closedByPerson`) overrides the hold outright — the
+  // boards draw a working close on the proposing composer, not a disabled one.
+  const effectiveCollapsed = isCollapsed && (!hasUnresolvedProposal || closedByPerson)
   const answerLanded =
     effectiveCollapsed &&
     lastSettledAnswerId !== null &&
@@ -1786,13 +1804,13 @@ export function AITerminal() {
           collapseComposer()
         } else {
           askComposer()
-          if (effectiveCollapsed) setIsCollapsed(false)
+          if (effectiveCollapsed) openComposer()
           focusInputSoon()
         }
         return
       }
       if (effectiveCollapsed) {
-        setIsCollapsed(false)
+        openComposer()
         focusInputSoon()
         return
       }
@@ -1812,6 +1830,7 @@ export function AITerminal() {
     hasUnresolvedProposal,
     collapseComposer,
     focusInputSoon,
+    openComposer,
   ])
 
   // Zen's pill (KAN-186) reads this from outside without importing AITerminal.
@@ -2187,7 +2206,7 @@ export function AITerminal() {
   useEffect(() => {
     function onOpenThreadMessage(e: Event) {
       const { messageId } = (e as CustomEvent<OpenThreadMessageDetail>).detail ?? {}
-      setIsCollapsed(false)
+      openComposer()
       requestAnimationFrame(() => {
         const el = messageId
           ? document.querySelector<HTMLElement>(`[data-message-id="${messageId}"]`)
@@ -2197,7 +2216,7 @@ export function AITerminal() {
     }
     window.addEventListener(OPEN_THREAD_MESSAGE_EVENT, onOpenThreadMessage)
     return () => window.removeEventListener(OPEN_THREAD_MESSAGE_EVENT, onOpenThreadMessage)
-  }, [])
+  }, [openComposer])
 
   // ── propose_changes resolution (t16 Phase 5) ──────────────────────────────
   // The generalized Accept path: mint ids for the accepted batch, apply it, and
@@ -2398,7 +2417,7 @@ export function AITerminal() {
   useEffect(() => {
     function onRequestChanges(e: Event) {
       const detail = (e as CustomEvent<RequestChangesDetail>).detail
-      setIsCollapsed(false)
+      openComposer()
       if (isReady) {
         sendRequestChanges(
           detail.toolCallId,
@@ -2413,7 +2432,7 @@ export function AITerminal() {
     }
     window.addEventListener(REQUEST_CHANGES_EVENT, onRequestChanges)
     return () => window.removeEventListener(REQUEST_CHANGES_EVENT, onRequestChanges)
-  }, [isReady, sendRequestChanges])
+  }, [isReady, sendRequestChanges, openComposer])
 
   // Raised record cards (KAN-152, s6o4 f4): the record page's revert button
   // asks; this terminal — already mounted pond-wide — uncollapses and holds
@@ -2422,12 +2441,12 @@ export function AITerminal() {
   useEffect(() => {
     function onRaiseRecordCard(e: Event) {
       const { recordId } = (e as CustomEvent<RaiseRecordCardDetail>).detail
-      setIsCollapsed(false)
+      openComposer()
       setRaisedRecordIds((prev) => (prev.includes(recordId) ? prev : [...prev, recordId]))
     }
     window.addEventListener(RAISE_RECORD_CARD_EVENT, onRaiseRecordCard)
     return () => window.removeEventListener(RAISE_RECORD_CARD_EVENT, onRaiseRecordCard)
-  }, [])
+  }, [openComposer])
   const handleRecordCardSettled = useCallback((recordId: string) => {
     setRaisedRecordIds((prev) => prev.filter((id) => id !== recordId))
   }, [])
@@ -3589,6 +3608,8 @@ export function AITerminal() {
             }}
             onAskAgain={canAskAgain ? () => handleAskAgain(messageIndex) : undefined}
             onStop={stop}
+            // `ThreadHead` already draws the one close mark once there's a head to hold it.
+            onClose={turns.length <= 1 ? closeComposerByClick : undefined}
           />
         )}
         {diffCards.length > 0 && (
@@ -3645,6 +3666,21 @@ export function AITerminal() {
             />
           </div>
         )}
+        {/* A text-less proposing answer (KAN-317: just diff cards, nothing for
+            `AnswerActions`'s `text || isStreaming` gate to hold) still needs a
+            reachable close in every state — the same far-end mark, with no chip
+            beside it since there's no "make this a page"/"ask again" to make. */}
+        {message.role === 'assistant' &&
+          isLastAssistant &&
+          !text.trim() &&
+          !isStreaming &&
+          diffCards.length > 0 &&
+          turns.length <= 1 && (
+            <div className="flex items-center gap-[7px] font-mono text-[11px] lowercase tracking-[0.02em]">
+              <div className="flex-1" />
+              <ComposerCloseButton onClick={closeComposerByClick} />
+            </div>
+          )}
         {createPageParts.map((part) => {
           // Same streaming caveat as above: a partially-parsed `blocks` array
           // crashes the block previews (e.g. TableView on undefined rows).
@@ -3966,7 +4002,7 @@ export function AITerminal() {
           area={threadArea}
           turns={turns.length}
           onNewThread={() => void handleClear()}
-          onClose={collapseComposer}
+          onClose={closeComposerByClick}
         />
       )}
       <div
@@ -4001,6 +4037,8 @@ export function AITerminal() {
                         onAskAgain={
                           lastQuestion.text ? () => handleAskAgain(messages.length - 1) : undefined
                         }
+                        // `ThreadHead` already draws the one close mark once there's a head to hold it.
+                        onClose={turns.length <= 1 ? closeComposerByClick : undefined}
                       />
                     )}
                   </>

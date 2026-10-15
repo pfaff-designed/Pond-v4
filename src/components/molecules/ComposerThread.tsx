@@ -14,6 +14,7 @@
 import { useId, useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { pageEyebrowClass } from '@/components/atoms/kicker'
+import { ComposerCloseButton } from '@/components/molecules/ComposerCloseButton'
 
 const RULE_CLASS = 'border-b border-mn-text/[0.09]'
 
@@ -45,26 +46,7 @@ export const ThreadHead = ({ area, turns, onNewThread, onClose }: ThreadHeadProp
     <button type="button" onClick={onNewThread} className="cursor-pointer hover:text-mn-text">
       new thread
     </button>
-    <button
-      type="button"
-      onClick={onClose}
-      aria-label="Close composer"
-      className="flex size-8 cursor-pointer items-center justify-center hover:text-mn-text md:size-[18px]"
-    >
-      <svg
-        width="12"
-        height="12"
-        viewBox="0 0 14 14"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden
-      >
-        <path d="M3 3l6 6M9 3l-6 6" />
-      </svg>
-    </button>
+    <ComposerCloseButton onClick={onClose} />
   </div>
 )
 
@@ -172,11 +154,15 @@ export const EarlierAnswerFold = ({ time, children }: EarlierAnswerFoldProps) =>
 export interface AnswerErrorProps {
   /** Sends the question again — absent when there is no question to resend. */
   onAskAgain?: () => void
+  /** Collapses the composer to its ⌘J tab. Omitted when a `ThreadHead` above
+   *  this row already draws the close mark (turns > 1). */
+  onClose?: () => void
 }
 
 /** `error` (`errRow`): the answer failed and the partial text was dropped, so the row
- *  says nothing was kept. 12px at ink .8, gap 10, `ask again` as the quiet chip. */
-export const AnswerError = ({ onAskAgain }: AnswerErrorProps) => (
+ *  says nothing was kept. 12px at ink .8, gap 10, `ask again` as the quiet chip, with
+ *  the same far-end close × as `AnswerActions` when there's no `ThreadHead` for it. */
+export const AnswerError = ({ onAskAgain, onClose }: AnswerErrorProps) => (
   <div
     role="alert"
     data-part="error-row"
@@ -191,6 +177,12 @@ export const AnswerError = ({ onAskAgain }: AnswerErrorProps) => (
       >
         ask again
       </button>
+    )}
+    {onClose && (
+      <>
+        <div className="flex-1" />
+        <ComposerCloseButton onClick={onClose} />
+      </>
     )}
   </div>
 )
