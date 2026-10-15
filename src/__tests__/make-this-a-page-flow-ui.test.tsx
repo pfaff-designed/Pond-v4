@@ -165,6 +165,7 @@ import { changeLogKey } from '@/lib/change-log/keys'
 import { pagesKey } from '@/lib/pages/keys'
 import { PondContext } from '@/lib/pond/context'
 import { sessionUndo } from '@/lib/change-log/session-undo'
+import { COMPOSER_HEIGHT_KEY } from '@/lib/layout/composer-height'
 import type { PageProposal } from '@/lib/conversation/page-proposals'
 
 // ── Fixtures ──────────────────────────────────────────────────────────────
@@ -1251,6 +1252,47 @@ describe('KAN-179 — the composer collapses to the undo/open-parent chips once 
     expect(screen.getByText('he can hold next week.')).toBeInTheDocument()
     // The chip row may stay above the line while its step is still on top.
     expect(screen.getByRole('button', { name: 'undo' })).toBeInTheDocument()
+  })
+
+  it('folded, the card sizes to its content, not a saved drag height — the drag height returns once the thread renders again', async () => {
+    window.localStorage.setItem(COMPOSER_HEIGHT_KEY, '616')
+    const qc = newQueryClient()
+    const { rerender } = render(terminalTreeForPond(qc, 'pond-collapse-4'))
+    await ready()
+    const card = () => screen.getByRole('region', { name: 'composer' })
+
+    fireEvent.click(screen.getByRole('button', { name: 'make this a page' }))
+    const proposedCard = await screen.findByRole('group', { name: /new page — proposed/i })
+    fireEvent.click(within(proposedCard).getByRole('button', { name: 'make page' }))
+
+    await screen.findByRole('button', { name: 'undo' })
+    expect(card().hasAttribute('data-sized')).toBe(false)
+    expect(card().style.height).toBe('')
+    expect(screen.queryByRole('separator', { name: 'Resize composer' })).toBeNull()
+
+    const textarea = screen.getByPlaceholderText('ask about this page')
+    fireEvent.change(textarea, { target: { value: 'and the electrician?' } })
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+
+    mockMessages = [
+      ...answeredThread(),
+      {
+        id: 'u3',
+        role: 'user',
+        parts: [{ type: 'text', text: 'and the electrician?' }],
+        metadata: { sentAt: '2026-09-22T07:20:00' },
+      },
+      {
+        id: 'a3',
+        role: 'assistant',
+        parts: [{ type: 'text', text: 'he can hold next week.' }],
+        metadata: {},
+      },
+    ]
+    rerender(terminalTreeForPond(qc, 'pond-collapse-4'))
+
+    expect(card().hasAttribute('data-sized')).toBe(true)
+    expect(card().style.height).toBe('616px')
   })
 })
 

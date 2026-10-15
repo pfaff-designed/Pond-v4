@@ -4446,6 +4446,7 @@ export function AITerminal() {
         maximized={isMaximized}
         zen={inZen}
         minimized={isMinimized}
+        unsized={threadFoldedForMadePage}
         cardRef={composerCardRef}
       >
         {/* A single expression child, not two siblings — JSX wraps multiple
