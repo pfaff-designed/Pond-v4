@@ -58,6 +58,8 @@ describe('SYSTEM_PROMPT — preserved rule strings (eval-pinned, must survive th
     'Never add a text property named "Title" or "Name"',
     // #52 fix 2: a collection shows exactly ONE active view.
     'A collection shows exactly ONE active view at a time',
+    // KAN-132: one assumption sentence precedes every proposal.
+    "give exactly ONE sentence in your answer's prose stating what the edit assumes",
   ])('still contains rule string: %s', (needle) => {
     expect(SYSTEM_PROMPT).toContain(needle)
   })
