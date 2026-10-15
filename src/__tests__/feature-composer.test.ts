@@ -281,6 +281,7 @@ describe('make this a page', () => {
       messageId: 'a1',
       question: QUESTION,
       askedAt: '2026-09-22T07:12:00Z',
+      madeAt: expect.any(String),
     })
     // Mentions ride the proposal record now (KAN-172) — this proposal carries none.
     expect(readMentioned(row.props)).toBeNull()
