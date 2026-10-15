@@ -251,4 +251,17 @@ describe('Rail row-tools — out-of-flow slots at the row\'s right edge (KAN-314
 
     fireEvent.mouseLeave(selectedRow)
   })
+
+  it("× has its own hit area: ＋ only transitions opacity (no margin-right slide), and × stacks above ＋ (KAN-320)", () => {
+    renderRail('sleep')
+    const selectedRow = screen.getByRole('treeitem', { name: 'Sleep' })
+    const { plusWrapperClassName, deleteWrapperClassName } = rowParts(selectedRow)
+
+    // ＋'s margin-right move is no longer part of what transitions — only opacity does.
+    expect(hasClass(plusWrapperClassName, 'transition-[opacity,margin-right]')).toBe(false)
+    expect(hasClass(plusWrapperClassName, 'transition-opacity')).toBe(true)
+
+    // × stacks above ＋, so a pointer landing at ×'s point always hits × first.
+    expect(hasClass(deleteWrapperClassName, 'z-[1]')).toBe(true)
+  })
 })

@@ -63,5 +63,7 @@ describe('Rail open row × — single click, no row click first (KAN-314 case 1)
     expect(onDelete).toHaveBeenCalledWith('sleep')
     // The row was already selected via the `selectedId` prop, never clicked.
     expect(onSelect).not.toHaveBeenCalled()
+    // The × click must never land on ＋'s menu instead (KAN-320).
+    expect(screen.queryByRole('menu', { name: 'new page menu' })).not.toBeInTheDocument()
   })
 })
