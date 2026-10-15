@@ -39,6 +39,7 @@
  * `types.ts` is the ROW interface; this is a different type on purpose.
  */
 import type { ModuleData } from '@/lib/modules/ai-composition'
+import type { ViewMode } from '@/lib/modules/view/schema'
 import type { ConfigureViewProposal } from '@/lib/pages/configure-view'
 import type { AiPropertyDef } from '@/lib/properties/schema'
 import type { TemplateKind } from './types'
@@ -48,11 +49,27 @@ import type { TemplateKind } from './types'
  * config in the shape `configure_view` proposes (property NAMES, never ids). No
  * `pageId` (the page does not exist yet) and no `collectionId` (a template's views
  * draw the page's own records).
+ *
+ * Two authoring shapes share this one type (KAN-32): the single-mode shape every
+ * existing template uses (`mode` plus that mode's own config), OR `views` —
+ * several saved views, each name-keyed exactly like the single-mode shape.
+ * `mode` is typed optional only so a `views`-authored block can skip it;
+ * `resolveTemplateView` resolves each saved view's config on its own and mirrors
+ * the first view's `kind` onto the block's own `mode` (the back-compat read every
+ * other consumer still does) — a single-mode template still always authors it.
  */
 export type TemplateViewBlock = { type: 'view'; label?: string } & Omit<
   ConfigureViewProposal,
-  'pageId' | 'collectionId'
->
+  'pageId' | 'collectionId' | 'mode'
+> & {
+    mode?: ViewMode
+    views?: Array<
+      { label: string; kind: ViewMode } & Omit<
+        ConfigureViewProposal,
+        'pageId' | 'collectionId' | 'mode' | 'label'
+      >
+    >
+  }
 
 /** An id-less block exactly as the AI emits one, with view blocks name-keyed. */
 export type TemplateBlock = Exclude<ModuleData, { type: 'view' }> | TemplateViewBlock
@@ -133,10 +150,16 @@ export const PREMADE_TEMPLATES: Record<TemplateKind, PremadeTemplate> = {
       { type: 'text', label: 'goal', content: '', placeholder: 'what done looks like' },
       // TODO(#274): the board draws a `first task` card in `to do` — a record, which
       // a view cannot carry. Renders the frame's empty state until #246 / #274 rule.
-      { type: 'view', mode: 'board', label: 'tasks — board', groupBy: 'status' },
-      // Start / end dates are inferred (1st date → start, 2nd → end); the voidBox line
-      // is the mode's own (`GANTT_EMPTY_LINE`), so nothing is configured here.
-      { type: 'view', mode: 'gantt', label: 'tasks — timeline' },
+      // Start / end dates (the timeline view) are inferred (1st date → start, 2nd →
+      // end), so neither is configured for it here.
+      {
+        type: 'view',
+        label: 'tasks',
+        views: [
+          { label: 'board', kind: 'board', groupBy: 'status' },
+          { label: 'timeline', kind: 'gantt' },
+        ],
+      },
       {
         type: 'entries',
         label: 'updates',

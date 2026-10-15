@@ -312,6 +312,55 @@ export const ViewHeadWithoutAName: Story = {
   },
 }
 
+// ── The saved-view bar (KAN-242) ─────────────────────────────────────────────
+
+const savedViewsConfig: ViewBlock = {
+  id: 'v-saved-views',
+  type: 'view',
+  mode: 'board',
+  groupBy: 'p-status',
+  label: 'tasks',
+  views: [
+    { id: 'view-board', label: 'board', kind: 'board', config: { groupBy: 'p-status' } },
+    { id: 'view-timeline', label: 'timeline', kind: 'gantt', config: {} },
+  ],
+  activeViewId: 'view-board',
+}
+
+/**
+ * KAN-36's ruling (done-when): a non-editable block still shows its name, record
+ * count and both saved-view segments — identification always renders. "＋ view"
+ * is an editing affordance (Views 3/4 wires it), so a reader never sees it.
+ */
+async function assertSavedViewsReadOnly(canvasElement: HTMLElement, base: 'ink' | 'paper') {
+  const canvas = within(canvasElement)
+  await expect(canvas.getByText('tasks')).toBeInTheDocument()
+  await expect(canvas.getByText(/4 records/)).toBeInTheDocument()
+  const boardTab = canvas.getByRole('tab', { name: 'board' })
+  await expect(boardTab).toBeInTheDocument()
+  await expect(canvas.getByRole('tab', { name: 'timeline' })).toBeInTheDocument()
+  await expect(canvas.queryByText('＋ view')).not.toBeInTheDocument()
+  // The active segment's ink-wash background resolves through the theme's roles.
+  await expectTier(getComputedStyle(boardTab).backgroundColor, base, 0.07)
+}
+
+export const ViewBarReadOnlyState: Story = {
+  args: { config: savedViewsConfig, schema, rows, collectionName: 'tasks' },
+  play: async ({ canvasElement }) => assertSavedViewsReadOnly(canvasElement, 'ink'),
+}
+
+export const ViewBarReadOnlyStateInk: Story = {
+  args: { config: savedViewsConfig, schema, rows, collectionName: 'tasks' },
+  decorators: [
+    (Story) => (
+      <div className="dark bg-raw-ink p-mn-4">
+        <Story />
+      </div>
+    ),
+  ],
+  play: async ({ canvasElement }) => assertSavedViewsReadOnly(canvasElement, 'paper'),
+}
+
 // ── Board ──────────────────────────────────────────────────────────────────────
 
 /**

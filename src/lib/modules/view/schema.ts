@@ -13,8 +13,9 @@ import { chartDataFromRows } from './chart-data'
  * `type='row'` children (#18), fetched and injected before `serialize` runs — the
  * read-hydration seam in `assemble.ts` (decision 16). Because the persisted block
  * is config-only and every id it references (`groupBy`/`sort.key`/`filter.property`
- * are property ids; `collectionId` a page id) already exists, the AI never mints an
- * id here — so there are no `nestedIdPaths` and the emit shape is a flat id strip.
+ * are property ids; `collectionId` a page id) already exists, the AI never mints a
+ * REFERENCE id here. It does mint one id of its own kind (KAN-32): each entry in
+ * `views[]` gets an id at hydration, declared via `nestedIdPaths: ['views']`.
  *
  * A view renders its OWN page's rows by default; when `collectionId` is set it is a
  * LINKED view (#41) that draws ANOTHER collection's rows instead. Both are hydrated
@@ -72,7 +73,7 @@ export type ViewFilter = z.infer<typeof viewFilterSchema>
 // ── chart + big-number mode config (#111) ────────────────────────────────────
 //
 // Mode-specific config, read ONLY for the matching mode (a leftover `chart` on a
-// table-mode view is inert, so flipping mode back and forth never loses a setup).
+// table-mode view is inert).
 // Neither block can be *required* by its mode: `viewSchema` is a member of the
 // `blockSchema` discriminated union, which cannot carry a cross-field refinement —
 // so mode-without-config is structurally valid and `aggregate.ts` INFERS a drawable
@@ -162,6 +163,34 @@ export const viewBigNumberConfigSchema = z.object({
 })
 export type ViewBigNumberConfig = z.infer<typeof viewBigNumberConfigSchema>
 
+/**
+ * A saved view's own config (KAN-32): the same per-mode clauses `viewSchema` has
+ * always carried at the top level, scoped to one view instead of the whole block.
+ */
+export const viewSavedViewConfigSchema = z.object({
+  groupBy: z.string().optional(),
+  sort: viewSortSchema.optional(),
+  filter: viewFilterSchema.optional(),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+  chart: viewChartConfigSchema.optional(),
+  bigNumber: viewBigNumberConfigSchema.optional(),
+  collectionId: z.string().optional(),
+})
+export type ViewSavedViewConfig = z.infer<typeof viewSavedViewConfigSchema>
+
+/**
+ * One saved view in a block's `views[]` (KAN-32): a fixed `kind` (never flips)
+ * plus its own config.
+ */
+export const viewSavedViewSchema = z.object({
+  id: z.string(),
+  label: z.string().optional(),
+  kind: viewModeSchema,
+  config: viewSavedViewConfigSchema.optional(),
+})
+export type ViewSavedView = z.infer<typeof viewSavedViewSchema>
+
 // `label` (#258) is the shared mixin from `types.ts`: the board's eyebrow for the view
 // (`kanban → tasks — board`, `gantt → tasks — timeline`, `number → this week`,
 // `gallery → records`, `bars → by week`, `heat → every day`) — every view-shaped
@@ -186,9 +215,77 @@ export const viewSchema = z
     bigNumber: viewBigNumberConfigSchema.optional(),
     /** A linked view over ANOTHER collection (#41) — draws that collection's rows instead of the host page's. */
     collectionId: z.string().optional(),
+    /**
+     * Several saved views of the same database (KAN-32). Optional: a block with no
+     * `views` is the back-compat shape above (one view, built from `mode`+config)
+     * — read it through `resolveActiveView`, never `mode`/`groupBy`/etc. directly.
+     */
+    views: z.array(viewSavedViewSchema).optional(),
+    /** Which of `views` is showing. Stale or missing → `views[0]` (`resolveActiveView`). */
+    activeViewId: z.string().optional(),
   })
   .extend(labelledBlockFields)
 export type ViewBlock = z.infer<typeof viewSchema>
+
+/**
+ * The one view a `ViewBlock` is currently showing (KAN-32). A legacy block (no
+ * `views`) synthesizes its single view from the top-level `mode`+config — the
+ * exact shape every reader used before `views[]` existed. A `views`-shaped block
+ * reads `activeViewId`, falling back to `views[0]` when it is missing or stale
+ * (e.g. the active view was deleted).
+ */
+export const resolveActiveView = (
+  block: ViewBlock
+): { id: string; label?: string; kind: ViewMode; config: ViewSavedViewConfig } => {
+  if (!block.views || block.views.length === 0) {
+    return {
+      id: block.id,
+      label: block.label,
+      kind: block.mode,
+      config: {
+        groupBy: block.groupBy,
+        sort: block.sort,
+        filter: block.filter,
+        startDate: block.startDate,
+        endDate: block.endDate,
+        chart: block.chart,
+        bigNumber: block.bigNumber,
+        collectionId: block.collectionId,
+      },
+    }
+  }
+  const active = block.views.find((view) => view.id === block.activeViewId) ?? block.views[0]
+  return { id: active.id, label: active.label, kind: active.kind, config: active.config ?? {} }
+}
+
+/**
+ * Writes a config patch onto a `ViewBlock` (KAN-32). A legacy block (no `views`)
+ * patches the top-level fields exactly as the old `{ ...data, ...patch }` spread
+ * did. A `views`-shaped block patches ONLY the active view's `config` — every
+ * other view's `config`, and `activeViewId` itself, pass through untouched. This
+ * is what replaces the retired "flipping mode back and forth never loses a
+ * setup" tolerance: each view now keeps its own config permanently, instead of
+ * the block hoarding every mode's leftover fields.
+ */
+export const applyConfigPatch = (
+  block: ViewBlock,
+  patch: Partial<ViewSavedViewConfig>,
+  /** The view actually showing (KAN-32 fix): the LOCAL selection a person's bar
+   *  click lands on, which can diverge from the persisted `activeViewId` — a
+   *  caller with no local selection (or a legacy block) omits it. */
+  activeId?: string
+): ViewBlock => {
+  if (!block.views || block.views.length === 0) {
+    return { ...block, ...patch }
+  }
+  const target = activeId ?? block.activeViewId ?? block.views[0].id
+  return {
+    ...block,
+    views: block.views.map((view) =>
+      view.id === target ? { ...view, config: { ...view.config, ...patch } } : view
+    ),
+  }
+}
 
 /**
  * A row injected into a view block by the `assemble.ts` hydration seam (decision
@@ -220,30 +317,63 @@ export type HydratedViewBlock = ViewBlock & {
 }
 
 /**
+ * The config clauses one view's `kind`+config serialize to — shared by the
+ * legacy top-level shape and every saved view in `views[]` (KAN-32), so a
+ * views-shaped block's per-view clauses can never drift from how the same
+ * config read off the top level.
+ */
+function viewConfigClauses(kind: ViewMode, config: ViewSavedViewConfig): string[] {
+  const cfg: string[] = [kind]
+  // #259: a CLAUSE, not a separator baked into cfg[0] — `cfg` is joined with
+  // ', ' by the caller, so writing the separator in here would silently break
+  // if that join ever changed (#259 review). Absent or 'card' adds nothing,
+  // which is what keeps a legacy view's serialized string byte-identical.
+  if (kind === 'chart' && config.chart) {
+    cfg[0] = `chart ${config.chart.kind}`
+    if (config.chart.presentation === 'compact') cfg.push('compact')
+  }
+  if (config.groupBy) cfg.push(`grouped by ${config.groupBy}`)
+  if (config.sort) cfg.push(`sorted by ${config.sort.key} ${config.sort.dir}`)
+  if (config.filter)
+    cfg.push(`filtered ${config.filter.property} ${config.filter.op} ${config.filter.value}`)
+  if (kind === 'big-number' && config.bigNumber)
+    cfg.push(`${AGG_LABELS[config.bigNumber.agg].toLowerCase()} figure`)
+  if (config.collectionId) cfg.push(`linked collection ${config.collectionId}`)
+  return cfg
+}
+
+/**
  * Aggregate-and-word a chart / big-number view for `serialize` (#111 AC 8). The
  * figures come from the same `aggregate.ts` functions the renderer calls, so the
  * prompt body and embedding can never disagree with the screen. Returns null when
  * the hydration seam gave us no schema/values to read — then serialize falls back to
- * naming the rows, which is honest rather than inventing a figure.
+ * naming the rows, which is honest rather than inventing a figure. Takes the
+ * ACTIVE view's own `kind`+config (KAN-32) rather than the whole block, so a
+ * views-shaped block's figure always matches what the person is looking at,
+ * never a stale top-level mirror.
  */
-function serializeFigures(data: HydratedViewBlock): string | null {
-  const schema = data.schema
+function serializeFigures(
+  kind: ViewMode,
+  config: ViewSavedViewConfig,
+  rowsIn: readonly ViewRow[],
+  schema: PropertySchema | undefined
+): string | null {
   if (!schema) return null
-  const rows = (data.rows ?? []).map((r) => ({
+  const rows = rowsIn.map((r) => ({
     id: r.id,
     title: r.title,
     values: r.values ?? {},
   }))
 
-  if (data.mode === 'big-number') {
-    const figure = bigNumberFromRows(rows, schema, data.bigNumber)
+  if (kind === 'big-number') {
+    const figure = bigNumberFromRows(rows, schema, config.bigNumber)
     const delta = figure.delta === undefined ? '' : ` (${signedDelta(figure.delta)})`
     return `${figure.label}: ${figure.formatted}${delta} over ${rows.length} record${
       rows.length === 1 ? '' : 's'
     }`
   }
 
-  const chart = chartDataFromRows(rows, schema, data.chart)
+  const chart = chartDataFromRows(rows, schema, config.chart)
   if (chart.points.length === 0) return 'no records to chart'
   if (chart.gauge) {
     const v = chart.gauge.value === null ? '—' : String(chart.gauge.value)
@@ -277,31 +407,34 @@ export const viewDescriptor: ModuleDescriptor<ViewBlock> = {
   // (e.g. a bare block passed to blocksToText), a view honestly renders "no rows".
   // A chart/big-number view leads with its AGGREGATED figures instead of row titles
   // (#111 AC 8) — the figure IS what the user sees, so it is what the model must read.
+  //
+  // A views-shaped block (KAN-32) names EVERY saved view, not just the active one:
+  // a saved view the model can't see here is a saved view its next wholesale `edit`
+  // drops (types.ts's `serialize` contract). The row/figure tail still reads off
+  // the ACTIVE view alone — that's the one render a person or the model is looking at.
   serialize: (data) => {
     const rows = (data as HydratedViewBlock).rows ?? []
-    const cfg: string[] = [data.mode]
-    // #259: the presentation rides serialize for the same reason `entries`' `serif`
-    // does (#250) — a flag the model cannot read here is silently dropped on the
-    // next wholesale `edit`, and a compact strip would come back as a full card.
-    if (data.mode === 'chart' && data.chart) {
-      // A CLAUSE, not a separator baked into cfg[0]: `cfg` is joined with ', '
-      // below, so writing the separator in here would silently break if that join
-      // ever changed (#259 review). Absent or 'card' adds nothing, which is what
-      // keeps a legacy view's serialized string byte-identical.
-      cfg[0] = `chart ${data.chart.kind}`
-      if (data.chart.presentation === 'compact') cfg.push('compact')
-    }
-    if (data.groupBy) cfg.push(`grouped by ${data.groupBy}`)
-    if (data.sort) cfg.push(`sorted by ${data.sort.key} ${data.sort.dir}`)
-    if (data.filter)
-      cfg.push(`filtered ${data.filter.property} ${data.filter.op} ${data.filter.value}`)
-    if (data.mode === 'big-number' && data.bigNumber)
-      cfg.push(`${AGG_LABELS[data.bigNumber.agg].toLowerCase()} figure`)
-    if (data.collectionId) cfg.push(`linked collection ${data.collectionId}`)
-    const head = `View (${cfg.join(', ')})`
+    const active = resolveActiveView(data)
 
-    if (data.mode === 'chart' || data.mode === 'big-number') {
-      const figures = serializeFigures(data as HydratedViewBlock)
+    const head =
+      data.views && data.views.length > 0
+        ? `View — ${data.views
+            .map((view) => {
+              const clauses = viewConfigClauses(view.kind, view.config ?? {})
+              const label = view.label ?? view.kind
+              const marker = view.id === active.id ? ' (active)' : ''
+              return `${label}${marker} (${clauses.join(', ')})`
+            })
+            .join('; ')}`
+        : `View (${viewConfigClauses(active.kind, active.config).join(', ')})`
+
+    if (active.kind === 'chart' || active.kind === 'big-number') {
+      const figures = serializeFigures(
+        active.kind,
+        active.config,
+        rows,
+        (data as HydratedViewBlock).schema
+      )
       if (figures) return `${head} — ${figures}`
     }
 
@@ -309,6 +442,9 @@ export const viewDescriptor: ModuleDescriptor<ViewBlock> = {
     const titles = rows.map((r) => r.title || 'Untitled').join(', ')
     return `${head} — ${rows.length} row${rows.length === 1 ? '' : 's'}: ${titles}`
   },
-  // No minted child ids: config references existing property/page ids, and rows
-  // are child pages hydrated at read time — never part of the persisted block.
+  // The one minted child id (KAN-32): each saved view's own `id` in `views[]`.
+  // Everything else config references already exists (property/page ids), and
+  // rows are child pages hydrated at read time — never part of the persisted
+  // block.
+  nestedIdPaths: ['views'],
 }

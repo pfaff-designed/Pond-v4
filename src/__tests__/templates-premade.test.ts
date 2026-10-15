@@ -50,7 +50,9 @@ function shape(block: TemplateBlock): string {
     case 'todo':
       return `todo:${todoMarker(block)}${label}`
     case 'view':
-      return `view:${block.mode}${block.chart?.presentation === 'compact' ? `:${block.chart.kind}` : ''}${label}`
+      return block.views
+        ? `view:${block.views.map((v) => v.kind).join('+')}${label}`
+        : `view:${block.mode}${block.chart?.presentation === 'compact' ? `:${block.chart.kind}` : ''}${label}`
     case 'table':
       return `table › ${block.title}`
     default:
@@ -106,15 +108,7 @@ describe("each template's block list matches the board's `T` table, in order", (
     ['page', ['text']],
     ['notes', ['text']],
     ['list', ['todo:dot › items']],
-    [
-      'project',
-      [
-        'text › goal',
-        'view:board › tasks — board',
-        'view:gantt › tasks — timeline',
-        'entries › updates',
-      ],
-    ],
+    ['project', ['text › goal', 'view:board+gantt › tasks', 'entries › updates']],
     ['tracker', ['view:big-number › this week', 'view:chart:bar › by week', 'table › log']],
     ['journal', ['entries › entries']],
     ['collection', ['view:gallery › records']],
@@ -213,7 +207,7 @@ describe('placeholder copy (KAN-103) lives in the `placeholder` field, never in 
   })
 
   it("entries — `project › updates` carries a block-level `placeholder` with its entry text empty; the journal's first entry is the block's OWN empty line, so it stays blank with no `placeholder`", () => {
-    expect(blocksOf('project')[3]).toEqual({
+    expect(blocksOf('project')[2]).toEqual({
       type: 'entries',
       label: 'updates',
       entries: [{ date: 'today', text: '' }],
@@ -348,14 +342,15 @@ describe('instantiateTemplate — ids minted through the existing paths, nothing
   it('project — the board groups by `status` (lanes = its three options); the gantt and the figure stay inferred', () => {
     const page = instantiateTemplate(PREMADE_TEMPLATES.project, counter())
     const status = page.schema!.find((d) => d.name === 'status')!
-    const board = page.blocks[1] as ViewBlock
-    expect(board.mode).toBe('board')
-    expect(board.groupBy).toBe(status.id)
+    const tasks = page.blocks[1] as ViewBlock
+    expect(tasks.mode).toBe('board')
+    const [board, gantt] = tasks.views!
+    expect(board.kind).toBe('board')
+    expect(board.config?.groupBy).toBe(status.id)
     expect(status.options!.map((o) => o.label)).toEqual(['to do', 'doing', 'done'])
-    const gantt = page.blocks[2] as ViewBlock
-    expect(gantt.mode).toBe('gantt')
-    expect(gantt.startDate).toBeUndefined()
-    expect(gantt.endDate).toBeUndefined()
+    expect(gantt.kind).toBe('gantt')
+    expect(gantt.config?.startDate).toBeUndefined()
+    expect(gantt.config?.endDate).toBeUndefined()
   })
 
   it('tracker / dashboard `bars` are the compact `bar` chart over `value` by `date`; habit `heat` the compact `heatmap` by `date`', () => {

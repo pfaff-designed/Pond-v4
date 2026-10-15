@@ -22,7 +22,7 @@ import { moduleDescriptors } from './registry'
 import { textSchema } from './text/schema'
 import { todoSchema, todoItemSchema } from './todo/schema'
 import { tableSchema, tableRowSchema } from './table/schema'
-import { viewSchema } from './view/schema'
+import { viewSchema, viewSavedViewSchema } from './view/schema'
 import { imageSchema } from './image/schema'
 import { highlightSchema } from './highlight/schema'
 import { entriesSchema, entrySchema } from './entries/schema'
@@ -79,10 +79,14 @@ const todoData = todoSchema
 const tableData = tableSchema
   .omit({ id: true })
   .extend({ rows: z.array(tableRowSchema.omit({ id: true })) })
-// #19: a view is config only — no nested id-bearing collections (its rows are
-// child pages, its groupBy/sort/filter reference existing property ids). So the
-// emit shape is a flat top-level id strip, like a chart.
-const viewData = viewSchema.omit({ id: true })
+// #19: a view's config references existing property/page ids (groupBy/sort/
+// filter/collectionId), nothing minted. Its rows are child pages, not part of
+// this shape either. The one nested id-bearing collection is `views` (KAN-32):
+// each saved view mints its own id at hydration, so the omit-chain strips it
+// the same way todo's items and table's rows do.
+const viewData = viewSchema
+  .omit({ id: true })
+  .extend({ views: z.array(viewSavedViewSchema.omit({ id: true })).optional() })
 // #61: an image/file block references an already-uploaded attachment by URL —
 // no nested id-bearing collections, so a flat top-level id strip is the whole
 // omit-chain (the module-nested-ids fence pins it). The catalog description

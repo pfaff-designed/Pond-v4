@@ -17,6 +17,7 @@ import {
 } from '@/lib/pages/configure-view'
 import { SCHEMA_KEY, type PropertySchema } from '@/lib/properties/schema'
 import type { Block } from '@/lib/documents/types'
+import type { ViewBlock } from '@/lib/modules/view/schema'
 
 const schema: PropertySchema = [
   { id: 'p-title', name: 'Title', type: 'text' },
@@ -403,6 +404,57 @@ describe('upsertViewBlock', () => {
     const existing: Block = { id: 'v-keep', type: 'view', mode: 'table' } as Block
     const out = upsertViewBlock([existing], { mode: 'board', groupBy: 'p-status' }, () => 'x')
     expect(out.replaced).toBe(true)
+  })
+
+  // ── KAN-32 — a views-shaped block is PATCHED per view, never rebuilt ─────────
+  describe('on a views-shaped block (KAN-32)', () => {
+    const multiView = (): Block =>
+      ({
+        id: 'v-multi',
+        type: 'view',
+        mode: 'board',
+        activeViewId: 'view-board',
+        views: [
+          { id: 'view-board', label: 'board', kind: 'board', config: { groupBy: 'p-status' } },
+          { id: 'view-gantt', label: 'timeline', kind: 'gantt', config: { startDate: 'p-due' } },
+        ],
+      }) as Block
+
+    it("patches only the saved view whose kind matches, leaving the rest alone", () => {
+      const existing = multiView()
+      const out = upsertViewBlock(
+        [existing],
+        { mode: 'board', sort: { key: 'p-due', dir: 'asc' } },
+        () => 'v-UNUSED'
+      )
+      const v = out.blocks[0] as ViewBlock
+      expect(v.id).toBe('v-multi')
+      expect(v.views).toEqual([
+        {
+          id: 'view-board',
+          label: 'board',
+          kind: 'board',
+          config: { groupBy: 'p-status', sort: { key: 'p-due', dir: 'asc' } },
+        },
+        { id: 'view-gantt', label: 'timeline', kind: 'gantt', config: { startDate: 'p-due' } },
+      ])
+      expect(v.activeViewId).toBe('view-board')
+      expect(out.replaced).toBe(false)
+    })
+
+    it('throws when no saved view has the proposed mode, instead of replacing a kind', () => {
+      const existing = multiView()
+      expect(() => upsertViewBlock([existing], { mode: 'table' }, () => 'v-UNUSED')).toThrow(
+        /no table view/
+      )
+    })
+
+    it('does not mutate the input blocks array', () => {
+      const existing = multiView()
+      const snapshot = JSON.parse(JSON.stringify(existing))
+      upsertViewBlock([existing], { mode: 'board', groupBy: 'p-other' }, () => 'v-UNUSED')
+      expect(existing).toEqual(snapshot)
+    })
   })
 })
 
