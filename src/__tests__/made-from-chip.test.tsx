@@ -21,8 +21,9 @@ import { MENTIONED_KEY } from '@/lib/pages/mentioned'
 import { workspaceUrl } from '@/lib/pages/nav'
 
 const mockPush = jest.fn()
+let mockNodeId = 'page-1'
 jest.mock('next/navigation', () => ({
-  useSearchParams: () => ({ get: (key: string) => (key === 'nodeId' ? 'page-1' : null) }),
+  useSearchParams: () => ({ get: (key: string) => (key === 'nodeId' ? mockNodeId : null) }),
   useRouter: () => ({ push: mockPush }),
 }))
 
@@ -82,7 +83,10 @@ function renderPage(
   )
 }
 
-beforeEach(() => jest.clearAllMocks())
+beforeEach(() => {
+  jest.clearAllMocks()
+  mockNodeId = 'page-1'
+})
 
 describe('the made-from chip', () => {
   it('renders the chip from the stamp and opens the thread at that message', async () => {
@@ -272,4 +276,61 @@ describe('a made page end to end', () => {
       within(card).queryByRole('button', { name: 'worktop template' })
     ).not.toBeInTheDocument()
   })
+})
+
+// ── the eyebrow does not carry a stale saved time across pages ─────────────
+
+describe('the title eyebrow on navigating pages', () => {
+  it(
+    'a made page opened right after an edited page reads made hh:mm, ' +
+      'not the other page\u2019s saved time',
+    async () => {
+      const PAGE_A = {
+        id: 'page-1',
+        parentId: null,
+        type: 'page',
+        title: 'Workshop',
+        blocks: [{ id: 'b1', type: 'text', content: 'hello' }],
+        props: { kind: 'page' },
+        order: 0,
+      }
+      const PAGE_B = {
+        id: 'page-2',
+        parentId: null,
+        type: 'page',
+        title: 'renovation blockers',
+        blocks: [{ id: 'b2', type: 'text', content: 'the cabinet quote' }],
+        props: { kind: 'page', [MADE_FROM_THREAD_KEY]: STAMP },
+        order: 0,
+      }
+      const PAGES: Record<string, unknown> = { 'page-1': PAGE_A, 'page-2': PAGE_B }
+      mockGetPage.mockImplementation(async (...args: unknown[]) => PAGES[args[1] as string])
+
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      const tree = () => (
+        <QueryClientProvider client={client}>
+          <DeletionUndoProvider>
+            <DocumentPanel />
+          </DeletionUndoProvider>
+        </QueryClientProvider>
+      )
+      const { rerender } = render(tree())
+
+      // Page A: type to trigger an autosave, so `savedAt` lands this session.
+      fireEvent.change(await screen.findByDisplayValue('Workshop'), {
+        target: { value: 'Workshop notes' },
+      })
+      await waitFor(
+        () => expect(screen.getByText(/^page — saved \d\d:\d\d$/)).toBeInTheDocument(),
+        { timeout: 2000 }
+      )
+
+      // Navigate to a just-made page B: its own `madeAt` must win, not A's `savedAt`.
+      mockNodeId = 'page-2'
+      rerender(tree())
+
+      expect(await screen.findByText('page — made 07:13')).toBeInTheDocument()
+      expect(screen.queryByText(/^page — saved/)).not.toBeInTheDocument()
+    }
+  )
 })

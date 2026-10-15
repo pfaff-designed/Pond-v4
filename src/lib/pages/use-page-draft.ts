@@ -87,6 +87,7 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
       setTitle(page.title)
       setBlocks(page.blocks)
       setSaved(true)
+      setSavedAt(null)
     } else if (page && page.id === loadedId.current && saved) {
       // Same page, no unsaved edits: adopt server blocks only when they changed
       // vs. what we last reconciled — i.e. an external write (accepted proposal).
