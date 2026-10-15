@@ -37,6 +37,8 @@ export interface RelationValueProps {
   value: string[]
   /** id→title for the linked ids (partial; a missing id renders faded). */
   titles: Map<string, string>
+  /** id→title for a linked id resolved to a trashed page's snapshot (broken-link chip). */
+  trashedTitles: Map<string, string>
   /** The pages the picker offers (target collection rows, or global). */
   candidates: RelationCandidate[]
   /** Radio cap — the picker replaces-on-select instead of appending. */
@@ -53,6 +55,7 @@ export interface RelationValueProps {
 export function RelationValue({
   value,
   titles,
+  trashedTitles,
   candidates,
   single = false,
   editable = false,
@@ -92,7 +95,8 @@ export function RelationValue({
           key={id}
           id={id}
           title={titles.get(id)}
-          missing={!titles.has(id)}
+          trashedTitle={trashedTitles.get(id)}
+          missing={!titles.has(id) && !trashedTitles.has(id)}
           onOpen={onOpen}
           onRemove={editable ? () => onChange(removeLink(value, id)) : undefined}
         />

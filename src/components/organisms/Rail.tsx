@@ -1675,6 +1675,16 @@ export function Rail() {
         reason,
         onWriteSettled
       )
+      // A trashed page's chip (relation cell, KAN-311) must flip without a
+      // reload — unscoped prefixes so every ['rows', id] and ['page', id]
+      // query is caught, same reach as pagesKey() just above. Skipped on a
+      // flush-driven commit for the same reason pagesKey() is (KAN-273): it
+      // runs nested inside another write and would refetch before that
+      // write's own optimistic change lands.
+      if (reason !== 'flush-driven') {
+        queryClient.invalidateQueries({ queryKey: ['rows'] })
+        queryClient.invalidateQueries({ queryKey: ['page'] })
+      }
       // if the open page was in the deleted subtree, clear the workspace
       const selected = selectedNodeIdRef.current
       if (selected && subtreeIds(node).has(selected)) {

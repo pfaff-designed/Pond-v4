@@ -129,6 +129,19 @@ function renderPage() {
   )
 }
 
+/** Same as `renderPage`, but hands back the client so a test can spy on its
+ *  cache invalidation (KAN-311: a restore must flip a relation chip without
+ *  a reload). */
+function renderPageWithClient() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const result = render(
+    <QueryClientProvider client={client}>
+      <ChangeLogPage />
+    </QueryClientProvider>
+  )
+  return { ...result, client }
+}
+
 /** The infinite "all" query has no `action` filter; the deleted view's does. */
 const isDeletedQuery = (opts: { action?: unknown }) => Array.isArray(opts.action)
 
@@ -182,6 +195,30 @@ describe('ChangeLogPage — the deleted view', () => {
     await waitFor(() => {
       expect(screen.queryByRole('button', { name: 'restore' })).not.toBeInTheDocument()
     })
+  })
+
+  it('invalidates the rows and page caches on restore, so a relation chip flips without a reload', async () => {
+    let answered = false
+    mockListRecords.mockImplementation(async (_supabase, opts) => {
+      if (!isDeletedQuery(opts)) return []
+      return answered ? [DELETE_RECORD, RESTORE_RECORD] : [DELETE_RECORD]
+    })
+    mockRestorePage.mockImplementation(async () => {
+      answered = true
+    })
+
+    const user = userEvent.setup()
+    const { client } = renderPageWithClient()
+    const invalidateSpy = jest.spyOn(client, 'invalidateQueries')
+    await user.click(screen.getByRole('button', { name: 'deleted' }))
+
+    const restoreButton = await screen.findByRole('button', { name: 'restore' })
+    await user.click(restoreButton)
+
+    await waitFor(() => {
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['rows'] })
+    })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['page'] })
   })
 
   it("reads the top-level card's `was in` as the pond's real name, not the literal 'life'", async () => {

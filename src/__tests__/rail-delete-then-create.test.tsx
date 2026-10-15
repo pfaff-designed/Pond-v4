@@ -377,3 +377,38 @@ describe('Rail — delete then create (KAN-273)', () => {
     expect(pushedUrl).toContain('nodeName=Untitled+2')
   })
 })
+
+describe('Rail — a grace-timer delete commit invalidates the relation caches (KAN-311)', () => {
+  beforeEach(() => {
+    jest.useFakeTimers()
+    for (const id of ['health', 'sleep']) unstageId(id)
+    sessionStorage.clear()
+    jest.clearAllMocks()
+  })
+
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  it('invalidates the rows and page caches once the grace-timer commit lands, so a chip flips without a reload', async () => {
+    const client = newClient(ROWS)
+    mount(client)
+    const invalidateSpy = jest.spyOn(client, 'invalidateQueries')
+
+    const sleepRow = screen.getByRole('treeitem', { name: /Sleep/ })
+    fireEvent.mouseEnter(sleepRow)
+    fireEvent.click(within(sleepRow).getByRole('button', { name: 'Delete Sleep' }))
+
+    await waitFor(() =>
+      expect(screen.queryByRole('treeitem', { name: /Sleep/ })).not.toBeInTheDocument()
+    )
+
+    await act(async () => {
+      jest.advanceTimersByTime(GRACE_WINDOW_MS + 1)
+    })
+    await waitFor(() => expect(trashPage).toHaveBeenCalledWith(expect.anything(), 'sleep'))
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['rows'] })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['page'] })
+  })
+})

@@ -26,7 +26,7 @@ export interface RelationValueFieldProps {
 
 export function RelationValueField({ def, value, editable, onChange }: RelationValueFieldProps) {
   const ids = Array.isArray(value) ? (value as string[]) : []
-  const { titles, candidates } = useRelationTitles(ids, def.target)
+  const { titles, trashedTitles, candidates } = useRelationTitles(ids, def.target)
   const router = useRouter()
 
   // A relation only links pages; the workspace panel loads content purely from
@@ -40,6 +40,7 @@ export function RelationValueField({ def, value, editable, onChange }: RelationV
     <RelationValue
       value={ids}
       titles={titles}
+      trashedTitles={trashedTitles}
       candidates={candidates}
       single={def.single}
       editable={editable}
