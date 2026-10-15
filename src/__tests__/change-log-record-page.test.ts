@@ -6,7 +6,7 @@
  * `describeChange`'s plain label when there is no live block to preview.
  */
 
-import { describeChange, formatClockTime } from '@/lib/change-log/page-changes'
+import { formatClockTime } from '@/lib/change-log/page-changes'
 import {
   buildChangeTimeline,
   changeLogPageFilterUrl,
@@ -394,7 +394,7 @@ describe('buildChangeTimeline', () => {
       {
         time: formatClockTime('2026-09-30T09:12:00.000Z'),
         event: 'proposed',
-        detail: describeChange(original, null),
+        detail: 'ONE',
         highlighted: false,
       },
       {
@@ -406,7 +406,7 @@ describe('buildChangeTimeline', () => {
       {
         time: formatClockTime('2026-09-30T09:20:00.000Z'),
         event: 'revised',
-        detail: describeChange(revision, null),
+        detail: 'ONE',
         highlighted: false,
       },
       {
@@ -467,7 +467,7 @@ describe('buildChangeTimeline', () => {
       {
         time: formatClockTime('2026-09-30T09:20:00.000Z'),
         event: 'proposed',
-        detail: describeChange(r, null),
+        detail: 'ONE',
         highlighted: false,
       },
       {
@@ -477,5 +477,26 @@ describe('buildChangeTimeline', () => {
         highlighted: true,
       },
     ])
+  })
+
+  it("reads a proposed row's detail as what it proposed — recordTitle's after-side, not describeChange's plain label", () => {
+    const r = record({
+      id: 'rec-1',
+      status: 'accepted',
+      targetBlockId: null,
+      before: [{ id: 'a', type: 'text', content: 'alpha one' }],
+      after: [{ id: 'a', type: 'text', content: 'apple one' }],
+      transitions: [
+        { status: 'proposed', at: '2026-09-30T09:20:00.000Z', actor: 'pond' },
+        { status: 'accepted', at: '2026-09-30T09:31:00.000Z', actor: 'you' },
+      ],
+    })
+
+    expect(buildChangeTimeline([r], 'rec-1')[0]).toEqual({
+      time: formatClockTime('2026-09-30T09:20:00.000Z'),
+      event: 'proposed',
+      detail: 'apple one',
+      highlighted: false,
+    })
   })
 })
