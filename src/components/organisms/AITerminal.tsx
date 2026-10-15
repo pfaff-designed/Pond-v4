@@ -4112,6 +4112,10 @@ export function AITerminal() {
     if (madePageCollapseRecordRef.current === madeProposalRecordId) return
     madePageCollapseRecordRef.current = madeProposalRecordId
     setMadePageCollapseBaseline(messages.length)
+    // The fold renders unsized (frame 5's ~131px card); maximized is a
+    // canvas-sized state that would otherwise win over it (KAN-323's style
+    // ternary), the same reason `handleMinimize` clears it.
+    setIsMaximized(false)
   }, [madeProposalRecordId, messages.length])
   const threadFoldedForMadePage =
     showMadePageActions &&

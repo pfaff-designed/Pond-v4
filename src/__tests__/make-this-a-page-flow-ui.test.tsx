@@ -1329,6 +1329,25 @@ describe('KAN-179 — the composer collapses to the undo/open-parent chips once 
     expect(card().hasAttribute('data-sized')).toBe(true)
     expect(card().style.height).toBe('616px')
   })
+
+  it('maximized before make page, the fold still renders unsized — no data-maximized, no data-sized, no inline height', async () => {
+    const qc = newQueryClient()
+    render(terminalTreeForPond(qc, 'pond-collapse-5'))
+    await ready()
+    const card = () => screen.getByRole('region', { name: 'composer' })
+
+    fireEvent.click(screen.getByRole('button', { name: 'maximize' }))
+    expect(card().hasAttribute('data-maximized')).toBe(true)
+
+    fireEvent.click(screen.getByRole('button', { name: 'make this a page' }))
+    const proposedCard = await screen.findByRole('group', { name: /new page — proposed/i })
+    fireEvent.click(within(proposedCard).getByRole('button', { name: 'make page' }))
+
+    await screen.findByRole('button', { name: 'undo' })
+    expect(card().hasAttribute('data-maximized')).toBe(false)
+    expect(card().hasAttribute('data-sized')).toBe(false)
+    expect(card().style.height).toBe('')
+  })
 })
 
 // ── KAN-179: the undo chip takes the made page back ──────────────────────────
