@@ -48,6 +48,7 @@ import {
   revertedByField,
   statusField,
 } from '@/lib/change-log/record-page'
+import { isPageId } from '@/lib/pages/page-id'
 
 /**
  * Finds a revision chain's root by walking `links.revisedFrom` backward one
@@ -146,7 +147,7 @@ export function ChangeLogRecordPage({ recordId }: { recordId: string }) {
     queryFn: async () => {
       const supabase = getSupabase()
       const entries = await Promise.all(
-        readChips.map(async (id) => {
+        readChips.filter(isPageId).map(async (id) => {
           const page = await getPage(supabase, id)
           return page ? ([id, page.title] as const) : null
         })

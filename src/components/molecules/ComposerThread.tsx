@@ -19,7 +19,7 @@ import { ComposerWindowControls } from '@/components/molecules/ComposerWindowCon
 const RULE_CLASS = 'border-b border-mn-text/[0.09]'
 
 export interface ThreadHeadProps {
-  /** The area the thread was started in. */
+  /** The current page's area (its topmost ancestor's title) — follows navigation, not where the thread began. */
   area: string
   turns: number
   /** Start over: clears the thread. */

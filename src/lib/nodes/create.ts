@@ -3,10 +3,7 @@
  */
 
 import { inPond, resolvePond } from '@/lib/pond/scope'
-
-// ── UUID validation ────────────────────────────────────────────────────────
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+import { isPageId } from '@/lib/pages/page-id'
 
 /** Resolve a parent reference that may be a UUID or a page title, to a page id.
  *  #312: the title lookup is scoped to the pond, so an AI-proposed parent title
@@ -20,7 +17,7 @@ export async function resolveParentId(
   /** #312: the pond to write into. See `CreatePageInput.pondId`. */
   pondId: string | null
 ): Promise<string> {
-  if (UUID_RE.test(idOrName)) return idOrName
+  if (isPageId(idOrName)) return idOrName
   const pond = await resolvePond(sb, userId, pondId)
   const q = sb.from('pages').select('id').eq('user_id', userId)
   const { data, error } = await inPond(q, pond).ilike('title', idOrName).limit(1).maybeSingle()
