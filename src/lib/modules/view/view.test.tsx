@@ -13,6 +13,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { SiblingBlocksProvider } from '@/lib/modules/sibling-context'
 import { ViewView } from './view'
+import { ActiveViewSelectionContext } from './active-view-context'
 import type { ViewBlock } from './schema'
 import type { PropertySchema } from '@/lib/properties/schema'
 import type { CollectionRow } from './apply'
@@ -409,6 +410,27 @@ describe('CollectionView — the saved-view bar switches views as reading, not e
     expect(screen.getByText('Trips')).toBeInTheDocument()
     expect(screen.getByText('1 record')).toBeInTheDocument()
     expect(screen.queryByRole('tab')).not.toBeInTheDocument()
+  })
+
+  it('tells a mounted ActiveViewSelectionContext listener which saved view was picked (KAN-321)', async () => {
+    const user = userEvent.setup()
+    const onSelectActiveView = jest.fn()
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={client}>
+        <DeletionUndoProvider>
+          <SiblingBlocksProvider value={{ blocks: [], pageId: 'page-1' }}>
+            <ActiveViewSelectionContext.Provider value={onSelectActiveView}>
+              <ViewView data={barView} editable={false} onChange={jest.fn()} />
+            </ActiveViewSelectionContext.Provider>
+          </SiblingBlocksProvider>
+        </DeletionUndoProvider>
+      </QueryClientProvider>
+    )
+
+    await user.click(screen.getByRole('tab', { name: 'timeline' }))
+
+    expect(onSelectActiveView).toHaveBeenCalledWith('view-gantt')
   })
 })
 

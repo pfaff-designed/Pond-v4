@@ -259,6 +259,34 @@ export const resolveActiveView = (
 }
 
 /**
+ * A `ViewBlock` whose mode/config fields mirror the resolved active view (KAN-321),
+ * for a caller that needs a `ViewBlock`-shaped value rather than `resolveActiveView`'s
+ * `{ kind, config }` pair — `block-frame.ts` and `BlockCanvas`'s fetch both read
+ * `mode`/`filter`/`collectionId` off a block, so they get one here instead of
+ * re-deriving the mirror themselves. `selectedId` is the bar's LOCAL selection
+ * (KAN-32 fix), which can diverge from the persisted `activeViewId`; omitted, this
+ * falls back to `activeViewId`, then `views[0]` — the same order `resolveActiveView`
+ * uses. A legacy block (no `views`) returns a copy of itself.
+ */
+export const activeSavedView = (block: ViewBlock, selectedId?: string): ViewBlock => {
+  const resolved = resolveActiveView(
+    block.views && selectedId ? { ...block, activeViewId: selectedId } : block
+  )
+  return {
+    ...block,
+    mode: resolved.kind,
+    groupBy: resolved.config.groupBy,
+    sort: resolved.config.sort,
+    filter: resolved.config.filter,
+    startDate: resolved.config.startDate,
+    endDate: resolved.config.endDate,
+    chart: resolved.config.chart,
+    bigNumber: resolved.config.bigNumber,
+    collectionId: resolved.config.collectionId,
+  }
+}
+
+/**
  * Writes a config patch onto a `ViewBlock` (KAN-32). A legacy block (no `views`)
  * patches the top-level fields exactly as the old `{ ...data, ...patch }` spread
  * did. A `views`-shaped block patches ONLY the active view's `config` — every

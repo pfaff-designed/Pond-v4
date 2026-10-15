@@ -23,7 +23,8 @@
  */
 
 import React from 'react'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
 import { PondMolecule } from '@/components/molecules/PondMolecule'
@@ -139,7 +140,7 @@ function renderView(config: ViewBlock, schema: PropertySchema, rows: CollectionR
   )
 }
 
-function renderCanvas(blocks: Block[]) {
+function renderCanvas(blocks: Block[], onChange: (next: Block[]) => void = jest.fn()) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={client}>
@@ -147,7 +148,7 @@ function renderCanvas(blocks: Block[]) {
         <BlockCanvas
           blocks={blocks}
           pageId="page-1"
-          onChange={jest.fn()}
+          onChange={onChange}
           onUndoRemove={jest.fn()}
         />
       </DeletionUndoProvider>
@@ -391,6 +392,200 @@ describe('BlockCanvas — a gantt’s empty state is the board’s voidBox, not 
     const c = cardOf('v-gantt')
     expect(c.dataset.blockState).toBe('rest')
     expect(c.querySelectorAll('[data-part="gantt-row"]')).toHaveLength(3)
+  })
+})
+
+// ── KAN-321 path test — the bar's active saved view drives the frame, not the block's top-level mode ──
+
+describe('BlockCanvas — switching the bar to timeline moves the frame to timeline’s, not the board’s (KAN-321)', () => {
+  it('stays bare across every saved view (the card is chosen off the block, not the active view), with the gantt’s own missing-date remedy rendered inline', async () => {
+    const user = userEvent.setup()
+    const noDateSchema = taskSchema.filter((def) => def.type !== 'date')
+    collection.schema = noDateSchema
+    collection.rows = []
+    const mixed: ViewBlock = {
+      id: 'v-mixed',
+      type: 'view',
+      mode: 'board',
+      views: [
+        { id: 'view-board', label: 'board', kind: 'board' },
+        { id: 'view-gantt', label: 'timeline', kind: 'gantt' },
+      ],
+      activeViewId: 'view-board',
+    }
+    renderCanvas([mixed])
+
+    // board draws bare (its frame is null — lanes on the page, no card), so
+    // neither a card nor the gantt's own remedy exists yet.
+    expect(document.getElementById('block-v-mixed')!.querySelector('[data-block-kind]')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'add a date field' })).toBeNull()
+
+    await user.click(screen.getByRole('tab', { name: 'timeline' }))
+
+    // The block's own frame (`board`, persisted) stays bare — no card appears
+    // for timeline either — and the gantt itself draws its remedy inline,
+    // under the SAME head row and bar the board drew it under.
+    expect(document.getElementById('block-v-mixed')!.querySelector('[data-block-kind]')).toBeNull()
+    expect(screen.getByRole('button', { name: 'add a date field' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('tab', { name: 'board' }))
+
+    expect(document.getElementById('block-v-mixed')!.querySelector('[data-block-kind]')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'add a date field' })).toBeNull()
+  })
+
+  it('keeps the SAME tablist node mounted across board → timeline → board, with ＋ view present in every state', async () => {
+    const user = userEvent.setup()
+    collection.schema = taskSchema
+    collection.rows = taskRows
+    const mixed: ViewBlock = {
+      id: 'v-stable',
+      type: 'view',
+      mode: 'board',
+      views: [
+        { id: 'view-board', label: 'board', kind: 'board' },
+        { id: 'view-gantt', label: 'timeline', kind: 'gantt' },
+      ],
+      activeViewId: 'view-board',
+    }
+    renderCanvas([mixed])
+
+    const tablist = screen.getByRole('tablist')
+    expect(screen.getByText('＋ view')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('tab', { name: 'timeline' }))
+    expect(screen.getByRole('tablist')).toBe(tablist)
+    expect(screen.getByText('＋ view')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('tab', { name: 'board' }))
+    expect(screen.getByRole('tablist')).toBe(tablist)
+    expect(screen.getByText('＋ view')).toBeInTheDocument()
+  })
+
+  it('ArrowRight/ArrowLeft move focus between segments and the frame with it, without a remount dropping focus to <body>', async () => {
+    const user = userEvent.setup()
+    const noDateSchema = taskSchema.filter((def) => def.type !== 'date')
+    collection.schema = noDateSchema
+    collection.rows = []
+    const mixed: ViewBlock = {
+      id: 'v-kbd',
+      type: 'view',
+      mode: 'board',
+      views: [
+        { id: 'view-board', label: 'board', kind: 'board' },
+        { id: 'view-gantt', label: 'timeline', kind: 'gantt' },
+      ],
+      activeViewId: 'view-board',
+    }
+    renderCanvas([mixed])
+
+    const boardTab = screen.getByRole('tab', { name: 'board' })
+    act(() => boardTab.focus())
+    expect(document.activeElement).toBe(boardTab)
+
+    await user.keyboard('{ArrowRight}')
+
+    const timelineTab = screen.getByRole('tab', { name: 'timeline' })
+    expect(document.activeElement).toBe(timelineTab)
+    expect(screen.getByRole('button', { name: 'add a date field' })).toBeInTheDocument()
+
+    await user.keyboard('{ArrowLeft}')
+
+    expect(document.activeElement).toBe(boardTab)
+    expect(screen.queryByRole('button', { name: 'add a date field' })).toBeNull()
+  })
+
+  it('(filter) a saved view whose filter matches nothing shows the filtered-empty line; an unfiltered saved view over the SAME rows shows them', async () => {
+    const user = userEvent.setup()
+    collection.schema = taskSchema
+    collection.rows = taskRows
+    const filterable: ViewBlock = {
+      id: 'v-filter',
+      type: 'view',
+      mode: 'table',
+      views: [
+        { id: 'view-all', label: 'all', kind: 'table' },
+        {
+          id: 'view-blocked',
+          label: 'blocked',
+          kind: 'table',
+          config: { filter: { property: 'p-status', op: 'eq', value: 'o-nope' } },
+        },
+      ],
+      activeViewId: 'view-all',
+    }
+    renderCanvas([filterable])
+
+    // Clicking into the filtered view: the card steps to `empty` and draws the
+    // filtered-empty line in its own empty box.
+    await user.click(screen.getByRole('tab', { name: 'blocked' }))
+
+    const filtered = cardOf('v-filter')
+    expect(filtered.dataset.blockState).toBe('empty')
+    const box = filtered.querySelector<HTMLElement>('[data-part="empty"]')!
+    expect(box.textContent).toBe(POND_BLOCK_FILTERED_EMPTY_LINE)
+
+    // The bar stays reachable while the card is empty (KAN-321 fix): clicking
+    // back to the unfiltered view returns the rows, in the block's `rest` state.
+    await user.click(screen.getByRole('tab', { name: 'all' }))
+
+    expect(cardOf('v-filter').dataset.blockState).toBe('rest')
+    expect(cardOf('v-filter').querySelectorAll('tbody tr')).toHaveLength(3)
+  })
+
+  it('draws the gantt’s own voidBox inline — still no outer card — when timeline is the active saved view on a board-mode block', async () => {
+    const user = userEvent.setup()
+    collection.schema = taskSchema
+    collection.rows = []
+    const mixedDated: ViewBlock = {
+      id: 'v-mixed-dated',
+      type: 'view',
+      mode: 'board',
+      views: [
+        { id: 'view-board', label: 'board', kind: 'board' },
+        { id: 'view-gantt', label: 'timeline', kind: 'gantt' },
+      ],
+      activeViewId: 'view-board',
+    }
+    renderCanvas([mixedDated])
+
+    await user.click(screen.getByRole('tab', { name: 'timeline' }))
+
+    // The block's frame stays bare (persisted mode is `board`) — the gantt body
+    // draws its own voidBox directly, with no outer PondBlock card around it.
+    expect(
+      document.getElementById('block-v-mixed-dated')!.querySelector('[data-block-kind]')
+    ).toBeNull()
+    const box = screen.getByText(GANTT_EMPTY_LINE).closest<HTMLElement>('[data-part="empty"]')!
+    expect(box.dataset.emptyBox).toBe('void')
+  })
+
+  it('a config edit made after switching the bar keeps the block’s own persisted activeViewId (#421)', async () => {
+    const user = userEvent.setup()
+    collection.schema = taskSchema
+    collection.rows = taskRows
+    const onChange = jest.fn()
+    const configEdit: ViewBlock = {
+      id: 'v-config',
+      type: 'view',
+      mode: 'board',
+      views: [
+        { id: 'view-board', label: 'board', kind: 'board' },
+        { id: 'view-number', label: 'number', kind: 'big-number' },
+      ],
+      activeViewId: 'view-board',
+    }
+    renderCanvas([configEdit], onChange)
+
+    await user.click(screen.getByRole('tab', { name: 'number' }))
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Figure' }), 'p-status')
+
+    expect(onChange).toHaveBeenCalled()
+    const committed = onChange.mock.calls[onChange.mock.calls.length - 1][0][0] as ViewBlock
+    expect(committed.activeViewId).toBe('view-board')
+    expect(committed.views?.find((v) => v.id === 'view-number')?.config?.bigNumber?.property).toBe(
+      'p-status'
+    )
   })
 })
 

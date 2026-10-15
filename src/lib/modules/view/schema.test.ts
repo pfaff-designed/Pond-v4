@@ -3,7 +3,7 @@
  * one view built from its legacy `mode`+config; a block with `views` reads the
  * active one, falling back to `views[0]` when `activeViewId` is missing or stale.
  */
-import { applyConfigPatch, resolveActiveView, viewSchema, type ViewBlock } from './schema'
+import { activeSavedView, applyConfigPatch, resolveActiveView, viewSchema, type ViewBlock } from './schema'
 
 const legacyBlock: ViewBlock = {
   id: 'b-1',
@@ -59,6 +59,43 @@ describe('resolveActiveView', () => {
 
     const staleActiveId: ViewBlock = { ...multiViewBlock, activeViewId: 'v-gone' }
     expect(resolveActiveView(staleActiveId).id).toBe('v-board')
+  })
+})
+
+describe('activeSavedView', () => {
+  it('returns a legacy block (no views) as an equivalent copy of itself', () => {
+    expect(activeSavedView(legacyBlock)).toEqual(legacyBlock)
+  })
+
+  it('mirrors activeViewId’s view onto the block shape when no selectedId is given', () => {
+    expect(activeSavedView(multiViewBlock)).toEqual({
+      ...multiViewBlock,
+      mode: 'gantt',
+      groupBy: undefined,
+      sort: undefined,
+      filter: undefined,
+      startDate: 'p-start',
+      endDate: undefined,
+      chart: undefined,
+      bigNumber: undefined,
+      collectionId: undefined,
+    })
+  })
+
+  it('a selectedId overrides a stale activeViewId', () => {
+    const staleActiveId: ViewBlock = { ...multiViewBlock, activeViewId: 'v-gone' }
+    expect(activeSavedView(staleActiveId, 'v-board')).toEqual({
+      ...staleActiveId,
+      mode: 'board',
+      groupBy: 'p-status',
+      sort: undefined,
+      filter: undefined,
+      startDate: undefined,
+      endDate: undefined,
+      chart: undefined,
+      bigNumber: undefined,
+      collectionId: undefined,
+    })
   })
 })
 
