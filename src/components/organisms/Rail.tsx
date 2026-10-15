@@ -500,12 +500,15 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
                 × is reachable with one click and no row click first. ＋ is the one
                 thing that moves — alone at that same edge when selected-and-unhovered,
                 one slot left of × (gap 8) once × also draws. The root takes ＋ and
-                never ×. */}
+                never ×. ＋'s margin-right move is NOT animated (KAN-320) — a pointer
+                aimed at ×'s point during the slide must never catch ＋ mid-move — and
+                × stacks above ＋ (z-[1]) so ×'s point always resolves to × even if the
+                two ever overlap. */}
               {(onNewPageMenuOpenChange || (!isRoot && onDelete)) && (
                 <span data-part="row-tools" className="absolute inset-y-0 right-2 flex items-center">
                   {onNewPageMenuOpenChange && (
                     <span
-                      className={`flex flex-none items-center transition-[opacity,margin-right] motion-reduce:transition-none group-focus-within:mr-5 group-focus-within:opacity-100 group-focus-within:pointer-events-auto ${
+                      className={`flex flex-none items-center transition-opacity motion-reduce:transition-none group-focus-within:mr-5 group-focus-within:opacity-100 group-focus-within:pointer-events-auto ${
                         showPlus ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
                       } ${hovered ? 'mr-5' : ''}`}
                     >
@@ -541,7 +544,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
                   )}
                   {!isRoot && onDelete && (
                     <span
-                      className={`absolute inset-y-0 right-0 flex items-center transition-opacity group-focus-within:opacity-100 group-focus-within:pointer-events-auto ${
+                      className={`absolute inset-y-0 right-0 z-[1] flex items-center transition-opacity group-focus-within:opacity-100 group-focus-within:pointer-events-auto ${
                         hovered ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
                       }`}
                     >
