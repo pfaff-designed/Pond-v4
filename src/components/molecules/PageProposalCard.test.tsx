@@ -117,31 +117,9 @@ describe('PageProposalCard — name and kind commit on settle (KAN-290)', () => 
   })
 })
 
-describe('PageProposalCard — accepted state goes dead-link-safe in trash (KAN-308)', () => {
-  it('renders "in trash" as plain text with no button when inTrash is true', () => {
-    render(
-      <PageProposalCard
-        {...baseProps}
-        status="accepted"
-        inTrash={true}
-        onOpenPage={jest.fn()}
-      />
-    )
-
-    expect(screen.queryByRole('button')).not.toBeInTheDocument()
-    expect(screen.getByText(/in trash/)).toBeInTheDocument()
-  })
-
-  it('still renders the "open <name>" button when inTrash is false', () => {
-    render(
-      <PageProposalCard
-        {...baseProps}
-        status="accepted"
-        inTrash={false}
-        onOpenPage={jest.fn()}
-      />
-    )
-
-    expect(screen.getByRole('button', { name: `open ${baseProps.name}` })).toBeInTheDocument()
+describe('PageProposalCard — accepted state moved to the composer (KAN-179)', () => {
+  it('renders nothing once the page is made (chips live in MadePageActions)', () => {
+    const { container } = render(<PageProposalCard {...baseProps} status="accepted" />)
+    expect(container).toBeEmptyDOMElement()
   })
 })

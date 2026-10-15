@@ -77,7 +77,10 @@ jest.mock('@/lib/change-log/store', () => ({
   appendOwnEdit: jest.fn(),
 }))
 jest.mock('@/lib/change-log/resolve', () => ({ resolveChangeLogRecord: jest.fn() }))
-jest.mock('@/lib/change-log/session-undo', () => ({ sessionUndo: { remember: jest.fn() } }))
+jest.mock('@/lib/change-log/session-undo', () => ({
+  sessionUndo: { remember: jest.fn() },
+  useSessionUndo: () => ({ canUndo: false }),
+}))
 jest.mock('@/lib/deletion/notify-bridge', () => ({ requestNotify: jest.fn() }))
 
 const mockSaveTranscript = jest.fn().mockResolvedValue(undefined)

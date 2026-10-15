@@ -67,6 +67,13 @@ export interface TerminalDrawerProps {
    *  mounted but hidden rather than unmounted — typing or focusing the line
    *  reopens it at its last height. */
   minimized?: boolean
+  /** Content present but not a thread (KAN-179's made-page chip row, frame 5):
+   *  the card sizes to it rather than `height`/the default, draws no resize
+   *  handle, and gets no `data-sized` — the same shape as having no children at
+   *  all, just with something to show. The style ternary checks `maximized`
+   *  first, so this has no effect while maximized is also true — callers fold
+   *  (AITerminal clears `maximized` the moment the fold for a made page begins). */
+  unsized?: boolean
   /** The card itself (`data-part="composer-card"`, the one element carrying the
    *  glass in both states) — exposed so a sibling (the `@` picker, KAN-99) can
    *  anchor to the visible glass rather than a transparent child of it. */
@@ -104,6 +111,7 @@ export const TerminalDrawer = ({
   maximized = false,
   zen = false,
   minimized = false,
+  unsized = false,
   cardRef: externalCardRef,
 }: TerminalDrawerProps) => {
   const innerCardRef = useRef<HTMLElement>(null)
@@ -224,8 +232,10 @@ export const TerminalDrawer = ({
 
   // At rest there is nothing to size, and a fixed height would leave an empty slab.
   // Minimized is rest too — the thread stays mounted (its state survives) but hidden.
+  // `unsized` content (KAN-179's made-page chip row) is shown the same way but never
+  // sized: it takes the `data-sized`/height/handle path out of the equation entirely.
   const hasThread = Boolean(children)
-  const showThread = hasThread && !minimized
+  const showThread = hasThread && !minimized && !unsized
 
   // Collapsed slides the whole card off screen rather than swapping it for the
   // tab: grip, thread and footer all stay mounted, so reopening needs no rebuild.

@@ -323,13 +323,14 @@ describe('undo_change_log_record — refusals leave everything as it was', () =>
   it('refuses a kind of change it cannot set back', async () => {
     const db = await makeDb()
     const { pondId } = await scene(db)
-    const made = await addRecord(db, {
-      action: 'create_page',
-      after: { title: 'suppliers', parent: null },
+    const moved = await addRecord(db, {
+      action: 'move',
+      before: { parentId: null },
+      after: { parentId: 'elsewhere' },
     })
 
-    await expect(undo(db, [made], pondId)).rejects.toMatchObject(refusal('0A000', 'not-undoable'))
-    expect((await record(db, made)).status).toBe('accepted')
+    await expect(undo(db, [moved], pondId)).rejects.toMatchObject(refusal('0A000', 'not-undoable'))
+    expect((await record(db, moved)).status).toBe('accepted')
     await db.close()
   })
 

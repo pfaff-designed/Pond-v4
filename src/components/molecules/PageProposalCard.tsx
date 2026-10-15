@@ -31,7 +31,7 @@
 import { useId, useRef } from 'react'
 import { DraftInput } from '@/components/atoms/draft-input'
 import { PondControl } from '@/components/atoms/PondControl'
-import { chipBaseClass, pageEyebrowClass } from '@/components/atoms/kicker'
+import { pageEyebrowClass } from '@/components/atoms/kicker'
 import { cn } from '@/lib/utils'
 import { PAGE_NAME_MAX, type PageProposalStatus } from '@/lib/conversation/page-proposals'
 import {
@@ -63,10 +63,6 @@ export interface PageProposalCardProps {
   onKindChange: (kind: string) => void
   onMakePage: () => void
   onCancel: () => void
-  /** Open the made page (accepted state). */
-  onOpenPage?: () => void
-  /** The made page is no longer reachable (trashed) — drop the link. */
-  inTrash?: boolean
   className?: string
 }
 
@@ -88,8 +84,6 @@ export function PageProposalCard({
   onKindChange,
   onMakePage,
   onCancel,
-  onOpenPage,
-  inTrash = false,
   className,
 }: PageProposalCardProps) {
   const ids = useId()
@@ -97,44 +91,10 @@ export function PageProposalCard({
 
   if (status === 'rejected') return null
 
-  if (status === 'accepted') {
-    if (inTrash) {
-      return (
-        <div
-          data-part="page-proposal"
-          data-status="accepted"
-          className={cn(
-            'flex flex-wrap items-center gap-[7px] font-mono text-[11px] lowercase tracking-[0.02em] text-mn-text-meta',
-            className
-          )}
-        >
-          <span>page made · {name} · in trash</span>
-        </div>
-      )
-    }
-
-    return (
-      <div
-        data-part="page-proposal"
-        data-status="accepted"
-        className={cn(
-          'flex flex-wrap items-center gap-[7px] font-mono text-[11px] lowercase tracking-[0.02em] text-mn-text-secondary',
-          className
-        )}
-      >
-        <span>page made</span>
-        {onOpenPage && (
-          <button
-            type="button"
-            onClick={onOpenPage}
-            className={cn(chipBaseClass, 'py-1.5 text-mn-text-meta hover:text-foreground')}
-          >
-            open {name}
-          </button>
-        )}
-      </div>
-    )
-  }
+  // The "page made" receipt moved to the composer's own chip row
+  // (`MadePageActions`) — frame 5's `PondComposer` spec carries no
+  // "page made" card at all, only `chips`/`line`.
+  if (status === 'accepted') return null
 
   const changePlace = () => placeRowRef.current?.changePlace()
 

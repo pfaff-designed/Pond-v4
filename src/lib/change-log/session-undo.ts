@@ -21,6 +21,14 @@ import { redoStep, undoStep, type HistoryStep, type StepResult } from './undo'
 export interface SessionUndoSnapshot {
   canUndo: boolean
   canRedo: boolean
+  /** The record ids of the step undo would take next — a caller that remembers
+   *  its own step's record id can tell whether IT is what undo would hit, not
+   *  just that the stack is non-empty. Empty when `canUndo` is false. */
+  topUndoRecordIds: readonly string[]
+  /** Every record id across the whole redo stack, not just its top — a step
+   *  sinks below later ones as more are undone, but it still sits ON the redo
+   *  stack, which is what a caller needs to know its own step left undo this way. */
+  redoRecordIds: readonly string[]
 }
 
 /**
@@ -53,7 +61,12 @@ interface PondHistory {
   snapshot: SessionUndoSnapshot
 }
 
-const EMPTY: SessionUndoSnapshot = { canUndo: false, canRedo: false }
+const EMPTY: SessionUndoSnapshot = {
+  canUndo: false,
+  canRedo: false,
+  topUndoRecordIds: [],
+  redoRecordIds: [],
+}
 
 /** One hung RPC must not freeze every later ⌘Z/⇧⌘Z in the tab. */
 export const STEP_TIMEOUT_MS = 10_000
@@ -103,7 +116,12 @@ export const createSessionUndo = (
 
   const notify = (history?: PondHistory) => {
     if (history) {
-      history.snapshot = { canUndo: history.undo.length > 0, canRedo: history.redo.length > 0 }
+      history.snapshot = {
+        canUndo: history.undo.length > 0,
+        canRedo: history.redo.length > 0,
+        topUndoRecordIds: history.undo.at(-1)?.recordIds ?? [],
+        redoRecordIds: history.redo.flatMap((step) => step.recordIds),
+      }
     }
     for (const listener of listeners) listener()
   }

@@ -49,6 +49,10 @@ export interface PageProposal {
   status: PageProposalStatus
   /** Set once the page is made. */
   pageId?: string
+  /** The change-log record's own id (not {@link id}, its toolCallId) — set once
+   *  `acceptCreatePageRecord` resolves, so the undo chip can tell whether ITS
+   *  step, not just any step, is the one on top of the session's undo stack. */
+  recordId?: string
   /** What Pond's placement model found this answer mentioned — `ref` is a
    *  candidate id, or null until it resolves to one. Absent on a proposal
    *  made before this field existed. */
@@ -120,6 +124,7 @@ export function parsePageProposals(value: unknown): PageProposals {
       kind: typeof r.kind === 'string' && r.kind ? r.kind : DEFAULT_PAGE_KIND,
       status: r.status as PageProposalStatus,
       ...(typeof r.pageId === 'string' && r.pageId ? { pageId: r.pageId } : {}),
+      ...(typeof r.recordId === 'string' && r.recordId ? { recordId: r.recordId } : {}),
       mentioned: parseMentioned(r.mentioned),
       ...(typeof r.leadIn === 'string' ? { leadIn: r.leadIn } : {}),
       ...(typeof r.signOff === 'string' ? { signOff: r.signOff } : {}),

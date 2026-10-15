@@ -33,7 +33,6 @@ const meta = {
     onKindChange: fn(),
     onMakePage: fn(),
     onCancel: fn(),
-    onOpenPage: fn(),
   },
 } satisfies Meta<typeof PageProposalCard>
 
@@ -97,15 +96,12 @@ export const LongName: Story = {
   },
 }
 
-/** After make page: the quiet receipt with an open chip. */
+/** After make page: the card itself renders nothing (the receipt lives in the composer's MadePageActions). */
 export const Made: Story = {
   args: { status: 'accepted' },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getByText('page made')).toBeInTheDocument()
-    await expect(
-      canvas.getByRole('button', { name: 'open renovation blockers' })
-    ).toBeInTheDocument()
     await expect(canvas.queryByRole('button', { name: 'make page' })).not.toBeInTheDocument()
+    await expect(canvas.queryByText('page made')).not.toBeInTheDocument()
   },
 }

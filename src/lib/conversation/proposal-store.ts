@@ -208,10 +208,18 @@ export type ProposalAction =
    *  pending card settles — a second make page on a settled card is a no-op
    *  (G9: a double ↵ must not make two pages). Clears any error. */
   | { kind: 'settlePageProposal'; id: string; status: 'accepted' | 'rejected'; pageId?: string }
-  /** The write landed: stamp the made page's id on an accepted card. */
-  | { kind: 'notePageMade'; id: string; pageId: string }
+  /** The write landed: stamp the made page's id on an accepted card. `recordId`
+   *  (the change-log record's own id, dispatched once `acceptCreatePageRecord`
+   *  resolves) arrives a tick later than `pageId` — a second `notePageMade` with
+   *  it set is how the card learns which undo step is its own. */
+  | { kind: 'notePageMade'; id: string; pageId: string; recordId?: string }
   /** The write failed: the card returns to pending, carrying the reason. */
   | { kind: 'revertPageProposal'; id: string; error?: string }
+  /** KAN-179 — undo took the made-page record back to `undone` (the backend's
+   *  own write; this dispatches nothing to the log). Settles the card as
+   *  `rejected` — the same terminal status cancel leaves it in — so the answer
+   *  it came from offers **make this a page** again, not a stale draft. */
+  | { kind: 'undoMadePage'; id: string }
   | { kind: 'reseed'; resolutions: ConversationResolutions }
   | { kind: 'reset' }
 
@@ -451,7 +459,11 @@ export function proposalReducer(state: ProposalState, action: ProposalAction): P
         ...state,
         pageProposals: {
           ...state.pageProposals,
-          [action.id]: { ...current, pageId: action.pageId },
+          [action.id]: {
+            ...current,
+            pageId: action.pageId,
+            ...(action.recordId ? { recordId: action.recordId } : {}),
+          },
         },
       }
     }
@@ -459,8 +471,9 @@ export function proposalReducer(state: ProposalState, action: ProposalAction): P
     case 'revertPageProposal': {
       const current = state.pageProposals[action.id]
       if (!current) return state
-      const { pageId: _drop, ...rest } = current
+      const { pageId: _drop, recordId: _dropRecord, ...rest } = current
       void _drop
+      void _dropRecord
       const pageProposalErrors = { ...state.pageProposalErrors }
       if (action.error) pageProposalErrors[action.id] = action.error
       else delete pageProposalErrors[action.id]
@@ -468,6 +481,18 @@ export function proposalReducer(state: ProposalState, action: ProposalAction): P
         ...state,
         pageProposals: { ...state.pageProposals, [action.id]: { ...rest, status: 'proposed' } },
         pageProposalErrors,
+      }
+    }
+
+    case 'undoMadePage': {
+      const current = state.pageProposals[action.id]
+      if (!current || current.status !== 'accepted') return state
+      const { pageId: _drop, recordId: _dropRecord, ...rest } = current
+      void _drop
+      void _dropRecord
+      return {
+        ...state,
+        pageProposals: { ...state.pageProposals, [action.id]: { ...rest, status: 'rejected' } },
       }
     }
 
