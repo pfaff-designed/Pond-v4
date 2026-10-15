@@ -20,6 +20,7 @@ import {
   viewCollectionId,
   viewFrameState,
   POND_BLOCK_EMPTY_ACTION_WIRED,
+  POND_BLOCK_FILTERED_EMPTY_LINE,
   POND_BLOCK_KINDS,
   POND_BLOCK_STATES,
   type BlockFrame,
@@ -27,6 +28,7 @@ import {
   type PondBlockState,
 } from '@/lib/modules/block-frame'
 import { GANTT_EMPTY_LINE } from '@/lib/modules/view/kinds'
+import { activeSavedView } from '@/lib/modules/view/schema'
 import { addTodoItem } from '@/lib/modules/todo/view'
 import { addTableRow } from '@/lib/modules/table/view'
 import { addEntry } from '@/lib/modules/entries/view'
@@ -404,6 +406,54 @@ describe('viewFrameState — a dateless list/gantt steps aside so the view’s o
     expect(viewFrameState(block, [], [], null, dateSchema)).toEqual({
       state: 'empty',
       line: GANTT_EMPTY_LINE,
+    })
+  })
+})
+
+// ── activeSavedView feeding the engine for a non-first active view (KAN-321) ─────
+
+describe('blockFrame / viewFrameState on activeSavedView — a views-shaped block’s non-first active view', () => {
+  const mixed: ViewBlock = {
+    id: 'v',
+    type: 'view',
+    mode: 'board',
+    views: [
+      { id: 'view-board', label: 'board', kind: 'board' },
+      { id: 'view-gantt', label: 'timeline', kind: 'gantt' },
+    ],
+    activeViewId: 'view-board',
+  }
+
+  it('a dateless schema: the resolved gantt view steps aside (rest), not the board’s', () => {
+    const resolved = activeSavedView(mixed, 'view-gantt')
+    const frame = blockFrame(resolved)
+    expect(frame).toEqual({ kind: 'table', heading: 'timeline', headNote: '' })
+    expect(viewFrameState(resolved, [], [], frame, textOnlySchema)).toEqual({ state: 'rest' })
+  })
+
+  const filterable: ViewBlock = {
+    id: 'v',
+    type: 'view',
+    mode: 'table',
+    views: [
+      { id: 'view-all', label: 'all', kind: 'table' },
+      {
+        id: 'view-blocked',
+        label: 'blocked',
+        kind: 'table',
+        config: { filter: { property: 'p-status', op: 'eq', value: 'o-nope' } },
+      },
+    ],
+    activeViewId: 'view-all',
+  }
+
+  it('a filtered-nothing saved view: the filtered-empty line', () => {
+    const resolved = activeSavedView(filterable, 'view-blocked')
+    const frame = blockFrame(resolved)
+    const rows = [{ id: 'r1' }]
+    expect(viewFrameState(resolved, rows, [], frame, textOnlySchema)).toEqual({
+      state: 'empty',
+      line: POND_BLOCK_FILTERED_EMPTY_LINE,
     })
   })
 })

@@ -43,6 +43,9 @@ import {
 } from '@/lib/modules/block-frame'
 import { useCollectionRows } from '@/lib/modules/view/use-collection-rows'
 import { applyView } from '@/lib/modules/view/apply'
+import { activeSavedView } from '@/lib/modules/view/schema'
+import { ActiveViewSelectionContext } from '@/lib/modules/view/active-view-context'
+import { ViewBar, type ViewBarView } from '@/components/molecules/ViewBar'
 import { CHART_EMPTY_LINE } from '@/lib/modules/chart/card'
 import { addTodoItem } from '@/lib/modules/todo/view'
 import { addTableRow } from '@/lib/modules/table/view'
@@ -1922,6 +1925,17 @@ function BlockEditor({
 }) {
   const [dragArmed, setDragArmed] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
+  // KAN-321: the empty-state fetch must read whichever saved view the bar has
+  // switched to, not the block's top-level mode/filter.
+  const [activeViewId, setActiveViewId] = useState<string | undefined>(undefined)
+  const resolvedBlock = block.type === 'view' ? activeSavedView(block, activeViewId) : block
+  // Live-verifier ruling (a): the CARD choice is read off the persisted block, not
+  // the active saved view — a views-shaped block keeps ONE frame (bare branch, or
+  // the same PondBlock card) across every view it holds, so the head row and the
+  // bar never remount on a tab click. `block.mode` never changes as the bar
+  // switches (only `views[].config` does), so this is already stable for a
+  // views-shaped block; it only matters here because it used to read
+  // `resolvedBlock` instead, whose mode DOES track the active view.
   const frame = blockFrame(block)
   const slash = useSlashLine({
     block,
@@ -1952,19 +1966,58 @@ function BlockEditor({
     }),
     [previewAnchorRef, slashSize]
   )
-  const { state, onEmptyAction, emptyLine } = useBlockEmptyState(block, frame, pageId, onChange)
+  const { state, onEmptyAction, emptyLine } = useBlockEmptyState(
+    resolvedBlock,
+    frame,
+    pageId,
+    onChange
+  )
+
+  // The PondBlock-card and no-card branches below sit at different tree depths, so
+  // flipping `frame` (e.g. board → timeline) remounts the module view underneath —
+  // CollectionView's own `localActiveViewId` would then reseed from the block's
+  // PERSISTED `activeViewId` and silently revert the bar to its stored tab. Carrying
+  // the bar's live selection through `activeViewId` here lets the remount reseed to
+  // the same tab instead.
+  const moduleData = block.type === 'view' && activeViewId ? { ...block, activeViewId } : block
+
+  // KAN-321 fix: `state === 'empty'` swaps `children` (the module view, bar
+  // included) for `PondBlockEmpty` below — a views-shaped block's active saved
+  // view with an emptying filter would otherwise strand the person with no tab
+  // back to one that isn't. Rendered through `PondBlock`'s `headBar` slot,
+  // which sits above whichever body (bar-and-rows or the empty box) draws.
+  const emptyStateViewBar =
+    state === 'empty' && block.type === 'view' && block.views && block.views.length > 0 ? (
+      <ViewBar
+        views={block.views.map((v): ViewBarView => ({ id: v.id, label: v.label ?? v.kind }))}
+        activeId={activeViewId ?? block.activeViewId ?? block.views[0].id}
+        onSelect={setActiveViewId}
+        showAddView={false}
+      />
+    ) : undefined
 
   const view = (
     <SlashLineContext.Provider value={slash.handleSlashLine}>
-      <ModuleView
-        type={block.type}
-        data={block}
-        editable
-        onChange={(next) => {
-          slash.handleTextChange(next as Block)
-          onChange(next as Block)
-        }}
-      />
+      <ActiveViewSelectionContext.Provider value={setActiveViewId}>
+        <ModuleView
+          type={block.type}
+          data={moduleData}
+          editable
+          onChange={(next) => {
+            // `moduleData` carries the bar's LIVE `activeViewId` (above), so a config
+            // edit's `applyConfigPatch` spread would otherwise write it into the
+            // persisted block — switching the bar is reading, not editing (#421).
+            // Restore the block's own persisted `activeViewId` before this leaves
+            // `BlockCanvas`; the views-array patch itself already landed correctly.
+            const committed =
+              block.type === 'view'
+                ? ({ ...(next as ViewBlock), activeViewId: block.activeViewId } as Block)
+                : (next as Block)
+            slash.handleTextChange(committed)
+            onChange(committed)
+          }}
+        />
+      </ActiveViewSelectionContext.Provider>
     </SlashLineContext.Provider>
   )
 
@@ -2205,7 +2258,8 @@ function BlockEditor({
           state={state}
           onEmptyAction={onEmptyAction}
           emptyLine={emptyLine}
-          emptyBox={blockEmptyBox(block)}
+          emptyBox={blockEmptyBox(resolvedBlock)}
+          headBar={emptyStateViewBar}
           size={menuSize}
         >
           {view}

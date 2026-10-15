@@ -241,6 +241,16 @@ export interface PondBlockProps {
    */
   emptyBox?: BlockEmptyBox
   /**
+   * KAN-321: a views-shaped block's saved-view bar, kept reachable when the
+   * active saved view's own filter empties the card — `empty` swaps `children`
+   * (the module view, bar included) for `PondBlockEmpty`, so without this slot
+   * a filtered-empty saved view has no tab back to one that isn't. Rendered
+   * above the body in EVERY state the host passes it for; the host only wires
+   * it while `state === 'empty'`, since every other state already draws the
+   * bar inside `children`.
+   */
+  headBar?: ReactNode
+  /**
    * The tombstone's facts (#240). What the view showed — the deleted DATABASE for a
    * view block (7a), defaulting to `heading` — and when it went and for how long it
    * can come back. All three are fixtures until #199 lands `deleted_at` and the
@@ -275,6 +285,7 @@ export function PondBlock({
   onEmptyAction,
   emptyLine,
   emptyBox = 'box',
+  headBar,
   deletedName,
   deletedOn,
   restoreWindow,
@@ -376,6 +387,7 @@ export function PondBlock({
           {loading ? BLOCK_LOADING_NOTE : tombed ? POND_BLOCK_TOMB_NOTE : headNote}
         </span>
       </div>
+      {headBar}
       {body}
     </div>
   )

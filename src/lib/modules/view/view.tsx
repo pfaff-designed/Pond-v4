@@ -18,13 +18,14 @@
  * module, `collection-calendar.tsx` (#262).
  */
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { ModuleViewProps } from '../types'
 import type { ViewBlock, ViewSavedView } from './schema'
 import { useSiblingBlocks } from '../sibling-context'
 import { viewCollectionId } from '../block-frame'
 import { useCollectionRows } from './use-collection-rows'
-import { applyConfigPatch, resolveActiveView } from './schema'
+import { activeSavedView, applyConfigPatch } from './schema'
+import { ActiveViewSelectionContext } from './active-view-context'
 import {
   applyView,
   displayValue,
@@ -244,30 +245,27 @@ export function CollectionView({
     config.views?.length ? config.activeViewId ?? config.views[0].id : undefined
   )
 
+  // KAN-321: BlockCanvas needs the bar's selection too, to resolve the block's
+  // frame — but only when it has mounted a provider (BlockCanvas, not a bare
+  // story/test render of CollectionView).
+  const notifyActiveViewSelected = useContext(ActiveViewSelectionContext)
+  const handleSelectView = useCallback(
+    (id: string) => {
+      setLocalActiveViewId(id)
+      notifyActiveViewSelected?.(id)
+    },
+    [notifyActiveViewSelected]
+  )
+
   // KAN-32: every mode/groupBy/sort/filter/chart/bigNumber read below runs off the
   // ACTIVE saved view, never the raw block — a `views`-shaped block's other saved
-  // views must never leak into what renders. `activeConfig` mirrors the active
-  // view's kind+config onto a `ViewBlock` shape so every reader below (most of
-  // which predate `views[]`) keeps reading the same fields it always has; on a
-  // legacy block (no `views`) `resolveActiveView` mirrors the top level back, so
-  // `activeConfig` is field-for-field identical to `config`.
-  const activeConfig: ViewBlock = useMemo(() => {
-    const resolved = resolveActiveView(
-      config.views && localActiveViewId ? { ...config, activeViewId: localActiveViewId } : config
-    )
-    return {
-      ...config,
-      mode: resolved.kind,
-      groupBy: resolved.config.groupBy,
-      sort: resolved.config.sort,
-      filter: resolved.config.filter,
-      startDate: resolved.config.startDate,
-      endDate: resolved.config.endDate,
-      chart: resolved.config.chart,
-      bigNumber: resolved.config.bigNumber,
-      collectionId: resolved.config.collectionId,
-    }
-  }, [config, localActiveViewId])
+  // views must never leak into what renders. `activeSavedView` (KAN-321) mirrors
+  // the active view's kind+config onto a `ViewBlock` shape so every reader below
+  // (most of which predate `views[]`) keeps reading the same fields it always has.
+  const activeConfig: ViewBlock = useMemo(
+    () => activeSavedView(config, localActiveViewId),
+    [config, localActiveViewId]
+  )
 
   const processed = useMemo(
     () => (schema ? applyView(rows, schema, activeConfig) : []),
@@ -336,7 +334,7 @@ export function CollectionView({
         recordCount={rows.length}
         savedViews={config.views}
         activeViewId={localActiveViewId}
-        onSelectView={config.views ? setLocalActiveViewId : undefined}
+        onSelectView={config.views ? handleSelectView : undefined}
         showAddView={!!editable}
         editable={editable}
         onConfigChange={onConfigChange ? handleConfigChange : undefined}
