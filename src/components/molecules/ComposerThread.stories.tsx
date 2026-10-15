@@ -96,13 +96,16 @@ const Answer = ({ text, actions }: { text: string; actions: boolean }) => (
         onAskAgain={fn()}
         onStop={fn()}
         onClose={fn()}
+        onMaximize={fn()}
+        onMinimize={fn()}
       />
     )}
   </div>
 )
 
 const LatestTurnBody = ({ latest }: { latest: LatestTurn }) => {
-  if (latest === 'error') return <AnswerError onAskAgain={fn()} />
+  if (latest === 'error')
+    return <AnswerError onAskAgain={fn()} onMaximize={fn()} onMinimize={fn()} />
   if (latest === 'proposing')
     return (
       <ModuleDiffCard
@@ -126,7 +129,17 @@ const ThreadFrame = ({ theme, turns, latest = 'thread' }: ThreadProps) => {
       className={`relative h-[40rem] w-[1180px] bg-mn-surface ${theme === 'ink' ? 'dark' : ''}`}
     >
       <TerminalDrawer collapsed={false} onExpand={fn()} footer={<div>line</div>}>
-        {turns > 1 && <ThreadHead area="life" turns={turns} onNewThread={fn()} onClose={fn()} />}
+        {turns > 1 && (
+          <ThreadHead
+            area="life"
+            turns={turns}
+            onNewThread={fn()}
+            onClose={fn()}
+            maximized={false}
+            onMaximize={fn()}
+            onMinimize={fn()}
+          />
+        )}
         <div className="flex flex-col gap-[14px]">
           {folded > 0 && <EarlierTurns count={folded} onExpand={() => setOpen(true)} />}
           {shown.map((n) => (
@@ -182,7 +195,7 @@ async function assertThreadValues(root: HTMLElement, theme: Theme) {
     1
   )
   await expectInk(getComputedStyle(within(head).getByText('3 turns')).color, theme, 0.68)
-  const close = within(head).getByRole('button', { name: 'Close composer' })
+  const close = within(head).getByRole('button', { name: 'close' })
   await expect(px(getComputedStyle(close).width)).toBe(18)
   await expect(px(getComputedStyle(close).height)).toBe(18)
   const cross = close.querySelector('svg')!
@@ -270,7 +283,7 @@ export const ThreadMobile: Story = {
   globals: MOBILE,
   play: async ({ canvasElement }) => {
     await assertAnswerType(canvasElement, 'paper', '16px')
-    const close = within(canvasElement).getByRole('button', { name: 'Close composer' })
+    const close = within(canvasElement).getByRole('button', { name: 'close' })
     await expect(px(getComputedStyle(close).width)).toBe(32)
     await expect(px(getComputedStyle(close).height)).toBe(32)
   },

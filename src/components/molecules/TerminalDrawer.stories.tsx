@@ -118,9 +118,9 @@ export const DrawsNothingButTheCard: Story = {
 }
 
 /**
- * The card never grows with the thread: it sits at 316 and the thread scrolls
+ * The card never grows with the thread: it sits at 392 and the thread scrolls
  * inside, until the person drags the handle on its top edge — never past the ⌘K
- * pill. ↑/↓ nudge it, Home/End jump to the bounds, a double-click returns to 316.
+ * pill. ↑/↓ nudge it, Home/End jump to the bounds, a double-click returns to 392.
  */
 export const WithTheHandle: Story = {
   name: 'with the handle',
@@ -184,7 +184,7 @@ const Themed = (theme: Theme) =>
 
 async function assertTab(canvasElement: HTMLElement, theme: Theme, landed: boolean) {
   const shell = shellOf(canvasElement).getBoundingClientRect()
-  const tab = within(canvasElement).getByRole('region', { name: 'composer' })
+  const tab = within(canvasElement).getByRole('region', { name: 'Composer tab' })
   const box = tab.getBoundingClientRect()
   const style = getComputedStyle(tab)
 
@@ -294,8 +294,46 @@ export const CollapsedMobile: Story = {
     ),
   ],
   play: async ({ canvasElement }) => {
-    const tab = within(canvasElement).getByRole('region', { name: 'composer' })
+    const tab = within(canvasElement).getByRole('region', { name: 'Composer tab' })
     await expect(Math.round(tab.getBoundingClientRect().width)).toBe(360)
+  },
+}
+
+/**
+ * Collapsed, the card stays mounted — grip, thread and footer intact, just slid
+ * off screen — so it must not go on offering its controls to Tab. `inert`
+ * (not the hand-set `tabIndex` it replaces) pulls the whole subtree out of the
+ * tab order; the tab that visually took its place is what Tab reaches instead.
+ * `userEvent.tab()` is synthetic and does not know about `inert` in jsdom, so
+ * this has to live here rather than in a jest test — same reasoning as
+ * `PondBlock.stories.tsx`'s `DisabledIsInert`.
+ */
+export const CollapsedCardIsInert: Story = {
+  name: 'collapsed card is inert',
+  args: { collapsed: true, children: <Thread turns={1} /> },
+  render: (args) => (
+    <div className="flex flex-col items-start gap-2">
+      <button data-testid="before">before</button>
+      <TerminalDrawer {...args} />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const card = canvasElement.querySelector<HTMLElement>('[data-part="composer-card"]')!
+    await expect(card.hasAttribute('inert')).toBe(true)
+
+    // The tab's "Open composer" button sits right after "before" in the DOM,
+    // then the card's textarea and its attach / research buttons. A real
+    // `.focus()` call on an `inert` element is a no-op (unlike jsdom, which has
+    // no such guard) — so a Tab that computes one of those as its destination
+    // just leaves focus exactly where it was, never inside the card.
+    canvas.getByTestId('before').focus()
+    await userEvent.tab()
+    await expect(document.activeElement).toBe(canvas.getByRole('button', { name: 'Open composer' }))
+    for (let i = 0; i < 3; i++) {
+      await userEvent.tab()
+      await expect(card.contains(document.activeElement)).toBe(false)
+    }
   },
 }
 

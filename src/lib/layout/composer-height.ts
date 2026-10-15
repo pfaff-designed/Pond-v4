@@ -18,11 +18,11 @@ import { COMPOSER_BOTTOM_INSET } from '@/lib/layout/composer-clearance'
 export const COMPOSER_HEIGHT_KEY = 'pond:composer-height'
 /**
  * The card with a thread, until the person resizes it: the tallest state the
- * board draws (`PondComposer` `proposing`, measured at 316 with the board's own
+ * board draws (`PondComposer` `proposing`, measured at 392 with the board's own
  * copy), so every drawn state — a diff card's accept and reject included — fits
  * without scrolling.
  */
-export const COMPOSER_DEFAULT_HEIGHT = 316
+export const COMPOSER_DEFAULT_HEIGHT = 392
 /** Floor: the thread head, one line of thread, the line and the toolbar. */
 export const COMPOSER_MIN_HEIGHT = 160
 /** Arrow-key nudge per press on the handle. */

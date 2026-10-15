@@ -518,10 +518,9 @@ describe('TerminalDrawer — the PondComposer card: floating glass, 560, 24 off 
 
   it('collapsed is the tab: 30 high on the bottom edge, a pill with ⌘J, and it brings the card back', () => {
     const onExpand = jest.fn()
-    renderDrawer({ collapsed: true, onExpand })
-    expect(screen.queryByText('body')).toBeNull()
-    expect(screen.queryByText('footer')).toBeNull()
-    const tab = screen.getByRole('region', { name: 'composer' })
+    const { container } = renderDrawer({ collapsed: true, onExpand })
+    const tab = container.querySelector('[data-part="composer-tab"]')!
+    expect(tab.textContent).not.toMatch(/body|footer/)
     const classes = tab.className.split(' ')
     for (const cls of [
       'mn-glass',
@@ -539,12 +538,97 @@ describe('TerminalDrawer — the PondComposer card: floating glass, 560, 24 off 
     expect(onExpand).toHaveBeenCalledTimes(1)
   })
 
+  it('the collapsed tab is its own standalone, always-mounted element, distinct from the card', () => {
+    const onExpand = jest.fn()
+    const { container, rerender } = renderDrawer({ collapsed: true, onExpand })
+    const collapsedTab = container.querySelector('[data-part="composer-tab"]')
+    expect(collapsedTab).not.toBeNull()
+    expect(collapsedTab!.getAttribute('aria-label')).toBe('Composer tab')
+    expect(collapsedTab!.hasAttribute('aria-hidden')).toBe(false)
+    const openButton = collapsedTab!.querySelector('button')!
+    fireEvent.click(openButton)
+    expect(onExpand).toHaveBeenCalledTimes(1)
+
+    // Not collapsed: the tab stays mounted — just hidden — beside the card, and
+    // the two don't collide on the card's "composer" region name.
+    rerender(
+      <TerminalDrawer collapsed={false} onExpand={onExpand} footer={<div>footer</div>}>
+        <div>body</div>
+      </TerminalDrawer>
+    )
+    const openTab = container.querySelector('[data-part="composer-tab"]')
+    expect(openTab).not.toBeNull()
+    expect(openTab!.getAttribute('aria-hidden')).toBe('true')
+    expect(openTab!.className.split(' ')).toContain('pointer-events-none')
+    expect(screen.queryAllByRole('region', { name: 'composer' })).toHaveLength(1)
+    expect(container.querySelector('[data-part="composer-card"]')).not.toBeNull()
+  })
+
   it('landed adds the dot and “pond answered” to the pill — never a count or a badge', () => {
-    renderDrawer({ collapsed: true, landed: true })
+    const { container } = renderDrawer({ collapsed: true, landed: true })
     expect(screen.getByText('pond answered')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /pond answered/ })).toBeInTheDocument()
-    const tab = screen.getByRole('region', { name: 'composer' })
+    const tab = container.querySelector('[data-part="composer-tab"]')!
     expect(tab.querySelector('[data-part="landed-dot"]')).not.toBeNull()
+  })
+
+  it('maximized fills the canvas beside the rail — ignores height, never COMPOSER_DEFAULT_HEIGHT', () => {
+    renderDrawer({ maximized: true, height: 420 })
+    const card = screen.getByRole('region', { name: 'composer' })
+    expect(card.style.height).toBe('')
+    expect(card.style.maxHeight).toBe('')
+    expect(card.style.top).toBe(`${COMPOSER_TOP_CLEARANCE}px`)
+    expect(card.style.bottom).toBe(`${COMPOSER_BOTTOM_INSET}px`)
+    expect(card.style.left).toBe(`${20 + RAIL_WIDTH_PX + 20}px`)
+    expect(card.style.right).toBe('20px')
+    const classes = card.className.split(' ')
+    expect(classes).not.toContain('left-1/2')
+    expect(classes).not.toContain('bottom-6')
+  })
+
+  it('maximized in zen insets left 20, not the rail\'s 246 — the rail is hidden there', () => {
+    renderDrawer({ maximized: true, zen: true, height: 420 })
+    const card = screen.getByRole('region', { name: 'composer' })
+    expect(card.style.left).toBe('20px')
+    expect(card.style.right).toBe('20px')
+  })
+
+  it('minimized is the one-line rest composer — the thread stays mounted, just hidden', () => {
+    renderDrawer({ minimized: true, height: 420 })
+    const card = screen.getByRole('region', { name: 'composer' })
+    expect(card.style.height).toBe('')
+    expect(card.hasAttribute('data-sized')).toBe(false)
+    expect(screen.queryByRole('separator')).toBeNull()
+    const thread = card.querySelector('[data-part="composer-thread"]')!
+    expect((thread as HTMLElement).hidden).toBe(true)
+    expect(thread.textContent).toBe('body')
+    expect(screen.getByText('footer')).toBeInTheDocument()
+  })
+
+  it('collapsed slides the persistent card off screen instead of unmounting it', () => {
+    const { container, rerender } = renderDrawer({ collapsed: true })
+    const card = container.querySelector('[data-part="composer-card"]')!
+    const classes = card.className.split(' ')
+    expect(classes).toContain('motion-resolve')
+    expect(classes).toContain('translate-y-full')
+    expect(classes).toContain('opacity-0')
+    expect(classes).toContain('pointer-events-none')
+    expect(card.getAttribute('aria-hidden')).toBe('true')
+    // Grip/thread/footer are still mounted under it, not swapped for the tab.
+    expect(card.textContent).toBe('bodyfooter')
+
+    rerender(
+      <TerminalDrawer collapsed={false} onExpand={jest.fn()} footer={<div>footer</div>}>
+        <div>body</div>
+      </TerminalDrawer>
+    )
+    // Same node: the card persisted across the toggle, only its slide classes changed.
+    expect(container.querySelector('[data-part="composer-card"]')).toBe(card)
+    const restoredClasses = card.className.split(' ')
+    expect(restoredClasses).not.toContain('translate-y-full')
+    expect(restoredClasses).not.toContain('opacity-0')
+    expect(restoredClasses).not.toContain('pointer-events-none')
+    expect(card.hasAttribute('aria-hidden')).toBe(false)
   })
 })
 
@@ -585,6 +669,39 @@ describe('ComposerHandle — the card never grows with the thread; only the pers
 
   afterEach(() => window.localStorage.clear())
 
+  it('hides the grip while maximized — maximized is a state, never a dragged/stored height', () => {
+    const onHeightChange = jest.fn()
+    const onHeightCommit = jest.fn()
+    const { rerender } = render(
+      <TerminalDrawer
+        collapsed={false}
+        onExpand={jest.fn()}
+        footer={<div>footer</div>}
+        height={300}
+        maximized
+        onHeightChange={onHeightChange}
+        onHeightCommit={onHeightCommit}
+      >
+        <div>body</div>
+      </TerminalDrawer>
+    )
+    expect(screen.queryByRole('separator', { name: 'Resize composer' })).toBeNull()
+
+    rerender(
+      <TerminalDrawer
+        collapsed={false}
+        onExpand={jest.fn()}
+        footer={<div>footer</div>}
+        height={300}
+        onHeightChange={onHeightChange}
+        onHeightCommit={onHeightCommit}
+      >
+        <div>body</div>
+      </TerminalDrawer>
+    )
+    expect(screen.getByRole('separator', { name: 'Resize composer' })).toBeInTheDocument()
+  })
+
   it('rides the card while there is a thread — not at rest, not without a height owner', () => {
     renderSized({}, null)
     expect(screen.queryByRole('separator')).toBeNull()
@@ -600,13 +717,16 @@ describe('ComposerHandle — the card never grows with the thread; only the pers
 
   it('with a thread it sits at the default, whatever the thread holds — capped below the ⌘K pill', () => {
     const { card } = renderSized()
-    expect(COMPOSER_DEFAULT_HEIGHT).toBe(316)
-    expect(card.style.height).toBe('316px')
+    expect(COMPOSER_DEFAULT_HEIGHT).toBe(392)
+    expect(card.style.height).toBe('392px')
     expect(card.style.maxHeight).toBe(`calc(100% - ${COMPOSER_TOP_CLEARANCE + 24}px)`)
     expect(card.hasAttribute('data-sized')).toBe(true)
     cleanup()
     // No height owner (a bare story) changes nothing: still the default, just no handle.
-    expect(renderDrawer().container.querySelector('section')!.style.height).toBe('316px')
+    expect(
+      renderDrawer().container.querySelector<HTMLElement>('[data-part="composer-card"]')!.style
+        .height
+    ).toBe('392px')
     cleanup()
     const sized = renderSized({ height: 420 }).card
     expect(sized.style.height).toBe('420px')
@@ -724,6 +844,41 @@ describe('composer clearance — the card publishes its real footprint, the surf
     const height = jest.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(30)
     const { read } = renderInShell(true)
     expect(read()).toBe('30px')
+    height.mockRestore()
+  })
+
+  it('republishes on a maximized/minimized toggle, not just a collapsed one — so composerBottomBound stays live', () => {
+    const height = jest.spyOn(HTMLElement.prototype, 'offsetHeight', 'get')
+    height.mockReturnValue(231)
+    const shell = document.createElement('div')
+    shell.setAttribute('data-part', 'shell')
+    document.body.appendChild(shell)
+    const read = () => shell.style.getPropertyValue(COMPOSER_CLEARANCE_VAR)
+
+    const { rerender } = render(
+      <TerminalDrawer collapsed={false} onExpand={jest.fn()} footer={<div>footer</div>}>
+        <div>body</div>
+      </TerminalDrawer>,
+      { container: shell }
+    )
+    expect(read()).toBe('255px')
+
+    height.mockReturnValue(600)
+    rerender(
+      <TerminalDrawer collapsed={false} maximized onExpand={jest.fn()} footer={<div>footer</div>}>
+        <div>body</div>
+      </TerminalDrawer>
+    )
+    expect(read()).toBe('624px')
+
+    height.mockReturnValue(101)
+    rerender(
+      <TerminalDrawer collapsed={false} minimized onExpand={jest.fn()} footer={<div>footer</div>}>
+        <div>body</div>
+      </TerminalDrawer>
+    )
+    expect(read()).toBe('125px')
+
     height.mockRestore()
   })
 })

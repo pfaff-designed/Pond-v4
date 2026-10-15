@@ -58,6 +58,9 @@ import { pageEyebrowClass } from '@/components/atoms/kicker'
 import { ANSWER_PROSE_CLASS } from '@/components/molecules/Markdown'
 import { dissolveConversation } from '@/lib/conversation/client'
 import { requestComposerToggle } from '@/lib/terminal-focus'
+import { COMPOSER_BOTTOM_INSET } from '@/lib/layout/composer-clearance'
+import { COMPOSER_DEFAULT_HEIGHT, COMPOSER_TOP_CLEARANCE } from '@/lib/layout/composer-height'
+import { RAIL_WIDTH_PX } from '@/lib/layout/rail-width'
 
 const renderTerminal = () =>
   render(
@@ -339,7 +342,7 @@ describe('the composer card — the thread: head, fold, turns', () => {
     fireEvent.click(screen.getByRole('button', { name: 'new thread' }))
     await waitFor(() => expect(dissolveConversation).toHaveBeenCalled())
 
-    fireEvent.click(screen.getByRole('button', { name: 'Close composer' }))
+    fireEvent.click(screen.getByRole('button', { name: 'close' }))
     expect(await screen.findByRole('button', { name: 'Open composer' })).toBeInTheDocument()
   })
 
@@ -349,7 +352,7 @@ describe('the composer card — the thread: head, fold, turns', () => {
     await waitReady()
 
     expect(document.querySelector('[data-part="thread-head"]')).not.toBeNull()
-    expect(screen.getAllByRole('button', { name: 'Close composer' })).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: 'close' })).toHaveLength(1)
   })
 
   it('only the latest turn stays open: the earlier ones fold, and the fold opens them', async () => {
@@ -407,9 +410,9 @@ describe('the composer card — a reachable close in every one-turn state', () =
     await waitReady()
 
     expect(document.querySelector('[data-part="error-row"]')).not.toBeNull()
-    expect(screen.getAllByRole('button', { name: 'Close composer' })).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: 'close' })).toHaveLength(1)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Close composer' }))
+    fireEvent.click(screen.getByRole('button', { name: 'close' }))
     expect(await screen.findByRole('button', { name: 'Open composer' })).toBeInTheDocument()
   })
 
@@ -435,15 +438,147 @@ describe('the composer card — a reachable close in every one-turn state', () =
     await waitReady()
 
     expect(screen.getByRole('group', { name: '1 diff' })).toBeInTheDocument()
-    expect(screen.getAllByRole('button', { name: 'Close composer' })).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: 'close' })).toHaveLength(1)
 
     // An explicit × click overrides the hold outright — the diff stays
     // proposed in the change log, only the card collapses.
-    fireEvent.click(screen.getByRole('button', { name: 'Close composer' }))
+    fireEvent.click(screen.getByRole('button', { name: 'close' }))
     expect(await screen.findByRole('button', { name: 'Open composer' })).toBeInTheDocument()
 
     // Reopening shows the same pending card — the proposal was never touched.
     fireEvent.click(screen.getByRole('button', { name: 'Open composer' }))
     expect(screen.getByRole('group', { name: '1 diff' })).toBeInTheDocument()
+  })
+})
+
+describe('the composer card — maximize fills the canvas (KAN-323)', () => {
+  const card = () => screen.getByRole('region', { name: 'composer' })
+
+  it('opens unmaximized, click maximize fills the canvas, click again restores the dragged height', async () => {
+    mockMessages = thread(1)
+    renderTerminal()
+    await waitReady()
+
+    expect(card().style.top).toBe('')
+    expect(card().getAttribute('data-maximized')).toBeNull()
+    expect(card().style.height).toBe(`${COMPOSER_DEFAULT_HEIGHT}px`)
+
+    fireEvent.click(screen.getByRole('button', { name: 'maximize' }))
+    expect(card().getAttribute('data-maximized')).toBe('true')
+    expect(card().style.top).toBe(`${COMPOSER_TOP_CLEARANCE}px`)
+    expect(card().style.bottom).toBe(`${COMPOSER_BOTTOM_INSET}px`)
+    expect(card().style.left).toBe(`${20 + RAIL_WIDTH_PX + 20}px`)
+    expect(card().style.height).toBe('')
+
+    fireEvent.click(screen.getByRole('button', { name: 'restore' }))
+    expect(card().getAttribute('data-maximized')).toBeNull()
+    expect(card().style.top).toBe('')
+    expect(card().style.height).toBe(`${COMPOSER_DEFAULT_HEIGHT}px`)
+  })
+
+  it('esc restores a maximized card instead of stepping the composer back', async () => {
+    const user = userEvent.setup()
+    mockMessages = thread(1)
+    renderTerminal()
+    await waitReady()
+
+    await user.click(screen.getByRole('button', { name: 'maximize' }))
+    expect(card().getAttribute('data-maximized')).toBe('true')
+
+    await user.keyboard('{Escape}')
+    expect(card().getAttribute('data-maximized')).toBeNull()
+    // Esc only undid the maximize — the composer itself is still open.
+    expect(screen.queryByRole('button', { name: 'Open composer' })).toBeNull()
+  })
+})
+
+describe('the composer card — minimize keeps the thread (KAN-323)', () => {
+  const card = () => screen.getByRole('region', { name: 'composer' })
+
+  it('click minimize hides the thread at rest height; typing brings it back at the same height', async () => {
+    const user = userEvent.setup()
+    mockMessages = thread(1)
+    renderTerminal()
+    await waitReady()
+
+    expect(card().getAttribute('data-minimized')).toBeNull()
+    expect(card().style.height).toBe(`${COMPOSER_DEFAULT_HEIGHT}px`)
+
+    await user.click(screen.getByRole('button', { name: 'minimize' }))
+    expect(card().getAttribute('data-minimized')).toBe('true')
+    expect(card().style.height).toBe('')
+    expect(document.querySelector('[data-part="composer-thread"]')).toHaveAttribute('hidden')
+
+    await user.type(line(), 'still here?')
+    expect(card().getAttribute('data-minimized')).toBeNull()
+    expect(card().style.height).toBe(`${COMPOSER_DEFAULT_HEIGHT}px`)
+    expect(document.querySelector('[data-part="composer-thread"]')).not.toHaveAttribute('hidden')
+  })
+
+  it('focusing the line while minimized un-minimizes it even with no text typed', async () => {
+    const user = userEvent.setup()
+    mockMessages = thread(1)
+    renderTerminal()
+    await waitReady()
+
+    await user.click(screen.getByRole('button', { name: 'minimize' }))
+    expect(card().getAttribute('data-minimized')).toBe('true')
+
+    await user.click(line())
+    expect(card().getAttribute('data-minimized')).toBeNull()
+  })
+})
+
+describe('the composer card — maximize never survives minimize/close/new thread (KAN-323)', () => {
+  // `getByRole` can't find the card once closed sets `aria-hidden` — same
+  // reason `kan-323-path.test.tsx`'s own `card()` reads the part attribute.
+  const card = () => document.querySelector('[data-part="composer-card"]') as HTMLElement
+
+  it('maximize then minimize gives the one-line rest composer, not a maximized empty slab', async () => {
+    const user = userEvent.setup()
+    mockMessages = thread(2)
+    renderTerminal()
+    await waitReady()
+
+    await user.click(screen.getByRole('button', { name: 'maximize' }))
+    expect(card().getAttribute('data-maximized')).toBe('true')
+
+    await user.click(screen.getByRole('button', { name: 'minimize' }))
+    expect(card().getAttribute('data-maximized')).toBeNull()
+    expect(card().getAttribute('data-minimized')).toBe('true')
+    expect(card().style.top).toBe('')
+    expect(card().style.height).toBe('')
+  })
+
+  it('maximize then close, then ⌘J reopens unmaximized', async () => {
+    const user = userEvent.setup()
+    mockMessages = thread(2)
+    renderTerminal()
+    await waitReady()
+
+    await user.click(screen.getByRole('button', { name: 'maximize' }))
+    expect(card().getAttribute('data-maximized')).toBe('true')
+
+    await user.click(screen.getByRole('button', { name: 'close' }))
+    expect(card()).toHaveAttribute('data-collapsed', 'true')
+
+    act(() => requestComposerToggle())
+    await waitReady()
+    expect(card().getAttribute('data-maximized')).toBeNull()
+    expect(card().style.height).toBe(`${COMPOSER_DEFAULT_HEIGHT}px`)
+  })
+
+  it('maximize then new thread leaves the composer unmaximized', async () => {
+    const user = userEvent.setup()
+    mockMessages = thread(2)
+    renderTerminal()
+    await waitReady()
+
+    await user.click(screen.getByRole('button', { name: 'maximize' }))
+    expect(card().getAttribute('data-maximized')).toBe('true')
+
+    fireEvent.click(screen.getByRole('button', { name: 'new thread' }))
+    await waitFor(() => expect(dissolveConversation).toHaveBeenCalled())
+    expect(card().getAttribute('data-maximized')).toBeNull()
   })
 })

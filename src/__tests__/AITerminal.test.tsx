@@ -1262,54 +1262,7 @@ describe('"close" always reachable in zen (KAN-186, 6q f8)', () => {
     return view
   }
 
-  it('shows "close" on the very first question, even though ThreadHead needs a second turn', async () => {
-    mockMessages = [
-      { id: 'm1', role: 'user', parts: [{ type: 'text', text: 'what should i cook' }] },
-    ]
-    renderInZen()
-    await waitReady()
-
-    expect(screen.getByRole('button', { name: 'close' })).toBeInTheDocument()
-  })
-
-  it('clicking "close" collapses the card and the Pond mark returns to rest', async () => {
-    mockMessages = [
-      { id: 'm1', role: 'user', parts: [{ type: 'text', text: 'what should i cook' }] },
-    ]
-    renderInZen()
-    await waitReady()
-
-    // PATH_STEP 1 — zen starts quiet: the mark is at rest, nothing asked.
-    const askPond = screen.getByRole('button', { name: 'ask pond' })
-    expect(askPond).toHaveAttribute('aria-pressed', 'false')
-
-    // PATH_STEP 8 — the first Pond-mark press is what opens the card.
-    fireEvent.click(askPond)
-    await waitFor(() => expect(askPond).toHaveAttribute('aria-pressed', 'true'))
-
-    fireEvent.click(screen.getByRole('button', { name: 'close' }))
-
-    await waitFor(() => expect(askPond).toHaveAttribute('aria-pressed', 'false'))
-  })
-
-  it('opened from the mark with no thread at all, "close" is present and closing it focuses ask pond', async () => {
-    renderInZen()
-    await waitReady()
-
-    const askPond = screen.getByRole('button', { name: 'ask pond' })
-    fireEvent.click(askPond)
-    await waitFor(() => expect(askPond).toHaveAttribute('aria-pressed', 'true'))
-
-    const close = screen.getByRole('button', { name: 'close' })
-    expect(close).toBeInTheDocument()
-
-    fireEvent.click(close)
-
-    await waitFor(() => expect(askPond).toHaveAttribute('aria-pressed', 'false'))
-    expect(askPond).toHaveFocus()
-  })
-
-  it('still shows "close" as the card\'s last row once a thread has more than one turn', async () => {
+  it('still shows "close" as exactly one control set once a thread has more than one turn (KAN-325: the old zen-close-row is gone)', async () => {
     mockMessages = [
       { id: 'm1', role: 'user', parts: [{ type: 'text', text: 'what should i cook' }] },
       { id: 'm2', role: 'assistant', parts: [{ type: 'text', text: 'pasta' }] },
@@ -1321,13 +1274,79 @@ describe('"close" always reachable in zen (KAN-186, 6q f8)', () => {
     renderInZen()
     await waitReady()
 
-    const close = screen.getByRole('button', { name: 'close' })
-    expect(close).toBeInTheDocument()
-    const closeRow = close.closest('[data-part="zen-close-row"]')
-    expect(closeRow?.parentElement?.lastElementChild).toBe(closeRow)
+    expect(screen.getAllByRole('button', { name: 'close' })).toHaveLength(1)
 
-    fireEvent.click(close)
+    fireEvent.click(screen.getByRole('button', { name: 'close' }))
     await waitFor(() => expect(screen.queryByRole('button', { name: 'close' })).not.toBeInTheDocument())
+  })
+})
+
+describe('zen close with a pending proposal (KAN-325)', () => {
+  function renderInZen() {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const root = React.createRef<HTMLDivElement>()
+    const Entered = () => {
+      const { enterZen } = useZen()
+      return (
+        <>
+          <button onClick={() => enterZen({ onInk: false })}>enter</button>
+          <ZenComposerChrome>
+            <QueryClientProvider client={queryClient}>
+              <AITerminal />
+            </QueryClientProvider>
+          </ZenComposerChrome>
+          <ZenPill />
+        </>
+      )
+    }
+    const view = render(
+      <div ref={root}>
+        <ZenProvider scrollRoot={root}>
+          <Entered />
+        </ZenProvider>
+      </div>
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'enter' }))
+    return view
+  }
+
+  it('closes the card even while a proposal is still pending, and the proposal is still pending on reopen', async () => {
+    mockMessages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'change alpha to apple' }] },
+      {
+        id: 'a1',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'tool-propose_changes',
+            toolCallId: 'pc1',
+            state: 'input-available',
+            input: {
+              changes: [{ op: 'create', data: { type: 'text', content: 'apple one' } }],
+            },
+          },
+        ],
+      },
+    ]
+    renderInZen()
+    await waitReady()
+
+    const askPond = screen.getByRole('button', { name: 'ask pond' })
+    fireEvent.click(askPond)
+    await waitFor(() => expect(askPond).toHaveAttribute('aria-pressed', 'true'))
+
+    expect(screen.getByRole('group', { name: '1 diff' })).toBeInTheDocument()
+
+    // An explicit close click overrides the hold outright — the diff stays
+    // proposed in the change log, only the card closes (KAN-325, same bypass
+    // as KAN-318's `closedByPerson`).
+    fireEvent.click(screen.getByRole('button', { name: 'close' }))
+    await waitFor(() => expect(askPond).toHaveAttribute('aria-pressed', 'false'))
+
+    // Reopening (the mark again) shows the same pending card — untouched.
+    fireEvent.click(askPond)
+    await waitFor(() => expect(askPond).toHaveAttribute('aria-pressed', 'true'))
+    expect(screen.getByRole('group', { name: '1 diff' })).toBeInTheDocument()
   })
 })
 
@@ -1430,7 +1449,6 @@ describe('⌘J inside zen (KAN-186)', () => {
 
     act(() => requestComposerToggle())
     await waitFor(() => expect(askPond).toHaveAttribute('aria-pressed', 'true'))
-    expect(screen.getByRole('button', { name: 'close' })).toBeInTheDocument()
 
     act(() => requestComposerToggle())
     await waitFor(() => expect(askPond).toHaveAttribute('aria-pressed', 'false'))
@@ -1477,9 +1495,10 @@ describe('leaving zen restores the composer’s open state (KAN-186)', () => {
     fireEvent.click(askPond)
     await waitFor(() => expect(askPond).toHaveAttribute('aria-pressed', 'true'))
 
-    // Closing the card calls the same `collapseComposer` the ordinary composer
-    // uses — it is this collapse, not zen itself, the fix must undo on leave.
-    fireEvent.click(screen.getByRole('button', { name: 'close' }))
+    // Pressing the mark again calls the same `collapseComposer` a dedicated
+    // close button used to — it is this collapse, not zen itself, the fix
+    // must undo on leave.
+    fireEvent.click(askPond)
     await waitFor(() => expect(askPond).toHaveAttribute('aria-pressed', 'false'))
 
     fireEvent.click(screen.getByRole('button', { name: 'leave' }))
@@ -1487,5 +1506,27 @@ describe('leaving zen restores the composer’s open state (KAN-186)', () => {
     await waitFor(() =>
       expect(screen.getByRole('textbox', { name: 'Message Pond' })).toBeInTheDocument()
     )
+  })
+})
+
+describe('reopening the composer actually moves focus into the input (KAN-323)', () => {
+  it('⌘J does not focus the still-collapsed textarea, and focuses it once the reopen commits', async () => {
+    renderTerminal()
+    await waitReady()
+
+    act(() => requestComposerToggle())
+    const card = document.querySelector('[data-part="composer-card"]')
+    expect(card).toHaveAttribute('data-collapsed')
+
+    const focusSpy = jest.spyOn(HTMLTextAreaElement.prototype, 'focus')
+
+    requestComposerToggle()
+    expect(focusSpy).not.toHaveBeenCalled()
+    expect(card).toHaveAttribute('data-collapsed')
+
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('textbox')))
+    expect(focusSpy).toHaveBeenCalled()
+
+    focusSpy.mockRestore()
   })
 })

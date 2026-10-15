@@ -18,10 +18,12 @@ describe('AnswerActions close control', () => {
         onAskAgain={jest.fn()}
         onStop={jest.fn()}
         onClose={onClose}
+        onMaximize={jest.fn()}
+        onMinimize={jest.fn()}
       />
     )
 
-    const closeButton = screen.getByRole('button', { name: 'Close composer' })
+    const closeButton = screen.getByRole('button', { name: 'close' })
     expect(closeButton).toBeInTheDocument()
 
     await user.click(closeButton)

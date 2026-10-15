@@ -354,6 +354,43 @@ describe('KAN-284 — ask again on a real answer whose replacement finishes blan
   })
 })
 
+describe('KAN-324 — ask again on a real answer whose replacement errors shows exactly one control set', () => {
+  it('restores the real answer with the error row trailing it, and draws the window controls once', async () => {
+    // A genuinely one-turn thread (no fixture history): `turns.length <= 1`'s
+    // gate is what let this double through.
+    mockStoredTranscript = { messages: [], resolutions: emptyResolutions() }
+    chatStreamQueue = [CAPTURED_STREAM, ERROR_STREAM]
+    const user = userEvent.setup()
+    renderTerminal()
+    await waitUntilReady()
+
+    await user.type(
+      screen.getByRole('textbox', { name: 'Message Pond' }),
+      'which areas does this pond have? one line, no changes{Enter}'
+    )
+
+    await waitFor(() => expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining('/api/chat'), expect.anything()))
+    expect(await screen.findByText(ANSWER_TEXT)).toBeInTheDocument()
+
+    const askAgainButton = screen.getByRole('button', { name: 'ask again' })
+    await user.click(askAgainButton)
+
+    await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(2))
+
+    // The resend errored outright: the real answer it was replacing is restored
+    // verbatim, with the error row trailing it — same shape as a blank finish,
+    // just via useChat's own `error` path instead.
+    const errorRow = await screen.findByRole('alert')
+    expect(errorRow).toHaveTextContent('nothing was kept')
+    expect(screen.getByText(ANSWER_TEXT)).toBeInTheDocument()
+
+    // The restored answer still has real content, so its own row's gate (`text
+    // || isStreaming`) holds too — exactly one window-control set must draw,
+    // not one from that row AND one from the error row below it.
+    expect(document.querySelectorAll('[data-part="composer-window-controls"]')).toHaveLength(1)
+  })
+})
+
 describe('KAN-284 — PATH_STEPS end to end: a failed turn shows the error row, and ask again gets a real answer', () => {
   it('drives the real composer through an error chunk, ask again, and the saved answer', async () => {
     chatStreamQueue = [ERROR_STREAM, CAPTURED_STREAM]
