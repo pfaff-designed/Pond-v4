@@ -4,7 +4,8 @@
  * The prose moves across word for word; this sits under it.
  *
  * It is a CARD, not prose and not a bullet list: paper separated by shadow, with
- * its own eyebrow and a row per page. Read inline from the frame's markup:
+ * its own eyebrow and a row per mention (a `ref: null` mention is a plain-text
+ * row). Read inline from the frame's markup:
  * card `#FAF9EF` paper (`bg-mn-card` — the same sheet as the ground in light,
  * the lifted card on dark), radius 20 (`rounded-mn-card`), padding 16px 18px,
  * column gap 11, the standard card shadow (`shadow-mn-card` =
@@ -21,8 +22,8 @@
  * in the composer — PROJECT_RULES § two registers, split by medium.
  *
  * A note is Pond saying WHY a page is mentioned ("the one everything waits on").
- * Generating one is model work tracked separately; this renders a note when there
- * is one and lays out correctly when there is not, so no row is ever half-drawn.
+ * Notes arrive with the proposal (KAN-172); this renders a note when there is
+ * one and lays out correctly when there is not, so no row is ever half-drawn.
  */
 
 import { KindDot } from '@/components/atoms/PondAtom'
@@ -53,33 +54,36 @@ export function MentionedCard({ mentioned, onOpenMention, className }: Mentioned
       )}
     >
       <span className={pageEyebrowClass}>{MENTIONED_LABEL}</span>
-      {mentioned.map((m, i) => (
-        <div
-          key={`${m.ref ?? m.title}-${i}`}
-          data-part="mentioned-row"
-          className="border-mn-hair flex items-baseline gap-3 border-b pb-[9px] text-[14px]"
-        >
-          <KindDot />
-          <span data-part="mentioned-title" className="min-w-0 flex-1 text-foreground">
-            {m.ref ? (
-              <button
-                type="button"
-                onClick={() => onOpenMention?.(m.ref as string, m.title)}
-                className="underline-offset-2 transition-colors hover:text-mn-text-secondary hover:underline"
-              >
-                {m.title}
-              </button>
-            ) : (
-              m.title
-            )}
-          </span>
-          {m.note && (
-            <span data-part="mentioned-note" className="text-mn-text-secondary text-[12.5px]">
-              {m.note}
+      {mentioned.map((m, i) => {
+        const ref = m.ref
+        return (
+          <div
+            key={`${ref ?? m.title}-${i}`}
+            data-part="mentioned-row"
+            className="border-mn-hair flex items-baseline gap-3 border-b pb-[9px] text-[14px]"
+          >
+            <KindDot />
+            <span data-part="mentioned-title" className="min-w-0 flex-1 text-foreground">
+              {ref ? (
+                <button
+                  type="button"
+                  onClick={() => onOpenMention?.(ref, m.title)}
+                  className="underline-offset-2 transition-colors hover:text-mn-text-secondary hover:underline"
+                >
+                  {m.title}
+                </button>
+              ) : (
+                m.title
+              )}
             </span>
-          )}
-        </div>
-      ))}
+            {m.note && (
+              <span data-part="mentioned-note" className="text-mn-text-secondary text-[12.5px]">
+                {m.note}
+              </span>
+            )}
+          </div>
+        )
+      })}
     </section>
   )
 }
