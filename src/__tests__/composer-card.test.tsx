@@ -332,7 +332,7 @@ describe('the composer card — the thread: head, fold, turns', () => {
     renderTerminal()
     await waitReady()
 
-    const head = document.querySelector('[data-part="thread-head"]')!
+    const head = document.querySelector<HTMLElement>('[data-part="thread-head"]')!
     expect(head).toHaveTextContent('thread · life')
     expect(head).toHaveTextContent('2 turns')
 
@@ -341,6 +341,15 @@ describe('the composer card — the thread: head, fold, turns', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Close composer' }))
     expect(await screen.findByRole('button', { name: 'Open composer' })).toBeInTheDocument()
+  })
+
+  it('a multi-turn thread draws exactly one close — the head’s, not the chips row’s too', async () => {
+    mockMessages = thread(2)
+    renderTerminal()
+    await waitReady()
+
+    expect(document.querySelector('[data-part="thread-head"]')).not.toBeNull()
+    expect(screen.getAllByRole('button', { name: 'Close composer' })).toHaveLength(1)
   })
 
   it('only the latest turn stays open: the earlier ones fold, and the fold opens them', async () => {
@@ -385,5 +394,56 @@ describe('the composer card — the thread: head, fold, turns', () => {
     expect(within(answer as HTMLElement).getByText('pond').className).toBe(pageEyebrowClass)
     // The answer voice itself (15px sans) is pinned in ComposerThread.stories.
     expect(screen.getByText('answer 1').className).toContain(ANSWER_PROSE_CLASS)
+  })
+})
+
+describe('the composer card — a reachable close in every one-turn state', () => {
+  it('a one-turn error thread draws exactly one close, which collapses the card', async () => {
+    mockMessages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'question 1' }] },
+      { id: 'a1', role: 'assistant', parts: [] },
+    ]
+    renderTerminal()
+    await waitReady()
+
+    expect(document.querySelector('[data-part="error-row"]')).not.toBeNull()
+    expect(screen.getAllByRole('button', { name: 'Close composer' })).toHaveLength(1)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close composer' }))
+    expect(await screen.findByRole('button', { name: 'Open composer' })).toBeInTheDocument()
+  })
+
+  it('a one-turn diff-only thread draws exactly one close, which collapses the card even while the diff is still pending', async () => {
+    mockMessages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'change alpha to apple' }] },
+      {
+        id: 'a1',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'tool-propose_changes',
+            toolCallId: 'pc1',
+            state: 'input-available',
+            input: {
+              changes: [{ op: 'create', data: { type: 'text', content: 'apple one' } }],
+            },
+          },
+        ],
+      },
+    ]
+    renderTerminal()
+    await waitReady()
+
+    expect(screen.getByRole('group', { name: '1 diff' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Close composer' })).toHaveLength(1)
+
+    // An explicit × click overrides the hold outright — the diff stays
+    // proposed in the change log, only the card collapses.
+    fireEvent.click(screen.getByRole('button', { name: 'Close composer' }))
+    expect(await screen.findByRole('button', { name: 'Open composer' })).toBeInTheDocument()
+
+    // Reopening shows the same pending card — the proposal was never touched.
+    fireEvent.click(screen.getByRole('button', { name: 'Open composer' }))
+    expect(screen.getByRole('group', { name: '1 diff' })).toBeInTheDocument()
   })
 })

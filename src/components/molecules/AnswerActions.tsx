@@ -1,7 +1,8 @@
 /**
  * AnswerActions (#97, `Pond 06.01` 6a frames 2–3) — the row under the latest
  * answer: **make this a page** and **ask again** as quiet mono chips, with a
- * stop control at the right while the answer is still streaming.
+ * stop control at the right while the answer is still streaming, and a close ×
+ * at the far end in every state (PondComposer DC chips-row `close: true`).
  *
  * There is no keep-as-note chip and no keep-in-thread chip (AUDIT § Decided
  * W4): the thread already keeps every answer, and a page is the only destination.
@@ -10,9 +11,14 @@
  * mono 11px, tracking .02em; chips 6px 11px, pill, ink .07 fill, ink .8 text;
  * the stop control a 24px round, ink .8, with the hand-drawn square (functional
  * marks are inline SVG at stroke 1.4 — PROJECT_RULES § Icons).
+ *
+ * The close × only belongs here when there's no `ThreadHead` to draw it: a
+ * multi-turn thread's head already carries the one close mark, so `onClose`
+ * is omitted there (KAN-318).
  */
 
 import { chipBaseClass } from '@/components/atoms/kicker'
+import { ComposerCloseButton } from '@/components/molecules/ComposerCloseButton'
 import { cn } from '@/lib/utils'
 
 export interface AnswerActionsProps {
@@ -24,6 +30,9 @@ export interface AnswerActionsProps {
   onStop: () => void
   /** Hide "make this a page" (e.g. a card for this answer is already open). */
   canMakePage?: boolean
+  /** Collapses the composer to its ⌘J tab. Omitted when a `ThreadHead` above
+   *  this row already draws the close mark (turns > 1). */
+  onClose?: () => void
   className?: string
 }
 
@@ -35,6 +44,7 @@ export function AnswerActions({
   onAskAgain,
   onStop,
   canMakePage = true,
+  onClose,
   className,
 }: AnswerActionsProps) {
   return (
@@ -67,6 +77,12 @@ export function AnswerActions({
             <rect x="1.5" y="1.5" width="7" height="7" rx="1.2" fill="currentColor" />
           </svg>
         </button>
+      )}
+      {onClose && (
+        <>
+          <div className="flex-1" />
+          <ComposerCloseButton onClick={onClose} />
+        </>
       )}
     </div>
   )

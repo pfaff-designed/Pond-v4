@@ -1,9 +1,11 @@
 /**
  * The change log page's view model — src/lib/change-log/log-page.ts.
  *
- * What it pins: day-header grouping against a fixed clock, the label staying
- * `describeChange`'s (never a second labelling path), the page-title fallback
- * chain, and the pill/plain split following `isWaitingStatus`.
+ * What it pins: day-header grouping against a fixed clock, the label reading
+ * `recordTitle` (the record page's own 38px title string) with a non-block
+ * action still falling back through `recordTitle`'s own `describeChange`
+ * path, the page-title fallback chain, and the pill/plain split following
+ * `isWaitingStatus`.
  */
 
 import { buildLogRows, isWaitingStatus } from '@/lib/change-log/log-page'
@@ -67,7 +69,7 @@ describe('buildLogRows', () => {
     expect(groups[2].rows.map((r) => r.record.id)).toEqual(['r4'])
   })
 
-  it('labels a row through describeChange, never a second labelling path', () => {
+  it('labels a non-block row through describeChange, never a second labelling path', () => {
     const addRow = record({
       action: 'add_row',
       before: null,
@@ -75,6 +77,17 @@ describe('buildLogRows', () => {
     })
     const [group] = buildLogRows([addRow], new Map(), NOW)
     expect(group.rows[0].label).toBe(describeChange(addRow, null, new Map([['rec-1', addRow]])))
+  })
+
+  it("labels a block edit row with the record page's own title, not describeChange's summary", () => {
+    const edit = record({
+      action: 'edit',
+      before: [{ id: 'a', type: 'text', content: 'alpha one' }],
+      after: [{ id: 'a', type: 'text', content: 'apple one' }],
+    })
+    const [group] = buildLogRows([edit], new Map(), NOW)
+    expect(group.rows[0].label).toBe('alpha one → apple one')
+    expect(group.rows[0].label).not.toBe(describeChange(edit, null))
   })
 
   it('resolves the page column from pageTitleById, falling back for memory and deleted pages', () => {

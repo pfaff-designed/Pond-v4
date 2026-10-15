@@ -593,7 +593,7 @@ export async function markOutdated(
 
   const out: ChangeLogRecord[] = []
   for (const record of stale) {
-    out.push(await advanceStatus(supabase, record.id, 'outdated', opts.actor ?? 'pond'))
+    out.push(await advanceStatus(supabase, record.id, 'outdated', opts.actor ?? ACTOR_YOU))
   }
   return out
 }

@@ -90,7 +90,13 @@ const Answer = ({ text, actions }: { text: string; actions: boolean }) => (
     <Markdown>{text}</Markdown>
     <ReadChips read={['budget']} />
     {actions && (
-      <AnswerActions streaming={false} onMakePage={fn()} onAskAgain={fn()} onStop={fn()} />
+      <AnswerActions
+        streaming={false}
+        onMakePage={fn()}
+        onAskAgain={fn()}
+        onStop={fn()}
+        onClose={fn()}
+      />
     )}
   </div>
 )
