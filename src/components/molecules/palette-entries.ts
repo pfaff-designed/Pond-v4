@@ -39,6 +39,7 @@ export type PaletteAction =
   | 'new-page'
   | 'new-pond'
   | 'ask-pond'
+  | 'deep-research'
   | 'save-as-template'
   | 'import-a-page'
   | ZenAction

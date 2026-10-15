@@ -19,7 +19,9 @@ import {
   requestComposerToggle,
   requestHtmlImportPicker,
   requestTerminalFocus,
+  takePendingTerminalResearch,
   useComposerOpen,
+  type FocusTerminalDetail,
 } from '@/lib/terminal-focus'
 
 describe('terminal-focus', () => {
@@ -34,6 +36,25 @@ describe('terminal-focus', () => {
     requestTerminalFocus()
     expect(listener).toHaveBeenCalledTimes(1)
     window.removeEventListener(FOCUS_TERMINAL_EVENT, listener)
+  })
+})
+
+describe('deep research from the palette (KAN-182)', () => {
+  it('requestTerminalFocus carries research: true in the dispatched detail', () => {
+    const listener = jest.fn()
+    window.addEventListener(FOCUS_TERMINAL_EVENT, listener)
+    requestTerminalFocus(undefined, { research: true })
+    expect(listener).toHaveBeenCalledTimes(1)
+    const event = listener.mock.calls[0][0] as CustomEvent<FocusTerminalDetail>
+    expect(event.detail.research).toBe(true)
+    window.removeEventListener(FOCUS_TERMINAL_EVENT, listener)
+  })
+
+  it('a request dispatched before a listener mounts waits in the pending research slot', () => {
+    requestTerminalFocus(undefined, { research: true })
+    expect(takePendingTerminalResearch()).toBe(true)
+    // Claimed once — a second late-mounting listener finds nothing left.
+    expect(takePendingTerminalResearch()).toBeUndefined()
   })
 })
 

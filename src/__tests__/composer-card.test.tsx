@@ -148,13 +148,15 @@ describe('the composer card — research, the only road to the web', () => {
   const pill = () => screen.getByRole('button', { name: 'research' })
   const sentBody = (call: number) => mockSendMessage.mock.calls[call][1].body
 
+  const findModeMenu = () => screen.findByRole('menu', { name: 'mode menu' })
+
   it('sits after ＋, off, and the first question carries research: false', async () => {
     const user = userEvent.setup()
     renderTerminal()
     await waitReady()
 
     expect(screen.getByRole('button', { name: 'Attach a file' }).nextElementSibling).toBe(pill())
-    expect(pill()).toHaveAttribute('aria-pressed', 'false')
+    expect(pill().className).not.toContain('bg-mn-text')
 
     await user.type(line(), 'what is the going rate for a worktop?')
     await user.click(screen.getByRole('button', { name: 'Send' }))
@@ -162,19 +164,21 @@ describe('the composer card — research, the only road to the web', () => {
     expect(sentBody(0).research).toBe(false)
   })
 
-  it('toggles on, rides one question, and is off again for the next', async () => {
+  it('arms via the mode menu, rides one question, and is off again for the next', async () => {
     const user = userEvent.setup()
     renderTerminal()
     await waitReady()
 
     await user.click(pill())
-    expect(pill()).toHaveAttribute('aria-pressed', 'true')
+    const menu = await findModeMenu()
+    await user.click(within(menu).getByText('deep research'))
+    expect(pill().className).toContain('bg-mn-text')
 
     await user.type(line(), 'what do worktops cost today?')
     await user.click(screen.getByRole('button', { name: 'Send' }))
     await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1))
     expect(sentBody(0).research).toBe(true)
-    expect(pill()).toHaveAttribute('aria-pressed', 'false')
+    expect(pill().className).not.toContain('bg-mn-text')
 
     await user.type(line(), 'and the fitting?')
     await user.keyboard('{Enter}')
@@ -182,14 +186,20 @@ describe('the composer card — research, the only road to the web', () => {
     expect(sentBody(1).research).toBe(false)
   })
 
-  it('toggles back off without sending', async () => {
+  it('arms then turns back off via the menu, without sending', async () => {
     const user = userEvent.setup()
     renderTerminal()
     await waitReady()
 
     await user.click(pill())
+    const menu = await findModeMenu()
+    await user.click(within(menu).getByText('deep research'))
+    expect(pill().className).toContain('bg-mn-text')
+
     await user.click(pill())
-    expect(pill()).toHaveAttribute('aria-pressed', 'false')
+    const resetMenu = await findModeMenu()
+    await user.click(within(resetMenu).getByText('ask'))
+    expect(pill().className).not.toContain('bg-mn-text')
     expect(mockSendMessage).not.toHaveBeenCalled()
   })
 })
