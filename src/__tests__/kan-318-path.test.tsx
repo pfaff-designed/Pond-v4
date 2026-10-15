@@ -202,7 +202,7 @@ describe('KAN-318 path test — the "proposed" view reads the same way', () => {
     const panel = screen.getByTestId('document-panel')
 
     await within(panel).findByText('bravo two → banana two')
-    await user.click(within(panel).getByRole('button', { name: 'proposed' }))
+    await user.click(within(panel).getByRole('tab', { name: 'proposed' }))
 
     expect(await within(panel).findByText('bravo two')).toBeInTheDocument()
     expect(within(panel).getByText('banana two')).toBeInTheDocument()

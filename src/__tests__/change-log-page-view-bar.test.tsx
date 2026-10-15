@@ -1,10 +1,13 @@
 /**
- * KAN-94/KAN-97/KAN-96 — the change log page's view bar (s6o1): six pills.
- * "all", "proposed" and "deleted" are interactive; the rest are drawn but
- * inert (aria-disabled, no button role).
+ * KAN-94/KAN-97/KAN-96/KAN-322 — the change log page's view bar (s6o1): six
+ * pills on the shared view-tabs engine. "all", "proposed" and "deleted" are
+ * tabs (role=tab, aria-selected, roving ←/→ focus); "by page" and "memory"
+ * are drawn but inert (aria-hidden, no tab role, skipped by arrow nav, kept out of ViewTabsList's
+ * required tab/tabpanel children); "＋ view" stays outside the tablist as a plain aria-disabled span.
  */
 
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ChangeLogPage } from '@/components/organisms/ChangeLogPage'
 
@@ -42,18 +45,49 @@ function renderPage() {
 }
 
 describe('ChangeLogPage — the view bar', () => {
-  it('"all", "proposed" and "deleted" have an accessible button role; the rest are inert', () => {
+  it('"all", "proposed" and "deleted" have an accessible tab role; the rest are inert', () => {
     renderPage()
 
-    expect(screen.getAllByRole('button')).toHaveLength(3)
-    expect(screen.getByRole('button', { name: 'all' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('button', { name: 'proposed' })).toHaveAttribute('aria-pressed', 'false')
-    expect(screen.getByRole('button', { name: 'deleted' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getAllByRole('tab')).toHaveLength(3)
+    expect(screen.getByRole('tab', { name: 'all' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'proposed' })).toHaveAttribute('aria-selected', 'false')
+    expect(screen.getByRole('tab', { name: 'deleted' })).toHaveAttribute('aria-selected', 'false')
+    expect(screen.getByRole('tab', { name: 'all' })).toHaveClass('focus-visible:outline-mn-area-b')
 
-    for (const label of ['by page', 'memory', '＋ view']) {
-      expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument()
+    for (const label of ['by page', 'memory']) {
+      expect(screen.queryByRole('tab', { name: label })).not.toBeInTheDocument()
       const pill = screen.getByText(label)
-      expect(pill).toHaveAttribute('aria-disabled', 'true')
+      expect(pill).toHaveAttribute('aria-hidden', 'true')
     }
+
+    expect(screen.queryByRole('tab', { name: '＋ view' })).not.toBeInTheDocument()
+    expect(screen.getByText('＋ view')).toHaveAttribute('aria-disabled', 'true')
+  })
+
+  it('clicking "proposed" switches the active tab', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(screen.getByRole('tab', { name: 'proposed' }))
+
+    expect(screen.getByRole('tab', { name: 'proposed' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'all' })).toHaveAttribute('aria-selected', 'false')
+  })
+
+  it('→ from "proposed" skips the inert views and lands on "deleted"; ← returns to "proposed"', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(screen.getByRole('tab', { name: 'proposed' }))
+    await user.keyboard('{ArrowRight}')
+
+    expect(screen.getByRole('tab', { name: 'deleted' })).toHaveFocus()
+    expect(screen.getByRole('tab', { name: 'deleted' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'proposed' })).toHaveAttribute('aria-selected', 'false')
+
+    await user.keyboard('{ArrowLeft}')
+
+    expect(screen.getByRole('tab', { name: 'proposed' })).toHaveFocus()
+    expect(screen.getByRole('tab', { name: 'proposed' })).toHaveAttribute('aria-selected', 'true')
   })
 })

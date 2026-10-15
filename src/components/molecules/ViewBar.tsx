@@ -22,9 +22,8 @@
  * slot, outside the pill (Views 3/4 wires it; KAN-243).
  */
 
-import { Tabs } from '@base-ui/react/tabs'
-
 import { FOCUS_VISIBLE_RING } from '@/components/atoms/focus-ring'
+import { ViewTabsList, ViewTabsRoot, ViewTabsTab } from '@/components/molecules/view-tabs'
 
 export interface ViewBarView {
   id: string
@@ -51,32 +50,23 @@ const ADD_VIEW = 'px-[9px] py-[5px] font-mono text-[11px] text-mn-text-secondary
 
 export function ViewBar({ views, activeId, onSelect, showAddView }: ViewBarProps) {
   return (
-    <Tabs.Root
-      value={activeId}
-      onValueChange={(value) => {
-        if (typeof value === 'string') onSelect(value)
-      }}
-      className={ROW}
-    >
-      {/* A segmented control previews on arrow-key movement, unlike a tabbed
-          panel's manual activation — `activateOnFocus` makes ←/→ select, not
-          just move focus. */}
-      <Tabs.List activateOnFocus className={SEGMENT_ROW}>
+    <ViewTabsRoot value={activeId} onValueChange={onSelect} className={ROW}>
+      <ViewTabsList className={SEGMENT_ROW}>
         {views.map((view) => (
-          <Tabs.Tab
+          <ViewTabsTab
             key={view.id}
             value={view.id}
             className={`${SEGMENT} ${view.id === activeId ? SEGMENT_ON : SEGMENT_OFF}`}
           >
             {view.label}
-          </Tabs.Tab>
+          </ViewTabsTab>
         ))}
-      </Tabs.List>
+      </ViewTabsList>
       {showAddView && (
         <span aria-disabled="true" className={ADD_VIEW}>
           ＋ view
         </span>
       )}
-    </Tabs.Root>
+    </ViewTabsRoot>
   )
 }

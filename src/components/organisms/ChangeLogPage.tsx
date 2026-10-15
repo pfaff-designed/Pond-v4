@@ -28,6 +28,8 @@ import { ChangeRows } from '@/components/molecules/diff-card-parts'
 import { existingPageIds, restorePage } from '@/lib/change-log/trash'
 import { personFacingMessage } from '@/lib/change-log/errors'
 import { PondControl } from '@/components/atoms/PondControl'
+import { FOCUS_VISIBLE_RING } from '@/components/atoms/focus-ring'
+import { ViewTabsList, ViewTabsRoot, ViewTabsTab } from '@/components/molecules/view-tabs'
 import { listPages } from '@/lib/pages/client'
 import { pagesKey } from '@/lib/pages/keys'
 
@@ -85,6 +87,9 @@ const PROPOSED_VIEW_COLUMN_PX = 640 + 2 * PAGE_COLUMN_PAD_PX
  * view beyond those three exists yet).
  */
 const INERT_VIEWS = ['by page', 'memory'] as const
+const SEGMENT = `rounded-full px-[11px] py-[5px] ${FOCUS_VISIBLE_RING}`
+const SEGMENT_ON = `${SEGMENT} bg-mn-hover-fill font-medium text-mn-text`
+const SEGMENT_OFF = `${SEGMENT} text-mn-text-secondary`
 
 type ChangeLogView = 'all' | 'proposed' | 'deleted'
 
@@ -281,6 +286,10 @@ export function ChangeLogPage() {
     [activeRecords, pageTitleById]
   )
   const clearPageFilter = () => router.replace(changeLogUrl())
+  const handleViewChange = (next: string) => {
+    setView(next as ChangeLogView)
+    if (next === 'all' && pageFilterId !== null) clearPageFilter()
+  }
 
   // s6o2: every record still waiting on a decision (`proposed` or
   // `outdated`), newest first — refetched on each switch, same reasoning as
@@ -416,62 +425,37 @@ export function ChangeLogPage() {
             </div>
           </>
         )}
-        <div className="flex items-center gap-1 text-[12.5px]">
-          <button
-            type="button"
-            aria-pressed={view === 'all'}
-            onClick={() => {
-              setView('all')
-              if (pageFilterId !== null) clearPageFilter()
-            }}
-            className={
-              view === 'all'
-                ? 'rounded-full bg-mn-hover-fill px-[11px] py-[5px] font-medium text-mn-text'
-                : 'rounded-full px-[11px] py-[5px] text-mn-text-secondary'
-            }
-          >
-            all
-          </button>
-          <button
-            type="button"
-            aria-pressed={view === 'proposed'}
-            onClick={() => setView('proposed')}
-            className={
-              view === 'proposed'
-                ? 'rounded-full bg-mn-hover-fill px-[11px] py-[5px] font-medium text-mn-text'
-                : 'rounded-full px-[11px] py-[5px] text-mn-text-secondary'
-            }
-          >
-            proposed
-          </button>
-          {INERT_VIEWS.map((inertView) => (
-            <span
-              key={inertView}
-              aria-disabled="true"
-              className="rounded-full px-[11px] py-[5px] text-mn-text-secondary"
+        <ViewTabsRoot value={view} onValueChange={handleViewChange} className="flex items-center gap-1 text-[12.5px]">
+          <ViewTabsList className="flex items-center gap-1">
+            <ViewTabsTab value="all" className={view === 'all' ? SEGMENT_ON : SEGMENT_OFF}>
+              all
+            </ViewTabsTab>
+            <ViewTabsTab
+              value="proposed"
+              className={view === 'proposed' ? SEGMENT_ON : SEGMENT_OFF}
             >
-              {inertView}
-            </span>
-          ))}
-          <button
-            type="button"
-            aria-pressed={view === 'deleted'}
-            onClick={() => setView('deleted')}
-            className={
-              view === 'deleted'
-                ? 'rounded-full bg-mn-hover-fill px-[11px] py-[5px] font-medium text-mn-text'
-                : 'rounded-full px-[11px] py-[5px] text-mn-text-secondary'
-            }
-          >
-            deleted
-          </button>
+              proposed
+            </ViewTabsTab>
+            {INERT_VIEWS.map((inertView) => (
+              <span
+                key={inertView}
+                aria-hidden="true"
+                className="rounded-full px-[11px] py-[5px] text-mn-text-secondary"
+              >
+                {inertView}
+              </span>
+            ))}
+            <ViewTabsTab value="deleted" className={view === 'deleted' ? SEGMENT_ON : SEGMENT_OFF}>
+              deleted
+            </ViewTabsTab>
+          </ViewTabsList>
           <span
             aria-disabled="true"
             className="px-[9px] py-[5px] font-mono text-[11px] lowercase tracking-[0.02em] text-mn-text-secondary"
           >
             ＋ view
           </span>
-        </div>
+        </ViewTabsRoot>
         {view === 'all' ? (
           <div className="rounded-mn-card bg-mn-card px-[10px] pt-[14px] pb-[6px] shadow-mn-card">
             {pageFilterId !== null && (
