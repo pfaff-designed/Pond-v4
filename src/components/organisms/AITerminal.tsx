@@ -34,6 +34,7 @@ import {
   requestComposerNotice,
   requestComposerToggle,
   requestHtmlImportPicker,
+  takePendingTerminalResearch,
   takePendingTerminalText,
   useComposerOpen,
   type ComposerNoticeDetail,
@@ -55,9 +56,12 @@ import {
   readChips,
   readPageIds,
   readStamp,
+  researchEndedAt,
+  researchEndedStamp,
   turnReadContext,
   withEarlierAnswer,
   withReadStamp,
+  withResearchEndedStamp,
   type EarlierAnswer,
   type PageProposal,
   type PageProposalPatch,
@@ -332,6 +336,17 @@ type HtmlTurnSnapshot = {
   size: number
   result: ReadHtmlResult
   afterMessages: number
+}
+
+/** 6r frame 8: the note under the first answer after a deep-research answer
+ *  — "deep research never stays on by itself." Copy and values are verbatim
+ *  off the board; no props, since there's nothing to vary. */
+function OffAgainNote() {
+  return (
+    <p className="rounded-[10px] bg-mn-text/[0.04] px-[10px] py-2 font-mono text-[10.5px] text-mn-text-meta">
+      deep research is off again. this answer read only your pond.
+    </p>
+  )
 }
 
 /** Renders one html read turn (q → a → readRow, 06.25 frame 2/6) — shared by
@@ -1814,22 +1829,30 @@ export function AITerminal() {
       // The palette's `ask pond about “q”` (#279) arrives with the question typed —
       // into an EMPTY composer only. A draft in progress is the person's and is
       // never overwritten (there is no undo for it); the question still gets focus.
-      // A live listener handles the event directly, so the pending slot (KAN-195's
-      // late-mount replay path) must not keep this text around for a future mount.
+      // A live listener handles the event directly, so the pending slots (KAN-195's
+      // late-mount replay path) must not keep this text/research around for a future mount.
       takePendingTerminalText()
-      const text = (e as CustomEvent<FocusTerminalDetail>).detail?.text
+      takePendingTerminalResearch()
+      const detail = (e as CustomEvent<FocusTerminalDetail>).detail
+      const text = detail?.text
       if (text) setInput((prev) => (prev.trim() ? prev : text))
+      if (detail?.research) setResearch(true)
       openComposer()
       focusInputSoon()
     }
     window.addEventListener(FOCUS_TERMINAL_EVENT, onFocusRequest)
     // A request dispatched before this listener attached (e.g. the cover's
     // `?ask=` carry, which fires from an effect that runs earlier in tree
-    // order) is still waiting in the pending slot — claim it exactly like an
+    // order) is still waiting in the pending slots — claim it exactly like an
     // incoming event (KAN-195).
     const pending = takePendingTerminalText()
-    if (pending)
-      onFocusRequest(new CustomEvent(FOCUS_TERMINAL_EVENT, { detail: { text: pending } }))
+    const pendingResearch = takePendingTerminalResearch()
+    if (pending || pendingResearch)
+      onFocusRequest(
+        new CustomEvent(FOCUS_TERMINAL_EVENT, {
+          detail: { text: pending, research: pendingResearch },
+        })
+      )
     return () => window.removeEventListener(FOCUS_TERMINAL_EVENT, onFocusRequest)
   }, [focusInputSoon, openComposer])
   const answerLanded =
@@ -2033,6 +2056,7 @@ export function AITerminal() {
       const metadata = {
         sentAt: new Date().toISOString(),
         openPageContext,
+        research,
         wholePageRefPageIds: sentReferences
           .filter(isWholePageReference)
           .filter((ref) => ref.pageId !== nodeId)
@@ -3206,17 +3230,20 @@ export function AITerminal() {
         const turn = isInitial
           ? { openPageContext: true, wholePageRefIds: [] }
           : turnReadContext(precedingUserMessage(prev, i))
-        return withLandedAt(
-          withReadStamp(
-            m,
-            readChips({
-              contextLabel: isInitial ? '' : contextLabel,
-              parts: m.parts as ReadPartLike[],
-              resolvePageName,
-              openPageContext: turn.openPageContext,
-              wholePageRefIds: turn.wholePageRefIds,
-            })
-          )
+        return withResearchEndedStamp(
+          withLandedAt(
+            withReadStamp(
+              m,
+              readChips({
+                contextLabel: isInitial ? '' : contextLabel,
+                parts: m.parts as ReadPartLike[],
+                resolvePageName,
+                openPageContext: turn.openPageContext,
+                wholePageRefIds: turn.wholePageRefIds,
+              })
+            )
+          ),
+          researchEndedAt(prev, i)
         )
       })
     )
@@ -3383,6 +3410,12 @@ export function AITerminal() {
             ...turnReadContext(precedingUserMessage(messages, messageIndex)),
           }))
         : []
+    // Same rule as `read` above: the off-again note is a fact about THIS
+    // answer (6r frame 8), stamped the moment it lands, read back ever
+    // after rather than re-walked from live sibling messages.
+    const showOffAgainNote =
+      message.role === 'assistant' &&
+      (researchEndedStamp(message.metadata) ?? researchEndedAt(messages, messageIndex))
     const earlierFolds = [...earlierAnswers(message.metadata)].reverse().map((entry) => ({
       sentAt: entry.sentAt,
       read: entry.read,
@@ -3573,6 +3606,7 @@ export function AITerminal() {
               </div>
               {sources.length > 0 && <SourceList sources={sources} />}
               <ReadChips read={read} />
+              {showOffAgainNote && <OffAgainNote />}
             </div>
           ))}
         {/* Sources can arrive on a message with no text; the citation still shows. */}
@@ -3581,6 +3615,7 @@ export function AITerminal() {
             <span className={pageEyebrowClass}>pond</span>
             <SourceList sources={sources} />
             <ReadChips read={read} />
+            {showOffAgainNote && <OffAgainNote />}
           </div>
         )}
         {/* Stashed oldest first; the most recently replaced answer sits nearest the current one. */}
@@ -4003,7 +4038,12 @@ export function AITerminal() {
         {message.role === 'assistant' &&
           !text.trim() &&
           sources.length === 0 &&
-          hasVisibleAssistantContent(message.parts) && <ReadChips read={read} />}
+          hasVisibleAssistantContent(message.parts) && (
+            <>
+              <ReadChips read={read} />
+              {showOffAgainNote && <OffAgainNote />}
+            </>
+          )}
       </div>
     )
   }
@@ -4386,7 +4426,7 @@ export function AITerminal() {
           anchorRef={composerRef}
           research={research}
           mentionTitles={mentionTitles}
-          onToggleResearch={() => setResearch((on) => !on)}
+          onSelectMode={(mode) => setResearch(mode === 'deep-research')}
           onChange={handleComposerChange}
           onFocus={unminimize}
           onKeyDown={handleKeyDown}

@@ -276,6 +276,10 @@ export function ShellCommands() {
         requestTerminalFocus(item.query)
         return
       }
+      if (item.action === 'deep-research') {
+        requestTerminalFocus(undefined, { research: true })
+        return
+      }
       if (item.action === 'import-a-page') {
         requestHtmlImportPicker()
         return

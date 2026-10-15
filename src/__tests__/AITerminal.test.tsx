@@ -14,7 +14,7 @@
  */
 
 import React from 'react'
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
@@ -90,6 +90,7 @@ import {
   requestComposerNotice,
   requestComposerToggle,
   requestHtmlImportPicker,
+  requestTerminalFocus,
 } from '@/lib/terminal-focus'
 import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
 import { useZen, ZenComposerChrome, ZenProvider } from '@/lib/layout/zen'
@@ -1528,6 +1529,287 @@ describe('reopening the composer actually moves focus into the input (KAN-323)',
     expect(focusSpy).toHaveBeenCalled()
 
     focusSpy.mockRestore()
+  })
+})
+
+describe('AITerminal — the research pill resets after one question, and the send carries it (KAN-182)', () => {
+  it('arms research for one send, stamps it on the sent message, then is unarmed again for the next', async () => {
+    const user = userEvent.setup()
+    renderTerminal()
+    await waitReady()
+
+    const pill = screen.getByRole('button', { name: 'research' })
+    await user.click(pill)
+    const menu = await screen.findByRole('menu', { name: 'mode menu' })
+    await user.click(within(menu).getByText('deep research'))
+
+    const textbox = screen.getByRole('textbox', { name: 'Message Pond' })
+    await user.type(textbox, 'what changed in the market today')
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1))
+    const firstMessage = mockSendMessage.mock.calls[0][0]
+    expect((firstMessage.metadata as { research?: boolean }).research).toBe(true)
+
+    // The pill is back at rest for the next question (existing behaviour):
+    // reopening the menu shows `ask` selected again, not `deep research`.
+    await user.click(pill)
+    const resetMenu = await screen.findByRole('menu', { name: 'mode menu' })
+    const [askRow] = within(resetMenu).getAllByRole('menuitem')
+    expect(askRow.className).toContain('bg-mn-text/[0.07]')
+    await user.keyboard('{Escape}')
+
+    await user.type(textbox, 'and the next question')
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(2))
+    const secondMessage = mockSendMessage.mock.calls[1][0]
+    expect((secondMessage.metadata as { research?: boolean }).research).toBe(false)
+  })
+})
+
+describe('AITerminal — the palette’s deep research row arms research (KAN-182)', () => {
+  it('a focus request carrying research: true arms the pill, open or closed composer alike', async () => {
+    const user = userEvent.setup()
+    renderTerminal()
+    await waitReady()
+
+    act(() => requestTerminalFocus(undefined, { research: true }))
+
+    const pill = screen.getByRole('button', { name: 'research' })
+    await waitFor(() => expect(pill.className).toContain('bg-mn-text'))
+    expect(pill.className).toContain('text-raw-paper')
+
+    await user.click(pill)
+    const menu = await screen.findByRole('menu', { name: 'mode menu' })
+    const [, deepResearchRow] = within(menu).getAllByRole('menuitem')
+    expect(deepResearchRow.className).toContain('bg-mn-text/[0.07]')
+  })
+})
+
+describe('AITerminal — the off-again note under a deep-research answer\'s read chips (KAN-182, 6r f8)', () => {
+  const OFF_AGAIN_NOTE = 'deep research is off again. this answer read only your pond.'
+
+  it('shows the note once, on the first answer after a deep-research answer', async () => {
+    mockMessages = [
+      {
+        id: 'u1',
+        role: 'user',
+        parts: [{ type: 'text', text: 'what changed in the market' }],
+        metadata: { research: true },
+      },
+      {
+        id: 'a1',
+        role: 'assistant',
+        parts: [{ type: 'text', text: 'a deep research answer' }],
+      },
+      {
+        id: 'u2',
+        role: 'user',
+        parts: [{ type: 'text', text: 'and this one' }],
+        metadata: { research: false },
+      },
+      {
+        id: 'a2',
+        role: 'assistant',
+        parts: [{ type: 'text', text: 'off again' }],
+      },
+    ]
+    renderTerminal()
+    await waitReady()
+
+    expect(screen.getAllByText(OFF_AGAIN_NOTE)).toHaveLength(1)
+  })
+
+  it('does not show the note on the answer after that one', async () => {
+    mockMessages = [
+      {
+        id: 'u1',
+        role: 'user',
+        parts: [{ type: 'text', text: 'what changed in the market' }],
+        metadata: { research: true },
+      },
+      {
+        id: 'a1',
+        role: 'assistant',
+        parts: [{ type: 'text', text: 'a deep research answer' }],
+      },
+      {
+        id: 'u2',
+        role: 'user',
+        parts: [{ type: 'text', text: 'and this one' }],
+        metadata: { research: false },
+      },
+      {
+        id: 'a2',
+        role: 'assistant',
+        parts: [{ type: 'text', text: 'off again' }],
+      },
+      {
+        id: 'u3',
+        role: 'user',
+        parts: [{ type: 'text', text: 'a third question' }],
+        metadata: { research: false },
+      },
+      {
+        id: 'a3',
+        role: 'assistant',
+        parts: [{ type: 'text', text: 'ordinary answer' }],
+      },
+    ]
+    renderTerminal()
+    await waitReady()
+
+    expect(screen.queryByText(OFF_AGAIN_NOTE)).not.toBeInTheDocument()
+  })
+
+  it('a message seeded with the stamp already set (a reload) still shows the note without re-deriving from live state', async () => {
+    mockMessages = [
+      {
+        id: 'u1',
+        role: 'user',
+        parts: [{ type: 'text', text: 'one question' }],
+        metadata: { research: false },
+      },
+      {
+        id: 'a1',
+        role: 'assistant',
+        parts: [{ type: 'text', text: 'an answer' }],
+        // Fewer than two prior user turns — live derivation would say
+        // false. The explicit stamp from a prior session wins anyway.
+        metadata: { researchEnded: true },
+      },
+    ]
+    renderTerminal()
+    await waitReady()
+
+    expect(screen.getByText(OFF_AGAIN_NOTE)).toBeInTheDocument()
+  })
+})
+
+describe('AITerminal — the path, end to end (KAN-182, PATH_STEPS 1-6)', () => {
+  const OFF_AGAIN_NOTE = 'deep research is off again. this answer read only your pond.'
+
+  it('⌘J, pill, menu, arrow+enter, reopen+Esc stays armed, send resets, second send notes off-again once', async () => {
+    const user = userEvent.setup()
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const { rerender } = render(
+      <QueryClientProvider client={queryClient}>
+        <AITerminal />
+      </QueryClientProvider>
+    )
+    await waitReady()
+
+    // 1. ⌘J (`requestComposerToggle`, the same event the real shortcut fires
+    // — see the KAN-323 tests above) opens the composer with the line
+    // focused; the pill sits at rest. The composer starts open by default,
+    // so close it first to make the open-with-⌘J step observable.
+    act(() => requestComposerToggle())
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    act(() => requestComposerToggle())
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Pond' })).toHaveFocus())
+
+    const pill = screen.getByRole('button', { name: 'research' })
+    expect(pill.className).not.toContain('bg-mn-text')
+
+    // 2. Clicking the pill opens the two-row mode menu.
+    await user.click(pill)
+    const menu = await screen.findByRole('menu', { name: 'mode menu' })
+    const [askRow, deepResearchRow] = within(menu).getAllByRole('menuitem')
+    expect(askRow.textContent).toBe('askreads this pond. quick.')
+    expect(deepResearchRow.textContent).toBe(
+      'deep researchreads the web and this pond. slow and thorough: primary sources, every claim checked against independent ones.'
+    )
+    expect(askRow.className).toContain('bg-mn-text/[0.07]')
+
+    // 3. ↓↓ then ↵ moves the highlight off `ask` (click-open starts there)
+    // onto `deep research` and picks it; the menu closes, focus returns to
+    // the line, the pill arms.
+    await user.keyboard('{ArrowDown}{ArrowDown}{Enter}')
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+    const textbox = screen.getByRole('textbox', { name: 'Message Pond' })
+    await waitFor(() => expect(textbox).toHaveFocus())
+    await waitFor(() => expect(pill.className).toContain('bg-mn-text'))
+    expect(pill.className).toContain('text-raw-paper')
+
+    // 4. Reopening the menu and pressing Esc leaves the mode unchanged
+    // (still armed) and returns focus to the line.
+    await user.click(pill)
+    const reopenedMenu = await screen.findByRole('menu', { name: 'mode menu' })
+    const [, reopenedDeepResearchRow] = within(reopenedMenu).getAllByRole('menuitem')
+    expect(reopenedDeepResearchRow.className).toContain('bg-mn-text/[0.07]')
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+    await waitFor(() => expect(textbox).toHaveFocus())
+    expect(pill.className).toContain('bg-mn-text')
+    expect(pill.className).toContain('text-raw-paper')
+
+    // 5. Send — the question goes out with `research: true` on its
+    // metadata, and the pill is back at rest for the next question.
+    await user.type(textbox, 'what changed in the market today')
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1))
+    expect((mockSendMessage.mock.calls[0][0].metadata as { research?: boolean }).research).toBe(
+      true
+    )
+    await waitFor(() => expect(pill.className).not.toContain('bg-mn-text'))
+
+    // 6. A second send after a deep-research answer shows the off-again
+    // note once; a third send does not add a second one. `AITerminal`
+    // reads `research`/`researchEnded` off `useChat`'s own `messages`, not
+    // off what `sendMessage` was called with, so seed the mocked thread to
+    // the state the two real sends above would have produced.
+    mockMessages = [
+      {
+        id: 'u1',
+        role: 'user',
+        parts: [{ type: 'text', text: 'what changed in the market today' }],
+        metadata: { research: true },
+      },
+      {
+        id: 'a1',
+        role: 'assistant',
+        parts: [{ type: 'text', text: 'a deep research answer' }],
+      },
+      {
+        id: 'u2',
+        role: 'user',
+        parts: [{ type: 'text', text: 'and the next question' }],
+        metadata: { research: false },
+      },
+      {
+        id: 'a2',
+        role: 'assistant',
+        parts: [{ type: 'text', text: 'off again' }],
+      },
+    ]
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <AITerminal />
+      </QueryClientProvider>
+    )
+    await waitFor(() => expect(screen.getAllByText(OFF_AGAIN_NOTE)).toHaveLength(1))
+
+    mockMessages = [
+      ...mockMessages,
+      {
+        id: 'u3',
+        role: 'user',
+        parts: [{ type: 'text', text: 'a third question' }],
+        metadata: { research: false },
+      },
+      {
+        id: 'a3',
+        role: 'assistant',
+        parts: [{ type: 'text', text: 'ordinary answer' }],
+      },
+    ]
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <AITerminal />
+      </QueryClientProvider>
+    )
+    await waitFor(() => expect(screen.queryByText(OFF_AGAIN_NOTE)).not.toBeInTheDocument())
   })
 })
 

@@ -7,17 +7,20 @@
  * thread, the stream and the attach flow belong to the AITerminal around it.
  *
  * Research is the one road to the web: off by default, spent on a single
- * question. Off it is ink .8 with no fill; on it takes an ink .07 wash and full ink.
+ * question. The pill opens a two-row mode menu (6r f1) rather than toggling
+ * directly. Off it is ink .8 with no fill; armed (a `deep research` pick)
+ * takes the ground/paper fill.
  *
  * Send is a 32px circle (40 below md). Off, with nothing to send, it is a quiet
  * disabled fill; on, it is solid ink, and while an answer streams it becomes the
  * stop square.
  */
 
-import { useLayoutEffect } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import type { KeyboardEvent, ReactNode, RefObject } from 'react'
 import { cn } from '@/lib/utils'
 import { MentionPillOverlay } from './MentionPillOverlay'
+import { ResearchModeMenu, type ResearchModeMenuAction } from './ResearchModeMenu'
 
 export interface ComposerLineProps {
   value: string
@@ -38,7 +41,7 @@ export interface ComposerLineProps {
   mentionTitles: readonly string[]
   /** The hidden file input the ＋ opens. */
   attachInput?: ReactNode
-  onToggleResearch: () => void
+  onSelectMode: (mode: ResearchModeMenuAction) => void
   onChange: (value: string) => void
   /** Focusing the line is itself a signal (e.g. un-minimizing, KAN-323). */
   onFocus?: () => void
@@ -60,7 +63,7 @@ export const ComposerLine = ({
   research,
   mentionTitles,
   attachInput,
-  onToggleResearch,
+  onSelectMode,
   onChange,
   onFocus,
   onKeyDown,
@@ -80,8 +83,30 @@ export const ComposerLine = ({
   const sendOn = streaming || canSend
   const handleSendClick = () => (streaming ? onStop() : onSend())
 
+  const pillRef = useRef<HTMLButtonElement>(null)
+  const modeMenuSlotRef = useRef<HTMLDivElement>(null)
+  const [modeMenuOpen, setModeMenuOpen] = useState(false)
+
+  const handleModeMenuOpenChange = (open: boolean) => {
+    setModeMenuOpen(open)
+    if (!open) textareaRef.current?.focus()
+  }
+
+  const handleSelectMode = (mode: ResearchModeMenuAction) => {
+    setModeMenuOpen(false)
+    onSelectMode(mode)
+    textareaRef.current?.focus()
+  }
+
   return (
     <>
+      {/*
+        The mode menu's own in-card slot (6r f1): `contents` so an empty slot
+        contributes no box — and so no flex `gap` — at rest; once the portaled
+        popup lands inside it, that popup becomes the flex column's own first
+        item, above the line.
+      */}
+      <div ref={modeMenuSlotRef} className="contents" />
       <div ref={anchorRef} className="relative">
         <MentionPillOverlay value={value} titles={mentionTitles} textareaRef={textareaRef} />
         <textarea
@@ -131,31 +156,42 @@ export const ComposerLine = ({
             <path d="M7 3v8M3 7h8" />
           </svg>
         </button>
-        <button
-          type="button"
-          aria-pressed={research}
-          onClick={onToggleResearch}
-          className={cn(
-            'flex items-center gap-[7px] rounded-mn-pill px-3 py-[11px] transition-colors md:py-[7px]',
-            research ? 'bg-mn-hover-fill text-mn-text' : 'text-mn-text-meta hover:text-mn-text'
-          )}
-        >
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 14 14"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.4"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden
-          >
-            <circle cx="6.2" cy="6.2" r="4" />
-            <path d="M9.2 9.2 12.2 12.2" />
-          </svg>
-          research
-        </button>
+        <ResearchModeMenu
+          selected={research ? 'deep-research' : 'ask'}
+          open={modeMenuOpen}
+          onOpenChange={handleModeMenuOpenChange}
+          onSelect={handleSelectMode}
+          placement={{ anchor: pillRef, align: 'start', top: 8, alignOffset: 0 }}
+          container={modeMenuSlotRef}
+          trigger={
+            <button
+              ref={pillRef}
+              type="button"
+              className={cn(
+                'flex items-center gap-[7px] rounded-mn-pill px-3 py-[11px] transition-colors md:py-[7px]',
+                research
+                  ? 'bg-mn-text text-raw-paper dark:text-raw-ink'
+                  : 'text-mn-text-meta hover:text-mn-text'
+              )}
+            >
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 14 14"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden
+              >
+                <circle cx="6.2" cy="6.2" r="4" />
+                <path d="M9.2 9.2 12.2 12.2" />
+              </svg>
+              research
+            </button>
+          }
+        />
         <button
           type="button"
           aria-label={streaming ? 'Stop' : 'Send'}

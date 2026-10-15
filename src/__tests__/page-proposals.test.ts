@@ -26,6 +26,7 @@ import {
   precedingUserMessage,
   proposalBlocks,
   readChips,
+  researchEndedAt,
   stripChatFraming,
   turnReadContext,
   withEarlierAnswer,
@@ -408,6 +409,38 @@ describe('precedingUserMessage / turnReadContext — this turn’s own sources (
   it('defaults to the pre-KAN-99 shape for a question stamped before this fix', () => {
     expect(turnReadContext(thread[2])).toEqual({ openPageContext: true, wholePageRefIds: [] })
     expect(turnReadContext(undefined)).toEqual({ openPageContext: true, wholePageRefIds: [] })
+  })
+})
+
+describe('researchEndedAt — 6r frame 8, "off again" shows once (KAN-182)', () => {
+  const thread = [
+    { id: 'u1', role: 'user', metadata: { research: true } },
+    { id: 'a1', role: 'assistant', metadata: {} },
+    { id: 'u2', role: 'user', metadata: { research: false } },
+    { id: 'a2', role: 'assistant', metadata: {} },
+    { id: 'u3', role: 'user', metadata: { research: false } },
+    { id: 'a3', role: 'assistant', metadata: {} },
+  ]
+
+  it('is true on the first answer after a research turn', () => {
+    expect(researchEndedAt(thread, 3)).toBe(true)
+  })
+
+  it('is false on the research turn itself', () => {
+    expect(researchEndedAt(thread, 1)).toBe(false)
+  })
+
+  it('is false on the turn after that', () => {
+    expect(researchEndedAt(thread, 5)).toBe(false)
+  })
+
+  it('is false with fewer than two prior user turns', () => {
+    const short = [
+      { id: 'u1', role: 'user', metadata: { research: false } },
+      { id: 'a1', role: 'assistant', metadata: {} },
+    ]
+    expect(researchEndedAt(short, 1)).toBe(false)
+    expect(researchEndedAt([], 0)).toBe(false)
   })
 })
 
