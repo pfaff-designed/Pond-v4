@@ -14,6 +14,8 @@ export const FOCUS_TERMINAL_EVENT = 'pond:focus-terminal'
 export interface FocusTerminalDetail {
   /** Text to put in the composer as it takes focus — the palette's `ask pond about “q”` (#279). */
   text?: string
+  /** Arm deep research for the next question — the palette's `deep research` row (KAN-182). */
+  research?: boolean
 }
 
 // A request can beat AITerminal's own listener to mount — the cover's `?ask=`
@@ -21,12 +23,15 @@ export interface FocusTerminalDetail {
 // tree order (KAN-195). The dispatch still fires for an already-mounted
 // listener; a request with text also waits here for a late listener to claim.
 let pendingText: string | undefined
+let pendingResearch: boolean | undefined
 
-export function requestTerminalFocus(text?: string) {
+export function requestTerminalFocus(text?: string, opts?: { research?: boolean }) {
   if (text) pendingText = text
-  window.dispatchEvent(
-    new CustomEvent<FocusTerminalDetail>(FOCUS_TERMINAL_EVENT, { detail: text ? { text } : {} })
-  )
+  if (opts?.research) pendingResearch = true
+  const detail: FocusTerminalDetail = {}
+  if (text) detail.text = text
+  if (opts?.research) detail.research = true
+  window.dispatchEvent(new CustomEvent<FocusTerminalDetail>(FOCUS_TERMINAL_EVENT, { detail }))
 }
 
 /** Claim and clear the last request's text, for a listener that attaches after the dispatch. */
@@ -34,6 +39,13 @@ export function takePendingTerminalText(): string | undefined {
   const text = pendingText
   pendingText = undefined
   return text
+}
+
+/** Claim and clear the last request's research flag, same shape as `takePendingTerminalText`. */
+export function takePendingTerminalResearch(): boolean | undefined {
+  const research = pendingResearch
+  pendingResearch = undefined
+  return research
 }
 
 /**

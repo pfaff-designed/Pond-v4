@@ -4,7 +4,8 @@
  * is always a file chooser to open, unlike the page-scoped `save-as-template`.
  */
 
-import { IMPORT_A_PAGE_ACTION, paletteItems } from '@/lib/pages/palette-items'
+import { paletteEntries } from '@/components/molecules/palette-entries'
+import { DEEP_RESEARCH_ACTION, IMPORT_A_PAGE_ACTION, paletteItems } from '@/lib/pages/palette-items'
 
 describe('IMPORT_A_PAGE_ACTION', () => {
   it('is an action row in Pond’s own words', () => {
@@ -28,5 +29,24 @@ describe('paletteItems — import a page', () => {
       expect(actions).toContain('new-page')
       expect(actions).toContain('ask-pond')
     }
+  })
+})
+
+/** 6r frame 1's "or ⌘K — deep research from the palette." */
+describe('DEEP_RESEARCH_ACTION', () => {
+  it('is an action row in Pond’s own words, beside ask pond', () => {
+    expect(DEEP_RESEARCH_ACTION).toMatchObject({
+      id: 'action:deep-research',
+      label: 'deep research',
+      kind: 'action',
+      action: 'deep-research',
+    })
+    expect(paletteItems([], [])).toContainEqual(DEEP_RESEARCH_ACTION)
+  })
+
+  it('lists on a `deep` query via the existing action-match path', () => {
+    const entries = paletteEntries(paletteItems([], []), 'deep')
+    const row = entries.find((e) => e.kind === 'row' && e.item.id === DEEP_RESEARCH_ACTION.id)
+    expect(row).toBeDefined()
   })
 })

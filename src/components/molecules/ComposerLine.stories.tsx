@@ -53,7 +53,7 @@ const Composer = ({
               anchorRef={anchorRef}
               research={research}
               mentionTitles={[]}
-              onToggleResearch={() => setResearch((on) => !on)}
+              onSelectMode={(mode) => setResearch(mode === 'deep-research')}
               onChange={setValue}
               onKeyDown={fn()}
               onAttach={fn()}
@@ -87,7 +87,7 @@ const meta = {
     anchorRef: { current: null },
     research: false,
     mentionTitles: [],
-    onToggleResearch: fn(),
+    onSelectMode: fn(),
     onChange: fn(),
     onKeyDown: fn(),
     onAttach: fn(),
@@ -266,9 +266,24 @@ const expectPillPaint = (pill: HTMLElement, color: string, background: string) =
     expect(css.backgroundColor).toBe(background)
   })
 
+/** Armed fill (6r f1): ground/paper, the inverse pair on dark. */
+const ARMED_PAINT = {
+  paper: { color: 'rgb(250, 249, 239)', background: 'rgb(27, 29, 20)' },
+  ink: { color: 'rgb(27, 29, 20)', background: 'rgb(250, 249, 239)' },
+} as const
+
+/** Clicking the pill opens the mode menu rather than toggling; picking a row arms/disarms it. */
+const pickMode = async (pill: HTMLElement, label: 'ask' | 'deep research') => {
+  await userEvent.click(pill)
+  const menu = await within(document.body).findByRole('menu', { name: 'mode menu' })
+  await userEvent.click(within(menu).getByText(label))
+  await waitFor(() => expect(within(document.body).queryByRole('menu')).not.toBeInTheDocument())
+}
+
 /**
- * The research pill after ＋. Off: ink .8, no fill, `aria-pressed=false`. Click:
- * ink .07 fill and full ink, `aria-pressed=true`; click again and it is off.
+ * The research pill after ＋. Off: ink .8, no fill. Click opens the mode menu
+ * (6r f1); picking `deep research` arms the ground/paper fill, picking `ask`
+ * again clears it.
  */
 export const Research: Story = {
   tags: ['!dev'],
@@ -276,37 +291,27 @@ export const Research: Story = {
   play: async ({ canvasElement }) => {
     for (const theme of THEMES) {
       const { research, plus, send } = parts(canvasElement, theme)
-      const wash = theme === 'paper' ? 'rgba(27, 29, 20, 0.07)' : 'rgba(250, 249, 239, 0.07)'
       await expectResearchPill(research, plus, send)
-
-      await expect(research).toHaveAttribute('aria-pressed', 'false')
       await expectPillPaint(research, INK[theme].meta, 'rgba(0, 0, 0, 0)')
 
-      await userEvent.click(research)
-      await expect(research).toHaveAttribute('aria-pressed', 'true')
-      await expectPillPaint(research, INK[theme].full, wash)
+      await pickMode(research, 'deep research')
+      await expectPillPaint(research, ARMED_PAINT[theme].color, ARMED_PAINT[theme].background)
       await expectResearchPill(research, plus, send)
 
-      await userEvent.click(research)
-      await expect(research).toHaveAttribute('aria-pressed', 'false')
+      await pickMode(research, 'ask')
       await expectPillPaint(research, INK[theme].meta, 'rgba(0, 0, 0, 0)')
     }
   },
 }
 
-/** Research on at rest: the wash and full ink are the whole signal. */
+/** Research on at rest: the ground/paper fill is the whole signal. */
 export const ResearchOn: Story = {
   tags: ['!dev'],
   render: () => <BothThemes initialResearch />,
   play: async ({ canvasElement }) => {
     for (const theme of THEMES) {
       const { research } = parts(canvasElement, theme)
-      await expect(research).toHaveAttribute('aria-pressed', 'true')
-      await expectPillPaint(
-        research,
-        INK[theme].full,
-        theme === 'paper' ? 'rgba(27, 29, 20, 0.07)' : 'rgba(250, 249, 239, 0.07)'
-      )
+      await expectPillPaint(research, ARMED_PAINT[theme].color, ARMED_PAINT[theme].background)
     }
   },
 }

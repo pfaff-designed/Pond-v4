@@ -38,6 +38,14 @@ export const ASK_POND_ACTION: PaletteItem = {
   action: 'ask-pond',
 }
 
+/** 6r frame 1's other door into the mode: "or ⌘K — deep research from the palette." */
+export const DEEP_RESEARCH_ACTION: PaletteItem = {
+  id: 'action:deep-research',
+  label: 'deep research',
+  kind: 'action',
+  action: 'deep-research',
+}
+
 /**
  * 6z's fourth door into the composer's html attach — board `Pond 06.25 Import
  * a page.dc.html` frame 1. Stands beside the shell's other two actions
@@ -97,6 +105,7 @@ export function paletteItems(
     IMPORT_A_PAGE_ACTION,
     NEW_PAGE_ACTION,
     ASK_POND_ACTION,
+    DEEP_RESEARCH_ACTION,
     ...(openPageId ? [SAVE_AS_TEMPLATE_ACTION] : []),
   ]
 }

@@ -419,6 +419,55 @@ export function precedingUserMessage<T extends { role: string }>(
 }
 
 /**
+ * Whether deep research just ended as of the answer at `assistantIndex` (6r
+ * frame 8: "off again" shows once, on the first answer after a deep-research
+ * answer). Walks up from the answer with {@link precedingUserMessage} twice —
+ * the question this answer replied to, then the one before that — and is
+ * true only when the nearer turned research OFF (`metadata.research ===
+ * false`, the stamp `sendText` always writes after a send) and the one
+ * before it had turned research ON. Fewer than two prior user turns (the
+ * thread's first question, or its second) is false, never a guess.
+ */
+export function researchEndedAt<T extends { role: string; metadata?: unknown }>(
+  messages: readonly T[],
+  assistantIndex: number
+): boolean {
+  const nearer = precedingUserMessage(messages, assistantIndex)
+  if (!nearer) return false
+  const earlier = precedingUserMessage(messages, messages.indexOf(nearer))
+  if (!earlier) return false
+  return researchFlag(nearer.metadata) === false && researchFlag(earlier.metadata) === true
+}
+
+function researchFlag(metadata: unknown): boolean | undefined {
+  if (typeof metadata !== 'object' || metadata === null) return undefined
+  const research = (metadata as { research?: unknown }).research
+  return typeof research === 'boolean' ? research : undefined
+}
+
+/**
+ * The off-again stamp written by {@link withResearchEndedStamp}, read back on
+ * every later render instead of recomputed — same reasoning as {@link
+ * readStamp}: a reload has no live message-index walk to redo, only the
+ * transcript it's given.
+ */
+export function researchEndedStamp(metadata: unknown): boolean | null {
+  if (typeof metadata !== 'object' || metadata === null) return null
+  const ended = (metadata as { researchEnded?: unknown }).researchEnded
+  return typeof ended === 'boolean' ? ended : null
+}
+
+/** Write the off-again flag onto a message's metadata, leaving every other field alone. */
+export function withResearchEndedStamp<T extends { metadata?: unknown }>(
+  message: T,
+  researchEnded: boolean
+): T {
+  const base =
+    typeof message.metadata === 'object' && message.metadata !== null ? message.metadata : {}
+  return { ...message, metadata: { ...base, researchEnded } }
+}
+
+/**
  * What actually reached the model for a turn (KAN-99: "sources are always
  * shown" — and never a source that wasn't one), read off the question's own
  * metadata, stamped by `sendText` at send time. Never recomputed from live

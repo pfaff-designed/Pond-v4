@@ -35,7 +35,7 @@ const Footer = () => {
         anchorRef={anchorRef}
         research={research}
         mentionTitles={[]}
-        onToggleResearch={() => setResearch((on) => !on)}
+        onSelectMode={(mode) => setResearch(mode === 'deep-research')}
         onChange={setValue}
         onKeyDown={fn()}
         onAttach={fn()}
