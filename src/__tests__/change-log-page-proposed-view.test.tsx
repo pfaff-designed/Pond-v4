@@ -121,7 +121,7 @@ describe('ChangeLogPage — the proposed view', () => {
     const user = userEvent.setup()
     renderPage()
 
-    await user.click(screen.getByRole('button', { name: 'proposed' }))
+    await user.click(screen.getByRole('tab', { name: 'proposed' }))
 
     expect(await screen.findByTestId('change-log-proposed-empty')).toHaveTextContent(
       'nothing waiting'
@@ -136,7 +136,7 @@ describe('ChangeLogPage — the proposed view', () => {
     const user = userEvent.setup()
     renderPage()
 
-    await user.click(screen.getByRole('button', { name: 'proposed' }))
+    await user.click(screen.getByRole('tab', { name: 'proposed' }))
 
     expect(screen.getByText('status is proposed')).toBeInTheDocument()
     expect(screen.getByText('newest first')).toBeInTheDocument()
@@ -152,7 +152,7 @@ describe('ChangeLogPage — the proposed view', () => {
     const user = userEvent.setup()
     renderPage()
 
-    await user.click(screen.getByRole('button', { name: 'proposed' }))
+    await user.click(screen.getByRole('tab', { name: 'proposed' }))
     const card = await screen.findByTestId('change-log-proposed-card-rec-open')
 
     await user.click(within(card).getByText('deleted page'))
@@ -166,7 +166,7 @@ describe('ChangeLogPage — the proposed view', () => {
     const user = userEvent.setup()
     renderPage()
 
-    await user.click(screen.getByRole('button', { name: 'proposed' }))
+    await user.click(screen.getByRole('tab', { name: 'proposed' }))
 
     expect(mockListRecords).toHaveBeenCalledWith(
       expect.anything(),
@@ -186,7 +186,7 @@ describe('ChangeLogPage — the proposed view', () => {
     const user = userEvent.setup()
     renderPage()
 
-    await user.click(screen.getByRole('button', { name: 'proposed' }))
+    await user.click(screen.getByRole('tab', { name: 'proposed' }))
 
     const card = await screen.findByTestId('change-log-proposed-card-rec-changed')
     const rows = card.querySelectorAll<HTMLElement>('[data-kind="diff-line"]')
@@ -209,7 +209,7 @@ describe('ChangeLogPage — the proposed view', () => {
     const user = userEvent.setup()
     renderPage()
 
-    await user.click(screen.getByRole('button', { name: 'proposed' }))
+    await user.click(screen.getByRole('tab', { name: 'proposed' }))
 
     const card = await screen.findByTestId('change-log-proposed-card-rec-created')
     const rows = card.querySelectorAll<HTMLElement>('[data-kind="diff-line"]')
@@ -233,7 +233,7 @@ describe('ChangeLogPage — the proposed view', () => {
     const user = userEvent.setup()
     renderPage()
 
-    await user.click(screen.getByRole('button', { name: 'proposed' }))
+    await user.click(screen.getByRole('tab', { name: 'proposed' }))
     const acceptButton = await screen.findByRole('button', { name: 'accept' })
 
     // Two clicks land in the same tick, before the first write settles — a
@@ -256,7 +256,7 @@ describe('ChangeLogPage — the proposed view', () => {
     const user = userEvent.setup()
     renderPage()
 
-    await user.click(screen.getByRole('button', { name: 'proposed' }))
+    await user.click(screen.getByRole('tab', { name: 'proposed' }))
 
     const card = await screen.findByTestId('change-log-proposed-card-rec-outdated')
     expect(card).toHaveTextContent('this proposal is out of date — ask Pond to revise it')
@@ -278,7 +278,7 @@ describe('ChangeLogPage — the proposed view', () => {
     const user = userEvent.setup()
     renderPage()
 
-    await user.click(screen.getByRole('button', { name: 'proposed' }))
+    await user.click(screen.getByRole('tab', { name: 'proposed' }))
     await screen.findByTestId('change-log-proposed-card-rec-outdated-revise')
 
     await user.click(screen.getByRole('button', { name: 'revise' }))
@@ -304,7 +304,7 @@ describe('ChangeLogPage — the proposed view', () => {
     const user = userEvent.setup()
     renderPage()
 
-    await user.click(screen.getByRole('button', { name: 'proposed' }))
+    await user.click(screen.getByRole('tab', { name: 'proposed' }))
     expect(await screen.findByTestId('change-log-proposed-card-rec-reject')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'reject' }))
@@ -323,7 +323,7 @@ describe('ChangeLogPage — the proposed view', () => {
     const user = userEvent.setup()
     renderPage()
 
-    await user.click(screen.getByRole('button', { name: 'proposed' }))
+    await user.click(screen.getByRole('tab', { name: 'proposed' }))
     await screen.findByTestId('change-log-proposed-card-rec-request')
 
     await user.click(screen.getByRole('button', { name: 'request changes' }))
@@ -346,7 +346,7 @@ describe('ChangeLogPage — the proposed view', () => {
     const user = userEvent.setup()
     renderPage()
 
-    await user.click(screen.getByRole('button', { name: 'proposed' }))
+    await user.click(screen.getByRole('tab', { name: 'proposed' }))
 
     const card = await screen.findByTestId('change-log-proposed-card-rec-unsupported')
     expect(within(card).queryByRole('button', { name: 'accept' })).not.toBeInTheDocument()
@@ -367,7 +367,7 @@ describe('ChangeLogPage — the proposed view', () => {
     const user = userEvent.setup()
     renderPage()
 
-    await user.click(screen.getByRole('button', { name: 'proposed' }))
+    await user.click(screen.getByRole('tab', { name: 'proposed' }))
     const reviseButton = await screen.findByRole('button', { name: 'revise' })
 
     // Two awaited clicks, each its own task with a React re-render in
@@ -394,7 +394,7 @@ describe('ChangeLogPage — the proposed view', () => {
     const user = userEvent.setup()
     renderPage()
 
-    await user.click(screen.getByRole('button', { name: 'proposed' }))
+    await user.click(screen.getByRole('tab', { name: 'proposed' }))
     await screen.findByTestId('change-log-proposed-card-rec-note-double')
     await user.click(screen.getByRole('button', { name: 'request changes' }))
     await user.type(screen.getByLabelText('note to pond'), 'shorten this')
@@ -426,7 +426,7 @@ describe('ChangeLogPage — the proposed view', () => {
     const client = renderPageWithClient()
     const invalidateSpy = jest.spyOn(client, 'invalidateQueries')
 
-    await user.click(screen.getByRole('button', { name: 'proposed' }))
+    await user.click(screen.getByRole('tab', { name: 'proposed' }))
     await user.click(await screen.findByRole('button', { name: 'accept' }))
 
     await waitFor(() => expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: changeLogKey() }))
@@ -443,7 +443,7 @@ describe('ChangeLogPage — the proposed view', () => {
     const client = renderPageWithClient()
     const invalidateSpy = jest.spyOn(client, 'invalidateQueries')
 
-    await user.click(screen.getByRole('button', { name: 'proposed' }))
+    await user.click(screen.getByRole('tab', { name: 'proposed' }))
     await user.click(await screen.findByRole('button', { name: 'reject' }))
 
     await waitFor(() => expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: changeLogKey() }))
@@ -483,7 +483,7 @@ describe('ChangeLogPage — the proposed view', () => {
 
     // Step 3: open the proposed view — the chips, and a card for every
     // record still waiting.
-    await user.click(screen.getByRole('button', { name: 'proposed' }))
+    await user.click(screen.getByRole('tab', { name: 'proposed' }))
     expect(screen.getByText('status is proposed')).toBeInTheDocument()
     expect(screen.getByText('newest first')).toBeInTheDocument()
     await screen.findByTestId('change-log-proposed-card-rec-accept')
@@ -530,8 +530,8 @@ describe('ChangeLogPage — the proposed view', () => {
       targetPageId: 'page-1',
     })
     waiting = waiting.filter((r) => r.id !== 'rec-request')
-    await user.click(screen.getByRole('button', { name: 'all' }))
-    await user.click(screen.getByRole('button', { name: 'proposed' }))
+    await user.click(screen.getByRole('tab', { name: 'all' }))
+    await user.click(screen.getByRole('tab', { name: 'proposed' }))
     await waitFor(() =>
       expect(screen.queryByTestId('change-log-proposed-card-rec-request')).not.toBeInTheDocument()
     )
@@ -571,7 +571,7 @@ describe('ChangeLogPage — the proposed view', () => {
       </div>
     )
 
-    await user.click(screen.getByRole('button', { name: 'proposed' }))
+    await user.click(screen.getByRole('tab', { name: 'proposed' }))
     const card = await screen.findByTestId('change-log-proposed-card-rec-dark')
 
     expect(card).toHaveClass('bg-mn-card')

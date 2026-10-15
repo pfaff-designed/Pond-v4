@@ -159,7 +159,7 @@ describe('ChangeLogPage — the deleted view', () => {
     const user = userEvent.setup()
     renderPage()
 
-    await user.click(screen.getByRole('button', { name: 'deleted' }))
+    await user.click(screen.getByRole('tab', { name: 'deleted' }))
 
     expect(await screen.findByText('deleted page old quotes')).toBeInTheDocument()
     expect(screen.getByText('you · 1 jan')).toBeInTheDocument()
@@ -185,7 +185,7 @@ describe('ChangeLogPage — the deleted view', () => {
 
     const user = userEvent.setup()
     renderPage()
-    await user.click(screen.getByRole('button', { name: 'deleted' }))
+    await user.click(screen.getByRole('tab', { name: 'deleted' }))
 
     const restoreButton = await screen.findByRole('button', { name: 'restore' })
     await user.click(restoreButton)
@@ -210,7 +210,7 @@ describe('ChangeLogPage — the deleted view', () => {
     const user = userEvent.setup()
     const { client } = renderPageWithClient()
     const invalidateSpy = jest.spyOn(client, 'invalidateQueries')
-    await user.click(screen.getByRole('button', { name: 'deleted' }))
+    await user.click(screen.getByRole('tab', { name: 'deleted' }))
 
     const restoreButton = await screen.findByRole('button', { name: 'restore' })
     await user.click(restoreButton)
@@ -229,7 +229,7 @@ describe('ChangeLogPage — the deleted view', () => {
     const user = userEvent.setup()
     renderPage()
 
-    await user.click(screen.getByRole('button', { name: 'deleted' }))
+    await user.click(screen.getByRole('tab', { name: 'deleted' }))
 
     expect(await screen.findByText('the garden')).toBeInTheDocument()
     expect(screen.queryByText('life')).not.toBeInTheDocument()
@@ -249,7 +249,7 @@ describe('ChangeLogPage — the deleted view', () => {
 
     const user = userEvent.setup()
     renderPage()
-    await user.click(screen.getByRole('button', { name: 'deleted' }))
+    await user.click(screen.getByRole('tab', { name: 'deleted' }))
 
     const restoreButton = await screen.findByRole('button', { name: 'restore' })
     await user.click(restoreButton)
@@ -266,7 +266,7 @@ describe('ChangeLogPage — the deleted view', () => {
 
     const user = userEvent.setup()
     renderPage()
-    await user.click(screen.getByRole('button', { name: 'deleted' }))
+    await user.click(screen.getByRole('tab', { name: 'deleted' }))
 
     const laterRestorable = `restorable until ${shortDateOf(plus30Days(LATER_DELETE_RECORD.createdAt))}`
     const soonerRestorable = await screen.findByText(RESTORABLE_UNTIL)
@@ -284,7 +284,7 @@ describe('ChangeLogPage — the deleted view', () => {
     const user = userEvent.setup()
     renderPage()
 
-    await user.click(screen.getByRole('button', { name: 'deleted' }))
+    await user.click(screen.getByRole('tab', { name: 'deleted' }))
     await screen.findByText('deleted page old quotes')
 
     expect(
@@ -301,7 +301,7 @@ describe('ChangeLogPage — the deleted view', () => {
     const user = userEvent.setup()
     renderPage()
 
-    await user.click(screen.getByRole('button', { name: 'deleted' }))
+    await user.click(screen.getByRole('tab', { name: 'deleted' }))
 
     const restoreButton = await screen.findByRole('button', { name: 'restore' })
     expect(restoreButton).toHaveAttribute('data-kind', 'button')
@@ -312,7 +312,7 @@ describe('ChangeLogPage — the deleted view', () => {
     const user = userEvent.setup()
     renderPage()
 
-    await user.click(screen.getByRole('button', { name: 'deleted' }))
+    await user.click(screen.getByRole('tab', { name: 'deleted' }))
 
     expect(await screen.findByTestId('change-log-deleted-empty')).toHaveTextContent(
       'nothing in the trash'
@@ -339,14 +339,14 @@ describe('ChangeLogPage — the deleted view', () => {
       </QueryClientProvider>
     )
 
-    await user.click(screen.getByRole('button', { name: 'deleted' }))
+    await user.click(screen.getByRole('tab', { name: 'deleted' }))
     expect(await screen.findByText('deleted page old quotes')).toBeInTheDocument()
     expect(screen.queryByText('deleted page supplier list')).not.toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'all' }))
+    await user.click(screen.getByRole('tab', { name: 'all' }))
     trashed = true // a page trashed through the mocked store while the deleted view was closed
 
-    await user.click(screen.getByRole('button', { name: 'deleted' }))
+    await user.click(screen.getByRole('tab', { name: 'deleted' }))
     expect(await screen.findByText('deleted page supplier list')).toBeInTheDocument()
   })
 
@@ -357,7 +357,7 @@ describe('ChangeLogPage — the deleted view', () => {
 
     expect(screen.getByTestId('change-log-column')).toHaveStyle({ maxWidth: '840px' })
 
-    await user.click(screen.getByRole('button', { name: 'deleted' }))
+    await user.click(screen.getByRole('tab', { name: 'deleted' }))
 
     // maxWidth bounds the border-box column, which eats PAGE_COLUMN_PAD_PX (32px)
     // each side — 700 + 2 * 32 so the content box itself lands at exactly 700px.
