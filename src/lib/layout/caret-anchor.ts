@@ -105,14 +105,32 @@ const GAP = 4
 
 /**
  * Which way the glass grows: below the caret when it fits, otherwise toward the
- * side with more room. `needed` is the glass's tallest height.
+ * side with more room. `needed` is the glass's tallest height. `bottomBound` is
+ * the lowest the glass may reach — the viewport, or less when something floats
+ * over the canvas (`composerBottomBound`).
  */
 export function sideTowardFreeSpace(
   caret: Pick<DOMRect, 'top' | 'bottom'>,
-  viewportHeight: number,
+  bottomBound: number,
   needed: number
 ): PickerSide {
-  const below = viewportHeight - caret.bottom - GAP
+  const below = bottomBound - caret.bottom - GAP
   const above = caret.top - GAP
   return below >= needed || below >= above ? 'bottom' : 'top'
+}
+
+/**
+ * How tall the glass may grow on the side `sideTowardFreeSpace` already
+ * chose — `below`/`above` from that same function, picked by `side`. Neither
+ * side always fits `needed` (both can be short of it at once, see that
+ * function's own tie-break), so a glass sized off `needed` alone can still
+ * reach past `bottomBound`; this is the cap that keeps it inside the side it
+ * opened on.
+ */
+export function roomTowardSide(
+  caret: Pick<DOMRect, 'top' | 'bottom'>,
+  bottomBound: number,
+  side: PickerSide
+): number {
+  return side === 'bottom' ? bottomBound - caret.bottom - GAP : caret.top - GAP
 }

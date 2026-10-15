@@ -19,6 +19,7 @@ import {
   RECORDS_ARE,
   recordsWord,
   sourceEntries,
+  sourcePickerHeight,
   typeEntries,
   type SourceDatabase,
   type SourceEntry,
@@ -340,5 +341,25 @@ describe('the picker speaks Pond’s words only', () => {
 
   it('a chart kind’s row is its engine name, lowercase', () => {
     for (const label of labels(typeEntries(CALORIES, true))) expect(label).toBe(label.toLowerCase())
+  })
+})
+
+// KAN-100: the source picker's side picks toward the composer's free space, same
+// as the `/` menu — `sourcePickerHeight` is what it sizes that decision off.
+describe('sourcePickerHeight (KAN-100)', () => {
+  it('grows with the databases list, capped at the viewport’s own 60vh', () => {
+    const none = sourcePickerHeight([], 900)
+    const some = sourcePickerHeight(
+      [{ id: 'd1', title: 'recipes', records: 3, recordsAre: 'pages' }],
+      900
+    )
+    expect(some).toBeGreaterThan(none)
+    const huge = Array.from({ length: 50 }, (_, i) => ({
+      id: `d${i}`,
+      title: `db ${i}`,
+      records: i,
+      recordsAre: 'pages' as const,
+    }))
+    expect(sourcePickerHeight(huge, 900)).toBeLessThan(900)
   })
 })

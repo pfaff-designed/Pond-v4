@@ -55,9 +55,11 @@ import {
   type YourTemplate,
 } from '@/components/molecules/SlashMenu'
 import type { PickerSize } from '@/components/molecules/picker-chrome'
-import type { PickerAnchorBox } from '@/components/molecules/use-anchored-box'
+import type { PickerAnchorBox, PickerSide } from '@/components/molecules/use-anchored-box'
 import { SourcePicker, type SourcePick } from '@/components/molecules/SourcePicker'
-import type { SourceBlock } from '@/components/molecules/source-entries'
+import { sourcePickerHeight, type SourceBlock } from '@/components/molecules/source-entries'
+import { caretRect, roomTowardSide, sideTowardFreeSpace } from '@/lib/layout/caret-anchor'
+import { composerBottomBound } from '@/lib/layout/composer-clearance'
 import {
   PondMenu,
   type PondMenuGroup,
@@ -421,6 +423,9 @@ export function BlockCanvas({
     /** Where to look for a nearby source (AUDIT C9) — a position, read once at open. */
     at: number
     anchor: Element | null
+    /** Toward the composer's free space (KAN-100) — read once at open, same as `/`'s own. */
+    side: PickerSide
+    maxHeight: number
   } | null>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
   // While previewing, `canvasRef` collapses to zero height (6f frame 3's
@@ -795,7 +800,11 @@ export function BlockCanvas({
     line: Element | null
   ) {
     const anchor = line ?? document.getElementById(blockDomId(target.hostId)) ?? canvasRef.current
-    setSourcePicker({ block, target, at, anchor })
+    const caret = anchor ? caretRect(anchor) : { top: 0, bottom: 0 }
+    const bound = composerBottomBound(window.innerHeight)
+    const side = sideTowardFreeSpace(caret, bound, sourcePickerHeight(databases, window.innerHeight))
+    const maxHeight = Math.max(0, roomTowardSide(caret, bound, side))
+    setSourcePicker({ block, target, at, anchor, side, maxHeight })
   }
 
   function nearestSource(at: number): string | null {
@@ -1715,6 +1724,8 @@ export function BlockCanvas({
             }
           })()}
           anchor={sourcePicker.anchor}
+          side={sourcePicker.side}
+          maxHeight={sourcePicker.maxHeight}
           onPick={(pick) => void onSourcePick(pick)}
           onClose={() => setSourcePicker(null)}
         />
@@ -2163,6 +2174,7 @@ function BlockEditor({
           query={slash.query}
           anchor={previewing ? previewAnchor : slash.anchor}
           side={slash.side}
+          maxHeight={slash.maxHeight}
           size={slashSize}
           onSelect={(row) => onSlashSelect?.(row, slash.line)}
           onPickTemplate={onSlashPickTemplate && ((pick) => onSlashPickTemplate(pick, slash.line))}

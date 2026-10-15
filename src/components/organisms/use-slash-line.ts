@@ -5,7 +5,8 @@ import type { PickerSize } from '@/components/molecules/picker-chrome'
 import { slashMenuHeight, type YourTemplate } from '@/components/molecules/slash-entries'
 import type { PickerAnchorBox, PickerSide } from '@/components/molecules/use-anchored-box'
 import type { Block } from '@/lib/documents/types'
-import { caretRect, sideTowardFreeSpace } from '@/lib/layout/caret-anchor'
+import { caretRect, roomTowardSide, sideTowardFreeSpace } from '@/lib/layout/caret-anchor'
+import { composerBottomBound } from '@/lib/layout/composer-clearance'
 import { slashRows } from '@/lib/modules/palette'
 import type { SlashLineAt, SlashLineListener } from '@/lib/modules/text/slash-line'
 
@@ -40,6 +41,10 @@ export const useSlashLine = ({
   onClose,
 }: SlashLineOptions) => {
   const [side, setSide] = useState<PickerSide>('bottom')
+  // The room the chosen side actually has, below the viewport's own 60vh cap
+  // (`LIST_MAX_VH`) — that cap is the full viewport's, and the composer band
+  // can leave a side with less room than that (`roomTowardSide`).
+  const [maxHeight, setMaxHeight] = useState<number | undefined>(undefined)
   const anchor = useMemo<PickerAnchorBox>(
     () => ({
       getBoundingClientRect: () =>
@@ -65,7 +70,11 @@ export const useSlashLine = ({
         at ? false : leadWithTemplates,
         yourTemplates
       )
-      setSide(sideTowardFreeSpace(caretRect(rootRef.current), window.innerHeight, height))
+      const caret = caretRect(rootRef.current)
+      const bound = composerBottomBound(window.innerHeight)
+      const nextSide = sideTowardFreeSpace(caret, bound, height)
+      setSide(nextSide)
+      setMaxHeight(Math.max(0, roomTowardSide(caret, bound, nextSide)))
     }
     onOpen?.()
   }
@@ -87,5 +96,5 @@ export const useSlashLine = ({
     else if (open && !line && !next.content.startsWith('/')) onClose?.()
   }
 
-  return { line, query, anchor, side, handleSlashLine, handleTextChange }
+  return { line, query, anchor, side, maxHeight, handleSlashLine, handleTextChange }
 }

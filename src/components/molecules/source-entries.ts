@@ -25,6 +25,7 @@ import type { ViewMode } from '@/lib/modules/view/schema'
 import { VIEW_KINDS } from '@/lib/modules/view/kinds'
 import { PROPERTY_TYPES, type PropertyType } from '@/lib/properties/schema'
 
+import { BOX_HEIGHT, LIST_MAX_VH, SLASH_SIZES } from './picker-chrome'
 import { ICON, type SlashEntry, type SlashIcon } from './slash-entries'
 
 /**
@@ -159,6 +160,23 @@ export function sourceEntries(
       out.push(row(db.id, db.title, { icon: ICON.db, hint: recordsWord(db) }))
   }
   return out
+}
+
+/**
+ * How tall the glass can get opening on the `source` step — the same role
+ * `slashMenuHeight` plays for the `/` menu, for picking which side it opens
+ * toward (`sideTowardFreeSpace`) before it renders. The source picker always
+ * opens desktop-sized (it hangs off the `/` line, never a mobile row).
+ */
+export function sourcePickerHeight(
+  databases: readonly SourceDatabase[],
+  viewportHeight: number
+): number {
+  const list = sourceEntries(databases, '').reduce(
+    (height, e) => height + (e.kind === 'group' ? BOX_HEIGHT.group : SLASH_SIZES.desktop.rowHeight),
+    0
+  )
+  return Math.min(list, viewportHeight * LIST_MAX_VH) + BOX_HEIGHT.foot + BOX_HEIGHT.glass
 }
 
 // ── type ───────────────────────────────────────────────────────────────────────
