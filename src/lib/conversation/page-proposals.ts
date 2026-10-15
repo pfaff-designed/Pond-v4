@@ -230,43 +230,6 @@ export interface MentionablePage {
   title: string
 }
 
-/**
- * The pages the answer mentioned — the person's pages whose title appears in the
- * prose (case-insensitive, whole words, titles of three characters or more so
- * "a" never matches). Order of first appearance, one entry per page. This is
- * the "mentioned" list Pond adds to the made page (6a frame 5) — derived from
- * the words, never invented.
- */
-export function mentionedPages(prose: string, pages: MentionablePage[]): MentionablePage[] {
-  const text = prose.toLowerCase()
-  const hits: { page: MentionablePage; at: number }[] = []
-  const seenTitles = new Set<string>()
-  for (const page of pages) {
-    const title = page.title.trim()
-    if (title.length < 3) continue
-    const key = title.toLowerCase()
-    if (seenTitles.has(key)) continue
-    const at = wholeWordIndex(text, key)
-    if (at === -1) continue
-    seenTitles.add(key)
-    hits.push({ page, at })
-  }
-  return hits.sort((a, b) => a.at - b.at).map((h) => h.page)
-}
-
-function wholeWordIndex(text: string, needle: string): number {
-  let from = 0
-  while (from <= text.length) {
-    const at = text.indexOf(needle, from)
-    if (at === -1) return -1
-    const before = at === 0 ? ' ' : text[at - 1]
-    const after = at + needle.length >= text.length ? ' ' : text[at + needle.length]
-    if (!/[\p{L}\p{N}]/u.test(before) && !/[\p{L}\p{N}]/u.test(after)) return at
-    from = at + 1
-  }
-  return -1
-}
-
 // ── Chat framing ─────────────────────────────────────────────────────────────
 
 /** A leading conversational line the model sometimes opens with, addressed to
