@@ -257,8 +257,7 @@ function filled(kind: TemplateKind): Filled {
         blocks: [
           fill(b[0], { content: 'Out of the flat by the 14th, with every box labelled by room.' }),
           b[1],
-          b[2],
-          entries(b[3], [
+          entries(b[2], [
             ['28 oct', 'Van booked for the morning of the 14th.'],
             ['24 oct', 'Landlord confirmed the inventory date.'],
           ]),

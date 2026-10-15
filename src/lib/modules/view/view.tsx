@@ -20,10 +20,11 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { ModuleViewProps } from '../types'
-import type { ViewBlock } from './schema'
+import type { ViewBlock, ViewSavedView } from './schema'
 import { useSiblingBlocks } from '../sibling-context'
 import { viewCollectionId } from '../block-frame'
 import { useCollectionRows } from './use-collection-rows'
+import { applyConfigPatch, resolveActiveView } from './schema'
 import {
   applyView,
   displayValue,
@@ -84,6 +85,7 @@ import { RecordPeek } from './record-peek'
 import { CollectionList } from './list'
 import { CollectionCalendar } from './collection-calendar'
 import { useRecordSelection } from './use-record-selection'
+import { ViewBar, type ViewBarView } from '@/components/molecules/ViewBar'
 
 // ── Registry entry: fetch, then draw ──────────────────────────────────────────
 
@@ -132,8 +134,13 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
 
   // Config edits (chart/big-number setup) rewrite the persisted view block through the
   // module's own onChange — the same whole-block save path every editable module uses.
+  // `applyConfigPatch` (KAN-32) lands the patch on the ACTIVE saved view's config on a
+  // `views`-shaped block, never the whole-block spread a legacy block still gets. The
+  // active view is whichever one `CollectionView`'s bar has LOCALLY selected, not the
+  // persisted `activeViewId` — a person can switch the bar without that being an edit,
+  // so `activeId` arrives from `CollectionView` on every call.
   const onConfigChange = onChange
-    ? (patch: ViewConfigPatch) => onChange({ ...data, ...patch })
+    ? (patch: ViewConfigPatch, activeId?: string) => onChange(applyConfigPatch(data, patch, activeId))
     : undefined
 
   // A row IS a page: `open ›` on the record peek navigates to it through the page-link
@@ -191,8 +198,11 @@ export interface CollectionViewProps {
   onAddRow?: (values?: Record<string, PropertyValue>) => Promise<string | null>
   onRenameRow?: (rowId: string, title: string) => void
   /** Rewrite the view block's own config — chart and big-number setup. Never its
-   *  kind (fixed once made, KAN-44). Absent on read-only / Storybook hosts. */
-  onConfigChange?: (patch: ViewConfigPatch) => void
+   *  kind (fixed once made, KAN-44). Absent on read-only / Storybook hosts. The
+   *  optional second arg is which saved view's config to land the patch on (KAN-32
+   *  fix) — `CollectionView` passes its own LOCAL active view, never the
+   *  persisted `activeViewId`. */
+  onConfigChange?: (patch: ViewConfigPatch, activeId?: string) => void
   /** Navigate to a row's page — a row IS a page, so this receives the row id. Draws
    *  the record peek's `open ›`; absent on Storybook/static renders (no dead affordance). */
   onOpenRow?: (rowId: string) => void
@@ -224,18 +234,61 @@ export function CollectionView({
   // What the page canvas keys this view's peek and orange pill by.
   const instanceKey = useId()
   const viewKey = config.id ?? instanceKey
+
+  // KAN-36: which saved view is showing is READING, not editing — a reader (a
+  // shared view-only page, the proposed view) can switch segments too, so this
+  // lives in local state rather than behind `editable`/`onConfigChange`. Seeded
+  // once from the persisted `activeViewId`; `config.views` is absent on a legacy
+  // block, so the bar never renders and this stays undefined.
+  const [localActiveViewId, setLocalActiveViewId] = useState<string | undefined>(() =>
+    config.views?.length ? config.activeViewId ?? config.views[0].id : undefined
+  )
+
+  // KAN-32: every mode/groupBy/sort/filter/chart/bigNumber read below runs off the
+  // ACTIVE saved view, never the raw block — a `views`-shaped block's other saved
+  // views must never leak into what renders. `activeConfig` mirrors the active
+  // view's kind+config onto a `ViewBlock` shape so every reader below (most of
+  // which predate `views[]`) keeps reading the same fields it always has; on a
+  // legacy block (no `views`) `resolveActiveView` mirrors the top level back, so
+  // `activeConfig` is field-for-field identical to `config`.
+  const activeConfig: ViewBlock = useMemo(() => {
+    const resolved = resolveActiveView(
+      config.views && localActiveViewId ? { ...config, activeViewId: localActiveViewId } : config
+    )
+    return {
+      ...config,
+      mode: resolved.kind,
+      groupBy: resolved.config.groupBy,
+      sort: resolved.config.sort,
+      filter: resolved.config.filter,
+      startDate: resolved.config.startDate,
+      endDate: resolved.config.endDate,
+      chart: resolved.config.chart,
+      bigNumber: resolved.config.bigNumber,
+      collectionId: resolved.config.collectionId,
+    }
+  }, [config, localActiveViewId])
+
   const processed = useMemo(
-    () => (schema ? applyView(rows, schema, config) : []),
-    [rows, schema, config]
+    () => (schema ? applyView(rows, schema, activeConfig) : []),
+    [rows, schema, activeConfig]
+  )
+
+  // A config edit (chart/big-number setup) must land on whichever view the bar has
+  // LOCALLY selected, never the persisted `activeViewId` — a bar click never calls
+  // `onChange`, so without this the edit would silently land on `views[0]`.
+  const handleConfigChange = useCallback(
+    (patch: ViewConfigPatch) => onConfigChange?.(patch, localActiveViewId),
+    [onConfigChange, localActiveViewId]
   )
 
   // #227: the chart CARD owns its loading state (the board's four-bar skeleton) —
   // every other mode shares the calm notice until its rows arrive.
-  const chartCard = isChartCard(config)
+  const chartCard = isChartCard(activeConfig)
   if (isLoading) {
     return chartCard ? (
       <CollectionChart
-        config={config}
+        config={activeConfig}
         schema={null}
         rows={[]}
         totalRows={0}
@@ -262,7 +315,7 @@ export function CollectionView({
     // its `error` state is for.
     return chartCard ? (
       <CollectionChart
-        config={config}
+        config={activeConfig}
         schema={null}
         rows={[]}
         totalRows={0}
@@ -276,65 +329,69 @@ export function CollectionView({
 
   return (
     <div className="text-sm text-mn-text">
-      {editable && onConfigChange && (
-        <ViewControls
-          config={config}
-          schema={schema}
-          collectionName={collectionName}
-          onConfigChange={onConfigChange}
-        />
-      )}
-      {config.mode === 'board' ? (
+      <ViewControls
+        config={activeConfig}
+        schema={schema}
+        collectionName={collectionName}
+        recordCount={rows.length}
+        savedViews={config.views}
+        activeViewId={localActiveViewId}
+        onSelectView={config.views ? setLocalActiveViewId : undefined}
+        showAddView={!!editable}
+        editable={editable}
+        onConfigChange={onConfigChange ? handleConfigChange : undefined}
+      />
+      {activeConfig.mode === 'board' ? (
         <CollectionBoard
           schema={schema}
           rows={processed}
           viewKey={viewKey}
-          groupBy={config.groupBy}
+          groupBy={activeConfig.groupBy}
           editable={editable}
           onEdit={onEdit}
           onAddRow={onAddRow}
           onRenameRow={onRenameRow}
           onOpenRow={onOpenRow}
         />
-      ) : config.mode === 'list' ? (
+      ) : activeConfig.mode === 'list' ? (
         <CollectionList
           viewKey={viewKey}
           schema={schema}
           rows={processed}
-          groupBy={config.groupBy}
+          groupBy={activeConfig.groupBy}
           editable={editable}
           onEdit={onEdit}
           onRenameRow={onRenameRow}
           onOpenRow={onOpenRow}
           onAddDateField={onAddDateField}
         />
-      ) : config.mode === 'calendar' ? (
+      ) : activeConfig.mode === 'calendar' ? (
         <CollectionCalendar
           schema={schema}
           rows={processed}
-          groupBy={config.groupBy}
+          groupBy={activeConfig.groupBy}
           onAddDateField={onAddDateField}
         />
-      ) : config.mode === 'gallery' ? (
+      ) : activeConfig.mode === 'gallery' ? (
         <CollectionGallery schema={schema} rows={processed} />
-      ) : config.mode === 'gantt' ? (
+      ) : activeConfig.mode === 'gantt' ? (
         <CollectionGantt
           schema={schema}
           rows={processed}
-          startId={config.startDate}
-          endId={config.endDate}
+          startId={activeConfig.startDate}
+          endId={activeConfig.endDate}
           editable={editable}
           onEdit={onEdit}
           onAddDateField={onAddDateField}
         />
-      ) : config.mode === 'chart' ? (
+      ) : activeConfig.mode === 'chart' ? (
         // #259: the chart's PRESENTATION — the compact inline mark (the board's
         // `bars` strip / `heat` grid) or the chart card. Same rows, same aggregation.
-        !chartCard && config.chart ? (
-          <CompactChart schema={schema} rows={processed} chart={config.chart} />
+        !chartCard && activeConfig.chart ? (
+          <CompactChart schema={schema} rows={processed} chart={activeConfig.chart} />
         ) : (
           <CollectionChart
-            config={config}
+            config={activeConfig}
             schema={schema}
             rows={processed}
             totalRows={rows.length}
@@ -348,8 +405,8 @@ export function CollectionView({
             onAddRow={editable && onAddRow ? () => void onAddRow() : undefined}
           />
         )
-      ) : config.mode === 'big-number' ? (
-        <CollectionBigNumber schema={schema} rows={processed} bigNumber={config.bigNumber} />
+      ) : activeConfig.mode === 'big-number' ? (
+        <CollectionBigNumber schema={schema} rows={processed} bigNumber={activeConfig.bigNumber} />
       ) : (
         <CollectionTable
           schema={schema}
@@ -367,21 +424,37 @@ export function CollectionView({
 // ── View controls (head row) ─────────────────────────────────────────────────
 
 /**
- * The editable head row (6u.1): the database's name and how the board reads it
- * (`grouped by status`, read-only text). A view's kind is fixed once made (ADR 0009),
- * so there is no in-place switch between kinds here. Chart and big-number setup rewrite
- * the block's config through `onConfigChange` (the whole-block save path).
+ * The head row (6u.1 + KAN-36): the database's name, its record count and how
+ * the board reads it (`grouped by status`) are IDENTIFICATION — they always
+ * render, editable or not (KAN-36: "identification always renders, affordances
+ * gate"). The saved-view bar is reading too (switching is not editing), so it
+ * renders whenever the block has `views`; only "＋ view" and the chart/big-
+ * number setup below it are affordances, gated on `editable && onConfigChange`.
+ * A view's kind is fixed once made (ADR 0009), so there is no in-place switch
+ * between kinds here.
  */
 function ViewControls({
   config,
   schema,
   collectionName,
+  recordCount,
+  savedViews,
+  activeViewId,
+  onSelectView,
+  showAddView,
+  editable,
   onConfigChange,
 }: {
   config: ViewBlock
   schema: PropertySchema
   collectionName?: string
-  onConfigChange: (patch: ViewConfigPatch) => void
+  recordCount: number
+  savedViews?: readonly ViewSavedView[]
+  activeViewId?: string
+  onSelectView?: (id: string) => void
+  showAddView: boolean
+  editable?: boolean
+  onConfigChange?: (patch: ViewConfigPatch) => void
 }) {
   // The head's fact: a board reads its lanes' property, a list the date it groups by.
   const groupDef =
@@ -404,19 +477,35 @@ function ViewControls({
               {collectionName}
             </span>
           )}
+          <span data-part="db-count" className="text-[10.5px] font-medium text-mn-text-meta">
+            {recordCount} record{recordCount === 1 ? '' : 's'}
+          </span>
           {groupName && (
-            <span data-part="db-facts" className="text-[10.5px] font-medium text-mn-text-meta">
-              grouped by {groupName}
-            </span>
+            <>
+              <span aria-hidden="true" className="text-[10.5px] font-medium text-mn-text-meta">
+                ·
+              </span>
+              <span data-part="db-facts" className="text-[10.5px] font-medium text-mn-text-meta">
+                grouped by {groupName}
+              </span>
+            </>
           )}
         </div>
+        {savedViews && savedViews.length > 0 && activeViewId && onSelectView && (
+          <ViewBar
+            views={savedViews.map((view): ViewBarView => ({ id: view.id, label: view.label ?? view.kind }))}
+            activeId={activeViewId}
+            onSelect={onSelectView}
+            showAddView={showAddView}
+          />
+        )}
       </div>
 
-      {config.mode === 'chart' && (
+      {editable && onConfigChange && config.mode === 'chart' && (
         <ChartControls config={config} schema={schema} onConfigChange={onConfigChange} />
       )}
 
-      {config.mode === 'big-number' && (
+      {editable && onConfigChange && config.mode === 'big-number' && (
         <BigNumberControls config={config} schema={schema} onConfigChange={onConfigChange} />
       )}
     </div>

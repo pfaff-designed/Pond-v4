@@ -205,6 +205,77 @@ describe('viewSchema — chart + big-number config (#111)', () => {
   })
 })
 
+// A views-shaped block (KAN-32) must name EVERY saved view, not just the active
+// one — the model re-emits whatever it can see here (types.ts's `serialize`
+// contract), so a saved view it never reads is a saved view the next wholesale
+// `edit` drops.
+describe('viewDescriptor.serialize — views-shaped block names every saved view (KAN-32)', () => {
+  const viewsBlock: ViewBlock = {
+    id: 'v1',
+    type: 'view',
+    // Stale top-level mirror (the back-compat shape item 6 writes at
+    // instantiation) — never read once `views` is present.
+    mode: 'board',
+    groupBy: 'stale-should-not-appear',
+    activeViewId: 'view-board',
+    views: [
+      { id: 'view-board', label: 'board', kind: 'board', config: { groupBy: 'p-status' } },
+      { id: 'view-timeline', label: 'timeline', kind: 'gantt' },
+    ],
+  }
+
+  it('names both saved views with their labels, kinds and clauses, marking the active one', () => {
+    const out = viewDescriptor.serialize(viewsBlock)
+    expect(out).toContain('board (active)')
+    expect(out).toContain('grouped by p-status')
+    expect(out).toContain('timeline')
+    expect(out).not.toContain('timeline (active)')
+    expect(out).not.toContain('stale-should-not-appear')
+  })
+
+  it('renders rows/figures off the ACTIVE view, not the stale top-level mirror', () => {
+    const chartSchema: PropertySchema = [
+      { id: 'p-hours', name: 'Hours', type: 'number' },
+      { id: 'p-month', name: 'Month', type: 'text' },
+    ]
+    const chartBlock: ViewBlock = {
+      id: 'v2',
+      type: 'view',
+      mode: 'board',
+      activeViewId: 'view-chart',
+      views: [
+        { id: 'view-board', label: 'board', kind: 'board' },
+        {
+          id: 'view-chart',
+          label: 'chart',
+          kind: 'chart',
+          config: {
+            chart: {
+              kind: 'bar',
+              xProperty: 'p-month',
+              series: [{ property: 'p-hours', agg: 'sum' }],
+            },
+          },
+        },
+      ],
+    }
+    const out = viewDescriptor.serialize({
+      ...chartBlock,
+      schema: chartSchema,
+      rows: [
+        { id: 'r1', title: 'Mill', values: { 'p-hours': 3, 'p-month': 'Jan' } },
+        { id: 'r2', title: 'Glue', values: { 'p-hours': 5, 'p-month': 'Jan' } },
+      ],
+    } as HydratedViewBlock as ViewBlock)
+    expect(out).toContain('chart bar')
+    expect(out).toContain('Jan 8')
+  })
+
+  it('a legacy block (no views) stays byte-identical', () => {
+    expect(viewDescriptor.serialize(base)).toBe('View (table) — no rows')
+  })
+})
+
 describe('viewDescriptor.serialize — aggregated figures (#111 AC 8)', () => {
   const figureSchema: PropertySchema = [
     { id: 'p-hours', name: 'Hours', type: 'number' },

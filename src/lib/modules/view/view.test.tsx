@@ -65,13 +65,13 @@ const gantt: ViewBlock = { id: 'v-gantt', type: 'view', mode: 'gantt' }
 const table: ViewBlock = { id: 'v-table', type: 'view', mode: 'table' }
 const board: ViewBlock = { id: 'v-board', type: 'view', mode: 'board' }
 
-function renderView(data: ViewBlock, editable = true) {
+function renderView(data: ViewBlock, editable = true, onChange: (next: ViewBlock) => void = jest.fn()) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
       <DeletionUndoProvider>
         <SiblingBlocksProvider value={{ blocks: [], pageId: 'page-1' }}>
-          <ViewView data={data} editable={editable} onChange={jest.fn()} />
+          <ViewView data={data} editable={editable} onChange={onChange} />
         </SiblingBlocksProvider>
       </DeletionUndoProvider>
     </QueryClientProvider>
@@ -274,5 +274,273 @@ describe('ViewView — the /table path end to end: add a row, type a title and a
     await user.tab()
     expect(setValue).toHaveBeenCalledTimes(1)
     expect(setValue).toHaveBeenCalledWith(rowId, 'p-date', '2026-10-20')
+  })
+})
+
+describe('CollectionView — every mode/groupBy/sort/filter/chart/bigNumber read runs off the ACTIVE saved view (KAN-32)', () => {
+  const multiViewSchema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    {
+      id: 'p-status',
+      name: 'Status',
+      type: 'select',
+      options: [{ id: 'opt-todo', label: 'Todo' }],
+    },
+    { id: 'p-start', name: 'Start', type: 'date' },
+  ]
+
+  // The top-level `mode`/`groupBy` are a STALE back-compat mirror, deliberately left
+  // pointed at the board — a buggy read that fell through to them instead of the
+  // resolved active view would render the board, grouped by status, instead of the
+  // gantt the `activeViewId` actually names.
+  const multiView: ViewBlock = {
+    id: 'v-multi',
+    type: 'view',
+    mode: 'board',
+    groupBy: 'p-status',
+    views: [
+      { id: 'view-board', kind: 'board', config: { groupBy: 'p-status' } },
+      { id: 'view-gantt', kind: 'gantt', config: {} },
+    ],
+    activeViewId: 'view-gantt',
+  }
+
+  beforeEach(() => {
+    initialSchema = multiViewSchema
+    initialRows = [
+      { id: 'r1', title: 'Task 1', values: { 'p-status': 'opt-todo', 'p-start': '2026-01-01' } },
+    ]
+  })
+
+  it('renders the gantt the activeViewId names, not the board its stray top-level groupBy points at', () => {
+    renderView(multiView)
+
+    expect(screen.getByRole('button', { name: /Reschedule Task 1/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '＋ task' })).not.toBeInTheDocument()
+  })
+
+  it('never leaks the OTHER saved view\'s groupBy into the active (gantt) render', () => {
+    renderView(multiView)
+
+    // The board's lane head ("Todo", its row count) only ever draws inside a board —
+    // its absence here is exactly what "no leak" means for a groupBy a gantt never reads.
+    expect(screen.queryByText('Todo')).not.toBeInTheDocument()
+  })
+})
+
+describe('CollectionView — the saved-view bar switches views as reading, not editing (KAN-36)', () => {
+  const barSchema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    {
+      id: 'p-status',
+      name: 'Status',
+      type: 'select',
+      options: [{ id: 'opt-todo', label: 'Todo' }],
+    },
+    { id: 'p-start', name: 'Start', type: 'date' },
+  ]
+
+  const barView: ViewBlock = {
+    id: 'v-bar',
+    type: 'view',
+    mode: 'board',
+    groupBy: 'p-status',
+    views: [
+      { id: 'view-board', label: 'board', kind: 'board', config: { groupBy: 'p-status' } },
+      { id: 'view-gantt', label: 'timeline', kind: 'gantt', config: {} },
+    ],
+    activeViewId: 'view-board',
+  }
+
+  beforeEach(() => {
+    initialSchema = barSchema
+    initialRows = [
+      { id: 'r1', title: 'Task 1', values: { 'p-status': 'opt-todo', 'p-start': '2026-01-01' } },
+    ]
+  })
+
+  it('a non-editable render shows the name, record count and bar, with no "＋ view"', () => {
+    const { container } = renderView(barView, false)
+
+    expect(screen.getByText('Trips')).toBeInTheDocument()
+    expect(screen.getByText('1 record')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'board' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'timeline' })).toBeInTheDocument()
+    expect(screen.queryByText('＋ view')).not.toBeInTheDocument()
+
+    // KAN-242's count + config facts join with ' · ', not two bare spans.
+    const head = container.querySelector('[data-part="view-head"]')
+    expect(head).toHaveTextContent(/1 record\s*·\s*grouped by status/)
+  })
+
+  it('joins no separator when there is no config fact to join (gantt has no groupBy)', () => {
+    const { container } = renderView(
+      { id: 'v-gantt-only', type: 'view', mode: 'gantt' },
+      false
+    )
+
+    const head = container.querySelector('[data-part="view-head"]')
+    expect(head).toHaveTextContent('1 record')
+    expect(head).not.toHaveTextContent('·')
+  })
+
+  it('clicking "timeline" switches the rendered mode to gantt, even without editable', async () => {
+    const user = userEvent.setup()
+    renderView(barView, false)
+
+    await user.click(screen.getByRole('tab', { name: 'timeline' }))
+
+    expect(screen.getByRole('img', { name: 'Task 1: 2026-01-01' })).toBeInTheDocument()
+  })
+
+  it('clicking "board" back renders the board, still grouped by status', async () => {
+    const user = userEvent.setup()
+    renderView(barView, false)
+
+    await user.click(screen.getByRole('tab', { name: 'timeline' }))
+    await user.click(screen.getByRole('tab', { name: 'board' }))
+
+    expect(screen.getByText('Todo')).toBeInTheDocument()
+  })
+
+  it('a legacy (no views) block shows the name and record count, with no bar', () => {
+    renderView(board, false)
+
+    expect(screen.getByText('Trips')).toBeInTheDocument()
+    expect(screen.getByText('1 record')).toBeInTheDocument()
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument()
+  })
+})
+
+describe('CollectionView — a config edit lands on the LOCALLY active view, not the persisted activeViewId (KAN-32)', () => {
+  const chartSchema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    {
+      id: 'p-status',
+      name: 'Status',
+      type: 'select',
+      options: [{ id: 'opt-todo', label: 'Todo' }],
+    },
+  ]
+
+  const boardAndChartView: ViewBlock = {
+    id: 'v-bc',
+    type: 'view',
+    mode: 'board',
+    views: [
+      { id: 'view-board', label: 'board', kind: 'board', config: { groupBy: 'p-status' } },
+      { id: 'view-chart', label: 'chart', kind: 'chart', config: {} },
+    ],
+    // Deliberately still pointed at "board" — a person's bar click never persists
+    // `activeViewId` (switching is reading, not editing), so this is what the OLD,
+    // buggy `applyConfigPatch(data, patch)` call would have targeted instead of
+    // the chart view the bar actually shows.
+    activeViewId: 'view-board',
+  }
+
+  beforeEach(() => {
+    initialSchema = chartSchema
+    initialRows = []
+  })
+
+  it('a chart setup change after switching tabs patches the chart view, leaving the board view untouched', async () => {
+    const user = userEvent.setup()
+    const onChange = jest.fn()
+    renderView(boardAndChartView, true, onChange)
+
+    await user.click(screen.getByRole('tab', { name: 'chart' }))
+    await user.selectOptions(screen.getByLabelText('Chart'), 'line')
+
+    expect(onChange).toHaveBeenCalledTimes(1)
+    const patched = onChange.mock.calls[0][0] as ViewBlock
+    expect(patched.views?.[1]).toMatchObject({ id: 'view-chart', config: { chart: { kind: 'line' } } })
+    expect(patched.views?.[0]).toEqual(boardAndChartView.views![0])
+  })
+})
+
+describe('ViewView — the path test: a premade-shaped tasks block, end to end (KAN-32/KAN-242, PATH_STEPS 3–7)', () => {
+  const pathSchema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    {
+      id: 'p-status',
+      name: 'Status',
+      type: 'select',
+      options: [{ id: 'opt-todo', label: 'Todo' }],
+    },
+    { id: 'p-start', name: 'Start', type: 'date' },
+  ]
+
+  // Mirrors the `project` template's `tasks` block (`premade.ts`): one view
+  // block, two saved views — `board` (active, grouped by status) and
+  // `timeline` (saved, no groupBy of its own).
+  const pathView: ViewBlock = {
+    id: 'v-path',
+    type: 'view',
+    mode: 'board',
+    groupBy: 'p-status',
+    views: [
+      { id: 'view-board', label: 'board', kind: 'board', config: { groupBy: 'p-status' } },
+      { id: 'view-timeline', label: 'timeline', kind: 'gantt', config: {} },
+    ],
+    activeViewId: 'view-board',
+  }
+
+  beforeEach(() => {
+    initialSchema = pathSchema
+    initialRows = [
+      { id: 'r1', title: 'Task 1', values: { 'p-status': 'opt-todo', 'p-start': '2026-01-01' } },
+    ]
+  })
+
+  it('renders "board" and "timeline" segments in order, "board" active', () => {
+    renderView(pathView)
+
+    const tabs = screen.getAllByRole('tab')
+    expect(tabs.map((t) => t.textContent)).toEqual(['board', 'timeline'])
+    expect(tabs[0]).toHaveAttribute('aria-selected', 'true')
+    expect(tabs[1]).toHaveAttribute('aria-selected', 'false')
+  })
+
+  it('clicking "timeline" draws the gantt and makes it the active segment', async () => {
+    const user = userEvent.setup()
+    renderView(pathView)
+
+    await user.click(screen.getByRole('tab', { name: 'timeline' }))
+
+    expect(screen.getByRole('button', { name: /Reschedule Task 1/ })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'timeline' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('clicking "board" back renders the board, its groupBy still intact', async () => {
+    const user = userEvent.setup()
+    renderView(pathView)
+
+    await user.click(screen.getByRole('tab', { name: 'timeline' }))
+    await user.click(screen.getByRole('tab', { name: 'board' }))
+
+    expect(screen.getByText('Todo')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'board' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('arrow keys move between segments, the selected one carrying aria-selected', async () => {
+    const user = userEvent.setup()
+    renderView(pathView)
+
+    await user.click(screen.getByRole('tab', { name: 'board' }))
+    await user.keyboard('{ArrowRight}')
+
+    expect(screen.getByRole('tab', { name: 'timeline' })).toHaveFocus()
+    expect(screen.getByRole('tab', { name: 'timeline' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'board' })).toHaveAttribute('aria-selected', 'false')
+  })
+
+  it('editable={false} keeps the name, count and segments, but shows no "＋ view"', () => {
+    renderView(pathView, false)
+
+    expect(screen.getByText('Trips')).toBeInTheDocument()
+    expect(screen.getByText('1 record')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'board' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'timeline' })).toBeInTheDocument()
+    expect(screen.queryByText('＋ view')).not.toBeInTheDocument()
   })
 })

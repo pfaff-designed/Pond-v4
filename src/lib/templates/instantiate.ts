@@ -24,8 +24,8 @@
  */
 import type { Block } from '@/lib/modules/content'
 import { hydrateBlock } from '@/lib/modules/hydrate'
-import type { ViewBlock } from '@/lib/modules/view/schema'
-import { resolveViewConfig } from '@/lib/pages/configure-view'
+import type { ViewBlock, ViewSavedView } from '@/lib/modules/view/schema'
+import { resolveViewConfig, type ConfigureViewProposal } from '@/lib/pages/configure-view'
 import { hydratePropertySchema } from '@/lib/pages/create-page'
 import type { PropertySchema } from '@/lib/properties/schema'
 import type { PremadeTemplate, TemplateViewBlock } from './premade'
@@ -61,16 +61,42 @@ export function instantiateTemplate(
 }
 
 /**
+ * A resolved view block before `hydrateBlock` mints ids: the block's own id (as for
+ * every block) and, for a several-saved-views block, each view's own id — minted via
+ * `viewDescriptor.nestedIdPaths`, so a saved view is authored and resolved with none.
+ */
+type ResolvedTemplateView = Omit<ViewBlock, 'id' | 'views'> & {
+  views?: Array<Omit<ViewSavedView, 'id'>>
+}
+
+/**
  * A template's view block, its property NAMES resolved to the page's ids through the
  * `configure_view` resolver. The label and the type ride beside the config; `pageId`
  * is not needed (the page does not exist yet) and the resolver does not read it.
+ *
+ * `views` (KAN-32) resolves each saved view's own name-keyed config independently —
+ * the same `resolveViewConfig` call, once per view — and sets the block's own `mode`
+ * to the first view's `kind` (the back-compat mirror every other consumer reads).
  */
-function resolveTemplateView(
-  view: TemplateViewBlock,
-  schema: PropertySchema
-): Omit<ViewBlock, 'id'> {
+function resolveTemplateView(view: TemplateViewBlock, schema: PropertySchema): ResolvedTemplateView {
+  if (view.views) {
+    const { type, label, views: authoredViews } = view
+    const views = authoredViews.map((authoredView) => {
+      const { label: viewLabel, kind, ...viewProposal } = authoredView
+      const { mode, ...config } = resolveViewConfig(schema, { mode: kind, ...viewProposal })
+      return { label: viewLabel, kind: mode, config }
+    })
+    return { type, ...(label ? { label } : {}), mode: views[0].kind, views }
+  }
   const { type, label, ...proposal } = view
-  return { type, ...(label ? { label } : {}), ...resolveViewConfig(schema, proposal) }
+  // `mode` is typed optional on `TemplateViewBlock` only so the `views` branch above can
+  // skip it; every template reaching this branch (no `views`) still authors it, same as
+  // before `views` existed.
+  return {
+    type,
+    ...(label ? { label } : {}),
+    ...resolveViewConfig(schema, proposal as Omit<ConfigureViewProposal, 'pageId' | 'collectionId'>),
+  }
 }
 
 /**
@@ -86,6 +112,10 @@ function resolveTemplateView(
  * warning about this class (*"#259's `presentation` would have been next"*).
  * **Add to both, or give them one table.** Verified clause by clause against
  * `resolveViewConfig` on 2026-10-02.
+ *
+ * Walks every saved view's OWN `config` too (KAN-32) — a `views`-shaped block's
+ * clauses live there, never at the top level, so skipping that walk would silently
+ * stop checking them.
  */
 export function viewPropertyRefs(block: ViewBlock): string[] {
   const refs: Array<string | undefined> = [
@@ -99,5 +129,22 @@ export function viewPropertyRefs(block: ViewBlock): string[] {
     block.bigNumber?.property,
     block.bigNumber?.delta?.property,
   ]
+  // Several saved views (KAN-32): each view's OWN config carries the same clauses,
+  // never the block's top-level fields above — walk every one, or a views-shaped
+  // block's references silently stop being checked.
+  for (const view of block.views ?? []) {
+    const config = view.config
+    refs.push(
+      config?.groupBy,
+      config?.sort?.key,
+      config?.filter?.property,
+      config?.startDate,
+      config?.endDate,
+      config?.chart?.xProperty,
+      ...(config?.chart?.series.map((s) => s.property) ?? []),
+      config?.bigNumber?.property,
+      config?.bigNumber?.delta?.property
+    )
+  }
   return refs.filter((r): r is string => typeof r === 'string')
 }

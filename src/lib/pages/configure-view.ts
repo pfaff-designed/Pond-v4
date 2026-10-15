@@ -29,6 +29,7 @@ import type { Database } from '@/lib/supabase/types'
 import type { Block } from '@/lib/documents/types'
 import { readSchema, resolveOptionValue } from '@/lib/properties/schema'
 import type { PropertyDef, PropertySchema } from '@/lib/properties/schema'
+import { applyConfigPatch } from '@/lib/modules/view/schema'
 import type {
   ViewBlock,
   ViewMode,
@@ -41,6 +42,7 @@ import type {
   ViewChartPresentation,
   ViewAggValue,
   ViewFigureFormat,
+  ViewSavedViewConfig,
 } from '@/lib/modules/view/schema'
 import { getPage, saveBlocks } from '@/lib/pages/client'
 import { collectionNameResolver, type CollectionCandidate } from '@/lib/pages/create-page'
@@ -276,6 +278,19 @@ export function resolveViewConfig(
  * `replaced` surfaces that fact so the accept path can say "switched active view
  * (replaced the previous table)" on the receipt/stamp — the model must not claim the
  * two views coexist.
+ *
+ * KAN-32 (saved views): the wholesale rebuild above only applies to a legacy block
+ * (no `views`). A `views`-shaped block already models several saved views of one
+ * database, each with its OWN config — rebuilding it from `mode`+clauses would drop
+ * every saved view but the one just configured, plus `activeViewId`. A kind is fixed
+ * per view (KAN-44; ＋ view mints a new one in Views 3/4), so a proposal can only ever
+ * be reconfiguring the saved view that already matches its `mode` — patch that view's
+ * config in place (via `applyConfigPatch`'s per-view path) and leave the rest alone.
+ * No saved view of that kind → throw, so the proposal card reverts rather than
+ * silently replacing a different view's kind. `replaced` stays false on this path:
+ * the #52 fix-2 meaning above (active view SWITCHED, coexistence broken) doesn't
+ * apply — the saved view that matches `mode` is edited in place, every other saved
+ * view and the active view are untouched.
  */
 export function upsertViewBlock(
   blocks: Block[],
@@ -284,6 +299,26 @@ export function upsertViewBlock(
 ): { blocks: Block[]; replaced: boolean } {
   const idx = blocks.findIndex((b) => b.type === 'view')
   const existing = idx >= 0 ? (blocks[idx] as ViewBlock) : null
+
+  if (existing?.views && existing.views.length > 0) {
+    const target = existing.views.find((v) => v.kind === config.mode)
+    if (!target) {
+      throw new Error(`this block has no ${config.mode} view`)
+    }
+    const patch: Partial<ViewSavedViewConfig> = {
+      ...(config.groupBy ? { groupBy: config.groupBy } : {}),
+      ...(config.sort ? { sort: config.sort } : {}),
+      ...(config.filter ? { filter: config.filter } : {}),
+      ...(config.startDate ? { startDate: config.startDate } : {}),
+      ...(config.endDate ? { endDate: config.endDate } : {}),
+      ...(config.chart ? { chart: config.chart } : {}),
+      ...(config.bigNumber ? { bigNumber: config.bigNumber } : {}),
+      ...(config.collectionId ? { collectionId: config.collectionId } : {}),
+    }
+    const next = [...blocks]
+    next[idx] = applyConfigPatch(existing, patch, target.id)
+    return { blocks: next, replaced: false }
+  }
 
   const block: ViewBlock = {
     id: existing?.id ?? mintId(),

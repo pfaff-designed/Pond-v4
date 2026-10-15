@@ -35,10 +35,19 @@ const samples: Record<string, ModuleData> = {
     columns: ['Tool', 'Location'],
     rows: [{ cells: ['Table Saw', 'Centre of shop'] }, { cells: ['Bandsaw', 'Left wall'] }],
   },
-  // #19: a view is config only (no nested id-bearing collections), so it round-trips
-  // with a flat top-level id strip. Its chart / big-number modes (#111) are config too —
-  // the figures are aggregated from the records, so there is nothing to strip.
-  view: { type: 'view', mode: 'board', groupBy: 'p-status' },
+  // #19 / KAN-32: a view's config (including each saved view's) references existing
+  // property ids — nothing to strip there. `views` itself carries ids (one per saved
+  // view), so the omit-chain strips at `nestedIdPaths: ['views']` and hydrate mints
+  // them back, like todo's items.
+  view: {
+    type: 'view',
+    mode: 'board',
+    groupBy: 'p-status',
+    views: [
+      { label: 'board', kind: 'board', config: { groupBy: 'p-status' } },
+      { label: 'timeline', kind: 'gantt' },
+    ],
+  },
   // #61: an image/file attachment carries no nested id-bearing collections —
   // just the storage URL + display metadata, so a flat top-level id strip is
   // the whole omit-chain.
