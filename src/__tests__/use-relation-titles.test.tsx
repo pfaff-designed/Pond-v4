@@ -28,6 +28,16 @@ jest.mock('@/lib/pages/client', () => ({
   listPages: (...a: unknown[]) => mockListPages(...a),
 }))
 
+const mockExistingPageIds = jest.fn()
+jest.mock('@/lib/change-log/trash', () => ({
+  existingPageIds: (...a: unknown[]) => mockExistingPageIds(...a),
+}))
+
+const mockListRecords = jest.fn()
+jest.mock('@/lib/change-log/store', () => ({
+  listRecords: (...a: unknown[]) => mockListRecords(...a),
+}))
+
 function page(id: string, title: string, type: PondPage['type'] = 'page'): PondPage {
   return { id, parentId: null, type, title, blocks: [], props: {}, order: 0 }
 }
@@ -46,6 +56,8 @@ beforeEach(() => {
   mockGetPage.mockReset()
   mockGetCollectionRows.mockReset()
   mockListPages.mockReset()
+  mockExistingPageIds.mockReset().mockResolvedValue(new Set())
+  mockListRecords.mockReset().mockResolvedValue([])
 })
 
 describe('useRelationTitles — targeted (collection rows)', () => {
@@ -112,5 +124,73 @@ describe('useRelationTitles — untargeted (per-id + global candidates)', () => 
       { id: 'a', title: 'Alpha' },
       { id: 'b', title: 'Beta' },
     ])
+  })
+})
+
+describe('useRelationTitles — trashed vs gone', () => {
+  it('an id with no live title but still in the trash resolves into trashedTitles, not titles', async () => {
+    mockGetPage.mockImplementation((_sb: unknown, id: string) =>
+      Promise.resolve(id === 'trashed' ? null : page(id, `Title ${id}`))
+    )
+    mockListPages.mockResolvedValue([])
+    mockExistingPageIds.mockResolvedValue(new Set(['trashed']))
+    mockListRecords.mockResolvedValue([
+      {
+        id: 'rec1',
+        action: 'delete',
+        before: {
+          title: 'Trashed Page',
+          parentId: null,
+          order: 0,
+          pageIds: ['trashed'],
+          blockCount: 0,
+          nestedPageCount: 0,
+          parentPath: [],
+        },
+      },
+    ])
+    const client = freshClient()
+    const { result } = renderHook(() => useRelationTitles(['trashed'], undefined), {
+      wrapper: wrapper(client),
+    })
+
+    await waitFor(() => expect(result.current.trashedTitles.get('trashed')).toBe('Trashed Page'))
+    expect(result.current.titles.has('trashed')).toBe(false)
+  })
+
+  it('an id absent from both live data and the trash resolves into neither map', async () => {
+    mockGetPage.mockResolvedValue(null)
+    mockListPages.mockResolvedValue([])
+    mockExistingPageIds.mockResolvedValue(new Set())
+    const client = freshClient()
+    const { result } = renderHook(() => useRelationTitles(['gone'], undefined), {
+      wrapper: wrapper(client),
+    })
+
+    await waitFor(() => expect(mockExistingPageIds).toHaveBeenCalled())
+    expect(result.current.titles.has('gone')).toBe(false)
+    expect(result.current.trashedTitles.has('gone')).toBe(false)
+  })
+
+  it('a live id whose page query is still pending fires no existingPageIds call', async () => {
+    let resolveGetPage!: (p: PondPage) => void
+    mockGetPage.mockImplementation(
+      () =>
+        new Promise<PondPage>((resolve) => {
+          resolveGetPage = resolve
+        })
+    )
+    mockListPages.mockResolvedValue([])
+    const client = freshClient()
+    const { result } = renderHook(() => useRelationTitles(['p1'], undefined), {
+      wrapper: wrapper(client),
+    })
+
+    await waitFor(() => expect(mockGetPage).toHaveBeenCalled())
+    expect(mockExistingPageIds).not.toHaveBeenCalled()
+
+    resolveGetPage(page('p1', 'Title p1'))
+    await waitFor(() => expect(result.current.titles.get('p1')).toBe('Title p1'))
+    expect(mockExistingPageIds).not.toHaveBeenCalled()
   })
 })

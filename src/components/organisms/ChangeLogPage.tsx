@@ -371,6 +371,8 @@ export function ChangeLogPage() {
       // change-log view (the deleted card itself, and the new `restore` row
       // in "all") in one go.
       queryClient.invalidateQueries({ queryKey: pagesKey(pondId) })
+      queryClient.invalidateQueries({ queryKey: ['rows'] })
+      queryClient.invalidateQueries({ queryKey: ['page'] })
       await queryClient.invalidateQueries({ queryKey: changeLogKey() })
       // The deleted view's own refetch now carries the `restore` record this
       // call just wrote — read its `parentFallback` back off it (rather than

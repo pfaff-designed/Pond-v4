@@ -1,13 +1,18 @@
 'use client'
 
 /**
- * One relation link rendered as a chip (#20). A present link shows the target
- * page's title and is clickable → `onOpen(id)` opens it. A `missing` link — an
- * id that resolves to no page (deleted or off-target, tolerated per #20
- * leniency) — renders struck-through and inert; the user drops it via the
- * picker's ×. The label itself is a `<PondAtom kind="relation">` (#93), so the
- * chip inherits the Make Noise machine-surface register; this wrapper only owns
- * the interaction (open / remove) around it.
+ * One relation link rendered as a chip (#20), in one of three states: live —
+ * the target page exists, shows its title, and is clickable → `onOpen(id)`
+ * opens it; trashed — the target was deleted, shows `trashedTitle` (its
+ * delete-record snapshot) struck-through and inert; or missing — the id
+ * resolves to no page and no trash record (deleted with no snapshot of its
+ * own, off-target per #20 leniency, or never existed), struck-through and
+ * inert with no title. Trashed and missing both drop via the picker's ×; only
+ * live opens. A page trashed as a descendant of a trashed parent has no
+ * delete record of its own, so it falls back to missing (deferred, not fixed
+ * here). The label itself is a `<PondAtom kind="relation">` (#93), so the
+ * chip inherits the Make Noise machine-surface register; this wrapper only
+ * owns the interaction (open / remove) around it.
  */
 
 import { PondAtom } from '@/components/atoms/PondAtom'
@@ -24,6 +29,8 @@ export interface RelationChipProps {
   onRemove?: () => void
   /** The id resolved to no page — render struck and inert. */
   missing?: boolean
+  /** The id resolved to a trashed page's snapshot title — render struck and inert. */
+  trashedTitle?: string
   className?: string
 }
 
@@ -33,6 +40,7 @@ export function RelationChip({
   onOpen,
   onRemove,
   missing = false,
+  trashedTitle,
   className,
 }: RelationChipProps) {
   // A container span (never a button) holds the atom + an optional ×, so the two
@@ -42,7 +50,7 @@ export function RelationChip({
   const removeButton = onRemove ? (
     <button
       type="button"
-      aria-label={missing ? 'Remove missing link' : `Remove ${title ?? id}`}
+      aria-label={missing ? 'Remove missing link' : `Remove ${title ?? trashedTitle ?? id}`}
       onClick={onRemove}
       className="flex-shrink-0 text-mn-mark-faint transition-colors hover:text-mn-text-meta"
     >
@@ -58,6 +66,15 @@ export function RelationChip({
     return (
       <span title="This linked page no longer exists" className={cn(base, className)}>
         <PondAtom kind="relation" state="error" note={false} value="Missing page" className="min-w-0" />
+        {removeButton}
+      </span>
+    )
+  }
+
+  if (trashedTitle && !title) {
+    return (
+      <span title="This page is in the trash" className={cn(base, className)}>
+        <PondAtom kind="relation" state="error" note={false} value={trashedTitle} className="min-w-0" />
         {removeButton}
       </span>
     )
