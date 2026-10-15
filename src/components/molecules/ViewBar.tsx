@@ -1,23 +1,25 @@
 'use client'
 
 /**
- * The saved-view bar (`Pond 06.15 Change log` 6o f2) — one segment per saved
- * view on a view block, switching between them. Clicking a segment is
- * READING, not editing (KAN-36's ruling), so this wraps base-ui's `Tabs`
- * rather than `ToggleGroup` (the seg `SourcePicker.tsx` already wears):
- * `Toggle` only gives `aria-pressed`, and this bar needs `aria-selected` +
- * arrow-key movement between segments, which `Tabs.Tab`/`Tabs.List` give for
- * free through the same roving-focus composite every other base-ui
- * collection uses. There is no panel content — the active view's config
- * feeds the block's own renderer elsewhere, not a `Tabs.Panel`.
+ * The saved-view bar (`Pond 02 Component library` 2w, values read off
+ * `PondCalendar.dc.html:133,143`) — one segment per saved view on a view
+ * block, switching between them. Clicking a segment is READING, not editing
+ * (KAN-36's ruling), so this wraps base-ui's `Tabs` rather than `ToggleGroup`
+ * (the seg `SourcePicker.tsx` already wears): `Toggle` only gives
+ * `aria-pressed`, and this bar needs `aria-selected` + arrow-key movement
+ * between segments, which `Tabs.Tab`/`Tabs.List` give for free through the
+ * same roving-focus composite every other base-ui collection uses. There is
+ * no panel content — the active view's config feeds the block's own
+ * renderer elsewhere, not a `Tabs.Panel`.
  *
- * Values from 6o f2, read inline off the board (and mirrored in
- * `ChangeLogPage.tsx`'s own "＋ view", the same frame's inert affordance):
- * row `flex items-center gap-[4px] text-[12.5px]`; segment
- * `rounded-[999px] px-[11px] py-[5px]`; active `bg-mn-text/[0.07]` + `font-
- * medium` + ink 100; inactive ink .68, no ground; "＋ view"
- * `px-[9px] py-[5px]`, ink .68, mono 11px, no pill, inert (Views 3/4 wires
- * it).
+ * Values from PondCalendar's segmented pill, read inline off the board:
+ * container `rounded-full p-[3px] bg-mn-text/[0.055]` (`.08` on ink); every
+ * segment `rounded-full px-[10px] py-[4px] text-[10.5px] font-medium`;
+ * active is a solid chip — `bg-mn-text text-raw-paper dark:text-raw-ink`,
+ * the codebase's existing inverse-text pattern (`ZenPill.tsx`,
+ * `NewPondSheet.tsx`'s `Pill`, `button.tsx`'s `primary` variant); inactive
+ * ink .68, no fill. "＋ view" stays 6o's inert affordance in the trailing
+ * slot, outside the pill (Views 3/4 wires it; KAN-243).
  */
 
 import { Tabs } from '@base-ui/react/tabs'
@@ -37,10 +39,13 @@ export interface ViewBarProps {
   showAddView: boolean
 }
 
-const ROW = 'flex items-center gap-[4px] text-[12.5px]'
-const SEGMENT_ROW = 'flex items-center gap-[4px]'
-const SEGMENT = `rounded-[999px] px-[11px] py-[5px] ${FOCUS_VISIBLE_RING}`
-const SEGMENT_ON = 'bg-mn-text/[0.07] font-medium text-mn-text'
+const ROW = 'flex items-center gap-[4px]'
+const SEGMENT_ROW =
+  // leading-[normal]: board seg is 26.5px tall. Not leading-normal, which
+  // globals.css sets to 1.5 and measures 29px (10.5px × 1.5).
+  'flex items-center gap-[4px] rounded-full p-[3px] text-[10.5px] font-medium leading-[normal] bg-mn-text/[0.055] dark:bg-mn-text/[0.08]'
+const SEGMENT = `rounded-full px-[10px] py-[4px] ${FOCUS_VISIBLE_RING}`
+const SEGMENT_ON = 'bg-mn-text text-raw-paper dark:text-raw-ink'
 const SEGMENT_OFF = 'text-mn-text-secondary'
 const ADD_VIEW = 'px-[9px] py-[5px] font-mono text-[11px] text-mn-text-secondary'
 

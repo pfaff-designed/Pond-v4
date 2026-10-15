@@ -24,9 +24,9 @@ describe('ViewBar', () => {
     const tabs = screen.getAllByRole('tab')
     expect(tabs.map((t) => t.textContent)).toEqual(['board', 'timeline'])
     expect(tabs[0]).toHaveAttribute('aria-selected', 'true')
-    expect(tabs[0].className).toContain('bg-mn-text/[0.07]')
+    expect(tabs[0].className).toContain('bg-mn-text')
     expect(tabs[1]).toHaveAttribute('aria-selected', 'false')
-    expect(tabs[1].className).not.toContain('bg-mn-text/[0.07]')
+    expect(tabs[1].className).not.toContain('bg-mn-text')
   })
 
   it('clicking a segment selects it', async () => {

@@ -340,8 +340,9 @@ async function assertSavedViewsReadOnly(canvasElement: HTMLElement, base: 'ink' 
   await expect(boardTab).toBeInTheDocument()
   await expect(canvas.getByRole('tab', { name: 'timeline' })).toBeInTheDocument()
   await expect(canvas.queryByText('＋ view')).not.toBeInTheDocument()
-  // The active segment's ink-wash background resolves through the theme's roles.
-  await expectTier(getComputedStyle(boardTab).backgroundColor, base, 0.07)
+  // The active segment is a solid chip: fill resolves to the base tier, text to its opposite.
+  await expectTier(getComputedStyle(boardTab).backgroundColor, base, 1)
+  await expectTier(getComputedStyle(boardTab).color, base === 'ink' ? 'paper' : 'ink', 1)
 }
 
 export const ViewBarReadOnlyState: Story = {
@@ -359,6 +360,101 @@ export const ViewBarReadOnlyStateInk: Story = {
     ),
   ],
   play: async ({ canvasElement }) => assertSavedViewsReadOnly(canvasElement, 'paper'),
+}
+
+/**
+ * PATH_STEPS 2–4, light theme: the real tasks block, not `ViewBar` alone.
+ * Clicking "timeline" moves the active chip and swaps the block's body — the
+ * bar's own node (`Tabs.Root`, holding the pill + "＋ view") never moves on a
+ * switch (KAN-321's engine) — and arrow keys then move focus and selection
+ * together.
+ */
+export const ViewBarSwitchesView: Story = {
+  args: { config: savedViewsConfig, schema, rows, collectionName: 'tasks', editable: true },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const boardTab = canvas.getByRole('tab', { name: 'board' })
+    const timelineTab = canvas.getByRole('tab', { name: 'timeline' })
+    const tablist = boardTab.closest('[role="tablist"]') as HTMLElement
+    const bar = tablist.parentElement as HTMLElement
+
+    // The pill's own line-height is 'normal' so segments inherit it — not the
+    // house --leading-normal (1.5), which would make the pill 29px tall
+    // instead of the board's 26.5px (PondCalendar.dc.html:143).
+    await expect(getComputedStyle(tablist).lineHeight).toBe('normal')
+    await expect(Math.round(tablist.getBoundingClientRect().height)).not.toBe(29)
+
+    await expect(boardTab).toHaveAttribute('aria-selected', 'true')
+    await expect(boardTab.className).toContain('bg-mn-text')
+    await expect(canvasElement.querySelector('[data-part="lanes"]')).toBeInTheDocument()
+
+    const before = bar.getBoundingClientRect()
+    await userEvent.click(timelineTab)
+    const after = bar.getBoundingClientRect()
+
+    await expect(timelineTab).toHaveAttribute('aria-selected', 'true')
+    await expect(timelineTab.className).toContain('bg-mn-text')
+    await expect(boardTab).toHaveAttribute('aria-selected', 'false')
+    await expect(boardTab.className).not.toContain('bg-mn-text')
+    // The body swapped: the board's lane grid is gone, the gantt's rows are up.
+    await expect(canvasElement.querySelector('[data-part="lanes"]')).not.toBeInTheDocument()
+    await expect(canvasElement.querySelector('[data-part="gantt-row"]')).toBeInTheDocument()
+    // The bar node itself did not move.
+    await expect(after.top).toBe(before.top)
+    await expect(after.left).toBe(before.left)
+    await expect(after.width).toBe(before.width)
+    await expect(after.height).toBe(before.height)
+
+    // Arrow keys move focus and selection together — click left focus on "timeline".
+    await userEvent.keyboard('{ArrowLeft}')
+    await expect(boardTab).toHaveFocus()
+    await expect(boardTab).toHaveAttribute('aria-selected', 'true')
+    await expect(timelineTab).toHaveAttribute('aria-selected', 'false')
+
+    await userEvent.keyboard('{ArrowRight}')
+    await expect(timelineTab).toHaveFocus()
+    await expect(timelineTab).toHaveAttribute('aria-selected', 'true')
+    await expect(boardTab).toHaveAttribute('aria-selected', 'false')
+  },
+}
+
+/**
+ * PATH_STEPS 5: the same path, under the `.dark` decorator `ViewBarReadOnlyStateInk`
+ * uses — the container tint, active chip, and inactive label colours must match
+ * PondCalendar's on-ink variant (the board's `a(ink ? .08 : .055)` and `fg`/`INK` swap).
+ */
+export const ViewBarSwitchesViewInk: Story = {
+  args: { config: savedViewsConfig, schema, rows, collectionName: 'tasks', editable: true },
+  decorators: [
+    (Story) => (
+      <div className="dark bg-raw-ink p-mn-4">
+        <Story />
+      </div>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const boardTab = canvas.getByRole('tab', { name: 'board' })
+    const timelineTab = canvas.getByRole('tab', { name: 'timeline' })
+    const row = boardTab.closest('[role="tablist"]') as HTMLElement
+
+    // Container: paper tint at .08 — the dark-theme value, not light's .055.
+    await expectTier(getComputedStyle(row).backgroundColor, 'paper', 0.08)
+    // Active chip: solid paper fill, ink text.
+    await expectTier(getComputedStyle(boardTab).backgroundColor, 'paper', 1)
+    await expectTier(getComputedStyle(boardTab).color, 'ink', 1)
+    // Inactive label: paper .68, no fill.
+    await expect(alphaOf(getComputedStyle(timelineTab).backgroundColor)).toBe(0)
+    await expectTier(getComputedStyle(timelineTab).color, 'paper', 0.68)
+
+    await userEvent.click(timelineTab)
+
+    // The chip follows the click: now timeline is the solid paper-on-ink chip.
+    await expectTier(getComputedStyle(timelineTab).backgroundColor, 'paper', 1)
+    await expectTier(getComputedStyle(timelineTab).color, 'ink', 1)
+    await expect(alphaOf(getComputedStyle(boardTab).backgroundColor)).toBe(0)
+    await expectTier(getComputedStyle(boardTab).color, 'paper', 0.68)
+  },
 }
 
 // ── Board ──────────────────────────────────────────────────────────────────────
