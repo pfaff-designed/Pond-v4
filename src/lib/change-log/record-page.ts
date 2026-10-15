@@ -142,6 +142,20 @@ export function recordBreadcrumbTitle(record: ChangeLogRecord, blocks?: readonly
 }
 
 /**
+ * The "this change" column's detail for a `proposed`/`revised`/`reverted`
+ * row (frame s6o3: `proposed · w/c 13 oct`): `recordTitle`'s own string, with
+ * any " → " and everything before it dropped — the mirror of
+ * `recordBreadcrumbTitle`, which keeps the name before the arrow; this keeps
+ * what it proposed. A title with no arrow (an ordinary block's content,
+ * "apple") is unchanged.
+ */
+export function recordChangeDetail(record: ChangeLogRecord, blocks?: readonly Block[]): string {
+  const title = recordTitle(record, blocks)
+  const arrow = title.indexOf(' → ')
+  return arrow === -1 ? title : title.slice(arrow + ' → '.length)
+}
+
+/**
  * The fields grid's "status" row: `labelForStatus`'s word, the actor of the
  * transition that landed the CURRENT status, and that transition's clock time
  * — "accepted by you · 09:31". `transitions` is append-only, so its last entry
@@ -267,11 +281,11 @@ export interface ChangeTimelineRow {
  * transition on a revert record (`accepted`/`outdated`/`rejected`, …) reads
  * as its own ordinary status word, same as any other record.
  *
- * `detail` reuses `describeChange` (the record's own short label) for
- * `proposed`/`revised`/`reverted` rather than a second description path;
- * every other event has no stored note text to show (`changes_requested`
- * included — the note travels live to the composer, never onto the record),
- * so its detail is the transition's own actor.
+ * `detail` reuses `recordChangeDetail` (the record's own after-side title,
+ * what it proposed) for `proposed`/`revised`/`reverted` rather than a second
+ * description path; every other event has no stored note text to show
+ * (`changes_requested` included — the note travels live to the composer,
+ * never onto the record), so its detail is the transition's own actor.
  *
  * A chain record's OWN transition into `reverted` status (`revert.ts`'s
  * `accepted → reverted`, written in the same transaction as the revert's own
@@ -314,7 +328,7 @@ export function buildChangeTimeline(
         row: {
           time: formatClockTime(transition.at),
           event,
-          detail: transition.status === 'proposed' ? describeChange(record, null) : transition.actor,
+          detail: transition.status === 'proposed' ? recordChangeDetail(record) : transition.actor,
           // The board highlights exactly ONE row — the viewed record's own
           // LATEST transition, not every transition it ever went through.
           highlighted: record.id === viewingId && index === transitions.length - 1,
