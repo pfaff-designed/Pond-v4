@@ -4118,6 +4118,16 @@ export function AITerminal() {
     madePageCollapseBaseline !== null &&
     messages.length <= madePageCollapseBaseline
 
+  // Frame 5 carries no `refs` section at all — the current-page chip (KAN-99)
+  // reseeds for the just-made page the moment navigation lands (`nodeId`
+  // became the new page), which would otherwise draw a reference naming it
+  // between the undo chips and the line. Suppressed only while folded: an
+  // @-added or highlight-to-ask reference keeps showing, and the chip comes
+  // back once the fold lifts on the next send.
+  const composerReferenceItems = threadFoldedForMadePage
+    ? referenceItems.filter((item) => !item.key.startsWith('current:'))
+    : referenceItems
+
   const turns = groupTurns(messages)
   const earlierOpen = earlierOpenFrom !== null && earlierOpenFrom === messages[0]?.id
   const foldedCount = earlierOpen ? 0 : foldedTurnCount(turns.length)
@@ -4355,7 +4365,7 @@ export function AITerminal() {
         </p>
       )}
       <div className="flex flex-col gap-[14px]">
-        <ReferencesRow items={referenceItems} onRemove={handleRemoveReference} />
+        <ReferencesRow items={composerReferenceItems} onRemove={handleRemoveReference} />
         <ComposerLine
           value={input}
           placeholder={

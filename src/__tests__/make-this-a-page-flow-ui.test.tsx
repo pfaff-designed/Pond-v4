@@ -1212,6 +1212,41 @@ describe('KAN-179 — the composer collapses to the undo/open-parent chips once 
     expect(screen.getByPlaceholderText('ask about this page')).toBeInTheDocument()
   })
 
+  it('no reference chip names the new page, but an @-added reference from before make page still shows', async () => {
+    const qc = newQueryClient()
+    const { rerender } = render(terminalTreeForPond(qc, 'pond-collapse-refs'))
+    await ready()
+
+    // An @-added whole-page reference, added before make page, must survive
+    // the fold (KAN-99) — only the auto current-page chip is stopped.
+    const textarea = screen.getByRole('textbox', { name: 'Message Pond' }) as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: '@Budget' } })
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length)
+    fireEvent.keyUp(textarea, { key: 't' })
+    fireEvent.click(await screen.findByRole('option', { name: /Budget/i }))
+    expect(screen.getByRole('group', { name: 'references' })).toHaveTextContent('Budget')
+
+    fireEvent.click(screen.getByRole('button', { name: 'make this a page' }))
+    const card = await screen.findByRole('group', { name: /new page — proposed/i })
+    fireEvent.click(within(card).getByRole('button', { name: 'make page' }))
+    await screen.findByRole('button', { name: 'undo' })
+
+    const madeTitle = (mockCreatePage.mock.calls[0][2] as { title: string }).title
+
+    // The real app's `router.push` updates `nodeId` in place — the composer
+    // is layout-level, not per-page — which would otherwise reseed the
+    // current-page chip for the page just made. Simulated here by bumping
+    // the mocked search params the same way the "navigate to another page"
+    // path test does, and re-rendering the same instance.
+    mockNodeId = 'new-page-1'
+    mockNodeName = madeTitle
+    rerender(terminalTreeForPond(qc, 'pond-collapse-refs'))
+
+    const refs = screen.getByRole('group', { name: 'references' })
+    expect(within(refs).queryByText(madeTitle)).not.toBeInTheDocument()
+    expect(within(refs).getByText('Budget')).toBeInTheDocument()
+  })
+
   it('folds only until the next send — a later question and its answer render normally, with the chip still above the line', async () => {
     const qc = newQueryClient()
     const { rerender } = render(terminalTreeForPond(qc, 'pond-collapse-3'))
