@@ -2,9 +2,11 @@
  * The title row's eyebrow (`Pond 06.21` 6u.1): `{kind} — {state}`. The kind is the
  * page's own editable label, so a page without one shows the state alone; the state
  * is `saved hh:mm` once an autosave has landed this session, `saving…` while one is
- * pending, and a bare `saved` for a page opened and not yet edited. An untouched page
- * (board 6f frame 1) draws `new — in {parentTitle}` instead, or bare `new` with no
- * parent, until the person types anything.
+ * pending, and a bare `saved` for a page opened and not yet edited — unless that page
+ * was made from an answer, in which case the bare state reads `made hh:mm` (the time
+ * it was made, not opened). An untouched page (board 6f frame 1) draws
+ * `new — in {parentTitle}` instead, or bare `new` with no parent, until the person
+ * types anything.
  */
 
 const clock = (at: Date): string =>
@@ -20,9 +22,16 @@ export const titleEyebrow = (
   savedAt: Date | null,
   untouched?: boolean,
   parentTitle?: string | null,
+  madeAt: Date | null = null,
 ): string => {
   if (untouched) return parentTitle ? `new — in ${parentTitle}` : 'new'
-  const state = saved ? (savedAt ? `saved ${clock(savedAt)}` : 'saved') : 'saving…'
+  const state = saved
+    ? savedAt
+      ? `saved ${clock(savedAt)}`
+      : madeAt
+        ? `made ${clock(madeAt)}`
+        : 'saved'
+    : 'saving…'
   const label = typeof kind === 'string' ? kind.trim() : ''
   return label ? `${label} — ${state}` : state
 }

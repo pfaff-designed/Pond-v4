@@ -32,6 +32,16 @@ describe('titleEyebrow', () => {
   it('draws a bare new for an untouched page with no parent', () => {
     expect(titleEyebrow('project', true, at, true, null)).toBe('new')
   })
+
+  it('reads made hh:mm when a page was made from an answer and not yet edited this session', () => {
+    const madeAt = new Date(2026, 9, 5, 7, 13)
+    expect(titleEyebrow('page', true, null, false, null, madeAt)).toBe('page — made 07:13')
+  })
+
+  it('lets a this-session save win over madeAt', () => {
+    const madeAt = new Date(2026, 9, 5, 7, 13)
+    expect(titleEyebrow('page', true, at, false, null, madeAt)).toBe('page — saved 09:04')
+  })
 })
 
 describe('isUntouchedPage', () => {

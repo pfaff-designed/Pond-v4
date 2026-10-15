@@ -281,9 +281,10 @@ describe('make this a page', () => {
       messageId: 'a1',
       question: QUESTION,
       askedAt: '2026-09-22T07:12:00Z',
+      madeAt: expect.any(String),
     })
-    // Derived from the words of the answer, never invented.
-    expect(readMentioned(row.props)).toEqual([{ pageId: 'kr-1', title: 'Kitchen renovation' }])
+    // Mentions ride the proposal record now (KAN-172) — this proposal carries none.
+    expect(readMentioned(row.props)).toBeNull()
     // One page, and the pages it read are untouched.
     expect(sb._pages.size).toBe(3)
     expect(sb._pages.get('kr-1')!.blocks).toEqual([{ id: 'b1' }])

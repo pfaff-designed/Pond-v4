@@ -18,10 +18,13 @@ import { MADE_FROM_THREAD_KEY } from '@/lib/pages/made-from'
 import { OPEN_THREAD_MESSAGE_EVENT } from '@/lib/terminal-focus'
 import { pageEyebrowClass } from '@/components/atoms/kicker'
 import { MENTIONED_KEY } from '@/lib/pages/mentioned'
+import { workspaceUrl } from '@/lib/pages/nav'
 
+const mockPush = jest.fn()
+let mockNodeId = 'page-1'
 jest.mock('next/navigation', () => ({
-  useSearchParams: () => ({ get: (key: string) => (key === 'nodeId' ? 'page-1' : null) }),
-  useRouter: () => ({ push: jest.fn() }),
+  useSearchParams: () => ({ get: (key: string) => (key === 'nodeId' ? mockNodeId : null) }),
+  useRouter: () => ({ push: mockPush }),
 }))
 
 jest.mock('@/lib/supabase/client', () => ({ createClient: () => ({}) }))
@@ -52,15 +55,21 @@ const STAMP = {
   messageId: 'a1',
   question: 'what is actually blocking the renovation?',
   askedAt: '2026-09-22T07:12:00',
+  madeAt: '2026-09-22T07:13:00',
 }
 
-function renderPage(props: Record<string, unknown>) {
+function renderPage(
+  props: Record<string, unknown>,
+  blocks: Record<string, unknown>[] = [
+    { id: 'b1', type: 'text', content: 'One thing: the cabinet quote.' },
+  ]
+) {
   mockGetPage.mockResolvedValue({
     id: 'page-1',
     parentId: 'kr-1',
     type: 'page',
     title: 'renovation blockers',
-    blocks: [{ id: 'b1', type: 'text', content: 'One thing: the cabinet quote.' }],
+    blocks,
     props,
     order: 0,
   })
@@ -74,7 +83,10 @@ function renderPage(props: Record<string, unknown>) {
   )
 }
 
-beforeEach(() => jest.clearAllMocks())
+beforeEach(() => {
+  jest.clearAllMocks()
+  mockNodeId = 'page-1'
+})
 
 describe('the made-from chip', () => {
   it('renders the chip from the stamp and opens the thread at that message', async () => {
@@ -147,6 +159,12 @@ describe('the made-from chip', () => {
     expect(screen.queryByText('made from')).not.toBeInTheDocument()
     expect(screen.queryByText(/made from · show/)).not.toBeInTheDocument()
   })
+
+  it('reads the title eyebrow as made hh:mm for an unedited made page', async () => {
+    renderPage({ kind: 'page', [MADE_FROM_THREAD_KEY]: STAMP })
+    const eyebrow = await screen.findByText('page — made 07:13')
+    expect(eyebrow).toHaveAttribute('data-part', 'title-eyebrow')
+  })
 })
 
 // ── the mentioned card (6a frame 5) ─────────────────────────────────────────
@@ -157,8 +175,8 @@ describe('the mentioned card on a made page', () => {
       kind: 'page',
       [MADE_FROM_THREAD_KEY]: STAMP,
       [MENTIONED_KEY]: [
-        { pageId: 'cq-1', title: 'cabinet quote', note: 'the one everything waits on' },
-        { pageId: 'wt-1', title: 'worktop template' },
+        { title: 'cabinet quote', ref: 'cq-1', note: 'the one everything waits on' },
+        { title: 'worktop template', ref: null, note: '' },
       ],
     })
     const card = await screen.findByRole('region', { name: 'mentioned' })
@@ -180,4 +198,139 @@ describe('the mentioned card on a made page', () => {
     await screen.findByText('made from')
     expect(screen.queryByRole('region', { name: 'mentioned' })).not.toBeInTheDocument()
   })
+
+  it('opens a mentioned row that resolves to a page; a row that resolves to nothing has no button', async () => {
+    renderPage({
+      kind: 'page',
+      [MADE_FROM_THREAD_KEY]: STAMP,
+      [MENTIONED_KEY]: [
+        { title: 'cabinet quote', ref: 'cq-1', note: 'the one everything waits on' },
+        { title: 'worktop template', ref: null, note: '' },
+      ],
+    })
+    const card = await screen.findByRole('region', { name: 'mentioned' })
+
+    fireEvent.click(within(card).getByRole('button', { name: 'cabinet quote' }))
+    expect(mockPush).toHaveBeenCalledWith(
+      workspaceUrl({ id: 'cq-1', type: 'page', title: 'cabinet quote' })
+    )
+
+    expect(screen.getByText('worktop template')).toBeInTheDocument()
+    expect(
+      within(card).queryByRole('button', { name: 'worktop template' })
+    ).not.toBeInTheDocument()
+  })
+})
+
+// ── the whole made page, end to end (PATH_STEPS 4–7, KAN-178) ──────────────
+
+describe('a made page end to end', () => {
+  it('shows the eyebrow, made-from chip, pond label and mentioned card together', async () => {
+    renderPage(
+      {
+        kind: 'page',
+        [MADE_FROM_THREAD_KEY]: STAMP,
+        [MENTIONED_KEY]: [
+          { title: 'cabinet quote', ref: 'cq-1', note: 'the one everything waits on' },
+          { title: 'worktop template', ref: null, note: '' },
+        ],
+      },
+      [
+        {
+          id: 'b1',
+          type: 'text',
+          content: 'One thing: the cabinet quote.',
+          pondStampAt: '2026-09-22T07:12:00',
+        },
+      ]
+    )
+
+    // Step 4: the title eyebrow reads `page — made hh:mm`.
+    const eyebrow = await screen.findByText('page — made 07:13')
+    expect(eyebrow).toHaveAttribute('data-part', 'title-eyebrow')
+
+    // Step 4: `made from` and its chip still render (regression).
+    expect(screen.getByText('made from')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', {
+        name: 'tuesday 07:12 — “what is actually blocking the renovation?”',
+      })
+    ).toBeInTheDocument()
+
+    // Step 5: the bare prose shows `pond` + the formatted `pondStampAt` time.
+    expect(screen.getByText('pond')).toBeInTheDocument()
+    expect(screen.getByText('07:12')).toBeInTheDocument()
+
+    // Step 6: the mentioned card shows both rows, with and without a note.
+    const card = await screen.findByRole('region', { name: 'mentioned' })
+    expect(within(card).getByText('cabinet quote')).toBeInTheDocument()
+    expect(within(card).getByText('the one everything waits on')).toBeInTheDocument()
+    expect(within(card).getByText('worktop template')).toBeInTheDocument()
+
+    // Step 7: a row with a `ref` opens that page; a row with no `ref` has no button.
+    fireEvent.click(within(card).getByRole('button', { name: 'cabinet quote' }))
+    expect(mockPush).toHaveBeenCalledWith(
+      workspaceUrl({ id: 'cq-1', type: 'page', title: 'cabinet quote' })
+    )
+    expect(
+      within(card).queryByRole('button', { name: 'worktop template' })
+    ).not.toBeInTheDocument()
+  })
+})
+
+// ── the eyebrow does not carry a stale saved time across pages ─────────────
+
+describe('the title eyebrow on navigating pages', () => {
+  it(
+    'a made page opened right after an edited page reads made hh:mm, ' +
+      'not the other page\u2019s saved time',
+    async () => {
+      const PAGE_A = {
+        id: 'page-1',
+        parentId: null,
+        type: 'page',
+        title: 'Workshop',
+        blocks: [{ id: 'b1', type: 'text', content: 'hello' }],
+        props: { kind: 'page' },
+        order: 0,
+      }
+      const PAGE_B = {
+        id: 'page-2',
+        parentId: null,
+        type: 'page',
+        title: 'renovation blockers',
+        blocks: [{ id: 'b2', type: 'text', content: 'the cabinet quote' }],
+        props: { kind: 'page', [MADE_FROM_THREAD_KEY]: STAMP },
+        order: 0,
+      }
+      const PAGES: Record<string, unknown> = { 'page-1': PAGE_A, 'page-2': PAGE_B }
+      mockGetPage.mockImplementation(async (...args: unknown[]) => PAGES[args[1] as string])
+
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      const tree = () => (
+        <QueryClientProvider client={client}>
+          <DeletionUndoProvider>
+            <DocumentPanel />
+          </DeletionUndoProvider>
+        </QueryClientProvider>
+      )
+      const { rerender } = render(tree())
+
+      // Page A: type to trigger an autosave, so `savedAt` lands this session.
+      fireEvent.change(await screen.findByDisplayValue('Workshop'), {
+        target: { value: 'Workshop notes' },
+      })
+      await waitFor(
+        () => expect(screen.getByText(/^page — saved \d\d:\d\d$/)).toBeInTheDocument(),
+        { timeout: 2000 }
+      )
+
+      // Navigate to a just-made page B: its own `madeAt` must win, not A's `savedAt`.
+      mockNodeId = 'page-2'
+      rerender(tree())
+
+      expect(await screen.findByText('page — made 07:13')).toBeInTheDocument()
+      expect(screen.queryByText(/^page — saved/)).not.toBeInTheDocument()
+    }
+  )
 })

@@ -20,9 +20,9 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 const WITH_NOTES = [
-  { pageId: 'cq-1', title: 'cabinet quote', note: 'the one everything waits on' },
-  { pageId: 'wt-1', title: 'worktop template', note: 'after the carcasses are measured' },
-  { pageId: 'el-1', title: 'electrician, second fix', note: 'wants a date' },
+  { title: 'cabinet quote', ref: 'cq-1', note: 'the one everything waits on' },
+  { title: 'worktop template', ref: 'wt-1', note: 'after the carcasses are measured' },
+  { title: 'electrician, second fix', ref: null, note: 'wants a date' },
 ]
 
 /** The card's own chrome, measured off the frame — the same on every story. */
@@ -99,7 +99,7 @@ export const WithNotes: Story = {
 /** What a page made today actually carries: titles, no notes — and the row still
  *  lays out, title taking the full measure rather than leaving a hole. */
 export const WithoutNotes: Story = {
-  args: { mentioned: WITH_NOTES.map(({ pageId, title }) => ({ pageId, title })) },
+  args: { mentioned: WITH_NOTES.map(({ title, ref }) => ({ title, ref, note: '' })) },
   play: async ({ canvasElement }) => {
     await expectCardChrome(canvasElement)
     const rows = canvasElement.querySelectorAll<HTMLElement>('[data-part="mentioned-row"]')

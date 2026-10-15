@@ -60,6 +60,7 @@ import { getRecord } from '@/lib/change-log/store'
 import { DATABASES_ROOT_TITLE } from '@/lib/pages/databases-root'
 import { childCards } from '@/lib/pages/child-cards'
 import { isUntouchedPage, titleEyebrow } from '@/lib/pages/title-eyebrow'
+import { readMadeFrom } from '@/lib/pages/made-from'
 import { workspaceUrl, WORKSPACE_PATH, type WorkspaceNodeRef } from '@/lib/pages/nav'
 import { homeQueryKey } from '@/lib/pages/keys'
 import { usePagesRows } from '@/lib/pages/use-pages'
@@ -261,7 +262,16 @@ export function DocumentPanel() {
   const parentTitle = rows.find((r) => r.id === page?.parentId)?.title ?? null
   // A page with a kind (an applied template) is not "untouched" for the eyebrow, even
   // if its blocks still read as the untouched shape — the eyebrow names the kind, not `new`.
-  const eyebrow = titleEyebrow(page?.props?.kind, saved, savedAt, untouched && !page?.props?.kind, parentTitle)
+  const madeAtStamp = readMadeFrom(page?.props)?.madeAt
+  const madeAt = madeAtStamp ? new Date(madeAtStamp) : null
+  const eyebrow = titleEyebrow(
+    page?.props?.kind,
+    saved,
+    savedAt,
+    untouched && !page?.props?.kind,
+    parentTitle,
+    madeAt,
+  )
   // Board 6f frame 4: an empty title after an apply names the kind, e.g. `recipe name`.
   const titlePlaceholder = page?.props?.kind ? `${page.props.kind} name` : 'Untitled'
 

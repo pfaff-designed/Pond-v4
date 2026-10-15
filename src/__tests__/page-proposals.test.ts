@@ -20,7 +20,6 @@ import {
   formatThreadTime,
   madeFromLabel,
   earlierAnswers,
-  mentionedPages,
   openPageProposalIds,
   parsePageProposals,
   parsePlacementResponse,
@@ -245,33 +244,6 @@ describe('clampPageName — a very long proposed name', () => {
     expect(clamped.length).toBeLessThanOrEqual(PAGE_NAME_MAX)
     expect(long.startsWith(clamped)).toBe(true)
     expect(/\S$/.test(clamped)).toBe(true)
-  })
-})
-
-describe('mentionedPages — what the answer mentioned', () => {
-  const pages = [
-    { id: 'p1', title: 'Kitchen renovation' },
-    { id: 'p2', title: 'Budget' },
-    { id: 'p3', title: 'Cabinet quote' },
-    { id: 'p4', title: 'a' },
-    { id: 'p5', title: 'Week' },
-  ]
-
-  it('lists pages whose title appears whole in the prose, in order of appearance', () => {
-    const prose = 'The cabinet quote is the thing; the budget follows the kitchen renovation.'
-    expect(mentionedPages(prose, pages).map((p) => p.id)).toEqual(['p3', 'p2', 'p1'])
-  })
-
-  it('ignores tiny titles and partial-word hits', () => {
-    expect(mentionedPages('a weekly plan', pages)).toEqual([])
-  })
-
-  it('returns one entry per title even when several pages share it', () => {
-    const dupes = [
-      { id: 'x', title: 'Budget' },
-      { id: 'y', title: 'budget' },
-    ]
-    expect(mentionedPages('the budget', dupes)).toHaveLength(1)
   })
 })
 

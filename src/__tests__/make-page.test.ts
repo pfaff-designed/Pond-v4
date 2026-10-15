@@ -113,7 +113,12 @@ describe('makePageFromAnswer', () => {
     const made = await makePageFromAnswer(
       supabase,
       {
-        proposal: proposal(),
+        proposal: proposal({
+          mentioned: [
+            { title: 'Cabinet quote', ref: 'cq-1', note: 'the one everything waits on' },
+            { title: 'Worktop template', ref: 'wt-1', note: 'after the carcasses are measured' },
+          ],
+        }),
         threadId: 'conv-1',
         pages: [
           { id: 'kr-1', title: 'Kitchen renovation' },
@@ -121,6 +126,7 @@ describe('makePageFromAnswer', () => {
           { id: 'wt-1', title: 'Worktop template' },
         ],
         pondId: 'pond-1',
+        answerSentAt: '2026-09-22T07:12:00Z',
       },
       mint()
     )
@@ -133,11 +139,14 @@ describe('makePageFromAnswer', () => {
     expect(row.type).toBe('page')
     expect(row.title).toBe('renovation blockers')
     expect(row.pond_id).toBe('pond-1')
-    // The prose, word for word, is the page's ONLY block (6a frame 5).
-    expect(row.blocks).toEqual([{ id: 'b1', type: 'text', content: PROSE }])
+    // The prose, word for word, is the page's ONLY block (6a frame 5), stamped
+    // with when the answer itself was sent.
+    expect(row.blocks).toEqual([
+      { id: 'b1', type: 'text', content: PROSE, pondStampAt: '2026-09-22T07:12:00Z' },
+    ])
     // What the answer mentioned is a card, not prose, so it rides in props beside
-    // the made-from stamp. Notes are Pond's own characterisation of WHY a page is
-    // mentioned — model work, tracked separately, so none is written yet.
+    // the made-from stamp — carried from the proposal's own mentioned list
+    // (KAN-172), not re-derived from the prose.
     expect(row.props).toEqual({
       kind: 'page',
       [MADE_FROM_THREAD_KEY]: {
@@ -145,10 +154,11 @@ describe('makePageFromAnswer', () => {
         messageId: 'a1',
         question: 'what is actually blocking the renovation?',
         askedAt: '2026-09-22T07:12:00Z',
+        madeAt: expect.any(String),
       },
       [MENTIONED_KEY]: [
-        { pageId: 'cq-1', title: 'Cabinet quote' },
-        { pageId: 'wt-1', title: 'Worktop template' },
+        { title: 'Cabinet quote', ref: 'cq-1', note: 'the one everything waits on' },
+        { title: 'Worktop template', ref: 'wt-1', note: 'after the carcasses are measured' },
       ],
     })
   })
@@ -197,9 +207,13 @@ describe('makePageFromAnswer', () => {
       mint()
     )
     expect(inserts[0].row.blocks).toEqual([{ id: 'b1', type: 'text', content: PROSE }])
+    // No `answerSentAt` given — the block carries no `pondStampAt` key at all,
+    // not one written as `null`.
+    const block = (inserts[0].row.blocks as Record<string, unknown>[])[0]
+    expect(block).not.toHaveProperty('pondStampAt')
   })
 
-  it('adds no mentioned list when the answer names none of the pond’s pages', async () => {
+  it('adds no mentioned list when the proposal carries no mentioned field', async () => {
     const { supabase, inserts } = makeSupabase({ existing: { 'kr-1': PARENT } })
     await makePageFromAnswer(
       supabase,
@@ -357,7 +371,13 @@ describe('recordPageProposal — born `proposed`, in the proposed view', () => {
 })
 
 describe('made-from stamp — hideable, not removable', () => {
-  const stamp = { threadId: 'conv-1', messageId: 'a1', question: 'q?', askedAt: null }
+  const stamp = {
+    threadId: 'conv-1',
+    messageId: 'a1',
+    question: 'q?',
+    askedAt: null,
+    madeAt: '2026-09-22T07:12:00Z',
+  }
 
   it('stamps once and reads back', () => {
     const props = stampMadeFrom({ kind: 'page' }, stamp)
@@ -414,16 +434,16 @@ describe('made-from stamp — hideable, not removable', () => {
 // ── props.mentioned — the card's data (6a frame 5) ───────────────────────────
 
 describe('the mentioned list in props', () => {
-  it('writes pageId and title, and a note only when there is one', () => {
+  it('writes title, ref and note verbatim', () => {
     const props = stampMentioned({ kind: 'page' }, [
-      { pageId: 'cq-1', title: 'Cabinet quote' },
-      { pageId: 'wt-1', title: 'Worktop template', note: 'after the carcasses are measured' },
-      { pageId: 'el-1', title: 'Electrician', note: '   ' },
+      { title: 'Cabinet quote', ref: 'cq-1', note: '' },
+      { title: 'Worktop template', ref: 'wt-1', note: 'after the carcasses are measured' },
+      { title: 'Electrician', ref: null, note: '   ' },
     ])
     expect(props[MENTIONED_KEY]).toEqual([
-      { pageId: 'cq-1', title: 'Cabinet quote' },
-      { pageId: 'wt-1', title: 'Worktop template', note: 'after the carcasses are measured' },
-      { pageId: 'el-1', title: 'Electrician' },
+      { title: 'Cabinet quote', ref: 'cq-1', note: '' },
+      { title: 'Worktop template', ref: 'wt-1', note: 'after the carcasses are measured' },
+      { title: 'Electrician', ref: null, note: '   ' },
     ])
     // Everything else on props is left alone.
     expect(props.kind).toBe('page')
@@ -434,25 +454,29 @@ describe('the mentioned list in props', () => {
   })
 
   it('reads back what was written, and null when there is nothing to show', () => {
-    const items = [{ pageId: 'cq-1', title: 'Cabinet quote' }]
+    const items = [{ title: 'Cabinet quote', ref: 'cq-1', note: '' }]
     expect(readMentioned(stampMentioned({}, items))).toEqual(items)
     expect(readMentioned({})).toBeNull()
     expect(readMentioned(null)).toBeNull()
     expect(readMentioned({ [MENTIONED_KEY]: [] })).toBeNull()
   })
 
-  it('drops a malformed entry rather than throwing — a bad row shortens the list', () => {
+  it('drops a malformed entry rather than throwing — only a missing or blank title drops a row', () => {
     expect(
       readMentioned({
         [MENTIONED_KEY]: [
-          { pageId: 'ok-1', title: 'Budget' },
-          { title: 'no page id' },
-          { pageId: 'blank', title: '   ' },
+          { title: 'Budget', ref: 'ok-1', note: 'under review' },
+          { ref: 'no-title' },
+          { title: '   ', ref: 'blank' },
+          { title: 'No note', ref: null },
           'not an object',
           null,
         ],
       })
-    ).toEqual([{ pageId: 'ok-1', title: 'Budget' }])
+    ).toEqual([
+      { title: 'Budget', ref: 'ok-1', note: 'under review' },
+      { title: 'No note', ref: null, note: '' },
+    ])
     expect(readMentioned({ [MENTIONED_KEY]: 'not a list' })).toBeNull()
   })
 })

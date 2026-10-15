@@ -33,6 +33,7 @@ const STAMP: MadeFromThread = {
   messageId: 'a1',
   question: 'what is actually blocking the renovation?',
   askedAt: '2026-09-22T07:12:00',
+  madeAt: '2026-09-22T07:12:00',
 }
 
 const meta = {
