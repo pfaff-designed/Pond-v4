@@ -122,6 +122,9 @@ export interface SourcePickerProps {
   anchor: PickerAnchor
   /** @default 'bottom' */
   side?: PickerSide
+  /** The chosen side's own room (`roomTowardSide`) — caps the glass inside it,
+   *  same as the `/` menu's `maxHeight`, when the host computed one. */
+  maxHeight?: number
   onPick: (pick: SourcePick) => void
   /** esc, or a press outside — the host keeps the typed text. */
   onClose: () => void
@@ -150,6 +153,7 @@ export function SourcePicker({
   defaultSource,
   anchor,
   side = 'bottom',
+  maxHeight,
   onPick,
   onClose,
   container,
@@ -305,7 +309,7 @@ export function SourcePicker({
       data-kind="source"
       data-step={step}
       className={`${side === 'top' ? GLASS_ABOVE : GLASS} ${WIDTH}`}
-      style={style}
+      style={maxHeight !== undefined ? { ...style, maxHeight } : style}
     >
       <div data-part="head" className={HEAD}>
         <span data-part="head-text" className={HEAD_TEXT}>

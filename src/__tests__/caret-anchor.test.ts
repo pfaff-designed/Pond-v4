@@ -1,4 +1,4 @@
-import { caretRect, sideTowardFreeSpace } from '@/lib/layout/caret-anchor'
+import { caretRect, roomTowardSide, sideTowardFreeSpace } from '@/lib/layout/caret-anchor'
 
 describe('sideTowardFreeSpace', () => {
   const caret = (top: number) => ({ top, bottom: top + 20 })
@@ -13,6 +13,35 @@ describe('sideTowardFreeSpace', () => {
 
   it('stays below when neither side fits but below has more room', () => {
     expect(sideTowardFreeSpace(caret(200), 600, 500)).toBe('bottom')
+  })
+
+  it('flips above when the bound is inside the composer band, though the full viewport has room below', () => {
+    // 900 tall viewport, but the composer's bound sits at 750 — caret.bottom (620) leaves only
+    // 126px to the bound, not enough for a 500px glass, and less than the 580px above.
+    expect(sideTowardFreeSpace(caret(600), 750, 500)).toBe('top')
+  })
+
+  it('stays below near the top of the viewport even with a composer band', () => {
+    expect(sideTowardFreeSpace(caret(40), 750, 500)).toBe('bottom')
+  })
+
+  it('reproduces the existing cases when the bound is the unpublished full viewport', () => {
+    expect(sideTowardFreeSpace(caret(100), 900, 500)).toBe('bottom')
+    expect(sideTowardFreeSpace(caret(700), 900, 500)).toBe('top')
+    expect(sideTowardFreeSpace(caret(200), 600, 500)).toBe('bottom')
+  })
+})
+
+describe('roomTowardSide', () => {
+  const caret = (top: number) => ({ top, bottom: top + 20 })
+
+  it('caps the bottom side to the bound, not the full viewport', () => {
+    // bound 775, caret.bottom 320 → 775 − 320 − 4 = 451.
+    expect(roomTowardSide(caret(300), 775, 'bottom')).toBe(451)
+  })
+
+  it('caps the top side to the caret, regardless of the bound', () => {
+    expect(roomTowardSide(caret(300), 775, 'top')).toBe(296)
   })
 })
 

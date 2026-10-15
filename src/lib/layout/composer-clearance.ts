@@ -34,3 +34,20 @@ export const composerClearancePadding = (): string => {
   const fallback = composerFootprintPx(COMPOSER_REST_HEIGHT)
   return `calc(var(${COMPOSER_CLEARANCE_VAR}, ${fallback}px) + ${COMPOSER_CLEARANCE_GAP}px)`
 }
+
+/**
+ * The lowest a floating surface over the canvas may reach without landing
+ * under the composer. Measured from the shell's own bottom edge, not the raw
+ * viewport height — the shell can end a pixel short of it (scrollbars,
+ * fractional layout), and a bound off the viewport alone lands the menu
+ * under the composer by exactly that pixel. Reads the footprint published on
+ * the shell; when nothing has published (no shell, or the composer never
+ * mounted) the bound is the full viewport.
+ */
+export const composerBottomBound = (viewportHeight: number): number => {
+  const shell = typeof document === 'undefined' ? null : document.querySelector<HTMLElement>('[data-part="shell"]')
+  if (!shell) return viewportHeight
+  const footprint = parseFloat(getComputedStyle(shell).getPropertyValue(COMPOSER_CLEARANCE_VAR))
+  if (Number.isNaN(footprint)) return viewportHeight
+  return shell.getBoundingClientRect().bottom - footprint
+}

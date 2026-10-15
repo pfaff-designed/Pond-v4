@@ -93,6 +93,9 @@ export interface SlashMenuProps {
   anchor: PickerAnchor
   /** @default 'bottom' */
   side?: PickerSide
+  /** The room `side` actually has (KAN-100) — caps the glass short of the
+   * viewport-wide 60vh default when a floating composer narrows that side. */
+  maxHeight?: number
   /** Accessible name for the list. @default 'blocks' */
   label?: string
   onSelect: (row: SlashRow) => void
@@ -129,6 +132,7 @@ export function SlashMenu({
   query,
   anchor,
   side = 'bottom',
+  maxHeight,
   label = 'blocks',
   onSelect,
   onClose,
@@ -296,7 +300,7 @@ export function SlashMenu({
       data-kind="slash"
       data-pane={pane}
       className={`${side === 'top' ? GLASS_ABOVE : GLASS} ${chrome.width}`}
-      style={style}
+      style={maxHeight !== undefined ? { ...style, maxHeight } : style}
       // The caret stays on the `/` line: a mousedown on the glass itself (not a
       // row or button) would otherwise focus it, since `tabIndex={-1}` makes it
       // the nearest focusable ancestor of everything inside.
