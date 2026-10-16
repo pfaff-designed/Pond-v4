@@ -191,12 +191,11 @@ export const Withdrawn: Story = { args: { status: 'withdrawn' } }
 export const Undone: Story = { args: { status: 'undone' } }
 export const Reverted: Story = { args: { status: 'reverted' } }
 
-/** Nothing the board does not draw: no `open page`, no `show original`, no `inferred` pill, no per-change reason line. */
+/** Nothing the board does not draw: no `open page`, no `show original`, no `inferred` pill. */
 export const DrawsOnlyWhatTheBoardDraws: Story = {
-  args: { changes: [{ ...create, inferred: true, reason: 'follows the electrician' }] },
+  args: { changes: [{ ...create, inferred: true }] },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.queryByText('follows the electrician')).not.toBeInTheDocument()
     await expect(canvas.queryByText('inferred')).not.toBeInTheDocument()
     await expect(canvas.queryByRole('button', { name: 'show original' })).not.toBeInTheDocument()
     await expect(canvas.queryByRole('button', { name: /open page/i })).not.toBeInTheDocument()

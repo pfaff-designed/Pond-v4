@@ -145,25 +145,6 @@ describe('ModuleDiffCard — needsPlace', () => {
   })
 })
 
-describe('ModuleDiffCard — per-change reason', () => {
-  it('does not render a change’s reason line (6c frame 2 draws no per-change reason)', () => {
-    const changeWithReason: ChangePreview = {
-      ...create,
-      reason: 'cabinets are measured in the last week of September',
-    }
-    render(
-      <ModuleDiffCard
-        changes={[changeWithReason]}
-        onAccept={jest.fn()}
-        onReject={jest.fn()}
-        onRequestChanges={jest.fn()}
-      />
-    )
-
-    expect(screen.queryByText(/cabinets are measured in the last week of September/)).not.toBeInTheDocument()
-  })
-})
-
 describe('ModuleDiffCard — skippedReasons', () => {
   it('collapses identical reasons to one line carrying the count', () => {
     render(
