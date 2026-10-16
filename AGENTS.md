@@ -36,7 +36,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
   only when the ticket is genuinely ambiguous — not as a gate on every build.
 - **One review gate before merge:** `/code-review`. That is the gate that has earned its cost.
 - **Sweep in the same session as the merge:** delete the branch, remove the worktree, move the
-  ticket to Done (transition `41`; `31` is In Review, for an open PR). Run `./scripts/sweep.sh`.
+  ticket to Done (transition `41`; `31` is In Review, for an open PR; `21` is In Progress, set when the build starts). Run `./scripts/sweep.sh`.
   Debris is a tax on every future search — on 2026-10-03 a sweep found 45 dead branches, 3
   abandoned worktrees (one a 55MB duplicate checkout inside the repo) and 112 archived planning
   docs, all of which had been polluting every grep for weeks.

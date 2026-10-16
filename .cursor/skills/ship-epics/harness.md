@@ -70,7 +70,7 @@ Atlassian MCP, every call taking `cloudId: '1535dfd5-6618-4e61-ac79-655c4c329842
 | `JIRA.get KEY`           | `getJiraIssue { issueIdOrKey: KEY, view: 'full', responseContentFormat: 'markdown' }`. The default `compact` view is for scanning and will not give you the whole description — and the description is the spec.                     |
 | `JIRA.jql`               | `searchJiraIssuesUsingJql { jql }`.                                                                                                                                                                                                  |
 | `JIRA.comment KEY`       | `addOrEditJiraIssueComment { issueIdOrKey: KEY, commentBody }` (markdown). Omit `commentId` to add.                                                                                                                                  |
-| `JIRA.transition KEY ID` | `transitionJiraIssue { issueIdOrKey: KEY, transitionId: '<ID>' }` — flat, not nested. `31` In Review, `41` Done. It returns the status actually reached; trust that over a read-back.                                                |
+| `JIRA.transition KEY ID` | `transitionJiraIssue { issueIdOrKey: KEY, transitionId: '<ID>' }` — flat, not nested. `21` In Progress, `31` In Review, `41` Done. It returns the status actually reached; trust that over a read-back.                              |
 | `JIRA.labels KEY`        | `editJiraIssue { issueIdOrKey: KEY, fields: { labels: [...] } }`. **Every field is set, not appended**: `JIRA.get` the current labels and send the whole list back with yours added, or you will erase `now`, `size-S` and the rest. |
 
 ## The user

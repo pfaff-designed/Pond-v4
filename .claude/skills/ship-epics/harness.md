@@ -81,7 +81,7 @@ Every call is `mcp__plugin_atlassian_atlassian__<name>` and every call takes `cl
 | `JIRA.get KEY`           | `getJiraIssue` with `issueIdOrKey: KEY`, **`view: "full"`** and `responseContentFormat: "markdown"`. The default `compact` view is for scanning and will not give you the whole description — and the description is the spec.               |
 | `JIRA.jql`               | `searchJiraIssuesUsingJql` with `jql`.                                                                                                                                                                                                       |
 | `JIRA.comment KEY`       | `addOrEditJiraIssueComment` with `issueIdOrKey: KEY` and `commentBody` (markdown). Omit `commentId` to add.                                                                                                                                  |
-| `JIRA.transition KEY ID` | `transitionJiraIssue` with `issueIdOrKey: KEY` and `transitionId: "<ID>"` — flat, not nested. `31` In Review, `41` Done. It returns the status actually reached; trust that over a read-back.                                                |
+| `JIRA.transition KEY ID` | `transitionJiraIssue` with `issueIdOrKey: KEY` and `transitionId: "<ID>"` — flat, not nested. `21` In Progress, `31` In Review, `41` Done. It returns the status actually reached; trust that over a read-back.                              |
 | `JIRA.labels KEY`        | `editJiraIssue` with `issueIdOrKey: KEY` and `fields: { labels: [...] }`. **Every field is set, not appended**: `JIRA.get` the current labels and send the whole list back with yours added, or you will erase `now`, `size-S` and the rest. |
 
 ## The user

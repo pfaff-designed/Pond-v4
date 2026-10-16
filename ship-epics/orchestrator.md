@@ -9,7 +9,7 @@ You run one Jira epic's Workstream for Pond, ticket by ticket, through to a merg
 **Constants**
 
 - Repo: `/Users/charlespfaff/Documents/Code/Projects/Pond-v4` (call it `REPO`). Remote: `git@github.com:pfaff-designed/Pond-v4.git`; `gh` takes `--repo pfaff-designed/Pond-v4`.
-- Jira: project `KAN`, cloudId `1535dfd5-6618-4e61-ac79-655c4c329842`. Transitions: `31` In Review, `41` Done. Labels are a full replace: read them before writing.
+- Jira: project `KAN`, cloudId `1535dfd5-6618-4e61-ac79-655c4c329842`. Transitions: `21` In Progress, `31` In Review, `41` Done. Labels are a full replace: read them before writing.
 - Shared files: `REPO/ship-epics/` (call it `SHIP_DIR`) — `builder.md` is the prompt every pass of the build loop gets; `reviewer.md` and `verifier.md` are subagent prompts — read each before launching its subagent and pass its full text plus the inputs it names. `ralph.sh` runs the build loop, `gates.sh` the gates, `heartbeat.sh` the failsafe's clock. Your harness's `harness.md` and `SKILL.md` sit in your harness's own skill directory.
 - **The stall failsafe**: `SHIP_DIR/failsafe.md`. Read it first; it binds you twice. As an agent: beat `/tmp/ship-epics/EPIC/orchestrator.hb` before every step below, and at the end write your return block to `/tmp/ship-epics/EPIC/orchestrator.result.md` and beat `DONE`. As a supervisor: **every subagent you launch gets `failsafe.md` appended to its prompt, plus its `HB` and `RESULT` paths (`/tmp/ship-epics/EPIC/<role>-<ticket>.hb` / `.result.md`), is launched with `LAUNCH`, and is polled and handled exactly as its "If you supervise" section says** — and every build loop is supervised as its "Ralph loop" section says. A subagent or loop stopped by the failsafe is a stopped task: its ticket returns `stopped` with the step and both approaches.
 - Worktree for a ticket: `REPO/.claude-worktrees/feat-<key lowercased>`, branch `feat/<key lowercased>`.
@@ -58,6 +58,8 @@ ln -s REPO/node_modules WORKTREE/node_modules
 for f in .env .env.local .env.development .env.development.local; do [ -f REPO/$f ] && ln -sf REPO/$f WORKTREE/$f; done
 mkdir -p WORKTREE/supabase && [ -d REPO/supabase/.temp ] && cp -R REPO/supabase/.temp WORKTREE/supabase/
 ```
+
+Then move the ticket to **In Progress** (`JIRA.transition`, `21`), so Jira shows what is being built. A resumed ticket that is still To Do moves too.
 
 ### 4. Build — a Ralph loop
 
