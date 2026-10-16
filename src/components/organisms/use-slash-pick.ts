@@ -4,7 +4,7 @@ import { useState } from 'react'
 import type { SlashRow, TemplatePick } from '@/components/molecules/SlashMenu'
 import { sourceBlockOf, type SourceBlock } from '@/components/molecules/source-entries'
 import type { Block } from '@/lib/documents/types'
-import { mintPreset } from '@/lib/modules/palette'
+import { HEADING_PREFIX, mintPreset } from '@/lib/modules/palette'
 import type { TextBlock } from '@/lib/modules/text/schema'
 import { splitAtSlashLine, type SlashLine, type SlashLineAt } from '@/lib/modules/text/slash-line'
 
@@ -163,7 +163,13 @@ export const useSlashPick = ({
       makePageFromRow(row.placement, target)
       return
     }
-    const minted = mintPreset(row.id)
+    const minted = row.freeText
+      ? {
+          id: mintId(),
+          type: 'text' as const,
+          content: row.freeText.as === 'heading' ? HEADING_PREFIX + row.freeText.word : row.freeText.word,
+        }
+      : mintPreset(row.id)
     if (!minted) return
     const landing = landAtSlash(blocks, target, minted)
     if (!landing?.landed) return

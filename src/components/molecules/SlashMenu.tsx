@@ -23,14 +23,15 @@
  *   hint    0 1 auto · max 45% · mono 10.5 · ink .68 · ellipsis — hidden on the selected row
  *   ↵       mono 10.5 · ink .8 — on the selected row
  *   match   underline · offset 3 · thickness 1, over a `pre` / `hit` / `post` split
- *   note    10px 10px · mono 12 (mobile 13) · 1.55 · ink .8 · text-wrap pretty
  *   foot    flex wrap · gap 14 · 9px 10px 4px · mt 4 · 1px ink .09 · 10.5 · ink .68
  *
  * There is no filter `<input>`: the query is the `/ta` the person typed, on the
  * page or in the composer, and the keys arrive from that field. The menu listens
  * on the document in the capture phase so ↑↓ ↵ esc never reach the field — except
  * ↵ with nothing to insert, which is the field's. **esc keeps the typed text:** it
- * only closes, and so does a space typed when nothing matches. The ink tiers `.68` / `.8` are the house `text-mn-text-secondary` /
+ * only closes, and so does a space typed when no REGISTERED row matches (an
+ * unmatched query's two free-text rows don't count, KAN-84). The ink tiers
+ * `.68` / `.8` are the house `text-mn-text-secondary` /
  * `text-mn-text-meta`. Class strings are template literals, not `cn()` (#252).
  *
  * The glass portals to `document.body` at a fixed box off the anchor's rect — the
@@ -235,9 +236,11 @@ export function SlashMenu({
         if (previewing) onPreviewCancel?.()
         else onClose()
       }
-      // Nothing matches and the person types a space: the words were prose, not a
-      // command. Close, and let the space through — the field keeps all of it.
-      else if (e.key === ' ' && pane === 'rows' && items.length === 0) {
+      // No REGISTERED row matches and the person types a space: the words were
+      // prose, not a command — the free-text rows don't count, since any typed
+      // query always yields those two. Close, and let the space through — the
+      // field keeps all of it.
+      else if (e.key === ' ' && pane === 'rows' && items.every((item) => item.row?.freeText)) {
         onClose()
         handled = false
       }
@@ -287,7 +290,8 @@ export function SlashMenu({
     onPreviewTemplate !== undefined,
     items[active]?.template !== undefined,
     leadWithTemplates,
-    previewing !== undefined
+    previewing !== undefined,
+    items[active]?.row?.freeText?.as
   )
   const indexOf = new Map(items.map((item, i) => [item, i]))
 
@@ -328,13 +332,6 @@ export function SlashMenu({
                 className={GROUP}
               >
                 {entry.label}
-              </div>
-            )
-          }
-          if (entry.kind === 'note') {
-            return (
-              <div key="note" data-part="note" className={chrome.note}>
-                {entry.text}
               </div>
             )
           }

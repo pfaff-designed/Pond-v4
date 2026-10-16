@@ -8,6 +8,7 @@ import {
   BLANK_TEXT_GROUP,
   blankRowEntries,
   footItems,
+  ICON,
   MOBILE_ROW_CAP,
   rowEntries,
   slashMenuHeight,
@@ -78,6 +79,43 @@ describe('rowEntries carries `.template` through', () => {
       origin: 'premade',
       kind: 'database',
     })
+  })
+})
+
+describe('rowEntries: an unknown word after `/` (KAN-84)', () => {
+  it('zero matches: two rows, text then heading, built from the word — never the DC empty note', () => {
+    const entries = rowEntries([TEXT_ROW, TABLE_ROW], 'wine')
+    expect(entries).toHaveLength(2)
+    const [text, heading] = entries
+    expect(text).toMatchObject({
+      kind: 'row',
+      id: 'freetext:text',
+      label: 'text — “wine”',
+      hint: 'no block named wine',
+      icon: ICON.text,
+      row: { id: 'freetext:text', label: 'text', freeText: { as: 'text', word: 'wine' } },
+    })
+    expect(heading).toMatchObject({
+      kind: 'row',
+      id: 'freetext:heading',
+      label: 'heading — “wine”',
+      icon: ICON.heading,
+      row: { id: 'freetext:heading', label: 'heading', freeText: { as: 'heading', word: 'wine' } },
+    })
+    expect(heading.kind === 'row' && heading.hint).toBeUndefined()
+  })
+
+  it('matches case-insensitively but keeps the word’s own casing, trimmed only', () => {
+    const entries = rowEntries([TEXT_ROW], '  Wine  ')
+    expect(entries[0]).toMatchObject({ label: 'text — “Wine”', row: { freeText: { word: 'Wine' } } })
+    expect(entries[0].kind === 'row' && entries[0].hint).toBe('no block named Wine')
+  })
+
+  it('a real match (e.g. `/ta`) is untouched — no free-text rows mixed in', () => {
+    const entries = rowEntries([TEXT_ROW, TABLE_ROW], 'ta')
+    expect(entries).toHaveLength(1)
+    expect(entries[0]).toMatchObject({ kind: 'row', id: 'table-row', label: 'table' })
+    expect(entries.some((e) => e.kind === 'row' && e.row?.freeText)).toBe(false)
   })
 })
 
@@ -169,5 +207,14 @@ describe('footItems', () => {
     expect(footItems('rows', '', 3, false, true, true, true)).toEqual(['↵ apply', 'esc back'])
     expect(footItems('templates', '', 12, true, false, false, true)).toEqual(['↵ apply', 'esc back'])
     expect(footItems('templates', '', 12, false, false, false, true)).toEqual(['↵ apply', 'esc back'])
+  })
+
+  it('active row is a free-text row: names what ↵ inserts, ahead of the match-count branches', () => {
+    expect(footItems('rows', 'wine', 2, false, false, false, false, 'text')).toEqual([
+      '↵ insert as text',
+    ])
+    expect(footItems('rows', 'wine', 2, false, false, false, false, 'heading')).toEqual([
+      '↵ insert as heading',
+    ])
   })
 })
