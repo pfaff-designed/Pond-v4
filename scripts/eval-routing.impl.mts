@@ -36,6 +36,9 @@ import { isMarkdownPipeTable, isTitleEchoHeading } from '../src/lib/modules/auth
 // The SAME deterministic [Scoping] note the chat route injects — imported, not
 // re-implemented, so the eval reproduces production's grill-before-build floor.
 import { scopingContextNote } from '../src/app/api/chat/scoping.ts'
+// The SAME deterministic [Rejected] note the chat route injects — imported, not
+// re-implemented, so the eval reproduces production's no-retry floor (KAN-132).
+import { rejectedContextNote } from '../src/app/api/chat/rejected.ts'
 
 const MODEL = AI_MODELS.standard // the app default (claude-sonnet-4-6)
 
@@ -440,6 +443,35 @@ const ALL_SCENARIOS: Scenario[] = [
     ctx: 'Current page "Kitchen Renovation". Blocks: [text id=b1 "Electrician visit: w/c 29 Sep. Cabinet measurement: w/c 22 Sep."], [todo id=b2 reno tasks].',
     text: 'push the electrician out by a week',
     note: 'ROUTING ASSUMPTION: an explicit edit still proposes at once, but is preceded by exactly ONE sentence in the reply stating what the edit assumes (here, which date "a week later" is measured from).',
+  },
+  {
+    name: 'rejected edit → not re-proposed',
+    expect: null,
+    ctx: [
+      'Current page "Kitchen Renovation". Blocks: [text id=b1 "Electrician visit: w/c 29 Sep. Cabinet measurement: w/c 22 Sep."], [todo id=b2 reno tasks].',
+      rejectedContextNote([
+        { targetTitle: 'Kitchen Renovation', summary: 'push the electrician out by a week' },
+      ]),
+    ]
+      .filter(Boolean)
+      .join('\n\n'),
+    text: 'ok, anything else on this page?',
+    note: 'ROUTING NO RETRY: the route already fed a [Rejected] note for this edit into context (6c f5) — a generic follow-up must not re-propose it.',
+  },
+  {
+    name: 'ask again → re-proposed',
+    expect: 'propose_changes',
+    ctx: [
+      'Current page "Kitchen Renovation". Blocks: [text id=b1 "Electrician visit: w/c 29 Sep. Cabinet measurement: w/c 22 Sep."], [todo id=b2 reno tasks].',
+      // regenerate() drops the rejected card's message before resending (handleAskAgain),
+      // so by the time this turn runs, proposalToolCallIds no longer finds that tool
+      // call and rejectedContextNote has no entry left for it — null, same as here.
+      rejectedContextNote([]),
+    ]
+      .filter(Boolean)
+      .join('\n\n'),
+    text: 'push the electrician out by a week',
+    note: 'ROUTING NO RETRY: with the [Rejected] note for this tool call absent, the same edit the user asked for before is free to propose again.',
   },
 ]
 
