@@ -427,7 +427,7 @@ const ALL_SCENARIOS: Scenario[] = [
     note: '#63 + grill: after the grill, the brand-new log page is born with its table (date/exercise/sets/weight as columns) on turn 2.',
   },
 
-  // ── KAN-132: unclear → chip (never a card), clear edit → one assumption sentence ──
+  // ── KAN-132: unclear → chip (never a card), clear edit → card ──
   {
     name: 'unclear instruction → chip, no card',
     expect: null,
