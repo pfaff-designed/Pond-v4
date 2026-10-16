@@ -310,12 +310,14 @@ describe('rendered machine surfaces carry no wide tracking', () => {
     inferred: true,
   }
 
-  it('the diff card, with the reason line an inferred change carries', () => {
+  it('the diff card, with the content line a create change carries', () => {
     const { container } = render(
       <ModuleDiffCard changes={[inferredChange]} targetName="schedule" {...diffHandlers()} />
     )
-    // The reason is really on screen — otherwise this test would pass vacuously.
-    expect(screen.getByText('the worktop follows the electrician by a week')).toBeInTheDocument()
+    // The content is really on screen — otherwise this test would pass vacuously.
+    // KAN-132: the per-change reason line is gone (6c frame 2 draws no reason line).
+    expect(screen.getByText(/worktop template — w\/c 13 oct/)).toBeInTheDocument()
+    expect(screen.queryByText('the worktop follows the electrician by a week')).not.toBeInTheDocument()
     expect(wideTrackingOnMono(container)).toEqual([])
   })
 
