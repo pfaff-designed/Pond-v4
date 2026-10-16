@@ -36,7 +36,7 @@ import type { PaletteItem } from '@/components/molecules/palette-entries'
 import { normalizeQuery } from '@/components/molecules/slash-entries'
 import { NewPondFlow } from '@/components/organisms/NewPondFlow'
 import { PondCommand } from '@/components/organisms/PondCommand'
-import { ReportProblemBox } from '@/components/organisms/ReportProblemBox'
+import { ReportProblemBox, type ReportProblemStatus } from '@/components/organisms/ReportProblemBox'
 import {
   isComposerToggleKey,
   requestComposerNotice,
@@ -91,6 +91,9 @@ export function ShellCommands() {
   const [naming, setNaming] = useState<string | null>(null)
   // `report a problem`: the box is open, mounted over the shell like the palette.
   const [reportOpen, setReportOpen] = useState(false)
+  const [reportStatus, setReportStatus] = useState<ReportProblemStatus>('idle')
+  const [reportFiled, setReportFiled] = useState<{ key: string; url: string } | null>(null)
+  const [reportError, setReportError] = useState<string | null>(null)
   const pondId = usePondId()
   const pondName = usePondName()
   const { pond, ponds } = usePond()
@@ -133,6 +136,36 @@ export function ShellCommands() {
     start: startTemplateSheet,
   } = templateSheet
   const closeNewPondSheet = useCallback(() => setNaming(null), [])
+
+  const closeReport = useCallback(() => {
+    setReportOpen(false)
+    setReportStatus('idle')
+    setReportFiled(null)
+    setReportError(null)
+  }, [])
+
+  const pageTitle = path.current
+  const handleReportSubmit = useCallback(
+    (text: string) => {
+      setReportStatus('sending')
+      fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, pageId: currentNodeId, pageTitle, url: window.location.href }),
+      })
+        .then(async (res) => {
+          if (!res.ok) throw new Error('not ok')
+          const data = (await res.json()) as { key: string; url: string }
+          setReportFiled({ key: data.key, url: data.url })
+          setReportStatus('filed')
+        })
+        .catch(() => {
+          setReportError("can't file reports right now")
+          setReportStatus('error')
+        })
+    },
+    [currentNodeId, pageTitle]
+  )
 
   // Global ⌘K → toggle the palette, or close the sheet it launched (the list is not
   // open then, so a toggle would raise it behind the sheet). Capture phase on the
@@ -288,6 +321,9 @@ export function ShellCommands() {
         return
       }
       if (item.action === 'report-a-problem') {
+        setReportStatus('idle')
+        setReportFiled(null)
+        setReportError(null)
         setReportOpen(true)
         return
       }
@@ -316,9 +352,12 @@ export function ShellCommands() {
       {reportOpen && (
         <ReportProblemBox
           pageTitle={path.current}
-          status="idle"
-          onSubmit={() => {}}
-          onClose={() => setReportOpen(false)}
+          status={reportStatus}
+          filedKey={reportFiled?.key}
+          filedUrl={reportFiled?.url}
+          errorText={reportError ?? undefined}
+          onSubmit={handleReportSubmit}
+          onClose={closeReport}
         />
       )}
       <PondCommand
