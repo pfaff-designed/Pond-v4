@@ -179,9 +179,16 @@ describe('KAN-335 path test — report a problem from ⌘K', () => {
     await waitFor(() => expect(box).toHaveTextContent('filed as KAN-901 · thanks'))
     const link = screen.getByRole('link', { name: 'KAN-901' })
     expect(link).toHaveAttribute('href', 'https://pfaff-team.atlassian.net/browse/KAN-901')
-    expect(link).toHaveFocus()
+    expect(box).toHaveFocus()
+    expect(link).not.toHaveFocus()
 
-    // 7. Esc closes the box, even with the line long gone and focus on the link.
+    // A second ↵ (pressing ↵ twice to send) must not open the link or file again.
+    await user.keyboard('{Enter}')
+    expect(
+      (global.fetch as jest.Mock).mock.calls.filter(([url]) => url === '/api/feedback')
+    ).toHaveLength(1)
+
+    // 7. Esc closes the box, even with the line long gone and focus on the dialog.
     await user.keyboard('{Escape}')
     expect(screen.queryByRole('dialog', { name: 'report a problem' })).toBeNull()
   })

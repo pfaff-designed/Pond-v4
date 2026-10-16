@@ -85,6 +85,31 @@ describe('ReportProblemBox — the line and send (KAN-335)', () => {
     )
   })
 
+  it('focuses the dialog (not the link) once filed, so a second ↵ cannot open the issue', async () => {
+    const user = userEvent.setup()
+    const onSubmit = jest.fn()
+    const openSpy = jest.spyOn(window, 'open').mockImplementation(() => null)
+
+    render(
+      <ReportProblemBox
+        {...baseProps}
+        onSubmit={onSubmit}
+        status="filed"
+        filedKey="KAN-123"
+        filedUrl="https://pfaff-team.atlassian.net/browse/KAN-123"
+      />
+    )
+
+    expect(screen.getByRole('dialog', { name: 'report a problem' })).toHaveFocus()
+    expect(screen.getByRole('link', { name: 'KAN-123' })).not.toHaveFocus()
+
+    await user.keyboard('{Enter}')
+
+    expect(openSpy).not.toHaveBeenCalled()
+    expect(onSubmit).not.toHaveBeenCalled()
+    openSpy.mockRestore()
+  })
+
   it('renders the error text verbatim', () => {
     render(
       <ReportProblemBox {...baseProps} status="error" errorText="can't file reports right now" />

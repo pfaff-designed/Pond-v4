@@ -48,17 +48,15 @@ export function ReportProblemBox({
 
   const lineRef = useRef<HTMLTextAreaElement>(null)
   const dialogRef = useRef<HTMLDivElement>(null)
-  const linkRef = useRef<HTMLAnchorElement>(null)
   // Opened via ⌘K → ↵, which leaves focus on the palette's now-unmounted row —
   // move it onto the line so typing lands immediately, and again once a
   // `sending` round-trip returns to `idle` for a second report. `filed`/`error`
-  // unmount the line, so focus moves onto what replaces it — the issue link, or
-  // the dialog itself when there's nothing else to focus — rather than falling
-  // to the body.
+  // unmount the line, so focus moves onto the dialog itself rather than
+  // falling to the body — `filed`'s link stays reachable by Tab but is never
+  // auto-focused, so a second ↵ to "send again" can't activate it.
   useEffect(() => {
     if (status === 'idle') lineRef.current?.focus()
-    else if (status === 'filed') linkRef.current?.focus()
-    else if (status === 'error') dialogRef.current?.focus()
+    else if (status === 'filed' || status === 'error') dialogRef.current?.focus()
   }, [status])
 
   // Esc closes the box in every status. `sending`/`filed`/`error` move focus
@@ -107,7 +105,7 @@ export function ReportProblemBox({
       {status === 'filed' ? (
         <p className="text-[13px] text-mn-text">
           filed as{' '}
-          <a ref={linkRef} href={filedUrl} target="_blank" rel="noreferrer" className="underline">
+          <a href={filedUrl} target="_blank" rel="noreferrer" className="underline">
             {filedKey}
           </a>{' '}
           · thanks
