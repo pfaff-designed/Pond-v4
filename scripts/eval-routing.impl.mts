@@ -28,6 +28,7 @@ import {
   configureViewTool,
   defineSchemaTool,
   addRowTool,
+  suggestFollowupsTool,
 } from '../src/app/api/chat/tools.ts'
 // The SAME heuristics the emit-time gate enforces (ticket-21) — imported, not
 // re-implemented, so the eval's tells and the gate can't drift.
@@ -48,6 +49,9 @@ const tools = {
   // every tool; this eval previously simulated only four).
   define_schema: tool(defineSchemaTool),
   add_row: tool(addRowTool),
+  // KAN-132: the unclear→chip rule routes through suggest_followups instead of
+  // propose_changes, so the eval needs the real chip tool registered to observe it.
+  suggest_followups: tool(suggestFollowupsTool),
 }
 
 /** Expected outcome: a specific tool name, or null = the model must call NO tool. */
@@ -101,6 +105,12 @@ type Scenario = {
    *  defensible. When set, T1 may either build (judged directly) or grill-then-
    *  build. Used sparingly for the truly-nothing-to-scope case. */
   grillOptional?: boolean
+  /** For suggest_followups cases (KAN-132 intent rule): assert at least one
+   *  offered chip names the edit this regex describes. */
+  expectChipNaming?: RegExp
+  /** For propose_changes / collection-tool cases (KAN-132 assumption rule):
+   *  assert the reply's prose is exactly one sentence stating the assumption. */
+  expectOneAssumptionSentence?: boolean
 }
 
 /** A decisive turn-2/3 answer the harness sends if the model grills a SECOND
@@ -413,6 +423,24 @@ const ALL_SCENARIOS: Scenario[] = [
     turn1Probe: /goal|experience|equipment|day|week|exercise|injur|record|track|what|kind/i,
     note: '#63 + grill: after the grill, the brand-new log page is born with its table (date/exercise/sets/weight as columns) on turn 2.',
   },
+
+  // ── KAN-132: unclear → chip (never a card), clear edit → one assumption sentence ──
+  {
+    name: 'unclear instruction → chip, no card',
+    expect: 'suggest_followups',
+    expectChipNaming: /electrician.*(w\/c )?6 oct|move the electrician/i,
+    ctx: 'Current page "Kitchen Renovation". Blocks: [text id=b1 "Electrician visit: w/c 29 Sep. Cabinet measurement: w/c 22 Sep."], [todo id=b2 reno tasks].',
+    text: 'the electrician might need to move to w/c 6 oct',
+    note: 'STEWARD: a passing remark that merely mentions a possible change is not a request — no clarifying question, no propose_changes; answer in prose, then offer the edit as ONE suggest_followups chip naming it.',
+  },
+  {
+    name: 'clear edit → card plus one assumption sentence',
+    expect: 'propose_changes',
+    expectOneAssumptionSentence: true,
+    ctx: 'Current page "Kitchen Renovation". Blocks: [text id=b1 "Electrician visit: w/c 29 Sep. Cabinet measurement: w/c 22 Sep."], [todo id=b2 reno tasks].',
+    text: 'push the electrician out by a week',
+    note: 'ROUTING ASSUMPTION: an explicit edit still proposes at once, but is preceded by exactly ONE sentence in the reply stating what the edit assumes (here, which date "a week later" is measured from).',
+  },
 ]
 
 type Result = {
@@ -428,11 +456,20 @@ type CreateInput = {
   title?: string
   parentTitle?: string
   blocks?: Array<{ type?: string; content?: string }>
+  suggestions?: string[]
+}
+
+/** Rough sentence count — splits on terminal punctuation. Good enough to assert
+ *  "exactly one sentence" without parsing prose. */
+function sentenceCount(text: string): number {
+  const trimmed = text.trim()
+  if (!trimmed) return 0
+  return (trimmed.match(/[^.!?]+(?:[.!?]+|$)/g) ?? []).filter((m) => m.trim().length > 0).length
 }
 
 /** The create_page shape assertions the milestones require. Only meaningful once
  *  the tool name already matched. Factored out so single-turn and turn-2 share it. */
-function checkShape(call: ToolCall | undefined, s: Scenario): boolean {
+function checkShape(call: ToolCall | undefined, s: Scenario, text: string): boolean {
   const input = (call?.input ?? {}) as CreateInput
   let pass = true
   if (s.expectType) pass = input.type === s.expectType
@@ -451,6 +488,12 @@ function checkShape(call: ToolCall | undefined, s: Scenario): boolean {
   if (pass && s.expectNoTitleEcho) {
     const first = (input.blocks ?? [])[0]
     pass = !(first?.type === 'text' && isTitleEchoHeading(first.content ?? '', input.title ?? ''))
+  }
+  if (pass && s.expectChipNaming) {
+    pass = (input.suggestions ?? []).some((sugg) => s.expectChipNaming!.test(sugg))
+  }
+  if (pass && s.expectOneAssumptionSentence) {
+    pass = sentenceCount(text) === 1
   }
   return pass
 }
@@ -476,13 +519,14 @@ async function generateTurn(
   })
 }
 
-/** Assert a single tool outcome against a scenario's `expect` + shape. */
-function judge(actual: string, call: ToolCall | undefined, s: Scenario): boolean {
+/** Assert a single tool outcome against a scenario's `expect` + shape. `text` is
+ *  the reply's prose for that turn (KAN-132: the one-assumption-sentence check). */
+function judge(actual: string, call: ToolCall | undefined, s: Scenario, text: string): boolean {
   if ((s.expect as unknown as string) === 'AMBIGUOUS') {
     return actual === 'create_page' || actual === 'propose_changes' || actual === '(no tool)'
   }
   if (s.expect === null) return actual === '(no tool)'
-  return actual === s.expect && checkShape(call, s)
+  return actual === s.expect && checkShape(call, s, text)
 }
 
 async function runOne(s: Scenario): Promise<Result> {
@@ -496,7 +540,7 @@ async function runOne(s: Scenario): Promise<Result> {
 
     // A genuinely trivial named page may just build on turn 1 — accept it.
     if (s.grillOptional && t1actual !== '(no tool)') {
-      const pass = judge(t1actual, t1call, s)
+      const pass = judge(t1actual, t1call, s, t1.text)
       const detail = t1call ? JSON.stringify(t1call.input).slice(0, 120) : t1.text.slice(0, 90)
       return { scenario: s, actual: `${t1actual} (T1, no grill)`, pass, detail }
     }
@@ -533,7 +577,7 @@ async function runOne(s: Scenario): Promise<Result> {
       const call = last.toolCalls[0] as ToolCall | undefined
       const actual = call ? call.toolName : '(no tool)'
       if (actual !== '(no tool)') {
-        const pass = judge(actual, call, s)
+        const pass = judge(actual, call, s, last.text)
         const detail = call
           ? JSON.stringify(call.input).slice(0, 120)
           : last.text.replace(/\s+/g, ' ').slice(0, 90)
@@ -561,7 +605,7 @@ async function runOne(s: Scenario): Promise<Result> {
   const detail = call
     ? JSON.stringify(call.input).slice(0, 120)
     : result.text.replace(/\s+/g, ' ').slice(0, 90)
-  return { scenario: s, actual, pass: judge(actual, call, s), detail }
+  return { scenario: s, actual, pass: judge(actual, call, s, result.text), detail }
 }
 
 function fmtExpect(e: Expect): string {
