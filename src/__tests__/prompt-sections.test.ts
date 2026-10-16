@@ -62,6 +62,8 @@ describe('SYSTEM_PROMPT — preserved rule strings (eval-pinned, must survive th
     "give exactly ONE sentence in your answer's prose stating what the edit assumes",
     // KAN-132: unclear-whether-an-edit-is-wanted offers a chip, not a clarifying question.
     'offer the edit as ONE suggest_followups chip that names it',
+    // KAN-132: never re-propose an edit rejected earlier in the thread.
+    'never re-propose an edit it names',
   ])('still contains rule string: %s', (needle) => {
     expect(SYSTEM_PROMPT).toContain(needle)
   })
