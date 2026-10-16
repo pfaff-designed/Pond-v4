@@ -36,6 +36,12 @@ function missingEnv(): boolean {
  * `now` queue — a failed rank still leaves the issue filed (`rankFailed`).
  */
 export async function POST(req: Request) {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
+
   let rawBody: unknown
   try {
     rawBody = await req.json()
@@ -46,12 +52,6 @@ export async function POST(req: Request) {
   if (!parsed) {
     return Response.json({ error: 'text is required' }, { status: 400 })
   }
-
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   if (missingEnv()) {
     return Response.json({ error: "can't file reports right now" }, { status: 503 })

@@ -59,6 +59,13 @@ describe('POST /api/feedback', () => {
     expect(mockCreateJiraIssue).not.toHaveBeenCalled()
   })
 
+  it('returns 401, not 400, when signed out with an empty body', async () => {
+    mockUser = null
+    const res = await post({ text: '', url: 'https://pond.local/p' })
+    expect(res.status).toBe(401)
+    expect(mockCreateJiraIssue).not.toHaveBeenCalled()
+  })
+
   it('returns 400 on invalid JSON', async () => {
     const res = await post('not json{')
     expect(res.status).toBe(400)
