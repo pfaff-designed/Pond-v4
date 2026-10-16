@@ -59,6 +59,18 @@ export const IMPORT_A_PAGE_ACTION: PaletteItem = {
 }
 
 /**
+ * KAN-335: a standing door into filing feedback, beside the shell's other
+ * actions unconditionally — there is always a problem to report, unlike the
+ * page-scoped `save-as-template`.
+ */
+export const REPORT_A_PROBLEM_ACTION: PaletteItem = {
+  id: 'action:report-a-problem',
+  label: 'report a problem',
+  kind: 'action',
+  action: 'report-a-problem',
+}
+
+/**
  * Board `6i` frame 3: "Saving is a page action, so it lives in the command
  * palette, not the / menu." A page action, so it lists only when there is a page
  * to save — `paletteItems` appends it on `openPageId` alone.
@@ -103,6 +115,7 @@ export function paletteItems(
     ...recent.map((r) => ({ ...item(r), recent: true })),
     ...all.filter((r) => !recentSet.has(r.id)).map(item),
     IMPORT_A_PAGE_ACTION,
+    REPORT_A_PROBLEM_ACTION,
     NEW_PAGE_ACTION,
     ASK_POND_ACTION,
     DEEP_RESEARCH_ACTION,

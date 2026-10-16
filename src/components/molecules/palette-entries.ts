@@ -42,6 +42,7 @@ export type PaletteAction =
   | 'deep-research'
   | 'save-as-template'
   | 'import-a-page'
+  | 'report-a-problem'
   | ZenAction
 
 export interface PaletteItem {
