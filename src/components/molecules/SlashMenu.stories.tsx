@@ -315,42 +315,46 @@ export const FilteredInk: Story = {
   play: async ({ canvasElement }) => assertFiltered(canvasElement, INK),
 }
 
-// ── empty ──────────────────────────────────────────────────────────────────────
+// ── free text ─────────────────────────────────────────────────────────────────
 
-async function assertEmpty(root: HTMLElement, p: Palette, mobile = false) {
+/**
+ * `/wine` (6i frame 1, `s3.4.1 add a block`): an unmatched word offers two
+ * ordinary `slash` rows — `text` selected, its hint hidden per the Pond 02
+ * component DC's hint-hidden-on-select rule, then `heading` with none — and
+ * the foot names what ↵ inserts. Chrome, row and foot values all come from
+ * `assertChrome`'s shared palette/`SLASH_SIZES` checks.
+ */
+async function assertFreeText(root: HTMLElement, p: Palette, mobile = false) {
   await assertChrome(root, p, mobile)
   const glass = glassOf(root)
-  await expect(glass.querySelectorAll('[role="option"]')).toHaveLength(0)
-  await expect(glass.querySelector('[data-part="foot"]')).toBeNull()
-  const note = glass.querySelector<HTMLElement>('[data-part="note"]')!
-  await expect(note.textContent).toBe(
-    'nothing called “zz”. esc to keep it as text, or ask pond in the composer.'
-  )
-  const s = getComputedStyle(note)
-  await expect(s.padding).toBe('10px')
-  await expect(s.fontFamily).toMatch(MONO)
-  await expect(px(s.fontSize)).toBe(mobile ? 13 : 12)
-  await expect(px(s.lineHeight)).toBeCloseTo(mobile ? 20.15 : 18.6, 1)
-  await expect(s.color).toBe(p.tier80)
+  await expect(glass.querySelectorAll('[data-part="group"]')).toHaveLength(0)
+  await expect(labels(root)).toEqual(['text — “wine”', 'heading — “wine”'])
+  const text = glass.querySelector<HTMLElement>('[aria-selected="true"]')!
+  await expect(text.querySelector('[data-part="hint"]')).toBeNull()
+  await expect(text.querySelector('[data-part="enter"]')!.textContent).toBe('↵')
+  const heading = [...glass.querySelectorAll('[role="option"]')][1]
+  await expect(heading.getAttribute('aria-selected')).toBe('false')
+  await expect(heading.querySelector('[data-part="hint"]')).toBeNull()
+  await expect(glass.querySelector('[data-part="foot"]')!.textContent).toBe('↵ insert as text')
 }
 
-/** `/zz`: the note, in the board's words, and no foot. */
-export const Empty: Story = {
-  name: 'empty',
-  args: { query: 'zz' },
-  play: async ({ canvasElement }) => assertEmpty(canvasElement, PAPER),
+/** `/wine`: `text` selected, its hint hidden while selected, only `↵` shows. */
+export const FreeText: Story = {
+  name: 'free text',
+  args: { query: 'wine' },
+  play: async ({ canvasElement }) => assertFreeText(canvasElement, PAPER),
 }
 
-export const EmptyMobile: Story = {
-  name: 'empty · mobile',
-  args: { query: 'zz', size: 'mobile' },
-  play: async ({ canvasElement }) => assertEmpty(canvasElement, PAPER, true),
+export const FreeTextMobile: Story = {
+  name: 'free text · mobile',
+  args: { query: 'wine', size: 'mobile' },
+  play: async ({ canvasElement }) => assertFreeText(canvasElement, PAPER, true),
 }
 
-export const EmptyInk: Story = {
-  name: 'empty · ink',
-  args: { query: 'zz', ink: true },
-  play: async ({ canvasElement }) => assertEmpty(canvasElement, INK),
+export const FreeTextInk: Story = {
+  name: 'free text · ink',
+  args: { query: 'wine', ink: true },
+  play: async ({ canvasElement }) => assertFreeText(canvasElement, INK),
 }
 
 // ── templates ──────────────────────────────────────────────────────────────────
@@ -524,12 +528,13 @@ export const KeyEdges: Story = {
 }
 
 /**
- * The one ↵ the menu does NOT take: with nothing to insert the key is the field's,
- * so `/zz` followed by ↵ reaches the page and keeps the typed text as text.
+ * The one ↵ the menu does NOT take: with nothing to insert the key is the field's.
+ * A typed, unmatched query always has the two free-text rows to insert (KAN-84),
+ * so `rows={[]}` is what still has nothing to insert.
  */
 export const EmptyKeepsEnter: Story = {
   tags: ['!dev'],
-  args: { query: 'zz', onSelect: fn() },
+  args: { rows: [], onSelect: fn() },
   play: async ({ canvasElement, args }) => {
     const field = within(canvasElement).getByLabelText('page')
     field.focus()
@@ -631,7 +636,9 @@ export const PagesGroup: Story = {
 
 /**
  * A space typed when nothing matches closes the menu and is not swallowed — the
- * field keeps the space and everything before it as plain text, like esc.
+ * field keeps the space and everything before it as plain text, like esc. An
+ * unmatched word's two free-text rows (KAN-84) don't count as a match, so this
+ * still closes against `/zz`.
  */
 export const SpaceKeepsText: Story = {
   tags: ['!dev'],

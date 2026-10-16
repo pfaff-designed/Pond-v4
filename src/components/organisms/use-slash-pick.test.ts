@@ -1,5 +1,7 @@
+import { renderHook } from '@testing-library/react'
+import type { SlashRow } from '@/components/molecules/SlashMenu'
 import type { Block } from '@/lib/documents/types'
-import { landAtSlash, undoLanding, type Landing, type SlashTarget } from './use-slash-pick'
+import { landAtSlash, undoLanding, useSlashPick, type Landing, type SlashTarget } from './use-slash-pick'
 
 const table: Block = { id: 'b-table', type: 'table', columns: ['Tool'], rows: [] }
 const picked: Block = { id: 'todo-1', type: 'todo', items: [] }
@@ -118,5 +120,62 @@ describe('undoLanding', () => {
     const edited: Block = { ...host, content: 'rewritten' }
     const landing = land([edited], target, picked)
     expect(undoLanding(landing.next, landing)).toEqual([edited])
+  })
+})
+
+describe('useSlashPick · handleSlashSelect with a free-text row', () => {
+  const setup = () => {
+    const onChange = jest.fn()
+    const markInserted = jest.fn()
+    const slashBlock: Block = { id: 'b-slash', type: 'text', content: '/wine' }
+    const { result } = renderHook(() =>
+      useSlashPick({
+        blocks: [slashBlock],
+        onChange,
+        markInserted,
+        openSourcePicker: jest.fn(),
+        makePageFromRow: jest.fn(),
+        makePageFromTemplate: jest.fn(),
+      })
+    )
+    return { result, onChange, markInserted }
+  }
+
+  it('mints a text block from the free-text row’s word', () => {
+    const { result, onChange, markInserted } = setup()
+    const row: SlashRow = { id: 'freetext:text', label: 'text', freeText: { as: 'text', word: 'wine' } }
+
+    result.current.handleSlashSelect(0, row, null)
+
+    expect(onChange).toHaveBeenCalledWith([
+      expect.objectContaining({ type: 'text', content: 'wine' }),
+    ])
+    expect(markInserted).toHaveBeenCalledWith(onChange.mock.calls[0][0][0].id)
+  })
+
+  it('keeps the word’s own casing — `/Wine` lands a block reading `Wine`', () => {
+    const { result, onChange } = setup()
+    const row: SlashRow = { id: 'freetext:text', label: 'text', freeText: { as: 'text', word: 'Wine' } }
+
+    result.current.handleSlashSelect(0, row, null)
+
+    expect(onChange).toHaveBeenCalledWith([
+      expect.objectContaining({ type: 'text', content: 'Wine' }),
+    ])
+  })
+
+  it('mints a heading block, content prefixed with `## `, from the free-text row’s word', () => {
+    const { result, onChange } = setup()
+    const row: SlashRow = {
+      id: 'freetext:heading',
+      label: 'heading',
+      freeText: { as: 'heading', word: 'wine' },
+    }
+
+    result.current.handleSlashSelect(0, row, null)
+
+    expect(onChange).toHaveBeenCalledWith([
+      expect.objectContaining({ type: 'text', content: '## wine' }),
+    ])
   })
 })

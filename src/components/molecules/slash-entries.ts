@@ -41,7 +41,12 @@ export interface SlashRow {
   placement?: 'sibling' | 'child'
   /** The row picks a template rather than inserting a block (the blank-page list's leading rows). */
   template?: TemplatePick
+  /** The row mints the unmatched query itself, as text or a heading (KAN-84), rather than picking a registered row. */
+  freeText?: { as: FreeTextAs; word: string }
 }
+
+/** The two shapes an unmatched `/word` can land as (KAN-84). */
+export type FreeTextAs = 'text' | 'heading'
 
 export type TemplatePick =
   { origin: 'premade'; kind: TemplateKind } | { origin: 'yours'; id: string }
@@ -54,7 +59,6 @@ export interface YourTemplate {
 
 export type SlashEntry =
   | { kind: 'group'; label: string }
-  | { kind: 'note'; text: string }
   | {
       kind: 'row'
       id: string
@@ -175,7 +179,7 @@ export function slashMenuHeight(
   return Math.min(list, viewportHeight * LIST_MAX_VH) + BOX_HEIGHT.foot + BOX_HEIGHT.glass
 }
 
-/** The `rows` pane: grouped at rest, a flat match list under a query, a note when nothing matches. */
+/** The `rows` pane: grouped at rest, a flat match list under a query, two free-text rows (KAN-84) when nothing registered matches. */
 export function rowEntries(
   rows: readonly SlashRow[],
   query: string,
@@ -223,14 +227,30 @@ export function rowEntries(
     })
   }
   const out = [...byLabel, ...byAlias]
-  return out.length
-    ? out
-    : [
-        {
-          kind: 'note',
-          text: `nothing called “${q}”. esc to keep it as text, or ask pond in the composer.`,
-        },
-      ]
+  if (out.length) return out
+  // 7f/6i: an unknown word after `/` offers to insert it as text or a heading,
+  // drawn as two ordinary `slash` rows rather than the DC's `empty` note.
+  // `word` keeps the query's own casing (trimmed only, never lowercased via
+  // `q`) so `/Wine` lands `Wine`, not `wine` — only the match above runs on `q`.
+  return FREE_TEXT_AS.map((as) => freeTextEntry(as, query.trim()))
+}
+
+const FREE_TEXT_AS: readonly FreeTextAs[] = ['text', 'heading']
+const FREE_TEXT_ICON: Record<FreeTextAs, SlashIcon> = { text: ICON.text, heading: ICON.heading }
+
+function freeTextEntry(as: FreeTextAs, word: string): SlashEntry {
+  const label = `${as} — “${word}”`
+  return {
+    kind: 'row',
+    id: `freetext:${as}`,
+    label,
+    pre: label,
+    hit: '',
+    post: '',
+    ...(as === 'text' ? { hint: `no block named ${word}` } : {}),
+    icon: FREE_TEXT_ICON[as],
+    row: { id: `freetext:${as}`, label: as, freeText: { as, word } },
+  }
 }
 
 /**
@@ -415,7 +435,10 @@ export function templateEntries(
  * active row is itself a template pick (KAN-124), whose foot is the board's
  * `↑↓ move · → preview · ↵ apply`. While a template is actually previewing
  * (KAN-131), the board drops `↑↓ move` entirely: `↵ apply · esc back` only,
- * ahead of every other branch.
+ * ahead of every other branch. When the active row is one of the two free-text
+ * rows (KAN-84), the foot names what ↵ inserts — `↵ insert as text` /
+ * `↵ insert as heading` — ahead of the ordinary match-count branches, which
+ * never fire for this case since the two free-text rows count as matches.
  */
 export function footItems(
   pane: SlashPane,
@@ -424,7 +447,8 @@ export function footItems(
   preview: boolean,
   activeIsTemplate = false,
   leadWithTemplates = false,
-  previewing = false
+  previewing = false,
+  activeFreeText?: FreeTextAs
 ): string[] {
   if (previewing) return ['↵ apply', 'esc back']
   if (pane === 'templates')
@@ -435,6 +459,7 @@ export function footItems(
     const verb = activeIsTemplate ? '↵ new nested page' : '↵ insert'
     return leadWithTemplates ? ['↑↓ move', verb] : ['↑↓ move', verb, 'esc keep as text']
   }
+  if (activeFreeText) return [`↵ insert as ${activeFreeText}`]
   if (matches === 0) return []
   return [`/ ${q} — ${matches} ${matches === 1 ? 'match' : 'matches'}`]
 }

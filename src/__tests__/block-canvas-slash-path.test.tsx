@@ -6,6 +6,10 @@
  * always has a way out. Every clause of the ticket's acceptance list is an
  * assertion below.
  *
+ * The same surface also carries the free-text path for an unmatched word
+ * (KAN-114): `/wine` offers `text` and `heading` rows rather than the old
+ * empty note, lands either kind, and esc leaves the typed `/wine` alone.
+ *
  * `BlockCanvas` is controlled, so this needs a stateful host — unlike the other
  * `BlockCanvas` suites' `onChange: () => {}`, a query narrowed by what was typed
  * only shows up once the edit round-trips back in as a new `blocks` prop, the
@@ -25,7 +29,7 @@ import { BlockCanvas } from '@/components/organisms/BlockCanvas'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import type { Block } from '@/lib/documents/types'
 import { BLANK_TEXT_GROUP } from '@/components/molecules/slash-entries'
-import { findTextBlock, writeInTextBlock } from './helpers/text-block'
+import { findAllTextBlocks, findTextBlock, writeInTextBlock } from './helpers/text-block'
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
@@ -222,5 +226,72 @@ describe('the templates pane always has a way out, on a page with content (KAN-2
     )
     const menu = await screen.findByRole('listbox', { name: 'blocks' })
     for (const label of labelsOf(menu)) expect(label.toLowerCase().includes('x')).toBe(true)
+  })
+})
+
+const footOf = (menu: HTMLElement) => menu.parentElement!.querySelector('[data-part="foot"]')
+
+describe('the free-text path for an unmatched word (KAN-114)', () => {
+  it('offers text or heading for `/wine`, lands either, and esc leaves it typed', async () => {
+    const user = userEvent.setup()
+    const emptyLine: Block = { id: 'b-empty', type: 'text', content: '' }
+    renderCanvas([emptyLine])
+
+    // 2: `/wine` matches nothing registered — two free-text rows, `text`
+    // selected (hint hidden per the hint-hidden-on-select rule, ↵ only) and
+    // the foot names what ↵ inserts.
+    const editorAtStart = await findTextBlock()
+    writeInTextBlock(editorAtStart, '/')
+    await screen.findByRole('listbox', { name: 'blocks' })
+    writeInTextBlock(editorAtStart, '/wine')
+    let menu = await screen.findByRole('listbox', { name: 'blocks' })
+    expect(labelsOf(menu)).toEqual(['text — “wine”', 'heading — “wine”'])
+    expect(
+      within(screen.getByRole('option', { selected: true })).queryByText('no block named wine')
+    ).not.toBeInTheDocument()
+    expect(footOf(menu)!.textContent).toBe('↵ insert as text')
+
+    // 3: ↵ lands a text block reading `wine`; the menu closes.
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument())
+    let editor = await findTextBlock()
+    expect(within(editor).queryByRole('heading')).not.toBeInTheDocument()
+    expect(editor.textContent).toBe('wine')
+
+    // 4: `/wine` again, ↓ selects `heading` and the foot follows; ↵ lands a
+    // heading block (markdown `## wine`) reading `wine`. The whole-block `/`
+    // path only opens from a block that is truly empty (`use-slash-line.ts`'s
+    // `handleTextChange`), so the retyping happens in a fresh block from the
+    // foot's always-visible add, as it would on the real page.
+    await user.click(screen.getByRole('button', { name: 'Add a block' }))
+    editor = (await findAllTextBlocks()).at(-1)!
+    writeInTextBlock(editor, '/')
+    await screen.findByRole('listbox', { name: 'blocks' })
+    writeInTextBlock(editor, '/wine')
+    menu = await screen.findByRole('listbox', { name: 'blocks' })
+    await user.keyboard('{ArrowDown}')
+    expect(labelsOf(menu)[1]).toBe('heading — “wine”')
+    expect(screen.getByRole('option', { selected: true })).toBe(screen.getAllByRole('option')[1])
+    // `text` is no longer selected, so its hint now shows.
+    expect(
+      within(screen.getAllByRole('option')[0]).getByText('no block named wine')
+    ).toBeInTheDocument()
+    expect(footOf(menu)!.textContent).toBe('↵ insert as heading')
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument())
+    // The landed heading takes a freshly-minted block id, so it is a new element
+    // (`editor` would be the stale, now-detached one that held `/wine`).
+    expect(await screen.findByRole('heading', { level: 2, name: 'wine' })).toBeInTheDocument()
+
+    // 5: `/wine` a third time, esc closes the menu and leaves `/wine` as typed text.
+    await user.click(screen.getByRole('button', { name: 'Add a block' }))
+    editor = (await findAllTextBlocks()).at(-1)!
+    writeInTextBlock(editor, '/')
+    await screen.findByRole('listbox', { name: 'blocks' })
+    writeInTextBlock(editor, '/wine')
+    await screen.findByRole('listbox', { name: 'blocks' })
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument())
+    expect(editor.textContent).toBe('/wine')
   })
 })

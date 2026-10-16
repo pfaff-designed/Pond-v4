@@ -104,7 +104,10 @@ describe('the / menu speaks Pond’s words only', () => {
       const text = glass().textContent ?? ''
       expect(text).not.toMatch(/[A-Z]/)
       for (const o of screen.queryAllByRole('option')) {
-        expect(ALLOWED.has(labelOf(o as HTMLElement)!)).toBe(true)
+        const label = labelOf(o as HTMLElement)!
+        // KAN-84: the two free-text rows carry the typed word, not a vocabulary term.
+        if (/^(text|heading) — /.test(label)) continue
+        expect(ALLOWED.has(label)).toBe(true)
       }
     }
     const renders: Array<Partial<React.ComponentProps<typeof SlashMenu>>> = [
@@ -371,14 +374,25 @@ describe('filtered', () => {
   })
 })
 
-describe('empty', () => {
-  it('says what it did not find, in the board’s words, and drops the foot', () => {
-    renderMenu({ query: 'zz' })
-    expect(screen.queryAllByRole('option')).toHaveLength(0)
-    expect(glass().querySelector('[data-part="note"]')!.textContent).toBe(
-      'nothing called “zz”. esc to keep it as text, or ask pond in the composer.'
-    )
-    expect(glass().querySelector('[data-part="foot"]')).toBeNull()
+describe('free text (KAN-84)', () => {
+  it('an unmatched word offers to insert it as text (selected, ↵ only) or heading (no hint), and the foot names what ↵ inserts', () => {
+    const { anchor } = renderMenu({ query: 'wine' })
+    expect(options().map((o) => labelOf(o as HTMLElement))).toEqual([
+      'text — “wine”',
+      'heading — “wine”',
+    ])
+    const text = selected()
+    expect(labelOf(text)).toBe('text — “wine”')
+    expect(within(text).queryByText('no block named wine')).toBeNull()
+    expect(within(text).getByText('↵')).toBeInTheDocument()
+    const heading = options()[1]
+    expect(heading.querySelector('[data-part="hint"]')).toBeNull()
+    expect(glass().querySelector('[data-part="foot"]')!.textContent).toBe('↵ insert as text')
+
+    fireEvent.keyDown(anchor, { key: 'ArrowDown' })
+    expect(labelOf(selected())).toBe('heading — “wine”')
+    expect(within(options()[0]).getByText('no block named wine')).toBeInTheDocument()
+    expect(glass().querySelector('[data-part="foot"]')!.textContent).toBe('↵ insert as heading')
   })
 })
 
@@ -390,7 +404,9 @@ describe('a space when nothing matches', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
     expect(space.defaultPrevented).toBe(false)
   })
+})
 
+describe('a space when something matches', () => {
   it('does nothing while something matches — a space inside `big number` is part of the query', () => {
     const { anchor, onClose } = renderMenu({ query: 'big' })
     const space = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true })
@@ -463,9 +479,11 @@ describe('mobile', () => {
     expect(glass().querySelector('[data-part="head"]')).toHaveClass('text-[13px]')
   })
 
-  it('sets the empty note at 13', () => {
+  it('sizes a free-text row (KAN-84) the same as any other mobile row', () => {
     renderMenu({ size: 'mobile', query: 'zz' })
-    expect(glass().querySelector('[data-part="note"]')).toHaveClass('text-[13px]')
+    for (const o of options()) {
+      expect(o).toHaveClass('py-[11px]', 'px-[10px]', 'text-[14px]')
+    }
   })
 })
 
@@ -726,7 +744,9 @@ describe('keys arrive from the field the person is typing in', () => {
   })
 
   it('the navigation keys are swallowed before the field sees them; ↵ with nothing to insert is not', () => {
-    const { anchor, onSelect } = renderMenu({ query: 'zz' })
+    // KAN-84: a typed, unmatched query always has the two free-text rows to
+    // insert, so `rows={[]}` at rest is what still has nothing to insert.
+    const { anchor, onSelect } = renderMenu({ rows: [], query: '' })
     const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
     anchor.dispatchEvent(enter)
     expect(enter.defaultPrevented).toBe(false)
