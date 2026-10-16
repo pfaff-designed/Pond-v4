@@ -14,7 +14,7 @@
  * sized off `ComposerLine`'s tokens (mono 16/14px line, 32px send circle).
  */
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { cn } from '@/lib/utils'
 
@@ -45,6 +45,14 @@ export function ReportProblemBox({
   const [text, setText] = useState('')
   const ready = status === 'idle'
   const canSend = ready && text.trim() !== ''
+
+  const lineRef = useRef<HTMLTextAreaElement>(null)
+  // Opened via ⌘K → ↵, which leaves focus on the palette's now-unmounted row —
+  // move it onto the line so typing lands immediately, and again once a
+  // `sending` round-trip returns to `idle` for a second report.
+  useEffect(() => {
+    if (ready) lineRef.current?.focus()
+  }, [ready])
 
   const submit = () => {
     if (!canSend) return
@@ -99,6 +107,7 @@ export function ReportProblemBox({
       ) : (
         <div className="flex items-end gap-2">
           <textarea
+            ref={lineRef}
             rows={1}
             aria-label="what went wrong?"
             placeholder="what went wrong?"

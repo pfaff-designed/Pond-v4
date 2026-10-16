@@ -157,10 +157,10 @@ describe('KAN-335 path test — report a problem from ⌘K', () => {
     expect(box).toHaveTextContent('the broken page')
     const line = screen.getByRole('textbox', { name: 'what went wrong?' })
     expect(line).toHaveAttribute('placeholder', 'what went wrong?')
+    expect(line).toHaveFocus()
 
-    // 5. Typing the problem and pressing ↵ files one report.
-    await user.type(line, 'the page will not load')
-    await user.keyboard('{Enter}')
+    // 5. The line is already focused (no click) — typing straight away files one report.
+    await user.keyboard('the page will not load{Enter}')
 
     expect(global.fetch).toHaveBeenCalledWith(
       '/api/feedback',
@@ -203,8 +203,8 @@ describe('KAN-335 path test — report a problem from ⌘K', () => {
     await screen.findByRole('dialog', { name: 'report a problem' })
 
     const line = screen.getByRole('textbox', { name: 'what went wrong?' })
-    await user.type(line, 'still broken')
-    await user.keyboard('{Enter}')
+    expect(line).toHaveFocus()
+    await user.keyboard('still broken{Enter}')
 
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent("can't file reports right now")

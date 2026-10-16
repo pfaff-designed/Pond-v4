@@ -10,23 +10,28 @@ const baseProps: ReportProblemBoxProps = {
 }
 
 describe('ReportProblemBox — the line and send (KAN-335)', () => {
-  it('disables send while the line is empty, and enables it once there is text', async () => {
+  it('focuses the line on mount, so typing straight after ⌘K → ↵ needs no click', () => {
+    render(<ReportProblemBox {...baseProps} />)
+
+    expect(screen.getByRole('textbox', { name: 'what went wrong?' })).toHaveFocus()
+  })
+
+  it('disables send while the line is empty, and enables it once there is text — no click first', async () => {
     const user = userEvent.setup()
     render(<ReportProblemBox {...baseProps} />)
 
     const send = screen.getByRole('button', { name: 'send' })
     expect(send).toBeDisabled()
 
-    await user.type(screen.getByRole('textbox', { name: 'what went wrong?' }), 'the chip is wrong')
+    await user.keyboard('the chip is wrong')
     expect(send).toBeEnabled()
   })
 
-  it('closes on Escape', async () => {
+  it('closes on Escape with no prior click', async () => {
     const user = userEvent.setup()
     const onClose = jest.fn()
     render(<ReportProblemBox {...baseProps} onClose={onClose} />)
 
-    await user.click(screen.getByRole('textbox', { name: 'what went wrong?' }))
     await user.keyboard('{Escape}')
 
     expect(onClose).toHaveBeenCalledTimes(1)
@@ -37,13 +42,12 @@ describe('ReportProblemBox — the line and send (KAN-335)', () => {
     const onSubmit = jest.fn()
     const { rerender } = render(<ReportProblemBox {...baseProps} onSubmit={onSubmit} />)
 
-    const line = screen.getByRole('textbox', { name: 'what went wrong?' })
-    await user.type(line, 'the chip is wrong{Enter}')
+    await user.keyboard('the chip is wrong{Enter}')
     expect(onSubmit).toHaveBeenCalledTimes(1)
     expect(onSubmit).toHaveBeenCalledWith('the chip is wrong')
 
     rerender(<ReportProblemBox {...baseProps} onSubmit={onSubmit} status="sending" />)
-    await user.type(screen.getByRole('textbox', { name: 'what went wrong?' }), '{Enter}')
+    await user.keyboard('{Enter}')
     expect(onSubmit).toHaveBeenCalledTimes(1)
   })
 
@@ -52,8 +56,16 @@ describe('ReportProblemBox — the line and send (KAN-335)', () => {
     const onSubmit = jest.fn()
     render(<ReportProblemBox {...baseProps} onSubmit={onSubmit} />)
 
-    await user.type(screen.getByRole('textbox', { name: 'what went wrong?' }), '{Enter}')
+    await user.keyboard('{Enter}')
     expect(onSubmit).not.toHaveBeenCalled()
+  })
+
+  it('re-focuses the line once status returns to idle after a send', () => {
+    const { rerender } = render(<ReportProblemBox {...baseProps} status="sending" />)
+    expect(screen.getByRole('textbox', { name: 'what went wrong?' })).not.toHaveFocus()
+
+    rerender(<ReportProblemBox {...baseProps} status="idle" />)
+    expect(screen.getByRole('textbox', { name: 'what went wrong?' })).toHaveFocus()
   })
 
   it('renders the filed copy with a link to the issue', () => {
