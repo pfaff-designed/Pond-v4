@@ -58,12 +58,15 @@ describe('SYSTEM_PROMPT — preserved rule strings (eval-pinned, must survive th
     'Never add a text property named "Title" or "Name"',
     // #52 fix 2: a collection shows exactly ONE active view.
     'A collection shows exactly ONE active view at a time',
-    // KAN-132: one assumption sentence precedes every proposal.
-    "give exactly ONE sentence in your answer's prose stating what the edit assumes",
+    // KAN-132: one assumption sentence precedes every proposal, on every path
+    // (including a re-proposal and a chip-sent request), modelled on the board.
+    'Both dates assume the cabinets are measured in the last week of September',
     // KAN-132: unclear-whether-an-edit-is-wanted offers a chip, not a clarifying question.
     'offer the edit as ONE suggest_followups chip that names it',
     // KAN-132: never re-propose an edit rejected earlier in the thread.
     'never re-propose an edit it names',
+    // KAN-132: a rejected edit is never re-offered as a follow-up chip either.
+    'never re-offer it as a suggest_followups chip either',
   ])('still contains rule string: %s', (needle) => {
     expect(SYSTEM_PROMPT).toContain(needle)
   })
