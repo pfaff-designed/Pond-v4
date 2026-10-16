@@ -179,9 +179,10 @@ describe('KAN-335 path test — report a problem from ⌘K', () => {
     await waitFor(() => expect(box).toHaveTextContent('filed as KAN-901 · thanks'))
     const link = screen.getByRole('link', { name: 'KAN-901' })
     expect(link).toHaveAttribute('href', 'https://pfaff-team.atlassian.net/browse/KAN-901')
+    expect(link).toHaveFocus()
 
-    // 7. Esc closes the box.
-    fireEvent.keyDown(box, { key: 'Escape' })
+    // 7. Esc closes the box, even with the line long gone and focus on the link.
+    await user.keyboard('{Escape}')
     expect(screen.queryByRole('dialog', { name: 'report a problem' })).toBeNull()
   })
 
@@ -209,5 +210,11 @@ describe('KAN-335 path test — report a problem from ⌘K', () => {
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent("can't file reports right now")
     )
+    expect(screen.getByRole('dialog', { name: 'report a problem' })).toHaveFocus()
+
+    // Esc closes the box from the error status too, with the line gone and
+    // focus on the dialog itself.
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog', { name: 'report a problem' })).toBeNull()
   })
 })

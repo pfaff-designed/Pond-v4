@@ -47,23 +47,38 @@ export function ReportProblemBox({
   const canSend = ready && text.trim() !== ''
 
   const lineRef = useRef<HTMLTextAreaElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const linkRef = useRef<HTMLAnchorElement>(null)
   // Opened via ⌘K → ↵, which leaves focus on the palette's now-unmounted row —
   // move it onto the line so typing lands immediately, and again once a
-  // `sending` round-trip returns to `idle` for a second report.
+  // `sending` round-trip returns to `idle` for a second report. `filed`/`error`
+  // unmount the line, so focus moves onto what replaces it — the issue link, or
+  // the dialog itself when there's nothing else to focus — rather than falling
+  // to the body.
   useEffect(() => {
-    if (ready) lineRef.current?.focus()
-  }, [ready])
+    if (status === 'idle') lineRef.current?.focus()
+    else if (status === 'filed') linkRef.current?.focus()
+    else if (status === 'error') dialogRef.current?.focus()
+  }, [status])
+
+  // Esc closes the box in every status. `sending`/`filed`/`error` move focus
+  // off the line, so a keydown listener scoped to the dialog's own subtree
+  // (e.g. a React `onKeyDown` on this div) never sees it — a document
+  // listener for the box's mounted lifetime does.
+  useEffect(() => {
+    function handleEscape(e: globalThis.KeyboardEvent) {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        onClose()
+      }
+    }
+    document.addEventListener('keydown', handleEscape)
+    return () => document.removeEventListener('keydown', handleEscape)
+  }, [onClose])
 
   const submit = () => {
     if (!canSend) return
     onSubmit(text.trim())
-  }
-
-  const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === 'Escape') {
-      e.preventDefault()
-      onClose()
-    }
   }
 
   const handleLineKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -75,13 +90,14 @@ export function ReportProblemBox({
 
   return (
     <div
+      ref={dialogRef}
       role="dialog"
       aria-label="report a problem"
+      tabIndex={-1}
       className={cn(
         PLACEMENT,
-        'mn-glass z-[100] flex w-[360px] flex-col gap-2.5 rounded-[20px] p-3 font-mono text-[13px] lowercase tracking-[0.02em] text-mn-text md:w-[420px]'
+        'mn-glass z-[100] flex w-[360px] flex-col gap-2.5 rounded-[20px] p-3 font-mono text-[13px] lowercase tracking-[0.02em] text-mn-text md:w-[420px] focus:outline-none'
       )}
-      onKeyDown={handleKeyDown}
     >
       <div className="flex items-center justify-between gap-2">
         <span className="text-mn-text-secondary">report a problem</span>
@@ -95,7 +111,7 @@ export function ReportProblemBox({
       {status === 'filed' ? (
         <p className="text-[13px] text-mn-text">
           filed as{' '}
-          <a href={filedUrl} target="_blank" rel="noreferrer" className="underline">
+          <a ref={linkRef} href={filedUrl} target="_blank" rel="noreferrer" className="underline">
             {filedKey}
           </a>{' '}
           · thanks
