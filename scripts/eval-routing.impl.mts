@@ -114,15 +114,6 @@ type Scenario = {
    *  `primaryCall` — so this is checked against the turn's pooled chips,
    *  never against `actual`. */
   expectChipNaming?: RegExp
-  /** For propose_changes / collection-tool cases (KAN-132 assumption rule):
-   *  assert the reply's prose is exactly one sentence stating the assumption
-   *  (not merely describing the action). */
-  expectOneAssumptionSentence?: boolean
-  /** For no-tool cases carrying a [Rejected] note (KAN-132 no-retry rule):
-   *  fail if any chip offered this turn names the rejected edit — the edit
-   *  must not come back as a suggest_followups chip either. Mirrors
-   *  `expectChipNaming`, checked the same way against the pooled chips. */
-  forbidChipNaming?: RegExp
 }
 
 /** A decisive turn-2/3 answer the harness sends if the model grills a SECOND
@@ -446,12 +437,11 @@ const ALL_SCENARIOS: Scenario[] = [
     note: 'STEWARD: a passing remark that merely mentions a possible change is not a request — no clarifying question, no propose_changes; answer in prose, then offer the edit as ONE suggest_followups chip naming it.',
   },
   {
-    name: 'clear edit → card plus one assumption sentence',
+    name: 'clear edit → card',
     expect: 'propose_changes',
-    expectOneAssumptionSentence: true,
     ctx: 'Current page "Kitchen Renovation". Blocks: [text id=b1 "Electrician visit: w/c 29 Sep. Cabinet measurement: w/c 22 Sep."], [todo id=b2 reno tasks].',
     text: 'push the electrician out by a week',
-    note: 'ROUTING ASSUMPTION: an explicit edit still proposes at once, but is preceded by exactly ONE sentence in the reply stating what the edit assumes (here, which date "a week later" is measured from).',
+    note: 'ROUTING: a clear, explicit edit still proposes at once (the request IS the confirmation).',
   },
   {
     name: 'rejected edit → not re-proposed',
@@ -470,7 +460,6 @@ const ALL_SCENARIOS: Scenario[] = [
   {
     name: 'ask again → re-proposed',
     expect: 'propose_changes',
-    expectOneAssumptionSentence: true,
     ctx: [
       'Current page "Kitchen Renovation". Blocks: [text id=b1 "Electrician visit: w/c 29 Sep. Cabinet measurement: w/c 22 Sep."], [todo id=b2 reno tasks].',
       // regenerate() drops the rejected card's message before resending (handleAskAgain),
@@ -481,12 +470,11 @@ const ALL_SCENARIOS: Scenario[] = [
       .filter(Boolean)
       .join('\n\n'),
     text: 'push the electrician out by a week',
-    note: 'ROUTING NO RETRY + ASSUMPTION: with the [Rejected] note for this tool call absent, the same edit is free to propose again — and the live miss showed a re-proposal can drop the assumption sentence, so this re-proposal is checked for it too.',
+    note: 'ROUTING NO RETRY: with the [Rejected] note for this tool call absent, the same edit the user asked for before is free to propose again.',
   },
   {
-    name: 'ask again in own words → re-proposed with one assumption sentence',
+    name: 'ask again in own words → re-proposed',
     expect: 'propose_changes',
-    expectOneAssumptionSentence: true,
     ctx: [
       'Current page "Kitchen Renovation". Blocks: [text id=b1 "Electrician visit: w/c 29 Sep. Cabinet measurement: w/c 22 Sep."], [todo id=b2 reno tasks].',
       rejectedContextNote([
@@ -496,22 +484,7 @@ const ALL_SCENARIOS: Scenario[] = [
       .filter(Boolean)
       .join('\n\n'),
     text: 'ask again: move the electrician to w/c 6 oct',
-    note: 'ROUTING NO RETRY + ASSUMPTION: the live miss — "ask again: <edit>" in the user\'s own words, with the [Rejected] note for THIS edit still present — must still propose (an explicit "ask again" overrides no-retry) and still carry exactly one assumption sentence.',
-  },
-  {
-    name: 'rejected edit → not re-offered as a chip',
-    expect: null,
-    forbidChipNaming: /electrician.*6 oct|move the electrician/i,
-    ctx: [
-      'Current page "Kitchen Renovation". Blocks: [text id=b1 "Electrician visit: w/c 29 Sep. Cabinet measurement: w/c 22 Sep."], [todo id=b2 reno tasks].',
-      rejectedContextNote([
-        { targetTitle: 'Kitchen Renovation', summary: 'move the electrician to w/c 6 oct' },
-      ]),
-    ]
-      .filter(Boolean)
-      .join('\n\n'),
-    text: 'ok, anything else on this page?',
-    note: 'ROUTING NO RETRY: the live miss — a rejected edit must not come back as a suggest_followups chip either, not just as a propose_changes call.',
+    note: 'ROUTING NO RETRY: "ask again: <edit>" in the user\'s own words, with the [Rejected] note for THIS edit still present, must still propose — an explicit "ask again" overrides no-retry.',
   },
 ]
 
@@ -529,27 +502,6 @@ type CreateInput = {
   parentTitle?: string
   blocks?: Array<{ type?: string; content?: string }>
   suggestions?: string[]
-}
-
-/** Rough sentence count — splits on terminal punctuation. Good enough to assert
- *  "exactly one sentence" without parsing prose. */
-function sentenceCount(text: string): number {
-  const trimmed = text.trim()
-  if (!trimmed) return 0
-  return (trimmed.match(/[^.!?]+(?:[.!?]+|$)/g) ?? []).filter((m) => m.trim().length > 0).length
-}
-
-/** KAN-132 live miss: the model can emit exactly one sentence that only
- *  describes the action ("Updating the electrician date.") rather than
- *  naming an assumption. `expectOneAssumptionSentence` must fail that case,
- *  so it also requires one of these assumption words/phrases. */
-const ASSUMPTION_WORD_RE = /assum|taking|taken|reading|measured from|counted from|presum/i
-
-/** `expectOneAssumptionSentence`: the reply is exactly one non-empty sentence
- *  AND that sentence names an assumption, not just the action taken. */
-function isOneAssumptionSentence(text: string): boolean {
-  const trimmed = text.trim()
-  return trimmed.length > 0 && sentenceCount(trimmed) === 1 && ASSUMPTION_WORD_RE.test(trimmed)
 }
 
 /** The first tool call that is a routing decision. KAN-132: production lets the
@@ -572,12 +524,7 @@ function collectChips(toolCalls: ToolCall[]): string[] {
 
 /** The create_page shape assertions the milestones require. Only meaningful once
  *  the tool name already matched. Factored out so single-turn and turn-2 share it. */
-function checkShape(
-  call: ToolCall | undefined,
-  s: Scenario,
-  text: string,
-  chips: string[]
-): boolean {
+function checkShape(call: ToolCall | undefined, s: Scenario, chips: string[]): boolean {
   const input = (call?.input ?? {}) as CreateInput
   let pass = true
   if (s.expectType) pass = input.type === s.expectType
@@ -599,12 +546,6 @@ function checkShape(
   }
   if (pass && s.expectChipNaming) {
     pass = chips.some((sugg) => s.expectChipNaming!.test(sugg))
-  }
-  if (pass && s.forbidChipNaming) {
-    pass = !chips.some((sugg) => s.forbidChipNaming!.test(sugg))
-  }
-  if (pass && s.expectOneAssumptionSentence) {
-    pass = isOneAssumptionSentence(text)
   }
   return pass
 }
@@ -630,23 +571,16 @@ async function generateTurn(
   })
 }
 
-/** Assert a single tool outcome against a scenario's `expect` + shape. `text` is
- *  the reply's prose for that turn (KAN-132: the one-assumption-sentence check);
- *  `chips` is the turn's pooled suggest_followups suggestions (KAN-132: the
+/** Assert a single tool outcome against a scenario's `expect` + shape. `chips`
+ *  is the turn's pooled suggest_followups suggestions (KAN-132: the
  *  chip-naming check) — `actual` is already `primaryCall`'s outcome, so a
  *  no-tool turn that only offered a chip still checks `expectChipNaming` here. */
-function judge(
-  actual: string,
-  call: ToolCall | undefined,
-  s: Scenario,
-  text: string,
-  chips: string[]
-): boolean {
+function judge(actual: string, call: ToolCall | undefined, s: Scenario, chips: string[]): boolean {
   if ((s.expect as unknown as string) === 'AMBIGUOUS') {
     return actual === 'create_page' || actual === 'propose_changes' || actual === '(no tool)'
   }
-  if (s.expect === null) return actual === '(no tool)' && checkShape(call, s, text, chips)
-  return actual === s.expect && checkShape(call, s, text, chips)
+  if (s.expect === null) return actual === '(no tool)' && checkShape(call, s, chips)
+  return actual === s.expect && checkShape(call, s, chips)
 }
 
 async function runOne(s: Scenario): Promise<Result> {
@@ -662,7 +596,7 @@ async function runOne(s: Scenario): Promise<Result> {
 
     // A genuinely trivial named page may just build on turn 1 — accept it.
     if (s.grillOptional && t1actual !== '(no tool)') {
-      const pass = judge(t1actual, t1call, s, t1.text, t1chips)
+      const pass = judge(t1actual, t1call, s, t1chips)
       const detail = t1call ? JSON.stringify(t1call.input).slice(0, 120) : t1.text.slice(0, 90)
       return { scenario: s, actual: `${t1actual} (T1, no grill)`, pass, detail }
     }
@@ -701,7 +635,7 @@ async function runOne(s: Scenario): Promise<Result> {
       const actual = call ? call.toolName : '(no tool)'
       const chips = collectChips(calls)
       if (actual !== '(no tool)') {
-        const pass = judge(actual, call, s, last.text, chips)
+        const pass = judge(actual, call, s, chips)
         const detail = call
           ? JSON.stringify(call.input).slice(0, 120)
           : last.text.replace(/\s+/g, ' ').slice(0, 90)
@@ -731,7 +665,7 @@ async function runOne(s: Scenario): Promise<Result> {
   const detail = call
     ? JSON.stringify(call.input).slice(0, 120)
     : result.text.replace(/\s+/g, ' ').slice(0, 90)
-  return { scenario: s, actual, pass: judge(actual, call, s, result.text, chips), detail }
+  return { scenario: s, actual, pass: judge(actual, call, s, chips), detail }
 }
 
 function fmtExpect(e: Expect): string {
