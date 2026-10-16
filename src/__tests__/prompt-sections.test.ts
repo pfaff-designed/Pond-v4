@@ -60,6 +60,8 @@ describe('SYSTEM_PROMPT — preserved rule strings (eval-pinned, must survive th
     'A collection shows exactly ONE active view at a time',
     // KAN-132: one assumption sentence precedes every proposal.
     "give exactly ONE sentence in your answer's prose stating what the edit assumes",
+    // KAN-132: unclear-whether-an-edit-is-wanted offers a chip, not a clarifying question.
+    'offer the edit as ONE suggest_followups chip that names it',
   ])('still contains rule string: %s', (needle) => {
     expect(SYSTEM_PROMPT).toContain(needle)
   })
