@@ -29,9 +29,10 @@ let mockSearch = ''
 jest.mock('@/lib/pond/client', () => ({
   listPonds: jest.fn(),
   createPond: jest.fn(),
+  setPondLastPage: jest.fn(),
 }))
 
-import { createPond, listPonds } from '@/lib/pond/client'
+import { createPond, listPonds, setPondLastPage } from '@/lib/pond/client'
 
 const LIFE = { id: 'p-life', name: 'life', glyph: 'waves-02', theme: 'paper', order: 0 }
 const NOISE = { id: 'p-noise', name: 'make noise', glyph: 'lightning-03', theme: 'ink', order: 1 }
@@ -53,6 +54,7 @@ beforeEach(() => {
   push.mockClear()
   ;(listPonds as jest.Mock).mockResolvedValue([LIFE, NOISE])
   ;(createPond as jest.Mock).mockReset()
+  ;(setPondLastPage as jest.Mock).mockReset().mockResolvedValue(undefined)
 })
 
 describe('the rail head before migration 0018', () => {
@@ -138,6 +140,65 @@ describe('the pond switcher', () => {
     // A page id from one pond means nothing in another, so switching lands on the
     // new pond's root rather than carrying ?nodeId= across.
     expect(link).toHaveAttribute('href', '/workspace?pond=p-noise')
+  })
+
+  it('carries a pond’s remembered page as &nodeId=', async () => {
+    ;(listPonds as jest.Mock).mockResolvedValue([LIFE, { ...NOISE, lastPageId: 'n-99' }])
+    renderSwitcher()
+
+    fireEvent.click(await screen.findByRole('button'))
+    const link = screen.getByRole('menuitem', { name: /make noise/ })
+    expect(link).toHaveAttribute('href', '/workspace?pond=p-noise&nodeId=n-99')
+  })
+
+  it('remembers page X across a real switch away and back (PATH_STEPS 2-4)', async () => {
+    const PAGE_X = '11111111-1111-1111-1111-111111111111'
+    mockSearch = 'pond=p-life'
+    const { rerender } = renderSwitcher()
+    const head = await screen.findByRole('button')
+
+    // Step 2: open page X in life.
+    mockSearch = `pond=p-life&nodeId=${PAGE_X}`
+    rerender(
+      <PondProvider>
+        <PondSwitcher fallbackName="life" />
+      </PondProvider>
+    )
+    await waitFor(() => expect(setPondLastPage).toHaveBeenCalledWith('p-life', PAGE_X))
+
+    // Step 3: switch to make noise — via the href the menu itself renders for
+    // that row, not a hand-authored string, so a broken href would be caught.
+    fireEvent.click(head)
+    const noiseHref = screen.getByRole('menuitem', { name: /make noise/ }).getAttribute('href')
+    fireEvent.click(head)
+    mockSearch = noiseHref!.split('?')[1] ?? ''
+    rerender(
+      <PondProvider>
+        <PondSwitcher fallbackName="life" />
+      </PondProvider>
+    )
+    await waitFor(() =>
+      expect(screen.getByText('make noise')).toBeInTheDocument()
+    )
+
+    // Step 4: switch back to life via ITS href, read the same way — this is
+    // the actual URL a click on that row would carry, including whatever
+    // &nodeId= the switch-away-and-back left behind.
+    fireEvent.click(head)
+    const lifeHref = screen.getByRole('menuitem', { name: /life/ }).getAttribute('href')
+    fireEvent.click(head)
+    expect(lifeHref).toBe(`/workspace?pond=p-life&nodeId=${PAGE_X}`)
+    mockSearch = lifeHref!.split('?')[1] ?? ''
+    rerender(
+      <PondProvider>
+        <PondSwitcher fallbackName="life" />
+      </PondProvider>
+    )
+    await screen.findByText('life')
+
+    fireEvent.click(head)
+    const lifeRow = screen.getByRole('menuitem', { name: /life/ })
+    expect(lifeRow).toHaveAttribute('href', `/workspace?pond=p-life&nodeId=${PAGE_X}`)
   })
 
   it("opens the board's three-step sheet, not a field in the menu", async () => {

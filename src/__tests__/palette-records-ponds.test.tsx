@@ -38,9 +38,17 @@ jest.mock('@/lib/pages/palette-records', () => ({
 
 const LIFE = { id: 'p-life', name: 'life', glyph: 'waves-02', theme: 'paper', order: 0 }
 const NOISE = { id: 'p-noise', name: 'make noise', glyph: 'lightning-03', theme: 'ink', order: 1 }
+const GARDEN = {
+  id: 'p-garden',
+  name: 'garden club',
+  glyph: 'leaf-01',
+  theme: 'paper',
+  order: 2,
+  lastPageId: 'n-77',
+}
 jest.mock('@/lib/pond/context', () => ({
   usePondId: () => 'p-life',
-  usePond: () => ({ pond: LIFE, ponds: [LIFE, NOISE], addPond: jest.fn() }),
+  usePond: () => ({ pond: LIFE, ponds: [LIFE, NOISE, GARDEN], addPond: jest.fn() }),
 }))
 jest.mock('@/lib/pond/client', () => ({ createPond: jest.fn(), listPonds: jest.fn() }))
 
@@ -156,6 +164,14 @@ describe('ponds', () => {
     await rowNamed(/make noise/)
     fireEvent.keyDown(input, { key: 'Enter' })
     expect(push).toHaveBeenCalledWith('/workspace?pond=p-noise')
+  })
+
+  it('↵ on a pond with a remembered page carries it as nodeId=', async () => {
+    renderShell()
+    const input = await openAndType('garden')
+    await rowNamed(/garden club/)
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(push).toHaveBeenCalledWith('/workspace?pond=p-garden&nodeId=n-77')
   })
 
   it('`new pond “q”` opens the New pond sheet with q already in the name', async () => {

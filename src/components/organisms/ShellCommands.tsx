@@ -285,7 +285,7 @@ export function ShellCommands() {
         return
       }
       if (item.kind === 'pond') {
-        router.push(pondHref(item.id))
+        router.push(pondHref(item.id, ponds.find((p) => p.id === item.id)?.lastPageId))
         return
       }
       if (item.kind === 'record') {
@@ -298,7 +298,7 @@ export function ShellCommands() {
         router.push(workspaceUrl({ id: page.id, type: page.type, title: page.title }))
       }
     },
-    [pages, router, currentNodeId, handleModeSelect, startTemplateSheet, handleCreatePage]
+    [pages, ponds, router, currentNodeId, handleModeSelect, startTemplateSheet, handleCreatePage]
   )
 
   const commandOpen = paletteOpen || templateSheetOpen

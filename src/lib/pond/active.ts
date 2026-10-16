@@ -36,13 +36,11 @@ export function resolveActivePond(ponds: Pond[], activeId: string | null): Pond 
 }
 
 /**
- * The href that switches to a pond. Drops `?nodeId=` on purpose: a page id from
- * one pond means nothing in another, so switching lands on the new pond's root.
- *
- * `s6m6` says "the page you left stays open for when you come back", which needs
- * a per-pond last-page record — `ponds.last_page_id` exists for it in 0018 and is
- * not wired up yet. Carried on #312.
+ * The href that switches to a pond. `s6m6` says "the page you left stays open
+ * for when you come back" — so when the target pond has a remembered page
+ * (`ponds.last_page_id`), carry it as `&nodeId=`; with none, land on the root.
  */
-export function pondHref(pondId: string): string {
-  return `/workspace?pond=${encodeURIComponent(pondId)}`
+export function pondHref(pondId: string, lastPageId?: string | null): string {
+  const base = `/workspace?pond=${encodeURIComponent(pondId)}`
+  return lastPageId ? `${base}&nodeId=${encodeURIComponent(lastPageId)}` : base
 }
