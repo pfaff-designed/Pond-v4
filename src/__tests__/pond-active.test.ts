@@ -40,11 +40,19 @@ describe('resolveActivePond', () => {
 })
 
 describe('pondHref', () => {
-  it('drops any page, because a page id means nothing in another pond', () => {
+  it('lands on the root with no remembered page', () => {
     expect(pondHref('p-noise')).toBe('/workspace?pond=p-noise')
   })
 
-  it('encodes the id', () => {
-    expect(pondHref('a b&c')).toBe('/workspace?pond=a%20b%26c')
+  it('lands on the root when the remembered page is null', () => {
+    expect(pondHref('p-noise', null)).toBe('/workspace?pond=p-noise')
+  })
+
+  it('carries the remembered page as nodeId', () => {
+    expect(pondHref('p-noise', 'n-42')).toBe('/workspace?pond=p-noise&nodeId=n-42')
+  })
+
+  it('encodes the pond id and the page id', () => {
+    expect(pondHref('a b&c', 'd e&f')).toBe('/workspace?pond=a%20b%26c&nodeId=d%20e%26f')
   })
 })

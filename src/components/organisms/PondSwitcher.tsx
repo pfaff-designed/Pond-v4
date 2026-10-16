@@ -127,7 +127,7 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
               <a
                 key={p.id}
                 role="menuitem"
-                href={pondHref(p.id)}
+                href={pondHref(p.id, p.lastPageId)}
                 onClick={() => setOpen(false)}
                 className={`flex items-center gap-[9px] rounded-[10px] px-[10px] py-[7px] text-[13px] leading-[normal] ${
                   p.id === active?.id ? 'bg-mn-text/[0.07] font-medium' : 'font-normal'

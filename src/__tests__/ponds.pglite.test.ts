@@ -194,6 +194,69 @@ describe('0018_ponds — the pond record', () => {
   })
 })
 
+describe('0018_ponds — last_page_id (KAN-16)', () => {
+  it('lets the owner write and clear it', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pond = (
+      await db.query<{ id: string }>(
+        'select id from public.ponds where user_id = $1 order by "order" limit 1',
+        [USER]
+      )
+    ).rows[0].id
+    const page = (
+      await db.query<{ id: string }>(
+        `insert into public.pages (user_id, pond_id, parent_id, type, title)
+         values ($1, $2, null, 'page', 'a page') returning id`,
+        [USER, pond]
+      )
+    ).rows[0].id
+
+    await db.query('update public.ponds set last_page_id = $1 where id = $2', [page, pond])
+    const written = await db.query<{ last_page_id: string | null }>(
+      'select last_page_id from public.ponds where id = $1',
+      [pond]
+    )
+    expect(written.rows[0].last_page_id).toBe(page)
+
+    await db.query('update public.ponds set last_page_id = null where id = $1', [pond])
+    const cleared = await db.query<{ last_page_id: string | null }>(
+      'select last_page_id from public.ponds where id = $1',
+      [pond]
+    )
+    expect(cleared.rows[0].last_page_id).toBeNull()
+    await db.close()
+  })
+
+  it("nulls it automatically when the remembered page is deleted (on delete set null) — covers the page landing in trash", async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pond = (
+      await db.query<{ id: string }>(
+        'select id from public.ponds where user_id = $1 order by "order" limit 1',
+        [USER]
+      )
+    ).rows[0].id
+    const page = (
+      await db.query<{ id: string }>(
+        `insert into public.pages (user_id, pond_id, parent_id, type, title)
+         values ($1, $2, null, 'page', 'a page') returning id`,
+        [USER, pond]
+      )
+    ).rows[0].id
+    await db.query('update public.ponds set last_page_id = $1 where id = $2', [page, pond])
+
+    await db.query('delete from public.pages where id = $1', [page])
+
+    const res = await db.query<{ last_page_id: string | null }>(
+      'select last_page_id from public.ponds where id = $1',
+      [pond]
+    )
+    expect(res.rows[0].last_page_id).toBeNull()
+    await db.close()
+  })
+})
+
 describe('the unique indexes across 0018 and 0019', () => {
   it('0018 keeps the user-keyed pair, because re-keying would disable them', async () => {
     // Why the two-step. `pond_id` is nullable, and NULLs are distinct in a unique

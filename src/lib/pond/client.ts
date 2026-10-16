@@ -23,9 +23,41 @@ export interface Pond {
   /** Newest first, capped — KAN-27's `ponds.recent_glyphs`, `pushRecentGlyph`'s own shape.
    *  Optional: several fixtures build a `Pond` by hand with no opinion on it. */
   recentGlyphs?: string[]
+  /** `s6m6`: "the page you left stays open for when you come back." Null until
+   *  visited. A hard delete nulls this via the FK's `on delete set null`, but
+   *  trash (migration 0027) is a soft delete — `deleted_at`, the row still
+   *  exists — so that FK never fires for it; `listPonds` embeds the page and
+   *  reads this back as null itself when it is trashed or gone. Optional for
+   *  the same reason `recentGlyphs` is. */
+  lastPageId?: string | null
 }
 
-const COLUMNS = 'id, name, glyph, theme, "order", recentGlyphs:recent_glyphs'
+interface PondRow {
+  id: string
+  name: string
+  glyph: string | null
+  theme: string
+  order: number
+  recentGlyphs: string[] | null
+  lastPage: { id: string; deleted_at: string | null } | null
+}
+
+const COLUMNS =
+  'id, name, glyph, theme, "order", recentGlyphs:recent_glyphs, lastPage:pages!last_page_id(id, deleted_at)'
+
+/** `PondRow` (the embedded `lastPage`) → `Pond` (the flat `lastPageId`), dropping
+ *  a trashed or gone remembered page — see the FK comment on `lastPageId` above. */
+function mapPondRow(row: PondRow): Pond {
+  return {
+    id: row.id,
+    name: row.name,
+    glyph: row.glyph,
+    theme: row.theme,
+    order: row.order,
+    recentGlyphs: row.recentGlyphs ?? undefined,
+    lastPageId: row.lastPage && row.lastPage.deleted_at === null ? row.lastPage.id : null,
+  }
+}
 
 /** Every pond the signed-in person owns, in switcher order. */
 export async function listPonds(): Promise<Pond[]> {
@@ -48,7 +80,7 @@ export async function listPonds(): Promise<Pond[]> {
     if (error.code === 'PGRST205') return []
     throw error
   }
-  return (data ?? []) as Pond[]
+  return ((data ?? []) as unknown as PondRow[]).map(mapPondRow)
 }
 
 /**
@@ -85,7 +117,7 @@ export async function createPond(name: string): Promise<Pond> {
     .single()
 
   if (error) throw error
-  return data as Pond
+  return mapPondRow(data as unknown as PondRow)
 }
 
 /**
@@ -111,4 +143,20 @@ export async function pushRecentGlyphToPond(
     .eq('id', pondId)
   if (error) throw error
   return next
+}
+
+/**
+ * Remember (or clear, with `pageId: null`) the page a pond was last on —
+ * `s6m6`'s write. Owner-scoped by RLS, same shape as `pushRecentGlyphToPond`.
+ */
+export async function setPondLastPage(pondId: string, pageId: string | null): Promise<void> {
+  const supabase = createClient()
+  // Cast as `pushRecentGlyphToPond` does above: `Database` can't infer an
+  // Update shape for a quoted-identifier table either.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any)
+    .from('ponds')
+    .update({ last_page_id: pageId })
+    .eq('id', pondId)
+  if (error) throw error
 }

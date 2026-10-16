@@ -13,9 +13,11 @@
  * Callers treat null as "not scoped yet" and keep their previous behaviour.
  */
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import { listPonds, type Pond } from './client'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
+import { listPonds, setPondLastPage, type Pond } from './client'
 import { resolveActivePond, useActivePondId } from './active'
+import { nextLastPageWrite, type LastPageRender } from './last-page'
 
 export interface PondContextValue {
   /** The active pond, or null before the list has loaded. */
@@ -50,6 +52,12 @@ export function PondProvider({ children }: { children: React.ReactNode }) {
   // dependency re-runs the fetch, and only its callbacks touch state.
   const [nonce, setNonce] = useState(0)
   const activeId = useActivePondId()
+  const nodeId = useSearchParams().get('nodeId')
+  // The render before this one, so `nextLastPageWrite` can tell a same-pond
+  // `nodeId` change from the stale page name carried over right after a
+  // pond switch. Null across remounts (tests, story swaps) is correct: that
+  // reads as "no snapshot yet", never a write.
+  const previousRenderRef = useRef<LastPageRender | null>(null)
 
   const reload = useCallback(() => setNonce((n) => n + 1), [])
 
@@ -76,9 +84,33 @@ export function PondProvider({ children }: { children: React.ReactNode }) {
     }
   }, [nonce])
 
+  const pond = resolveActivePond(ponds, activeId)
+
+  // `s6m6`'s write: a `?nodeId=` change within the SAME pond is remembered as
+  // that pond's `last_page_id`. `nextLastPageWrite` is the pure decision;
+  // this effect only carries the render snapshot and fires the write it
+  // returns. The in-memory `ponds` row is updated too — `addPond`'s reasoning
+  // — so switching away and back in one session reads the fresh value rather
+  // than racing a refetch.
+  useEffect(() => {
+    const current: LastPageRender = { pondId: pond?.id ?? null, nodeId }
+    const decision = nextLastPageWrite(previousRenderRef.current, current, pond?.lastPageId)
+    previousRenderRef.current = current
+    if (!decision.write || !current.pondId) return
+
+    const targetPondId = current.pondId
+    const toWrite = decision.lastPageId
+    setPonds((rows) =>
+      rows.map((row) => (row.id === targetPondId ? { ...row, lastPageId: toWrite } : row))
+    )
+    setPondLastPage(targetPondId, toWrite).catch((error) => {
+      console.error('[pond/last-page] write not persisted', targetPondId, toWrite, error)
+    })
+  }, [pond?.id, pond?.lastPageId, nodeId])
+
   const value = useMemo(
-    () => ({ pond: resolveActivePond(ponds, activeId), ponds, loading, reload, addPond }),
-    [ponds, activeId, loading, reload, addPond]
+    () => ({ pond, ponds, loading, reload, addPond }),
+    [pond, ponds, loading, reload, addPond]
   )
 
   return <PondContext.Provider value={value}>{children}</PondContext.Provider>
