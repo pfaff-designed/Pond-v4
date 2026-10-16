@@ -129,15 +129,6 @@ export const NON_EMITTABLE_MODULES = {
 export type NonEmittableType = keyof typeof NON_EMITTABLE_MODULES
 
 /**
- * One composition operation. `op` is composition-level (which blocks exist) — NOT a
- * within-module ops grammar (t12 kept that closed). The AI references existing
- * blocks by `blockId` (from the injected context) and never invents one; `after`
- * anchors placement, and `changes[]` array order sequences the batch (branch 3).
- * `edit` may type-morph (swap `type` + `data` on the same id, preserving identity
- * and position).
- */
-
-/**
  * Inferred-vs-requested split (ticket-30). A change the user explicitly asked for
  * omits this flag; a change YOU inferred as a helpful side-effect (e.g. ticking
  * "first class booked" when they only asked to add a flight) sets `inferred: true`
@@ -197,6 +188,14 @@ export const createPageBlockSchema = z.discriminatedUnion('type', [
 ])
 export type CreatePageBlock = z.infer<typeof createPageBlockSchema>
 
+/**
+ * One composition operation. `op` is composition-level (which blocks exist) — NOT a
+ * within-module ops grammar (t12 kept that closed). The AI references existing
+ * blocks by `blockId` (from the injected context) and never invents one; `after`
+ * anchors placement, and `changes[]` array order sequences the batch (branch 3).
+ * `edit` may type-morph (swap `type` + `data` on the same id, preserving identity
+ * and position).
+ */
 export const changeSchema = z.discriminatedUnion('op', [
   z.object({
     op: z.literal('create'),
