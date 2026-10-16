@@ -1234,6 +1234,45 @@ describe('AITerminal — tool-only answers still show their read chips (KAN-317)
   })
 })
 
+// Path test (PATH_STEPS 3, 6c frame 2): the real composer surface, not the
+// isolated ModuleDiffCard, must not surface a change's per-change `reason` —
+// the board draws head/meta/lines/buttons only, with the assumption sentence
+// living in the answer prose above the card instead.
+describe('AITerminal — a proposed diff card carries no per-change reason line (KAN-132)', () => {
+  it('a change with a reason renders no text matching it', async () => {
+    mockMessages = [
+      { id: 'm-ask', role: 'user', parts: [{ type: 'text', text: 'push the electrician out by a week' }] },
+      {
+        id: 'm-answer',
+        role: 'assistant',
+        parts: [
+          { type: 'text', text: 'Updated the schedule.' },
+          {
+            type: 'tool-propose_changes',
+            toolCallId: 'tc-reason',
+            state: 'input-available',
+            input: {
+              changes: [
+                {
+                  op: 'edit',
+                  blockId: 'b0',
+                  data: { type: 'text', content: 'Electrician visit: w/c 6 oct' },
+                  reason: 'cabinets are measured in the last week of September',
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ]
+    renderTerminal()
+    await waitReady()
+
+    expect(await screen.findByRole('group', { name: '1 diff' })).toBeInTheDocument()
+    expect(screen.queryByText(/cabinets are measured in the last week of September/)).not.toBeInTheDocument()
+  })
+})
+
 describe('"close" always reachable in zen (KAN-186, 6q f8)', () => {
   function renderInZen() {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
