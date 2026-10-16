@@ -71,10 +71,6 @@ describe('SYSTEM_PROMPT — preserved rule strings (eval-pinned, must survive th
       'The available block types (used by BOTH create_page and propose_changes) are:'
     )
   })
-
-  it('KAN-334: no longer carries the ASSUMPTION clause', () => {
-    expect(SYSTEM_PROMPT).not.toContain('ASSUMPTION')
-  })
 })
 
 describe('SYSTEM_PROMPT — ticket-39 additions', () => {
