@@ -63,14 +63,50 @@ describe('createJiraIssue', () => {
 })
 
 describe('rankFirstInNowQueue', () => {
-  it('skips the rank call and returns false when the JQL result is empty', async () => {
+  it('skips the rank call and returns true when the JQL result is empty', async () => {
     const mockedFetch = global.fetch as jest.Mock
     mockedFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ issues: [] }) })
 
     const ranked = await rankFirstInNowQueue('KAN-900')
 
-    expect(ranked).toBe(false)
+    expect(ranked).toBe(true)
     expect(mockedFetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('skips the rank call and returns true when the new issue is already first', async () => {
+    const mockedFetch = global.fetch as jest.Mock
+    mockedFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ issues: [{ key: 'KAN-900' }] }) })
+
+    const ranked = await rankFirstInNowQueue('KAN-900')
+
+    expect(ranked).toBe(true)
+    expect(mockedFetch).toHaveBeenCalledTimes(1)
+    expect(mockedFetch).toHaveBeenCalledWith(
+      expect.stringContaining('maxResults=2'),
+      expect.anything()
+    )
+  })
+
+  it('ranks before the next issue when the new issue is already first in a 2-result page', async () => {
+    const mockedFetch = global.fetch as jest.Mock
+    mockedFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ issues: [{ key: 'KAN-900' }, { key: 'KAN-800' }] }),
+      })
+      .mockResolvedValueOnce({ ok: true })
+
+    const ranked = await rankFirstInNowQueue('KAN-900')
+
+    expect(ranked).toBe(true)
+    expect(mockedFetch).toHaveBeenNthCalledWith(
+      2,
+      'https://pfaff-team.atlassian.net/rest/agile/1.0/issue/rank',
+      expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify({ issues: ['KAN-900'], rankBeforeIssue: 'KAN-800' }),
+      })
+    )
   })
 
   it('returns false without throwing when the rank call 4xxs', async () => {

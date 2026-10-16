@@ -53,18 +53,18 @@ export async function rankFirstInNowQueue(key: string): Promise<boolean> {
   }
 
   try {
-    const searchUrl = `${baseUrl}/rest/api/3/search/jql?jql=${encodeURIComponent(NOW_QUEUE_JQL)}&maxResults=1&fields=key`
+    const searchUrl = `${baseUrl}/rest/api/3/search/jql?jql=${encodeURIComponent(NOW_QUEUE_JQL)}&maxResults=2&fields=key`
     const searchResponse = await fetch(searchUrl, { headers })
     if (!searchResponse.ok) return false
 
     const searchData = (await searchResponse.json()) as { issues?: { key: string }[] }
-    const firstIssue = searchData.issues?.[0]
-    if (!firstIssue) return false
+    const issueAheadOfTheNewOne = searchData.issues?.find((issue) => issue.key !== key)
+    if (!issueAheadOfTheNewOne) return true
 
     const rankResponse = await fetch(`${baseUrl}/rest/agile/1.0/issue/rank`, {
       method: 'PUT',
       headers,
-      body: JSON.stringify({ issues: [key], rankBeforeIssue: firstIssue.key }),
+      body: JSON.stringify({ issues: [key], rankBeforeIssue: issueAheadOfTheNewOne.key }),
     })
 
     return rankResponse.ok
