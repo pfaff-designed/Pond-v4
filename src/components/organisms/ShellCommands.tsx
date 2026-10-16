@@ -36,6 +36,7 @@ import type { PaletteItem } from '@/components/molecules/palette-entries'
 import { normalizeQuery } from '@/components/molecules/slash-entries'
 import { NewPondFlow } from '@/components/organisms/NewPondFlow'
 import { PondCommand } from '@/components/organisms/PondCommand'
+import { ReportProblemBox } from '@/components/organisms/ReportProblemBox'
 import {
   isComposerToggleKey,
   requestComposerNotice,
@@ -88,6 +89,8 @@ export function ShellCommands() {
   const [query, setQuery] = useState('')
   // `new pond “q”`: the sheet is open, holding the name the palette handed over.
   const [naming, setNaming] = useState<string | null>(null)
+  // `report a problem`: the box is open, mounted over the shell like the palette.
+  const [reportOpen, setReportOpen] = useState(false)
   const pondId = usePondId()
   const pondName = usePondName()
   const { pond, ponds } = usePond()
@@ -284,6 +287,10 @@ export function ShellCommands() {
         requestHtmlImportPicker()
         return
       }
+      if (item.action === 'report-a-problem') {
+        setReportOpen(true)
+        return
+      }
       if (item.kind === 'pond') {
         router.push(pondHref(item.id, ponds.find((p) => p.id === item.id)?.lastPageId))
         return
@@ -306,6 +313,14 @@ export function ShellCommands() {
   return (
     <>
       {naming !== null && <NewPondFlow defaultName={naming} onClose={closeNewPondSheet} />}
+      {reportOpen && (
+        <ReportProblemBox
+          pageTitle={path.current}
+          status="idle"
+          onSubmit={() => {}}
+          onClose={() => setReportOpen(false)}
+        />
+      )}
       <PondCommand
         className={`${PLACEMENT} ${zenCommands.commandClassName(commandOpen)}`}
         path={path}
