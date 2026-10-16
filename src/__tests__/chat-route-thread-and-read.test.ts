@@ -44,21 +44,26 @@ jest.mock('@/lib/embeddings/retrieve', () => ({
 jest.mock('@/lib/ai/repair', () => ({ makeRepairToolCall: () => undefined }))
 jest.mock('@/lib/change-log/propose', () => ({ recordProposedToolCalls: jest.fn() }))
 jest.mock('@/lib/change-log/resolve', () => ({ resolveChangeLogRecord: jest.fn() }))
+jest.mock('@/lib/change-log/store', () => ({ listRecordsByToolCalls: jest.fn() }))
 
 import { streamText } from 'ai'
 import { recordProposedToolCalls } from '@/lib/change-log/propose'
 import { resolveChangeLogRecord } from '@/lib/change-log/resolve'
+import { listRecordsByToolCalls } from '@/lib/change-log/store'
+import type { ChangeLogRecord } from '@/lib/change-log/types'
 import { POST } from '@/app/api/chat/route'
 
 const mockedStreamText = streamText as jest.MockedFunction<typeof streamText>
 const mockedRecord = recordProposedToolCalls as jest.MockedFunction<typeof recordProposedToolCalls>
 const mockedResolve = resolveChangeLogRecord as jest.MockedFunction<typeof resolveChangeLogRecord>
+const mockedListByToolCalls = listRecordsByToolCalls as jest.MockedFunction<typeof listRecordsByToolCalls>
 
 beforeEach(() => {
   jest.clearAllMocks()
   mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } })
   mockedRecord.mockResolvedValue(1)
   mockedResolve.mockResolvedValue(null)
+  mockedListByToolCalls.mockResolvedValue([])
 })
 
 async function post(body: Record<string, unknown>) {
@@ -111,5 +116,68 @@ describe('POST /api/chat — thread id and read provenance (KAN-152)', () => {
     await post({ messages: [], nodeId: 'page-1', openPageContext: false })
     await finishStep([{ toolCallId: 'c1', toolName: 'propose_changes', input: { changes: [] } }])
     expect(mockedRecord.mock.calls[0][1]).toMatchObject({ read: null })
+  })
+})
+
+function rejectedRecord(overrides: Partial<ChangeLogRecord> = {}): ChangeLogRecord {
+  return {
+    id: 'rec-1',
+    userId: 'user-1',
+    pondId: null,
+    status: 'rejected',
+    action: 'edit',
+    actor: 'you',
+    targetPageId: 'page-1',
+    targetBlockId: null,
+    before: null,
+    after: null,
+    sourceThreadId: null,
+    toolCallId: 'tc-rejected',
+    read: null,
+    links: {},
+    transitions: [],
+    createdAt: '2026-10-01T00:00:00.000Z',
+    statusAt: '2026-10-01T00:00:00.000Z',
+    ...overrides,
+  }
+}
+
+const proposeMessage = (toolCallId: string) => ({
+  id: 'm-1',
+  role: 'assistant' as const,
+  parts: [{ type: 'tool-propose_changes', toolCallId, state: 'input-available', input: { changes: [] } }],
+})
+
+describe('POST /api/chat — no-retry [Rejected] context (KAN-132)', () => {
+  // ROUTING's own rule text always names "[Rejected]" as the section to watch for
+  // (prompt.ts), so these assertions check for the injected block's body, not the
+  // bracketed word alone.
+  const REJECTED_BLOCK_OPENER = 'has already rejected these edits in this thread'
+
+  it('names a rejected record in the system prompt when its tool call is in `messages`', async () => {
+    mockedListByToolCalls.mockResolvedValue([rejectedRecord()])
+    await post({ messages: [proposeMessage('tc-rejected')] })
+    const args = mockedStreamText.mock.calls.at(-1)?.[0] as { system: string }
+    expect(args.system).toContain(REJECTED_BLOCK_OPENER)
+    expect(args.system).toContain('kitchen renovation')
+  })
+
+  it('omits the block when `listRecordsByToolCalls` returns nothing', async () => {
+    mockedListByToolCalls.mockResolvedValue([])
+    await post({ messages: [proposeMessage('tc-rejected')] })
+    const args = mockedStreamText.mock.calls.at(-1)?.[0] as { system: string }
+    expect(args.system).not.toContain(REJECTED_BLOCK_OPENER)
+  })
+
+  it('omits the block when the matching record is not rejected', async () => {
+    mockedListByToolCalls.mockResolvedValue([rejectedRecord({ status: 'proposed' })])
+    await post({ messages: [proposeMessage('tc-rejected')] })
+    const args = mockedStreamText.mock.calls.at(-1)?.[0] as { system: string }
+    expect(args.system).not.toContain(REJECTED_BLOCK_OPENER)
+  })
+
+  it('never looks the record up when no proposal tool call is in `messages`', async () => {
+    await post({ messages: [{ id: 'm-0', role: 'user', parts: [{ type: 'text', text: 'hi' }] }] })
+    expect(mockedListByToolCalls).not.toHaveBeenCalled()
   })
 })
