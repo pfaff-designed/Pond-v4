@@ -92,6 +92,15 @@ describe('POST /api/feedback', () => {
     })
   })
 
+  it('returns 502 and never ranks when createJiraIssue throws', async () => {
+    mockUser = { id: 'owner-1', email: 'CMP7CC@gmail.com' }
+    mockCreateJiraIssue.mockRejectedValue(new Error('Jira issue creation failed: 400'))
+    const res = await post({ text: 'the save button does nothing', url: 'https://pond.local/p' })
+    expect(res.status).toBe(502)
+    expect(await res.json()).toEqual({ error: "can't file reports right now" })
+    expect(mockRankFirstInNowQueue).not.toHaveBeenCalled()
+  })
+
   it("a non-owner report's labels are exactly feedback/from-user, and rank is never attempted", async () => {
     const res = await post({ text: 'the save button does nothing', url: 'https://pond.local/p' })
     expect(res.status).toBe(200)

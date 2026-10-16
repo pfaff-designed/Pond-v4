@@ -74,7 +74,12 @@ export async function POST(req: Request) {
   })
   const labels = isOwner ? [...issue.labels, 'now', 'size-S'] : issue.labels
 
-  const created = await createJiraIssue({ ...issue, labels })
+  let created
+  try {
+    created = await createJiraIssue({ ...issue, labels })
+  } catch {
+    return Response.json({ error: "can't file reports right now" }, { status: 502 })
+  }
   if (!isOwner) return Response.json({ key: created.key, url: created.url })
 
   const ranked = await rankFirstInNowQueue(created.key)

@@ -49,6 +49,17 @@ describe('createJiraIssue', () => {
     })
     expect(result).toEqual({ key: 'KAN-900', url: 'https://pfaff-team.atlassian.net/browse/KAN-900' })
   })
+
+  it('throws on a 4xx response', async () => {
+    const mockedFetch = global.fetch as jest.Mock
+    mockedFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      json: async () => ({ errorMessages: ['bad request'] }),
+    })
+
+    await expect(createJiraIssue(ISSUE)).rejects.toThrow()
+  })
 })
 
 describe('rankFirstInNowQueue', () => {

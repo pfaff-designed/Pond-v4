@@ -38,7 +38,10 @@ export async function createJiraIssue(payload: FeedbackIssue): Promise<CreateJir
     }),
   })
 
-  const data = (await response.json()) as { key: string }
+  const data = (await response.json()) as { key?: string }
+  if (!response.ok || !data.key) {
+    throw new Error(`Jira issue creation failed: ${response.status}`)
+  }
   return { key: data.key, url: `${baseUrl}/browse/${data.key}` }
 }
 
