@@ -192,40 +192,62 @@ export const ComposerLine = ({
             </button>
           }
         />
-        <button
-          type="button"
-          aria-label={streaming ? 'Stop' : 'Send'}
+        <ComposerSend
+          ariaLabel={streaming ? 'Stop' : 'Send'}
+          on={sendOn}
+          streaming={streaming}
           onClick={handleSendClick}
-          disabled={!sendOn}
-          className={cn(
-            'ml-auto flex size-11 flex-none items-center justify-center rounded-mn-pill md:size-8',
-            sendOn
-              ? 'bg-mn-text text-raw-paper shadow-[0_4px_12px_rgba(27,29,20,0.22)] dark:text-raw-ink dark:shadow-none'
-              : 'bg-[rgba(27,29,20,0.12)] text-mn-text-meta dark:bg-[rgba(250,249,239,0.12)]'
-          )}
-        >
-          {streaming ? (
-            <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
-              <rect x="1.5" y="1.5" width="7" height="7" rx="1.2" fill="currentColor" />
-            </svg>
-          ) : (
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 14 14"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.4"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden
-            >
-              <path d="M7 11V3" />
-              <path d="M3.6 6.4 7 3l3.4 3.4" />
-            </svg>
-          )}
-        </button>
+          className="ml-auto"
+        />
       </div>
     </>
   )
 }
+
+export interface ComposerSendProps {
+  ariaLabel: string
+  /** True when there is something to send, or mid-stream (the stop square is always on). */
+  on: boolean
+  /** Shows the stop square in place of the send arrow. */
+  streaming?: boolean
+  onClick: () => void
+  className?: string
+}
+
+/** The composer's send circle (32px, 44 below md) — shared with `ReportProblemBox`'s own send. */
+export const ComposerSend = ({ ariaLabel, on, streaming = false, onClick, className }: ComposerSendProps) => (
+  <button
+    type="button"
+    aria-label={ariaLabel}
+    onClick={onClick}
+    disabled={!on}
+    className={cn(
+      'flex size-11 flex-none items-center justify-center rounded-mn-pill md:size-8',
+      on
+        ? 'bg-mn-text text-raw-paper shadow-[0_4px_12px_rgba(27,29,20,0.22)] dark:text-raw-ink dark:shadow-none'
+        : 'bg-[rgba(27,29,20,0.12)] text-mn-text-meta dark:bg-[rgba(250,249,239,0.12)]',
+      className
+    )}
+  >
+    {streaming ? (
+      <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
+        <rect x="1.5" y="1.5" width="7" height="7" rx="1.2" fill="currentColor" />
+      </svg>
+    ) : (
+      <svg
+        width="12"
+        height="12"
+        viewBox="0 0 14 14"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden
+      >
+        <path d="M7 11V3" />
+        <path d="M3.6 6.4 7 3l3.4 3.4" />
+      </svg>
+    )}
+  </button>
+)

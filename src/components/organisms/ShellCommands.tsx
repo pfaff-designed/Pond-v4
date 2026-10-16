@@ -48,6 +48,7 @@ import { isPaletteChord, isRedoChord, isUndoChord, onApplePlatform } from '@/lib
 import { sessionUndo } from '@/lib/change-log/session-undo'
 import { applyUndoOutcome } from '@/lib/change-log/undo-outcome'
 import { useCommandPath } from '@/lib/layout/command-path'
+import { PLACEMENT } from '@/lib/layout/shell-placement'
 import { useZenCommands } from '@/lib/layout/use-zen-commands'
 import { workspaceUrl } from '@/lib/pages/nav'
 import { newPageParent, paletteItems, paletteScope, pondItems } from '@/lib/pages/palette-items'
@@ -66,9 +67,6 @@ import { pondHref } from '@/lib/pond/active'
 import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
 import { useSaveAsTemplateSheet } from '@/components/organisms/use-save-as-template-sheet'
 import { ROW_TYPE } from '@/lib/properties/schema'
-
-/** `Pond 05 Shell`'s placement: centred on the whole shell, 20px off its top. */
-const PLACEMENT = 'absolute top-5 left-[calc(50%_+_13px)] w-max -translate-x-1/2'
 
 /** Where ⌘Z/⇧⌘Z belongs to the field itself (Tiptap's own undo, an input, a select) —
  * except an empty page-title input (`data-pond-page-title`), which has nothing of
@@ -361,7 +359,7 @@ export function ShellCommands() {
       {naming !== null && <NewPondFlow defaultName={naming} onClose={closeNewPondSheet} />}
       {reportOpen && (
         <ReportProblemBox
-          pageTitle={path.current}
+          pageTitle={pageTitle}
           status={reportStatus}
           filedKey={reportFiled?.key}
           filedUrl={reportFiled?.url}

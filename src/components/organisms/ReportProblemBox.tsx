@@ -9,14 +9,17 @@
  * call and the status transitions.
  *
  * No board draws this box — the ticket is an explicit user request, built from
- * the component library rather than a frame: `.mn-glass` at `ShellCommands`'
- * own `PLACEMENT` (`Pond 05 Shell`'s top-20, centred spot), the line and send
- * sized off `ComposerLine`'s tokens (mono 16/14px line, 32px send circle).
+ * the component library rather than a frame: `.mn-glass` at the shell's shared
+ * `PLACEMENT` (`Pond 05 Shell`'s top-20, centred spot), `ComposerLine`'s own
+ * `ComposerSend` for send, and `PondAtom kind="tag"` for the page chip.
  */
 
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { cn } from '@/lib/utils'
+import { PondAtom } from '@/components/atoms/PondAtom'
+import { ComposerSend } from '@/components/molecules/ComposerLine'
+import { PLACEMENT } from '@/lib/layout/shell-placement'
 
 export type ReportProblemStatus = 'idle' | 'sending' | 'filed' | 'error'
 
@@ -29,9 +32,6 @@ export interface ReportProblemBoxProps {
   onSubmit: (text: string) => void
   onClose: () => void
 }
-
-/** `ShellCommands`' `PLACEMENT`, verbatim — the shell's one centred-top spot. */
-const PLACEMENT = 'absolute top-5 left-[calc(50%_+_13px)] w-max -translate-x-1/2'
 
 export function ReportProblemBox({
   pageTitle,
@@ -101,11 +101,7 @@ export function ReportProblemBox({
     >
       <div className="flex items-center justify-between gap-2">
         <span className="text-mn-text-secondary">report a problem</span>
-        {pageTitle !== '' && (
-          <span className="min-w-0 truncate rounded-full bg-mn-text/[0.07] px-2 py-0.5 text-[11px] text-mn-text-meta">
-            {pageTitle}
-          </span>
-        )}
+        {pageTitle !== '' && <PondAtom kind="tag" value={pageTitle} className="min-w-0" />}
       </div>
 
       {status === 'filed' ? (
@@ -133,33 +129,7 @@ export function ReportProblemBox({
             onKeyDown={handleLineKeyDown}
             className="min-h-[20px] flex-1 resize-none border-0 bg-transparent p-0 text-[16px] leading-[1.5] outline-none placeholder:text-mn-text-secondary disabled:opacity-60 md:text-[14px]"
           />
-          <button
-            type="button"
-            aria-label="send"
-            onClick={submit}
-            disabled={!canSend}
-            className={cn(
-              'flex size-8 flex-none items-center justify-center rounded-mn-pill',
-              canSend
-                ? 'bg-mn-text text-raw-paper dark:text-raw-ink'
-                : 'bg-[rgba(27,29,20,0.12)] text-mn-text-meta dark:bg-[rgba(250,249,239,0.12)]'
-            )}
-          >
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 14 14"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.4"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden
-            >
-              <path d="M7 11V3" />
-              <path d="M3.6 6.4 7 3l3.4 3.4" />
-            </svg>
-          </button>
+          <ComposerSend ariaLabel="send" on={canSend} onClick={submit} />
         </div>
       )}
     </div>
