@@ -46,6 +46,12 @@ export interface PageProposal {
   name: string
   parentId: string | null
   kind: string
+  /** The page the question was asked from, stamped once at propose time and
+   *  never touched again — unlike {@link parentId}, which `change place` can
+   *  rewrite freely (KAN-328). `null` means asked from the pond root; absent
+   *  means the proposal predates this field, so undo falls back to the old
+   *  `parentId`-based behaviour. Only `proposePage` ever sets it. */
+  askedFromPageId?: string | null
   status: PageProposalStatus
   /** Set once the page is made. */
   pageId?: string
@@ -128,6 +134,9 @@ export function parsePageProposals(value: unknown): PageProposals {
       mentioned: parseMentioned(r.mentioned),
       ...(typeof r.leadIn === 'string' ? { leadIn: r.leadIn } : {}),
       ...(typeof r.signOff === 'string' ? { signOff: r.signOff } : {}),
+      ...('askedFromPageId' in r
+        ? { askedFromPageId: typeof r.askedFromPageId === 'string' && r.askedFromPageId ? r.askedFromPageId : null }
+        : {}),
     }
   }
   return out

@@ -2973,6 +2973,10 @@ export function AITerminal() {
         // Placement defaults to the page the answer was about (6a frame 4);
         // Life home is the pond's root, so it reads as top level.
         parentId: nodeId && allPages.some((p) => p.id === nodeId) ? nodeId : null,
+        // Stamped once, here, at the node open when "make this a page" is
+        // pressed — unlike `parentId`, `change place` never touches it, so
+        // undo can always return to where the question was actually asked.
+        askedFromPageId: nodeId && allPages.some((p) => p.id === nodeId) ? nodeId : null,
         kind: DEFAULT_PAGE_KIND,
         status: 'proposed',
       }
@@ -4067,6 +4071,18 @@ export function AITerminal() {
   const madeProposalParentName = madeProposal?.parentId
     ? allPages.find((p) => p.id === madeProposal.parentId)?.title ?? null
     : null
+  // Shared by the chip's `undoMadePage` and the ⌘Z effect below: an explicit
+  // `null` (asked from top level) must resolve to the pond home; only a
+  // genuinely absent key (a pre-field proposal) falls back to the old
+  // parentId-based behaviour.
+  const resolveAskedFromHref = (proposal: PageProposal) => {
+    const askedFromId =
+      proposal.askedFromPageId !== undefined ? proposal.askedFromPageId : proposal.parentId
+    const askedFrom = askedFromId ? allPages.find((p) => p.id === askedFromId) : null
+    return askedFrom
+      ? workspaceHref({ id: askedFrom.id, type: 'page', title: askedFrom.title })
+      : workspaceUrl(null)
+  }
   // The made record can leave the undo stack by a route this composer never
   // sees — ⌘Z through ShellCommands' own `runUndoStep`, not just this chip —
   // and land on redo. Either way the card is no longer applied, so the answer
@@ -4077,13 +4093,16 @@ export function AITerminal() {
     if (!madeProposal || !madeProposalRecordId) return
     if (redoRecordIds.includes(madeProposalRecordId)) {
       dispatch({ kind: 'undoMadePage', id: madeProposal.id })
+      router.push(resolveAskedFromHref(madeProposal))
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- this must fire exactly once when the record lands on redo, never again just because resolveAskedFromHref/router/allPages changed (e.g. the listPages refetch the undo itself kicks off) — keying off them would retrigger the dispatch/navigate on every such change instead of gating it on redoRecordIds.
   }, [madeProposal, madeProposalRecordId, redoRecordIds, dispatch])
   // The backend record is already `undone` (the session-undo RPC did that) — this
   // only takes the client's own card back to `rejected` (the terminal cancel
-  // already leaves it in) so the answer offers make this a page again, and
-  // returns to the node that was open when make this a page was pressed, which
-  // is exactly the parentId `proposePage` stamped onto the card at that moment.
+  // already leaves it in) so the answer offers make this a page again. The
+  // record landing on redo is what the `redoRecordIds` effect above reacts
+  // to, so the navigation back to the `askedFromPageId` `proposePage`
+  // stamped onto the card happens there — once, not here too.
   const undoMadePageInFlightRef = useRef(false)
   const undoMadePage = () => {
     const proposal = madeProposal
@@ -4104,17 +4123,6 @@ export function AITerminal() {
         // Same caches and notices a ⌘Z through ShellCommands settles, so the
         // rail/change-log don't read stale after the chip's own route (PATH_STEPS 6-7).
         applyUndoOutcome('undo', result, queryClient)
-        // The queue pops at run time, not call time — by the time this
-        // resolves, the step that actually ran may not be this proposal's
-        // own. Check before acting.
-        if (result.outcome !== 'done' || !result.step.recordIds.includes(recordId)) return
-        dispatch({ kind: 'undoMadePage', id: proposal.id })
-        const parent = proposal.parentId
-          ? allPages.find((p) => p.id === proposal.parentId)
-          : null
-        router.push(
-          parent ? workspaceHref({ id: parent.id, type: 'page', title: parent.title }) : workspaceUrl(null)
-        )
       } catch (err) {
         console.error('[change-log] undo failed', err)
         requestComposerNotice(`can't undo — try again.`)

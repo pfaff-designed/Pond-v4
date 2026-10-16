@@ -161,6 +161,27 @@ describe('parsePageProposals — the envelope record', () => {
     expect(parsed.p.signOff).toBeUndefined()
     expect(parsed.p.prose).toBe(PROSE)
   })
+
+  it('a persisted proposal missing askedFromPageId parses fine, carrying neither key', () => {
+    const parsed = parsePageProposals({ 'pp-1': proposal() })
+    expect(parsed['pp-1'].askedFromPageId).toBeUndefined()
+    expect('askedFromPageId' in parsed['pp-1']).toBe(false)
+  })
+
+  it('round-trips an explicit askedFromPageId page id', () => {
+    const parsed = parsePageProposals({
+      p: proposal({ id: 'p', askedFromPageId: 'kr-1' }),
+    })
+    expect(parsed.p.askedFromPageId).toBe('kr-1')
+  })
+
+  it('round-trips an explicit null askedFromPageId — asked from the pond root, distinct from absent', () => {
+    const parsed = parsePageProposals({
+      p: proposal({ id: 'p', askedFromPageId: null }),
+    })
+    expect(parsed.p.askedFromPageId).toBeNull()
+    expect('askedFromPageId' in parsed.p).toBe(true)
+  })
 })
 
 describe('parsePlacementResponse — the propose-page route response, tolerantly parsed', () => {
