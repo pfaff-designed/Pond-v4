@@ -108,8 +108,11 @@ type Scenario = {
    *  defensible. When set, T1 may either build (judged directly) or grill-then-
    *  build. Used sparingly for the truly-nothing-to-scope case. */
   grillOptional?: boolean
-  /** For suggest_followups cases (KAN-132 intent rule): assert at least one
-   *  offered chip names the edit this regex describes. */
+  /** For no-tool cases carrying a suggest_followups chip (KAN-132 intent
+   *  rule): assert at least one chip offered this turn names the edit this
+   *  regex describes. A chip is not itself a routing decision — see
+   *  `primaryCall` — so this is checked against the turn's pooled chips,
+   *  never against `actual`. */
   expectChipNaming?: RegExp
   /** For propose_changes / collection-tool cases (KAN-132 assumption rule):
    *  assert the reply's prose is exactly one sentence stating the assumption. */
@@ -430,7 +433,7 @@ const ALL_SCENARIOS: Scenario[] = [
   // ── KAN-132: unclear → chip (never a card), clear edit → one assumption sentence ──
   {
     name: 'unclear instruction → chip, no card',
-    expect: 'suggest_followups',
+    expect: null,
     expectChipNaming: /electrician.*(w\/c )?6 oct|move the electrician/i,
     ctx: 'Current page "Kitchen Renovation". Blocks: [text id=b1 "Electrician visit: w/c 29 Sep. Cabinet measurement: w/c 22 Sep."], [todo id=b2 reno tasks].',
     text: 'the electrician might need to move to w/c 6 oct',
@@ -499,9 +502,32 @@ function sentenceCount(text: string): number {
   return (trimmed.match(/[^.!?]+(?:[.!?]+|$)/g) ?? []).filter((m) => m.trim().length > 0).length
 }
 
+/** The first tool call that is a routing decision. KAN-132: production lets the
+ *  model offer a suggest_followups chip alongside grilling or a chat answer, so
+ *  a chip is not itself a route — skip it when picking the turn's outcome, or
+ *  every grill/chat case that also offers a chip reads as that chip's name
+ *  instead of `(no tool)`. */
+function primaryCall(toolCalls: ToolCall[]): ToolCall | undefined {
+  return toolCalls.find((c) => c.toolName !== 'suggest_followups')
+}
+
+/** Every chip offered this turn, pooled across all suggest_followups calls —
+ *  collected separately from `primaryCall` since a chip offer never counts as
+ *  the turn's routing outcome. */
+function collectChips(toolCalls: ToolCall[]): string[] {
+  return toolCalls
+    .filter((c) => c.toolName === 'suggest_followups')
+    .flatMap((c) => (c.input as CreateInput | undefined)?.suggestions ?? [])
+}
+
 /** The create_page shape assertions the milestones require. Only meaningful once
  *  the tool name already matched. Factored out so single-turn and turn-2 share it. */
-function checkShape(call: ToolCall | undefined, s: Scenario, text: string): boolean {
+function checkShape(
+  call: ToolCall | undefined,
+  s: Scenario,
+  text: string,
+  chips: string[]
+): boolean {
   const input = (call?.input ?? {}) as CreateInput
   let pass = true
   if (s.expectType) pass = input.type === s.expectType
@@ -522,7 +548,7 @@ function checkShape(call: ToolCall | undefined, s: Scenario, text: string): bool
     pass = !(first?.type === 'text' && isTitleEchoHeading(first.content ?? '', input.title ?? ''))
   }
   if (pass && s.expectChipNaming) {
-    pass = (input.suggestions ?? []).some((sugg) => s.expectChipNaming!.test(sugg))
+    pass = chips.some((sugg) => s.expectChipNaming!.test(sugg))
   }
   if (pass && s.expectOneAssumptionSentence) {
     pass = sentenceCount(text) === 1
@@ -552,13 +578,22 @@ async function generateTurn(
 }
 
 /** Assert a single tool outcome against a scenario's `expect` + shape. `text` is
- *  the reply's prose for that turn (KAN-132: the one-assumption-sentence check). */
-function judge(actual: string, call: ToolCall | undefined, s: Scenario, text: string): boolean {
+ *  the reply's prose for that turn (KAN-132: the one-assumption-sentence check);
+ *  `chips` is the turn's pooled suggest_followups suggestions (KAN-132: the
+ *  chip-naming check) — `actual` is already `primaryCall`'s outcome, so a
+ *  no-tool turn that only offered a chip still checks `expectChipNaming` here. */
+function judge(
+  actual: string,
+  call: ToolCall | undefined,
+  s: Scenario,
+  text: string,
+  chips: string[]
+): boolean {
   if ((s.expect as unknown as string) === 'AMBIGUOUS') {
     return actual === 'create_page' || actual === 'propose_changes' || actual === '(no tool)'
   }
-  if (s.expect === null) return actual === '(no tool)'
-  return actual === s.expect && checkShape(call, s, text)
+  if (s.expect === null) return actual === '(no tool)' && checkShape(call, s, text, chips)
+  return actual === s.expect && checkShape(call, s, text, chips)
 }
 
 async function runOne(s: Scenario): Promise<Result> {
@@ -567,12 +602,14 @@ async function runOne(s: Scenario): Promise<Result> {
   //    project may take two; a real user answers once or twice, never forever) ──
   if (s.followup) {
     const t1 = await generateTurn(s.ctx, s.text, { prompt: s.text })
-    const t1call = t1.toolCalls[0] as ToolCall | undefined
+    const t1calls = t1.toolCalls as ToolCall[]
+    const t1call = primaryCall(t1calls)
     const t1actual = t1call ? t1call.toolName : '(no tool)'
+    const t1chips = collectChips(t1calls)
 
     // A genuinely trivial named page may just build on turn 1 — accept it.
     if (s.grillOptional && t1actual !== '(no tool)') {
-      const pass = judge(t1actual, t1call, s, t1.text)
+      const pass = judge(t1actual, t1call, s, t1.text, t1chips)
       const detail = t1call ? JSON.stringify(t1call.input).slice(0, 120) : t1.text.slice(0, 90)
       return { scenario: s, actual: `${t1actual} (T1, no grill)`, pass, detail }
     }
@@ -606,10 +643,12 @@ async function runOne(s: Scenario): Promise<Result> {
     for (let i = 0; i < answers.length; i++) {
       history.push({ role: 'user', content: answers[i] })
       last = await generateTurn(s.ctx, answers[i], { messages: [...history] })
-      const call = last.toolCalls[0] as ToolCall | undefined
+      const calls = last.toolCalls as ToolCall[]
+      const call = primaryCall(calls)
       const actual = call ? call.toolName : '(no tool)'
+      const chips = collectChips(calls)
       if (actual !== '(no tool)') {
-        const pass = judge(actual, call, s, last.text)
+        const pass = judge(actual, call, s, last.text, chips)
         const detail = call
           ? JSON.stringify(call.input).slice(0, 120)
           : last.text.replace(/\s+/g, ' ').slice(0, 90)
@@ -632,12 +671,14 @@ async function runOne(s: Scenario): Promise<Result> {
 
   // ── single-turn case (unchanged): the assertion applies to turn 1 ──
   const result = await generateTurn(s.ctx, s.text, { prompt: s.text })
-  const call = result.toolCalls[0] as ToolCall | undefined
+  const calls = result.toolCalls as ToolCall[]
+  const call = primaryCall(calls)
   const actual = call ? call.toolName : '(no tool)'
+  const chips = collectChips(calls)
   const detail = call
     ? JSON.stringify(call.input).slice(0, 120)
     : result.text.replace(/\s+/g, ' ').slice(0, 90)
-  return { scenario: s, actual, pass: judge(actual, call, s, result.text), detail }
+  return { scenario: s, actual, pass: judge(actual, call, s, result.text, chips), detail }
 }
 
 function fmtExpect(e: Expect): string {
