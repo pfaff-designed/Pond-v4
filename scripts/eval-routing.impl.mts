@@ -115,8 +115,14 @@ type Scenario = {
    *  never against `actual`. */
   expectChipNaming?: RegExp
   /** For propose_changes / collection-tool cases (KAN-132 assumption rule):
-   *  assert the reply's prose is exactly one sentence stating the assumption. */
+   *  assert the reply's prose is exactly one sentence stating the assumption
+   *  (not merely describing the action). */
   expectOneAssumptionSentence?: boolean
+  /** For no-tool cases carrying a [Rejected] note (KAN-132 no-retry rule):
+   *  fail if any chip offered this turn names the rejected edit — the edit
+   *  must not come back as a suggest_followups chip either. Mirrors
+   *  `expectChipNaming`, checked the same way against the pooled chips. */
+  forbidChipNaming?: RegExp
 }
 
 /** A decisive turn-2/3 answer the harness sends if the model grills a SECOND
@@ -464,6 +470,7 @@ const ALL_SCENARIOS: Scenario[] = [
   {
     name: 'ask again → re-proposed',
     expect: 'propose_changes',
+    expectOneAssumptionSentence: true,
     ctx: [
       'Current page "Kitchen Renovation". Blocks: [text id=b1 "Electrician visit: w/c 29 Sep. Cabinet measurement: w/c 22 Sep."], [todo id=b2 reno tasks].',
       // regenerate() drops the rejected card's message before resending (handleAskAgain),
@@ -474,7 +481,37 @@ const ALL_SCENARIOS: Scenario[] = [
       .filter(Boolean)
       .join('\n\n'),
     text: 'push the electrician out by a week',
-    note: 'ROUTING NO RETRY: with the [Rejected] note for this tool call absent, the same edit the user asked for before is free to propose again.',
+    note: 'ROUTING NO RETRY + ASSUMPTION: with the [Rejected] note for this tool call absent, the same edit is free to propose again — and the live miss showed a re-proposal can drop the assumption sentence, so this re-proposal is checked for it too.',
+  },
+  {
+    name: 'ask again in own words → re-proposed with one assumption sentence',
+    expect: 'propose_changes',
+    expectOneAssumptionSentence: true,
+    ctx: [
+      'Current page "Kitchen Renovation". Blocks: [text id=b1 "Electrician visit: w/c 29 Sep. Cabinet measurement: w/c 22 Sep."], [todo id=b2 reno tasks].',
+      rejectedContextNote([
+        { targetTitle: 'Kitchen Renovation', summary: 'move the electrician to w/c 6 oct' },
+      ]),
+    ]
+      .filter(Boolean)
+      .join('\n\n'),
+    text: 'ask again: move the electrician to w/c 6 oct',
+    note: 'ROUTING NO RETRY + ASSUMPTION: the live miss — "ask again: <edit>" in the user\'s own words, with the [Rejected] note for THIS edit still present — must still propose (an explicit "ask again" overrides no-retry) and still carry exactly one assumption sentence.',
+  },
+  {
+    name: 'rejected edit → not re-offered as a chip',
+    expect: null,
+    forbidChipNaming: /electrician.*6 oct|move the electrician/i,
+    ctx: [
+      'Current page "Kitchen Renovation". Blocks: [text id=b1 "Electrician visit: w/c 29 Sep. Cabinet measurement: w/c 22 Sep."], [todo id=b2 reno tasks].',
+      rejectedContextNote([
+        { targetTitle: 'Kitchen Renovation', summary: 'move the electrician to w/c 6 oct' },
+      ]),
+    ]
+      .filter(Boolean)
+      .join('\n\n'),
+    text: 'ok, anything else on this page?',
+    note: 'ROUTING NO RETRY: the live miss — a rejected edit must not come back as a suggest_followups chip either, not just as a propose_changes call.',
   },
 ]
 
@@ -500,6 +537,19 @@ function sentenceCount(text: string): number {
   const trimmed = text.trim()
   if (!trimmed) return 0
   return (trimmed.match(/[^.!?]+(?:[.!?]+|$)/g) ?? []).filter((m) => m.trim().length > 0).length
+}
+
+/** KAN-132 live miss: the model can emit exactly one sentence that only
+ *  describes the action ("Updating the electrician date.") rather than
+ *  naming an assumption. `expectOneAssumptionSentence` must fail that case,
+ *  so it also requires one of these assumption words/phrases. */
+const ASSUMPTION_WORD_RE = /assum|taking|taken|reading|measured from|counted from|presum/i
+
+/** `expectOneAssumptionSentence`: the reply is exactly one non-empty sentence
+ *  AND that sentence names an assumption, not just the action taken. */
+function isOneAssumptionSentence(text: string): boolean {
+  const trimmed = text.trim()
+  return trimmed.length > 0 && sentenceCount(trimmed) === 1 && ASSUMPTION_WORD_RE.test(trimmed)
 }
 
 /** The first tool call that is a routing decision. KAN-132: production lets the
@@ -550,8 +600,11 @@ function checkShape(
   if (pass && s.expectChipNaming) {
     pass = chips.some((sugg) => s.expectChipNaming!.test(sugg))
   }
+  if (pass && s.forbidChipNaming) {
+    pass = !chips.some((sugg) => s.forbidChipNaming!.test(sugg))
+  }
   if (pass && s.expectOneAssumptionSentence) {
-    pass = sentenceCount(text) === 1
+    pass = isOneAssumptionSentence(text)
   }
   return pass
 }
