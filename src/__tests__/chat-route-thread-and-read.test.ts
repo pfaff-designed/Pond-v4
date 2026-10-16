@@ -180,4 +180,12 @@ describe('POST /api/chat — no-retry [Rejected] context (KAN-132)', () => {
     await post({ messages: [{ id: 'm-0', role: 'user', parts: [{ type: 'text', text: 'hi' }] }] })
     expect(mockedListByToolCalls).not.toHaveBeenCalled()
   })
+
+  it('still streams and omits the block when `listRecordsByToolCalls` rejects', async () => {
+    mockedListByToolCalls.mockRejectedValue(new Error('change_log read failed'))
+    await post({ messages: [proposeMessage('tc-rejected')] })
+    expect(mockedStreamText).toHaveBeenCalled()
+    const args = mockedStreamText.mock.calls.at(-1)?.[0] as { system: string }
+    expect(args.system).not.toContain(REJECTED_BLOCK_OPENER)
+  })
 })
