@@ -1412,6 +1412,136 @@ describe('KAN-179 — the undo chip', () => {
   })
 })
 
+// ── KAN-328: undo returns to the asked-from page, not change place's pick ──
+
+describe('KAN-328 — the undo chip after change place', () => {
+  afterEach(() => {
+    act(() => {
+      sessionUndo.clear()
+    })
+  })
+
+  it('click → navigates to the page the question was asked from, not the place chosen in change place', async () => {
+    const undoRecord = {
+      id: 'undo-rec-2',
+      userId: 'user-1',
+      pondId: 'pond-undo-2',
+      status: 'undone' as const,
+      action: 'create_page' as const,
+      actor: 'you',
+      targetPageId: null,
+      targetBlockId: null,
+      before: null,
+      after: null,
+      sourceThreadId: null,
+      toolCallId: null,
+      read: null,
+      links: { undoOf: 'rec-1' },
+      transitions: [],
+      createdAt: '2026-10-14T00:00:00.000Z',
+      statusAt: '2026-10-14T00:00:00.000Z',
+    }
+    mockUndoStep.mockResolvedValue({ outcome: 'done', records: [undoRecord] })
+
+    const qc = newQueryClient()
+    render(terminalTreeForPond(qc, 'pond-undo-2'))
+    await ready()
+
+    fireEvent.click(screen.getByRole('button', { name: 'make this a page' }))
+    const card = await screen.findByRole('group', { name: /new page — proposed/i })
+    fireEvent.click(within(card).getByRole('button', { name: 'change place' }))
+    const under = within(card).getByRole('combobox', { name: 'under' })
+    fireEvent.change(under, { target: { value: 'bud-1' } })
+    fireEvent.click(within(card).getByRole('button', { name: 'make page' }))
+    await waitFor(() => expect(mockCreatePage).toHaveBeenCalledTimes(1))
+    expect((mockCreatePage.mock.calls[0][2] as { parentId: string }).parentId).toBe('bud-1')
+
+    await screen.findByRole('button', { name: 'undo' })
+    mockRouterPush.mockClear()
+
+    fireEvent.click(screen.getByRole('button', { name: 'undo' }))
+
+    await waitFor(() => expect(mockUndoStep).toHaveBeenCalledTimes(1))
+    // The asked-from page (kr-1, stamped at propose time) wins over the place
+    // change place picked (bud-1), which only ever rewrote `parentId` — and it
+    // must push exactly once: a second push (e.g. a stale-closure race) could
+    // land on bud-1 after this assertion already saw kr-1 go by.
+    await waitFor(() => expect(mockRouterPush).toHaveBeenCalledTimes(1))
+    expect(mockRouterPush).toHaveBeenCalledWith(expect.stringContaining('kr-1'))
+  })
+})
+
+// ── KAN-328: the asked-from page is itself gone — fall back to the pond home ─
+
+describe('KAN-328 — the undo chip when the asked-from page is gone', () => {
+  afterEach(() => {
+    act(() => {
+      sessionUndo.clear()
+    })
+  })
+
+  it('click → kr-1 (the asked-from page) is trashed before undo → pushes the pond home, not a dead link', async () => {
+    const undoRecord = {
+      id: 'undo-rec-3',
+      userId: 'user-1',
+      pondId: 'pond-undo-3',
+      status: 'undone' as const,
+      action: 'create_page' as const,
+      actor: 'you',
+      targetPageId: null,
+      targetBlockId: null,
+      before: null,
+      after: null,
+      sourceThreadId: null,
+      toolCallId: null,
+      read: null,
+      links: { undoOf: 'rec-1' },
+      transitions: [],
+      createdAt: '2026-10-14T00:00:00.000Z',
+      statusAt: '2026-10-14T00:00:00.000Z',
+    }
+    mockUndoStep.mockResolvedValue({ outcome: 'done', records: [undoRecord] })
+
+    const qc = newQueryClient()
+    render(terminalTreeForPond(qc, 'pond-undo-3'))
+    await ready()
+
+    fireEvent.click(screen.getByRole('button', { name: 'make this a page' }))
+    const card = await screen.findByRole('group', { name: /new page — proposed/i })
+    fireEvent.click(within(card).getByRole('button', { name: 'make page' }))
+    await waitFor(() => expect(mockCreatePage).toHaveBeenCalledTimes(1))
+    await screen.findByRole('button', { name: 'undo' })
+
+    // Let make page's own listPages refetch settle first — overriding the mock
+    // while that fetch is still in flight would let its stale (kr-1-including)
+    // result land after ours and put kr-1 back.
+    const fullPagesKey = [...pagesKey('pond-undo-3'), 'full']
+    await waitFor(() => expect(qc.getQueryState(fullPagesKey)?.fetchStatus).toBe('idle'))
+
+    // kr-1 — the asked-from page, stamped on the proposal at propose time — is
+    // itself trashed before undo is pressed, same as PATH_STEPS 6.
+    mockListPages.mockImplementation(async () => [
+      ...PAGES.filter((p) => p.id !== 'kr-1'),
+      ...createdPages,
+    ])
+    await act(async () => {
+      await qc.invalidateQueries({ queryKey: pagesKey() })
+    })
+    await waitFor(() => expect(qc.getQueryState(fullPagesKey)?.fetchStatus).toBe('idle'))
+
+    mockRouterPush.mockClear()
+    fireEvent.click(screen.getByRole('button', { name: 'undo' }))
+
+    await waitFor(() => expect(mockUndoStep).toHaveBeenCalledTimes(1))
+    // allPages no longer has kr-1 — resolveAskedFromHref falls back to the pond
+    // home rather than a dead link to the trashed page — and it must push
+    // exactly once: a second push racing on a stale allPages closure could
+    // still land on kr-1 after this assertion already saw /workspace go by.
+    await waitFor(() => expect(mockRouterPush).toHaveBeenCalledTimes(1))
+    expect(mockRouterPush).toHaveBeenCalledWith('/workspace')
+  })
+})
+
 // ── KAN-179: the undo chip is bound to its own step, not the whole stack ────
 
 describe('KAN-179 — the undo chip is bound to its own step', () => {
@@ -1474,6 +1604,7 @@ describe('KAN-179 — the undo chip is bound to its own step', () => {
     fireEvent.click(within(card).getByRole('button', { name: 'make page' }))
 
     await screen.findByRole('button', { name: 'undo' })
+    mockRouterPush.mockClear()
 
     // ⌘Z reaches the session-undo engine directly, the same way ShellCommands'
     // own `runUndoStep` does — never through this chip's own onClick. The made
@@ -1488,6 +1619,12 @@ describe('KAN-179 — the undo chip is bound to its own step', () => {
     expect(screen.getByText(QUESTION)).toBeInTheDocument()
     expect(screen.getByText(PROSE)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'make this a page' })).toBeInTheDocument()
+    // ⌘Z must navigate too — not just dispatch — the same asked-from page the
+    // chip's own `undoMadePage` would land on, and exactly once: a second push
+    // from a race between the redo effect and `undoMadePage` itself could still
+    // land on a different href after this assertion already saw kr-1 go by.
+    await waitFor(() => expect(mockRouterPush).toHaveBeenCalledTimes(1))
+    expect(mockRouterPush).toHaveBeenCalledWith(expect.stringContaining('kr-1'))
   })
 
   it('double press undoes exactly one step', async () => {
@@ -1749,6 +1886,101 @@ describe('KAN-179 — the person’s path: ask → make page → navigate away �
     await screen.findByRole('button', { name: 'undo' })
     expect(screen.queryByRole('button', { name: /^open /i })).not.toBeInTheDocument()
     expect(screen.getByPlaceholderText('ask about this page')).toBeInTheDocument()
+  })
+})
+
+// ── KAN-328: the full path, chip then ⌘Z, both landing back on A ───────────
+
+describe('KAN-328 — the person’s path: make this a page → change place → top level → undo', () => {
+  afterEach(() => {
+    act(() => {
+      sessionUndo.clear()
+    })
+  })
+
+  it('walks PATH_STEPS 1–5: the undo chip lands on A, then the same flow again with ⌘Z lands on A too', async () => {
+    const undoRecord = {
+      id: 'undo-rec-path-full',
+      userId: 'user-1',
+      pondId: 'pond-path-full-1',
+      status: 'undone' as const,
+      action: 'create_page' as const,
+      actor: 'you',
+      targetPageId: null,
+      targetBlockId: null,
+      before: null,
+      after: null,
+      sourceThreadId: null,
+      toolCallId: null,
+      read: null,
+      links: { undoOf: 'rec-1' },
+      transitions: [],
+      createdAt: '2026-10-14T00:00:00.000Z',
+      statusAt: '2026-10-14T00:00:00.000Z',
+    }
+    mockUndoStep.mockResolvedValue({ outcome: 'done', records: [undoRecord] })
+
+    const qc = newQueryClient()
+    render(terminalTreeForPond(qc, 'pond-path-full-1'))
+    await ready()
+
+    // 1–2: page A (kr-1) already carries the answered thread (the fixture) —
+    // make this a page → change place → top level → make page.
+    fireEvent.click(screen.getByRole('button', { name: 'make this a page' }))
+    let card = await screen.findByRole('group', { name: /new page — proposed/i })
+    fireEvent.click(within(card).getByRole('button', { name: 'change place' }))
+    let under = within(card).getByRole('combobox', { name: 'under' })
+    fireEvent.change(under, { target: { value: '' } })
+    fireEvent.click(within(card).getByRole('button', { name: 'make page' }))
+    await waitFor(() => expect(mockCreatePage).toHaveBeenCalledTimes(1))
+    expect((mockCreatePage.mock.calls[0][2] as { parentId: string | null }).parentId).toBeNull()
+
+    // 3: the undo chip lands back on A (kr-1) — never the top level `change
+    // place` picked, which only ever rewrote `parentId` — the answer returns
+    // to the thread unfiled and make this a page is offered again.
+    await screen.findByRole('button', { name: 'undo' })
+    mockRouterPush.mockClear()
+    fireEvent.click(screen.getByRole('button', { name: 'undo' }))
+
+    await waitFor(() => expect(mockUndoStep).toHaveBeenCalledTimes(1))
+    await waitFor(() =>
+      expect(mockRouterPush).toHaveBeenCalledWith(expect.stringContaining('kr-1'))
+    )
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'undo' })).not.toBeInTheDocument()
+    )
+    expect(screen.getByText(QUESTION)).toBeInTheDocument()
+    expect(screen.getByText(PROSE)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'make this a page' })).toBeInTheDocument()
+
+    // 4: the same ask → make page → change place flow again, pressing ⌘Z
+    // (sessionUndo.undo directly, the way ShellCommands' key handler fires it)
+    // instead of the chip this time — same landing on A.
+    fireEvent.click(screen.getByRole('button', { name: 'make this a page' }))
+    card = await screen.findByRole('group', { name: /new page — proposed/i })
+    fireEvent.click(within(card).getByRole('button', { name: 'change place' }))
+    under = within(card).getByRole('combobox', { name: 'under' })
+    fireEvent.change(under, { target: { value: '' } })
+    fireEvent.click(within(card).getByRole('button', { name: 'make page' }))
+    await waitFor(() => expect(mockCreatePage).toHaveBeenCalledTimes(2))
+    expect((mockCreatePage.mock.calls[1][2] as { parentId: string | null }).parentId).toBeNull()
+
+    await screen.findByRole('button', { name: 'undo' })
+    mockRouterPush.mockClear()
+
+    await act(async () => {
+      await sessionUndo.undo('pond-path-full-1')
+    })
+
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'undo' })).not.toBeInTheDocument()
+    )
+    expect(screen.getByText(QUESTION)).toBeInTheDocument()
+    expect(screen.getByText(PROSE)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'make this a page' })).toBeInTheDocument()
+    await waitFor(() =>
+      expect(mockRouterPush).toHaveBeenCalledWith(expect.stringContaining('kr-1'))
+    )
   })
 })
 
