@@ -193,10 +193,9 @@ export const Reverted: Story = { args: { status: 'reverted' } }
 
 /** Nothing the board does not draw: no `open page`, no `show original`, no `inferred` pill. */
 export const DrawsOnlyWhatTheBoardDraws: Story = {
-  args: { changes: [{ ...create, inferred: true, reason: 'follows the electrician' }] },
+  args: { changes: [{ ...create, inferred: true }] },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getByText('follows the electrician')).toBeInTheDocument()
     await expect(canvas.queryByText('inferred')).not.toBeInTheDocument()
     await expect(canvas.queryByRole('button', { name: 'show original' })).not.toBeInTheDocument()
     await expect(canvas.queryByRole('button', { name: /open page/i })).not.toBeInTheDocument()
@@ -484,9 +483,7 @@ async function assertDiffCardValues(root: HTMLElement, theme: 'paper' | 'ink') {
   const lines = card.querySelectorAll<HTMLElement>('[data-kind="diff-line"]')
   await expect(lines).toHaveLength(3)
   await expect(getComputedStyle(lines[0].parentElement!).rowGap).toBe('3px')
-  await expect(getComputedStyle(lines[0].parentElement!.parentElement!.parentElement!).rowGap).toBe(
-    '3px'
-  )
+  await expect(getComputedStyle(lines[0].parentElement!.parentElement!).rowGap).toBe('3px')
   await expect(getComputedStyle(lines[0]).fontSize).toBe('11.5px')
   await expect(getComputedStyle(lines[0]).paddingLeft).toBe('10px')
 

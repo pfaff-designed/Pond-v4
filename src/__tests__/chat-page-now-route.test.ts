@@ -58,6 +58,7 @@ jest.mock('@/lib/embeddings/retrieve', () => ({
 jest.mock('@/lib/ai/repair', () => ({ makeRepairToolCall: () => undefined }))
 jest.mock('@/lib/change-log/propose', () => ({ recordProposedToolCalls: jest.fn() }))
 jest.mock('@/lib/change-log/resolve', () => ({ resolveChangeLogRecord: jest.fn() }))
+jest.mock('@/lib/change-log/store', () => ({ listRecordsByToolCalls: jest.fn(async () => []) }))
 
 import type { ModelMessage } from 'ai'
 import { streamText } from 'ai'

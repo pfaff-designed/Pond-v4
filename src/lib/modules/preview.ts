@@ -28,8 +28,6 @@ export interface ChangePreview {
   before: Block | null
   /** Proposed block with a placeholder id (create / edit); null for a remove. */
   after: Block | null
-  /** Optional one-line note from the model on what changed and why. */
-  reason?: string
   /** Ticket-30: true when the model INFERRED this change as a side-effect the
    *  user did not explicitly request — the card labels it distinctly and
    *  "Accept all" leaves it pending for its own click. */
@@ -61,7 +59,6 @@ export function previewForChange(change: ModuleChange, blocks: Block[]): ChangeP
       op: 'remove',
       before: blocks.find((b) => b.id === change.blockId) ?? null,
       after: null,
-      reason: change.reason,
       inferred: change.inferred,
     }
   }
@@ -70,7 +67,6 @@ export function previewForChange(change: ModuleChange, blocks: Block[]): ChangeP
       op: 'create',
       before: null,
       after: stampDisplayIds(change.data, PREVIEW_ID),
-      reason: change.reason,
       inferred: change.inferred,
     }
   }
@@ -79,7 +75,6 @@ export function previewForChange(change: ModuleChange, blocks: Block[]): ChangeP
     op: 'edit',
     before: blocks.find((b) => b.id === change.blockId) ?? null,
     after: stampDisplayIds(change.data, PREVIEW_ID),
-    reason: change.reason,
     inferred: change.inferred,
   }
 }

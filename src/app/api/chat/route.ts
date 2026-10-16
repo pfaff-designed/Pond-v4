@@ -34,6 +34,10 @@ import { withOpenPageNow } from './page-now'
 import { recordProposedToolCalls } from '@/lib/change-log/propose'
 import { resolveChangeLogRecord } from '@/lib/change-log/resolve'
 import { requestChangesContextNote } from './request-changes'
+import { proposalToolCallIds, rejectedContextNote } from './rejected'
+import type { ProposalMessageLike } from '@/lib/conversation/proposals'
+import { listRecordsByToolCalls } from '@/lib/change-log/store'
+import { describeChange } from '@/lib/change-log/page-changes'
 import { referencesContextNote, wholePageReferenceNote } from './references'
 import { parseChatBody } from './body'
 import { isWholePageReference } from '@/lib/references/reference'
@@ -206,6 +210,47 @@ export async function POST(req: Request) {
         toolCallId: requestChanges.toolCallId,
         decision: 'changes_requested',
       })
+    }
+
+    // No-retry context (6c f5, KAN-132): see rejected.ts for what this names and why.
+    try {
+      const rejectableToolCallIds = proposalToolCallIds(messages as ProposalMessageLike[])
+      if (rejectableToolCallIds.length > 0) {
+        const rejectedRecords = (
+          await listRecordsByToolCalls(supabase, {
+            userId: user.id,
+            pondId,
+            toolCallIds: rejectableToolCallIds,
+          })
+        ).filter((record) => record.status === 'rejected')
+        if (rejectedRecords.length > 0) {
+          const rejectedPageIds = [
+            ...new Set(rejectedRecords.flatMap((record) => (record.targetPageId ? [record.targetPageId] : []))),
+          ]
+          const rejectedTitles = new Map<string, string>()
+          await Promise.all(
+            rejectedPageIds.map(async (pageId) => {
+              const data = await fetchNodeContext(supabase, user.id, pageId)
+              if (data) rejectedTitles.set(pageId, data.title)
+            })
+          )
+          const note = rejectedContextNote(
+            rejectedRecords.flatMap((record) =>
+              record.targetPageId
+                ? [
+                    {
+                      targetTitle: rejectedTitles.get(record.targetPageId) ?? record.targetPageId,
+                      summary: describeChange(record, null),
+                    },
+                  ]
+                : []
+            )
+          )
+          if (note) contextBlocks.push(note)
+        }
+      }
+    } catch (err) {
+      console.error('[chat-route] failed to build [Rejected] context', err)
     }
   }
   // #98 — tell the model this turn answers a request-changes note (or revises an

@@ -129,20 +129,6 @@ export const NON_EMITTABLE_MODULES = {
 export type NonEmittableType = keyof typeof NON_EMITTABLE_MODULES
 
 /**
- * One composition operation. `op` is composition-level (which blocks exist) — NOT a
- * within-module ops grammar (t12 kept that closed). The AI references existing
- * blocks by `blockId` (from the injected context) and never invents one; `after`
- * anchors placement, and `changes[]` array order sequences the batch (branch 3).
- * `edit` may type-morph (swap `type` + `data` on the same id, preserving identity
- * and position). Every variant may carry an optional `reason` — a short note the
- * diff card shows the user on what this change does and why.
- */
-const reason = z
-  .string()
-  .optional()
-  .describe('A short, optional note on what this change does and why (shown to the user)')
-
-/**
  * Inferred-vs-requested split (ticket-30). A change the user explicitly asked for
  * omits this flag; a change YOU inferred as a helpful side-effect (e.g. ticking
  * "first class booked" when they only asked to add a flight) sets `inferred: true`
@@ -202,6 +188,14 @@ export const createPageBlockSchema = z.discriminatedUnion('type', [
 ])
 export type CreatePageBlock = z.infer<typeof createPageBlockSchema>
 
+/**
+ * One composition operation. `op` is composition-level (which blocks exist) — NOT a
+ * within-module ops grammar (t12 kept that closed). The AI references existing
+ * blocks by `blockId` (from the injected context) and never invents one; `after`
+ * anchors placement, and `changes[]` array order sequences the batch (branch 3).
+ * `edit` may type-morph (swap `type` + `data` on the same id, preserving identity
+ * and position).
+ */
 export const changeSchema = z.discriminatedUnion('op', [
   z.object({
     op: z.literal('create'),
@@ -211,7 +205,6 @@ export const changeSchema = z.discriminatedUnion('op', [
       .optional()
       .describe('Existing blockId to insert after; omit to append to the end'),
     bindKey,
-    reason,
     inferred,
   }),
   z.object({
@@ -222,13 +215,11 @@ export const changeSchema = z.discriminatedUnion('op', [
       .string()
       .optional()
       .describe('Move the block to just after this blockId; omit to keep its position'),
-    reason,
     inferred,
   }),
   z.object({
     op: z.literal('remove'),
     blockId: z.string().describe('Existing block id, from the injected context'),
-    reason,
     inferred,
   }),
 ])

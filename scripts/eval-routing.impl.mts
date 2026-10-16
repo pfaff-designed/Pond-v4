@@ -28,6 +28,7 @@ import {
   configureViewTool,
   defineSchemaTool,
   addRowTool,
+  suggestFollowupsTool,
 } from '../src/app/api/chat/tools.ts'
 // The SAME heuristics the emit-time gate enforces (ticket-21) — imported, not
 // re-implemented, so the eval's tells and the gate can't drift.
@@ -35,6 +36,9 @@ import { isMarkdownPipeTable, isTitleEchoHeading } from '../src/lib/modules/auth
 // The SAME deterministic [Scoping] note the chat route injects — imported, not
 // re-implemented, so the eval reproduces production's grill-before-build floor.
 import { scopingContextNote } from '../src/app/api/chat/scoping.ts'
+// The SAME deterministic [Rejected] note the chat route injects — imported, not
+// re-implemented, so the eval reproduces production's no-retry floor (KAN-132).
+import { rejectedContextNote } from '../src/app/api/chat/rejected.ts'
 
 const MODEL = AI_MODELS.standard // the app default (claude-sonnet-4-6)
 
@@ -48,6 +52,9 @@ const tools = {
   // every tool; this eval previously simulated only four).
   define_schema: tool(defineSchemaTool),
   add_row: tool(addRowTool),
+  // KAN-132: the unclear→chip rule routes through suggest_followups instead of
+  // propose_changes, so the eval needs the real chip tool registered to observe it.
+  suggest_followups: tool(suggestFollowupsTool),
 }
 
 /** Expected outcome: a specific tool name, or null = the model must call NO tool. */
@@ -101,6 +108,12 @@ type Scenario = {
    *  defensible. When set, T1 may either build (judged directly) or grill-then-
    *  build. Used sparingly for the truly-nothing-to-scope case. */
   grillOptional?: boolean
+  /** For no-tool cases carrying a suggest_followups chip (KAN-132 intent
+   *  rule): assert at least one chip offered this turn names the edit this
+   *  regex describes. A chip is not itself a routing decision — see
+   *  `primaryCall` — so this is checked against the turn's pooled chips,
+   *  never against `actual`. */
+  expectChipNaming?: RegExp
 }
 
 /** A decisive turn-2/3 answer the harness sends if the model grills a SECOND
@@ -413,6 +426,66 @@ const ALL_SCENARIOS: Scenario[] = [
     turn1Probe: /goal|experience|equipment|day|week|exercise|injur|record|track|what|kind/i,
     note: '#63 + grill: after the grill, the brand-new log page is born with its table (date/exercise/sets/weight as columns) on turn 2.',
   },
+
+  // ── KAN-132: unclear → chip (never a card), clear edit → card ──
+  {
+    name: 'unclear instruction → chip, no card',
+    expect: null,
+    expectChipNaming: /electrician.*(w\/c )?6 oct|move the electrician/i,
+    ctx: 'Current page "Kitchen Renovation". Blocks: [text id=b1 "Electrician visit: w/c 29 Sep. Cabinet measurement: w/c 22 Sep."], [todo id=b2 reno tasks].',
+    text: 'the electrician might need to move to w/c 6 oct',
+    note: 'STEWARD: a passing remark that merely mentions a possible change is not a request — no clarifying question, no propose_changes; answer in prose, then offer the edit as ONE suggest_followups chip naming it.',
+  },
+  {
+    name: 'clear edit → card',
+    expect: 'propose_changes',
+    ctx: 'Current page "Kitchen Renovation". Blocks: [text id=b1 "Electrician visit: w/c 29 Sep. Cabinet measurement: w/c 22 Sep."], [todo id=b2 reno tasks].',
+    text: 'push the electrician out by a week',
+    note: 'ROUTING: a clear, explicit edit still proposes at once (the request IS the confirmation).',
+  },
+  {
+    name: 'rejected edit → not re-proposed',
+    expect: null,
+    ctx: [
+      'Current page "Kitchen Renovation". Blocks: [text id=b1 "Electrician visit: w/c 29 Sep. Cabinet measurement: w/c 22 Sep."], [todo id=b2 reno tasks].',
+      rejectedContextNote([
+        { targetTitle: 'Kitchen Renovation', summary: 'push the electrician out by a week' },
+      ]),
+    ]
+      .filter(Boolean)
+      .join('\n\n'),
+    text: 'ok, anything else on this page?',
+    note: 'ROUTING NO RETRY: the route already fed a [Rejected] note for this edit into context (6c f5) — a generic follow-up must not re-propose it.',
+  },
+  {
+    name: 'ask again → re-proposed',
+    expect: 'propose_changes',
+    ctx: [
+      'Current page "Kitchen Renovation". Blocks: [text id=b1 "Electrician visit: w/c 29 Sep. Cabinet measurement: w/c 22 Sep."], [todo id=b2 reno tasks].',
+      // regenerate() drops the rejected card's message before resending (handleAskAgain),
+      // so by the time this turn runs, proposalToolCallIds no longer finds that tool
+      // call and rejectedContextNote has no entry left for it — null, same as here.
+      rejectedContextNote([]),
+    ]
+      .filter(Boolean)
+      .join('\n\n'),
+    text: 'push the electrician out by a week',
+    note: 'ROUTING NO RETRY: with the [Rejected] note for this tool call absent, the same edit the user asked for before is free to propose again.',
+  },
+  {
+    name: 'ask again in own words → re-proposed',
+    expect: 'propose_changes',
+    ctx: [
+      'Current page "Kitchen Renovation". Blocks: [text id=b1 "Electrician visit: w/c 29 Sep. Cabinet measurement: w/c 22 Sep."], [todo id=b2 reno tasks].',
+      rejectedContextNote([
+        { targetTitle: 'Kitchen Renovation', summary: 'move the electrician to w/c 6 oct' },
+      ]),
+    ]
+      .filter(Boolean)
+      .join('\n\n'),
+    text: 'ask again: move the electrician to w/c 6 oct',
+    note: 'ROUTING NO RETRY: "ask again: <edit>" in the user\'s own words, with the [Rejected] note for THIS edit still present, must still propose — an explicit "ask again" overrides no-retry.',
+  },
 ]
 
 type Result = {
@@ -428,11 +501,30 @@ type CreateInput = {
   title?: string
   parentTitle?: string
   blocks?: Array<{ type?: string; content?: string }>
+  suggestions?: string[]
+}
+
+/** The first tool call that is a routing decision. KAN-132: production lets the
+ *  model offer a suggest_followups chip alongside grilling or a chat answer, so
+ *  a chip is not itself a route — skip it when picking the turn's outcome, or
+ *  every grill/chat case that also offers a chip reads as that chip's name
+ *  instead of `(no tool)`. */
+function primaryCall(toolCalls: ToolCall[]): ToolCall | undefined {
+  return toolCalls.find((c) => c.toolName !== 'suggest_followups')
+}
+
+/** Every chip offered this turn, pooled across all suggest_followups calls —
+ *  collected separately from `primaryCall` since a chip offer never counts as
+ *  the turn's routing outcome. */
+function collectChips(toolCalls: ToolCall[]): string[] {
+  return toolCalls
+    .filter((c) => c.toolName === 'suggest_followups')
+    .flatMap((c) => (c.input as CreateInput | undefined)?.suggestions ?? [])
 }
 
 /** The create_page shape assertions the milestones require. Only meaningful once
  *  the tool name already matched. Factored out so single-turn and turn-2 share it. */
-function checkShape(call: ToolCall | undefined, s: Scenario): boolean {
+function checkShape(call: ToolCall | undefined, s: Scenario, chips: string[]): boolean {
   const input = (call?.input ?? {}) as CreateInput
   let pass = true
   if (s.expectType) pass = input.type === s.expectType
@@ -451,6 +543,9 @@ function checkShape(call: ToolCall | undefined, s: Scenario): boolean {
   if (pass && s.expectNoTitleEcho) {
     const first = (input.blocks ?? [])[0]
     pass = !(first?.type === 'text' && isTitleEchoHeading(first.content ?? '', input.title ?? ''))
+  }
+  if (pass && s.expectChipNaming) {
+    pass = chips.some((sugg) => s.expectChipNaming!.test(sugg))
   }
   return pass
 }
@@ -476,13 +571,16 @@ async function generateTurn(
   })
 }
 
-/** Assert a single tool outcome against a scenario's `expect` + shape. */
-function judge(actual: string, call: ToolCall | undefined, s: Scenario): boolean {
+/** Assert a single tool outcome against a scenario's `expect` + shape. `chips`
+ *  is the turn's pooled suggest_followups suggestions (KAN-132: the
+ *  chip-naming check) — `actual` is already `primaryCall`'s outcome, so a
+ *  no-tool turn that only offered a chip still checks `expectChipNaming` here. */
+function judge(actual: string, call: ToolCall | undefined, s: Scenario, chips: string[]): boolean {
   if ((s.expect as unknown as string) === 'AMBIGUOUS') {
     return actual === 'create_page' || actual === 'propose_changes' || actual === '(no tool)'
   }
-  if (s.expect === null) return actual === '(no tool)'
-  return actual === s.expect && checkShape(call, s)
+  if (s.expect === null) return actual === '(no tool)' && checkShape(call, s, chips)
+  return actual === s.expect && checkShape(call, s, chips)
 }
 
 async function runOne(s: Scenario): Promise<Result> {
@@ -491,12 +589,14 @@ async function runOne(s: Scenario): Promise<Result> {
   //    project may take two; a real user answers once or twice, never forever) ──
   if (s.followup) {
     const t1 = await generateTurn(s.ctx, s.text, { prompt: s.text })
-    const t1call = t1.toolCalls[0] as ToolCall | undefined
+    const t1calls = t1.toolCalls as ToolCall[]
+    const t1call = primaryCall(t1calls)
     const t1actual = t1call ? t1call.toolName : '(no tool)'
+    const t1chips = collectChips(t1calls)
 
     // A genuinely trivial named page may just build on turn 1 — accept it.
     if (s.grillOptional && t1actual !== '(no tool)') {
-      const pass = judge(t1actual, t1call, s)
+      const pass = judge(t1actual, t1call, s, t1chips)
       const detail = t1call ? JSON.stringify(t1call.input).slice(0, 120) : t1.text.slice(0, 90)
       return { scenario: s, actual: `${t1actual} (T1, no grill)`, pass, detail }
     }
@@ -530,10 +630,12 @@ async function runOne(s: Scenario): Promise<Result> {
     for (let i = 0; i < answers.length; i++) {
       history.push({ role: 'user', content: answers[i] })
       last = await generateTurn(s.ctx, answers[i], { messages: [...history] })
-      const call = last.toolCalls[0] as ToolCall | undefined
+      const calls = last.toolCalls as ToolCall[]
+      const call = primaryCall(calls)
       const actual = call ? call.toolName : '(no tool)'
+      const chips = collectChips(calls)
       if (actual !== '(no tool)') {
-        const pass = judge(actual, call, s)
+        const pass = judge(actual, call, s, chips)
         const detail = call
           ? JSON.stringify(call.input).slice(0, 120)
           : last.text.replace(/\s+/g, ' ').slice(0, 90)
@@ -556,12 +658,14 @@ async function runOne(s: Scenario): Promise<Result> {
 
   // ── single-turn case (unchanged): the assertion applies to turn 1 ──
   const result = await generateTurn(s.ctx, s.text, { prompt: s.text })
-  const call = result.toolCalls[0] as ToolCall | undefined
+  const calls = result.toolCalls as ToolCall[]
+  const call = primaryCall(calls)
   const actual = call ? call.toolName : '(no tool)'
+  const chips = collectChips(calls)
   const detail = call
     ? JSON.stringify(call.input).slice(0, 120)
     : result.text.replace(/\s+/g, ' ').slice(0, 90)
-  return { scenario: s, actual, pass: judge(actual, call, s), detail }
+  return { scenario: s, actual, pass: judge(actual, call, s, chips), detail }
 }
 
 function fmtExpect(e: Expect): string {

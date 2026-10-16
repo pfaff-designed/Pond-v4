@@ -239,12 +239,7 @@ export function ModuleDiffCard({
           )}
           <div className="flex flex-col gap-[3px]">
             {changes.map((change, i) => (
-              <div key={i} className="flex flex-col gap-[3px]">
-                <ChangeRows change={change} />
-                {change.reason && (
-                  <div className="px-2.5 text-[10.5px] text-mn-text-secondary">{change.reason}</div>
-                )}
-              </div>
+              <ChangeRows key={i} change={change} />
             ))}
           </div>
 
