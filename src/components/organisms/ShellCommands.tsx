@@ -172,7 +172,7 @@ export function ShellCommands() {
   // document, so it fires before a focused editor/input can swallow it.
   const pondSheetOpen = naming !== null
   const zenCommands = useZenCommands({
-    blocked: templateSheetOpen || pondSheetOpen,
+    blocked: templateSheetOpen || pondSheetOpen || reportOpen,
     onEnter: closePalette,
   })
   const { inZen, handleModeSelect } = zenCommands
@@ -199,6 +199,7 @@ export function ShellCommands() {
         e.stopPropagation()
         if (templateSheetOpen) closeTemplateSheet()
         else if (pondSheetOpen) closeNewPondSheet()
+        else if (reportOpen) closeReport()
         else setPaletteOpen((prev) => !prev)
         return
       }
@@ -236,7 +237,16 @@ export function ShellCommands() {
     }
     document.addEventListener('keydown', onKey, { capture: true })
     return () => document.removeEventListener('keydown', onKey, { capture: true })
-  }, [templateSheetOpen, pondSheetOpen, closeTemplateSheet, closeNewPondSheet, pondId, runUndoStep])
+  }, [
+    templateSheetOpen,
+    pondSheetOpen,
+    reportOpen,
+    closeTemplateSheet,
+    closeNewPondSheet,
+    closeReport,
+    pondId,
+    runUndoStep,
+  ])
 
   const handleOpenChange = useCallback(
     (next: boolean) => {

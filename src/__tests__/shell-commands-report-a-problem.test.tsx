@@ -61,6 +61,54 @@ describe('ShellCommands — `report a problem` opens the box', () => {
     expect(screen.queryByRole('dialog', { name: 'report a problem' })).toBeNull()
   })
 
+  it('⌘K while the box is open closes it instead of opening the palette behind it', async () => {
+    renderShell()
+
+    fireEvent.keyDown(document, { key: 'k', metaKey: true })
+    const input = await screen.findByRole('combobox', { name: 'command palette' })
+    fireEvent.change(input, { target: { value: 'rep' } })
+    await waitFor(() => {
+      const options = screen.getAllByRole('option')
+      expect(options.some((o) => o.textContent?.includes('report a problem'))).toBe(true)
+    })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await screen.findByRole('dialog', { name: 'report a problem' })
+
+    fireEvent.keyDown(document, { key: 'k', metaKey: true })
+
+    expect(screen.queryByRole('dialog', { name: 'report a problem' })).toBeNull()
+    expect(screen.queryByRole('combobox', { name: 'command palette' })).toBeNull()
+  })
+
+  it('⌘. (zen) is blocked while the report box is open — reopening the palette still offers `zen`, not `leave zen`', async () => {
+    renderShell()
+
+    fireEvent.keyDown(document, { key: 'k', metaKey: true })
+    const input = await screen.findByRole('combobox', { name: 'command palette' })
+    fireEvent.change(input, { target: { value: 'rep' } })
+    await waitFor(() => {
+      const options = screen.getAllByRole('option')
+      expect(options.some((o) => o.textContent?.includes('report a problem'))).toBe(true)
+    })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    const box = await screen.findByRole('dialog', { name: 'report a problem' })
+
+    fireEvent.keyDown(document, { key: '.', metaKey: true })
+    expect(box).toBeInTheDocument()
+
+    fireEvent.keyDown(box, { key: 'Escape' })
+    expect(screen.queryByRole('dialog', { name: 'report a problem' })).toBeNull()
+
+    fireEvent.keyDown(document, { key: 'k', metaKey: true })
+    const reopenedInput = await screen.findByRole('combobox', { name: 'command palette' })
+    fireEvent.change(reopenedInput, { target: { value: 'zen' } })
+    await waitFor(() => {
+      const options = screen.getAllByRole('option')
+      expect(options.some((o) => o.textContent?.includes('leave zen'))).toBe(false)
+      expect(options.some((o) => o.textContent?.includes('everything else hidden'))).toBe(true)
+    })
+  })
+
   const openReportBox = async (user: ReturnType<typeof userEvent.setup>) => {
     fireEvent.keyDown(document, { key: 'k', metaKey: true })
     const input = await screen.findByRole('combobox', { name: 'command palette' })
