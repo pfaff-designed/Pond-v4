@@ -1,4 +1,4 @@
-import { createJiraIssue, rankFirstInNowQueue } from './jira-client'
+import { addIssueComment, createJiraIssue, rankFirstInNowQueue } from './jira-client'
 import type { FeedbackIssue } from './build-issue'
 
 const ISSUE: FeedbackIssue = {
@@ -137,5 +137,57 @@ describe('rankFirstInNowQueue', () => {
         body: JSON.stringify({ issues: ['KAN-900'], rankBeforeIssue: 'KAN-800' }),
       })
     )
+  })
+})
+
+describe('addIssueComment', () => {
+  it('posts the right URL and ADF body', async () => {
+    const mockedFetch = global.fetch as jest.Mock
+    mockedFetch.mockResolvedValueOnce({ ok: true })
+
+    const posted = await addIssueComment('KAN-900', 'owner email failed: Resend 500')
+
+    expect(posted).toBe(true)
+    expect(mockedFetch).toHaveBeenCalledWith(
+      'https://pfaff-team.atlassian.net/rest/api/3/issue/KAN-900/comment',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          Authorization: `Basic ${Buffer.from('charles@example.com:secret-key').toString('base64')}`,
+        }),
+      })
+    )
+    const body = JSON.parse(mockedFetch.mock.calls[0][1].body)
+    expect(body).toEqual({
+      body: {
+        type: 'doc',
+        version: 1,
+        content: [
+          {
+            type: 'paragraph',
+            content: [{ type: 'text', text: 'owner email failed: Resend 500' }],
+          },
+        ],
+      },
+    })
+    expect(mockedFetch.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal)
+  })
+
+  it('returns false without throwing on a non-ok response', async () => {
+    const mockedFetch = global.fetch as jest.Mock
+    mockedFetch.mockResolvedValueOnce({ ok: false, status: 400 })
+
+    const posted = await addIssueComment('KAN-900', 'owner email failed: bad request')
+
+    expect(posted).toBe(false)
+  })
+
+  it('returns false without throwing when fetch throws', async () => {
+    const mockedFetch = global.fetch as jest.Mock
+    mockedFetch.mockRejectedValueOnce(new Error('network down'))
+
+    const posted = await addIssueComment('KAN-900', 'owner email failed: network down')
+
+    expect(posted).toBe(false)
   })
 })
