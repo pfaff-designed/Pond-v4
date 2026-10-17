@@ -3,6 +3,11 @@ import { EditorView } from '@tiptap/pm/view'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { HEADING_PREFIX } from '@/lib/modules/palette'
 import {
+  composerClearanceMarginPx,
+  COMPOSER_CLEARANCE_VAR,
+  COMPOSER_TOP_CLEARANCE,
+} from '@/lib/layout/composer-clearance'
+import {
   findTextBlock as findField,
   textEditorOf as editorOf,
 } from '@/__tests__/helpers/text-block'
@@ -336,6 +341,23 @@ describe('TextView — the text block edits in place as rendered prose', () => {
     expect(editorOf(field).state.selection.from).toBe(5)
     expect(pressRef.current).toBeNull()
     posAtCoords.mockRestore()
+  })
+
+  it("the editor's scrollMargin clears the composer's live published footprint and the ⌘K pill (KAN-400)", async () => {
+    const shell = document.createElement('div')
+    shell.setAttribute('data-part', 'shell')
+    shell.style.setProperty(COMPOSER_CLEARANCE_VAR, '392px')
+    document.body.appendChild(shell)
+    render(<TextEditor data={sample} standIn={null} pressRef={{ current: null }} />)
+    const { view } = editorOf(await findField())
+
+    expect(view.someProp('scrollMargin')).toEqual({
+      top: COMPOSER_TOP_CLEARANCE,
+      bottom: composerClearanceMarginPx(),
+      left: 0,
+      right: 0,
+    })
+    document.body.removeChild(shell)
   })
 
   it('the stand-in records where it was pressed', () => {

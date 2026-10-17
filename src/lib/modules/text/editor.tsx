@@ -5,6 +5,7 @@ import { EditorContent, useEditor, type Editor } from '@tiptap/react'
 import { Placeholder } from '@tiptap/extensions'
 import { redo, undo } from '@tiptap/pm/history'
 import type { EditorView } from '@tiptap/pm/view'
+import { COMPOSER_TOP_CLEARANCE, composerClearanceMarginPx } from '@/lib/layout/composer-clearance'
 import { isRedoChord, isUndoChord } from '@/lib/shell-commands'
 import type { ModuleViewProps } from '../types'
 import { registerTextEditor } from './active-editor'
@@ -128,6 +129,12 @@ const editorProps = {
   // The one markdown-paste path, text/plain-only or html-wrapper-only; see its
   // own comment for why `clipboardTextParser` can't own this instead.
   handlePaste: markdownHandlePaste,
+  // `tr.scrollIntoView()` reads this fresh via `view.someProp` on every call —
+  // a getter, not a fixed value, so it tracks the composer's live published
+  // footprint instead of the one at module load (KAN-400).
+  get scrollMargin() {
+    return { top: COMPOSER_TOP_CLEARANCE, bottom: composerClearanceMarginPx(), left: 0, right: 0 }
+  },
 }
 
 /**
