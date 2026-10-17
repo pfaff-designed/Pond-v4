@@ -447,3 +447,37 @@ export const ClosedMinimized: Story = {
   render: renderClosedInScroller,
   play: async ({ canvasElement }) => assertClosedLeavesNoTrace(canvasElement),
 }
+
+/**
+ * The slide must animate (280ms, `--ease-mn`), not jump — Tailwind v4's
+ * `translate-y-*` utilities write the standalone `translate` property, which
+ * `.motion-resolve` has to list alongside `transform` or only opacity eases.
+ * `visibility` rides the same transition so the card leaves the a11y tree only
+ * once the slide finishes; opening is instantly visible (CSS's to/from-`visible`
+ * rule), closing hides at the end of the duration, never before.
+ */
+export const ClosedSlideAnimates: Story = {
+  name: 'closed · slide animates, hides only after',
+  tags: ['!dev'],
+  render: (args) => {
+    const [collapsed, setCollapsed] = useState(false)
+    return (
+      <>
+        <button onClick={() => setCollapsed(true)}>close</button>
+        <TerminalDrawer {...args} collapsed={collapsed} onExpand={() => setCollapsed(false)} />
+      </>
+    )
+  },
+  args: { children: <Thread turns={1} /> },
+  play: async ({ canvas, canvasElement }) => {
+    const card = canvasElement.querySelector<HTMLElement>('[data-part="composer-card"]')!
+    const style = getComputedStyle(card)
+    await expect(style.transitionProperty.split(', ')).toEqual(expect.arrayContaining(['translate']))
+    await expect(style.visibility).toBe('visible')
+
+    await userEvent.click(canvas.getByText('close'))
+    // Right after the toggle the slide has only just started — still visible.
+    await expect(style.visibility).toBe('visible')
+    await waitFor(() => expect(style.visibility).toBe('hidden'), { timeout: 1000 })
+  },
+}

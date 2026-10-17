@@ -278,8 +278,8 @@ export const TerminalDrawer = ({
           maximized ? MAXIMIZED_PLACEMENT : CARD_PLACEMENT,
           'motion-resolve group/composer mn-glass box-border flex flex-col gap-[14px] rounded-mn-card p-[14px] font-mono text-mn-text',
           collapsed
-            ? 'pointer-events-none translate-y-[calc(100%+24px)] opacity-0'
-            : 'pointer-events-auto'
+            ? 'pointer-events-none invisible translate-y-[calc(100%+24px)] opacity-0'
+            : 'pointer-events-auto visible'
         )}
       >
         {showThread && !maximized && onHeightChange && onHeightCommit && (
