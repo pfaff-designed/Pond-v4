@@ -31,6 +31,14 @@ import {
 import { pickDateDef, type CollectionRow } from './apply'
 import { localDateIso } from './due'
 import { CALENDAR_EMPTY_LINE } from './kinds'
+import { RecordPeek } from './record-peek'
+import { useDoneToggle } from './use-done-toggle'
+import { useRecordSelection } from './use-record-selection'
+
+/** The shape `useRecordSelection` hands back for a row-typed-id container (the
+ *  stack item, the focus-list row) — read off the hook's own return so this file
+ *  never redeclares its props. */
+type RowSelection = ReturnType<typeof useRecordSelection<CollectionRow>>
 
 const NAV_BTN = 'inline-flex size-11 items-center justify-center rounded-mn-pill text-mn-text hover:bg-mn-hover-fill md:size-7'
 
@@ -44,6 +52,8 @@ const DAY_NUMBER =
   'inline-flex h-[22px] min-w-[22px] items-center justify-center rounded-full px-1 text-[12px] font-medium tabular-nums'
 /** The DC's stack item row: `gap 6 · height 20 · padding 0 4 · radius 6`. */
 const DAY_ITEM_ROW = 'flex h-5 items-center gap-1.5 rounded-[6px] px-1'
+/** `PondCalendar.dc.html`'s `ring(o)`: a selected item's own 1.5px inset ink ring. */
+const DAY_ITEM_SELECTED_RING = 'ring-[1.5px] ring-inset ring-mn-text'
 /** `boxSt(o,9)`: a 9px dot, `boxShadow: inset 0 0 0 1.4px a(.32)` for a live (non-done) row. */
 const DAY_ITEM_DOT = 'size-[9px] flex-none rounded-[2.5px] box-border ring-[1.4px] ring-inset ring-mn-text/[0.32]'
 /** `tSt(o,11.5)`: flex-1, one line, ellipsis. */
@@ -72,14 +82,37 @@ function MonthDayNumber({ day, isToday, inMonth }: { day: number; isToday: boole
   )
 }
 
-function MonthDayStack({ items, moreCount }: { items: MonthDayCell['items']; moreCount: number }) {
+function MonthDayStack({
+  items,
+  moreCount,
+  selectedId,
+  rowProps,
+  keyboardProps,
+  selectWithPointer,
+}: {
+  items: MonthDayCell['items']
+  moreCount: number
+  selectedId?: string
+  rowProps: RowSelection['rowProps']
+  keyboardProps: RowSelection['keyboardProps']
+  selectWithPointer: RowSelection['selectWithPointer']
+}) {
   if (items.length === 0 && moreCount === 0) return null
   return (
     <div className="flex flex-col gap-px px-1 pt-0.5 pb-2">
       {items.map((row) => (
-        // A row is its own target (its own click behaviour, unbuilt here) — it must
-        // never fall through to the cell's "open the add input" click underneath it.
-        <div key={row.id} className={DAY_ITEM_ROW} onClick={(e) => e.stopPropagation()}>
+        // A row is its own target — it must never fall through to the cell's
+        // "open the add input" click underneath it, so it stops that click too.
+        <div
+          key={row.id}
+          className={cn(DAY_ITEM_ROW, row.id === selectedId && DAY_ITEM_SELECTED_RING)}
+          {...rowProps(row.id)}
+          {...keyboardProps(row.id)}
+          onClick={(e) => {
+            e.stopPropagation()
+            selectWithPointer(row.id)
+          }}
+        >
           <span className={DAY_ITEM_DOT} />
           <span className={DAY_ITEM_TITLE}>{row.title}</span>
         </div>
@@ -97,6 +130,10 @@ function MonthDayCellView({
   onOpenAdd,
   onCommitAdd,
   onCancelAdd,
+  selectedId,
+  rowProps,
+  keyboardProps,
+  selectWithPointer,
 }: {
   cell: MonthDayCell
   columnIndex: number
@@ -105,6 +142,10 @@ function MonthDayCellView({
   onOpenAdd: () => void
   onCommitAdd: (title: string) => void
   onCancelAdd: () => void
+  selectedId?: string
+  rowProps: RowSelection['rowProps']
+  keyboardProps: RowSelection['keyboardProps']
+  selectWithPointer: RowSelection['selectWithPointer']
 }) {
   const openable = canAdd && !isAdding
   return (
@@ -131,7 +172,14 @@ function MonthDayCellView({
       )}
     >
       <MonthDayNumber day={cell.dayOfMonth} isToday={cell.isToday} inMonth={cell.inMonth} />
-      <MonthDayStack items={cell.items} moreCount={cell.moreCount} />
+      <MonthDayStack
+        items={cell.items}
+        moreCount={cell.moreCount}
+        selectedId={selectedId}
+        rowProps={rowProps}
+        keyboardProps={keyboardProps}
+        selectWithPointer={selectWithPointer}
+      />
       {isAdding && (
         <AddRowInput
           aria-label={`Add an item on ${cell.dayOfMonth} ${monthAbbr(cell.iso)}`}
@@ -262,32 +310,47 @@ function ChevronRight() {
 }
 
 export function CollectionCalendar({
+  viewKey,
   schema,
   rows,
   groupBy,
   editable,
+  onEdit,
   onAddRow,
   onRenameRow,
+  onOpenRow,
   onAddDateField,
 }: {
+  /** The view block's id — what the page canvas keys its one peek and one orange
+   *  pill by. Optional: every existing direct render of this component predates
+   *  selection and has no canvas to key against, so it falls back to a constant. */
+  viewKey?: string
   schema: PropertySchema
   rows: CollectionRow[]
   groupBy?: string
   editable?: boolean
+  onEdit?: (rowId: string, key: string, value: PropertyValue) => void
   onAddRow?: (values?: Record<string, PropertyValue>) => Promise<string | null>
   onRenameRow?: (rowId: string, title: string) => void
+  onOpenRow?: (rowId: string) => void
   onAddDateField?: () => void
 }) {
   const dateDef = useMemo(() => pickDateDef(schema, groupBy), [schema, groupBy])
   // `today` is read once per mount, as the board reads its own `now` (view.tsx);
   // the local calendar date, matching `due.ts`'s `dueAtom`, not UTC's.
   const [todayIso] = useState(() => localDateIso(new Date()))
+  const [now] = useState(() => new Date())
   const [focusIso, setFocusIso] = useState(todayIso)
   const [addingIso, setAddingIso] = useState<string | null>(null)
   const grid = useMemo(
     () => buildMonthGrid(focusIso, todayIso, rows, dateDef),
     [dateDef, focusIso, todayIso, rows]
   )
+  const { selectedRow, rowProps, keyboardProps, selectWithPointer } = useRecordSelection(
+    rows,
+    viewKey ?? 'calendar'
+  )
+  const done = useDoneToggle({ schema, editable, onEdit })
 
   const canAdd = !!dateDef && !!editable && !!onAddRow
 
@@ -387,6 +450,10 @@ export function CollectionCalendar({
                 onOpenAdd={() => setAddingIso(cell.iso)}
                 onCommitAdd={(title) => void handleAddDay(cell.iso, title)}
                 onCancelAdd={() => setAddingIso(null)}
+                selectedId={selectedRow?.id}
+                rowProps={rowProps}
+                keyboardProps={keyboardProps}
+                selectWithPointer={selectWithPointer}
               />
             ))}
           </div>
@@ -415,6 +482,20 @@ export function CollectionCalendar({
         label={focusLabel}
         items={focusItems}
       />
+      {selectedRow && (
+        <RecordPeek
+          key={selectedRow.id}
+          row={selectedRow}
+          schema={schema}
+          done={done.isDone(selectedRow)}
+          onToggleDone={done.toggle && (() => done.toggle?.(selectedRow))}
+          now={now}
+          editable={editable}
+          onEdit={onEdit}
+          onRenameRow={onRenameRow}
+          onOpenRow={onOpenRow}
+        />
+      )}
     </div>
   )
 }

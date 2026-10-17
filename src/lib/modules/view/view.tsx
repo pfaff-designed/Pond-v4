@@ -455,12 +455,15 @@ export function CollectionView({
         />
       ) : activeConfig.mode === 'calendar' ? (
         <CollectionCalendar
+          viewKey={viewKey}
           schema={schema}
           rows={processed}
           groupBy={activeConfig.groupBy}
           editable={editable}
+          onEdit={onEdit}
           onAddRow={onAddRow}
           onRenameRow={onRenameRow}
+          onOpenRow={onOpenRow}
           onAddDateField={onAddDateField}
         />
       ) : activeConfig.mode === 'gallery' ? (

@@ -305,7 +305,9 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
       )
 
       await user.click(within(cellFor(container, '2026-09-10')).getByText('Trim the rim'))
-      expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+      // Selecting the row opens its own peek (KAN-358) — its title/field inputs are
+      // not the day cell's add-row input, which is the one this guard is about.
+      expect(screen.queryByRole('textbox', { name: /Add an item/ })).not.toBeInTheDocument()
       expect(onAddRow).not.toHaveBeenCalled()
     })
 
@@ -336,6 +338,38 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
         <CollectionCalendar schema={schemaNoDate} rows={rows} editable onAddRow={jest.fn()} onRenameRow={jest.fn()} />
       )
       expect(noDate.querySelector('[data-part="calendar-day-cell"][role="button"]')).toBeNull()
+    })
+  })
+
+  describe('selecting a day’s event (KAN-358)', () => {
+    beforeEach(() => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-09-10T12:00:00Z'))
+    })
+    afterEach(() => {
+      jest.useRealTimers()
+    })
+
+    it('clicking a stack item draws the selected ring and opens the record peek, without opening the day cell’s add input', async () => {
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+      const { container } = render(
+        <CollectionCalendar
+          schema={schemaWithDate}
+          rows={rows}
+          editable
+          onAddRow={jest.fn()}
+          onRenameRow={jest.fn()}
+        />
+      )
+      const desktopWrap = [...container.querySelectorAll('div')].find((d) => d.classList.contains('md:flex'))!
+      const item = within(desktopWrap).getByText('Trim the rim').closest('div')!
+      expect(item).not.toHaveClass('ring-[1.5px]')
+      expect(screen.queryByLabelText('Record: Trim the rim')).not.toBeInTheDocument()
+
+      await user.click(item)
+
+      expect(item).toHaveClass('ring-[1.5px]', 'ring-inset', 'ring-mn-text')
+      expect(screen.getByLabelText('Record: Trim the rim')).toBeInTheDocument()
+      expect(screen.queryByRole('textbox', { name: /Add an item/ })).not.toBeInTheDocument()
     })
   })
 })
