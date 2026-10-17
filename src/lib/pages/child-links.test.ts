@@ -563,6 +563,76 @@ describe('unlinkTrashedSubtree', () => {
     expect(consoleError).toHaveBeenCalled()
     consoleError.mockRestore()
   })
+
+  it("records a parent's removed links on the root before committing it, so an earlier parent's removal is not lost when a later parent's commit fails", async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
+    const linkA = link('bA', 'child-1')
+    const linkB = link('bB', 'child-1')
+    const supabase = makeSupabase({
+      containsResults: {
+        'child-1': [parentPage('parent-a', [linkA]), parentPage('parent-b', [linkB])],
+      },
+    })
+    mockGetPage.mockImplementation(async (_supabase: unknown, id: string) => ({
+      id,
+      parentId: null,
+      type: 'page',
+      title: id,
+      blocks: id === 'parent-a' ? [linkA] : [linkB],
+      order: 0,
+      props: {},
+    }))
+    mockCommitBlocks.mockImplementation((_s: unknown, _q: unknown, pageId: string) =>
+      pageId === 'parent-b' ? Promise.reject(new Error('boom')) : Promise.resolve(undefined)
+    )
+
+    await expect(
+      unlinkTrashedSubtree(supabase as never, queryClient, {
+        pondId: 'pond-1',
+        rootPageId: 'root-1',
+        subtreeIds: new Set(['child-1']),
+      })
+    ).resolves.toBeUndefined()
+
+    expect(consoleError).toHaveBeenCalled()
+    expect(supabase.update).toHaveBeenCalled()
+    const [firstPayload] = supabase.update.mock.calls[0]
+    expect(firstPayload.props.unlinkedLinks).toEqual([
+      { parentId: 'parent-a', block: linkA, index: 0, beforeId: null },
+    ])
+    consoleError.mockRestore()
+  })
+
+  it('writes nothing — and never commits — when the root-props read errors, rather than wiping existing props', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
+    const link1 = link('b1', 'child-1')
+    const supabase = makeSupabase({
+      containsResults: { 'child-1': [parentPage('parent-a', [link1])] },
+    })
+    supabase._chain.maybeSingle.mockResolvedValue({ data: null, error: { message: 'boom' } })
+    mockGetPage.mockResolvedValue({
+      id: 'parent-a',
+      parentId: null,
+      type: 'page',
+      title: 'Parent A',
+      blocks: [link1],
+      order: 0,
+      props: {},
+    })
+
+    await expect(
+      unlinkTrashedSubtree(supabase as never, queryClient, {
+        pondId: 'pond-1',
+        rootPageId: 'root-1',
+        subtreeIds: new Set(['child-1']),
+      })
+    ).resolves.toBeUndefined()
+
+    expect(supabase._chain.update).not.toHaveBeenCalled()
+    expect(mockCommitBlocks).not.toHaveBeenCalled()
+    expect(consoleError).toHaveBeenCalled()
+    consoleError.mockRestore()
+  })
 })
 
 describe('relinkRestoredSubtree', () => {
@@ -711,5 +781,42 @@ describe('relinkRestoredSubtree', () => {
     expect(consoleError).toHaveBeenCalled()
     expect(supabase._chain.update).not.toHaveBeenCalled()
     consoleError.mockRestore()
+  })
+
+  it('does nothing — never reads a parent or writes — when the root-props read errors, rather than wiping existing props', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
+    const supabase = makeSupabase()
+    supabase._chain.maybeSingle.mockResolvedValue({ data: null, error: { message: 'boom' } })
+
+    await expect(
+      relinkRestoredSubtree(supabase as never, queryClient, {
+        pondId: 'pond-1',
+        rootPageId: 'root-1',
+      })
+    ).resolves.toBeUndefined()
+
+    expect(mockGetPage).not.toHaveBeenCalled()
+    expect(supabase._chain.update).not.toHaveBeenCalled()
+    expect(consoleError).toHaveBeenCalled()
+    consoleError.mockRestore()
+  })
+
+  it('drops a malformed unlinkedLinks entry at the read boundary instead of throwing', async () => {
+    const link1 = link('b1', 'child-1')
+    const validEntry: RemovedLink = { parentId: 'parent-a', block: link1, index: 0, beforeId: null }
+    const malformed = { parentId: 'parent-b' }
+    const supabase = makeSupabase({
+      rootProps: { props: { unlinkedLinks: [malformed, validEntry] } },
+    })
+    mockGetPage.mockResolvedValue(pageWith('parent-a', []))
+
+    await relinkRestoredSubtree(supabase as never, queryClient, {
+      pondId: 'pond-1',
+      rootPageId: 'root-1',
+    })
+
+    expect(mockGetPage).toHaveBeenCalledTimes(1)
+    expect(mockGetPage).toHaveBeenCalledWith(supabase, 'parent-a')
+    expect(mockCommitBlocks).toHaveBeenCalledTimes(1)
   })
 })

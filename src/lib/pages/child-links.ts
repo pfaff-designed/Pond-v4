@@ -10,11 +10,19 @@
  * `commitLocalEdit` rather than this module's write seam).
  */
 
+import { z } from 'zod'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { QueryClient } from '@tanstack/react-query'
 import type { Database } from '@/lib/supabase/types'
-import type { Block } from '@/lib/modules/content'
-import { getPage, mapRow, PAGE_COLUMNS, type PondPage, type PageRow as PondPageRow } from './client'
+import { blockSchema, type Block } from '@/lib/modules/content'
+import {
+  getPage,
+  mapRow,
+  saveProps,
+  PAGE_COLUMNS,
+  type PondPage,
+  type PageRow as PondPageRow,
+} from './client'
 import { commitBlocks } from './commit'
 import type { PageRow } from './tree'
 import { withoutDatabasesRoot } from './databases-root'
@@ -123,6 +131,65 @@ export interface RemovedLink {
   beforeId: string | null
 }
 
+/** Validates one `RemovedLink` read back off `props.unlinkedLinks` jsonb — reuses
+ *  `content.ts`'s own `blockSchema` for `block` rather than re-describing a
+ *  page-link block's shape a second time (AGENTS.md DRY). */
+const removedLinkSchema = z.object({
+  parentId: z.string(),
+  block: blockSchema,
+  index: z.number(),
+  beforeId: z.string().nullable(),
+})
+
+/**
+ * Parse `props.unlinkedLinks` at the read boundary, dropping any entry that
+ * doesn't validate rather than failing the whole array — a page's `props` is
+ * hand-editable jsonb, so one corrupt entry must not block every other
+ * parent's pending relink.
+ */
+function parseUnlinkedLinks(value: unknown): RemovedLink[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((entry) => {
+    const parsed = removedLinkSchema.safeParse(entry)
+    return parsed.success ? [parsed.data] : []
+  })
+}
+
+/**
+ * Read a page's `props` jsonb, throwing on a read error rather than
+ * `getPage`'s swallow-to-`null` (KAN-448) — every caller here merges onto
+ * whatever this returns and writes the merge back, so a transient read
+ * failure silently treated as "no props" would wipe the page's real props
+ * (`status`, `_schema`, `mark`, `childLinksMigrated`, ...) on write.
+ */
+async function readPageProps(
+  supabase: SupabaseClient<Database>,
+  pageId: string
+): Promise<Record<string, unknown>> {
+  const { data, error } = await supabase
+    .from('pages')
+    .select('props')
+    .eq('id', pageId)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  const current = (data as { props?: unknown } | null)?.props
+  return current && typeof current === 'object' && !Array.isArray(current)
+    ? (current as Record<string, unknown>)
+    : {}
+}
+
+/** The one read-merge-write seam for a page's `props`, shared by every caller
+ *  in this file that needs to touch `props` without clobbering a sibling key
+ *  (`unlinkTrashedSubtree`, `relinkRestoredSubtree`, `markChildLinksMigrated`). */
+async function readMergeWriteProps(
+  supabase: SupabaseClient<Database>,
+  pageId: string,
+  merge: (props: Record<string, unknown>) => Record<string, unknown>
+): Promise<void> {
+  const props = await readPageProps(supabase, pageId)
+  await saveProps(supabase, pageId, merge(props))
+}
+
 /**
  * Strip every page-link block whose `pageId` is in `pageIds` from `blocks`,
  * recording each removal's position so `restoreLinks` can put it back later.
@@ -221,12 +288,15 @@ export async function findPagesLinkingTo(
  * the exact same own-edit seam as `appendChildLinkToParent` — flush
  * its pending save, read it fresh (the earlier `findPagesLinkingTo` read ran
  * before the flush and may already be stale), write only if the fresh read
- * still has the link, invalidate. Every removal across every parent is
- * flattened onto `rootPageId`'s own `props.unlinkedLinks` — a plain
- * read-merge-write, same shape as `markChildLinksMigrated` — written BEFORE
- * returning, so the caller can sequence `trashPage` right after: a trashed
- * row is RLS-hidden to everyone, including its own owner, so this must land
- * first.
+ * still has the link, invalidate.
+ *
+ * Each parent's removal is append-merged onto `rootPageId`'s own
+ * `props.unlinkedLinks` BEFORE that parent is committed, not collected and
+ * written once at the end — so an earlier parent's already-landed removal is
+ * never lost if a LATER parent's commit (or the root write itself) throws.
+ * `restoreLinks` already refuses to double-apply an entry whose link is
+ * still present, so recording a parent that then fails to commit is
+ * harmless over-recording, not a correctness bug.
  *
  * Never throws: a failed unlink must not fail the trash it rides with
  * (`appendChildLinkUnder`'s rule) — log and return.
@@ -244,7 +314,6 @@ export async function unlinkTrashedSubtree(
     const parents = (await findPagesLinkingTo(supabase, pondId, subtreeIds)).filter(
       (parent) => !subtreeIds.has(parent.id)
     )
-    const removed: RemovedLink[] = []
 
     for (const parent of parents) {
       await flushPendingPageSave(parent.id)
@@ -258,34 +327,20 @@ export async function unlinkTrashedSubtree(
       )
       if (nextBlocks === fresh.blocks) continue
 
+      if (parentRemoved.length > 0) {
+        await readMergeWriteProps(supabase, rootPageId, (props) => ({
+          ...props,
+          unlinkedLinks: [...parseUnlinkedLinks(props.unlinkedLinks), ...parentRemoved],
+        }))
+      }
+
       await commitBlocks(supabase, queryClient, parent.id, nextBlocks, {
         ownEdit: true,
         before: fresh.blocks,
         pondId,
       })
       await queryClient.invalidateQueries({ queryKey: ['page', parent.id] })
-      removed.push(...parentRemoved)
     }
-
-    if (removed.length === 0) return
-
-    const { data } = await supabase
-      .from('pages')
-      .select('props')
-      .eq('id', rootPageId)
-      .maybeSingle()
-    const current = (data as { props?: unknown } | null)?.props
-    const props: Record<string, unknown> =
-      current && typeof current === 'object' && !Array.isArray(current)
-        ? (current as Record<string, unknown>)
-        : {}
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase as any)
-      .from('pages')
-      .update({ props: { ...props, unlinkedLinks: removed }, updated_at: new Date().toISOString() })
-      .eq('id', rootPageId)
-    if (error) throw new Error(error.message)
   } catch (err) {
     console.error('[page-link] trashed subtree not unlinked', rootPageId, err)
   }
@@ -293,7 +348,11 @@ export async function unlinkTrashedSubtree(
 
 /**
  * Undo `unlinkTrashedSubtree`'s write, once the subtree is restored (KAN-448).
- * Reads `rootPageId`'s `props.unlinkedLinks` (absent or empty → no-op), then
+ * Reads `rootPageId`'s `props.unlinkedLinks` through {@link readPageProps}
+ * (throws on a read error rather than silently treating it as "no props" and
+ * later wiping the root's real props on write) and {@link parseUnlinkedLinks}
+ * (drops any entry that fails `removedLinkSchema` rather than failing the
+ * whole array). Absent or empty → no-op, then
  * replays each entry's parent through the same own-edit seam: flush that
  * parent's pending save (the same race `unlinkTrashedSubtree` guards against
  * — a restore can land while the parent is the open, actively-saving page),
@@ -316,17 +375,8 @@ export async function relinkRestoredSubtree(
   { pondId, rootPageId }: { pondId: string | null; rootPageId: string }
 ): Promise<void> {
   try {
-    const { data } = await supabase
-      .from('pages')
-      .select('props')
-      .eq('id', rootPageId)
-      .maybeSingle()
-    const current = (data as { props?: unknown } | null)?.props
-    const props: Record<string, unknown> =
-      current && typeof current === 'object' && !Array.isArray(current)
-        ? (current as Record<string, unknown>)
-        : {}
-    const removed = Array.isArray(props.unlinkedLinks) ? (props.unlinkedLinks as RemovedLink[]) : []
+    const props = await readPageProps(supabase, rootPageId)
+    const removed = parseUnlinkedLinks(props.unlinkedLinks)
     if (removed.length === 0) return
 
     const byParent = new Map<string, RemovedLink[]>()
@@ -354,12 +404,7 @@ export async function relinkRestoredSubtree(
 
     const restProps = { ...props }
     delete restProps.unlinkedLinks
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase as any)
-      .from('pages')
-      .update({ props: restProps, updated_at: new Date().toISOString() })
-      .eq('id', rootPageId)
-    if (error) throw new Error(error.message)
+    await saveProps(supabase, rootPageId, restProps)
   } catch (err) {
     console.error('[page-link] restored subtree not relinked', rootPageId, err)
   }
@@ -408,17 +453,7 @@ export async function markChildLinksMigrated(
   supabase: SupabaseClient<Database>,
   pageId: string
 ): Promise<void> {
-  const { data } = await supabase.from('pages').select('props').eq('id', pageId).maybeSingle()
-  const current = (data as { props?: unknown } | null)?.props
-  const props: Record<string, unknown> =
-    current && typeof current === 'object' && !Array.isArray(current)
-      ? (current as Record<string, unknown>)
-      : {}
+  const props = await readPageProps(supabase, pageId)
   if (props.childLinksMigrated === true) return
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase as any)
-    .from('pages')
-    .update({ props: { ...props, childLinksMigrated: true }, updated_at: new Date().toISOString() })
-    .eq('id', pageId)
-  if (error) throw new Error(error.message)
+  await saveProps(supabase, pageId, { ...props, childLinksMigrated: true })
 }
