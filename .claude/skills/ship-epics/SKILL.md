@@ -53,7 +53,7 @@ A Ralph loop (Geoffrey Huntley's name for it) is a dumb loop around a fresh agen
 2. **Pick the epics.** An epic runs when it has an interrupted ticket to resume (a worktree and a loop under `/tmp/ship-epics/<EPIC>/ralph-<key>/`), or when its next Workstream ticket is ready: every `after:` is Done and no `feat/<key>` branch or open PR exists. At most **3** orchestrators at once — each runs jest, Storybook and a dev server.
 3. **Launch** every picked orchestrator with `LAUNCH`, all in **one message** so they run at once. Each prompt is `ship-epics/orchestrator.md` + `ship-epics/failsafe.md` + `harness.md` plus its inputs. First, for each: an epic with an interrupted ticket keeps its directory, which is what its orchestrator resumes from — move `orchestrator.result.md` to `orchestrator.prev-run.md` and remove only `orchestrator.hb`; any other epic gets `rm -rf /tmp/ship-epics/<EPIC> && mkdir -p /tmp/ship-epics/<EPIC>`. The inputs:
    - `EPIC` — the epic key
-   - `PORT` — 3101, 3102, 3103 (one each; the user's own dev server is on 3000/3001)
+   - `PORT` — 3101, 3102, 3103 (one each; the user's own dev server is on 3000/3001). The port also picks the orchestrator's own browser, `pw1`–`pw3` (`harness.md`). When a run stops with `browser slot N signed out`, sign that slot in: navigate its browser to `http://localhost:3000`, type the person's email, and `ASK` for the emailed code.
    - `MAX_TICKETS` — 2 unless the user says otherwise
    - `HB=/tmp/ship-epics/<EPIC>/orchestrator.hb`, `RESULT=/tmp/ship-epics/<EPIC>/orchestrator.result.md`
 

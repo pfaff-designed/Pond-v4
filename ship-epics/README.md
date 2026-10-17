@@ -26,7 +26,7 @@ flowchart TD
 ```
 
 Orchestrators run in parallel because each epic owns its own files and migration numbers. The
-browser does not: there is one shared tab, taken through `/tmp/pond-browser.lock`.
+browser is per run too: each orchestrator slot has its own headless browser, `pw1`–`pw3`, matched to its port. The shared browser and `/tmp/pond-browser.lock` are only a fallback.
 
 ## One ticket, nine steps
 
