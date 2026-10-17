@@ -137,3 +137,31 @@ describe('rankPages diacritics', () => {
     expect(ranked.map((i) => i.id)).toEqual(['a'])
   })
 })
+
+describe('rankPages edge cases (KAN-390 acceptance: try to break it)', () => {
+  it('a one-character query still tiers exact, prefix and substring sanely', () => {
+    const items = [page('a', 'p'), page('b', 'projects'), page('c', 'map')]
+    const ranked = rankPages(items, 'p')
+    expect(ranked.map((i) => i.id)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('500 pages rank under a frame budget', () => {
+    const items = Array.from({ length: 500 }, (_, i) => page(`id-${i}`, `page number ${i} of things`))
+    const start = performance.now()
+    rankPages(items, 'pro', items.slice(0, 20).map((i) => i.id))
+    // A frame is ~16ms; this leaves generous headroom (html-security.test.ts's
+    // own budgets are this generous) so the assertion catches a real
+    // regression (an accidental O(n^2) pass) rather than CI jitter.
+    expect(performance.now() - start).toBeLessThan(50)
+  })
+})
+
+describe('paletteEntries end-to-end diacritics (KAN-390)', () => {
+  it('finds "Café" for "cafe" through the full paletteEntries path, not just rankPages', () => {
+    const items = [page('a', 'Café'), page('b', 'Other page')]
+    const entries = paletteEntries(items, 'cafe')
+    const rows = entries.flatMap((e) => (e.kind === 'row' ? [e.item.id] : []))
+    expect(rows).toContain('a')
+    expect(rows).not.toContain('b')
+  })
+})
