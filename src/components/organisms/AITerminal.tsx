@@ -60,6 +60,7 @@ import {
   researchEndedAt,
   researchEndedStamp,
   turnReadContext,
+  turnSendStamp,
   withEarlierAnswer,
   withReadStamp,
   withResearchEndedStamp,
@@ -2078,6 +2079,11 @@ export function AITerminal() {
         sentAt: new Date().toISOString(),
         openPageContext,
         research,
+        // KAN-341: the turn's own node and references, read back by
+        // `handleAskAgain` via `turnSendStamp` instead of recomputed from
+        // live state (which can have moved on by the time ask-again runs).
+        nodeId: pageId,
+        references: sentReferences,
         wholePageRefPageIds: sentReferences
           .filter(isWholePageReference)
           .filter((ref) => ref.pageId !== pageId)
@@ -3353,22 +3359,38 @@ export function AITerminal() {
     const outgoing: ConversationResolutions = isLifecycleActive(lifecycle)
       ? { ...resolutions, lifecycle }
       : { ...resolutions, lifecycle: undefined }
+    // The question this turn is resending: a true "ask again" on an answer
+    // reads the user line above it; the trailing-error resend (above) IS
+    // that user line, so it reads its own metadata instead of skipping past it.
+    const questionMessage =
+      message?.role === 'user' ? message : precedingUserMessage(messages, messageIndex)
     clearError?.()
     const dispatchRegenerate = () => {
       dispatchGate.current = false
-      // KAN-341: a hidden chip and any highlighted passages are this turn's own
-      // choices, not the original send's — recomputed the same way `sendText`
-      // does rather than carried over, so a reference removed since then drops
-      // out here too.
+      // KAN-341: a hidden chip and any highlighted passages are THIS turn's
+      // own facts, not whatever navigation/reference state looks like right
+      // now (a chip hidden on A, then reset by visiting B and back; a
+      // passage ×'d since the question was sent) — read off the question's
+      // own send-time stamp via `turnSendStamp`, falling back to live state
+      // only when the message carries no stamp at all (a reseeded/old
+      // transcript, pre-dating this fix).
+      const turn = turnSendStamp(questionMessage, {
+        nodeId: pageId,
+        openPageContext: dismissedCurrentRefNodeId !== pageId,
+        references: dedupeWholePageReferences(references),
+      })
       regenerate({
         body: {
-          nodeId: pageId,
+          nodeId: turn.nodeId,
           nodeType,
           pondId,
           resolutions: outgoing,
           research,
-          references: dedupeWholePageReferences(references),
-          openPageContext: dismissedCurrentRefNodeId !== pageId,
+          references: turn.references,
+          openPageContext: turn.openPageContext,
+          // KAN-152: a record proposed on an ask-again answer still carries
+          // a "from thread" chip, same as `sendText`'s own body.
+          threadId: conversationId,
         },
       })
     }

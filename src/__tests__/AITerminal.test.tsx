@@ -1080,12 +1080,20 @@ describe('AITerminal — ask again keeps the hidden chip and references (KAN-341
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'what is on this page' } })
     fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' })
     await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1))
-    const [, sentOptions] = mockSendMessage.mock.calls[0]
+    const [sentMessage, sentOptions] = mockSendMessage.mock.calls[0]
     const sentBody = sentOptions.body as { openPageContext: boolean; references: unknown[] }
     expect(sentBody.openPageContext).toBe(false)
 
+    // The seeded user message carries the real stamp `sendText` wrote
+    // (`sentMessage.metadata`) — `handleAskAgain` reads the resend's
+    // openPageContext/references off this, not off live state.
     mockMessages = [
-      { id: 'm-ask', role: 'user', parts: [{ type: 'text', text: 'what is on this page' }] },
+      {
+        id: 'm-ask',
+        role: 'user',
+        parts: [{ type: 'text', text: 'what is on this page' }],
+        metadata: (sentMessage as { metadata: unknown }).metadata,
+      },
       { id: 'm-answer', role: 'assistant', parts: [{ type: 'text', text: 'The page has...' }] },
     ]
     rerender(tree())
@@ -1097,6 +1105,118 @@ describe('AITerminal — ask again keeps the hidden chip and references (KAN-341
     const [regenerateOptions] = mockRegenerate.mock.calls[0]
     expect(regenerateOptions.body.openPageContext).toBe(sentBody.openPageContext)
     expect(regenerateOptions.body.references).toEqual(sentBody.references)
+  })
+})
+
+describe('AITerminal — ask again ignores a chip reset since the original send (KAN-341)', () => {
+  it('a hidden chip that reappeared after visiting another page and back stays hidden on regenerate', async () => {
+    const user = userEvent.setup()
+    mockAmbientNodeId = 'page-a'
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const tree = () => (
+      <QueryClientProvider client={queryClient}>
+        <AITerminal />
+      </QueryClientProvider>
+    )
+    const { rerender } = render(tree())
+    await waitReady()
+
+    // × the chip on A, then ask.
+    const currentChip = () => screen.getByRole('button', { name: /^remove reference:/ })
+    await waitFor(() => expect(currentChip()).toBeInTheDocument())
+    await user.click(currentChip())
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /^remove reference:/ })).not.toBeInTheDocument()
+    )
+    await user.type(screen.getByRole('textbox'), 'what is on this page')
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1))
+    const [sentMessage] = mockSendMessage.mock.calls[0]
+
+    mockMessages = [
+      {
+        id: 'm-ask',
+        role: 'user',
+        parts: [{ type: 'text', text: 'what is on this page' }],
+        metadata: (sentMessage as { metadata: unknown }).metadata,
+      },
+      { id: 'm-answer', role: 'assistant', parts: [{ type: 'text', text: 'The page has...' }] },
+    ]
+    rerender(tree())
+
+    // Open B, then back to A — the dismissal resets, so A's chip is back
+    // and live `openPageContext` for A is now true again.
+    mockAmbientNodeId = 'page-b'
+    rerender(tree())
+    await waitFor(() => expect(currentChip()).toBeInTheDocument())
+    mockAmbientNodeId = 'page-a'
+    rerender(tree())
+    await waitFor(() => expect(currentChip()).toBeInTheDocument())
+
+    const askAgain = await screen.findByRole('button', { name: 'ask again' })
+    await user.click(askAgain)
+
+    await waitFor(() => expect(mockRegenerate).toHaveBeenCalledTimes(1))
+    const [regenerateOptions] = mockRegenerate.mock.calls[0]
+    // The ORIGINAL send's choice (hidden), not the live, reset state (shown).
+    expect(regenerateOptions.body.openPageContext).toBe(false)
+    expect(regenerateOptions.body.nodeId).toBe('page-a')
+    expect(regenerateOptions.body.threadId).toBe('conv-1')
+  })
+})
+
+describe('AITerminal — ask again keeps a passage ×d since the original send (KAN-341)', () => {
+  afterEach(() => clearSelection())
+
+  it("a passage reference removed after asking still rides the regenerate body's references", async () => {
+    const user = userEvent.setup()
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const tree = () => (
+      <QueryClientProvider client={queryClient}>
+        <div data-block-id="home-block-1">hello garden</div>
+        <AITerminal />
+      </QueryClientProvider>
+    )
+    const { rerender } = render(tree())
+    await waitReady()
+
+    selectWord(screen.getByText('hello garden'), 'garden')
+    await user.click(await screen.findByRole('button', { name: 'ask pond' }))
+    await user.type(screen.getByRole('textbox'), 'what is this?')
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1))
+    const [sentMessage] = mockSendMessage.mock.calls[0]
+    const sentMetadata = (sentMessage as { metadata: { references: unknown[] } }).metadata
+    expect(sentMetadata.references).toEqual(
+      expect.arrayContaining([expect.objectContaining({ quotedText: 'garden' })])
+    )
+
+    mockMessages = [
+      {
+        id: 'm-ask',
+        role: 'user',
+        parts: [{ type: 'text', text: 'what is this?' }],
+        metadata: sentMetadata,
+      },
+      { id: 'm-answer', role: 'assistant', parts: [{ type: 'text', text: 'It is a garden.' }] },
+    ]
+    rerender(tree())
+
+    // × the passage chip — it drops from live `references`.
+    const passageChip = await screen.findByRole('button', { name: /^remove reference:.*garden/ })
+    await user.click(passageChip)
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /^remove reference:.*garden/ })).not.toBeInTheDocument()
+    )
+
+    const askAgain = await screen.findByRole('button', { name: 'ask again' })
+    await user.click(askAgain)
+
+    await waitFor(() => expect(mockRegenerate).toHaveBeenCalledTimes(1))
+    const [regenerateOptions] = mockRegenerate.mock.calls[0]
+    expect(regenerateOptions.body.references).toEqual(
+      expect.arrayContaining([expect.objectContaining({ quotedText: 'garden' })])
+    )
   })
 })
 

@@ -22,6 +22,7 @@
 
 import type { UIMessage } from 'ai'
 import type { Block } from '@/lib/documents/types'
+import type { PageReference } from '@/lib/references/reference'
 
 // ── The record ───────────────────────────────────────────────────────────────
 
@@ -498,6 +499,36 @@ export function turnReadContext(message: { metadata?: unknown } | undefined): {
     wholePageRefIds: Array.isArray(meta?.wholePageRefPageIds)
       ? meta.wholePageRefPageIds.filter((id): id is string => typeof id === 'string')
       : [],
+  }
+}
+
+/**
+ * What a turn's resend ("ask again") should carry to the model: the SAME
+ * node, chip visibility and references the original send carried (KAN-341,
+ * PROJECT_RULES "sources are always shown") — never recomputed from live
+ * navigation/reference state, which can have moved on since the original
+ * send (a hidden chip reset by visiting another page and back; a passage
+ * ×'d after the question was asked). Read off the question message's own
+ * metadata, stamped by `sendText` at send time, same reasoning as {@link
+ * turnReadContext}. A message sent before this fix (or reseeded from a
+ * saved transcript) carries no `openPageContext` field at all — that's the
+ * only case `fallback` (the caller's live values) is used.
+ */
+export function turnSendStamp(
+  message: { metadata?: unknown } | undefined,
+  fallback: { nodeId: string | null; openPageContext: boolean; references: PageReference[] }
+): { nodeId: string | null; openPageContext: boolean; references: PageReference[] } {
+  const meta = message?.metadata as
+    | { nodeId?: unknown; openPageContext?: unknown; references?: unknown }
+    | undefined
+  if (typeof meta?.openPageContext !== 'boolean') return fallback
+  return {
+    nodeId:
+      meta.nodeId === null || typeof meta.nodeId === 'string' ? meta.nodeId : fallback.nodeId,
+    openPageContext: meta.openPageContext,
+    references: Array.isArray(meta.references)
+      ? (meta.references as PageReference[])
+      : fallback.references,
   }
 }
 
