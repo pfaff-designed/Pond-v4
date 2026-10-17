@@ -147,43 +147,90 @@ export interface MatchRun {
   hit: boolean
 }
 
+/** NFD combining marks, stripped by `fold` so `cafe` matches `Café` (KAN-390). */
+const COMBINING_MARKS = /[̀-ͯ]/g
+
+/**
+ * `label` folded one code point at a time (NFD, combining marks stripped,
+ * lowercased) rather than as one string, so a matched range in `text` can
+ * grow back to the exact original character it came from — `map[i]` names
+ * `source[map[i]]` as `text[i]`'s origin — and an accent a fold would
+ * otherwise consume (e.g. `é`'s own combining mark) still underlines with
+ * its base letter instead of being left off the run.
+ */
+interface FoldedLabel {
+  text: string
+  map: readonly number[]
+  source: readonly string[]
+}
+
+function foldLabel(label: string): FoldedLabel {
+  const source = Array.from(label)
+  const text: string[] = []
+  const map: number[] = []
+  source.forEach((ch, i) => {
+    for (const folded of ch.normalize('NFD').replace(COMBINING_MARKS, '').toLowerCase()) {
+      text.push(folded)
+      map.push(i)
+    }
+  })
+  return { text: text.join(''), map, source }
+}
+
+/**
+ * Case- and mark-insensitive fold, shared with `palette-entries.ts`'s
+ * `matchTier` (KAN-390) — one owner, so a scoring tier and a highlighted run
+ * never disagree about what counts as a match.
+ */
+export function fold(s: string): string {
+  return foldLabel(s).text
+}
+
 /**
  * The palette's highlight (KAN-390): a contiguous hit (exact / prefix / word-
  * start / substring tier) still splits `pre` / `hit` / `post` like
  * `splitMatch` — one run each side, at most one underlined. A subsequence
  * (fuzzy) hit has no contiguous span to split, so this scatters the query's
- * characters across `label` greedily (the same left-to-right scan
- * `isSubsequence` in `palette-entries.ts` uses to score the tier) and merges
- * adjacent matched characters into runs, so `nwp` against "new page"
- * underlines `n`, `w`, `p` as three separate runs rather than one.
+ * characters across the folded label greedily (the same left-to-right scan
+ * `isSubsequence` in `palette-entries.ts` uses to score the tier), maps each
+ * matched folded position back to its original character via `foldLabel`'s
+ * `map`, and merges adjacent matched characters into runs, so `nwp` against
+ * "new page" underlines `n`, `w`, `p` as three separate runs rather than one.
  */
 export function matchRuns(label: string, q: string): MatchRun[] {
   if (!q) return [{ text: label, hit: false }]
-  const foldedLabel = label.toLowerCase()
-  const foldedQuery = q.toLowerCase()
+  const { text: foldedLabel, map, source } = foldLabel(label)
+  const foldedQuery = fold(q)
   const at = foldedLabel.indexOf(foldedQuery)
+  const hitAt = new Set<number>()
   if (at !== -1) {
-    const runs: MatchRun[] = []
-    if (at > 0) runs.push({ text: label.slice(0, at), hit: false })
-    runs.push({ text: label.slice(at, at + q.length), hit: true })
-    if (at + q.length < label.length) runs.push({ text: label.slice(at + q.length), hit: false })
-    return runs
+    for (let i = at; i < at + foldedQuery.length; i++) hitAt.add(i)
+  } else {
+    let qi = 0
+    for (let i = 0; i < foldedLabel.length && qi < foldedQuery.length; i++) {
+      if (foldedLabel[i] === foldedQuery[qi]) {
+        hitAt.add(i)
+        qi++
+      }
+    }
   }
+  const sourceHit = new Array<boolean>(source.length).fill(false)
+  hitAt.forEach((i) => {
+    sourceHit[map[i]] = true
+  })
   const runs: MatchRun[] = []
-  let qi = 0
   let run = ''
   let runHit = false
-  for (const ch of label) {
-    const hit = qi < foldedQuery.length && ch.toLowerCase() === foldedQuery[qi]
-    if (hit) qi++
+  source.forEach((ch, i) => {
+    const hit = sourceHit[i]
     if (run && hit === runHit) {
       run += ch
-      continue
+      return
     }
     if (run) runs.push({ text: run, hit: runHit })
     run = ch
     runHit = hit
-  }
+  })
   if (run) runs.push({ text: run, hit: runHit })
   return runs
 }

@@ -47,6 +47,17 @@ describe('rankPages tiers', () => {
     expect(ranked.map((i) => i.id)).toEqual(['b', 'a'])
   })
 
+  it('scores word-start on a non-Latin label (Cyrillic), not just a-z0-9 words', () => {
+    // "запрос" only substring-matches "про" mid-word; "мои проекты" has "про"
+    // at the start of its second word — the regression this guards is a word
+    // split that treats every non-Latin letter as a separator, which would
+    // have scored both the same (or neither) instead of ranking the word-
+    // start label above the mid-word one.
+    const items = [page('a', 'запрос'), page('b', 'мои проекты')]
+    const ranked = rankPages(items, 'про')
+    expect(ranked.map((i) => i.id)).toEqual(['b', 'a'])
+  })
+
   it('finds "new page" for "nwp" by subsequence', () => {
     const items = [{ id: 'a', label: 'new page', kind: 'action' } satisfies PaletteItem]
     const ranked = rankPages(items, 'nwp')

@@ -629,9 +629,11 @@ describe('the gut: one morphing element — nothing of the dialog, the wash or t
   it('the group label is the page eyebrow and the split is #278’s — one owner each, no second copy', () => {
     expect(command).toMatch(/pageEyebrowClass/)
     expect(read('src/components/molecules/palette-entries.ts')).toMatch(
-      /import \{ type MatchRun, matchRuns, normalizeQuery \} from '\.\/slash-entries'/
+      /import \{ fold, type MatchRun, matchRuns, normalizeQuery \} from '\.\/slash-entries'/
     )
-    expect(read('src/components/molecules/palette-entries.ts')).not.toMatch(/function matchRuns/)
+    expect(read('src/components/molecules/palette-entries.ts')).not.toMatch(
+      /function matchRuns|function fold\(/
+    )
     expect(paletteRow).toMatch(/import \{ ENTER, HINT, MATCH, Mark \} from '\.\/slash-row'/)
     expect(paletteRow).not.toMatch(
       /underline-offset|decoration-\[|max-w-\[45%\]|const (HINT|ENTER|MATCH)\b/

@@ -21,7 +21,7 @@
  */
 
 import type { ZenAction } from '@/lib/layout/use-zen-commands'
-import { type MatchRun, matchRuns, normalizeQuery } from './slash-entries'
+import { fold, type MatchRun, matchRuns, normalizeQuery } from './slash-entries'
 
 export type PaletteKind = 'page' | 'database' | 'record' | 'action' | 'pond'
 
@@ -128,11 +128,6 @@ const SUBSEQUENCE_SCORE = 20
 /** The full boost a visit at the newest position of `visits` adds; older positions scale down from it. */
 const VISIT_BOOST = 15
 
-/** Case- and mark-insensitive, so `cafe` matches `Café` (KAN-390). */
-function fold(s: string): string {
-  return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
-}
-
 /**
  * The greedy earliest-end scan `matchTier`'s subsequence tier scores on: the
  * span from the first matched character to the last, picking each of `q`'s
@@ -182,7 +177,7 @@ function matchTier(item: PaletteItem, foldedQuery: string, q: string): number {
   if (foldedLabel === foldedQuery) return EXACT_SCORE
   if (foldedLabel.startsWith(foldedQuery)) return PREFIX_SCORE
   const isWordStart = foldedLabel
-    .split(/[^a-z0-9]+/)
+    .split(/[^\p{L}\p{N}]+/u)
     .some((word) => word && word !== foldedLabel && word.startsWith(foldedQuery))
   if (isWordStart) return WORD_START_SCORE
   if (foldedLabel.includes(foldedQuery)) return SUBSTRING_SCORE

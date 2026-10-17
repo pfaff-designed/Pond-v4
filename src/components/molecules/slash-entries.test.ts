@@ -266,4 +266,8 @@ describe('matchRuns (KAN-390)', () => {
   it('an empty query is one unmatched run', () => {
     expect(matchRuns('new page', '')).toEqual([{ text: 'new page', hit: false }])
   })
+
+  it('a diacritic match underlines the accented character whole, not just its base letter', () => {
+    expect(matchRuns('Café', 'cafe')).toEqual([{ text: 'Café', hit: true }])
+  })
 })
