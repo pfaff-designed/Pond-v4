@@ -226,7 +226,8 @@ export function PondCommand({
   // (a keystroke that doesn't move the selection) never re-fires the prefetch.
   const activeItem = rows[active]?.item
   useEffect(() => {
-    if (activeItem?.kind === 'page') onActiveItemChange?.(activeItem)
+    if (activeItem?.kind === 'page' || activeItem?.kind === 'database')
+      onActiveItemChange?.(activeItem)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the id alone, see note above
   }, [activeItem?.id])
 
