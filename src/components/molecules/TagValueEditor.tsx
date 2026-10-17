@@ -146,7 +146,9 @@ export function TagValueEditor({
           wasOpenRef.current = open
         }}
         onClick={() => {
-          if (!editable || wasOpenRef.current) return
+          const wasOpen = wasOpenRef.current
+          wasOpenRef.current = false
+          if (!editable || wasOpen) return
           setOpen(true)
         }}
         // See `isStepOutKey` (AtomEditor.tsx) — only Enter (the key that opens

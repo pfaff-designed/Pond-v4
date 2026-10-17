@@ -437,6 +437,30 @@ describe('TagValueEditor', () => {
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
   })
 
+  it('a later Enter still opens it after a click opened then closed it', async () => {
+    const user = userEvent.setup()
+    render(
+      <TagValueEditor
+        options={OPTIONS}
+        value="o1"
+        label="event"
+        empty={false}
+        aria-label="Type value"
+        onChange={jest.fn()}
+      />
+    )
+
+    const trigger = screen.getByRole('button', { name: 'Type value' })
+    await user.click(trigger)
+    expect(screen.getByRole('listbox')).toBeInTheDocument()
+
+    await user.click(trigger)
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+
+    await user.keyboard('{Enter}')
+    expect(screen.getByRole('listbox')).toBeInTheDocument()
+  })
+
   it('a disabled editor renders no click target', () => {
     render(
       <TagValueEditor
