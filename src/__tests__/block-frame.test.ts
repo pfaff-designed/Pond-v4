@@ -27,7 +27,6 @@ import {
   type PondBlockKind,
   type PondBlockState,
 } from '@/lib/modules/block-frame'
-import { GANTT_EMPTY_LINE } from '@/lib/modules/view/kinds'
 import { activeSavedView } from '@/lib/modules/view/schema'
 import { addTodoItem } from '@/lib/modules/todo/view'
 import { addTableRow } from '@/lib/modules/table/view'
@@ -401,12 +400,9 @@ describe('viewFrameState — a dateless list/gantt steps aside so the view’s o
     })
   })
 
-  it('a gantt with a date property and zero rows is unchanged: the void line', () => {
+  it('a gantt with a date property and zero rows also yields (rest) (KAN-352): the view draws its own void line plus "add a task"', () => {
     const block: ViewBlock = { id: 'v', type: 'view', mode: 'gantt' }
-    expect(viewFrameState(block, [], [], null, dateSchema)).toEqual({
-      state: 'empty',
-      line: GANTT_EMPTY_LINE,
-    })
+    expect(viewFrameState(block, [], [], null, dateSchema)).toEqual({ state: 'rest' })
   })
 })
 

@@ -261,4 +261,81 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
       expect(within(focusList).queryByText('thu sep · today')).not.toBeInTheDocument()
     })
   })
+
+  describe('adding a record from a day cell (KAN-352)', () => {
+    beforeEach(() => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-09-10T12:00:00Z'))
+    })
+    afterEach(() => {
+      jest.useRealTimers()
+    })
+
+    function cellFor(container: HTMLElement, iso: string) {
+      return container.querySelector<HTMLElement>(`[data-part="calendar-day-cell"][data-iso="${iso}"]`)!
+    }
+
+    it('clicking a day’s blank area, typing and ↵ adds that day’s record then closes the input', async () => {
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+      const onAddRow = jest.fn().mockResolvedValue('r-new')
+      const onRenameRow = jest.fn()
+      const { container } = render(
+        <CollectionCalendar
+          schema={schemaWithDate}
+          rows={[]}
+          editable
+          onAddRow={onAddRow}
+          onRenameRow={onRenameRow}
+        />
+      )
+
+      await user.click(cellFor(container, '2026-09-20'))
+      const input = screen.getByRole('textbox', { name: 'Add an item on 20 sep' })
+      await user.type(input, 'dentist{Enter}')
+
+      expect(onAddRow).toHaveBeenCalledWith({ 'p-due': '2026-09-20' })
+      expect(onRenameRow).toHaveBeenCalledWith('r-new', 'dentist')
+      expect(screen.queryByRole('textbox', { name: 'Add an item on 20 sep' })).not.toBeInTheDocument()
+    })
+
+    it('clicking an existing day-item row never opens the input (stopPropagation on MonthDayStack)', async () => {
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+      const onAddRow = jest.fn().mockResolvedValue('r-new')
+      const { container } = render(
+        <CollectionCalendar schema={schemaWithDate} rows={rows} editable onAddRow={onAddRow} onRenameRow={jest.fn()} />
+      )
+
+      await user.click(within(cellFor(container, '2026-09-10')).getByText('Trim the rim'))
+      expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+      expect(onAddRow).not.toHaveBeenCalled()
+    })
+
+    it('Esc after opening calls neither addRow nor onRenameRow', async () => {
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+      const onAddRow = jest.fn().mockResolvedValue('r-new')
+      const onRenameRow = jest.fn()
+      const { container } = render(
+        <CollectionCalendar schema={schemaWithDate} rows={[]} editable onAddRow={onAddRow} onRenameRow={onRenameRow} />
+      )
+
+      await user.click(cellFor(container, '2026-09-20'))
+      const input = screen.getByRole('textbox', { name: 'Add an item on 20 sep' })
+      await user.type(input, 'nope{Escape}')
+
+      expect(onAddRow).not.toHaveBeenCalled()
+      expect(onRenameRow).not.toHaveBeenCalled()
+      expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    })
+
+    it('not editable (or no date property) draws no clickable cell at all', () => {
+      const { container: notEditable } = render(
+        <CollectionCalendar schema={schemaWithDate} rows={[]} onAddRow={jest.fn()} onRenameRow={jest.fn()} />
+      )
+      expect(cellFor(notEditable, '2026-09-20')).not.toHaveAttribute('role', 'button')
+
+      const { container: noDate } = render(
+        <CollectionCalendar schema={schemaNoDate} rows={rows} editable onAddRow={jest.fn()} onRenameRow={jest.fn()} />
+      )
+      expect(noDate.querySelector('[data-part="calendar-day-cell"][role="button"]')).toBeNull()
+    })
+  })
 })

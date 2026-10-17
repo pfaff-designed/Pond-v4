@@ -227,6 +227,11 @@ export function viewFrameState(
   // lane sets the status"). The view itself draws its lanes, or, with no
   // select/status field, its own "add a status field" remedy.
   if (block.mode === 'board') return { state: 'rest' }
+  // KAN-352: a gantt with zero rows steps aside too — otherwise the frame's own
+  // void line replaces the task column, and the view's own void branch (the same
+  // line, plus the `add a task` row the frame has no action slot for) never
+  // mounts, leaving the person no way to add the first task.
+  if (block.mode === 'gantt') return { state: 'rest' }
   if (markEmpty === 'void') return { state: 'empty', chartLine: true }
   // #260: a kind that owns its empty line takes it from the kind, which also decides
   // its box, so the box and the line cannot disagree.

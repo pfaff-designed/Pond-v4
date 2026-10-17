@@ -1817,8 +1817,11 @@ export function BlockCanvas({
  *   view   → the collection's `addRow`               `add a row` / `add a record`
  *   view of kind `number` → none: `pick a field` has no engine path yet
  *          (`POND_BLOCK_EMPTY_ACTION_WIRED`), so the line renders alone.
- *   view in `gantt` mode → none: the board's voidBox has no action slot (#260);
- *          the line is the template's `tasks with a start and a due date draw here`.
+ *
+ * A fresh `gantt` view with zero rows steps aside (`rest`) just as `board` does
+ * (KAN-352, mirroring KAN-351): the frame's own void line would otherwise replace
+ * the task column, and the view's own void branch draws that same line PLUS the
+ * `add a task` row the frame has no action slot for.
  *
  * A view still loading, or over a non-collection, is NOT empty — the view keeps its
  * own notice. Wiring the frame's `loading` state to `isLoading` is a sibling

@@ -29,6 +29,7 @@ import { DIFF_REMOVAL_TEXT_CLASSNAME } from '@/components/molecules/PondMolecule
 import { activeSavedView, applyConfigPatch } from './schema'
 import { ActiveViewSelectionContext } from './active-view-context'
 import {
+  addDays,
   applyView,
   displayValue,
   epochDay,
@@ -79,7 +80,8 @@ import {
 } from '@/lib/properties/schema'
 import { useOptionalDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import { usePageLinks } from '../page-link/context'
-import { dueOfRow, firstOrangeToday } from './due'
+import { dueOfRow, firstOrangeToday, localDateIso } from './due'
+import { AddRowInput } from './add-row-input'
 import { DueMark } from './due-mark'
 import { useDoneToggle } from './use-done-toggle'
 import { useOrangeToday } from '../page-canvas'
@@ -131,8 +133,17 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
   // shares (#239); `useCollectionRows` fetches + writes against whichever.
   const { pageId } = useSiblingBlocks()
   const collectionId = viewCollectionId(data, pageId)
-  const { schema, rows, collectionName, isLoading, isError, setValue, addRow, renameRow, updateSchema } =
-    useCollectionRows(collectionId)
+  const {
+    schema,
+    rows,
+    collectionName,
+    isLoading,
+    isError,
+    setValue,
+    addRow,
+    renameRow,
+    updateSchema,
+  } = useCollectionRows(collectionId)
   // The chart card's `on` / `reads` (#227), off the caches the shell already holds.
   const chartProvenance = useChartProvenance(pageId, collectionId)
 
@@ -188,7 +199,8 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
   // persisted `activeViewId` — a person can switch the bar without that being an edit,
   // so `activeId` arrives from `CollectionView` on every call.
   const onConfigChange = onChange
-    ? (patch: ViewConfigPatch, activeId?: string) => onChange(applyConfigPatch(data, patch, activeId))
+    ? (patch: ViewConfigPatch, activeId?: string) =>
+        onChange(applyConfigPatch(data, patch, activeId))
     : undefined
 
   // A row IS a page: `open ›` on the record peek navigates to it through the page-link
@@ -302,7 +314,7 @@ export function CollectionView({
   // once from the persisted `activeViewId`; `config.views` is absent on a legacy
   // block, so the bar never renders and this stays undefined.
   const [localActiveViewId, setLocalActiveViewId] = useState<string | undefined>(() =>
-    config.views?.length ? config.activeViewId ?? config.views[0].id : undefined
+    config.views?.length ? (config.activeViewId ?? config.views[0].id) : undefined
   )
 
   // KAN-321: BlockCanvas needs the bar's selection too, to resolve the block's
@@ -434,6 +446,7 @@ export function CollectionView({
           groupBy={activeConfig.groupBy}
           editable={editable}
           onEdit={onEdit}
+          onAddRow={onAddRow}
           onRenameRow={onRenameRow}
           onOpenRow={onOpenRow}
           onAddDateField={onAddDateField}
@@ -443,6 +456,9 @@ export function CollectionView({
           schema={schema}
           rows={processed}
           groupBy={activeConfig.groupBy}
+          editable={editable}
+          onAddRow={onAddRow}
+          onRenameRow={onRenameRow}
           onAddDateField={onAddDateField}
         />
       ) : activeConfig.mode === 'gallery' ? (
@@ -455,6 +471,8 @@ export function CollectionView({
           endId={activeConfig.endDate}
           editable={editable}
           onEdit={onEdit}
+          onAddRow={onAddRow}
+          onRenameRow={onRenameRow}
           onAddDateField={onAddDateField}
         />
       ) : activeConfig.mode === 'chart' ? (
@@ -567,7 +585,10 @@ function ViewControls({
         </div>
         {savedViews && savedViews.length > 0 && activeViewId && onSelectView && (
           <ViewBar
-            views={savedViews.map((view): ViewBarView => ({ id: view.id, label: view.label ?? view.kind }))}
+            views={savedViews.map((view): ViewBarView => ({
+              id: view.id,
+              label: view.label ?? view.kind,
+            }))}
             activeId={activeViewId}
             onSelect={onSelectView}
             showAddView={showAddView}
@@ -657,7 +678,9 @@ function CollectionTable({
                 }
               >
                 <td
-                  className={struck ? 'py-1.5 pr-3 font-medium' : 'py-1.5 pr-3 font-medium text-mn-text'}
+                  className={
+                    struck ? 'py-1.5 pr-3 font-medium' : 'py-1.5 pr-3 font-medium text-mn-text'
+                  }
                   onKeyDown={(e) => handleCellKeyDown(ri, -1, e)}
                 >
                   {editable && onRenameRow && !struck ? (
@@ -673,7 +696,11 @@ function CollectionTable({
                   )}
                 </td>
                 {schema.map((def, ci) => (
-                  <td key={def.id} className="py-1.5 pr-3" onKeyDown={(e) => handleCellKeyDown(ri, ci, e)}>
+                  <td
+                    key={def.id}
+                    className="py-1.5 pr-3"
+                    onKeyDown={(e) => handleCellKeyDown(ri, ci, e)}
+                  >
                     <Cell
                       def={def}
                       value={coerceValue(def, row.values[def.id])}
@@ -1066,6 +1093,8 @@ function CollectionGantt({
   endId,
   editable,
   onEdit,
+  onAddRow,
+  onRenameRow,
   onAddDateField,
 }: {
   schema: PropertySchema
@@ -1074,6 +1103,8 @@ function CollectionGantt({
   endId?: string
   editable?: boolean
   onEdit?: (rowId: string, key: string, value: PropertyValue) => void
+  onAddRow?: (values?: Record<string, PropertyValue>) => Promise<string | null>
+  onRenameRow?: (rowId: string, title: string) => void
   onAddDateField?: () => void
 }) {
   const defs = useMemo(() => pickGanttDefs(schema, startId, endId), [schema, startId, endId])
@@ -1115,6 +1146,51 @@ function CollectionGantt({
     observerRef.current = ro
   }, [])
 
+  // The foot row's own `add a task` input — todayIso is frozen per mount, same
+  // as the calendar's, so it doesn't drift mid-session.
+  const [addingTask, setAddingTask] = useState(false)
+  const [todayIso] = useState(() => localDateIso(new Date()))
+  const handleAddTask = async (title: string) => {
+    if (!defs) return
+    try {
+      const id = await onAddRow?.({
+        [defs.startDef.id]: todayIso,
+        ...(defs.endDef ? { [defs.endDef.id]: addDays(todayIso, 1) } : {}),
+      })
+      if (id) onRenameRow?.(id, title)
+    } catch (err) {
+      console.error('Failed to add a task', err)
+    }
+  }
+  // No start property at all → nothing to date a new task with, so no row
+  // (same guard as the void-box swap below).
+  const canAddTask = !!editable && !!onAddRow && !!defs
+  const addTaskRow = canAddTask && (
+    <li data-part="gantt-add-row" className={GANTT_ROW}>
+      {addingTask ? (
+        <AddRowInput
+          aria-label="Add a task"
+          placeholder="Untitled"
+          autoFocus
+          staysOpen
+          onCommit={(title) => void handleAddTask(title)}
+          onCancel={() => setAddingTask(false)}
+          className={`${GANTT_LABEL} border-0 bg-transparent p-0 font-mono text-mn-text outline-none placeholder:text-mn-text-secondary`}
+        />
+      ) : (
+        <button
+          type="button"
+          data-part="gantt-add"
+          onClick={() => setAddingTask(true)}
+          className="rounded-[8px] p-[4px] text-left font-mono text-[11px] font-medium text-mn-text-secondary transition-colors hover:bg-mn-text/[0.04] hover:text-mn-text motion-reduce:transition-none"
+        >
+          add a task
+        </button>
+      )}
+      <span />
+    </li>
+  )
+
   if (!defs) {
     // No date property at all: the void box has no action slot, so the remedy
     // uses the board's `box` emptyBox instead — same line, same action as the
@@ -1131,123 +1207,133 @@ function CollectionGantt({
       <PondBlockEmpty box="void" line={GANTT_EMPTY_LINE} />
     )
   }
-  if (!layout || layout.bars.length === 0 || !layout.rangeStart || !layout.rangeEnd) {
-    // Nothing dated: the shared voidBox with the template's own line — true whether the
-    // rows are missing or simply carry no dates. Rendered through PondBlockEmpty, never
-    // a second empty component (#259's geometry).
-    return <PondBlockEmpty box="void" line={GANTT_EMPTY_LINE} />
-  }
-
-  const { bars, rangeStart } = layout
+  // Nothing dated: the shared voidBox with the template's own line — true whether the
+  // rows are missing or simply carry no dates. `add a task` still draws here, and it
+  // must render at the SAME tree position as the bar list's own foot row below (one
+  // `<ul>`, sibling after the head/void content) so adding the first task never
+  // remounts it — a remount would drop an in-flight draft (KAN-352).
+  const noBars = !layout || layout.bars.length === 0 || !layout.rangeStart || !layout.rangeEnd
+  const bars = noBars ? [] : layout.bars
+  const rangeStart = noBars ? null : layout.rangeStart
   const { endDef } = defs
-  const startDay = epochDay(rangeStart)
+  const startDay = rangeStart ? epochDay(rangeStart) : 0
   const pct = (day: number) => ((day - startDay) / totalDays) * 100
-  const ticks = quarterTicks(rangeStart, totalDays)
+  const ticks = rangeStart ? quarterTicks(rangeStart, totalDays) : []
 
   return (
     <div {...containerHandlers}>
       <div className={drag?.active ? 'cursor-grabbing select-none' : undefined}>
-        {/* gHead — an empty label cell, then the four ticks in their quarter cells. */}
-        <div data-part="gantt-head" className={GANTT_HEAD}>
-          <span />
-          <div data-part="gantt-ticks" className={GANTT_TICKS}>
-            {ticks.map((iso, i) => (
-              // Index keys: a one-day range repeats its day across all four cells.
-              <span key={i} data-part="gantt-tick" className={GANTT_TICK}>
-                {formatTick(iso)}
-              </span>
-            ))}
+        {noBars ? (
+          <PondBlockEmpty box="void" line={GANTT_EMPTY_LINE} />
+        ) : (
+          /* gHead — an empty label cell, then the four ticks in their quarter cells. */
+          <div data-part="gantt-head" className={GANTT_HEAD}>
+            <span />
+            <div data-part="gantt-ticks" className={GANTT_TICKS}>
+              {ticks.map((iso, i) => (
+                // Index keys: a one-day range repeats its day across all four cells.
+                <span key={i} data-part="gantt-tick" className={GANTT_TICK}>
+                  {formatTick(iso)}
+                </span>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* gRow — a 120px label column + a proportional track, each on its own hairline. */}
+        {/* gRow — a 120px label column + a proportional track, each on its own hairline.
+            Always the same `<ul>`, whether or not there are bars, so `addTaskRow` below
+            never moves tree position. */}
         <ul role="list">
-          {bars.map(({ row, startIso, endIso }, i) => {
-            const done = ganttRowDone(schema, row)
-            const dragging = drag?.active && drag.rowId === row.id
-            const showStart = dragging ? drag.startIso : startIso
-            const showEnd = dragging ? drag.endIso : endIso
-            const left = pct(epochDay(showStart))
-            // +1 so an inclusive single-day span still has visible width.
-            const width = ((epochDay(showEnd) - epochDay(showStart) + 1) / totalDays) * 100
-            const span = showStart === showEnd ? showStart : `${showStart} – ${showEnd}`
-            const isTick = startIso === endIso // a milestone / single-day / no-end row
-            // Rendered bar width in px (from the measured track). Under the threshold the
-            // bar is too small to carry grabbable edges, so it's move-only (spec). Until
-            // the track is measured (trackPx 0) edges show — the common, wide case.
-            const narrow = trackPx > 0 && (width / 100) * trackPx < NARROW_BAR_PX
-            const bar = `${GANTT_BAR_SHELL} ${done ? GANTT_BAR_INK.done : GANTT_BAR_INK.live}`
-            const label = `${GANTT_LABEL} ${done ? GANTT_LABEL_INK.done : GANTT_LABEL_INK.live}`
+          {!noBars &&
+            bars.map(({ row, startIso, endIso }, i) => {
+              const done = ganttRowDone(schema, row)
+              const dragging = drag?.active && drag.rowId === row.id
+              const showStart = dragging ? drag.startIso : startIso
+              const showEnd = dragging ? drag.endIso : endIso
+              const left = pct(epochDay(showStart))
+              // +1 so an inclusive single-day span still has visible width.
+              const width = ((epochDay(showEnd) - epochDay(showStart) + 1) / totalDays) * 100
+              const span = showStart === showEnd ? showStart : `${showStart} – ${showEnd}`
+              const isTick = startIso === endIso // a milestone / single-day / no-end row
+              // Rendered bar width in px (from the measured track). Under the threshold the
+              // bar is too small to carry grabbable edges, so it's move-only (spec). Until
+              // the track is measured (trackPx 0) edges show — the common, wide case.
+              const narrow = trackPx > 0 && (width / 100) * trackPx < NARROW_BAR_PX
+              const bar = `${GANTT_BAR_SHELL} ${done ? GANTT_BAR_INK.done : GANTT_BAR_INK.live}`
+              const label = `${GANTT_LABEL} ${done ? GANTT_LABEL_INK.done : GANTT_LABEL_INK.live}`
 
-            // The row's stored dates for the drag math: endIso is null unless the row
-            // actually holds an End on/after its Start (a milestone reads as a tick).
-            const rawEnd = endDef ? coerceValue(endDef, row.values[endDef.id]) : null
-            const rawEndDay = typeof rawEnd === 'string' && rawEnd ? rawEnd.slice(0, 10) : null
-            const dates: BarDates = {
-              startIso,
-              endIso: rawEndDay && rawEndDay >= startIso ? rawEndDay : null,
-              hasEndDef: !!endDef,
-            }
+              // The row's stored dates for the drag math: endIso is null unless the row
+              // actually holds an End on/after its Start (a milestone reads as a tick).
+              const rawEnd = endDef ? coerceValue(endDef, row.values[endDef.id]) : null
+              const rawEndDay = typeof rawEnd === 'string' && rawEnd ? rawEnd.slice(0, 10) : null
+              const dates: BarDates = {
+                startIso,
+                endIso: rawEndDay && rawEndDay >= startIso ? rawEndDay : null,
+                hasEndDef: !!endDef,
+              }
 
-            return (
-              <li key={row.id} data-part="gantt-row" className={GANTT_ROW}>
-                <span data-part="gantt-label" className={label}>
-                  {row.title || 'Untitled'}
-                </span>
-                <span
-                  data-gantt-track
-                  data-part="gantt-track"
-                  ref={i === 0 ? measureTrack : undefined}
-                  className={GANTT_TRACK}
-                  style={GANTT_TRACK_STYLE}
-                >
-                  {editable ? (
-                    <span
-                      data-part="gantt-bar"
-                      data-done={done || undefined}
-                      className={bar}
-                      style={{ left: `${left}%`, width: `${width}%` }}
-                    >
-                      {/* Body — drag to MOVE the whole bar. */}
-                      <button
-                        type="button"
-                        aria-label={`Reschedule ${row.title || 'Untitled'}: ${span}`}
-                        onPointerDown={(e) => onBarPointerDown(e, row.id, 'move', dates)}
-                        className="absolute inset-0 h-full w-full cursor-grab touch-none rounded-[4px]"
+              return (
+                <li key={row.id} data-part="gantt-row" className={GANTT_ROW}>
+                  <span data-part="gantt-label" className={label}>
+                    {row.title || 'Untitled'}
+                  </span>
+                  <span
+                    data-gantt-track
+                    data-part="gantt-track"
+                    ref={i === 0 ? measureTrack : undefined}
+                    className={GANTT_TRACK}
+                    style={GANTT_TRACK_STYLE}
+                  >
+                    {editable ? (
+                      <span
+                        data-part="gantt-bar"
+                        data-done={done || undefined}
+                        className={bar}
+                        style={{ left: `${left}%`, width: `${width}%` }}
+                      >
+                        {/* Body — drag to MOVE the whole bar. */}
+                        <button
+                          type="button"
+                          aria-label={`Reschedule ${row.title || 'Untitled'}: ${span}`}
+                          onPointerDown={(e) => onBarPointerDown(e, row.id, 'move', dates)}
+                          className="absolute inset-0 h-full w-full cursor-grab touch-none rounded-[4px]"
+                        />
+                        {/* Left edge — resize the Start (real spans only; hidden when too narrow to grab). */}
+                        {endDef && !isTick && !narrow && (
+                          <button
+                            type="button"
+                            aria-label={`Move start of ${row.title || 'Untitled'}`}
+                            onPointerDown={(e) =>
+                              onBarPointerDown(e, row.id, 'resize-start', dates)
+                            }
+                            className="absolute top-0 bottom-0 left-0 z-10 w-1.5 cursor-ew-resize touch-none rounded-l-[4px] bg-mn-text"
+                          />
+                        )}
+                        {/* Right edge — resize the End (creates one on a tick → span; hidden when too narrow). */}
+                        {endDef && !narrow && (
+                          <button
+                            type="button"
+                            aria-label={`Move end of ${row.title || 'Untitled'}`}
+                            onPointerDown={(e) => onBarPointerDown(e, row.id, 'resize-end', dates)}
+                            className="absolute top-0 right-0 bottom-0 z-10 w-1.5 cursor-ew-resize touch-none rounded-r-[4px] bg-mn-text"
+                          />
+                        )}
+                      </span>
+                    ) : (
+                      <span
+                        role="img"
+                        aria-label={`${row.title || 'Untitled'}: ${span}`}
+                        data-part="gantt-bar"
+                        data-done={done || undefined}
+                        className={bar}
+                        style={{ left: `${left}%`, width: `${width}%` }}
                       />
-                      {/* Left edge — resize the Start (real spans only; hidden when too narrow to grab). */}
-                      {endDef && !isTick && !narrow && (
-                        <button
-                          type="button"
-                          aria-label={`Move start of ${row.title || 'Untitled'}`}
-                          onPointerDown={(e) => onBarPointerDown(e, row.id, 'resize-start', dates)}
-                          className="absolute top-0 bottom-0 left-0 z-10 w-1.5 cursor-ew-resize touch-none rounded-l-[4px] bg-mn-text"
-                        />
-                      )}
-                      {/* Right edge — resize the End (creates one on a tick → span; hidden when too narrow). */}
-                      {endDef && !narrow && (
-                        <button
-                          type="button"
-                          aria-label={`Move end of ${row.title || 'Untitled'}`}
-                          onPointerDown={(e) => onBarPointerDown(e, row.id, 'resize-end', dates)}
-                          className="absolute top-0 right-0 bottom-0 z-10 w-1.5 cursor-ew-resize touch-none rounded-r-[4px] bg-mn-text"
-                        />
-                      )}
-                    </span>
-                  ) : (
-                    <span
-                      role="img"
-                      aria-label={`${row.title || 'Untitled'}: ${span}`}
-                      data-part="gantt-bar"
-                      data-done={done || undefined}
-                      className={bar}
-                      style={{ left: `${left}%`, width: `${width}%` }}
-                    />
-                  )}
-                </span>
-              </li>
-            )
-          })}
+                    )}
+                  </span>
+                </li>
+              )
+            })}
+          {addTaskRow}
         </ul>
       </div>
     </div>
