@@ -3,7 +3,6 @@ import { labelledBlockFields, type ModuleDescriptor } from '../types'
 import type { PropertySchema } from '@/lib/properties/schema'
 import { AGG_LABELS, CHART_KINDS, VIEW_AGGS, bigNumberFromRows, signedDelta } from './aggregate'
 import { chartDataFromRows } from './chart-data'
-import { VIEW_KINDS } from './kinds'
 
 /**
  * The `view` block (#19) — an inline block that DRAWS a collection's rows.
@@ -314,41 +313,6 @@ export const applyConfigPatch = (
       view.id === target ? { ...view, config: { ...view.config, ...patch } } : view
     ),
   }
-}
-
-/**
- * Adds a saved view to a `ViewBlock` and makes it active (KAN-243 ＋ view). A
- * legacy block (no `views`) is converted first: its existing `mode`+config
- * becomes `views[0]`, built the same way `resolveActiveView`'s legacy branch
- * reads it — the top-level fields are left exactly as they were, dead data
- * from here on since every reader resolves through `views`/`activeViewId` once
- * `views` exists. The new view gets `mode`'s `VIEW_KINDS` label, suffixed " 2",
- * " 3"… on a case-insensitive collision against every existing view's
- * effective label (`v.label ?? VIEW_KINDS[v.kind].label`) — including the
- * just-wrapped `views[0]` on a legacy block.
- */
-export const addSavedView = (
-  block: ViewBlock,
-  mode: ViewMode,
-  mintId: () => string = () => crypto.randomUUID()
-): ViewBlock => {
-  const existingViews: ViewSavedView[] =
-    block.views && block.views.length > 0
-      ? block.views
-      : [{ ...resolveActiveView(block), id: mintId() }]
-
-  const takenLabels = new Set(
-    existingViews.map((view) => (view.label ?? VIEW_KINDS[view.kind].label).toLowerCase())
-  )
-  const baseLabel = VIEW_KINDS[mode].label
-  let label = baseLabel
-  for (let suffix = 2; takenLabels.has(label.toLowerCase()); suffix++) {
-    label = `${baseLabel} ${suffix}`
-  }
-
-  const newView: ViewSavedView = { id: mintId(), label, kind: mode, config: {} }
-
-  return { ...block, views: [...existingViews, newView], activeViewId: newView.id }
 }
 
 /**

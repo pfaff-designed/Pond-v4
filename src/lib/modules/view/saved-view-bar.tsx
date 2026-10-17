@@ -29,7 +29,8 @@
  */
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import type { ViewBlock, ViewMode, ViewSavedView } from './schema'
-import { addSavedView, resolveActiveView } from './schema'
+import { resolveActiveView } from './schema'
+import { addSavedView } from './saved-views'
 import { useOptionalDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import { ViewBar, type ViewBarView } from '@/components/molecules/ViewBar'
 import { addViewRemedyLine, hasRequiredField, VIEW_KIND_REQUIREMENT, VIEW_KINDS } from './kinds'
