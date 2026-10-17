@@ -640,12 +640,12 @@ describe('CollectionGallery — PondBlock.dc.html’s gallery frame, each card a
     expect(card.querySelector('[data-kind="tag"]')!.textContent).toBe('Low')
   })
 
-  it('a row with no status/select field (or no value on it) draws no tag text', () => {
+  it('a row with no status/select field (or no value on it) draws no tag chip', () => {
     const { container } = renderView(gallery, plantSchema, [
       row('m', 'monstera', { 'p-care': 'water weekly' }),
     ])
     const card = container.querySelector<HTMLElement>('[data-kind="record-card"]')!
-    expect(card.querySelector('[data-kind="tag"]')!.textContent).toBe('')
+    expect(card.querySelector('[data-kind="tag"]')).toBeNull()
   })
 
   it('an untitled record reads `untitled`, a record with nothing to show `—` — the molecule’s fallbacks', () => {
