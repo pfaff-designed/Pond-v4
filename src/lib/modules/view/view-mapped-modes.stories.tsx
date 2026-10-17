@@ -139,50 +139,50 @@ async function assertGallery(canvasElement: HTMLElement, theme: Theme) {
   const grid = canvasElement.querySelector<HTMLElement>('[data-part="gallery"]')!
   await expect(grid).toBeTruthy()
   const gs = getComputedStyle(grid)
-  // gallery: grid · repeat(3) · gap 10
-  await expect(gs.display).toBe('grid')
-  await expect(gs.gridTemplateColumns.split(' ')).toHaveLength(3)
-  await expect(gs.columnGap).toBe('10px')
-  await expect(gs.rowGap).toBe('10px')
+  // gallery (PondBlock.dc.html): flex · wrap · gap 12
+  await expect(gs.display).toBe('flex')
+  await expect(gs.flexWrap).toBe('wrap')
+  await expect(gs.columnGap).toBe('12px')
+  await expect(gs.rowGap).toBe('12px')
 
   // Every record is a card — five here, past the preview's three.
-  const cards = Array.from(grid.querySelectorAll<HTMLElement>('[data-part="gallery-card"]'))
+  const cards = Array.from(grid.querySelectorAll<HTMLElement>('[data-kind="record-card"]'))
   await expect(cards).toHaveLength(PLANTS.length)
   await expect(cards.length).toBeGreaterThan(3)
 
   for (const [i, card] of cards.entries()) {
     const cs = getComputedStyle(card)
-    // gcard: column · gap 6
+    // card2 (PondMolecule.dc.html): column · width 170 · padding 10 · gap 10 · radius 20
     await expect(cs.display).toBe('flex')
     await expect(cs.flexDirection).toBe('column')
-    await expect(cs.rowGap).toBe('6px')
-    // img: block · 64 high · radius 12 · ink .07 ground
-    const img = card.querySelector<HTMLElement>('[data-part="gallery-image"]')!
+    await expect(cs.width).toBe('170px')
+    await expect(cs.paddingTop).toBe('10px')
+    await expect(cs.rowGap).toBe('10px')
+    await expect(cs.borderTopLeftRadius).toBe('20px')
+    // image tile: 150×99 · radius 14 (mn-inner) · ink .07 ground
+    const img = card.querySelector<HTMLElement>('[data-kind="image"]')!
     const is = getComputedStyle(img)
-    await expect(is.display).toBe('block')
-    await expect(is.height).toBe('64px')
-    await expect(is.borderTopLeftRadius).toBe('12px')
+    await expect(is.height).toBe('99px')
+    await expect(is.width).toBe('150px')
+    await expect(is.borderTopLeftRadius).toBe('14px')
     await expect(alphaOf(is.backgroundColor)).toBeCloseTo(0.07, 2)
-    // tStyle: 13.5 / 500 / full ink
-    const title = card.querySelector<HTMLElement>('[data-part="gallery-title"]')!
+    // title: 13 / 500 / full ink
+    const title = card.querySelector<HTMLElement>('[data-part="title"]')!
     const ts = getComputedStyle(title)
     await expect(title.textContent).toBe(PLANTS[i][0])
-    await expect(ts.fontSize).toBe('13.5px')
+    await expect(ts.fontSize).toBe('13px')
     await expect(ts.fontWeight).toBe('500')
     await expect(ts.color).toBe(theme.ink)
-    // mStyle: mono 10.5 / ink .68
-    const metaEl = card.querySelector<HTMLElement>('[data-part="gallery-meta"]')!
+    // meta: mono 10.5 / ink .68 — the schema's one field, read through galleryCardMeta
+    const metaEl = card.querySelector<HTMLElement>('[data-part="meta"]')!
     const ms = getComputedStyle(metaEl)
     await expect(metaEl.textContent).toBe(PLANTS[i][1])
     await expect(ms.fontFamily).toContain('Mono')
     await expect(ms.fontSize).toBe('10.5px')
     await expect(ms.color).toBe(theme.ink68)
+    // No status/select field on this schema — galleryCardTag draws no chip.
+    await expect(card.querySelector('[data-kind="tag"]')).toBeNull()
   }
-  // Three per row: the fourth card sits under the first.
-  const x = (i: number) => cards[i].getBoundingClientRect().left
-  const y = (i: number) => cards[i].getBoundingClientRect().top
-  await expect(x(3)).toBeCloseTo(x(0), 0)
-  await expect(y(3)).toBeGreaterThan(y(0))
 }
 
 export const Gallery: Story = {
@@ -523,10 +523,10 @@ export const NumberNoValuesInk: Story = {
 export const GalleryFallbacks: Story = {
   args: { config: gallery, schema: plantSchema, rows: [r('e', '', {})] },
   play: async ({ canvasElement }) => {
-    const title = canvasElement.querySelector<HTMLElement>('[data-part="gallery-title"]')!
+    const title = canvasElement.querySelector<HTMLElement>('[data-part="title"]')!
     await expect(title.textContent).toBe('untitled')
     await expect(getComputedStyle(title).color).toBe(LIGHT.ink)
-    const metaEl = canvasElement.querySelector<HTMLElement>('[data-part="gallery-meta"]')!
+    const metaEl = canvasElement.querySelector<HTMLElement>('[data-part="meta"]')!
     await expect(metaEl.textContent).toBe('—')
     const ms = getComputedStyle(metaEl)
     await expect(ms.fontFamily).toContain('Mono')
