@@ -9,18 +9,25 @@
  * thin shell over these.
  */
 
+import { isNewNestedPage } from '@/lib/pages/nested-page'
+
 /** The minimal node reference a linked card renders + navigates with. */
 export interface PageRef {
   id: string
   title: string
   type: string
+  /** KAN-122: true while the linked page was made by `/ nested page` and has not
+   *  yet been opened — drives the page-link row's `new` chip and the rail's row
+   *  note. */
+  isNew: boolean
 }
 
-/** The subset of a `PageRow` these helpers read (id/title/type). */
+/** The subset of a `PageRow` these helpers read (id/title/type/props). */
 export interface PageLike {
   id: string
   title: string
   type: string
+  props?: Record<string, unknown> | null
 }
 
 /**
@@ -30,7 +37,9 @@ export interface PageLike {
  */
 export function resolvePageFromRows(rows: readonly PageLike[], pageId: string): PageRef | null {
   const row = rows.find((r) => r.id === pageId)
-  return row ? { id: row.id, title: row.title || 'Untitled', type: row.type } : null
+  return row
+    ? { id: row.id, title: row.title || 'Untitled', type: row.type, isNew: isNewNestedPage(row.props) }
+    : null
 }
 
 /**
@@ -43,5 +52,5 @@ export function searchPagesInRows(rows: readonly PageLike[], query: string, limi
   const matches = q ? rows.filter((r) => (r.title || '').toLowerCase().includes(q)) : rows
   return matches
     .slice(0, limit)
-    .map((r) => ({ id: r.id, title: r.title || 'Untitled', type: r.type }))
+    .map((r) => ({ id: r.id, title: r.title || 'Untitled', type: r.type, isNew: isNewNestedPage(r.props) }))
 }

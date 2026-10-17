@@ -19,6 +19,7 @@ describe('resolvePageFromRows', () => {
       id: 'p1',
       title: 'Sanding guide',
       type: 'page',
+      isNew: false,
     })
   })
 
@@ -27,7 +28,35 @@ describe('resolvePageFromRows', () => {
   })
 
   it('falls back to "Untitled" for an empty stored title', () => {
-    expect(resolvePageFromRows(rows, 'p4')).toEqual({ id: 'p4', title: 'Untitled', type: 'page' })
+    expect(resolvePageFromRows(rows, 'p4')).toEqual({
+      id: 'p4',
+      title: 'Untitled',
+      type: 'page',
+      isNew: false,
+    })
+  })
+
+  it('reads isNew true for a nested page not yet opened (KAN-122)', () => {
+    const nested: PageLike[] = [
+      { id: 'p5', title: 'cabinets', type: 'page', props: { nestedFrom: 'p1' } },
+    ]
+    expect(resolvePageFromRows(nested, 'p5')?.isNew).toBe(true)
+  })
+
+  it('reads isNew false once the page has been opened', () => {
+    const opened: PageLike[] = [
+      {
+        id: 'p5',
+        title: 'cabinets',
+        type: 'page',
+        props: { nestedFrom: 'p1', openedAt: '2026-10-16T00:00:00.000Z' },
+      },
+    ]
+    expect(resolvePageFromRows(opened, 'p5')?.isNew).toBe(false)
+  })
+
+  it('reads isNew false for a page with no nestedFrom stamp', () => {
+    expect(resolvePageFromRows(rows, 'p1')?.isNew).toBe(false)
   })
 })
 
@@ -47,5 +76,12 @@ describe('searchPagesInRows', () => {
 
   it('normalizes an empty title to "Untitled" in results', () => {
     expect(searchPagesInRows(rows, '').find((r) => r.id === 'p4')?.title).toBe('Untitled')
+  })
+
+  it('carries isNew for a nested, unopened page', () => {
+    const nested: PageLike[] = [
+      { id: 'p5', title: 'cabinets', type: 'page', props: { nestedFrom: 'p1' } },
+    ]
+    expect(searchPagesInRows(nested, 'cabinets')[0].isNew).toBe(true)
   })
 })

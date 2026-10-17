@@ -12,7 +12,7 @@ import type { PageLinkBlock } from './schema'
 
 const block: PageLinkBlock = { id: 'pl-1', type: 'page-link', pageId: 'page-1' }
 
-const ref: PageRef = { id: 'page-1', title: 'cabinets', type: 'page' }
+const ref: PageRef = { id: 'page-1', title: 'cabinets', type: 'page', isNew: false }
 
 const capabilities = (resolved: PageRef | null): PageLinkCapabilities => ({
   resolvePage: jest.fn(() => resolved),

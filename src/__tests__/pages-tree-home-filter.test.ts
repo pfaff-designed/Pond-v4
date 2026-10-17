@@ -20,8 +20,10 @@ jest.mock('@/lib/supabase/client', () => ({
 /** A chainable query double that records the filters and resolves `.order`. */
 function makeClient(returnRows: unknown[]) {
   const neq = jest.fn()
+  const select = jest.fn()
   const builder: Record<string, unknown> = {
-    select() {
+    select(columns: string) {
+      select(columns)
       return builder
     },
     eq() {
@@ -40,6 +42,7 @@ function makeClient(returnRows: unknown[]) {
   }
   return {
     _neq: neq,
+    _select: select,
     auth: { getUser: () => Promise.resolve({ data: { user: { id: 'u1' } } }) },
     from: () => builder,
   }
@@ -57,6 +60,13 @@ it('applies a .neq filter excluding the row type (#18 — rows never enter the t
   mockCreateClient.mockReturnValue(client)
   await fetchPages('pond-1')
   expect(client._neq).toHaveBeenCalledWith('type', ROW_TYPE)
+})
+
+it('selects props alongside glyph/area_role (KAN-122 — isNewNestedPage reads it from the same cache)', async () => {
+  const client = makeClient([])
+  mockCreateClient.mockReturnValue(client)
+  await fetchPages('pond-1')
+  expect(client._select).toHaveBeenCalledWith(expect.stringContaining('props'))
 })
 
 it('returns [] when unauthenticated (no query)', async () => {

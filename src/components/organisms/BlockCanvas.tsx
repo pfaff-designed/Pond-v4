@@ -1014,7 +1014,12 @@ export function BlockCanvas({
       )
       void queryClient.invalidateQueries({ queryKey: pagesKey() })
       if (placement === 'sibling') {
-        pageLinks.navigateToPage({ id: created.id, title: created.title, type: created.type })
+        pageLinks.navigateToPage({
+          id: created.id,
+          title: created.title,
+          type: created.type,
+          isNew: false,
+        })
       }
       return true
     } catch (err) {

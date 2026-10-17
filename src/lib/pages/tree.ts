@@ -32,6 +32,13 @@ export interface PageRow {
    */
   glyph?: string | null
   area_role?: string | null
+  /**
+   * KAN-122: rides along the same way `glyph`/`area_role` do, so
+   * `isNewNestedPage`/the `new` chip and row note derive from the one
+   * `['pages', pond]` cache without a second fetch. Stays small (write-once
+   * stamp keys only) — never the full props blob a page surface needs.
+   */
+  props?: Record<string, unknown> | null
 }
 
 export async function fetchPages(pondId: string | null): Promise<PageRow[]> {
@@ -53,7 +60,9 @@ export async function fetchPages(pondId: string | null): Promise<PageRow[]> {
     // #134: glyph + area_role ride along, so the ONE pagesKey() cache
     // the rail, breadcrumb and page surface already share is enough to resolve every
     // mark — no surface fetches anything extra to draw one.
-    .select('id, parent_id, type, title, "order", updated_at, glyph, area_role')
+    // KAN-122: props rides along too (small write-once stamps only), so the same
+    // cache resolves isNewNestedPage per row with no second fetch.
+    .select('id, parent_id, type, title, "order", updated_at, glyph, area_role, props')
     .eq('user_id', user.id)
     // #312: scoped by POND, not by workspace. The sandbox pond holds exactly the
     // `workspace='sandbox'` rows, so the pond filter already says everything the
