@@ -14,7 +14,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { QueryClient } from '@tanstack/react-query'
 import type { Database } from '@/lib/supabase/types'
 import type { Block } from '@/lib/modules/content'
-import { getPage } from './client'
+import { getPage, type PondPage } from './client'
 import { commitBlocks } from './commit'
 import type { PageRow } from './tree'
 import { withoutDatabasesRoot } from './databases-root'
@@ -76,6 +76,20 @@ export function childLinkTargets(rows: PageRow[], parentId: string | null): stri
     .filter((r) => r.parent_id === parentId)
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.title.localeCompare(b.title))
     .map((r) => r.id)
+}
+
+/**
+ * Stamp `props.childLinksMigrated` on the `['page', pageId]` query cache, so
+ * the upgrade effect's own-page cache read sees the stamp at once rather than
+ * only after `markChildLinksMigrated`'s DB write resolves — otherwise a
+ * navigate-away-and-back while that write is still in flight (or already
+ * landed but unrefetched) re-reads an unstamped cached page and re-appends a
+ * link the person just removed. No-op when the page isn't in the cache.
+ */
+export function stampChildLinksMigratedInCache(queryClient: QueryClient, pageId: string): void {
+  queryClient.setQueryData(['page', pageId], (prev: PondPage | null | undefined) =>
+    prev ? { ...prev, props: { ...prev.props, childLinksMigrated: true } } : prev
+  )
 }
 
 /**

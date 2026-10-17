@@ -64,7 +64,12 @@ import { applyPagePropsOptimistic } from '@/lib/pages/tree'
 import { WORKSPACE_PATH } from '@/lib/pages/nav'
 import { homeQueryKey, pagesKey } from '@/lib/pages/keys'
 import { usePagesRows } from '@/lib/pages/use-pages'
-import { appendChildLink, childLinkTargets, markChildLinksMigrated } from '@/lib/pages/child-links'
+import {
+  appendChildLink,
+  childLinkTargets,
+  markChildLinksMigrated,
+  stampChildLinksMigratedInCache,
+} from '@/lib/pages/child-links'
 import { usePond } from '@/lib/pond/context'
 import { PageCanvas } from '@/lib/modules/page-canvas'
 import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
@@ -272,15 +277,18 @@ export function DocumentPanel() {
   // `childCards` used (direct children, root scoped via `withoutDatabasesRoot`
   // when `nodeId` is null, i.e. this is the home row). Goes through the
   // editor's own `commitLocalEdit`, not a direct write, because this page is —
-  // by construction — the one currently open. Guarded by `migratedRef` keyed
-  // on the page id (not just `page.props`) so a double-mount/strict-mode
-  // re-render never re-appends while the server stamp is still in flight — the
-  // same guard shape as `openedMarked` above.
-  const migratedRef = useRef<string | null>(null)
+  // by construction — the one currently open. Guarded by `migratedRef`, every
+  // page id migrated so far (not just the last one), so a double-mount/
+  // strict-mode re-render never re-appends. The stamp also lands on the
+  // `['page', id]` cache at once (`stampChildLinksMigratedInCache`), not only
+  // the DB — navigating away and back while `markChildLinksMigrated`'s write
+  // is still in flight, or already landed but unrefetched, must not re-read an
+  // unstamped cached page and re-append a link the person just removed.
+  const migratedRef = useRef<Set<string>>(new Set())
   useEffect(() => {
-    if (!page || rowsPending || migratedRef.current === page.id) return
+    if (!page || rowsPending || migratedRef.current.has(page.id)) return
     if (page.props?.childLinksMigrated === true) return
-    migratedRef.current = page.id
+    migratedRef.current.add(page.id)
 
     const nextBlocks = childLinkTargets(rows, nodeId).reduce(
       (blocks, childId) => appendChildLink(blocks, childId),
@@ -288,10 +296,12 @@ export function DocumentPanel() {
     )
     if (nextBlocks !== viewBlocks) commitLocalEdit(nextBlocks)
 
+    stampChildLinksMigratedInCache(queryClient, page.id)
+
     void markChildLinksMigrated(getSupabase(), page.id).catch((err) => {
       console.error('Failed to mark child links migrated', page.id, err)
     })
-  }, [page, rows, rowsPending, nodeId, viewBlocks, commitLocalEdit, getSupabase])
+  }, [page, rows, rowsPending, nodeId, viewBlocks, commitLocalEdit, getSupabase, queryClient])
 
   // "Changes to this page" (#103, storyboard frame 8): the log filtered to this
   // page, floating, ⌥⌘H. State, shortcut and surface all live with the panel; the
