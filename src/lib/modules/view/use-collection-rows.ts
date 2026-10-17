@@ -115,8 +115,25 @@ const cachedRow = (
 ): PondPage | undefined =>
   queryClient.getQueryData<PondPage[]>(ROWS_KEY(collectionId))?.find((p) => p.id === rowId)
 
+/**
+ * Read a collection's schema straight off react-query's `['page', collectionId]`
+ * cache — the SAME key this hook's own `schema` derives from. KAN-243's undo
+ * seam: two `useCollectionRows` callers over the same collection (BlockCanvas's
+ * empty-state fetch and the live view's own) must agree on "what the schema is
+ * right now" even with no re-render between a mint and the undo that might
+ * follow it — `updateSchema` writes this cache SYNCHRONOUSLY, so reading it back
+ * here is too, unlike a ref that only catches up on the next effect.
+ */
+export function readCachedSchema(
+  queryClient: QueryClient,
+  collectionId: string | undefined
+): PropertySchema | null {
+  if (!collectionId) return null
+  return readSchema(queryClient.getQueryData<PondPage | null>(['page', collectionId])?.props)
+}
+
 const cachedFields = (queryClient: QueryClient, collectionId: string): PropertySchema =>
-  readSchema(queryClient.getQueryData<PondPage | null>(['page', collectionId])?.props) ?? []
+  readCachedSchema(queryClient, collectionId) ?? []
 
 /** A record as the change log keeps it, each field also as the field shows it. */
 const snapshotOf = (row: PondPage, fields: PropertySchema): RowSnapshot => {

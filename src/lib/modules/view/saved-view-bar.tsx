@@ -16,6 +16,16 @@
  * selection AND notifies `BlockCanvas` (KAN-321's `ActiveViewSelectionContext`); in
  * the empty state it is `BlockCanvas`'s own `setActiveViewId` directly — the same
  * fact, reached two different ways, so `runAddView` never needs to know which.
+ *
+ * `latestBlock`/`getLatestSchema` (KAN-243 fix) are the undo's own read of "what is
+ * current right now" — BlockCanvas draws the empty-state bar and `ViewControls`'
+ * live bar as TWO SEPARATE instances of this component, and the block flips between
+ * them (a mode change can make either one unmount while the other's toast is still
+ * open), so a ref owned BY an instance of `SavedViewBar` itself would freeze the
+ * moment that instance unmounts. Each host passes its OWN getter instead — one that
+ * outlives this component's own mounts — and only a caller with neither (a bare
+ * story/test render of `CollectionView`) falls back to a local ref tied to this
+ * instance's own props, which is exactly today's behaviour for those.
  */
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import type { ViewBlock, ViewMode, ViewSavedView } from './schema'
@@ -28,36 +38,37 @@ import { addDateField, addStatusField, removeField, type PropertySchema } from '
 
 /**
  * Adds a saved view (KAN-243's ＋ view): when the kind needs a field the schema
- * lacks ({@link hasRequiredField}), mints it onto `schemaRef.current` and writes
- * it BEFORE the view, so a same-tick second pick reads the field already there.
- * ONE undo step covers both writes — but undo must remove ONLY this add's own
- * delta (its view, and the field it minted), read off `dataRef.current` (the
- * CURRENT block) rather than restoring the whole block captured at click. Two
- * toasts can be open together (`useDeletionUndo` keeps every staged toast until
- * it is actioned or expires); closing over the pre-add block would make undoing
- * the OLDER one wipe out a view a LATER add had since made.
+ * lacks ({@link hasRequiredField}), mints it and writes it BEFORE the view, so a
+ * same-tick second pick reads the field already there via `getLatestSchema`
+ * (`updateSchema`'s own cache write is synchronous). ONE undo step covers both
+ * writes — but undo must remove ONLY this add's own delta (its view, and the
+ * field it minted), read off `latestBlock.current`/`getLatestSchema()` (owned by
+ * a host that outlives THIS CALL's own `SavedViewBar` instance) rather than
+ * restoring the whole block captured at click. Two toasts can be open together
+ * (`useDeletionUndo` keeps every staged toast until it is actioned or expires);
+ * closing over the pre-add block would make undoing the OLDER one wipe out a
+ * view a LATER add had since made, or — if the instance that staged it has since
+ * unmounted (BlockCanvas's empty↔live swap) — read a block frozen before either.
  */
 function runAddView(
   data: ViewBlock,
   mode: ViewMode,
-  schemaRef: { current: PropertySchema | null },
-  dataRef: { current: ViewBlock },
+  getLatestSchema: () => PropertySchema | null,
+  latestBlock: { readonly current: ViewBlock },
   updateSchema: (next: PropertySchema) => void,
   onChange: (next: ViewBlock) => void,
   deletionUndo: NonNullable<ReturnType<typeof useOptionalDeletionUndo>>,
   onSelect: (id: string) => void
 ): void {
-  const schema = schemaRef.current
+  const schema = getLatestSchema()
   if (!schema) return
 
   const need = VIEW_KIND_REQUIREMENT[mode]
   let addedFieldId: string | undefined
-  let mintedSchema: PropertySchema | undefined
   if (need && !hasRequiredField(mode, schema)) {
     const addField = need === 'date' ? addDateField : addStatusField
-    mintedSchema = addField(schema)
+    const mintedSchema = addField(schema)
     addedFieldId = mintedSchema[mintedSchema.length - 1].id
-    schemaRef.current = mintedSchema
     updateSchema(mintedSchema)
   }
 
@@ -79,7 +90,7 @@ function runAddView(
     message: `Added a ${VIEW_KINDS[mode].label} view`,
     scope: 'block',
     undo: () => {
-      const current = dataRef.current
+      const current = latestBlock.current
       const currentViews: ViewSavedView[] = current.views ?? []
       const removingShownView = current.activeViewId === addedViewId
       onChange({
@@ -89,7 +100,7 @@ function runAddView(
       })
       if (removingShownView) onSelect(previousActiveViewId)
       if (addedFieldId) {
-        updateSchema(removeField(schemaRef.current ?? mintedSchema ?? schema, addedFieldId))
+        updateSchema(removeField(getLatestSchema() ?? schema, addedFieldId))
       }
     },
   })
@@ -115,6 +126,13 @@ export interface SavedViewBarProps {
   /** Absent on a reader / no-persistence host — gates "＋ view" the same way
    *  every other insert does. */
   onChange?: (next: ViewBlock) => void
+  /** Host-owned reads of "what is current right now" (`SavedViewHost`, KAN-243
+   *  fix) — pass the host's own getters so an undo staged by one bar instance
+   *  still reads correctly after BlockCanvas swaps it for the other. Absent
+   *  only for a bare story/test render of `CollectionView`, which falls back to
+   *  a local ref tied to THIS instance's own props (today's behaviour there). */
+  latestBlock?: { readonly current: ViewBlock }
+  getLatestSchema?: () => PropertySchema | null
 }
 
 export function SavedViewBar({
@@ -125,19 +143,21 @@ export function SavedViewBar({
   onSelect,
   editable,
   onChange,
+  latestBlock,
+  getLatestSchema,
 }: SavedViewBarProps) {
   const deletionUndo = useOptionalDeletionUndo()
 
-  // Undo must drop only what THIS add created off the CURRENT schema/block, never
-  // restore a stale snapshot captured at click — another add's toast may still be
-  // open (KAN-243).
-  const schemaRef = useRef(schema)
+  // Local fallback only: a host that owns neither getter (a bare story/test
+  // render of `CollectionView`) gets today's behaviour — a ref tied to THIS
+  // instance's own props, which is fine there since nothing ever swaps it out.
+  const ownSchemaRef = useRef(schema)
   useEffect(() => {
-    schemaRef.current = schema
+    ownSchemaRef.current = schema
   }, [schema])
-  const dataRef = useRef(block)
+  const ownBlockRef = useRef(block)
   useEffect(() => {
-    dataRef.current = block
+    ownBlockRef.current = block
   }, [block])
 
   const addViewRows: readonly ViewKindPickerRow[] = useMemo(
@@ -153,9 +173,18 @@ export function SavedViewBar({
   const onAddView = useCallback(
     (mode: ViewMode) => {
       if (!editable || !schema || !deletionUndo || !onChange) return
-      runAddView(block, mode, schemaRef, dataRef, updateSchema, onChange, deletionUndo, onSelect)
+      runAddView(
+        block,
+        mode,
+        getLatestSchema ?? (() => ownSchemaRef.current),
+        latestBlock ?? ownBlockRef,
+        updateSchema,
+        onChange,
+        deletionUndo,
+        onSelect
+      )
     },
-    [editable, schema, deletionUndo, onChange, block, updateSchema, onSelect]
+    [editable, schema, deletionUndo, onChange, block, updateSchema, onSelect, getLatestSchema, latestBlock]
   )
 
   // KAN-243 PATH_STEPS 1: a legacy block (no `views[]` yet — every view made from

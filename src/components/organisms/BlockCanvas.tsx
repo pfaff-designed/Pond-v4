@@ -42,11 +42,14 @@ import {
   type BlockFrame,
   type PondBlockState,
 } from '@/lib/modules/block-frame'
-import { useCollectionRows } from '@/lib/modules/view/use-collection-rows'
+import { readCachedSchema, useCollectionRows } from '@/lib/modules/view/use-collection-rows'
 import { shouldSelectCardFromClick } from '@/lib/modules/view/card-click'
 import { applyView } from '@/lib/modules/view/apply'
 import { activeSavedView } from '@/lib/modules/view/schema'
-import { ActiveViewSelectionContext } from '@/lib/modules/view/active-view-context'
+import {
+  ActiveViewSelectionContext,
+  SavedViewHostContext,
+} from '@/lib/modules/view/active-view-context'
 import { SavedViewBar } from '@/lib/modules/view/saved-view-bar'
 import { compactChartMark } from '@/lib/modules/view/chart-compact'
 import type { PropertySchema } from '@/lib/properties/schema'
@@ -1840,45 +1843,60 @@ function useBlockEmptyState(
   emptyLine?: string
   schema: PropertySchema | null
   updateSchema: (next: PropertySchema) => void
+  /** KAN-243 fix: reads the collection's schema straight off react-query's cache
+   *  (`SavedViewHost`) — the host-owned getter `SavedViewBar`'s undo needs, since
+   *  `schema` above is a snapshot from render time, not "right now". */
+  getLatestSchema: () => PropertySchema | null
 } {
   const collectionId = block.type === 'view' ? viewCollectionId(block, pageId) : undefined
+  const queryClient = useQueryClient()
   const { schema, rows, isLoading, addRow, updateSchema } = useCollectionRows(collectionId)
+  const getLatestSchema = useCallback(
+    () => readCachedSchema(queryClient, collectionId),
+    [queryClient, collectionId]
+  )
   // The rows the view will actually draw — its filter (and sort) applied.
   const processed = useMemo(
     () => (block.type === 'view' && schema ? applyView(rows, schema, block) : rows),
     [block, rows, schema]
   )
 
-  switch (block.type) {
-    case 'todo':
-      return blockIsEmpty(block)
-        ? { state: 'empty', onEmptyAction: () => onChange(addTodoItem(block)), schema, updateSchema }
-        : { state: 'rest', schema, updateSchema }
-    case 'table':
-      return blockIsEmpty(block)
-        ? { state: 'empty', onEmptyAction: () => onChange(addTableRow(block)), schema, updateSchema }
-        : { state: 'rest', schema, updateSchema }
-    case 'entries':
-      return blockIsEmpty(block)
-        ? { state: 'empty', onEmptyAction: () => onChange(addEntry(block)), schema, updateSchema }
-        : { state: 'rest', schema, updateSchema }
-    case 'view': {
-      if (isLoading || schema === null) return { state: 'rest', schema, updateSchema }
-      // The rule itself is `viewFrameState` in `block-frame.ts`, shared with the
-      // template story so the story asserts what the product runs (#261 review).
-      // This host adds the two things a pure rule cannot carry: the chart mark's
-      // copy, which lives in a React module, and the write action.
-      const verdict = viewFrameState(block, rows, processed, frame, schema)
-      if (verdict.state === 'rest') return { state: 'rest', schema, updateSchema }
-      if (verdict.chartLine)
-        return { state: 'empty', emptyLine: CHART_EMPTY_LINE, schema, updateSchema }
-      if (verdict.addRow)
-        return { state: 'empty', onEmptyAction: () => void addRow(), schema, updateSchema }
-      return { state: 'empty', emptyLine: verdict.line, schema, updateSchema }
+  const result = ((): {
+    state: PondBlockState
+    onEmptyAction?: () => void
+    emptyLine?: string
+  } => {
+    switch (block.type) {
+      case 'todo':
+        return blockIsEmpty(block)
+          ? { state: 'empty', onEmptyAction: () => onChange(addTodoItem(block)) }
+          : { state: 'rest' }
+      case 'table':
+        return blockIsEmpty(block)
+          ? { state: 'empty', onEmptyAction: () => onChange(addTableRow(block)) }
+          : { state: 'rest' }
+      case 'entries':
+        return blockIsEmpty(block)
+          ? { state: 'empty', onEmptyAction: () => onChange(addEntry(block)) }
+          : { state: 'rest' }
+      case 'view': {
+        if (isLoading || schema === null) return { state: 'rest' }
+        // The rule itself is `viewFrameState` in `block-frame.ts`, shared with the
+        // template story so the story asserts what the product runs (#261 review).
+        // This host adds the two things a pure rule cannot carry: the chart mark's
+        // copy, which lives in a React module, and the write action.
+        const verdict = viewFrameState(block, rows, processed, frame, schema)
+        if (verdict.state === 'rest') return { state: 'rest' }
+        if (verdict.chartLine) return { state: 'empty', emptyLine: CHART_EMPTY_LINE }
+        if (verdict.addRow) return { state: 'empty', onEmptyAction: () => void addRow() }
+        return { state: 'empty', emptyLine: verdict.line }
+      }
+      default:
+        return { state: 'rest' }
     }
-    default:
-      return { state: 'rest', schema, updateSchema }
-  }
+  })()
+
+  return { ...result, schema, updateSchema, getLatestSchema }
 }
 
 /**
@@ -2043,6 +2061,7 @@ function BlockEditor({
     emptyLine,
     schema: collectionSchema,
     updateSchema: updateCollectionSchema,
+    getLatestSchema,
   } = useBlockEmptyState(resolvedBlock, frame, pageId, onChange)
   // Pointer-selected (07.05): a click on the row's own chrome — never a nested
   // cell/input/button, which keeps its own focus — focuses the row and this
@@ -2060,7 +2079,26 @@ function BlockEditor({
   // PERSISTED `activeViewId` and silently revert the bar to its stored tab. Carrying
   // the bar's live selection through `activeViewId` here lets the remount reseed to
   // the same tab instead.
-  const moduleData = block.type === 'view' && activeViewId ? { ...block, activeViewId } : block
+  const moduleData = useMemo(
+    () => (block.type === 'view' && activeViewId ? { ...block, activeViewId } : block),
+    [block, activeViewId]
+  )
+
+  // KAN-243 fix: `runAddView`'s undo must read "what is current right now" off
+  // something that outlives EITHER `SavedViewBar` instance below (the
+  // empty-state bar and `ViewControls`' own live bar swap in and out of this
+  // very render as `state` flips empty/rest) — this per-block `BlockEditor`
+  // instance never unmounts across that flip, so a ref owned here does.
+  // Typed to `ViewBlock` since the two readers (below, and `SavedViewHostContext`'s
+  // consumer) only ever exist for a `view`-type block.
+  const latestViewBlockRef = useRef<ViewBlock>(moduleData as ViewBlock)
+  useEffect(() => {
+    if (block.type === 'view') latestViewBlockRef.current = moduleData as ViewBlock
+  }, [block.type, moduleData])
+  const savedViewHost = useMemo(
+    () => ({ latestBlock: latestViewBlockRef, getLatestSchema }),
+    [getLatestSchema]
+  )
 
   // KAN-321 fix: `state === 'empty'` swaps `children` (the module view, bar
   // included) for `PondBlockEmpty` below — a views-shaped block's active saved
@@ -2087,6 +2125,8 @@ function BlockEditor({
         onSelect={setActiveViewId}
         editable
         onChange={commitViewChange}
+        latestBlock={latestViewBlockRef}
+        getLatestSchema={getLatestSchema}
       />
     ) : undefined
 
@@ -2094,24 +2134,26 @@ function BlockEditor({
     <BlockRowProvider value={{ selected: state === 'selected', stepOut: onReturn }}>
       <SlashLineContext.Provider value={slash.handleSlashLine}>
         <ActiveViewSelectionContext.Provider value={setActiveViewId}>
-          <ModuleView
-            type={block.type}
-            data={moduleData}
-            editable
-            onChange={(next) => {
-              // `moduleData` carries the bar's LIVE `activeViewId` (above), so a config
-              // edit's `applyConfigPatch` spread would otherwise write it into the
-              // persisted block — switching the bar is reading, not editing (#421).
-              // Restore the block's own persisted `activeViewId` before this leaves
-              // `BlockCanvas`; the views-array patch itself already landed correctly.
-              const committed =
-                block.type === 'view'
-                  ? ({ ...(next as ViewBlock), activeViewId: block.activeViewId } as Block)
-                  : (next as Block)
-              slash.handleTextChange(committed)
-              onChange(committed)
-            }}
-          />
+          <SavedViewHostContext.Provider value={savedViewHost}>
+            <ModuleView
+              type={block.type}
+              data={moduleData}
+              editable
+              onChange={(next) => {
+                // `moduleData` carries the bar's LIVE `activeViewId` (above), so a config
+                // edit's `applyConfigPatch` spread would otherwise write it into the
+                // persisted block — switching the bar is reading, not editing (#421).
+                // Restore the block's own persisted `activeViewId` before this leaves
+                // `BlockCanvas`; the views-array patch itself already landed correctly.
+                const committed =
+                  block.type === 'view'
+                    ? ({ ...(next as ViewBlock), activeViewId: block.activeViewId } as Block)
+                    : (next as Block)
+                slash.handleTextChange(committed)
+                onChange(committed)
+              }}
+            />
+          </SavedViewHostContext.Provider>
         </ActiveViewSelectionContext.Provider>
       </SlashLineContext.Provider>
     </BlockRowProvider>

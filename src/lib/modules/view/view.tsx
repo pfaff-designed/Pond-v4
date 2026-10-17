@@ -27,7 +27,7 @@ import { useCollectionRows } from './use-collection-rows'
 import { useStruckRows } from '@/lib/change-log/undo-strike'
 import { DIFF_REMOVAL_TEXT_CLASSNAME, PondMolecule } from '@/components/molecules/PondMolecule'
 import { activeSavedView, applyConfigPatch } from './schema'
-import { ActiveViewSelectionContext } from './active-view-context'
+import { ActiveViewSelectionContext, SavedViewHostContext } from './active-view-context'
 import { SavedViewBar } from './saved-view-bar'
 import {
   addDays,
@@ -335,6 +335,10 @@ export function CollectionView({
   // frame — but only when it has mounted a provider (BlockCanvas, not a bare
   // story/test render of CollectionView).
   const notifyActiveViewSelected = useContext(ActiveViewSelectionContext)
+  // KAN-243 fix: BlockCanvas's own getters, which outlive both `SavedViewBar`
+  // instances it draws for one block — absent off a bare story/test render of
+  // `CollectionView`, where `SavedViewBar` falls back to its own local ref.
+  const savedViewHost = useContext(SavedViewHostContext)
   const handleSelectView = useCallback(
     (id: string) => {
       setLocalActiveViewId(id)
@@ -452,6 +456,8 @@ export function CollectionView({
         onChange={onChange}
         editable={editable}
         onConfigChange={onConfigChange ? handleConfigChange : undefined}
+        latestBlock={savedViewHost?.latestBlock}
+        getLatestSchema={savedViewHost?.getLatestSchema}
       />
       {activeConfig.mode === 'board' ? (
         <CollectionBoard
@@ -579,6 +585,8 @@ function ViewControls({
   onChange,
   editable,
   onConfigChange,
+  latestBlock,
+  getLatestSchema,
 }: {
   config: ViewBlock
   /** The raw, unresolved persisted block — `SavedViewBar`'s segments and its
@@ -594,6 +602,10 @@ function ViewControls({
   onChange?: (next: ViewBlock) => void
   editable?: boolean
   onConfigChange?: (patch: ViewConfigPatch) => void
+  /** KAN-243 fix: `BlockCanvas`'s own host getters, forwarded to `SavedViewBar`
+   *  — see `SavedViewHostContext`. Absent off a bare story/test render. */
+  latestBlock?: { readonly current: ViewBlock }
+  getLatestSchema?: () => PropertySchema | null
 }) {
   // The head's fact: a board reads its lanes' property, a list the date it groups by.
   const groupDef =
@@ -639,6 +651,8 @@ function ViewControls({
             onSelect={onSelectView}
             editable={!!editable}
             onChange={onChange}
+            latestBlock={latestBlock}
+            getLatestSchema={getLatestSchema}
           />
         )}
       </div>
