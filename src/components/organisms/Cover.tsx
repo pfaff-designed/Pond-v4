@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 
 import { AsciiPondBackground } from '@/components/molecules/AsciiPondBackground'
 import { formatCoverClock, timezoneCity } from '@/lib/first-run/cover-clock'
+import { formatChord, useApplePlatform } from '@/lib/shell-commands'
 
 const headerLabelClass =
   'whitespace-nowrap text-[9.5px] font-medium uppercase tracking-[0.11em] text-mn-text-meta'
@@ -29,6 +30,7 @@ const useMounted = () => useSyncExternalStore(subscribeMounted, () => true, () =
  */
 export function Cover() {
   const mounted = useMounted()
+  const apple = useApplePlatform()
   const [clock, setClock] = useState(() => formatCoverClock(new Date()))
   const [text, setText] = useState('')
   const router = useRouter()
@@ -81,7 +83,7 @@ export function Cover() {
             className="w-full flex-1 bg-transparent font-mono text-[12.5px] tracking-[0.02em] text-mn-text-secondary caret-mn-text placeholder:text-mn-text-secondary focus:outline-none"
           />
           <span className="rounded-full bg-mn-hover-fill px-[11px] py-1.5 text-[11px] text-mn-text-meta">
-            ⌘K
+            {formatChord('mod+k', apple)}
           </span>
           <button
             type="button"

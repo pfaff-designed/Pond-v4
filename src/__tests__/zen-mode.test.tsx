@@ -123,6 +123,7 @@ describe('the palette’s mode group (6q frame 1)', () => {
     paletteEntries([...paletteItems([], [], 'journal'), ...modeItems(inZen)], query)
 
   it('typing zen lists `mode`: zen and zen, on ink, as the board writes them', () => {
+    onPlatform('MacIntel')
     const entries = rows(false, 'zen')
     expect(entries[0]).toEqual({ kind: 'group', label: 'mode' })
     const mode = entries.slice(1, 3)
