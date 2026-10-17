@@ -31,11 +31,14 @@ import {
   COMPOSER_BOTTOM_INSET,
   COMPOSER_CARD_BOTTOM_VAR,
   COMPOSER_CLEARANCE_VAR,
+  COMPOSER_SCROLL_CLEARANCE_VAR,
   COMPOSER_TAB_INSET,
   COMPOSER_TOP_CLEARANCE,
   composerFootprintPx,
+  ZEN_PILL_FOOTPRINT_PX,
 } from '@/lib/layout/composer-clearance'
 import { COMPOSER_DEFAULT_HEIGHT, COMPOSER_MAX_HEIGHT_CSS } from '@/lib/layout/composer-height'
+import { useZen } from '@/lib/layout/zen'
 import { RAIL_WIDTH_PX } from '@/lib/layout/rail-width'
 import { ariaKeyshortcuts, formatChord, useApplePlatform } from '@/lib/shell-commands'
 import type { CSSVars } from '@/lib/css-vars'
@@ -121,6 +124,10 @@ export const TerminalDrawer = ({
   // formatChord/ariaKeyshortcuts take it as a param rather than reading navigator live,
   // so the tab's SSR and first client render always agree (no hydration mismatch).
   const apple = useApplePlatform()
+  // Off a `ZenProvider` (Storybook) this reads the context's default —
+  // `composerAsked: false` — so `cardHidden` below is just `zen`, matching
+  // the card's own actual visibility (`ZenComposerChrome`) in that setting.
+  const { composerAsked } = useZen()
   const innerCardRef = useRef<HTMLElement>(null)
   const tabRef = useRef<HTMLElement>(null)
   const setCardRef = useCallback(
@@ -164,6 +171,40 @@ export const TerminalDrawer = ({
       shell.style.removeProperty(COMPOSER_CLEARANCE_VAR)
     }
   }, [collapsed, maximized, minimized])
+
+  // The var a scrolling caret actually has to clear — a SEPARATE effect from
+  // the one above, on purpose: `COMPOSER_CLEARANCE_VAR` (content padding) must
+  // keep its last measurement while zen hides the card (so the page's content
+  // padding doesn't jump), but this var must not — nothing is drawn where
+  // that old footprint says once zen hides the card, the zen pill is, lower
+  // down. Which of the two applies is explicit state (`zen` + `composerAsked`),
+  // never layout measurement — the hidden card's own node reads a stale or
+  // zeroed size once its ancestor (`ZenComposerChrome`) goes `display: none`.
+  useLayoutEffect(() => {
+    const node = collapsed ? tabRef.current : innerCardRef.current
+    const shell = node?.closest<HTMLElement>('[data-part="shell"]')
+    if (!node || !shell) return
+    const cardHidden = zen && !composerAsked
+    if (cardHidden) {
+      shell.style.setProperty(COMPOSER_SCROLL_CLEARANCE_VAR, `${ZEN_PILL_FOOTPRINT_PX}px`)
+      return () => shell.style.removeProperty(COMPOSER_SCROLL_CLEARANCE_VAR)
+    }
+    const publish = () =>
+      shell.style.setProperty(
+        COMPOSER_SCROLL_CLEARANCE_VAR,
+        `${composerFootprintPx(node.offsetHeight, collapsed ? COMPOSER_TAB_INSET : undefined)}px`
+      )
+    publish()
+    const handleResize = () => {
+      if (node.getClientRects().length > 0) publish()
+    }
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(handleResize)
+    observer?.observe(node)
+    return () => {
+      observer?.disconnect()
+      shell.style.removeProperty(COMPOSER_SCROLL_CLEARANCE_VAR)
+    }
+  }, [collapsed, maximized, minimized, zen, composerAsked])
 
   // The chevron pill, the "pond answered" landed state, the ⌘J key and the
   // "Open composer" button — a standalone element, always mounted, so it can

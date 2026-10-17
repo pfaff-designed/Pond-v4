@@ -20,6 +20,23 @@ export const COMPOSER_CLEARANCE_VAR = '--pond-composer-clearance'
 /** Air between a surface's last line and the composer's top edge, once scrolled to the end. */
 export const COMPOSER_CLEARANCE_GAP = 24
 
+/**
+ * What a scrolling caret actually has to clear, on the shell element. Equal
+ * to `COMPOSER_CLEARANCE_VAR` while the card or its tab is on screen — but
+ * zen hiding the card (ZenChrome `hidden`) leaves `COMPOSER_CLEARANCE_VAR` at
+ * its last value on purpose (so the page's content padding doesn't jump),
+ * and nothing is drawn where that footprint says — the zen pill is, lower
+ * down. Two facts, two vars (`TerminalDrawer.tsx`'s publish effect).
+ */
+export const COMPOSER_SCROLL_CLEARANCE_VAR = '--pond-composer-scroll-clearance'
+
+/** The zen pill's own footprint (`ZenPill.tsx`): `bottom-[30px]`, plus its
+ *  height (the row's `p-[5px]` round its `h-[36px]` items: 36 + 5 + 5). What
+ *  zen actually draws at the screen's bottom once the card itself is hidden. */
+export const ZEN_PILL_BOTTOM_INSET_PX = 30
+export const ZEN_PILL_HEIGHT_PX = 46
+export const ZEN_PILL_FOOTPRINT_PX = ZEN_PILL_BOTTOM_INSET_PX + ZEN_PILL_HEIGHT_PX
+
 /** The collapsed tab sits on the shell's bottom edge, with no inset below it. */
 export const COMPOSER_TAB_INSET = 0
 
@@ -37,11 +54,14 @@ export const composerFootprintPx = (cardHeight: number, inset = COMPOSER_BOTTOM_
 const queryShell = (): HTMLElement | null =>
   typeof document === 'undefined' ? null : document.querySelector<HTMLElement>('[data-part="shell"]')
 
-/** The footprint the shell is currently publishing, or null when nothing has. */
-const publishedFootprintPx = (shell: HTMLElement): number | null => {
-  const footprint = parseFloat(getComputedStyle(shell).getPropertyValue(COMPOSER_CLEARANCE_VAR))
-  return Number.isNaN(footprint) ? null : footprint
+/** The number the shell is currently publishing under `cssVar`, or null when nothing has. */
+const publishedPx = (shell: HTMLElement, cssVar: string): number | null => {
+  const value = parseFloat(getComputedStyle(shell).getPropertyValue(cssVar))
+  return Number.isNaN(value) ? null : value
 }
+
+/** The footprint the shell is currently publishing, or null when nothing has. */
+const publishedFootprintPx = (shell: HTMLElement): number | null => publishedPx(shell, COMPOSER_CLEARANCE_VAR)
 
 /**
  * The bottom padding a page surface carries so its last lines clear the
@@ -80,12 +100,16 @@ export const composerBottomBound = (viewportHeight: number): number => {
  * can exceed the scroller itself, leaving no band for the caret to sit in.
  * Clamped against the shell's own height (the page scroller spans the
  * shell's full column); with no shell there is nothing to clamp against.
+ *
+ * Reads `COMPOSER_SCROLL_CLEARANCE_VAR` first — what a caret actually has to
+ * clear — falling back to the content-padding footprint, then the
+ * card-at-rest fallback, same order as `composerScrollPadding`'s CSS.
  */
 export const composerClearanceMarginPx = (): number => {
   const shell = queryShell()
-  const footprint = shell ? publishedFootprintPx(shell) : null
+  const published = shell ? publishedPx(shell, COMPOSER_SCROLL_CLEARANCE_VAR) ?? publishedFootprintPx(shell) : null
   const margin =
-    footprint === null ? composerFootprintPx(COMPOSER_REST_HEIGHT) + COMPOSER_CLEARANCE_GAP : footprint + COMPOSER_CLEARANCE_GAP
+    published === null ? composerFootprintPx(COMPOSER_REST_HEIGHT) + COMPOSER_CLEARANCE_GAP : published + COMPOSER_CLEARANCE_GAP
   if (!shell) return margin
   const maxMargin = shell.getBoundingClientRect().height - COMPOSER_TOP_CLEARANCE - COMPOSER_MIN_CARET_BAND
   return Math.min(margin, maxMargin)
@@ -95,12 +119,19 @@ export const composerClearanceMarginPx = (): number => {
  * The inline `scroll-padding` a page's own scroller carries so native
  * caret-follow and `scrollIntoView` land clear of the pill above and the
  * card below — whichever element actually scrolls the page (`<main>`,
- * `PageCanvas`'s own div) reads the same two values. The bottom value is
- * clamped the same way as `composerClearanceMarginPx`: `scroll-padding`'s `%`
- * resolves against the scrollport's own height, so `100%` here is the
- * scroller's height without a shell lookup.
+ * `PageCanvas`'s own div) reads the same two values. The bottom value reads
+ * `COMPOSER_SCROLL_CLEARANCE_VAR` first (what a caret actually has to
+ * clear), falling back to the content-padding footprint, then the
+ * card-at-rest fallback — the same order `composerClearanceMarginPx` reads
+ * in JS. Clamped the same way too: `scroll-padding`'s `%` resolves against
+ * the scrollport's own height, so `100%` here is the scroller's height
+ * without a shell lookup.
  */
-export const composerScrollPadding = (): { scrollPaddingTop: string; scrollPaddingBottom: string } => ({
-  scrollPaddingTop: `${COMPOSER_TOP_CLEARANCE}px`,
-  scrollPaddingBottom: `min(${composerClearancePadding()}, calc(100% - ${COMPOSER_TOP_CLEARANCE + COMPOSER_MIN_CARET_BAND}px))`,
-})
+export const composerScrollPadding = (): { scrollPaddingTop: string; scrollPaddingBottom: string } => {
+  const fallback = composerFootprintPx(COMPOSER_REST_HEIGHT)
+  const bottom = `calc(var(${COMPOSER_SCROLL_CLEARANCE_VAR}, var(${COMPOSER_CLEARANCE_VAR}, ${fallback}px)) + ${COMPOSER_CLEARANCE_GAP}px)`
+  return {
+    scrollPaddingTop: `${COMPOSER_TOP_CLEARANCE}px`,
+    scrollPaddingBottom: `min(${bottom}, calc(100% - ${COMPOSER_TOP_CLEARANCE + COMPOSER_MIN_CARET_BAND}px))`,
+  }
+}
