@@ -881,16 +881,19 @@ export function AITerminal() {
   // hidden on page A stayed hidden for good, even after leaving and coming
   // back), per the ticket's "state per page visit".
   const [dismissedCurrentRefNodeId, setDismissedCurrentRefNodeId] = useState<string | null>(null)
-  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
+    // KAN-341: resets the per-visit dismissal on a real pageId change (opening
+    // another page) — a cause, not a derived-state computation.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDismissedCurrentRefNodeId(null)
   }, [pageId])
-  // Guarded to fire once per `pageId`/dismissal pair (both tracked in the
-  // dependency array, so this never cascades) — not a derived-state
-  // computation, so `react-hooks/set-state-in-effect` is disabled here, same
-  // as Rail.tsx's own "reveal the selection" effect.
   useEffect(() => {
     const currentRefId = `current:${pageId}`
+    // Guarded to fire once per `pageId`/dismissal pair (both tracked in the
+    // dependency array, so this never cascades) — not a derived-state
+    // computation, so `react-hooks/set-state-in-effect` is disabled here, same
+    // as Rail.tsx's own "reveal the selection" effect.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setReferences((prev) => {
       const withoutStaleCurrent = prev.filter(
         (ref) => !ref.id.startsWith('current:') || ref.id === currentRefId
@@ -903,7 +906,6 @@ export function AITerminal() {
       ]
     })
   }, [pageId, dismissedCurrentRefNodeId])
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleAskFromSelection = useCallback(
     (ctx: SelectionContext) => {

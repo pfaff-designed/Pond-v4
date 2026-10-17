@@ -259,10 +259,8 @@ export async function fetchNodeContext(
   sb: Sb,
   userId: string,
   nodeId: string,
-  /** #341: scopes the read to this pond, like `resolveMention`'s `pond`. Optional
-   *  until the other call sites thread it through — omitted, the read stays
-   *  unscoped by pond, as before. */
-  pond?: string | null
+  /** KAN-341: scopes the read to this pond, like `resolveMention`'s `pond`. */
+  pond: string | null
 ): Promise<NodeContextData | null> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const q: any = sb
@@ -270,12 +268,12 @@ export async function fetchNodeContext(
     .select('type, title, blocks, props, deleted_at')
     .eq('id', nodeId)
     .eq('user_id', userId)
-  const { data: own } = await (pond === undefined ? q : inPond(q, pond)).maybeSingle()
+  const { data: own } = await inPond(q, pond).maybeSingle()
 
   if (!own) return null
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const row = own as any
-  // #341: a trashed row (migration 0027's `deleted_at`, not in the generated
+  // KAN-341: a trashed row (migration 0027's `deleted_at`, not in the generated
   // types) is left out — same as an id that never resolved.
   if (row.deleted_at) return null
 
@@ -468,6 +466,12 @@ export interface BuildChatContextOptions {
   latestUserText?: string
   /** #312: the pond whose pages the model may see. See `fetchPageSummaries`. */
   pondId: string | null
+  /**
+   * KAN-341: a caller that already resolved `pondId` (`resolvePond`) passes the
+   * result here, so this function doesn't resolve it a second time per request.
+   * `undefined` (the default) means "resolve `pondId` yourself".
+   */
+  pond?: string | null
   /** KAN-99: the person dismissed the open page's whole-page chip for this
    *  visit — withhold its content block, even though `nodeId` itself still
    *  rides the request (propose_changes still targets it). */
@@ -493,13 +497,13 @@ export async function buildChatContext(
   opts: BuildChatContextOptions
 ): Promise<string> {
   const blocks: string[] = []
-  const pond = await resolvePond(sb, userId, opts.pondId)
+  const pond = opts.pond !== undefined ? opts.pond : await resolvePond(sb, userId, opts.pondId)
 
   if (opts.nodeId && !opts.skipNodeContext) {
     const data =
       opts.nodeData !== undefined ? opts.nodeData : await fetchNodeContext(sb, userId, opts.nodeId, pond)
     // Current node only: expose block ids so the model can target one in propose_changes.
-    // #341: a resolved-but-unreadable node (another pond, or trashed) still rode the
+    // KAN-341: a resolved-but-unreadable node (another pond, or trashed) still rode the
     // request — say so, rather than letting the model answer as if nothing was asked.
     blocks.push(data ? formatNodeContext(data, { includeBlockIds: true }) : '[Current node] unavailable')
   }

@@ -117,9 +117,10 @@ export async function POST(req: Request) {
   // KAN-309: fetched once here (not inside buildChatContext) so the route can
   // also hand it to withOpenPageNow below — one read, two uses.
   let openPageData: NodeContextData | null = null
-  // #341: resolved once, the same way buildChatContext resolves its own —
-  // every fetchNodeContext call below threads it through so a cross-pond or
-  // trashed id reads as unavailable instead of another pond's page.
+  // KAN-341: resolved once, then handed to buildChatContext below (which
+  // otherwise resolves it again) — every fetchNodeContext call below also
+  // threads it through, so a cross-pond or trashed id reads as unavailable
+  // instead of another pond's page.
   let pond: string | null = null
   if (user) {
     pond = await resolvePond(supabase, user.id, pondId)
@@ -155,6 +156,8 @@ export async function POST(req: Request) {
       latestUserText: userTextForMentions,
       // #312: the composer reads only this pond (`s6m5`).
       pondId,
+      // KAN-341: already resolved above — skip a second `resolvePond` call.
+      pond,
       // KAN-99: `nodeId` still rides every other use (propose_changes targets
       // it) — only its content block is withheld once its chip is dismissed.
       skipNodeContext: !openPageContext,
