@@ -20,7 +20,7 @@ flowchart TD
     C --> O3["Epic orchestrator · opus"]
     O1 --> BL["<b>Build loop</b> — ralph.sh<br/>a fresh claude-sonnet-5 pass per item"]
     O1 --> RV["<b>Reviewer × 2</b> · opus<br/>standards + spec, in parallel"]
-    O1 --> VE["<b>Live verifier</b> · opus<br/>a real browser, one at a time"]
+    O1 --> VE["<b>Live verifier</b> · opus<br/>a real browser, one per slot"]
     O2 -.-> D1["same three"]
     O3 -.-> D2["same three"]
 ```
@@ -93,7 +93,7 @@ flowchart TD
 ```
 
 **Use a loop when all four hold:** the work is a list of items; each is proven by a command, not by
-judgement; the state survives in git and a plan file; and nothing in it needs you, the shared
+judgement; the state survives in git and a plan file; and nothing in it needs you, a
 browser, or a one-way door. Picking, the reachability gate, review, live verification, migrations,
 pushes, merges and Jira are therefore **not** loops.
 

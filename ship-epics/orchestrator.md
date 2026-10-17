@@ -144,15 +144,15 @@ cd WORKTREE && npx next dev -p PORT > /tmp/EPIC-dev.log 2>&1
 cd REPO && npx -y serve wayfinder/design_handoff_pond -l $((PORT + 1500)) > /tmp/EPIC-serve.log 2>&1
 ```
 
-Wait until `curl -s -o /dev/null -w '%{http_code}' localhost:PORT` answers (poll with `sleep 5`, max 3 minutes). Then `LAUNCH_BROWSER` the verifier, supervised (failsafe), prompt = `SHIP_DIR/verifier.md` + `BROWSER`, `DEPTH`, `APP_URL=http://localhost:PORT`, `BOARD_URL=http://localhost:<PORT+1500>`, `PATH_STEPS`, the board files and frames the spec names, `TICKET`.
+Wait until `curl -s -o /dev/null -w '%{http_code}' localhost:PORT` answers (poll with `sleep 5`, max 3 minutes). Only you, the orchestrator, ever take or release the lock; a verifier never does. Then `LAUNCH_BROWSER` the verifier, supervised (failsafe), prompt = `SHIP_DIR/verifier.md` + `BROWSER`, `DEPTH`, `APP_URL=http://localhost:PORT`, `BOARD_URL=http://localhost:<PORT+1500>`, `PATH_STEPS`, the board files and frames the spec names, `TICKET`.
 
 Afterwards, always — pass or fail:
 
 ```sh
-pkill -f "next dev -p PORT"; pkill -f "serve wayfinder/design_handoff_pond -l $((PORT + 1500))"; [ "$(cat /tmp/pond-browser.lock/owner 2>/dev/null)" = "EPIC" ] && rm -rf /tmp/pond-browser.lock
+pkill -f "next dev -p PORT"; pkill -f "serve wayfinder/design_handoff_pond -l $((PORT + 1500))"; if [ "$(cat /tmp/pond-browser.lock/owner 2>/dev/null)" = "EPIC" ]; then rm -rf /tmp/pond-browser.lock; fi
 ```
 
-A failed verification is a fix round (step 6), then verify again.
+A failed verification is a fix round (step 6), then verify again. A verifier that reports `signed out` is not a fix round: return `stopped` with `reason: browser slot N signed out`, so the conductor can sign the slot in.
 
 ### 8. Migrations
 

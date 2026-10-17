@@ -106,8 +106,10 @@ Every call is `mcp__plugin_atlassian_atlassian__<name>` and every call takes `cl
 | 3102   | `mcp__pw2__browser_<x>` |
 | 3103   | `mcp__pw3__browser_<x>` |
 
-- **No lock** with a slot browser: nobody else uses it.
-- **Signed out?** If `APP_URL` shows the sign-in screen, stop with `stopped: browser slot N signed out`. Only the conductor signs a slot in, with the person's emailed code. A slot is never signed in through script.
+- **No lock** with a slot browser: nobody else uses it. The lock belongs to the orchestrator in every case. A verifier never takes or waits on it.
+- **Load the slot's tools first.** They are deferred: a verifier loads them with `ToolSearch` (`select:mcp__pwN__browser_navigate,…`) before its first call. If the search returns none, the slot isn't in this session. Then use the shared `mcp__playwright__<name>` (the orchestrator holds the lock for you) and say so in `RESULT`.
+- **No `BROWSER` input** (an orchestrator started before per-slot browsers) means the shared `mcp__playwright__<name>`, under the orchestrator's lock.
+- **Signed out?** If `APP_URL` shows the sign-in screen, the verifier returns `result: fail` with first line `signed out: browser slot N`, and the orchestrator returns `stopped: browser slot N signed out`. Only the conductor signs a slot in, with the person's emailed code. A slot is never signed in through script.
 - **Fallback.** If the slot's tools aren't in this session (they load when Claude Code starts, so a session started before they were added lacks them), use the shared `mcp__playwright__<name>`. That browser is still shared, so take `/tmp/pond-browser.lock` first, as `orchestrator.md` step 7 says.
 
 The tool names below are the suffix `<x>` after `BROWSER`'s prefix.
