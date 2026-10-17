@@ -129,11 +129,24 @@ const editorProps = {
   // The one markdown-paste path, text/plain-only or html-wrapper-only; see its
   // own comment for why `clipboardTextParser` can't own this instead.
   handlePaste: markdownHandlePaste,
-  // `tr.scrollIntoView()` reads this fresh via `view.someProp` on every call —
-  // a getter, not a fixed value, so it tracks the composer's live published
-  // footprint instead of the one at module load (KAN-400).
-  get scrollMargin() {
-    return { top: COMPOSER_TOP_CLEARANCE, bottom: composerClearanceMarginPx(), left: 0, right: 0 }
+  // `@tiptap/core` spreads `editorProps` into the `EditorView` once, at
+  // mount (and again on `setOptions`), which bakes a `get scrollMargin()`
+  // defined here into a fixed value — ProseMirror's own `scrollRectIntoView`
+  // would then read the composer's footprint as it was at that one moment,
+  // not as it is when a later `tr.scrollIntoView()` actually runs. The
+  // spread only copies the *reference* to `scrollMargin`'s object, though, so
+  // giving that object itself live getters keeps `getSide`'s `value.bottom`
+  // read (on every scroll) current with the composer's published footprint
+  // (KAN-400).
+  scrollMargin: {
+    get top() {
+      return COMPOSER_TOP_CLEARANCE
+    },
+    get bottom() {
+      return composerClearanceMarginPx()
+    },
+    left: 0,
+    right: 0,
   },
 }
 

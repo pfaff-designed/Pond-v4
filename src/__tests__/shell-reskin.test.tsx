@@ -102,7 +102,6 @@ import {
   COMPOSER_CLEARANCE_GAP,
   COMPOSER_CLEARANCE_VAR,
   COMPOSER_REST_HEIGHT,
-  composerClearanceMarginPx,
   composerClearancePadding,
   composerFootprintPx,
 } from '@/lib/layout/composer-clearance'
@@ -996,29 +995,14 @@ describe('WorkspaceShell — the chrome floats over one canvas', () => {
   it('a real text block inside <main> reads the published clearance through the whole tree, and scrollToBlock still centres (path test, KAN-400)', async () => {
     const data: TextBlock = { id: 'blk-1', type: 'text', content: 'hello' }
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    const wrap = (child: React.ReactNode) => (
+    const { container } = render(
       <QueryClientProvider client={client}>
-        <WorkspaceShell>{child}</WorkspaceShell>
+        <WorkspaceShell>
+          <div id={blockDomId(data.id)}>
+            <TextEditor data={data} onChange={() => {}} standIn={null} pressRef={{ current: null }} />
+          </div>
+        </WorkspaceShell>
       </QueryClientProvider>
-    )
-    // Mount the shell first and publish the thread footprint on its real
-    // `[data-part="shell"]` node (`COMPOSER_DEFAULT_HEIGHT`, 392, plus its
-    // bottom inset — mirroring `shellEndingAt` in composer-clearance.test.ts),
-    // THEN mount the block — a `TextEditor` reads `editorProps.scrollMargin`'s
-    // getter once, at creation, so the footprint must already be live for the
-    // editor to pick it up (same ordering `view.test.tsx`'s unit test uses).
-    const { container, rerender } = render(wrap(null))
-    const shell = container.querySelector<HTMLElement>('[data-part="shell"]')!
-    shell.style.setProperty(
-      COMPOSER_CLEARANCE_VAR,
-      `${composerFootprintPx(COMPOSER_DEFAULT_HEIGHT)}px`
-    )
-    rerender(
-      wrap(
-        <div id={blockDomId(data.id)}>
-          <TextEditor data={data} onChange={() => {}} standIn={null} pressRef={{ current: null }} />
-        </div>
-      )
     )
 
     const field = await findTextBlock()
@@ -1029,9 +1013,20 @@ describe('WorkspaceShell — the chrome floats over one canvas', () => {
     // doesn't crash reading the live footprint.
     selectWord(field, 'hello')
 
+    // Publish the thread footprint on the shell's real `[data-part="shell"]`
+    // node AFTER the block has already mounted (392 + its bottom inset,
+    // mirroring `shellEndingAt` in composer-clearance.test.ts) — proving
+    // `scrollMargin`'s live getters (KAN-400) track a change made well after
+    // creation, not just whatever was published at mount.
+    const shell = container.querySelector<HTMLElement>('[data-part="shell"]')!
+    shell.style.setProperty(
+      COMPOSER_CLEARANCE_VAR,
+      `${composerFootprintPx(COMPOSER_DEFAULT_HEIGHT)}px`
+    )
+
     expect(textEditorOf(field).view.someProp('scrollMargin')).toEqual({
-      top: COMPOSER_TOP_CLEARANCE,
-      bottom: composerClearanceMarginPx(),
+      top: 72,
+      bottom: 440,
       left: 0,
       right: 0,
     })
