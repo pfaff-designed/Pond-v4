@@ -40,12 +40,14 @@ Judge the code against this repo's conventions (`WORKTREE/AGENTS.md`, and two or
 - Tests that pass for the wrong reason: asserting on mocks, or on the new component alone when the behaviour depends on its host.
 - **The pragmatic rules** (AGENTS.md, "Build like a pragmatic programmer"):
   - **Knowledge in two places.** A value, rule or path the diff spells out that already has a home is a finding. So is a fact stored only implicitly in another field.
-  - **Coincidence.** A claim in a comment or a commit message with no test behind it. A fix with no failing-first regression test. A test that would still pass with the production change reverted: check by reading what it asserts.
-  - **Coupling.** A change that reaches through several unrelated modules, or a test tied to the machine it runs on (platform, locale or time zone literals).
+  - **Coincidence.** A claim in a comment or a commit message with no test behind it. A behaviour fix with no failing-first regression test. A test that would still pass with the production change reverted: check what it asserts and what its mocks stub out.
+  - **Coupling.** A change that reaches through several unrelated modules, new global or module-level mutable state, a caller that asks for an object's internals to decide for it (tell, don't ask), or a test tied to the machine it runs on (platform, locale or time zone literals).
+  - **Contracts.** An engine seam (field engine, coercion, rollups, layout, the diff path) that accepts input its types or zod parse don't describe, or a caller that passes what the contract refuses.
+  - **Privilege.** Under `supabase/migrations/`, a policy, grant or `security definer` wider than the feature needs, or one that lets an admin read a private page.
   - **Unreleased resources.** Listeners, timers, subscriptions or locks with no matching release.
   - **Swallowed errors.** A catch that neither handles the error nor rethrows it.
   - **Pure engine code** tested by one happy path. Ask for a table of cases over the input space, and name the combination that is missing.
-  - **Broken windows** in the lines the diff touched, left as they were.
+  - **Broken windows** in the lines the diff touched, left as they were. Always `non_blocking`, unless the diff made the window.
 
 ## AXIS = spec
 
