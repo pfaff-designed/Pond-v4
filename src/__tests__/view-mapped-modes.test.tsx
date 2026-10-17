@@ -373,7 +373,7 @@ describe('BlockCanvas — a gantt’s empty state is the board’s voidBox, not 
     expect(box.dataset.emptyBox).toBe('void')
     expect(box.textContent).toBe(GANTT_EMPTY_LINE)
     expect(c.textContent).not.toContain('no rows yet')
-    expect(c.querySelector('button')).toHaveTextContent('add a task')
+    expect(c.querySelector('[data-part="gantt-add"]')).toHaveTextContent('add a task')
   })
 
   it('whose filter hides every row: the filter line, in the void box', () => {
