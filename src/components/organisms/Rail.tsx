@@ -419,6 +419,11 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
           pagePrefetch.onFocus()
         }
       }}
+      onBlur={(e) => {
+        // Same guard as onFocus — losing focus to an inner control must not
+        // cancel a hold the row itself still owns.
+        if (e.target === e.currentTarget) pagePrefetch.onBlur()
+      }}
       onKeyDown={(e) => {
         // Only keys pressed on the row itself — Enter on an inner ＋/× button
         // already clicks it; it must not also bubble into an "open" command.
