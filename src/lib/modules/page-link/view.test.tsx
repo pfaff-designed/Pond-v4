@@ -10,6 +10,14 @@ import type { PageRef } from './resolve'
 import { PageLinkView } from './view'
 import type { PageLinkBlock } from './schema'
 
+// The real hook talks to Supabase through react-query; mocked here (mirrors
+// `view/view.test.tsx`'s `use-collection-rows` mock) so this file can assert
+// the row text without a QueryClientProvider.
+let mockBlockCount = 0
+jest.mock('./use-block-count', () => ({
+  useBlockCount: () => mockBlockCount,
+}))
+
 const block: PageLinkBlock = { id: 'pl-1', type: 'page-link', pageId: 'page-1' }
 
 const ref: PageRef = { id: 'page-1', title: 'cabinets', type: 'page', isNew: false }
@@ -24,6 +32,10 @@ const capabilities = (resolved: PageRef | null): PageLinkCapabilities => ({
 })
 
 describe('PageLinkView — resolved', () => {
+  beforeEach(() => {
+    mockBlockCount = 0
+  })
+
   it('renders the title and chevron, and clicking navigates', () => {
     const caps = capabilities(ref)
     render(
@@ -68,6 +80,47 @@ describe('PageLinkView — resolved', () => {
       </PageLinkProvider>
     )
     expect(screen.queryByText('new')).not.toBeInTheDocument()
+  })
+
+  it('renders "0 blocks" for an empty linked page', () => {
+    const caps = capabilities(ref)
+    render(
+      <PageLinkProvider value={caps}>
+        <PageLinkView data={block} />
+      </PageLinkProvider>
+    )
+    expect(screen.getByText('0 blocks')).toBeInTheDocument()
+  })
+
+  it('renders singular "1 block"', () => {
+    mockBlockCount = 1
+    const caps = capabilities(ref)
+    render(
+      <PageLinkProvider value={caps}>
+        <PageLinkView data={block} />
+      </PageLinkProvider>
+    )
+    expect(screen.getByText('1 block')).toBeInTheDocument()
+  })
+
+  it('updates the row text when the linked page\'s block count changes', () => {
+    mockBlockCount = 2
+    const caps = capabilities(ref)
+    const { rerender } = render(
+      <PageLinkProvider value={caps}>
+        <PageLinkView data={block} />
+      </PageLinkProvider>
+    )
+    expect(screen.getByText('2 blocks')).toBeInTheDocument()
+
+    mockBlockCount = 5
+    rerender(
+      <PageLinkProvider value={caps}>
+        <PageLinkView data={block} />
+      </PageLinkProvider>
+    )
+    expect(screen.getByText('5 blocks')).toBeInTheDocument()
+    expect(screen.queryByText('2 blocks')).not.toBeInTheDocument()
   })
 })
 

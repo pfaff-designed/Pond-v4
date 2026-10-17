@@ -2,6 +2,7 @@
 
 import type { ModuleViewProps } from '../types'
 import { usePageLinks } from './context'
+import { useBlockCount } from './use-block-count'
 import type { PageLinkBlock } from './schema'
 
 /**
@@ -9,8 +10,8 @@ import type { PageLinkBlock } from './schema'
  * center;gap:10px;padding:10px 4px;border-bottom:1px solid rgba(27,29,20,.09);
  * font-size:14px`. One focusable row, no card.
  *
- * `N blocks` is a placeholder literal for now (KAN-122's live-count item is a
- * later pass).
+ * `N blocks` is the linked page's live block count (`use-block-count.ts`),
+ * re-read on demand — never stored.
  */
 const ROW =
   'flex items-center gap-[10px] border-b border-mn-text/[0.09] px-1 py-[10px] text-[14px]'
@@ -37,6 +38,7 @@ function PageIcon() {
 export function PageLinkView({ data }: ModuleViewProps<PageLinkBlock>) {
   const pageLinks = usePageLinks()
   const ref = pageLinks?.resolvePage(data.pageId) ?? null
+  const blocks = useBlockCount(ref ? data.pageId : undefined)
 
   // No provider (Storybook, the AI terminal's reference render) degrades the
   // same way as a deleted page: 6k draws no missing state, so this is the
@@ -70,7 +72,9 @@ export function PageLinkView({ data }: ModuleViewProps<PageLinkBlock>) {
           new
         </span>
       )}
-      <span className="text-[12.5px] text-mn-text-secondary">0 blocks</span>
+      <span className="text-[12.5px] text-mn-text-secondary">
+        {blocks} {blocks === 1 ? 'block' : 'blocks'}
+      </span>
       <span aria-hidden className="text-mn-text-meta">
         ›
       </span>
