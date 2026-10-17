@@ -188,8 +188,8 @@ export type ViewFrameState =
   { state: 'rest' } | { state: 'empty'; line?: string; chartLine?: true; addRow?: true }
 
 /** The modes that place rows by a date property — the ones a missing date field
- *  starves, not just empties (calendar is listed for completeness; its `empty.own`
- *  above already steps aside regardless of schema). */
+ *  starves, not just empties (calendar is listed for completeness: like board, its
+ *  `empty.own` above already steps aside regardless of schema). */
 const DATE_PLACED_MODES: ReadonlySet<ViewBlock['mode']> = new Set(['calendar', 'list', 'gantt'])
 
 export function viewFrameState(
@@ -206,8 +206,9 @@ export function viewFrameState(
   const mark = compactChartMark(block)
   const markEmpty = mark === null ? null : COMPACT_MARK_EMPTY[mark]
   if (markEmpty === 'grid') return { state: 'rest' }
-  // KAN-262: the calendar draws its own empty state too — chrome, grid and its
-  // `emptyLine` — so the frame's `no rows yet` never replaces it.
+  // KAN-262/KAN-377: the calendar and board each draw their own empty state —
+  // chrome/grid/lanes and their own line — so the frame's `no rows yet` never
+  // replaces either, filtered or not.
   if (viewKind(block).empty.own) return { state: 'rest' }
   if (rows.length > 0) {
     return processed.length === 0

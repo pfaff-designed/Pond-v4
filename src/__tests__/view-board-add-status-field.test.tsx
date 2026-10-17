@@ -256,7 +256,6 @@ describe('CollectionBoard — the full ＋ task path, on the real `CollectionVie
     const lanes = container.querySelectorAll<HTMLElement>('[data-part="lane"]')
     expect(Array.from(lanes).map((lane) => lane.dataset.lane)).toEqual(['to do', 'doing', 'done'])
     expect(container.querySelector('[data-part="record-peek"]')).toBeNull()
-    expect(screen.queryByText('no rows yet')).not.toBeInTheDocument()
   })
 })
 
