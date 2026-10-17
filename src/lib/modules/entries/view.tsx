@@ -63,13 +63,16 @@ const blankLine = (data: EntriesBlock) => data.placeholder ?? ENTRIES_EMPTY_LINE
  * `write one` on the empty `log` card still works too, via the same `addEntry`.
  *
  * A third insert path lives inside each entry's own field (KAN-356): ↵ with no
- * Shift inserts a new blank entry immediately above the one being typed into,
- * focused — the field's own `onChange` already commits every keystroke, so
- * there is nothing left for ↵ to do but insert and move focus. Shift+↵ is left
- * to the textarea's native newline, which multi-line prose (and `serialize`'s
- * line-collapsing) already assumes. Both this path and the add line share one
- * `pendingFocusId` ref, keyed by the new entry's own id rather than its index,
- * since an in-row insert can land anywhere in the stack, not just at the top.
+ * Shift inserts a new blank entry at the top of the stack (index 0), focused —
+ * newest-first (schema.ts, PondBlock `log`) means any insert belongs at the
+ * top, never spliced in beside the row being typed into, so this reuses
+ * `addEntry` rather than rebuilding the entry shape inline. The field's own
+ * `onChange` already commits every keystroke, so there is nothing left for ↵
+ * to do but insert and move focus. Shift+↵ is left to the textarea's native
+ * newline, which multi-line prose (and `serialize`'s line-collapsing) already
+ * assumes. `pendingFocusId` is keyed by id rather than index because the
+ * Backspace removal path (below) still needs to focus a neighbour row that is
+ * not always at the top.
  */
 
 /**
@@ -172,37 +175,33 @@ export function EntriesView({ data, editable, onChange }: ModuleViewProps<Entrie
   }
 
   /**
-   * ↵ in an entry's own field (KAN-356) inserts a new blank entry immediately
-   * above it, focused — the row is already committed by every keystroke's own
-   * `onChange` via `patchEntry`, so there is nothing left to commit here. Shift+↵
-   * is left untouched: the textarea's native behaviour inserts the literal
-   * newline multi-line prose needs.
+   * ↵ in an entry's own field (KAN-356) inserts a new blank entry at the top
+   * of the stack, focused — newest-first (schema.ts, PondBlock `log`) means
+   * the new entry always belongs at index 0, regardless of which row it was
+   * typed into, so this reuses `addEntry` rather than splicing a hand-built
+   * entry in beside `index`. The row being typed into is already committed by
+   * every keystroke's own `onChange` via `patchEntry`, so there is nothing
+   * left to commit here. Shift+↵ is left untouched: the textarea's native
+   * behaviour inserts the literal newline multi-line prose needs.
    *
-   * ⌫ in an entry already emptied by its own `onChange` removes the row and
-   * moves focus to its neighbour — the previous entry, else the next, else
-   * nowhere — mirroring `BlockCanvas.tsx`'s `removeEmptyLineAt` idiom, built
-   * locally since this is within-block, not a block removal.
+   * ⌫ in an entry already emptied by its own `onChange` removes the row via
+   * `removeEntry` and moves focus to its neighbour — the previous entry, else
+   * the next, else nowhere — mirroring `BlockCanvas.tsx`'s `removeEmptyLineAt`
+   * idiom, built locally since this is within-block, not a block removal.
    */
   function handleTextKeyDown(e: KeyboardEvent<HTMLTextAreaElement>, index: number) {
     if (e.key === 'Backspace' && data.entries[index].text === '') {
       e.preventDefault()
       const neighbour = data.entries[index - 1] ?? data.entries[index + 1]
       if (neighbour) pendingFocusId.current = neighbour.id
-      onChange?.({ ...data, entries: data.entries.filter((_, k) => k !== index) })
+      removeEntry(index)
       return
     }
     if (e.key !== 'Enter' || e.shiftKey) return
     e.preventDefault()
     const id = crypto.randomUUID()
     pendingFocusId.current = id
-    onChange?.({
-      ...data,
-      entries: [
-        ...data.entries.slice(0, index),
-        { id, date: entryDateLabel(new Date()), text: '' },
-        ...data.entries.slice(index),
-      ],
-    })
+    onChange?.(addEntry(data, new Date(), '', id))
   }
 
   if (editable) {

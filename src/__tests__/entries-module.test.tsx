@@ -493,7 +493,7 @@ describe('EntriesView — the add line (KAN-356)', () => {
 })
 
 describe('EntriesView — ↵ inside an entry’s own field (KAN-356)', () => {
-  it('commits the row and inserts a new blank entry immediately above it, focused', () => {
+  it('commits the row and inserts a new blank entry at the top of the stack, focused', () => {
     render(<Stateful data={updates} />)
     const texts = screen.getAllByRole('textbox', { name: 'Entry text' })
     fireEvent.change(texts[1], { target: { value: 'Landlord confirmed, and the keys.' } })
@@ -501,13 +501,13 @@ describe('EntriesView — ↵ inside an entry’s own field (KAN-356)', () => {
 
     const next = screen.getAllByRole('textbox', { name: 'Entry text' })
     expect(next).toHaveLength(3)
+    // Newest-first: the new blank row always lands at index 0, never beside
+    // the row it was typed into — both older entries are pushed down intact.
+    expect((next[0] as HTMLTextAreaElement).value).toBe('')
+    expect((next[1] as HTMLTextAreaElement).value).toBe(updates.entries[0].text)
     // The committed edit survives the insert.
     expect((next[2] as HTMLTextAreaElement).value).toBe('Landlord confirmed, and the keys.')
-    // The new blank row lands immediately above it (index 1, pushing the old
-    // second entry to index 2) — not necessarily at the very top of the stack.
-    expect((next[1] as HTMLTextAreaElement).value).toBe('')
-    expect((next[0] as HTMLTextAreaElement).value).toBe(updates.entries[0].text)
-    expect(document.activeElement).toBe(next[1])
+    expect(document.activeElement).toBe(next[0])
   })
 
   it('Shift+↵ inserts a literal newline instead — no new entry', () => {
