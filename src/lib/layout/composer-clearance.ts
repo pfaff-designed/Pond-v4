@@ -80,3 +80,14 @@ export const composerClearanceMarginPx = (): number => {
   if (footprint === null) return composerFootprintPx(COMPOSER_REST_HEIGHT) + COMPOSER_CLEARANCE_GAP
   return footprint + COMPOSER_CLEARANCE_GAP
 }
+
+/**
+ * The inline `scroll-padding` a page's own scroller carries so native
+ * caret-follow and `scrollIntoView` land clear of the pill above and the
+ * card below — whichever element actually scrolls the page (`<main>`,
+ * `PageCanvas`'s own div) reads the same two values.
+ */
+export const composerScrollPadding = (): { scrollPaddingTop: string; scrollPaddingBottom: string } => ({
+  scrollPaddingTop: `${COMPOSER_TOP_CLEARANCE}px`,
+  scrollPaddingBottom: composerClearancePadding(),
+})

@@ -9,7 +9,7 @@ import { AITerminal } from '@/components/organisms/AITerminal'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { NotifyBridge } from '@/lib/deletion/notify-bridge'
 import { CommandPathProvider } from '@/lib/layout/command-path'
-import { COMPOSER_TOP_CLEARANCE, composerClearancePadding } from '@/lib/layout/composer-clearance'
+import { composerScrollPadding } from '@/lib/layout/composer-clearance'
 import { RAIL_WIDTH_PX } from '@/lib/layout/rail-width'
 import { useZen, ZenChrome, ZenComposerChrome, ZenProvider } from '@/lib/layout/zen'
 import { ZenPill } from '@/components/organisms/ZenPill'
@@ -72,10 +72,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
                     <main
                       ref={mainRef}
                       className="flex-1 overflow-y-auto"
-                      style={{
-                        scrollPaddingTop: `${COMPOSER_TOP_CLEARANCE}px`,
-                        scrollPaddingBottom: composerClearancePadding(),
-                      }}
+                      style={composerScrollPadding()}
                     >
                       {children}
                       <Suspense fallback={null}>
