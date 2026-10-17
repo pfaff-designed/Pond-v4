@@ -65,7 +65,7 @@ describe('readExpandedIds / writeExpandedIds', () => {
     spy.mockRestore()
   })
 
-  it('writing [] is a no-op that reads back empty', () => {
+  it('writing [] overwrites previously stored ids, clearing them', () => {
     writeExpandedIds('pond-1', ['a', 'b'])
     writeExpandedIds('pond-1', [])
     expect(readExpandedIds('pond-1')).toEqual([])

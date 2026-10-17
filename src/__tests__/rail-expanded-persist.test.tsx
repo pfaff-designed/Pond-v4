@@ -173,6 +173,7 @@ describe('the rail persists expanded rows per pond (KAN-393)', () => {
     rerender(withPond(POND))
     expect(readExpandedIds('pond-1')).toEqual(['kitchen'])
     expect(readExpandedIds('pond-2')).toEqual(['garage'])
+    expect(screen.getByRole('treeitem', { name: 'Cabinets' })).toBeInTheDocument()
   })
 
   it("clears the current pond's store when Life's caret collapses everything", async () => {

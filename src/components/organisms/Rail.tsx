@@ -1431,8 +1431,9 @@ export function Rail() {
     () => pushedGlyphs.reduce(pushRecentGlyph, pond?.recentGlyphs ?? []),
     [pond, pushedGlyphs]
   )
-  // Area folders start collapsed and open per session; Life starts expanded so
-  // the tree is visible on load (collapsing Life is the "collapse everything").
+  // Area folders persist their open/collapsed state per pond across reloads
+  // (see the persistence effect below); Life starts expanded so the tree is
+  // visible on load (collapsing Life is the "collapse everything").
   const [expanded, setExpandedRaw] = useState<Set<string>>(new Set())
   // KAN-393: every expand/collapse — manual or programmatic — persists to this
   // pond's store so a reload keeps what was open (board `Pond 08 Edges` 8f).
