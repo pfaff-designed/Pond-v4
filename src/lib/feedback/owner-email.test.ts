@@ -106,6 +106,30 @@ describe('sendOwnerEmail', () => {
     expect(result).toEqual({ id: 'email-123' })
   })
 
+  it('throws when the response is ok but has no id', async () => {
+    const mockFetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    })
+    global.fetch = mockFetch as unknown as typeof fetch
+
+    await expect(sendOwnerEmail(FIELDS)).rejects.toThrow('Resend returned no id')
+  })
+
+  it('throws with the reason when the response body is not valid JSON', async () => {
+    const mockFetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => {
+        throw new SyntaxError('Unexpected end of JSON input')
+      },
+    })
+    global.fetch = mockFetch as unknown as typeof fetch
+
+    await expect(sendOwnerEmail(FIELDS)).rejects.toThrow(/Unexpected end of JSON input/)
+  })
+
   it('bounds the Resend request with a timeout signal', async () => {
     const mockFetch = jest.fn().mockResolvedValue({
       ok: true,

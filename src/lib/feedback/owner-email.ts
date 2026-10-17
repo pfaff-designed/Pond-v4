@@ -63,8 +63,18 @@ export async function sendOwnerEmail(fields: OwnerEmailFields): Promise<SendOwne
     throw new Error(`Resend responded with ${response.status}`)
   }
 
-  const data = (await response.json()) as { id?: string }
-  return { id: data.id ?? '' }
+  let data: { id?: string }
+  try {
+    data = (await response.json()) as { id?: string }
+  } catch (error) {
+    throw new Error(`Resend response was not valid JSON: ${error instanceof Error ? error.message : String(error)}`)
+  }
+
+  if (!data.id) {
+    throw new Error('Resend returned no id')
+  }
+
+  return { id: data.id }
 }
 
 export function buildOwnerEmailFields({
