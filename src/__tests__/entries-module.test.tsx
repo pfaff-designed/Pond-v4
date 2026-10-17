@@ -542,3 +542,41 @@ describe('EntriesView — the hover `remove` (KAN-356)', () => {
     expect((texts[0] as HTMLTextAreaElement).value).toBe(updates.entries[1].text)
   })
 })
+
+describe('EntriesView — ⌫ in an empty entry’s own field (KAN-356)', () => {
+  it('removes that entry via onChange and moves focus to the previous entry', () => {
+    render(<Stateful data={{ ...updates, entries: [...updates.entries, { id: 'u3', date: '1 nov', text: '' }] }} />)
+    const texts = screen.getAllByRole('textbox', { name: 'Entry text' })
+    expect(texts).toHaveLength(3)
+    fireEvent.keyDown(texts[2], { key: 'Backspace' })
+
+    const next = screen.getAllByRole('textbox', { name: 'Entry text' })
+    expect(next).toHaveLength(2)
+    expect(document.activeElement).toBe(next[1])
+  })
+
+  it('with no previous entry, moves focus to the next one instead', () => {
+    render(<Stateful data={{ ...updates, entries: [{ id: 'u0', date: '1 nov', text: '' }, ...updates.entries] }} />)
+    const texts = screen.getAllByRole('textbox', { name: 'Entry text' })
+    fireEvent.keyDown(texts[0], { key: 'Backspace' })
+
+    const next = screen.getAllByRole('textbox', { name: 'Entry text' })
+    expect(next).toHaveLength(2)
+    expect(document.activeElement).toBe(next[0])
+  })
+
+  it('as the only entry, removes it and focuses nowhere', () => {
+    const onlyEmpty: EntriesBlock = { ...updates, entries: [{ id: 'u0', date: '1 nov', text: '' }] }
+    render(<Stateful data={onlyEmpty} />)
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Entry text' }), { key: 'Backspace' })
+
+    expect(screen.queryByRole('textbox', { name: 'Entry text' })).toBeNull()
+  })
+
+  it('does nothing when the entry has text — the browser deletes a character instead', () => {
+    const onChange = jest.fn()
+    render(<EntriesView data={updates} editable onChange={onChange} />)
+    fireEvent.keyDown(screen.getAllByRole('textbox', { name: 'Entry text' })[0], { key: 'Backspace' })
+    expect(onChange).not.toHaveBeenCalled()
+  })
+})

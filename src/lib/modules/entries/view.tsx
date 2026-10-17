@@ -177,8 +177,20 @@ export function EntriesView({ data, editable, onChange }: ModuleViewProps<Entrie
    * `onChange` via `patchEntry`, so there is nothing left to commit here. Shift+↵
    * is left untouched: the textarea's native behaviour inserts the literal
    * newline multi-line prose needs.
+   *
+   * ⌫ in an entry already emptied by its own `onChange` removes the row and
+   * moves focus to its neighbour — the previous entry, else the next, else
+   * nowhere — mirroring `BlockCanvas.tsx`'s `removeEmptyLineAt` idiom, built
+   * locally since this is within-block, not a block removal.
    */
   function handleTextKeyDown(e: KeyboardEvent<HTMLTextAreaElement>, index: number) {
+    if (e.key === 'Backspace' && data.entries[index].text === '') {
+      e.preventDefault()
+      const neighbour = data.entries[index - 1] ?? data.entries[index + 1]
+      if (neighbour) pendingFocusId.current = neighbour.id
+      onChange?.({ ...data, entries: data.entries.filter((_, k) => k !== index) })
+      return
+    }
     if (e.key !== 'Enter' || e.shiftKey) return
     e.preventDefault()
     const id = crypto.randomUUID()
