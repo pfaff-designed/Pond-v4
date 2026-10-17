@@ -1479,6 +1479,20 @@ export function Rail() {
   const selectedNodeId = searchParams.get('nodeId')
 
   // ── Rail remembers what was open (KAN-393) ──────────────────────────────────
+  // A pond switch must drop the previous pond's rows before the merge effect
+  // below runs, or a toggle on the new pond writes the old pond's lingering
+  // ids into its store too — `writeExpandedIds` persists the whole set, not a
+  // diff, and `expanded` is one Set shared across ponds since `Rail` itself
+  // never remounts on a switch. Declared ahead of the merge effect so it runs
+  // first on the same pondId change (React runs passive effects in source
+  // order); the merge effect then repopulates from the new pond's store.
+  const prevPondIdRef = useRef(pondId)
+  useEffect(() => {
+    if (prevPondIdRef.current === pondId) return
+    prevPondIdRef.current = pondId
+    setExpandedRaw(new Set())
+  }, [pondId])
+
   // Read this pond's stored expansion once per `pondId`, prune it against the
   // loaded `pages` (a stored id may have been deleted elsewhere), and merge
   // the result into `expanded` via a union — never a replace — so this can't

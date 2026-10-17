@@ -92,4 +92,62 @@ describe('the rail persists expanded rows per pond (KAN-393)', () => {
 
     expect(screen.getByRole('treeitem', { name: 'Cabinets' })).toBeInTheDocument()
   })
+
+  it('keeps each pond toggling its own store when the pond switches', async () => {
+    const POND_B: Pond = { ...POND, id: 'pond-2' }
+    const GARAGE: PageRow = {
+      id: 'garage',
+      parent_id: null,
+      type: 'page',
+      title: 'Garage',
+      order: 0,
+      updated_at: AT,
+    }
+    const SHELF: PageRow = {
+      id: 'shelf',
+      parent_id: 'garage',
+      type: 'page',
+      title: 'Shelf',
+      order: 0,
+      updated_at: AT,
+    }
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    })
+    client.setQueryData(pagesKey('pond-1'), [KITCHEN, CABINETS])
+    client.setQueryData(pagesKey('pond-2'), [GARAGE, SHELF])
+
+    const withPond = (pond: Pond) => (
+      <QueryClientProvider client={client}>
+        <PondContext.Provider value={{ ...PROVIDER_VALUE, pond }}>
+          <DeletionUndoProvider>
+            <Rail />
+          </DeletionUndoProvider>
+        </PondContext.Provider>
+      </QueryClientProvider>
+    )
+
+    const { rerender } = render(withPond(POND))
+    await userEvent.click(screen.getByRole('treeitem', { name: 'Kitchen renovation' }).querySelector('button')!)
+    expect(readExpandedIds('pond-1')).toEqual(['kitchen'])
+
+    rerender(withPond(POND_B))
+    await userEvent.click(screen.getByRole('treeitem', { name: 'Garage' }).querySelector('button')!)
+    expect(readExpandedIds('pond-2')).toEqual(['garage'])
+    expect(readExpandedIds('pond-1')).toEqual(['kitchen'])
+
+    rerender(withPond(POND))
+    expect(readExpandedIds('pond-1')).toEqual(['kitchen'])
+    expect(readExpandedIds('pond-2')).toEqual(['garage'])
+  })
+
+  it("clears the current pond's store when Life's caret collapses everything", async () => {
+    mountRail([KITCHEN, CABINETS])
+
+    await userEvent.click(screen.getByRole('treeitem', { name: 'Kitchen renovation' }).querySelector('button')!)
+    expect(readExpandedIds('pond-1')).toEqual(['kitchen'])
+
+    await userEvent.click(screen.getByRole('treeitem', { name: 'life' }).querySelector('button')!)
+    expect(readExpandedIds('pond-1')).toEqual([])
+  })
 })
