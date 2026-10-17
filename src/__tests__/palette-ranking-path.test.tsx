@@ -81,3 +81,46 @@ describe('KAN-390 path test A — recent, ranked above a mid-word match, underli
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 'projects' }))
   })
 })
+
+describe('KAN-390 path test B — a subsequence action is found, underlined per character; recents stay per pond', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+  })
+
+  it('`nwp` finds `new page` under `actions` with n, w, p each underlined', async () => {
+    const items = paletteItems(PAGES, [], null)
+
+    render(
+      <PondCommand
+        path={PATH}
+        open
+        items={items}
+        visits={[]}
+        onSelect={jest.fn()}
+        onOpenChange={jest.fn()}
+      />
+    )
+
+    const input = screen.getByRole('combobox', { name: 'command palette' })
+    const user = userEvent.setup()
+    await user.type(input, 'nwp')
+
+    const newPageRow = screen
+      .getAllByRole('option')
+      .find((o) => o.getAttribute('data-kind') === 'action' && o.textContent?.includes('new page'))
+    expect(newPageRow).toBeDefined()
+    const hits = Array.from(newPageRow!.querySelectorAll('[data-part="hit"]')).map((h) => h.textContent)
+    expect(hits).toEqual(['n', 'w', 'p'])
+  })
+
+  it('each pond keeps its own recents', () => {
+    writeRecent({ id: 'projects', type: 'page', title: 'Projects' }, 'pond-1')
+
+    expect(readRecentPageIds('pond-2')).toEqual([])
+
+    writeRecent({ id: 'improvements', type: 'page', title: 'Improvements' }, 'pond-2')
+
+    expect(readRecentPageIds('pond-1')).toEqual(['projects'])
+    expect(readRecentPageIds('pond-2')).toEqual(['improvements'])
+  })
+})
