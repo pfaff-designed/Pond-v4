@@ -10,8 +10,7 @@ import type { PageLinkBlock } from './schema'
  * font-size:14px`. One focusable row, no card.
  *
  * `N blocks` is a placeholder literal for now (KAN-122's live-count item is a
- * later pass); the `new` chip is a later item too (its own pass reads
- * `resolvePage(...)?.isNew`).
+ * later pass).
  */
 const ROW =
   'flex items-center gap-[10px] border-b border-mn-text/[0.09] px-1 py-[10px] text-[14px]'
@@ -66,6 +65,11 @@ export function PageLinkView({ data }: ModuleViewProps<PageLinkBlock>) {
     >
       <PageIcon />
       <span className="flex-1 font-medium text-mn-text">{ref.title}</span>
+      {ref.isNew && (
+        <span className="font-mono text-[10.5px] lowercase tracking-tight text-mn-text-meta">
+          new
+        </span>
+      )}
       <span className="text-[12.5px] text-mn-text-secondary">0 blocks</span>
       <span aria-hidden className="text-mn-text-meta">
         ›

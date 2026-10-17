@@ -13,6 +13,7 @@ import type { PageLinkBlock } from './schema'
 const block: PageLinkBlock = { id: 'pl-1', type: 'page-link', pageId: 'page-1' }
 
 const ref: PageRef = { id: 'page-1', title: 'cabinets', type: 'page', isNew: false }
+const newRef: PageRef = { id: 'page-1', title: 'cabinets', type: 'page', isNew: true }
 
 const capabilities = (resolved: PageRef | null): PageLinkCapabilities => ({
   resolvePage: jest.fn(() => resolved),
@@ -47,6 +48,26 @@ describe('PageLinkView — resolved', () => {
     )
     fireEvent.keyDown(screen.getByRole('button', { name: 'Open cabinets' }), { key: 'Enter' })
     expect(caps.navigateToPage).toHaveBeenCalledWith(ref)
+  })
+
+  it('renders the `new` chip when the linked page is new', () => {
+    const caps = capabilities(newRef)
+    render(
+      <PageLinkProvider value={caps}>
+        <PageLinkView data={block} />
+      </PageLinkProvider>
+    )
+    expect(screen.getByText('new')).toBeInTheDocument()
+  })
+
+  it('does not render the `new` chip once the linked page is no longer new', () => {
+    const caps = capabilities(ref)
+    render(
+      <PageLinkProvider value={caps}>
+        <PageLinkView data={block} />
+      </PageLinkProvider>
+    )
+    expect(screen.queryByText('new')).not.toBeInTheDocument()
   })
 })
 
