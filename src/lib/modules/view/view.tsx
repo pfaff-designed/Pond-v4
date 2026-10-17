@@ -638,7 +638,10 @@ function CollectionTable({
 }) {
   const { stepOut } = useBlockRow()
   const [now] = useState(() => new Date())
-  const { selectedRow, selectWithPointer } = useRecordSelection(rows, viewKey)
+  const { selectedRow, select, selectWithPointer, keyboardProps } = useRecordSelection(
+    rows,
+    viewKey
+  )
   const done = useDoneToggle({ schema, editable, onEdit })
 
   // A click on the row's own space (not a cell's input/control) selects it and
@@ -647,6 +650,25 @@ function CollectionTable({
   // which is the row's entire clickable surface).
   function handleRowClick(rowId: string, e: React.MouseEvent) {
     if (shouldSelectRowFromClick(e.target)) selectWithPointer(rowId)
+  }
+
+  // ↵ on the row itself (not a cell's input — `keyboardProps`' own guard) opens
+  // the record's page once the row is already selected; a first ↵ (or Space,
+  // any time) selects it instead, same as the board's keyboard behaviour, so
+  // a keyboard user reaches the peek before the page. Focus never moves into
+  // the peek from here (no `focusOnOpen`), so the second ↵ still lands on the
+  // row.
+  function handleRowKeyDown(rowId: string, e: React.KeyboardEvent<HTMLTableRowElement>) {
+    if (e.target !== e.currentTarget) return
+    if (e.key === 'Enter' && rowId === selectedRow?.id) {
+      e.preventDefault()
+      onOpenRow?.(rowId)
+      return
+    }
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      select({ id: rowId, via: 'keyboard' })
+    }
   }
 
   // Return/↓ in the last row's last cell step out of the table (KAN-344) — the
@@ -693,6 +715,8 @@ function CollectionTable({
                 key={row.id}
                 data-row-id={row.id}
                 onClick={(e) => handleRowClick(row.id, e)}
+                {...keyboardProps(row.id)}
+                onKeyDown={(e) => handleRowKeyDown(row.id, e)}
                 className={[
                   'border-b border-mn-line last:border-b-0 align-top',
                   struck ? DIFF_REMOVAL_TEXT_CLASSNAME : '',

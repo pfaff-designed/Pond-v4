@@ -17,7 +17,7 @@ const rows = [
   { id: 'b', title: 'Second', values: { f: 'two' } },
 ]
 
-const renderTable = (onEdit = jest.fn()) =>
+const renderTable = (onEdit = jest.fn(), onOpenRow = jest.fn()) =>
   render(
     <CollectionView
       config={config}
@@ -26,11 +26,13 @@ const renderTable = (onEdit = jest.fn()) =>
       collectionName="tasks"
       editable
       onEdit={onEdit}
+      onOpenRow={onOpenRow}
     />
   )
 
 const peek = () => document.querySelector('[data-part="record-peek"]')
 const cellOf = (title: string) => screen.getByText(title).closest('td') as HTMLTableCellElement
+const rowOf = (title: string) => screen.getByText(title).closest('tr') as HTMLTableRowElement
 
 describe('table — a row opens its record in the peek', () => {
   it('clicking a row’s cell padding selects it and opens its peek', async () => {
@@ -63,6 +65,42 @@ describe('table — a row opens its record in the peek', () => {
     await userEvent.clear(input)
     await userEvent.type(input, 'changed{Enter}')
     expect(onEdit).toHaveBeenCalledWith('a', 'f', 'changed')
+    expect(peek()).toBeNull()
+  })
+
+  it('↵ on a focused row selects it; ↵ again opens its page', async () => {
+    const onOpenRow = jest.fn()
+    renderTable(jest.fn(), onOpenRow)
+
+    rowOf('First').focus()
+    await userEvent.keyboard('{Enter}')
+    expect(screen.getByLabelText('Record: First')).toBeInTheDocument()
+    expect(onOpenRow).not.toHaveBeenCalled()
+
+    await userEvent.keyboard('{Enter}')
+    expect(onOpenRow).toHaveBeenCalledWith('a')
+  })
+
+  it('a click-selected row opens its page on the next ↵, with no second select', async () => {
+    const onOpenRow = jest.fn()
+    renderTable(jest.fn(), onOpenRow)
+
+    await userEvent.click(cellOf('First'))
+    expect(screen.getByLabelText('Record: First')).toBeInTheDocument()
+
+    await userEvent.keyboard('{Enter}')
+    expect(onOpenRow).toHaveBeenCalledTimes(1)
+    expect(onOpenRow).toHaveBeenCalledWith('a')
+  })
+
+  it('↵ inside the last cell’s input still steps out, not opens the row', async () => {
+    const onOpenRow = jest.fn()
+    renderTable(jest.fn(), onOpenRow)
+
+    const [, lastInput] = screen.getAllByRole('textbox', { name: 'note value' })
+    await userEvent.click(lastInput)
+    await userEvent.keyboard('{Enter}')
+    expect(onOpenRow).not.toHaveBeenCalled()
     expect(peek()).toBeNull()
   })
 })
