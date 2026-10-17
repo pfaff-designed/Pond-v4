@@ -496,6 +496,45 @@ describe('unlinkTrashedSubtree', () => {
     expect(supabase._chain.update).not.toHaveBeenCalled()
   })
 
+  it('never reads or commits a parent that is itself inside the trashed subtree', async () => {
+    const linkToC = link('b1', 'child-1')
+    const linkToP = link('b2', 'parent-p')
+    const supabase = makeSupabase({
+      containsResults: {
+        'child-1': [parentPage('parent-p', [linkToC])],
+        'parent-p': [parentPage('outside-q', [linkToP])],
+      },
+    })
+    mockGetPage.mockImplementation(async (_supabase: unknown, id: string) => {
+      if (id === 'outside-q') {
+        return {
+          id: 'outside-q',
+          parentId: null,
+          type: 'page',
+          title: 'Outside Q',
+          blocks: [linkToP],
+          order: 0,
+          props: {},
+        }
+      }
+      throw new Error(`unexpected getPage(${id})`)
+    })
+
+    await unlinkTrashedSubtree(supabase as never, queryClient, {
+      pondId: 'pond-1',
+      rootPageId: 'root-1',
+      subtreeIds: new Set(['parent-p', 'child-1']),
+    })
+
+    expect(mockGetPage).toHaveBeenCalledTimes(1)
+    expect(mockGetPage).toHaveBeenCalledWith(supabase, 'outside-q')
+    expect(mockFlushPendingPageSave).toHaveBeenCalledTimes(1)
+    expect(mockFlushPendingPageSave).toHaveBeenCalledWith('outside-q')
+    expect(mockCommitBlocks).toHaveBeenCalledTimes(1)
+    const [, , pageId] = mockCommitBlocks.mock.calls[0]
+    expect(pageId).toBe('outside-q')
+  })
+
   it('never throws — logs and returns when the commit fails', async () => {
     const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
     const link1 = link('b1', 'child-1')

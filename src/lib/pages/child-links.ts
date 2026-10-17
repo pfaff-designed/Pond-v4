@@ -175,11 +175,12 @@ export function restoreLinks(blocks: Block[], removed: RemovedLink[]): Block[] {
 
 /**
  * Every LIVE page in `pond` whose `blocks` jsonb links to any id in
- * `pageIds` (KAN-448: `pageIds` is a trashed subtree, so a page inside that
- * subtree is never a caller-meaningful parent — descendants aren't edited by
- * this ticket). Trashed rows are already invisible here: the SELECT policy
- * hides a trashed row even from its own owner (`trash.ts`), so no extra
- * status filter is needed.
+ * `pageIds`. Includes a match whose own id is in `pageIds` (e.g. an ancestor
+ * linking its own child inside the same to-be-trashed subtree) — this
+ * function doesn't know which ids are a "subtree", so `unlinkTrashedSubtree`
+ * is the one that filters those back out. Trashed rows are already invisible
+ * here: the SELECT policy hides a trashed row even from its own owner
+ * (`trash.ts`), so no extra status filter is needed.
  *
  * One `.contains('blocks', ...)` query per id rather than one combined OR —
  * chaining `.contains()` on a single builder ANDs the filters, which is the
@@ -213,8 +214,11 @@ export async function findPagesLinkingTo(
 
 /**
  * Unlink every LIVE page outside the subtree that links into it, right
- * before the caller trashes that subtree (KAN-448). Each matched parent goes
- * through the exact same own-edit seam as `appendChildLinkToParent` — flush
+ * before the caller trashes that subtree (KAN-448). `findPagesLinkingTo`'s
+ * matches are filtered to drop any id already in `subtreeIds` — a page
+ * inside the subtree being trashed is never edited by this ticket, even when
+ * it links one of its own descendants. Each remaining parent goes through
+ * the exact same own-edit seam as `appendChildLinkToParent` — flush
  * its pending save, read it fresh (the earlier `findPagesLinkingTo` read ran
  * before the flush and may already be stale), write only if the fresh read
  * still has the link, invalidate. Every removal across every parent is
@@ -237,7 +241,9 @@ export async function unlinkTrashedSubtree(
   }: { pondId: string | null; rootPageId: string; subtreeIds: Set<string> }
 ): Promise<void> {
   try {
-    const parents = await findPagesLinkingTo(supabase, pondId, subtreeIds)
+    const parents = (await findPagesLinkingTo(supabase, pondId, subtreeIds)).filter(
+      (parent) => !subtreeIds.has(parent.id)
+    )
     const removed: RemovedLink[] = []
 
     for (const parent of parents) {
