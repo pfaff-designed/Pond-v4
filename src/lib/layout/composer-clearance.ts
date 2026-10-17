@@ -10,6 +10,8 @@
 
 /** The card's distance from the shell's bottom edge (`bottom: 24px` in the storyboards). */
 export const COMPOSER_BOTTOM_INSET = 24
+/** The custom property the card's own `bottom` reads, so a wrapping surface (zen) can move it. */
+export const COMPOSER_CARD_BOTTOM_VAR = '--composer-card-bottom'
 /** The card's height at rest: 14 padding ×2, a 25px line, 14 gap, a 32px toolbar, 1px border ×2. */
 export const COMPOSER_REST_HEIGHT = 101
 

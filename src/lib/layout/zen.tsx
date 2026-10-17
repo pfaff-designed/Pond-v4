@@ -31,6 +31,7 @@ import {
 } from 'react'
 import { useSearchParams } from 'next/navigation'
 
+import type { CSSVars } from '@/lib/css-vars'
 import { PAGE_COLUMN_PAD_PX, TEXT_BLOCK_INSET_PX } from '@/lib/layout/surface-column'
 import { requestComposerToggle, useComposerOpen } from '@/lib/terminal-focus'
 import { holdInkGround } from '@/lib/theme/mode'
@@ -98,8 +99,6 @@ export const ZEN_TYPE_SCALE = ZEN_BODY_PX / POND_ATOM_PAGE_TYPE_PX.prose
 
 /** A page size as zen sets it: the one factor, to two places. */
 export const zenPx = (pagePx: number): number => Number((pagePx * ZEN_TYPE_SCALE).toFixed(2))
-
-type CSSVars = CSSProperties & Record<`--${string}`, string>
 
 /** The type and the gap, as variables on the zen column that its classes read. */
 const ZEN_VARS: CSSVars = Object.fromEntries([

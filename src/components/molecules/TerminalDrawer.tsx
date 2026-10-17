@@ -25,10 +25,11 @@
  */
 
 import { useCallback, useLayoutEffect, useRef } from 'react'
-import type { CSSProperties, ReactNode, RefObject } from 'react'
+import type { ReactNode, RefObject } from 'react'
 import { ComposerHandle } from '@/components/molecules/ComposerHandle'
 import {
   COMPOSER_BOTTOM_INSET,
+  COMPOSER_CARD_BOTTOM_VAR,
   COMPOSER_CLEARANCE_VAR,
   COMPOSER_TAB_INSET,
   composerFootprintPx,
@@ -39,6 +40,7 @@ import {
   COMPOSER_TOP_CLEARANCE,
 } from '@/lib/layout/composer-height'
 import { RAIL_WIDTH_PX } from '@/lib/layout/rail-width'
+import type { CSSVars } from '@/lib/css-vars'
 import { cn } from '@/lib/utils'
 
 export interface TerminalDrawerProps {
@@ -240,6 +242,23 @@ export const TerminalDrawer = ({
   const hasThread = Boolean(children)
   const showThread = hasThread && !minimized && !unsized
 
+  // `bottom` always reads this var rather than a hard-coded inset, so a
+  // wrapping surface (zen) can move the card by overriding one custom
+  // property instead of out-fighting a utility class.
+  const cardStyle: CSSVars = {
+    [COMPOSER_CARD_BOTTOM_VAR]: `${COMPOSER_BOTTOM_INSET}px`,
+    bottom: `var(${COMPOSER_CARD_BOTTOM_VAR})`,
+    ...(maximized
+      ? {
+          top: COMPOSER_TOP_CLEARANCE,
+          left: zen ? COMPOSER_MAXIMIZED_RIGHT_PX : COMPOSER_MAXIMIZED_LEFT_PX,
+          right: COMPOSER_MAXIMIZED_RIGHT_PX,
+        }
+      : showThread
+        ? { height: height ?? COMPOSER_DEFAULT_HEIGHT, maxHeight: COMPOSER_MAX_HEIGHT_CSS }
+        : {}),
+  }
+
   // Collapsed slides the whole card off screen rather than swapping it for the
   // tab: grip, thread and footer all stay mounted, so reopening needs no rebuild.
   // The shell itself has no overflow clip (WorkspaceShell's `[data-part="shell"]`
@@ -265,24 +284,7 @@ export const TerminalDrawer = ({
         // real boolean attribute) pulls the whole subtree out of the tab order,
         // not just the hand-set tabIndex this used to need on each control.
         inert={collapsed || undefined}
-        style={
-          {
-            // `bottom` always reads this var rather than a hard-coded inset, so
-            // a wrapping surface (zen) can move the card by overriding one
-            // custom property instead of out-fighting a utility class.
-            '--composer-card-bottom': `${COMPOSER_BOTTOM_INSET}px`,
-            bottom: 'var(--composer-card-bottom)',
-            ...(maximized
-              ? {
-                  top: COMPOSER_TOP_CLEARANCE,
-                  left: zen ? COMPOSER_MAXIMIZED_RIGHT_PX : COMPOSER_MAXIMIZED_LEFT_PX,
-                  right: COMPOSER_MAXIMIZED_RIGHT_PX,
-                }
-              : showThread
-                ? { height: height ?? COMPOSER_DEFAULT_HEIGHT, maxHeight: COMPOSER_MAX_HEIGHT_CSS }
-                : {}),
-          } as unknown as CSSProperties
-        }
+        style={cardStyle}
         className={cn(
           maximized ? MAXIMIZED_PLACEMENT : CARD_PLACEMENT,
           'motion-resolve group/composer mn-glass box-border flex flex-col gap-[14px] rounded-mn-card p-[14px] font-mono text-mn-text',
