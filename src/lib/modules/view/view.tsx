@@ -470,6 +470,7 @@ export function CollectionView({
           rows={processed}
           editable={editable}
           onEdit={onEdit}
+          onAddRow={onAddRow}
           onRenameRow={onRenameRow}
           onOpenRow={onOpenRow}
         />
@@ -1125,6 +1126,7 @@ function CollectionGallery({
   rows,
   editable,
   onEdit,
+  onAddRow,
   onRenameRow,
   onOpenRow,
 }: {
@@ -1134,6 +1136,7 @@ function CollectionGallery({
   rows: CollectionRow[]
   editable?: boolean
   onEdit?: (rowId: string, key: string, value: PropertyValue) => void
+  onAddRow?: (values?: Record<string, PropertyValue>) => Promise<string | null>
   onRenameRow?: (rowId: string, title: string) => void
   onOpenRow?: (rowId: string) => void
 }) {
@@ -1141,6 +1144,21 @@ function CollectionGallery({
   const [hoveredId, setHoveredId] = useState<string | null>(null)
   const { selectedRow, select, rowProps, keyboardProps } = useRecordSelection(rows, viewKey)
   const done = useDoneToggle({ schema, editable, onEdit })
+  // Guards handleAddRecord against a second click while its write is in flight
+  // (AUDIT G9), same shape as CollectionBoard's handleAddCard.
+  const addingRef = useRef(false)
+
+  const handleAddRecord = async () => {
+    if (!onAddRow || addingRef.current) return
+    addingRef.current = true
+    try {
+      const id = await onAddRow()
+      if (!id) return
+      select({ id, via: 'keyboard' })
+    } finally {
+      addingRef.current = false
+    }
+  }
 
   // ↵ on the card's own tab stop (not an inner control's) selects it; ↵ again on the
   // already-selected card opens its page — same split as `CollectionTable`'s
@@ -1185,6 +1203,22 @@ function CollectionGallery({
             </div>
           )
         })}
+
+        {editable && onAddRow && (
+          <button
+            type="button"
+            data-part="gallery-add"
+            onClick={handleAddRecord}
+            className={[
+              'w-[170px] rounded-[20px] bg-transparent p-[10px] text-[13px] font-medium text-mn-text-secondary',
+              'ring-[1.4px] ring-inset ring-mn-text/20 transition-colors hover:bg-mn-text/[0.04] hover:text-mn-text',
+              'outline-[1.5px] outline-offset-1 outline-mn-text/50 outline-none focus-visible:outline-solid',
+              'motion-reduce:transition-none',
+            ].join(' ')}
+          >
+            ＋ add a record
+          </button>
+        )}
       </div>
 
       {selectedRow && (

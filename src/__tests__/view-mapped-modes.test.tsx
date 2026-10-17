@@ -665,7 +665,11 @@ describe('CollectionGallery — PondBlock.dc.html’s gallery frame, each card a
 })
 
 describe('CollectionGallery — hover, selection and the peek (KAN-358)', () => {
-  function renderEditableGallery(rows: CollectionRow[] = plants(2), onOpenRow = jest.fn()) {
+  function renderEditableGallery(
+    rows: CollectionRow[] = plants(2),
+    onOpenRow = jest.fn(),
+    onAddRow?: () => Promise<string | null>
+  ) {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const result = render(
       <QueryClientProvider client={client}>
@@ -675,6 +679,7 @@ describe('CollectionGallery — hover, selection and the peek (KAN-358)', () => 
           rows={rows}
           editable
           onEdit={jest.fn()}
+          onAddRow={onAddRow}
           onRenameRow={jest.fn()}
           onOpenRow={onOpenRow}
         />
@@ -717,6 +722,58 @@ describe('CollectionGallery — hover, selection and the peek (KAN-358)', () => 
 
     await userEvent.keyboard('{Enter}')
     expect(onOpenRow).toHaveBeenCalledWith('pl0')
+  })
+
+  it('clicking ＋ add a record calls onAddRow once and selects the returned id', async () => {
+    const mint = jest.fn().mockResolvedValue('pl-new')
+    function Harness() {
+      const [rows, setRows] = React.useState(plants(2))
+      const onAddRow = async () => {
+        const id = await mint()
+        setRows((prev) => [...prev, row(id, '', {})])
+        return id as string
+      }
+      return (
+        <CollectionView
+          config={gallery}
+          schema={plantSchema}
+          rows={rows}
+          editable
+          onEdit={jest.fn()}
+          onAddRow={onAddRow}
+          onRenameRow={jest.fn()}
+          onOpenRow={jest.fn()}
+        />
+      )
+    }
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={client}>
+        <Harness />
+      </QueryClientProvider>
+    )
+    const tile = screen.getByRole('button', { name: '＋ add a record' })
+
+    await userEvent.click(tile)
+
+    expect(mint).toHaveBeenCalledTimes(1)
+    expect(screen.getByLabelText('Record: Untitled')).toBeInTheDocument()
+  })
+
+  it('two rapid clicks before the mint resolves call onAddRow only once', async () => {
+    let resolveAdd: (id: string) => void = () => {}
+    const onAddRow = jest.fn(() => new Promise<string | null>((resolve) => (resolveAdd = resolve)))
+    renderEditableGallery(plants(2), jest.fn(), onAddRow)
+    const tile = screen.getByRole('button', { name: '＋ add a record' })
+
+    fireEvent.click(tile)
+    fireEvent.click(tile)
+    expect(onAddRow).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      resolveAdd('pl-new')
+    })
+    expect(onAddRow).toHaveBeenCalledTimes(1)
   })
 })
 
