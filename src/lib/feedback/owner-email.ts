@@ -53,6 +53,7 @@ export async function sendOwnerEmail(fields: OwnerEmailFields): Promise<SendOwne
         subject: fields.subject,
         html: fields.html,
       }),
+      signal: AbortSignal.timeout(10_000),
     })
   } catch (error) {
     throw new Error(`Resend request failed: ${error instanceof Error ? error.message : String(error)}`)

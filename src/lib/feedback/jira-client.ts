@@ -90,6 +90,7 @@ export async function addIssueComment(key: string, text: string): Promise<boolea
           content: [{ type: 'paragraph', content: [{ type: 'text', text }] }],
         },
       }),
+      signal: AbortSignal.timeout(10_000),
     })
 
     if (!response.ok) console.error(`addIssueComment failed for ${key}: ${response.status}`)

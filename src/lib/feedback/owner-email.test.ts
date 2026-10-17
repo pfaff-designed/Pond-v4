@@ -101,8 +101,32 @@ describe('sendOwnerEmail', () => {
         subject: FIELDS.subject,
         html: FIELDS.html,
       }),
+      signal: expect.any(AbortSignal),
     })
     expect(result).toEqual({ id: 'email-123' })
+  })
+
+  it('bounds the Resend request with a timeout signal', async () => {
+    const mockFetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ id: 'email-123' }),
+    })
+    global.fetch = mockFetch as unknown as typeof fetch
+
+    await sendOwnerEmail(FIELDS)
+
+    const options = mockFetch.mock.calls[0][1] as RequestInit
+    expect(options.signal).toBeInstanceOf(AbortSignal)
+  })
+
+  it('throws with the reason when the request aborts on timeout', async () => {
+    const mockFetch = jest.fn().mockRejectedValue(new DOMException('The operation was aborted', 'TimeoutError'))
+    global.fetch = mockFetch as unknown as typeof fetch
+
+    await expect(sendOwnerEmail(FIELDS)).rejects.toThrow(/TimeoutError|aborted/)
+    const options = mockFetch.mock.calls[0][1] as RequestInit
+    expect(options.signal).toBeInstanceOf(AbortSignal)
   })
 
   it('throws when RESEND_API_KEY is missing', async () => {

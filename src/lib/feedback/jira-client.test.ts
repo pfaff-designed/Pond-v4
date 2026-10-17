@@ -170,6 +170,7 @@ describe('addIssueComment', () => {
         ],
       },
     })
+    expect(mockedFetch.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal)
   })
 
   it('returns false without throwing on a non-ok response', async () => {
