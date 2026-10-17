@@ -55,6 +55,12 @@ The gates and the CI wait are the only steps that outlast an ordinary bounded ca
 
 3. Exit 0 is green. Non-zero is red — act on it where the role file says. A command still running when `timeout` fires is a stall: say so and stop.
 
+## Research
+
+| Name       | Call                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `RESEARCH` | Design references for orchestrator.md step 2b. **Mobbin:** the `mcp__mobbin__search_screens`, `search_flows` and `search_sections` tools (load them first if your harness defers tools). **Refero:** the `mcp__refero__*` tools when loaded, otherwise `bash REPO/ship-epics/refero.sh <tool> '<json>'`, e.g. `refero_search_screens '{"query":"kanban empty state","platform":"web"}'`, `refero_search_flows`, `refero_get_screen '{"ids":["…"]}'`. Cite every reference by app and link or id. |
+
 ## The one gate
 
 | Name           | Call                                                        |

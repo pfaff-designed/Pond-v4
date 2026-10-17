@@ -47,6 +47,16 @@ For every step, find the code that would make it work today: `rg` for the compon
 
 An engine-only ticket ("the reader", "the RPC", "the model") never passes the gate on its own.
 
+### 2b. Research the behaviour
+
+The boards fix how a surface **looks**. They are often silent on how it **behaves**: an empty view, adding the first item, Enter in a list, picking a date, deleting a record. A builder that guesses there ships something a person can't use. So before setting up, if the ticket touches a front-end user journey (canvas, blocks, `/`, views, the rail, ⌘K, settings, the composer's window), or its description says "choice stated" or "the boards are silent":
+
+1. Pull 3–5 references for each open behaviour with `RESEARCH` (Notion and Linear first, then Craft, Things, Raycast, Airtable): how each solves it, and why it works.
+2. Decide Pond's behaviour. **The boards still win** for every value and for the Make Noise look, and a pattern that breaks PROJECT_RULES (nudges, streaks, auto-edits) is a deliberate difference, not a gap.
+3. Write a `## Research` section into `SPEC.md` and a Jira comment on the ticket: the references (app plus link or id), the chosen behaviour, and the deliberate differences. The build, the reviewers and the verifier all hold the ticket to it.
+
+Skip this step for tickets that only change values a board already draws.
+
 ### 3. Set up
 
 From `REPO`, never from inside a worktree:
