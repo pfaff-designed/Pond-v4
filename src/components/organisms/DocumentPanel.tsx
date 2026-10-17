@@ -446,13 +446,26 @@ export function DocumentPanel() {
   const pendingKnownRow = isLoading && !rowsPending ? rows.find((r) => r.id === pageId) : undefined
   if (pendingKnownRow) {
     // Same shape as the landed row's own `titlePlaceholder`/`eyebrow` below,
-    // fed by the rail row rather than the (not yet loaded) page: `saved` with
-    // no timestamp, never `untouched` — the row carries no draft state to
-    // read `new — in {parent}` from.
+    // fed by the rail row rather than the (not yet loaded) page: no draft
+    // state to read `saving…` from, so `saved` is always the state, but
+    // `untouched`/parent/made-from still read off the row so a fresh or
+    // answer-made page's shell matches what the landed row shows next.
     const shellPlaceholder = pendingKnownRow.props?.kind
       ? `${pendingKnownRow.props.kind} name`
       : 'Untitled'
-    const shellEyebrow = titleEyebrow(pendingKnownRow.props?.kind, true, null, false)
+    const shellUntouched = pendingKnownRow.title.trim() === '' && !pendingKnownRow.props?.kind
+    const shellParentTitle =
+      rows.find((r) => r.id === pendingKnownRow.parent_id)?.title ?? null
+    const shellMadeAtStamp = readMadeFrom(pendingKnownRow.props)?.madeAt
+    const shellMadeAt = shellMadeAtStamp ? new Date(shellMadeAtStamp) : null
+    const shellEyebrow = titleEyebrow(
+      pendingKnownRow.props?.kind,
+      true,
+      null,
+      shellUntouched,
+      shellParentTitle,
+      shellMadeAt,
+    )
     return (
       <PageCanvas className="h-full overflow-y-auto">
         <div {...(zen ? zenColumn(column) : column)} data-testid="page-column">

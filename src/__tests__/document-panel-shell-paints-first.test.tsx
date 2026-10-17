@@ -117,6 +117,102 @@ describe('DocumentPanel — the shell paints before the page lands', () => {
     expect(screen.getByText('notes — saved')).toBeInTheDocument()
   })
 
+  it('shows the same `new — in {parent}` eyebrow in the shell and the landed page for an untitled, no-kind row', async () => {
+    mockFetchPages.mockResolvedValueOnce([
+      {
+        id: 'parent-1',
+        parent_id: null,
+        type: 'page',
+        title: 'recipes',
+        order: 0,
+        updated_at: '',
+        props: {},
+      },
+      {
+        id: 'page-1',
+        parent_id: 'parent-1',
+        type: 'page',
+        title: '',
+        order: 1,
+        updated_at: '',
+        props: {},
+      },
+    ])
+    let resolveGetPage!: (value: unknown) => void
+    mockGetPage.mockReturnValue(
+      new Promise((resolve) => {
+        resolveGetPage = resolve
+      })
+    )
+
+    renderPanel()
+
+    expect(await screen.findByText('new — in recipes')).toBeInTheDocument()
+
+    await act(async () => {
+      resolveGetPage({
+        id: 'page-1',
+        parentId: 'parent-1',
+        title: '',
+        blocks: [{ id: 'b1', type: 'text', content: '' }],
+        props: {},
+      })
+    })
+
+    expect(await screen.findByText('new — in recipes')).toBeInTheDocument()
+  })
+
+  it('shows the same `made hh:mm` eyebrow in the shell and the landed page for an answer-made row', async () => {
+    mockFetchPages.mockResolvedValueOnce([
+      {
+        id: 'page-1',
+        parent_id: null,
+        type: 'page',
+        title: 'Grocery insights',
+        order: 0,
+        updated_at: '',
+        props: {
+          madeFromThread: {
+            threadId: null,
+            messageId: 'm1',
+            question: 'what should I buy?',
+            askedAt: null,
+            madeAt: '2026-09-22T07:13:00',
+          },
+        },
+      },
+    ])
+    let resolveGetPage!: (value: unknown) => void
+    mockGetPage.mockReturnValue(
+      new Promise((resolve) => {
+        resolveGetPage = resolve
+      })
+    )
+
+    renderPanel()
+
+    expect(await screen.findByText('made 07:13')).toBeInTheDocument()
+
+    await act(async () => {
+      resolveGetPage({
+        id: 'page-1',
+        title: 'Grocery insights',
+        blocks: [{ id: 'b1', type: 'text', content: 'Buy oats' }],
+        props: {
+          madeFromThread: {
+            threadId: null,
+            messageId: 'm1',
+            question: 'what should I buy?',
+            askedAt: null,
+            madeAt: '2026-09-22T07:13:00',
+          },
+        },
+      })
+    })
+
+    expect(await screen.findByText('made 07:13')).toBeInTheDocument()
+  })
+
   it('shows a not-found line when the page is gone and the rail row is already gone too', async () => {
     mockFetchPages.mockResolvedValueOnce([])
     mockGetPage.mockResolvedValue(null)
