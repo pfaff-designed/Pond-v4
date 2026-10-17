@@ -51,7 +51,7 @@ import { ViewBar, type ViewBarView } from '@/components/molecules/ViewBar'
 import { CHART_EMPTY_LINE } from '@/lib/modules/chart/card'
 import { addTodoItem } from '@/lib/modules/todo/view'
 import { addTableRow } from '@/lib/modules/table/view'
-import { addEntry } from '@/lib/modules/entries/view'
+import { addEntryFocused } from '@/lib/modules/entries/view'
 import { PondBlock } from '@/components/organisms/PondBlock'
 import {
   SlashMenu,
@@ -1851,8 +1851,14 @@ function useBlockEmptyState(
         ? { state: 'empty', onEmptyAction: () => onChange(addTableRow(block)) }
         : { state: 'rest' }
     case 'entries':
+      // `write one` fires while the log is still `empty`, so `EntriesView` isn't
+      // mounted yet to hold a pending-focus ref — the id has to be registered
+      // before `onChange` swaps the frame to `rest` and mounts it (KAN-444).
       return blockIsEmpty(block)
-        ? { state: 'empty', onEmptyAction: () => onChange(addEntry(block)) }
+        ? {
+            state: 'empty',
+            onEmptyAction: () => onChange(addEntryFocused(block)),
+          }
         : { state: 'rest' }
     case 'view': {
       if (isLoading || schema === null) return { state: 'rest' }
