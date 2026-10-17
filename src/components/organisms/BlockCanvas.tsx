@@ -1307,56 +1307,68 @@ export function BlockCanvas({
 
     const priorWrite = writeChainRef.current
     const outcome: Promise<WriteOutcome> = priorWrite.then(async (prior) => {
-      if (prior.rollbackTo) {
-        // A write already queued ahead of us failed — cancel: no `saveBlocks`
-        // call, and forward its rollback target rather than our own `before`,
-        // so every write in the run lands on the ONE write that actually failed.
-        applyRollback(prior.rollbackTo)
-        return { recordIds: null, rollbackTo: prior.rollbackTo }
-      }
-
-      if (flushed) {
-        await flushed
-        // The flushed save's own `runSave` sets `serverSig`/`lastSaved`, the
-        // `['page', pageId]` cache, and `blocks` state to ITS stale `nextBlocks`
-        // only after its await above resolves — after our own cache write,
-        // `onBlocksPersisted` and `onChange` calls already ran. Re-apply all
-        // three now that the flush has fully landed, so its later bookkeeping
-        // can't leave `after` (the actually-latest write) looking stale to the
-        // next page refetch, or get adopted back over the rendered blocks.
-        // Only when there WAS a flush to wait for — otherwise `onChange`
-        // fires twice for the same `after` on every structural edit.
-        queryClient.setQueryData<PondPage | null>(['page', pageId], (prev) =>
-          prev ? { ...prev, blocks: after } : prev
-        )
-        onBlocksPersisted?.(after)
-        onChange(after)
-      }
-
+      // Everything below is wrapped so nothing thrown here can leave `outcome`
+      // (and so `writeChainRef`) permanently rejected — a rejected link in the
+      // chain never settles the `.finally` reset below it, so every later
+      // structural write would see a rejected `priorWrite` and cancel forever.
       try {
-        await saveBlocks(supabase, pageId, after)
+        if (prior.rollbackTo) {
+          // A write already queued ahead of us failed — cancel: no `saveBlocks`
+          // call, and forward its rollback target rather than our own `before`,
+          // so every write in the run lands on the ONE write that actually failed.
+          applyRollback(prior.rollbackTo)
+          return { recordIds: null, rollbackTo: prior.rollbackTo }
+        }
+
+        if (flushed) {
+          await flushed
+          // The flushed save's own `runSave` sets `serverSig`/`lastSaved`, the
+          // `['page', pageId]` cache, and `blocks` state to ITS stale `nextBlocks`
+          // only after its await above resolves — after our own cache write,
+          // `onBlocksPersisted` and `onChange` calls already ran. Re-apply all
+          // three now that the flush has fully landed, so its later bookkeeping
+          // can't leave `after` (the actually-latest write) looking stale to the
+          // next page refetch, or get adopted back over the rendered blocks.
+          // Only when there WAS a flush to wait for — otherwise `onChange`
+          // fires twice for the same `after` on every structural edit.
+          queryClient.setQueryData<PondPage | null>(['page', pageId], (prev) =>
+            prev ? { ...prev, blocks: after } : prev
+          )
+          onBlocksPersisted?.(after)
+          onChange(after)
+        }
+
+        try {
+          await saveBlocks(supabase, pageId, after)
+        } catch (err) {
+          console.error('Failed to save the blocks', pageId, err)
+          applyRollback(before)
+          return { recordIds: null, rollbackTo: before }
+        }
+        try {
+          const {
+            data: { user },
+          } = await supabase.auth.getUser()
+          if (!user) return { recordIds: null, rollbackTo: null }
+          const record = await appendOwnEdit(supabase, {
+            userId: user.id,
+            pondId,
+            action: 'edit',
+            targetPageId: pageId,
+            before,
+            after,
+          })
+          await queryClient.invalidateQueries({ queryKey: changeLogKey() })
+          return { recordIds: [record.id], rollbackTo: null }
+        } catch (err) {
+          console.error('[change-log] edit not logged', pageId, err)
+          return { recordIds: null, rollbackTo: null }
+        }
       } catch (err) {
-        console.error('Failed to save the blocks', pageId, err)
-        applyRollback(before)
-        return { recordIds: null, rollbackTo: before }
-      }
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) return { recordIds: null, rollbackTo: null }
-      try {
-        const record = await appendOwnEdit(supabase, {
-          userId: user.id,
-          pondId,
-          action: 'edit',
-          targetPageId: pageId,
-          before,
-          after,
-        })
-        await queryClient.invalidateQueries({ queryKey: changeLogKey() })
-        return { recordIds: [record.id], rollbackTo: null }
-      } catch (err) {
-        console.error('[change-log] edit not logged', pageId, err)
+        // The save itself already landed by the time anything out here could
+        // throw (getUser, the cache re-apply, the flush await) — same as a
+        // failed own-edit log, there is nothing to roll back to.
+        console.error('Unexpected error in a structural write', pageId, err)
         return { recordIds: null, rollbackTo: null }
       }
     })
@@ -1364,7 +1376,8 @@ export function BlockCanvas({
     // Once this write settles, if nothing has queued behind it since, reset
     // the chain to neutral — a failure must cancel the writes racing it, not
     // poison writes made later, after the queue it actually raced has drained.
-    void outcome.then(() => {
+    // `finally` (not `then`) so the reset still runs if `outcome` ever rejects.
+    void outcome.finally(() => {
       if (writeChainRef.current === outcome) writeChainRef.current = Promise.resolve(NEUTRAL_WRITE_OUTCOME)
     })
 

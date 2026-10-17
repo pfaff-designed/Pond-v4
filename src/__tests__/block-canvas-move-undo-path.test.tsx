@@ -24,8 +24,9 @@ jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
 }))
 
+const mockGetUser = jest.fn()
 jest.mock('@/lib/supabase/client', () => ({
-  createClient: () => ({ auth: { getUser: async () => ({ data: { user: { id: 'user-1' } } }) } }),
+  createClient: () => ({ auth: { getUser: (...args: unknown[]) => mockGetUser(...args) } }),
 }))
 
 jest.mock('@/lib/pond/context', () => ({
@@ -82,6 +83,7 @@ beforeEach(() => {
   jest.clearAllMocks()
   recordSeq = 0
   mockSaveBlocks.mockResolvedValue(undefined)
+  mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } })
   mockAppendOwnEdit.mockImplementation(async () => ({ id: `record-${++recordSeq}` }))
   jest.mocked(undoStep).mockResolvedValue({ outcome: 'done', records: [] })
   onPlatform('MacIntel')
@@ -198,5 +200,30 @@ describe('offline saveBlocks failure never merges with the next write (KAN-368)'
     // entries off the stack without ever reaching the RPC.
     await waitFor(() => expect(sessionUndo.getSnapshot('pond-1').canUndo).toBe(false))
     expect(undoStep).not.toHaveBeenCalled()
+  })
+})
+
+describe('a throw inside the write body never wedges the write chain (KAN-368)', () => {
+  it('getUser throws once, the next ⌥↓ still saves', async () => {
+    const [a, b, c] = [tool('b-a', 'Saw'), tool('b-b', 'Plane'), tool('b-c', 'Chisel')]
+    renderPath([a, b, c])
+    await screen.findByLabelText('Page title')
+    mockGetUser.mockRejectedValueOnce(new Error('session expired'))
+
+    fireEvent.keyDown(blockRoot('b-a'), { key: 'ArrowDown', altKey: true })
+
+    // The save itself still landed — `getUser` throwing only loses the
+    // own-edit log, same as the existing no-user branch.
+    await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(blockOrder()).toEqual(['b-b', 'b-a', 'b-c']))
+    expect(mockAppendOwnEdit).not.toHaveBeenCalled()
+
+    fireEvent.keyDown(blockRoot('b-a'), { key: 'ArrowDown', altKey: true })
+
+    // A rejected `getUser` must not leave `writeChainRef` permanently
+    // rejected: the NEXT structural write still reaches `saveBlocks`.
+    await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(blockOrder()).toEqual(['b-b', 'b-c', 'b-a']))
+    await waitFor(() => expect(mockAppendOwnEdit).toHaveBeenCalledTimes(1))
   })
 })
