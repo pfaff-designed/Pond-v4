@@ -70,8 +70,14 @@ export async function commitBlocks(
       before: opts.before,
       blocks,
     })
+    // Hand `logged` to session-undo BEFORE awaiting anything else on it: a ⌘Z
+    // pressed while this is still in flight (the record append races
+    // `propagateBlockWrite`'s refetch, and can still be running after the
+    // debounce timer that started it has already fired) must wait for THIS
+    // `remember` rather than taking the previous step.
+    const pondId = opts.pondId
+    if (pondId) sessionUndo.trackPending(pondId, logged)
     void logged.then((record) => {
-      const pondId = opts.pondId
       if (pondId && record) sessionUndo.remember({ pondId, recordIds: [record.id] })
       // Only now is the record durable enough to hand ⌘Z to the shell's undo
       // (KAN-139, comment 10064) — closing history any earlier (right after

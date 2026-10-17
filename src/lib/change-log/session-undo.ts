@@ -41,6 +41,12 @@ export type SessionUndoOutcome = { outcome: 'empty' } | (StepResult & { step: Hi
 export interface SessionUndo {
   /** Make one action's records the next thing undo takes back in its pond. Clears that pond's redo. */
   remember: (step: HistoryStep) => void
+  /** A `remember` for this pond is still in flight (e.g. the own-edit record a
+   *  save is still appending) — `undo`/`redo` wait for it before taking a step,
+   *  so a ⌘Z that lands in the gap between the save resolving and its record's
+   *  `remember` call never takes the WRONG step. Self-removing: callers hand in
+   *  the promise once and never clear it themselves. */
+  trackPending: (pondId: string, pending: Promise<unknown>) => void
   undo: (pondId: string) => Promise<SessionUndoOutcome>
   redo: (pondId: string) => Promise<SessionUndoOutcome>
   clear: () => void
@@ -103,6 +109,7 @@ export const createSessionUndo = (
 ): SessionUndo => {
   const timeoutMs = options.timeoutMs ?? STEP_TIMEOUT_MS
   let histories = new Map<string, PondHistory>()
+  const pending = new Map<string, Set<Promise<unknown>>>()
   const listeners = new Set<() => void>()
   let queue: Promise<unknown> = Promise.resolve()
 
@@ -135,6 +142,11 @@ export const createSessionUndo = (
   /** Pops at run time, not call time, so queued calls each take the then-newest step. */
   const runQueued = (pondId: string, direction: 'undo' | 'redo'): Promise<SessionUndoOutcome> =>
     enqueue(async () => {
+      // Wait out every `remember` still being logged for this pond FIRST, before
+      // reading the stack at all — the record that `remember` is about to push
+      // may be the step this call is meant to take.
+      const inFlight = pending.get(pondId)
+      if (inFlight && inFlight.size > 0) await Promise.allSettled([...inFlight])
       const history = histories.get(pondId)
       const from = direction === 'undo' ? history?.undo : history?.redo
       const taken = from?.pop()
@@ -186,6 +198,15 @@ export const createSessionUndo = (
       history.redo.length = 0
       history.generation += 1
       notify(history)
+    },
+    trackPending: (pondId, promise) => {
+      const set = pending.get(pondId) ?? new Set<Promise<unknown>>()
+      pending.set(pondId, set)
+      set.add(promise)
+      const clear = () => set.delete(promise)
+      // `.then(clear, clear)`, not `.finally`: the latter's own returned promise
+      // re-rejects on a rejected `promise`, which nothing here consumes.
+      promise.then(clear, clear)
     },
     undo: (pondId) => runQueued(pondId, 'undo'),
     redo: (pondId) => runQueued(pondId, 'redo'),
