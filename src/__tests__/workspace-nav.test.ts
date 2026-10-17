@@ -11,7 +11,7 @@
  * dropped you back into `life`.
  */
 
-import { workspaceUrl, workspaceHref, WORKSPACE_PATH } from '@/lib/pages/nav'
+import { workspaceUrl, workspaceHref, openWorkspaceUrl, WORKSPACE_PATH } from '@/lib/pages/nav'
 
 const node = { id: 'n1', type: 'page', title: 'Notes' }
 
@@ -61,5 +61,31 @@ describe('workspaceHref', () => {
     addressIs('?pond=p-second')
     expect(workspaceHref(node)).toBe(workspaceUrl(node))
     expect(workspaceHref(node, 'p-third')).toBe(workspaceUrl(node, 'p-third'))
+  })
+})
+
+describe('openWorkspaceUrl', () => {
+  it('on /workspace, pushes history shallowly and never calls router.push', () => {
+    addressIs('')
+    const push = jest.fn()
+    const pushStateSpy = jest.spyOn(window.history, 'pushState')
+
+    openWorkspaceUrl(workspaceUrl(node), { push })
+
+    expect(pushStateSpy).toHaveBeenCalledWith(null, '', workspaceUrl(node))
+    expect(push).not.toHaveBeenCalled()
+    pushStateSpy.mockRestore()
+  })
+
+  it('off /workspace (e.g. Cover.tsx at /), falls back to router.push', () => {
+    window.history.replaceState({}, '', '/')
+    const push = jest.fn()
+    const pushStateSpy = jest.spyOn(window.history, 'pushState')
+
+    openWorkspaceUrl(workspaceUrl(node), { push })
+
+    expect(push).toHaveBeenCalledWith(workspaceUrl(node))
+    expect(pushStateSpy).not.toHaveBeenCalled()
+    pushStateSpy.mockRestore()
   })
 })

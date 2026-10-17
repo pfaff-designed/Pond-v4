@@ -64,3 +64,25 @@ export function workspaceUrl(node: WorkspaceNodeRef | null, pondId?: string | nu
 /** Ticket-26 alias for the same URL; new call sites should use workspaceUrl. */
 export const workspaceHref = (node: WorkspaceNodeRef, pondId?: string | null): string =>
   workspaceUrl(node, pondId)
+
+/** The subset of `useRouter()` a page open needs — just enough to mock in tests. */
+export interface WorkspaceNavRouter {
+  push: (url: string) => void
+}
+
+/**
+ * The one way to open a workspace URL (KAN-449).
+ *
+ * On `/workspace`, every surface reads `?nodeId=`/`?nodeType=`/`?nodeName=`
+ * client-side (DocumentPanel, Rail, ShellCommands, AITerminal), so a shallow
+ * `pushState` switches the open page with no RSC round trip. Off `/workspace`
+ * (Cover.tsx at `/`), pushState cannot change the route, so the caller still
+ * needs a real navigation.
+ */
+export function openWorkspaceUrl(url: string, router: WorkspaceNavRouter): void {
+  if (window.location.pathname === WORKSPACE_PATH) {
+    window.history.pushState(null, '', url)
+    return
+  }
+  router.push(url)
+}
