@@ -10,9 +10,10 @@
 # Run from anywhere; every command runs inside WORKTREE.
 set -euo pipefail
 
-worktree=${1:?usage: gates.sh WORKTREE [BASE]}
+worktree=${1:?usage: gates.sh WORKTREE [BASE] [all|related]}
 base=${2:-origin/main}
 scope=${3:-all}
+case $scope in all | related) ;; *) echo "gates.sh: SCOPE must be all or related, got '$scope'" >&2; exit 2 ;; esac
 cd "$worktree"
 
 changed=$(git diff --name-only "$base"...HEAD; git diff --name-only HEAD; git ls-files --others --exclude-standard)
@@ -33,10 +34,10 @@ run_gate() {
 run_gate tsc npx tsc --noEmit
 jest_ignore=(--testPathIgnorePatterns "/node_modules/" "/\.claude/" "\.pglite\.test\.ts$" "/__tests__/helpers/")
 if [ "$scope" = related ]; then
-  related=$(printf '%s\n' "$changed" | sort -u | rg '\.(ts|tsx)$' | while read -r f; do [ -f "$f" ] && echo "$f"; done || true)
-  if [ -n "$related" ]; then
-    # shellcheck disable=SC2086
-    run_gate jest npx jest "${jest_ignore[@]}" --passWithNoTests --findRelatedTests $related
+  related=()
+  while IFS= read -r f; do [ -f "$f" ] && related+=("$f"); done < <(printf '%s\n' "$changed" | sort -u | rg '\.(ts|tsx)$' || true)
+  if [ "${#related[@]}" -gt 0 ]; then
+    run_gate jest npx jest "${jest_ignore[@]}" --passWithNoTests --findRelatedTests "${related[@]}"
   else
     echo "jest: n/a"
   fi

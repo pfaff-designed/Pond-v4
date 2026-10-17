@@ -23,7 +23,7 @@ Quirks, learned the hard way:
 
 ## What to do
 
-**`DEPTH=standard`:** do steps 2 and 5 in light, and step 3 only for values the diff changed. Skip 1, 4 and 6 unless the spec names keyboard use, in which case do 4. Make and delete the scratch page as always (7). **`DEPTH=full`:** every step.
+**`DEPTH=standard`:** do steps 2 and 5 in light, and step 3 only for values the diff changed. Do step 1 only for the frames holding the values you measure. Skip 4 and 6, unless the spec names keyboard use, in which case do 4. Make and delete the scratch page as always (7). **`DEPTH=full`:** every step.
 
 1. **The board.** Open `BOARD_URL/<board file>` (URL-encode spaces), find the named frames, screenshot each. Read the inline values for what you will measure from the markup (a snapshot or a read-only `READ` query); do not estimate from pixels.
 2. **The path.** Open `APP_URL`, make the scratch page, and walk `PATH_STEPS` step by step with real input. After each step, snapshot or screenshot and state what a person now sees. If a step cannot be done — the control is missing, hidden, unlabelled, or does nothing — stop there: that is a **fail**, whatever else works.

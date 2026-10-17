@@ -154,7 +154,7 @@ A clear, small, fully-specified request needs neither — act on it directly.
 
 A slice is finished when the built surface **matches the mockup it came from** — layout, colour, type, spacing, radii, shadow, copy — and the features that storyboard commits to actually work. Rendering without errors is not done. Passing tests is not done. **Code nobody can reach is not done**: write the person's path (the clicks and keys from an open page to the feature) before building, and walk it with real input before the PR. A path that only works through the console, the editor API or a dispatched event does not work.
 
-How to check, every time, before opening a PR:
+How to check, every time, before opening a PR. The one exception is a `light` ticket (`ship-epics/orchestrator.md`, step 2c): tests, docs, copy, or a small fix with a known cause and no visual, persistence or control change. Its proof is CI plus its regression test, and it has no live walk.
 
 1. Serve the handoff: `npx serve wayfinder/design_handoff_pond` (the fonts, glyphs and child components need a static server; `support.js` is the mockup runtime — never port it).
 2. Open the mockup board and the built surface side by side at the same viewport, and screenshot both.

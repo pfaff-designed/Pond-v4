@@ -29,10 +29,10 @@ You run one Jira epic's Workstream for Pond, ticket by ticket, through to a merg
 
 Read `EPIC`'s description and its `## Workstream` section (`JIRA.get`).
 
-**Resume first.** A Workstream ticket that is not Done and already has its worktree and its loop (`/tmp/ship-epics/EPIC/ralph-<key lowercased>/PLAN.md`) was interrupted: a usage limit, or a run stopped from outside. Take it before anything new. Read the ticket's latest comments and `/tmp/ship-epics/EPIC/orchestrator.prev-run.md` if the conductor left one, but decide where you are from git, `gh` and the run files, never from a note's word. Skip steps 2 and 3 (the person's path is `PATH_STEPS` in the loop's `SPEC.md`) and go on from the first step not finished:
+**Resume first.** A Workstream ticket that is not Done and already has its worktree and its loop (`/tmp/ship-epics/EPIC/ralph-<key lowercased>/PLAN.md`) was interrupted: a usage limit, or a run stopped from outside. Take it before anything new. Read the ticket's latest comments and `/tmp/ship-epics/EPIC/orchestrator.prev-run.md` if the conductor left one, but decide where you are from git, `gh` and the run files, never from a note's word. Skip steps 2 and 3 (the person's path is `PATH_STEPS` in the loop's `SPEC.md`, and the depth is its `DEPTH:` line; a loop with no `DEPTH:` line predates the tiers and is `full`) and go on from the first step not finished:
 
 - An item in `PLAN.md` still unticked → step 4. First stash what an interrupted pass left uncommitted (`git -C WORKTREE stash push -u -m "ralph: interrupted pass"`): unverified edits are not work to build on, and the stash keeps them recoverable. Remove the builder's old `HB` and `RESULT` and start `ralph.sh` on the same `LOOP`; it keeps its misses and numbers its passes on.
-- Every item ticked and green, no review result → step 5. Reviewed, not verified → step 7. Verified and unpushed → step 8, then 9. An open PR → step 9's CI wait.
+- Every item ticked and green, no review result → step 5. Reviewed, not verified → step 7 (`light`: step 8). Verified and unpushed → step 8, then 9. An open PR → step 9's CI wait.
 
 Otherwise take the first ticket in list order that is not Done, has no `feat/<key>` branch (`git -C REPO branch --list`) and no open PR (`gh pr list --head feat/<key> --state open`), and whose every `after:` ticket is Done. The first pick must carry the `now` label. If nothing is ready, return `blocked` with what each candidate waits on.
 
@@ -94,16 +94,16 @@ Write the loop state, `LOOP=/tmp/ship-epics/EPIC/ralph-<key lowercased>`:
 
 ```sh
 mkdir -p LOOP && cp SHIP_DIR/builder.md LOOP/PROMPT.md && : > LOOP/PLAN.md
-printf '#!/usr/bin/env bash\nexec %s %s\n' SHIP_DIR/gates.sh WORKTREE > LOOP/GATES && chmod +x LOOP/GATES
+printf '#!/usr/bin/env bash\nexec %s %s origin/main %s\n' SHIP_DIR/gates.sh WORKTREE SCOPE > LOOP/GATES && chmod +x LOOP/GATES
 ```
 
-and `LOOP/SPEC.md`: the ticket key and summary, its Jira description verbatim, `PATH_STEPS` (the person's path from step 2), and the epic's `Owns:` and `Migrations:` lines verbatim. Then start it with `BG` and supervise it (failsafe, "Ralph loop"), with `HB=/tmp/ship-epics/EPIC/builder-<key>.hb` and `RESULT=/tmp/ship-epics/EPIC/builder-<key>.result.md`:
+(`SCOPE` is `related` for `light` and `standard`, `all` for `full`), and `LOOP/SPEC.md`: the `DEPTH` line from step 2c, the ticket key and summary, its Jira description verbatim, `PATH_STEPS` (the person's path from step 2), and the epic's `Owns:` and `Migrations:` lines verbatim. Then start it with `BG` and supervise it (failsafe, "Ralph loop"), with `HB=/tmp/ship-epics/EPIC/builder-<key>.hb` and `RESULT=/tmp/ship-epics/EPIC/builder-<key>.result.md`:
 
 ```sh
 SHIP_DIR/ralph.sh LOOP WORKTREE HB RESULT > LOOP/ralph.out 2>&1
 ```
 
-**Size check, after the planning pass.** When `PLAN.md` first has items, count them. More than **8** build items means the ticket is bigger than one run lands well. Split it vertically now, before any item is built: keep the first working slice of the person's path (its entry point and the items under it) in this ticket, and move the rest into a new child ticket (`JIRA.comment` the proposed split on the ticket; the conductor creates the child). Then delete the moved items from `PLAN.md` and start the loop. Small tickets merge in one run; large ones run out of fix rounds.
+**Size check: plan first, then build.** Start the loop the first time with `RALPH_MAX_PASSES=1` in front of `ralph.sh`, so it runs only the planning pass and stops ("pass budget spent" is expected here, not a failure). Count the build items in `PLAN.md`. More than **8** means the ticket is bigger than one run lands well. Split it vertically before anything is built: keep the first working slice of the person's path (its entry point and the items under it) here, delete the other items from `PLAN.md`, and `JIRA.comment` the remainder on the ticket as a proposed child, with its own path. Report it in `RESULT` as `split:`; the conductor creates the child ticket. Then start the loop again without the limit.
 
 `RESULT` says `status: green` or `status: stopped` with a reason, and carries the commits and `PLAN.md` — whose `## Notes` (choices, deviations, outside_stream, causes, windows, path_test, verify_steps) feed the review, the verifier and the PR body.
 
@@ -144,7 +144,7 @@ cd WORKTREE && npx next dev -p PORT > /tmp/EPIC-dev.log 2>&1
 cd REPO && npx -y serve wayfinder/design_handoff_pond -l $((PORT + 1500)) > /tmp/EPIC-serve.log 2>&1
 ```
 
-Wait until `curl -s -o /dev/null -w '%{http_code}' localhost:PORT` answers (poll with `sleep 5`, max 3 minutes). Then `LAUNCH_BROWSER` the verifier, supervised (failsafe), prompt = `SHIP_DIR/verifier.md` + `APP_URL=http://localhost:PORT`, `BOARD_URL=http://localhost:<PORT+1500>`, `PATH_STEPS`, the board files and frames the spec names, `TICKET`.
+Wait until `curl -s -o /dev/null -w '%{http_code}' localhost:PORT` answers (poll with `sleep 5`, max 3 minutes). Then `LAUNCH_BROWSER` the verifier, supervised (failsafe), prompt = `SHIP_DIR/verifier.md` + `DEPTH`, `APP_URL=http://localhost:PORT`, `BOARD_URL=http://localhost:<PORT+1500>`, `PATH_STEPS`, the board files and frames the spec names, `TICKET`.
 
 Afterwards, always — pass or fail:
 
@@ -162,7 +162,12 @@ If the branch adds anything under `supabase/migrations/`: run `npm run test:pgli
 
 1. **Rebase** onto `origin/main` (`git -C WORKTREE fetch -q origin main && git -C WORKTREE rebase origin/main`). An unpushed branch may be squashed first (`git reset --soft $(git merge-base HEAD origin/main)` + one commit) so conflicts are resolved once. A conflict whose resolution changes behaviour is a fix round, then re-review.
 2. **Gates**: `SHIP_DIR/gates.sh WORKTREE` for `full` (tsc, all of jest, eslint on the changed files, Storybook if components or stories changed, pglite if a migration did). For `light` and `standard`, `SHIP_DIR/gates.sh WORKTREE origin/main related` runs jest only on the tests related to the changed files and leaves Storybook to CI. The full gates can outlast a single bounded call, so run them with `LONG`, beaten as `land: gates` with `LIMIT` 1500. Red after a rebase is a fix round.
-3. **Push** (`git -C WORKTREE push -q REMOTE BRANCH`), **open the PR**, and **turn on auto-merge** at once (`gh pr merge <N> --repo pfaff-designed/Pond-v4 --squash --delete-branch --auto`), so the PR merges the moment CI is green. To open the PR: `gh pr create --repo pfaff-designed/Pond-v4 --base main --head BRANCH --title "KEY: <summary>" --body-file <file>`. The body says, in this order: the person's path; what the ticket's acceptance asked and where each is met; the `DEPTH` and its reason; what the verifier measured against the board (or `light: not live-checked`); every choice made where the spec was silent; every deferral, with its ticket; the AUDIT p2/p3 items for this surface, resolved or deferred.
+3. **Push** (`git -C WORKTREE push -q REMOTE BRANCH`) and **open the PR**. Then **turn on auto-merge** (`gh pr merge <N> --repo pfaff-designed/Pond-v4 --squash --delete-branch --auto`), so it merges the moment CI is green, but only when both hold:
+   - The branch adds nothing under `supabase/migrations/`. A migration PR waits for the user (step 8) and is never auto-merged.
+   - `gh api repos/pfaff-designed/Pond-v4/branches/main/protection --jq '.required_status_checks.contexts'` lists `CI passed`. Without that required check, auto-merge could merge before CI runs.
+
+   Otherwise wait for CI (5) and merge by hand (6). To open the PR: `gh pr create --repo pfaff-designed/Pond-v4 --base main --head BRANCH --title "KEY: <summary>" --body-file <file>`. The body says, in this order: the person's path; what the ticket's acceptance asked and where each is met; the `DEPTH` and its reason; what the verifier measured against the board (or `light: not live-checked`); every choice made where the spec was silent; every deferral, with its ticket; the AUDIT p2/p3 items for this surface, resolved or deferred.
+
 4. Move the ticket to **In Review** (`JIRA.transition`, `31`).
 5. **Wait for CI and act on what it says** — never start a watcher and move on. CI outlasts a single bounded call, so run the wait with `LONG`, beaten as `land: CI for #<N>` with `LIMIT` 1800:
 
@@ -192,6 +197,7 @@ KAN-123 · merged | needs-user | stopped | blocked
   user:      <the decision needed, if needs-user>
   reason:    <why, if stopped or blocked: the cause, not the symptom>
   options:   <if stopped or blocked: at least one way forward (smaller slice, other route, the user's decision)>
+  split:     <if step 4's size check split the ticket: the proposed child's summary and path, or none>
   follow-up: <tickets created or commented on>
   windows:   <rot written down in step 9.7, or none>
 EPIC · <n merged> · next ready: <key or none>

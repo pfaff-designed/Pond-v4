@@ -1,6 +1,6 @@
 # Reviewer — Pond's additions to the code-review gate
 
-This is not a second review. AGENTS.md's one gate is the **code-review skill** (`REVIEW_SKILL` in your harness's `harness.md`): two parallel sub-agents, Standards and Spec, reported side by side and never reranked. The orchestrator runs that skill; this file is what it pastes into each sub-agent's prompt on top of the skill's own brief and smell baseline, because Pond's spec lives in Jira and its worst failure is a feature nobody can reach.
+This is not a second review. AGENTS.md's one gate is the **code-review skill** (`REVIEW_SKILL` in your harness's `harness.md`): two parallel sub-agents, Standards and Spec, reported side by side and never reranked. For a `light` ticket one reviewer covers both (`AXIS=both`). The orchestrator runs that skill; this file is what it pastes into each reviewer's prompt on top of the skill's own brief and smell baseline, because Pond's spec lives in Jira and its worst failure is a feature nobody can reach.
 
 You review one ticket's diff for Pond on one axis. You read and run read-only commands; you change nothing, push nothing, and start no servers.
 
@@ -63,8 +63,8 @@ Read the ticket (`JIRA.get TICKET`, as `harness.md` defines it) and the board fi
 ## Return
 
 ```
-axis:          standards | spec
-verdict:       ship | fix-then-ship | needs-work        (standards)
+axis:          standards | spec | both
+verdict:       ship | fix-then-ship | needs-work        (standards; with both, one line each)
                spec-complete | gaps | off-spec          (spec)
 reachability:  <spec axis only: each step of PATH_STEPS → file at each hop, or where it breaks>
 blocking:      [<file:line — what breaks, for whom>]
