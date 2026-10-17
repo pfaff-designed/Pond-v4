@@ -24,7 +24,7 @@
  */
 
 import React, { useState } from 'react'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, act } from '@testing-library/react'
 
 import {
   entriesSchema,
@@ -378,17 +378,30 @@ function Stateful({ data }: { data: EntriesBlock }) {
   return <EntriesView data={state} editable onChange={setState} />
 }
 
-describe('EntriesView — editable (every row is a date field + a prose field)', () => {
-  it('renders a mono date input and a textarea per entry, in the row grid', () => {
+describe('EntriesView — editable (a read-only date label + a prose field, per row)', () => {
+  it('keeps the date a read-only mono LABEL — no board draws a live date field for `entry` — and renders a textarea per entry, in the row grid', () => {
     const { container } = render(<Stateful data={updates} />)
-    const dates = screen.getAllByRole('textbox', { name: 'Entry date' })
+    expect(screen.queryAllByRole('textbox', { name: 'Entry date' })).toHaveLength(0)
+    const dates = datesOf(container)
     const texts = screen.getAllByRole('textbox', { name: 'Entry text' })
     expect(dates).toHaveLength(2)
     expect(texts).toHaveLength(2)
-    expect((dates[0] as HTMLInputElement).value).toBe('28 oct')
+    expect(dates[0].textContent).toBe('28 oct')
     expect((texts[0] as HTMLTextAreaElement).value).toBe(updates.entries[0].text)
     for (const d of dates) has(d, ...DATE)
     for (const row of Array.from(container.firstElementChild!.children)) has(row, ...ROW)
+  })
+
+  it('a focused row wears the molecule’s `editing` ring; blurring drops it', () => {
+    render(<Stateful data={updates} />)
+    const texts = screen.getAllByRole('textbox', { name: 'Entry text' })
+    const rows = texts.map((t) => t.parentElement!)
+    for (const row of rows) lacks(row, 'ring-mn-text')
+    act(() => texts[0].focus())
+    has(rows[0], 'ring-[1.4px]', 'ring-inset', 'ring-mn-text')
+    lacks(rows[1], 'ring-mn-text')
+    act(() => texts[0].blur())
+    lacks(rows[0], 'ring-mn-text')
   })
 
   it('the textarea wears the block’s medium: sans by default, serif 200 / 16.5 / 1.6 on a journal', () => {
@@ -421,20 +434,13 @@ describe('EntriesView — editable (every row is a date field + a prose field)',
     fireEvent.change(screen.getAllByRole('textbox', { name: 'Entry text' })[1], {
       target: { value: 'Quiet day.' },
     })
-    expect(onChange).toHaveBeenCalledWith({
+    expect(onChange).toHaveBeenLastCalledWith({
       ...journal,
       entries: [
         journal.entries[0],
         { ...journal.entries[1], text: 'Quiet day.' },
         journal.entries[2],
       ],
-    })
-    fireEvent.change(screen.getAllByRole('textbox', { name: 'Entry date' })[0], {
-      target: { value: '26 oct' },
-    })
-    expect(onChange).toHaveBeenLastCalledWith({
-      ...journal,
-      entries: [{ ...journal.entries[0], date: '26 oct' }, journal.entries[1], journal.entries[2]],
     })
   })
 

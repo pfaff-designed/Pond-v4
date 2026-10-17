@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import type { ModuleViewProps } from '../types'
 import { ENTRIES_EMPTY_LINE, type Entry, type EntriesBlock } from './schema'
 
@@ -44,10 +45,14 @@ const blankLine = (data: EntriesBlock) => data.placeholder ?? ENTRIES_EMPTY_LINE
  * ticket overturns it only for the geometry and serif size, which this view now
  * matches by hand.
  *
- * Editing folds into the view: each row is a mono date field and a textarea in the
- * block's medium, emitting the whole next block through `onChange`. No add
- * affordance is drawn here (as `todo`): the frame's `write one` on the empty `log`
- * card is the insert path, via `addEntry`.
+ * Editing folds into the view: each row keeps the read-only date LABEL (no board
+ * draws a live date field for `entry` — the date is system-set at `addEntry` time,
+ * not something a person retypes) and turns the text into a textarea in the
+ * block's medium, emitting the whole next block through `onChange`. The focused
+ * row wears the molecule's `editing` state — `boxShadow: inset 0 0 0 1.4px fg` — a
+ * state the pre-KAN-356 implementation never drew. No add affordance is drawn here
+ * (as `todo`): the frame's `write one` on the empty `log` card is the insert path,
+ * via `addEntry`.
  */
 
 /**
@@ -63,6 +68,8 @@ const ROW =
 const DATE = 'font-mono text-[10.5px] text-mn-text-secondary'
 const SANS = 'font-sans text-[13.5px] leading-normal [text-wrap:pretty]'
 const SERIF = 'font-serif font-extralight text-[16.5px] leading-[1.6] [text-wrap:pretty]'
+/** The molecule's `editing` state: `boxShadow: inset 0 0 0 1.4px fg`, no background change. */
+const EDIT_RING = 'ring-[1.4px] ring-inset ring-mn-text'
 
 /** The block's medium for prose — the board's `d.serif` branch. */
 const medium = (serif: boolean | undefined) => (serif ? SERIF : SANS)
@@ -89,6 +96,8 @@ export function addEntry(data: EntriesBlock, now: Date = new Date()): EntriesBlo
 }
 
 export function EntriesView({ data, editable, onChange }: ModuleViewProps<EntriesBlock>) {
+  const [editingId, setEditingId] = useState<string | null>(null)
+
   function patchEntry(index: number, patch: Partial<Entry>) {
     onChange?.({
       ...data,
@@ -100,19 +109,18 @@ export function EntriesView({ data, editable, onChange }: ModuleViewProps<Entrie
     return (
       <div className={STACK}>
         {data.entries.map((entry, i) => (
-          <div key={entry.id} className={ROW}>
-            <input
-              aria-label="Entry date"
-              className={`${DATE} min-w-0 bg-transparent outline-none`}
-              value={entry.date}
-              onChange={(e) => patchEntry(i, { date: e.target.value })}
-            />
+          <div key={entry.id} className={`${ROW} ${editingId === entry.id ? EDIT_RING : ''}`}>
+            <span data-part="date" className={DATE}>
+              {entry.date}
+            </span>
             <textarea
               aria-label="Entry text"
               className={`${medium(data.serif)} w-full resize-none bg-transparent text-mn-text outline-none placeholder:text-mn-text-secondary`}
               value={entry.text}
               rows={Math.max(1, entry.text.split('\n').length)}
               placeholder={blankLine(data)}
+              onFocus={() => setEditingId(entry.id)}
+              onBlur={() => setEditingId((id) => (id === entry.id ? null : id))}
               onChange={(e) => patchEntry(i, { text: e.target.value })}
             />
           </div>

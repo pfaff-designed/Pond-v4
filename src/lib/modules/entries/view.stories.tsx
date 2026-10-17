@@ -275,7 +275,12 @@ function Stateful({ data }: { data: EntriesBlock }) {
   return <EntriesView data={state} editable onChange={setState} />
 }
 
-/** Editable journal: the textarea wears the serif register; typing lands in the block. */
+/**
+ * Editable journal: the textarea wears the serif register; typing lands in the
+ * block. The date stays the read-only mono LABEL (no board draws a live date field
+ * for `entry` — it is system-set at `addEntry` time), and a focused row wears the
+ * molecule's `editing` ring: `boxShadow: inset 0 0 0 1.4px fg`.
+ */
 export const EditableJournal: Story = {
   args: { data: journal },
   render: (args) => <Stateful data={args.data} />,
@@ -285,20 +290,30 @@ export const EditableJournal: Story = {
     await expect(texts).toHaveLength(3)
     await assertSerif(getComputedStyle(texts[0]), INK)
     await expect((texts[0] as HTMLTextAreaElement).placeholder).toBe(ENTRIES_EMPTY_LINE)
-    const dates = canvas.getAllByRole('textbox', { name: 'Entry date' })
+    await expect(canvas.queryAllByRole('textbox', { name: 'Entry date' })).toHaveLength(0)
+    const dates = datesOf(canvasElement)
+    await expect(dates).toHaveLength(3)
     const ds = getComputedStyle(dates[0])
     await expect(ds.fontFamily).toContain('PP Neue Montreal Mono')
     await expect(ds.fontSize).toBe('10.5px')
     await expect(ds.color).toBe(INK_68)
     // The editable row keeps the read-only row's geometry: the molecule's 56px grid
     // at gap 14, baseline — the fields swap in, the layout does not change.
-    for (const t of texts) {
-      const cs = getComputedStyle(t.parentElement!)
+    const rows = texts.map((t) => t.parentElement!)
+    for (const row of rows) {
+      const cs = getComputedStyle(row)
       await expect(cs.display).toBe('grid')
       await expect(cs.gridTemplateColumns.startsWith('56px ')).toBe(true)
       await expect(cs.columnGap).toBe('14px')
       await expect(cs.alignItems).toBe('baseline')
+      await expect(cs.boxShadow).toBe('none')
     }
+    await userEvent.click(texts[0])
+    await expect(getComputedStyle(rows[0]).boxShadow).toContain('inset')
+    await expect(getComputedStyle(rows[0]).boxShadow).toContain('1.4px')
+    await expect(getComputedStyle(rows[1]).boxShadow).toBe('none')
+    await userEvent.tab()
+    await expect(getComputedStyle(rows[0]).boxShadow).toBe('none')
     await userEvent.type(texts[1], ' Early night.')
     await expect(texts[1]).toHaveValue(
       'Quiet day. Finished the chapter and started the next. Early night.'
@@ -315,6 +330,10 @@ export const EditableUpdates: Story = {
     for (const t of canvas.getAllByRole('textbox', { name: 'Entry text' })) {
       await assertSans(getComputedStyle(t), INK)
     }
+    // The date is a read-only label here too — the project's `updates` has no
+    // more claim to a live date field than the journal does.
+    await expect(canvas.queryAllByRole('textbox', { name: 'Entry date' })).toHaveLength(0)
+    await expect(datesOf(canvasElement)).toHaveLength(2)
   },
 }
 
