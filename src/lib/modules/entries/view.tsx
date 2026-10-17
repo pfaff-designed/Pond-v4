@@ -10,8 +10,7 @@ const blankLine = (data: EntriesBlock) => data.placeholder ?? ENTRIES_EMPTY_LINE
 
 /**
  * Entries view (#250) — dated prose. Row geometry and serif size follow
- * `PondMolecule.dc.html`'s `entry` kind values (conductor's ruling, KAN-356: the
- * library wins over the superseded `PondTemplate.dc.html` reading below):
+ * `PondMolecule.dc.html`'s `entry` kind values:
  *
  *   stack  { display: 'flex', flexDirection: 'column', gap: 2 }
  *   entry  { display: 'grid', gridTemplateColumns: '56px minmax(0,1fr)', gap: 14,
@@ -29,51 +28,43 @@ const blankLine = (data: EntriesBlock) => data.placeholder ?? ENTRIES_EMPTY_LINE
  * here: an entry with prose is at full ink, a blank one at ink .68 — but BOTH keep
  * the block's medium.
  *
- * The old `PondTemplate.dc.html` literal was `d.serif && filled`, which reads as "a
- * blank row is sans even on a journal". It does not support that: `serif: 1` appears
- * ONLY on the journal's FILLED descriptor, so the two flip together and the board
- * never renders a serif-flagged block through the non-filled branch. It gave no
- * evidence for this state. `renderVals()`'s idiom for an empty authored-prose block
- * is KEEP THE MEDIUM, DROP THE INK — `text` is `fontFamily: serif … color: filled ?
- * fg : a(.68)`, and `highlight`'s empty branch is serif 200 at `a(.68)`, which
- * `highlight/view.tsx` follows. The deciding fact is ours, not the board's: the
- * editable path below wears `medium(data.serif)` unconditionally, so a sans blank row
- * would be serif while focused and sans on blur — a medium flip on every blur.
+ * An empty row keeps the medium and drops the ink rather than switching to sans:
+ * `renderVals()`'s idiom for an empty authored-prose block is KEEP THE MEDIUM, DROP
+ * THE INK — `text` is `fontFamily: serif … color: filled ? fg : a(.68)`, and
+ * `highlight`'s empty branch is serif 200 at `a(.68)`, which `highlight/view.tsx`
+ * follows. The editable path below wears `medium(data.serif)` unconditionally, so a
+ * sans blank row would otherwise flip medium between focus and blur.
  *
- * NOT delegated to `<PondMolecule kind="entry">` itself, even though its VALUES now
- * win: that component hardcodes the serif register and has no `onTitleChange` /
- * `trailing` / sans variant for `entry`, so a block built on it could not render
- * `project`'s sans `updates`. The #250 exclusion stands for the COMPONENT; this
- * ticket overturns it only for the geometry and serif size, which this view now
- * matches by hand.
+ * NOT delegated to `<PondMolecule kind="entry">` itself: that component hardcodes
+ * the serif register and has no `onTitleChange` / `trailing` / sans variant for
+ * `entry`, so a block built on it could not render `project`'s sans `updates`. Row
+ * geometry and serif size are matched by hand here instead.
  *
  * Editing folds into the view: each row keeps the read-only date LABEL (no board
  * draws a live date field for `entry` — the date is system-set at `addEntry` time,
  * not something a person retypes) and turns the text into a textarea in the
  * block's medium, emitting the whole next block through `onChange`. The focused
- * row wears the molecule's `editing` state — `boxShadow: inset 0 0 0 1.4px fg` — a
- * state the pre-KAN-356 implementation never drew.
+ * row wears the molecule's `editing` state — `boxShadow: inset 0 0 0 1.4px fg`.
  *
- * A second insert path sits above the stack (KAN-356): a quiet mono add line,
- * editable mode only — unlike `todo`, whose only add path is the frame's empty-state
- * `add a step`, the ticket's own build instruction asks for this one explicitly.
- * ↵ prepends a dated entry through `addEntry`'s now-optional `text` param (the same
- * whole-block `onChange` contract `patchEntry` rides), clears the line, and focuses
- * the new row's textarea once it exists post-round-trip (hence the `useEffect`, not
- * an inline `.focus()` in the key handler). An empty ↵ is a no-op. The frame's
- * `write one` on the empty `log` card still works too, via the same `addEntry`.
+ * A second insert path sits above the stack: a quiet mono add line, editable mode
+ * only. ↵ prepends a dated entry through `addEntry`'s optional `text` param (the
+ * same whole-block `onChange` contract `patchEntry` rides), clears the line, and
+ * focuses the new row's textarea once it exists post-round-trip (hence the
+ * `useEffect`, not an inline `.focus()` in the key handler). An empty ↵ is a no-op.
+ * The frame's `write one` on the empty `log` card still works too, via the same
+ * `addEntry`.
  *
- * A third insert path lives inside each entry's own field (KAN-356): ↵ with no
- * Shift inserts a new blank entry at the top of the stack (index 0), focused —
- * newest-first (schema.ts, PondBlock `log`) means any insert belongs at the
- * top, never spliced in beside the row being typed into, so this reuses
- * `addEntry` rather than rebuilding the entry shape inline. The field's own
- * `onChange` already commits every keystroke, so there is nothing left for ↵
- * to do but insert and move focus. Shift+↵ is left to the textarea's native
- * newline, which multi-line prose (and `serialize`'s line-collapsing) already
- * assumes. `pendingFocusId` is keyed by id rather than index because an
- * insert's row can land anywhere in the stack (not just at the top via the
- * add line), and a splice reindexes the array out from under a plain index.
+ * A third insert path lives inside each entry's own field: ↵ with no Shift inserts
+ * a new blank entry at the top of the stack (index 0), focused — newest-first
+ * (schema.ts, PondBlock `log`) means any insert belongs at the top, never spliced
+ * in beside the row being typed into, so this reuses `addEntry` rather than
+ * rebuilding the entry shape inline. The field's own `onChange` already commits
+ * every keystroke, so there is nothing left for ↵ to do but insert and move focus.
+ * Shift+↵ is left to the textarea's native newline, which multi-line prose (and
+ * `serialize`'s line-collapsing) already assumes. `pendingFocusId` is keyed by id
+ * rather than index because an insert's row can land anywhere in the stack (not
+ * just at the top via the add line), and a splice reindexes the array out from
+ * under a plain index.
  */
 
 /**
@@ -104,17 +95,18 @@ const SERIF = 'font-serif font-extralight text-[16.5px] leading-[1.6] [text-wrap
 /** The molecule's `editing` state: `boxShadow: inset 0 0 0 1.4px fg`, no background change. */
 const EDIT_RING = 'ring-[1.4px] ring-inset ring-mn-text'
 /**
- * The hover `remove` (KAN-356) — no board draws it on `entry` either, so it
- * follows `BlockCanvas.tsx`'s own hover-handle idiom: `group` on the row,
- * `opacity-0` revealed by `group-hover`/`group-focus-within` (keyboard parity
- * with a mouse hover), trailing-aligned over the row's end. Stays at ink .68
- * throughout — it never earns full ink, same register as the add line.
+ * The hover `remove` — no board draws it on `entry` either, so it follows
+ * `BlockCanvas.tsx`'s own hover-handle idiom: `group` on the row, `opacity-0`
+ * revealed by `group-hover`/`group-focus-within` (keyboard parity with a mouse
+ * hover), trailing-aligned over the row's end, and after the textarea in DOM
+ * order so Tab reaches the row's text first. The textarea reserves the button's
+ * width with right padding so it never covers the end of a long line. Stays at
+ * ink .68 throughout — it never earns full ink, same register as the add line.
  */
 const REMOVE =
   'absolute right-2 top-1/2 -translate-y-1/2 font-mono text-[10.5px] tracking-tight text-mn-text-secondary opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100'
 /**
- * The add line (KAN-356) — no board draws this row, the ticket's own build
- * instruction does ("as a quiet mono line"): machine-surface register, ink .68
+ * The add line — no board draws this row: machine-surface register, ink .68
  * throughout rather than the content rows' full ink, since it is an affordance, not
  * authored prose.
  */
@@ -137,7 +129,7 @@ export function entryDateLabel(date: Date): string {
  * same whole-block `onChange(nextBlock)` contract the fields use. Newest first, as
  * the board's journal notes (`note: 'newest first'`) and both its fixtures read.
  * `text` defaults to `''` for the frame's empty-state caller (`write one`, a blank
- * row to type into); the add line (KAN-356) passes its own typed text instead.
+ * row to type into); the add line passes its own typed text instead.
  */
 export function addEntry(
   data: EntriesBlock,
@@ -190,19 +182,19 @@ export function EntriesView({ data, editable, onChange }: ModuleViewProps<Entrie
   }
 
   /**
-   * ↵ in an entry's own field (KAN-356) inserts a new blank entry at the top
-   * of the stack, focused — newest-first (schema.ts, PondBlock `log`) means
-   * the new entry always belongs at index 0, regardless of which row it was
-   * typed into, so this reuses `addEntry` rather than splicing a hand-built
-   * entry in beside `index`. The row being typed into is already committed by
-   * every keystroke's own `onChange` via `patchEntry`, so there is nothing
-   * left to commit here. Shift+↵ is left untouched: the textarea's native
-   * behaviour inserts the literal newline multi-line prose needs.
+   * ↵ in an entry's own field inserts a new blank entry at the top of the
+   * stack, focused — newest-first (schema.ts, PondBlock `log`) means the new
+   * entry always belongs at index 0, regardless of which row it was typed
+   * into, so this reuses `addEntry` rather than splicing a hand-built entry in
+   * beside `index`. The row being typed into is already committed by every
+   * keystroke's own `onChange` via `patchEntry`, so there is nothing left to
+   * commit here. Shift+↵ is left untouched: the textarea's native behaviour
+   * inserts the literal newline multi-line prose needs.
    *
    * ⌫ in an entry already emptied by its own `onChange` removes the row via
-   * `removeEntry`, then blurs the field instead of focusing a neighbour row
-   * (KAN-356 fix): this textarea is not a Tiptap editor, so if focus stayed
-   * on one, ShellCommands' ⌘Z-belongs-to-the-field rule (`isEditable`,
+   * `removeEntry`, then blurs the field instead of focusing a neighbour row:
+   * this textarea is not a Tiptap editor, so if focus stayed on one,
+   * ShellCommands' ⌘Z-belongs-to-the-field rule (`isEditable`,
    * `ShellCommands.tsx`) would hand the next ⌘Z to the browser's native field
    * undo instead of falling through to the session undo step, and the
    * removed row would never come back.
@@ -243,21 +235,13 @@ export function EntriesView({ data, editable, onChange }: ModuleViewProps<Entrie
             <span data-part="date" className={DATE}>
               {entry.date}
             </span>
-            <button
-              type="button"
-              aria-label="Remove entry"
-              className={REMOVE}
-              onClick={() => removeEntry(i)}
-            >
-              remove
-            </button>
             <textarea
               ref={(el) => {
                 if (el) textRefs.current.set(entry.id, el)
                 else textRefs.current.delete(entry.id)
               }}
               aria-label="Entry text"
-              className={`${medium(data.serif)} w-full resize-none bg-transparent text-mn-text outline-none placeholder:text-mn-text-secondary`}
+              className={`${medium(data.serif)} w-full resize-none bg-transparent pr-12 text-mn-text outline-none placeholder:text-mn-text-secondary`}
               value={entry.text}
               rows={Math.max(1, entry.text.split('\n').length)}
               placeholder={blankLine(data)}
@@ -266,6 +250,14 @@ export function EntriesView({ data, editable, onChange }: ModuleViewProps<Entrie
               onChange={(e) => patchEntry(i, { text: e.target.value })}
               onKeyDown={(e) => handleTextKeyDown(e, i)}
             />
+            <button
+              type="button"
+              aria-label="Remove entry"
+              className={REMOVE}
+              onClick={() => removeEntry(i)}
+            >
+              remove
+            </button>
           </div>
         ))}
       </div>

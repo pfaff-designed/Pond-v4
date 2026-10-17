@@ -571,6 +571,16 @@ describe('EntriesView — the hover `remove` (KAN-356)', () => {
     expect(texts).toHaveLength(1)
     expect((texts[0] as HTMLTextAreaElement).value).toBe(updates.entries[1].text)
   })
+
+  it('reserves its own width on the textarea (right padding) and sits after it in DOM order, so Tab reaches the text first', () => {
+    render(<Stateful data={updates} />)
+    const text = screen.getAllByRole('textbox', { name: 'Entry text' })[0]
+    const remove = screen.getAllByRole('button', { name: 'Remove entry' })[0]
+    has(text, 'pr-12')
+    const row = text.parentElement!
+    const rowChildren = Array.from(row.children)
+    expect(rowChildren.indexOf(text)).toBeLessThan(rowChildren.indexOf(remove))
+  })
 })
 
 describe('EntriesView — ⌫ in an empty entry’s own field (KAN-356)', () => {
