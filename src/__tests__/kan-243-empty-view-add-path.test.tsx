@@ -34,13 +34,17 @@ const tableSchema: PropertySchema = [
 ]
 
 const updateSchema = jest.fn()
+// Mutated by the "WITH rows" test below (reset in `beforeEach`), since
+// `viewFrameState` keys 'empty' off zero rows — a non-empty fixture never
+// reaches `BlockCanvas`'s empty-state bar at all, only `ViewControls`'s live one.
+let mockRows: CollectionRow[] = []
 // `runAddView`'s undo reads "what is current" through `readCachedSchema` (the
 // react-query cache), not through this hook's own return — mock it too, or the
 // undo's `getLatestSchema()` throws (`readCachedSchema is not a function`) the
 // moment a real add actually stages a toast.
 jest.mock('@/lib/modules/view/use-collection-rows', () => ({
   useCollectionRows: () => {
-    const [rows] = useState<CollectionRow[]>([])
+    const [rows] = useState<CollectionRow[]>(mockRows)
     return {
       schema: tableSchema,
       rows,
@@ -106,6 +110,7 @@ function renderCanvas(blocks: Block[]) {
 
 beforeEach(() => {
   jest.clearAllMocks()
+  mockRows = []
 })
 
 describe('BlockCanvas — "＋ view" reaches an empty database too (KAN-243)', () => {
@@ -158,5 +163,17 @@ describe('BlockCanvas — "＋ view" reaches an empty database too (KAN-243)', (
     const schemaAfterUndo: PropertySchema = updateSchema.mock.calls[1][0]
     expect(schemaAfterUndo.some((def) => def.type === 'date')).toBe(false)
     expect(schemaAfterUndo.some((def) => def.type === 'status')).toBe(true)
+  })
+
+  it('a legacy table WITH rows: picking "calendar" selects its tab and draws the real grid, through the live ViewControls bar', async () => {
+    mockRows = [{ id: 'row-1', title: 'first task', values: {} }]
+    const user = userEvent.setup()
+    renderCanvas([table])
+
+    await user.click(await screen.findByRole('button', { name: 'add a view' }))
+    await user.click(screen.getByRole('option', { name: /^calendar/ }))
+
+    expect(screen.getByRole('tab', { name: 'calendar' })).toHaveAttribute('aria-selected', 'true')
+    expect(document.querySelectorAll('[data-part="calendar-day-cell"]').length).toBeGreaterThan(0)
   })
 })
