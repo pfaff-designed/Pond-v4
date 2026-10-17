@@ -1483,6 +1483,12 @@ export function Rail() {
   // re-reveals instead of being read as already-revealed.
   const prevPondIdRef = useRef(pondId)
   const revealedForRef = useRef<string | null>(null)
+  // Declared here, ahead of the reset effect below, so that effect's own
+  // real-switch branch can clear it (react-hooks/immutability wants a ref
+  // mutated before it's read by an earlier-registered effect). Also read by
+  // the write effect and set by the restore effect further down — gated by
+  // this ref so it fires exactly once per pond.
+  const loadedForRef = useRef<string | null>(null)
   useEffect(() => {
     if (prevPondIdRef.current === pondId) return
     const isPondSwitch = prevPondIdRef.current !== null
@@ -1490,19 +1496,22 @@ export function Rail() {
     if (!isPondSwitch) return
     setExpanded(new Set())
     revealedForRef.current = null
+    // On a real switch, A's `loadedForRef` pin must not survive onto B and
+    // then back onto A — otherwise switching back to A before B ever loads
+    // reads as "A already loaded", skipping the restore-on-mount re-read and
+    // letting the write effect persist this clear's empty `expanded` over
+    // A's real store.
+    loadedForRef.current = null
   }, [pondId])
 
   // Read this pond's stored expansion once per `pondId`, prune it against the
   // loaded `pages` (a stored id may have been deleted elsewhere), and merge
   // the result into `expanded` via a union — never a replace — so this can't
   // fight the ancestor-reveal or KAN-122 child-reveal effects below regardless
-  // of effect order. Gated by `loadedForRef` so it fires exactly once per pond.
-  // Gated on `isSuccess`, not `!isLoading`: a failed fetch also leaves
-  // `isLoading` false with `pages` still `[]`, and pruning against that would
-  // mark the pond loaded and wipe the real stored ids before a retry ever
-  // lands them. Declared ahead of the write effect below, which reads this
-  // same ref to know whether it's safe to write yet.
-  const loadedForRef = useRef<string | null>(null)
+  // of effect order. Gated on `isSuccess`, not `!isLoading`: a failed fetch
+  // also leaves `isLoading` false with `pages` still `[]`, and pruning
+  // against that would mark the pond loaded and wipe the real stored ids
+  // before a retry ever lands them.
 
   // Write `expanded` to the current pond's store whenever it (or the pond)
   // changes — the only place this runs, now that `setExpanded` itself is
