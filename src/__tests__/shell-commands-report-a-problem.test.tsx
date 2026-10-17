@@ -77,7 +77,14 @@ describe('ShellCommands — `report a problem` opens the box', () => {
     fireEvent.keyDown(document, { key: 'k', metaKey: true })
 
     expect(screen.queryByRole('dialog', { name: 'report a problem' })).toBeNull()
-    expect(screen.queryByRole('combobox', { name: 'command palette' })).toBeNull()
+    // The palette's own close (from picking the row, before the report box
+    // ever opened) is still mid-morph — its combobox stays mounted until that
+    // animation's rAF loop reaches rest (see the ShellCommands wiring test's
+    // note on this). Waiting lets that pre-existing close finish instead of
+    // asserting mid-transition.
+    await waitFor(() => {
+      expect(screen.queryByRole('combobox', { name: 'command palette' })).toBeNull()
+    })
   })
 
   it('⌘. (zen) is blocked while the report box is open — reopening the palette still offers `zen`, not `leave zen`', async () => {
