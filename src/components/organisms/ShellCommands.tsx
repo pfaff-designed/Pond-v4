@@ -64,7 +64,9 @@ import { readRecentPageIds, writeRecent } from '@/lib/pages/recent-pages'
 import { usePaletteRecords } from '@/lib/pages/use-palette-records'
 import { createPage } from '@/lib/pages/client'
 import { insertPageOptimistic } from '@/lib/pages/tree'
-import { pagesKey } from '@/lib/pages/keys'
+import { pagesKey, homeQueryKey } from '@/lib/pages/keys'
+import { getOrCreateHomePage, type HomePage } from '@/lib/pages/home'
+import { appendChildLinkToParent } from '@/lib/pages/child-links'
 import { usePagesRows } from '@/lib/pages/use-pages'
 import { createClient } from '@/lib/supabase/client'
 import { instantiateTemplate } from '@/lib/templates/instantiate'
@@ -366,11 +368,26 @@ export function ShellCommands() {
         writeRecent({ id: created.id, type: 'page', title: created.title })
         router.push(workspaceUrl({ id: created.id, type: 'page', title: created.title }))
         void queryClient.invalidateQueries({ queryKey: pagesKey(pondId) })
+        // KAN-415: a failed link append is not a failed page creation — the
+        // page above has already landed and been navigated to.
+        void (async () => {
+          try {
+            const resolvedParentId =
+              parent.id ??
+              queryClient.getQueryData<HomePage | null>(homeQueryKey(pondId))?.id ??
+              (await getOrCreateHomePage(supabase, pondId, pondName))?.id ??
+              null
+            if (!resolvedParentId) return
+            await appendChildLinkToParent(supabase, queryClient, resolvedParentId, created.id, pondId)
+          } catch (err) {
+            console.error('[page-link] child link not appended', created.id, err)
+          }
+        })()
       } catch {
         requestComposerNotice("can't make the page — try again.")
       }
     },
-    [parent.id, pondId, queryClient, router]
+    [parent.id, pondId, pondName, queryClient, router]
   )
 
   const handlePaletteSelect = useCallback(
