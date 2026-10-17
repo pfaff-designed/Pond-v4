@@ -351,3 +351,33 @@ describe('AtomEditor — date', () => {
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
   })
 })
+
+describe('AtomEditor — a very long unbroken value fits its column', () => {
+  const longValue = 'a'.repeat(260)
+
+  // jsdom never lays out real pixels (getBoundingClientRect is always 0), so
+  // this guards the classes a real browser needs to shrink the trigger below
+  // its content width inside a grid track (`min-width: auto` is a button's UA
+  // default) — the layout assertion itself lives in a story.
+  it('keeps the rest-mode trigger shrinkable (min-w-0 max-w-full)', () => {
+    render(
+      <AtomEditor kind="text" value={longValue} aria-label="Notes value" parse={parseText} onCommit={jest.fn()} />
+    )
+    const trigger = screen.getByRole('button', { name: 'Notes value' })
+    expect(trigger.className).toContain('min-w-0')
+    expect(trigger.className).toContain('max-w-full')
+  })
+
+  it('shows the full value, unclipped, while editing', async () => {
+    const user = userEvent.setup()
+    render(
+      <AtomEditor kind="text" value={longValue} aria-label="Notes value" parse={parseText} onCommit={jest.fn()} />
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Notes value' }))
+    const input = screen.getByLabelText('Notes value') as HTMLInputElement
+    expect(input.value).toBe(longValue)
+    expect(input.className).toContain('min-w-0')
+    expect(input.className).toContain('max-w-full')
+  })
+})

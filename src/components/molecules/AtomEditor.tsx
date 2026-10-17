@@ -126,7 +126,7 @@ export function AtomEditor({
         // editor instead of being read as "leave the row".
         onKeyDown={(e) => e.stopPropagation()}
         className={cn(
-          'rounded-mn-chrome border-0 bg-transparent p-0 text-left',
+          'min-w-0 max-w-full rounded-mn-chrome border-0 bg-transparent p-0 text-left',
           FOCUS_VISIBLE_RING,
           className
         )}

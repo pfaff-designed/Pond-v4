@@ -203,6 +203,39 @@ export const InPropertiesCard: Story = {
   },
 }
 
+/**
+ * KAN-350 fix: a very long unbroken word (no spaces to wrap on) must truncate
+ * inside the value column, not blow the trigger out past the card/viewport —
+ * the grid-item `<button>` has `min-width: auto` by default, so this needs
+ * `min-w-0 max-w-full` on the trigger, which only a real layout can prove.
+ */
+export const LongTextTruncates: Story = {
+  args: {
+    schema: [{ id: 'notes', name: 'Notes', type: 'text' }],
+    values: { notes: 'a'.repeat(260) },
+  },
+  render: (args) => (
+    <PondBlock {...propertiesFrame(args.schema, 'tasks')}>
+      <PropertyInspector {...args} />
+    </PondBlock>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const card = canvasElement.querySelector<HTMLElement>('[data-block-kind]')!
+    const row = card.querySelector<HTMLElement>('[data-kind="field-row"]')!
+    const trigger = canvas.getByRole('button', { name: 'Notes value' })
+    await expect(row.contains(trigger)).toBe(true)
+    await expect(trigger.getBoundingClientRect().width).toBeLessThanOrEqual(
+      row.getBoundingClientRect().width
+    )
+
+    // Editing shows the full draft, uncut — only the rest-mode read truncates.
+    await userEvent.click(trigger)
+    const input = canvas.getByRole('textbox', { name: 'Notes value' }) as HTMLInputElement
+    await expect(input.value).toBe('a'.repeat(260))
+  },
+}
+
 /** A schema with no fields: the frame's empty state — `no fields yet`, no dead action. */
 export const EmptyInCard: Story = {
   args: { schema: [], values: {} },
