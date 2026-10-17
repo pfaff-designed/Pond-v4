@@ -23,7 +23,7 @@
  */
 
 import React from 'react'
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
@@ -32,7 +32,7 @@ import { PropertyInspector } from '@/components/molecules/PropertyInspector'
 import { pageEyebrowClass } from '@/components/atoms/kicker'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { CollectionView } from '@/lib/modules/view/view'
-import { galleryCardMeta } from '@/lib/modules/view/apply'
+import { galleryCardMeta, galleryCardTag } from '@/lib/modules/view/apply'
 import {
   blockEmptyBox,
   blockFrame,
@@ -608,46 +608,273 @@ describe('galleryCardMeta — the card’s one mono line, until a card layout (#
   })
 })
 
-describe('CollectionGallery — PondTemplate.dc.html’s gallery / gcard / img / tStyle / mStyle', () => {
-  it('the grid is three columns at gap 10; every record is a card — no three-card cap', () => {
-    const { container } = renderView(gallery, plantSchema, plants(7))
-    const grid = container.querySelector<HTMLElement>('[data-part="gallery"]')!
-    expect(classesOf(grid)).toEqual(
-      expect.arrayContaining(['grid', 'grid-cols-[repeat(3,minmax(0,1fr))]', 'gap-[10px]'])
-    )
-    expect(grid.querySelectorAll('[data-part="gallery-card"]')).toHaveLength(7)
+describe('galleryCardTag — the card’s one tag chip: the row’s first status/select option', () => {
+  it('the first status/select field’s option label', () => {
+    expect(galleryCardTag(plantSchema, row('r', 'r', { 'p-light': 'l-low' }))).toBe('Low')
   })
 
-  it('a card: column at gap 6 · a 64-high radius-12 tile on ink .07 · title 13.5/500 · meta mono 10.5 / ink .68', () => {
+  it('empty when the row has no status/select field, or no value set on it', () => {
+    expect(galleryCardTag([{ id: 'p-care', name: 'Care', type: 'text' }], row('r', 'r', {}))).toBe(
+      ''
+    )
+    expect(galleryCardTag(plantSchema, row('r', 'r', {}))).toBe('')
+  })
+})
+
+describe('CollectionGallery — PondBlock.dc.html’s gallery frame, each card a PondMolecule record-card', () => {
+  it('the row lays cards out flex/wrap at gap 12; every record is a card — no three-card cap', () => {
+    const { container } = renderView(gallery, plantSchema, plants(7))
+    const grid = container.querySelector<HTMLElement>('[data-part="gallery"]')!
+    expect(classesOf(grid)).toEqual(expect.arrayContaining(['flex', 'flex-wrap', 'gap-[12px]']))
+    expect(grid.querySelectorAll('[data-kind="record-card"]')).toHaveLength(7)
+  })
+
+  it('a card: rest state, the right title / meta / tag text', () => {
+    const { container } = renderView(gallery, plantSchema, [
+      row('m', 'monstera', { 'p-care': 'water weekly', 'p-light': 'l-low' }),
+    ])
+    const card = container.querySelector<HTMLElement>('[data-kind="record-card"]')!
+    expect(card.dataset.state).toBe('rest')
+    expect(card.querySelector('[data-part="title"]')!.textContent).toBe('monstera')
+    expect(card.querySelector('[data-part="meta"]')!.textContent).toBe('water weekly')
+    expect(card.querySelector('[data-kind="tag"]')!.textContent).toBe('Low')
+  })
+
+  it('a row with no status/select field (or no value on it) draws no tag chip', () => {
     const { container } = renderView(gallery, plantSchema, [
       row('m', 'monstera', { 'p-care': 'water weekly' }),
     ])
-    const card = container.querySelector<HTMLElement>('[data-part="gallery-card"]')!
-    expect(classesOf(card)).toEqual(
-      expect.arrayContaining(['flex', 'flex-col', 'gap-[6px]', 'min-w-0'])
-    )
-    const img = card.querySelector<HTMLElement>('[data-part="gallery-image"]')!
-    expect(classesOf(img)).toEqual(
-      expect.arrayContaining(['block', 'h-[64px]', 'rounded-[12px]', 'bg-mn-text/[0.07]'])
-    )
-    const title = card.querySelector<HTMLElement>('[data-part="gallery-title"]')!
-    expect(title.textContent).toBe('monstera')
-    expect(classesOf(title)).toEqual(
-      expect.arrayContaining(['text-[13.5px]', 'font-medium', 'text-mn-text'])
-    )
-    const meta = card.querySelector<HTMLElement>('[data-part="gallery-meta"]')!
-    expect(meta.textContent).toBe('water weekly')
-    expect(classesOf(meta)).toEqual(
-      expect.arrayContaining(['font-mono', 'text-[10.5px]', 'text-mn-text-secondary'])
-    )
-    // The old card listed every field as a definition list; the board draws one line.
-    expect(card.querySelector('dl')).toBeNull()
+    const card = container.querySelector<HTMLElement>('[data-kind="record-card"]')!
+    expect(card.querySelector('[data-kind="tag"]')).toBeNull()
   })
 
-  it('an untitled record reads `untitled`, a record with nothing to show `—` — the board’s fallbacks', () => {
+  it('an untitled record reads `untitled`, a record with nothing to show `—` — the molecule’s fallbacks', () => {
     const { container } = renderView(gallery, plantSchema, [row('e', '', {})])
-    expect(container.querySelector('[data-part="gallery-title"]')!.textContent).toBe('untitled')
-    expect(container.querySelector('[data-part="gallery-meta"]')!.textContent).toBe('—')
+    const card = container.querySelector<HTMLElement>('[data-kind="record-card"]')!
+    expect(card.querySelector('[data-part="title"]')!.textContent).toBe('untitled')
+    expect(card.querySelector('[data-part="meta"]')!.textContent).toBe('—')
+  })
+
+  it('the old gallery-card / gallery-image parts are gone', () => {
+    const { container } = renderView(gallery, plantSchema, plants(1))
+    expect(container.querySelector('[data-part="gallery-card"]')).toBeNull()
+    expect(container.querySelector('[data-part="gallery-image"]')).toBeNull()
+    expect(container.querySelector('[data-part="gallery-title"]')).toBeNull()
+    expect(container.querySelector('[data-part="gallery-meta"]')).toBeNull()
+  })
+})
+
+describe('CollectionGallery — hover, selection and the peek (KAN-358)', () => {
+  function renderEditableGallery(
+    rows: CollectionRow[] = plants(2),
+    onOpenRow = jest.fn(),
+    onAddRow?: () => Promise<string | null>
+  ) {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const result = render(
+      <QueryClientProvider client={client}>
+        <CollectionView
+          config={gallery}
+          schema={plantSchema}
+          rows={rows}
+          editable
+          onEdit={jest.fn()}
+          onAddRow={onAddRow}
+          onRenameRow={jest.fn()}
+          onOpenRow={onOpenRow}
+        />
+      </QueryClientProvider>
+    )
+    return { ...result, onOpenRow }
+  }
+
+  it('hovering a card’s wrapper sets data-state="hover", leaving the other card rest', () => {
+    const { container } = renderEditableGallery()
+    const [a, b] = container.querySelectorAll<HTMLElement>('[data-kind="record-card"]')
+    expect(a.dataset.state).toBe('rest')
+
+    fireEvent.mouseEnter(b)
+    expect(b.dataset.state).toBe('hover')
+    expect(a.dataset.state).toBe('rest')
+
+    fireEvent.mouseLeave(b)
+    expect(b.dataset.state).toBe('rest')
+  })
+
+  it('clicking a card selects it and renders the record peek for that row', async () => {
+    const { container } = renderEditableGallery()
+    const [a] = container.querySelectorAll<HTMLElement>('[data-kind="record-card"]')
+    expect(document.querySelector('[data-part="record-peek"]')).toBeNull()
+
+    await userEvent.click(a)
+    expect(a.dataset.state).toBe('selected')
+    expect(screen.getByLabelText('Record: plant 0')).toBeInTheDocument()
+  })
+
+  it('the card’s tab stop is a real box (not display: contents), so a click on the card reaches focus on it (KAN-358)', async () => {
+    const { container } = renderEditableGallery()
+    const wrapper = container.querySelector<HTMLElement>('[data-row-focus="pl0"]')!
+    const card = wrapper.querySelector<HTMLElement>('[data-kind="record-card"]')!
+    expect(wrapper.className).not.toMatch(/\bcontents\b/)
+    expect(getComputedStyle(wrapper).display).not.toBe('contents')
+
+    await userEvent.click(card)
+    expect(document.activeElement).toBe(wrapper)
+  })
+
+  it('↵ on an unselected card selects it; ↵ again opens its page', async () => {
+    const { container, onOpenRow } = renderEditableGallery()
+    const wrapper = container.querySelector<HTMLElement>('[data-row-focus="pl0"]')!
+
+    wrapper.focus()
+    await userEvent.keyboard('{Enter}')
+    expect(screen.getByLabelText('Record: plant 0')).toBeInTheDocument()
+    expect(onOpenRow).not.toHaveBeenCalled()
+
+    await userEvent.keyboard('{Enter}')
+    expect(onOpenRow).toHaveBeenCalledWith('pl0')
+  })
+
+  it('clicking ＋ add a record calls onAddRow once and selects the returned id', async () => {
+    const mint = jest.fn().mockResolvedValue('pl-new')
+    function Harness() {
+      const [rows, setRows] = React.useState(plants(2))
+      const onAddRow = async () => {
+        const id = await mint()
+        setRows((prev) => [...prev, row(id, '', {})])
+        return id as string
+      }
+      return (
+        <CollectionView
+          config={gallery}
+          schema={plantSchema}
+          rows={rows}
+          editable
+          onEdit={jest.fn()}
+          onAddRow={onAddRow}
+          onRenameRow={jest.fn()}
+          onOpenRow={jest.fn()}
+        />
+      )
+    }
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={client}>
+        <Harness />
+      </QueryClientProvider>
+    )
+    const tile = screen.getByRole('button', { name: '＋ add a record' })
+
+    await userEvent.click(tile)
+
+    expect(mint).toHaveBeenCalledTimes(1)
+    expect(screen.getByLabelText('Record: Untitled')).toBeInTheDocument()
+  })
+
+  it('two rapid clicks before the mint resolves call onAddRow only once', async () => {
+    let resolveAdd: (id: string) => void = () => {}
+    const onAddRow = jest.fn(() => new Promise<string | null>((resolve) => (resolveAdd = resolve)))
+    renderEditableGallery(plants(2), jest.fn(), onAddRow)
+    const tile = screen.getByRole('button', { name: '＋ add a record' })
+
+    fireEvent.click(tile)
+    fireEvent.click(tile)
+    expect(onAddRow).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      resolveAdd('pl-new')
+    })
+    expect(onAddRow).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('CollectionView — the gallery and calendar path, end to end (KAN-358)', () => {
+  it('gallery: hover a card, click opens the peek, ↵ opens the page, then ＋ add a record mints and selects a new card', async () => {
+    const user = userEvent.setup()
+    const onOpenRow = jest.fn()
+    const mint = jest.fn().mockResolvedValue('pl-new')
+    function Harness() {
+      const [rows, setRows] = React.useState(plants(2))
+      const onAddRow = async () => {
+        const id = await mint()
+        setRows((prev) => [...prev, row(id, '', {})])
+        return id as string
+      }
+      return (
+        <CollectionView
+          config={gallery}
+          schema={plantSchema}
+          rows={rows}
+          editable
+          onEdit={jest.fn()}
+          onAddRow={onAddRow}
+          onRenameRow={jest.fn()}
+          onOpenRow={onOpenRow}
+        />
+      )
+    }
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const { container } = render(
+      <QueryClientProvider client={client}>
+        <Harness />
+      </QueryClientProvider>
+    )
+    const [a] = container.querySelectorAll<HTMLElement>('[data-kind="record-card"]')
+
+    fireEvent.mouseEnter(a)
+    expect(a.dataset.state).toBe('hover')
+
+    await user.click(a)
+    expect(a.dataset.state).toBe('selected')
+    expect(screen.getByLabelText('Record: plant 0')).toBeInTheDocument()
+
+    await user.keyboard('{Enter}')
+    expect(onOpenRow).toHaveBeenCalledWith('pl0')
+
+    const tile = screen.getByRole('button', { name: '＋ add a record' })
+    await user.click(tile)
+    expect(mint).toHaveBeenCalledTimes(1)
+    expect(screen.getByLabelText('Record: Untitled')).toBeInTheDocument()
+  })
+
+  it('calendar: clicking a dated event draws the selected ring and opens the peek; ↵ opens the page', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-09-10T12:00:00Z'))
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    const onOpenRow = jest.fn()
+    const calendar: ViewBlock = { id: 'v-calendar', type: 'view', mode: 'calendar' }
+    const calendarSchema: PropertySchema = [{ id: 'p-due', name: 'Due', type: 'date' }]
+    const calendarRows: CollectionRow[] = [row('r1', 'Trim the rim', { 'p-due': '2026-09-10' })]
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const { container } = render(
+      <QueryClientProvider client={client}>
+        <CollectionView
+          config={calendar}
+          schema={calendarSchema}
+          rows={calendarRows}
+          editable
+          onEdit={jest.fn()}
+          onAddRow={jest.fn()}
+          onRenameRow={jest.fn()}
+          onOpenRow={onOpenRow}
+        />
+      </QueryClientProvider>
+    )
+    const desktopWrap = [...container.querySelectorAll('div')].find((d) =>
+      d.classList.contains('md:flex')
+    )!
+    const item = within(desktopWrap).getByText('Trim the rim').closest('div')!
+    expect(item).not.toHaveClass('ring-[1.5px]')
+
+    await user.click(item)
+    expect(item).toHaveClass('ring-[1.5px]', 'ring-inset', 'ring-mn-text')
+    expect(screen.getByLabelText('Record: Trim the rim')).toBeInTheDocument()
+    expect(onOpenRow).not.toHaveBeenCalled()
+
+    item.focus()
+    await user.keyboard('{Enter}')
+    expect(onOpenRow).toHaveBeenCalledWith('r1')
+
+    jest.useRealTimers()
   })
 })
 

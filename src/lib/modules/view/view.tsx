@@ -25,7 +25,7 @@ import { useSiblingBlocks } from '../sibling-context'
 import { viewCollectionId } from '../block-frame'
 import { useCollectionRows } from './use-collection-rows'
 import { useStruckRows } from '@/lib/change-log/undo-strike'
-import { DIFF_REMOVAL_TEXT_CLASSNAME } from '@/components/molecules/PondMolecule'
+import { DIFF_REMOVAL_TEXT_CLASSNAME, PondMolecule } from '@/components/molecules/PondMolecule'
 import { activeSavedView, applyConfigPatch } from './schema'
 import { ActiveViewSelectionContext } from './active-view-context'
 import {
@@ -34,6 +34,7 @@ import {
   displayValue,
   epochDay,
   galleryCardMeta,
+  galleryCardTag,
   groupRows,
   layoutGanttBars,
   pickDateDef,
@@ -90,8 +91,8 @@ import { DraftInput } from '@/components/atoms/draft-input'
 import { RecordPeek } from './record-peek'
 import { CollectionList } from './list'
 import { CollectionCalendar } from './collection-calendar'
-import { useRecordSelection } from './use-record-selection'
-import { shouldSelectRowFromClick } from './card-click'
+import { ROW_FOCUS_VISIBLE, ROW_FOCUS_VISIBLE_BASE, useRecordSelection } from './use-record-selection'
+import { shouldSelectCardFromClick, shouldSelectRowFromClick } from './card-click'
 import { ViewBar, type ViewBarView } from '@/components/molecules/ViewBar'
 import { useBlockRow } from '../block-row-context'
 
@@ -454,16 +455,28 @@ export function CollectionView({
         />
       ) : activeConfig.mode === 'calendar' ? (
         <CollectionCalendar
+          viewKey={viewKey}
           schema={schema}
           rows={processed}
           groupBy={activeConfig.groupBy}
           editable={editable}
+          onEdit={onEdit}
           onAddRow={onAddRow}
           onRenameRow={onRenameRow}
+          onOpenRow={onOpenRow}
           onAddDateField={onAddDateField}
         />
       ) : activeConfig.mode === 'gallery' ? (
-        <CollectionGallery schema={schema} rows={processed} />
+        <CollectionGallery
+          viewKey={viewKey}
+          schema={schema}
+          rows={processed}
+          editable={editable}
+          onEdit={onEdit}
+          onAddRow={onAddRow}
+          onRenameRow={onRenameRow}
+          onOpenRow={onOpenRow}
+        />
       ) : activeConfig.mode === 'gantt' ? (
         <CollectionGantt
           schema={schema}
@@ -638,7 +651,7 @@ function CollectionTable({
 }) {
   const { stepOut } = useBlockRow()
   const [now] = useState(() => new Date())
-  const { selectedRow, select, selectWithPointer, keyboardProps } = useRecordSelection(
+  const { selectedRow, selectWithPointer, keyboardProps, selectOrOpenOnKey } = useRecordSelection(
     rows,
     viewKey
   )
@@ -662,16 +675,7 @@ function CollectionTable({
   // the peek from here (no `focusOnOpen`), so the second ↵ still lands on the
   // row.
   function handleRowKeyDown(rowId: string, e: React.KeyboardEvent<HTMLTableRowElement>) {
-    if (e.target !== e.currentTarget) return
-    if (e.key === 'Enter' && rowId === selectedRow?.id) {
-      e.preventDefault()
-      onOpenRow?.(rowId)
-      return
-    }
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault()
-      select({ id: rowId, via: 'keyboard' })
-    }
+    selectOrOpenOnKey(rowId, e, onOpenRow)
   }
 
   // Return/↓ in the last row's last cell step out of the table (KAN-344) — the
@@ -729,7 +733,7 @@ function CollectionTable({
                   // `border-collapse` keeps a <tr>'s own radius from ever painting, so
                   // the selected background and its outer rounding live on the end
                   // tds instead (first/last below).
-                  'outline-[1.5px] outline-offset-1 outline-mn-text/50 outline-none focus-visible:outline-solid',
+                  ROW_FOCUS_VISIBLE,
                 ].join(' ')}
               >
                 <td
@@ -1002,7 +1006,7 @@ function CollectionBoard({
                       'dark:shadow-[0_1px_2px_rgba(0,0,0,.34),0_2px_8px_rgba(0,0,0,.4)]',
                       'transition-shadow duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none',
                       // `mn-text` flips to paper in dark, so the outline does too.
-                      'outline-[1.5px] outline-offset-1 outline-mn-text/50',
+                      ROW_FOCUS_VISIBLE_BASE,
                       isSelected ? 'outline-solid' : 'outline-none focus-visible:outline-solid',
                       isDragging ? 'opacity-30' : '',
                       editable ? 'cursor-grab' : 'cursor-pointer',
@@ -1098,51 +1102,143 @@ function CollectionBoard({
 // ── Gallery ─────────────────────────────────────────────────────────────────────
 
 /**
- * Gallery view — a read-only card grid, drawn to `PondTemplate.dc.html` (#260):
+ * Gallery view — a card grid of `PondMolecule kind="record-card"`, the molecule
+ * `PondBlock.dc.html`'s own gallery frame composes (`gallery: { display: 'flex',
+ * gap: 12, flexWrap: 'wrap' }`). EVERY record is a card; the board's
+ * `list.slice(0, mob ? 2 : 3)` is the template preview's truncation, not a product
+ * rule. `untitled` and `—` are the molecule's own fallbacks; which field the one
+ * meta line shows is `galleryCardMeta`, the one tag chip shows `galleryCardTag`.
  *
- *   gallery { display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 10 }
- *   gcard   { display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }
- *   img     { display: 'block', height: 64, borderRadius: 12, background: a(.07) }  // filled
- *   tStyle  { fontSize: 13.5, fontWeight: 500, color: fg }
- *   mStyle  { fontFamily: mono, fontSize: 10.5, color: a(.68) }
- *
- * EVERY record is a card: the board's `list.slice(0, mob ? 2 : 3)` is the template
- * preview's truncation, not a product rule. The tile is the board's filled ground —
- * there is no image property type, so it is a slot, not a picture. The board's
- * ring-on-transparent tile belongs to its EMPTY cards, which the product never draws:
- * an empty gallery is the frame's `no records yet` (#239). `untitled` and `—` are the
- * board's own fallbacks; which field the one meta line shows is `galleryCardMeta`.
- *
- * Why not `PondMolecule kind="record-card"`, which `PondBlock.dc.html`'s gallery
- * frame composes: ADR 0004's ladder sends a block to the molecule only where the
- * molecule can express every case the templates need, and the record-card ALWAYS
- * draws a tag chip (`tagText: p.tag ?? 'recipe'`) that no template gallery has
- * (`collection › records` is a title and one line). As `entries` (ADR 0004 §8), the
- * template's inline card is therefore the specification; the molecule stays for the
- * block board's demo. Mobile (2 columns, 70-high tile) is the frame's later slice —
- * `PondBlock` has no size axis yet. Class strings are literals, never `cn` (#252).
+ * `useRecordSelection` drives hover/selected the same way the board does, but the
+ * molecule owns no DOM props of its own (unlike the board's `<article>`, which IS
+ * the card) — so each row gets a wrapper sized to the card, carrying
+ * `rowProps`/`keyboardProps`, its own pointer-hover tracking, and the shared
+ * focus-visible outline (the table row's and board card's, since this box — not the
+ * molecule inside it — is the tab stop).
  */
-const GALLERY = 'grid grid-cols-[repeat(3,minmax(0,1fr))] gap-[10px]'
-const GALLERY_CARD = 'flex min-w-0 flex-col gap-[6px]'
-const GALLERY_IMAGE = 'block h-[64px] rounded-[12px] bg-mn-text/[0.07]'
-const GALLERY_TITLE = 'text-[13.5px] font-medium text-mn-text'
-const GALLERY_META = 'font-mono text-[10.5px] text-mn-text-secondary'
+function CollectionGallery({
+  viewKey,
+  schema,
+  rows,
+  editable,
+  onEdit,
+  onAddRow,
+  onRenameRow,
+  onOpenRow,
+}: {
+  /** The view block's id — what the page canvas keys its one peek and one orange pill by. */
+  viewKey: string
+  schema: PropertySchema
+  rows: CollectionRow[]
+  editable?: boolean
+  onEdit?: (rowId: string, key: string, value: PropertyValue) => void
+  onAddRow?: (values?: Record<string, PropertyValue>) => Promise<string | null>
+  onRenameRow?: (rowId: string, title: string) => void
+  onOpenRow?: (rowId: string) => void
+}) {
+  const [now] = useState(() => new Date())
+  const [hoveredId, setHoveredId] = useState<string | null>(null)
+  const { selectedRow, select, selectWithPointer, rowProps, keyboardProps, selectOrOpenOnKey } =
+    useRecordSelection(rows, viewKey)
+  const done = useDoneToggle({ schema, editable, onEdit })
+  // Guards handleAddRecord against a second click while its write is in flight
+  // (AUDIT G9), same shape as CollectionBoard's handleAddCard.
+  const addingRef = useRef(false)
 
-function CollectionGallery({ schema, rows }: { schema: PropertySchema; rows: CollectionRow[] }) {
-  // No empty line of its own: the frame owns the empty state (#239).
+  const handleAddRecord = async () => {
+    if (!onAddRow || addingRef.current) return
+    addingRef.current = true
+    try {
+      const id = await onAddRow()
+      if (!id) return
+      select({ id, via: 'keyboard' })
+    } finally {
+      addingRef.current = false
+    }
+  }
+
+  // ↵ on the card's own tab stop (not an inner control's) selects it; ↵ again on the
+  // already-selected card opens its page — `useRecordSelection`'s own
+  // `selectOrOpenOnKey`, shared with `CollectionTable`'s row and the calendar.
+  function handleCardKeyDown(rowId: string, e: React.KeyboardEvent<HTMLElement>) {
+    selectOrOpenOnKey(rowId, e, onOpenRow)
+  }
+
+  // A card's own click must never bubble to the block row underneath it: that
+  // row's `handleClick` (BlockCanvas) focuses ITSELF on any click that isn't an
+  // inner control's, which would steal focus off the card and make the block's
+  // own ↵ fire instead of the card's — the calendar's own row click
+  // (`handleCalendarRowClick`) stops propagation for the same reason. A real
+  // browser moves focus to a clicked `tabIndex=0` element on its own; jsdom does
+  // not, so the explicit `.focus()` also keeps this testable with `userEvent.click`.
+  function handleCardClick(rowId: string, e: React.MouseEvent<HTMLElement>) {
+    e.stopPropagation()
+    if (!shouldSelectCardFromClick(e.target)) return
+    selectWithPointer(rowId)
+    e.currentTarget.focus()
+  }
+
   return (
-    <div data-part="gallery" className={GALLERY}>
-      {rows.map((row) => (
-        <article key={row.id} data-part="gallery-card" className={GALLERY_CARD}>
-          <span aria-hidden data-part="gallery-image" className={GALLERY_IMAGE} />
-          <span data-part="gallery-title" className={GALLERY_TITLE}>
-            {row.title || 'untitled'}
-          </span>
-          <span data-part="gallery-meta" className={GALLERY_META}>
-            {galleryCardMeta(schema, row) || '—'}
-          </span>
-        </article>
-      ))}
+    <div>
+      {/* No empty line of its own: the frame owns the empty state (#239). */}
+      <div data-part="gallery" className="flex flex-wrap gap-[12px]">
+        {rows.map((row) => {
+          const selected = row.id === selectedRow?.id
+          const state = selected ? 'selected' : hoveredId === row.id ? 'hover' : 'rest'
+          return (
+            <article
+              key={row.id}
+              aria-label={row.title || 'untitled'}
+              className={`w-[170px] rounded-[20px] ${ROW_FOCUS_VISIBLE}`}
+              {...rowProps(row.id)}
+              {...keyboardProps(row.id)}
+              onClick={(e) => handleCardClick(row.id, e)}
+              onKeyDown={(e) => handleCardKeyDown(row.id, e)}
+              onMouseEnter={() => setHoveredId(row.id)}
+              onMouseLeave={() => setHoveredId((h) => (h === row.id ? null : h))}
+            >
+              <PondMolecule
+                kind="record-card"
+                state={state}
+                title={row.title || 'untitled'}
+                meta={galleryCardMeta(schema, row) || '—'}
+                tag={galleryCardTag(schema, row)}
+              />
+            </article>
+          )
+        })}
+
+        {editable && onAddRow && (
+          <button
+            type="button"
+            data-part="gallery-add"
+            onClick={handleAddRecord}
+            className={[
+              'w-[170px] rounded-[20px] bg-transparent p-[10px] text-[13px] font-medium text-mn-text-secondary',
+              'ring-[1.4px] ring-inset ring-mn-text/20 transition-colors hover:bg-mn-text/[0.04] hover:text-mn-text',
+              ROW_FOCUS_VISIBLE,
+              'motion-reduce:transition-none',
+            ].join(' ')}
+          >
+            ＋ add a record
+          </button>
+        )}
+      </div>
+
+      {selectedRow && (
+        <RecordPeek
+          key={selectedRow.id}
+          row={selectedRow}
+          schema={schema}
+          done={done.isDone(selectedRow)}
+          onToggleDone={done.toggle && (() => done.toggle?.(selectedRow))}
+          now={now}
+          editable={editable}
+          onEdit={onEdit}
+          onRenameRow={onRenameRow}
+          onOpenRow={onOpenRow}
+        />
+      )}
     </div>
   )
 }

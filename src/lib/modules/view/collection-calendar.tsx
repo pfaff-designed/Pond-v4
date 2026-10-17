@@ -31,6 +31,14 @@ import {
 import { pickDateDef, type CollectionRow } from './apply'
 import { localDateIso } from './due'
 import { CALENDAR_EMPTY_LINE } from './kinds'
+import { RecordPeek } from './record-peek'
+import { useDoneToggle } from './use-done-toggle'
+import { ROW_FOCUS_VISIBLE, useRecordSelection } from './use-record-selection'
+
+/** The shape `useRecordSelection` hands back for a row-typed-id container (the
+ *  stack item, the focus-list row) — read off the hook's own return so this file
+ *  never redeclares its props. */
+type RowSelection = ReturnType<typeof useRecordSelection<CollectionRow>>
 
 const NAV_BTN = 'inline-flex size-11 items-center justify-center rounded-mn-pill text-mn-text hover:bg-mn-hover-fill md:size-7'
 
@@ -44,6 +52,8 @@ const DAY_NUMBER =
   'inline-flex h-[22px] min-w-[22px] items-center justify-center rounded-full px-1 text-[12px] font-medium tabular-nums'
 /** The DC's stack item row: `gap 6 · height 20 · padding 0 4 · radius 6`. */
 const DAY_ITEM_ROW = 'flex h-5 items-center gap-1.5 rounded-[6px] px-1'
+/** `PondCalendar.dc.html`'s `ring(o)`: a selected item's own 1.5px inset ink ring. */
+const DAY_ITEM_SELECTED_RING = 'ring-[1.5px] ring-inset ring-mn-text'
 /** `boxSt(o,9)`: a 9px dot, `boxShadow: inset 0 0 0 1.4px a(.32)` for a live (non-done) row. */
 const DAY_ITEM_DOT = 'size-[9px] flex-none rounded-[2.5px] box-border ring-[1.4px] ring-inset ring-mn-text/[0.32]'
 /** `tSt(o,11.5)`: flex-1, one line, ellipsis. */
@@ -62,6 +72,15 @@ const DAY_DOT = 'size-1 flex-none rounded-full bg-mn-text'
 const DAY_NUMBER_LIST = 'inline-flex h-[30px] min-w-[30px] self-start text-[20px] font-medium tabular-nums'
 /** `boxSt(o,13)`: the focused-day list's larger dot, `radius 4` (`sz > 11`). */
 const DAY_ITEM_DOT_LARGE = 'size-[13px] flex-none rounded-[4px] box-border ring-[1.4px] ring-inset ring-mn-text/[0.32]'
+/** The day cell's own keyboard-only "add" control: a mouse user reaches `onOpenAdd` by
+ *  clicking the cell's blank space, so this stays `sr-only` until it is the thing with
+ *  focus, then draws as a small chip in the cell's corner. */
+const DAY_ADD_BUTTON = cn(
+  'sr-only focus-visible:not-sr-only focus-visible:absolute focus-visible:right-1 focus-visible:top-1 focus-visible:z-10',
+  'focus-visible:rounded-[6px] focus-visible:bg-mn-card focus-visible:px-1.5 focus-visible:py-0.5',
+  'focus-visible:text-[10.5px] focus-visible:font-medium focus-visible:text-mn-text',
+  ROW_FOCUS_VISIBLE
+)
 
 function MonthDayNumber({ day, isToday, inMonth }: { day: number; isToday: boolean; inMonth: boolean }) {
   if (isToday) {
@@ -72,14 +91,54 @@ function MonthDayNumber({ day, isToday, inMonth }: { day: number; isToday: boole
   )
 }
 
-function MonthDayStack({ items, moreCount }: { items: MonthDayCell['items']; moreCount: number }) {
+function handleCalendarRowClick(
+  rowId: string,
+  selectedId: string | undefined,
+  selectWithPointer: RowSelection['selectWithPointer'],
+  onOpenRow: ((rowId: string) => void) | undefined,
+  e: React.MouseEvent<HTMLDivElement>
+) {
+  // A row is its own target — it must never fall through to the cell's
+  // "open the add input" click underneath it, so it stops that click too.
+  e.stopPropagation()
+  if (rowId === selectedId) {
+    onOpenRow?.(rowId)
+    return
+  }
+  selectWithPointer(rowId)
+}
+
+function MonthDayStack({
+  items,
+  moreCount,
+  selectedId,
+  rowProps,
+  keyboardProps,
+  selectWithPointer,
+  selectOrOpenOnKey,
+  onOpenRow,
+}: {
+  items: MonthDayCell['items']
+  moreCount: number
+  selectedId?: string
+  rowProps: RowSelection['rowProps']
+  keyboardProps: RowSelection['keyboardProps']
+  selectWithPointer: RowSelection['selectWithPointer']
+  selectOrOpenOnKey: RowSelection['selectOrOpenOnKey']
+  onOpenRow?: (rowId: string) => void
+}) {
   if (items.length === 0 && moreCount === 0) return null
   return (
     <div className="flex flex-col gap-px px-1 pt-0.5 pb-2">
       {items.map((row) => (
-        // A row is its own target (its own click behaviour, unbuilt here) — it must
-        // never fall through to the cell's "open the add input" click underneath it.
-        <div key={row.id} className={DAY_ITEM_ROW} onClick={(e) => e.stopPropagation()}>
+        <div
+          key={row.id}
+          className={cn(DAY_ITEM_ROW, ROW_FOCUS_VISIBLE, row.id === selectedId && DAY_ITEM_SELECTED_RING)}
+          {...rowProps(row.id)}
+          {...keyboardProps(row.id)}
+          onKeyDown={(e) => selectOrOpenOnKey(row.id, e, onOpenRow)}
+          onClick={(e) => handleCalendarRowClick(row.id, selectedId, selectWithPointer, onOpenRow, e)}
+        >
           <span className={DAY_ITEM_DOT} />
           <span className={DAY_ITEM_TITLE}>{row.title}</span>
         </div>
@@ -97,6 +156,12 @@ function MonthDayCellView({
   onOpenAdd,
   onCommitAdd,
   onCancelAdd,
+  selectedId,
+  rowProps,
+  keyboardProps,
+  selectWithPointer,
+  selectOrOpenOnKey,
+  onOpenRow,
 }: {
   cell: MonthDayCell
   columnIndex: number
@@ -105,33 +170,49 @@ function MonthDayCellView({
   onOpenAdd: () => void
   onCommitAdd: (title: string) => void
   onCancelAdd: () => void
+  selectedId?: string
+  rowProps: RowSelection['rowProps']
+  keyboardProps: RowSelection['keyboardProps']
+  selectWithPointer: RowSelection['selectWithPointer']
+  selectOrOpenOnKey: RowSelection['selectOrOpenOnKey']
+  onOpenRow?: (rowId: string) => void
 }) {
   const openable = canAdd && !isAdding
   return (
     <div
       data-part="calendar-day-cell"
       data-iso={cell.iso}
-      role={openable ? 'button' : undefined}
-      tabIndex={openable ? 0 : undefined}
-      aria-label={openable ? `Add on ${cell.dayOfMonth} ${monthAbbr(cell.iso)}` : undefined}
       onClick={openable ? onOpenAdd : undefined}
-      onKeyDown={
-        openable
-          ? (e) => {
-              if (e.key !== 'Enter' && e.key !== ' ') return
-              e.preventDefault()
-              onOpenAdd()
-            }
-          : undefined
-      }
       className={cn(
-        'min-h-[108px] p-1.5',
+        'relative min-h-[108px] p-1.5',
         columnIndex !== 0 && 'border-l border-mn-text/[0.09] dark:border-mn-text/[0.14]',
         columnIndex >= 5 && 'bg-mn-text/[0.025]'
       )}
     >
       <MonthDayNumber day={cell.dayOfMonth} isToday={cell.isToday} inMonth={cell.inMonth} />
-      <MonthDayStack items={cell.items} moreCount={cell.moreCount} />
+      <MonthDayStack
+        items={cell.items}
+        moreCount={cell.moreCount}
+        selectedId={selectedId}
+        rowProps={rowProps}
+        keyboardProps={keyboardProps}
+        selectWithPointer={selectWithPointer}
+        selectOrOpenOnKey={selectOrOpenOnKey}
+        onOpenRow={onOpenRow}
+      />
+      {openable && (
+        <button
+          type="button"
+          aria-label={`Add on ${cell.dayOfMonth} ${monthAbbr(cell.iso)}`}
+          onClick={(e) => {
+            e.stopPropagation()
+            onOpenAdd()
+          }}
+          className={DAY_ADD_BUTTON}
+        >
+          ＋
+        </button>
+      )}
       {isAdding && (
         <AddRowInput
           aria-label={`Add an item on ${cell.dayOfMonth} ${monthAbbr(cell.iso)}`}
@@ -210,11 +291,23 @@ function FocusDayList({
   isToday,
   label,
   items,
+  selectedId,
+  rowProps,
+  keyboardProps,
+  selectWithPointer,
+  selectOrOpenOnKey,
+  onOpenRow,
 }: {
   dayOfMonth: number
   isToday: boolean
   label: string
   items: CollectionRow[]
+  selectedId?: string
+  rowProps: RowSelection['rowProps']
+  keyboardProps: RowSelection['keyboardProps']
+  selectWithPointer: RowSelection['selectWithPointer']
+  selectOrOpenOnKey: RowSelection['selectOrOpenOnKey']
+  onOpenRow?: (rowId: string) => void
 }) {
   return (
     <div
@@ -232,7 +325,18 @@ function FocusDayList({
           <span className="py-2.5 text-[13px] text-mn-text-secondary">nothing dated</span>
         ) : (
           items.map((row) => (
-            <div key={row.id} className="flex min-h-11 min-w-0 items-center gap-2.5 rounded-[10px] px-2">
+            <div
+              key={row.id}
+              className={cn(
+                'flex min-h-11 min-w-0 items-center gap-2.5 rounded-[10px] px-2',
+                ROW_FOCUS_VISIBLE,
+                row.id === selectedId && DAY_ITEM_SELECTED_RING
+              )}
+              {...rowProps(row.id)}
+              {...keyboardProps(row.id)}
+              onKeyDown={(e) => selectOrOpenOnKey(row.id, e, onOpenRow)}
+              onClick={(e) => handleCalendarRowClick(row.id, selectedId, selectWithPointer, onOpenRow, e)}
+            >
               <span className={DAY_ITEM_DOT_LARGE} />
               <span className="min-w-0 flex-1 truncate text-[15px] leading-[1.3] text-mn-text">
                 {row.title}
@@ -262,32 +366,45 @@ function ChevronRight() {
 }
 
 export function CollectionCalendar({
+  viewKey,
   schema,
   rows,
   groupBy,
   editable,
+  onEdit,
   onAddRow,
   onRenameRow,
+  onOpenRow,
   onAddDateField,
 }: {
+  /** The view block's id — what the page canvas keys its one peek and one orange
+   *  pill by. Optional: every existing direct render of this component predates
+   *  selection and has no canvas to key against, so it falls back to a constant. */
+  viewKey?: string
   schema: PropertySchema
   rows: CollectionRow[]
   groupBy?: string
   editable?: boolean
+  onEdit?: (rowId: string, key: string, value: PropertyValue) => void
   onAddRow?: (values?: Record<string, PropertyValue>) => Promise<string | null>
   onRenameRow?: (rowId: string, title: string) => void
+  onOpenRow?: (rowId: string) => void
   onAddDateField?: () => void
 }) {
   const dateDef = useMemo(() => pickDateDef(schema, groupBy), [schema, groupBy])
   // `today` is read once per mount, as the board reads its own `now` (view.tsx);
   // the local calendar date, matching `due.ts`'s `dueAtom`, not UTC's.
   const [todayIso] = useState(() => localDateIso(new Date()))
+  const [now] = useState(() => new Date())
   const [focusIso, setFocusIso] = useState(todayIso)
   const [addingIso, setAddingIso] = useState<string | null>(null)
   const grid = useMemo(
     () => buildMonthGrid(focusIso, todayIso, rows, dateDef),
     [dateDef, focusIso, todayIso, rows]
   )
+  const { selectedRow, rowProps, keyboardProps, selectWithPointer, selectOrOpenOnKey } =
+    useRecordSelection(rows, viewKey ?? 'calendar')
+  const done = useDoneToggle({ schema, editable, onEdit })
 
   const canAdd = !!dateDef && !!editable && !!onAddRow
 
@@ -387,6 +504,12 @@ export function CollectionCalendar({
                 onOpenAdd={() => setAddingIso(cell.iso)}
                 onCommitAdd={(title) => void handleAddDay(cell.iso, title)}
                 onCancelAdd={() => setAddingIso(null)}
+                selectedId={selectedRow?.id}
+                rowProps={rowProps}
+                keyboardProps={keyboardProps}
+                selectWithPointer={selectWithPointer}
+                selectOrOpenOnKey={selectOrOpenOnKey}
+                onOpenRow={onOpenRow}
               />
             ))}
           </div>
@@ -414,7 +537,27 @@ export function CollectionCalendar({
         isToday={focusIsToday}
         label={focusLabel}
         items={focusItems}
+        selectedId={selectedRow?.id}
+        rowProps={rowProps}
+        keyboardProps={keyboardProps}
+        selectWithPointer={selectWithPointer}
+        selectOrOpenOnKey={selectOrOpenOnKey}
+        onOpenRow={onOpenRow}
       />
+      {selectedRow && (
+        <RecordPeek
+          key={selectedRow.id}
+          row={selectedRow}
+          schema={schema}
+          done={done.isDone(selectedRow)}
+          onToggleDone={done.toggle && (() => done.toggle?.(selectedRow))}
+          now={now}
+          editable={editable}
+          onEdit={onEdit}
+          onRenameRow={onRenameRow}
+          onOpenRow={onOpenRow}
+        />
+      )}
     </div>
   )
 }

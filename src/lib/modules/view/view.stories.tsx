@@ -1474,10 +1474,11 @@ export const GalleryReadOnly: Story = {
   args: { config: galleryConfig, schema, rows },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    // Every row is a card; the meta resolves (status id → "Doing" label).
+    // Every row is a card; the meta resolves (status id → "Doing" label) — the
+    // same status is also the first grouping field, so it draws the tag chip too.
     await expect(canvas.getByText('Trim the rim')).toBeInTheDocument()
     await expect(canvas.getByText('Kiln maintenance')).toBeInTheDocument()
-    await expect(canvas.getByText('Doing')).toBeInTheDocument()
+    await expect(canvas.getAllByText('Doing').length).toBeGreaterThan(0)
     // Read-only: no editors, no drag handles.
     await expect(canvas.queryByRole('textbox')).not.toBeInTheDocument()
     await expect(canvas.queryByLabelText(/Drag card/)).not.toBeInTheDocument()

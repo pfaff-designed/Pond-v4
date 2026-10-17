@@ -14,6 +14,7 @@
  */
 import {
   coerceValue,
+  firstGroupingDef,
   optionForValue,
   resolveOptionValue,
   type PropertyDef,
@@ -552,4 +553,17 @@ export function galleryCardMeta(schema: PropertySchema, row: CollectionRow): str
     if (text !== '') return text
   }
   return ''
+}
+
+/**
+ * A gallery card's tag chip (`PondMolecule record-card`'s `tag`): the row's own
+ * status/select value, read through the same `firstGroupingDef` a board columns
+ * by and a gantt bar reads `done` from, so the one chip a card draws is the same
+ * property the rest of the product already treats as "the" grouping field. No
+ * such property, or no value set on it, draws no chip — `''`.
+ */
+export function galleryCardTag(schema: PropertySchema, row: CollectionRow): string {
+  const def = firstGroupingDef(schema)
+  if (!def) return ''
+  return optionForValue(def, coerceValue(def, row.values[def.id]))?.label ?? ''
 }
