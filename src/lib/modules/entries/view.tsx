@@ -70,9 +70,9 @@ const blankLine = (data: EntriesBlock) => data.placeholder ?? ENTRIES_EMPTY_LINE
  * `onChange` already commits every keystroke, so there is nothing left for ↵
  * to do but insert and move focus. Shift+↵ is left to the textarea's native
  * newline, which multi-line prose (and `serialize`'s line-collapsing) already
- * assumes. `pendingFocusId` is keyed by id rather than index because the
- * Backspace removal path (below) still needs to focus a neighbour row that is
- * not always at the top.
+ * assumes. `pendingFocusId` is keyed by id rather than index because an
+ * insert's row can land anywhere in the stack (not just at the top via the
+ * add line), and a splice reindexes the array out from under a plain index.
  */
 
 /**
@@ -186,17 +186,19 @@ export function EntriesView({ data, editable, onChange }: ModuleViewProps<Entrie
    * behaviour inserts the literal newline multi-line prose needs.
    *
    * ⌫ in an entry already emptied by its own `onChange` removes the row via
-   * `removeEntry` and moves focus to its neighbour — the previous entry, else
-   * the next, else nowhere — mirroring `BlockCanvas.tsx`'s `removeEmptyLineAt`
-   * idiom, built locally since this is within-block, not a block removal.
+   * `removeEntry`, then blurs the field instead of focusing a neighbour row
+   * (KAN-356 fix): this textarea is not a Tiptap editor, so if focus stayed
+   * on one, ShellCommands' ⌘Z-belongs-to-the-field rule (`isEditable`,
+   * `ShellCommands.tsx`) would hand the next ⌘Z to the browser's native field
+   * undo instead of falling through to the session undo step, and the
+   * removed row would never come back.
    */
   function handleTextKeyDown(e: KeyboardEvent<HTMLTextAreaElement>, index: number) {
     if (e.nativeEvent.isComposing) return
     if (e.key === 'Backspace' && data.entries[index].text === '') {
       e.preventDefault()
-      const neighbour = data.entries[index - 1] ?? data.entries[index + 1]
-      if (neighbour) pendingFocusId.current = neighbour.id
       removeEntry(index)
+      e.currentTarget.blur()
       return
     }
     if (e.key !== 'Enter' || e.shiftKey) return

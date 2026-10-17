@@ -562,7 +562,7 @@ describe('EntriesView — the hover `remove` (KAN-356)', () => {
 })
 
 describe('EntriesView — ⌫ in an empty entry’s own field (KAN-356)', () => {
-  it('removes that entry via onChange and moves focus to the previous entry', () => {
+  it('removes that entry via onChange, and blurs rather than focusing a neighbour (so ⌘Z reaches the session undo step, not a focused field’s own undo — KAN-356 fix)', () => {
     render(<Stateful data={{ ...updates, entries: [...updates.entries, { id: 'u3', date: '1 nov', text: '' }] }} />)
     const texts = screen.getAllByRole('textbox', { name: 'Entry text' })
     expect(texts).toHaveLength(3)
@@ -570,25 +570,26 @@ describe('EntriesView — ⌫ in an empty entry’s own field (KAN-356)', () => 
 
     const next = screen.getAllByRole('textbox', { name: 'Entry text' })
     expect(next).toHaveLength(2)
-    expect(document.activeElement).toBe(next[1])
+    expect(document.activeElement).toBe(document.body)
   })
 
-  it('with no previous entry, moves focus to the next one instead', () => {
+  it('with no previous entry, still blurs rather than focusing the next one', () => {
     render(<Stateful data={{ ...updates, entries: [{ id: 'u0', date: '1 nov', text: '' }, ...updates.entries] }} />)
     const texts = screen.getAllByRole('textbox', { name: 'Entry text' })
     fireEvent.keyDown(texts[0], { key: 'Backspace' })
 
     const next = screen.getAllByRole('textbox', { name: 'Entry text' })
     expect(next).toHaveLength(2)
-    expect(document.activeElement).toBe(next[0])
+    expect(document.activeElement).toBe(document.body)
   })
 
-  it('as the only entry, removes it and focuses nowhere', () => {
+  it('as the only entry, removes it and leaves focus nowhere', () => {
     const onlyEmpty: EntriesBlock = { ...updates, entries: [{ id: 'u0', date: '1 nov', text: '' }] }
     render(<Stateful data={onlyEmpty} />)
     fireEvent.keyDown(screen.getByRole('textbox', { name: 'Entry text' }), { key: 'Backspace' })
 
     expect(screen.queryByRole('textbox', { name: 'Entry text' })).toBeNull()
+    expect(document.activeElement).toBe(document.body)
   })
 
   it('does nothing when the entry has text — the browser deletes a character instead', () => {
