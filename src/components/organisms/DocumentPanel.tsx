@@ -10,8 +10,8 @@
  * The root (#234): no ?nodeId means Life, whose blocks live on the reserved
  * per-user home row (lib/pages/home). The row is resolved here and then takes
  * the SAME path as any other page — no bespoke surface, no distinct area kind
- * (#108). Its nested pages are the top-level pages, shown through the same
- * children grid every page uses.
+ * (#108). Its nested pages are the top-level pages, shown as page-link blocks
+ * on its own content (KAN-415), same as any other page's children.
  *
  * The title and blocks being edited, and their debounced save, are the page's
  * draft (`lib/pages/use-page-draft`).
@@ -19,8 +19,8 @@
  * Manual block authoring (ticket-37, ticket-44): the user is an equal author to
  * the AI. The editor body — the `/` palette, Return after a block, reorder, and the
  * always-visible "+ Add a block" foot affordance — is the shared <BlockCanvas>,
- * so every page authors identically. This panel owns the title header, the
- * debounced save, and the children grid; BlockCanvas owns the blocks.
+ * so every page authors identically. This panel owns the title header and the
+ * debounced save; BlockCanvas owns the blocks, page-link blocks included.
  */
 
 import React, { useEffect, useRef, useState } from 'react'
@@ -68,8 +68,10 @@ import {
   appendChildLink,
   childLinkTargets,
   markChildLinksMigrated,
+  saveThenStamp,
   stampChildLinksMigratedInCache,
 } from '@/lib/pages/child-links'
+import { flushPendingPageSave } from '@/lib/pages/page-flush'
 import { usePond } from '@/lib/pond/context'
 import { PageCanvas } from '@/lib/modules/page-canvas'
 import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
@@ -283,7 +285,11 @@ export function DocumentPanel() {
   // `['page', id]` cache at once (`stampChildLinksMigratedInCache`), not only
   // the DB — navigating away and back while `markChildLinksMigrated`'s write
   // is still in flight, or already landed but unrefetched, must not re-read an
-  // unstamped cached page and re-append a link the person just removed.
+  // unstamped cached page and re-append a link the person just removed. The
+  // appended blocks only reach the DB through this page's own 600ms-debounced
+  // save, so the DB stamp (`markChildLinksMigrated`) waits on that save's
+  // flush (`saveThenStamp`) — a reload inside the debounce window must not see
+  // the stamp without the links it promises.
   const migratedRef = useRef<Set<string>>(new Set())
   useEffect(() => {
     if (!page || rowsPending || migratedRef.current.has(page.id)) return
@@ -298,7 +304,10 @@ export function DocumentPanel() {
 
     stampChildLinksMigratedInCache(queryClient, page.id)
 
-    void markChildLinksMigrated(getSupabase(), page.id).catch((err) => {
+    void saveThenStamp({
+      flush: () => flushPendingPageSave(page.id),
+      stamp: () => markChildLinksMigrated(getSupabase(), page.id),
+    }).catch((err) => {
       console.error('Failed to mark child links migrated', page.id, err)
     })
   }, [page, rows, rowsPending, nodeId, viewBlocks, commitLocalEdit, getSupabase, queryClient])
@@ -393,10 +402,10 @@ export function DocumentPanel() {
     )
   }
 
-  // ── The page (+ children grid when it has nested pages) ───────────────────────
+  // ── The page (its children render as page-link blocks, not a grid) ─────────
   // "Everything is a page": a page may hold BOTH its own blocks AND children, and
   // nothing here reads a type tag — a page with pages inside it is simply a page
-  // with a children grid under its content (#108, #234).
+  // whose blocks include a page-link per child (#108, #234, KAN-415).
   //
   // In zen "what's left is the page's own text" (6q frame 3): its title and blocks.
   // What is drawn ABOUT the page — the eyebrow, provenance, properties, mentioned,

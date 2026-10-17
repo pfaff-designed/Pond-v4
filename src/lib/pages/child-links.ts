@@ -99,6 +99,24 @@ export function stampChildLinksMigratedInCache(queryClient: QueryClient, pageId:
  * `markOpened`, so the schema and every other prop are untouched. No-op once
  * the stamp is already there, so a reload never re-runs the upgrade.
  */
+/**
+ * Await a pending save before stamping — the one-time upgrade's appended
+ * links only reach the DB through the open page's own 600ms-debounced save
+ * (`flushPendingPageSave`), so stamping before that save lands would leave a
+ * reload within the debounce window with the stamp but none of the links it
+ * promises. A rejected `flush` propagates and the stamp never runs.
+ */
+export async function saveThenStamp({
+  flush,
+  stamp,
+}: {
+  flush: () => Promise<void> | undefined
+  stamp: () => Promise<void>
+}): Promise<void> {
+  await flush()
+  await stamp()
+}
+
 export async function markChildLinksMigrated(
   supabase: SupabaseClient<Database>,
   pageId: string
