@@ -52,6 +52,7 @@ import { useChartProvenance } from './use-chart-provenance'
 import type { ChartProvenance } from '../chart/chrome'
 import { ViewNotice } from './notice'
 import { usePointerBucketDrag } from './use-pointer-bucket-drag'
+import { isStepOutKey } from './step-out-key'
 import { usePointerGanttDrag } from './use-gantt-bar-drag'
 import {
   formatTick,
@@ -678,15 +679,15 @@ function CollectionTable({
     selectOrOpenOnKey(rowId, e, onOpenRow)
   }
 
-  // Return/↓ in the last row's last cell step out of the table (KAN-344) — the
-  // "last cell" is the Row title input when there's no schema, else the last
-  // field's Cell. Every other cell keeps reading those keys itself (multi-line
-  // entry, moving down a column). `ci === -1` is the Row title sentinel, so an
-  // empty schema's last cell (schema.length - 1 === -1) still matches it.
+  // isStepOutKey's two keys in the last row's last cell step out of the table
+  // (KAN-344) — the "last cell" is the Row title input when there's no schema,
+  // else the last field's Cell. Every other cell keeps reading those keys
+  // itself (multi-line entry, moving down a column). `ci === -1` is the Row
+  // title sentinel, so an empty schema's last cell (schema.length - 1 === -1)
+  // still matches it.
   function handleCellKeyDown(ri: number, ci: number, e: React.KeyboardEvent) {
     if (ri !== rows.length - 1 || ci !== schema.length - 1) return
-    if (e.key !== 'Enter' && e.key !== 'ArrowDown') return
-    if (e.shiftKey || e.altKey || e.metaKey || e.ctrlKey) return
+    if (!isStepOutKey(e)) return
     const target = e.target as HTMLElement
     if (target.closest('textarea, [role="listbox"], [role="menu"]')) return
     e.preventDefault()

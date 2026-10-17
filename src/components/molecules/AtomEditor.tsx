@@ -26,18 +26,9 @@ import { useEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { PondAtom, type PondAtomKind } from '@/components/atoms/PondAtom'
 import { FOCUS_VISIBLE_RING } from '@/components/atoms/focus-ring'
+import { isStepOutKey } from '@/lib/modules/view/step-out-key'
 
 type Mode = 'rest' | 'editing' | 'error'
-
-// A host row (the table's last-cell step-out, KAN-344, `handleCellKeyDown` in
-// `view.tsx`) reads keydowns off a rest-mode trigger's ancestor — these are the
-// only two keys it ever acts on (and only unmodified), so they're the only two
-// this editor steals. Any other key (Esc, ⌥⌘H, …) must keep bubbling: it's how
-// the changes panel, record peek and zen's own document/window listeners hear
-// it while a value merely has focus, not open for editing.
-export function isStepOutKey(e: { key: string; altKey: boolean; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }) {
-  return (e.key === 'Enter' || e.key === 'ArrowDown') && !e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey
-}
 
 export interface AtomEditorProps {
   /** The atom kind this value renders as at rest/empty/error. */
@@ -131,9 +122,9 @@ export function AtomEditor({
         type="button"
         aria-label={ariaLabel}
         onClick={startEditing}
-        // See `isStepOutKey` above — only the two keys the row's step-out
-        // actually reads are stopped here; everything else must still reach a
-        // document/window listener while this trigger is merely focused.
+        // See `isStepOutKey` (step-out-key.ts) — only the two keys the row's
+        // step-out actually reads are stopped here; everything else must still
+        // reach a document/window listener while this trigger is merely focused.
         onKeyDown={(e) => {
           if (isStepOutKey(e)) e.stopPropagation()
         }}

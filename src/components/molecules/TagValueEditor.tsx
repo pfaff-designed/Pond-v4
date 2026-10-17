@@ -32,7 +32,7 @@ import { PondControl } from '@/components/atoms/PondControl'
 import { FOCUS_VISIBLE_RING } from '@/components/atoms/focus-ring'
 import { cn } from '@/lib/utils'
 import type { PropertyOption } from '@/lib/properties/schema'
-import { isStepOutKey } from './AtomEditor'
+import { isStepOutKey } from '@/lib/modules/view/step-out-key'
 import { GLASS, LIST } from './picker-chrome'
 import { useAnchoredBox, type PickerAnchor } from './use-anchored-box'
 
@@ -151,9 +151,10 @@ export function TagValueEditor({
           if (!editable || wasOpen) return
           setOpen(true)
         }}
-        // See `isStepOutKey` (AtomEditor.tsx) — only Enter (the key that opens
-        // this popover) is stopped here; everything else must still reach a
-        // document/window listener while this trigger is merely focused.
+        // See `isStepOutKey` (step-out-key.ts) — only Enter and ArrowDown (the
+        // keys that open this popover) are stopped here; everything else must
+        // still reach a document/window listener while this trigger is merely
+        // focused.
         onKeyDown={(e) => {
           if (isStepOutKey(e)) e.stopPropagation()
         }}
