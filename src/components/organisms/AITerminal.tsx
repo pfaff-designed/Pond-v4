@@ -76,7 +76,7 @@ import { AnswerActions } from '@/components/molecules/AnswerActions'
 import { PageProposalCard } from '@/components/molecules/PageProposalCard'
 import { MadePageActions } from '@/components/molecules/MadePageActions'
 import { toParentOptions, ancestorPathLabel } from '@/lib/pages/parent-options'
-import { workspaceHref, workspaceUrl } from '@/lib/pages/nav'
+import { openWorkspaceUrl, workspaceHref, workspaceUrl } from '@/lib/pages/nav'
 import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
 import { insertPageOptimistic, type PageRow } from '@/lib/pages/tree'
 import { appendChildLinkUnder } from '@/lib/pages/child-links'
@@ -1726,7 +1726,10 @@ export function AITerminal() {
         if (call.state !== 'input-available' || openedChangeLogRef.current.has(call.toolCallId))
           continue
         openedChangeLogRef.current.add(call.toolCallId)
-        router.push(workspaceHref({ id: CHANGE_LOG_NODE_ID, type: 'page', title: 'change log' }))
+        openWorkspaceUrl(
+          workspaceHref({ id: CHANGE_LOG_NODE_ID, type: 'page', title: 'change log' }),
+          router
+        )
       }
     }
   }, [messages, router, initialMessageIds])
@@ -2447,12 +2450,13 @@ export function AITerminal() {
           message: `Added ${blockNoun(result.applied)} to ${targetName}${suffix}`,
           action: openTarget
             ? () =>
-                router.push(
+                openWorkspaceUrl(
                   workspaceHref({
                     id: openTarget,
                     type: allPages.find((p) => p.id === openTarget)?.type ?? 'page',
                     title: targetName,
-                  })
+                  }),
+                  router
                 )
             : undefined,
           actionLabel: 'Open',
@@ -2743,7 +2747,7 @@ export function AITerminal() {
           },
           pondId
         )
-        router.push(workspaceHref({ id: created.id, type: part.type, title: part.title }))
+        openWorkspaceUrl(workspaceHref({ id: created.id, type: part.type, title: part.title }), router)
         void queryClient.invalidateQueries({ queryKey: pagesKey() })
         // KAN-415: a failed link append is not a failed page creation — the page
         // above has already landed and been navigated to. A database/record made
@@ -3182,7 +3186,7 @@ export function AITerminal() {
           pondId
         )
         void queryClient.invalidateQueries({ queryKey: pagesKey() })
-        router.push(workspaceHref({ id: made.id, type: 'page', title: made.title }))
+        openWorkspaceUrl(workspaceHref({ id: made.id, type: 'page', title: made.title }), router)
         // KAN-415: a failed link append is not a failed page creation — the
         // page above has already landed and been navigated to.
         void appendChildLinkUnder(getSupabase(), queryClient, proposal.parentId, made.id, pondId, pondName)
@@ -4277,7 +4281,7 @@ export function AITerminal() {
     if (!madeProposal || !madeProposalRecordId) return
     if (redoRecordIds.includes(madeProposalRecordId)) {
       dispatch({ kind: 'undoMadePage', id: madeProposal.id })
-      router.push(resolveAskedFromHref(madeProposal))
+      openWorkspaceUrl(resolveAskedFromHref(madeProposal), router)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- this must fire exactly once when the record lands on redo, never again just because resolveAskedFromHref/router/allPages changed (e.g. the listPages refetch the undo itself kicks off) — keying off them would retrigger the dispatch/navigate on every such change instead of gating it on redoRecordIds.
   }, [madeProposal, madeProposalRecordId, redoRecordIds, dispatch])
@@ -4320,7 +4324,7 @@ export function AITerminal() {
     if (!proposal?.parentId) return
     const parent = allPages.find((p) => p.id === proposal.parentId)
     if (!parent) return
-    router.push(workspaceHref({ id: parent.id, type: 'page', title: parent.title }))
+    openWorkspaceUrl(workspaceHref({ id: parent.id, type: 'page', title: parent.title }), router)
   }
   const madePageActionsNode = showMadePageActions && (
     <MadePageActions
