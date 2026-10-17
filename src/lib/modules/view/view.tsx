@@ -142,6 +142,13 @@ function runFieldRemedy(
  * ONE undo step covers both writes — it restores the pre-add block and, only
  * when a field was minted, drops that field too; a kind that already had what
  * it needed never drags a field removal into its own undo.
+ *
+ * Activation goes through `notifyActiveViewSelected`, the SAME
+ * `ActiveViewSelectionContext` path a bar click uses — never `data.activeViewId`
+ * alone. `addSavedView` does set the new view as the block's `activeViewId`, but
+ * BlockCanvas's own `onChange` strips that back to the block's PERSISTED
+ * `activeViewId` before saving (switching is reading, #421), so without this
+ * call the write never surfaces as a selection in the real app.
  */
 function runAddView(
   data: ViewBlock,
@@ -149,7 +156,8 @@ function runAddView(
   schemaRef: { current: PropertySchema | null },
   updateSchema: (next: PropertySchema) => void,
   onChange: (next: ViewBlock) => void,
-  deletionUndo: NonNullable<ReturnType<typeof useOptionalDeletionUndo>>
+  deletionUndo: NonNullable<ReturnType<typeof useOptionalDeletionUndo>>,
+  notifyActiveViewSelected: ((id: string) => void) | undefined
 ): void {
   const schema = schemaRef.current
   if (!schema) return
@@ -165,12 +173,16 @@ function runAddView(
     updateSchema(mintedSchema)
   }
 
-  onChange(addSavedView(data, mode))
+  const previousActiveViewId = resolveActiveView(data).id
+  const updated = addSavedView(data, mode)
+  onChange(updated)
+  if (updated.activeViewId) notifyActiveViewSelected?.(updated.activeViewId)
   deletionUndo.stageUndo({
     message: `Added a ${VIEW_KINDS[mode].label} view`,
     scope: 'block',
     undo: () => {
       onChange(data)
+      notifyActiveViewSelected?.(previousActiveViewId)
       if (addedId) updateSchema(removeField(schemaRef.current ?? mintedSchema ?? schema, addedId))
     },
   })
@@ -208,6 +220,9 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
   // provider lookup is the non-throwing variant: a diff/proposal preview and
   // Storybook mount `ViewView` with no `DeletionUndoProvider` ancestor at all.
   const deletionUndo = useOptionalDeletionUndo()
+  // KAN-243: the same context `CollectionView`'s bar-click handler notifies —
+  // consumable here too, since both sit under BlockCanvas's one Provider.
+  const notifyActiveViewSelected = useContext(ActiveViewSelectionContext)
   // Undo must drop only the field it added, off whatever the schema has become by
   // the time the toast is actioned — restoring the schema captured at click would
   // also wipe any other schema edit made while the toast was open. `schemaRef`
@@ -260,12 +275,15 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
   )
   // KAN-243: mints the remedy field (when the kind needs one and the schema lacks
   // it) then adds the saved view, through ONE undo step — `runAddView` above.
+  // `notifyActiveViewSelected` is read here (not only inside `CollectionView`,
+  // the context's other consumer) so the new view's activation reaches
+  // BlockCanvas's own selection state the same way a bar click does.
   const onAddView: (mode: ViewMode) => void = useCallback(
     (mode) => {
       if (!editable || !schema || !deletionUndo || !onChange) return
-      runAddView(data, mode, schemaRef, updateSchema, onChange, deletionUndo)
+      runAddView(data, mode, schemaRef, updateSchema, onChange, deletionUndo, notifyActiveViewSelected)
     },
-    [editable, schema, deletionUndo, onChange, data, updateSchema]
+    [editable, schema, deletionUndo, onChange, data, updateSchema, notifyActiveViewSelected]
   )
 
   // Config edits (chart/big-number setup) rewrite the persisted view block through the

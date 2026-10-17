@@ -1116,3 +1116,73 @@ describe('ViewView — a legacy block (no views[] yet) still shows ＋ view, edi
     expect(screen.queryByRole('button', { name: 'add a view' })).not.toBeInTheDocument()
   })
 })
+
+describe('ViewView — a picked view still becomes active through BlockCanvas-style activeViewId stripping (KAN-243)', () => {
+  const legacyTable: ViewBlock = { id: 'v-legacy-strip', type: 'view', mode: 'table' }
+  const viewsShapedTable: ViewBlock = {
+    id: 'v-shaped-strip',
+    type: 'view',
+    mode: 'table',
+    views: [{ id: 'view-table-strip', label: 'table', kind: 'table', config: {} }],
+    activeViewId: 'view-table-strip',
+  }
+
+  beforeEach(() => {
+    initialSchema = dateless
+    initialRows = []
+  })
+
+  // Mirrors BlockCanvas.tsx's own shape (#421, KAN-321): a locally-held
+  // `activeViewId` overrides what's rendered, but `onChange` strips it back to
+  // the block's own PERSISTED `activeViewId` before committing — switching is
+  // reading, never an edit. Only `ActiveViewSelectionContext` carries a bar's
+  // (or, here, a ＋ view pick's) selection past that strip.
+  function StrippingHarness({ initial }: { initial: ViewBlock }) {
+    const [block, setBlock] = useState<ViewBlock>(initial)
+    const [activeViewId, setActiveViewId] = useState<string | undefined>(undefined)
+    const moduleData = activeViewId ? { ...block, activeViewId } : block
+    return (
+      <ActiveViewSelectionContext.Provider value={setActiveViewId}>
+        <ViewView
+          data={moduleData}
+          editable
+          onChange={(next) => setBlock({ ...(next as ViewBlock), activeViewId: block.activeViewId })}
+        />
+      </ActiveViewSelectionContext.Provider>
+    )
+  }
+
+  function renderStripping(initial: ViewBlock) {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    return render(
+      <QueryClientProvider client={client}>
+        <DeletionUndoProvider>
+          <SiblingBlocksProvider value={{ blocks: [], pageId: 'page-1' }}>
+            <StrippingHarness initial={initial} />
+          </SiblingBlocksProvider>
+        </DeletionUndoProvider>
+      </QueryClientProvider>
+    )
+  }
+
+  it.each([
+    ['a legacy table', legacyTable],
+    ['a views-shaped table', viewsShapedTable],
+  ])('%s: picking calendar activates its segment, and undo re-selects the original', async (_label, initial) => {
+    const user = userEvent.setup()
+    renderStripping(initial)
+
+    expect(screen.getByRole('tab', { name: 'table' })).toHaveAttribute('aria-selected', 'true')
+
+    await user.click(screen.getByRole('button', { name: 'add a view' }))
+    await user.click(screen.getByRole('option', { name: /calendar/ }))
+
+    expect(screen.getByRole('tab', { name: 'calendar' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('button', { name: 'add a view' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Undo' }))
+
+    expect(screen.queryByRole('tab', { name: 'calendar' })).not.toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'table' })).toHaveAttribute('aria-selected', 'true')
+  })
+})
