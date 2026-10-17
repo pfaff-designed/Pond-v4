@@ -3,8 +3,7 @@
  * (s6o1): four real pills on the shared view-tabs engine — "all",
  * "proposed", "by page" and "deleted" (role=tab, aria-selected, roving ←/→
  * focus). "memory" stays absent until KAN-173 lands (no inert span drawn for
- * it). "＋ view" stays outside the tablist as a plain aria-disabled span
- * until KAN-148's later items wire it up.
+ * it). "＋ view" stays outside the tablist as a plain aria-disabled span.
  */
 
 import { render, screen } from '@testing-library/react'

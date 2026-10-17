@@ -47,8 +47,13 @@ export interface LogRow {
   status: { kind: 'pill' | 'plain'; text: ChangeLogStatus }
 }
 
-/** Rows newest-first within one day header, s6o1's grouping. */
-export interface LogDayGroup {
+/** Rows newest-first within one group — a day header (`buildLogRows`) or a
+ *  page (`buildLogPageGroups`); both share this shape, only the grouping key
+ *  differs. `key` is the grouping key itself (stable across a label a second
+ *  group could repeat, e.g. two unresolved pages both labelled "deleted
+ *  page"); React keys off it, never off `label` or array index. */
+export interface LogGroup {
+  key: string
   label: string
   rows: LogRow[]
 }
@@ -85,13 +90,20 @@ export function dayTimeLabel(iso: string, now: Date = new Date()): string {
   return day === 'today' ? time : `${day} ${time}`
 }
 
+/** A record with no `targetPageId` is either a memory note or one whose
+ *  target no longer resolves — the one `action === 'memory_note'` check both
+ *  {@link pageLabel} and `pageGroupKey` need, so neither repeats it. */
+function nullTargetKind(record: ChangeLogRecord): 'memory' | 'deleted' {
+  return record.action === 'memory_note' ? 'memory' : 'deleted'
+}
+
 /** The "page" column: the title of `targetPageId`, `memory` for a memory note
  *  with no page, or `deleted page` once the target no longer resolves. Also
  *  the proposed view's own card head's page name (`proposed-view.ts`) — one
  *  label path for both. */
 export function pageLabel(record: ChangeLogRecord, pageTitleById: Map<string, string>): string {
   if (record.targetPageId === null) {
-    return record.action === 'memory_note' ? 'memory' : 'deleted page'
+    return nullTargetKind(record) === 'memory' ? 'memory' : 'deleted page'
   }
   return pageTitleById.get(record.targetPageId) ?? 'deleted page'
 }
@@ -118,18 +130,18 @@ export function buildLogRows(
   records: ChangeLogRecord[],
   pageTitleById: Map<string, string>,
   now: Date = new Date()
-): LogDayGroup[] {
-  const groups: LogDayGroup[] = []
+): LogGroup[] {
+  const groups: LogGroup[] = []
 
   for (const record of records) {
     const groupLabel = dayHeaderLabel(record.createdAt, now)
     const row = buildLogRow(record, pageTitleById)
 
     const lastGroup = groups[groups.length - 1]
-    if (lastGroup !== undefined && lastGroup.label === groupLabel) {
+    if (lastGroup !== undefined && lastGroup.key === groupLabel) {
       lastGroup.rows.push(row)
     } else {
-      groups.push({ label: groupLabel, rows: [row] })
+      groups.push({ key: groupLabel, label: groupLabel, rows: [row] })
     }
   }
 
@@ -137,24 +149,26 @@ export function buildLogRows(
 }
 
 /** `targetPageId`, but split so a memory note and a deleted-target record —
- *  both `null` — land in their own groups rather than merging under one. */
+ *  both `null` — land in their own groups rather than merging under one,
+ *  sharing {@link nullTargetKind}'s decision with `pageLabel`. */
 function pageGroupKey(record: ChangeLogRecord): string {
   if (record.targetPageId !== null) return record.targetPageId
-  return record.action === 'memory_note' ? '__memory__' : '__deleted_no_target__'
+  return nullTargetKind(record) === 'memory' ? '__memory__' : '__deleted_no_target__'
 }
 
 /**
- * The log's rows grouped by page — `by page` (`s6o1`), reusing `LogDayGroup`
- * with the page title as `label`. `records` is assumed already newest-first
- * (as `listRecords` returns them), so the first record seen for a page is
- * that group's newest, which is also the order groups come out in — no
- * re-sort needed for either the groups or the rows inside one.
+ * The log's rows grouped by page — `by page` (`s6o1`), reusing `LogGroup`
+ * with the page title as `label` and `pageGroupKey`'s grouping key as `key`.
+ * `records` is assumed already newest-first (as `listRecords` returns them),
+ * so the first record seen for a page is that group's newest, which is also
+ * the order groups come out in — no re-sort needed for either the groups or
+ * the rows inside one.
  */
 export function buildLogPageGroups(
   records: ChangeLogRecord[],
   pageTitleById: Map<string, string>
-): LogDayGroup[] {
-  const groups: LogDayGroup[] = []
+): LogGroup[] {
+  const groups: LogGroup[] = []
   const groupIndexByKey = new Map<string, number>()
 
   for (const record of records) {
@@ -166,7 +180,7 @@ export function buildLogPageGroups(
       groups[existingIndex].rows.push(row)
     } else {
       groupIndexByKey.set(key, groups.length)
-      groups.push({ label: row.page, rows: [row] })
+      groups.push({ key, label: row.page, rows: [row] })
     }
   }
 

@@ -207,4 +207,40 @@ describe('buildLogPageGroups', () => {
       status: { kind: 'plain', text: 'accepted' },
     })
   })
+
+  it('returns no groups for empty input', () => {
+    expect(buildLogPageGroups([], pageTitleById)).toEqual([])
+  })
+
+  it('keys two distinct unresolved-page records into two groups, even though both are labelled "deleted page"', () => {
+    const groups = buildLogPageGroups(
+      [
+        record({ id: 'r1', targetPageId: 'page-gone-1' }),
+        record({ id: 'r2', targetPageId: 'page-gone-2' }),
+      ],
+      pageTitleById
+    )
+
+    expect(groups.map((g) => g.label)).toEqual(['deleted page', 'deleted page'])
+    expect(groups.map((g) => g.key)).toEqual(['page-gone-1', 'page-gone-2'])
+    expect(new Set(groups.map((g) => g.key)).size).toBe(2)
+  })
+
+  it('does not re-sort rows that arrive oldest-first; it only groups them', () => {
+    const groups = buildLogPageGroups(
+      [
+        record({ id: 'r1', targetPageId: 'page-1', createdAt: '2026-09-28T09:00:00.000Z' }),
+        record({ id: 'r2', targetPageId: 'page-1', createdAt: '2026-09-29T09:00:00.000Z' }),
+        record({ id: 'r3', targetPageId: 'page-2', createdAt: '2026-09-30T09:00:00.000Z' }),
+      ],
+      pageTitleById
+    )
+
+    // Grouped in the order each page is first seen (page-1 before page-2),
+    // and each group's rows stay in input order — the function trusts the
+    // caller's order rather than re-sorting by `createdAt`.
+    expect(groups.map((g) => g.label)).toEqual(['kitchen renovation', 'reading list'])
+    expect(groups[0].rows.map((r) => r.record.id)).toEqual(['r1', 'r2'])
+    expect(groups[1].rows.map((r) => r.record.id)).toEqual(['r3'])
+  })
 })

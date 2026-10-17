@@ -98,9 +98,7 @@ describe('ChangeLogPage — the by page view', () => {
 
     expect(await screen.findByTestId('change-log-waiting-count')).toHaveTextContent('3')
     expect(screen.getByText(/waiting on you/)).toBeInTheDocument()
-    expect(
-      screen.queryByText(/Every action in this pond, by you, by Pond/)
-    ).not.toBeInTheDocument()
+    expect(screen.queryByText(/Every action in this pond, by you, by Pond/)).not.toBeInTheDocument()
   })
 
   it('renders the "grouped by page" and "newest first" chips', async () => {
@@ -137,7 +135,7 @@ describe('ChangeLogPage — the by page view', () => {
 
     await user.click(screen.getByRole('tab', { name: 'by page' }))
 
-    const groupHeads = await screen.findAllByText(/^(launch plan|budget)$/, { selector: '.pt-3' })
+    const groupHeads = await screen.findAllByTestId('change-log-group-head')
     expect(groupHeads.map((el) => el.textContent)).toEqual(['launch plan', 'budget'])
 
     const launchRows = screen.getAllByTestId(/change-log-status-rec-launch/)

@@ -17,7 +17,7 @@ import { usePondName } from '@/lib/pond/name'
 import { PAGE_COLUMN_PAD_PX, useSurfaceColumn } from '@/lib/layout/surface-column'
 import { countWaiting, listRecords } from '@/lib/change-log/store'
 import { changeLogKey } from '@/lib/change-log/keys'
-import { buildLogPageGroups, buildLogRows } from '@/lib/change-log/log-page'
+import { buildLogPageGroups, buildLogRows, type LogGroup } from '@/lib/change-log/log-page'
 import { changeLogRecordUrl, changeLogUrl, PAGE_FILTER_PARAM } from '@/lib/change-log/record-page'
 import { clockTime } from '@/lib/change-log/page-changes'
 import { labelForStatus, WAITING_STATUSES } from '@/lib/change-log/status'
@@ -178,6 +178,71 @@ function DeletedRecordCard({
   )
 }
 
+/** s6o1's five-column table body: the header row, one group head per group
+ *  (a day header in "all", a page title in "by page"), and each group's rows
+ *  — shared so a row/head change is made once, not once per view. */
+function LogGroupsTable({
+  groups,
+  onOpen,
+}: {
+  groups: LogGroup[]
+  onOpen: (recordId: string) => void
+}) {
+  return (
+    <>
+      <div
+        className={`grid ${TABLE_COLUMNS} gap-x-[14px] border-b border-mn-line px-[10px] pb-2 text-[10.5px] font-medium tracking-[.1em] text-mn-text-secondary uppercase`}
+      >
+        <span>time</span>
+        <span>what</span>
+        <span>page</span>
+        <span>by</span>
+        <span>status</span>
+      </div>
+      {groups.map((group) => (
+        <div key={group.key}>
+          <div
+            data-testid="change-log-group-head"
+            className="px-[10px] pt-3 pb-[6px] text-[10.5px] font-medium tracking-[.1em] text-mn-text-secondary uppercase"
+          >
+            {group.label}
+          </div>
+          {group.rows.map((row) => (
+            <button
+              key={row.record.id}
+              type="button"
+              onClick={() => onOpen(row.record.id)}
+              className={`grid ${TABLE_COLUMNS} min-h-[38px] w-full items-center gap-x-[14px] border-b border-mn-hair px-[10px] text-left text-[13.5px]`}
+            >
+              <span className="font-mono text-[10.5px] text-mn-text-secondary">
+                {clockTime(row.record)}
+              </span>
+              <span className="truncate">{row.label}</span>
+              <span className="truncate text-[12.5px] text-mn-text-meta">{row.page}</span>
+              <span className="text-[12.5px] text-mn-text-meta">{row.by}</span>
+              {row.status.kind === 'pill' ? (
+                <span
+                  data-testid={`change-log-status-${row.record.id}`}
+                  className="justify-self-start rounded-full px-2 py-0.5 font-mono text-[10.5px] text-mn-text ring-1 ring-mn-mark-faint ring-inset"
+                >
+                  {labelForStatus(row.status.text)}
+                </span>
+              ) : (
+                <span
+                  data-testid={`change-log-status-${row.record.id}`}
+                  className="font-mono text-[10.5px] text-mn-text-secondary"
+                >
+                  {labelForStatus(row.status.text)}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      ))}
+    </>
+  )
+}
+
 export function ChangeLogPage() {
   const getSupabase = useLazySupabase()
   const router = useRouter()
@@ -257,7 +322,11 @@ export function ChangeLogPage() {
         data: { user },
       } = await supabase.auth.getUser()
       if (!user) return []
-      return listRecords(supabase, { userId: user.id, pondId, targetPageId: pageFilterId as string })
+      return listRecords(supabase, {
+        userId: user.id,
+        pondId,
+        targetPageId: pageFilterId as string,
+      })
     },
   })
 
@@ -277,7 +346,7 @@ export function ChangeLogPage() {
 
   const pageTitleById = useMemo(() => new Map(pages.map((p) => [p.id, p.title])), [pages])
   const activeRecords = useMemo(
-    () => (pageFilterId === null ? records : pageFilteredRecords ?? []),
+    () => (pageFilterId === null ? records : (pageFilteredRecords ?? [])),
     [pageFilterId, records, pageFilteredRecords]
   )
   const activeRecordsLoading = pageFilterId === null ? recordsLoading : pageFilteredLoading
@@ -434,7 +503,11 @@ export function ChangeLogPage() {
             </span>
           </div>
         )}
-        <ViewTabsRoot value={view} onValueChange={handleViewChange} className="flex items-center gap-1 text-[12.5px]">
+        <ViewTabsRoot
+          value={view}
+          onValueChange={handleViewChange}
+          className="flex items-center gap-1 text-[12.5px]"
+        >
           <ViewTabsList className="flex items-center gap-1">
             <ViewTabsTab value="all" className={view === 'all' ? SEGMENT_ON : SEGMENT_OFF}>
               all
@@ -494,52 +567,10 @@ export function ChangeLogPage() {
               </p>
             ) : (
               <>
-                <div
-                  className={`grid ${TABLE_COLUMNS} gap-x-[14px] border-b border-mn-line px-[10px] pb-2 text-[10.5px] font-medium tracking-[.1em] text-mn-text-secondary uppercase`}
-                >
-                  <span>time</span>
-                  <span>what</span>
-                  <span>page</span>
-                  <span>by</span>
-                  <span>status</span>
-                </div>
-                {groups.map((group) => (
-                  <div key={group.label}>
-                    <div className="px-[10px] pt-3 pb-[6px] text-[10.5px] font-medium tracking-[.1em] text-mn-text-secondary uppercase">
-                      {group.label}
-                    </div>
-                    {group.rows.map((row) => (
-                      <button
-                        key={row.record.id}
-                        type="button"
-                        onClick={() => router.push(changeLogRecordUrl(row.record.id))}
-                        className={`grid ${TABLE_COLUMNS} min-h-[38px] w-full items-center gap-x-[14px] border-b border-mn-hair px-[10px] text-left text-[13.5px]`}
-                      >
-                        <span className="font-mono text-[10.5px] text-mn-text-secondary">
-                          {clockTime(row.record)}
-                        </span>
-                        <span className="truncate">{row.label}</span>
-                        <span className="truncate text-[12.5px] text-mn-text-meta">{row.page}</span>
-                        <span className="text-[12.5px] text-mn-text-meta">{row.by}</span>
-                        {row.status.kind === 'pill' ? (
-                          <span
-                            data-testid={`change-log-status-${row.record.id}`}
-                            className="justify-self-start rounded-full px-2 py-0.5 font-mono text-[10.5px] text-mn-text ring-1 ring-mn-mark-faint ring-inset"
-                          >
-                            {labelForStatus(row.status.text)}
-                          </span>
-                        ) : (
-                          <span
-                            data-testid={`change-log-status-${row.record.id}`}
-                            className="font-mono text-[10.5px] text-mn-text-secondary"
-                          >
-                            {labelForStatus(row.status.text)}
-                          </span>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                ))}
+                <LogGroupsTable
+                  groups={groups}
+                  onOpen={(id) => router.push(changeLogRecordUrl(id))}
+                />
                 {pageFilterId === null && hasNextPage && (
                   <button
                     type="button"
@@ -569,56 +600,10 @@ export function ChangeLogPage() {
                   nothing logged in this pond yet
                 </p>
               ) : (
-                <>
-                  <div
-                    className={`grid ${TABLE_COLUMNS} gap-x-[14px] border-b border-mn-line px-[10px] pb-2 text-[10.5px] font-medium tracking-[.1em] text-mn-text-secondary uppercase`}
-                  >
-                    <span>time</span>
-                    <span>what</span>
-                    <span>page</span>
-                    <span>by</span>
-                    <span>status</span>
-                  </div>
-                  {pageGroups.map((group, index) => (
-                    <div key={`page-group-${index}`}>
-                      <div className="px-[10px] pt-3 pb-[6px] text-[10.5px] font-medium tracking-[.1em] text-mn-text-secondary uppercase">
-                        {group.label}
-                      </div>
-                      {group.rows.map((row) => (
-                        <button
-                          key={row.record.id}
-                          type="button"
-                          onClick={() => router.push(changeLogRecordUrl(row.record.id))}
-                          className={`grid ${TABLE_COLUMNS} min-h-[38px] w-full items-center gap-x-[14px] border-b border-mn-hair px-[10px] text-left text-[13.5px]`}
-                        >
-                          <span className="font-mono text-[10.5px] text-mn-text-secondary">
-                            {clockTime(row.record)}
-                          </span>
-                          <span className="truncate">{row.label}</span>
-                          <span className="truncate text-[12.5px] text-mn-text-meta">
-                            {row.page}
-                          </span>
-                          <span className="text-[12.5px] text-mn-text-meta">{row.by}</span>
-                          {row.status.kind === 'pill' ? (
-                            <span
-                              data-testid={`change-log-status-${row.record.id}`}
-                              className="justify-self-start rounded-full px-2 py-0.5 font-mono text-[10.5px] text-mn-text ring-1 ring-mn-mark-faint ring-inset"
-                            >
-                              {labelForStatus(row.status.text)}
-                            </span>
-                          ) : (
-                            <span
-                              data-testid={`change-log-status-${row.record.id}`}
-                              className="font-mono text-[10.5px] text-mn-text-secondary"
-                            >
-                              {labelForStatus(row.status.text)}
-                            </span>
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  ))}
-                </>
+                <LogGroupsTable
+                  groups={pageGroups}
+                  onOpen={(id) => router.push(changeLogRecordUrl(id))}
+                />
               )}
             </div>
           </>
