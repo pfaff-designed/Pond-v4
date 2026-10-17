@@ -233,6 +233,16 @@ export const changeSchema = z.discriminatedUnion('op', [
 ])
 export type ModuleChange = z.infer<typeof changeSchema>
 
+/** Required on every proposal tool (propose_changes and the five collection
+ *  tools in `chat/tools.ts`) — KAN-334's one-sentence answer rendered above
+ *  the card, never pasted per-schema. */
+export const assumptionField = z
+  .string()
+  .min(1)
+  .describe(
+    'Write this BEFORE the changes. One sentence that begins "Assuming" or "Taking" and names the reading you chose where the instruction left room: which date or value a relative amount is measured from, which block you read as the target, what you take as given. Example: "Taking \'next month\' from the 14 Mar due date already on the page." Never describe what changes ("The due date moves to 14 Apr.") — the card already shows that. Write no other prose in this turn.'
+  )
+
 /**
  * The `propose_changes` tool input: a non-empty batch of composition operations,
  * optionally aimed at a page OTHER than the one currently open (ticket-30).
@@ -245,6 +255,7 @@ export type ModuleChange = z.infer<typeof changeSchema>
  * an id absent from the workspace is ignored (falls back to the open page).
  */
 export const proposeChangesSchema = z.object({
+  assumption: assumptionField,
   targetPageId: z
     .string()
     .optional()

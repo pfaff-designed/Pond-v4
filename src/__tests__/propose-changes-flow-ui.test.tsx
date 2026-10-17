@@ -55,6 +55,7 @@ jest.mock('@/lib/pages/create-page', () => ({
   defineSchemaFromProposal: jest.fn(),
   addRowFromProposal: jest.fn(),
   collectionTitleResolver: () => () => undefined,
+  unresolvableRollupNames: jest.fn().mockReturnValue([]),
 }))
 jest.mock('@/lib/pages/tree', () => ({
   fetchPages: jest.fn().mockResolvedValue([]),
@@ -179,17 +180,31 @@ function renderWithQuery(ui: React.ReactElement) {
   }
 }
 
-function batch(toolCallId: string, targetPageId?: string) {
+function batch(toolCallId: string, targetPageId?: string, assumption?: string) {
   return {
     type: 'tool-propose_changes',
     toolCallId,
     state: 'input-available',
     input: {
       targetPageId,
+      ...(assumption !== undefined ? { assumption } : {}),
       changes: [
         { op: 'create', data: { type: 'text', content: `first line of ${toolCallId}` } },
         { op: 'create', data: { type: 'text', content: `second line of ${toolCallId}` } },
       ],
+    },
+  }
+}
+
+function defineSchemaPart(toolCallId: string, pageId: string, assumption?: string) {
+  return {
+    type: 'tool-define_schema',
+    toolCallId,
+    state: 'input-available',
+    input: {
+      pageId,
+      properties: [{ name: 'Author', type: 'text' }],
+      ...(assumption !== undefined ? { assumption } : {}),
     },
   }
 }
@@ -267,6 +282,174 @@ describe('AITerminal — propose_changes card (#98)', () => {
     expect(screen.getByRole('button', { name: 'reject' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'request changes' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'accept all' })).not.toBeInTheDocument()
+  })
+
+  // KAN-334 — PATH_STEPS 3-4: the answer shown above the card is the edit's
+  // `assumption`, one sentence, never the model's other free prose in the
+  // same turn (the tool description tells it to write none when proposing,
+  // but a turn that does anyway must still drop it here).
+  it('a proposal card shows only its assumption sentence above it; the message’s other prose is dropped', async () => {
+    mockMessages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'push the electrician out by a week' }] },
+      {
+        id: 'm1',
+        role: 'assistant',
+        parts: [
+          { type: 'text', text: 'Sure, pushing that back for you now.' },
+          batch('pc1', undefined, "Taking 'a week' from the current w/c 29 Sep date."),
+        ],
+      },
+    ]
+    renderWithQuery(<AITerminal />)
+    await ready()
+
+    const assumption = screen.getByText(
+      "Taking 'a week' from the current w/c 29 Sep date."
+    )
+    expect(assumption).toBeInTheDocument()
+    expect(screen.queryByText('Sure, pushing that back for you now.')).not.toBeInTheDocument()
+    const readChips = screen.getByTestId('read-chips')
+    expect(readChips).toBeInTheDocument()
+    expect(screen.getByText('first line of pc1')).toBeInTheDocument()
+
+    // The stray prose is a proposing turn, not an answer to keep — never offer
+    // to make a page from it, even though raw `text` on the message is non-empty.
+    expect(screen.queryByRole('button', { name: 'make this a page' })).not.toBeInTheDocument()
+
+    // The assumption sentence sits above the card, and the read chips follow
+    // it, per the board's `turns` section order (`a` then `card` then `read`).
+    const card = screen.getByRole('group', { name: 'proposed edit' })
+    expect(assumption.compareDocumentPosition(card)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(card.compareDocumentPosition(readChips)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+  })
+
+  // KAN-334 fix — a proposing turn's assumption line made `AnswerActions`'s
+  // `assistantProse || isStreaming` gate true, so it drew its own window
+  // controls alongside the KAN-317 fallback row's: two clusters. Exactly one
+  // belongs, after the card.
+  it('a proposing turn with an assumption renders exactly one minimize/close control set, after the card', async () => {
+    mockMessages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'push the electrician out by a week' }] },
+      {
+        id: 'm1',
+        role: 'assistant',
+        parts: [batch('pc1', undefined, "Taking 'a week' from the current w/c 29 Sep date.")],
+      },
+    ]
+    renderWithQuery(<AITerminal />)
+    await ready()
+
+    const controls = document.querySelectorAll('[data-part="composer-window-controls"]')
+    expect(controls).toHaveLength(1)
+
+    const card = screen.getByRole('group', { name: 'proposed edit' })
+    expect(card.compareDocumentPosition(controls[0])).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+  })
+
+  // KAN-334 fix — `AnswerActions`'s own "ask again" chip sat between the
+  // answer and the card in a proposing turn (`PondComposer.dc.html:46-52`'s
+  // proposing state draws no actions row). The card's own ask again, offered
+  // after a reject, is unaffected.
+  it('a proposing turn shows no ask again above the card; the card’s own ask again still works after reject', async () => {
+    const user = userEvent.setup()
+    mockMessages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'push the electrician out by a week' }] },
+      {
+        id: 'm1',
+        role: 'assistant',
+        parts: [batch('pc1', undefined, "Taking 'a week' from the current w/c 29 Sep date.")],
+      },
+    ]
+    renderWithQuery(<AITerminal />)
+    await ready()
+
+    expect(screen.queryByRole('button', { name: 'ask again' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'reject' }))
+    const askAgain = await screen.findByRole('button', { name: 'ask again' })
+    await user.click(askAgain)
+    expect(mockRegenerate).toHaveBeenCalledTimes(1)
+  })
+
+  // KAN-334 fix — the below-card read chips and the controls-only fallback
+  // row sat right after `ProposalGroup` (propose_changes's own cards), ahead
+  // of the five collection card .map blocks, so a collection-only proposal
+  // (no propose_changes batch) had its read chips land ABOVE the card and no
+  // reachable window controls at all (the fallback row required
+  // `diffCards.length > 0`).
+  it('a single-turn define_schema proposal with an assumption shows exactly one window-controls set, in order: assumption, card, read chips, controls', async () => {
+    mockMessages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'track who wrote each book' }] },
+      {
+        id: 'm1',
+        role: 'assistant',
+        parts: [defineSchemaPart('ds1', 'page-reading', 'Taking "each book" as every row in this collection.')],
+      },
+    ]
+    renderWithQuery(<AITerminal />)
+    await ready()
+
+    const assumption = screen.getByText('Taking "each book" as every row in this collection.')
+    const card = screen.getByRole('group', { name: 'Proposed page schema' })
+    const readChips = screen.getByTestId('read-chips')
+    const controls = document.querySelectorAll('[data-part="composer-window-controls"]')
+
+    expect(controls).toHaveLength(1)
+    expect(assumption.compareDocumentPosition(card)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(card.compareDocumentPosition(readChips)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(readChips.compareDocumentPosition(controls[0])).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+  })
+
+  it('a mixed turn (propose_changes + define_schema) puts the read chips and controls after the last card', async () => {
+    mockMessages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'push the date and track authors' }] },
+      {
+        id: 'm1',
+        role: 'assistant',
+        parts: [
+          batch('pc1', undefined, "Taking 'a week' from the current w/c 29 Sep date."),
+          defineSchemaPart('ds1', 'page-reading'),
+        ],
+      },
+    ]
+    renderWithQuery(<AITerminal />)
+    await ready()
+
+    const diffCard = screen.getByRole('group', { name: 'proposed edit' })
+    const schemaCard = screen.getByRole('group', { name: 'Proposed page schema' })
+    const readChips = screen.getByTestId('read-chips')
+    const controls = document.querySelectorAll('[data-part="composer-window-controls"]')
+
+    expect(controls).toHaveLength(1)
+    expect(diffCard.compareDocumentPosition(schemaCard)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(schemaCard.compareDocumentPosition(readChips)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(readChips.compareDocumentPosition(controls[0])).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+  })
+
+  // KAN-334 fix — a qualifying part with no VISIBLE card (the stream stopped
+  // before the tool input finished) still has `hasQualifyingProposalPart`
+  // true, so keying the layout off that alone hid the model's text, withheld
+  // `AnswerActions`, and drew no fallback row: no close at all. A turn like
+  // this reads as a plain answer instead — raw text, one controls set.
+  it('a qualifying part whose tool input is still input-streaming (stopped) shows the raw text and exactly one controls set', async () => {
+    mockMessages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'push the electrician out by a week' }] },
+      {
+        id: 'm1',
+        role: 'assistant',
+        parts: [
+          { type: 'text', text: 'Working on it…' },
+          { type: 'tool-propose_changes', toolCallId: 'pc1', state: 'input-streaming', input: {} },
+        ],
+      },
+    ]
+    renderWithQuery(<AITerminal />)
+    await ready()
+
+    expect(screen.getByText('Working on it…')).toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'proposed edit' })).not.toBeInTheDocument()
+    const controls = document.querySelectorAll('[data-part="composer-window-controls"]')
+    expect(controls).toHaveLength(1)
   })
 
   // KAN-96 fix — a 0-write accept (the target page can't be loaded, e.g. a
@@ -435,13 +618,15 @@ describe('AITerminal — propose_changes card (#98)', () => {
       {
         id: 'm1',
         role: 'assistant',
-        parts: [{ type: 'text', text: 'older answer' }, batch('pc1')],
+        // KAN-334: a proposal's answer prose is its `assumption`, not any
+        // free text alongside it — carry the distinguishing text there.
+        parts: [{ type: 'text', text: 'extra prose, dropped' }, batch('pc1', undefined, 'older answer')],
       },
       { id: 'u2', role: 'user', parts: [{ type: 'text', text: 'second question' }] },
       {
         id: 'm2',
         role: 'assistant',
-        parts: [{ type: 'text', text: 'newer answer' }, batch('pc2')],
+        parts: [{ type: 'text', text: 'extra prose, dropped' }, batch('pc2', undefined, 'newer answer')],
       },
     ]
     renderWithQuery(<AITerminal />)
