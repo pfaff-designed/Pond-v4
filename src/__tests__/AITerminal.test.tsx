@@ -78,6 +78,14 @@ jest.mock('@/lib/pages/accept', () => ({
     .mockResolvedValue({ applied: 1, skipped: 0, skippedReasons: [], targetId: 'home-1', recordId: null }),
 }))
 
+// KAN-341 (acceptConfigureView fix): stub the write so a linked configure_view
+// card's accept can be clicked and `pageId` (the write's host) inspected directly —
+// `resolveCollectionByName` stays real, it's a pure name lookup over `allPages`.
+jest.mock('@/lib/pages/configure-view', () => ({
+  ...jest.requireActual('@/lib/pages/configure-view'),
+  configureViewFromProposal: jest.fn().mockResolvedValue({ id: 'view-1', replaced: false }),
+}))
+
 const mockSendMessage = jest.fn()
 // Mutable, read fresh by `useChat` on every call — lets a test stream a
 // message in mid-test via `rerender` (KAN-96's revision-stamping test below),
@@ -114,12 +122,14 @@ import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
 import { useZen, ZenComposerChrome, ZenProvider } from '@/lib/layout/zen'
 import { COMPOSER_CLEARANCE_VAR } from '@/lib/layout/composer-clearance'
 import { writeAcceptedChanges } from '@/lib/pages/accept'
+import { configureViewFromProposal } from '@/lib/pages/configure-view'
 import { resolveAcceptTarget } from '@/lib/conversation/resolutions'
 import { clearSelection, selectWord } from './helpers/selection'
 
 const mockListPages = listPages as jest.Mock
 const mockGetPage = getPage as jest.Mock
 const mockWriteAcceptedChanges = writeAcceptedChanges as jest.Mock
+const mockConfigureViewFromProposal = configureViewFromProposal as jest.Mock
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -163,6 +173,7 @@ beforeEach(() => {
   mockSendMessage.mockClear()
   mockRegenerate.mockClear()
   mockWriteAcceptedChanges.mockClear()
+  mockConfigureViewFromProposal.mockClear()
   mockAmbientNodeId = null
   mockMessages = []
 })
@@ -1335,6 +1346,40 @@ describe('AITerminal — at the root, a diff card against the home page is not "
     await waitFor(() => expect(mockWriteAcceptedChanges).toHaveBeenCalledTimes(1))
     const [call] = mockWriteAcceptedChanges.mock.calls[0]
     expect(resolveAcceptTarget(call.resolutions, call.toolCallId, call.openNodeId)).toBe('home-1')
+  })
+})
+
+describe('AITerminal — at the root, accepting a linked configure_view card uses the home id (KAN-341)', () => {
+  it('accept calls configureViewFromProposal with pageId = the home id, not stuck on a null host', async () => {
+    mockMessages = [
+      { id: 'm-ask', role: 'user', parts: [{ type: 'text', text: 'show the tasks as a board' }] },
+      {
+        id: 'm-answer',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'tool-configure_view',
+            toolCallId: 'tc-root-view',
+            state: 'input-available',
+            input: {
+              pageId: 'collection-1',
+              mode: 'board',
+              targetCollection: 'Tasks',
+              reason: 'A board of the tasks collection',
+            },
+          },
+        ],
+      },
+    ]
+    renderTerminal()
+    await waitReady()
+
+    const card = await screen.findByRole('group', { name: 'Proposed view' })
+    fireEvent.click(within(card).getByRole('button', { name: 'Apply view' }))
+
+    await waitFor(() => expect(mockConfigureViewFromProposal).toHaveBeenCalledTimes(1))
+    const [, proposal] = mockConfigureViewFromProposal.mock.calls[0]
+    expect(proposal.pageId).toBe('home-1')
   })
 })
 

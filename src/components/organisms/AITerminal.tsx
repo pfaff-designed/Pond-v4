@@ -2933,7 +2933,7 @@ export function AITerminal() {
       // inline view is configured on the selected collection itself. Host = where the
       // block (and its ['page'] cache) lives, so that's what we invalidate.
       const linked = !!part?.targetCollection
-      const host = linked ? nodeId : selectedTargetId
+      const host = linked ? pageId : selectedTargetId
       if (!host) return
       dispatch({ kind: 'resolve', type: 'views', id: toolCallId, decision: 'accepted' })
       try {
@@ -2974,7 +2974,7 @@ export function AITerminal() {
         dispatch({ kind: 'revert', type: 'views', id: toolCallId })
       }
     },
-    [getSupabase, queryClient, nodeId, logDecision]
+    [getSupabase, queryClient, pageId, logDecision]
   )
 
   // ── make this a page ───────────────────────────────────────────────────────
