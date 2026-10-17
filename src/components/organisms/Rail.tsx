@@ -1495,9 +1495,21 @@ export function Rail() {
   // and the reveal effect above never fires. Expand the selected row itself
   // the moment its child set gains an id it didn't have last render, so the
   // freshly made child is visible without navigating anywhere.
+  //
+  // `pages` defaults to `[]` while the query is loading, so a baseline taken
+  // before data arrives would record an empty child set and read every
+  // already-existing child as "gained" once the real rows land. Wait for the
+  // same ready condition the ancestor-reveal effect above uses (not loading,
+  // selected node present) before recording a baseline, and drop any stale
+  // baseline when the pond changes underneath the same `nodeId`.
   const childIdsRef = useRef<Map<string, Set<string>>>(new Map())
   useEffect(() => {
+    childIdsRef.current = new Map()
+  }, [pondId])
+  useEffect(() => {
     if (!selectedNodeId) return
+    if (isLoading) return
+    if (!pages.some((r) => r.id === selectedNodeId)) return
     const prevChildren = childIdsRef.current.get(selectedNodeId)
     const nextChildren = new Set(
       pages.filter((r) => (r.parent_id ?? null) === selectedNodeId).map((r) => r.id)
@@ -1512,7 +1524,7 @@ export function Rail() {
       next.add(selectedNodeId)
       return next
     })
-  }, [selectedNodeId, pages])
+  }, [selectedNodeId, pages, isLoading])
 
   // Deferred commits fire up to ~6s after staging — read the selection fresh at
   // commit time via this ref, not the render-time closure value.
