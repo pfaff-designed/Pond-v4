@@ -350,6 +350,10 @@ describe('TextView — the text block edits in place as rendered prose', () => {
     it("keeps reading the composer's live published footprint, not the one at mount", async () => {
       shell = document.createElement('div')
       shell.setAttribute('data-part', 'shell')
+      // jsdom does no layout, so a real height would read 0 and clamp the
+      // margin to nothing — mock an 800px scroller, as composer-clearance's
+      // own tests do.
+      shell.getBoundingClientRect = () => ({ height: 800 } as DOMRect)
       shell.style.setProperty(COMPOSER_CLEARANCE_VAR, '125px')
       document.body.appendChild(shell)
       render(<TextEditor data={sample} standIn={null} pressRef={{ current: null }} />)
@@ -363,6 +367,7 @@ describe('TextView — the text block edits in place as rendered prose', () => {
     it('gives scrollThreshold the same live clearance, so the caret never clears the margin without also clearing the rect it scrolls within', async () => {
       shell = document.createElement('div')
       shell.setAttribute('data-part', 'shell')
+      shell.getBoundingClientRect = () => ({ height: 800 } as DOMRect)
       shell.style.setProperty(COMPOSER_CLEARANCE_VAR, '125px')
       document.body.appendChild(shell)
       render(<TextEditor data={sample} standIn={null} pressRef={{ current: null }} />)

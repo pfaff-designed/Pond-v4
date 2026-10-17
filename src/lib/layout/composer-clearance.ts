@@ -26,6 +26,9 @@ export const COMPOSER_TAB_INSET = 0
 /** Room above the card for the ⌘K pill: its 20px inset, its 40px, and 12px of air. */
 export const COMPOSER_TOP_CLEARANCE = 72
 
+/** One text line (prose 17.5px × 1.6 line-height) — the least a caret band may be. */
+export const COMPOSER_MIN_CARET_BAND = 28
+
 /** The footprint the card publishes: its own height plus the inset below it. */
 export const composerFootprintPx = (cardHeight: number, inset = COMPOSER_BOTTOM_INSET): number =>
   cardHeight + inset
@@ -72,22 +75,32 @@ export const composerBottomBound = (viewportHeight: number): number => {
  * properties aren't readable as numbers): the published footprint plus
  * `COMPOSER_CLEARANCE_GAP`, or the card-at-rest footprint plus the gap when
  * nothing has published — the same fallback `composerClearancePadding()`'s
- * calc string uses.
+ * calc string uses. Clamped so it never swallows the whole scroller: maximized
+ * or dragged to its max height, the card's footprint plus the top clearance
+ * can exceed the scroller itself, leaving no band for the caret to sit in.
+ * Clamped against the shell's own height (the page scroller spans the
+ * shell's full column); with no shell there is nothing to clamp against.
  */
 export const composerClearanceMarginPx = (): number => {
   const shell = queryShell()
   const footprint = shell ? publishedFootprintPx(shell) : null
-  if (footprint === null) return composerFootprintPx(COMPOSER_REST_HEIGHT) + COMPOSER_CLEARANCE_GAP
-  return footprint + COMPOSER_CLEARANCE_GAP
+  const margin =
+    footprint === null ? composerFootprintPx(COMPOSER_REST_HEIGHT) + COMPOSER_CLEARANCE_GAP : footprint + COMPOSER_CLEARANCE_GAP
+  if (!shell) return margin
+  const maxMargin = shell.getBoundingClientRect().height - COMPOSER_TOP_CLEARANCE - COMPOSER_MIN_CARET_BAND
+  return Math.min(margin, maxMargin)
 }
 
 /**
  * The inline `scroll-padding` a page's own scroller carries so native
  * caret-follow and `scrollIntoView` land clear of the pill above and the
  * card below — whichever element actually scrolls the page (`<main>`,
- * `PageCanvas`'s own div) reads the same two values.
+ * `PageCanvas`'s own div) reads the same two values. The bottom value is
+ * clamped the same way as `composerClearanceMarginPx`: `scroll-padding`'s `%`
+ * resolves against the scrollport's own height, so `100%` here is the
+ * scroller's height without a shell lookup.
  */
 export const composerScrollPadding = (): { scrollPaddingTop: string; scrollPaddingBottom: string } => ({
   scrollPaddingTop: `${COMPOSER_TOP_CLEARANCE}px`,
-  scrollPaddingBottom: composerClearancePadding(),
+  scrollPaddingBottom: `min(${composerClearancePadding()}, calc(100% - ${COMPOSER_TOP_CLEARANCE + COMPOSER_MIN_CARET_BAND}px))`,
 })

@@ -1019,6 +1019,11 @@ describe('WorkspaceShell — the chrome floats over one canvas', () => {
     // `scrollMargin`'s live getters (KAN-400) track a change made well after
     // creation, not just whatever was published at mount.
     const shell = container.querySelector<HTMLElement>('[data-part="shell"]')!
+    // jsdom does no layout, so the shell's real getBoundingClientRect height
+    // is 0 — mock it to an 800px scroller (composer-clearance.test.ts's own
+    // fixture height) so the KAN-400 caret-band clamp has a real height to
+    // clamp against, matching a real browser's shell.
+    shell.getBoundingClientRect = () => ({ height: 800 } as DOMRect)
     shell.style.setProperty(
       COMPOSER_CLEARANCE_VAR,
       `${composerFootprintPx(COMPOSER_DEFAULT_HEIGHT)}px`
