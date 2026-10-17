@@ -11,6 +11,7 @@
 import {
   chartSuggestions,
   CHART_LABEL,
+  defaultFieldsFor,
   FIELD_WORD,
   fieldTypeEntries,
   footFor,
@@ -18,6 +19,7 @@ import {
   newEntries,
   RECORDS_ARE,
   recordsWord,
+  SOURCE_BLOCKS,
   sourceEntries,
   sourcePickerHeight,
   typeEntries,
@@ -27,7 +29,7 @@ import {
 } from '@/components/molecules/source-entries'
 import { ICON } from '@/components/molecules/slash-entries'
 import { CHART_KINDS } from '@/lib/modules/view/aggregate'
-import { PROPERTY_TYPES } from '@/lib/properties/schema'
+import { DEFAULT_STATUS_OPTIONS, PROPERTY_TYPES } from '@/lib/properties/schema'
 import { boardChartKinds, readHandoff } from './helpers/handoff'
 
 /** `Pond 03` 3a — the 18px/500 term column, straight off the board. */
@@ -218,6 +220,21 @@ describe('new — define a new database', () => {
     expect(add.kind === 'row' && add.icon).toBe(ICON.plus)
   })
 
+  it('a field carrying options hints its labels joined with " · ", not its Pond word', () => {
+    const fields: SourceField[] = [
+      { name: 'title', type: 'text' },
+      { name: 'status', type: 'status', options: DEFAULT_STATUS_OPTIONS.map((label) => ({ label })) },
+    ]
+    expect(shape(newEntries(fields))).toEqual([
+      'G:fields',
+      'title ·text',
+      'status ·to do · doing · done',
+      'field',
+      'G:records are',
+      'SEG',
+    ])
+  })
+
   it('FIELD_WORD covers every one of the engine’s property types — the compiler holds it exhaustive, this holds it lowercase', () => {
     expect(Object.keys(FIELD_WORD).sort()).toEqual([...PROPERTY_TYPES].sort())
     for (const word of Object.values(FIELD_WORD)) expect(word).toBe(word.toLowerCase())
@@ -226,6 +243,43 @@ describe('new — define a new database', () => {
   it('the seg’s two options are the board’s, verbatim and in order', () => {
     expect(RECORDS_ARE.map((o) => o.label)).toEqual(boardSeg(boardSourceBranch()))
     expect(RECORDS_ARE.map((o) => o.value)).toEqual(['pages', 'rows'])
+  })
+})
+
+// ── new — default fields per view kind (KAN-351) ──────────────────────────────
+
+describe('defaultFieldsFor — the fields a new database starts with, per view kind', () => {
+  it('calendar and list start with a `date` field', () => {
+    expect(defaultFieldsFor('calendar')).toEqual([{ name: 'date', type: 'date' }])
+    expect(defaultFieldsFor('list')).toEqual([{ name: 'date', type: 'date' }])
+  })
+
+  it('gantt starts with `start` and `due` date fields', () => {
+    expect(defaultFieldsFor('gantt')).toEqual([
+      { name: 'start', type: 'date' },
+      { name: 'due', type: 'date' },
+    ])
+  })
+
+  it('board starts with a `status` field carrying DEFAULT_STATUS_OPTIONS as labels', () => {
+    expect(defaultFieldsFor('board')).toEqual([
+      {
+        name: 'status',
+        type: 'status',
+        options: DEFAULT_STATUS_OPTIONS.map((label) => ({ label })),
+      },
+    ])
+  })
+
+  it('table, gallery, chart and big-number are unchanged — chart/big-number keep their own flow', () => {
+    expect(defaultFieldsFor('table')).toEqual([])
+    expect(defaultFieldsFor('gallery')).toEqual([])
+    expect(defaultFieldsFor('chart')).toEqual([])
+    expect(defaultFieldsFor('big-number')).toEqual([])
+  })
+
+  it('every SOURCE_BLOCKS kind is covered — no block silently falls through', () => {
+    for (const block of SOURCE_BLOCKS) expect(() => defaultFieldsFor(block)).not.toThrow()
   })
 })
 

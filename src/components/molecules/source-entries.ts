@@ -23,7 +23,7 @@ import { CHART_TYPE_TAG } from '@/lib/modules/chart/chrome'
 import { plural } from '@/lib/modules/block-frame'
 import type { ViewMode } from '@/lib/modules/view/schema'
 import { VIEW_KINDS } from '@/lib/modules/view/kinds'
-import { PROPERTY_TYPES, type PropertyType } from '@/lib/properties/schema'
+import { DEFAULT_STATUS_OPTIONS, PROPERTY_TYPES, type PropertyType } from '@/lib/properties/schema'
 
 import { BOX_HEIGHT, LIST_MAX_VH, SLASH_SIZES } from './picker-chrome'
 import { ICON, type SlashEntry, type SlashIcon } from './slash-entries'
@@ -77,6 +77,12 @@ export interface SourceField {
   id?: string
   name: string
   type: PropertyType
+  /**
+   * Default option labels for a `select`/`status` field (KAN-351) — no ids yet,
+   * the picker hasn't minted any. The host mints one id per option when it
+   * commits the field, same as the field's own id.
+   */
+  options?: readonly { label: string }[]
 }
 
 /**
@@ -297,11 +303,48 @@ export function kindOf(rowId: string): ChartKind | null {
 
 // ── new ────────────────────────────────────────────────────────────────────────
 
+/** {@link DEFAULT_STATUS_OPTIONS} as a new field's `options` shape (KAN-351) — shared
+ *  by a board's default `status` field and a `status`/`select` field added by hand. */
+export const DEFAULT_STATUS_FIELD_OPTIONS: readonly { label: string }[] =
+  DEFAULT_STATUS_OPTIONS.map((label) => ({ label }))
+
+/**
+ * The fields a new database starts with for a view kind (KAN-351): a calendar or
+ * list needs a date to place a record on; a timeline needs both ends; a board
+ * needs a group-by lane, so its `status` field carries {@link DEFAULT_STATUS_OPTIONS}
+ * by default. Table and gallery stay fieldless (title only, added by the caller);
+ * chart and big-number keep their own flow (KAN-109) — unaffected here.
+ */
+export function defaultFieldsFor(block: SourceBlock): SourceField[] {
+  switch (block) {
+    case 'calendar':
+    case 'list':
+      return [{ name: 'date', type: 'date' }]
+    case 'gantt':
+      return [
+        { name: 'start', type: 'date' },
+        { name: 'due', type: 'date' },
+      ]
+    case 'board':
+      return [{ name: 'status', type: 'status', options: DEFAULT_STATUS_FIELD_OPTIONS }]
+    case 'table':
+    case 'gallery':
+    case 'chart':
+    case 'big-number':
+      return []
+  }
+}
+
+/** A field's row hint: its options' labels joined, or `FIELD_WORD` when it has none. */
+function fieldHint(f: SourceField): string {
+  return f.options?.length ? f.options.map((o) => o.label).join(' · ') : FIELD_WORD[f.type]
+}
+
 /** Define a new database: its fields, the faint `field` add row, then `records are` and the seg. */
 export function newEntries(fields: readonly SourceField[]): SourceEntry[] {
   return [
     { kind: 'group', label: 'fields' },
-    ...fields.map((f, i) => row(`field:${i}`, f.name, { hint: FIELD_WORD[f.type] })),
+    ...fields.map((f, i) => row(`field:${i}`, f.name, { hint: fieldHint(f) })),
     row(ADD_FIELD_ID, 'field', { icon: ICON.plus, faint: true }),
     { kind: 'group', label: 'records are' },
     { kind: 'seg' },

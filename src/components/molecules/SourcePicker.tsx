@@ -65,6 +65,8 @@ import {
   ADD_FIELD_ID,
   ALL_CHARTS_ID,
   chartPick,
+  DEFAULT_STATUS_FIELD_OPTIONS,
+  defaultFieldsFor,
   fieldTypeEntries,
   footFor,
   headFor,
@@ -166,7 +168,9 @@ export function SourcePicker({
   )
   // The chosen source: a database, or `null` for the new one being defined.
   const [source, setSource] = useState<SourceDatabase | null>(defaultSource ?? null)
-  const [fields, setFields] = useState<readonly SourceField[]>([])
+  // Prefilled per view kind (KAN-351), so `new database — <page>` → ↵ opens the
+  // `new` step already usable rather than empty.
+  const [fields, setFields] = useState<readonly SourceField[]>(() => defaultFieldsFor(block))
   // An existing database's fields, keyed to the database they were read for, so
   // a change of source reads as "not loaded yet" without an effect writing state.
   const [loaded, setLoaded] = useState<{ id: string; fields: readonly SourceField[] } | null>(null)
@@ -219,6 +223,7 @@ export function SourcePicker({
       if (!item) return
       if (item.id === NEW_DATABASE_ID) {
         setSource(null)
+        setFields(defaultFieldsFor(block))
         go('new')
         return
       }
@@ -242,7 +247,12 @@ export function SourcePicker({
       if (kind) finish(chartPick(kind, source ? sourceFields : fields))
     } else if (step === 'field-type') {
       if (!item) return
-      setFields((f) => [...f, { name: nextFieldName(f), type: item.id as SourceField['type'] }])
+      const type = item.id as SourceField['type']
+      // A board is never laneless: any status/select field added here carries
+      // the three lanes by default, same as `defaultFieldsFor`'s own board field.
+      const options =
+        type === 'status' || type === 'select' ? DEFAULT_STATUS_FIELD_OPTIONS : undefined
+      setFields((f) => [...f, { name: nextFieldName(f), type, ...(options ? { options } : {}) }])
       go('new')
     } else if (item?.id === ADD_FIELD_ID) {
       go('field-type')

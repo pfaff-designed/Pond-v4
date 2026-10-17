@@ -265,6 +265,27 @@ export function addDateField(
   return [...schema, { id: mintId(), name, type: 'date' }]
 }
 
+/** The three lanes a board never ships without (KAN-351): `addStatusField`'s
+ *  default options, and the board's own `add a status field` remedy. */
+export const DEFAULT_STATUS_OPTIONS = ['to do', 'doing', 'done'] as const
+
+/**
+ * Append a `status`-typed property to `schema` (KAN-351: the group-by-less board's
+ * own remedy, mirroring {@link addDateField}). Named `status`, or `status 2` on a
+ * name collision — same single-fallback convention as `addDateField`. Carries
+ * {@link DEFAULT_STATUS_OPTIONS} as minted `{id, label}` pairs so the board never
+ * lands laneless. `mintId` mints both the field's id and each option's id.
+ */
+export function addStatusField(
+  schema: PropertySchema,
+  mintId: () => string = () => crypto.randomUUID()
+): PropertySchema {
+  const name = schema.some((d) => d.name === 'status') ? 'status 2' : 'status'
+  const id = mintId()
+  const options = DEFAULT_STATUS_OPTIONS.map((label) => ({ id: mintId(), label }))
+  return [...schema, { id, name, type: 'status', options }]
+}
+
 /**
  * Remove one property by id (KAN-292: `addDateField`'s undo). Undoing must drop
  * only the field it added, read fresh off the CURRENT schema at undo time — not

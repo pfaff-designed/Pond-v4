@@ -67,9 +67,10 @@ import {
   GANTT_TRACK_STYLE,
 } from './gantt-shared'
 import { PondBlockEmpty } from '@/components/organisms/PondBlock'
-import { GANTT_EMPTY_LINE, type ViewConfigPatch } from './kinds'
+import { BOARD_EMPTY_LINE, GANTT_EMPTY_LINE, type ViewConfigPatch } from './kinds'
 import {
   addDateField,
+  addStatusField,
   coerceValue,
   removeField,
   ROW_TYPE,
@@ -90,6 +91,35 @@ import { CollectionCalendar } from './collection-calendar'
 import { useRecordSelection } from './use-record-selection'
 import { ViewBar, type ViewBarView } from '@/components/molecules/ViewBar'
 import { useBlockRow } from '../block-row-context'
+
+/**
+ * One field-add remedy (KAN-292's date field, KAN-351's status field): builds off
+ * `schemaRef.current`, not the `schema` state closure, which two clicks fired
+ * before React re-renders would both still see as stale — writes `schemaRef.current`
+ * itself, synchronously, before `updateSchema`, so a second same-tick click reads
+ * the field already there via `alreadyApplies` and no-ops instead of adding a
+ * duplicate field and staging a second undo toast.
+ */
+function runFieldRemedy(
+  schemaRef: { current: PropertySchema | null },
+  updateSchema: (next: PropertySchema) => void,
+  deletionUndo: NonNullable<ReturnType<typeof useOptionalDeletionUndo>>,
+  addField: (schema: PropertySchema) => PropertySchema,
+  alreadyApplies: (schema: PropertySchema) => boolean,
+  message: string
+): void {
+  const schema = schemaRef.current
+  if (!schema || alreadyApplies(schema)) return
+  const next = addField(schema)
+  const addedId = next[next.length - 1].id
+  schemaRef.current = next
+  updateSchema(next)
+  deletionUndo.stageUndo({
+    message,
+    scope: 'block',
+    undo: () => updateSchema(removeField(schemaRef.current ?? next, addedId)),
+  })
+}
 
 // ── Registry entry: fetch, then draw ──────────────────────────────────────────
 
@@ -124,16 +154,30 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
   }, [schema])
   const handleAddDateField =
     editable && schema && deletionUndo
-      ? () => {
-          const next = addDateField(schema)
-          const addedId = next[next.length - 1].id
-          updateSchema(next)
-          deletionUndo.stageUndo({
-            message: 'Added a date field',
-            scope: 'block',
-            undo: () => updateSchema(removeField(schemaRef.current ?? next, addedId)),
-          })
-        }
+      ? () =>
+          runFieldRemedy(
+            schemaRef,
+            updateSchema,
+            deletionUndo,
+            addDateField,
+            (s) => s.some((d) => d.type === 'date'),
+            'Added a date field'
+          )
+      : undefined
+
+  // KAN-351: the board's own remedy for a group-by-less schema, mirroring the
+  // date remedy above — same `runFieldRemedy` seam, one field added.
+  const handleAddStatusField =
+    editable && schema && deletionUndo
+      ? () =>
+          runFieldRemedy(
+            schemaRef,
+            updateSchema,
+            deletionUndo,
+            addStatusField,
+            (s) => s.some((d) => d.type === 'status' || d.type === 'select'),
+            'Added a status field'
+          )
       : undefined
 
   // Config edits (chart/big-number setup) rewrite the persisted view block through the
@@ -177,6 +221,7 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
       onOpenRow={handleOpenRow}
       chartProvenance={chartProvenance}
       onAddDateField={handleAddDateField}
+      onAddStatusField={handleAddStatusField}
     />
   )
 }
@@ -221,6 +266,10 @@ export interface CollectionViewProps {
    *  calendar/list/gantt view whose kind needs one and doesn't have it. Absent when
    *  not `editable` (Storybook, a diff/proposal render) — no undrawn affordance there. */
   onAddDateField?: () => void
+  /** KAN-351: mint a `status` field onto this collection's schema, offered by a
+   *  board whose schema has no status/select property to group by. Absent when
+   *  not `editable` (Storybook, a diff/proposal render) — no undrawn affordance there. */
+  onAddStatusField?: () => void
 }
 
 export function CollectionView({
@@ -240,6 +289,7 @@ export function CollectionView({
   onOpenRow,
   chartProvenance,
   onAddDateField,
+  onAddStatusField,
 }: CollectionViewProps) {
   // What the page canvas keys this view's peek and orange pill by.
   const instanceKey = useId()
@@ -373,6 +423,7 @@ export function CollectionView({
           onAddRow={onAddRow}
           onRenameRow={onRenameRow}
           onOpenRow={onOpenRow}
+          onAddStatusField={onAddStatusField}
         />
       ) : activeConfig.mode === 'list' ? (
         <CollectionList
@@ -667,6 +718,7 @@ function CollectionBoard({
   onAddRow,
   onRenameRow,
   onOpenRow,
+  onAddStatusField,
 }: {
   /** The view block's id — what the page canvas keys its one peek and one orange pill by. */
   viewKey: string
@@ -678,6 +730,9 @@ function CollectionBoard({
   onAddRow?: (values?: Record<string, PropertyValue>) => Promise<string | null>
   onRenameRow?: (rowId: string, title: string) => void
   onOpenRow?: (rowId: string) => void
+  /** KAN-351: mint a `status` field, offered by a board whose schema has none to
+   *  group by. Absent when not `editable` — the bare notice stands in instead. */
+  onAddStatusField?: () => void
 }) {
   const groupDef = pickGroupDef(schema, groupBy)
   const grouped = useMemo(() => groupRows(rows, schema, groupDef?.id), [rows, schema, groupDef])
@@ -727,7 +782,19 @@ function CollectionBoard({
   )
 
   if (!grouped) {
-    return <ViewNotice>This board needs a group-by (select or status) property.</ViewNotice>
+    // KAN-351: an editable host offers the remedy inline, same box as the
+    // calendar/list/gantt's own "add a date field" (#260's `box`, action slot);
+    // a read-only/Storybook render has no handler, so the bare notice stands.
+    return onAddStatusField ? (
+      <PondBlockEmpty
+        box="box"
+        line={BOARD_EMPTY_LINE}
+        action="add a status field"
+        onAction={onAddStatusField}
+      />
+    ) : (
+      <ViewNotice>{BOARD_EMPTY_LINE}</ViewNotice>
+    )
   }
   const { def: boardDef } = grouped
 

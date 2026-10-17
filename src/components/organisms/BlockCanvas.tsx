@@ -908,7 +908,17 @@ export function BlockCanvas({
         getSupabase(),
         {
           title: pick.title,
-          schema: pick.fields.map((f) => ({ id: crypto.randomUUID(), name: f.name, type: f.type })),
+          // A picked field's `options` (a board's default `status` lanes, or any
+          // status/select the person added in the picker) carry no ids yet — the
+          // picker never writes a database, only the host minting one here does.
+          schema: pick.fields.map((f) => ({
+            id: crypto.randomUUID(),
+            name: f.name,
+            type: f.type,
+            ...(f.options
+              ? { options: f.options.map((o) => ({ id: crypto.randomUUID(), label: o.label })) }
+              : {}),
+          })),
           mode: pick.mode,
           chart,
           pondId,
