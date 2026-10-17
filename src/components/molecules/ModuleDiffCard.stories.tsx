@@ -3,6 +3,7 @@ import { expect, fn, userEvent, within } from 'storybook/test'
 
 import { ModuleDiffCard } from './ModuleDiffCard'
 import type { ChangePreview } from '@/lib/modules/preview'
+import { formatChord } from '@/lib/shell-commands'
 
 /** Board 6c frame 2: "move the electrician to the week of the 6th." */
 const edit: ChangePreview = {
@@ -498,8 +499,8 @@ async function assertDiffCardValues(root: HTMLElement, theme: 'paper' | 'ink') {
   const row = accept.parentElement!
   await expect(getComputedStyle(row).columnGap).toBe('8px')
   const items = [...row.children].map((el) => el.textContent)
-  await expect(items).toEqual(['accept', '⌘↵', 'request changes', 'reject', '', 'schedule'])
-  const hint = within(row as HTMLElement).getByText('⌘↵')
+  await expect(items).toEqual(['accept', formatChord('mod+enter'), 'request changes', 'reject', '', 'schedule'])
+  const hint = within(row as HTMLElement).getByText(formatChord('mod+enter'))
   await expect(getComputedStyle(hint).fontSize).toBe('10.5px')
   await expect(getComputedStyle(hint).marginLeft).toBe('-2px')
   await expect(getComputedStyle(hint).marginRight).toBe('4px')
