@@ -169,8 +169,9 @@ function foldLabel(label: string): FoldedLabel {
   const text: string[] = []
   const map: number[] = []
   source.forEach((ch, i) => {
-    for (const folded of ch.normalize('NFD').replace(COMBINING_MARKS, '').toLowerCase()) {
-      text.push(folded)
+    const folded = ch.normalize('NFD').replace(COMBINING_MARKS, '').toLowerCase()
+    for (let u = 0; u < folded.length; u++) {
+      text.push(folded[u])
       map.push(i)
     }
   })
