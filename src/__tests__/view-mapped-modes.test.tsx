@@ -705,6 +705,19 @@ describe('CollectionGallery — hover, selection and the peek (KAN-358)', () => 
     expect(a.dataset.state).toBe('selected')
     expect(screen.getByLabelText('Record: plant 0')).toBeInTheDocument()
   })
+
+  it('↵ on an unselected card selects it; ↵ again opens its page', async () => {
+    const { container, onOpenRow } = renderEditableGallery()
+    const wrapper = container.querySelector<HTMLElement>('[data-row-focus="pl0"]')!
+
+    wrapper.focus()
+    await userEvent.keyboard('{Enter}')
+    expect(screen.getByLabelText('Record: plant 0')).toBeInTheDocument()
+    expect(onOpenRow).not.toHaveBeenCalled()
+
+    await userEvent.keyboard('{Enter}')
+    expect(onOpenRow).toHaveBeenCalledWith('pl0')
+  })
 })
 
 // ── number ──────────────────────────────────────────────────────────────────────

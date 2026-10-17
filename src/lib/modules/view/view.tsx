@@ -1139,8 +1139,24 @@ function CollectionGallery({
 }) {
   const [now] = useState(() => new Date())
   const [hoveredId, setHoveredId] = useState<string | null>(null)
-  const { selectedRow, rowProps, keyboardProps } = useRecordSelection(rows, viewKey)
+  const { selectedRow, select, rowProps, keyboardProps } = useRecordSelection(rows, viewKey)
   const done = useDoneToggle({ schema, editable, onEdit })
+
+  // ↵ on the card's own tab stop (not an inner control's) selects it; ↵ again on the
+  // already-selected card opens its page — same split as `CollectionTable`'s
+  // `handleRowKeyDown`.
+  function handleCardKeyDown(rowId: string, e: React.KeyboardEvent<HTMLDivElement>) {
+    if (e.target !== e.currentTarget) return
+    if (e.key === 'Enter' && rowId === selectedRow?.id) {
+      e.preventDefault()
+      onOpenRow?.(rowId)
+      return
+    }
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      select({ id: rowId, via: 'keyboard' })
+    }
+  }
 
   return (
     <div>
@@ -1155,6 +1171,7 @@ function CollectionGallery({
               className="contents"
               {...rowProps(row.id)}
               {...keyboardProps(row.id)}
+              onKeyDown={(e) => handleCardKeyDown(row.id, e)}
               onMouseEnter={() => setHoveredId(row.id)}
               onMouseLeave={() => setHoveredId((h) => (h === row.id ? null : h))}
             >
