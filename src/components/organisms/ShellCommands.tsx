@@ -59,6 +59,7 @@ import { useCommandPath } from '@/lib/layout/command-path'
 import { PLACEMENT } from '@/lib/layout/shell-placement'
 import { useZenCommands } from '@/lib/layout/use-zen-commands'
 import { workspaceUrl } from '@/lib/pages/nav'
+import { flushPendingPageSave } from '@/lib/pages/page-flush'
 import { newPageParent, paletteItems, paletteScope, pondItems } from '@/lib/pages/palette-items'
 import { readRecentPageIds, writeRecent } from '@/lib/pages/recent-pages'
 import { usePaletteRecords } from '@/lib/pages/use-palette-records'
@@ -138,7 +139,14 @@ export function ShellCommands() {
     (direction: 'undo' | 'redo') => {
       if (pondId === null) return
       const stepId = ++stepCounterRef.current
-      const step = direction === 'undo' ? sessionUndo.undo(pondId) : sessionUndo.redo(pondId)
+      // The open page's own edit may still be sitting in its save debounce (same
+      // KAN-302 hazard AITerminal's send guards against) — a step read before it
+      // lands would undo the wrong thing, then have the stale save land on top.
+      // `undefined` means nothing was pending, so the step stays in this tick —
+      // existing callers assert `sessionUndo.undo`/`redo` synchronously after a chord.
+      const pendingFlush = flushPendingPageSave(currentNodeId)
+      const runStep = () => (direction === 'undo' ? sessionUndo.undo(pondId) : sessionUndo.redo(pondId))
+      const step = pendingFlush ? pendingFlush.then(runStep) : runStep()
       step
         .then((result) => {
           applyUndoOutcome(direction, result, queryClient)
