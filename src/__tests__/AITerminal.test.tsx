@@ -115,6 +115,7 @@ import { useZen, ZenComposerChrome, ZenProvider } from '@/lib/layout/zen'
 import { COMPOSER_CLEARANCE_VAR } from '@/lib/layout/composer-clearance'
 import { writeAcceptedChanges } from '@/lib/pages/accept'
 import { resolveAcceptTarget } from '@/lib/conversation/resolutions'
+import { clearSelection, selectWord } from './helpers/selection'
 
 const mockListPages = listPages as jest.Mock
 const mockGetPage = getPage as jest.Mock
@@ -1287,6 +1288,40 @@ describe('AITerminal — the path, end to end (KAN-341, PATH_STEPS 1-5)', () => 
     const [regenerateOptions] = mockRegenerate.mock.calls[0]
     expect(regenerateOptions.body.openPageContext).toBe(sentBody.openPageContext)
     expect(regenerateOptions.body.references).toEqual(sentBody.references)
+  })
+})
+
+describe('AITerminal — ask-from-selection at the root uses the home id (KAN-341)', () => {
+  afterEach(() => clearSelection())
+
+  it('appends a passage reference stamped with the home id, not null', async () => {
+    const user = userEvent.setup()
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <div data-block-id="home-block-1">hello garden</div>
+        <AITerminal />
+      </QueryClientProvider>
+    )
+    await waitReady()
+
+    selectWord(screen.getByText('hello garden'), 'garden')
+    await user.click(await screen.findByRole('button', { name: 'ask pond' }))
+
+    await user.type(screen.getByRole('textbox'), 'what is this?')
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1))
+    const [, { body }] = mockSendMessage.mock.calls[0]
+    expect(body.references).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          pageId: 'home-1',
+          blockId: 'home-block-1',
+          quotedText: 'garden',
+        }),
+      ])
+    )
   })
 })
 

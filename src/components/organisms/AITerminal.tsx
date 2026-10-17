@@ -911,12 +911,12 @@ export function AITerminal() {
       // to anchor a reference to — nothing is appended, but the composer still
       // focuses so typing a question works either way.
       const { blockId } = ctx
-      if (nodeId && blockId) {
+      if (pageId && blockId) {
         const range =
           ctx.from !== undefined && ctx.to !== undefined ? { from: ctx.from, to: ctx.to } : null
         setReferences((prev) => [
           ...prev,
-          { id: crypto.randomUUID(), pageId: nodeId, blockId, range, quotedText: ctx.text },
+          { id: crypto.randomUUID(), pageId, blockId, range, quotedText: ctx.text },
         ])
       }
       if (inZen) {
@@ -925,7 +925,7 @@ export function AITerminal() {
       }
       requestAnimationFrame(() => inputRef.current?.focus())
     },
-    [nodeId, inZen, composerOpen, askComposer]
+    [pageId, inZen, composerOpen, askComposer]
   )
 
   // The refs row's marks come off the same `pagesKey()` cache the rail and
@@ -2483,12 +2483,12 @@ export function AITerminal() {
       // A view-originated request names its own target page (KAN-96) so the
       // revised diff lands there, not on whatever node happens to be open —
       // e.g. the change log page itself. A thread-originated card omits it
-      // and keeps riding the ambient nodeId, since it's already on its page.
+      // and keeps riding the open page (pageId), since it's already on its page.
       // The stamping effect reads this same page id when it stamps the
       // revised batch, so the card never reads 'revised edit — change log'.
       pendingRevisionTargetPageId.current = targetPageId ?? null
       const body = {
-        nodeId: targetPageId ?? nodeId,
+        nodeId: targetPageId ?? pageId,
         nodeType: targetPageId ? 'page' : nodeType,
         pondId,
         resolutions: projectResolutions(next),
@@ -2509,7 +2509,7 @@ export function AITerminal() {
       clearError?.()
       sendMessage({ text: note, metadata }, { body })
     },
-    [isReady, proposals, logDecision, nodeId, nodeType, pondId, sendMessage, clearError]
+    [isReady, proposals, logDecision, pageId, nodeType, pondId, sendMessage, clearError]
   )
 
   // The proposed view's card has no mounted thread of its own to request
@@ -3048,7 +3048,7 @@ export function AITerminal() {
             body: JSON.stringify({
               question: opts.question,
               prose: opts.prose,
-              openPageId: nodeId,
+              openPageId: pageId,
               // Ids, not the chip titles in `opts.read` — a title can collide
               // with an unrelated page of the same name (two "Untitled"s).
               read: opts.readIds,
@@ -3089,6 +3089,7 @@ export function AITerminal() {
     },
     [
       nodeId,
+      pageId,
       allPages,
       pageProposals,
       getSupabase,
