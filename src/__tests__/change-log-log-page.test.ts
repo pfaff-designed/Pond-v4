@@ -90,6 +90,29 @@ describe('buildLogRows', () => {
     expect(group.rows[0].label).not.toBe(describeChange(edit, null))
   })
 
+  it('labels an edit_schema row in Pond words, not a blank cell or a bare arrow', () => {
+    // `edit_schema`'s before/after are PropertySchema arrays of `{id: string,
+    // ...}`, which satisfies `readBlockSnapshot`'s loose shape check by
+    // coincidence (KAN-380) — this pins the list row reading through
+    // `describeChange`'s `edit_schema` case instead.
+    const rename = record({
+      action: 'edit_schema',
+      before: [{ id: 'f1', name: 'field 2', type: 'text' }],
+      after: [{ id: 'f1', name: 'due', type: 'text' }],
+    })
+    const deleted = record({
+      id: 'r2',
+      action: 'edit_schema',
+      before: [{ id: 'f1', name: 'due', type: 'text' }],
+      after: [],
+    })
+    const [group] = buildLogRows([rename, deleted], new Map(), NOW)
+    const byId = new Map(group.rows.map((r) => [r.record.id, r]))
+
+    expect(byId.get('rec-1')?.label).toBe('renamed field field 2 to due')
+    expect(byId.get('r2')?.label).toBe('deleted field due')
+  })
+
   it('resolves the page column from pageTitleById, falling back for memory and deleted pages', () => {
     const onAPage = record({ id: 'r1', targetPageId: 'page-1' })
     const memoryNote = record({ id: 'r2', action: 'memory_note', targetPageId: null })

@@ -47,6 +47,19 @@ export function changeLogUrl(): string {
  * snapshots — `null` when neither side is a block array (a collection-tool
  * record) or nothing differs.
  *
+ * `edit_schema` is excluded up front rather than left to `readBlockSnapshot`'s
+ * own shape check: its before/after are each a whole `PropertySchema` — an
+ * array of `{id: string, ...}` property defs — which satisfies that check by
+ * coincidence (a `PropertyDef` carries a string `id` just like a `Block`
+ * does) and was being read as the page's own blocks, producing a bogus
+ * "before → after" off two property defs instead of falling through to
+ * {@link describeChange}'s `edit_schema` case. Every OTHER non-block action
+ * (`add_row`/`edit_row`'s `RowSnapshot`, `edit_glyph`/`edit_area_role`'s bare
+ * id) already fails the shape check on its own shape, so this is the one
+ * action that needs an explicit guard; `undo`/`redo` of a real block edit
+ * must still reach the structural check below, which is why this is not a
+ * blanket {@link BLOCK_ACTIONS} gate.
+ *
  * `targetBlockId` is tried FIRST but is not load-bearing: `propose.ts` never
  * sets it for a `propose_changes` call (the only tool that snapshots real
  * blocks), so every composer-made edit's `targetBlockId` is `null` in
@@ -57,6 +70,7 @@ export function changeLogUrl(): string {
  * `before` order.
  */
 function resolvedBlockChange(record: ChangeLogRecord): ChangePreview | null {
+  if (record.action === 'edit_schema') return null
   const beforeBlocks = readBlockSnapshot(record.before)
   const afterBlocks = readBlockSnapshot(record.after)
   if (beforeBlocks === null && afterBlocks === null) return null

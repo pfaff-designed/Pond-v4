@@ -14,6 +14,7 @@ import { useCollectionRows } from '@/lib/modules/view/use-collection-rows'
 import { PondContext, type PondContextValue } from '@/lib/pond/context'
 import type { ChangeLogRecord } from '@/lib/change-log/types'
 import type { Pond } from '@/lib/pond/client'
+import type { PropertySchema } from '@/lib/properties/schema'
 
 jest.mock('@/lib/supabase/client', () => ({
   createClient: () => ({
@@ -304,6 +305,48 @@ describe('useCollectionRows — record edits are logged by pause', () => {
 
     await waitFor(() => expect(spy).toHaveBeenCalled(), afterThePause)
     expect(result.current.rows[0].values).toEqual({ status: 'weeknight', stage: 'o-want' })
+    spy.mockRestore()
+  })
+})
+
+describe('useCollectionRows — a schema edit is logged at once, not by pause (KAN-380)', () => {
+  const before: PropertySchema = [{ id: 'status', name: 'status', type: 'text' }]
+  const after: PropertySchema = [{ id: 'status', name: 'due', type: 'text' }]
+
+  it('writes one edit_schema record immediately — no pause to wait out', async () => {
+    activePond = pondNamed('pond-1')
+    const { result } = await mounted()
+
+    act(() => result.current.logSchemaEdit(before, after))
+
+    await waitFor(() => expect(mockAppendOwnEdit).toHaveBeenCalledTimes(1))
+    expect(mockAppendOwnEdit.mock.calls[0][1]).toEqual({
+      userId: 'user-1',
+      pondId: 'pond-1',
+      action: 'edit_schema',
+      targetPageId: 'col-1',
+      before,
+      after,
+    })
+  })
+
+  it('writes nothing when before and after are the same schema', async () => {
+    const { result } = await mounted()
+
+    act(() => result.current.logSchemaEdit(before, before))
+    await waitOutThePause()
+
+    expect(mockAppendOwnEdit).not.toHaveBeenCalled()
+  })
+
+  it('a failed append fails nothing the person sees', async () => {
+    mockAppendOwnEdit.mockRejectedValueOnce(new Error('rls'))
+    const spy = jest.spyOn(console, 'error').mockImplementation(() => {})
+    const { result } = await mounted()
+
+    act(() => result.current.logSchemaEdit(before, after))
+
+    await waitFor(() => expect(spy).toHaveBeenCalled())
     spy.mockRestore()
   })
 })

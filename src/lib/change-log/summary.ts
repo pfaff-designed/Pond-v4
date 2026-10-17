@@ -17,6 +17,7 @@ import { blockLabel } from '@/lib/modules/types'
 import type { TableBlock } from '@/lib/modules/table/schema'
 import { jsonEqual } from '@/lib/json-equal'
 import { OPENS_ON_A_HEADING } from '@/lib/templates/summary'
+import { propertySchemaSchema, type PropertySchema } from '@/lib/properties/schema'
 import { readBlockSnapshot } from './revert-plan'
 import type { RowSnapshot, TrashSnapshot } from './types'
 
@@ -266,4 +267,42 @@ export const readTrashSnapshot = (value: unknown): TrashSnapshot | null => {
 export const summarizeTrash = (value: unknown, verb: 'deleted' | 'restored'): string => {
   const title = readTrashSnapshot(value)?.title.trim()
   return title ? `${verb} ${title}` : verb
+}
+
+const readPropertySchema = (value: unknown): PropertySchema | null => {
+  const parsed = propertySchemaSchema.safeParse(value)
+  return parsed.success ? parsed.data : null
+}
+
+/**
+ * `renamed field field 2 to due` / `deleted field due` / `added field due` —
+ * the one def that differs between an `edit_schema` record's before and
+ * after (KAN-380: the table header menu's rename and delete each write
+ * exactly one). Falls back to a bare verb when either side isn't a well-formed
+ * schema, or the diff is wider than a single field.
+ */
+export const summarizeSchemaEdit = (beforeValue: unknown, afterValue: unknown): string => {
+  const before = readPropertySchema(beforeValue)
+  const after = readPropertySchema(afterValue)
+  if (before === null || after === null) return 'edited the fields'
+
+  const beforeById = new Map(before.map((def) => [def.id, def]))
+  const afterById = new Map(after.map((def) => [def.id, def]))
+  const added = after.filter((def) => !beforeById.has(def.id))
+  const removed = before.filter((def) => !afterById.has(def.id))
+  const renamed = after.filter((def) => {
+    const prior = beforeById.get(def.id)
+    return prior !== undefined && prior.name !== def.name
+  })
+
+  if (removed.length === 1 && added.length === 0 && renamed.length === 0) {
+    return `deleted field ${removed[0].name}`
+  }
+  if (added.length === 1 && removed.length === 0 && renamed.length === 0) {
+    return `added field ${added[0].name}`
+  }
+  if (renamed.length === 1 && added.length === 0 && removed.length === 0) {
+    return `renamed field ${beforeById.get(renamed[0].id)?.name} to ${renamed[0].name}`
+  }
+  return 'edited the fields'
 }
