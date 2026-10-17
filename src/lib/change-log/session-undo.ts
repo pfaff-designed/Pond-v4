@@ -59,6 +59,18 @@ type StackStep = HistoryStep | PendingHistoryStep
 const isPending = (step: StackStep): step is PendingHistoryStep => !Array.isArray(step.recordIds)
 
 /**
+ * Whether a pending step's `recordIds` had already resolved before THIS press
+ * started popping it, set by a `.then()` attached the moment `rememberPending`
+ * pushes it — not by awaiting `recordIds` at pop time, which would always read
+ * as "settled" once we're past the await. A step still genuinely in flight when
+ * the press reaches it (false here) resolving to nothing written means the
+ * press's own target action made nothing, so it must not fall through to an
+ * older, unrelated step; a step that was already dead on the stack before the
+ * press ever touched it (true here) is safe to skip transparently.
+ */
+const pendingSettled = new WeakMap<PendingHistoryStep, boolean>()
+
+/**
  * The step object `rememberPending` just pushed, held by reference — a caller
  * that stages its own undo control (a toast) can ask `isTopUndo` whether THIS
  * step is still what a ⌘Z would hit, rather than blindly taking the current
@@ -214,6 +226,7 @@ export const createSessionUndo = (
         // not stall every later ⌘Z/⇧⌘Z behind it in the queue.
         let step: HistoryStep
         if (isPending(taken)) {
+          const settledBeforePress = pendingSettled.get(taken) === true
           let recordIds: readonly string[] | null
           try {
             recordIds = await withTimeout(taken.recordIds, timeoutMs)
@@ -221,7 +234,10 @@ export const createSessionUndo = (
             putTakenBack(taken)
             throw err
           }
-          if (!recordIds || recordIds.length === 0) continue
+          if (!recordIds || recordIds.length === 0) {
+            if (settledBeforePress) continue
+            return { outcome: 'empty' }
+          }
           step = {
             pondId: taken.pondId,
             recordIds,
@@ -299,6 +315,11 @@ export const createSessionUndo = (
       promise.then(clear, clear)
     },
     rememberPending: (step) => {
+      pendingSettled.set(step, false)
+      step.recordIds.then(
+        () => pendingSettled.set(step, true),
+        () => pendingSettled.set(step, true)
+      )
       rememberStep(step)
       return step
     },

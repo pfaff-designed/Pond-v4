@@ -612,10 +612,14 @@ describe('createSessionUndo', () => {
       expect(store.getSnapshot(POND).canUndo).toBe(false)
     })
 
-    it('falls through to the real step beneath a pending one that resolves to nothing written', async () => {
+    it('falls through to the real step beneath a pending one that resolves to nothing written, if it had already settled before the press', async () => {
       const { store, run } = makeStore()
       store.remember({ pondId: POND, recordIds: ['older'] })
-      store.rememberPending({ pondId: POND, recordIds: Promise.resolve(null) })
+      const resolved = Promise.resolve(null)
+      store.rememberPending({ pondId: POND, recordIds: resolved })
+      // Let the pending step's own `.then` land before pressing undo, so this
+      // press finds it already settled — the scenario the fall-through covers.
+      await resolved
 
       const outcome = await store.undo(POND)
 
@@ -623,6 +627,33 @@ describe('createSessionUndo', () => {
       expect(run.undo).toHaveBeenCalledTimes(1)
       expect(run.undo).toHaveBeenCalledWith({ pondId: POND, recordIds: ['older'] })
       expect(store.getSnapshot(POND).canUndo).toBe(false)
+    })
+
+    it('does not fall through to an older step when the press itself finds the step still pending and it resolves to nothing written', async () => {
+      const { store, run } = makeStore()
+      store.remember({ pondId: POND, recordIds: ['typing-a'] })
+      let resolveMove: (ids: readonly string[] | null) => void = () => {}
+      const movePending = new Promise<readonly string[] | null>((resolve) => {
+        resolveMove = resolve
+      })
+      store.rememberPending({ pondId: POND, recordIds: movePending })
+
+      // ⌘Z at once: this press reaches the move's step while it is still in
+      // flight — its save is then refused, resolving to nothing written.
+      const outcome = store.undo(POND)
+      await flush()
+      expect(run.undo).not.toHaveBeenCalled()
+      resolveMove(null)
+
+      await expect(outcome).resolves.toEqual({ outcome: 'empty' })
+      expect(run.undo).not.toHaveBeenCalled()
+      // The typing step beneath it is untouched by this press.
+      expect(store.getSnapshot(POND).canUndo).toBe(true)
+      expect(store.getSnapshot(POND).topUndoRecordIds).toEqual(['typing-a'])
+
+      const second = await store.undo(POND)
+      expect(second).toMatchObject({ outcome: 'done', step: { pondId: POND, recordIds: ['typing-a'] } })
+      expect(run.undo).toHaveBeenCalledWith({ pondId: POND, recordIds: ['typing-a'] })
     })
 
     describe('a hung pending step', () => {
