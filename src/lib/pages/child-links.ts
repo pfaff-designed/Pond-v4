@@ -149,6 +149,30 @@ export function removeLinksTo(
 }
 
 /**
+ * Pure reinsert for `removeLinksTo`'s output (KAN-448). Each `RemovedLink` is
+ * replayed in order: skip if a link to that page already exists anywhere
+ * (`appendChildLink`'s no-duplicate rule); else reinsert right after the
+ * saved `beforeId` if it's still present — a neighbour id survives reordering
+ * elsewhere on the page, so this is the main branch even when the link
+ * itself was moved before its parent was trashed; else fall back to the
+ * saved `index`, clamped to the current length, when `beforeId` is `null`
+ * or its block is gone.
+ */
+export function restoreLinks(blocks: Block[], removed: RemovedLink[]): Block[] {
+  return removed.reduce((current, entry) => {
+    const pageId = entry.block.type === 'page-link' ? entry.block.pageId : null
+    const hasLink = current.some((block) => block.type === 'page-link' && block.pageId === pageId)
+    if (hasLink) return current
+
+    const beforeIndex =
+      entry.beforeId === null ? -1 : current.findIndex((block) => block.id === entry.beforeId)
+    const insertAt =
+      beforeIndex === -1 ? Math.min(Math.max(entry.index, 0), current.length) : beforeIndex + 1
+    return [...current.slice(0, insertAt), entry.block, ...current.slice(insertAt)]
+  }, blocks)
+}
+
+/**
  * Stamp `props.childLinksMigrated` on the `['page', pageId]` query cache, so
  * the upgrade effect's own-page cache read sees the stamp at once rather than
  * only after `markChildLinksMigrated`'s DB write resolves — otherwise a

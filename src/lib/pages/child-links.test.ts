@@ -1,6 +1,9 @@
-import { appendChildLink, appendChildLinkToParent, removeLinksTo } from './child-links'
+import { appendChildLink, appendChildLinkToParent, removeLinksTo, restoreLinks } from './child-links'
 import type { Block } from '@/lib/modules/content'
 import type { PondPage } from './client'
+
+const link = (id: string, pageId: string): Block => ({ id, type: 'page-link', pageId })
+const text = (id: string): Block => ({ id, type: 'text', content: id })
 
 const mockGetPage = jest.fn()
 jest.mock('./client', () => ({
@@ -121,9 +124,6 @@ describe('appendChildLinkToParent', () => {
 })
 
 describe('removeLinksTo', () => {
-  const link = (id: string, pageId: string): Block => ({ id, type: 'page-link', pageId })
-  const text = (id: string): Block => ({ id, type: 'text', content: id })
-
   it('removes a link that is the only block', () => {
     const blocks = [link('b1', 'child-1')]
     const { blocks: next, removed } = removeLinksTo(blocks, new Set(['child-1']), 'parent-1')
@@ -188,5 +188,65 @@ describe('removeLinksTo', () => {
     const { blocks: next, removed } = removeLinksTo(blocks, new Set(['child-1']), 'parent-1')
     expect(next).toBe(blocks)
     expect(removed).toEqual([])
+  })
+})
+
+describe('restoreLinks', () => {
+  it('reinserts at the exact original index when the neighbours are untouched', () => {
+    const removedLink = link('b2', 'child-1')
+    const blocks = [text('b1'), text('b3')]
+    const next = restoreLinks(blocks, [
+      { parentId: 'parent-1', block: removedLink, index: 1, beforeId: 'b1' },
+    ])
+    expect(next).toEqual([blocks[0], removedLink, blocks[1]])
+  })
+
+  it('reinserts after the same beforeId, now at a shifted index, when a block was inserted ahead of it since removal', () => {
+    const removedLink = link('b2', 'child-1')
+    const blocks = [text('b0'), text('b1'), text('b3')]
+    const next = restoreLinks(blocks, [
+      { parentId: 'parent-1', block: removedLink, index: 1, beforeId: 'b1' },
+    ])
+    expect(next).toEqual([blocks[0], blocks[1], removedLink, blocks[2]])
+  })
+
+  it('falls back to the clamped saved index when the beforeId block was deleted since', () => {
+    const removedLink = link('b2', 'child-1')
+    const blocks = [text('b3')]
+    const next = restoreLinks(blocks, [
+      { parentId: 'parent-1', block: removedLink, index: 1, beforeId: 'b1' },
+    ])
+    expect(next).toEqual([blocks[0], removedLink])
+  })
+
+  it('clamps the saved index to the current length when it now overshoots', () => {
+    const removedLink = link('b2', 'child-1')
+    const blocks: Block[] = []
+    const next = restoreLinks(blocks, [
+      { parentId: 'parent-1', block: removedLink, index: 5, beforeId: 'gone' },
+    ])
+    expect(next).toEqual([removedLink])
+  })
+
+  it('does not duplicate a link that was independently re-added since', () => {
+    const readded = link('b-new', 'child-1')
+    const removedLink = link('b2', 'child-1')
+    const blocks = [text('b1'), readded]
+    const next = restoreLinks(blocks, [
+      { parentId: 'parent-1', block: removedLink, index: 0, beforeId: null },
+    ])
+    expect(next).toBe(blocks)
+    expect(next).toEqual([blocks[0], readded])
+  })
+
+  it('restores two entries for one page in their original relative order', () => {
+    const linkA = link('a', 'child-1')
+    const linkB = link('b', 'child-2')
+    const blocks = [text('mid')]
+    const next = restoreLinks(blocks, [
+      { parentId: 'parent-1', block: linkA, index: 0, beforeId: null },
+      { parentId: 'parent-1', block: linkB, index: 2, beforeId: null },
+    ])
+    expect(next).toEqual([linkA, blocks[0], linkB])
   })
 })
