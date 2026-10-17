@@ -61,10 +61,9 @@ const blankLine = (data: EntriesBlock) => data.placeholder ?? ENTRIES_EMPTY_LINE
  * rebuilding the entry shape inline. The field's own `onChange` already commits
  * every keystroke, so there is nothing left for ↵ to do but insert and move focus.
  * Shift+↵ is left to the textarea's native newline, which multi-line prose (and
- * `serialize`'s line-collapsing) already assumes. `pendingFocusId` is keyed by id
- * rather than index because an insert's row can land anywhere in the stack (not
- * just at the top via the add line), and a splice reindexes the array out from
- * under a plain index.
+ * `serialize`'s line-collapsing) already assumes. `pendingFocusId` is keyed by id,
+ * not index, because `textRefs` below is itself a `Map` keyed by entry id — the
+ * ref callback has no index to key by, only the row's own entry.
  */
 
 /**
