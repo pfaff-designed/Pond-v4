@@ -14,7 +14,13 @@
  */
 
 import { AREA_COLOUR_SWATCHES, GLYPH_LIBRARY, isAreaRole } from '@/lib/rail/glyph-library'
-import { summarizeAddedRow, summarizeBlockEdit, summarizeRowEdit, summarizeTrash } from './summary'
+import {
+  summarizeAddedRow,
+  summarizeBlockEdit,
+  summarizeRemovedRow,
+  summarizeRowEdit,
+  summarizeTrash,
+} from './summary'
 import type { ChangeLogRecord } from './types'
 
 /** `09:31` for a raw ISO timestamp — split out from {@link clockTime} so a
@@ -148,5 +154,26 @@ export function describeChange(
       // `mapChangeLogRow` casts the column to `ChangeLogAction`. A record written
       // by a later build lands here, and showing its raw action beats a blank row.
       return record.action
+  }
+}
+
+/**
+ * What undoing/redoing `original` did, past tense, read backwards from its own
+ * diff — the undo notice's body (board `s6o5`: "removed chickpeas, harissa"),
+ * never the log row's own `undo · …` label ({@link describeChange}'s `undo`/
+ * `redo` case, which describes the row, not the effect). `summarizeBlockEdit`
+ * and `summarizeRowEdit` are direction-agnostic by diff, so swapping
+ * before/after already reads as the reverse.
+ */
+export function describeUndoneEffect(original: ChangeLogRecord): string {
+  switch (original.action) {
+    case 'add_row':
+      return summarizeRemovedRow(original.after)
+    case 'edit':
+      return summarizeBlockEdit(original.after, original.before) ?? 'edited this page'
+    case 'edit_row':
+      return summarizeRowEdit(original.after, original.before)
+    default:
+      return describeChange(original, null)
   }
 }

@@ -12,6 +12,7 @@ import {
   TOGGLE_COMPOSER_EVENT,
   type ComposerNoticeDetail,
   type RequestChangesDetail,
+  clearUndoNotice,
   isComposerToggleKey,
   notifyComposerOpenChange,
   requestChanges,
@@ -19,8 +20,11 @@ import {
   requestComposerToggle,
   requestHtmlImportPicker,
   requestTerminalFocus,
+  requestUndoNotice,
   takePendingTerminalResearch,
+  toNoticeLines,
   useComposerOpen,
+  useUndoNotice,
   type FocusTerminalDetail,
 } from '@/lib/terminal-focus'
 
@@ -106,6 +110,72 @@ describe("the composer's open state outside AITerminal (KAN-186)", () => {
 
     act(() => notifyComposerOpenChange(false))
     expect(result.current).toBe(false)
+  })
+})
+
+describe('the undo/redo notice (KAN-139)', () => {
+  afterEach(() => act(() => clearUndoNotice()))
+
+  it('useUndoNotice reads the dispatched notice, then clearUndoNotice resets it to null', () => {
+    const { result } = renderHook(() => useUndoNotice())
+    expect(result.current).toBeNull()
+
+    act(() =>
+      requestUndoNotice({
+        direction: 'undo',
+        pastTense: 'removed chickpeas, harissa',
+        openedPageTitle: 'recipes',
+        previousPageTitle: 'kitchen renovation',
+      })
+    )
+    expect(result.current).toEqual({
+      direction: 'undo',
+      pastTense: 'removed chickpeas, harissa',
+      openedPageTitle: 'recipes',
+      previousPageTitle: 'kitchen renovation',
+    })
+
+    act(() => clearUndoNotice())
+    expect(result.current).toBeNull()
+  })
+
+  it('a request made before any reader mounts is read by a reader mounted afterwards', () => {
+    requestUndoNotice({
+      direction: 'undo',
+      pastTense: 'removed chickpeas, harissa',
+      previousPageTitle: 'kitchen renovation',
+    })
+
+    const { result } = renderHook(() => useUndoNotice())
+    expect(result.current).toEqual({
+      direction: 'undo',
+      pastTense: 'removed chickpeas, harissa',
+      previousPageTitle: 'kitchen renovation',
+    })
+  })
+
+  it('toNoticeLines shows no "opened"/"you were on"/"back to" clauses for a same-page step', () => {
+    const lines = toNoticeLines({
+      direction: 'undo',
+      pastTense: 'removed chickpeas, harissa',
+      previousPageTitle: 'kitchen renovation',
+    })
+    expect(lines.headRight).toBeNull()
+    expect(lines.body).toBe('removed chickpeas, harissa.')
+    expect(lines.footRight).toBeNull()
+  })
+
+  it('toNoticeLines shows the "opened" clause when the step navigated', () => {
+    const lines = toNoticeLines({
+      direction: 'undo',
+      pastTense: 'removed chickpeas, harissa',
+      openedPageTitle: 'recipes',
+      previousPageTitle: 'kitchen renovation',
+    })
+    expect(lines.headLeft).toBe('undo · ⌘Z')
+    expect(lines.headRight).toBe('opened recipes')
+    expect(lines.footLeft).toBe('redo ⇧⌘Z')
+    expect(lines.footRight).toBe('back to kitchen renovation ⌘[')
   })
 })
 
