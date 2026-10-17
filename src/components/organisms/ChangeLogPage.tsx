@@ -17,7 +17,7 @@ import { usePondName } from '@/lib/pond/name'
 import { PAGE_COLUMN_PAD_PX, useSurfaceColumn } from '@/lib/layout/surface-column'
 import { countWaiting, listRecords } from '@/lib/change-log/store'
 import { changeLogKey } from '@/lib/change-log/keys'
-import { buildLogRows } from '@/lib/change-log/log-page'
+import { buildLogPageGroups, buildLogRows } from '@/lib/change-log/log-page'
 import { changeLogRecordUrl, changeLogUrl, PAGE_FILTER_PARAM } from '@/lib/change-log/record-page'
 import { clockTime } from '@/lib/change-log/page-changes'
 import { labelForStatus, WAITING_STATUSES } from '@/lib/change-log/status'
@@ -81,17 +81,17 @@ const DELETED_VIEW_COLUMN_PX = 700 + 2 * PAGE_COLUMN_PAD_PX
 const PROPOSED_VIEW_COLUMN_PX = 640 + 2 * PAGE_COLUMN_PAD_PX
 
 /**
- * s6o1's view bar. "all", "proposed" (KAN-96, s6o2) and "deleted" (KAN-97,
- * s6o6) are built; the rest are drawn per the board but stay inert
- * (PROJECT_RULES "nothing locked in": visible-but-inert over hidden, since no
- * view beyond those three exists yet).
+ * s6o1's view bar. "all", "proposed" (KAN-96, s6o2), "by page" (KAN-148,
+ * s6o1) and "deleted" (KAN-97, s6o6) are built; "memory" stays absent until
+ * KAN-173 ships the memory database (PROJECT_RULES "nothing locked in" is
+ * about inert affordances for an existing feature, not drawing a tab for a
+ * feature that doesn't exist yet).
  */
-const INERT_VIEWS = ['by page', 'memory'] as const
 const SEGMENT = `rounded-full px-[11px] py-[5px] ${FOCUS_VISIBLE_RING}`
 const SEGMENT_ON = `${SEGMENT} bg-mn-hover-fill font-medium text-mn-text`
 const SEGMENT_OFF = `${SEGMENT} text-mn-text-secondary`
 
-type ChangeLogView = 'all' | 'proposed' | 'deleted'
+type ChangeLogView = 'all' | 'proposed' | 'by-page' | 'deleted'
 
 /** s6o2's own chip: "status is proposed" · "newest first" — an inset hairline
  *  pill, ink .8, no fill (distinct from the filled `chipBaseClass` family). */
@@ -285,6 +285,12 @@ export function ChangeLogPage() {
     () => buildLogRows(activeRecords, pageTitleById),
     [activeRecords, pageTitleById]
   )
+  // "by page" groups whatever the "all" query has already loaded — no
+  // separate fetch, same records regrouped.
+  const pageGroups = useMemo(
+    () => buildLogPageGroups(activeRecords, pageTitleById),
+    [activeRecords, pageTitleById]
+  )
   const clearPageFilter = () => router.replace(changeLogUrl())
   const handleViewChange = (next: string) => {
     setView(next as ChangeLogView)
@@ -405,25 +411,28 @@ export function ChangeLogPage() {
           change log
         </span>
         {view === 'all' && (
-          <>
-            <p className="max-w-[560px] font-serif text-[17px] leading-[1.6] font-extralight text-mn-text">
-              Every action in this pond, by you, by Pond and by anyone you share a page with. One
-              record for each, newest first.
-            </p>
-            <div className="flex items-end gap-[14px] pt-1 pb-[2px]">
-              <span
-                className="text-[88px] leading-[.9] font-light tracking-[-0.03em] text-mn-text"
-                data-testid="change-log-waiting-count"
-              >
-                {isLoading ? '–' : waiting}
-              </span>
-              <span className="pb-2 text-[13.5px] leading-[1.4] text-mn-text-meta">
-                proposed,
-                <br />
-                waiting on you
-              </span>
-            </div>
-          </>
+          <p className="max-w-[560px] font-serif text-[17px] leading-[1.6] font-extralight text-mn-text">
+            Every action in this pond, by you, by Pond and by anyone you share a page with. One
+            record for each, newest first.
+          </p>
+        )}
+        {/* "by page" keeps this lead figure when it switches in (KAN-148
+         *  acceptance) even though it drops "all"'s own descriptive
+         *  paragraph above. */}
+        {(view === 'all' || view === 'by-page') && (
+          <div className="flex items-end gap-[14px] pt-1 pb-[2px]">
+            <span
+              className="text-[88px] leading-[.9] font-light tracking-[-0.03em] text-mn-text"
+              data-testid="change-log-waiting-count"
+            >
+              {isLoading ? '–' : waiting}
+            </span>
+            <span className="pb-2 text-[13.5px] leading-[1.4] text-mn-text-meta">
+              proposed,
+              <br />
+              waiting on you
+            </span>
+          </div>
         )}
         <ViewTabsRoot value={view} onValueChange={handleViewChange} className="flex items-center gap-1 text-[12.5px]">
           <ViewTabsList className="flex items-center gap-1">
@@ -436,15 +445,9 @@ export function ChangeLogPage() {
             >
               proposed
             </ViewTabsTab>
-            {INERT_VIEWS.map((inertView) => (
-              <span
-                key={inertView}
-                aria-hidden="true"
-                className="rounded-full px-[11px] py-[5px] text-mn-text-secondary"
-              >
-                {inertView}
-              </span>
-            ))}
+            <ViewTabsTab value="by-page" className={view === 'by-page' ? SEGMENT_ON : SEGMENT_OFF}>
+              by page
+            </ViewTabsTab>
             <ViewTabsTab value="deleted" className={view === 'deleted' ? SEGMENT_ON : SEGMENT_OFF}>
               deleted
             </ViewTabsTab>
@@ -551,6 +554,74 @@ export function ChangeLogPage() {
               </>
             )}
           </div>
+        ) : view === 'by-page' ? (
+          <>
+            <div className="flex flex-wrap gap-1.5">
+              <span className={PROPOSED_CHIP_CLASS}>grouped by page</span>
+              <span className={PROPOSED_CHIP_CLASS}>newest first</span>
+            </div>
+            <div className="rounded-mn-card bg-mn-card px-[10px] pt-[14px] pb-[6px] shadow-mn-card">
+              {activeRecordsLoading ? null : activeRecords.length === 0 ? (
+                <p
+                  data-testid="change-log-empty"
+                  className="px-[10px] pb-[8px] font-mono text-[12.5px] text-mn-text-secondary"
+                >
+                  nothing logged in this pond yet
+                </p>
+              ) : (
+                <>
+                  <div
+                    className={`grid ${TABLE_COLUMNS} gap-x-[14px] border-b border-mn-line px-[10px] pb-2 text-[10.5px] font-medium tracking-[.1em] text-mn-text-secondary uppercase`}
+                  >
+                    <span>time</span>
+                    <span>what</span>
+                    <span>page</span>
+                    <span>by</span>
+                    <span>status</span>
+                  </div>
+                  {pageGroups.map((group, index) => (
+                    <div key={`page-group-${index}`}>
+                      <div className="px-[10px] pt-3 pb-[6px] text-[10.5px] font-medium tracking-[.1em] text-mn-text-secondary uppercase">
+                        {group.label}
+                      </div>
+                      {group.rows.map((row) => (
+                        <button
+                          key={row.record.id}
+                          type="button"
+                          onClick={() => router.push(changeLogRecordUrl(row.record.id))}
+                          className={`grid ${TABLE_COLUMNS} min-h-[38px] w-full items-center gap-x-[14px] border-b border-mn-hair px-[10px] text-left text-[13.5px]`}
+                        >
+                          <span className="font-mono text-[10.5px] text-mn-text-secondary">
+                            {clockTime(row.record)}
+                          </span>
+                          <span className="truncate">{row.label}</span>
+                          <span className="truncate text-[12.5px] text-mn-text-meta">
+                            {row.page}
+                          </span>
+                          <span className="text-[12.5px] text-mn-text-meta">{row.by}</span>
+                          {row.status.kind === 'pill' ? (
+                            <span
+                              data-testid={`change-log-status-${row.record.id}`}
+                              className="justify-self-start rounded-full px-2 py-0.5 font-mono text-[10.5px] text-mn-text ring-1 ring-mn-mark-faint ring-inset"
+                            >
+                              {labelForStatus(row.status.text)}
+                            </span>
+                          ) : (
+                            <span
+                              data-testid={`change-log-status-${row.record.id}`}
+                              className="font-mono text-[10.5px] text-mn-text-secondary"
+                            >
+                              {labelForStatus(row.status.text)}
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+          </>
         ) : view === 'proposed' ? (
           <>
             <div className="flex flex-wrap gap-1.5">
