@@ -26,7 +26,7 @@ import { viewCollectionId } from '../block-frame'
 import { useCollectionRows } from './use-collection-rows'
 import { useStruckRows } from '@/lib/change-log/undo-strike'
 import { DIFF_REMOVAL_TEXT_CLASSNAME, PondMolecule } from '@/components/molecules/PondMolecule'
-import { activeSavedView, applyConfigPatch } from './schema'
+import { activeSavedView, addSavedView, applyConfigPatch } from './schema'
 import { ActiveViewSelectionContext } from './active-view-context'
 import {
   addDays,
@@ -74,6 +74,7 @@ import {
   BOARD_EMPTY_LINE,
   GANTT_EMPTY_LINE,
   hasRequiredField,
+  VIEW_KIND_REQUIREMENT,
   VIEW_KINDS,
   type ViewConfigPatch,
 } from './kinds'
@@ -130,6 +131,48 @@ function runFieldRemedy(
     message,
     scope: 'block',
     undo: () => updateSchema(removeField(schemaRef.current ?? next, addedId)),
+  })
+}
+
+/**
+ * Adds a saved view (KAN-243's ＋ view), mirroring `runFieldRemedy`'s
+ * synchronous-ref seam: when the kind needs a field the schema lacks
+ * ({@link hasRequiredField}), mints it onto `schemaRef.current` and writes it
+ * BEFORE the view, so a same-tick second pick reads the field already there.
+ * ONE undo step covers both writes — it restores the pre-add block and, only
+ * when a field was minted, drops that field too; a kind that already had what
+ * it needed never drags a field removal into its own undo.
+ */
+function runAddView(
+  data: ViewBlock,
+  mode: ViewMode,
+  schemaRef: { current: PropertySchema | null },
+  updateSchema: (next: PropertySchema) => void,
+  onChange: (next: ViewBlock) => void,
+  deletionUndo: NonNullable<ReturnType<typeof useOptionalDeletionUndo>>
+): void {
+  const schema = schemaRef.current
+  if (!schema) return
+
+  const need = VIEW_KIND_REQUIREMENT[mode]
+  let addedId: string | undefined
+  let mintedSchema: PropertySchema | undefined
+  if (need && !hasRequiredField(mode, schema)) {
+    const addField = need === 'date' ? addDateField : addStatusField
+    mintedSchema = addField(schema)
+    addedId = mintedSchema[mintedSchema.length - 1].id
+    schemaRef.current = mintedSchema
+    updateSchema(mintedSchema)
+  }
+
+  onChange(addSavedView(data, mode))
+  deletionUndo.stageUndo({
+    message: `Added a ${VIEW_KINDS[mode].label} view`,
+    scope: 'block',
+    undo: () => {
+      onChange(data)
+      if (addedId) updateSchema(removeField(schemaRef.current ?? mintedSchema ?? schema, addedId))
+    },
   })
 }
 
@@ -215,9 +258,15 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
       })),
     [schema]
   )
-  // Placeholder until the next item wires the real add — mints the remedy field (when
-  // needed) then the saved view, through one undo step.
-  const onAddView: (mode: ViewMode) => void = useCallback(() => {}, [])
+  // KAN-243: mints the remedy field (when the kind needs one and the schema lacks
+  // it) then adds the saved view, through ONE undo step — `runAddView` above.
+  const onAddView: (mode: ViewMode) => void = useCallback(
+    (mode) => {
+      if (!editable || !schema || !deletionUndo || !onChange) return
+      runAddView(data, mode, schemaRef, updateSchema, onChange, deletionUndo)
+    },
+    [editable, schema, deletionUndo, onChange, data, updateSchema]
+  )
 
   // Config edits (chart/big-number setup) rewrite the persisted view block through the
   // module's own onChange — the same whole-block save path every editable module uses.

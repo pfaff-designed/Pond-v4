@@ -797,6 +797,74 @@ describe('CollectionView — the ＋ view picker carries each kind\'s remedy lin
   })
 })
 
+describe('ViewView — picking a ＋ view row adds the view, minting its remedy field first when needed (KAN-243)', () => {
+  const onePickerView: ViewBlock = {
+    id: 'v-picker',
+    type: 'view',
+    mode: 'table',
+    views: [{ id: 'view-table', label: 'table', kind: 'table', config: {} }],
+    activeViewId: 'view-table',
+  }
+
+  beforeEach(() => {
+    initialSchema = dateless
+    initialRows = []
+  })
+
+  it('adding calendar to a dateless schema mints a date field, then adds the view active, with no field reference of its own', async () => {
+    const user = userEvent.setup()
+    const onChange = jest.fn()
+    renderView(onePickerView, true, onChange)
+
+    await user.click(screen.getByRole('button', { name: 'add a view' }))
+    await user.click(screen.getByRole('option', { name: /calendar/ }))
+
+    expect(updateSchema).toHaveBeenCalledWith([
+      ...dateless,
+      expect.objectContaining({ name: 'date', type: 'date' }),
+    ])
+    expect(onChange).toHaveBeenCalledTimes(1)
+    const next = onChange.mock.calls[0][0] as ViewBlock
+    expect(next.views).toHaveLength(2)
+    const newView = next.views!.find((v) => v.kind === 'calendar')
+    expect(newView).toEqual({ id: expect.any(String), label: 'calendar', kind: 'calendar', config: {} })
+    expect(next.activeViewId).toBe(newView!.id)
+  })
+
+  it('undo removes the view AND the field it minted, in one step', async () => {
+    const user = userEvent.setup()
+    const onChange = jest.fn()
+    renderView(onePickerView, true, onChange)
+
+    await user.click(screen.getByRole('button', { name: 'add a view' }))
+    await user.click(screen.getByRole('option', { name: /calendar/ }))
+
+    const afterAdd = updateSchema.mock.calls.at(-1)![0] as PropertySchema
+    const addedField = afterAdd[afterAdd.length - 1]
+
+    await user.click(screen.getByRole('button', { name: 'Undo' }))
+
+    expect(onChange).toHaveBeenLastCalledWith(onePickerView)
+    const afterUndo = updateSchema.mock.calls.at(-1)![0] as PropertySchema
+    expect(afterUndo).toEqual(dateless)
+    expect(afterUndo.find((d) => d.id === addedField.id)).toBeUndefined()
+  })
+
+  it('adding table (no required field) never calls updateSchema', async () => {
+    const user = userEvent.setup()
+    const onChange = jest.fn()
+    renderView(onePickerView, true, onChange)
+
+    await user.click(screen.getByRole('button', { name: 'add a view' }))
+    await user.click(screen.getByRole('option', { name: /^table/ }))
+
+    expect(updateSchema).not.toHaveBeenCalled()
+    expect(onChange).toHaveBeenCalledTimes(1)
+    const next = onChange.mock.calls[0][0] as ViewBlock
+    expect(next.views).toHaveLength(2)
+  })
+})
+
 describe('CollectionView — a config edit lands on the LOCALLY active view, not the persisted activeViewId (KAN-32)', () => {
   const chartSchema: PropertySchema = [
     { id: 'p-title', name: 'Title', type: 'text' },
