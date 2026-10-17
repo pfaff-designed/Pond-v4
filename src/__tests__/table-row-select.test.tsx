@@ -7,22 +7,27 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { CollectionView } from '@/lib/modules/view/view'
+import type { CollectionRow } from '@/lib/modules/view/apply'
 import type { ViewBlock } from '@/lib/modules/view/schema'
 import type { PropertySchema } from '@/lib/properties/schema'
 
 const schema: PropertySchema = [{ id: 'f', name: 'note', type: 'text' }]
 const config: ViewBlock = { id: 'b', mode: 'table' }
-const rows = [
+const rows: CollectionRow[] = [
   { id: 'a', title: 'First', values: { f: 'one' } },
   { id: 'b', title: 'Second', values: { f: 'two' } },
 ]
 
-const renderTable = (onEdit = jest.fn(), onOpenRow = jest.fn()) =>
+const renderTable = (
+  onEdit = jest.fn(),
+  onOpenRow = jest.fn(),
+  overrides: Partial<{ schema: PropertySchema; rows: CollectionRow[] }> = {}
+) =>
   render(
     <CollectionView
       config={config}
-      schema={schema}
-      rows={rows}
+      schema={overrides.schema ?? schema}
+      rows={overrides.rows ?? rows}
       collectionName="tasks"
       editable
       onEdit={onEdit}
@@ -102,5 +107,65 @@ describe('table — a row opens its record in the peek', () => {
     await userEvent.keyboard('{Enter}')
     expect(onOpenRow).not.toHaveBeenCalled()
     expect(peek()).toBeNull()
+  })
+
+  it('Esc clears the selection and closes the peek, focus returns to the row', async () => {
+    renderTable()
+
+    await userEvent.click(cellOf('First'))
+    expect(peek()).not.toBeNull()
+
+    await userEvent.keyboard('{Escape}')
+    expect(peek()).toBeNull()
+    expect(rowOf('First')).toHaveFocus()
+  })
+
+  it('a double-click selects once — no second peek, no navigation', async () => {
+    const onOpenRow = jest.fn()
+    renderTable(jest.fn(), onOpenRow)
+
+    await userEvent.dblClick(cellOf('First'))
+    expect(document.querySelectorAll('[data-part="record-peek"]')).toHaveLength(1)
+    expect(onOpenRow).not.toHaveBeenCalled()
+  })
+
+  it('a record that leaves rows closes its own peek', async () => {
+    const onEdit = jest.fn()
+    const onOpenRow = jest.fn()
+    const { rerender } = render(
+      <CollectionView
+        config={config}
+        schema={schema}
+        rows={rows}
+        collectionName="tasks"
+        editable
+        onEdit={onEdit}
+        onOpenRow={onOpenRow}
+      />
+    )
+
+    await userEvent.click(cellOf('First'))
+    expect(peek()).not.toBeNull()
+
+    rerender(
+      <CollectionView
+        config={config}
+        schema={schema}
+        rows={rows.filter((r) => r.id !== 'a')}
+        collectionName="tasks"
+        editable
+        onEdit={onEdit}
+        onOpenRow={onOpenRow}
+      />
+    )
+    expect(peek()).toBeNull()
+  })
+
+  it('a one-column (Name only) table still has clickable row space outside the title input', async () => {
+    const oneColumnRows = [{ id: 'a', title: 'First', values: {} }]
+    renderTable(jest.fn(), jest.fn(), { schema: [], rows: oneColumnRows })
+
+    await userEvent.click(cellOf('First'))
+    expect(screen.getByLabelText('Record: First')).toBeInTheDocument()
   })
 })
