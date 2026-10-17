@@ -16,7 +16,7 @@
 
 import { useCallback, useSyncExternalStore } from 'react'
 
-import { MODE_KEY } from './mode-boot'
+import { MEDIA_QUERY, MODE_KEY, type StoredMode } from './mode-boot'
 
 export type Mode = 'light' | 'dark'
 
@@ -24,6 +24,8 @@ export type Mode = 'light' | 'dark'
 const holds = new Set<symbol>()
 /** The person's mode while the ink ground is held; null when nothing holds it. */
 let heldChoice: Mode | null = null
+/** toggleMode's own record of the person's pick, for when storage can't hold it (private mode). */
+let explicitChoice: Mode | null = null
 const listeners = new Set<() => void>()
 
 const classMode = (): Mode =>
@@ -31,17 +33,87 @@ const classMode = (): Mode =>
 
 const readMode = (): Mode => heldChoice ?? classMode()
 
-const setDarkClass = (dark: boolean) => document.documentElement.classList.toggle('dark', dark)
+/** Only `light`/`dark` win outright; anything else — absent, garbage, unreadable — is `system`. */
+const readStoredMode = (): StoredMode => {
+  if (explicitChoice !== null) return explicitChoice
+  try {
+    const stored = window.localStorage.getItem(MODE_KEY)
+    return stored === 'dark' || stored === 'light' ? stored : 'system'
+  } catch {
+    return 'system'
+  }
+}
+
+/** The flip in flight's own double-rAF pair, so an overlapping flip can cancel it. */
+let pendingFrame: number | null = null
+let pendingFrame2: number | null = null
+
+/**
+ * Flips `.dark` with transitions suppressed for one frame (`[data-theme-switching]`,
+ * `globals.css`) so every surface snaps together instead of fading at its own speed.
+ * The double `requestAnimationFrame` clears the attribute only after the flip has
+ * painted once with transitions off. A flip within that window cancels the prior
+ * pair first, so its own attribute isn't removed early by the stale one's.
+ */
+const setDarkClass = (dark: boolean) => {
+  const html = document.documentElement
+  if (pendingFrame !== null) cancelAnimationFrame(pendingFrame)
+  if (pendingFrame2 !== null) cancelAnimationFrame(pendingFrame2)
+  html.setAttribute('data-theme-switching', '')
+  html.classList.toggle('dark', dark)
+  pendingFrame = requestAnimationFrame(() => {
+    pendingFrame2 = requestAnimationFrame(() => {
+      html.removeAttribute('data-theme-switching')
+      pendingFrame = null
+      pendingFrame2 = null
+    })
+  })
+}
 
 const notify = () => listeners.forEach((listener) => listener())
+
+const handleSystemChange = (event: MediaQueryListEvent) => {
+  if (readStoredMode() !== 'system') return
+  const next: Mode = event.matches ? 'dark' : 'light'
+  if (heldChoice !== null) {
+    heldChoice = next
+    notify()
+    return
+  }
+  setDarkClass(next === 'dark')
+  notify()
+}
+
+/** The one shared media query listener every `useMode` subscriber follows, ref-counted. */
+let mediaQuery: MediaQueryList | null = null
+let followerCount = 0
+
+/** Keeps `.dark` on the OS's preference for as long as the stored choice stays `system`. */
+const followSystem = () => {
+  if (typeof window.matchMedia !== 'function') return () => {}
+  if (followerCount === 0) {
+    mediaQuery = window.matchMedia(MEDIA_QUERY)
+    mediaQuery.addEventListener('change', handleSystemChange)
+  }
+  followerCount += 1
+  return () => {
+    followerCount -= 1
+    if (followerCount === 0 && mediaQuery !== null) {
+      mediaQuery.removeEventListener('change', handleSystemChange)
+      mediaQuery = null
+    }
+  }
+}
 
 const subscribe = (onChange: () => void) => {
   const observer = new MutationObserver(onChange)
   observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
   listeners.add(onChange)
+  const stopFollowingSystem = followSystem()
   return () => {
     observer.disconnect()
     listeners.delete(onChange)
+    stopFollowingSystem()
   }
 }
 
@@ -69,10 +141,11 @@ export function useMode(): { mode: Mode; toggleMode: () => void } {
   const mode = useSyncExternalStore<Mode>(subscribe, readMode, () => 'light')
   const toggleMode = useCallback(() => {
     const next: Mode = readMode() === 'dark' ? 'light' : 'dark'
+    explicitChoice = next
     try {
       window.localStorage.setItem(MODE_KEY, next)
     } catch {
-      /* private mode: the switch still holds for this visit */
+      /* private mode: explicitChoice above still holds the pick for this visit */
     }
     if (heldChoice !== null) {
       heldChoice = next
