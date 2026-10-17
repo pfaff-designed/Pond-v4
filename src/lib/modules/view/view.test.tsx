@@ -17,6 +17,9 @@ import { ActiveViewSelectionContext } from './active-view-context'
 import type { ViewBlock } from './schema'
 import type { PropertySchema } from '@/lib/properties/schema'
 import type { CollectionRow } from './apply'
+import { rememberStruckRow } from '@/lib/change-log/undo-strike'
+import { clearUndoNotice, requestUndoNotice } from '@/lib/terminal-focus'
+import type { ChangeLogRecord } from '@/lib/change-log/types'
 
 const dateless: PropertySchema = [{ id: 'p-title', name: 'Title', type: 'text' }]
 
@@ -178,6 +181,100 @@ describe('CollectionTable — the row-title input commits once, not per keystrok
     await user.tab()
     expect(renameRow).toHaveBeenCalledTimes(1)
     expect(renameRow).toHaveBeenCalledWith('r1', 'kan299')
+  })
+})
+
+describe('CollectionTable — a row an undo just removed stays struck through (KAN-139, s6o5)', () => {
+  // `requestUndoNotice`/`clearUndoNotice` write a module-level snapshot, read
+  // whenever a reader mounts — matching how `ShellCommands` (the one real
+  // reader) is already mounted before any ⌘Z ever fires — so every
+  // request/clear below runs AFTER `renderView`, inside `act`, with the view
+  // still mounted.
+  const rowSnapshot = (id: string, title: string) => ({ id, title, values: {}, shown: {} })
+
+  it('keeps the board\'s own example visible, struck through, once the row is gone from the data', () => {
+    initialRows = []
+    // The undo record's OWN before/after (migration 0021): `before` is the row
+    // as it showed right before the step, `after` is null once it's undone —
+    // the shape `rememberStruckRow` reads, same as `ShellCommands` passes it.
+    rememberStruckRow({
+      targetPageId: 'page-1',
+      before: rowSnapshot('kan139-r1', 'chickpeas, harissa'),
+      after: null,
+    } as unknown as ChangeLogRecord)
+
+    renderView(table)
+    act(() => {
+      requestUndoNotice({
+        direction: 'undo',
+        pastTense: 'removed chickpeas, harissa',
+        previousPageTitle: 'kitchen renovation',
+      })
+    })
+
+    const row = screen.getByText('chickpeas, harissa').closest('tr')
+    expect(row).toHaveClass('line-through')
+    expect(row).toHaveClass('decoration-mn-signal-removal')
+
+    act(() => clearUndoNotice())
+  })
+
+  it('stops showing the struck row once the notice clears', () => {
+    initialRows = []
+    rememberStruckRow({
+      targetPageId: 'page-1',
+      before: rowSnapshot('kan139-r2', 'dal, weeknight'),
+      after: null,
+    } as unknown as ChangeLogRecord)
+
+    renderView(table)
+    act(() => {
+      requestUndoNotice({
+        direction: 'undo',
+        pastTense: 'removed dal, weeknight',
+        previousPageTitle: 'kitchen renovation',
+      })
+    })
+    expect(screen.getByText('dal, weeknight')).toBeInTheDocument()
+
+    act(() => clearUndoNotice())
+    expect(screen.queryByText('dal, weeknight')).not.toBeInTheDocument()
+  })
+
+  it('does not bring back a row struck by an earlier, already-cleared notice', () => {
+    initialRows = []
+    rememberStruckRow({
+      targetPageId: 'page-1',
+      before: rowSnapshot('kan139-r3', 'kale, lemon'),
+      after: null,
+    } as unknown as ChangeLogRecord)
+    act(() => {
+      requestUndoNotice({
+        direction: 'undo',
+        pastTense: 'removed kale, lemon',
+        previousPageTitle: 'kitchen renovation',
+      })
+    })
+    act(() => clearUndoNotice())
+
+    rememberStruckRow({
+      targetPageId: 'page-1',
+      before: rowSnapshot('kan139-r4', 'farro, roasted squash'),
+      after: null,
+    } as unknown as ChangeLogRecord)
+    renderView(table)
+    act(() => {
+      requestUndoNotice({
+        direction: 'undo',
+        pastTense: 'removed farro, roasted squash',
+        previousPageTitle: 'kitchen renovation',
+      })
+    })
+
+    expect(screen.getByText('farro, roasted squash')).toBeInTheDocument()
+    expect(screen.queryByText('kale, lemon')).not.toBeInTheDocument()
+
+    act(() => clearUndoNotice())
   })
 })
 

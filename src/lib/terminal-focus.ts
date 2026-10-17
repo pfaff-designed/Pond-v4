@@ -171,6 +171,89 @@ export function requestChanges(detail: RequestChangesDetail) {
 }
 
 /**
+ * "Show the undo/redo notice" (KAN-139, board `Pond 06.15` s6o5). The shell's
+ * ⌘Z/⇧⌘Z handler knows which page it opened and what the step did; the
+ * notice panel owns the only place to show it — same decoupling as
+ * `requestTerminalFocus`. A module-level snapshot plus a listener set, like
+ * `notifyComposerOpenChange`/`useComposerOpen`, not a `window` event: a
+ * notice can be requested before any reader (the panel, `undo-strike.ts`)
+ * mounts, and a plain event would only reach a listener already attached —
+ * the snapshot must already hold it once one does.
+ */
+export interface UndoNotice {
+  direction: 'undo' | 'redo'
+  /** What the record did, past tense — e.g. "removed chickpeas, harissa". */
+  pastTense: string
+  /** The page the step navigated to, when it changed page. Omitted ⇒ the
+   *  head's "opened {page}" clause doesn't show. */
+  openedPageTitle?: string | null
+  previousPageTitle: string
+}
+
+let undoNoticeSnapshot: UndoNotice | null = null
+const undoNoticeListeners = new Set<() => void>()
+
+function setUndoNoticeSnapshot(notice: UndoNotice | null) {
+  undoNoticeSnapshot = notice
+  undoNoticeListeners.forEach((listener) => listener())
+}
+
+export function requestUndoNotice(notice: UndoNotice) {
+  setUndoNoticeSnapshot(notice)
+}
+
+export function clearUndoNotice() {
+  setUndoNoticeSnapshot(null)
+}
+
+/** The current undo/redo notice, for a non-React reader (`undo-strike.ts`). */
+export function getUndoNoticeSnapshot(): UndoNotice | null {
+  return undoNoticeSnapshot
+}
+
+/** Subscribe to every undo-notice change, for a non-React reader
+ *  (`undo-strike.ts`'s struck-row map) that must react to a clear with no
+ *  panel mounted to re-render. */
+export function subscribeUndoNotice(listener: () => void): () => void {
+  undoNoticeListeners.add(listener)
+  return () => undoNoticeListeners.delete(listener)
+}
+
+/** Track the showing undo/redo notice from outside the panel. Null on the server. */
+export function useUndoNotice(): UndoNotice | null {
+  return useSyncExternalStore(subscribeUndoNotice, getUndoNoticeSnapshot, () => null)
+}
+
+export interface UndoNoticeLines {
+  headLeft: string
+  /** Null when the notice didn't navigate — the head shows no right clause. */
+  headRight: string | null
+  body: string
+  footLeft: string
+  /** Null when the notice didn't navigate — the foot shows no separator or
+   *  right clause. The board only draws the cross-page case; a same-page
+   *  step has no "previous page" worth naming, and ⌘[ (browser back) would
+   *  go somewhere else entirely, so "back to {page}" would mislead. */
+  footRight: string | null
+}
+
+/** The notice panel's four strings, computed from the data alone — so the
+ *  "no opened clause" rule is testable without rendering the panel. */
+export function toNoticeLines(notice: UndoNotice): UndoNoticeLines {
+  const undoing = notice.direction === 'undo'
+  const navigated = Boolean(notice.openedPageTitle)
+  return {
+    headLeft: undoing ? 'undo · ⌘Z' : 'redo · ⇧⌘Z',
+    headRight: navigated ? `opened ${notice.openedPageTitle}` : null,
+    body: navigated
+      ? `${notice.pastTense}. you were on ${notice.previousPageTitle}.`
+      : `${notice.pastTense}.`,
+    footLeft: undoing ? 'redo ⇧⌘Z' : 'undo ⌘Z',
+    footRight: navigated ? `back to ${notice.previousPageTitle} ⌘[` : null,
+  }
+}
+
+/**
  * "Raise a record's card in the composer" (KAN-152, board `Pond 06.15`
  * s6o4's f4) — the record page's revert button asks; the composer owns the
  * only mounted thread to show the card in, so this stays the same

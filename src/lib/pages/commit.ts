@@ -6,6 +6,8 @@ import { saveBlocks } from './client'
 import { recordOwnEdit } from '@/lib/change-log/own-edit'
 import { changeLogKey } from '@/lib/change-log/keys'
 import { pagesKey } from '@/lib/pages/keys'
+import { closeBlockHistory } from '@/lib/modules/text/active-editor'
+import { sessionUndo } from '@/lib/change-log/session-undo'
 
 /**
  * Persist a page's blocks and propagate the write everywhere downstream: refresh
@@ -68,7 +70,21 @@ export async function commitBlocks(
       before: opts.before,
       blocks,
     })
-    void logged.then(() => queryClient.invalidateQueries({ queryKey: changeLogKey() }))
+    void logged.then((record) => {
+      const pondId = opts.pondId
+      if (pondId && record) sessionUndo.remember({ pondId, recordIds: [record.id] })
+      // Only now is the record durable enough to hand ⌘Z to the shell's undo
+      // (KAN-139, comment 10064) — closing history any earlier (right after
+      // `saveBlocks`) leaves a window, until `sessionUndo` hears about the
+      // record, where the block reports no undo depth but the shell has
+      // nothing to fall through to either, so ⌘Z silently undoes nothing.
+      if (record) {
+        for (const block of blocks) {
+          if ('content' in block) closeBlockHistory(block.id, block.content)
+        }
+      }
+      return queryClient.invalidateQueries({ queryKey: changeLogKey() })
+    })
   }
   await propagateBlockWrite(queryClient, pageId)
 }

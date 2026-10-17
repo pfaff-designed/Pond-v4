@@ -32,7 +32,7 @@ import type { Database } from '@/lib/supabase/types'
 import type { Block } from '@/lib/documents/types'
 import { jsonEqual } from '@/lib/json-equal'
 import { appendOwnEdit, markOutdated, type AppendRecordInput } from './store'
-import { ACTOR_YOU, BLOCK_ACTIONS, type RowSnapshot } from './types'
+import { ACTOR_YOU, BLOCK_ACTIONS, type RowSnapshot, type ChangeLogRecord } from './types'
 
 /** The signed-in person, or null — never a throw. */
 const sessionUserId = async (
@@ -53,18 +53,20 @@ const sessionUserId = async (
 const appendUnlessUnchanged = async (
   supabase: SupabaseClient<Database>,
   input: Omit<AppendRecordInput, 'status' | 'actor'>
-): Promise<void> => {
-  if (jsonEqual(input.before ?? null, input.after ?? null)) return
+): Promise<ChangeLogRecord | null> => {
+  if (jsonEqual(input.before ?? null, input.after ?? null)) return null
   try {
-    await appendOwnEdit(supabase, input)
+    return await appendOwnEdit(supabase, input)
   } catch (err) {
     console.error('[change-log] own edit not logged', input.targetPageId, err)
+    return null
   }
 }
 
-/** The own-edit record of one save, still being written. Settles, never rejects. */
+/** The own-edit record of one save, still being written. Settles, never rejects.
+ *  Null when the save changed nothing, or the append failed. */
 export interface OwnEditLogging {
-  logged: Promise<void>
+  logged: Promise<ChangeLogRecord | null>
 }
 
 /**
@@ -87,7 +89,7 @@ export async function recordOwnEdit(
 ): Promise<OwnEditLogging> {
   const userId = await sessionUserId(supabase, opts.pageId)
   // No session: there is no pond to sweep or log into.
-  if (!userId) return { logged: Promise.resolve() }
+  if (!userId) return { logged: Promise.resolve(null) }
 
   try {
     await markOutdated(supabase, {

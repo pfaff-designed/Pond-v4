@@ -29,23 +29,31 @@
  * still mints no `ask pond about “q”` there.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQueryClient } from '@tanstack/react-query'
 import type { PaletteItem } from '@/components/molecules/palette-entries'
 import { normalizeQuery } from '@/components/molecules/slash-entries'
 import { NewPondFlow } from '@/components/organisms/NewPondFlow'
 import { PondCommand } from '@/components/organisms/PondCommand'
+import { UndoNotice } from '@/components/molecules/UndoNotice'
 import {
+  clearUndoNotice,
   isComposerToggleKey,
   requestComposerNotice,
   requestComposerToggle,
   requestHtmlImportPicker,
   requestTerminalFocus,
+  requestUndoNotice,
+  useUndoNotice,
 } from '@/lib/terminal-focus'
 import { isPaletteChord, isRedoChord, isUndoChord, onApplePlatform } from '@/lib/shell-commands'
 import { sessionUndo } from '@/lib/change-log/session-undo'
+import { editorHistoryEmptyFor } from '@/lib/modules/text/active-editor'
 import { applyUndoOutcome } from '@/lib/change-log/undo-outcome'
+import { describeChange, describeUndoneEffect } from '@/lib/change-log/page-changes'
+import { getRecord } from '@/lib/change-log/store'
+import { rememberStruckRow } from '@/lib/change-log/undo-strike'
 import { useCommandPath } from '@/lib/layout/command-path'
 import { useZenCommands } from '@/lib/layout/use-zen-commands'
 import { workspaceUrl } from '@/lib/pages/nav'
@@ -97,21 +105,72 @@ export function ShellCommands() {
   // page mid-delete is gone from the palette's listing, not just the rail.
   const { data: pages } = usePagesRows(pondId)
   const records = usePaletteRecords(normalizeQuery(query))
+  const undoNotice = useUndoNotice()
+
+  // A step's notice is only good for AS LONG AS NOTHING ELSE HAPPENED — a
+  // key/click (via `clearShownNotice`) or a second step (via `runUndoStep`)
+  // bumps this past the step's own captured value, so a `getRecord` that
+  // resolves late (or two steps resolving out of order) drops its stale text
+  // instead of showing it or overwriting a newer notice.
+  const stepCounterRef = useRef(0)
+  const clearShownNotice = useCallback(() => {
+    stepCounterRef.current += 1
+    clearUndoNotice()
+  }, [])
 
   // `applyUndoOutcome` owes everything downstream: the sidebar/rail mark, the
   // "Changes to this page" panel and the specific pages the step's records
   // touched on `done`, or a one-line notice otherwise — shared with the
   // composer's own undo chip (KAN-179) so a ⌘Z and a chip press settle the
-  // same way.
+  // same way. It runs first, so a throw further down (building the notice)
+  // can never leave a server-side success unrecorded. A `done` step whose
+  // record sits on another page opens that page first (KAN-139: "undo opens
+  // recipes first"). The notice's body names what the step did, read off the
+  // ORIGINAL record (`links.undoOf`/`redoOf`) rather than the undo/redo
+  // record's own `action` — `getRecord` is the one network round trip a ⌘Z
+  // pays that the RPC's own response doesn't carry.
   const runUndoStep = useCallback(
     (direction: 'undo' | 'redo') => {
       if (pondId === null) return
+      const stepId = ++stepCounterRef.current
       const step = direction === 'undo' ? sessionUndo.undo(pondId) : sessionUndo.redo(pondId)
       step
-        .then((result) => applyUndoOutcome(direction, result, queryClient))
+        .then((result) => {
+          applyUndoOutcome(direction, result, queryClient)
+          if (result.outcome !== 'done') return
+          // Struck row (KAN-139, s6o5): captured off the step's own records,
+          // BEFORE `applyUndoOutcome`'s invalidation refetches the row away.
+          for (const stepRecord of result.records) rememberStruckRow(stepRecord)
+          const record = result.records[0]
+          const targetPageId = record?.targetPageId ?? null
+          const departed = currentNodeId ? pages?.find((p) => p.id === currentNodeId) ?? null : null
+          const previousPageTitle = departed?.title ?? null
+          let openedPageTitle: string | null = null
+          if (targetPageId !== null && targetPageId !== currentNodeId) {
+            const target = pages?.find((p) => p.id === targetPageId)
+            if (target) {
+              openedPageTitle = target.title
+              router.push(workspaceUrl({ id: target.id, type: target.type, title: target.title }))
+            }
+          }
+          const originalId = direction === 'undo' ? record?.links?.undoOf : record?.links?.redoOf
+          if (originalId === undefined || previousPageTitle === null) return
+          getRecord(createClient(), originalId)
+            .then((original) => {
+              if (original === null || stepCounterRef.current !== stepId) return
+              requestUndoNotice({
+                direction,
+                pastTense:
+                  direction === 'undo' ? describeUndoneEffect(original) : describeChange(original, null),
+                openedPageTitle,
+                previousPageTitle,
+              })
+            })
+            .catch(() => {})
+        })
         .catch(() => requestComposerNotice(`can't ${direction} — try again.`))
     },
-    [pondId, queryClient]
+    [pondId, queryClient, pages, currentNodeId, router]
   )
 
   // Before the open page has published its path, the pill reads the pond's root.
@@ -158,6 +217,10 @@ export function ShellCommands() {
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
+      // The showing notice is for the LAST step, not whatever comes next — any
+      // key clears it, the chord that opens a new one included (it reappears
+      // once that step's own fetch settles).
+      clearShownNotice()
       if (isPaletteChord(e)) {
         e.preventDefault()
         e.stopPropagation()
@@ -177,13 +240,20 @@ export function ShellCommands() {
       }
       // Undo/redo belongs to an editable field first — Tiptap's own undo, an
       // input, a select — so the shell never intercepts a keystroke they own.
-      if (
-        pondId === null ||
-        e.defaultPrevented ||
-        isEditable(e.target instanceof Element ? e.target : null) ||
-        isEditable(document.activeElement)
-      ) {
-        return
+      // Except: a text block whose own history the commit just closed
+      // (KAN-139, comment 10064) has nothing left for that chord to do, so it
+      // falls through to the session step instead — an input, a select, and a
+      // text block that still has history all keep theirs.
+      if (pondId === null || e.defaultPrevented) return
+      const targetEl = e.target instanceof Element ? e.target : null
+      const editableEl = isEditable(targetEl)
+        ? targetEl
+        : isEditable(document.activeElement)
+          ? document.activeElement
+          : null
+      if (editableEl) {
+        const direction = isUndoChord(e) ? 'undo' : isRedoChord(e) ? 'redo' : null
+        if (direction === null || !editorHistoryEmptyFor(editableEl, direction)) return
       }
       if (isUndoChord(e)) {
         e.preventDefault()
@@ -198,9 +268,24 @@ export function ShellCommands() {
         runUndoStep('redo')
       }
     }
+    function onClick() {
+      clearShownNotice()
+    }
     document.addEventListener('keydown', onKey, { capture: true })
-    return () => document.removeEventListener('keydown', onKey, { capture: true })
-  }, [templateSheetOpen, pondSheetOpen, closeTemplateSheet, closeNewPondSheet, pondId, runUndoStep])
+    document.addEventListener('click', onClick, { capture: true })
+    return () => {
+      document.removeEventListener('keydown', onKey, { capture: true })
+      document.removeEventListener('click', onClick, { capture: true })
+    }
+  }, [
+    templateSheetOpen,
+    pondSheetOpen,
+    closeTemplateSheet,
+    closeNewPondSheet,
+    pondId,
+    runUndoStep,
+    clearShownNotice,
+  ])
 
   const handleOpenChange = useCallback(
     (next: boolean) => {
@@ -320,6 +405,7 @@ export function ShellCommands() {
         onQueryChange={setQuery}
         sheet={templateSheet.sheet}
       />
+      <UndoNotice notice={undoNotice} />
     </>
   )
 }

@@ -189,7 +189,10 @@ export const summarizeBlockEdit = (beforeValue: unknown, afterValue: unknown): s
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
-const readRowSnapshot = (value: unknown): RowSnapshot | null => {
+/** A `before`/`after` value read back as a row snapshot, or null when it
+ *  isn't one — shared with `undo-strike.ts`, which uses the same shape check
+ *  to tell a row's removal from every other kind of step. */
+export const readRowSnapshot = (value: unknown): RowSnapshot | null => {
   if (!isPlainObject(value)) return null
   const { id, title, values, shown } = value
   if (typeof id !== 'string' || typeof title !== 'string') return null
@@ -205,6 +208,13 @@ const recordName = (title: string): string => title.trim() || 'a record'
 export const summarizeAddedRow = (afterValue: unknown): string => {
   const record = readRowSnapshot(afterValue)
   return `added ${recordName(record?.title ?? '')}`
+}
+
+/** `removed chickpeas, harissa` — the reverse of {@link summarizeAddedRow},
+ *  for an undo of an `add_row`. */
+export const summarizeRemovedRow = (afterValue: unknown): string => {
+  const record = readRowSnapshot(afterValue)
+  return `removed ${recordName(record?.title ?? '')}`
 }
 
 const fieldText = (record: RowSnapshot, fieldId: string): string => {
