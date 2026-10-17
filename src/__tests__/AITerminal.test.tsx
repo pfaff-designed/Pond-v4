@@ -974,6 +974,57 @@ describe('AITerminal — the @ mention picker opens, narrows and closes (KAN-99)
     expect(recentIndex).toBeGreaterThanOrEqual(0)
     expect(recentIndex).toBeLessThan(unrelatedIndex)
   })
+
+  it('leads with only the top 3 of 5 seeded recents (RECENT_SHOWN, same constant as the palette)', async () => {
+    const fivePages = [
+      { id: 'r1', parentId: null, type: 'page', title: 'recent one', blocks: [], order: 0, props: {} },
+      { id: 'r2', parentId: null, type: 'page', title: 'recent two', blocks: [], order: 1, props: {} },
+      { id: 'r3', parentId: null, type: 'page', title: 'recent three', blocks: [], order: 2, props: {} },
+      { id: 'r4', parentId: null, type: 'page', title: 'recent four', blocks: [], order: 3, props: {} },
+      { id: 'r5', parentId: null, type: 'page', title: 'recent five', blocks: [], order: 4, props: {} },
+    ]
+    mockListPages.mockResolvedValue(fivePages)
+    window.localStorage.setItem(
+      'pond:recent-pages:pond-1',
+      JSON.stringify([
+        { id: 'r5', type: 'page', title: 'recent five' },
+        { id: 'r4', type: 'page', title: 'recent four' },
+        { id: 'r3', type: 'page', title: 'recent three' },
+        { id: 'r2', type: 'page', title: 'recent two' },
+        { id: 'r1', type: 'page', title: 'recent one' },
+      ])
+    )
+    const user = userEvent.setup()
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <PondContext.Provider
+          value={{
+            pond: { id: 'pond-1', name: 'life', glyph: null, theme: 'paper', order: 0 },
+            ponds: [],
+            loading: false,
+            reload: () => {},
+            addPond: () => {},
+          }}
+        >
+          <AITerminal />
+        </PondContext.Provider>
+      </QueryClientProvider>
+    )
+    await waitReady()
+
+    const textbox = screen.getByRole('textbox', { name: 'Message Pond' })
+    await user.type(textbox, '@')
+    await screen.findByText('pages')
+
+    const options = screen.getAllByRole('option').map((o) => o.textContent)
+    const indexOf = (title: string) => options.findIndex((t) => t?.includes(title))
+    expect(indexOf('recent five')).toBe(0)
+    expect(indexOf('recent four')).toBe(1)
+    expect(indexOf('recent three')).toBe(2)
+    expect(indexOf('recent two')).toBeGreaterThanOrEqual(3)
+    expect(indexOf('recent one')).toBeGreaterThanOrEqual(3)
+  })
 })
 
 describe('AITerminal — REQUEST_CHANGES_EVENT before the thread is ready (KAN-96)', () => {

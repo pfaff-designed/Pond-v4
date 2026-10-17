@@ -7,6 +7,9 @@
 const RECENT_PAGES_PREFIX = 'pond:recent-pages:'
 const RECENT_MAX = 20
 
+/** How many of the stored 20 ever surface to a person — `Pond 02` 2g: "the last three pages". */
+export const RECENT_SHOWN = 3
+
 interface RecentEntry {
   id: string
   type: string

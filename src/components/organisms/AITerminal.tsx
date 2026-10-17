@@ -78,7 +78,7 @@ import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
 import { insertPageOptimistic, type PageRow } from '@/lib/pages/tree'
 import { appendChildLinkUnder } from '@/lib/pages/child-links'
 import { linkedPageIds, orderMentionPages } from '@/lib/pages/mention-pages'
-import { readRecentPageIds } from '@/lib/pages/recent-pages'
+import { readRecentPageIds, RECENT_SHOWN } from '@/lib/pages/recent-pages'
 import { writeAcceptedChanges } from '@/lib/pages/accept'
 import { sessionUndo, useSessionUndo } from '@/lib/change-log/session-undo'
 import { applyUndoOutcome } from '@/lib/change-log/undo-outcome'
@@ -1054,7 +1054,7 @@ export function AITerminal() {
     const ordered = orderMentionPages(
       mentionPageRows,
       {
-        recentIds: readRecentPageIds(pondId),
+        recentIds: readRecentPageIds(pondId).slice(0, RECENT_SHOWN),
         linkedIds: linkedPageIds(
           mentionPageRows,
           references.map((ref) => ref.pageId)
