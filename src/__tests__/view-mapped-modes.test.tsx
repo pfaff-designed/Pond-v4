@@ -664,6 +664,49 @@ describe('CollectionGallery — PondBlock.dc.html’s gallery frame, each card a
   })
 })
 
+describe('CollectionGallery — hover, selection and the peek (KAN-358)', () => {
+  function renderEditableGallery(rows: CollectionRow[] = plants(2), onOpenRow = jest.fn()) {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const result = render(
+      <QueryClientProvider client={client}>
+        <CollectionView
+          config={gallery}
+          schema={plantSchema}
+          rows={rows}
+          editable
+          onEdit={jest.fn()}
+          onRenameRow={jest.fn()}
+          onOpenRow={onOpenRow}
+        />
+      </QueryClientProvider>
+    )
+    return { ...result, onOpenRow }
+  }
+
+  it('hovering a card’s wrapper sets data-state="hover", leaving the other card rest', () => {
+    const { container } = renderEditableGallery()
+    const [a, b] = container.querySelectorAll<HTMLElement>('[data-kind="record-card"]')
+    expect(a.dataset.state).toBe('rest')
+
+    fireEvent.mouseEnter(b)
+    expect(b.dataset.state).toBe('hover')
+    expect(a.dataset.state).toBe('rest')
+
+    fireEvent.mouseLeave(b)
+    expect(b.dataset.state).toBe('rest')
+  })
+
+  it('clicking a card selects it and renders the record peek for that row', async () => {
+    const { container } = renderEditableGallery()
+    const [a] = container.querySelectorAll<HTMLElement>('[data-kind="record-card"]')
+    expect(document.querySelector('[data-part="record-peek"]')).toBeNull()
+
+    await userEvent.click(a)
+    expect(a.dataset.state).toBe('selected')
+    expect(screen.getByLabelText('Record: plant 0')).toBeInTheDocument()
+  })
+})
+
 // ── number ──────────────────────────────────────────────────────────────────────
 
 describe('CollectionBigNumber — 52 / 700 / -.03em / .95 / tabular-nums, a mono-11 sub (ADR 0004 §5)', () => {

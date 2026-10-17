@@ -464,7 +464,15 @@ export function CollectionView({
           onAddDateField={onAddDateField}
         />
       ) : activeConfig.mode === 'gallery' ? (
-        <CollectionGallery schema={schema} rows={processed} />
+        <CollectionGallery
+          viewKey={viewKey}
+          schema={schema}
+          rows={processed}
+          editable={editable}
+          onEdit={onEdit}
+          onRenameRow={onRenameRow}
+          onOpenRow={onOpenRow}
+        />
       ) : activeConfig.mode === 'gantt' ? (
         <CollectionGantt
           schema={schema}
@@ -1105,21 +1113,77 @@ function CollectionBoard({
  * `list.slice(0, mob ? 2 : 3)` is the template preview's truncation, not a product
  * rule. `untitled` and `—` are the molecule's own fallbacks; which field the one
  * meta line shows is `galleryCardMeta`, the one tag chip shows `galleryCardTag`.
+ *
+ * `useRecordSelection` drives hover/selected the same way the board does, but the
+ * molecule owns no DOM props of its own (unlike the board's `<article>`, which IS
+ * the card) — so each row gets a `display: contents` wrapper, the todo view's host
+ * pattern, carrying `rowProps`/`keyboardProps` and its own pointer-hover tracking.
  */
-function CollectionGallery({ schema, rows }: { schema: PropertySchema; rows: CollectionRow[] }) {
-  // No empty line of its own: the frame owns the empty state (#239).
+function CollectionGallery({
+  viewKey,
+  schema,
+  rows,
+  editable,
+  onEdit,
+  onRenameRow,
+  onOpenRow,
+}: {
+  /** The view block's id — what the page canvas keys its one peek and one orange pill by. */
+  viewKey: string
+  schema: PropertySchema
+  rows: CollectionRow[]
+  editable?: boolean
+  onEdit?: (rowId: string, key: string, value: PropertyValue) => void
+  onRenameRow?: (rowId: string, title: string) => void
+  onOpenRow?: (rowId: string) => void
+}) {
+  const [now] = useState(() => new Date())
+  const [hoveredId, setHoveredId] = useState<string | null>(null)
+  const { selectedRow, rowProps, keyboardProps } = useRecordSelection(rows, viewKey)
+  const done = useDoneToggle({ schema, editable, onEdit })
+
   return (
-    <div data-part="gallery" className="flex flex-wrap gap-[12px]">
-      {rows.map((row) => (
-        <PondMolecule
-          key={row.id}
-          kind="record-card"
-          state="rest"
-          title={row.title || 'untitled'}
-          meta={galleryCardMeta(schema, row) || '—'}
-          tag={galleryCardTag(schema, row)}
+    <div>
+      {/* No empty line of its own: the frame owns the empty state (#239). */}
+      <div data-part="gallery" className="flex flex-wrap gap-[12px]">
+        {rows.map((row) => {
+          const selected = row.id === selectedRow?.id
+          const state = selected ? 'selected' : hoveredId === row.id ? 'hover' : 'rest'
+          return (
+            <div
+              key={row.id}
+              className="contents"
+              {...rowProps(row.id)}
+              {...keyboardProps(row.id)}
+              onMouseEnter={() => setHoveredId(row.id)}
+              onMouseLeave={() => setHoveredId((h) => (h === row.id ? null : h))}
+            >
+              <PondMolecule
+                kind="record-card"
+                state={state}
+                title={row.title || 'untitled'}
+                meta={galleryCardMeta(schema, row) || '—'}
+                tag={galleryCardTag(schema, row)}
+              />
+            </div>
+          )
+        })}
+      </div>
+
+      {selectedRow && (
+        <RecordPeek
+          key={selectedRow.id}
+          row={selectedRow}
+          schema={schema}
+          done={done.isDone(selectedRow)}
+          onToggleDone={done.toggle && (() => done.toggle?.(selectedRow))}
+          now={now}
+          editable={editable}
+          onEdit={onEdit}
+          onRenameRow={onRenameRow}
+          onOpenRow={onOpenRow}
         />
-      ))}
+      )}
     </div>
   )
 }
