@@ -64,7 +64,7 @@ import { readMadeFrom } from '@/lib/pages/made-from'
 import { isNewNestedPage, markOpened } from '@/lib/pages/nested-page'
 import { applyPagePropsOptimistic } from '@/lib/pages/tree'
 import { workspaceUrl, WORKSPACE_PATH, type WorkspaceNodeRef } from '@/lib/pages/nav'
-import { homeQueryKey } from '@/lib/pages/keys'
+import { homeQueryKey, pagesKey } from '@/lib/pages/keys'
 import { usePagesRows } from '@/lib/pages/use-pages'
 import { usePond } from '@/lib/pond/context'
 import { PageCanvas } from '@/lib/modules/page-canvas'
@@ -214,7 +214,13 @@ export function DocumentPanel() {
       { id: page.id, props: { openedAt: new Date().toISOString() } },
       pondId
     )
-    void markOpened(getSupabase(), page.id)
+    // A failed write leaves the optimistic `openedAt` wrong (the chip/row note
+    // cleared client-side with nothing landed) — invalidate so the next refetch
+    // reconciles with server truth, rather than an unhandled rejection.
+    void markOpened(getSupabase(), page.id).catch((err) => {
+      console.error('Failed to mark the nested page opened', err)
+      queryClient.invalidateQueries({ queryKey: pagesKey(pondId) })
+    })
   }, [page, pondId, queryClient, getSupabase])
 
   // The flat page tree — the same cache the rail reads — so this page's own

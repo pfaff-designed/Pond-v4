@@ -44,28 +44,16 @@ const PARENT_ROW = {
   order: 0,
   updated_at: NOW,
 }
-const CHILD_ROW = {
-  id: 'new-page',
-  parent_id: 'page-1',
-  type: 'page',
-  title: 'untitled',
-  order: 0,
-  updated_at: NOW,
-  // Stamped by `makePage`'s child path and read by `resolvePageFromRows` for
-  // the row's `new` chip — only present once the real `fetchPages` refetch
-  // (fired by `makePage`'s `invalidateQueries`) lands.
-  props: { kind: 'nested page', nestedFrom: 'page-1' },
-}
-
-let childCreated = false
+// The initial load resolves with the parent alone. `makePage`'s own
+// `invalidateQueries` refetch (the SECOND call) is left pending indefinitely —
+// the REAL `insertPageOptimistic` (unmocked below) is the only thing that can
+// put the child's row, with its `new`/`nestedFrom` props, into the `['pages']`
+// cache before that refetch ever lands. Proves the chip shows at once, not
+// after a refetch.
 const mockFetchPages = jest.fn()
-mockFetchPages.mockImplementation(async () =>
-  childCreated ? [PARENT_ROW, CHILD_ROW] : [PARENT_ROW]
-)
 jest.mock('@/lib/pages/tree', () => ({
   ...jest.requireActual('@/lib/pages/tree'),
   fetchPages: (...args: unknown[]) => mockFetchPages(...args),
-  insertPageOptimistic: jest.fn(),
 }))
 
 const mockGetPage = jest.fn()
@@ -110,11 +98,10 @@ function renderPanel() {
 
 beforeEach(() => {
   jest.clearAllMocks()
-  childCreated = false
-  mockCreatePage.mockImplementation(async () => {
-    childCreated = true
-    return { id: 'new-page', title: 'untitled', type: 'page' }
-  })
+  mockFetchPages
+    .mockResolvedValueOnce([PARENT_ROW])
+    .mockImplementation(() => new Promise(() => {})) // the post-create refetch never resolves
+  mockCreatePage.mockResolvedValue({ id: 'new-page', title: 'untitled', type: 'page' })
 })
 
 describe('`/ nested page` on the real page-hosting surface (KAN-122 path test)', () => {
@@ -150,7 +137,8 @@ describe('`/ nested page` on the real page-hosting surface (KAN-122 path test)',
     const blockEls = [...document.querySelectorAll('[id^="block-"]')]
     expect(blockEls[1]).toContainElement(row)
 
-    // `new` and `0 blocks` land once the real post-create refetch resolves.
+    // `new` and `0 blocks` show at once off the optimistic insert — `fetchPages`
+    // (mocked above) never returns the child's row at all.
     expect(await within(row).findByText('new')).toBeInTheDocument()
     expect(within(row).getByText('0 blocks')).toBeInTheDocument()
     expect(within(row).getByText('untitled')).toBeInTheDocument()

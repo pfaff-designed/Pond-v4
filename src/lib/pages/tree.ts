@@ -97,7 +97,19 @@ export async function fetchPages(pondId: string | null): Promise<PageRow[]> {
  */
 export function insertPageOptimistic(
   queryClient: QueryClient,
-  page: { id: string; parentId: string | null; type: string; title: string },
+  page: {
+    id: string
+    parentId: string | null
+    type: string
+    title: string
+    /**
+     * KAN-122: a `/ nested page` row's created page carries `nestedFrom`/`kind`
+     * (and later `openedAt`) at creation. Passed through so `isNewNestedPage` is
+     * true on the optimistic row itself — the rail note and the link row's `new`
+     * chip show at once, not after the invalidate's refetch lands.
+     */
+    props?: Record<string, unknown> | null
+  },
   /**
    * #312: the pond whose cache to write. `setQueryData` is an EXACT key match,
    * unlike `invalidateQueries`, so writing `pagesKey()` while the reads
@@ -118,6 +130,7 @@ export function insertPageOptimistic(
         title: page.title,
         order: 0,
         updated_at: new Date().toISOString(),
+        ...(page.props ? { props: page.props } : {}),
       },
     ]
   })

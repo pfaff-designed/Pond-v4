@@ -108,6 +108,14 @@ describe('`/ nested page` leaves a page-link block where the `/` line was (KAN-1
     expect(ids[1]).not.toBe('block-b-slash')
 
     expect(insertPageOptimistic).toHaveBeenCalledTimes(1)
+    expect(insertPageOptimistic).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        id: 'new-page',
+        props: expect.objectContaining({ kind: 'nested page', nestedFrom: 'page-1' }),
+      }),
+      null
+    )
     expect(mockPush).not.toHaveBeenCalled()
   })
 })

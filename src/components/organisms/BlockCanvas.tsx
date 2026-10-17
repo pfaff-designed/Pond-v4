@@ -1009,6 +1009,7 @@ export function BlockCanvas({
           parentId,
           type: created.type,
           title: created.title,
+          props,
         },
         pondId
       )
