@@ -382,6 +382,18 @@ describe('paletteItems — every value from the owner that already derives it', 
     expect(items.filter((i) => i.id === 'journal')).toHaveLength(1)
   })
 
+  it('the 3-row cap applies after a trashed recent is dropped, not before (#390)', () => {
+    // The newest id ('gone') no longer resolves to a page — trashed since it was
+    // recorded — so the cap must land on the next 3 that still exist, not shrink
+    // the visible group to 2.
+    const items = paletteItems(ROWS, ['gone', 'personal', 'journal', 'entry'])
+    expect(items.slice(0, 3).map((i) => [i.id, i.recent])).toEqual([
+      ['personal', true],
+      ['journal', true],
+      ['entry', true],
+    ])
+  })
+
   it('a page with children scopes; a leaf, the root, or nothing selected does not', () => {
     expect(paletteScope(ROWS, 'journal')).toEqual({ id: 'journal', label: 'journal' })
     expect(paletteScope(ROWS, 'entry')).toBeNull()

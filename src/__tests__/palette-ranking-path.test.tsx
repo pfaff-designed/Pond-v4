@@ -42,7 +42,7 @@ describe('KAN-390 path test A — recent, ranked above a mid-word match, underli
     writeRecent({ id: 'projects', type: 'page', title: 'Projects' }, 'pond-1')
 
     const visits = readRecentPageIds('pond-1')
-    const items = paletteItems(PAGES, visits.slice(0, 3), null)
+    const items = paletteItems(PAGES, visits, null)
     const onSelect = jest.fn()
 
     render(

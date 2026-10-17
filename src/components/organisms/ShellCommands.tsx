@@ -246,7 +246,7 @@ export function ShellCommands() {
     () =>
       paletteOpen
         ? [
-            ...paletteItems(pages, recentPageIds.slice(0, 3), currentNodeId),
+            ...paletteItems(pages, recentPageIds, currentNodeId),
             ...zenCommands.items,
             ...pondItems(ponds, pond?.id ?? null),
             ...records,

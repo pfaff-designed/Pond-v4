@@ -85,8 +85,13 @@ export const SAVE_AS_TEMPLATE_ACTION: PaletteItem = {
   action: 'save-as-template',
 }
 
+/** `Pond 02` 2g: "the last three pages" — capped after the existence filter below,
+ * so a trashed page in the newest slots doesn't shrink the visible group. */
+const RECENT_SHOWN = 3
+
 export function paletteItems(
   rows: readonly PageRow[],
+  /** Newest first, up to the store's own 20-entry cap — not pre-sliced by the caller. */
   recentIds: readonly string[],
   /**
    * The page open right now, if any. Page actions list only when there is a page
@@ -109,7 +114,7 @@ export function paletteItems(
       path: path.map((c) => c.id),
     }
   }
-  const recent = recentIds.flatMap((id) => byId.get(id) ?? [])
+  const recent = recentIds.flatMap((id) => byId.get(id) ?? []).slice(0, RECENT_SHOWN)
   const recentSet = new Set(recent.map((r) => r.id))
   return [
     ...recent.map((r) => ({ ...item(r), recent: true })),
