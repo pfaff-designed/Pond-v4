@@ -82,6 +82,49 @@ function MonthDayNumber({ day, isToday, inMonth }: { day: number; isToday: boole
   )
 }
 
+/** ↵ on the item's own tab stop (not an inner control's) selects it; ↵ again, or a
+ *  second click, on the already-selected item opens its page — same split as
+ *  `CollectionTable`'s `handleRowKeyDown`, but the calendar's own click also opens
+ *  (Jira: "Enter or a second click opens the record"). Shared by the desktop
+ *  stack item and the mobile focus-list row. */
+function handleCalendarRowKeyDown(
+  rowId: string,
+  selectedId: string | undefined,
+  select: RowSelection['select'],
+  onOpenRow: ((rowId: string) => void) | undefined,
+  e: React.KeyboardEvent<HTMLDivElement>
+) {
+  if (e.target !== e.currentTarget) return
+  if (e.key !== 'Enter' && e.key !== ' ') return
+  // Stop the day cell's own Enter/Space listener underneath (open-add-input)
+  // from also firing — the same guard the item's click already makes.
+  e.stopPropagation()
+  if (e.key === 'Enter' && rowId === selectedId) {
+    e.preventDefault()
+    onOpenRow?.(rowId)
+    return
+  }
+  e.preventDefault()
+  select({ id: rowId, via: 'keyboard' })
+}
+
+function handleCalendarRowClick(
+  rowId: string,
+  selectedId: string | undefined,
+  selectWithPointer: RowSelection['selectWithPointer'],
+  onOpenRow: ((rowId: string) => void) | undefined,
+  e: React.MouseEvent<HTMLDivElement>
+) {
+  // A row is its own target — it must never fall through to the cell's
+  // "open the add input" click underneath it, so it stops that click too.
+  e.stopPropagation()
+  if (rowId === selectedId) {
+    onOpenRow?.(rowId)
+    return
+  }
+  selectWithPointer(rowId)
+}
+
 function MonthDayStack({
   items,
   moreCount,
@@ -102,43 +145,16 @@ function MonthDayStack({
   onOpenRow?: (rowId: string) => void
 }) {
   if (items.length === 0 && moreCount === 0) return null
-  // ↵ on the item's own tab stop (not an inner control's) selects it; ↵ again, or a
-  // second click, on the already-selected item opens its page — same split as
-  // `CollectionTable`'s `handleRowKeyDown`, but the calendar's own click also opens
-  // (Jira: "Enter or a second click opens the record").
-  function handleItemKeyDown(rowId: string, e: React.KeyboardEvent<HTMLDivElement>) {
-    if (e.target !== e.currentTarget) return
-    if (e.key !== 'Enter' && e.key !== ' ') return
-    // Stop the day cell's own Enter/Space listener underneath (open-add-input)
-    // from also firing — the same guard the item's click already makes.
-    e.stopPropagation()
-    if (e.key === 'Enter' && rowId === selectedId) {
-      e.preventDefault()
-      onOpenRow?.(rowId)
-      return
-    }
-    e.preventDefault()
-    select({ id: rowId, via: 'keyboard' })
-  }
   return (
     <div className="flex flex-col gap-px px-1 pt-0.5 pb-2">
       {items.map((row) => (
-        // A row is its own target — it must never fall through to the cell's
-        // "open the add input" click underneath it, so it stops that click too.
         <div
           key={row.id}
           className={cn(DAY_ITEM_ROW, row.id === selectedId && DAY_ITEM_SELECTED_RING)}
           {...rowProps(row.id)}
           {...keyboardProps(row.id)}
-          onKeyDown={(e) => handleItemKeyDown(row.id, e)}
-          onClick={(e) => {
-            e.stopPropagation()
-            if (row.id === selectedId) {
-              onOpenRow?.(row.id)
-              return
-            }
-            selectWithPointer(row.id)
-          }}
+          onKeyDown={(e) => handleCalendarRowKeyDown(row.id, selectedId, select, onOpenRow, e)}
+          onClick={(e) => handleCalendarRowClick(row.id, selectedId, selectWithPointer, onOpenRow, e)}
         >
           <span className={DAY_ITEM_DOT} />
           <span className={DAY_ITEM_TITLE}>{row.title}</span>
@@ -291,11 +307,23 @@ function FocusDayList({
   isToday,
   label,
   items,
+  selectedId,
+  rowProps,
+  keyboardProps,
+  selectWithPointer,
+  select,
+  onOpenRow,
 }: {
   dayOfMonth: number
   isToday: boolean
   label: string
   items: CollectionRow[]
+  selectedId?: string
+  rowProps: RowSelection['rowProps']
+  keyboardProps: RowSelection['keyboardProps']
+  selectWithPointer: RowSelection['selectWithPointer']
+  select: RowSelection['select']
+  onOpenRow?: (rowId: string) => void
 }) {
   return (
     <div
@@ -313,7 +341,17 @@ function FocusDayList({
           <span className="py-2.5 text-[13px] text-mn-text-secondary">nothing dated</span>
         ) : (
           items.map((row) => (
-            <div key={row.id} className="flex min-h-11 min-w-0 items-center gap-2.5 rounded-[10px] px-2">
+            <div
+              key={row.id}
+              className={cn(
+                'flex min-h-11 min-w-0 items-center gap-2.5 rounded-[10px] px-2',
+                row.id === selectedId && DAY_ITEM_SELECTED_RING
+              )}
+              {...rowProps(row.id)}
+              {...keyboardProps(row.id)}
+              onKeyDown={(e) => handleCalendarRowKeyDown(row.id, selectedId, select, onOpenRow, e)}
+              onClick={(e) => handleCalendarRowClick(row.id, selectedId, selectWithPointer, onOpenRow, e)}
+            >
               <span className={DAY_ITEM_DOT_LARGE} />
               <span className="min-w-0 flex-1 truncate text-[15px] leading-[1.3] text-mn-text">
                 {row.title}
@@ -516,6 +554,12 @@ export function CollectionCalendar({
         isToday={focusIsToday}
         label={focusLabel}
         items={focusItems}
+        selectedId={selectedRow?.id}
+        rowProps={rowProps}
+        keyboardProps={keyboardProps}
+        selectWithPointer={selectWithPointer}
+        select={select}
+        onOpenRow={onOpenRow}
       />
       {selectedRow && (
         <RecordPeek

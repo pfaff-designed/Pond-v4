@@ -423,4 +423,62 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
       expect(onOpenRow).toHaveBeenCalledWith('r1')
     })
   })
+
+  describe("selecting a day’s event in the mobile focus list (KAN-358)", () => {
+    beforeEach(() => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-09-10T12:00:00Z'))
+    })
+    afterEach(() => {
+      jest.useRealTimers()
+    })
+
+    it('clicking a focus-list row draws the selected ring and opens the record peek', async () => {
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+      const { container } = render(
+        <CollectionCalendar
+          schema={schemaWithDate}
+          rows={rows}
+          editable
+          onAddRow={jest.fn()}
+          onRenameRow={jest.fn()}
+        />
+      )
+      const focusList = container.querySelector<HTMLElement>('[data-part="calendar-focus-list"]')!
+      const item = within(focusList).getByText('Trim the rim').closest('div')!
+      expect(item).not.toHaveClass('ring-[1.5px]')
+      expect(screen.queryByLabelText('Record: Trim the rim')).not.toBeInTheDocument()
+
+      await user.click(item)
+
+      expect(item).toHaveClass('ring-[1.5px]', 'ring-inset', 'ring-mn-text')
+      expect(screen.getByLabelText('Record: Trim the rim')).toBeInTheDocument()
+    })
+
+    it('↵ on an unselected focus-list row selects it without opening the record; ↵ again (selected) opens it', async () => {
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+      const onOpenRow = jest.fn()
+      const { container } = render(
+        <CollectionCalendar
+          schema={schemaWithDate}
+          rows={rows}
+          editable
+          onAddRow={jest.fn()}
+          onRenameRow={jest.fn()}
+          onOpenRow={onOpenRow}
+        />
+      )
+      const focusList = container.querySelector<HTMLElement>('[data-part="calendar-focus-list"]')!
+      const item = within(focusList).getByText('Trim the rim').closest('div')!
+      item.focus()
+
+      await user.keyboard('{Enter}')
+
+      expect(item).toHaveClass('ring-[1.5px]')
+      expect(onOpenRow).not.toHaveBeenCalled()
+
+      await user.keyboard('{Enter}')
+
+      expect(onOpenRow).toHaveBeenCalledWith('r1')
+    })
+  })
 })
