@@ -91,6 +91,7 @@ import { RecordPeek } from './record-peek'
 import { CollectionList } from './list'
 import { CollectionCalendar } from './collection-calendar'
 import { useRecordSelection } from './use-record-selection'
+import { shouldSelectRowFromClick } from './card-click'
 import { ViewBar, type ViewBarView } from '@/components/molecules/ViewBar'
 import { useBlockRow } from '../block-row-context'
 
@@ -500,6 +501,7 @@ export function CollectionView({
         <CollectionBigNumber schema={schema} rows={processed} bigNumber={activeConfig.bigNumber} />
       ) : (
         <CollectionTable
+          viewKey={viewKey}
           schema={schema}
           rows={tableRows}
           struckIds={struckIds}
@@ -507,6 +509,7 @@ export function CollectionView({
           onEdit={onEdit}
           onAddRow={onAddRow}
           onRenameRow={onRenameRow}
+          onOpenRow={onOpenRow}
         />
       )}
     </div>
@@ -610,6 +613,7 @@ function ViewControls({
 // ── Table ─────────────────────────────────────────────────────────────────────
 
 function CollectionTable({
+  viewKey,
   schema,
   rows,
   struckIds,
@@ -617,7 +621,10 @@ function CollectionTable({
   onEdit,
   onAddRow,
   onRenameRow,
+  onOpenRow,
 }: {
+  /** The view block's id — what the page canvas keys its one peek and one orange pill by. */
+  viewKey: string
   schema: PropertySchema
   rows: CollectionRow[]
   /** Row ids an undo/redo just removed (KAN-139, s6o5) — still rendered,
@@ -627,8 +634,20 @@ function CollectionTable({
   onEdit?: (rowId: string, key: string, value: PropertyValue) => void
   onAddRow?: (values?: Record<string, PropertyValue>) => Promise<string | null>
   onRenameRow?: (rowId: string, title: string) => void
+  onOpenRow?: (rowId: string) => void
 }) {
   const { stepOut } = useBlockRow()
+  const [now] = useState(() => new Date())
+  const { selectedRow, selectWithPointer } = useRecordSelection(rows, viewKey)
+  const done = useDoneToggle({ schema, editable, onEdit })
+
+  // A click on the row's own space (not a cell's input/control) selects it and
+  // opens the board's peek beside the table; `shouldSelectRowFromClick` is the
+  // row-shaped predicate (unlike the card's, it doesn't exclude `td`/`th`,
+  // which is the row's entire clickable surface).
+  function handleRowClick(rowId: string, e: React.MouseEvent) {
+    if (shouldSelectRowFromClick(e.target)) selectWithPointer(rowId)
+  }
 
   // Return/↓ in the last row's last cell step out of the table (KAN-344) — the
   // "last cell" is the Row title input when there's no schema, else the last
@@ -668,14 +687,17 @@ function CollectionTable({
               (PondBlock state="empty", #239) and suppresses this view entirely. */}
           {rows.map((row, ri) => {
             const struck = struckIds?.has(row.id) ?? false
+            const selected = row.id === selectedRow?.id
             return (
               <tr
                 key={row.id}
-                className={
-                  struck
-                    ? `border-b border-mn-line last:border-b-0 align-top ${DIFF_REMOVAL_TEXT_CLASSNAME}`
-                    : 'border-b border-mn-line last:border-b-0 align-top'
-                }
+                data-row-id={row.id}
+                onClick={(e) => handleRowClick(row.id, e)}
+                className={[
+                  'border-b border-mn-line last:border-b-0 align-top',
+                  struck ? DIFF_REMOVAL_TEXT_CLASSNAME : '',
+                  selected ? 'rounded-[8px] bg-mn-text/[0.07]' : '',
+                ].join(' ')}
               >
                 <td
                   className={
@@ -725,6 +747,21 @@ function CollectionTable({
         >
           + Add row
         </button>
+      )}
+
+      {selectedRow && (
+        <RecordPeek
+          key={selectedRow.id}
+          row={selectedRow}
+          schema={schema}
+          done={done.isDone(selectedRow)}
+          onToggleDone={done.toggle && (() => done.toggle?.(selectedRow))}
+          now={now}
+          editable={editable}
+          onEdit={onEdit}
+          onRenameRow={onRenameRow}
+          onOpenRow={onOpenRow}
+        />
       )}
     </div>
   )
