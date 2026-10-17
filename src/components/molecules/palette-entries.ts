@@ -133,17 +133,52 @@ function fold(s: string): string {
   return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 }
 
-function isSubsequence(label: string, q: string): boolean {
+/**
+ * The greedy earliest-end scan `matchTier`'s subsequence tier scores on: the
+ * span from the first matched character to the last, picking each of `q`'s
+ * characters at its earliest possible position in `label`. `-1` means `q` is
+ * not a subsequence of `label` at all.
+ */
+function subsequenceSpan(label: string, q: string): number {
+  if (!q) return 0
   let i = 0
+  let first = -1
+  let last = -1
+  let pos = 0
   for (const ch of label) {
-    if (ch === q[i]) i++
-    if (i === q.length) return true
+    if (ch === q[i]) {
+      if (first === -1) first = pos
+      last = pos
+      i++
+      if (i === q.length) break
+    }
+    pos++
   }
-  return q.length === 0
+  return i === q.length ? last - first + 1 : -1
 }
 
-function matchTier(foldedLabel: string, foldedQuery: string): number {
+/**
+ * The minimum word length a subsequence hit needs before it is even tried
+ * (KAN-390: a 1- or 2-char query scatter-matches almost anything).
+ */
+const SUBSEQUENCE_MIN_QUERY_LENGTH = 3
+/** How loose a subsequence hit's span may be, relative to the query's length. */
+const SUBSEQUENCE_SPAN_FACTOR = 2
+
+/**
+ * A page's or record's own near-miss spelling goes to `did you mean`, not a
+ * scattered subsequence hit — `PondPicker.dc.html`'s `empty` frame's own
+ * example (`cabnet` over "cabinet plan"). Shared with `didYouMean` so the two
+ * branches agree on what "close" means.
+ */
+function isCloseSpelling(label: string, q: string): boolean {
+  const lower = label.toLowerCase()
+  return [lower, ...lower.split(/\s+/)].some((w) => editDistance(w, q) <= 2)
+}
+
+function matchTier(item: PaletteItem, foldedQuery: string, q: string): number {
   if (!foldedQuery) return 0
+  const foldedLabel = fold(item.label)
   if (foldedLabel === foldedQuery) return EXACT_SCORE
   if (foldedLabel.startsWith(foldedQuery)) return PREFIX_SCORE
   const isWordStart = foldedLabel
@@ -151,8 +186,11 @@ function matchTier(foldedLabel: string, foldedQuery: string): number {
     .some((word) => word && word !== foldedLabel && word.startsWith(foldedQuery))
   if (isWordStart) return WORD_START_SCORE
   if (foldedLabel.includes(foldedQuery)) return SUBSTRING_SCORE
-  if (isSubsequence(foldedLabel, foldedQuery)) return SUBSEQUENCE_SCORE
-  return 0
+  if (foldedQuery.length < SUBSEQUENCE_MIN_QUERY_LENGTH) return 0
+  const span = subsequenceSpan(foldedLabel, foldedQuery)
+  if (span === -1 || span > foldedQuery.length * SUBSEQUENCE_SPAN_FACTOR) return 0
+  if (item.kind !== 'action' && isCloseSpelling(item.label, q)) return 0
+  return SUBSEQUENCE_SCORE
 }
 
 /**
@@ -182,7 +220,7 @@ export function rankPages(
 ): PaletteItem[] {
   const foldedQuery = fold(q)
   return items
-    .map((item, index) => ({ item, index, tier: matchTier(fold(item.label), foldedQuery) }))
+    .map((item, index) => ({ item, index, tier: matchTier(item, foldedQuery, q) }))
     .filter(({ tier }) => tier > 0)
     .map(({ item, index, tier }) => ({
       item,
@@ -320,10 +358,7 @@ export function paletteEntries(
 export function didYouMean(items: readonly PaletteItem[], q: string): PaletteItem[] {
   return items
     .filter((i) => i.kind !== 'action' && i.kind !== 'pond')
-    .filter((i) => {
-      const label = i.label.toLowerCase()
-      return [label, ...label.split(/\s+/)].some((w) => editDistance(w, q) <= 2)
-    })
+    .filter((i) => isCloseSpelling(i.label, q))
     .slice(0, DID_YOU_MEAN_MAX)
 }
 

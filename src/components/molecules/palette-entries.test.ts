@@ -39,15 +39,41 @@ describe('rankPages tiers', () => {
   })
 
   it('ranks a contiguous substring match above a scattered subsequence match', () => {
-    // "sub" sits mid-word in "absubtle" (substring); "sauce bun" only scatter-matches s-u-b.
-    const items = [page('a', 'sauce bun'), page('b', 'absubtle')]
+    // "sub" sits mid-word in "absubtle" (substring); "snubby" only scatter-matches
+    // s-u-b, within the subsequence tier's span bound and far enough from "sub" by
+    // edit distance not to read as a near-miss spelling.
+    const items = [page('a', 'snubby'), page('b', 'absubtle')]
     const ranked = rankPages(items, 'sub')
     expect(ranked.map((i) => i.id)).toEqual(['b', 'a'])
   })
 
   it('finds "new page" for "nwp" by subsequence', () => {
-    const items = [page('a', 'new page')]
+    const items = [{ id: 'a', label: 'new page', kind: 'action' } satisfies PaletteItem]
     const ranked = rankPages(items, 'nwp')
+    expect(ranked.map((i) => i.id)).toEqual(['a'])
+  })
+
+  it('does not count a too-scattered subsequence hit: span must stay within 2x the query length', () => {
+    // "pasta" against "save page as template": the greedy p-a-s-t-a span stretches
+    // across the whole label, well past 2x the 5-char query.
+    const items = [{ id: 'a', label: 'save page as template', kind: 'action' } satisfies PaletteItem]
+    const ranked = rankPages(items, 'pasta')
+    expect(ranked).toEqual([])
+  })
+
+  it('does not count a page/record subsequence hit whose own word near-misses the query', () => {
+    // "cabnet" against "cabinet plan": within span, but "cabinet" is one edit from
+    // "cabnet" — that goes to `did you mean`, not a fuzzy hit (PondPicker.dc.html `empty`).
+    const items = [page('a', 'cabinet plan')]
+    const ranked = rankPages(items, 'cabnet')
+    expect(ranked).toEqual([])
+  })
+
+  it('still counts an action subsequence hit even when a word near-misses the query', () => {
+    // Actions are exempt from the near-miss suppression — only pages/records defer to
+    // `did you mean`.
+    const items = [{ id: 'a', label: 'cabinet', kind: 'action' } satisfies PaletteItem]
+    const ranked = rankPages(items, 'cabnt')
     expect(ranked.map((i) => i.id)).toEqual(['a'])
   })
 
