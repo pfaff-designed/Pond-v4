@@ -184,4 +184,38 @@ describe('ChangeLogPage — the by page view', () => {
       'nothing logged in this pond yet'
     )
   })
+
+  it('offers load more, and fetching the next page surfaces an older page group', async () => {
+    // A full first page (50, `page-1`) so `hasNextPage` is true, then a
+    // second page holding a record on a page whose edits are all older than
+    // the first page — "by page" has no group for it until load more runs.
+    const PAGE_ONE: ChangeLogRecord[] = Array.from({ length: 50 }, (_, i) =>
+      record({
+        id: `page1-${i}`,
+        targetPageId: 'page-1',
+        createdAt: new Date(2026, 0, 1, 12, 0, -i).toISOString(),
+      })
+    )
+    const OLDER_PAGE_RECORD = record({
+      id: 'rec-older-page',
+      targetPageId: 'page-2',
+      createdAt: '2025-12-01T08:00:00.000Z',
+    })
+    mockListRecords.mockImplementation(async (_supabase, opts) => {
+      if (opts.before === undefined) return PAGE_ONE
+      return [OLDER_PAGE_RECORD]
+    })
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(screen.getByRole('tab', { name: 'by page' }))
+    await screen.findByTestId('change-log-load-more')
+    expect(screen.queryByText('budget')).not.toBeInTheDocument()
+
+    await user.click(screen.getByTestId('change-log-load-more'))
+
+    const groupHeads = await screen.findAllByTestId('change-log-group-head')
+    expect(groupHeads.map((el) => el.textContent)).toContain('budget')
+    expect(mockListRecords).toHaveBeenCalledTimes(2)
+  })
 })

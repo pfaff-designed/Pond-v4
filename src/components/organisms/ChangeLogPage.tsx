@@ -184,9 +184,11 @@ function DeletedRecordCard({
 function LogGroupsTable({
   groups,
   onOpen,
+  loadMore,
 }: {
   groups: LogGroup[]
   onOpen: (recordId: string) => void
+  loadMore?: { onFetch: () => void; isFetching: boolean }
 }) {
   return (
     <>
@@ -239,6 +241,17 @@ function LogGroupsTable({
           ))}
         </div>
       ))}
+      {loadMore && (
+        <button
+          type="button"
+          onClick={loadMore.onFetch}
+          disabled={loadMore.isFetching}
+          data-testid="change-log-load-more"
+          className="mt-1 w-full py-2 text-center font-mono text-[11px] lowercase tracking-[0.02em] text-mn-text-secondary disabled:opacity-60"
+        >
+          {loadMore.isFetching ? 'loading…' : 'load more'}
+        </button>
+      )}
     </>
   )
 }
@@ -566,23 +579,15 @@ export function ChangeLogPage() {
                   : 'nothing logged in this pond yet'}
               </p>
             ) : (
-              <>
-                <LogGroupsTable
-                  groups={groups}
-                  onOpen={(id) => router.push(changeLogRecordUrl(id))}
-                />
-                {pageFilterId === null && hasNextPage && (
-                  <button
-                    type="button"
-                    onClick={() => fetchNextPage()}
-                    disabled={isFetchingNextPage}
-                    data-testid="change-log-load-more"
-                    className="mt-1 w-full py-2 text-center font-mono text-[11px] lowercase tracking-[0.02em] text-mn-text-secondary disabled:opacity-60"
-                  >
-                    {isFetchingNextPage ? 'loading…' : 'load more'}
-                  </button>
-                )}
-              </>
+              <LogGroupsTable
+                groups={groups}
+                onOpen={(id) => router.push(changeLogRecordUrl(id))}
+                loadMore={
+                  pageFilterId === null && hasNextPage
+                    ? { onFetch: fetchNextPage, isFetching: isFetchingNextPage }
+                    : undefined
+                }
+              />
             )}
           </div>
         ) : view === 'by-page' ? (
@@ -603,6 +608,11 @@ export function ChangeLogPage() {
                 <LogGroupsTable
                   groups={pageGroups}
                   onOpen={(id) => router.push(changeLogRecordUrl(id))}
+                  loadMore={
+                    pageFilterId === null && hasNextPage
+                      ? { onFetch: fetchNextPage, isFetching: isFetchingNextPage }
+                      : undefined
+                  }
                 />
               )}
             </div>
