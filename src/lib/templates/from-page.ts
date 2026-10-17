@@ -19,13 +19,20 @@
  *   - `entries` keeps its `serif` flag, which is what makes a journal a journal
  *   - `text`, `highlight` and `image` are content-only, so they become empty
  *     blocks of their type
- *   - a `page-link` (KAN-122) has no shape beyond its tie to one other page, so
- *     it drops that tie the same way a view's `collectionId` does — see below
+ *   - a `page-link` (KAN-122) has no shape beyond its tie to one other page —
+ *     unlike a `view`, where the tie is one field among several, the whole
+ *     block IS the pointer — so it is DROPPED from the template entirely,
+ *     in both branches below, rather than kept with an empty `pageId`: a
+ *     template is reused by someone who never saw the original page, so an
+ *     emptied link would be a dead, unfixable "page in trash" row on every
+ *     page the template makes
  *
- * The eight above ARE the whole `Block` union, so the switch is exhaustive and a
- * new block type will fail to compile here rather than silently copying its
- * content into a template. (`page` is not in the union — it is the withheld
- * structural type, see `modules/palette.ts`'s `WITHHELD`.)
+ * The seven kept kinds are the whole `Block` union minus `page-link` (filtered
+ * out before `emptied`/`withoutTie` run — see `isNotPageLink`), so the switch
+ * in `emptied` is still exhaustive and a new block type will fail to compile
+ * here rather than silently copying its content into a template. (`page` is
+ * not in the union — it is the withheld structural type, see
+ * `modules/palette.ts`'s `WITHHELD`.)
  *
  * `collectionId` is dropped deliberately. It names ONE database, and a template
  * is a shape you copy, never a tie — `provenance.ts` is explicit that a page
@@ -42,6 +49,7 @@
  */
 
 import type { Block } from '@/lib/modules/content'
+import type { PageLinkBlock } from '@/lib/modules/page-link/schema'
 
 /** What the sheet's one tick changes (board `6i` frame 4). */
 export interface TemplateFromPageOptions {
@@ -63,9 +71,14 @@ export function templateBlocksFrom(
   mintId: () => string,
   opts: TemplateFromPageOptions = {}
 ): Block[] {
-  return blocks.map((block) =>
-    opts.keepContent ? withoutTie(block, mintId()) : emptied(block, mintId)
-  )
+  return blocks
+    .filter(isNotPageLink)
+    .map((block) => (opts.keepContent ? withoutTie(block, mintId()) : emptied(block, mintId)))
+}
+
+/** Narrows `page-link` out so the branches below never have to handle it. */
+function isNotPageLink(block: Block): block is Exclude<Block, PageLinkBlock> {
+  return block.type !== 'page-link'
 }
 
 /**
@@ -84,21 +97,17 @@ export function templateBlocksFrom(
  * because a pond must stay sealed and a template is a copy, never a tie
  * (`provenance.ts`). Do not "fix" this by restoring the id.
  */
-function withoutTie(block: Block, id: string): Block {
+function withoutTie(block: Exclude<Block, PageLinkBlock>, id: string): Block {
   if (block.type === 'view') {
     const next = { ...block, id }
     delete next.collectionId
     return next
   }
-  // KAN-122: a page-link IS a tie (the whole block is a pointer to one other
-  // page, not "a view with a tie among its fields") — the same cross-page,
-  // eventually cross-pond, read `collectionId` is dropped for above.
-  if (block.type === 'page-link') return { ...block, id, pageId: '' }
   return { ...block, id }
 }
 
-/** One block, keeping its shape and losing its content. */
-function emptied(block: Block, mintId: () => string): Block {
+/** One block, keeping its shape and losing its content. `page-link` is filtered out before this runs. */
+function emptied(block: Exclude<Block, PageLinkBlock>, mintId: () => string): Block {
   const id = mintId()
   // `label` is on every type and is the eyebrow the board calls a "label", so it
   // is preserved in every branch below rather than conditionally.
@@ -162,12 +171,5 @@ function emptied(block: Block, mintId: () => string): Block {
       delete next.collectionId
       return next
     }
-
-    case 'page-link':
-      // A page-link has no shape apart from its tie: unlike `view`, where the
-      // tie is one field among several, the whole block IS the pointer. No
-      // board specifies a template placeholder for it, so empty `pageId` is
-      // the same "nothing set yet" sentinel `image`/`highlight` use above.
-      return { ...block, id, pageId: '' }
   }
 }
