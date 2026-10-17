@@ -31,6 +31,32 @@ import { blockFrame } from '@/lib/modules/block-frame'
  *   none     no dot · label 500 (`fontWeight: d.links ? 500 : 400`)
  */
 
+
+// DIAGNOSTIC (KAN-355 CI, to be reverted): record every pointer boundary event.
+const __log: string[] = []
+const __desc = (t: EventTarget | null) =>
+  t instanceof Element
+    ? `${t.tagName.toLowerCase()}${t.getAttribute('data-item-id') ? '#' + t.getAttribute('data-item-id') : ''}${t.getAttribute('data-kind') ? '[' + t.getAttribute('data-kind') + ']' : ''}${t.getAttribute('data-part') ? '{' + t.getAttribute('data-part') + '}' : ''}`
+    : String(t)
+for (const type of ['mouseover', 'mouseout', 'mousemove', 'pointerover', 'pointerout']) {
+  document.addEventListener(
+    type,
+    (e) => {
+      const m = e as MouseEvent
+      __log.push(`${type} trusted=${e.isTrusted} t=${__desc(e.target)} rel=${__desc(m.relatedTarget)} xy=${m.clientX},${m.clientY}`)
+    },
+    true
+  )
+}
+function __dump(label: string, root: HTMLElement) {
+  const hov = Array.from(document.querySelectorAll(':hover')).map(__desc).join(' > ')
+  const rects = Array.from(root.querySelectorAll<HTMLElement>('[data-item-id]'))
+    .map((r) => { const b = r.getBoundingClientRect(); return `${r.getAttribute('data-item-id')}:${b.x},${b.y},${b.width}x${b.height}` })
+    .join(' ')
+  console.log(`DIAG ${label} win=${innerWidth}x${innerHeight} :hover=[${hov}] rects=[${rects}]\nDIAG events:\n${__log.slice(-40).join('\n')}`)
+  __log.length = 0
+}
+
 /** Storybook-only paper/ink decorator: flips the ambient role tokens via `.dark`. */
 const inkTheme: Decorator = (Story) => (
   <div className="dark rounded-mn-inner bg-raw-ink p-mn-6">
@@ -302,7 +328,9 @@ export const Hover: Story = {
   args: { data: method },
   play: async ({ canvasElement }) => {
     const rows = rowsOf(canvasElement)
+    __dump('Hover:before', canvasElement)
     await userEvent.hover(rows[1])
+    __dump('Hover:after', canvasElement)
     await assertHover(rows[1], onPaper())
     // Only the hovered row washes; its neighbours stay at rest.
     await expect(getComputedStyle(rows[2]).backgroundColor).toBe(TRANSPARENT)
@@ -432,7 +460,10 @@ export const DoneWithMeta: Story = {
 
 export const DotList: Story = {
   args: { data: groceries },
-  play: async ({ canvasElement }) => assertGroceries(canvasElement, onPaper()),
+  play: async ({ canvasElement }) => {
+    __dump('DotList', canvasElement)
+    await assertGroceries(canvasElement, onPaper())
+  },
 }
 
 export const DotListDark: Story = {
