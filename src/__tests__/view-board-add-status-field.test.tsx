@@ -147,3 +147,20 @@ describe('CollectionBoard — the "add a status field" remedy (KAN-351)', () => 
     expect(screen.getByRole('button', { name: 'add a status field' })).toBeInTheDocument()
   })
 })
+
+describe('CollectionBoard — a status field with no options (KAN-377)', () => {
+  it('draws one "No <name>" lane, min-h-[380px], with ＋ task — not zero lanes', () => {
+    initialSchema = [
+      ...titleOnly,
+      { id: 'p-status', name: 'status', type: 'status', options: [] },
+    ]
+
+    const { container } = renderView(board)
+
+    const lanes = container.querySelectorAll<HTMLElement>('[data-part="lane"]')
+    expect(lanes).toHaveLength(1)
+    expect(lanes[0]).toHaveAttribute('data-lane', 'No status')
+    expect(lanes[0].className).toContain('min-h-[380px]')
+    expect(screen.getByRole('button', { name: '＋ task' })).toBeInTheDocument()
+  })
+})

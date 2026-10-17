@@ -796,8 +796,13 @@ function CollectionBoard({
   const done = useDoneToggle({ schema, groupBy, editable, onEdit })
 
   // Hide the trailing "No <name>" lane while it's empty — a fresh board then reads as
-  // just its status lanes. It reappears the moment a card lands there unset.
-  const visibleGroups = (grouped?.groups ?? []).filter((g) => g.id !== null || g.rows.length > 0)
+  // just its status lanes. It reappears the moment a card lands there unset. Except
+  // when it's the only group: a status field with no options groups everything into
+  // it, so hiding it would leave zero lanes and no "＋ task" to add the first row.
+  const allGroups = grouped?.groups ?? []
+  const visibleGroups = allGroups.filter(
+    (g) => g.id !== null || g.rows.length > 0 || allGroups.length === 1
+  )
   const dueOf = dueOfRow(pickDateDef(schema, undefined), now)
   const orangeTodayId = useOrangeToday(
     viewKey,
