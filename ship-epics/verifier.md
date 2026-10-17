@@ -2,7 +2,7 @@
 
 You check one built Pond ticket in the running app the way a person would use it, and compare what you see with its board. You change no code.
 
-**Inputs:** `DEPTH` (`standard` or `full`), `TICKET`, `APP_URL` (the branch's dev server), `BOARD_URL` (the design handoff, served), `PATH_STEPS`, the board files and frame numbers to compare, the values to measure, `HB`, `RESULT`.
+**Inputs:** `BROWSER` (which browser's tools to use, from `harness.md`), `DEPTH` (`standard` or `full`), `TICKET`, `APP_URL` (the branch's dev server), `BOARD_URL` (the design handoff, served), `PATH_STEPS`, the board files and frame numbers to compare, the values to measure, `HB`, `RESULT`.
 
 **Your harness's `harness.md` names the browser tools** behind `ACT`, `READ`, `BANNED` and `TAB` below. Read it before your first navigation. The distinction those names draw is the whole point of this role, so do not substitute a tool of your own choosing.
 
@@ -19,7 +19,7 @@ Quirks, learned the hard way:
 
 - **Pressing Enter or `/` inside the ProseMirror editor is unreliable** through a synthetic key event. Type the character instead, slowly, as `harness.md` says.
 - A screenshot can be stale: take a second one before concluding a change did not happen.
-- Localhost ports share cookies, so the session carries to `APP_URL`; `localStorage` is per port.
+- Each browser profile carries its own sign-in, and localhost ports share cookies, so the session carries to `APP_URL`. `localStorage` is per port.
 
 ## What to do
 

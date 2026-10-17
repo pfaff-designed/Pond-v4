@@ -12,7 +12,7 @@ conductor (this chat)
  └─ epic orchestrator (one per epic, in parallel)        ship-epics/orchestrator.md   opus
      ├─ build loop         ralph.sh: a fresh pass per item  ship-epics/builder.md      claude-sonnet-5
      ├─ reviewer × 2       standards + spec, in parallel    ship-epics/reviewer.md     opus
-     └─ live verifier      Playwright, one at a time        ship-epics/verifier.md     opus
+     └─ live verifier      Playwright, the slot's browser   ship-epics/verifier.md     opus
 ```
 
 **One source, two heads.** Every role prompt and every script lives once, in `REPO/ship-epics/`, and names no tools. This directory is the Claude Code head: this file and `harness.md`, which is the only place a tool is named. `.cursor/skills/ship-epics/` is the Cursor head. **Read `harness.md` before you call anything**, and pass it to every orchestrator you launch.
@@ -41,10 +41,10 @@ And the failsafe, because on 2026-10-02 two builds retried one blocked step six 
 
 A Ralph loop (Geoffrey Huntley's name for it) is a dumb loop around a fresh agent: the same prompt every pass, no memory between passes, all state in files and git. `ralph.sh` is Pond's: one headless Claude Code pass per `PLAN.md` item, each committing one green step, until every item is ticked and `gates.sh` passes. A long-running builder accumulates context and, when stuck, retries inside it; a fresh pass reads the plan and the failed attempt and takes another route, and the loop measures progress from git rather than taking the pass's word for it. Its passes run with default-deny permissions — nothing in them can push, reach Supabase or start a server — enforced by the tool, not by the prompt.
 
-**Use a loop when all four hold:** the work is a list of items; each item is proven by a command (a test, `tsc`, the gates), not by judgement; the state survives in git and a plan file; and nothing in it needs the user, the shared browser, or a one-way door.
+**Use a loop when all four hold:** the work is a list of items; each item is proven by a command (a test, `tsc`, the gates), not by judgement; the state survives in git and a plan file; and nothing in it needs the user, a browser, or a one-way door.
 
 - **Loops:** a ticket's build, and every fix round (confirmed review findings, a failed live verification, red CI), each as `fix:` items on the same plan. Also a mechanical queue the user hands over — one surface's AUDIT p2/p3 items, a deletion sweep — with the same script and its own `PROMPT.md` and `SPEC.md`.
-- **Not loops:** picking and the reachability gate (judgement against the queue and the app); review (independent eyes — a loop would mark its own work); live verification (one shared browser, judged against a board); migrations, pushes, merges and Jira (one-way doors and the user's decisions). These stay with subagents or the orchestrator itself.
+- **Not loops:** picking and the reachability gate (judgement against the queue and the app); review (independent eyes — a loop would mark its own work); live verification (a real browser, judged against a board); migrations, pushes, merges and Jira (one-way doors and the user's decisions). These stay with subagents or the orchestrator itself.
 
 ## The run
 
@@ -53,7 +53,7 @@ A Ralph loop (Geoffrey Huntley's name for it) is a dumb loop around a fresh agen
 2. **Pick the epics.** An epic runs when it has an interrupted ticket to resume (a worktree and a loop under `/tmp/ship-epics/<EPIC>/ralph-<key>/`), or when its next Workstream ticket is ready: every `after:` is Done and no `feat/<key>` branch or open PR exists. At most **3** orchestrators at once — each runs jest, Storybook and a dev server.
 3. **Launch** every picked orchestrator with `LAUNCH`, all in **one message** so they run at once. Each prompt is `ship-epics/orchestrator.md` + `ship-epics/failsafe.md` + `harness.md` plus its inputs. First, for each: an epic with an interrupted ticket keeps its directory, which is what its orchestrator resumes from — move `orchestrator.result.md` to `orchestrator.prev-run.md` and remove only `orchestrator.hb`; any other epic gets `rm -rf /tmp/ship-epics/<EPIC> && mkdir -p /tmp/ship-epics/<EPIC>`. The inputs:
    - `EPIC` — the epic key
-   - `PORT` — 3101, 3102, 3103 (one each; the user's own dev server is on 3000/3001)
+   - `PORT` — 3101, 3102, 3103 (one each; the user's own dev server is on 3000/3001). The port also picks the orchestrator's own browser, `pw1`–`pw3` (`harness.md`). When a run stops with `browser slot N signed out`, sign that slot in yourself, by hand, never by script. Load `mcp__pwN__*` with `ToolSearch`, make sure the user's dev server answers on `http://localhost:3000`, navigate there, type the person's sign-in email (`userEmail` in your context), and `ASK` for the code Pond emails them.
    - `MAX_TICKETS` — 2 unless the user says otherwise
    - `HB=/tmp/ship-epics/<EPIC>/orchestrator.hb`, `RESULT=/tmp/ship-epics/<EPIC>/orchestrator.result.md`
 
