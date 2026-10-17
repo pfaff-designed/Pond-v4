@@ -139,21 +139,30 @@ function runFieldRemedy(
  * synchronous-ref seam: when the kind needs a field the schema lacks
  * ({@link hasRequiredField}), mints it onto `schemaRef.current` and writes it
  * BEFORE the view, so a same-tick second pick reads the field already there.
- * ONE undo step covers both writes — it restores the pre-add block and, only
- * when a field was minted, drops that field too; a kind that already had what
- * it needed never drags a field removal into its own undo.
+ * ONE undo step covers both writes — but undo must remove ONLY this add's own
+ * delta (its view, and the field it minted), read off `dataRef.current` (the
+ * CURRENT block, same seam as `schemaRef`) rather than restoring the whole
+ * block captured at click. Two toasts can be open together (`useDeletionUndo`
+ * keeps every staged toast until it is actioned or expires); closing over the
+ * pre-add block would make undoing the OLDER one wipe out a view a LATER add
+ * had since made, and undoing either would blow away any other edit made to
+ * the block while its toast sat open.
  *
  * Activation goes through `notifyActiveViewSelected`, the SAME
  * `ActiveViewSelectionContext` path a bar click uses — never `data.activeViewId`
  * alone. `addSavedView` does set the new view as the block's `activeViewId`, but
  * BlockCanvas's own `onChange` strips that back to the block's PERSISTED
  * `activeViewId` before saving (switching is reading, #421), so without this
- * call the write never surfaces as a selection in the real app.
+ * call the write never surfaces as a selection in the real app. Undo's
+ * re-selection is conditional on the same ground: it only moves the bar back
+ * when the view it is removing is the one actually showing at undo time — a
+ * later add may already have moved the bar on, and undo must leave that alone.
  */
 function runAddView(
   data: ViewBlock,
   mode: ViewMode,
   schemaRef: { current: PropertySchema | null },
+  dataRef: { current: ViewBlock },
   updateSchema: (next: PropertySchema) => void,
   onChange: (next: ViewBlock) => void,
   deletionUndo: NonNullable<ReturnType<typeof useOptionalDeletionUndo>>,
@@ -163,27 +172,46 @@ function runAddView(
   if (!schema) return
 
   const need = VIEW_KIND_REQUIREMENT[mode]
-  let addedId: string | undefined
+  let addedFieldId: string | undefined
   let mintedSchema: PropertySchema | undefined
   if (need && !hasRequiredField(mode, schema)) {
     const addField = need === 'date' ? addDateField : addStatusField
     mintedSchema = addField(schema)
-    addedId = mintedSchema[mintedSchema.length - 1].id
+    addedFieldId = mintedSchema[mintedSchema.length - 1].id
     schemaRef.current = mintedSchema
     updateSchema(mintedSchema)
   }
 
-  const previousActiveViewId = resolveActiveView(data).id
   const updated = addSavedView(data, mode)
+  // `addSavedView` always returns a non-empty `views` (wraps a legacy block's
+  // mode+config into `views[0]` first) — `views!` is the schema's own optional
+  // typing for the general `ViewBlock` case, not a real possibility here.
+  const updatedViews: ViewSavedView[] = updated.views!
+  // A legacy block's wrap mints a BRAND NEW id for the view `resolveActiveView(data)`
+  // would have reported (`addSavedView`'s `views[0]`, never `data.id` itself) — read
+  // the previously-active id off `updatedViews[0]` in that case so undo's
+  // re-selection lands on an id that actually exists in the post-add `views[]`.
+  const previousActiveViewId =
+    data.views && data.views.length > 0 ? resolveActiveView(data).id : updatedViews[0].id
+  const addedViewId = updatedViews[updatedViews.length - 1].id
   onChange(updated)
-  if (updated.activeViewId) notifyActiveViewSelected?.(updated.activeViewId)
+  notifyActiveViewSelected?.(addedViewId)
   deletionUndo.stageUndo({
     message: `Added a ${VIEW_KINDS[mode].label} view`,
     scope: 'block',
     undo: () => {
-      onChange(data)
-      notifyActiveViewSelected?.(previousActiveViewId)
-      if (addedId) updateSchema(removeField(schemaRef.current ?? mintedSchema ?? schema, addedId))
+      const current = dataRef.current
+      const currentViews: ViewSavedView[] = current.views ?? []
+      const removingShownView = current.activeViewId === addedViewId
+      onChange({
+        ...current,
+        views: currentViews.filter((view) => view.id !== addedViewId),
+        activeViewId: removingShownView ? previousActiveViewId : current.activeViewId,
+      })
+      if (removingShownView) notifyActiveViewSelected?.(previousActiveViewId)
+      if (addedFieldId) {
+        updateSchema(removeField(schemaRef.current ?? mintedSchema ?? schema, addedFieldId))
+      }
     },
   })
 }
@@ -231,6 +259,15 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
   useEffect(() => {
     schemaRef.current = schema
   }, [schema])
+  // Same seam as `schemaRef`, for `runAddView`'s undo: it must remove only
+  // the view (and field) THIS add created off the CURRENT block, never
+  // restore the whole block as it was at click — another add's toast may
+  // still be open, and reverting to that stale snapshot would take its view
+  // down too (KAN-243).
+  const dataRef = useRef(data)
+  useEffect(() => {
+    dataRef.current = data
+  }, [data])
   const handleAddDateField =
     editable && schema && deletionUndo
       ? () =>
@@ -281,7 +318,16 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
   const onAddView: (mode: ViewMode) => void = useCallback(
     (mode) => {
       if (!editable || !schema || !deletionUndo || !onChange) return
-      runAddView(data, mode, schemaRef, updateSchema, onChange, deletionUndo, notifyActiveViewSelected)
+      runAddView(
+        data,
+        mode,
+        schemaRef,
+        dataRef,
+        updateSchema,
+        onChange,
+        deletionUndo,
+        notifyActiveViewSelected
+      )
     },
     [editable, schema, deletionUndo, onChange, data, updateSchema, notifyActiveViewSelected]
   )

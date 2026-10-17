@@ -1068,6 +1068,64 @@ describe('ViewView — the ＋ view path test: calendar from a dateless table, e
   })
 })
 
+describe('ViewView — undoing an OLDER ＋ view add leaves a later add intact (KAN-243)', () => {
+  const onePickerView: ViewBlock = {
+    id: 'v-picker',
+    type: 'view',
+    mode: 'table',
+    views: [{ id: 'view-table', label: 'table', kind: 'table', config: {} }],
+    activeViewId: 'view-table',
+  }
+
+  beforeEach(() => {
+    initialSchema = dateless
+    initialRows = []
+  })
+
+  // Same live-feedback shape as the path test above — two adds must build on
+  // each other's result, which `renderView`'s static `data` prop can't show.
+  function LiveHarness() {
+    const [data, setData] = useState<ViewBlock>(onePickerView)
+    return <ViewView data={data} editable onChange={setData} />
+  }
+
+  function renderLiveView() {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    return render(
+      <QueryClientProvider client={client}>
+        <DeletionUndoProvider>
+          <SiblingBlocksProvider value={{ blocks: [], pageId: 'page-1' }}>
+            <LiveHarness />
+          </SiblingBlocksProvider>
+        </DeletionUndoProvider>
+      </QueryClientProvider>
+    )
+  }
+
+  it('undoing the older of two adds removes only that view and its minted field — the newer view and field remain', async () => {
+    const user = userEvent.setup()
+    renderLiveView()
+
+    await user.click(screen.getByRole('button', { name: 'add a view' }))
+    await user.click(screen.getByRole('option', { name: /calendar/ }))
+    await user.click(screen.getByRole('button', { name: 'add a view' }))
+    await user.click(screen.getByRole('option', { name: /^board/ }))
+
+    expect(screen.getByRole('tab', { name: 'board' })).toHaveAttribute('aria-selected', 'true')
+
+    // Toasts stack oldest-first — undoing the first button undoes calendar's add.
+    const undoButtons = screen.getAllByRole('button', { name: 'Undo' })
+    await user.click(undoButtons[0])
+
+    expect(screen.queryByRole('tab', { name: 'calendar' })).not.toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'board' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'board' })).toHaveAttribute('aria-selected', 'true')
+    const afterUndo = updateSchema.mock.calls.at(-1)![0] as PropertySchema
+    expect(afterUndo.some((d) => d.type === 'date')).toBe(false)
+    expect(afterUndo.some((d) => d.type === 'status')).toBe(true)
+  })
+})
+
 describe('ViewView — a legacy block (no views[] yet) still shows ＋ view, editable only (KAN-243, PATH_STEPS 1 gap)', () => {
   const legacyTable: ViewBlock = { id: 'v-legacy', type: 'view', mode: 'table' }
 
