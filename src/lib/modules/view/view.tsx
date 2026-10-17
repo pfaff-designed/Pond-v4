@@ -25,7 +25,7 @@ import { useSiblingBlocks } from '../sibling-context'
 import { viewCollectionId } from '../block-frame'
 import { useCollectionRows } from './use-collection-rows'
 import { useStruckRows } from '@/lib/change-log/undo-strike'
-import { DIFF_REMOVAL_TEXT_CLASSNAME } from '@/components/molecules/PondMolecule'
+import { DIFF_REMOVAL_TEXT_CLASSNAME, PondMolecule } from '@/components/molecules/PondMolecule'
 import { activeSavedView, applyConfigPatch } from './schema'
 import { ActiveViewSelectionContext } from './active-view-context'
 import {
@@ -34,6 +34,7 @@ import {
   displayValue,
   epochDay,
   galleryCardMeta,
+  galleryCardTag,
   groupRows,
   layoutGanttBars,
   pickDateDef,
@@ -1098,50 +1099,26 @@ function CollectionBoard({
 // ── Gallery ─────────────────────────────────────────────────────────────────────
 
 /**
- * Gallery view — a read-only card grid, drawn to `PondTemplate.dc.html` (#260):
- *
- *   gallery { display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 10 }
- *   gcard   { display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }
- *   img     { display: 'block', height: 64, borderRadius: 12, background: a(.07) }  // filled
- *   tStyle  { fontSize: 13.5, fontWeight: 500, color: fg }
- *   mStyle  { fontFamily: mono, fontSize: 10.5, color: a(.68) }
- *
- * EVERY record is a card: the board's `list.slice(0, mob ? 2 : 3)` is the template
- * preview's truncation, not a product rule. The tile is the board's filled ground —
- * there is no image property type, so it is a slot, not a picture. The board's
- * ring-on-transparent tile belongs to its EMPTY cards, which the product never draws:
- * an empty gallery is the frame's `no records yet` (#239). `untitled` and `—` are the
- * board's own fallbacks; which field the one meta line shows is `galleryCardMeta`.
- *
- * Why not `PondMolecule kind="record-card"`, which `PondBlock.dc.html`'s gallery
- * frame composes: ADR 0004's ladder sends a block to the molecule only where the
- * molecule can express every case the templates need, and the record-card ALWAYS
- * draws a tag chip (`tagText: p.tag ?? 'recipe'`) that no template gallery has
- * (`collection › records` is a title and one line). As `entries` (ADR 0004 §8), the
- * template's inline card is therefore the specification; the molecule stays for the
- * block board's demo. Mobile (2 columns, 70-high tile) is the frame's later slice —
- * `PondBlock` has no size axis yet. Class strings are literals, never `cn` (#252).
+ * Gallery view — a card grid of `PondMolecule kind="record-card"`, the molecule
+ * `PondBlock.dc.html`'s own gallery frame composes (`gallery: { display: 'flex',
+ * gap: 12, flexWrap: 'wrap' }`). EVERY record is a card; the board's
+ * `list.slice(0, mob ? 2 : 3)` is the template preview's truncation, not a product
+ * rule. `untitled` and `—` are the molecule's own fallbacks; which field the one
+ * meta line shows is `galleryCardMeta`, the one tag chip shows `galleryCardTag`.
  */
-const GALLERY = 'grid grid-cols-[repeat(3,minmax(0,1fr))] gap-[10px]'
-const GALLERY_CARD = 'flex min-w-0 flex-col gap-[6px]'
-const GALLERY_IMAGE = 'block h-[64px] rounded-[12px] bg-mn-text/[0.07]'
-const GALLERY_TITLE = 'text-[13.5px] font-medium text-mn-text'
-const GALLERY_META = 'font-mono text-[10.5px] text-mn-text-secondary'
-
 function CollectionGallery({ schema, rows }: { schema: PropertySchema; rows: CollectionRow[] }) {
   // No empty line of its own: the frame owns the empty state (#239).
   return (
-    <div data-part="gallery" className={GALLERY}>
+    <div data-part="gallery" className="flex flex-wrap gap-[12px]">
       {rows.map((row) => (
-        <article key={row.id} data-part="gallery-card" className={GALLERY_CARD}>
-          <span aria-hidden data-part="gallery-image" className={GALLERY_IMAGE} />
-          <span data-part="gallery-title" className={GALLERY_TITLE}>
-            {row.title || 'untitled'}
-          </span>
-          <span data-part="gallery-meta" className={GALLERY_META}>
-            {galleryCardMeta(schema, row) || '—'}
-          </span>
-        </article>
+        <PondMolecule
+          key={row.id}
+          kind="record-card"
+          state="rest"
+          title={row.title || 'untitled'}
+          meta={galleryCardMeta(schema, row) || '—'}
+          tag={galleryCardTag(schema, row)}
+        />
       ))}
     </div>
   )

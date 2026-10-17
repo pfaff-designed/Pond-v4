@@ -32,7 +32,7 @@ import { PropertyInspector } from '@/components/molecules/PropertyInspector'
 import { pageEyebrowClass } from '@/components/atoms/kicker'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { CollectionView } from '@/lib/modules/view/view'
-import { galleryCardMeta } from '@/lib/modules/view/apply'
+import { galleryCardMeta, galleryCardTag } from '@/lib/modules/view/apply'
 import {
   blockEmptyBox,
   blockFrame,
@@ -608,46 +608,59 @@ describe('galleryCardMeta — the card’s one mono line, until a card layout (#
   })
 })
 
-describe('CollectionGallery — PondTemplate.dc.html’s gallery / gcard / img / tStyle / mStyle', () => {
-  it('the grid is three columns at gap 10; every record is a card — no three-card cap', () => {
-    const { container } = renderView(gallery, plantSchema, plants(7))
-    const grid = container.querySelector<HTMLElement>('[data-part="gallery"]')!
-    expect(classesOf(grid)).toEqual(
-      expect.arrayContaining(['grid', 'grid-cols-[repeat(3,minmax(0,1fr))]', 'gap-[10px]'])
-    )
-    expect(grid.querySelectorAll('[data-part="gallery-card"]')).toHaveLength(7)
+describe('galleryCardTag — the card’s one tag chip: the row’s first status/select option', () => {
+  it('the first status/select field’s option label', () => {
+    expect(galleryCardTag(plantSchema, row('r', 'r', { 'p-light': 'l-low' }))).toBe('Low')
   })
 
-  it('a card: column at gap 6 · a 64-high radius-12 tile on ink .07 · title 13.5/500 · meta mono 10.5 / ink .68', () => {
+  it('empty when the row has no status/select field, or no value set on it', () => {
+    expect(galleryCardTag([{ id: 'p-care', name: 'Care', type: 'text' }], row('r', 'r', {}))).toBe(
+      ''
+    )
+    expect(galleryCardTag(plantSchema, row('r', 'r', {}))).toBe('')
+  })
+})
+
+describe('CollectionGallery — PondBlock.dc.html’s gallery frame, each card a PondMolecule record-card', () => {
+  it('the row lays cards out flex/wrap at gap 12; every record is a card — no three-card cap', () => {
+    const { container } = renderView(gallery, plantSchema, plants(7))
+    const grid = container.querySelector<HTMLElement>('[data-part="gallery"]')!
+    expect(classesOf(grid)).toEqual(expect.arrayContaining(['flex', 'flex-wrap', 'gap-[12px]']))
+    expect(grid.querySelectorAll('[data-kind="record-card"]')).toHaveLength(7)
+  })
+
+  it('a card: rest state, the right title / meta / tag text', () => {
+    const { container } = renderView(gallery, plantSchema, [
+      row('m', 'monstera', { 'p-care': 'water weekly', 'p-light': 'l-low' }),
+    ])
+    const card = container.querySelector<HTMLElement>('[data-kind="record-card"]')!
+    expect(card.dataset.state).toBe('rest')
+    expect(card.querySelector('[data-part="title"]')!.textContent).toBe('monstera')
+    expect(card.querySelector('[data-part="meta"]')!.textContent).toBe('water weekly')
+    expect(card.querySelector('[data-kind="tag"]')!.textContent).toBe('Low')
+  })
+
+  it('a row with no status/select field (or no value on it) draws no tag text', () => {
     const { container } = renderView(gallery, plantSchema, [
       row('m', 'monstera', { 'p-care': 'water weekly' }),
     ])
-    const card = container.querySelector<HTMLElement>('[data-part="gallery-card"]')!
-    expect(classesOf(card)).toEqual(
-      expect.arrayContaining(['flex', 'flex-col', 'gap-[6px]', 'min-w-0'])
-    )
-    const img = card.querySelector<HTMLElement>('[data-part="gallery-image"]')!
-    expect(classesOf(img)).toEqual(
-      expect.arrayContaining(['block', 'h-[64px]', 'rounded-[12px]', 'bg-mn-text/[0.07]'])
-    )
-    const title = card.querySelector<HTMLElement>('[data-part="gallery-title"]')!
-    expect(title.textContent).toBe('monstera')
-    expect(classesOf(title)).toEqual(
-      expect.arrayContaining(['text-[13.5px]', 'font-medium', 'text-mn-text'])
-    )
-    const meta = card.querySelector<HTMLElement>('[data-part="gallery-meta"]')!
-    expect(meta.textContent).toBe('water weekly')
-    expect(classesOf(meta)).toEqual(
-      expect.arrayContaining(['font-mono', 'text-[10.5px]', 'text-mn-text-secondary'])
-    )
-    // The old card listed every field as a definition list; the board draws one line.
-    expect(card.querySelector('dl')).toBeNull()
+    const card = container.querySelector<HTMLElement>('[data-kind="record-card"]')!
+    expect(card.querySelector('[data-kind="tag"]')!.textContent).toBe('')
   })
 
-  it('an untitled record reads `untitled`, a record with nothing to show `—` — the board’s fallbacks', () => {
+  it('an untitled record reads `untitled`, a record with nothing to show `—` — the molecule’s fallbacks', () => {
     const { container } = renderView(gallery, plantSchema, [row('e', '', {})])
-    expect(container.querySelector('[data-part="gallery-title"]')!.textContent).toBe('untitled')
-    expect(container.querySelector('[data-part="gallery-meta"]')!.textContent).toBe('—')
+    const card = container.querySelector<HTMLElement>('[data-kind="record-card"]')!
+    expect(card.querySelector('[data-part="title"]')!.textContent).toBe('untitled')
+    expect(card.querySelector('[data-part="meta"]')!.textContent).toBe('—')
+  })
+
+  it('the old gallery-card / gallery-image parts are gone', () => {
+    const { container } = renderView(gallery, plantSchema, plants(1))
+    expect(container.querySelector('[data-part="gallery-card"]')).toBeNull()
+    expect(container.querySelector('[data-part="gallery-image"]')).toBeNull()
+    expect(container.querySelector('[data-part="gallery-title"]')).toBeNull()
+    expect(container.querySelector('[data-part="gallery-meta"]')).toBeNull()
   })
 })
 
