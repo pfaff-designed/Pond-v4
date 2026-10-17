@@ -192,9 +192,10 @@ export const PREMADE_TEMPLATES: Record<TemplateKind, PremadeTemplate> = {
     kind: 'journal',
     title: 'journal',
     blocks: [
-      // `serif: true` is the journal's (#250 ruling 4). The first entry is left blank so
-      // the row draws its own `write the first entry` at placeholder ink.
-      { type: 'entries', label: 'entries', serif: true, entries: [{ date: 'today', text: '' }] },
+      // The first entry is left blank so the row draws its own `write the first
+      // entry` at placeholder ink. The text renders serif unconditionally now
+      // (KAN-444) — no flag to set.
+      { type: 'entries', label: 'entries', entries: [{ date: 'today', text: '' }] },
     ],
   },
 
