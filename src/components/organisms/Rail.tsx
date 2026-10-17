@@ -67,7 +67,7 @@ import { trashPage } from '@/lib/change-log/trash'
 import { TrashRefusedError } from '@/lib/change-log/errors'
 import { jsonEqual } from '@/lib/json-equal'
 import { pagesKey } from '@/lib/pages/keys'
-import { appendChildLinkUnder } from '@/lib/pages/child-links'
+import { appendChildLinkUnder, unlinkTrashedSubtree } from '@/lib/pages/child-links'
 import { usePondId, usePond } from '@/lib/pond/context'
 import { pushRecentGlyphToPond } from '@/lib/pond/client'
 import { PondSwitcher } from './PondSwitcher'
@@ -1705,6 +1705,11 @@ export function Rail() {
             data: { user },
           } = await supabase.auth.getUser()
           if (!user) continue // no signed-in user — leave staged, retry on a later mount
+          await unlinkTrashedSubtree(supabase, queryClient, {
+            pondId,
+            rootPageId: id,
+            subtreeIds: new Set([id]),
+          })
           await trashPage(supabase, id)
           unstageId(id)
           queryClient.setQueryData<PageRow[]>(pagesKey(pondId), (rows) => removeRow(rows ?? [], id))
@@ -1818,6 +1823,11 @@ export function Rail() {
     try {
       await withUser(
         async (sb) => {
+          await unlinkTrashedSubtree(sb, queryClient, {
+            pondId,
+            rootPageId: node.id,
+            subtreeIds: subtreeIds(node),
+          })
           await trashPage(sb, node.id)
         },
         reason,
