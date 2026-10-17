@@ -266,6 +266,8 @@ export function DocumentPanel() {
     viewBlocks,
     saved,
     savedAt,
+    offline,
+    retrying,
     onTitle,
     onProperty,
     commitLocalEdit,
@@ -334,6 +336,8 @@ export function DocumentPanel() {
     untouched && !page?.props?.kind,
     parentTitle,
     madeAt,
+    offline,
+    retrying,
   )
   // Board 6f frame 4: an empty title after an apply names the kind, e.g. `recipe name`.
   const titlePlaceholder = page?.props?.kind ? `${page.props.kind} name` : 'Untitled'
