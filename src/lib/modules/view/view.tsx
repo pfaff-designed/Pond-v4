@@ -20,14 +20,15 @@
 
 import { useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { ModuleViewProps } from '../types'
-import type { ViewBlock, ViewMode, ViewSavedView } from './schema'
+import type { ViewBlock } from './schema'
 import { useSiblingBlocks } from '../sibling-context'
 import { viewCollectionId } from '../block-frame'
 import { useCollectionRows } from './use-collection-rows'
 import { useStruckRows } from '@/lib/change-log/undo-strike'
 import { DIFF_REMOVAL_TEXT_CLASSNAME, PondMolecule } from '@/components/molecules/PondMolecule'
-import { activeSavedView, addSavedView, applyConfigPatch, resolveActiveView } from './schema'
+import { activeSavedView, applyConfigPatch } from './schema'
 import { ActiveViewSelectionContext } from './active-view-context'
+import { SavedViewBar } from './saved-view-bar'
 import {
   addDays,
   applyView,
@@ -69,16 +70,7 @@ import {
   GANTT_TRACK_STYLE,
 } from './gantt-shared'
 import { PondBlockEmpty } from '@/components/organisms/PondBlock'
-import {
-  addViewRemedyLine,
-  BOARD_EMPTY_LINE,
-  GANTT_EMPTY_LINE,
-  hasRequiredField,
-  VIEW_KIND_REQUIREMENT,
-  VIEW_KINDS,
-  type ViewConfigPatch,
-} from './kinds'
-import type { ViewKindPickerRow } from '@/components/molecules/ViewKindPicker'
+import { BOARD_EMPTY_LINE, GANTT_EMPTY_LINE, type ViewConfigPatch } from './kinds'
 import {
   addDateField,
   addStatusField,
@@ -102,7 +94,6 @@ import { CollectionList } from './list'
 import { CollectionCalendar } from './collection-calendar'
 import { ROW_FOCUS_VISIBLE, ROW_FOCUS_VISIBLE_BASE, useRecordSelection } from './use-record-selection'
 import { shouldSelectCardFromClick, shouldSelectRowFromClick } from './card-click'
-import { ViewBar, type ViewBarView } from '@/components/molecules/ViewBar'
 import { useBlockRow } from '../block-row-context'
 
 /**
@@ -131,88 +122,6 @@ function runFieldRemedy(
     message,
     scope: 'block',
     undo: () => updateSchema(removeField(schemaRef.current ?? next, addedId)),
-  })
-}
-
-/**
- * Adds a saved view (KAN-243's ＋ view), mirroring `runFieldRemedy`'s
- * synchronous-ref seam: when the kind needs a field the schema lacks
- * ({@link hasRequiredField}), mints it onto `schemaRef.current` and writes it
- * BEFORE the view, so a same-tick second pick reads the field already there.
- * ONE undo step covers both writes — but undo must remove ONLY this add's own
- * delta (its view, and the field it minted), read off `dataRef.current` (the
- * CURRENT block, same seam as `schemaRef`) rather than restoring the whole
- * block captured at click. Two toasts can be open together (`useDeletionUndo`
- * keeps every staged toast until it is actioned or expires); closing over the
- * pre-add block would make undoing the OLDER one wipe out a view a LATER add
- * had since made, and undoing either would blow away any other edit made to
- * the block while its toast sat open.
- *
- * Activation goes through `notifyActiveViewSelected`, the SAME
- * `ActiveViewSelectionContext` path a bar click uses — never `data.activeViewId`
- * alone. `addSavedView` does set the new view as the block's `activeViewId`, but
- * BlockCanvas's own `onChange` strips that back to the block's PERSISTED
- * `activeViewId` before saving (switching is reading, #421), so without this
- * call the write never surfaces as a selection in the real app. Undo's
- * re-selection is conditional on the same ground: it only moves the bar back
- * when the view it is removing is the one actually showing at undo time — a
- * later add may already have moved the bar on, and undo must leave that alone.
- */
-function runAddView(
-  data: ViewBlock,
-  mode: ViewMode,
-  schemaRef: { current: PropertySchema | null },
-  dataRef: { current: ViewBlock },
-  updateSchema: (next: PropertySchema) => void,
-  onChange: (next: ViewBlock) => void,
-  deletionUndo: NonNullable<ReturnType<typeof useOptionalDeletionUndo>>,
-  notifyActiveViewSelected: ((id: string) => void) | undefined
-): void {
-  const schema = schemaRef.current
-  if (!schema) return
-
-  const need = VIEW_KIND_REQUIREMENT[mode]
-  let addedFieldId: string | undefined
-  let mintedSchema: PropertySchema | undefined
-  if (need && !hasRequiredField(mode, schema)) {
-    const addField = need === 'date' ? addDateField : addStatusField
-    mintedSchema = addField(schema)
-    addedFieldId = mintedSchema[mintedSchema.length - 1].id
-    schemaRef.current = mintedSchema
-    updateSchema(mintedSchema)
-  }
-
-  const updated = addSavedView(data, mode)
-  // `addSavedView` always returns a non-empty `views` (wraps a legacy block's
-  // mode+config into `views[0]` first) — `views!` is the schema's own optional
-  // typing for the general `ViewBlock` case, not a real possibility here.
-  const updatedViews: ViewSavedView[] = updated.views!
-  // A legacy block's wrap mints a BRAND NEW id for the view `resolveActiveView(data)`
-  // would have reported (`addSavedView`'s `views[0]`, never `data.id` itself) — read
-  // the previously-active id off `updatedViews[0]` in that case so undo's
-  // re-selection lands on an id that actually exists in the post-add `views[]`.
-  const previousActiveViewId =
-    data.views && data.views.length > 0 ? resolveActiveView(data).id : updatedViews[0].id
-  const addedViewId = updatedViews[updatedViews.length - 1].id
-  onChange(updated)
-  notifyActiveViewSelected?.(addedViewId)
-  deletionUndo.stageUndo({
-    message: `Added a ${VIEW_KINDS[mode].label} view`,
-    scope: 'block',
-    undo: () => {
-      const current = dataRef.current
-      const currentViews: ViewSavedView[] = current.views ?? []
-      const removingShownView = current.activeViewId === addedViewId
-      onChange({
-        ...current,
-        views: currentViews.filter((view) => view.id !== addedViewId),
-        activeViewId: removingShownView ? previousActiveViewId : current.activeViewId,
-      })
-      if (removingShownView) notifyActiveViewSelected?.(previousActiveViewId)
-      if (addedFieldId) {
-        updateSchema(removeField(schemaRef.current ?? mintedSchema ?? schema, addedFieldId))
-      }
-    },
   })
 }
 
@@ -248,9 +157,6 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
   // provider lookup is the non-throwing variant: a diff/proposal preview and
   // Storybook mount `ViewView` with no `DeletionUndoProvider` ancestor at all.
   const deletionUndo = useOptionalDeletionUndo()
-  // KAN-243: the same context `CollectionView`'s bar-click handler notifies —
-  // consumable here too, since both sit under BlockCanvas's one Provider.
-  const notifyActiveViewSelected = useContext(ActiveViewSelectionContext)
   // Undo must drop only the field it added, off whatever the schema has become by
   // the time the toast is actioned — restoring the schema captured at click would
   // also wipe any other schema edit made while the toast was open. `schemaRef`
@@ -259,15 +165,6 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
   useEffect(() => {
     schemaRef.current = schema
   }, [schema])
-  // Same seam as `schemaRef`, for `runAddView`'s undo: it must remove only
-  // the view (and field) THIS add created off the CURRENT block, never
-  // restore the whole block as it was at click — another add's toast may
-  // still be open, and reverting to that stale snapshot would take its view
-  // down too (KAN-243).
-  const dataRef = useRef(data)
-  useEffect(() => {
-    dataRef.current = data
-  }, [data])
   const handleAddDateField =
     editable && schema && deletionUndo
       ? () =>
@@ -295,42 +192,6 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
             'Added a status field'
           )
       : undefined
-
-  // KAN-243: the ＋ view picker's rows, one per `VIEW_KINDS` entry in its own table
-  // order. A kind needing a field the schema lacks carries the remedy hint; `disabled`
-  // only fires with no schema at all — defensive, since `showAddView` requires
-  // `editable` and a schema-less view renders the "needs a collection" notice below
-  // instead of `ViewControls` (so the picker itself never actually mounts without one).
-  const addViewRows: readonly ViewKindPickerRow[] = useMemo(
-    () =>
-      (Object.keys(VIEW_KINDS) as ViewMode[]).map((mode) => ({
-        mode,
-        remedyLine: schema && !hasRequiredField(mode, schema) ? addViewRemedyLine(mode) : undefined,
-        disabled: schema ? undefined : 'this view has no collection',
-      })),
-    [schema]
-  )
-  // KAN-243: mints the remedy field (when the kind needs one and the schema lacks
-  // it) then adds the saved view, through ONE undo step — `runAddView` above.
-  // `notifyActiveViewSelected` is read here (not only inside `CollectionView`,
-  // the context's other consumer) so the new view's activation reaches
-  // BlockCanvas's own selection state the same way a bar click does.
-  const onAddView: (mode: ViewMode) => void = useCallback(
-    (mode) => {
-      if (!editable || !schema || !deletionUndo || !onChange) return
-      runAddView(
-        data,
-        mode,
-        schemaRef,
-        dataRef,
-        updateSchema,
-        onChange,
-        deletionUndo,
-        notifyActiveViewSelected
-      )
-    },
-    [editable, schema, deletionUndo, onChange, data, updateSchema, notifyActiveViewSelected]
-  )
 
   // Config edits (chart/big-number setup) rewrite the persisted view block through the
   // module's own onChange — the same whole-block save path every editable module uses.
@@ -376,8 +237,8 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
       chartProvenance={chartProvenance}
       onAddDateField={handleAddDateField}
       onAddStatusField={handleAddStatusField}
-      addViewRows={addViewRows}
-      onAddView={onAddView}
+      updateSchema={updateSchema}
+      onChange={onChange}
     />
   )
 }
@@ -426,12 +287,14 @@ export interface CollectionViewProps {
    *  board whose schema has no status/select property to group by. Absent when
    *  not `editable` (Storybook, a diff/proposal render) — no undrawn affordance there. */
   onAddStatusField?: () => void
-  /** KAN-243: the ＋ view picker's rows, one per `VIEW_KINDS` entry, carrying that
-   *  kind's remedy hint when the schema lacks what it needs. Absent when not
-   *  `editable` (Storybook, a diff/proposal render) — no undrawn affordance there. */
-  addViewRows?: readonly ViewKindPickerRow[]
-  /** KAN-243: pick a kind from the ＋ view picker. Absent when not `editable`. */
-  onAddView?: (mode: ViewMode) => void
+  /** KAN-243: writes the collection's schema — `SavedViewBar`'s own add-a-view
+   *  remedy mints a field onto it the same way `onAddDateField`/`onAddStatusField`
+   *  do. Absent when not `editable` (Storybook, a diff/proposal render). */
+  updateSchema?: (next: PropertySchema) => void
+  /** KAN-243: the whole-block write `SavedViewBar` lands an add through. Absent
+   *  when not `editable` (Storybook, a diff/proposal render) — no undrawn
+   *  affordance there. */
+  onChange?: (next: ViewBlock) => void
 }
 
 export function CollectionView({
@@ -452,8 +315,8 @@ export function CollectionView({
   chartProvenance,
   onAddDateField,
   onAddStatusField,
-  addViewRows,
-  onAddView,
+  updateSchema,
+  onChange,
 }: CollectionViewProps) {
   // What the page canvas keys this view's peek and orange pill by.
   const instanceKey = useId()
@@ -579,15 +442,14 @@ export function CollectionView({
     <div className="text-sm text-mn-text">
       <ViewControls
         config={activeConfig}
+        rawBlock={config}
         schema={schema}
         collectionName={collectionName}
         recordCount={rows.length}
-        savedViews={config.views}
         activeViewId={localActiveViewId}
         onSelectView={handleSelectView}
-        showAddView={!!editable}
-        addViewRows={addViewRows}
-        onAddView={onAddView}
+        updateSchema={updateSchema}
+        onChange={onChange}
         editable={editable}
         onConfigChange={onConfigChange ? handleConfigChange : undefined}
       />
@@ -707,28 +569,29 @@ export function CollectionView({
  */
 function ViewControls({
   config,
+  rawBlock,
   schema,
   collectionName,
   recordCount,
-  savedViews,
   activeViewId,
   onSelectView,
-  showAddView,
-  addViewRows,
-  onAddView,
+  updateSchema,
+  onChange,
   editable,
   onConfigChange,
 }: {
   config: ViewBlock
+  /** The raw, unresolved persisted block — `SavedViewBar`'s segments and its
+   *  `addSavedView` write both need `.views[]` (or the legacy top-level
+   *  mode+config) directly, never `config`'s per-saved-view resolved mirror. */
+  rawBlock: ViewBlock
   schema: PropertySchema
   collectionName?: string
   recordCount: number
-  savedViews?: readonly ViewSavedView[]
   activeViewId?: string
   onSelectView?: (id: string) => void
-  showAddView: boolean
-  addViewRows?: readonly ViewKindPickerRow[]
-  onAddView?: (mode: ViewMode) => void
+  updateSchema?: (next: PropertySchema) => void
+  onChange?: (next: ViewBlock) => void
   editable?: boolean
   onConfigChange?: (patch: ViewConfigPatch) => void
 }) {
@@ -740,23 +603,6 @@ function ViewControls({
         ? pickDateDef(schema, config.groupBy)
         : undefined
   const groupName = groupDef?.name.toLowerCase()
-
-  // KAN-243 PATH_STEPS 1: a legacy block (no `views[]` yet — every view made from
-  // `/`, KAN-240) has exactly one view, itself. Synthesize that one segment so
-  // "＋ view" is reachable before the first `addSavedView` call ever wraps it into
-  // `views[0]` — editable only; a reader of a legacy block keeps today's render
-  // (no bar at all, nothing to switch between).
-  const hasSavedViews = !!savedViews && savedViews.length > 0
-  const legacyView = hasSavedViews ? undefined : resolveActiveView(config)
-  const barViews: readonly ViewBarView[] | undefined = hasSavedViews
-    ? savedViews.map((view): ViewBarView => ({
-        id: view.id,
-        label: view.label ?? VIEW_KINDS[view.kind].label,
-      }))
-    : editable && legacyView
-      ? [{ id: legacyView.id, label: legacyView.label ?? VIEW_KINDS[legacyView.kind].label }]
-      : undefined
-  const barActiveId = hasSavedViews ? activeViewId : legacyView?.id
 
   return (
     <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -784,17 +630,15 @@ function ViewControls({
             </>
           )}
         </div>
-        {barViews && barViews.length > 0 && barActiveId && onSelectView && (
-          <ViewBar
-            views={barViews}
-            activeId={barActiveId}
+        {onSelectView && (
+          <SavedViewBar
+            block={rawBlock}
+            schema={schema}
+            updateSchema={updateSchema ?? (() => {})}
+            activeId={activeViewId}
             onSelect={onSelectView}
-            // `ViewBar` requires addViewRows/onAddView only when showAddView is the
-            // literal `true` (KAN-243) — falls back to `false` if either is somehow
-            // missing, rather than passing `ViewBar` a `true` it can't back up.
-            {...(showAddView && addViewRows && onAddView
-              ? { showAddView: true, addViewRows, onAddView }
-              : { showAddView: false })}
+            editable={!!editable}
+            onChange={onChange}
           />
         )}
       </div>

@@ -47,8 +47,8 @@ import { shouldSelectCardFromClick } from '@/lib/modules/view/card-click'
 import { applyView } from '@/lib/modules/view/apply'
 import { activeSavedView } from '@/lib/modules/view/schema'
 import { ActiveViewSelectionContext } from '@/lib/modules/view/active-view-context'
-import { VIEW_KINDS } from '@/lib/modules/view/kinds'
-import { ViewBar, type ViewBarView } from '@/components/molecules/ViewBar'
+import { SavedViewBar } from '@/lib/modules/view/saved-view-bar'
+import type { PropertySchema } from '@/lib/properties/schema'
 import { CHART_EMPTY_LINE } from '@/lib/modules/chart/card'
 import { addTodoItem } from '@/lib/modules/todo/view'
 import { addTableRow } from '@/lib/modules/table/view'
@@ -1833,9 +1833,15 @@ function useBlockEmptyState(
   frame: BlockFrame | null,
   pageId: string,
   onChange: (next: Block) => void
-): { state: PondBlockState; onEmptyAction?: () => void; emptyLine?: string } {
+): {
+  state: PondBlockState
+  onEmptyAction?: () => void
+  emptyLine?: string
+  schema: PropertySchema | null
+  updateSchema: (next: PropertySchema) => void
+} {
   const collectionId = block.type === 'view' ? viewCollectionId(block, pageId) : undefined
-  const { schema, rows, isLoading, addRow } = useCollectionRows(collectionId)
+  const { schema, rows, isLoading, addRow, updateSchema } = useCollectionRows(collectionId)
   // The rows the view will actually draw — its filter (and sort) applied.
   const processed = useMemo(
     () => (block.type === 'view' && schema ? applyView(rows, schema, block) : rows),
@@ -1845,30 +1851,32 @@ function useBlockEmptyState(
   switch (block.type) {
     case 'todo':
       return blockIsEmpty(block)
-        ? { state: 'empty', onEmptyAction: () => onChange(addTodoItem(block)) }
-        : { state: 'rest' }
+        ? { state: 'empty', onEmptyAction: () => onChange(addTodoItem(block)), schema, updateSchema }
+        : { state: 'rest', schema, updateSchema }
     case 'table':
       return blockIsEmpty(block)
-        ? { state: 'empty', onEmptyAction: () => onChange(addTableRow(block)) }
-        : { state: 'rest' }
+        ? { state: 'empty', onEmptyAction: () => onChange(addTableRow(block)), schema, updateSchema }
+        : { state: 'rest', schema, updateSchema }
     case 'entries':
       return blockIsEmpty(block)
-        ? { state: 'empty', onEmptyAction: () => onChange(addEntry(block)) }
-        : { state: 'rest' }
+        ? { state: 'empty', onEmptyAction: () => onChange(addEntry(block)), schema, updateSchema }
+        : { state: 'rest', schema, updateSchema }
     case 'view': {
-      if (isLoading || schema === null) return { state: 'rest' }
+      if (isLoading || schema === null) return { state: 'rest', schema, updateSchema }
       // The rule itself is `viewFrameState` in `block-frame.ts`, shared with the
       // template story so the story asserts what the product runs (#261 review).
       // This host adds the two things a pure rule cannot carry: the chart mark's
       // copy, which lives in a React module, and the write action.
       const verdict = viewFrameState(block, rows, processed, frame, schema)
-      if (verdict.state === 'rest') return { state: 'rest' }
-      if (verdict.chartLine) return { state: 'empty', emptyLine: CHART_EMPTY_LINE }
-      if (verdict.addRow) return { state: 'empty', onEmptyAction: () => void addRow() }
-      return { state: 'empty', emptyLine: verdict.line }
+      if (verdict.state === 'rest') return { state: 'rest', schema, updateSchema }
+      if (verdict.chartLine)
+        return { state: 'empty', emptyLine: CHART_EMPTY_LINE, schema, updateSchema }
+      if (verdict.addRow)
+        return { state: 'empty', onEmptyAction: () => void addRow(), schema, updateSchema }
+      return { state: 'empty', emptyLine: verdict.line, schema, updateSchema }
     }
     default:
-      return { state: 'rest' }
+      return { state: 'rest', schema, updateSchema }
   }
 }
 
@@ -2032,6 +2040,8 @@ function BlockEditor({
     state: baseState,
     onEmptyAction,
     emptyLine,
+    schema: collectionSchema,
+    updateSchema: updateCollectionSchema,
   } = useBlockEmptyState(resolvedBlock, frame, pageId, onChange)
   // Pointer-selected (07.05): a click on the row's own chrome — never a nested
   // cell/input/button, which keeps its own focus — focuses the row and this
@@ -2056,16 +2066,24 @@ function BlockEditor({
   // view with an emptying filter would otherwise strand the person with no tab
   // back to one that isn't. Rendered through `PondBlock`'s `headBar` slot,
   // which sits above whichever body (bar-and-rows or the empty box) draws.
+  // KAN-243: adding a view is a real edit, but the PERSISTED `activeViewId`
+  // stays whatever it already was — switching is reading, #421, same as the
+  // ModuleView path's `committed` write below. The add's own activation
+  // reaches this block only through `setActiveViewId` (the context below),
+  // the same path a bar click already uses.
+  const commitViewChange = (next: ViewBlock) =>
+    onChange({ ...next, activeViewId: block.type === 'view' ? block.activeViewId : undefined })
+
   const emptyStateViewBar =
-    state === 'empty' && block.type === 'view' && block.views && block.views.length > 0 ? (
-      <ViewBar
-        views={block.views.map((v): ViewBarView => ({
-          id: v.id,
-          label: v.label ?? VIEW_KINDS[v.kind].label,
-        }))}
-        activeId={activeViewId ?? block.activeViewId ?? block.views[0].id}
+    state === 'empty' && block.type === 'view' ? (
+      <SavedViewBar
+        block={activeViewId ? { ...block, activeViewId } : block}
+        schema={collectionSchema}
+        updateSchema={updateCollectionSchema}
+        activeId={activeViewId}
         onSelect={setActiveViewId}
-        showAddView={false}
+        editable
+        onChange={commitViewChange}
       />
     ) : undefined
 
