@@ -296,6 +296,32 @@ export function removeField(schema: PropertySchema, id: string): PropertySchema 
   return schema.filter((d) => d.id !== id)
 }
 
+/**
+ * Append a new option, by label, to a `select`/`status` field (KAN-350: the tag
+ * editor's "+ new tag"). Returns the updated schema AND the minted option id, so
+ * the caller can set the field's value to it in the same gesture. A field whose
+ * id doesn't match (or isn't `select`/`status`) returns the schema unchanged and
+ * `optionId: null` — the caller's own write is conditioned on this, so an id that
+ * no longer names a field in the schema (stale card, concurrent edit) writes
+ * nothing rather than minting an option nobody's field will ever show.
+ */
+export function addOption(
+  schema: PropertySchema,
+  fieldId: string,
+  label: string,
+  mintId: () => string = () => crypto.randomUUID()
+): { schema: PropertySchema; optionId: string | null } {
+  const field = schema.find((d) => d.id === fieldId)
+  if (!field || (field.type !== 'select' && field.type !== 'status')) {
+    return { schema, optionId: null }
+  }
+  const optionId = mintId()
+  const next = schema.map((d) =>
+    d.id === fieldId ? { ...d, options: [...(d.options ?? []), { id: optionId, label }] } : d
+  )
+  return { schema: next, optionId }
+}
+
 // ── Reserved-key merge helpers (the only place `_schema` and values coexist) ───
 
 type Props = Record<string, unknown>

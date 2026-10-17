@@ -586,23 +586,20 @@ describe('ViewView — the /table path end to end: add a row, type a title and a
     await user.type(titleInput, 'kan299 dated record')
     expect(renameRow).not.toHaveBeenCalled()
 
-    const dateInput = screen.getByLabelText('Date value')
-    // Clicking the date cell blurs the title input, committing it.
-    await user.click(dateInput)
+    const dateButton = screen.getByRole('button', { name: 'Date value' })
+    // Clicking the date cell blurs the title input, committing it, and opens
+    // the date editor (KAN-350: the atom's `editing` state, no native
+    // `type="date"` input left to drive).
+    await user.click(dateButton)
     expect(renameRow).toHaveBeenCalledTimes(1)
     const rowId = renameRow.mock.calls[0]![0] as string
     expect(renameRow).toHaveBeenCalledWith(rowId, 'kan299 dated record')
 
-    // jsdom's <input type="date"> has no segmented UI for user-event to drive
-    // key by key — fireEvent.change reproduces the native per-keystroke
-    // partial-year intermediates from the bug report directly (as cells.test.tsx
-    // does for the cell in isolation).
-    fireEvent.change(dateInput, { target: { value: '0002-10-20' } })
-    fireEvent.change(dateInput, { target: { value: '0020-10-20' } })
-    fireEvent.change(dateInput, { target: { value: '2026-10-20' } })
+    const dateInput = screen.getByLabelText('Date value')
+    await user.type(dateInput, '2026-10-20')
     expect(setValue).not.toHaveBeenCalled()
 
-    await user.tab()
+    await user.keyboard('{Enter}')
     expect(setValue).toHaveBeenCalledTimes(1)
     expect(setValue).toHaveBeenCalledWith(rowId, 'p-date', '2026-10-20')
   })

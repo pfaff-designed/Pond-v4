@@ -59,16 +59,18 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** One labeled control per property; edits raise onChange(key, value). */
+/** One click-to-edit atom per property; edits raise onChange(key, value). */
 export const Default: Story = {
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement)
 
-    // A control per property, seeded with the stored value.
-    const title = canvas.getByLabelText('Title value') as HTMLInputElement
-    await expect(title).toHaveValue('Build a workbench')
-    await expect(canvas.getByLabelText('Count value')).toHaveValue(3)
-    await expect(canvas.getByLabelText('Stage value')).toHaveValue('doing')
+    // A control per property, seeded with the stored value — a click-to-edit
+    // atom (KAN-350), not a native `<input>`/`<select>`.
+    const titleTrigger = canvas.getByRole('button', { name: 'Title value' })
+    await expect(within(titleTrigger).getByText('Build a workbench')).toBeInTheDocument()
+    await expect(canvas.getByText('3')).toBeInTheDocument()
+    const stageTrigger = canvas.getByRole('button', { name: 'Stage value' })
+    await expect(within(stageTrigger).getByText('Doing')).toBeInTheDocument()
     // The checkbox property IS `PondControl kind="checkbox"` (#221): a base-ui
     // `role="checkbox"` span inside the control's own `[data-kind]` root, so its
     // state is `aria-checked`, not `.checked` — and the bare
@@ -82,16 +84,21 @@ export const Default: Story = {
       canvasElement.querySelector('input[type="checkbox"]:not([aria-hidden])')
     ).toBeNull()
 
-    // Editing text raises onChange with the new string.
-    await userEvent.type(title, '!')
+    // Editing text (click to open, type, commit) raises onChange with the new string.
+    await userEvent.click(titleTrigger)
+    const titleInput = canvas.getByRole('textbox', { name: 'Title value' })
+    await userEvent.type(titleInput, '!')
+    await userEvent.keyboard('{Enter}')
     await expect(args.onChange).toHaveBeenLastCalledWith('title', 'Build a workbench!')
 
     // Toggling the checkbox raises a boolean.
     await userEvent.click(done)
     await expect(args.onChange).toHaveBeenLastCalledWith('done', true)
 
-    // Picking a status option raises the option id.
-    await userEvent.selectOptions(canvas.getByLabelText('Stage value'), 'done')
+    // Picking a status option raises the option id. The popover portals to
+    // document.body, outside canvasElement.
+    await userEvent.click(stageTrigger)
+    await userEvent.click(await within(document.body).findByRole('option', { name: 'Done' }))
     await expect(args.onChange).toHaveBeenLastCalledWith('stage', 'done')
   },
 }
@@ -100,15 +107,24 @@ export const Default: Story = {
 export const ClearsToNull: Story = {
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement)
-    await userEvent.selectOptions(canvas.getByLabelText('Stage value'), '—')
+    await userEvent.click(canvas.getByRole('button', { name: 'Stage value' }))
+    // The leading `clear` row is also the initially-active one, so its
+    // accessible name carries the `↵` hint (`PondControl`'s `selected` state
+    // paints it) — match with a prefix regex rather than an exact string.
+    const clearRow = await within(document.body).findByRole('option', { name: 'clear' })
+    await userEvent.click(clearRow)
     await expect(args.onChange).toHaveBeenLastCalledWith('stage', null)
   },
 }
 
 /**
- * Read-only: every control is disabled, no edit escapes. The checkbox is a
- * base-ui `role="checkbox"` span rather than an input, so its refusal reads as
- * `aria-disabled` — and a click on it emits nothing at all (#221).
+ * Read-only: no edit escapes. The text/number/date atom (`AtomEditor`) drops
+ * its click target entirely when `editable` is false — a bare `PondAtom`, no
+ * `<button>`. The tag editor (`TagValueEditor`) keeps its trigger button (the
+ * popover it would open is the affordance to disable, not the display), so it
+ * disables the button instead. The checkbox is a base-ui `role="checkbox"`
+ * span rather than an input, so its refusal reads as `aria-disabled` — and a
+ * click on it emits nothing at all (#221).
  */
 export const ReadOnly: Story = {
   args: {
@@ -117,8 +133,10 @@ export const ReadOnly: Story = {
   },
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getByLabelText('Title value')).toBeDisabled()
-    await expect(canvas.getByLabelText('Stage value')).toBeDisabled()
+    await expect(canvas.getByText('Build a workbench')).toBeInTheDocument()
+    await expect(canvas.getByText('Doing')).toBeInTheDocument()
+    await expect(canvas.queryByRole('button', { name: 'Title value' })).not.toBeInTheDocument()
+    await expect(canvas.getByRole('button', { name: 'Stage value' })).toBeDisabled()
 
     const done = canvas.getByLabelText('Done value')
     await expect(done).toHaveAttribute('aria-checked', 'true')
@@ -133,15 +151,18 @@ export const ReadOnly: Story = {
 
 /**
  * #260 — framed, as DocumentPanel mounts it: the board's `properties` card (400),
- * `properties` as the eyebrow, the field count as the note. The rows ARE
- * `PondMolecule kind="field-row"` — `PondBlock.dc.html`'s properties frame
- * dc-imports the molecule — so the geometry asserted here is the molecule's
+ * `record` as the eyebrow, the collection's name as the note (KAN-350,
+ * `PondBlock.dc.html` `['record', 'recipes']`). The rows ARE `PondMolecule
+ * kind="field-row"` — `PondBlock.dc.html`'s properties frame dc-imports the
+ * molecule — so the geometry asserted here is the molecule's
  * (`PondMolecule.dc.html` `fieldRow`): grid `140px minmax(0,1fr)` · gap 12 ·
- * min-height 34 · width 360 · the eyebrow label; the control rides the value cell.
+ * min-height 34 · the eyebrow label; the control rides the value cell. KAN-350
+ * dropped the molecule's own 360px clamp, so a row's width is whatever the card
+ * gives it — not asserted here.
  */
 export const InPropertiesCard: Story = {
   render: (args) => (
-    <PondBlock {...propertiesFrame(args.schema)}>
+    <PondBlock {...propertiesFrame(args.schema, 'tasks')}>
       <PropertyInspector {...args} />
     </PondBlock>
   ),
@@ -156,9 +177,9 @@ export const InPropertiesCard: Story = {
     const cavail = cp.clientWidth - parseFloat(cps.paddingLeft) - parseFloat(cps.paddingRight)
     await expect(card.getBoundingClientRect().width).toBeCloseTo(cavail, 0)
     const head = card.firstElementChild as HTMLElement
-    await expect(head.children[0].textContent).toBe('properties')
+    await expect(head.children[0].textContent).toBe('record')
     await expect(head.children[0].className).toBe(pageEyebrowClass)
-    await expect(head.children[1].textContent).toBe('6 fields')
+    await expect(head.children[1].textContent).toBe('tasks')
 
     const rows = Array.from(card.querySelectorAll<HTMLElement>('[data-kind="field-row"]'))
     await expect(rows).toHaveLength(schema.length)
@@ -168,7 +189,6 @@ export const InPropertiesCard: Story = {
       await expect(rs.gridTemplateColumns.split(' ')[0]).toBe('140px')
       await expect(rs.columnGap).toBe('12px')
       await expect(parseFloat(rs.minHeight)).toBe(34)
-      await expect(parseFloat(rs.width)).toBe(360)
       const label = row.querySelector<HTMLElement>('[data-part="label"]')!
       await expect(label.textContent).toBe(schema[i].name)
       const ls = getComputedStyle(label)
@@ -177,8 +197,9 @@ export const InPropertiesCard: Story = {
       await expect(ls.textTransform).toBe('uppercase')
     }
     // The controls are live inside the rows — the inspector still edits.
-    await expect(rows[0].contains(canvas.getByLabelText('Title value'))).toBe(true)
-    await expect(canvas.getByLabelText('Count value')).toHaveValue(3)
+    const titleTrigger = canvas.getByRole('button', { name: 'Title value' })
+    await expect(rows[0].contains(titleTrigger)).toBe(true)
+    await expect(canvas.getByText('3')).toBeInTheDocument()
   },
 }
 
@@ -186,7 +207,7 @@ export const InPropertiesCard: Story = {
 export const EmptyInCard: Story = {
   args: { schema: [], values: {} },
   render: (args) => (
-    <PondBlock {...propertiesFrame(args.schema)}>
+    <PondBlock {...propertiesFrame(args.schema, 'tasks')}>
       <PropertyInspector {...args} />
     </PondBlock>
   ),
@@ -195,8 +216,8 @@ export const EmptyInCard: Story = {
     const card = canvasElement.querySelector<HTMLElement>('[data-block-kind]')!
     await expect(card.dataset.blockKind).toBe('properties')
     await expect(card.dataset.blockState).toBe('empty')
-    // The note still counts, at zero — the frame does not drop it when empty.
-    await expect((card.firstElementChild as HTMLElement).children[1].textContent).toBe('0 fields')
+    // The note still names the collection — the frame does not drop it when empty.
+    await expect((card.firstElementChild as HTMLElement).children[1].textContent).toBe('tasks')
     await expect(canvas.getByText('no fields yet')).toBeInTheDocument()
     await expect(canvas.queryByRole('button')).not.toBeInTheDocument()
     await expect(canvas.queryByText(/no properties/i)).not.toBeInTheDocument()

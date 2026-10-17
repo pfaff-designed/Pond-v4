@@ -99,7 +99,7 @@ function TemplatePage({
         </span>
       </div>
       {schema && (
-        <PondBlock {...propertiesFrame(schema)}>
+        <PondBlock {...propertiesFrame(schema, title)}>
           <PropertyInspector schema={schema} values={values} onChange={() => {}} editable={false} />
         </PondBlock>
       )}
@@ -480,7 +480,7 @@ async function assertBlocks(root: HTMLElement, page: Pick<TemplatePageProps, 'bl
   await expect(cards).toHaveLength(framed.length + (page.schema ? 1 : 0))
   const eyebrows = cards.map((c) => (c.firstElementChild as HTMLElement).children[0].textContent)
   await expect(eyebrows).toEqual([
-    ...(page.schema ? ['properties'] : []),
+    ...(page.schema ? ['record'] : []),
     ...framed.map((f) => f.heading),
   ])
 

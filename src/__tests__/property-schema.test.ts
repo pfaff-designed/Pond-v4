@@ -24,6 +24,7 @@ import {
   withValue,
   addDateField,
   addStatusField,
+  addOption,
   removeField,
   DEFAULT_STATUS_OPTIONS,
   type PropertyDef,
@@ -309,6 +310,38 @@ describe('addStatusField — the laneless-board remedy (#351)', () => {
   it('is undone by removeField, same as addDateField', () => {
     const out = addStatusField(SCHEMA, mintIds('field-id', 'opt-1', 'opt-2', 'opt-3'))
     expect(removeField(out, 'field-id')).toEqual(SCHEMA)
+  })
+})
+
+describe('addOption — the tag editor\'s "+ new tag" (#350)', () => {
+  it('appends a minted {id, label} option to the named select/status field', () => {
+    const { schema: out, optionId } = addOption(SCHEMA, 'stage', 'Blocked', () => 'opt-new')
+    expect(optionId).toBe('opt-new')
+    const stage = out.find((d) => d.id === 'stage')
+    expect(stage?.options).toEqual([
+      { id: 'todo', label: 'To do' },
+      { id: 'done', label: 'Done', color: 'green' },
+      { id: 'opt-new', label: 'Blocked' },
+    ])
+  })
+
+  it('does not mutate the input schema or the field it leaves alone', () => {
+    const before = JSON.parse(JSON.stringify(SCHEMA))
+    const { schema: out } = addOption(SCHEMA, 'stage', 'Blocked', () => 'opt-new')
+    expect(SCHEMA).toEqual(before)
+    expect(out.find((d) => d.id === 'count')).toEqual(SCHEMA.find((d) => d.id === 'count'))
+  })
+
+  it('a field id that names a non-select/status type is returned unchanged, with a null optionId', () => {
+    const { schema: out, optionId } = addOption(SCHEMA, 'count', 'Blocked', () => 'opt-new')
+    expect(out).toEqual(SCHEMA)
+    expect(optionId).toBeNull()
+  })
+
+  it('an unknown field id is returned unchanged, with a null optionId', () => {
+    const { schema: out, optionId } = addOption(SCHEMA, 'nope', 'Blocked', () => 'opt-new')
+    expect(out).toEqual(SCHEMA)
+    expect(optionId).toBeNull()
   })
 })
 

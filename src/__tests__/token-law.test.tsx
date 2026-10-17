@@ -437,15 +437,20 @@ describe('PropertyInspector — sans values, board field-row label', () => {
   ]
 
   it('property values are not serif', () => {
-    render(<PropertyInspector schema={schema} values={{ kcal: 520 }} onChange={() => {}} />)
-    const num = screen.getByLabelText('kcal per serving value')
-    const txt = screen.getByLabelText('note value')
-    for (const el of [num, txt]) {
+    const { container } = render(
+      <PropertyInspector schema={schema} values={{ kcal: 520 }} onChange={() => {}} />
+    )
+    const texts = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-kind="field-row"] [data-part="text"]')
+    )
+    expect(texts).toHaveLength(2)
+    for (const el of texts) {
       expect(el.className).not.toMatch(/font-serif/)
-      expect(el.className).toMatch(/font-sans/)
       expect(el.className).not.toMatch(/\btext-sm\b/)
       expect(el.className).not.toMatch(/mn-text-faint/)
     }
+    // `note` has no value — it reads `empty`.
+    expect(texts[1].textContent).toBe('empty')
   })
 
   it('the field-row label is the page eyebrow — 10.5 / 500 / .1em / uppercase / .68, sans', () => {

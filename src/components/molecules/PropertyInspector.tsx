@@ -21,19 +21,25 @@
  * `date`, `with` → tag / date / text) — so, as list and check rows (#219), the
  * molecule wins and `PondTemplate`'s tighter inline row (`width 70` label at 12.5,
  * `min-height 22`) is the level-4 rendering, unreconciled. The molecule's geometry
- * — grid `140px minmax(0,1fr)` · gap 12 · min-height 34 · width 360 · the eyebrow
- * label — therefore comes from the molecule, never restated here; the live control
- * rides its value slot. `relation` renders the connected chip field (#20).
+ * — grid `140px minmax(0,1fr)` · gap 12 · min-height 34, filling the card (KAN-350
+ * dropped the molecule's own 360 clamp) · the eyebrow label — therefore comes from
+ * the molecule, never restated here. At rest a value is a `PondAtom` (`propertyAtom`),
+ * never a native `<input>`/`<select>` (KAN-350); `relation` renders the connected
+ * chip field (#20).
  *
  * No empty copy of its own: the `properties` card's empty state (`no fields yet`)
  * is the frame's (#239), and DocumentPanel sets it off the schema (`propertiesFrame`).
  */
 
 import { PondControl } from '@/components/atoms/PondControl'
+import { AtomEditor } from '@/components/molecules/AtomEditor'
 import { PondMolecule } from '@/components/molecules/PondMolecule'
+import { TagValueEditor } from '@/components/molecules/TagValueEditor'
 import { RelationValueField } from '@/components/organisms/RelationValueField'
 import { RollupValueField } from '@/components/organisms/RollupValueField'
 import { POND_BLOCK_ROW_GAP } from '@/lib/modules/block-frame'
+import { formatAtomDate, localToday, parseDateInput } from '@/lib/properties/date-input'
+import { propertyAtom } from '@/lib/properties/property-atom'
 import {
   coerceValue,
   type PropertyDef,
@@ -48,18 +54,21 @@ export interface PropertyInspectorProps {
   values: Record<string, unknown>
   /** Raised with the property id and its new value on each edit. */
   onChange: (key: string, value: PropertyValue) => void
+  /** select/status "+ new tag": the host turns the picked label into one schema
+   *  write (adding the option, on the collection page that owns `_schema`) plus
+   *  the value set. Omit where the host can't write the schema — the tag
+   *  editor's "+ new tag" row then never appears. */
+  onAddOption?: (key: string, label: string) => void
   /** When false, controls render read-only. Defaults to true. */
   editable?: boolean
   className?: string
 }
 
-const inputClass =
-  'w-full border-0 border-b border-mn-line bg-transparent px-0 py-1 font-sans text-[13.5px] text-mn-text outline-none transition-colors placeholder:text-mn-text-secondary focus:border-mn-text disabled:opacity-60'
-
 export function PropertyInspector({
   schema,
   values,
   onChange,
+  onAddOption,
   editable = true,
   className,
 }: PropertyInspectorProps) {
@@ -72,13 +81,13 @@ export function PropertyInspector({
       className={`flex flex-col ${POND_BLOCK_ROW_GAP.properties} ${className ?? ''}`}
     >
       {schema.map((def) => (
-        // The fixed 360 clamps to a narrower column rather than overflow (ADR 0004 §7).
         <PondMolecule key={def.id} kind="field-row" label={def.name} className="max-w-full">
           <PropertyField
             def={def}
             value={coerceValue(def, values[def.id])}
             editable={editable}
             onChange={onChange}
+            onAddOption={onAddOption}
             schema={schema}
             values={values}
           />
@@ -93,6 +102,7 @@ function PropertyField({
   value,
   editable,
   onChange,
+  onAddOption,
   schema,
   values,
 }: {
@@ -100,39 +110,13 @@ function PropertyField({
   value: PropertyValue
   editable: boolean
   onChange: (key: string, value: PropertyValue) => void
+  onAddOption?: (key: string, label: string) => void
   /** The page schema — a rollup reads its sibling relation def from here. */
   schema?: PropertySchema
   /** The page values — a rollup reads its sibling relation's linked ids from here. */
   values?: Record<string, unknown>
 }) {
-  const label = `${def.name} value`
-
   switch (def.type) {
-    case 'number':
-      return (
-        <input
-          type="number"
-          className={inputClass}
-          aria-label={label}
-          disabled={!editable}
-          value={typeof value === 'number' ? value : ''}
-          placeholder="—"
-          onChange={(e) => onChange(def.id, e.target.value === '' ? null : Number(e.target.value))}
-        />
-      )
-
-    case 'date':
-      return (
-        <input
-          type="date"
-          className={inputClass}
-          aria-label={label}
-          disabled={!editable}
-          value={typeof value === 'string' ? value : ''}
-          onChange={(e) => onChange(def.id, e.target.value === '' ? null : e.target.value)}
-        />
-      )
-
     case 'checkbox':
       // `PondControl kind="checkbox"` (#221) — the STANDALONE control of
       // `PondControl.dc.html` (14 / radius 4 / inset .68): a property value sitting
@@ -142,30 +126,11 @@ function PropertyField({
         <PondControl
           kind="checkbox"
           label={null}
-          aria-label={label}
+          aria-label={`${def.name} value`}
           disabled={!editable}
           on={value === true}
           onCheckedChange={(next) => onChange(def.id, next)}
         />
-      )
-
-    case 'select':
-    case 'status':
-      return (
-        <select
-          className={inputClass}
-          aria-label={label}
-          disabled={!editable}
-          value={typeof value === 'string' ? value : ''}
-          onChange={(e) => onChange(def.id, e.target.value === '' ? null : e.target.value)}
-        >
-          <option value="">—</option>
-          {(def.options ?? []).map((opt) => (
-            <option key={opt.id} value={opt.id}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
       )
 
     case 'relation':
@@ -189,18 +154,84 @@ function PropertyField({
       return <RollupValueField def={def} relationDef={relationDef} relationValue={relationValue} />
     }
 
-    case 'text':
-    default:
+    // date — the same AtomEditor host, parsing free text through `parseDateInput`
+    // and showing its resolved day as a mono preview line under the input while
+    // typing (`formatAtomDate`).
+    case 'date': {
+      const atom = propertyAtom(def, value)
+      const today = localToday()
       return (
-        <input
-          type="text"
-          className={inputClass}
-          aria-label={label}
-          disabled={!editable}
-          value={typeof value === 'string' ? value : ''}
-          placeholder="—"
-          onChange={(e) => onChange(def.id, e.target.value === '' ? null : e.target.value)}
+        <AtomEditor
+          kind={atom.kind}
+          value={atom.value}
+          empty={atom.empty}
+          editable={editable}
+          aria-label={`${def.name} value`}
+          className="justify-self-start"
+          errorNote="not a date"
+          parse={(text) => parseDateInput(text, today)}
+          preview={(text) => {
+            const parsed = parseDateInput(text, today)
+            return parsed === null || parsed === 'empty' ? null : formatAtomDate(parsed)
+          }}
+          onCommit={(next) => onChange(def.id, next)}
         />
       )
+    }
+
+    // number/text — click-to-edit via the shared AtomEditor host (KAN-350).
+    case 'number':
+    case 'text': {
+      const atom = propertyAtom(def, value)
+      const isNumber = def.type === 'number'
+      return (
+        <AtomEditor
+          kind={atom.kind}
+          value={atom.value}
+          empty={atom.empty}
+          editValue={
+            isNumber
+              ? typeof value === 'number'
+                ? String(value)
+                : ''
+              : typeof value === 'string'
+                ? value
+                : ''
+          }
+          editable={editable}
+          aria-label={`${def.name} value`}
+          className="justify-self-start"
+          parse={(text) => {
+            const trimmed = text.trim()
+            if (trimmed === '') return 'empty'
+            if (!isNumber) return text
+            const n = Number(trimmed)
+            return Number.isFinite(n) ? n : null
+          }}
+          onCommit={(next) => onChange(def.id, next)}
+        />
+      )
+    }
+
+    // select, status — the tag editor: click opens the option menu, picking
+    // writes the option's id. "+ new tag" raises `onAddOption`, which the host
+    // (DocumentPanel) turns into one schema write plus the value set.
+    case 'select':
+    case 'status': {
+      const atom = propertyAtom(def, value)
+      return (
+        <TagValueEditor
+          options={def.options ?? []}
+          value={typeof value === 'string' ? value : null}
+          label={atom.value}
+          empty={atom.empty}
+          editable={editable}
+          aria-label={`${def.name} value`}
+          className="justify-self-start"
+          onChange={(next) => onChange(def.id, next)}
+          onAddOption={onAddOption ? (newLabel) => onAddOption(def.id, newLabel) : undefined}
+        />
+      )
+    }
   }
 }
