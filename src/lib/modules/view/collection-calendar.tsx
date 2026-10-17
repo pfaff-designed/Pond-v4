@@ -95,32 +95,6 @@ function MonthDayNumber({ day, isToday, inMonth }: { day: number; isToday: boole
   )
 }
 
-/** ↵ on the item's own tab stop (not an inner control's) selects it; ↵ again, or a
- *  second click, on the already-selected item opens its page — same split as
- *  `CollectionTable`'s `handleRowKeyDown`, but the calendar's own click also opens
- *  (Jira: "Enter or a second click opens the record"). Shared by the desktop
- *  stack item and the mobile focus-list row. */
-function handleCalendarRowKeyDown(
-  rowId: string,
-  selectedId: string | undefined,
-  select: RowSelection['select'],
-  onOpenRow: ((rowId: string) => void) | undefined,
-  e: React.KeyboardEvent<HTMLDivElement>
-) {
-  if (e.target !== e.currentTarget) return
-  if (e.key !== 'Enter' && e.key !== ' ') return
-  // Stop the day cell's own Enter/Space listener underneath (open-add-input)
-  // from also firing — the same guard the item's click already makes.
-  e.stopPropagation()
-  if (e.key === 'Enter' && rowId === selectedId) {
-    e.preventDefault()
-    onOpenRow?.(rowId)
-    return
-  }
-  e.preventDefault()
-  select({ id: rowId, via: 'keyboard' })
-}
-
 function handleCalendarRowClick(
   rowId: string,
   selectedId: string | undefined,
@@ -145,7 +119,7 @@ function MonthDayStack({
   rowProps,
   keyboardProps,
   selectWithPointer,
-  select,
+  selectOrOpenOnKey,
   onOpenRow,
 }: {
   items: MonthDayCell['items']
@@ -154,7 +128,7 @@ function MonthDayStack({
   rowProps: RowSelection['rowProps']
   keyboardProps: RowSelection['keyboardProps']
   selectWithPointer: RowSelection['selectWithPointer']
-  select: RowSelection['select']
+  selectOrOpenOnKey: RowSelection['selectOrOpenOnKey']
   onOpenRow?: (rowId: string) => void
 }) {
   if (items.length === 0 && moreCount === 0) return null
@@ -166,7 +140,7 @@ function MonthDayStack({
           className={cn(DAY_ITEM_ROW, ROW_FOCUS_VISIBLE, row.id === selectedId && DAY_ITEM_SELECTED_RING)}
           {...rowProps(row.id)}
           {...keyboardProps(row.id)}
-          onKeyDown={(e) => handleCalendarRowKeyDown(row.id, selectedId, select, onOpenRow, e)}
+          onKeyDown={(e) => selectOrOpenOnKey(row.id, e, onOpenRow)}
           onClick={(e) => handleCalendarRowClick(row.id, selectedId, selectWithPointer, onOpenRow, e)}
         >
           <span className={DAY_ITEM_DOT} />
@@ -190,7 +164,7 @@ function MonthDayCellView({
   rowProps,
   keyboardProps,
   selectWithPointer,
-  select,
+  selectOrOpenOnKey,
   onOpenRow,
 }: {
   cell: MonthDayCell
@@ -204,7 +178,7 @@ function MonthDayCellView({
   rowProps: RowSelection['rowProps']
   keyboardProps: RowSelection['keyboardProps']
   selectWithPointer: RowSelection['selectWithPointer']
-  select: RowSelection['select']
+  selectOrOpenOnKey: RowSelection['selectOrOpenOnKey']
   onOpenRow?: (rowId: string) => void
 }) {
   const openable = canAdd && !isAdding
@@ -227,7 +201,7 @@ function MonthDayCellView({
         rowProps={rowProps}
         keyboardProps={keyboardProps}
         selectWithPointer={selectWithPointer}
-        select={select}
+        selectOrOpenOnKey={selectOrOpenOnKey}
         onOpenRow={onOpenRow}
       />
       {openable && (
@@ -325,7 +299,7 @@ function FocusDayList({
   rowProps,
   keyboardProps,
   selectWithPointer,
-  select,
+  selectOrOpenOnKey,
   onOpenRow,
 }: {
   dayOfMonth: number
@@ -336,7 +310,7 @@ function FocusDayList({
   rowProps: RowSelection['rowProps']
   keyboardProps: RowSelection['keyboardProps']
   selectWithPointer: RowSelection['selectWithPointer']
-  select: RowSelection['select']
+  selectOrOpenOnKey: RowSelection['selectOrOpenOnKey']
   onOpenRow?: (rowId: string) => void
 }) {
   return (
@@ -364,7 +338,7 @@ function FocusDayList({
               )}
               {...rowProps(row.id)}
               {...keyboardProps(row.id)}
-              onKeyDown={(e) => handleCalendarRowKeyDown(row.id, selectedId, select, onOpenRow, e)}
+              onKeyDown={(e) => selectOrOpenOnKey(row.id, e, onOpenRow)}
               onClick={(e) => handleCalendarRowClick(row.id, selectedId, selectWithPointer, onOpenRow, e)}
             >
               <span className={DAY_ITEM_DOT_LARGE} />
@@ -432,10 +406,8 @@ export function CollectionCalendar({
     () => buildMonthGrid(focusIso, todayIso, rows, dateDef),
     [dateDef, focusIso, todayIso, rows]
   )
-  const { selectedRow, rowProps, keyboardProps, selectWithPointer, select } = useRecordSelection(
-    rows,
-    viewKey ?? 'calendar'
-  )
+  const { selectedRow, rowProps, keyboardProps, selectWithPointer, selectOrOpenOnKey } =
+    useRecordSelection(rows, viewKey ?? 'calendar')
   const done = useDoneToggle({ schema, editable, onEdit })
 
   const canAdd = !!dateDef && !!editable && !!onAddRow
@@ -540,7 +512,7 @@ export function CollectionCalendar({
                 rowProps={rowProps}
                 keyboardProps={keyboardProps}
                 selectWithPointer={selectWithPointer}
-                select={select}
+                selectOrOpenOnKey={selectOrOpenOnKey}
                 onOpenRow={onOpenRow}
               />
             ))}
@@ -573,7 +545,7 @@ export function CollectionCalendar({
         rowProps={rowProps}
         keyboardProps={keyboardProps}
         selectWithPointer={selectWithPointer}
-        select={select}
+        selectOrOpenOnKey={selectOrOpenOnKey}
         onOpenRow={onOpenRow}
       />
       {selectedRow && (

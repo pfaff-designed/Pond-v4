@@ -101,6 +101,23 @@ export function useRecordSelection<T extends { id: string }>(
         select({ id, via: 'keyboard' })
       },
     }),
+    /** The one home for "first ↵/Space selects; ↵ on the already-selected row opens
+     *  its page" — `CollectionTable`'s row, `CollectionGallery`'s card and the
+     *  calendar's stack item/focus-list row all split a row's own Enter/Space this
+     *  way. A click's own select-vs-open split differs per view, so it stays there. */
+    selectOrOpenOnKey: (
+      id: string,
+      e: KeyboardEvent,
+      onOpenRow?: (id: string) => void
+    ) => {
+      if (e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return
+      e.preventDefault()
+      if (e.key === 'Enter' && id === selectedId) {
+        onOpenRow?.(id)
+        return
+      }
+      select({ id, via: 'keyboard' })
+    },
     /** For a native button inside the record: it is the tab stop, and activates natively. */
     buttonProps: (id: string) => ({
       'data-row-focus': id,

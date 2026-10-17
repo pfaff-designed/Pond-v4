@@ -651,7 +651,7 @@ function CollectionTable({
 }) {
   const { stepOut } = useBlockRow()
   const [now] = useState(() => new Date())
-  const { selectedRow, select, selectWithPointer, keyboardProps } = useRecordSelection(
+  const { selectedRow, selectWithPointer, keyboardProps, selectOrOpenOnKey } = useRecordSelection(
     rows,
     viewKey
   )
@@ -675,16 +675,7 @@ function CollectionTable({
   // the peek from here (no `focusOnOpen`), so the second ↵ still lands on the
   // row.
   function handleRowKeyDown(rowId: string, e: React.KeyboardEvent<HTMLTableRowElement>) {
-    if (e.target !== e.currentTarget) return
-    if (e.key === 'Enter' && rowId === selectedRow?.id) {
-      e.preventDefault()
-      onOpenRow?.(rowId)
-      return
-    }
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault()
-      select({ id: rowId, via: 'keyboard' })
-    }
+    selectOrOpenOnKey(rowId, e, onOpenRow)
   }
 
   // Return/↓ in the last row's last cell step out of the table (KAN-344) — the
@@ -1147,7 +1138,10 @@ function CollectionGallery({
 }) {
   const [now] = useState(() => new Date())
   const [hoveredId, setHoveredId] = useState<string | null>(null)
-  const { selectedRow, select, rowProps, keyboardProps } = useRecordSelection(rows, viewKey)
+  const { selectedRow, select, rowProps, keyboardProps, selectOrOpenOnKey } = useRecordSelection(
+    rows,
+    viewKey
+  )
   const done = useDoneToggle({ schema, editable, onEdit })
   // Guards handleAddRecord against a second click while its write is in flight
   // (AUDIT G9), same shape as CollectionBoard's handleAddCard.
@@ -1166,19 +1160,10 @@ function CollectionGallery({
   }
 
   // ↵ on the card's own tab stop (not an inner control's) selects it; ↵ again on the
-  // already-selected card opens its page — same split as `CollectionTable`'s
-  // `handleRowKeyDown`.
+  // already-selected card opens its page — `useRecordSelection`'s own
+  // `selectOrOpenOnKey`, shared with `CollectionTable`'s row and the calendar.
   function handleCardKeyDown(rowId: string, e: React.KeyboardEvent<HTMLDivElement>) {
-    if (e.target !== e.currentTarget) return
-    if (e.key === 'Enter' && rowId === selectedRow?.id) {
-      e.preventDefault()
-      onOpenRow?.(rowId)
-      return
-    }
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault()
-      select({ id: rowId, via: 'keyboard' })
-    }
+    selectOrOpenOnKey(rowId, e, onOpenRow)
   }
 
   return (
