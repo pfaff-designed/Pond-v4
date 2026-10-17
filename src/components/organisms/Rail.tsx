@@ -1437,19 +1437,19 @@ export function Rail() {
   // KAN-393: every expand/collapse — manual or programmatic — persists to this
   // pond's store so a reload keeps what was open (board `Pond 08 Edges` 8f).
   // `setExpanded` shadows the raw setter so every existing call site persists
-  // without being touched individually; `pondId` is null outside a pond
-  // context (several stories/tests), where persistence is simply skipped.
-  // `useCallback`'d on `pondId` alone so its identity is stable for the reveal
-  // effects' dep arrays below.
+  // without being touched individually. The updater itself stays pure (no
+  // I/O, no `pondId` capture) — a caller's closure (e.g. `handleAddChild`,
+  // async across a pond switch) can be stale by the time it resolves and
+  // calls this, and writing from inside the updater would persist under
+  // whichever pond that stale closure remembers. The persistence effect
+  // below writes instead, reading `pondId` fresh from the render it runs in.
+  // `useCallback`'d with no deps so its identity never changes, for the
+  // reveal effects' dep arrays below.
   const setExpanded = useCallback(
     (update: Set<string> | ((prev: Set<string>) => Set<string>)) => {
-      setExpandedRaw((prev) => {
-        const next = typeof update === 'function' ? update(prev) : update
-        if (pondId) writeExpandedIds(pondId, Array.from(next))
-        return next
-      })
+      setExpandedRaw((prev) => (typeof update === 'function' ? update(prev) : update))
     },
-    [pondId]
+    []
   )
   const [lifeExpanded, setLifeExpanded] = useState(true)
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -1492,6 +1492,26 @@ export function Rail() {
     prevPondIdRef.current = pondId
     setExpandedRaw(new Set())
   }, [pondId])
+
+  // Write `expanded` to the current pond's store whenever it (or the pond)
+  // changes — the only place this runs, now that `setExpanded` itself is
+  // pure, so it always writes under the `pondId` of the render it's in, not
+  // whatever pond a stale async closure remembers. `writeGuardPondIdRef`
+  // starts `null` so the very first pass for *any* pondId (mount, or a
+  // switch) is always skipped rather than written: `expanded` hasn't been
+  // merged from that pond's store yet (mount) or reset from the old pond's
+  // (switch), and writing it now would clobber the real stored value before
+  // the merge-read effect below ever gets to it. The reset/merge that
+  // follows immediately triggers the pass that writes the right set.
+  const writeGuardPondIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (writeGuardPondIdRef.current !== pondId) {
+      writeGuardPondIdRef.current = pondId
+      return
+    }
+    if (!pondId) return
+    writeExpandedIds(pondId, Array.from(expanded))
+  }, [pondId, expanded])
 
   // Read this pond's stored expansion once per `pondId`, prune it against the
   // loaded `pages` (a stored id may have been deleted elsewhere), and merge
