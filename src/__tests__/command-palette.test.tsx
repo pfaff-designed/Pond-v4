@@ -65,7 +65,7 @@ const groupsOf = (entries: PaletteEntry[]) =>
   entries.flatMap((e) => (e.kind === 'group' ? [e.label] : []))
 /** One query per state — `sav` reaches the capitalised `Savings`. */
 const MONEY_SCOPE = { id: 'money', label: 'money' }
-const QUERIES = ['', 'cab', '> log', 'adobe', 'cabnet', 'make', 'sav']
+const QUERIES = ['', 'cab', '> log', 'adobe', 'cabinex', 'make', 'sav']
 
 // ── The list, state by state ───────────────────────────────────────────────────
 
@@ -222,16 +222,19 @@ describe('paletteEntries — the board’s states', () => {
   })
 
   it('empty: a note, ask pond, make the page under the pond, then a close spelling — no dead end', () => {
-    const entries = paletteEntries(PALETTE_ITEMS, 'cabnet', { pondName: 'life' })
+    // "cabinex": close enough to "cabinet" for `didYouMean`'s edit distance, but not a
+    // subsequence of any item's label (no item has an "x") — a true miss, unlike the
+    // board's own "cabnet" (KAN-390's fuzzy subsequence tier now finds that one).
+    const entries = paletteEntries(PALETTE_ITEMS, 'cabinex', { pondName: 'life' })
     expect(shape(entries)).toEqual([
-      'N:no page or record called “cabnet”',
-      'action:ask pond about “cabnet”',
-      'action:new page “cabnet” under life',
+      'N:no page or record called “cabinex”',
+      'action:ask pond about “cabinex”',
+      'action:new page “cabinex” under life',
       'G:did you mean',
       'page:cabinet plan',
     ])
     expect(entries[2]).toMatchObject({
-      item: { id: NEW_PAGE_ID, action: 'new-page', query: 'cabnet' },
+      item: { id: NEW_PAGE_ID, action: 'new-page', query: 'cabinex' },
     })
     expect(entries[1]).toMatchObject({ item: { id: ASK_POND_ID, action: 'ask-pond' } })
   })
@@ -479,13 +482,13 @@ describe('open, it is a combobox in the same box — not a dialog, not a portal'
         (o) => o.querySelector('[data-part="label"]')!.textContent === 'chase the cabinet quote'
       )!
     expect(chase.querySelector('[data-part="hit"]')!.textContent).toBe('cab')
-    fireEvent.change(input(), { target: { value: 'cabnet' } })
+    fireEvent.change(input(), { target: { value: 'cabinex' } })
     expect(box().querySelector('[data-part="note"]')!.textContent).toBe(
-      'no page or record called “cabnet”'
+      'no page or record called “cabinex”'
     )
     expect(screen.queryByText('no results')).toBeNull()
     expect(screen.getByRole('option', { selected: true })).toHaveTextContent(
-      'ask pond about “cabnet”'
+      'ask pond about “cabinex”'
     )
   })
 

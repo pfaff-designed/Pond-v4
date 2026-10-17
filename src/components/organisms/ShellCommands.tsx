@@ -235,18 +235,24 @@ export function ShellCommands() {
   })
   const { inZen, handleModeSelect } = zenCommands
 
-  // Recents are read as the palette opens, so a page opened from it lists next time.
+  // Recents are read once as the palette opens, so a page opened from it lists next
+  // time: the full up-to-20 list ranks `pages`/`actions` (KAN-390's `visits`), and
+  // the board's last-three (`Pond 02` 2g) is `paletteItems`' own `recent` group.
+  const recentPageIds = useMemo(
+    () => (paletteOpen ? readRecentPageIds(pondId) : []),
+    [paletteOpen, pondId]
+  )
   const items = useMemo(
     () =>
       paletteOpen
         ? [
-            ...paletteItems(pages, readRecentPageIds(pondId), currentNodeId),
+            ...paletteItems(pages, recentPageIds.slice(0, 3), currentNodeId),
             ...zenCommands.items,
             ...pondItems(ponds, pond?.id ?? null),
             ...records,
           ]
         : [],
-    [pages, paletteOpen, currentNodeId, zenCommands.items, ponds, pond, records, pondId]
+    [pages, paletteOpen, currentNodeId, zenCommands.items, ponds, pond, records, recentPageIds]
   )
   const scope = useMemo(() => paletteScope(pages, currentNodeId), [pages, currentNodeId])
 
@@ -459,6 +465,7 @@ export function ShellCommands() {
         parentTitle={parent.title}
         onSelect={handlePaletteSelect}
         ask={!inZen}
+        visits={recentPageIds}
         onQueryChange={setQuery}
         sheet={templateSheet.sheet}
       />

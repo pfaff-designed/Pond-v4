@@ -102,6 +102,8 @@ export interface PaletteOptions {
    * a row that does nothing visible. @default true
    */
   ask?: boolean
+  /** Newest-first visited page ids (KAN-390) — `rankPages`'s recency boost for `pages` and `actions`. */
+  visits?: readonly string[]
 }
 
 /** The ids of the two rows the palette mints from the query — the host acts on them. */
@@ -203,6 +205,7 @@ export function paletteEntries(
     parentTitle = pondName,
     suggested = [],
     ask: canAsk = true,
+    visits = [],
   }: PaletteOptions = {}
 ): PaletteEntry[] {
   const q = normalizeQuery(query)
@@ -239,11 +242,22 @@ export function paletteEntries(
   const hits = (kinds: PaletteKind[], from: readonly PaletteItem[] = pool) =>
     from.filter((i) => kinds.includes(i.kind) && i.label.toLowerCase().includes(q))
   const ponds = hits(['pond'])
-  const pages = hits(['page', 'database'])
+  // Ranked, not filtered by substring (KAN-390): exact/prefix/word-start/substring/
+  // subsequence tiers, the visit boost and the depth tiebreak decide both order and
+  // membership (a zero-score label is dropped the same as a missed `.includes`).
+  const pages = rankPages(
+    pool.filter((i) => i.kind === 'page' || i.kind === 'database'),
+    q,
+    visits
+  )
   // A record is searched by the host (title or field value), so it is not
   // filtered on its label again here — a field match would never survive that.
   const records = pool.filter((i) => i.kind === 'record')
-  const matched = hits(['action'], items)
+  const matched = rankPages(
+    items.filter((i) => i.kind === 'action'),
+    q,
+    visits
+  )
   const modes = matched.filter((i) => i.group === 'mode')
   const actions = matched.filter((i) => i.group !== 'mode')
   const ask: PaletteEntry[] = canAsk

@@ -4,7 +4,7 @@
  * match, and a zero-score item dropped.
  */
 
-import { rankPages, type PaletteItem } from './palette-entries'
+import { paletteEntries, rankPages, type PaletteItem } from './palette-entries'
 
 const page = (id: string, label: string, path: readonly string[] = []): PaletteItem => ({
   id,
@@ -93,6 +93,34 @@ describe('rankPages stability', () => {
     const items = [page('a', 'projects'), page('b', 'projects'), page('c', 'projects')]
     const ranked = rankPages(items, 'projects')
     expect(ranked.map((i) => i.id)).toEqual(['a', 'b', 'c'])
+  })
+})
+
+describe('paletteEntries wires rankPages into pages and actions (KAN-390)', () => {
+  it('ranks "Projects" above "Improvements" for "pro" — tree order would list them the other way', () => {
+    const items = [page('a', 'Improvements'), page('b', 'Projects')]
+    const entries = paletteEntries(items, 'pro')
+    const pagesGroup = entries.indexOf(entries.find((e) => e.kind === 'group' && e.label === 'pages')!)
+    const actionsGroup = entries.findIndex((e) => e.kind === 'group' && e.label === 'actions')
+    const pages = entries
+      .slice(pagesGroup + 1, actionsGroup)
+      .flatMap((e) => (e.kind === 'row' ? [e.item.id] : []))
+    expect(pages).toEqual(['b', 'a'])
+  })
+
+  it('lists "new page" under actions for "nwp" via the subsequence tier', () => {
+    const items = [
+      page('a', 'Improvements'),
+      { id: 'new-page', label: 'new page', kind: 'action' } satisfies PaletteItem,
+    ]
+    const entries = paletteEntries(items, 'nwp')
+    const groups = entries.flatMap((e) => (e.kind === 'group' ? [e.label] : []))
+    expect(groups).toContain('actions')
+    const actionsGroup = entries.indexOf(entries.find((e) => e.kind === 'group' && e.label === 'actions')!)
+    const actionRows = entries
+      .slice(actionsGroup + 1)
+      .flatMap((e) => (e.kind === 'row' ? [e.item.id] : []))
+    expect(actionRows).toContain('new-page')
   })
 })
 
