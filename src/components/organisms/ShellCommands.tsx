@@ -60,7 +60,7 @@ import { PLACEMENT } from '@/lib/layout/shell-placement'
 import { useZenCommands } from '@/lib/layout/use-zen-commands'
 import { workspaceUrl } from '@/lib/pages/nav'
 import { newPageParent, paletteItems, paletteScope, pondItems } from '@/lib/pages/palette-items'
-import { pageQueryOptions } from '@/lib/pages/page-query'
+import { prefetchPageIfAbsent } from '@/lib/pages/use-page-prefetch'
 import { readRecentPageIds, writeRecent } from '@/lib/pages/recent-pages'
 import { usePaletteRecords } from '@/lib/pages/use-palette-records'
 import { createPage } from '@/lib/pages/client'
@@ -190,7 +190,7 @@ export function ShellCommands() {
   // KAN-388: the active row arrowed/typed to in ⌘K warms its page before ↵.
   const handleActiveItemChange = useCallback(
     (item: PaletteItem) => {
-      void queryClient.prefetchQuery(pageQueryOptions(createClient, item.id))
+      prefetchPageIfAbsent(queryClient, createClient, item.id)
     },
     [queryClient]
   )

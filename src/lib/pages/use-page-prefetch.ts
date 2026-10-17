@@ -15,12 +15,29 @@
  */
 
 import { useContext, useEffect, useRef } from 'react'
-import { QueryClientContext } from '@tanstack/react-query'
+import { QueryClientContext, type QueryClient } from '@tanstack/react-query'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
 import { pageQueryOptions } from './page-query'
 
 const PREFETCH_HOLD_MS = 60
+
+/**
+ * Shared by every prefetch site (this hook's hold, and `ShellCommands`'
+ * un-held active-row prefetch) so the "already cached" skip can't drift
+ * between them — a stale-but-present `['page', id]` entry (the open page's
+ * own row, past its 30s staleTime) must never be refetched under a live
+ * editor regardless of which caller triggers it.
+ */
+export function prefetchPageIfAbsent(
+  queryClient: QueryClient | undefined,
+  getSupabase: () => SupabaseClient<Database>,
+  id: string
+) {
+  const options = pageQueryOptions(getSupabase, id)
+  if (queryClient?.getQueryData(options.queryKey) !== undefined) return
+  queryClient?.prefetchQuery(options)
+}
 
 export function usePagePrefetchHandlers(id: string, getSupabase: () => SupabaseClient<Database>) {
   const queryClient = useContext(QueryClientContext)
@@ -40,14 +57,7 @@ export function usePagePrefetchHandlers(id: string, getSupabase: () => SupabaseC
     clearPending()
     timerRef.current = setTimeout(() => {
       timerRef.current = null
-      const options = pageQueryOptions(getSupabase, id)
-      // An id already in the cache (even stale, past the 30s staleTime) is
-      // skipped outright — not just left to `prefetchQuery`'s own staleTime
-      // check — because the OPEN page's own rail row hovers constantly, and
-      // a stale-triggered refetch there would overwrite blocks typed under
-      // an active editor mid-debounce.
-      if (queryClient?.getQueryData(options.queryKey) !== undefined) return
-      queryClient?.prefetchQuery(options)
+      prefetchPageIfAbsent(queryClient, getSupabase, id)
     }, PREFETCH_HOLD_MS)
   }
 

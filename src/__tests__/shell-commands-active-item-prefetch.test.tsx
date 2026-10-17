@@ -51,4 +51,26 @@ describe('ShellCommands — ⌘K’s active row warms its page', () => {
     fireEvent.keyDown(input, { key: 'ArrowDown' })
     expect(prefetchSpy).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ['page', 'beta-1'] }))
   })
+
+  it('skips the already-cached active row — opening ⌘K on the open page must not refetch it under a live editor', async () => {
+    mockFetchPages.mockResolvedValue([
+      { id: 'alpha-1', parent_id: null, type: 'page', title: 'Alpha', order: 0, updated_at: '' },
+    ])
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    queryClient.setQueryData(['page', 'alpha-1'], { id: 'alpha-1' })
+    const prefetchSpy = jest.spyOn(queryClient, 'prefetchQuery').mockResolvedValue(undefined)
+    jest.spyOn(window.navigator, 'platform', 'get').mockReturnValue('MacIntel')
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ShellCommands />
+      </QueryClientProvider>
+    )
+
+    fireEvent.keyDown(document, { key: 'k', metaKey: true })
+    await screen.findByRole('combobox', { name: 'command palette' })
+    await screen.findByRole('option', { name: /Alpha/ })
+
+    expect(prefetchSpy).not.toHaveBeenCalled()
+  })
 })
