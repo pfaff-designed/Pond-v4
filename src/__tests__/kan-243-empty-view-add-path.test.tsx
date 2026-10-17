@@ -34,6 +34,10 @@ const tableSchema: PropertySchema = [
 ]
 
 const updateSchema = jest.fn()
+// `runAddView`'s undo reads "what is current" through `readCachedSchema` (the
+// react-query cache), not through this hook's own return — mock it too, or the
+// undo's `getLatestSchema()` throws (`readCachedSchema is not a function`) the
+// moment a real add actually stages a toast.
 jest.mock('@/lib/modules/view/use-collection-rows', () => ({
   useCollectionRows: () => {
     const [rows] = useState<CollectionRow[]>([])
@@ -50,6 +54,7 @@ jest.mock('@/lib/modules/view/use-collection-rows', () => ({
       updateSchema,
     }
   },
+  readCachedSchema: () => tableSchema,
 }))
 
 jest.mock('next/navigation', () => ({
@@ -116,5 +121,42 @@ describe('BlockCanvas — "＋ view" reaches an empty database too (KAN-243)', (
     const boardTab = screen.getByRole('tab', { name: 'board' })
     expect(boardTab).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('button', { name: 'add a view' })).toBeInTheDocument()
+  })
+
+  it('undoing the OLDER of two staged adds removes only its own view and field, through BlockCanvas\'s two SavedViewBar instances', async () => {
+    const user = userEvent.setup()
+    renderCanvas([table])
+
+    // First add, off the empty-state bar: calendar has no date field yet, so
+    // this mints one. Calendar owns its empty state (block-frame.ts), so the
+    // frame flips to 'rest' and the live `ViewControls` bar takes over —
+    // a DIFFERENT `SavedViewBar` instance than the one that staged this toast.
+    await user.click(await screen.findByRole('button', { name: 'add a view' }))
+    await user.click(screen.getByRole('option', { name: /^calendar/ }))
+    expect(updateSchema).toHaveBeenCalledTimes(1)
+    const schemaAfterCalendar: PropertySchema = updateSchema.mock.calls[0][0]
+    expect(schemaAfterCalendar.some((def) => def.type === 'date')).toBe(true)
+
+    // Second add, off the live calendar bar: board already has a status field
+    // (tableSchema), so no field is minted for it.
+    await user.click(await screen.findByRole('button', { name: 'add a view' }))
+    await user.click(screen.getByRole('option', { name: 'board' }))
+    expect(updateSchema).toHaveBeenCalledTimes(1)
+
+    expect(screen.getByRole('tab', { name: 'board' })).toHaveAttribute('aria-selected', 'true')
+
+    // Undo the FIRST toast (calendar's) — the second instance's own add (board)
+    // must survive, proving the undo read "what is current" off a getter that
+    // outlives either bar instance rather than a ref frozen at click time.
+    const undoButtons = screen.getAllByRole('button', { name: 'Undo' })
+    await user.click(undoButtons[0])
+
+    expect(screen.queryByRole('tab', { name: 'calendar' })).not.toBeInTheDocument()
+    const boardTab = screen.getByRole('tab', { name: 'board' })
+    expect(boardTab).toHaveAttribute('aria-selected', 'true')
+    expect(updateSchema).toHaveBeenCalledTimes(2)
+    const schemaAfterUndo: PropertySchema = updateSchema.mock.calls[1][0]
+    expect(schemaAfterUndo.some((def) => def.type === 'date')).toBe(false)
+    expect(schemaAfterUndo.some((def) => def.type === 'status')).toBe(true)
   })
 })
