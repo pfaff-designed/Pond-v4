@@ -1120,8 +1120,10 @@ function CollectionBoard({
  *
  * `useRecordSelection` drives hover/selected the same way the board does, but the
  * molecule owns no DOM props of its own (unlike the board's `<article>`, which IS
- * the card) — so each row gets a `display: contents` wrapper, the todo view's host
- * pattern, carrying `rowProps`/`keyboardProps` and its own pointer-hover tracking.
+ * the card) — so each row gets a wrapper sized to the card, carrying
+ * `rowProps`/`keyboardProps`, its own pointer-hover tracking, and the shared
+ * focus-visible outline (the table row's and board card's, since this box — not the
+ * molecule inside it — is the tab stop).
  */
 function CollectionGallery({
   viewKey,
@@ -1189,7 +1191,7 @@ function CollectionGallery({
           return (
             <div
               key={row.id}
-              className="contents"
+              className="w-[170px] rounded-[20px] outline-[1.5px] outline-offset-1 outline-mn-text/50 outline-none focus-visible:outline-solid"
               {...rowProps(row.id)}
               {...keyboardProps(row.id)}
               onKeyDown={(e) => handleCardKeyDown(row.id, e)}

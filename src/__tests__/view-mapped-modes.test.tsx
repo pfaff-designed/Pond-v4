@@ -711,6 +711,17 @@ describe('CollectionGallery — hover, selection and the peek (KAN-358)', () => 
     expect(screen.getByLabelText('Record: plant 0')).toBeInTheDocument()
   })
 
+  it('the card’s tab stop is a real box (not display: contents), so a click on the card reaches focus on it (KAN-358)', async () => {
+    const { container } = renderEditableGallery()
+    const wrapper = container.querySelector<HTMLElement>('[data-row-focus="pl0"]')!
+    const card = wrapper.querySelector<HTMLElement>('[data-kind="record-card"]')!
+    expect(wrapper.className).not.toMatch(/\bcontents\b/)
+    expect(getComputedStyle(wrapper).display).not.toBe('contents')
+
+    await userEvent.click(card)
+    expect(document.activeElement).toBe(wrapper)
+  })
+
   it('↵ on an unselected card selects it; ↵ again opens its page', async () => {
     const { container, onOpenRow } = renderEditableGallery()
     const wrapper = container.querySelector<HTMLElement>('[data-row-focus="pl0"]')!
@@ -817,7 +828,6 @@ describe('CollectionView — the gallery and calendar path, end to end (KAN-358)
     expect(a.dataset.state).toBe('selected')
     expect(screen.getByLabelText('Record: plant 0')).toBeInTheDocument()
 
-    container.querySelector<HTMLElement>('[data-row-focus="pl0"]')!.focus()
     await user.keyboard('{Enter}')
     expect(onOpenRow).toHaveBeenCalledWith('pl0')
 
