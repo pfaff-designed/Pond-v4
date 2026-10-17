@@ -1457,7 +1457,7 @@ export function Rail() {
   const [confirmTarget, setConfirmTarget] = useState<RailNode | null>(null)
   const { stageDeletion, notify } = useDeletionUndo()
 
-  const { data: pages = [], isLoading } = useQuery({
+  const { data: pages = [], isLoading, isSuccess } = useQuery({
     queryKey: pagesKey(pondId),
     queryFn: () => fetchPages(pondId),
   })
@@ -1517,13 +1517,15 @@ export function Rail() {
   // loaded `pages` (a stored id may have been deleted elsewhere), and merge
   // the result into `expanded` via a union — never a replace — so this can't
   // fight the ancestor-reveal or KAN-122 child-reveal effects below regardless
-  // of effect order. Gated by `loadedForRef` so it fires exactly once per pond:
-  // `pages` is `[]` while `isLoading`, and pruning against that would wipe the
-  // real stored ids before they ever reach the tree.
+  // of effect order. Gated by `loadedForRef` so it fires exactly once per pond.
+  // Gated on `isSuccess`, not `!isLoading`: a failed fetch also leaves
+  // `isLoading` false with `pages` still `[]`, and pruning against that would
+  // mark the pond loaded and wipe the real stored ids before a retry ever
+  // lands them.
   const loadedForRef = useRef<string | null>(null)
   useEffect(() => {
     if (!pondId) return
-    if (isLoading) return
+    if (!isSuccess) return
     if (loadedForRef.current === pondId) return
     loadedForRef.current = pondId
     const validIds = new Set(pages.map((r) => r.id))
@@ -1536,7 +1538,7 @@ export function Rail() {
       return next
     })
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [pondId, isLoading, pages, setExpanded])
+  }, [pondId, isSuccess, pages, setExpanded])
 
   // ── Rail follows you (ticket-25) ────────────────────────────────────────────
   // When the selection changes — via a rail click, a children-grid card, the
