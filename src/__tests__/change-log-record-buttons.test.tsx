@@ -9,6 +9,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ChangeLogRecordPage } from '@/components/organisms/ChangeLogRecordPage'
 import { RAISE_RECORD_CARD_EVENT, type RaiseRecordCardDetail } from '@/lib/terminal-focus'
+import { WORKSPACE_PATH } from '@/lib/pages/nav'
 import type { ChangeLogRecord } from '@/lib/change-log/types'
 
 jest.mock('@/lib/pond/context', () => ({
@@ -138,17 +139,21 @@ describe('ChangeLogRecordPage — buttons', () => {
     expect(screen.queryByRole('button', { name: 'revert' })).not.toBeInTheDocument()
   })
 
-  it('"open page" navigates to the target page', async () => {
+  it('"open page" pushes history shallowly on /workspace, never router.push (KAN-449)', async () => {
+    window.history.replaceState({}, '', WORKSPACE_PATH)
     mockGetRecord.mockResolvedValue(record())
 
     renderPage()
 
     const openButton = await screen.findByRole('button', { name: 'open page' })
     await waitFor(() => expect(openButton).toBeEnabled())
+    const pushStateSpy = jest.spyOn(window.history, 'pushState')
     fireEvent.click(openButton)
 
-    expect(mockPush).toHaveBeenCalledTimes(1)
-    expect(mockPush.mock.calls[0][0]).toContain('page-1')
+    expect(pushStateSpy).toHaveBeenCalledTimes(1)
+    expect(pushStateSpy.mock.calls[0][2]).toContain('page-1')
+    expect(mockPush).not.toHaveBeenCalled()
+    pushStateSpy.mockRestore()
   })
 
   it('two rapid clicks on revert call proposeRevert once (G9)', async () => {
