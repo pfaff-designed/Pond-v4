@@ -532,5 +532,9 @@ export function blockFrame(block: Block): BlockFrame | null {
         headNote: plural(block.entries.length, 'entry', 'entries'),
       }
     }
+    // KAN-122: the page-link row (6k frame 2) sits on the paper with no card —
+    // no board draws a `PondBlock` frame around it, as an unlabelled text block.
+    case 'page-link':
+      return null
   }
 }

@@ -26,6 +26,7 @@ import { viewSchema, viewSavedViewSchema } from './view/schema'
 import { imageSchema } from './image/schema'
 import { highlightSchema } from './highlight/schema'
 import { entriesSchema, entrySchema } from './entries/schema'
+import { pageLinkSchema } from './page-link/schema'
 import { isMarkdownPipeTable, PIPE_TABLE_IN_TEXT_MESSAGE } from './authoring-lint'
 
 /**
@@ -102,6 +103,9 @@ const highlightData = highlightSchema.omit({ id: true })
 const entriesData = entriesSchema
   .omit({ id: true })
   .extend({ entries: z.array(entrySchema.omit({ id: true })) })
+// KAN-122: `pageId` references an existing page (like a view's `collectionId`) —
+// nothing minted, so a flat top-level id strip is the whole omit-chain.
+const pageLinkData = pageLinkSchema.omit({ id: true })
 
 export const moduleDataSchema = z.discriminatedUnion('type', [
   textData,
@@ -111,6 +115,7 @@ export const moduleDataSchema = z.discriminatedUnion('type', [
   imageData,
   highlightData,
   entriesData,
+  pageLinkData,
 ])
 export type ModuleData = z.infer<typeof moduleDataSchema>
 
@@ -185,6 +190,9 @@ export const createPageBlockSchema = z.discriminatedUnion('type', [
   // #250: a page can be created WITH a dated log (a project's `updates`, a journal's
   // `entries`). Nothing binds to it — parity with the persisted union.
   entriesData.extend({ bindKey }),
+  // KAN-122: a page can be created WITH a page link. Nothing binds to it —
+  // parity with the persisted union.
+  pageLinkData.extend({ bindKey }),
 ])
 export type CreatePageBlock = z.infer<typeof createPageBlockSchema>
 

@@ -17,8 +17,9 @@
  * `highlight` (#249) and `entries` (#250) appear for free, and
  * `slash-menu.test.tsx` asserts it over `moduleDescriptors`.
  *
- * `page link` and `pond — update` have no row: no block or inline page link exists
- * to insert, and there is no `pond — update` block type.
+ * `page-link` (KAN-122) is registered but withheld: it is inserted only by
+ * `makePage`'s `/ nested page` swap, never picked directly from this menu. There is
+ * no `pond — update` block type, so that one has no row at all.
  */
 
 import { moduleDescriptors, type DescriptorType } from '@/lib/modules/registry'
@@ -132,6 +133,7 @@ const VARIANT_ROWS: Partial<Record<DescriptorType, readonly SlashRow[]>> = {
 export const WITHHELD = {
   page: 'structural — a page is made through the rail or `page from template`, not inserted as a block',
   view: 'wholly covered by its variants — each view kind is its own row (ADR 0009)',
+  'page-link': "minted only by `makePage`'s `/ nested page` swap (KAN-122), never picked from the menu directly",
 } as const satisfies Partial<Record<DescriptorType, string>>
 
 /**

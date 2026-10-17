@@ -19,8 +19,10 @@
  *   - `entries` keeps its `serif` flag, which is what makes a journal a journal
  *   - `text`, `highlight` and `image` are content-only, so they become empty
  *     blocks of their type
+ *   - a `page-link` (KAN-122) has no shape beyond its tie to one other page, so
+ *     it drops that tie the same way a view's `collectionId` does — see below
  *
- * The seven above ARE the whole `Block` union, so the switch is exhaustive and a
+ * The eight above ARE the whole `Block` union, so the switch is exhaustive and a
  * new block type will fail to compile here rather than silently copying its
  * content into a template. (`page` is not in the union — it is the withheld
  * structural type, see `modules/palette.ts`'s `WITHHELD`.)
@@ -83,10 +85,16 @@ export function templateBlocksFrom(
  * (`provenance.ts`). Do not "fix" this by restoring the id.
  */
 function withoutTie(block: Block, id: string): Block {
-  if (block.type !== 'view') return { ...block, id }
-  const next = { ...block, id }
-  delete next.collectionId
-  return next
+  if (block.type === 'view') {
+    const next = { ...block, id }
+    delete next.collectionId
+    return next
+  }
+  // KAN-122: a page-link IS a tie (the whole block is a pointer to one other
+  // page, not "a view with a tie among its fields") — the same cross-page,
+  // eventually cross-pond, read `collectionId` is dropped for above.
+  if (block.type === 'page-link') return { ...block, id, pageId: '' }
+  return { ...block, id }
 }
 
 /** One block, keeping its shape and losing its content. */
@@ -154,5 +162,12 @@ function emptied(block: Block, mintId: () => string): Block {
       delete next.collectionId
       return next
     }
+
+    case 'page-link':
+      // A page-link has no shape apart from its tie: unlike `view`, where the
+      // tie is one field among several, the whole block IS the pointer. No
+      // board specifies a template placeholder for it, so empty `pageId` is
+      // the same "nothing set yet" sentinel `image`/`highlight` use above.
+      return { ...block, id, pageId: '' }
   }
 }

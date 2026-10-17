@@ -17,6 +17,7 @@ import { viewDescriptor } from './view/schema'
 import { imageDescriptor } from './image/schema'
 import { highlightDescriptor } from './highlight/schema'
 import { entriesDescriptor } from './entries/schema'
+import { pageLinkDescriptor } from './page-link/schema'
 
 export const moduleDescriptors = {
   text: textDescriptor,
@@ -32,6 +33,8 @@ export const moduleDescriptors = {
   highlight: highlightDescriptor,
   // #250: dated prose — authored content, so a block (ADR 0007).
   entries: entriesDescriptor,
+  // KAN-122: the row `/ nested page` leaves behind at the `/` line's own index.
+  'page-link': pageLinkDescriptor,
 } satisfies Record<string, ModuleDescriptor>
 
 export type DescriptorType = keyof typeof moduleDescriptors
