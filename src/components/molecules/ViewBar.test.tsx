@@ -6,16 +6,35 @@
 import { useState } from 'react'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { ViewBar, type ViewBarView } from '@/components/molecules/ViewBar'
+import { ViewBar, type ViewBarProps, type ViewBarView } from '@/components/molecules/ViewBar'
+import type { ViewKindPickerRow } from '@/components/molecules/ViewKindPicker'
 
 const VIEWS: ViewBarView[] = [
   { id: 'v-board', label: 'board' },
   { id: 'v-timeline', label: 'timeline' },
 ]
 
-const Harness = ({ showAddView = true }: { showAddView?: boolean }) => {
+const ADD_VIEW_ROWS: ViewKindPickerRow[] = [{ mode: 'table' }, { mode: 'board' }, { mode: 'calendar' }]
+
+type HarnessProps =
+  | { showAddView?: false }
+  | { showAddView: true; addViewRows?: readonly ViewKindPickerRow[]; onAddView?: ViewBarProps['onAddView'] }
+
+const Harness = (props: HarnessProps = {}) => {
   const [activeId, setActiveId] = useState('v-board')
-  return <ViewBar views={VIEWS} activeId={activeId} onSelect={setActiveId} showAddView={showAddView} />
+  if (!props.showAddView) {
+    return <ViewBar views={VIEWS} activeId={activeId} onSelect={setActiveId} showAddView={false} />
+  }
+  return (
+    <ViewBar
+      views={VIEWS}
+      activeId={activeId}
+      onSelect={setActiveId}
+      showAddView
+      addViewRows={props.addViewRows ?? ADD_VIEW_ROWS}
+      onAddView={props.onAddView ?? (() => {})}
+    />
+  )
 }
 
 describe('ViewBar', () => {
@@ -54,16 +73,49 @@ describe('ViewBar', () => {
     expect(screen.queryByText('＋ view')).not.toBeInTheDocument()
   })
 
-  it('showAddView=true renders the inert "＋ view"', () => {
+  it('showAddView=true renders a real, focusable "＋ view" button', () => {
     render(<Harness showAddView />)
-    const addView = screen.getByText('＋ view')
-    expect(addView).toHaveAttribute('aria-disabled', 'true')
+    const addView = screen.getByRole('button', { name: 'add a view' })
+    expect(addView).toHaveTextContent('＋ view')
+    expect(addView).not.toHaveAttribute('aria-disabled')
   })
 
   it('"＋ view" carries no classes beyond 6o f2\'s values (no lowercase/tracking)', () => {
     render(<Harness showAddView />)
-    const addView = screen.getByText('＋ view')
+    const addView = screen.getByRole('button', { name: 'add a view' })
     expect(addView.className).not.toContain('lowercase')
     expect(addView.className).not.toContain('tracking-')
+  })
+
+  it('clicking "＋ view" opens the picker with its rows', async () => {
+    const user = userEvent.setup()
+    render(<Harness showAddView />)
+    await user.click(screen.getByRole('button', { name: 'add a view' }))
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual([
+      'table↵',
+      'board',
+      'calendar',
+    ])
+  })
+
+  it('Escape closes the picker and returns focus to the "＋ view" button', async () => {
+    const user = userEvent.setup()
+    render(<Harness showAddView />)
+    const addView = screen.getByRole('button', { name: 'add a view' })
+    await user.click(addView)
+    expect(screen.getAllByRole('option')).toHaveLength(3)
+    await user.keyboard('{Escape}')
+    expect(screen.queryAllByRole('option')).toHaveLength(0)
+    expect(addView).toHaveFocus()
+  })
+
+  it('picking a row calls onAddView with that mode and closes the picker', async () => {
+    const user = userEvent.setup()
+    const onAddView = jest.fn()
+    render(<Harness showAddView onAddView={onAddView} />)
+    await user.click(screen.getByRole('button', { name: 'add a view' }))
+    await user.click(screen.getByRole('option', { name: 'board' }))
+    expect(onAddView).toHaveBeenCalledWith('board')
+    expect(screen.queryAllByRole('option')).toHaveLength(0)
   })
 })

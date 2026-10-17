@@ -607,7 +607,11 @@ function ViewControls({
             }))}
             activeId={activeViewId}
             onSelect={onSelectView}
-            showAddView={showAddView}
+            // `ViewBar` requires addViewRows/onAddView only when showAddView is the
+            // literal `true` (KAN-243); ＋ view stays inert pending its own rows.
+            {...(showAddView
+              ? { showAddView: true, addViewRows: [], onAddView: () => {} }
+              : { showAddView: false })}
           />
         )}
       </div>

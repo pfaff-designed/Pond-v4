@@ -22,21 +22,36 @@
  * slot, outside the pill (Views 3/4 wires it; KAN-243).
  */
 
+import { useRef, useState } from 'react'
+
 import { FOCUS_VISIBLE_RING } from '@/components/atoms/focus-ring'
 import { ViewTabsList, ViewTabsRoot, ViewTabsTab } from '@/components/molecules/view-tabs'
+import { ViewKindPicker, type ViewKindPickerRow } from '@/components/molecules/ViewKindPicker'
+import type { ViewMode } from '@/lib/modules/view/schema'
 
 export interface ViewBarView {
   id: string
   label: string
 }
 
-export interface ViewBarProps {
+interface ViewBarBase {
   views: readonly ViewBarView[]
   activeId: string
   onSelect: (id: string) => void
-  /** Editable only — a reader can still switch views, but never adds one. */
-  showAddView: boolean
 }
+
+export type ViewBarProps = ViewBarBase &
+  (
+    | {
+        /** Editable only — a reader can still switch views, but never adds one. */
+        showAddView: true
+        /** The ＋ view picker's rows, one per `VIEW_KINDS` entry. */
+        addViewRows: readonly ViewKindPickerRow[]
+        /** Picking a row closes the picker and hands the host the chosen kind. */
+        onAddView: (mode: ViewMode) => void
+      }
+    | { showAddView: false; addViewRows?: undefined; onAddView?: undefined }
+  )
 
 const ROW = 'flex items-center gap-[4px]'
 const SEGMENT_ROW =
@@ -46,9 +61,18 @@ const SEGMENT_ROW =
 const SEGMENT = `rounded-full px-[10px] py-[4px] ${FOCUS_VISIBLE_RING}`
 const SEGMENT_ON = 'bg-mn-text text-raw-paper dark:text-raw-ink'
 const SEGMENT_OFF = 'text-mn-text-secondary'
-const ADD_VIEW = 'px-[9px] py-[5px] font-mono text-[11px] text-mn-text-secondary'
+const ADD_VIEW = `px-[9px] py-[5px] font-mono text-[11px] text-mn-text-secondary ${FOCUS_VISIBLE_RING}`
 
-export function ViewBar({ views, activeId, onSelect, showAddView }: ViewBarProps) {
+export function ViewBar(props: ViewBarProps) {
+  const { views, activeId, onSelect, showAddView } = props
+  const addViewRef = useRef<HTMLButtonElement>(null)
+  const [pickerOpen, setPickerOpen] = useState(false)
+
+  const closePicker = () => {
+    setPickerOpen(false)
+    addViewRef.current?.focus()
+  }
+
   return (
     <ViewTabsRoot value={activeId} onValueChange={onSelect} className={ROW}>
       <ViewTabsList className={SEGMENT_ROW}>
@@ -63,9 +87,26 @@ export function ViewBar({ views, activeId, onSelect, showAddView }: ViewBarProps
         ))}
       </ViewTabsList>
       {showAddView && (
-        <span aria-disabled="true" className={ADD_VIEW}>
+        <button
+          ref={addViewRef}
+          type="button"
+          aria-label="add a view"
+          onClick={() => setPickerOpen((open) => !open)}
+          className={ADD_VIEW}
+        >
           ＋ view
-        </span>
+        </button>
+      )}
+      {showAddView && pickerOpen && (
+        <ViewKindPicker
+          rows={props.addViewRows}
+          anchor={addViewRef}
+          onPick={(mode) => {
+            closePicker()
+            props.onAddView(mode)
+          }}
+          onClose={closePicker}
+        />
       )}
     </ViewTabsRoot>
   )
