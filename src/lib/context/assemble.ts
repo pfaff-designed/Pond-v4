@@ -276,7 +276,8 @@ export async function fetchNodeContext(
   // `type='row'` children, but serialize is sync and gets page-mates, not children.
   // Fetch the rows once (only when a view is present) and attach them to each view
   // block BEFORE it serializes — so blocksToText / blockPreview render the rows.
-  const blocks = await hydrateViewBlocks(sb, userId, nodeId, rawBlocks)
+  const viewHydrated = await hydrateViewBlocks(sb, userId, nodeId, rawBlocks)
+  const blocks = await hydratePageLinkBlocks(sb, userId, viewHydrated)
   const documents = blocks.length ? [{ title: row.title as string, blocks }] : []
 
   const children = await fetchChildren(sb, userId, nodeId)
@@ -366,6 +367,36 @@ export async function hydrateViewBlocks(
       // rows rather than reporting a figure it cannot honestly compute.
       ...(schema ? { schema } : {}),
     }
+  })
+}
+
+/**
+ * Graft each `page-link` block's linked page's live title on, transiently, so
+ * `blocksToText`/`blockPreview` (via `pageLinkDescriptor.serialize`) render the
+ * current title rather than the raw `pageId`. One query for every distinct
+ * linked page, skipped entirely when the page has no `page-link` block.
+ */
+export async function hydratePageLinkBlocks(
+  sb: Sb,
+  userId: string,
+  blocks: Block[]
+): Promise<Block[]> {
+  const pageLinkBlocks = blocks.filter((b) => b.type === 'page-link')
+  if (pageLinkBlocks.length === 0) return blocks
+
+  const pageIds = new Set(pageLinkBlocks.map((b) => b.pageId))
+  const { data } = await sb
+    .from('pages')
+    .select('id, title')
+    .eq('user_id', userId)
+    .in('id', [...pageIds])
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const titleById = new Map(((data ?? []) as any[]).map((p) => [p.id as string, p.title as string]))
+
+  return blocks.map((b) => {
+    if (b.type !== 'page-link') return b
+    const title = titleById.get(b.pageId)
+    return title === undefined ? b : { ...b, title }
   })
 }
 
