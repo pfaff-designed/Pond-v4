@@ -10,8 +10,10 @@
  * board row from this one).
  *
  * Typing filters by label; ↑↓ moves; ↵ picks; Esc closes with no change. A
- * `clear` row leads the list when a value is set, unfiltered by the query (an
- * action, not an option). When the query matches no option's label exactly and
+ * `clear` row leads the list only while the query is empty — the active row
+ * then defaults to the current value's own row (so opening and pressing ↵
+ * leaves it unchanged), and typing hides `clear` and defaults the active row
+ * to the first match. When the query matches no option's label exactly and
  * the host passes `onAddOption`, the LAST row is `＋ new tag "<query>"` —
  * picking it hands the typed label back to the host, which owns the schema
  * write (there's no `_schema` to add an option to from inside this component).
@@ -58,6 +60,36 @@ interface TagRow {
   label: string
   clear?: boolean
   isNew?: boolean
+}
+
+/** The `clear` row only appears with an empty query — it's unfiltered because
+ *  it's an action, not an option, and hiding it once the query matches the
+ *  "＋ new tag" case keeps a typed Enter from ever landing on it instead. */
+function buildTagRows(
+  options: readonly PropertyOption[],
+  value: string | null,
+  onCreate: ((label: string) => void) | undefined,
+  trimmedQuery: string
+): TagRow[] {
+  const q = trimmedQuery.toLowerCase()
+  const matches = options.filter((o) => o.label.toLowerCase().includes(q))
+  const hasExactMatch = options.some((o) => o.label.trim().toLowerCase() === q)
+  const showNewRow = !!onCreate && trimmedQuery !== '' && !hasExactMatch
+  const showClear = value !== null && trimmedQuery === ''
+  return [
+    ...(showClear ? [{ id: CLEAR_ID, label: 'clear', clear: true }] : []),
+    ...matches.map((o) => ({ id: o.id, label: o.label })),
+    ...(showNewRow ? [{ id: NEW_ID, label: `＋ new tag "${trimmedQuery}"`, isNew: true }] : []),
+  ]
+}
+
+/** With no query, default to the current value's own row (so ↵ on open
+ *  leaves it unchanged); with a query, default to the first row — the first
+ *  match, or the "＋ new tag" row once nothing matches. */
+function defaultActiveIndex(rows: TagRow[], value: string | null, trimmedQuery: string): number {
+  if (trimmedQuery !== '') return 0
+  const idx = rows.findIndex((r) => !r.clear && !r.isNew && r.id === value)
+  return idx === -1 ? 0 : idx
 }
 
 export function TagValueEditor({
@@ -146,20 +178,12 @@ function TagPopover({
   onDismiss: () => void
 }) {
   const [query, setQuery] = useState('')
-  const [active, setActive] = useState(0)
+  const trimmedQuery = query.trim()
+  const rows = buildTagRows(options, value, onCreate, trimmedQuery)
+  const [active, setActive] = useState(() => defaultActiveIndex(rows, value, trimmedQuery))
   const glassRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const trimmedQuery = query.trim()
-  const q = trimmedQuery.toLowerCase()
-  const matches = options.filter((o) => o.label.toLowerCase().includes(q))
-  const hasExactMatch = options.some((o) => o.label.trim().toLowerCase() === q)
-  const showNewRow = !!onCreate && trimmedQuery !== '' && !hasExactMatch
-  const rows: TagRow[] = [
-    ...(value !== null ? [{ id: CLEAR_ID, label: 'clear', clear: true }] : []),
-    ...matches.map((o) => ({ id: o.id, label: o.label })),
-    ...(showNewRow ? [{ id: NEW_ID, label: `＋ new tag "${trimmedQuery}"`, isNew: true }] : []),
-  ]
   const clamped = Math.min(active, Math.max(0, rows.length - 1))
 
   function select(row: TagRow) {
@@ -244,8 +268,10 @@ function TagPopover({
         ref={inputRef}
         value={query}
         onChange={(e) => {
-          setQuery(e.target.value)
-          setActive(0)
+          const nextQuery = e.target.value
+          const nextTrimmed = nextQuery.trim()
+          setQuery(nextQuery)
+          setActive(defaultActiveIndex(buildTagRows(options, value, onCreate, nextTrimmed), value, nextTrimmed))
         }}
         onKeyDown={handleKeyDown}
         placeholder="filter…"

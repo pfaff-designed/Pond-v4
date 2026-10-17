@@ -53,6 +53,49 @@ describe('TagValueEditor', () => {
     expect(onChange).toHaveBeenCalledWith(null)
   })
 
+  it('a value set, opened with no query: Enter leaves it unchanged (the current option is active, not "clear")', async () => {
+    const user = userEvent.setup()
+    const onChange = jest.fn()
+    render(
+      <TagValueEditor
+        options={OPTIONS}
+        value="o2"
+        label="task"
+        empty={false}
+        aria-label="Type value"
+        onChange={onChange}
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Type value' }))
+    await user.keyboard('{Enter}')
+    expect(onChange).toHaveBeenCalledWith('o2')
+  })
+
+  it('a value set, typing a new label then Enter creates and sets the new tag, not "clear"', async () => {
+    const user = userEvent.setup()
+    const onAddOption = jest.fn()
+    const onChange = jest.fn()
+    render(
+      <TagValueEditor
+        options={OPTIONS}
+        value="o1"
+        label="event"
+        empty={false}
+        aria-label="Type value"
+        onChange={onChange}
+        onAddOption={onAddOption}
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Type value' }))
+    await user.type(screen.getByRole('textbox', { name: 'filter options' }), 'appointment')
+    expect(screen.queryByRole('option', { name: 'clear' })).not.toBeInTheDocument()
+    await user.keyboard('{Enter}')
+    expect(onAddOption).toHaveBeenCalledWith('appointment')
+    expect(onChange).not.toHaveBeenCalledWith(null)
+  })
+
   it('filters options by the typed query', async () => {
     const user = userEvent.setup()
     render(
