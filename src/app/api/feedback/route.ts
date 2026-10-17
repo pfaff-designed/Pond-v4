@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { buildFeedbackIssue } from '@/lib/feedback/build-issue'
-import { createJiraIssue, rankFirstInNowQueue } from '@/lib/feedback/jira-client'
+import { addIssueComment, createJiraIssue, rankFirstInNowQueue } from '@/lib/feedback/jira-client'
+import { buildOwnerEmailFields, sendOwnerEmail } from '@/lib/feedback/owner-email'
 import { checkFeedbackRateLimit } from '@/lib/feedback/rate-limit'
 
 const REQUIRED_ENV = ['JIRA_BASE_URL', 'JIRA_EMAIL', 'JIRA_API_KEY', 'OWNER_EMAIL'] as const
@@ -62,6 +63,7 @@ export async function POST(req: Request) {
   }
 
   const isOwner = (user.email ?? '').toLowerCase() === (process.env.OWNER_EMAIL ?? '').toLowerCase()
+  const now = new Date()
   const issue = buildFeedbackIssue({
     text: parsed.text,
     pageId: parsed.pageId,
@@ -69,7 +71,7 @@ export async function POST(req: Request) {
     url: parsed.url,
     reporterEmail: user.email ?? '',
     userAgent: req.headers.get('user-agent') ?? '',
-    now: new Date(),
+    now,
     isOwner,
   })
   const labels = isOwner ? [...issue.labels, 'now', 'size-S'] : issue.labels
@@ -80,7 +82,26 @@ export async function POST(req: Request) {
   } catch {
     return Response.json({ error: "can't file reports right now" }, { status: 502 })
   }
-  if (!isOwner) return Response.json({ key: created.key, url: created.url })
+  if (!isOwner) {
+    const fields = buildOwnerEmailFields({
+      reporterEmail: user.email ?? '',
+      text: parsed.text,
+      pageTitle: parsed.pageTitle,
+      url: parsed.url,
+      now,
+      jiraUrl: created.url,
+    })
+    try {
+      const { id } = await sendOwnerEmail(fields)
+      console.log(`owner email sent: ${id}`)
+      return Response.json({ key: created.key, url: created.url, emailId: id })
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
+      console.error(`owner email failed: ${reason}`)
+      await addIssueComment(created.key, `owner email failed: ${reason}`)
+      return Response.json({ key: created.key, url: created.url, emailFailed: true })
+    }
+  }
 
   const ranked = await rankFirstInNowQueue(created.key)
   return Response.json({ key: created.key, url: created.url, rankFailed: !ranked })
