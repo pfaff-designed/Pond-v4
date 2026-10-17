@@ -726,13 +726,19 @@ function CollectionTable({
                 className={[
                   'border-b border-mn-line last:border-b-0 align-top',
                   struck ? DIFF_REMOVAL_TEXT_CLASSNAME : '',
-                  selected ? 'rounded-[8px] bg-mn-text/[0.07]' : '',
+                  // `border-collapse` keeps a <tr>'s own radius from ever painting, so
+                  // the selected background and its outer rounding live on the end
+                  // tds instead (first/last below).
+                  'outline-[1.5px] outline-offset-1 outline-mn-text/50 outline-none focus-visible:outline-solid',
                 ].join(' ')}
               >
                 <td
-                  className={
-                    struck ? 'py-1.5 pr-3 font-medium' : 'py-1.5 pr-3 font-medium text-mn-text'
-                  }
+                  className={[
+                    struck ? 'py-1.5 pr-3 font-medium' : 'py-1.5 pr-3 font-medium text-mn-text',
+                    'rounded-l-[8px]',
+                    schema.length === 0 ? 'rounded-r-[8px]' : '',
+                    selected ? 'bg-mn-text/[0.07]' : '',
+                  ].join(' ')}
                   onKeyDown={(e) => handleCellKeyDown(ri, -1, e)}
                 >
                   {editable && onRenameRow && !struck ? (
@@ -750,7 +756,11 @@ function CollectionTable({
                 {schema.map((def, ci) => (
                   <td
                     key={def.id}
-                    className="py-1.5 pr-3"
+                    className={[
+                      'py-1.5 pr-3',
+                      ci === schema.length - 1 ? 'rounded-r-[8px]' : '',
+                      selected ? 'bg-mn-text/[0.07]' : '',
+                    ].join(' ')}
                     onKeyDown={(e) => handleCellKeyDown(ri, ci, e)}
                   >
                     <Cell

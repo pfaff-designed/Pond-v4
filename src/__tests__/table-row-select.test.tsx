@@ -4,7 +4,7 @@
  * place and selects nothing (KAN-378).
  */
 
-import { act, render, screen } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { CollectionView } from '@/lib/modules/view/view'
 import type { CollectionRow } from '@/lib/modules/view/apply'
@@ -42,7 +42,12 @@ const renderTable = (
 const peek = () => document.querySelector('[data-part="record-peek"]')
 // The title is a `DraftInput` (value, not text) whenever `onRenameRow` makes it
 // editable (every `renderTable` render); a struck row keeps it as plain text.
-const titleElementOf = (title: string) => screen.queryByDisplayValue(title) ?? screen.getByText(title)
+// Scoped to the table: the peek renders the same title as a `Record title`
+// input, which would otherwise collide with the row's own title element.
+const titleElementOf = (title: string) => {
+  const table = within(document.querySelector('table') as HTMLTableElement)
+  return table.queryByDisplayValue(title) ?? table.getByText(title)
+}
 const cellOf = (title: string) => titleElementOf(title).closest('td') as HTMLTableCellElement
 const rowOf = (title: string) => titleElementOf(title).closest('tr') as HTMLTableRowElement
 
@@ -54,6 +59,22 @@ describe('table — a row opens its record in the peek', () => {
     await userEvent.click(cellOf('First'))
     expect(peek()).not.toBeNull()
     expect(screen.getByLabelText('Record: First')).toBeInTheDocument()
+  })
+
+  it('a selected row paints its radius and background on the end tds, not the tr', async () => {
+    renderTable()
+
+    await userEvent.click(cellOf('First'))
+    const row = rowOf('First')
+    const tds = row.querySelectorAll('td')
+    const [firstTd, lastTd] = [tds[0], tds[tds.length - 1]]
+
+    expect(firstTd.className).toContain('rounded-l-[8px]')
+    expect(firstTd.className).toContain('bg-mn-text/[0.07]')
+    expect(lastTd.className).toContain('rounded-r-[8px]')
+    expect(lastTd.className).toContain('bg-mn-text/[0.07]')
+    expect(row.className).not.toContain('rounded-[8px]')
+    expect(row.className).not.toContain('bg-mn-text/[0.07]')
   })
 
   it('clicking a different row’s padding swaps the peek', async () => {
