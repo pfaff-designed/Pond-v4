@@ -450,13 +450,20 @@ export function BlockCanvas({
   // without it, the browser draws its own full-width snapshot of the dragged
   // row, which would compete with the lifted copy this surface draws itself.
   // Appended to the body (not this tree) so it has a layout box even while
-  // `canvasRef` is collapsed (previewing, above).
+  // `canvasRef` is collapsed (previewing, above). `position: fixed` keeps it
+  // out of normal flow — in static position it made the document 1px taller
+  // than the viewport, so End/PageDown and the composer's closed-tab offset
+  // were both off by a pixel (KAN-366 conductor fix round).
   const dragImageRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
     const el = document.createElement('div')
+    el.style.position = 'fixed'
+    el.style.top = '-1px'
+    el.style.left = '-1px'
     el.style.width = '1px'
     el.style.height = '1px'
     el.style.opacity = '0'
+    el.style.pointerEvents = 'none'
     document.body.appendChild(el)
     dragImageRef.current = el
     return () => {

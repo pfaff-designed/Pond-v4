@@ -31,6 +31,7 @@ import {
 } from 'react'
 import { useSearchParams } from 'next/navigation'
 
+import type { CSSVars } from '@/lib/css-vars'
 import { PAGE_COLUMN_PAD_PX, TEXT_BLOCK_INSET_PX } from '@/lib/layout/surface-column'
 import { requestComposerToggle, useComposerOpen } from '@/lib/terminal-focus'
 import { holdInkGround } from '@/lib/theme/mode'
@@ -98,8 +99,6 @@ export const ZEN_TYPE_SCALE = ZEN_BODY_PX / POND_ATOM_PAGE_TYPE_PX.prose
 
 /** A page size as zen sets it: the one factor, to two places. */
 export const zenPx = (pagePx: number): number => Number((pagePx * ZEN_TYPE_SCALE).toFixed(2))
-
-type CSSVars = CSSProperties & Record<`--${string}`, string>
 
 /** The type and the gap, as variables on the zen column that its classes read. */
 const ZEN_VARS: CSSVars = Object.fromEntries([
@@ -316,10 +315,10 @@ export const ZenChrome = ({
  * its `backdrop-filter: blur(24px) saturate(1.3)` (already a literal there,
  * matching the board) needs no override of its own.
  */
-const ZEN_COMPOSER_CARD_OVERRIDE = [
+export const ZEN_COMPOSER_CARD_OVERRIDE = [
   '[&_[data-part="composer-card"]]:w-[560px]!',
   '[&_[data-part="composer-card"]]:left-1/2!',
-  '[&_[data-part="composer-card"]]:bottom-[92px]!',
+  '[&_[data-part="composer-card"]]:[--composer-card-bottom:92px]!',
   '[&_[data-part="composer-card"]]:gap-[12px]!',
   '[&_[data-part="composer-card"]]:[--mn-glass-bg:linear-gradient(160deg,rgba(255,255,255,.92),rgba(255,255,255,.76))]!',
   '[&_[data-part="composer-card"]]:[--mn-glass-border:1px_solid_rgba(255,255,255,.9)]!',

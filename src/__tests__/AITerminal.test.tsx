@@ -94,6 +94,7 @@ import {
 } from '@/lib/terminal-focus'
 import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
 import { useZen, ZenComposerChrome, ZenProvider } from '@/lib/layout/zen'
+import { COMPOSER_CLEARANCE_VAR } from '@/lib/layout/composer-clearance'
 
 const mockListPages = listPages as jest.Mock
 const mockGetPage = getPage as jest.Mock
@@ -1529,6 +1530,66 @@ describe('reopening the composer actually moves focus into the input (KAN-323)',
     expect(focusSpy).toHaveBeenCalled()
 
     focusSpy.mockRestore()
+  })
+})
+
+describe('closing the composer leaves only the tab; reopening restores the same thread (KAN-366)', () => {
+  function renderInShell() {
+    const shell = document.createElement('div')
+    shell.setAttribute('data-part', 'shell')
+    document.body.appendChild(shell)
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const utils = render(
+      <QueryClientProvider client={queryClient}>
+        <AITerminal />
+      </QueryClientProvider>,
+      { container: shell }
+    )
+    return { ...utils, shell }
+  }
+
+  it('⌘J collapses the card into the clip layer behind the live tab; ⌘J again brings back the same turns', async () => {
+    // jsdom lays out nothing — stand in for the tab's real 30px (h-[30px]) so
+    // the published clearance below is the tab's own footprint, not 0.
+    const height = jest.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(30)
+    mockMessages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'what is the capital of France' }] },
+      {
+        id: 'a1',
+        role: 'assistant',
+        parts: [{ type: 'text', text: 'Paris is the capital of France' }],
+      },
+    ]
+    const { shell } = renderInShell()
+    await waitReady()
+
+    expect(screen.getByText('Paris is the capital of France')).toBeInTheDocument()
+    const card = document.querySelector('[data-part="composer-card"]') as HTMLElement
+    expect(card).not.toHaveAttribute('data-collapsed')
+    expect(card).not.toHaveAttribute('inert')
+
+    act(() => requestComposerToggle())
+
+    expect(card).toHaveAttribute('data-collapsed')
+    expect(card).toHaveAttribute('inert')
+    // The clip layer is the shared parent `TerminalDrawer` wraps both the tab
+    // and the card in — not a prop on either, so read it off the DOM.
+    expect(card.parentElement).toHaveClass('overflow-clip')
+    const tab = screen.getByRole('button', { name: 'Open composer' })
+    const tabSection = tab.closest('section') as HTMLElement
+    expect(tabSection.parentElement).toBe(card.parentElement)
+    expect(tabSection.className).toContain('pointer-events-auto')
+    expect(card.className).toContain('pointer-events-none')
+    expect(shell.style.getPropertyValue(COMPOSER_CLEARANCE_VAR)).toBe('30px')
+
+    act(() => requestComposerToggle())
+
+    expect(card).not.toHaveAttribute('data-collapsed')
+    expect(card).not.toHaveAttribute('inert')
+    expect(screen.getByText('what is the capital of France')).toBeInTheDocument()
+    expect(screen.getByText('Paris is the capital of France')).toBeInTheDocument()
+
+    height.mockRestore()
   })
 })
 

@@ -659,13 +659,22 @@
     animation: motion-menu-in var(--motion-quick) var(--ease-out) both;
   }
 
-  /* Card resolve (ModuleDiffCard / ProposalGroup). Settle tier — the card eases
+  /* Card resolve (ModuleDiffCard / TerminalDrawer). Settle tier — the card eases
      down to inert as it dims, never snaps. Transition (not keyframe) so it rides
-     the status → resolved class flip both directions cleanly. */
+     the status → resolved class flip both directions cleanly. `visibility`
+     rides the same duration so it only flips to hidden once the slide finishes
+     (CSS's to/from-`visible` rule switches at 100% when leaving `visible`, 0%
+     when entering it) — close still slides, open is instantly visible. */
+  /* `translate` is deliberately NOT transitioned here: a card whose placement
+     switches between the centred (`-translate-x-1/2`) and maximized (inset,
+     no translate utility) classes would otherwise slide sideways on every
+     maximize/restore. The closed slide drives through `transform` instead
+     (which this does transition), so it still animates. */
   .motion-resolve {
     transition:
       opacity var(--motion-settle) var(--ease-out),
-      transform var(--motion-settle) var(--ease-mn);
+      transform var(--motion-settle) var(--ease-mn),
+      visibility var(--motion-settle);
   }
 
   /* Tree children settle (TreeRow subtree) & block insert/reorder settle. A

@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite'
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test'
 import { useRef, useState } from 'react'
+import type { ComponentProps } from 'react'
 
 import { ComposerLine } from './ComposerLine'
 import { TerminalDrawer } from './TerminalDrawer'
@@ -10,6 +11,7 @@ import {
   COMPOSER_MIN_HEIGHT,
   composerMaxHeight,
 } from '@/lib/layout/composer-height'
+import { ZEN_COMPOSER_CARD_OVERRIDE } from '@/lib/layout/zen'
 
 /**
  * The shell-side of the PondComposer card: where it sits, that it publishes its
@@ -127,7 +129,12 @@ export const WithTheHandle: Story = {
   render: (args) => {
     const [height, setHeight] = useState<number | null>(null)
     return (
-      <TerminalDrawer {...args} height={height} onHeightChange={setHeight} onHeightCommit={setHeight}>
+      <TerminalDrawer
+        {...args}
+        height={height}
+        onHeightChange={setHeight}
+        onHeightCommit={setHeight}
+      >
         <Thread turns={4} />
       </TerminalDrawer>
     )
@@ -157,7 +164,9 @@ export const WithTheHandle: Story = {
     // End: as tall as the shell allows — the top stays 72px below the shell's top.
     await userEvent.keyboard('{End}')
     await expect(cardH()).toBe(composerMaxHeight(shell.clientHeight))
-    await expect(Math.round(card.getBoundingClientRect().top - shell.getBoundingClientRect().top)).toBe(72)
+    await expect(
+      Math.round(card.getBoundingClientRect().top - shell.getBoundingClientRect().top)
+    ).toBe(72)
 
     await userEvent.dblClick(handle)
     await expect(cardH()).toBe(COMPOSER_DEFAULT_HEIGHT)
@@ -375,5 +384,176 @@ export const PublishesItsClearanceToTheShell: Story = {
 
     await userEvent.click(canvas.getByText('unmount'))
     await expect(published()).toBe('')
+  },
+}
+
+// ── KAN-366: closed means gone, in every sizing state ───────────────────────
+//
+// A scroller standing in for the document the real bug lands in: the shell
+// itself has no overflow clip, so a card that translates short of its own
+// footprint (height + the 24px inset, not just the height) inflates the
+// SCROLLER's scrollable area instead of leaving no trace below it.
+
+const MadePageChipRow = () => (
+  <div className="flex items-center gap-2 px-1.5 font-sans text-[13px]">
+    <span className="rounded-full border border-mn-hair px-3 py-1">renovation plan</span>
+    <span className="text-mn-text-secondary">made a page</span>
+  </div>
+)
+
+const renderClosedInScroller = (args: ComponentProps<typeof TerminalDrawer>) => (
+  <div data-testid="scroller" className="h-[30rem] w-[1180px] overflow-auto bg-mn-surface">
+    <div data-part="shell" className="relative h-full">
+      <TerminalDrawer {...args} />
+    </div>
+  </div>
+)
+
+async function assertClosedLeavesNoTrace(canvasElement: HTMLElement) {
+  const scroller = within(canvasElement).getByTestId('scroller')
+  // Collapsed, the card is `aria-hidden`/`inert` — querySelector, not getByRole.
+  const card = scroller.querySelector<HTMLElement>('[data-part="composer-card"]')!
+  const tab = within(scroller).getByRole('region', { name: 'Composer tab' })
+  const scrollerBottom = scroller.getBoundingClientRect().bottom
+
+  await expect(scroller.scrollHeight).toBe(scroller.clientHeight)
+  await expect(card.getBoundingClientRect().top).toBeGreaterThanOrEqual(scrollerBottom)
+  await expect(Math.round(tab.getBoundingClientRect().bottom)).toBe(Math.round(scrollerBottom))
+}
+
+export const ClosedAtTheDefaultHeight: Story = {
+  name: 'closed · default height',
+  args: { collapsed: true, children: <Thread turns={4} /> },
+  render: renderClosedInScroller,
+  play: async ({ canvasElement }) => assertClosedLeavesNoTrace(canvasElement),
+}
+
+export const ClosedAtADraggedHeight: Story = {
+  name: 'closed · dragged height',
+  args: { collapsed: true, height: 560, children: <Thread turns={4} /> },
+  render: renderClosedInScroller,
+  play: async ({ canvasElement }) => assertClosedLeavesNoTrace(canvasElement),
+}
+
+export const ClosedWithUnsizedContent: Story = {
+  name: 'closed · unsized content',
+  args: { collapsed: true, unsized: true, children: <MadePageChipRow /> },
+  render: renderClosedInScroller,
+  play: async ({ canvasElement }) => assertClosedLeavesNoTrace(canvasElement),
+}
+
+export const ClosedMaximized: Story = {
+  name: 'closed · maximized',
+  args: { collapsed: true, maximized: true, children: <Thread turns={4} /> },
+  render: renderClosedInScroller,
+  play: async ({ canvasElement }) => assertClosedLeavesNoTrace(canvasElement),
+}
+
+export const ClosedMinimized: Story = {
+  name: 'closed · minimized',
+  args: { collapsed: true, minimized: true, children: <Thread turns={4} /> },
+  render: renderClosedInScroller,
+  play: async ({ canvasElement }) => assertClosedLeavesNoTrace(canvasElement),
+}
+
+/**
+ * Zen overrides the card's `bottom` by `!important`-ing the class that sets
+ * `--composer-card-bottom`, not `bottom` itself — the inline style's `bottom:
+ * var(--composer-card-bottom)` has to keep reading the overridden var rather
+ * than get out-fought by a `bottom-[92px]!` utility the closed slide's own
+ * `calc(100% + var(...))` would never see. Proves the var wins (92, not the
+ * default 24) and that the closed slide clears the scroller by the zen
+ * footprint, not the ordinary one.
+ */
+export const ClosedInZenClearsTheZenFootprint: Story = {
+  name: 'closed · in zen, clears the zen footprint (92px)',
+  args: { collapsed: true, children: <Thread turns={4} /> },
+  render: (args) => (
+    <div data-testid="scroller" className="h-[30rem] w-[1180px] overflow-auto bg-mn-surface">
+      <div data-part="shell" className={`relative h-full ${ZEN_COMPOSER_CARD_OVERRIDE}`}>
+        <TerminalDrawer {...args} />
+      </div>
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const scroller = within(canvasElement).getByTestId('scroller')
+    const card = scroller.querySelector<HTMLElement>('[data-part="composer-card"]')!
+    const scrollerBottom = scroller.getBoundingClientRect().bottom
+
+    await expect(getComputedStyle(card).getPropertyValue('--composer-card-bottom').trim()).toBe(
+      '92px'
+    )
+    await expect(scroller.scrollHeight).toBe(scroller.clientHeight)
+    await expect(card.getBoundingClientRect().top).toBeGreaterThanOrEqual(scrollerBottom)
+  },
+}
+
+/**
+ * The slide must animate (280ms, `--ease-mn`), not jump — the slide drives
+ * through `transform`. `visibility` rides the same transition so the card
+ * leaves the a11y tree only once the slide finishes; opening is instantly
+ * visible (CSS's to/from-`visible` rule), closing hides at the end of the
+ * duration, never before.
+ */
+export const ClosedSlideAnimates: Story = {
+  name: 'closed · slide animates, hides only after',
+  tags: ['!dev'],
+  render: (args) => {
+    const [collapsed, setCollapsed] = useState(false)
+    return (
+      <>
+        <button onClick={() => setCollapsed(true)}>close</button>
+        <TerminalDrawer {...args} collapsed={collapsed} onExpand={() => setCollapsed(false)} />
+      </>
+    )
+  },
+  args: { children: <Thread turns={1} /> },
+  play: async ({ canvas, canvasElement }) => {
+    const card = canvasElement.querySelector<HTMLElement>('[data-part="composer-card"]')!
+    const style = getComputedStyle(card)
+    await expect(style.transitionProperty.split(', ')).toEqual(
+      expect.arrayContaining(['transform'])
+    )
+    await expect(style.visibility).toBe('visible')
+
+    await userEvent.click(canvas.getByText('close'))
+    // Right after the toggle the slide has only just started — still visible.
+    await expect(style.visibility).toBe('visible')
+    await waitFor(() => expect(style.visibility).toBe('hidden'), { timeout: 1000 })
+  },
+}
+
+/**
+ * `translate` must NOT be a transitioned property: the card's placement swaps
+ * between the centred class (`-translate-x-1/2`, a `translate` value) and the
+ * maximized inset (no translate utility at all) on every maximize/restore, and
+ * if `.motion-resolve` eased that change the full-width card would appear to
+ * start half its width to the left and slide right. The closed slide animates
+ * through `transform` instead, which stays listed.
+ */
+export const MaximizeDoesNotSlideSideways: Story = {
+  name: 'maximize/restore does not animate translate',
+  tags: ['!dev'],
+  render: (args) => {
+    const [maximized, setMaximized] = useState(false)
+    return (
+      <>
+        <button onClick={() => setMaximized((value) => !value)}>toggle maximized</button>
+        <TerminalDrawer {...args} maximized={maximized} />
+      </>
+    )
+  },
+  args: { children: <Thread turns={1} /> },
+  play: async ({ canvas, canvasElement }) => {
+    const card = canvasElement.querySelector<HTMLElement>('[data-part="composer-card"]')!
+    const style = getComputedStyle(card)
+    await expect(style.transitionProperty.split(', ')).not.toEqual(
+      expect.arrayContaining(['translate'])
+    )
+
+    await userEvent.click(canvas.getByText('toggle maximized'))
+    // No `translate` transition means no running animation on that property —
+    // the placement swap (and its implied translate jump) lands in one frame.
+    await expect(card.getAnimations().length).toBe(0)
   },
 }

@@ -29,6 +29,7 @@ import type { ReactNode, RefObject } from 'react'
 import { ComposerHandle } from '@/components/molecules/ComposerHandle'
 import {
   COMPOSER_BOTTOM_INSET,
+  COMPOSER_CARD_BOTTOM_VAR,
   COMPOSER_CLEARANCE_VAR,
   COMPOSER_TAB_INSET,
   composerFootprintPx,
@@ -39,6 +40,7 @@ import {
   COMPOSER_TOP_CLEARANCE,
 } from '@/lib/layout/composer-height'
 import { RAIL_WIDTH_PX } from '@/lib/layout/rail-width'
+import type { CSSVars } from '@/lib/css-vars'
 import { cn } from '@/lib/utils'
 
 export interface TerminalDrawerProps {
@@ -82,7 +84,10 @@ export interface TerminalDrawerProps {
 
 const PLACEMENT =
   'absolute left-1/2 z-30 w-[360px] max-w-full -translate-x-1/2 md:left-[calc(50%_+_113px)] md:w-[560px]'
-const CARD_PLACEMENT = cn(PLACEMENT, 'bottom-6')
+/** The card's own `bottom` comes from `--composer-card-bottom` (the style object
+ *  below), not a class, so a surface that wraps it (zen) can override the one
+ *  custom property rather than fighting a `bottom-6` utility with `!important`. */
+const CARD_PLACEMENT = PLACEMENT
 const TAB_PLACEMENT = cn(PLACEMENT, 'bottom-0')
 /** Maximized drops the centred placement for an absolute inset — position comes
  *  from style, not these classes. */
@@ -177,7 +182,7 @@ export const TerminalDrawer = ({
         TAB_PLACEMENT,
         TAB_SHADOW,
         'mn-glass box-border flex h-[30px] justify-center rounded-[14px_16px_0_0] border-b-0 font-mono text-mn-text',
-        collapsed ? 'opacity-100' : 'pointer-events-none opacity-0'
+        collapsed ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
       )}
     >
       <button
@@ -237,10 +242,33 @@ export const TerminalDrawer = ({
   const hasThread = Boolean(children)
   const showThread = hasThread && !minimized && !unsized
 
+  // `bottom` always reads this var rather than a hard-coded inset, so a
+  // wrapping surface (zen) can move the card by overriding one custom
+  // property instead of out-fighting a utility class.
+  const cardStyle: CSSVars = {
+    [COMPOSER_CARD_BOTTOM_VAR]: `${COMPOSER_BOTTOM_INSET}px`,
+    bottom: `var(${COMPOSER_CARD_BOTTOM_VAR})`,
+    ...(maximized
+      ? {
+          top: COMPOSER_TOP_CLEARANCE,
+          left: zen ? COMPOSER_MAXIMIZED_RIGHT_PX : COMPOSER_MAXIMIZED_LEFT_PX,
+          right: COMPOSER_MAXIMIZED_RIGHT_PX,
+        }
+      : showThread
+        ? { height: height ?? COMPOSER_DEFAULT_HEIGHT, maxHeight: COMPOSER_MAX_HEIGHT_CSS }
+        : {}),
+  }
+
   // Collapsed slides the whole card off screen rather than swapping it for the
   // tab: grip, thread and footer all stay mounted, so reopening needs no rebuild.
+  // The shell itself has no overflow clip (WorkspaceShell's `[data-part="shell"]`
+  // is a plain `relative` box), so the slid-off card would otherwise inflate the
+  // page's scrollable area by its own height. This layer clips that off without
+  // creating a stacking context of its own — `inset-0` alone matches the shell's
+  // box exactly, so the card and tab's `absolute` placement reads the same
+  // coordinates it always did (maximized's top/left/right/bottom included).
   return (
-    <>
+    <div className="absolute inset-0 overflow-clip pointer-events-none">
       {tab}
       <section
         ref={setCardRef}
@@ -256,22 +284,13 @@ export const TerminalDrawer = ({
         // real boolean attribute) pulls the whole subtree out of the tab order,
         // not just the hand-set tabIndex this used to need on each control.
         inert={collapsed || undefined}
-        style={
-          maximized
-            ? {
-                top: COMPOSER_TOP_CLEARANCE,
-                bottom: COMPOSER_BOTTOM_INSET,
-                left: zen ? COMPOSER_MAXIMIZED_RIGHT_PX : COMPOSER_MAXIMIZED_LEFT_PX,
-                right: COMPOSER_MAXIMIZED_RIGHT_PX,
-              }
-            : showThread
-              ? { height: height ?? COMPOSER_DEFAULT_HEIGHT, maxHeight: COMPOSER_MAX_HEIGHT_CSS }
-              : undefined
-        }
+        style={cardStyle}
         className={cn(
           maximized ? MAXIMIZED_PLACEMENT : CARD_PLACEMENT,
           'motion-resolve group/composer mn-glass box-border flex flex-col gap-[14px] rounded-mn-card p-[14px] font-mono text-mn-text',
-          collapsed && 'pointer-events-none translate-y-full opacity-0'
+          collapsed
+            ? 'pointer-events-none invisible [transform:translateY(calc(100%+var(--composer-card-bottom)))] opacity-0'
+            : 'pointer-events-auto visible'
         )}
       >
         {showThread && !maximized && onHeightChange && onHeightCommit && (
@@ -293,6 +312,6 @@ export const TerminalDrawer = ({
         )}
         {footer}
       </section>
-    </>
+    </div>
   )
 }
