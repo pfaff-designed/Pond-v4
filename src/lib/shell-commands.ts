@@ -10,6 +10,10 @@ import { isApplePlatform } from '@/lib/platform'
  *  an alias here so this module's existing callers don't change. */
 export const onApplePlatform = isApplePlatform
 
+/** Marks a container whose fields own no undo of their own — a removed row is the
+ *  session's to restore, not the focused field's (KAN-445, KAN-355). */
+export const SESSION_UNDO_SCOPE_ATTR = 'data-pond-session-undo'
+
 /** The platform's command key alone: ⌘ on a Mac, Ctrl everywhere else — never both. */
 const isCommandOnly = (e: KeyboardEvent) =>
   onApplePlatform() ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey

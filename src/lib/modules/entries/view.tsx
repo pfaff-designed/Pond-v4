@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { KeyboardEvent, MutableRefObject } from 'react'
 import type { ModuleViewProps } from '../types'
 import { ENTRIES_EMPTY_LINE, type Entry, type EntriesBlock } from './schema'
+import { SESSION_UNDO_SCOPE_ATTR } from '@/lib/shell-commands'
 
 /**
  * The block's own placeholder wins over the board's generic empty line. "Write
@@ -329,19 +330,26 @@ export function EntriesView({ data, editable, onChange }: ModuleViewProps<Entrie
    * inserts the literal newline multi-line prose needs.
    *
    * ⌫ in an entry already emptied by its own `onChange` removes the row via
-   * `removeEntry`, then blurs the field instead of focusing a neighbour row:
-   * this textarea is not a Tiptap editor, so if focus stayed on one,
-   * ShellCommands' ⌘Z-belongs-to-the-field rule (`isEditable`,
-   * `ShellCommands.tsx`) would hand the next ⌘Z to the browser's native field
-   * undo instead of falling through to the session undo step, and the
-   * removed row would never come back.
+   * `removeEntry` and focuses the row above (previous index) when one
+   * exists, else the row below (the top-row case), via `requestEntryFocus` —
+   * the same registry the insert paths use — so the caret lands at the
+   * neighbour's end once it re-renders. The only-row case blurs instead,
+   * since there is no neighbour to focus. ⌘Z inside the rows is the
+   * session's step, not a focused field's own undo, because the rows carry
+   * `SESSION_UNDO_SCOPE_ATTR` (`ShellCommands.tsx`'s `isEditable` exempts it).
    */
   function handleTextKeyDown(e: KeyboardEvent<HTMLTextAreaElement>, index: number) {
     if (e.nativeEvent.isComposing) return
     if (e.key === 'Backspace' && data.entries[index].text === '') {
       e.preventDefault()
+      const neighbour = data.entries[index - 1] ?? data.entries[index + 1]
+      if (neighbour) {
+        requestEntryFocus(data.id, neighbour.id)
+      }
       removeEntry(index)
-      e.currentTarget.blur()
+      if (!neighbour) {
+        e.currentTarget.blur()
+      }
       return
     }
     if (e.key !== 'Enter' || e.shiftKey) return
@@ -360,36 +368,41 @@ export function EntriesView({ data, editable, onChange }: ModuleViewProps<Entrie
           onChange={(e) => setAddValue(e.target.value)}
           onKeyDown={handleAddKeyDown}
         />
-        {data.entries.map((entry, i) => (
-          <div
-            key={entry.id}
-            className={`${ROW} group/row relative ${editingId === entry.id ? EDIT_RING : ''} ${hoveredId === entry.id ? HOVER : ''}`}
-            onMouseEnter={() => setHoveredId(entry.id)}
-            onMouseLeave={() => setHoveredId((id) => (id === entry.id ? null : id))}
-          >
-            <span data-part="date" className={DATE}>
-              {entry.date}
-            </span>
-            <EntryTextarea
-              entry={entry}
-              index={i}
-              placeholder={blankLine(data, i)}
-              textRefs={textRefs}
-              onFocusRow={() => setEditingId(entry.id)}
-              onBlurRow={() => setEditingId((id) => (id === entry.id ? null : id))}
-              onChangeText={(index, text) => patchEntry(index, { text })}
-              onKeyDownRow={handleTextKeyDown}
-            />
-            <button
-              type="button"
-              aria-label="Remove entry"
-              className={REMOVE}
-              onClick={() => removeEntry(i)}
+        {/* Rows only, not the add line above: the add line's value is local
+         * state (`addValue`), never a page save, so ⌘Z there must stay the
+         * browser's own field undo rather than routing to the session. */}
+        <div className={STACK} {...{ [SESSION_UNDO_SCOPE_ATTR]: '' }}>
+          {data.entries.map((entry, i) => (
+            <div
+              key={entry.id}
+              className={`${ROW} group/row relative ${editingId === entry.id ? EDIT_RING : ''} ${hoveredId === entry.id ? HOVER : ''}`}
+              onMouseEnter={() => setHoveredId(entry.id)}
+              onMouseLeave={() => setHoveredId((id) => (id === entry.id ? null : id))}
             >
-              remove
-            </button>
-          </div>
-        ))}
+              <span data-part="date" className={DATE}>
+                {entry.date}
+              </span>
+              <EntryTextarea
+                entry={entry}
+                index={i}
+                placeholder={blankLine(data, i)}
+                textRefs={textRefs}
+                onFocusRow={() => setEditingId(entry.id)}
+                onBlurRow={() => setEditingId((id) => (id === entry.id ? null : id))}
+                onChangeText={(index, text) => patchEntry(index, { text })}
+                onKeyDownRow={handleTextKeyDown}
+              />
+              <button
+                type="button"
+                aria-label="Remove entry"
+                className={REMOVE}
+                onClick={() => removeEntry(i)}
+              >
+                remove
+              </button>
+            </div>
+          ))}
+        </div>
       </div>
     )
   }
