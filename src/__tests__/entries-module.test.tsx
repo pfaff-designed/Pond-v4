@@ -40,6 +40,7 @@ import {
 } from '@/lib/modules/ai-composition'
 import { emptyBlockForType, slashRows } from '@/lib/modules/palette'
 import { blockFrame, blockIsEmpty, POND_BLOCK_EMPTY_ACTION_WIRED } from '@/lib/modules/block-frame'
+import { SESSION_UNDO_SCOPE_ATTR } from '@/lib/shell-commands'
 
 /** The board's `project` → `updates` fixture. */
 const updates: EntriesBlock = {
@@ -364,6 +365,12 @@ describe('EntriesView — read-only', () => {
     const { container: c2 } = render(<EntriesView data={updates} />)
     has(textsOf(c2)[0], 'text-[16.5px]', 'text-mn-text')
   })
+
+  it('carries no session-undo scope attribute — a read-only stack has no fields to exempt', () => {
+    const { container } = render(<EntriesView data={updates} />)
+    const stack = container.firstElementChild!
+    expect(stack.hasAttribute(SESSION_UNDO_SCOPE_ATTR)).toBe(false)
+  })
 })
 
 function Stateful({ data }: { data: EntriesBlock }) {
@@ -385,6 +392,16 @@ describe('EntriesView — editable (a read-only date label + a prose field, per 
     // The add line is the stack's first child now (KAN-356); only the entry
     // rows — found through the text fields, not raw children — keep ROW's geometry.
     for (const t of texts) has(t.parentElement!, ...ROW, 'group/row')
+  })
+
+  it('stamps the rows wrapper with the session-undo scope attribute, so ⌘Z in a row’s field reaches the session — but not the add line, whose value is local state, never a page save (KAN-445)', () => {
+    const { container } = render(<Stateful data={updates} />)
+    const addInput = screen.getByRole('textbox', { name: 'Add entry' })
+    const rowsWrapper = container.querySelector(`[${SESSION_UNDO_SCOPE_ATTR}]`)
+    expect(rowsWrapper).not.toBeNull()
+    expect(rowsWrapper!.contains(addInput)).toBe(false)
+    const texts = screen.getAllByRole('textbox', { name: 'Entry text' })
+    for (const t of texts) expect(rowsWrapper!.contains(t)).toBe(true)
   })
 
   it('a focused row wears the molecule’s `editing` ring; blurring drops it', () => {
@@ -668,8 +685,8 @@ describe('EntriesView — the hover `remove` (KAN-356)', () => {
   })
 })
 
-describe('EntriesView — ⌫ in an empty entry’s own field (KAN-356)', () => {
-  it('removes that entry via onChange, and blurs rather than focusing a neighbour (so ⌘Z reaches the session undo step, not a focused field’s own undo — KAN-356 fix)', () => {
+describe('EntriesView — ⌫ in an empty entry’s own field (KAN-445)', () => {
+  it('removes that entry via onChange, and focuses the row above with the caret at its end (KAN-445)', () => {
     render(<Stateful data={{ ...updates, entries: [...updates.entries, { id: 'u3', date: '1 nov', text: '' }] }} />)
     const texts = screen.getAllByRole('textbox', { name: 'Entry text' })
     expect(texts).toHaveLength(3)
@@ -677,17 +694,69 @@ describe('EntriesView — ⌫ in an empty entry’s own field (KAN-356)', () => 
 
     const next = screen.getAllByRole('textbox', { name: 'Entry text' })
     expect(next).toHaveLength(2)
-    expect(document.activeElement).toBe(document.body)
+    const above = next[1] as HTMLTextAreaElement
+    expect(document.activeElement).toBe(above)
+    expect(above.selectionStart).toBe(above.value.length)
+    expect(above.selectionEnd).toBe(above.value.length)
   })
 
-  it('with no previous entry, still blurs rather than focusing the next one', () => {
+  it('with no previous entry (the top row), focuses the row below instead, caret at its end', () => {
     render(<Stateful data={{ ...updates, entries: [{ id: 'u0', date: '1 nov', text: '' }, ...updates.entries] }} />)
     const texts = screen.getAllByRole('textbox', { name: 'Entry text' })
     fireEvent.keyDown(texts[0], { key: 'Backspace' })
 
     const next = screen.getAllByRole('textbox', { name: 'Entry text' })
     expect(next).toHaveLength(2)
-    expect(document.activeElement).toBe(document.body)
+    const below = next[0] as HTMLTextAreaElement
+    expect(document.activeElement).toBe(below)
+    expect(below.selectionStart).toBe(below.value.length)
+    expect(below.selectionEnd).toBe(below.value.length)
+  })
+
+  it('two fast Backspaces over two empty rows removes both, as two separate onChange removals', () => {
+    // Step granularity (whether each is its own session-undo step) is the
+    // page draft's 600ms save pause (use-page-draft.ts EDIT_PAUSE_MS), not
+    // this view — this only proves two distinct onChange calls.
+    const onChange = jest.fn()
+    function StatefulSpy({ data }: { data: EntriesBlock }) {
+      const [state, setState] = useState(data)
+      return (
+        <EntriesView
+          data={state}
+          editable
+          onChange={(next) => {
+            onChange(next)
+            setState(next)
+          }}
+        />
+      )
+    }
+    const twoEmpty: EntriesBlock = {
+      ...updates,
+      entries: [
+        { id: 'u3', date: '2 nov', text: '' },
+        { id: 'u4', date: '1 nov', text: '' },
+        ...updates.entries,
+      ],
+    }
+    render(<StatefulSpy data={twoEmpty} />)
+    let texts = screen.getAllByRole('textbox', { name: 'Entry text' })
+    expect(texts).toHaveLength(4)
+    fireEvent.keyDown(texts[0], { key: 'Backspace' })
+
+    texts = screen.getAllByRole('textbox', { name: 'Entry text' })
+    fireEvent.keyDown(texts[0], { key: 'Backspace' })
+
+    expect(onChange).toHaveBeenCalledTimes(2)
+    expect((onChange.mock.calls[0][0] as EntriesBlock).entries.map((e) => e.id)).toEqual([
+      'u4',
+      'u1',
+      'u2',
+    ])
+    expect((onChange.mock.calls[1][0] as EntriesBlock).entries.map((e) => e.id)).toEqual([
+      'u1',
+      'u2',
+    ])
   })
 
   it('as the only entry, removes it and leaves focus nowhere', () => {

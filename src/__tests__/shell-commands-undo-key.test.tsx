@@ -36,6 +36,7 @@ jest.mock('@/lib/terminal-focus', () => ({
 }))
 
 import { ShellCommands } from '@/components/organisms/ShellCommands'
+import { SESSION_UNDO_SCOPE_ATTR } from '@/lib/shell-commands'
 import { sessionUndo } from '@/lib/change-log/session-undo'
 import { requestComposerNotice } from '@/lib/terminal-focus'
 import { changeLogKey } from '@/lib/change-log/keys'
@@ -129,6 +130,37 @@ describe('ShellCommands — an editable keeps its own ⌘Z', () => {
 
     expect(sessionUndo.undo).not.toHaveBeenCalled()
     expect(prevented).toBe(true)
+  })
+})
+
+describe('ShellCommands — a session-undo-scoped field hands ⌘Z to the session, not the browser', () => {
+  it('leaves the key alone in a plain textarea', () => {
+    onPlatform('MacIntel')
+    const { container } = renderShell()
+    const field = document.createElement('textarea')
+    container.appendChild(field)
+    field.focus()
+
+    const prevented = fireEvent.keyDown(field, { key: 'z', metaKey: true })
+
+    expect(sessionUndo.undo).not.toHaveBeenCalled()
+    expect(prevented).toBe(true)
+  })
+
+  it('runs the session undo in a textarea under a SESSION_UNDO_SCOPE_ATTR ancestor', () => {
+    onPlatform('MacIntel')
+    const { container } = renderShell()
+    const scope = document.createElement('div')
+    scope.setAttribute(SESSION_UNDO_SCOPE_ATTR, '')
+    const field = document.createElement('textarea')
+    scope.appendChild(field)
+    container.appendChild(scope)
+    field.focus()
+
+    const prevented = fireEvent.keyDown(field, { key: 'z', metaKey: true })
+
+    expect(sessionUndo.undo).toHaveBeenCalledWith('pond-1')
+    expect(prevented).toBe(false)
   })
 })
 
