@@ -55,7 +55,7 @@ flowchart TD
     M -->|"no"| L["<b>9 · Land it</b><br/>rebase → gates → push → PR → In Review"]
     L --> CI{"CI"}
     CI -->|"red"| CAP
-    CI -->|"green"| MERGE["Squash-merge · ticket Done<br/>refill now · sweep the worktree"]
+    CI -->|"green"| MERGE["Squash-merge · ticket Done<br/>note broken windows · refill now<br/>sweep the worktree"]
     MERGE --> P
 ```
 

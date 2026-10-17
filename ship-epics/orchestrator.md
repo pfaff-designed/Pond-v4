@@ -88,7 +88,7 @@ and `LOOP/SPEC.md`: the ticket key and summary, its Jira description verbatim, `
 SHIP_DIR/ralph.sh LOOP WORKTREE HB RESULT > LOOP/ralph.out 2>&1
 ```
 
-`RESULT` says `status: green` or `status: stopped` with a reason, and carries the commits and `PLAN.md` — whose `## Notes` (choices, deviations, outside_stream, path_test, verify_steps) feed the review, the verifier and the PR body.
+`RESULT` says `status: green` or `status: stopped` with a reason, and carries the commits and `PLAN.md` — whose `## Notes` (choices, deviations, outside_stream, causes, windows, path_test, verify_steps) feed the review, the verifier and the PR body.
 
 - `stopped — blocked: <step> — <why>`: a pass found a step this ticket cannot build. If it is a path step another ticket owns, that is the reachability gate failing late: comment the re-split on the ticket and return `needs-user`. Otherwise judge it, and either fix the plan or return `needs-user` with the question.
 - `stopped — '<item>' missed twice`: read the attempts. One more run is allowed with a changed instruction — rewrite that item in `PLAN.md` (split it, or name the route the passes missed) and start the loop again; a second stop is `stopped`.
@@ -103,7 +103,9 @@ A reviewer finding is checked before it is acted on: open the cited file and con
 
 ### 6. Fix rounds
 
-Confirmed blocking findings go back into the build loop: one item per finding, `SHIP_DIR/ralph.sh add LOOP "fix: <file:line — what breaks, for whom>"` (it lands above the plan's notes); remove the old `HB` and `RESULT`; start `ralph.sh` again on the same `LOOP`, the same way as step 4 — each finding gets its own fresh pass. Then re-review on the axis that found them. **At most two rounds** across review, live verification and CI together. A third is `stopped`.
+Confirmed blocking findings go back into the build loop: one item per finding, `SHIP_DIR/ralph.sh add LOOP "fix: <file:line — what breaks, for whom>"` (it lands above the plan's notes); remove the old `HB` and `RESULT`; start `ralph.sh` again on the same `LOOP`, the same way as step 4 — each finding gets its own fresh pass. Before queuing a finding, make sure it states its cause, not just its symptom. "The menu stays open because `onDragStart` sets state that the trigger's pointerdown re-opens" can be fixed; "the menu stays open" invites patching by coincidence (AGENTS.md, "Program deliberately"). A finding you can't explain, you diagnose before queuing it: read the code yourself, or ask the reviewer that found it. Diagnosis isn't a fix round. Every behaviour fix item names the regression test that must fail without it; a visual-value item names the value the verifier will re-measure.
+
+Then re-review on the axis that found them. **At most two rounds** across review, live verification and CI together. A third is `stopped`.
 
 ### 7. Live verification
 
@@ -152,8 +154,9 @@ If the branch adds anything under `supabase/migrations/`: run `npm run test:pgli
    Red: `gh run view <run> --repo pfaff-designed/Pond-v4 --log-failed`, fix through the build loop (a fix round: one `fix:` item per failure), push, wait again. A check that is still pending when `LONG`'s own deadline passes is a stall: say so and stop.
 
 6. **Merge**: `gh pr merge <N> --repo pfaff-designed/Pond-v4 --squash --delete-branch`. Ticket to **Done** (`JIRA.transition`, `41`).
-7. **Refill `now`**: add the label (`JIRA.labels`) to this Workstream's next not-Done ticket that lacks it, if the queue holds fewer than 8.
-8. **Sweep**: `git -C REPO worktree remove --force WORKTREE`, `git -C REPO branch -D BRANCH`, `REPO/scripts/sweep.sh`.
+7. **Write down the broken windows.** Collect each `windows:` line in `PLAN.md`'s notes, and each non-blocking reviewer note naming rot outside the diff, as `file:line — the rot`. Post them in one `JIRA.comment` on the epic, and list them in `RESULT` under `windows:`. The conductor specs them into tickets; you don't create tickets. Rot nobody writes down spreads (AGENTS.md, "Fix broken windows").
+8. **Refill `now`**: add the label (`JIRA.labels`) to this Workstream's next not-Done ticket that lacks it, if the queue holds fewer than 8.
+9. **Sweep**: `git -C REPO worktree remove --force WORKTREE`, `git -C REPO branch -D BRANCH`, `REPO/scripts/sweep.sh`.
 
 Then go back to step 1 for the next ticket, until `MAX_TICKETS` have merged or nothing is ready.
 
@@ -167,8 +170,10 @@ KAN-123 · merged | needs-user | stopped | blocked
   pr:        <url or none>
   verified:  <what matched the board, light and dark; screenshot paths>
   user:      <the decision needed, if needs-user>
-  reason:    <why, if stopped or blocked>
+  reason:    <why, if stopped or blocked: the cause, not the symptom>
+  options:   <if stopped or blocked: at least one way forward (smaller slice, other route, the user's decision)>
   follow-up: <tickets created or commented on>
+  windows:   <rot written down in step 9.7, or none>
 EPIC · <n merged> · next ready: <key or none>
 ```
 

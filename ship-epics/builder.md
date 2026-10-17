@@ -27,6 +27,8 @@ When `PLAN.md` has no items, you are the planning pass. Write the plan and commi
 choices:
 deviations:
 outside_stream:
+causes:
+windows:
 path_test:
 verify_steps:
 ```
@@ -60,4 +62,12 @@ A `fix:` item is a confirmed review or verification finding, with its `file:line
 - Stay inside `Owns:`. A file outside it, if the spec truly needs it, is changed minimally and listed under `outside_stream`.
 - Code style (the user's rules): strict TypeScript, no `any`; early returns; `const` arrow functions; event handlers named `handle*`; Tailwind classes for styling; accessible elements (labels, roles, keyboard).
 - Comments state constraints the code cannot show. Never narrate what the next line does or why your change is right.
+- **The pragmatic rules** (AGENTS.md, "Build like a pragmatic programmer") apply to every item:
+  - **One home per fact.** Before writing a rule, chord, path or derived value, `rg` for it; if it exists, import it. Board values are exempt: a value written in a board is used as written. Never store a fact implicitly in another field: a new persisted field is optional, and absent means today's behaviour.
+  - **Know why.** Before a `fix:` item changes code, write the failing test that reproduces it, and record the cause in one line under `causes:` in `## Notes`. A fix whose cause you cannot state is a `[!]`, not a commit. A visual-value fix (colour, size) needs no jest test: the verifier re-measures it.
+  - **Crash early.** An impossible state throws in development and falls back safely in production (AGENTS.md). Catch an error only where you handle it.
+  - **Finish what you start.** Every listener, timer and subscription you add is released in the same scope.
+  - **Pure engine code** (layout, rollups, dates, coercion) gets a table of cases covering its boundaries and combinations, not one happy path.
+  - **Broken windows.** Fix rot in the lines your item touches. List rot you only see nearby under `## Notes` as `windows:`, so the orchestrator can ticket it.
+  - **Tests are orthogonal to the machine.** Never assert a platform-, locale- or time-zone-specific literal (`⌘K`, a date string) unless the test pins that platform, locale or zone itself. CI runs on Linux.
 - Shared primitives are wrapped, not duplicated: shadcn / Base UI under the `Pond*` library, Bklit for charts. No icon library — functional marks are inline SVG, stroke-width 1.4, round caps.
