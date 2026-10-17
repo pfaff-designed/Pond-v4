@@ -17,18 +17,19 @@ jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
 }))
 jest.mock('@/lib/supabase/client', () => ({ createClient: () => ({}) }))
+const mockFetchPages = jest.fn().mockResolvedValue([
+  {
+    id: 'page-1',
+    parent_id: null,
+    type: 'page',
+    title: 'Kitchen renovation',
+    order: 0,
+    updated_at: '',
+    props: { kind: 'project' },
+  },
+])
 jest.mock('@/lib/pages/tree', () => ({
-  fetchPages: jest.fn().mockResolvedValue([
-    {
-      id: 'page-1',
-      parent_id: null,
-      type: 'page',
-      title: 'Kitchen renovation',
-      order: 0,
-      updated_at: '',
-      props: { kind: 'project' },
-    },
-  ]),
+  fetchPages: (...args: unknown[]) => mockFetchPages(...args),
 }))
 const mockGetPage = jest.fn()
 jest.mock('@/lib/pages/client', () => ({
@@ -77,5 +78,24 @@ describe('DocumentPanel — the shell paints before the page lands', () => {
     })
 
     expect(await findTextBlock()).toBeInTheDocument()
+  })
+
+  it('shows a not-found line when the page is gone and the rail row is already gone too', async () => {
+    mockFetchPages.mockResolvedValueOnce([])
+    mockGetPage.mockResolvedValue(null)
+
+    renderPanel()
+
+    expect(await screen.findByText('this page is gone — it may be in the trash')).toBeInTheDocument()
+    expect(screen.queryByText('Loading…')).toBeNull()
+  })
+
+  it('shows a not-found line when the page is gone but the rail row is still stale', async () => {
+    mockGetPage.mockResolvedValue(null)
+
+    renderPanel()
+
+    expect(await screen.findByText('this page is gone — it may be in the trash')).toBeInTheDocument()
+    expect(screen.queryByText('Loading…')).toBeNull()
   })
 })

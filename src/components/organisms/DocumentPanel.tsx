@@ -198,7 +198,11 @@ export function DocumentPanel() {
     wasAtPage.current = !!nodeId
   }, [nodeId, refetchFirstRunPending])
 
-  const { data: page, isLoading } = useQuery({
+  const {
+    data: page,
+    isLoading,
+    isError: pageIsError,
+  } = useQuery({
     ...pageQueryOptions(getSupabase, pageId),
     enabled: !!pageId && !isChangeLogNode,
   })
@@ -428,6 +432,18 @@ export function DocumentPanel() {
           </div>
         </div>
       </PageCanvas>
+    )
+  }
+
+  // KAN-388: `getPage` settling with nothing (deleted elsewhere) or erroring
+  // must not leave the pending shell above (or "Loading…" below) up forever —
+  // the rail's row for the id can still be stale (it hasn't refetched yet),
+  // so this checks the page query's own outcome, not whether a row exists.
+  if (pageId && !isChangeLogNode && !isLoading && (page === null || pageIsError)) {
+    return (
+      <div className="flex h-full items-center justify-center text-mn-13 text-mn-text-secondary">
+        this page is gone — it may be in the trash
+      </div>
     )
   }
 
