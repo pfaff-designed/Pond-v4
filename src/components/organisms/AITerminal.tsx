@@ -76,6 +76,7 @@ import { toParentOptions, ancestorPathLabel } from '@/lib/pages/parent-options'
 import { workspaceHref, workspaceUrl } from '@/lib/pages/nav'
 import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
 import { insertPageOptimistic, type PageRow } from '@/lib/pages/tree'
+import { appendChildLinkUnder } from '@/lib/pages/child-links'
 import { linkedPageIds, orderMentionPages } from '@/lib/pages/mention-pages'
 import { readRecentPageIds } from '@/lib/pages/recent-pages'
 import { writeAcceptedChanges } from '@/lib/pages/accept'
@@ -2693,6 +2694,12 @@ export function AITerminal() {
         )
         router.push(workspaceHref({ id: created.id, type: part.type, title: part.title }))
         void queryClient.invalidateQueries({ queryKey: pagesKey() })
+        // KAN-415: a failed link append is not a failed page creation — the page
+        // above has already landed and been navigated to. A database/record made
+        // this way is not a "page under a parent" for this rule (orchestrator note).
+        if (part.type === 'page') {
+          void appendChildLinkUnder(getSupabase(), queryClient, parentRef, created.id, pondId, pondName)
+        }
         // The write landed — only now may the record say so. The log only grows,
         // so an `accepted` stamped before this point could never be taken back.
         logDecision(toolCallId, 'accepted')
@@ -2702,7 +2709,7 @@ export function AITerminal() {
         dispatch({ kind: 'revert', type: 'creates', id: toolCallId })
       }
     },
-    [getSupabase, queryClient, router, pondId, logDecision]
+    [getSupabase, queryClient, router, pondId, pondName, logDecision]
   )
 
   // ── define_schema resolution (#17 slice 5) ────────────────────────────────
@@ -3124,6 +3131,9 @@ export function AITerminal() {
         )
         void queryClient.invalidateQueries({ queryKey: pagesKey() })
         router.push(workspaceHref({ id: made.id, type: 'page', title: made.title }))
+        // KAN-415: a failed link append is not a failed page creation — the
+        // page above has already landed and been navigated to.
+        void appendChildLinkUnder(getSupabase(), queryClient, proposal.parentId, made.id, pondId, pondName)
         // The write landed — only now may the record say so (the log only grows).
         // Not the generic logDecision path: a create_page record has to remember
         // WHICH page it made, so undo (KAN-93) has something to trash —
@@ -3176,6 +3186,7 @@ export function AITerminal() {
       queryClient,
       router,
       pondId,
+      pondName,
       messages,
     ]
   )

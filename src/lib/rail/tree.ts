@@ -123,8 +123,9 @@ export function isDescendant(rows: PageRow[], nodeId: string, maybeAncestorId: s
 
 /** The child ids of `parentId` (null = top-level) in visual order — the same
  *  `order`-then-`title` sort `buildTree` uses, so a computed group matches the
- *  rendered one. */
-function sortedChildIds(rows: PageRow[], parentId: string | null): string[] {
+ *  rendered one. Exported so other scopes needing "rail order" (KAN-415's
+ *  `childLinkTargets`) share this sort instead of re-implementing it. */
+export function sortedChildIds(rows: PageRow[], parentId: string | null): string[] {
   return rows
     .filter((r) => (r.parent_id ?? null) === parentId)
     .slice()

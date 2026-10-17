@@ -60,7 +60,11 @@ export const blockMenuGroups = (
     items: [
       ...(slots.moveIntoNewPage ? [MOVE_INTO_NEW_PAGE] : []),
       { id: 'copy-link', label: 'copy link to block', action: { type: 'copy-link' } },
-      { id: 'delete', label: 'delete', action: { type: 'delete' } },
+      {
+        id: 'delete',
+        label: block.type === 'page-link' ? 'remove link' : 'delete',
+        action: { type: 'delete' },
+      },
     ],
   },
 ]

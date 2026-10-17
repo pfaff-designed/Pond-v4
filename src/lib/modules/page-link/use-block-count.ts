@@ -3,7 +3,7 @@
 /**
  * Live `N blocks` for a page-link row (KAN-122). Never stored — re-read on
  * demand, one lightweight per-link query selecting just the linked page's
- * `blocks` column (not the whole-subtree count `child-cards.ts` computes).
+ * `blocks` column.
  *
  * No `jsonb_array_length(...)` computed-column select: PostgREST has no bare
  * function-call select syntax without a migration, and this ticket has none

@@ -10,8 +10,8 @@
  * The root (#234): no ?nodeId means Life, whose blocks live on the reserved
  * per-user home row (lib/pages/home). The row is resolved here and then takes
  * the SAME path as any other page — no bespoke surface, no distinct area kind
- * (#108). Its nested pages are the top-level pages, shown through the same
- * children grid every page uses.
+ * (#108). Its nested pages are the top-level pages, shown as page-link blocks
+ * on its own content (KAN-415), same as any other page's children.
  *
  * The title and blocks being edited, and their debounced save, are the page's
  * draft (`lib/pages/use-page-draft`).
@@ -19,11 +19,11 @@
  * Manual block authoring (ticket-37, ticket-44): the user is an equal author to
  * the AI. The editor body — the `/` palette, Return after a block, reorder, and the
  * always-visible "+ Add a block" foot affordance — is the shared <BlockCanvas>,
- * so every page authors identically. This panel owns the title header, the
- * debounced save, and the children grid; BlockCanvas owns the blocks.
+ * so every page authors identically. This panel owns the title header and the
+ * debounced save; BlockCanvas owns the blocks, page-link blocks included.
  */
 
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
@@ -37,7 +37,6 @@ import { BacklinksPanel } from '@/components/organisms/BacklinksPanel'
 import { usePageChangesPanel } from '@/components/organisms/PageChangesPanel'
 import { readSchema, readValues, ROW_TYPE } from '@/lib/properties/schema'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
-import { ChildrenGrid } from '@/components/molecules/ChildrenGrid'
 import { ContentWidthHandle } from '@/components/molecules/ContentWidthHandle'
 import { useContentWidth } from '@/lib/layout/content-width'
 import { TEXT_BLOCK_INSET_PX, useSurfaceColumn } from '@/lib/layout/surface-column'
@@ -58,14 +57,21 @@ import { RECORD_PARAM, recordBreadcrumbTitle } from '@/lib/change-log/record-pag
 import { recordKey } from '@/lib/change-log/keys'
 import { getRecord } from '@/lib/change-log/store'
 import { DATABASES_ROOT_TITLE } from '@/lib/pages/databases-root'
-import { childCards } from '@/lib/pages/child-cards'
 import { isUntouchedPage, titleEyebrow } from '@/lib/pages/title-eyebrow'
 import { readMadeFrom } from '@/lib/pages/made-from'
 import { isNewNestedPage, markOpened } from '@/lib/pages/nested-page'
 import { applyPagePropsOptimistic } from '@/lib/pages/tree'
-import { workspaceUrl, WORKSPACE_PATH, type WorkspaceNodeRef } from '@/lib/pages/nav'
+import { WORKSPACE_PATH } from '@/lib/pages/nav'
 import { homeQueryKey, pagesKey } from '@/lib/pages/keys'
 import { usePagesRows } from '@/lib/pages/use-pages'
+import {
+  appendChildLink,
+  childLinkTargets,
+  markChildLinksMigrated,
+  saveThenStamp,
+  stampChildLinksMigratedInCache,
+} from '@/lib/pages/child-links'
+import { flushPendingPageSave } from '@/lib/pages/page-flush'
 import { usePond } from '@/lib/pond/context'
 import { PageCanvas } from '@/lib/modules/page-canvas'
 import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
@@ -224,21 +230,12 @@ export function DocumentPanel() {
   }, [page, pondId, queryClient, getSupabase])
 
   // The flat page tree — the same cache the rail reads — so this page's own
-  // children can be shown below its blocks (ticket-22). `new Date()` is captured
-  // per rows/node change, so the cards' "updated Xd ago" captions refresh with
-  // the data rather than the wall clock. `rowsPending` holds the panel on the
-  // loading state until they land, so a page never paints without its children.
-  // `usePagesRows` (KAN-310 gap 1) drops a staged-for-delete id at once, so a
-  // card a rail delete just staged disappears here with no refetch.
+  // children (now ordinary page-link blocks, KAN-415) resolve against current
+  // rows/titles. `rowsPending` holds the panel on the loading state until they
+  // land, so a page never paints before its children are known. `usePagesRows`
+  // (KAN-310 gap 1) drops a staged-for-delete id at once, so a page-link a rail
+  // delete just staged resolves as gone here with no refetch.
   const { data: rows, isPending: rowsPending } = usePagesRows(pondId)
-  // The root's children are the top-level pages (`null` parent); the home row is
-  // never among the rows (fetchPages strips it), so it is never its own child.
-  const cards = useMemo(() => childCards(rows, nodeId, new Date()), [rows, nodeId])
-  // Card → page is the one navigation (lib/pages/nav): a card carries its own
-  // id/type/title, so the URL gets the same params a rail click would.
-  function goTo(ref: WorkspaceNodeRef | null) {
-    router.push(workspaceUrl(ref))
-  }
 
   // ticket-41: ids of blocks just inserted this session, so a freshly-inserted
   // block SETTLES in (motion-settle-in) while blocks present on page load do
@@ -275,6 +272,45 @@ export function DocumentPanel() {
     undoRemove,
     adoptSavedBlocks,
   } = usePageDraft({ page, pageId, pondId, getSupabase })
+
+  // KAN-415: child pages are ordinary page-link blocks on their parent now, not
+  // an auto-drawn grid, so a page saved before this ticket needs each of its
+  // CURRENT children appended once — the same scope and order the deleted
+  // `childCards` used (direct children, root scoped via `withoutDatabasesRoot`
+  // when `nodeId` is null, i.e. this is the home row). Goes through the
+  // editor's own `commitLocalEdit`, not a direct write, because this page is —
+  // by construction — the one currently open. Guarded by `migratedRef`, every
+  // page id migrated so far (not just the last one), so a double-mount/
+  // strict-mode re-render never re-appends. The stamp also lands on the
+  // `['page', id]` cache at once (`stampChildLinksMigratedInCache`), not only
+  // the DB — navigating away and back while `markChildLinksMigrated`'s write
+  // is still in flight, or already landed but unrefetched, must not re-read an
+  // unstamped cached page and re-append a link the person just removed. The
+  // appended blocks only reach the DB through this page's own 600ms-debounced
+  // save, so the DB stamp (`markChildLinksMigrated`) waits on that save's
+  // flush (`saveThenStamp`) — a reload inside the debounce window must not see
+  // the stamp without the links it promises.
+  const migratedRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    if (!page || rowsPending || migratedRef.current.has(page.id)) return
+    if (page.props?.childLinksMigrated === true) return
+    migratedRef.current.add(page.id)
+
+    const nextBlocks = childLinkTargets(rows, nodeId).reduce(
+      (blocks, childId) => appendChildLink(blocks, childId),
+      viewBlocks
+    )
+    if (nextBlocks !== viewBlocks) commitLocalEdit(nextBlocks)
+
+    stampChildLinksMigratedInCache(queryClient, page.id)
+
+    void saveThenStamp({
+      flush: () => flushPendingPageSave(page.id),
+      stamp: () => markChildLinksMigrated(getSupabase(), page.id),
+    }).catch((err) => {
+      console.error('Failed to mark child links migrated', page.id, err)
+    })
+  }, [page, rows, rowsPending, nodeId, viewBlocks, commitLocalEdit, getSupabase, queryClient])
 
   // "Changes to this page" (#103, storyboard frame 8): the log filtered to this
   // page, floating, ⌥⌘H. State, shortcut and surface all live with the panel; the
@@ -366,10 +402,10 @@ export function DocumentPanel() {
     )
   }
 
-  // ── The page (+ children grid when it has nested pages) ───────────────────────
+  // ── The page (its children render as page-link blocks, not a grid) ─────────
   // "Everything is a page": a page may hold BOTH its own blocks AND children, and
   // nothing here reads a type tag — a page with pages inside it is simply a page
-  // with a children grid under its content (#108, #234).
+  // whose blocks include a page-link per child (#108, #234, KAN-415).
   //
   // In zen "what's left is the page's own text" (6q frame 3): its title and blocks.
   // What is drawn ABOUT the page — the eyebrow, provenance, properties, mentioned,
@@ -461,15 +497,6 @@ export function DocumentPanel() {
 
         <div className={hiddenInZen}>
           <PageMentioned props={page.props} className="mt-8" />
-
-          {/* Content above, children below — the page's own blocks stay primary; its
-              nested pages read as a quiet index beneath them (ticket-22). Collapses
-              to nothing when the page has no children. */}
-          {cards.length > 0 && (
-            <div className="mt-12 border-t border-mn-hair pt-6">
-              <ChildrenGrid cards={cards} onOpenCard={goTo} />
-            </div>
-          )}
 
           {/* Backlinks (#39): the reverse of the one-way relations pointing at this page —
               derived on read, read-only, hidden when nothing links here. A row's collection

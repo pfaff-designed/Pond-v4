@@ -5,10 +5,15 @@
  * chevron, not clickable.
  */
 import { render, screen, fireEvent } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { PageLinkProvider, type PageLinkCapabilities } from './context'
 import type { PageRef } from './resolve'
 import { PageLinkView } from './view'
 import type { PageLinkBlock } from './schema'
+import { pagesKey } from '@/lib/pages/keys'
+import type { PageRow } from '@/lib/pages/tree'
+import { BlockRowProvider } from '../block-row-context'
+import { POND_BLOCK_SELECTED_RING } from '@/components/organisms/PondBlock'
 
 // The real hook talks to Supabase through react-query; mocked here (mirrors
 // `view/view.test.tsx`'s `use-collection-rows` mock) so this file can assert
@@ -19,6 +24,15 @@ jest.mock('./use-block-count', () => ({
 }))
 
 const block: PageLinkBlock = { id: 'pl-1', type: 'page-link', pageId: 'page-1' }
+
+const pageRow: PageRow = {
+  id: 'page-1',
+  parent_id: null,
+  type: 'page',
+  title: 'cabinets',
+  order: 0,
+  updated_at: '2026-01-01T00:00:00.000Z',
+}
 
 const ref: PageRef = { id: 'page-1', title: 'cabinets', type: 'page', isNew: false }
 const newRef: PageRef = { id: 'page-1', title: 'cabinets', type: 'page', isNew: true }
@@ -124,6 +138,36 @@ describe('PageLinkView — resolved', () => {
   })
 })
 
+describe('PageLinkView — selected', () => {
+  const ringClasses = POND_BLOCK_SELECTED_RING.split(' ')
+
+  it('carries the selected ring when the canvas has the row selected', () => {
+    const caps = capabilities(ref)
+    render(
+      <PageLinkProvider value={caps}>
+        <BlockRowProvider value={{ selected: true, stepOut: jest.fn() }}>
+          <PageLinkView data={block} />
+        </BlockRowProvider>
+      </PageLinkProvider>
+    )
+    const row = screen.getByRole('button', { name: 'Open cabinets' })
+    for (const cls of ringClasses) expect(row).toHaveClass(cls)
+  })
+
+  it('carries no selected ring when the row is not selected', () => {
+    const caps = capabilities(ref)
+    render(
+      <PageLinkProvider value={caps}>
+        <BlockRowProvider value={{ selected: false, stepOut: jest.fn() }}>
+          <PageLinkView data={block} />
+        </BlockRowProvider>
+      </PageLinkProvider>
+    )
+    const row = screen.getByRole('button', { name: 'Open cabinets' })
+    for (const cls of ringClasses) expect(row).not.toHaveClass(cls)
+  })
+})
+
 describe('PageLinkView — unresolved', () => {
   it('reads "page in trash", not clickable, no chevron, when the page is gone', () => {
     const caps = capabilities(null)
@@ -137,9 +181,33 @@ describe('PageLinkView — unresolved', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
 
-  it('reads the same way with no provider mounted', () => {
+  it('reads the same way with no provider and no QueryClient mounted', () => {
     render(<PageLinkView data={block} />)
     expect(screen.getByText('page in trash')).toBeInTheDocument()
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('reads "page in trash" with no provider when no cached row matches', () => {
+    const queryClient = new QueryClient()
+    render(
+      <QueryClientProvider client={queryClient}>
+        <PageLinkView data={block} />
+      </QueryClientProvider>
+    )
+    expect(screen.getByText('page in trash')).toBeInTheDocument()
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('resolves the title from the pages-list cache with no provider (the change-log diff card)', () => {
+    const queryClient = new QueryClient()
+    queryClient.setQueryData(pagesKey(), [pageRow])
+    render(
+      <QueryClientProvider client={queryClient}>
+        <PageLinkView data={block} />
+      </QueryClientProvider>
+    )
+    expect(screen.getByText('cabinets')).toBeInTheDocument()
+    expect(screen.queryByText('page in trash')).not.toBeInTheDocument()
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
 })

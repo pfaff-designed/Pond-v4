@@ -67,6 +67,7 @@ import { trashPage } from '@/lib/change-log/trash'
 import { TrashRefusedError } from '@/lib/change-log/errors'
 import { jsonEqual } from '@/lib/json-equal'
 import { pagesKey } from '@/lib/pages/keys'
+import { appendChildLinkUnder } from '@/lib/pages/child-links'
 import { usePondId, usePond } from '@/lib/pond/context'
 import { pushRecentGlyphToPond } from '@/lib/pond/client'
 import { PondSwitcher } from './PondSwitcher'
@@ -1694,6 +1695,9 @@ export function Rail() {
           { id: created.id, type: 'page', title: created.title },
           { openTemplates: action === 'template' }
         )
+        // KAN-415: a failed link append is not a failed page creation — the
+        // page above has already landed and been navigated to.
+        void appendChildLinkUnder(createClient(), queryClient, parentId, created.id, pondId, pondName)
       }
     } finally {
       setBusyId(null)
@@ -1961,6 +1965,11 @@ export function Rail() {
     const move = computeMove(pages, draggedId, targetId, zone)
     if (!move) return
 
+    // A re-parent (not a same-parent reorder) gets a link on its new parent;
+    // the old parent's link, if any, is left for the person to remove.
+    const draggedRow = pages.find((r) => r.id === draggedId)
+    const isReparent = (draggedRow?.parent_id ?? null) !== move.newParentId
+
     const snapshot = applyMoveOptimistic(
       queryClient,
       {
@@ -1975,6 +1984,11 @@ export function Rail() {
     if (zone === 'into') {
       if (targetId === LIFE_ID) setLifeExpanded(true)
       else setExpanded((prev) => new Set(prev).add(targetId))
+    }
+
+    // KAN-415: a failed link append is not a failed move — fired alongside it.
+    if (isReparent) {
+      void appendChildLinkUnder(createClient(), queryClient, move.newParentId, draggedId, pondId, pondName)
     }
 
     try {

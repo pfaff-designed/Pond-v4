@@ -65,6 +65,7 @@ import { usePaletteRecords } from '@/lib/pages/use-palette-records'
 import { createPage } from '@/lib/pages/client'
 import { insertPageOptimistic } from '@/lib/pages/tree'
 import { pagesKey } from '@/lib/pages/keys'
+import { appendChildLinkUnder } from '@/lib/pages/child-links'
 import { usePagesRows } from '@/lib/pages/use-pages'
 import { createClient } from '@/lib/supabase/client'
 import { instantiateTemplate } from '@/lib/templates/instantiate'
@@ -366,11 +367,14 @@ export function ShellCommands() {
         writeRecent({ id: created.id, type: 'page', title: created.title })
         router.push(workspaceUrl({ id: created.id, type: 'page', title: created.title }))
         void queryClient.invalidateQueries({ queryKey: pagesKey(pondId) })
+        // KAN-415: a failed link append is not a failed page creation — the
+        // page above has already landed and been navigated to.
+        void appendChildLinkUnder(supabase, queryClient, parent.id, created.id, pondId, pondName)
       } catch {
         requestComposerNotice("can't make the page — try again.")
       }
     },
-    [parent.id, pondId, queryClient, router]
+    [parent.id, pondId, pondName, queryClient, router]
   )
 
   const handlePaletteSelect = useCallback(

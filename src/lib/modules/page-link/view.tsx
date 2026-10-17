@@ -1,9 +1,16 @@
 'use client'
 
+import { useContext } from 'react'
+import { QueryClientContext, type QueryClient } from '@tanstack/react-query'
 import type { ModuleViewProps } from '../types'
 import { usePageLinks } from './context'
 import { useBlockCount } from './use-block-count'
+import { useBlockRow } from '../block-row-context'
 import type { PageLinkBlock } from './schema'
+import type { PageRow } from '@/lib/pages/tree'
+import { pagesKey } from '@/lib/pages/keys'
+import { cn } from '@/lib/utils'
+import { POND_BLOCK_SELECTED_RING } from '@/components/organisms/PondBlock'
 
 /**
  * The page-link row (6k frame 2), inline values: `display:flex;align-items:
@@ -35,19 +42,56 @@ function PageIcon() {
   )
 }
 
+/** A live page row from the `['pages']` cache whose id matches, or null if none is cached. */
+function findCachedPageRow(queryClient: QueryClient, pageId: string): PageRow | null {
+  const matches = queryClient.getQueriesData<PageRow[]>({ queryKey: pagesKey() })
+  for (const [, rows] of matches) {
+    const row = rows?.find((row) => row.id === pageId)
+    if (row) return row
+  }
+  return null
+}
+
 export function PageLinkView({ data }: ModuleViewProps<PageLinkBlock>) {
   const pageLinks = usePageLinks()
   const ref = pageLinks?.resolvePage(data.pageId) ?? null
-  const blocks = useBlockCount(ref ? data.pageId : undefined)
+  // Read via the raw context (not `useQueryClient()`, which throws without a
+  // provider) — a host with no `PageLinkProvider` (the change-log diff card)
+  // may still have a `QueryClientProvider` above it, whose `['pages']` cache
+  // tells a live page from a deleted one.
+  const queryClient = useContext(QueryClientContext)
+  const cachedRow =
+    !pageLinks && queryClient ? findCachedPageRow(queryClient, data.pageId) : null
+  const blocks = useBlockCount(ref || cachedRow ? data.pageId : undefined)
+  // The canvas's own selection (⇧Tab / keyboard, ⌘⌫ target) reaches this row
+  // through `BlockRowContext` rather than `PondBlock` (07.05) — `block-frame.ts`
+  // draws no card around a page-link, same bridge KAN-344's chart card uses.
+  const { selected } = useBlockRow()
+  const selectedRing = selected && POND_BLOCK_SELECTED_RING
 
-  // No provider (Storybook, the AI terminal's reference render) degrades the
-  // same way as a deleted page: 6k draws no missing state, so this is the
-  // ticket's own stated choice for both.
-  if (!ref) {
+  if (!ref && !cachedRow) {
     return (
-      <div className={ROW}>
+      <div className={cn(ROW, selectedRing)}>
         <PageIcon />
         <span className="flex-1 text-mn-text-secondary">page in trash</span>
+      </div>
+    )
+  }
+
+  // No `PageLinkProvider`, but the page is still live in the pages-list
+  // cache: draw the normal row, minus anything that needs capabilities this
+  // host doesn't have — there is nothing to navigate with.
+  if (!ref) {
+    return (
+      <div className={cn(ROW, selectedRing)}>
+        <PageIcon />
+        <span className="flex-1 font-medium text-mn-text">{cachedRow!.title}</span>
+        <span className="text-[12.5px] text-mn-text-secondary">
+          {blocks} {blocks === 1 ? 'block' : 'blocks'}
+        </span>
+        <span aria-hidden className="text-mn-text-meta">
+          ›
+        </span>
       </div>
     )
   }
@@ -57,7 +101,11 @@ export function PageLinkView({ data }: ModuleViewProps<PageLinkBlock>) {
       role="button"
       tabIndex={0}
       aria-label={`Open ${ref.title}`}
-      className={`${ROW} cursor-pointer`}
+      className={cn(
+        ROW,
+        'cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-mn-text',
+        selectedRing
+      )}
       onClick={() => pageLinks!.navigateToPage(ref)}
       onKeyDown={(e) => {
         if (e.key !== 'Enter') return
