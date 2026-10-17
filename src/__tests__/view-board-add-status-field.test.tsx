@@ -259,3 +259,55 @@ describe('CollectionBoard — the full ＋ task path, on the real `CollectionVie
     expect(screen.queryByText('no rows yet')).not.toBeInTheDocument()
   })
 })
+
+describe('CollectionBoard — ＋ task double-click guard (KAN-377, AUDIT G9)', () => {
+  const statusSchema: PropertySchema = [
+    ...titleOnly,
+    {
+      id: 'p-status',
+      name: 'status',
+      type: 'status',
+      options: [
+        { id: 'o-todo', label: 'to do' },
+        { id: 'o-doing', label: 'doing' },
+        { id: 'o-done', label: 'done' },
+      ],
+    },
+  ]
+  const boardConfig: ViewBlock = { id: 'v-board3', type: 'view', mode: 'board', groupBy: 'p-status' }
+
+  it('a fast double-click writes one row; a further click after it resolves adds a second', async () => {
+    const user = userEvent.setup()
+    let resolveAdd: (id: string | null) => void = () => {}
+    const addRowSpy = jest.fn(
+      () =>
+        new Promise<string | null>((resolve) => {
+          resolveAdd = resolve
+        })
+    )
+
+    const { container } = render(
+      <CollectionView
+        config={boardConfig}
+        schema={statusSchema}
+        rows={[]}
+        editable
+        onAddRow={addRowSpy}
+        onRenameRow={jest.fn()}
+      />
+    )
+
+    const doingLane = () => container.querySelector<HTMLElement>('[data-lane="doing"]')!
+    const button = () => within(doingLane()).getByRole('button', { name: '＋ task' })
+
+    await user.dblClick(button())
+    expect(addRowSpy).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      resolveAdd('row-1')
+    })
+
+    await user.click(button())
+    expect(addRowSpy).toHaveBeenCalledTimes(2)
+  })
+})
