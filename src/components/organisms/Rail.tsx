@@ -1979,6 +1979,11 @@ export function Rail() {
     const move = computeMove(pages, draggedId, targetId, zone)
     if (!move) return
 
+    // A re-parent (not a same-parent reorder) gets a link on its new parent;
+    // the old parent's link, if any, is left for the person to remove.
+    const draggedRow = pages.find((r) => r.id === draggedId)
+    const isReparent = (draggedRow?.parent_id ?? null) !== move.newParentId
+
     const snapshot = applyMoveOptimistic(
       queryClient,
       {
@@ -1993,6 +1998,24 @@ export function Rail() {
     if (zone === 'into') {
       if (targetId === LIFE_ID) setLifeExpanded(true)
       else setExpanded((prev) => new Set(prev).add(targetId))
+    }
+
+    // KAN-415: a failed link append is not a failed move — fired alongside it.
+    if (isReparent) {
+      void (async () => {
+        try {
+          const sb = createClient()
+          const resolvedParentId =
+            move.newParentId ??
+            queryClient.getQueryData<HomePage | null>(homeQueryKey(pondId))?.id ??
+            (await getOrCreateHomePage(sb, pondId, pondName))?.id ??
+            null
+          if (!resolvedParentId) return
+          await appendChildLinkToParent(sb, queryClient, resolvedParentId, draggedId, pondId)
+        } catch (err) {
+          console.error('[page-link] child link not appended', draggedId, err)
+        }
+      })()
     }
 
     try {

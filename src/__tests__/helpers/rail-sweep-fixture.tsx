@@ -38,11 +38,11 @@ const PROVIDER_VALUE: PondContextValue = {
   addPond: () => {},
 }
 
-export function mountRail() {
+export function mountRail(rows: PageRow[] = ROWS) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   })
-  client.setQueryData(pagesKey('pond-1'), ROWS)
+  client.setQueryData(pagesKey('pond-1'), rows)
   render(
     <QueryClientProvider client={client}>
       <PondContext.Provider value={PROVIDER_VALUE}>
