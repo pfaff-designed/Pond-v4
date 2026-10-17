@@ -85,7 +85,7 @@ export function buildOwnerEmailFields({
   now,
   jiraUrl,
 }: BuildOwnerEmailFieldsInput): OwnerEmailFields {
-  const firstLine = text.split('\n')[0]?.trim() ?? ''
+  const firstLine = text.split('\n').map((line) => line.trim()).find((line) => line.length > 0) ?? ''
   const subject = `pond · problem reported: ${firstLine}`
 
   const html = [

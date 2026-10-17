@@ -18,6 +18,15 @@ describe('buildOwnerEmailFields', () => {
     expect(subject).toBe('pond · problem reported: the <save> button does nothing & it spins')
   })
 
+  it('skips leading blank lines when building the subject', () => {
+    const { subject } = buildOwnerEmailFields({
+      ...BASE,
+      text: '\n  \nthe save button does nothing',
+    })
+
+    expect(subject).toBe('pond · problem reported: the save button does nothing')
+  })
+
   it('HTML-escapes `<` and `&` in the text within the body', () => {
     const { html } = buildOwnerEmailFields({ ...BASE, text: 'the <save> button does nothing & it spins' })
 
