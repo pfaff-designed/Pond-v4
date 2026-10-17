@@ -177,7 +177,7 @@ export const TerminalDrawer = ({
         TAB_PLACEMENT,
         TAB_SHADOW,
         'mn-glass box-border flex h-[30px] justify-center rounded-[14px_16px_0_0] border-b-0 font-mono text-mn-text',
-        collapsed ? 'opacity-100' : 'pointer-events-none opacity-0'
+        collapsed ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
       )}
     >
       <button
@@ -239,8 +239,14 @@ export const TerminalDrawer = ({
 
   // Collapsed slides the whole card off screen rather than swapping it for the
   // tab: grip, thread and footer all stay mounted, so reopening needs no rebuild.
+  // The shell itself has no overflow clip (WorkspaceShell's `[data-part="shell"]`
+  // is a plain `relative` box), so the slid-off card would otherwise inflate the
+  // page's scrollable area by its own height. This layer clips that off without
+  // creating a stacking context of its own — `inset-0` alone matches the shell's
+  // box exactly, so the card and tab's `absolute` placement reads the same
+  // coordinates it always did (maximized's top/left/right/bottom included).
   return (
-    <>
+    <div className="absolute inset-0 overflow-clip pointer-events-none">
       {tab}
       <section
         ref={setCardRef}
@@ -271,7 +277,9 @@ export const TerminalDrawer = ({
         className={cn(
           maximized ? MAXIMIZED_PLACEMENT : CARD_PLACEMENT,
           'motion-resolve group/composer mn-glass box-border flex flex-col gap-[14px] rounded-mn-card p-[14px] font-mono text-mn-text',
-          collapsed && 'pointer-events-none translate-y-full opacity-0'
+          collapsed
+            ? 'pointer-events-none translate-y-[calc(100%+24px)] opacity-0'
+            : 'pointer-events-auto'
         )}
       >
         {showThread && !maximized && onHeightChange && onHeightCommit && (
@@ -293,6 +301,6 @@ export const TerminalDrawer = ({
         )}
         {footer}
       </section>
-    </>
+    </div>
   )
 }

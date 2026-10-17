@@ -610,7 +610,9 @@ describe('TerminalDrawer — the PondComposer card: floating glass, 560, 24 off 
     const card = container.querySelector('[data-part="composer-card"]')!
     const classes = card.className.split(' ')
     expect(classes).toContain('motion-resolve')
-    expect(classes).toContain('translate-y-full')
+    // The full height alone leaves the card's 24px inset still inside the
+    // shell's bounds — it translates by height + the inset to clear it fully.
+    expect(classes).toContain('translate-y-[calc(100%+24px)]')
     expect(classes).toContain('opacity-0')
     expect(classes).toContain('pointer-events-none')
     expect(card.getAttribute('aria-hidden')).toBe('true')
@@ -625,7 +627,7 @@ describe('TerminalDrawer — the PondComposer card: floating glass, 560, 24 off 
     // Same node: the card persisted across the toggle, only its slide classes changed.
     expect(container.querySelector('[data-part="composer-card"]')).toBe(card)
     const restoredClasses = card.className.split(' ')
-    expect(restoredClasses).not.toContain('translate-y-full')
+    expect(restoredClasses).not.toContain('translate-y-[calc(100%+24px)]')
     expect(restoredClasses).not.toContain('opacity-0')
     expect(restoredClasses).not.toContain('pointer-events-none')
     expect(card.hasAttribute('aria-hidden')).toBe(false)
