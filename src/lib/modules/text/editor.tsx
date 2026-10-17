@@ -11,6 +11,7 @@ import { registerTextEditor } from './active-editor'
 import { proseExtensions } from './extensions'
 import { parseMarkdown, serializeMarkdown } from './markdown'
 import { TEXT_PROSE_CLASS, textPlaceholderFor } from './prose'
+import { markdownHandlePaste } from './paste'
 import { ReferenceHighlight } from './reference-highlight'
 import type { TextBlock } from './schema'
 import { opensSlashLine, SlashLineContext, slashLineAt, type SlashLineAt } from './slash-line'
@@ -27,6 +28,11 @@ export interface Press {
  * the caret in them.
  */
 const isUnwritten = (content: string): boolean => content.replace(/^#{1,6}\s*/, '').trim() === ''
+
+// A fresh array literal in `useEditor`'s options changes identity every render,
+// which (per the comment on `opening` below) makes `useEditor` re-apply it over
+// keystrokes not yet read — this must stay a stable, module-level reference.
+const ENABLED_PASTE_RULES = ['link']
 
 /** The block's own placeholder and id, fixed at mount — neither is ever typed over. */
 const buildExtensions = (placeholder: string | undefined, blockId: string) => [
@@ -119,6 +125,9 @@ const editorProps = {
   },
   handleKeyDown,
   handleClick,
+  // The one markdown-paste path, text/plain-only or html-wrapper-only; see its
+  // own comment for why `clipboardTextParser` can't own this instead.
+  handlePaste: markdownHandlePaste,
 }
 
 /**
@@ -168,6 +177,13 @@ const TextEditor = ({
     content: opening.content,
     immediatelyRender: false,
     autofocus: opening.autofocus,
+    // `handlePaste` (`paste.ts`) is the one path for markdown-on-paste, dispatched
+    // untagged so Link's paste rule never reruns over it; the marks' own built-in
+    // paste rules (bold/italic/etc.) would otherwise still convert `**x**` on a
+    // literal, shift-held paste, which must stay literal. Link's own paste rule
+    // stays on for everything `handlePaste` falls through on: it only autolinks a
+    // bare URL run, which a markdown paste never reaches this rule to double-handle.
+    enablePasteRules: ENABLED_PASTE_RULES,
     editorProps,
     onSelectionUpdate: ({ editor: updated, transaction }) => {
       if (transaction.docChanged) return
