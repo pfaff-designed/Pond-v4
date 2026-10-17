@@ -287,7 +287,6 @@ export function DocumentPanel() {
     onTitle,
     onProperty,
     commitLocalEdit,
-    undoRemove,
     adoptSavedBlocks,
   } = usePageDraft({ page, pageId, pondId, getSupabase })
 
@@ -570,7 +569,6 @@ export function DocumentPanel() {
           pageTitle={viewTitle}
           onChange={commitLocalEdit}
           onBlocksPersisted={adoptSavedBlocks}
-          onUndoRemove={undoRemove}
           insertedIds={insertedIds}
           chrome={!zen}
           untouched={untouched}

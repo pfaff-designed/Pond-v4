@@ -69,9 +69,9 @@ jest.mock('@/lib/change-log/store', () => ({
   appendOwnEdit: (...args: unknown[]) => mockAppendOwnEdit(...args),
   markOutdated: (...args: unknown[]) => mockMarkOutdated(...args),
 }))
-const mockRemember = jest.fn()
+const mockRememberPending = jest.fn()
 jest.mock('@/lib/change-log/session-undo', () => ({
-  sessionUndo: { remember: (...args: unknown[]) => mockRemember(...args) },
+  sessionUndo: { rememberPending: (...args: unknown[]) => mockRememberPending(...args) },
 }))
 
 beforeEach(() => {
@@ -148,6 +148,6 @@ it('a fast `/` then a template pick (within the draft debounce) logs the apply o
   expect(callsLoggingTheApply).toHaveLength(1)
 
   // Apply is one undo step: exactly one record remembered for it.
-  expect(mockRemember).toHaveBeenCalledTimes(1)
-  expect(mockRemember.mock.calls[0][0].recordIds).toHaveLength(1)
+  expect(mockRememberPending).toHaveBeenCalledTimes(1)
+  await expect(mockRememberPending.mock.calls[0][0].recordIds).resolves.toHaveLength(1)
 })

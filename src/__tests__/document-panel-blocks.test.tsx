@@ -77,7 +77,7 @@ jest.mock('@/lib/change-log/store', () => ({
   appendOwnEdit: jest.fn().mockResolvedValue({ id: 'record-1' }),
 }))
 jest.mock('@/lib/change-log/session-undo', () => ({
-  sessionUndo: { remember: jest.fn() },
+  sessionUndo: { remember: jest.fn(), rememberPending: jest.fn() },
 }))
 
 const blocks: Block[] = [

@@ -72,7 +72,6 @@ function Harness({ initialBlocks }: { initialBlocks: Block[] }) {
       pageId="page-1"
       pageTitle="sourdough, 78%"
       onChange={setBlocks}
-      onUndoRemove={() => {}}
     />
   )
 }

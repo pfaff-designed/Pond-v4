@@ -12,8 +12,10 @@ import { useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 
 import { EDIT_PAUSE_MS } from '@/lib/change-log/pause'
+import { sessionUndo } from '@/lib/change-log/session-undo'
 import type { Block } from '@/lib/documents/types'
 import { setProperty, updateTitle, type PondPage } from '@/lib/pages/client'
+import { closeBlockHistory } from '@/lib/modules/text/active-editor'
 import { commitBlocks } from '@/lib/pages/commit'
 import type { HomePage } from '@/lib/pages/home'
 import { homeQueryKey } from '@/lib/pages/keys'
@@ -118,7 +120,8 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
     id: string,
     nextTitle: string,
     nextBlocks: Block[],
-    beforeAtSchedule: Block[]
+    beforeAtSchedule: Block[],
+    resolveRecordIds: (recordIds: readonly string[] | null) => void
   ) {
     // This save is one pause: the change log records it as one edit, from what
     // the page last saved to what it saves now. Advanced before the first await
@@ -146,8 +149,10 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
         ownEdit: true,
         before,
         pondId,
+        onPending: resolveRecordIds,
       }))
     } catch (err) {
+      resolveRecordIds(null)
       if (advanced && lastSaved.current?.pageId === id && lastSaved.current.blocks === nextBlocks) {
         lastSaved.current = { pageId: id, blocks: before }
       }
@@ -191,12 +196,28 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
     nextBlocks: Block[],
     beforeAtSchedule: Block[]
   ): Promise<void> {
+    // KAN-368: reserve this save's slot on the undo stack synchronously, the
+    // instant the save is started — before it waits behind a previous save
+    // (the KAN-355 chain) and before its own round trip — so a structural
+    // edit that flushes it (`persistBlocksAsOwnEdit`, which registers its own
+    // pending step right after kicking this one off) ends up ABOVE this one,
+    // not racing it for the same slot. `runSave` hands the slot its record
+    // ids through `commitBlocks`'s `onPending`, or null if the save fails.
+    let resolveRecordIds: (recordIds: readonly string[] | null) => void = () => {}
+    if (pondId) {
+      sessionUndo.rememberPending({
+        pondId,
+        recordIds: new Promise((resolve) => {
+          resolveRecordIds = resolve
+        }),
+      })
+    }
     const prev = inFlightSave.current
-    const promise = (
-      prev
-        ? prev.catch(() => {}).then(() => runSave(id, nextTitle, nextBlocks, beforeAtSchedule))
-        : runSave(id, nextTitle, nextBlocks, beforeAtSchedule)
-    ).finally(() => {
+    const run = () => runSave(id, nextTitle, nextBlocks, beforeAtSchedule, resolveRecordIds)
+    const promise = (prev ? prev.catch(() => {}).then(run) : run()).finally(() => {
+      // Nothing may leave the slot unsettled: a throw before `commitBlocks`
+      // resolves it would hold every later ⌘Z for the timeout.
+      resolveRecordIds(null)
       if (inFlightSave.current === promise) inFlightSave.current = null
     })
     inFlightSave.current = promise
@@ -233,7 +254,21 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
     }
     const p = pendingSave.current
     pendingSave.current = null
-    if (p) return startSave(p.pageId, p.title, p.blocks, p.beforeAtSchedule)
+    if (p) {
+      const promise = startSave(p.pageId, p.title, p.blocks, p.beforeAtSchedule)
+      // KAN-368: a flush fires because something ELSE (a structural edit) is
+      // about to move focus off this save's own fields and onto another block
+      // — so close these fields' Tiptap history now, synchronously, rather
+      // than waiting for commit.ts's own close, which only runs once the save
+      // is durable (a full round trip later). Without this, the shell's ⌘Z
+      // pressed right after the flush still finds undo depth in the field
+      // focus just left and undoes that typing instead of falling through to
+      // the structural edit's own session step.
+      for (const block of p.blocks) {
+        if ('content' in block) closeBlockHistory(block.id, block.content)
+      }
+      return promise
+    }
     return inFlightSave.current ?? undefined
   }
 
@@ -269,9 +304,16 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
 
   // Apply an in-editor block change (from BlockCanvas): update local state and
   // schedule the debounced persist. (Named to avoid colliding with the DB-level
-  // commitBlocks.)
+  // commitBlocks.) KAN-368: `persistBlocksAsOwnEdit`'s own callers (delete,
+  // move, …) call `onBlocksPersisted` (adoptSavedBlocks) with the SAME array
+  // reference right before this, so the write these chords already made at
+  // once is never rescheduled behind the 600ms pause — a ⌘Z landing inside
+  // that window would otherwise have nothing to race against ending the undo
+  // 600ms later with this chord's own stale, pre-undo snapshot.
   function commitLocalEdit(next: Block[]) {
     setBlocks(next)
+    const id = loadedId.current
+    if (id && lastSavedOf(id) === next) return
     scheduleSave(viewTitle, next)
   }
 
@@ -291,19 +333,6 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
     serverSig.current = JSON.stringify(blocks)
   }
 
-  // Undo a block removal (ticket-44 review): re-insert against the LATEST blocks
-  // via a functional update, so an edit made between the delete and the Undo
-  // isn't clobbered by a re-base on the stale stage-time snapshot (the original
-  // DocumentPanel behaviour, preserved through BlockCanvas.onUndoRemove).
-  function undoRemove(index: number, block: Block) {
-    setBlocks((current) => {
-      const at = Math.min(index, current.length)
-      const next = [...current.slice(0, at), block, ...current.slice(at)]
-      scheduleSave(viewTitle, next)
-      return next
-    })
-  }
-
   return {
     viewTitle,
     viewBlocks,
@@ -312,7 +341,6 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
     onTitle,
     onProperty,
     commitLocalEdit,
-    undoRemove,
     adoptSavedBlocks,
   }
 }

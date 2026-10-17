@@ -48,7 +48,6 @@ function Harness({ initialBlocks }: { initialBlocks: Block[] }) {
       pageId="page-1"
       pageTitle="kitchen renovation"
       onChange={setBlocks}
-      onUndoRemove={() => {}}
     />
   )
 }

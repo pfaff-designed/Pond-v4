@@ -50,7 +50,6 @@ function Harness({ initial }: { initial: Block[] }) {
       pageId="page-1"
       pageTitle="trip planning"
       onChange={setBlocks}
-      onUndoRemove={() => {}}
     />
   )
 }

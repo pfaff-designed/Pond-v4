@@ -39,6 +39,13 @@ type OwnEditOpts = {
   before: Block[]
   /** The pond the sweep and the record are scoped to. */
   pondId: string | null
+  /** KAN-368: a caller whose write can race a faster one (the debounced
+   *  save, flushed mid-flight by a structural edit) has already reserved
+   *  its OWN session-undo slot with `sessionUndo.rememberPending` before
+   *  calling this — passing this hands it the record ids once they're
+   *  known (null when nothing was logged), instead of `commitBlocks`
+   *  remembering a fresh (and, by then, wrongly-ordered) step itself. */
+  onPending?: (recordIds: readonly string[] | null) => void
 }
 
 export async function commitBlocks(
@@ -99,7 +106,8 @@ export async function commitBlocks(
     // chain, so a chained save's record is remembered after this one's).
     const remembered: Promise<void> = logged
       .then((record) => {
-        if (pondId && record) sessionUndo.remember({ pondId, recordIds: [record.id] })
+        if (opts.onPending) opts.onPending(record ? [record.id] : null)
+        else if (pondId && record) sessionUndo.remember({ pondId, recordIds: [record.id] })
         // Only now is the record durable enough to hand ⌘Z to the shell's undo
         // (KAN-139, comment 10064) — closing history any earlier (right after
         // `saveBlocks`) leaves a window, until `sessionUndo` hears about the
@@ -113,6 +121,8 @@ export async function commitBlocks(
         return queryClient.invalidateQueries({ queryKey: changeLogKey() })
       })
       .catch((err) => {
+        // A reserved slot must still settle, or its ⌘Z waits out the timeout.
+        opts.onPending?.(null)
         console.error('[change-log] own-edit remember failed', pageId, err)
       })
     await propagateBlockWrite(queryClient, pageId)

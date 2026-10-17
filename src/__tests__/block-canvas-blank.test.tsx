@@ -65,9 +65,9 @@ const mockAppendOwnEdit = jest.fn()
 jest.mock('@/lib/change-log/store', () => ({
   appendOwnEdit: (...args: unknown[]) => mockAppendOwnEdit(...args),
 }))
-const mockRemember = jest.fn()
+const mockRememberPending = jest.fn()
 jest.mock('@/lib/change-log/session-undo', () => ({
-  sessionUndo: { remember: (...args: unknown[]) => mockRemember(...args) },
+  sessionUndo: { rememberPending: (...args: unknown[]) => mockRememberPending(...args) },
 }))
 // Captures whatever `anchor`/width the glass is given, each render — jsdom
 // never lays anything out (every element's own rect is zeroed, `hidden` or
@@ -111,7 +111,6 @@ function renderCanvas(blocks: Block[]) {
           pageId="page-1"
           pageTitle="sourdough, 78%"
           onChange={() => {}}
-          onUndoRemove={() => {}}
         />
       </DeletionUndoProvider>
     </QueryClientProvider>
@@ -349,7 +348,6 @@ function BlankPageHarness({
         pageId="page-1"
         pageTitle="sourdough, 78%"
         onChange={setBlocks}
-        onUndoRemove={() => {}}
         onPreviewNameChange={onPreviewNameChange}
       />
     </>
@@ -397,7 +395,6 @@ function PageSwitchableHarness({ pageId }: { pageId: string }) {
         pageId={pageId}
         pageTitle="sourdough, 78%"
         onChange={setBlocks}
-        onUndoRemove={() => {}}
         onPreviewNameChange={setPreviewName}
       />
     </>
@@ -498,8 +495,10 @@ describe('a template pick on a blank page applies in place (KAN-124)', () => {
     expect(input.after).toEqual(mockSaveBlocks.mock.calls[0][2])
     expect(input.targetPageId).toBe('page-1')
 
-    expect(mockRemember).toHaveBeenCalledTimes(1)
-    expect(mockRemember).toHaveBeenCalledWith({ pondId: 'pond-1', recordIds: ['record-1'] })
+    expect(mockRememberPending).toHaveBeenCalledTimes(1)
+    const pending = mockRememberPending.mock.calls[0][0]
+    expect(pending.pondId).toBe('pond-1')
+    await expect(pending.recordIds).resolves.toEqual(['record-1'])
 
     // No duplicate save/record for the same apply.
     expect(mockSaveBlocks).toHaveBeenCalledTimes(1)
@@ -532,7 +531,7 @@ describe('a template pick on a blank page applies in place (KAN-124)', () => {
     await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalledTimes(1))
     expect(mockSaveProps).toHaveBeenCalledTimes(1)
     expect(mockAppendOwnEdit).toHaveBeenCalledTimes(1)
-    expect(mockRemember).toHaveBeenCalledTimes(1)
+    expect(mockRememberPending).toHaveBeenCalledTimes(1)
   })
 
   it('the path: a schema-carrying premade template applies in place on one double ↵, after a foot that already read apply', async () => {

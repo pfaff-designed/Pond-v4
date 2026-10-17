@@ -40,9 +40,9 @@ const mockAppendOwnEdit = jest.fn().mockResolvedValue({ id: 'record-1' })
 jest.mock('@/lib/change-log/store', () => ({
   appendOwnEdit: (...args: unknown[]) => mockAppendOwnEdit(...args),
 }))
-const mockRemember = jest.fn()
+const mockRememberPending = jest.fn()
 jest.mock('@/lib/change-log/session-undo', () => ({
-  sessionUndo: { remember: (...args: unknown[]) => mockRemember(...args) },
+  sessionUndo: { rememberPending: (...args: unknown[]) => mockRememberPending(...args) },
 }))
 
 beforeEach(() => {
@@ -61,7 +61,6 @@ function renderCanvas(blocks: Block[], onChange: (next: Block[]) => void) {
           pageId="page-1"
           pageTitle="sourdough, 78%"
           onChange={onChange}
-          onUndoRemove={() => {}}
         />
       </DeletionUndoProvider>
     </QueryClientProvider>
@@ -114,7 +113,7 @@ describe('committing an own-line drop', () => {
     expect(mockAppendOwnEdit.mock.calls[0][1]).toEqual(
       expect.objectContaining({ before: [left, right, dropped], after: expected })
     )
-    expect(mockRemember).toHaveBeenCalledTimes(1)
+    expect(mockRememberPending).toHaveBeenCalledTimes(1)
   })
 
   it('drops under the FIRST block of a 1/2+1/2 row: lands after the whole row, not between the two halves', async () => {

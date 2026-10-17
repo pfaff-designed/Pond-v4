@@ -45,6 +45,7 @@ jest.mock('@/lib/templates/client', () => ({
 const mockGetPage = jest.fn()
 const mockDeletePage = jest.fn().mockResolvedValue(undefined)
 const mockMovePage = jest.fn().mockResolvedValue(undefined)
+const mockSaveBlocks = jest.fn().mockResolvedValue(undefined)
 jest.mock('@/lib/pages/client', () => ({
   getPage: (...args: unknown[]) => mockGetPage(...args),
   updateTitle: jest.fn().mockResolvedValue(undefined),
@@ -52,6 +53,7 @@ jest.mock('@/lib/pages/client', () => ({
   defineSchema: jest.fn().mockResolvedValue(undefined),
   deletePage: (...args: unknown[]) => mockDeletePage(...args),
   movePage: (...args: unknown[]) => mockMovePage(...args),
+  saveBlocks: (...args: unknown[]) => mockSaveBlocks(...args),
 }))
 
 const mockCommitBlocks = jest.fn()
@@ -78,6 +80,8 @@ jest.mock('@/lib/change-log/session-undo', () => ({
   sessionUndo: {
     undo: (...args: unknown[]) => mockSessionUndo(...args),
     redo: (...args: unknown[]) => mockSessionRedo(...args),
+    remember: () => {},
+    rememberPending: () => {},
   },
 }))
 
@@ -228,11 +232,11 @@ describe('removing, undoing and reordering a migrated page-link row (KAN-415 pat
     expect(mockDeletePage).not.toHaveBeenCalled()
     expect(mockMovePage).not.toHaveBeenCalled()
 
-    // Let the debounced save of the 2-block page land before the test ends —
-    // an unawaited pending timer would otherwise fire during a LATER test
-    // (RTL's auto-unmount doesn't cancel it) and corrupt that test's own
-    // `mockCommitBlocks` call count.
-    await waitFor(() => expect(mockCommitBlocks).toHaveBeenCalledTimes(1))
+    // Let the direct `persistBlocksAsOwnEdit` write of the 2-block page land
+    // before the test ends (KAN-368: a structural delete writes at once, not
+    // via the debounced save) — an unawaited pending write would otherwise
+    // resolve during a LATER test and corrupt that test's own mock call counts.
+    await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalledTimes(1))
   })
 
   it('⌘Z brings the removed row back', async () => {
@@ -243,9 +247,9 @@ describe('removing, undoing and reordering a migrated page-link row (KAN-415 pat
     root.focus()
     fireEvent.keyDown(root, { key: 'Backspace', metaKey: true })
     await waitFor(() => expect(linkRows()).toHaveLength(2))
-    // The debounced save of the 2-block page must land (saved: true) before an
+    // The direct write of the 2-block page (KAN-368) must land before an
     // external write — the undo, invalidating `['page', 'page-1']` — is adopted.
-    await waitFor(() => expect(mockCommitBlocks).toHaveBeenCalledTimes(1), { timeout: 3000 })
+    await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalledTimes(1), { timeout: 3000 })
 
     // sessionUndo is stubbed directly (`undo-redraw-within-1s.test.tsx`'s pattern):
     // simulate its server-side restore by putting the pre-delete blocks back on

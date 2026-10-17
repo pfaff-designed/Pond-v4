@@ -46,6 +46,7 @@ export function makeFakeSupabase(
   const from = (table = 'pages') => {
     let op: 'select' | 'insert' | 'update' | 'delete' | null = null
     let insertPayload: Record<string, unknown> | null = null
+    let updatePayload: Record<string, unknown> | null = null
     const filters: Array<(r: AnyRow) => boolean> = []
     const source = (): AnyRow[] =>
       table === 'pages' ? ([...pages.values()] as unknown as AnyRow[]) : (tables[table] ?? [])
@@ -58,6 +59,11 @@ export function makeFakeSupabase(
       insert(payload: Record<string, unknown>) {
         op = 'insert'
         insertPayload = payload
+        return builder
+      },
+      update(payload: Record<string, unknown>) {
+        op = 'update'
+        updatePayload = payload
         return builder
       },
       delete() {
@@ -115,10 +121,15 @@ export function makeFakeSupabase(
         pages.set(id, row)
         return Promise.resolve({ data: { id }, error: null })
       },
-      // The root lookup and the delete both await the filtered builder directly.
+      // The root lookup, the delete and the update all await the filtered
+      // builder directly (`saveBlocks`'s own call shape, among others).
       then(resolve: (v: { data: AnyRow[] | null; error: null }) => unknown) {
         if (op === 'delete') {
           cascade(matching() as unknown as Row[])
+          return Promise.resolve({ data: null, error: null }).then(resolve)
+        }
+        if (op === 'update') {
+          for (const row of matching()) Object.assign(row, updatePayload)
           return Promise.resolve({ data: null, error: null }).then(resolve)
         }
         return Promise.resolve({ data: matching(), error: null }).then(resolve)

@@ -88,7 +88,6 @@ import { focusTextBlock, hasTextBeforeCaret } from '@/lib/modules/text/focus'
 import { UNTOUCHED_HINT_CLASS } from '@/lib/modules/text/prose'
 import {
   landAtSlash,
-  undoLanding,
   useSlashPick,
   type Landing,
   type SlashTarget,
@@ -132,9 +131,11 @@ import { insertPageOptimistic } from '@/lib/pages/tree'
 import { pagesKey } from '@/lib/pages/keys'
 import { usePagesRows } from '@/lib/pages/use-pages'
 import { flushPendingPageSave } from '@/lib/pages/page-flush'
-import { appendOwnEdit } from '@/lib/change-log/store'
+import { appendOwnEdit, listRecords } from '@/lib/change-log/store'
 import { changeLogKey } from '@/lib/change-log/keys'
-import { sessionUndo } from '@/lib/change-log/session-undo'
+import { sessionUndo, type UndoHandle } from '@/lib/change-log/session-undo'
+import { applyUndoOutcome } from '@/lib/change-log/undo-outcome'
+import { restorePage, trashPage } from '@/lib/change-log/trash'
 import { readSchema } from '@/lib/properties/schema'
 import type { ViewBlock } from '@/lib/modules/view/schema'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
@@ -148,10 +149,28 @@ import { stampNestedPage } from '@/lib/pages/nested-page'
 import { cn } from '@/lib/utils'
 import type { Block } from '@/lib/documents/types'
 import type { BlockWidth } from '@/lib/modules/content'
+import { blockName as changeLogBlockName } from '@/lib/change-log/summary'
 
 /** What a block is called to assistive tech: its heading, else its kind. */
 const blockName = (block: Block, frame: BlockFrame | null): string =>
   frame?.heading ?? descriptorFor(block.type)?.label ?? block.type
+
+/**
+ * One `persistBlocksAsOwnEdit` write's settled outcome, chained through
+ * `writeChainRef` (KAN-368) so concurrent structural writes serialize their
+ * `saveBlocks` calls and a failure cancels every write still queued behind
+ * it. `rollbackTo` set means "this write failed or was cancelled" — the
+ * blocks it rolled (or will roll) local state back to, forwarded verbatim to
+ * whatever write is chained after it so the cascade lands on one target: the
+ * FIRST write in the run that actually failed, not each write's own, stale
+ * `before`.
+ */
+interface WriteOutcome {
+  recordIds: readonly string[] | null
+  rollbackTo: Block[] | null
+}
+
+const NEUTRAL_WRITE_OUTCOME: WriteOutcome = { recordIds: null, rollbackTo: null }
 
 const TURNED_INTO: Record<Exclude<ConversionTarget, 'table'>, string> = {
   list: 'Turned into a list',
@@ -317,15 +336,6 @@ export interface BlockCanvasProps {
    */
   onBlocksPersisted?: (next: Block[]) => void
   /**
-   * Undo a block removal (ticket-44 review). The caller re-inserts `block` at
-   * `index` via a FUNCTIONAL state update against its LATEST blocks — NOT through
-   * `onChange`, which would re-base on the stale `blocks` snapshot captured when
-   * the toast was staged. This preserves DocumentPanel's original
-   * `setBlocks((current) => …)` correctness: an edit between remove and Undo
-   * must not be clobbered by the re-insert. Required whenever removal is possible.
-   */
-  onUndoRemove: (index: number, block: Block) => void
-  /**
    * Block ids inserted this session, so a freshly-inserted block SETTLES in
    * (motion-settle-in) while blocks present on load do not (ticket-41). The Set is
    * OWNED BY THE PARENT (so it survives the panel's stable mount across page
@@ -374,7 +384,6 @@ export function BlockCanvas({
   pageTitle = '',
   onChange,
   onBlocksPersisted,
-  onUndoRemove,
   insertedIds,
   onMoveIntoNewPage,
   chrome = true,
@@ -383,18 +392,29 @@ export function BlockCanvas({
   listStyle,
   onPreviewNameChange,
 }: BlockCanvasProps) {
-  const { stageDeletion, stageUndo, notify } = useDeletionUndo()
+  const { stageUndo, notify } = useDeletionUndo()
   const getSupabase = useLazySupabase()
   const queryClient = useQueryClient()
   const pondId = usePondId()
   // The LATEST blocks, for the async paths below (the list→table write and its
   // undo). They run after awaits / from a toast, when the `blocks` their closure
   // captured may be stale — re-basing an edit on that snapshot would drop
-  // whatever the person typed in between (the hazard onUndoRemove documents).
+  // whatever the person typed in between.
   const blocksRef = useRef(blocks)
   useEffect(() => {
     blocksRef.current = blocks
   }, [blocks])
+  // Serializes `persistBlocksAsOwnEdit`'s actual writes (KAN-368): two quick
+  // structural edits (two fast ⌥↓) each apply locally at once, but their
+  // `saveBlocks` calls must run in order, not race each other, so a failure
+  // rolls back to the write that actually failed — never a later write's
+  // stale, never-saved `before`. Holds the LATEST write's outcome; a write
+  // that finds the chain already failed cancels itself (no `saveBlocks`
+  // call) and forwards the same `rollbackTo`, so the failure cascades to
+  // every write still queued behind it. Reset to the neutral sentinel once a
+  // write settles as the chain's own tail, so a failure doesn't poison
+  // writes made later, once the queue it actually raced has drained.
+  const writeChainRef = useRef<Promise<WriteOutcome>>(Promise.resolve(NEUTRAL_WRITE_OUTCOME))
   // G9: guards `applyTemplateInPlace` itself against a double ↵ — a ref, not
   // state, since the second pick can land mid-await, before a state update
   // guarding on a render would have committed.
@@ -722,21 +742,18 @@ export function BlockCanvas({
     })
   }
 
-  /**
-   * The width row's keep (6x): the same in-place-swap-by-id route as
-   * `convertBlock`, so the undo toast restores the block's previous width
-   * (absent means `full`). Pond binds no ⌘Z anywhere — inside a focused text
-   * block that key reaches the editor instead — so the toast is the undo the
-   * board's "click to keep, with undo" has here.
-   */
-  const setBlockWidth = (before: Block, width: BlockWidth) => {
-    const after = { ...before, width } as Block
-    onChange(blocks.map((b) => (b.id === before.id ? after : b)))
-    stageUndo({
-      message: 'Set the block width',
-      scope: 'block',
-      undo: () => onChange(blocksRef.current.map((b) => (b.id === before.id ? before : b))),
-    })
+  // The width row's keep (6x): one ⌘Z step (KAN-368), same write path as
+  // drag-drop/move — picking a width hands focus back to the handle (not an
+  // editor), so the shell's own ⌘Z already reaches `sessionUndo` without a
+  // toast of its own. Reads and advances `blocksRef.current`, not the
+  // `blocks` closure (KAN-368): a structural action fired before an earlier
+  // one's round trip returns must act on the array that one already
+  // produced, not recompute against stale, pre-write blocks.
+  const setBlockWidth = (id: string, width: BlockWidth) => {
+    const current = blocksRef.current
+    const next = current.map((b) => (b.id === id ? ({ ...b, width } as Block) : b))
+    blocksRef.current = next
+    void persistBlocksAsOwnEdit(current, next)
   }
 
   /** The page's own URL, anchored at the block — arriving there lands on it. */
@@ -773,8 +790,8 @@ export function BlockCanvas({
       },
       'move-into-new-page': () => onMoveIntoNewPage?.(block),
       'copy-link': () => void copyBlockLink(block.id),
-      delete: () => removeBlockAt(index),
-      'set-width': ({ width }) => setBlockWidth(block, width),
+      delete: () => removeBlockAt(block.id),
+      'set-width': ({ width }) => setBlockWidth(block.id, width),
     })
   }
 
@@ -782,23 +799,38 @@ export function BlockCanvas({
     onChange(blocks.map((b, i) => (i === index ? next : b)))
   }
 
-  function removeBlockAt(index: number) {
-    const removed = blocks[index]
+  // One ⌘Z step (KAN-368), same write path as drag-drop/move — the write lands
+  // at once, so there's nothing left to defer. The toast's own "undo" is the
+  // mouse path onto that same step: it runs `sessionUndo.undo`, the exact call
+  // the shell's ⌘Z makes, so a mouse user isn't left with inert "· undo" copy.
+  // Reads and advances `blocksRef.current`, not the `blocks` closure
+  // (KAN-368): a second structural action fired before an earlier one's round
+  // trip returns must act on the array that one already produced (and find
+  // its block by id, since an earlier removal has already shifted indices),
+  // not recompute against stale, pre-write blocks.
+  //
+  // The toast outlives this delete's own step — a later ⌥↓/⌘⌫/⌘Z can leave it
+  // sitting beneath the top of the undo stack, or move it to redo. Its handle
+  // (KAN-368) lets the undo button check `isTopUndo` before acting, so a
+  // stale click can never reach past a later step to this one.
+  function removeBlockAt(id: string) {
+    const current = blocksRef.current
+    const index = current.findIndex((b) => b.id === id)
+    const removed = current[index]
     if (!removed) return
-    onChange(blocks.filter((_, i) => i !== index))
-    focusBlockNeighbour(blocks, index)
-    stageDeletion({
-      message: `Deleted ${removed.type} block`,
-      // The removal already persists via the caller's debounced save; undo
-      // re-inserts and re-saves. Flushed via scope 'block' on page change.
-      //
-      // Route the re-insert through the caller's FUNCTIONAL update
-      // (onUndoRemove), NOT onChange: `blocks` here is the snapshot at
-      // stage-time, so an edit before Undo would otherwise re-base the insert on
-      // stale state and drop that edit (ticket-44 review).
+    const next = current.filter((_, i) => i !== index)
+    blocksRef.current = next
+    let handle: UndoHandle | undefined
+    void persistBlocksAsOwnEdit(current, next, { onPending: (h) => (handle = h) })
+    focusBlockNeighbour(current, index)
+    stageUndo({
+      message: `deleted ${changeLogBlockName(removed)} ·`,
+      undoLabel: 'undo',
       scope: 'block',
-      commit: () => {},
-      undo: () => onUndoRemove(index, removed),
+      undo: () => {
+        if (!pondId || !handle || !sessionUndo.isTopUndo(pondId, handle)) return
+        return sessionUndo.undo(pondId).then((result) => applyUndoOutcome('undo', result, queryClient))
+      },
     })
   }
 
@@ -806,17 +838,26 @@ export function BlockCanvas({
    * Backspace in an empty text block takes the line away and leaves focus on the
    * block before it, at the end of its text — or on the block after it when it
    * was the first. An unlabelled empty line holds nothing to undo, so removing it
-   * is not a deletion; the page's only block stays.
+   * is not a deletion; the page's only block stays. Reads and advances
+   * `blocksRef.current`, not the `blocks` closure (KAN-368), same reason as
+   * `removeBlockAt` above.
    */
-  function removeEmptyLineAt(index: number) {
-    const line = blocks[index]
-    const neighbour = blocks[index - 1] ?? blocks[index + 1]
+  function removeEmptyLineAt(id: string) {
+    const current = blocksRef.current
+    const index = current.findIndex((b) => b.id === id)
+    const line = current[index]
+    const neighbour = current[index - 1] ?? current[index + 1]
     if (!line || !neighbour) return
     if (line.type === 'text' && !line.label) {
-      onChange(blocks.filter((_, i) => i !== index))
-      focusBlockNeighbour(blocks, index)
+      // One ⌘Z step (KAN-368), same write path as drag-drop/move — there's
+      // nothing to name in a toast, but it must still be remembered the
+      // instant the keystroke happens, not once the round trip returns.
+      const next = current.filter((_, i) => i !== index)
+      blocksRef.current = next
+      void persistBlocksAsOwnEdit(current, next)
+      focusBlockNeighbour(current, index)
     } else {
-      removeBlockAt(index)
+      removeBlockAt(id)
     }
   }
 
@@ -824,13 +865,21 @@ export function BlockCanvas({
   // opens with the caret in it, ready for `/`. An optional `patch` replaces the
   // block at `index` in the SAME call (KAN-344's checklist: the empty item that
   // triggered this must be gone in the array this inserts into, not left for a
-  // second `onChange` that would rebuild from the pre-patch `blocks` and drop it).
-  function insertLineAfter(index: number, patch?: Block) {
+  // second write that would rebuild from the pre-patch `blocks` and drop it).
+  // One ⌘Z step (KAN-368), same write path as drag-drop/move. Reads and
+  // advances `blocksRef.current`, not the `blocks` closure, same reason as
+  // `removeBlockAt`/`removeEmptyLineAt` above.
+  function insertLineAfter(id: string, patch?: Block) {
+    const current = blocksRef.current
+    const index = current.findIndex((b) => b.id === id)
+    if (index === -1) return
     const nb = emptyBlockForType('text')
     if (!nb) return
     markInserted(nb.id)
-    const base = patch ? blocks.map((b, i) => (i === index ? patch : b)) : blocks
-    onChange([...base.slice(0, index + 1), nb, ...base.slice(index + 1)])
+    const base = patch ? current.map((b, i) => (i === index ? patch : b)) : current
+    const next = [...base.slice(0, index + 1), nb, ...base.slice(index + 1)]
+    blocksRef.current = next
+    void persistBlocksAsOwnEdit(current, next)
   }
 
   /**
@@ -891,17 +940,17 @@ export function BlockCanvas({
   )
 
   /**
-   * Put the picked view block where the `/` was, read against the blocks as they
-   * are now: making a database is an await, and the page can change under it. A
-   * `/…` block that went away while the glass was open gets the view appended
-   * rather than dropped. Returns what the undo needs to put the `/` back.
+   * Where the picked view block lands, read against the blocks as they are now:
+   * making a database is an await, and the page can change under it. A `/…`
+   * block that went away while the glass was open gets the view appended rather
+   * than dropped. Writing `landing.next` is the caller's job, through
+   * `persistBlocksAsOwnEdit` (KAN-368) — one ⌘Z step, not a manual `onChange`.
    */
   function placeView(view: ViewBlock, target: SlashTarget): Landing {
     const current = blocksRef.current
     const appended = { next: [...current, view], landed: view, split: null, slash: null }
     const landing = landAtSlash(current, target, view) ?? appended
     if (landing.landed) markInserted(landing.landed.id)
-    onChange(landing.next)
     return landing
   }
 
@@ -910,8 +959,11 @@ export function BlockCanvas({
    * the caller's ordinary save — no proposal card; only Pond's changes arrive as
    * diffs (the same reading as `turnIntoTable`, #101). An existing database is a
    * linked view of it. A new one is written through `createDatabase` (filed under
-   * the databases root, named after this page), with an undo that puts the `/…`
-   * block back and removes the database it made.
+   * the databases root, named after this page). Both branches write through
+   * `persistBlocksAsOwnEdit` (KAN-368) — one ⌘Z step, same path as drag-drop. The
+   * new-database branch's step also carries `onUndone`/`onRedone` side effects
+   * that trash/restore the database it made, since undoing the view insert must
+   * take the database back too (an existing database is left alone either way).
    */
   async function onSourcePick(pick: SourcePick) {
     const open = sourcePicker
@@ -939,7 +991,9 @@ export function BlockCanvas({
         collectionId: pick.database.id,
         ...(chart ? { chart } : {}),
       }
-      placeView(view, open.target)
+      const before = blocksRef.current
+      const landing = placeView(view, open.target)
+      void persistBlocksAsOwnEdit(before, landing.next)
       return
     }
     try {
@@ -964,18 +1018,36 @@ export function BlockCanvas({
         },
         () => crypto.randomUUID()
       )
+      const before = blocksRef.current
       const landing = placeView(made.view, open.target)
       queryClient.invalidateQueries({ queryKey: pagesKey() })
       queryClient.invalidateQueries({ queryKey: ['record-counts', pondId] })
-      stageUndo({
-        message: 'Made a database',
-        scope: 'block',
-        undo: async () => {
-          onChange(undoLanding(blocksRef.current, landing))
+      void persistBlocksAsOwnEdit(before, landing.next, {
+        onUndone: async () => {
           try {
-            await deletePage(getSupabase(), made.databaseId)
+            await trashPage(getSupabase(), made.databaseId)
           } catch (err) {
-            console.error('Failed to remove the database after undo', err)
+            console.error('Failed to trash the database this view made', made.databaseId, err)
+          }
+          queryClient.invalidateQueries({ queryKey: pagesKey() })
+        },
+        onRedone: async () => {
+          try {
+            const supabase = getSupabase()
+            const {
+              data: { user },
+            } = await supabase.auth.getUser()
+            if (!user) return
+            const [deleted] = await listRecords(supabase, {
+              userId: user.id,
+              pondId,
+              targetPageId: made.databaseId,
+              action: 'delete',
+              limit: 1,
+            })
+            if (deleted) await restorePage(supabase, deleted.id)
+          } catch (err) {
+            console.error('Failed to restore the database this view made', made.databaseId, err)
           }
           queryClient.invalidateQueries({ queryKey: pagesKey() })
         },
@@ -1126,55 +1198,169 @@ export function BlockCanvas({
    * Writes `after` directly — bypassing the debounced save — and logs it as
    * one own-edit record, remembered with `sessionUndo`, so the write is ONE
    * ⌘Z-undoable change (KAN-93's template-apply pattern, shared here with
-   * drag-drop's commits, KAN-247, so neither grows a second write path). The
-   * `['page', pageId]` cache carries `after` optimistically first, so
-   * `use-page-draft.ts`'s same-page "adopt" branch folds it into the open
-   * draft's baseline before the caller's own debounced save can schedule
-   * anything against stale blocks. Rolls the cache back to `before` and
-   * returns `false` only if `saveBlocks` itself fails; a failed `appendOwnEdit`
-   * does not roll back — the write already landed, only its own-edit log
-   * didn't, same as `applyTemplateInPlaceUnguarded` always treated it.
+   * drag-drop's commits, KAN-247, so neither grows a second write path).
+   *
+   * `blocksRef.current`, the `['page', pageId]` cache and the caller
+   * (`onBlocksPersisted` then `onChange`, in that order — `onBlocksPersisted`
+   * must land first so the caller's own debounced save sees `after` as its
+   * baseline and never reschedules it, see its own comment) all move to
+   * `after` at once, before any `await` — not once the round trip lands.
+   * Without this, a block inserted or removed stays on screen (or absent)
+   * until the write resolves, and whatever the person typed into it in that
+   * window is stale `after`, computed before they touched it (KAN-368).
+   * `flushPendingPageSave` is still called first, but only invoked here, not
+   * yet awaited: invoking it runs its own synchronous bookkeeping (advancing
+   * its `lastSaved` ref for whatever typing edit was already pending) before
+   * the `onBlocksPersisted` call below overwrites that same ref for our own
+   * write, so the two writes' bookkeeping can't race each other. Its actual
+   * network round trip is awaited further down, still ahead of `saveBlocks`,
+   * so a flushed save can't land after ours and clobber it.
+   *
+   * Rolls `blocksRef.current`, the cache and the caller back to `before` only
+   * if `saveBlocks` itself fails, and only then returns `false`; a failed
+   * `appendOwnEdit` does not roll back — the write already landed, only its
+   * own-edit log didn't, same as `applyTemplateInPlaceUnguarded` always
+   * treated it.
+   *
+   * `sessionUndo.rememberPending` runs the instant the write starts — before
+   * `flushPendingPageSave`'s own round trip resolves, not just before
+   * `saveBlocks` does — so a ⌘Z pressed mid-flight still waits for and undoes
+   * THIS write, rather than reaching for whatever step is still on top of the
+   * stack underneath it (KAN-368). This is also why `flushPendingPageSave` is
+   * called first, synchronously, before this function registers its own
+   * step: a flushed typing edit still pending is itself registered, by
+   * `use-page-draft.ts`'s `runSave`, the instant ITS write starts — so its
+   * step always lands BENEATH this one, never racing it for the same slot. A
+   * write that lands nothing (a failed save, no user, a failed own-edit log)
+   * resolves the pending promise to `null`, which `sessionUndo` drops without
+   * remembering.
+   *
+   * `sideEffects` rides onto the step unchanged (view-insert's new-database
+   * branch, KAN-368): `onUndone`/`onRedone` run once the ⌘Z/⇧⌘Z RPC itself
+   * lands `done`, for a write that did more than log change-log records.
+   *
+   * `onPending`, if given, fires synchronously with this write's `UndoHandle`
+   * the instant `rememberPending` runs — before any `await` in this function,
+   * so a caller that fires this with `void` (every call site does) already
+   * has the handle by the time its own next line runs. A toast-button undo
+   * (`removeBlockAt`, KAN-368) uses it to check `isTopUndo` before acting,
+   * so clicking a toast that has sunk beneath a later ⌘Z step doesn't undo
+   * that later step instead of its own.
+   *
+   * The actual `saveBlocks` call (not the local-apply-at-once above) runs
+   * through `writeChainRef`, one write after another: a write that starts
+   * while an earlier one is still in flight waits for it to settle first,
+   * so two concurrent writes' network calls can never race each other or
+   * land out of order. If a write in the chain fails, every write still
+   * queued behind it is cancelled outright — no `saveBlocks` call, its
+   * `recordIds` resolves `null` so `sessionUndo` drops its step — and local
+   * state (`blocksRef`, the `['page', pageId]` cache, `onChange`) rolls back
+   * to the FAILED write's own `before`, forwarded through the cancelled
+   * writes rather than each falling back to its own, never-saved `before`.
    */
-  const persistBlocksAsOwnEdit = async (before: Block[], after: Block[]): Promise<boolean> => {
-    await flushPendingPageSave(pageId)
+  const persistBlocksAsOwnEdit = async (
+    before: Block[],
+    after: Block[],
+    sideEffects?: {
+      onUndone?: () => Promise<void> | void
+      onRedone?: () => Promise<void> | void
+      onPending?: (handle: UndoHandle) => void
+    }
+  ): Promise<boolean> => {
+    const flushed = flushPendingPageSave(pageId)
     const supabase = getSupabase()
+    blocksRef.current = after
     queryClient.setQueryData<PondPage | null>(['page', pageId], (prev) =>
       prev ? { ...prev, blocks: after } : prev
     )
-    try {
-      await saveBlocks(supabase, pageId, after)
+    onBlocksPersisted?.(after)
+    onChange(after)
+
+    const applyRollback = (rollbackTo: Block[]) => {
+      blocksRef.current = rollbackTo
+      queryClient.setQueryData<PondPage | null>(['page', pageId], (prev) =>
+        prev ? { ...prev, blocks: rollbackTo } : prev
+      )
+      onBlocksPersisted?.(rollbackTo)
+      onChange(rollbackTo)
+    }
+
+    const priorWrite = writeChainRef.current
+    const outcome: Promise<WriteOutcome> = priorWrite.then(async (prior) => {
+      if (prior.rollbackTo) {
+        // A write already queued ahead of us failed — cancel: no `saveBlocks`
+        // call, and forward its rollback target rather than our own `before`,
+        // so every write in the run lands on the ONE write that actually failed.
+        applyRollback(prior.rollbackTo)
+        return { recordIds: null, rollbackTo: prior.rollbackTo }
+      }
+
+      if (flushed) {
+        await flushed
+        // The flushed save's own `runSave` sets `serverSig`/`lastSaved`, the
+        // `['page', pageId]` cache, and `blocks` state to ITS stale `nextBlocks`
+        // only after its await above resolves — after our own cache write,
+        // `onBlocksPersisted` and `onChange` calls already ran. Re-apply all
+        // three now that the flush has fully landed, so its later bookkeeping
+        // can't leave `after` (the actually-latest write) looking stale to the
+        // next page refetch, or get adopted back over the rendered blocks.
+        // Only when there WAS a flush to wait for — otherwise `onChange`
+        // fires twice for the same `after` on every structural edit.
+        queryClient.setQueryData<PondPage | null>(['page', pageId], (prev) =>
+          prev ? { ...prev, blocks: after } : prev
+        )
+        onBlocksPersisted?.(after)
+        onChange(after)
+      }
+
+      try {
+        await saveBlocks(supabase, pageId, after)
+      } catch (err) {
+        console.error('Failed to save the blocks', pageId, err)
+        applyRollback(before)
+        return { recordIds: null, rollbackTo: before }
+      }
       const {
         data: { user },
       } = await supabase.auth.getUser()
-      if (user) {
-        try {
-          const record = await appendOwnEdit(supabase, {
-            userId: user.id,
-            pondId,
-            action: 'edit',
-            targetPageId: pageId,
-            before,
-            after,
-          })
-          if (pondId) sessionUndo.remember({ pondId, recordIds: [record.id] })
-          await queryClient.invalidateQueries({ queryKey: changeLogKey() })
-        } catch (err) {
-          console.error('[change-log] edit not logged', pageId, err)
-        }
+      if (!user) return { recordIds: null, rollbackTo: null }
+      try {
+        const record = await appendOwnEdit(supabase, {
+          userId: user.id,
+          pondId,
+          action: 'edit',
+          targetPageId: pageId,
+          before,
+          after,
+        })
+        await queryClient.invalidateQueries({ queryKey: changeLogKey() })
+        return { recordIds: [record.id], rollbackTo: null }
+      } catch (err) {
+        console.error('[change-log] edit not logged', pageId, err)
+        return { recordIds: null, rollbackTo: null }
       }
-    } catch (err) {
-      console.error('Failed to save the blocks', pageId, err)
-      queryClient.setQueryData<PondPage | null>(['page', pageId], (prev) =>
-        prev ? { ...prev, blocks: before } : prev
-      )
-      return false
+    })
+    writeChainRef.current = outcome
+    // Once this write settles, if nothing has queued behind it since, reset
+    // the chain to neutral — a failure must cancel the writes racing it, not
+    // poison writes made later, after the queue it actually raced has drained.
+    void outcome.then(() => {
+      if (writeChainRef.current === outcome) writeChainRef.current = Promise.resolve(NEUTRAL_WRITE_OUTCOME)
+    })
+
+    const recordIds = outcome.then((result) => result.recordIds)
+    if (pondId) {
+      const handle = sessionUndo.rememberPending({
+        pondId,
+        recordIds,
+        onUndone: sideEffects?.onUndone,
+        onRedone: sideEffects?.onRedone,
+      })
+      sideEffects?.onPending?.(handle)
     }
-    // Before `onChange`: the caller's own debounced save (if any) must see this
-    // write as its baseline, or it fires again with a stale `before` and logs a
-    // second own-edit record for the same write.
-    onBlocksPersisted?.(after)
-    onChange(after)
-    return true
+
+    const result = await outcome
+    return result.rollbackTo === null
   }
 
   const applyTemplateInPlaceUnguarded = async (pick: TemplatePick, target: SlashTarget) => {
@@ -1268,12 +1454,23 @@ export function BlockCanvas({
     onChange([...blocks, nb])
   }
 
-  function moveBlockAt(index: number, dir: 'up' | 'down') {
+  // ⌥↑/⌥↓ is its own ⌘Z step, written at once like drag-drop (KAN-368) — not the
+  // debounced `onChange`. Reads and advances `blocksRef.current`, not the
+  // `blocks` closure: two quick presses, fired before the first write's round
+  // trip returns, must move the SAME block by its id against the move the first
+  // press already queued, not recompute the same swap on stale blocks (which
+  // would silently drop the second press). `persistBlocksAsOwnEdit` is not
+  // awaited here — the keydown handler itself stays synchronous, same as every
+  // other chord in `handleKeyDown`.
+  function moveBlockAt(id: string, dir: 'up' | 'down') {
+    const current = blocksRef.current
+    const index = current.findIndex((b) => b.id === id)
     const target = dir === 'up' ? index - 1 : index + 1
-    if (target < 0 || target >= blocks.length) return
-    const next = [...blocks]
+    if (index === -1 || target < 0 || target >= current.length) return
+    const next = [...current]
     ;[next[index], next[target]] = [next[target], next[index]]
-    onChange(next)
+    blocksRef.current = next
+    void persistBlocksAsOwnEdit(current, next)
   }
 
   // Rows are derived, never stored (6x): consecutive blocks whose widths add up
@@ -1509,11 +1706,11 @@ export function BlockCanvas({
         chrome={chrome}
         untouched={untouched && i === 0}
         onChange={(next) => setBlockAt(i, next)}
-        onRemoveEmpty={() => removeEmptyLineAt(i)}
-        onDeleteBlock={() => removeBlockAt(i)}
-        onReturn={(patch) => insertLineAfter(i, patch)}
-        onMoveUp={() => moveBlockAt(i, 'up')}
-        onMoveDown={() => moveBlockAt(i, 'down')}
+        onRemoveEmpty={() => removeEmptyLineAt(block.id)}
+        onDeleteBlock={() => removeBlockAt(block.id)}
+        onReturn={(patch) => insertLineAfter(block.id, patch)}
+        onMoveUp={() => moveBlockAt(block.id, 'up')}
+        onMoveDown={() => moveBlockAt(block.id, 'down')}
         onSlashKey={() => openSlashMenuAt(i)}
         slashMenuOpen={slashMenuOpenAt === i}
         blank={blank}

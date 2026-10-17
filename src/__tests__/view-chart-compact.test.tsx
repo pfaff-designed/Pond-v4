@@ -250,7 +250,6 @@ function renderCanvas(blocks: Block[]) {
           blocks={blocks}
           pageId="page-1"
           onChange={jest.fn()}
-          onUndoRemove={jest.fn()}
         />
       </DeletionUndoProvider>
     </QueryClientProvider>

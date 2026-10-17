@@ -74,8 +74,9 @@ const mockCommitBlocks = jest.fn().mockResolvedValue(undefined)
 jest.mock('@/lib/pages/commit', () => ({
   commitBlocks: (...args: unknown[]) => mockCommitBlocks(...args),
 }))
+const mockAppendOwnEdit = jest.fn().mockResolvedValue({ id: 'record-1' })
 jest.mock('@/lib/change-log/store', () => ({
-  appendOwnEdit: jest.fn().mockResolvedValue({ id: 'record-1' }),
+  appendOwnEdit: (...args: unknown[]) => mockAppendOwnEdit(...args),
 }))
 // `session-undo.ts` stays real here (unlike part 1, and like `undo-accept-path.test.tsx`):
 // part 2 proves the drop's `remember` and ⌘Z's `undo` share one real stack, not two
@@ -90,6 +91,7 @@ beforeEach(() => {
   jest.clearAllMocks()
   mockFetchPages.mockResolvedValue([])
   mockSaveBlocks.mockResolvedValue(undefined)
+  mockAppendOwnEdit.mockResolvedValue({ id: 'record-1' })
   mockUsePondId.mockReturnValue(null)
   jest.mocked(undoStep).mockResolvedValue({ outcome: 'done', records: [] })
   sessionUndo.clear()
@@ -320,6 +322,59 @@ describe('the side-by-side path (6x), part 2: ⌘Z after a beside drop', () => {
     expect(undoStep).toHaveBeenCalledWith(expect.anything(), {
       pondId: 'pond-1',
       recordIds: ['record-1'],
+    })
+  })
+
+  it('⌘Z pressed while a SECOND drop’s own-edit write is still in flight undoes that drop, not the first', async () => {
+    onPlatform('MacIntel')
+    mockUsePondId.mockReturnValue('pond-1')
+    const list: Block = {
+      id: 'b-list',
+      type: 'todo',
+      items: [{ id: 'item-1', label: 'Sand the top', checked: false }],
+    }
+    const table: Block = {
+      id: 'b-table',
+      type: 'table',
+      columns: ['Tool'],
+      rows: [{ id: 'r1', cells: ['Table Saw'] }],
+    }
+    renderPathWithShell([list, table])
+    await screen.findByLabelText('Page title')
+    const user = userEvent.setup()
+
+    // First drop: its own-edit write resolves normally and settles underneath.
+    await armHandle(user, 'b-table')
+    fireEvent.dragStart(blockRoot('b-table'))
+    dragOverAt('b-list', rect(0, 400), 360, 50)
+    dropAt('b-list', rect(0, 400), 360, 50)
+    await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(mockAppendOwnEdit).toHaveBeenCalledTimes(1))
+
+    // Second drop: hold its own-edit write open until released below — ⌘Z
+    // fires while this write is still in flight.
+    let releaseSecondWrite!: (value: { id: string }) => void
+    mockAppendOwnEdit.mockImplementationOnce(
+      () => new Promise((resolve) => (releaseSecondWrite = resolve))
+    )
+    fireEvent.dragStart(blockRoot('b-table'))
+    dragOverAt('b-list', rect(0, 400, 0, 100), 200, 90)
+    dropAt('b-list', rect(0, 400, 0, 100), 200, 90)
+    await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalledTimes(2))
+
+    await user.click(document.body)
+    await user.keyboard('{Meta>}z{/Meta}')
+
+    // `undo` must await the in-flight write before calling the RPC at all —
+    // it must not reach past it for the first drop's already-settled step.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(undoStep).not.toHaveBeenCalled()
+
+    releaseSecondWrite({ id: 'record-2' })
+    await waitFor(() => expect(undoStep).toHaveBeenCalledTimes(1))
+    expect(undoStep).toHaveBeenCalledWith(expect.anything(), {
+      pondId: 'pond-1',
+      recordIds: ['record-2'],
     })
   })
 })

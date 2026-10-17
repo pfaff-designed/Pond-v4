@@ -137,11 +137,20 @@ const mockGetPage = jest.fn((_supabase: unknown, id: string) => Promise.resolve(
 const mockGetCollectionRows = jest.fn((_supabase: unknown, _userId: string, id: string) =>
   Promise.resolve(ROWS_BY_COLLECTION[id] ?? [])
 )
+const mockSaveBlocks = jest.fn().mockResolvedValue(undefined)
 jest.mock('@/lib/pages/client', () => ({
   ...jest.requireActual('@/lib/pages/client'),
   getPage: (supabase: unknown, id: string) => mockGetPage(supabase, id),
   getCollectionRows: (supabase: unknown, userId: string, id: string) =>
     mockGetCollectionRows(supabase, userId, id),
+  // Picking a view block (KAN-368) now writes through `persistBlocksAsOwnEdit`,
+  // which calls these directly rather than the debounced save.
+  saveBlocks: (...args: unknown[]) => mockSaveBlocks(...args),
+}))
+const mockAppendOwnEdit = jest.fn().mockResolvedValue({ id: 'record-1' })
+jest.mock('@/lib/change-log/store', () => ({
+  ...jest.requireActual('@/lib/change-log/store'),
+  appendOwnEdit: (...args: unknown[]) => mockAppendOwnEdit(...args),
 }))
 
 /** `BlockCanvas` is controlled — a harness re-renders it with `onChange`'s next
@@ -154,7 +163,6 @@ function Harness({ initial }: { initial: Block[] }) {
       pageId="page-1"
       pageTitle="trip planning"
       onChange={setBlocks}
-      onUndoRemove={() => {}}
     />
   )
 }

@@ -8,7 +8,7 @@
  */
 
 import React, { useState } from 'react'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
@@ -48,11 +48,17 @@ jest.mock('@/lib/pages/source-databases', () => ({
 }))
 const mockDeletePage = jest.fn().mockResolvedValue(undefined)
 const mockMovePage = jest.fn().mockResolvedValue(undefined)
+const mockSaveBlocks = jest.fn().mockResolvedValue(undefined)
 jest.mock('@/lib/pages/client', () => ({
   ...jest.requireActual('@/lib/pages/client'),
   createPage: jest.fn(),
   deletePage: (...args: unknown[]) => mockDeletePage(...args),
   movePage: (...args: unknown[]) => mockMovePage(...args),
+  saveBlocks: (...args: unknown[]) => mockSaveBlocks(...args),
+}))
+const mockAppendOwnEdit = jest.fn().mockResolvedValue({ id: 'record-1' })
+jest.mock('@/lib/change-log/store', () => ({
+  appendOwnEdit: (...args: unknown[]) => mockAppendOwnEdit(...args),
 }))
 
 const note: Block = { id: 'b-note', type: 'text', content: 'Cabinets are the only open cost.' }
@@ -69,7 +75,6 @@ function Harness({ initial, onChange }: { initial: Block[]; onChange: jest.Mock 
         onChange(next)
         setBlocks(next)
       }}
-      onUndoRemove={() => {}}
     />
   )
 }
@@ -96,6 +101,8 @@ const setPlatform = (value: string) =>
 beforeEach(() => {
   jest.clearAllMocks()
   mockFetchPages.mockResolvedValue([childRow])
+  mockSaveBlocks.mockResolvedValue(undefined)
+  mockAppendOwnEdit.mockResolvedValue({ id: 'record-1' })
 })
 afterEach(() => {
   if (platform) Object.defineProperty(window.navigator, 'platform', platform)
@@ -113,8 +120,9 @@ describe('removing a page-link block removes only the link (KAN-415)', () => {
     root.focus()
     fireEvent.keyDown(root, { key: 'Backspace', metaKey: true })
 
-    expect(lastBlocks(onChange).map((b) => b.id)).toEqual(['b-note'])
-    expect(await screen.findByText('Deleted page-link block')).toBeInTheDocument()
+    await waitFor(() => expect(lastBlocks(onChange).map((b) => b.id)).toEqual(['b-note']))
+    expect(await screen.findByText('deleted page link ·')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'undo' })).toBeInTheDocument()
     expect(mockDeletePage).not.toHaveBeenCalled()
     expect(mockMovePage).not.toHaveBeenCalled()
     const rows = client.getQueryData<PageRow[]>(pagesKey(null))
@@ -134,7 +142,7 @@ describe('removing a page-link block removes only the link (KAN-415)', () => {
     expect(screen.queryByRole('menuitem', { name: 'delete' })).not.toBeInTheDocument()
     await user.click(item)
 
-    expect(lastBlocks(onChange).map((b) => b.id)).toEqual(['b-note'])
+    await waitFor(() => expect(lastBlocks(onChange).map((b) => b.id)).toEqual(['b-note']))
     expect(mockDeletePage).not.toHaveBeenCalled()
     expect(mockMovePage).not.toHaveBeenCalled()
     const rows = client.getQueryData<PageRow[]>(pagesKey(null))

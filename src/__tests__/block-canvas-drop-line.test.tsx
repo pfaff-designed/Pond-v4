@@ -29,7 +29,6 @@ function renderCanvas(blocks: Block[]) {
           pageId="page-1"
           pageTitle="sourdough, 78%"
           onChange={() => {}}
-          onUndoRemove={() => {}}
         />
       </DeletionUndoProvider>
     </QueryClientProvider>

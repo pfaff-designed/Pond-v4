@@ -35,8 +35,37 @@ export interface SessionUndoSnapshot {
  * What `undo()` / `redo()` did. A `blocked` step stays on top, so it runs again
  * once the obstacle is cleared. A `stale` or `refused` step is dropped: the log
  * only grows, so it cannot succeed later — revert from the change log instead.
+ * `empty` also covers a pending step that resolved to nothing written.
  */
 export type SessionUndoOutcome = { outcome: 'empty' } | (StepResult & { step: HistoryStep })
+
+/**
+ * A step remembered the instant its action starts, before the write's round
+ * trip returns — `recordIds` resolves once it lands. `undo`/`redo` await it
+ * before calling the RPC; a resolution of `null` means the write made nothing
+ * (the same case `persistBlocksAsOwnEdit` treats as "remember nothing"), so the
+ * step is dropped rather than retried.
+ */
+export interface PendingHistoryStep {
+  pondId: string
+  recordIds: Promise<readonly string[] | null>
+  /** Same as `HistoryStep`'s — carried over onto the settled step once `recordIds` resolves. */
+  onUndone?: () => Promise<void> | void
+  onRedone?: () => Promise<void> | void
+}
+
+type StackStep = HistoryStep | PendingHistoryStep
+
+const isPending = (step: StackStep): step is PendingHistoryStep => !Array.isArray(step.recordIds)
+
+/**
+ * The step object `rememberPending` just pushed, held by reference — a caller
+ * that stages its own undo control (a toast) can ask `isTopUndo` whether THIS
+ * step is still what a ⌘Z would hit, rather than blindly taking the current
+ * top of the stack (which may by then be a later step, or this one already
+ * moved to redo).
+ */
+export type UndoHandle = object
 
 export interface SessionUndo {
   /** Make one action's records the next thing undo takes back in its pond. Clears that pond's redo. */
@@ -47,6 +76,10 @@ export interface SessionUndo {
    *  `remember` call never takes the WRONG step. Self-removing: callers hand in
    *  the promise once and never clear it themselves. */
   trackPending: (pondId: string, pending: Promise<unknown>) => void
+  /** Same as `remember`, for a step whose record ids are still in flight. Returns a handle for `isTopUndo`. */
+  rememberPending: (step: PendingHistoryStep) => UndoHandle
+  /** Whether `handle` (from `rememberPending`) is still the step undo would take next in `pondId`. */
+  isTopUndo: (pondId: string, handle: UndoHandle) => boolean
   undo: (pondId: string) => Promise<SessionUndoOutcome>
   redo: (pondId: string) => Promise<SessionUndoOutcome>
   clear: () => void
@@ -60,8 +93,8 @@ export interface SessionUndoRunner {
 }
 
 interface PondHistory {
-  undo: HistoryStep[]
-  redo: HistoryStep[]
+  undo: StackStep[]
+  redo: StackStep[]
   /** Bumped by every `remember`; a result that finds it moved arrived too late. */
   generation: number
   snapshot: SessionUndoSnapshot
@@ -121,13 +154,18 @@ export const createSessionUndo = (
     return created
   }
 
+  // A pending step's ids aren't known yet — it reports as empty until it resolves.
+  const settledIdsOf = (step: StackStep): readonly string[] =>
+    isPending(step) ? [] : step.recordIds
+
   const notify = (history?: PondHistory) => {
     if (history) {
+      const top = history.undo.at(-1)
       history.snapshot = {
         canUndo: history.undo.length > 0,
         canRedo: history.redo.length > 0,
-        topUndoRecordIds: history.undo.at(-1)?.recordIds ?? [],
-        redoRecordIds: history.redo.flatMap((step) => step.recordIds),
+        topUndoRecordIds: top ? settledIdsOf(top) : [],
+        redoRecordIds: history.redo.flatMap(settledIdsOf),
       }
     }
     for (const listener of listeners) listener()
@@ -151,56 +189,105 @@ export const createSessionUndo = (
         await withTimeout(Promise.allSettled([...inFlight]), timeoutMs).catch(() => {})
       }
       const history = histories.get(pondId)
-      const from = direction === 'undo' ? history?.undo : history?.redo
-      const taken = from?.pop()
-      if (!history || !from || taken === undefined) return { outcome: 'empty' }
-      const takenFrom = from.length
-      const undoDepth = history.undo.length
-      const generation = history.generation
-      notify(history)
-
+      if (!history) return { outcome: 'empty' }
+      const from = direction === 'undo' ? history.undo : history.redo
       const current = () => histories.get(pondId) === history
-      // Nothing was written, so it is still applied (undo) or still undone (redo)
-      // and goes back where it was — unless the history was cleared, or a new
-      // change has emptied redo.
-      const putBack = () => {
-        if (!current() || (direction === 'redo' && history.generation !== generation)) return
-        from.splice(Math.min(takenFrom, from.length), 0, taken)
+
+      // A pending step that resolves to nothing written is dropped, not
+      // reported as `empty` — real steps may still sit beneath it on the stack.
+      while (true) {
+        const taken = from.pop()
+        if (taken === undefined) return { outcome: 'empty' }
+        const takenFrom = from.length
+        const undoDepth = history.undo.length
+        const generation = history.generation
         notify(history)
-      }
-      let result: StepResult
-      try {
-        // A call that times out may still land later: it already ran putBack,
-        // so the step is back on the stack, and the next ⌘Z on it comes back
-        // `refused already-undone` and is dropped — not undone twice.
-        result = await withTimeout(run[direction](taken), timeoutMs)
-      } catch (err) {
-        putBack()
-        throw err
-      }
-      if (result.outcome === 'blocked') putBack()
-      if (result.outcome === 'done' && current()) {
-        if (direction === 'undo' && history.generation === generation) {
-          history.redo.push(taken)
+
+        const putTakenBack = (toPutBack: StackStep) => {
+          if (!current()) return
+          from.splice(Math.min(takenFrom, from.length), 0, toPutBack)
+          notify(history)
         }
-        if (direction === 'redo') {
-          // Beneath anything remembered while it ran: those happened after it.
-          const redone = { pondId, recordIds: result.records.map((r) => r.id) }
-          history.undo.splice(Math.min(undoDepth, history.undo.length), 0, redone)
+
+        // A pending step's write hasn't landed yet — wait for it before calling
+        // the RPC, under the same timeout as the RPC itself: a hung write must
+        // not stall every later ⌘Z/⇧⌘Z behind it in the queue.
+        let step: HistoryStep
+        if (isPending(taken)) {
+          let recordIds: readonly string[] | null
+          try {
+            recordIds = await withTimeout(taken.recordIds, timeoutMs)
+          } catch (err) {
+            putTakenBack(taken)
+            throw err
+          }
+          if (!recordIds || recordIds.length === 0) continue
+          step = {
+            pondId: taken.pondId,
+            recordIds,
+            onUndone: taken.onUndone,
+            onRedone: taken.onRedone,
+          }
+        } else {
+          step = taken
         }
-        notify(history)
+
+        // Nothing was written, so it is still applied (undo) or still undone (redo)
+        // and goes back where it was — unless the history was cleared, or a new
+        // change has emptied redo.
+        const putBack = () => {
+          if (direction === 'redo' && history.generation !== generation) return
+          putTakenBack(step)
+        }
+        let result: StepResult
+        try {
+          // A call that times out may still land later: it already ran putBack,
+          // so the step is back on the stack, and the next ⌘Z on it comes back
+          // `refused already-undone` and is dropped — not undone twice.
+          result = await withTimeout(run[direction](step), timeoutMs)
+        } catch (err) {
+          putBack()
+          throw err
+        }
+        if (result.outcome === 'blocked') putBack()
+        if (result.outcome === 'done') {
+          // The RPC already landed: losing the step here would strand it off
+          // both stacks even though the write succeeded, so a broken side
+          // effect is logged, not thrown.
+          try {
+            if (direction === 'undo') await step.onUndone?.()
+            else await step.onRedone?.()
+          } catch (err) {
+            console.error(err)
+          }
+        }
+        if (result.outcome === 'done' && current()) {
+          if (direction === 'undo' && history.generation === generation) {
+            history.redo.push(step)
+          }
+          if (direction === 'redo') {
+            // Beneath anything remembered while it ran: those happened after it.
+            const redone = { pondId, recordIds: result.records.map((r) => r.id) }
+            history.undo.splice(Math.min(undoDepth, history.undo.length), 0, redone)
+          }
+          notify(history)
+        }
+        return { ...result, step }
       }
-      return { ...result, step: taken }
     })
+
+  const rememberStep = (step: StackStep) => {
+    const history = historyOf(step.pondId)
+    history.undo.push(step)
+    history.redo.length = 0
+    history.generation += 1
+    notify(history)
+  }
 
   return {
     remember: (step) => {
       if (step.recordIds.length === 0) return
-      const history = historyOf(step.pondId)
-      history.undo.push(step)
-      history.redo.length = 0
-      history.generation += 1
-      notify(history)
+      rememberStep(step)
     },
     trackPending: (pondId, promise) => {
       const set = pending.get(pondId) ?? new Set<Promise<unknown>>()
@@ -211,6 +298,11 @@ export const createSessionUndo = (
       // re-rejects on a rejected `promise`, which nothing here consumes.
       promise.then(clear, clear)
     },
+    rememberPending: (step) => {
+      rememberStep(step)
+      return step
+    },
+    isTopUndo: (pondId, handle) => histories.get(pondId)?.undo.at(-1) === handle,
     undo: (pondId) => runQueued(pondId, 'undo'),
     redo: (pondId) => runQueued(pondId, 'redo'),
     clear: () => {

@@ -76,7 +76,6 @@ function Harness({ initial }: { initial: Block[] }) {
       pageId="page-1"
       pageTitle="plans"
       onChange={setBlocks}
-      onUndoRemove={() => {}}
     />
   )
 }

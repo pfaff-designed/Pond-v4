@@ -41,9 +41,9 @@ const mockAppendOwnEdit = jest.fn().mockResolvedValue({ id: 'record-1' })
 jest.mock('@/lib/change-log/store', () => ({
   appendOwnEdit: (...args: unknown[]) => mockAppendOwnEdit(...args),
 }))
-const mockRemember = jest.fn()
+const mockRememberPending = jest.fn()
 jest.mock('@/lib/change-log/session-undo', () => ({
-  sessionUndo: { remember: (...args: unknown[]) => mockRemember(...args) },
+  sessionUndo: { rememberPending: (...args: unknown[]) => mockRememberPending(...args) },
 }))
 
 beforeEach(() => {
@@ -62,7 +62,6 @@ function renderCanvas(blocks: Block[], onChange: (next: Block[]) => void) {
           pageId="page-1"
           pageTitle="sourdough, 78%"
           onChange={onChange}
-          onUndoRemove={() => {}}
         />
       </DeletionUndoProvider>
     </QueryClientProvider>
@@ -119,8 +118,10 @@ describe('committing a beside drop', () => {
     expect(mockAppendOwnEdit.mock.calls[0][1]).toEqual(
       expect.objectContaining({ before: [a, b], after: expected })
     )
-    expect(mockRemember).toHaveBeenCalledTimes(1)
-    expect(mockRemember).toHaveBeenCalledWith({ pondId: 'pond-1', recordIds: ['record-1'] })
+    expect(mockRememberPending).toHaveBeenCalledTimes(1)
+    const pending = mockRememberPending.mock.calls[0][0]
+    expect(pending.pondId).toBe('pond-1')
+    await expect(pending.recordIds).resolves.toEqual(['record-1'])
   })
 
   it('drops beside a row with room: the dropped block takes the room, the existing width stays untouched', async () => {

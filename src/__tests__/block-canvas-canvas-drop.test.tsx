@@ -40,9 +40,9 @@ const mockAppendOwnEdit = jest.fn().mockResolvedValue({ id: 'record-1' })
 jest.mock('@/lib/change-log/store', () => ({
   appendOwnEdit: (...args: unknown[]) => mockAppendOwnEdit(...args),
 }))
-const mockRemember = jest.fn()
+const mockRememberPending = jest.fn()
 jest.mock('@/lib/change-log/session-undo', () => ({
-  sessionUndo: { remember: (...args: unknown[]) => mockRemember(...args) },
+  sessionUndo: { rememberPending: (...args: unknown[]) => mockRememberPending(...args) },
 }))
 
 beforeEach(() => {
@@ -61,7 +61,6 @@ function renderCanvas(blocks: Block[], onChange: (next: Block[]) => void) {
           pageId="page-1"
           pageTitle="sourdough, 78%"
           onChange={onChange}
-          onUndoRemove={() => {}}
         />
       </DeletionUndoProvider>
     </QueryClientProvider>
@@ -153,7 +152,7 @@ describe('the canvas root keeps and commits the indicator the ghost would otherw
 
     await waitFor(() => expect(result).not.toBeNull())
     expect(mockAppendOwnEdit).toHaveBeenCalledTimes(1)
-    expect(mockRemember).toHaveBeenCalledTimes(1)
+    expect(mockRememberPending).toHaveBeenCalledTimes(1)
   })
 })
 
