@@ -13,9 +13,9 @@ import { blockFrame, blockIsEmpty } from '@/lib/modules/block-frame'
  * (conductor's ruling, KAN-356: the library wins over the superseded
  * `PondTemplate.dc.html` reading these numbers used to cite):
  *
- *   stack   flex column · gap 8
+ *   stack   flex column · gap 2
  *   entry   grid 56px minmax(0,1fr) · gap 14 · padding 10px 8px · radius 10 ·
- *           align-items baseline
+ *           align-items baseline · hover bg ink .05 (ink-alpha token, editable only)
  *   edate   PP Neue Montreal Mono 10.5 · ink .68
  *   sans    PP Neue Montreal 13.5 / 1.5 · full ink              (project → updates)
  *   serif   PP Editorial New 200 / 16.5 / 1.6 · full ink         (journal → entries)
@@ -86,6 +86,23 @@ const PAPER = 'rgb(250, 249, 239)' // #FAF9EF
 const INK_68 = 'rgba(27, 29, 20, 0.68)'
 const PAPER_68 = 'rgba(250, 249, 239, 0.68)'
 
+/**
+ * The board writes its hover wash as `a(.05)` — ink at an alpha. Tailwind v4
+ * renders `bg-mn-text/5` as `color-mix(in oklab, <ink> 5%, transparent)`, which
+ * Chromium serialises as an `oklab(…)` string, not an `rgba()` literal (see
+ * `todo/view.stories.tsx`'s own `mix` probe, the repo's convention for this).
+ */
+function mix(base: string, pct: number): string {
+  const probe = document.createElement('span')
+  probe.style.color = `color-mix(in oklab, ${base} ${pct}%, transparent)`
+  document.body.appendChild(probe)
+  const out = getComputedStyle(probe).color
+  probe.remove()
+  return out
+}
+const INK_05 = () => mix(INK, 5)
+const PAPER_05 = () => mix(PAPER, 5)
+
 const rowsOf = (root: HTMLElement) =>
   Array.from(root.querySelectorAll<HTMLElement>('[data-part="date"]')).map((d) => d.parentElement!)
 const datesOf = (root: HTMLElement) =>
@@ -101,7 +118,7 @@ async function assertGeometry(canvasElement: HTMLElement, count: number) {
   const ss = getComputedStyle(stack)
   await expect(ss.display).toBe('flex')
   await expect(ss.flexDirection).toBe('column')
-  await expect(ss.rowGap).toBe('8px')
+  await expect(ss.rowGap).toBe('2px')
   for (const row of rows) {
     const cs = getComputedStyle(row)
     await expect(cs.display).toBe('grid')
@@ -403,7 +420,7 @@ function EditableLogHost({ data: initial }: { data: EntriesBlock }) {
  * `persistBlocksAsOwnEdit`'s immediate variant used for template-apply/drag-drop
  * in `BlockCanvas.tsx`. The live verifier confirms ⌘Z in the real browser.
  */
-async function walkPath(canvasElement: HTMLElement) {
+async function walkPath(canvasElement: HTMLElement, hoverBg: () => string) {
   const canvas = within(canvasElement)
   await userEvent.click(canvas.getByRole('button', { name: 'write one' }))
 
@@ -421,7 +438,15 @@ async function walkPath(canvasElement: HTMLElement) {
   await expect(texts[1]).toHaveValue('first')
 
   const firstRow = texts[1].parentElement!
+  // Typing into `firstText` earlier left the pointer (and `hoveredId`) on this
+  // very row — move off it explicitly before asserting the rest state.
+  await userEvent.unhover(firstRow)
+  await expect(getComputedStyle(firstRow).backgroundColor).toBe('rgba(0, 0, 0, 0)')
   await userEvent.hover(firstRow)
+  // `hoveredId` state (`onMouseEnter`/`onMouseLeave`) applies the molecule's
+  // `hover` wash (`a(.05)`) through the ink-alpha role token, so it reads
+  // correctly on both themes without a separate class.
+  await expect(getComputedStyle(firstRow).backgroundColor).toBe(hoverBg())
   await userEvent.click(within(firstRow).getByRole('button', { name: 'Remove entry' }))
 
   const remaining = canvas.getAllByRole('textbox', { name: 'Entry text' })
@@ -434,12 +459,12 @@ const emptyLog: EntriesBlock = { id: 'e3', type: 'entries', entries: [] }
 export const EditablePath: Story = {
   args: { data: emptyLog },
   render: (args) => <EditableLogHost data={args.data} />,
-  play: async ({ canvasElement }) => walkPath(canvasElement),
+  play: async ({ canvasElement }) => walkPath(canvasElement, INK_05),
 }
 
 export const EditablePathDark: Story = {
   args: { data: emptyLog },
   decorators: [inkTheme],
   render: (args) => <EditableLogHost data={args.data} />,
-  play: async ({ canvasElement }) => walkPath(canvasElement),
+  play: async ({ canvasElement }) => walkPath(canvasElement, PAPER_05),
 }

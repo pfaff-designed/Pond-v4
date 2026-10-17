@@ -4,9 +4,9 @@
  * (conductor's ruling, KAN-356: the library wins over the superseded
  * `PondTemplate.dc.html` reading):
  *
- *   stack  flex column · gap 8
+ *   stack  flex column · gap 2
  *   entry  grid `56px minmax(0,1fr)` · gap 14 · padding 10px 8px · radius 10 ·
- *          align-items baseline
+ *          align-items baseline · hover bg ink .05 (`hoveredId` state, ink-alpha token)
  *   edate  mono 10.5 · ink .68
  *   text   d.serif && filled ? serif 200 / 16.5 / 1.6 · full ink
  *                            : sans 13.5 / 1.5 · full ink when filled, ink .68 when not
@@ -271,10 +271,10 @@ const SERIF = [
 ]
 
 describe('EntriesView — read-only', () => {
-  it('the stack is a flex column at gap 8; each row the molecule’s 56px grid, gap 14, baseline', () => {
+  it('the stack is a flex column at gap 2; each row the molecule’s 56px grid, gap 14, baseline', () => {
     const { container } = render(<EntriesView data={updates} />)
     const stack = container.firstElementChild!
-    has(stack, 'flex', 'flex-col', 'gap-mn-2')
+    has(stack, 'flex', 'flex-col', 'gap-[2px]')
     const rows = Array.from(stack.children)
     expect(rows).toHaveLength(2)
     for (const row of rows) has(row, ...ROW)
@@ -391,7 +391,7 @@ describe('EntriesView — editable (a read-only date label + a prose field, per 
     for (const d of dates) has(d, ...DATE)
     // The add line is the stack's first child now (KAN-356); only the entry
     // rows — found through the text fields, not raw children — keep ROW's geometry.
-    for (const t of texts) has(t.parentElement!, ...ROW)
+    for (const t of texts) has(t.parentElement!, ...ROW, 'group')
   })
 
   it('a focused row wears the molecule’s `editing` ring; blurring drops it', () => {
@@ -404,6 +404,18 @@ describe('EntriesView — editable (a read-only date label + a prose field, per 
     lacks(rows[1], 'ring-mn-text')
     act(() => texts[0].blur())
     lacks(rows[0], 'ring-mn-text')
+  })
+
+  it('a hovered row wears the molecule’s `hover` wash (ink .05); unhovering drops it', () => {
+    render(<Stateful data={updates} />)
+    const texts = screen.getAllByRole('textbox', { name: 'Entry text' })
+    const rows = texts.map((t) => t.parentElement!)
+    for (const row of rows) lacks(row, 'bg-mn-text/5')
+    fireEvent.mouseEnter(rows[0])
+    has(rows[0], 'bg-mn-text/5')
+    lacks(rows[1], 'bg-mn-text/5')
+    fireEvent.mouseLeave(rows[0])
+    lacks(rows[0], 'bg-mn-text/5')
   })
 
   it('the textarea wears the block’s medium: sans by default, serif 200 / 16.5 / 1.6 on a journal', () => {

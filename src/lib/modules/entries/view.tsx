@@ -13,9 +13,10 @@ const blankLine = (data: EntriesBlock) => data.placeholder ?? ENTRIES_EMPTY_LINE
  * `PondMolecule.dc.html`'s `entry` kind values (conductor's ruling, KAN-356: the
  * library wins over the superseded `PondTemplate.dc.html` reading below):
  *
- *   stack  { display: 'flex', flexDirection: 'column', gap: 8 }
+ *   stack  { display: 'flex', flexDirection: 'column', gap: 2 }
  *   entry  { display: 'grid', gridTemplateColumns: '56px minmax(0,1fr)', gap: 14,
- *            padding: '10px 8px', borderRadius: 10, alignItems: 'baseline' }
+ *            padding: '10px 8px', borderRadius: 10, alignItems: 'baseline',
+ *            background: hover ? ink/.05 : 'transparent' }
  *   edate  { fontFamily: mono, fontSize: 10.5, color: a(.68) }  (the molecule's `cellMeta`)
  *   text   d.serif && filled
  *            ? { fontFamily: serif, fontWeight: 200, fontSize: 16.5, lineHeight: 1.6,
@@ -82,9 +83,21 @@ const blankLine = (data: EntriesBlock) => data.placeholder ?? ENTRIES_EMPTY_LINE
  * **#252**; once `cn` is taught the `--text-mn-*` scale via `extendTailwindMerge`,
  * these can go back to `cn` and this note can be deleted.
  */
-const STACK = 'flex flex-col gap-mn-2'
+/** `PondBlock.dc.html`'s `log` stack is gap 2 — tighter than the `--spacing-mn-*`
+ *  ramp's floor (4), so the board's literal wins as an arbitrary value (AGENTS.md:
+ *  "a value written in a board is final") rather than rounding up to `gap-mn-1`. */
+const STACK = 'flex flex-col gap-[2px]'
 const ROW =
   'grid items-baseline gap-3.5 rounded-mn-row px-2 py-2.5 [grid-template-columns:56px_minmax(0,1fr)]'
+/**
+ * The molecule's `hover` wash (`a(.05)`), the ink-alpha role token, never a raw
+ * colour — applied through `hoveredId` state (`onMouseEnter`/`onMouseLeave`), the
+ * same idiom `todo/view.tsx`'s `hovered` row uses, rather than a `group-hover:`
+ * CSS variant: real pointer hover works either way, but `userEvent.hover` in the
+ * story's play function dispatches synthetic mouse events that do not update the
+ * browser's own `:hover` match, only a JS listener's state.
+ */
+const HOVER = 'bg-mn-text/5'
 const DATE = 'font-mono text-[10.5px] text-mn-text-secondary'
 const SANS = 'font-sans text-[13.5px] leading-normal [text-wrap:pretty]'
 const SERIF = 'font-serif font-extralight text-[16.5px] leading-[1.6] [text-wrap:pretty]'
@@ -140,6 +153,7 @@ export function addEntry(
 
 export function EntriesView({ data, editable, onChange }: ModuleViewProps<EntriesBlock>) {
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [hoveredId, setHoveredId] = useState<string | null>(null)
   const [addValue, setAddValue] = useState('')
   const textRefs = useRef<Map<string, HTMLTextAreaElement>>(new Map())
   const pendingFocusId = useRef<string | null>(null)
@@ -222,7 +236,9 @@ export function EntriesView({ data, editable, onChange }: ModuleViewProps<Entrie
         {data.entries.map((entry, i) => (
           <div
             key={entry.id}
-            className={`${ROW} group relative ${editingId === entry.id ? EDIT_RING : ''}`}
+            className={`${ROW} group relative ${editingId === entry.id ? EDIT_RING : ''} ${hoveredId === entry.id ? HOVER : ''}`}
+            onMouseEnter={() => setHoveredId(entry.id)}
+            onMouseLeave={() => setHoveredId((id) => (id === entry.id ? null : id))}
           >
             <span data-part="date" className={DATE}>
               {entry.date}
