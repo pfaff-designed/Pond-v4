@@ -46,6 +46,7 @@ import {
   ZEN_BLOCK_LIST_STYLE,
   ZEN_COLUMN_PX,
   ZEN_TITLE_CLASS,
+  type Zen,
 } from '@/lib/layout/zen'
 import { usePublishCommandPath } from '@/lib/layout/command-path'
 import { commandPath } from '@/lib/pages/command-path'
@@ -81,6 +82,53 @@ import { readTemplatesParam, urlWithoutTemplates } from '@/lib/pages/templates-p
 import { requestTerminalFocus } from '@/lib/terminal-focus'
 import { FirstRunHints } from '@/components/organisms/FirstRunHints'
 import { useFirstRunPending } from '@/lib/first-run/use-first-run-pending'
+
+/**
+ * The title row (`Pond 06.21` 6u.1): the page's name at left, one eyebrow at
+ * right. Shared by the real page and the KAN-388 pending shell, so the frame
+ * cannot drift between them — only `readOnly`/`onChange` and the computed
+ * placeholder/eyebrow text tell the two apart.
+ */
+function PageTitleRow({
+  zen,
+  value,
+  placeholder,
+  eyebrow,
+  readOnly,
+  onChange,
+}: {
+  zen: Zen | null
+  value: string
+  placeholder: string
+  eyebrow: string
+  readOnly?: boolean
+  onChange?: (value: string) => void
+}) {
+  return (
+    <div
+      className={`${zen ? 'mb-[var(--zen-gap)]' : 'mt-2 mb-4'} flex items-end justify-between gap-3`}
+      style={{ paddingInline: TEXT_BLOCK_INSET_PX }}
+    >
+      <input
+        className={`min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-mn-text-secondary ${zen ? ZEN_TITLE_CLASS : 'font-sans text-[38px] leading-[1.15] font-bold tracking-[-0.01em] uppercase'}`}
+        value={value}
+        onChange={onChange ? (e) => onChange(e.target.value) : undefined}
+        readOnly={readOnly}
+        placeholder={placeholder}
+        aria-label="Page title"
+        data-pond-page-title
+      />
+      <span
+        data-part="title-eyebrow"
+        className="flex-none text-[10.5px] font-medium tracking-[.1em] text-mn-text-secondary uppercase"
+        hidden={zen !== null}
+        aria-live="polite"
+      >
+        {eyebrow}
+      </span>
+    </div>
+  )
+}
 
 export function DocumentPanel() {
   const router = useRouter()
@@ -397,8 +445,14 @@ export function DocumentPanel() {
   // (a deep link on a cold load, PATH_STEPS step 7) or rows/home are pending.
   const pendingKnownRow = isLoading && !rowsPending ? rows.find((r) => r.id === pageId) : undefined
   if (pendingKnownRow) {
-    const shellEyebrow =
-      typeof pendingKnownRow.props?.kind === 'string' ? pendingKnownRow.props.kind : ''
+    // Same shape as the landed row's own `titlePlaceholder`/`eyebrow` below,
+    // fed by the rail row rather than the (not yet loaded) page: `saved` with
+    // no timestamp, never `untouched` — the row carries no draft state to
+    // read `new — in {parent}` from.
+    const shellPlaceholder = pendingKnownRow.props?.kind
+      ? `${pendingKnownRow.props.kind} name`
+      : 'Untitled'
+    const shellEyebrow = titleEyebrow(pendingKnownRow.props?.kind, true, null, false)
     return (
       <PageCanvas className="h-full overflow-y-auto">
         <div {...(zen ? zenColumn(column) : column)} data-testid="page-column">
@@ -410,26 +464,13 @@ export function DocumentPanel() {
               onWidthCommit={commitWidth}
             />
           )}
-          <div
-            className={`${zen ? 'mb-[var(--zen-gap)]' : 'mt-2 mb-4'} flex items-end justify-between gap-3`}
-            style={{ paddingInline: TEXT_BLOCK_INSET_PX }}
-          >
-            <input
-              className={`min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-mn-text-secondary ${zen ? ZEN_TITLE_CLASS : 'font-sans text-[38px] leading-[1.15] font-bold tracking-[-0.01em] uppercase'}`}
-              value={pendingKnownRow.title}
-              readOnly
-              aria-label="Page title"
-              data-pond-page-title
-            />
-            <span
-              data-part="title-eyebrow"
-              className="flex-none text-[10.5px] font-medium tracking-[.1em] text-mn-text-secondary uppercase"
-              hidden={zen !== null}
-              aria-live="polite"
-            >
-              {shellEyebrow}
-            </span>
-          </div>
+          <PageTitleRow
+            zen={zen}
+            value={pendingKnownRow.title}
+            placeholder={shellPlaceholder}
+            eyebrow={shellEyebrow}
+            readOnly
+          />
         </div>
       </PageCanvas>
     )
@@ -499,27 +540,13 @@ export function DocumentPanel() {
         {/* The title row (`Pond 06.21` 6u.1): the page's name at left, and at right
             one eyebrow — `{kind} — {save state}`. The save state lives here and
             nowhere else; no kind set, and the eyebrow is the state alone. */}
-        <div
-          className={`${zen ? 'mb-[var(--zen-gap)]' : 'mt-2 mb-4'} flex items-end justify-between gap-3`}
-          style={{ paddingInline: TEXT_BLOCK_INSET_PX }}
-        >
-          <input
-            className={`min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-mn-text-secondary ${zen ? ZEN_TITLE_CLASS : 'font-sans text-[38px] leading-[1.15] font-bold tracking-[-0.01em] uppercase'}`}
-            value={viewTitle}
-            onChange={(e) => onTitle(e.target.value)}
-            placeholder={titlePlaceholder}
-            aria-label="Page title"
-            data-pond-page-title
-          />
-          <span
-            data-part="title-eyebrow"
-            className="flex-none text-[10.5px] font-medium tracking-[.1em] text-mn-text-secondary uppercase"
-            hidden={zen !== null}
-            aria-live="polite"
-          >
-            {previewName ? `preview — ${previewName}` : eyebrow}
-          </span>
-        </div>
+        <PageTitleRow
+          zen={zen}
+          value={viewTitle}
+          onChange={onTitle}
+          placeholder={titlePlaceholder}
+          eyebrow={previewName ? `preview — ${previewName}` : eyebrow}
+        />
 
         <div className={hiddenInZen}>
           {/* Provenance (#97, 6a frame 5): the thread moment this page was made

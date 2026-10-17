@@ -65,7 +65,7 @@ describe('DocumentPanel — the shell paints before the page lands', () => {
 
     expect(await screen.findByLabelText('Page title')).toHaveValue('Kitchen renovation')
     expect(screen.getByLabelText('Page title')).toHaveAttribute('readonly')
-    expect(screen.getByText('project')).toBeInTheDocument()
+    expect(screen.getByText('project — saved')).toBeInTheDocument()
     expect(screen.queryByText('Loading…')).toBeNull()
 
     await act(async () => {
@@ -78,6 +78,43 @@ describe('DocumentPanel — the shell paints before the page lands', () => {
     })
 
     expect(await findTextBlock()).toBeInTheDocument()
+  })
+
+  it('shows the same placeholder and eyebrow for an untitled kinded row before and after it lands', async () => {
+    mockFetchPages.mockResolvedValueOnce([
+      {
+        id: 'page-1',
+        parent_id: null,
+        type: 'page',
+        title: '',
+        order: 0,
+        updated_at: '',
+        props: { kind: 'notes' },
+      },
+    ])
+    let resolveGetPage!: (value: unknown) => void
+    mockGetPage.mockReturnValue(
+      new Promise((resolve) => {
+        resolveGetPage = resolve
+      })
+    )
+
+    renderPanel()
+
+    expect(await screen.findByLabelText('Page title')).toHaveAttribute('placeholder', 'notes name')
+    expect(screen.getByText('notes — saved')).toBeInTheDocument()
+
+    await act(async () => {
+      resolveGetPage({
+        id: 'page-1',
+        title: '',
+        blocks: [{ id: 'b1', type: 'text', content: 'Grocery list' }],
+        props: { kind: 'notes' },
+      })
+    })
+
+    expect(await screen.findByLabelText('Page title')).toHaveAttribute('placeholder', 'notes name')
+    expect(screen.getByText('notes — saved')).toBeInTheDocument()
   })
 
   it('shows a not-found line when the page is gone and the rail row is already gone too', async () => {
