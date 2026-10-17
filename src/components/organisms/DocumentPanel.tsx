@@ -385,6 +385,52 @@ export function DocumentPanel() {
     return recordId ? <ChangeLogRecordPage recordId={recordId} /> : <ChangeLogPage />
   }
 
+  // KAN-388: while `['page', pageId]` is still in flight, the row this id
+  // already has in `['pages']` (the rail's own cache) is enough to paint the
+  // title and eyebrow at once — the canvas never has to blank to "Loading…"
+  // for a page the person just clicked from a row they could already see.
+  // Falls through to "Loading…" below when the row itself isn't known yet
+  // (a deep link on a cold load, PATH_STEPS step 7) or rows/home are pending.
+  const pendingKnownRow = isLoading && !rowsPending ? rows.find((r) => r.id === pageId) : undefined
+  if (pendingKnownRow) {
+    const shellEyebrow =
+      typeof pendingKnownRow.props?.kind === 'string' ? pendingKnownRow.props.kind : ''
+    return (
+      <PageCanvas className="h-full overflow-y-auto">
+        <div {...(zen ? zenColumn(column) : column)} data-testid="page-column">
+          {!zen && (
+            <ContentWidthHandle
+              {...handle}
+              width={contentWidth}
+              onWidthChange={setContentWidth}
+              onWidthCommit={commitWidth}
+            />
+          )}
+          <div
+            className={`${zen ? 'mb-[var(--zen-gap)]' : 'mt-2 mb-4'} flex items-end justify-between gap-3`}
+            style={{ paddingInline: TEXT_BLOCK_INSET_PX }}
+          >
+            <input
+              className={`min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-mn-text-secondary ${zen ? ZEN_TITLE_CLASS : 'font-sans text-[38px] leading-[1.15] font-bold tracking-[-0.01em] uppercase'}`}
+              value={pendingKnownRow.title}
+              readOnly
+              aria-label="Page title"
+              data-pond-page-title
+            />
+            <span
+              data-part="title-eyebrow"
+              className="flex-none text-[10.5px] font-medium tracking-[.1em] text-mn-text-secondary uppercase"
+              hidden={zen !== null}
+              aria-live="polite"
+            >
+              {shellEyebrow}
+            </span>
+          </div>
+        </div>
+      </PageCanvas>
+    )
+  }
+
   if ((!nodeId && homePending) || isLoading || rowsPending || !page) {
     return (
       <div className="h-full flex items-center justify-center text-mn-13 text-mn-text-secondary">
