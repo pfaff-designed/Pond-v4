@@ -337,6 +337,62 @@ describe('usePageDraft retry (KAN-407)', () => {
     expect(result.current.retrying).toBe(false)
   })
 
+  it('switching away and back while a newer edit is queued behind the failed one keeps the newer edit', async () => {
+    mockUpdateTitle.mockRejectedValueOnce(new Error('v1 fails')) // v1's attempt fails, schedules a retry
+    const v2Save = deferred()
+    mockUpdateTitle.mockReturnValueOnce(v2Save.promise) // v2's own debounce attempt, left in flight
+    mockCommitBlocks.mockResolvedValue({ remembered: Promise.resolve() })
+    const { result, rerender } = mountDraft(PAGE)
+
+    act(() => {
+      result.current.commitLocalEdit([textBlock('v1')])
+    })
+    await act(async () => {
+      jest.advanceTimersByTime(EDIT_PAUSE_MS) // v1 fires and fails; retry backs off 2000ms from here
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(mockUpdateTitle).toHaveBeenCalledTimes(1)
+    expect(result.current.retrying).toBe(true)
+
+    // Typed again before the backoff fired: v2's own debounce fires and is
+    // left in flight (not yet landed) — still well short of the 2000ms retry.
+    act(() => {
+      result.current.commitLocalEdit([textBlock('v2')])
+    })
+    await act(async () => {
+      jest.advanceTimersByTime(EDIT_PAUSE_MS)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(mockUpdateTitle).toHaveBeenCalledTimes(2)
+
+    rerender(PAGE_B)
+    rerender(PAGE)
+
+    // The seed effect reseeding page-1 must find v2, not the stale v1 that
+    // failed — v2's own save is still in flight, queued ahead of the stale
+    // retry payload.
+    expect(result.current.viewBlocks).toEqual([textBlock('v2')])
+    expect(result.current.saved).toBe(false)
+
+    await act(async () => {
+      v2Save.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(result.current.saved).toBe(true)
+    expect(mockCommitBlocks).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.anything(),
+      PAGE.id,
+      [textBlock('v2')],
+      expect.anything()
+    )
+  })
+
   it('a save in flight superseded by a newer edit: saved stays false until the newer save lands', async () => {
     const firstSave = deferred()
     mockUpdateTitle.mockReturnValueOnce(firstSave.promise)

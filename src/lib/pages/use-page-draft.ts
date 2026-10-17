@@ -337,6 +337,16 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
     nextBlocks: Block[],
     beforeAtSchedule: Block[]
   ): Promise<void> {
+    // `id` already has a retry/held entry: refresh it with what's actually
+    // about to be saved, synchronously and before chaining (`runSave` may run
+    // a tick or a whole save later under the KAN-355 chain) — otherwise a
+    // page switch that reseeds from `retryPayload` while THIS save is still
+    // queued finds the older draft that failed, not this newer one, and
+    // silently reseeds back to it. Timer/attempt count stay as they are;
+    // only the stored payload moves.
+    if (retryPayload.current.has(id)) {
+      retryPayload.current.set(id, { title: nextTitle, blocks: nextBlocks, beforeAtSchedule })
+    }
     const prev = inFlightSave.current
     const promise = (
       prev
