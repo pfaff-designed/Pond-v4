@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite'
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test'
 import { useRef, useState } from 'react'
+import type { ComponentProps } from 'react'
 
 import { ComposerLine } from './ComposerLine'
 import { TerminalDrawer } from './TerminalDrawer'
@@ -376,4 +377,73 @@ export const PublishesItsClearanceToTheShell: Story = {
     await userEvent.click(canvas.getByText('unmount'))
     await expect(published()).toBe('')
   },
+}
+
+// ── KAN-366: closed means gone, in every sizing state ───────────────────────
+//
+// A scroller standing in for the document the real bug lands in: the shell
+// itself has no overflow clip, so a card that translates short of its own
+// footprint (height + the 24px inset, not just the height) inflates the
+// SCROLLER's scrollable area instead of leaving no trace below it.
+
+const MadePageChipRow = () => (
+  <div className="flex items-center gap-2 px-1.5 font-sans text-[13px]">
+    <span className="rounded-full border border-mn-hair px-3 py-1">renovation plan</span>
+    <span className="text-mn-text-secondary">made a page</span>
+  </div>
+)
+
+const renderClosedInScroller = (args: ComponentProps<typeof TerminalDrawer>) => (
+  <div data-testid="scroller" className="h-[30rem] w-[1180px] overflow-auto bg-mn-surface">
+    <div data-part="shell" className="relative h-full">
+      <TerminalDrawer {...args} />
+    </div>
+  </div>
+)
+
+async function assertClosedLeavesNoTrace(canvasElement: HTMLElement) {
+  const scroller = within(canvasElement).getByTestId('scroller')
+  // Collapsed, the card is `aria-hidden`/`inert` — querySelector, not getByRole.
+  const card = scroller.querySelector<HTMLElement>('[data-part="composer-card"]')!
+  const tab = within(scroller).getByRole('region', { name: 'Composer tab' })
+  const scrollerBottom = scroller.getBoundingClientRect().bottom
+
+  await expect(scroller.scrollHeight).toBe(scroller.clientHeight)
+  await expect(card.getBoundingClientRect().top).toBeGreaterThanOrEqual(scrollerBottom)
+  await expect(Math.round(tab.getBoundingClientRect().bottom)).toBe(Math.round(scrollerBottom))
+}
+
+export const ClosedAtTheDefaultHeight: Story = {
+  name: 'closed · default height',
+  args: { collapsed: true, children: <Thread turns={4} /> },
+  render: renderClosedInScroller,
+  play: async ({ canvasElement }) => assertClosedLeavesNoTrace(canvasElement),
+}
+
+export const ClosedAtADraggedHeight: Story = {
+  name: 'closed · dragged height',
+  args: { collapsed: true, height: 560, children: <Thread turns={4} /> },
+  render: renderClosedInScroller,
+  play: async ({ canvasElement }) => assertClosedLeavesNoTrace(canvasElement),
+}
+
+export const ClosedWithUnsizedContent: Story = {
+  name: 'closed · unsized content',
+  args: { collapsed: true, unsized: true, children: <MadePageChipRow /> },
+  render: renderClosedInScroller,
+  play: async ({ canvasElement }) => assertClosedLeavesNoTrace(canvasElement),
+}
+
+export const ClosedMaximized: Story = {
+  name: 'closed · maximized',
+  args: { collapsed: true, maximized: true, children: <Thread turns={4} /> },
+  render: renderClosedInScroller,
+  play: async ({ canvasElement }) => assertClosedLeavesNoTrace(canvasElement),
+}
+
+export const ClosedMinimized: Story = {
+  name: 'closed · minimized',
+  args: { collapsed: true, minimized: true, children: <Thread turns={4} /> },
+  render: renderClosedInScroller,
+  play: async ({ canvasElement }) => assertClosedLeavesNoTrace(canvasElement),
 }
