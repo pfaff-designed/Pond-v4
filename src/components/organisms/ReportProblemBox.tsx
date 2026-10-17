@@ -125,7 +125,7 @@ export function ReportProblemBox({
             disabled={!ready}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={handleLineKeyDown}
-            className="min-h-[20px] flex-1 resize-none border-0 bg-transparent p-0 text-[16px] leading-[1.5] outline-none placeholder:text-mn-text-secondary disabled:opacity-60 md:text-[14px]"
+            className="min-h-[20px] flex-1 resize-none border-0 bg-transparent p-0 text-[16px] leading-[1.5] tracking-[0.02em] outline-none placeholder:text-mn-text-secondary disabled:opacity-60 md:text-[14px]"
           />
           <ComposerSend ariaLabel="send" on={canSend} onClick={submit} />
         </div>
