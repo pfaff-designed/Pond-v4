@@ -416,6 +416,19 @@ export function CollectionView({
     [notifyActiveViewSelected]
   )
 
+  // KAN-243: picking a kind from the ＋ view picker "makes it active" (the
+  // spec's own words), and its undo restores the segment that was active
+  // before — adjusted during render (React's own "you might not need an
+  // effect" pattern), not in a `useEffect`, since the effect form would
+  // commit the stale tab for one frame before correcting itself. A bar
+  // CLICK never touches `config.activeViewId` (KAN-36 keeps it local-only),
+  // so this only ever fires off the host's OWN edits.
+  const [seenActiveViewId, setSeenActiveViewId] = useState(config.activeViewId)
+  if (config.activeViewId !== seenActiveViewId) {
+    setSeenActiveViewId(config.activeViewId)
+    if (config.activeViewId) setLocalActiveViewId(config.activeViewId)
+  }
+
   // KAN-32: every mode/groupBy/sort/filter/chart/bigNumber read below runs off the
   // ACTIVE saved view, never the raw block — a `views`-shaped block's other saved
   // views must never leak into what renders. `activeSavedView` (KAN-321) mirrors

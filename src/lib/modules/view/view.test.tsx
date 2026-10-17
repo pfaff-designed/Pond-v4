@@ -997,3 +997,73 @@ describe('ViewView — the path test: a premade-shaped tasks block, end to end (
     expect(screen.queryByText('＋ view')).not.toBeInTheDocument()
   })
 })
+
+describe('ViewView — the ＋ view path test: calendar from a dateless table, end to end (KAN-243, PATH_STEPS 1–4)', () => {
+  const onePickerView: ViewBlock = {
+    id: 'v-picker',
+    type: 'view',
+    mode: 'table',
+    views: [{ id: 'view-table', label: 'table', kind: 'table', config: {} }],
+    activeViewId: 'view-table',
+  }
+
+  beforeEach(() => {
+    initialSchema = dateless
+    initialRows = []
+  })
+
+  // `onChange` must actually feed back into `data` here (unlike every other
+  // describe block's `jest.fn()`), or the new "calendar" segment and its live
+  // grid would never appear — `renderView`'s static `data` prop is right for
+  // every other test, which only asserts on the call, not the re-render.
+  function LiveHarness({ editable = true }: { editable?: boolean }) {
+    const [data, setData] = useState<ViewBlock>(onePickerView)
+    return <ViewView data={data} editable={editable} onChange={setData} />
+  }
+
+  function renderLiveView(editable = true) {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    return render(
+      <QueryClientProvider client={client}>
+        <DeletionUndoProvider>
+          <SiblingBlocksProvider value={{ blocks: [], pageId: 'page-1' }}>
+            <LiveHarness editable={editable} />
+          </SiblingBlocksProvider>
+        </DeletionUndoProvider>
+      </QueryClientProvider>
+    )
+  }
+
+  it('adding calendar to a dateless table mints the field, switches to a live calendar grid, and undoes both in one step', async () => {
+    const user = userEvent.setup()
+    renderLiveView()
+
+    await user.click(screen.getByRole('button', { name: 'add a view' }))
+    await user.click(screen.getByRole('option', { name: /calendar/ }))
+
+    // (a) the schema gained one date property.
+    expect(updateSchema).toHaveBeenCalledWith([
+      ...dateless,
+      expect.objectContaining({ name: 'date', type: 'date' }),
+    ])
+
+    // (b) a new active "calendar" segment appeared.
+    expect(screen.getByRole('tab', { name: 'calendar' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'table' })).toHaveAttribute('aria-selected', 'false')
+
+    // (c) the calendar mode renders its grid, never the "no collection"/dateless notices.
+    expect(document.querySelectorAll('[data-part="calendar-day-cell"]').length).toBeGreaterThan(0)
+    expect(screen.queryByRole('button', { name: 'add a date field' })).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('This view needs a collection with properties.')
+    ).not.toBeInTheDocument()
+
+    // (d) undo removes both the segment and the field it minted, in one step.
+    await user.click(screen.getByRole('button', { name: 'Undo' }))
+
+    expect(screen.queryByRole('tab', { name: 'calendar' })).not.toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'table' })).toHaveAttribute('aria-selected', 'true')
+    const afterUndo = updateSchema.mock.calls.at(-1)![0] as PropertySchema
+    expect(afterUndo).toEqual(dateless)
+  })
+})
