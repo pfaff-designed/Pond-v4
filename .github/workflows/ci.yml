@@ -57,6 +57,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -66,8 +68,22 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # The slowest check (about 2-4 minutes), so a PR runs only the PGLite tests related to what it
+      # changed. A change to the migrations or the harness (which loads them from disk, so jest's import
+      # graph can't see the link) runs them all, and so does every push to main.
       - name: Test (PGLite schema invariants)
-        run: npm run test:pglite
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ -z "$BASE_SHA" ]; then npm run test:pglite; exit; fi
+          changed=$(git diff --name-only "$BASE_SHA"...HEAD)
+          if printf '%s\n' "$changed" | grep -qE '^(supabase/|src/__tests__/helpers/pglite|jest\.config\.pglite|package(-lock)?\.json$)'; then
+            npm run test:pglite
+          else
+            mapfile -t files < <(printf '%s\n' "$changed" | grep -E '\.(ts|tsx)$' | while read -r f; do [ -f "$f" ] && echo "$f"; done)
+            if [ "${#files[@]}" -eq 0 ]; then echo "No TypeScript changes: no PGLite tests to run."; exit 0; fi
+            NODE_OPTIONS=--experimental-vm-modules npx jest --config jest.config.pglite.mjs --passWithNoTests --findRelatedTests "${files[@]}"
+          fi
 
   build:
     name: Build
