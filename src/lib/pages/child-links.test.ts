@@ -12,6 +12,11 @@ jest.mock('./commit', () => ({
   commitBlocks: (...args: unknown[]) => mockCommitBlocks(...args),
 }))
 
+const mockFlushPendingPageSave = jest.fn()
+jest.mock('./page-flush', () => ({
+  flushPendingPageSave: (...args: unknown[]) => mockFlushPendingPageSave(...args),
+}))
+
 describe('appendChildLink', () => {
   it('appends one link to an empty block array', () => {
     const next = appendChildLink([], 'child-1')
@@ -53,6 +58,25 @@ describe('appendChildLinkToParent', () => {
   beforeEach(() => {
     jest.clearAllMocks()
     mockCommitBlocks.mockResolvedValue(undefined)
+    mockFlushPendingPageSave.mockReturnValue(undefined)
+  })
+
+  it('awaits the parent\'s pending save before reading it', async () => {
+    const parent = pageWith([{ id: 'b1', type: 'text', content: 'hello' }])
+    const order: string[] = []
+    mockFlushPendingPageSave.mockImplementation(async (pageId: string) => {
+      order.push(`flush:${pageId}`)
+    })
+    mockGetPage.mockImplementation(async () => {
+      order.push('getPage')
+      return parent
+    })
+    const invalidateQueries = jest.fn().mockResolvedValue(undefined)
+    const queryClient = { invalidateQueries } as never
+
+    await appendChildLinkToParent(supabase, queryClient, 'parent-1', 'child-1', 'pond-1')
+
+    expect(order).toEqual(['flush:parent-1', 'getPage'])
   })
 
   it('writes once when the parent has no link to the child yet', async () => {

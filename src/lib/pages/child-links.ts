@@ -18,6 +18,7 @@ import { getPage, type PondPage } from './client'
 import { commitBlocks } from './commit'
 import type { PageRow } from './tree'
 import { withoutDatabasesRoot } from './databases-root'
+import { flushPendingPageSave } from './page-flush'
 
 /**
  * Append a page-link to `childId` at the end of `blocks`, unless one already
@@ -41,6 +42,11 @@ export function appendChildLink(blocks: Block[], childId: string): Block[] {
  * `commit.ts`'s documented convention for an external write: an open draft on
  * that page adopts the new blocks via `use-page-draft.ts`'s same-page adopt
  * branch instead of having them silently overwritten.
+ *
+ * Flushes `parentId`'s own pending debounced save first (a no-op when
+ * nothing is pending) — otherwise a read right after typing on the open
+ * parent races its 600ms save, and that save lands after this write and
+ * overwrites the appended link with the stale blocks it was holding.
  */
 export async function appendChildLinkToParent(
   supabase: SupabaseClient<Database>,
@@ -49,6 +55,7 @@ export async function appendChildLinkToParent(
   childId: string,
   pondId: string | null
 ): Promise<void> {
+  await flushPendingPageSave(parentId)
   const parent = await getPage(supabase, parentId)
   if (!parent) return
 
