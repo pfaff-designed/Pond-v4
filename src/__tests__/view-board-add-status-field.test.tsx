@@ -5,16 +5,16 @@
  * the real `ViewView` host, same `schemaRef` + `stageUndo` seam as the date
  * remedy, so clicking it mints the field and the undo toast removes it again.
  */
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { useState } from 'react'
+import { useState, type ReactElement } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { SiblingBlocksProvider } from '@/lib/modules/sibling-context'
-import { ViewView } from '@/lib/modules/view/view'
+import { CollectionView, ViewView } from '@/lib/modules/view/view'
 import { BOARD_EMPTY_LINE } from '@/lib/modules/view/kinds'
 import type { ViewBlock } from '@/lib/modules/view/schema'
-import type { PropertySchema } from '@/lib/properties/schema'
+import type { PropertySchema, PropertyValue } from '@/lib/properties/schema'
 import type { CollectionRow } from '@/lib/modules/view/apply'
 
 const titleOnly: PropertySchema = [{ id: 'p-title', name: 'Title', type: 'text' }]
@@ -186,5 +186,76 @@ describe('CollectionBoard — a status field with no options (KAN-377)', () => {
     lanes.forEach((lane) => expect(lane.className).toContain('min-h-[380px]'))
     expect(screen.getAllByRole('button', { name: '＋ task' })).toHaveLength(3)
     expect(screen.queryByText('No status')).not.toBeInTheDocument()
+  })
+})
+
+describe('CollectionBoard — the full ＋ task path, on the real `CollectionView` host (KAN-377)', () => {
+  const statusSchema: PropertySchema = [
+    ...titleOnly,
+    {
+      id: 'p-status',
+      name: 'status',
+      type: 'status',
+      options: [
+        { id: 'o-todo', label: 'to do' },
+        { id: 'o-doing', label: 'doing' },
+        { id: 'o-done', label: 'done' },
+      ],
+    },
+  ]
+  const boardConfig: ViewBlock = { id: 'v-board2', type: 'view', mode: 'board', groupBy: 'p-status' }
+
+  it('click ＋ task in doing writes the status and lands the card there, opening its peek; the row going away returns three empty lanes', async () => {
+    const user = userEvent.setup()
+    let rows: CollectionRow[] = []
+    let rerenderBoard: (el: ReactElement) => void = () => {}
+    const draw = () =>
+      rerenderBoard(
+        <CollectionView
+          config={boardConfig}
+          schema={statusSchema}
+          rows={rows}
+          editable
+          onAddRow={addRowSpy}
+          onRenameRow={jest.fn()}
+        />
+      )
+    const addRowSpy = jest.fn(async (values: Record<string, PropertyValue> = {}) => {
+      const id = 'row-1'
+      rows = [...rows, { id, title: '', values }]
+      draw()
+      return id
+    })
+
+    const { container, rerender } = render(
+      <CollectionView
+        config={boardConfig}
+        schema={statusSchema}
+        rows={rows}
+        editable
+        onAddRow={addRowSpy}
+        onRenameRow={jest.fn()}
+      />
+    )
+    rerenderBoard = rerender
+
+    const doingLane = () => container.querySelector<HTMLElement>('[data-lane="doing"]')!
+    await user.click(within(doingLane()).getByRole('button', { name: '＋ task' }))
+
+    expect(addRowSpy).toHaveBeenCalledWith({ 'p-status': 'o-doing' })
+    expect(within(doingLane()).getByText('1')).toBeInTheDocument()
+    expect(within(doingLane()).getByRole('article')).toBeInTheDocument()
+
+    const peek = container.querySelector<HTMLElement>('[data-part="record-peek"]')
+    expect(peek).not.toBeNull()
+    expect(within(peek!).getByLabelText('status value')).toHaveValue('o-doing')
+
+    rows = []
+    draw()
+
+    const lanes = container.querySelectorAll<HTMLElement>('[data-part="lane"]')
+    expect(Array.from(lanes).map((lane) => lane.dataset.lane)).toEqual(['to do', 'doing', 'done'])
+    expect(container.querySelector('[data-part="record-peek"]')).toBeNull()
+    expect(screen.queryByText('no rows yet')).not.toBeInTheDocument()
   })
 })
