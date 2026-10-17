@@ -6,8 +6,12 @@
  */
 
 import { PondControl } from '@/components/atoms/PondControl'
+import { AtomEditor } from '@/components/molecules/AtomEditor'
+import { TagValueEditor } from '@/components/molecules/TagValueEditor'
 import { RelationValueField } from '@/components/organisms/RelationValueField'
 import { RollupValueField } from '@/components/organisms/RollupValueField'
+import { formatAtomDate, localToday, parseDateInput } from '@/lib/properties/date-input'
+import { propertyAtom } from '@/lib/properties/property-atom'
 import {
   coerceValue,
   optionForValue,
@@ -27,6 +31,7 @@ export function Cell({
   schema,
   rowValues,
   inputClassName,
+  onAddOption,
 }: {
   def: PropertyDef
   value: PropertyValue
@@ -38,6 +43,10 @@ export function Cell({
   rowValues?: Record<string, unknown>
   /** Replaces the editor's type recipe — the record peek sets its own 13.5px ink. */
   inputClassName?: string
+  /** select/status "+ new tag": the host turns the picked label into one schema
+   *  write plus the value set. Omit where the host can't write the schema — the
+   *  tag editor's "+ new tag" row then never appears. */
+  onAddOption?: (label: string) => void
 }) {
   const label = `${def.name} value`
 
@@ -96,16 +105,28 @@ export function Cell({
           onCommit={(draft) => onChange(draft === '' ? null : Number(draft))}
         />
       )
-    case 'date':
+    case 'date': {
+      // The date editor (KAN-350): the atom's `editing` state, free text parsed
+      // through `parseDateInput` with a resolved-day preview. No native date
+      // picker — the board draws none.
+      const atom = propertyAtom(def, value)
+      const today = localToday()
       return (
-        <DraftInput
-          type="date"
-          className={cellInput}
+        <AtomEditor
+          kind={atom.kind}
+          value={atom.value}
+          empty={atom.empty}
           aria-label={label}
-          value={typeof value === 'string' ? value : ''}
-          onCommit={(draft) => onChange(draft === '' ? null : draft)}
+          errorNote="not a date"
+          parse={(text) => parseDateInput(text, today)}
+          preview={(text) => {
+            const parsed = parseDateInput(text, today)
+            return parsed === null || parsed === 'empty' ? null : formatAtomDate(parsed)
+          }}
+          onCommit={(next) => onChange(next)}
         />
       )
+    }
     case 'checkbox':
       // `PondControl kind="checkbox"` — the standalone control of
       // `PondControl.dc.html` (14 / 4 / .68), alone in a table cell; not the
@@ -121,24 +142,20 @@ export function Cell({
       )
     case 'select':
     case 'status': {
-      // Bind the option *id*, resolving through optionForValue so a legacy
-      // label-stored value (a row stored before options had ids) still selects its option
-      // instead of falling back to "—". An edit then writes the canonical id.
-      const selected = optionForValue(def, value)?.id ?? (typeof value === 'string' ? value : '')
+      // The tag editor (KAN-350): the value reads as a `tag` chip, clicking opens
+      // the option menu. "+ new tag" only appears when the host passes
+      // `onAddOption` — it owns the schema write a new option needs.
+      const atom = propertyAtom(def, value)
       return (
-        <select
-          className={cellInput}
+        <TagValueEditor
+          options={def.options ?? []}
+          value={typeof value === 'string' ? value : null}
+          label={atom.value}
+          empty={atom.empty}
           aria-label={label}
-          value={selected}
-          onChange={(e) => onChange(e.target.value === '' ? null : e.target.value)}
-        >
-          <option value="">—</option>
-          {(def.options ?? []).map((opt) => (
-            <option key={opt.id} value={opt.id}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
+          onChange={(next) => onChange(next)}
+          onAddOption={onAddOption}
+        />
       )
     }
     case 'relation':

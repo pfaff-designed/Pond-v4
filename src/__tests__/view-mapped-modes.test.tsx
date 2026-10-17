@@ -190,15 +190,15 @@ describe('blockFrame — the four mappings (#260)', () => {
     })
   })
 
-  it('the inspector → the properties card at 400, the field count as its note, empty when the schema is', () => {
-    expect(propertiesFrame(taskSchema)).toEqual({
+  it('the inspector → the properties card at 400, eyebrow `record` · note the collection name, empty when the schema is (KAN-350)', () => {
+    expect(propertiesFrame(taskSchema, 'Tasks')).toEqual({
       kind: 'properties',
-      heading: 'properties',
-      headNote: '3 fields',
+      heading: 'record',
+      headNote: 'Tasks',
       state: 'rest',
     })
-    expect(propertiesFrame([taskSchema[0]])).toMatchObject({ headNote: '1 field', state: 'rest' })
-    expect(propertiesFrame([])).toMatchObject({ headNote: '0 fields', state: 'empty' })
+    expect(propertiesFrame([taskSchema[0]], 'Tasks')).toMatchObject({ headNote: 'Tasks', state: 'rest' })
+    expect(propertiesFrame([], 'Tasks')).toMatchObject({ headNote: 'Tasks', state: 'empty' })
     expect(POND_BLOCK_WIDTHS.properties).toBe(400)
   })
 })
@@ -966,11 +966,12 @@ describe('PondMolecule field-row — a live control may ride in the value slot (
       expect.arrayContaining([
         'grid',
         'min-h-[34px]',
-        'w-[360px]',
         '[grid-template-columns:140px_minmax(0,1fr)]',
         'gap-3',
       ])
     )
+    // KAN-350: no fixed-width clamp — the row fills the card's value column.
+    expect(classesOf(rowEl)).not.toContain('w-[360px]')
     expect(screen.getByLabelText('kcal per serving value')).toBeInTheDocument()
     expect(rowEl.querySelector('[data-kind="number"]')).toBeNull()
   })
@@ -987,19 +988,27 @@ describe('PropertyInspector — rows are field-row molecules; the frame owns the
     { id: 'cooked', name: 'cooked', type: 'date' },
   ]
 
-  it('one field-row per schema entry, the control inside it, the label as the eyebrow', () => {
+  it('one field-row per schema entry, a formatted PondAtom value at rest, the label as the eyebrow', () => {
     const { container } = render(
       <PropertyInspector schema={schema} values={{ kcal: 520 }} onChange={() => {}} />
     )
     const rows = Array.from(container.querySelectorAll<HTMLElement>('[data-kind="field-row"]'))
     expect(rows).toHaveLength(2)
-    expect(rows[0].contains(screen.getByLabelText('kcal per serving value'))).toBe(true)
-    expect(rows[1].contains(screen.getByLabelText('cooked value'))).toBe(true)
+    // kcal has a value: the number atom at rest, never a native control.
+    expect(rows[0].querySelector('[data-kind="number"][data-state="rest"]')!.textContent).toBe(
+      '520'
+    )
+    // cooked has none: the date atom reads `empty`.
+    expect(rows[1].querySelector('[data-kind="date"][data-state="empty"]')!.textContent).toBe(
+      'empty'
+    )
+    expect(container.querySelector('input, select')).toBeNull()
     const label = rows[0].querySelector<HTMLElement>('[data-part="label"]')!
     expect(label.textContent).toBe('kcal per serving')
     expect(label.className).toBe(pageEyebrowClass)
-    // The rows stack at the board's row gap; a clamp keeps the fixed 360 inside a narrow column.
+    // The rows stack at the board's row gap; no fixed-width clamp (KAN-350).
     expect(classesOf(rows[0])).toContain('max-w-full')
+    expect(classesOf(rows[0])).not.toContain('w-[360px]')
     expect(container.querySelector('dl')).toBeNull()
   })
 
@@ -1009,12 +1018,13 @@ describe('PropertyInspector — rows are field-row molecules; the frame owns the
     expect(screen.queryByText(/no properties/i)).toBeNull()
   })
 
-  it('holds no copy: the values come from props, and every edit goes back out as (key, value)', () => {
+  it('holds no copy: a checkbox value comes straight from props, and its own edit still goes back out as (key, value)', () => {
     const onChange = jest.fn()
-    render(<PropertyInspector schema={schema} values={{ kcal: 520 }} onChange={onChange} />)
-    const input = screen.getByLabelText('kcal per serving value') as HTMLInputElement
-    expect(input.value).toBe('520')
-    fireEvent.change(input, { target: { value: '600' } })
-    expect(onChange).toHaveBeenCalledWith('kcal', 600)
+    const checkboxSchema: PropertySchema = [{ id: 'done', name: 'done', type: 'checkbox' }]
+    render(<PropertyInspector schema={checkboxSchema} values={{ done: false }} onChange={onChange} />)
+    const box = screen.getByLabelText('done value')
+    expect(box).toHaveAttribute('aria-checked', 'false')
+    fireEvent.click(box)
+    expect(onChange).toHaveBeenCalledWith('done', true)
   })
 })

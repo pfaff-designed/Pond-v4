@@ -154,11 +154,13 @@ export const TableEditCell: Story = {
   render: (args) => <StatefulView config={args.config} />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    // Each row exposes a "Status value" select; change r1 (Trim the rim) To do → Done.
-    const statusSelects = canvas.getAllByLabelText('Status value')
-    await expect(statusSelects[0]).toHaveValue('o-doing')
-    await userEvent.selectOptions(statusSelects[0], 'o-done')
-    await expect(statusSelects[0]).toHaveValue('o-done')
+    // Each row exposes a "Status value" tag trigger; change r1 (Trim the rim) To do → Done.
+    const statusTriggers = canvas.getAllByRole('button', { name: 'Status value' })
+    await expect(within(statusTriggers[0]).getByText('Doing')).toBeInTheDocument()
+    await userEvent.click(statusTriggers[0])
+    // The popover portals to document.body, outside canvasElement.
+    await userEvent.click(await within(document.body).findByRole('option', { name: 'Done' }))
+    await expect(within(statusTriggers[0]).getByText('Done')).toBeInTheDocument()
     // A text/number cell edit persists to the row.
     const priority = canvas.getAllByLabelText('Priority value')[2]
     await userEvent.clear(priority)
@@ -186,9 +188,10 @@ export const TableLegacyLabelValue: Story = {
   ),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    // The select resolves the stored label to the "Doing" option id, so it is the
-    // selected value (not the empty "—").
-    await expect(canvas.getByLabelText('Status value')).toHaveValue('o-doing')
+    // The chip resolves the stored label to the "Doing" option, so it reads
+    // "Doing" (not the empty "—").
+    const statusTrigger = canvas.getByRole('button', { name: 'Status value' })
+    await expect(within(statusTrigger).getByText('Doing')).toBeInTheDocument()
   },
 }
 
@@ -1069,7 +1072,9 @@ export const RecordPeekEditsTheRecord: Story = {
     const canvas = within(canvasElement)
     await userEvent.click(cardByTitle(canvasElement, 'choose oak veneer finish'))
     const peek = within(canvasElement.querySelector<HTMLElement>('[data-part="record-peek"]')!)
-    await userEvent.selectOptions(peek.getByLabelText('status value'), 't-done')
+    await userEvent.click(peek.getByRole('button', { name: 'status value' }))
+    // The popover portals to document.body, outside canvasElement.
+    await userEvent.click(await within(document.body).findByRole('option', { name: 'done' }))
     // The card moved to the done lane, and the peek's checkbox draws filled.
     const doneLane = canvas.getByText('done', { selector: 'header span' }).closest('section')!
     await expect(within(doneLane).getByText('choose oak veneer finish')).toBeInTheDocument()
