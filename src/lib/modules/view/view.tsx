@@ -75,11 +75,18 @@ import {
   addDateField,
   addStatusField,
   coerceValue,
+  fieldNameClash,
+  freeFieldName,
+  isFieldNameTaken,
   removeField,
+  renameField,
+  restoreFieldAt,
   ROW_TYPE,
+  type PropertyDef,
   type PropertySchema,
   type PropertyValue,
 } from '@/lib/properties/schema'
+import { FieldHeaderMenu } from './field-header-menu'
 import { useOptionalDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import { usePageLinks } from '../page-link/context'
 import { dueOfRow, firstOrangeToday, localDateIso } from './due'
@@ -98,12 +105,34 @@ import { ViewBar, type ViewBarView } from '@/components/molecules/ViewBar'
 import { useBlockRow } from '../block-row-context'
 
 /**
- * One field-add remedy (KAN-292's date field, KAN-351's status field): builds off
- * `schemaRef.current`, not the `schema` state closure, which two clicks fired
- * before React re-renders would both still see as stale — writes `schemaRef.current`
- * itself, synchronously, before `updateSchema`, so a second same-tick click reads
- * the field already there via `alreadyApplies` and no-ops instead of adding a
- * duplicate field and staging a second undo toast.
+ * Applies one schema edit against `schemaRef.current`, writing the ref
+ * SYNCHRONOUSLY before `updateSchema` (KAN-380) — the shape every commit and
+ * every undo below shares, so a second same-tick call (a double click, or an
+ * undo fired while another edit is still landing) reads its own prior write
+ * through the ref rather than a stale closure. `transform` returns `null` to
+ * no-op, writing and logging nothing. `logSchemaEdit` is `null` for the
+ * date/status remedies, which never touch the change log.
+ */
+function applySchemaEdit(
+  schemaRef: { current: PropertySchema | null },
+  updateSchema: (next: PropertySchema) => void,
+  logSchemaEdit: ((before: PropertySchema, after: PropertySchema) => void) | null,
+  transform: (schema: PropertySchema) => PropertySchema | null
+): void {
+  const schema = schemaRef.current
+  if (!schema) return
+  const next = transform(schema)
+  if (!next) return
+  schemaRef.current = next
+  updateSchema(next)
+  logSchemaEdit?.(schema, next)
+}
+
+/**
+ * One field-add remedy (KAN-292's date field, KAN-351's status field): the
+ * outer `alreadyApplies` check guards a second same-tick click (the field it
+ * would add is already there, read through `schemaRef.current`), so no
+ * further no-op check is needed inside {@link applySchemaEdit}'s transform.
  */
 function runFieldRemedy(
   schemaRef: { current: PropertySchema | null },
@@ -117,12 +146,82 @@ function runFieldRemedy(
   if (!schema || alreadyApplies(schema)) return
   const next = addField(schema)
   const addedId = next[next.length - 1].id
-  schemaRef.current = next
-  updateSchema(next)
+  applySchemaEdit(schemaRef, updateSchema, null, () => next)
   deletionUndo.stageUndo({
     message,
     scope: 'block',
-    undo: () => updateSchema(removeField(schemaRef.current ?? next, addedId)),
+    undo: () => applySchemaEdit(schemaRef, updateSchema, null, (s) => removeField(s, addedId)),
+  })
+}
+
+/**
+ * The table header's rename commit (KAN-380), and its undo. The outer
+ * `field.name === name` check guards a same-tick double commit of the SAME
+ * rename. The undo no-ops via `isFieldNameTaken` instead: between the
+ * commit and the undo firing, a later rename can give another field the old
+ * name (rename `field 2`→`due`, then `field 1`→`field 2`, then undo the
+ * first toast) — restoring `due`→`field 2` there would collide, so the
+ * undo is refused rather than overwriting it.
+ */
+function runFieldRename(
+  schemaRef: { current: PropertySchema | null },
+  updateSchema: (next: PropertySchema) => void,
+  logSchemaEdit: (before: PropertySchema, after: PropertySchema) => void,
+  deletionUndo: NonNullable<ReturnType<typeof useOptionalDeletionUndo>>,
+  id: string,
+  name: string
+): void {
+  const schema = schemaRef.current
+  const field = schema?.find((d) => d.id === id)
+  if (!schema || !field || field.name === name) return
+  const oldName = field.name
+  applySchemaEdit(schemaRef, updateSchema, logSchemaEdit, (s) => renameField(s, id, name))
+  deletionUndo.stageUndo({
+    message: `renamed field ${oldName} to ${name}`,
+    scope: 'block',
+    undo: () =>
+      applySchemaEdit(schemaRef, updateSchema, logSchemaEdit, (s) =>
+        isFieldNameTaken(s, oldName, id) ? null : renameField(s, id, oldName)
+      ),
+  })
+}
+
+/**
+ * The table header's `delete field` commit (KAN-380), and its undo. The
+ * outer `index === -1` check guards a same-tick double commit (the second
+ * call's `schemaRef.current` no longer has the id). The removed def and its
+ * original index are captured in this closure, not re-read at undo time —
+ * `removeField` never strips row values, so undo's `restoreFieldAt` hands
+ * the column its values straight back. The undo's own no-op guard is
+ * `field.id` already present (a same-tick double undo): unlike rename's
+ * undo, a name collision is NEVER a reason to no-op here — `restoreFieldAt`
+ * is the only thing that gives a deleted field's row values back, so a name
+ * someone else has claimed since (e.g. the board's add-status remedy, or a
+ * later rename) is resolved with {@link freeFieldName} (`status 2`, `status
+ * 3`, …) rather than dropping the restore.
+ */
+function runFieldDelete(
+  schemaRef: { current: PropertySchema | null },
+  updateSchema: (next: PropertySchema) => void,
+  logSchemaEdit: (before: PropertySchema, after: PropertySchema) => void,
+  deletionUndo: NonNullable<ReturnType<typeof useOptionalDeletionUndo>>,
+  id: string
+): void {
+  const schema = schemaRef.current
+  const index = schema?.findIndex((d) => d.id === id) ?? -1
+  if (!schema || index === -1) return
+  const field = schema[index]
+  applySchemaEdit(schemaRef, updateSchema, logSchemaEdit, (s) => removeField(s, id))
+  deletionUndo.stageUndo({
+    message: `deleted field ${field.name}`,
+    scope: 'block',
+    undo: () =>
+      applySchemaEdit(schemaRef, updateSchema, logSchemaEdit, (s) => {
+        if (s.some((d) => d.id === field.id)) return null
+        const clash = fieldNameClash(s, field.name, field.id)
+        const restored = clash ? { ...field, name: freeFieldName(s, field.name, field.id) } : field
+        return restoreFieldAt(s, index, restored)
+      }),
   })
 }
 
@@ -146,6 +245,7 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
     addRow,
     renameRow,
     updateSchema,
+    logSchemaEdit,
   } = useCollectionRows(collectionId)
   // The chart card's `on` / `reads` (#227), off the caches the shell already holds.
   const chartProvenance = useChartProvenance(pageId, collectionId)
@@ -194,6 +294,21 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
           )
       : undefined
 
+  // KAN-380: the table header's rename commit — same `schemaRef` + `stageUndo`
+  // seam as the remedies above, gated the same way.
+  const handleRenameField =
+    editable && schema && deletionUndo
+      ? (id: string, name: string) =>
+          runFieldRename(schemaRef, updateSchema, logSchemaEdit, deletionUndo, id, name)
+      : undefined
+
+  // KAN-380: the menu's `delete field` row — same `schemaRef` + `stageUndo`
+  // seam as the rename commit above, gated the same way.
+  const handleDeleteField =
+    editable && schema && deletionUndo
+      ? (id: string) => runFieldDelete(schemaRef, updateSchema, logSchemaEdit, deletionUndo, id)
+      : undefined
+
   // Config edits (chart/big-number setup) rewrite the persisted view block through the
   // module's own onChange — the same whole-block save path every editable module uses.
   // `applyConfigPatch` (KAN-32) lands the patch on the ACTIVE saved view's config on a
@@ -238,6 +353,8 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
       chartProvenance={chartProvenance}
       onAddDateField={handleAddDateField}
       onAddStatusField={handleAddStatusField}
+      onRenameField={handleRenameField}
+      onDeleteField={handleDeleteField}
     />
   )
 }
@@ -286,6 +403,12 @@ export interface CollectionViewProps {
    *  board whose schema has no status/select property to group by. Absent when
    *  not `editable` (Storybook, a diff/proposal render) — no undrawn affordance there. */
   onAddStatusField?: () => void
+  /** KAN-380: commit a rename from the table's field-header menu. Absent when
+   *  not `editable` — the header renders as plain text instead of a button. */
+  onRenameField?: (id: string, name: string) => void
+  /** KAN-380: commit a `delete field` from the table's field-header menu.
+   *  Absent when not `editable` — the menu never draws the delete row. */
+  onDeleteField?: (id: string) => void
 }
 
 export function CollectionView({
@@ -306,6 +429,8 @@ export function CollectionView({
   chartProvenance,
   onAddDateField,
   onAddStatusField,
+  onRenameField,
+  onDeleteField,
 }: CollectionViewProps) {
   // What the page canvas keys this view's peek and orange pill by.
   const instanceKey = useId()
@@ -524,6 +649,8 @@ export function CollectionView({
           onAddRow={onAddRow}
           onRenameRow={onRenameRow}
           onOpenRow={onOpenRow}
+          onRenameField={onRenameField}
+          onDeleteField={onDeleteField}
         />
       )}
     </div>
@@ -636,6 +763,8 @@ function CollectionTable({
   onAddRow,
   onRenameRow,
   onOpenRow,
+  onRenameField,
+  onDeleteField,
 }: {
   /** The view block's id — what the page canvas keys its one peek and one orange pill by. */
   viewKey: string
@@ -649,6 +778,12 @@ function CollectionTable({
   onAddRow?: (values?: Record<string, PropertyValue>) => Promise<string | null>
   onRenameRow?: (rowId: string, title: string) => void
   onOpenRow?: (rowId: string) => void
+  /** KAN-380: commit a rename from the field-header menu. Absent when not
+   *  `editable` — the schema-field headers below fall back to plain text. */
+  onRenameField?: (id: string, name: string) => void
+  /** KAN-380: commit a `delete field` from the field-header menu. Absent when
+   *  not `editable` — same fallback as `onRenameField`. */
+  onDeleteField?: (id: string) => void
 }) {
   const { stepOut } = useBlockRow()
   const [now] = useState(() => new Date())
@@ -702,14 +837,24 @@ function CollectionTable({
             <th className="border-b border-mn-hair py-1 pr-3 text-xs font-medium text-mn-text-secondary">
               Name
             </th>
-            {schema.map((def) => (
-              <th
-                key={def.id}
-                className="border-b border-mn-hair py-1 pr-3 text-xs font-medium text-mn-text-secondary"
-              >
-                {def.name}
-              </th>
-            ))}
+            {schema.map((def) =>
+              editable && onRenameField ? (
+                <FieldHeaderCell
+                  key={def.id}
+                  field={def}
+                  schema={schema}
+                  onRenameField={onRenameField}
+                  onDeleteField={onDeleteField}
+                />
+              ) : (
+                <th
+                  key={def.id}
+                  className="border-b border-mn-hair py-1 pr-3 text-xs font-medium text-mn-text-secondary"
+                >
+                  {def.name}
+                </th>
+              )
+            )}
           </tr>
         </thead>
         <tbody>
@@ -809,6 +954,57 @@ function CollectionTable({
         />
       )}
     </div>
+  )
+}
+
+/**
+ * One schema-field `<th>`, editable only (KAN-380): the header itself is the
+ * `FieldHeaderMenu` trigger, anchored off the cell. `canDelete` is always
+ * true here — every looped field is a real `PropertyDef`; the fixed `Name`
+ * title `<th>` above never routes through this component at all, so the
+ * title-can't-be-deleted rule holds structurally, with no flag to check.
+ */
+function FieldHeaderCell({
+  field,
+  schema,
+  onRenameField,
+  onDeleteField,
+}: {
+  field: PropertyDef
+  schema: PropertySchema
+  onRenameField: (id: string, name: string) => void
+  onDeleteField?: (id: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const anchorRef = useRef<HTMLTableCellElement>(null)
+
+  return (
+    <th
+      ref={anchorRef}
+      className="border-b border-mn-hair py-1 pr-3 text-xs font-medium text-mn-text-secondary"
+    >
+      <FieldHeaderMenu
+        field={field}
+        schema={schema}
+        canDelete={!!onDeleteField}
+        onRename={(name) => onRenameField(field.id, name)}
+        onDelete={() => onDeleteField?.(field.id)}
+        open={open}
+        onOpenChange={setOpen}
+        trigger={
+          // Same focus-visible ring as the row-level trigger buttons already in
+          // this module (CollectionList's title button, list.tsx:168) — a
+          // plain `<button>` draws no ring of its own otherwise.
+          <button
+            type="button"
+            className="block w-full truncate rounded-[4px] text-left outline-offset-2 focus-visible:outline-[1.5px] focus-visible:outline-mn-text/50 focus-visible:outline-solid"
+          >
+            {field.name}
+          </button>
+        }
+        placement={{ anchor: anchorRef, align: 'start', top: 26, alignOffset: -10 }}
+      />
+    </th>
   )
 }
 

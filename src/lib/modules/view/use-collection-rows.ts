@@ -24,6 +24,10 @@
  * record in the change log (`add_row` / `edit_row`, filed against the
  * collection). Writes land per keystroke; the log groups them per record once
  * they settle (`groupByPause`) and closes any open group when the view unmounts.
+ * A schema rename/delete (`logSchemaEdit`, KAN-380) is the one exception: it is
+ * a single committed action, not a run of keystrokes, so it writes its
+ * `edit_schema` record at once via `appendOwnEdit` rather than through a pause
+ * group.
  */
 import { useEffect, useMemo, useRef } from 'react'
 import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
@@ -51,7 +55,9 @@ import {
 import { recordOwnRowEdit } from '@/lib/change-log/own-edit'
 import { groupByPause, type PauseGroups } from '@/lib/change-log/pause'
 import { changeLogKey } from '@/lib/change-log/keys'
+import { appendOwnEdit } from '@/lib/change-log/store'
 import type { RowSnapshot } from '@/lib/change-log/types'
+import { jsonEqual } from '@/lib/json-equal'
 import { displayValue, type CollectionRow } from './apply'
 
 export interface CollectionData {
@@ -98,6 +104,15 @@ export interface CollectionData {
    * on failure it reconciles from server truth (invalidate), mirroring `setValue`.
    */
   updateSchema: (next: PropertySchema) => void
+  /**
+   * Log one rename/delete of the schema as an own `edit_schema` record
+   * (KAN-380: the table header menu's commit). Written at once via
+   * `appendOwnEdit` directly — a schema edit is one atomic action, never a
+   * run of keystrokes, so it skips the `groupByPause` grouping `setValue`/
+   * `renameRow` use. `before`/`after` are each the whole schema; a no-op
+   * diff writes nothing.
+   */
+  logSchemaEdit: (before: PropertySchema, after: PropertySchema) => void
 }
 
 const ROWS_KEY = (collectionId: string) => ['rows', collectionId] as const
@@ -348,6 +363,16 @@ export function useCollectionRows(collectionId: string | undefined): CollectionD
     [collectionId, queryClient, getSupabase, pondId]
   )
 
+  // `defineSchema` is a read-modify-write round trip (fetch the page, merge,
+  // save) — two overlapping calls can land on the server out of order, and the
+  // slower one's read (taken before the faster one's write landed) silently
+  // overwrites it with a schema that predates it (KAN-380 live-verify: delete
+  // a field, rename another, undo the delete — the rename's write landed,
+  // then the delete's slower write reverted it). Chaining every call behind
+  // the one before guarantees a write never starts until the previous write
+  // has fully landed, so each call's own read always sees it.
+  const schemaWriteChain = useRef<Promise<void>>(Promise.resolve())
+
   // Optimistically write the new schema into the collection page's ['page'] cache
   // (from which `schema` is derived, so the board/table re-render immediately), then
   // persist through the merge-safe `defineSchema`. Reconcile on failure.
@@ -357,11 +382,42 @@ export function useCollectionRows(collectionId: string | undefined): CollectionD
       queryClient.setQueryData<PondPage | null>(['page', collectionId], (prev) =>
         prev ? { ...prev, props: withSchema(prev.props, next) } : prev
       )
-      defineSchema(getSupabase(), collectionId, next).catch(() => {
-        void queryClient.invalidateQueries({ queryKey: ['page', collectionId] })
-      })
+      schemaWriteChain.current = schemaWriteChain.current.then(() =>
+        defineSchema(getSupabase(), collectionId, next).catch(() => {
+          void queryClient.invalidateQueries({ queryKey: ['page', collectionId] })
+        })
+      )
     },
     [collectionId, queryClient, getSupabase]
+  )
+
+  // One atomic record per rename/delete commit — not grouped by pause, since a
+  // schema edit is a single committed action rather than a run of keystrokes.
+  const logSchemaEdit = useMemo(
+    () => (before: PropertySchema, after: PropertySchema) => {
+      if (!collectionId || jsonEqual(before, after)) return
+      void (async () => {
+        const supabase = getSupabase()
+        const {
+          data: { user },
+        } = await supabase.auth.getUser()
+        if (!user) return
+        try {
+          await appendOwnEdit(supabase, {
+            userId: user.id,
+            pondId,
+            action: 'edit_schema',
+            targetPageId: collectionId,
+            before,
+            after,
+          })
+          void queryClient.invalidateQueries({ queryKey: changeLogKey() })
+        } catch (err) {
+          console.error('[change-log] schema edit not logged', collectionId, err)
+        }
+      })()
+    },
+    [collectionId, getSupabase, pondId, queryClient]
   )
 
   return {
@@ -376,5 +432,6 @@ export function useCollectionRows(collectionId: string | undefined): CollectionD
     removeRow,
     renameRow,
     updateSchema,
+    logSchemaEdit,
   }
 }

@@ -322,6 +322,80 @@ export function addOption(
   return { schema: next, optionId }
 }
 
+/**
+ * Rename one property by id (KAN-380: the table header's rename row). A missing
+ * `id` leaves `schema` unchanged — the caller checks {@link isFieldNameTaken}
+ * before writing, so this never needs to refuse a collision itself.
+ */
+export function renameField(schema: PropertySchema, id: string, name: string): PropertySchema {
+  return schema.map((d) => (d.id === id ? { ...d, name } : d))
+}
+
+/** The table header's fixed title column (KAN-380) is not itself a `PropertyDef`,
+ *  so no renamed/added field may claim its label — a second "Name" column would
+ *  be indistinguishable from the title in the header row. */
+const RESERVED_TITLE_LABEL = 'Name'
+
+/**
+ * The name `name` collides with — case-insensitively, trimmed — or `null` if
+ * it's free (KAN-380: the rename row's collision guard, checked before every
+ * commit, and the source of its note's wording). `excludeId` is the field
+ * being renamed; it is never a collision with its own current name. An actual
+ * field's own-cased name wins over the reserved {@link RESERVED_TITLE_LABEL}
+ * fallback when both would match (there is no field literally named "Name").
+ */
+export function fieldNameClash(
+  schema: PropertySchema,
+  name: string,
+  excludeId?: string
+): string | null {
+  const candidate = name.trim().toLowerCase()
+  const existing = schema.find((d) => d.id !== excludeId && d.name.trim().toLowerCase() === candidate)
+  if (existing) return existing.name
+  return candidate === RESERVED_TITLE_LABEL.toLowerCase() ? RESERVED_TITLE_LABEL : null
+}
+
+/** Whether `name` collides with another field's name or the reserved title — see {@link fieldNameClash}. */
+export function isFieldNameTaken(
+  schema: PropertySchema,
+  name: string,
+  excludeId?: string
+): boolean {
+  return fieldNameClash(schema, name, excludeId) !== null
+}
+
+/**
+ * The first of `name`, `name 2`, `name 3`, … not claimed in `schema` (KAN-380:
+ * `delete field`'s undo, when the name it's restoring under has since been
+ * taken by another field). Unlike {@link addDateField}/{@link addStatusField}'s
+ * single `<name> 2` fallback, undo must never give up on a clash — the def is
+ * the only thing that hands the stored row values back, so it is restored
+ * under SOME free name rather than dropped. `excludeId` is the field being
+ * restored; it is never a collision with itself.
+ */
+export function freeFieldName(schema: PropertySchema, name: string, excludeId?: string): string {
+  if (!fieldNameClash(schema, name, excludeId)) return name
+  let n = 2
+  while (fieldNameClash(schema, `${name} ${n}`, excludeId)) n++
+  return `${name} ${n}`
+}
+
+/**
+ * Reinsert a removed property def at `index` (KAN-380: `delete field`'s undo,
+ * the {@link removeField} inverse). Values are never stripped on delete, so the
+ * restored column reads them straight back. `index` clamps into range so an
+ * undo staged against a schema that has since shrunk still lands the def
+ * somewhere sane rather than throwing.
+ */
+export function restoreFieldAt(
+  schema: PropertySchema,
+  index: number,
+  def: PropertyDef
+): PropertySchema {
+  const at = Math.max(0, Math.min(index, schema.length))
+  return [...schema.slice(0, at), def, ...schema.slice(at)]
+}
+
 // ── Reserved-key merge helpers (the only place `_schema` and values coexist) ───
 
 type Props = Record<string, unknown>

@@ -26,6 +26,10 @@ import {
   addStatusField,
   addOption,
   removeField,
+  renameField,
+  isFieldNameTaken,
+  freeFieldName,
+  restoreFieldAt,
   DEFAULT_STATUS_OPTIONS,
   type PropertyDef,
   type PropertySchema,
@@ -342,6 +346,88 @@ describe('addOption — the tag editor\'s "+ new tag" (#350)', () => {
     const { schema: out, optionId } = addOption(SCHEMA, 'nope', 'Blocked', () => 'opt-new')
     expect(out).toEqual(SCHEMA)
     expect(optionId).toBeNull()
+  })
+})
+
+describe('renameField — the header menu rename row (#380)', () => {
+  it('renames the field with the matching id', () => {
+    const out = renameField(SCHEMA, 'due', 'deadline')
+    expect(out.find((d) => d.id === 'due')).toEqual({ id: 'due', name: 'deadline', type: 'date' })
+  })
+
+  it('does not mutate the input schema', () => {
+    const before = [...SCHEMA]
+    renameField(SCHEMA, 'due', 'deadline')
+    expect(SCHEMA).toEqual(before)
+  })
+
+  it('leaves the schema unchanged when the id is not found', () => {
+    expect(renameField(SCHEMA, 'nope', 'deadline')).toEqual(SCHEMA)
+  })
+})
+
+describe('isFieldNameTaken — the rename row collision guard (#380)', () => {
+  it('is taken when another field already has the name, case-insensitively and trimmed', () => {
+    expect(isFieldNameTaken(SCHEMA, 'DUE')).toBe(true)
+    expect(isFieldNameTaken(SCHEMA, '  due  ')).toBe(true)
+  })
+
+  it('is not taken against the field’s own current name when excluded', () => {
+    expect(isFieldNameTaken(SCHEMA, 'due', 'due')).toBe(false)
+  })
+
+  it('is taken against the reserved title label "Name", case-insensitively', () => {
+    expect(isFieldNameTaken(SCHEMA, 'Name')).toBe(true)
+    expect(isFieldNameTaken(SCHEMA, 'name')).toBe(true)
+  })
+
+  it('is not taken for a name nothing else has', () => {
+    expect(isFieldNameTaken(SCHEMA, 'unused')).toBe(false)
+  })
+})
+
+describe('freeFieldName — delete field’s undo name-clash fallback (#380)', () => {
+  it('returns the name as-is when nothing claims it', () => {
+    expect(freeFieldName(SCHEMA, 'Due', 'due')).toBe('Due')
+  })
+
+  it('falls back to "<name> 2" when another field already has the name', () => {
+    const withStage2 = [...SCHEMA, { id: 'stage2', name: 'Stage', type: 'text' as const }]
+    expect(freeFieldName(withStage2, 'Stage', 'stage')).toBe('Stage 2')
+  })
+
+  it('counts past "<name> 2" when that is also taken', () => {
+    const taken = [
+      ...SCHEMA,
+      { id: 'stage2', name: 'Stage', type: 'text' as const },
+      { id: 'stage3', name: 'Stage 2', type: 'text' as const },
+    ]
+    expect(freeFieldName(taken, 'Stage', 'stage')).toBe('Stage 3')
+  })
+
+  it('is not a collision with its own excluded id', () => {
+    expect(freeFieldName(SCHEMA, 'Stage', 'stage')).toBe('Stage')
+  })
+})
+
+describe('restoreFieldAt — delete field’s undo (#380)', () => {
+  it('reinserts the def at its original index, preserving column order', () => {
+    const removed = removeField(SCHEMA, 'due')
+    const restored = restoreFieldAt(removed, 2, SCHEMA[2])
+    expect(restored).toEqual(SCHEMA)
+  })
+
+  it('does not mutate the input schema', () => {
+    const removed = removeField(SCHEMA, 'due')
+    const before = [...removed]
+    restoreFieldAt(removed, 2, SCHEMA[2])
+    expect(removed).toEqual(before)
+  })
+
+  it('clamps an out-of-range index instead of throwing', () => {
+    const removed = removeField(SCHEMA, 'due')
+    expect(restoreFieldAt(removed, 999, SCHEMA[2]).at(-1)).toEqual(SCHEMA[2])
+    expect(restoreFieldAt(removed, -5, SCHEMA[2])[0]).toEqual(SCHEMA[2])
   })
 })
 
