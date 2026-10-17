@@ -47,6 +47,7 @@ import { shouldSelectCardFromClick } from '@/lib/modules/view/card-click'
 import { applyView } from '@/lib/modules/view/apply'
 import { activeSavedView } from '@/lib/modules/view/schema'
 import { ActiveViewSelectionContext } from '@/lib/modules/view/active-view-context'
+import { VIEW_KINDS } from '@/lib/modules/view/kinds'
 import { ViewBar, type ViewBarView } from '@/components/molecules/ViewBar'
 import { CHART_EMPTY_LINE } from '@/lib/modules/chart/card'
 import { addTodoItem } from '@/lib/modules/todo/view'
@@ -2058,7 +2059,10 @@ function BlockEditor({
   const emptyStateViewBar =
     state === 'empty' && block.type === 'view' && block.views && block.views.length > 0 ? (
       <ViewBar
-        views={block.views.map((v): ViewBarView => ({ id: v.id, label: v.label ?? v.kind }))}
+        views={block.views.map((v): ViewBarView => ({
+          id: v.id,
+          label: v.label ?? VIEW_KINDS[v.kind].label,
+        }))}
         activeId={activeViewId ?? block.activeViewId ?? block.views[0].id}
         onSelect={setActiveViewId}
         showAddView={false}

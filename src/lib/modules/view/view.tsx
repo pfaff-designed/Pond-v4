@@ -26,7 +26,7 @@ import { viewCollectionId } from '../block-frame'
 import { useCollectionRows } from './use-collection-rows'
 import { useStruckRows } from '@/lib/change-log/undo-strike'
 import { DIFF_REMOVAL_TEXT_CLASSNAME, PondMolecule } from '@/components/molecules/PondMolecule'
-import { activeSavedView, addSavedView, applyConfigPatch } from './schema'
+import { activeSavedView, addSavedView, applyConfigPatch, resolveActiveView } from './schema'
 import { ActiveViewSelectionContext } from './active-view-context'
 import {
   addDays,
@@ -520,7 +520,7 @@ export function CollectionView({
         recordCount={rows.length}
         savedViews={config.views}
         activeViewId={localActiveViewId}
-        onSelectView={config.views ? handleSelectView : undefined}
+        onSelectView={handleSelectView}
         showAddView={!!editable}
         addViewRows={addViewRows}
         onAddView={onAddView}
@@ -677,6 +677,23 @@ function ViewControls({
         : undefined
   const groupName = groupDef?.name.toLowerCase()
 
+  // KAN-243 PATH_STEPS 1: a legacy block (no `views[]` yet — every view made from
+  // `/`, KAN-240) has exactly one view, itself. Synthesize that one segment so
+  // "＋ view" is reachable before the first `addSavedView` call ever wraps it into
+  // `views[0]` — editable only; a reader of a legacy block keeps today's render
+  // (no bar at all, nothing to switch between).
+  const hasSavedViews = !!savedViews && savedViews.length > 0
+  const legacyView = hasSavedViews ? undefined : resolveActiveView(config)
+  const barViews: readonly ViewBarView[] | undefined = hasSavedViews
+    ? savedViews.map((view): ViewBarView => ({
+        id: view.id,
+        label: view.label ?? VIEW_KINDS[view.kind].label,
+      }))
+    : editable && legacyView
+      ? [{ id: legacyView.id, label: legacyView.label ?? VIEW_KINDS[legacyView.kind].label }]
+      : undefined
+  const barActiveId = hasSavedViews ? activeViewId : legacyView?.id
+
   return (
     <div className="mb-3 flex flex-wrap items-center gap-2">
       <div
@@ -703,13 +720,10 @@ function ViewControls({
             </>
           )}
         </div>
-        {savedViews && savedViews.length > 0 && activeViewId && onSelectView && (
+        {barViews && barViews.length > 0 && barActiveId && onSelectView && (
           <ViewBar
-            views={savedViews.map((view): ViewBarView => ({
-              id: view.id,
-              label: view.label ?? view.kind,
-            }))}
-            activeId={activeViewId}
+            views={barViews}
+            activeId={barActiveId}
             onSelect={onSelectView}
             // `ViewBar` requires addViewRows/onAddView only when showAddView is the
             // literal `true` (KAN-243) — falls back to `false` if either is somehow

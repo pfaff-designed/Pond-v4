@@ -1067,3 +1067,52 @@ describe('ViewView — the ＋ view path test: calendar from a dateless table, e
     expect(afterUndo).toEqual(dateless)
   })
 })
+
+describe('ViewView — a legacy block (no views[] yet) still shows ＋ view, editable only (KAN-243, PATH_STEPS 1 gap)', () => {
+  const legacyTable: ViewBlock = { id: 'v-legacy', type: 'view', mode: 'table' }
+
+  beforeEach(() => {
+    initialSchema = dateless
+    initialRows = []
+  })
+
+  function LegacyHarness({ editable = true }: { editable?: boolean }) {
+    const [data, setData] = useState<ViewBlock>(legacyTable)
+    return <ViewView data={data} editable={editable} onChange={setData} />
+  }
+
+  function renderLegacy(editable = true) {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    return render(
+      <QueryClientProvider client={client}>
+        <DeletionUndoProvider>
+          <SiblingBlocksProvider value={{ blocks: [], pageId: 'page-1' }}>
+            <LegacyHarness editable={editable} />
+          </SiblingBlocksProvider>
+        </DeletionUndoProvider>
+      </QueryClientProvider>
+    )
+  }
+
+  it('editable: one segment synthesized from the legacy mode, plus ＋ view; picking a kind adds a second segment, active', async () => {
+    const user = userEvent.setup()
+    renderLegacy()
+
+    expect(screen.getAllByRole('tab')).toHaveLength(1)
+    expect(screen.getByRole('tab', { name: 'table' })).toHaveAttribute('aria-selected', 'true')
+
+    await user.click(screen.getByRole('button', { name: 'add a view' }))
+    await user.click(screen.getByRole('option', { name: /board/ }))
+
+    expect(screen.getAllByRole('tab')).toHaveLength(2)
+    expect(screen.getByRole('tab', { name: 'board' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'table' })).toHaveAttribute('aria-selected', 'false')
+  })
+
+  it('reader: draws no bar at all — no segments, no ＋ view', () => {
+    renderLegacy(false)
+
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'add a view' })).not.toBeInTheDocument()
+  })
+})
