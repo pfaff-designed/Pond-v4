@@ -48,7 +48,13 @@ import {
   requestUndoNotice,
   useUndoNotice,
 } from '@/lib/terminal-focus'
-import { isPaletteChord, isRedoChord, isUndoChord, onApplePlatform } from '@/lib/shell-commands'
+import {
+  isPaletteChord,
+  isRedoChord,
+  isUndoChord,
+  onApplePlatform,
+  SESSION_UNDO_SCOPE_ATTR,
+} from '@/lib/shell-commands'
 import { sessionUndo } from '@/lib/change-log/session-undo'
 import { editorHistoryEmptyFor } from '@/lib/modules/text/active-editor'
 import { applyUndoOutcome } from '@/lib/change-log/undo-outcome'
@@ -59,6 +65,7 @@ import { useCommandPath } from '@/lib/layout/command-path'
 import { PLACEMENT } from '@/lib/layout/shell-placement'
 import { useZenCommands } from '@/lib/layout/use-zen-commands'
 import { workspaceUrl } from '@/lib/pages/nav'
+import { flushPendingPageSave } from '@/lib/pages/page-flush'
 import { newPageParent, paletteItems, paletteScope, pondItems } from '@/lib/pages/palette-items'
 import { readRecentPageIds } from '@/lib/pages/recent-pages'
 import { usePaletteRecords } from '@/lib/pages/use-palette-records'
@@ -79,11 +86,14 @@ import { ROW_TYPE } from '@/lib/properties/schema'
 
 /** Where ⌘Z/⇧⌘Z belongs to the field itself (Tiptap's own undo, an input, a select) —
  * except an empty page-title input (`data-pond-page-title`), which has nothing of
- * its own to undo, so the chord falls through to the session step instead. */
+ * its own to undo, and a field inside a `SESSION_UNDO_SCOPE_ATTR` container (a list
+ * or entry-log row), whose undo is the session's step, not the browser's field undo —
+ * so the chord falls through to the session step instead. */
 const isEditable = (el: Element | null): boolean =>
   el !== null &&
   el.matches('input, textarea, select, [contenteditable]') &&
-  !isEmptyPageTitleInput(el)
+  !isEmptyPageTitleInput(el) &&
+  !el.closest(`[${SESSION_UNDO_SCOPE_ATTR}]`)
 
 const isEmptyPageTitleInput = (el: Element): boolean =>
   el.hasAttribute('data-pond-page-title') && (el as HTMLInputElement).value === ''
@@ -138,7 +148,14 @@ export function ShellCommands() {
     (direction: 'undo' | 'redo') => {
       if (pondId === null) return
       const stepId = ++stepCounterRef.current
-      const step = direction === 'undo' ? sessionUndo.undo(pondId) : sessionUndo.redo(pondId)
+      // The open page's own edit may still be sitting in its save debounce (same
+      // KAN-302 hazard AITerminal's send guards against) — a step read before it
+      // lands would undo the wrong thing, then have the stale save land on top.
+      // `undefined` means nothing was pending, so the step stays in this tick —
+      // existing callers assert `sessionUndo.undo`/`redo` synchronously after a chord.
+      const pendingFlush = flushPendingPageSave(currentNodeId)
+      const runStep = () => (direction === 'undo' ? sessionUndo.undo(pondId) : sessionUndo.redo(pondId))
+      const step = pendingFlush ? pendingFlush.then(runStep) : runStep()
       step
         .then((result) => {
           applyUndoOutcome(direction, result, queryClient)

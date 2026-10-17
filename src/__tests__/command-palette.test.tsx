@@ -426,6 +426,7 @@ const input = () => screen.getByRole('combobox', { name: 'command palette' }) as
 
 describe('at rest the palette is the breadcrumb (`PondCommand` t = 0)', () => {
   it('the path, the area’s mark and ⌘K — no list, no input; a click on it asks to open', () => {
+    const platform = jest.spyOn(window.navigator, 'platform', 'get').mockReturnValue('MacIntel')
     const { onOpenChange } = renderPalette({ open: false })
     expect(box().getAttribute('data-state')).toBe('rest')
     expect(box().querySelector('[data-part="path"]')!.textContent).toBe(
@@ -441,6 +442,7 @@ describe('at rest the palette is the breadcrumb (`PondCommand` t = 0)', () => {
     expect(opener.getAttribute('aria-expanded')).toBe('false')
     fireEvent.click(opener)
     expect(onOpenChange).toHaveBeenCalledWith(true)
+    platform.mockRestore()
   })
 
   it('the mode toggle switches light/dark on the document, and never opens the palette', async () => {

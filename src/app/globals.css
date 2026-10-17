@@ -132,6 +132,7 @@
   /* ── Make Noise SURFACE shadows (issue #89) — shadow-mn-card etc. ─────────
      Paper-not-frames: surfaces separate by shadow, not borders. */
   --shadow-mn-card: var(--mn-shadow-card);
+  --shadow-mn-card-hover: var(--mn-shadow-card-hover);
   --shadow-mn-drag-ghost: var(--mn-shadow-drag-ghost);
   --shadow-mn-lifted: var(--mn-shadow-lifted);
   --shadow-mn-sm: var(--mn-shadow-sm);
@@ -273,6 +274,7 @@
 }
 
 :root {
+  color-scheme: light;
   /* ══ Make Noise RAW palette (issues #85/#86) — the one house palette ════════
      Source of truth: wayfinder/design_handoff_pond/_ds/mn/tokens/colors.css.
      Every colour in the app maps from here, named by what it IS. A theme
@@ -334,6 +336,8 @@
 
   /* ── Make Noise shadows (issue #89) — paper-not-frames: surfaces lift, not box ── */
   --mn-shadow-card: 0 1px 2px rgb(40 34 24 / 0.04), 0 8px 24px rgb(40 34 24 / 0.06);
+  /* `card2` hover (PondMolecule.dc.html:60) — the record-card lift, not shadow-mn-md. */
+  --mn-shadow-card-hover: 0 2px 4px rgb(40 34 24 / 0.06), 0 12px 28px rgb(40 34 24 / 0.1);
   --mn-shadow-drag-ghost: 0 4px 12px rgb(27 29 20 / 0.1), 0 12px 32px rgb(27 29 20 / 0.14);
   /* `lifted` (PondBlock.dc.html) — the dragged block stepped up off the paper. */
   --mn-shadow-lifted: 0 2px 4px rgb(40 34 24 / 0.06), 0 20px 44px rgb(40 34 24 / 0.16);
@@ -455,6 +459,7 @@
 }
 
 .dark {
+  color-scheme: dark;
   /* ══ Make Noise DARK — only roles reassign; a --raw-* value NEVER moves ══════
      Ground = ink, cards = dark card. Every shadcn/sidebar token in :root
      derives from the --mn- roles, so overriding them here re-themes the
@@ -486,6 +491,7 @@
 
   /* Heavier MN shadows on the dark ground */
   --mn-shadow-card: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px rgb(0 0 0 / 0.34);
+  --mn-shadow-card-hover: 0 2px 4px rgb(0 0 0 / 0.3), 0 12px 28px rgb(0 0 0 / 0.4);
   --mn-shadow-drag-ghost: 0 8px 24px rgb(0 0 0 / 0.45);
   --mn-shadow-lifted: 0 2px 4px rgb(0 0 0 / 0.34), 0 20px 44px rgb(0 0 0 / 0.5);
   --mn-shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.2);
@@ -771,5 +777,14 @@
   }
   html {
     @apply font-sans;
+  }
+  /* `setDarkClass` (lib/theme/mode) sets this attribute for one frame around
+     every flip — pill, OS-driven, and ink-hold — so surfaces snap together
+     instead of fading at different speeds. */
+  [data-theme-switching],
+  [data-theme-switching] *,
+  [data-theme-switching] *::before,
+  [data-theme-switching] *::after {
+    transition: none !important;
   }
 }

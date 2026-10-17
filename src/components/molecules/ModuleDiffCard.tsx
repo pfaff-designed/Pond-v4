@@ -45,6 +45,7 @@ import { useId, useState, type KeyboardEvent } from 'react'
 import { cn } from '@/lib/utils'
 import type { ChangePreview } from '@/lib/modules/preview'
 import { chipBaseClass } from '@/components/atoms/kicker'
+import { formatChord, useApplePlatform } from '@/lib/shell-commands'
 import { PondControl } from '@/components/atoms/PondControl'
 import { ChangeRows, NoteBox } from './diff-card-parts'
 import { ProposalActions, type ProposalStatus } from '@/components/molecules/ProposalActions'
@@ -131,6 +132,7 @@ export function ModuleDiffCard({
   const [noteOpen, setNoteOpen] = useState(false)
   const [showRejected, setShowRejected] = useState(false)
   const placeRowId = useId()
+  const apple = useApplePlatform()
 
   const resolved = status !== 'pending'
   const kind = revised ? 'revised edit' : 'proposed edit'
@@ -256,7 +258,7 @@ export function ModuleDiffCard({
                   onClick={onAccept}
                 />
                 <span aria-hidden className="-ml-0.5 mr-1 text-mn-text-secondary">
-                  ⌘↵
+                  {formatChord('mod+enter', apple)}
                 </span>
                 <PondControl
                   kind="button"

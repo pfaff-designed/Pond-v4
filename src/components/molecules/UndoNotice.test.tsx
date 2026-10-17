@@ -15,8 +15,16 @@ function zIndexOf(className: string): number {
   return Number(match[1] ?? match[2])
 }
 
+const onPlatform = (platform: string) =>
+  jest.spyOn(window.navigator, 'platform', 'get').mockReturnValue(platform)
+
+afterEach(() => {
+  jest.restoreAllMocks()
+})
+
 describe('UndoNotice', () => {
   it('renders the board’s exact head/body/foot strings', () => {
+    onPlatform('MacIntel')
     const notice: UndoNoticeData = {
       direction: 'undo',
       pastTense: 'removed chickpeas, harissa',
@@ -37,6 +45,7 @@ describe('UndoNotice', () => {
   })
 
   it('renders the foot as three spans with a middle separator', () => {
+    onPlatform('MacIntel')
     const notice: UndoNoticeData = {
       direction: 'undo',
       pastTense: 'removed chickpeas, harissa',
@@ -51,6 +60,7 @@ describe('UndoNotice', () => {
   })
 
   it('renders no "opened"/"you were on"/"back to" clauses for a same-page step', () => {
+    onPlatform('MacIntel')
     const notice: UndoNoticeData = {
       direction: 'undo',
       pastTense: 'removed chickpeas, harissa',

@@ -54,7 +54,6 @@ const ENTRIES = {
   id: 'b6',
   type: 'entries',
   label: 'journal',
-  serif: true,
   entries: [{ id: 'e1', date: '2026-10-04', text: 'went well' }],
 } as Block
 const VIEW = {
@@ -119,9 +118,9 @@ describe('templateBlocksFrom — structure and labels by default', () => {
       },
     },
     {
-      name: 'entries keeps its serif flag — that is what makes a journal a journal',
+      name: 'entries keeps its label, loses every entry',
       block: ENTRIES,
-      shape: { type: 'entries', label: 'journal', serif: true },
+      shape: { type: 'entries', label: 'journal' },
       emptied: { entries: [] },
     },
     {

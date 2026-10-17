@@ -22,6 +22,16 @@ export type RecordSelection = { id: string; via: 'pointer' | 'keyboard' }
 const KEEPS_SELECTION =
   '[data-row-id], [data-part="record-peek"], [role="dialog"], [role="listbox"], [role="menu"]'
 
+/** The row tab stop's own focus-visible ring (color/width only) — the table row, the
+ *  board card, the gallery card/add tile and the calendar's stack item/focus-list row
+ *  all draw it. Split out so a caller that also draws a "selected" outline state (the
+ *  board card, the list row) can compose its own solid/none suffix on top. */
+export const ROW_FOCUS_VISIBLE_BASE = 'outline-[1.5px] outline-offset-1 outline-mn-text/50'
+
+/** The full ring for a row with no separate "selected" outline state: visible on
+ *  focus-visible only. */
+export const ROW_FOCUS_VISIBLE = `${ROW_FOCUS_VISIBLE_BASE} outline-none focus-visible:outline-solid`
+
 export function useRecordSelection<T extends { id: string }>(
   rows: readonly T[],
   viewKey: string,
@@ -101,6 +111,23 @@ export function useRecordSelection<T extends { id: string }>(
         select({ id, via: 'keyboard' })
       },
     }),
+    /** The one home for "first ↵/Space selects; ↵ on the already-selected row opens
+     *  its page" — `CollectionTable`'s row, `CollectionGallery`'s card and the
+     *  calendar's stack item/focus-list row all split a row's own Enter/Space this
+     *  way. A click's own select-vs-open split differs per view, so it stays there. */
+    selectOrOpenOnKey: (
+      id: string,
+      e: KeyboardEvent,
+      onOpenRow?: (id: string) => void
+    ) => {
+      if (e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return
+      e.preventDefault()
+      if (e.key === 'Enter' && id === selectedId) {
+        onOpenRow?.(id)
+        return
+      }
+      select({ id, via: 'keyboard' })
+    },
     /** For a native button inside the record: it is the tab stop, and activates natively. */
     buttonProps: (id: string) => ({
       'data-row-focus': id,

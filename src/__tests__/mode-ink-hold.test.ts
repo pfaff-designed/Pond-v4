@@ -63,3 +63,50 @@ describe('holdInkGround', () => {
     expect(result.current.mode).toBe('light')
   })
 })
+
+describe('transition suppression', () => {
+  beforeEach(() => jest.useFakeTimers())
+  afterEach(() => jest.useRealTimers())
+
+  it('suppresses transitions for one frame around a flip, then lifts it', async () => {
+    const { result } = renderHook(() => useMode())
+
+    await act(async () => result.current.toggleMode())
+    expect(html.hasAttribute('data-theme-switching')).toBe(true)
+
+    act(() => jest.runOnlyPendingTimers())
+    expect(html.hasAttribute('data-theme-switching')).toBe(true)
+
+    act(() => jest.runOnlyPendingTimers())
+    expect(html.hasAttribute('data-theme-switching')).toBe(false)
+  })
+
+  it('cancels a stale flip’s pending frames so an overlapping second flip does not fade early', async () => {
+    const { result } = renderHook(() => useMode())
+
+    await act(async () => result.current.toggleMode())
+    act(() => jest.runOnlyPendingTimers())
+
+    await act(async () => result.current.toggleMode())
+    act(() => jest.runOnlyPendingTimers())
+    expect(html.hasAttribute('data-theme-switching')).toBe(true)
+
+    act(() => jest.runOnlyPendingTimers())
+    expect(html.hasAttribute('data-theme-switching')).toBe(false)
+  })
+
+  it('suppresses transitions around an ink hold and its release too', () => {
+    let release = () => {}
+    act(() => {
+      release = holdInkGround()
+    })
+    expect(html.hasAttribute('data-theme-switching')).toBe(true)
+    act(() => jest.runAllTimers())
+    expect(html.hasAttribute('data-theme-switching')).toBe(false)
+
+    act(() => release())
+    expect(html.hasAttribute('data-theme-switching')).toBe(true)
+    act(() => jest.runAllTimers())
+    expect(html.hasAttribute('data-theme-switching')).toBe(false)
+  })
+})

@@ -125,6 +125,13 @@ interface SlashPickOptions {
   makePageFromRow: (placement: 'sibling' | 'child', target: SlashTarget) => void
   /** `index` is the picked block's position — a blank page applies in place instead (KAN-124). */
   makePageFromTemplate: (pick: TemplatePick, target: SlashTarget, index: number) => void
+  /**
+   * The block a mint-and-land pick just put on the page (KAN-355), called right
+   * after `onChange` lands it. A text landing already keeps the host editor's
+   * focus; a block with no editor of its own (a todo's item field) does not, and
+   * this is the caller's one hook to put focus somewhere real.
+   */
+  onLanded?: (landed: Block) => void
 }
 
 /**
@@ -139,6 +146,7 @@ export const useSlashPick = ({
   openSourcePicker,
   makePageFromRow,
   makePageFromTemplate,
+  onLanded,
 }: SlashPickOptions) => {
   // An index, not an id: the menu belongs to the block at that position.
   const [slashMenuOpenAt, setSlashMenuOpenAt] = useState<number | null>(null)
@@ -175,6 +183,7 @@ export const useSlashPick = ({
     if (!landing?.landed) return
     markInserted(landing.landed.id)
     onChange(landing.next)
+    onLanded?.(landing.landed)
   }
 
   const handleSlashPickTemplate = (index: number, pick: TemplatePick, at: SlashLineAt | null) => {

@@ -1,10 +1,10 @@
 # Reviewer — Pond's additions to the code-review gate
 
-This is not a second review. AGENTS.md's one gate is the **code-review skill** (`REVIEW_SKILL` in your harness's `harness.md`): two parallel sub-agents, Standards and Spec, reported side by side and never reranked. The orchestrator runs that skill; this file is what it pastes into each sub-agent's prompt on top of the skill's own brief and smell baseline, because Pond's spec lives in Jira and its worst failure is a feature nobody can reach.
+This is not a second review. AGENTS.md's one gate is the **code-review skill** (`REVIEW_SKILL` in your harness's `harness.md`): two parallel sub-agents, Standards and Spec, reported side by side and never reranked. For a `light` ticket one reviewer covers both (`AXIS=both`). The orchestrator runs that skill; this file is what it pastes into each reviewer's prompt on top of the skill's own brief and smell baseline, because Pond's spec lives in Jira and its worst failure is a feature nobody can reach.
 
 You review one ticket's diff for Pond on one axis. You read and run read-only commands; you change nothing, push nothing, and start no servers.
 
-**Inputs:** `AXIS` (`standards` or `spec`), `TICKET`, `WORKTREE`, `BRANCH`, `PATH_STEPS`, `OWNS`, `HB`, `RESULT`.
+**Inputs:** `AXIS` (`standards`, `spec`, or `both` for a `light` ticket: do both sections below, briefly, and return one block with both verdicts), `TICKET`, `WORKTREE`, `BRANCH`, `PATH_STEPS`, `OWNS`, `HB`, `RESULT`.
 
 - **The stall failsafe binds you** (`failsafe.md`, appended below): beat `HB` before every task, keep the step name across retries, reapproach when told or when your own check says stalled. Your return block goes into `RESULT`, then `$H beat HB DONE`, then your reply.
 
@@ -38,6 +38,16 @@ Judge the code against this repo's conventions (`WORKTREE/AGENTS.md`, and two or
 - Comments that narrate instead of stating a constraint.
 - Changes outside `OWNS` that are not listed and justified.
 - Tests that pass for the wrong reason: asserting on mocks, or on the new component alone when the behaviour depends on its host.
+- **The pragmatic rules** (AGENTS.md, "Build like a pragmatic programmer"):
+  - **Knowledge in two places.** A value, rule or path the diff spells out that already has a home is a finding. So is a fact stored only implicitly in another field.
+  - **Coincidence.** A claim in a comment or a commit message with no test behind it. A behaviour fix with no failing-first regression test. A test that would still pass with the production change reverted: check what it asserts and what its mocks stub out.
+  - **Coupling.** A change that reaches through several unrelated modules, new global or module-level mutable state, a caller that asks for an object's internals to decide for it (tell, don't ask), or a test tied to the machine it runs on (platform, locale or time zone literals).
+  - **Contracts.** An engine seam (field engine, coercion, rollups, layout, the diff path) that accepts input its types or zod parse don't describe, or a caller that passes what the contract refuses.
+  - **Privilege.** Under `supabase/migrations/`, a policy, grant or `security definer` wider than the feature needs, or one that lets an admin read a private page.
+  - **Unreleased resources.** Listeners, timers, subscriptions or locks with no matching release.
+  - **Swallowed errors.** A catch that neither handles the error nor rethrows it.
+  - **Pure engine code** tested by one happy path. Ask for a table of cases over the input space, and name the combination that is missing.
+  - **Broken windows** in the lines the diff touched, left as they were. Always `non_blocking`, unless the diff made the window.
 
 ## AXIS = spec
 
@@ -53,8 +63,8 @@ Read the ticket (`JIRA.get TICKET`, as `harness.md` defines it) and the board fi
 ## Return
 
 ```
-axis:          standards | spec
-verdict:       ship | fix-then-ship | needs-work        (standards)
+axis:          standards | spec | both
+verdict:       ship | fix-then-ship | needs-work        (standards; with both, one line each)
                spec-complete | gaps | off-spec          (spec)
 reachability:  <spec axis only: each step of PATH_STEPS → file at each hop, or where it breaks>
 blocking:      [<file:line — what breaks, for whom>]

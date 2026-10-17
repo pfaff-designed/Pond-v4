@@ -6,6 +6,7 @@ import type { ComponentProps } from 'react'
 import { ComposerLine } from './ComposerLine'
 import { TerminalDrawer } from './TerminalDrawer'
 import { COMPOSER_CLEARANCE_VAR } from '@/lib/layout/composer-clearance'
+import { formatChord } from '@/lib/shell-commands'
 import {
   COMPOSER_DEFAULT_HEIGHT,
   COMPOSER_MIN_HEIGHT,
@@ -250,7 +251,7 @@ async function assertTab(canvasElement: HTMLElement, theme: Theme, landed: boole
   }
 
   // tabKey: ⌘J, mono 10.5, ink .68, margin-top 12
-  const key = within(tab).getByText('⌘J')
+  const key = within(tab).getByText(formatChord('mod+j'))
   const keyStyle = getComputedStyle(key)
   await expect(keyStyle.fontSize).toBe('10.5px')
   await expect(keyStyle.marginTop).toBe('12px')

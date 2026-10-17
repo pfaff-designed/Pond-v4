@@ -87,7 +87,7 @@ Atlassian MCP, every call taking `cloudId: '1535dfd5-6618-4e61-ac79-655c4c329842
 
 ## The browser
 
-One shared tab across every orchestrator, which is why `/tmp/pond-browser.lock` is taken before any of it.
+One shared tab across every orchestrator, which is why `/tmp/pond-browser.lock` is taken before any of it. Cursor has no per-slot browsers, so `BROWSER` is always this shared one, and `orchestrator.md` step 7's fallback (take the lock) always applies.
 
 | Name     | Tools                                                                                                                                                                                                                                         |
 | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

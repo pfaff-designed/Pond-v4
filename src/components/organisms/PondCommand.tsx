@@ -56,6 +56,7 @@ import { PaletteRow, type PaletteRowEntry } from '@/components/molecules/palette
 import type { CommandPath } from '@/lib/pages/command-path'
 import { markAccent } from '@/lib/rail/glyph-library'
 import { useMorph } from '@/lib/motion/use-morph'
+import { ariaKeyshortcuts, formatChord, useApplePlatform } from '@/lib/shell-commands'
 import { useMode } from '@/lib/theme/mode'
 
 export type { PaletteItem, PaletteKind, PaletteScope } from '@/components/molecules/palette-entries'
@@ -181,6 +182,10 @@ export function PondCommand({
   const live = open || !atRest
   const { mode, toggleMode } = useMode()
   const markCol = markAccent(path.role)
+  // The server has no navigator, so this starts Apple-biased and corrects on mount —
+  // formatChord/ariaKeyshortcuts take it as a param rather than reading navigator live,
+  // so the chip's SSR and first client render always agree (no hydration mismatch).
+  const apple = useApplePlatform()
 
   const [query, setQuery] = useState(defaultQuery)
   const [scope, setScope] = useState(initialScope)
@@ -336,7 +341,7 @@ export function PondCommand({
           data-part="opener"
           aria-haspopup="listbox"
           aria-expanded={open}
-          aria-keyshortcuts="Meta+K Control+K"
+          aria-keyshortcuts={ariaKeyshortcuts('mod+k', apple)}
           inert={open}
           className={`${OPENER} ${half ? 'pointer-events-none' : ''}`}
         >
@@ -431,7 +436,7 @@ export function PondCommand({
           </button>
         ) : (
           <span aria-hidden data-part="chip" className={CHIP}>
-            ⌘K
+            {formatChord('mod+k', apple)}
           </span>
         )}
         {live && (

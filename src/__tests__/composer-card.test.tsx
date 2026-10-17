@@ -262,6 +262,7 @@ describe('the composer card — collapse is the session’s, and ⌘J is its key
   })
 
   it('⌘J closes the card to its tab, and brings it back with the line focused', async () => {
+    const platform = jest.spyOn(window.navigator, 'platform', 'get').mockReturnValue('MacIntel')
     renderTerminal()
     await waitReady()
 
@@ -272,6 +273,7 @@ describe('the composer card — collapse is the session’s, and ⌘J is its key
     act(() => requestComposerToggle())
     await waitReady()
     await waitFor(() => expect(line()).toHaveFocus())
+    platform.mockRestore()
   })
 
   it('the tab brings the card back', async () => {

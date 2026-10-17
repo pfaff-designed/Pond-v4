@@ -6,11 +6,19 @@
 
 import { paletteEntries } from '@/components/molecules/palette-entries'
 import {
+  ASK_POND_ACTION,
   DEEP_RESEARCH_ACTION,
   IMPORT_A_PAGE_ACTION,
+  modeItems,
   paletteItems,
   REPORT_A_PROBLEM_ACTION,
+  ZEN_ACTION,
 } from '@/lib/pages/palette-items'
+
+const onPlatform = (platform: string) =>
+  jest.spyOn(window.navigator, 'platform', 'get').mockReturnValue(platform)
+
+afterEach(() => jest.restoreAllMocks())
 
 describe('IMPORT_A_PAGE_ACTION', () => {
   it('is an action row in Pond’s own words', () => {
@@ -75,5 +83,49 @@ describe('DEEP_RESEARCH_ACTION', () => {
     const entries = paletteEntries(paletteItems([], []), 'deep')
     const row = entries.find((e) => e.kind === 'row' && e.item.id === DEEP_RESEARCH_ACTION.id)
     expect(row).toBeDefined()
+  })
+})
+
+describe('modeItems — zen’s key reads the platform at call time', () => {
+  it('shows the Apple glyph on a Mac', () => {
+    onPlatform('MacIntel')
+    const zen = modeItems(false).find((item) => item.id === ZEN_ACTION.id)
+    expect(zen?.key).toBe('⌘.')
+  })
+
+  it('shows the Ctrl word off a Mac', () => {
+    onPlatform('Win32')
+    const zen = modeItems(false).find((item) => item.id === ZEN_ACTION.id)
+    expect(zen?.key).toBe('Ctrl .')
+  })
+})
+
+describe('modeItems — the out-of-zen array is stable across calls', () => {
+  it('returns the same reference on the same platform', () => {
+    onPlatform('MacIntel')
+    expect(modeItems(false)).toBe(modeItems(false))
+  })
+
+  it('returns a new reference, with the new key, after a platform change', () => {
+    onPlatform('MacIntel')
+    const onMac = modeItems(false)
+    onPlatform('Win32')
+    const onWindows = modeItems(false)
+    expect(onWindows).not.toBe(onMac)
+    expect(onWindows.find((item) => item.id === ZEN_ACTION.id)?.key).toBe('Ctrl .')
+  })
+})
+
+describe('paletteItems — ask pond’s key matches the composer’s own ⌘J', () => {
+  it('shows the Apple glyph on a Mac', () => {
+    onPlatform('MacIntel')
+    const askPond = paletteItems([], []).find((item) => item.id === ASK_POND_ACTION.id)
+    expect(askPond?.key).toBe('⌘J')
+  })
+
+  it('shows the Ctrl word off a Mac', () => {
+    onPlatform('Win32')
+    const askPond = paletteItems([], []).find((item) => item.id === ASK_POND_ACTION.id)
+    expect(askPond?.key).toBe('Ctrl J')
   })
 })

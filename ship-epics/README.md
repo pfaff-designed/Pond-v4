@@ -20,13 +20,13 @@ flowchart TD
     C --> O3["Epic orchestrator · opus"]
     O1 --> BL["<b>Build loop</b> — ralph.sh<br/>a fresh claude-sonnet-5 pass per item"]
     O1 --> RV["<b>Reviewer × 2</b> · opus<br/>standards + spec, in parallel"]
-    O1 --> VE["<b>Live verifier</b> · opus<br/>a real browser, one at a time"]
+    O1 --> VE["<b>Live verifier</b> · opus<br/>a real browser, one per slot"]
     O2 -.-> D1["same three"]
     O3 -.-> D2["same three"]
 ```
 
 Orchestrators run in parallel because each epic owns its own files and migration numbers. The
-browser does not: there is one shared tab, taken through `/tmp/pond-browser.lock`.
+browser is per run too: each orchestrator slot has its own headless browser, `pw1`–`pw3`, matched to its port. The shared browser and `/tmp/pond-browser.lock` are only a fallback.
 
 ## One ticket, nine steps
 
@@ -55,7 +55,7 @@ flowchart TD
     M -->|"no"| L["<b>9 · Land it</b><br/>rebase → gates → push → PR → In Review"]
     L --> CI{"CI"}
     CI -->|"red"| CAP
-    CI -->|"green"| MERGE["Squash-merge · ticket Done<br/>refill now · sweep the worktree"]
+    CI -->|"green"| MERGE["Squash-merge · ticket Done<br/>note broken windows · refill now<br/>sweep the worktree"]
     MERGE --> P
 ```
 
@@ -93,7 +93,7 @@ flowchart TD
 ```
 
 **Use a loop when all four hold:** the work is a list of items; each is proven by a command, not by
-judgement; the state survives in git and a plan file; and nothing in it needs you, the shared
+judgement; the state survives in git and a plan file; and nothing in it needs you, a
 browser, or a one-way door. Picking, the reachability gate, review, live verification, migrations,
 pushes, merges and Jira are therefore **not** loops.
 

@@ -31,7 +31,7 @@ import { CALENDAR_EMPTY_LINE } from './kinds'
 import { RecordCheck } from './record-check'
 import { RecordPeek } from './record-peek'
 import { useDoneToggle } from './use-done-toggle'
-import { useRecordSelection } from './use-record-selection'
+import { ROW_FOCUS_VISIBLE_BASE, useRecordSelection } from './use-record-selection'
 
 export const LIST_EMPTY_LINE = 'no records yet'
 
@@ -152,7 +152,7 @@ export function CollectionList({
                     // The negative margin lets the hairline run past the text.
                     className={[
                       '-mx-[6px] flex cursor-pointer items-center gap-[11px] rounded-[8px] border-b border-mn-text/[0.055] px-[6px] py-[8px] text-[14px]',
-                      'outline-[1.5px] outline-offset-1 outline-mn-text/50',
+                      ROW_FOCUS_VISIBLE_BASE,
                       isSelected ? 'outline-solid' : 'outline-none',
                       rowDone ? 'text-mn-text-secondary' : 'text-mn-text',
                     ].join(' ')}
