@@ -15,6 +15,7 @@ import {
   type BlockMenuSlots,
 } from '@/components/organisms/block-menu'
 import type { TodoBlock } from '@/lib/modules/todo/schema'
+import type { PageLinkBlock } from '@/lib/modules/page-link/schema'
 
 const list: TodoBlock = {
   id: 'b-list',
@@ -93,6 +94,20 @@ describe('blockMenuGroups slots', () => {
     expect(
       within(menu()).queryByRole('menuitem', { name: 'move into a new page' })
     ).not.toBeInTheDocument()
+  })
+})
+
+describe('blockMenuGroups delete label', () => {
+  const pageLink: PageLinkBlock = { id: 'b-link', type: 'page-link', pageId: 'p-1' }
+
+  it('reads `remove link` for a page-link block', () => {
+    const group = blockMenuGroups(pageLink).find((g) => g.id === 'block')
+    expect(group?.items?.find((item) => item.id === 'delete')?.label).toBe('remove link')
+  })
+
+  it('reads `delete` for every other block type', () => {
+    const group = blockMenuGroups(list).find((g) => g.id === 'block')
+    expect(group?.items?.find((item) => item.id === 'delete')?.label).toBe('delete')
   })
 })
 
