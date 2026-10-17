@@ -14,6 +14,19 @@ The diff: `git -C WORKTREE diff origin/main...BRANCH`. Read whole files where th
 
 Every finding cites `file:line` and says what breaks for whom. A finding you cannot point at is not a finding. Do not invent nits to look thorough.
 
+## Both axes: try to break it
+
+Do not stop at "does the diff follow the rules and meet the criteria". **Try to break the feature.** Read the code as someone looking for the input or sequence that makes it fail, then say exactly what that is. Work through, at least:
+
+- **Inputs:** empty, whitespace only, very long, unicode and emoji, the same value twice, a value of the wrong type, a value that is valid but at a boundary (0, the last item, the first day of a month).
+- **Repeats and speed:** a double click or double Enter (AUDIT G9: one action, one write), a fast repeat while a save is in flight, the action done twice from two surfaces.
+- **Undo and redo:** ⌘Z right after the action, then ⇧⌘Z, then ⌘Z again. Is the state the same as before? Does it leave anything behind, or take back someone else's step?
+- **Interruption:** Esc mid-flow, navigating away mid-save, a reload mid-action, a network failure (does the optimistic state roll back?).
+- **Scope:** another pond, another person's page, a trashed or deleted target, a page that's been edited since (outdated), no permission.
+- **The person's view:** can a person get stuck, where the only way out is to ask Pond or reload? A feature a person can't finish by hand is broken.
+
+Each break you can point at in code is a **blocking** finding, written as the sequence that triggers it (`click X, press ⌘Z twice → the row is gone and undo is empty`). Suspected breaks that only the browser can confirm go in `non_blocking`, prefixed `verify:`, so the verifier tries them.
+
 ## AXIS = standards
 
 Judge the code against this repo's conventions (`WORKTREE/AGENTS.md`, and two or three sibling files the diff touches), not against the feature spec:

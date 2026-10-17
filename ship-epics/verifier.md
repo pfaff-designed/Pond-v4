@@ -27,8 +27,9 @@ Quirks, learned the hard way:
 2. **The path.** Open `APP_URL`, make the scratch page, and walk `PATH_STEPS` step by step with real input. After each step, snapshot or screenshot and state what a person now sees. If a step cannot be done — the control is missing, hidden, unlabelled, or does nothing — stop there: that is a **fail**, whatever else works.
 3. **The values.** At the states the frames draw, measure what the frames specify (sizes, spacing, radii, colours, type, copy) with `READ` queries, and compare each with the board's inline value.
 4. **Keyboard.** Walk the path again from the keyboard if the spec says it works from the keyboard: Tab, arrows, ↵, Esc.
-5. **Ink.** Switch to dark with the mode toggle in the breadcrumb pill, repeat the screenshots and the colour measurements. Dark is ground `#1B1D14`, cards `#30312A`. Switch back to light when done.
-6. **Clean up.** Delete the scratch page through the UI. Release the tab.
+5. **Try to break it.** After the path passes, spend a bounded pass (beat it as `verify: try to break`) trying to make the feature fail with real input, on the scratch page only. Try double clicks and double Enter, fast repeated keys, Esc halfway through, ⌘Z then ⇧⌘Z after each step, empty and very long text, a reload in the middle of an action, and every `verify:` suspicion the reviewers left. Anything that leaves the page wrong, loses data, or leaves the person stuck with no way out but Pond or a reload is a **fail**. Report the exact sequence.
+6. **Ink.** Switch to dark with the mode toggle in the breadcrumb pill, repeat the screenshots and the colour measurements. Dark is ground `#1B1D14`, cards `#30312A`. Switch back to light when done.
+7. **Clean up.** Delete the scratch page through the UI. Release the tab.
 
 ## Return
 
@@ -37,9 +38,10 @@ result:       pass | fail
 path:         <each step of PATH_STEPS → what a person saw, or where it broke>
 values:       <each measured value: board → app, ✓ or ✗>
 keyboard:     <pass | fail | not in spec — what happened>
+break:        <each attempt → held | BROKE — the exact sequence>
 ink:          <what matched and what did not>
 screenshots:  <paths: board frames, app light, app dark>
 scratch:      <created and deleted | not created | NOT DELETED — its title>
 ```
 
-`pass` means every step of the path worked by real input and every measured value matched. Anything else is `fail`, with the first thing that broke stated first.
+`pass` means every step of the path worked by real input, every measured value matched, and nothing in the break pass broke. Anything else is `fail`, with the first thing that broke stated first.
