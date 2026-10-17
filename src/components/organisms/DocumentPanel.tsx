@@ -25,7 +25,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { getPage } from '@/lib/pages/client'
 import { usePageDraft } from '@/lib/pages/use-page-draft'
@@ -61,6 +61,8 @@ import { DATABASES_ROOT_TITLE } from '@/lib/pages/databases-root'
 import { childCards } from '@/lib/pages/child-cards'
 import { isUntouchedPage, titleEyebrow } from '@/lib/pages/title-eyebrow'
 import { readMadeFrom } from '@/lib/pages/made-from'
+import { isNewNestedPage, markOpened } from '@/lib/pages/nested-page'
+import { applyPagePropsOptimistic } from '@/lib/pages/tree'
 import { workspaceUrl, WORKSPACE_PATH, type WorkspaceNodeRef } from '@/lib/pages/nav'
 import { homeQueryKey } from '@/lib/pages/keys'
 import { usePagesRows } from '@/lib/pages/use-pages'
@@ -195,6 +197,25 @@ export function DocumentPanel() {
     queryFn: () => (pageId ? getPage(getSupabase(), pageId) : Promise.resolve(null)),
     enabled: !!pageId && !isChangeLogNode,
   })
+
+  // KAN-122: a page made by `/ nested page` carries `new` (the chip on its
+  // parent's page-link row, the rail row note) until it is first opened for
+  // reading — stamped here, the one mount point that owns `pageId` for every
+  // page surface. Guarded by `openedMarked` (not just `page.props`) so the
+  // write fires once per page, not on every re-render while the server write
+  // is still in flight.
+  const queryClient = useQueryClient()
+  const openedMarked = useRef<string | null>(null)
+  useEffect(() => {
+    if (!page || !isNewNestedPage(page.props) || openedMarked.current === page.id) return
+    openedMarked.current = page.id
+    applyPagePropsOptimistic(
+      queryClient,
+      { id: page.id, props: { openedAt: new Date().toISOString() } },
+      pondId
+    )
+    void markOpened(getSupabase(), page.id)
+  }, [page, pondId, queryClient, getSupabase])
 
   // The flat page tree — the same cache the rail reads — so this page's own
   // children can be shown below its blocks (ticket-22). `new Date()` is captured

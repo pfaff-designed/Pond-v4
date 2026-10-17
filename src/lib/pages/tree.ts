@@ -172,6 +172,23 @@ export function applyAreaRoleOptimistic(
 }
 
 /**
+ * Optimistically merge props onto ONE row in the pagesKey() cache (KAN-122) —
+ * so a write-once stamp (e.g. `markOpened`'s `openedAt`) is reflected immediately,
+ * before its own write lands, and the `new` chip/row note disappear without
+ * waiting on a refetch. Mirrors `applyGlyphOptimistic`: touches only the picked
+ * row, merging onto whatever `props` it already carries rather than replacing it.
+ */
+export function applyPagePropsOptimistic(
+  queryClient: QueryClient,
+  patch: { id: string; props: Record<string, unknown> },
+  pondId: string | null
+): void {
+  queryClient.setQueryData<PageRow[]>(pagesKey(pondId), (rows) =>
+    rows?.map((r) => (r.id === patch.id ? { ...r, props: { ...r.props, ...patch.props } } : r))
+  )
+}
+
+/**
  * Optimistically apply a MOVE (F25) to the pagesKey() cache so the rail
  * restructures instantly — before movePage's write lands. Sets the moved row's
  * `parent_id` and rewrites `order = index` for every id in the reindexed target
