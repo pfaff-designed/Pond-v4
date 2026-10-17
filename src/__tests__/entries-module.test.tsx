@@ -490,6 +490,16 @@ describe('EntriesView — the add line (KAN-356)', () => {
     fireEvent.keyDown(add, { key: 'Enter' })
     expect(onChange).not.toHaveBeenCalled()
   })
+
+  it('↵ while composing an IME candidate does nothing — no stray entry', () => {
+    const onChange = jest.fn()
+    render(<EntriesView data={updates} editable onChange={onChange} />)
+    const add = screen.getByRole('textbox', { name: 'Add entry' })
+    fireEvent.change(add, { target: { value: '予測' } })
+    fireEvent.keyDown(add, { key: 'Enter', isComposing: true })
+    expect(onChange).not.toHaveBeenCalled()
+    expect((add as HTMLInputElement).value).toBe('予測')
+  })
 })
 
 describe('EntriesView — ↵ inside an entry’s own field (KAN-356)', () => {
@@ -515,6 +525,14 @@ describe('EntriesView — ↵ inside an entry’s own field (KAN-356)', () => {
     render(<EntriesView data={updates} editable onChange={onChange} />)
     const texts = screen.getAllByRole('textbox', { name: 'Entry text' })
     fireEvent.keyDown(texts[0], { key: 'Enter', shiftKey: true })
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('↵ while composing an IME candidate does nothing — no stray entry', () => {
+    const onChange = jest.fn()
+    render(<EntriesView data={updates} editable onChange={onChange} />)
+    const texts = screen.getAllByRole('textbox', { name: 'Entry text' })
+    fireEvent.keyDown(texts[0], { key: 'Enter', isComposing: true })
     expect(onChange).not.toHaveBeenCalled()
   })
 })
@@ -577,6 +595,20 @@ describe('EntriesView — ⌫ in an empty entry’s own field (KAN-356)', () => 
     const onChange = jest.fn()
     render(<EntriesView data={updates} editable onChange={onChange} />)
     fireEvent.keyDown(screen.getAllByRole('textbox', { name: 'Entry text' })[0], { key: 'Backspace' })
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('⌫ while composing an IME candidate does nothing, even on an empty row', () => {
+    const onChange = jest.fn()
+    render(
+      <EntriesView
+        data={{ ...updates, entries: [...updates.entries, { id: 'u3', date: '1 nov', text: '' }] }}
+        editable
+        onChange={onChange}
+      />
+    )
+    const texts = screen.getAllByRole('textbox', { name: 'Entry text' })
+    fireEvent.keyDown(texts[2], { key: 'Backspace', isComposing: true })
     expect(onChange).not.toHaveBeenCalled()
   })
 })

@@ -165,6 +165,7 @@ export function EntriesView({ data, editable, onChange }: ModuleViewProps<Entrie
   }
 
   function handleAddKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.nativeEvent.isComposing) return
     if (e.key !== 'Enter') return
     e.preventDefault()
     if (addValue.trim() === '') return
@@ -190,6 +191,7 @@ export function EntriesView({ data, editable, onChange }: ModuleViewProps<Entrie
    * idiom, built locally since this is within-block, not a block removal.
    */
   function handleTextKeyDown(e: KeyboardEvent<HTMLTextAreaElement>, index: number) {
+    if (e.nativeEvent.isComposing) return
     if (e.key === 'Backspace' && data.entries[index].text === '') {
       e.preventDefault()
       const neighbour = data.entries[index - 1] ?? data.entries[index + 1]
