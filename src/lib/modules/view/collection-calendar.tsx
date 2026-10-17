@@ -33,7 +33,7 @@ import { localDateIso } from './due'
 import { CALENDAR_EMPTY_LINE } from './kinds'
 import { RecordPeek } from './record-peek'
 import { useDoneToggle } from './use-done-toggle'
-import { useRecordSelection } from './use-record-selection'
+import { ROW_FOCUS_VISIBLE, useRecordSelection } from './use-record-selection'
 
 /** The shape `useRecordSelection` hands back for a row-typed-id container (the
  *  stack item, the focus-list row) — read off the hook's own return so this file
@@ -72,10 +72,6 @@ const DAY_DOT = 'size-1 flex-none rounded-full bg-mn-text'
 const DAY_NUMBER_LIST = 'inline-flex h-[30px] min-w-[30px] self-start text-[20px] font-medium tabular-nums'
 /** `boxSt(o,13)`: the focused-day list's larger dot, `radius 4` (`sz > 11`). */
 const DAY_ITEM_DOT_LARGE = 'size-[13px] flex-none rounded-[4px] box-border ring-[1.4px] ring-inset ring-mn-text/[0.32]'
-/** The shared focus-visible outline (`view.tsx`'s table row / board card / gallery card) — a
- *  tab stop needs its own visible ring, since the selected ring only draws once chosen. */
-const ROW_FOCUS_VISIBLE =
-  'outline-[1.5px] outline-offset-1 outline-mn-text/50 outline-none focus-visible:outline-solid'
 /** The day cell's own keyboard-only "add" control: a mouse user reaches `onOpenAdd` by
  *  clicking the cell's blank space, so this stays `sr-only` until it is the thing with
  *  focus, then draws as a small chip in the cell's corner. */

@@ -91,7 +91,7 @@ import { DraftInput } from '@/components/atoms/draft-input'
 import { RecordPeek } from './record-peek'
 import { CollectionList } from './list'
 import { CollectionCalendar } from './collection-calendar'
-import { useRecordSelection } from './use-record-selection'
+import { ROW_FOCUS_VISIBLE, ROW_FOCUS_VISIBLE_BASE, useRecordSelection } from './use-record-selection'
 import { shouldSelectCardFromClick, shouldSelectRowFromClick } from './card-click'
 import { ViewBar, type ViewBarView } from '@/components/molecules/ViewBar'
 import { useBlockRow } from '../block-row-context'
@@ -733,7 +733,7 @@ function CollectionTable({
                   // `border-collapse` keeps a <tr>'s own radius from ever painting, so
                   // the selected background and its outer rounding live on the end
                   // tds instead (first/last below).
-                  'outline-[1.5px] outline-offset-1 outline-mn-text/50 outline-none focus-visible:outline-solid',
+                  ROW_FOCUS_VISIBLE,
                 ].join(' ')}
               >
                 <td
@@ -1006,7 +1006,7 @@ function CollectionBoard({
                       'dark:shadow-[0_1px_2px_rgba(0,0,0,.34),0_2px_8px_rgba(0,0,0,.4)]',
                       'transition-shadow duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none',
                       // `mn-text` flips to paper in dark, so the outline does too.
-                      'outline-[1.5px] outline-offset-1 outline-mn-text/50',
+                      ROW_FOCUS_VISIBLE_BASE,
                       isSelected ? 'outline-solid' : 'outline-none focus-visible:outline-solid',
                       isDragging ? 'opacity-30' : '',
                       editable ? 'cursor-grab' : 'cursor-pointer',
@@ -1189,7 +1189,7 @@ function CollectionGallery({
             <article
               key={row.id}
               aria-label={row.title || 'untitled'}
-              className="w-[170px] rounded-[20px] outline-[1.5px] outline-offset-1 outline-mn-text/50 outline-none focus-visible:outline-solid"
+              className={`w-[170px] rounded-[20px] ${ROW_FOCUS_VISIBLE}`}
               {...rowProps(row.id)}
               {...keyboardProps(row.id)}
               onClick={(e) => handleCardClick(row.id, e)}
@@ -1216,7 +1216,7 @@ function CollectionGallery({
             className={[
               'w-[170px] rounded-[20px] bg-transparent p-[10px] text-[13px] font-medium text-mn-text-secondary',
               'ring-[1.4px] ring-inset ring-mn-text/20 transition-colors hover:bg-mn-text/[0.04] hover:text-mn-text',
-              'outline-[1.5px] outline-offset-1 outline-mn-text/50 outline-none focus-visible:outline-solid',
+              ROW_FOCUS_VISIBLE,
               'motion-reduce:transition-none',
             ].join(' ')}
           >

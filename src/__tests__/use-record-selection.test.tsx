@@ -1,6 +1,6 @@
 /**
  * `useRecordSelection`'s `selectOrOpenOnKey` — the one home for "first ↵/Space
- * selects; ↵ on the already-selected row opens its page" (KAN-396), shared by
+ * selects; ↵ on the already-selected row opens its page" (KAN-358), shared by
  * `CollectionTable`'s row, `CollectionGallery`'s card and the calendar's stack
  * item/focus-list row. Each view's own ↵ test (table-row-select.test.tsx,
  * view-mapped-modes.test.tsx, collection-calendar.test.tsx) proves the wiring;
