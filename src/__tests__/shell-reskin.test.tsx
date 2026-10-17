@@ -102,6 +102,7 @@ import {
   COMPOSER_CLEARANCE_GAP,
   COMPOSER_CLEARANCE_VAR,
   COMPOSER_REST_HEIGHT,
+  composerClearanceMarginPx,
   composerClearancePadding,
   composerFootprintPx,
 } from '@/lib/layout/composer-clearance'
@@ -113,6 +114,11 @@ import {
   composerMaxHeight,
   readStoredComposerHeight,
 } from '@/lib/layout/composer-height'
+import TextEditor from '@/lib/modules/text/editor'
+import { findTextBlock, textEditorOf } from '@/__tests__/helpers/text-block'
+import { blockDomId, scrollToBlock } from '@/lib/modules/block-dom'
+import type { TextBlock } from '@/lib/modules/text/schema'
+import { selectWord } from '@/__tests__/helpers/selection'
 
 const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), 'utf8')
 /** Whitespace- and leading-zero-insensitive, so prettier's `0.86` matches the README's `.86`. */
@@ -985,6 +991,63 @@ describe('WorkspaceShell — the chrome floats over one canvas', () => {
     expect(main.style.scrollPaddingTop).toBe(`${COMPOSER_TOP_CLEARANCE}px`)
     expect(main.style.scrollPaddingBottom).toContain(COMPOSER_CLEARANCE_VAR)
     expect(main.style.scrollPaddingBottom).toContain('24px')
+  })
+
+  it('a real text block inside <main> reads the published clearance through the whole tree, and scrollToBlock still centres (path test, KAN-400)', async () => {
+    const data: TextBlock = { id: 'blk-1', type: 'text', content: 'hello' }
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const wrap = (child: React.ReactNode) => (
+      <QueryClientProvider client={client}>
+        <WorkspaceShell>{child}</WorkspaceShell>
+      </QueryClientProvider>
+    )
+    // Mount the shell first and publish the thread footprint on its real
+    // `[data-part="shell"]` node (`COMPOSER_DEFAULT_HEIGHT`, 392, plus its
+    // bottom inset — mirroring `shellEndingAt` in composer-clearance.test.ts),
+    // THEN mount the block — a `TextEditor` reads `editorProps.scrollMargin`'s
+    // getter once, at creation, so the footprint must already be live for the
+    // editor to pick it up (same ordering `view.test.tsx`'s unit test uses).
+    const { container, rerender } = render(wrap(null))
+    const shell = container.querySelector<HTMLElement>('[data-part="shell"]')!
+    shell.style.setProperty(
+      COMPOSER_CLEARANCE_VAR,
+      `${composerFootprintPx(COMPOSER_DEFAULT_HEIGHT)}px`
+    )
+    rerender(
+      wrap(
+        <div id={blockDomId(data.id)}>
+          <TextEditor data={data} onChange={() => {}} standIn={null} pressRef={{ current: null }} />
+        </div>
+      )
+    )
+
+    const field = await findTextBlock()
+    // A real click's mousedown handler calls `document.elementFromPoint`,
+    // which jsdom lacks (see helpers/selection.ts) — a real `Range` +
+    // `selectionchange` is the established stand-in for "click into the
+    // field" here, and proves the real tree's own click-to-select path
+    // doesn't crash reading the live footprint.
+    selectWord(field, 'hello')
+
+    expect(textEditorOf(field).view.someProp('scrollMargin')).toEqual({
+      top: COMPOSER_TOP_CLEARANCE,
+      bottom: composerClearanceMarginPx(),
+      left: 0,
+      right: 0,
+    })
+
+    const main = container.querySelector<HTMLElement>('main')!
+    expect(main.style.scrollPaddingTop).toBe(`${COMPOSER_TOP_CLEARANCE}px`)
+    expect(main.style.scrollPaddingBottom).toContain(COMPOSER_CLEARANCE_VAR)
+    expect(main.style.scrollPaddingBottom).toContain('24px')
+
+    // The ⌘K/jump path already honours the padded viewport natively through
+    // `block: 'center'` — confirmed, not changed by this ticket. jsdom has no
+    // `scrollIntoView`; jest.setup.ts stands it in globally.
+    const scrollIntoView = jest.mocked(HTMLElement.prototype.scrollIntoView)
+    scrollIntoView.mockClear()
+    scrollToBlock(data.id)
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'center' })
   })
 
   it('a click on the pill grows it into the palette', async () => {
