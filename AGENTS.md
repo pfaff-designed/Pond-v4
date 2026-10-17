@@ -73,6 +73,26 @@ So: read the board, list its states, delete the old component, write the new one
 
 What survives a gut is **engine logic the boards assume but do not draw**: the field engine, the diff path, persistence, ARIA trees, data derivation. Lift that out first, then gut the surface around it.
 
+# Build like a pragmatic programmer.
+
+These rules come from _The Pragmatic Programmer_ (Hunt and Thomas; the user asked for them on 2026-10-17). Each one below is tied to a failure this repo has actually had. The role files in `ship-epics/` restate the ones each role acts on.
+
+- **DRY means one home for each piece of knowledge, not just no repeated lines.** A rule, a value, a chord or a path lives in exactly one place, and everything else reads it. On 2026-10-17 the ⌘K/⌘J/⌘. hints were spelled out in six files and drifted. The same day, the monitor read a session folder written into its source and went silently stale. Text that only looks the same but means different things stays separate.
+- **Make state explicit. Never encode two facts in one field.** Rows were inferred from widths alone, so a block left at ½ silently re-packed every row below it, and side-by-side stopped working (KAN-440). If behaviour depends on a fact, store that fact.
+- **Orthogonality.** One change touches one concern. A ticket that has to edit several unrelated modules points to coupling: say so in the PR rather than threading through it. Tests are orthogonal to their environment too. Storybook stories that asserted `⌘K` failed on CI's Linux runner (KAN-396).
+- **Program deliberately, not by coincidence.** Know why the code works before you call it done, and know why it fails before you change it. A comment that claims behaviour is a claim, so test it: "a drag closes the menu its press opened" sat in `BlockCanvas.tsx` while the menu stayed open through every drag. A fix you cannot explain is not a fix.
+- **Crash early. Use assertions for the impossible.** An impossible state throws in development rather than defaulting quietly. Catch an error only where you handle it. A swallowed error turns a bug into a mystery.
+- **Finish what you start.** Whoever acquires a listener, timer, subscription, lock or server releases it, in the same scope. Leftover dev servers and browser locks have stalled whole runs.
+- **Reversibility.** Prefer decisions you can undo. A new persisted field is optional, and absent means today's behaviour, so old pages read unchanged and the change can be rolled back. Production migrations and data deletes are one-way doors, so they go to the user.
+- **Tracer bullets, not prototypes.** Every slice is a thin, working path from a control a person can see down to the data ("Split vertically", above). Code nobody can reach is not a tracer; it is a guess.
+- **Don't outrun your headlights.** Take small steps, each proven by a command, before taking the next. That is why build items are sized at about six minutes.
+- **Find bugs once.** Every bug a review, a verifier or the user finds gets a test that fails without the fix. Test the states, not the coverage number. Pure engine code (layout, rollups, date math) gets a table of cases or property-style tests over its whole input space: three scenarios in a table would have shown the KAN-440 re-pack bug at once.
+- **"select" isn't broken.** When something fails, suspect our own code first, then the test, then the tool. Prove it with the smallest check before blaming the framework.
+- **Fix broken windows.** Rot you see in lines you touch, you fix in the same change. Rot you only see nearby goes into the PR as a note, so it is ticketed rather than spread. Never leave a window you broke.
+- **Name well, rename freely.** A name that no longer says what the thing does is a bug. Rename it in the change that altered the meaning.
+- **Don't use code you don't understand.** That covers generated, copied and "it worked in the story" code alike: read it before it lands.
+- **Good-enough software, with the user setting "enough".** Ship the slice the ticket describes, at the board's quality, and stop. Polish beyond the spec is scope; anything short of the spec is not done.
+
 # There are exactly two kinds of component. Everything else is deleted.
 
 1. **The component library** — what Pond itself is built from. `Pond 02 Component library` and its child DCs define it: `PondAtom`, `PondControl`, `PondMolecule`, `PondPicker`, `PondRail`, `PondComposer`, `PondChart`, `PondTemplate`. This is the chrome.

@@ -28,6 +28,7 @@ Quirks, learned the hard way:
 3. **The values.** At the states the frames draw, measure what the frames specify (sizes, spacing, radii, colours, type, copy) with `READ` queries, and compare each with the board's inline value.
 4. **Keyboard.** Walk the path again from the keyboard if the spec says it works from the keyboard: Tab, arrows, ↵, Esc.
 5. **Try to break it.** After the path passes, spend a bounded pass (beat it as `verify: try to break`) trying to make the feature fail with real input, on the scratch page only. Try double clicks and double Enter, fast repeated keys, Esc halfway through, ⌘Z then ⇧⌘Z after each step, empty and very long text, a reload in the middle of an action, and every `verify:` suspicion the reviewers left. Anything that leaves the page wrong, loses data, or leaves the person stuck with no way out but Pond or a reload is a **fail**. Report the exact sequence.
+   A failure is reported as cause plus evidence, never as a guess. Before you write it up, find the smallest check that separates our code from the tool: the element's computed style, the event that fired or didn't, the request that was or wasn't sent. "select" isn't broken: suspect the app before Playwright (AGENTS.md).
 6. **Ink.** Switch to dark with the mode toggle in the breadcrumb pill, repeat the screenshots and the colour measurements. Dark is ground `#1B1D14`, cards `#30312A`. Switch back to light when done.
 7. **Clean up.** Delete the scratch page through the UI. Release the tab.
 

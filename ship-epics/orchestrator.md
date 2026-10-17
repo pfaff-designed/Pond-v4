@@ -103,7 +103,9 @@ A reviewer finding is checked before it is acted on: open the cited file and con
 
 ### 6. Fix rounds
 
-Confirmed blocking findings go back into the build loop: one item per finding, `SHIP_DIR/ralph.sh add LOOP "fix: <file:line — what breaks, for whom>"` (it lands above the plan's notes); remove the old `HB` and `RESULT`; start `ralph.sh` again on the same `LOOP`, the same way as step 4 — each finding gets its own fresh pass. Then re-review on the axis that found them. **At most two rounds** across review, live verification and CI together. A third is `stopped`.
+Confirmed blocking findings go back into the build loop: one item per finding, `SHIP_DIR/ralph.sh add LOOP "fix: <file:line — what breaks, for whom>"` (it lands above the plan's notes); remove the old `HB` and `RESULT`; start `ralph.sh` again on the same `LOOP`, the same way as step 4 — each finding gets its own fresh pass. Before queuing a finding, make sure it states its cause, not just its symptom. "The menu stays open because `onDragStart` sets state that the trigger's pointerdown re-opens" can be fixed; "the menu stays open" invites patching by coincidence (AGENTS.md, "Program deliberately"). A finding you can't explain goes to the verifier or a reviewer to diagnose first. Every fix item names the regression test that must fail without it.
+
+Then re-review on the axis that found them. **At most two rounds** across review, live verification and CI together. A third is `stopped`.
 
 ### 7. Live verification
 
@@ -152,8 +154,9 @@ If the branch adds anything under `supabase/migrations/`: run `npm run test:pgli
    Red: `gh run view <run> --repo pfaff-designed/Pond-v4 --log-failed`, fix through the build loop (a fix round: one `fix:` item per failure), push, wait again. A check that is still pending when `LONG`'s own deadline passes is a stall: say so and stop.
 
 6. **Merge**: `gh pr merge <N> --repo pfaff-designed/Pond-v4 --squash --delete-branch`. Ticket to **Done** (`JIRA.transition`, `41`).
-7. **Refill `now`**: add the label (`JIRA.labels`) to this Workstream's next not-Done ticket that lacks it, if the queue holds fewer than 8.
-8. **Sweep**: `git -C REPO worktree remove --force WORKTREE`, `git -C REPO branch -D BRANCH`, `REPO/scripts/sweep.sh`.
+7. **Ticket the broken windows.** Each `windows:` line in `PLAN.md`'s notes, and each non-blocking reviewer note naming rot outside the diff, becomes a Jira ticket under the same epic (`size-S`, no `now` label), or a comment on an existing ticket that covers it. List them in `RESULT`. Rot that isn't ticketed spreads (AGENTS.md, "Fix broken windows").
+8. **Refill `now`**: add the label (`JIRA.labels`) to this Workstream's next not-Done ticket that lacks it, if the queue holds fewer than 8.
+9. **Sweep**: `git -C REPO worktree remove --force WORKTREE`, `git -C REPO branch -D BRANCH`, `REPO/scripts/sweep.sh`.
 
 Then go back to step 1 for the next ticket, until `MAX_TICKETS` have merged or nothing is ready.
 
