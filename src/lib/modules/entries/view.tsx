@@ -61,6 +61,15 @@ const blankLine = (data: EntriesBlock) => data.placeholder ?? ENTRIES_EMPTY_LINE
  * the new row's textarea once it exists post-round-trip (hence the `useEffect`, not
  * an inline `.focus()` in the key handler). An empty ↵ is a no-op. The frame's
  * `write one` on the empty `log` card still works too, via the same `addEntry`.
+ *
+ * A third insert path lives inside each entry's own field (KAN-356): ↵ with no
+ * Shift inserts a new blank entry immediately above the one being typed into,
+ * focused — the field's own `onChange` already commits every keystroke, so
+ * there is nothing left for ↵ to do but insert and move focus. Shift+↵ is left
+ * to the textarea's native newline, which multi-line prose (and `serialize`'s
+ * line-collapsing) already assumes. Both this path and the add line share one
+ * `pendingFocusId` ref, keyed by the new entry's own id rather than its index,
+ * since an in-row insert can land anywhere in the stack, not just at the top.
  */
 
 /**
@@ -108,27 +117,28 @@ export function entryDateLabel(date: Date): string {
 export function addEntry(
   data: EntriesBlock,
   now: Date = new Date(),
-  text: string = ''
+  text: string = '',
+  id: string = crypto.randomUUID()
 ): EntriesBlock {
   return {
     ...data,
-    entries: [{ id: crypto.randomUUID(), date: entryDateLabel(now), text }, ...data.entries],
+    entries: [{ id, date: entryDateLabel(now), text }, ...data.entries],
   }
 }
 
 export function EntriesView({ data, editable, onChange }: ModuleViewProps<EntriesBlock>) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [addValue, setAddValue] = useState('')
-  const firstTextRef = useRef<HTMLTextAreaElement | null>(null)
-  const focusNewEntry = useRef(false)
+  const textRefs = useRef<Map<string, HTMLTextAreaElement>>(new Map())
+  const pendingFocusId = useRef<string | null>(null)
 
-  // Runs the render after an add — the new entry's textarea exists only once
-  // `onChange`'s data has round-tripped back through the host, so the focus can't
-  // happen inline in the key handler.
+  // Runs after an insert's `onChange` round-trips back through the host — the new
+  // entry's textarea doesn't exist in the DOM until then, so the focus can't happen
+  // inline in the key handler.
   useEffect(() => {
-    if (!focusNewEntry.current) return
-    focusNewEntry.current = false
-    firstTextRef.current?.focus()
+    if (!pendingFocusId.current) return
+    textRefs.current.get(pendingFocusId.current)?.focus()
+    pendingFocusId.current = null
   }, [data.entries])
 
   function patchEntry(index: number, patch: Partial<Entry>) {
@@ -142,9 +152,32 @@ export function EntriesView({ data, editable, onChange }: ModuleViewProps<Entrie
     if (e.key !== 'Enter') return
     e.preventDefault()
     if (addValue.trim() === '') return
-    focusNewEntry.current = true
-    onChange?.(addEntry(data, new Date(), addValue))
+    const id = crypto.randomUUID()
+    pendingFocusId.current = id
+    onChange?.(addEntry(data, new Date(), addValue, id))
     setAddValue('')
+  }
+
+  /**
+   * ↵ in an entry's own field (KAN-356) inserts a new blank entry immediately
+   * above it, focused — the row is already committed by every keystroke's own
+   * `onChange` via `patchEntry`, so there is nothing left to commit here. Shift+↵
+   * is left untouched: the textarea's native behaviour inserts the literal
+   * newline multi-line prose needs.
+   */
+  function handleTextKeyDown(e: KeyboardEvent<HTMLTextAreaElement>, index: number) {
+    if (e.key !== 'Enter' || e.shiftKey) return
+    e.preventDefault()
+    const id = crypto.randomUUID()
+    pendingFocusId.current = id
+    onChange?.({
+      ...data,
+      entries: [
+        ...data.entries.slice(0, index),
+        { id, date: entryDateLabel(new Date()), text: '' },
+        ...data.entries.slice(index),
+      ],
+    })
   }
 
   if (editable) {
@@ -164,7 +197,10 @@ export function EntriesView({ data, editable, onChange }: ModuleViewProps<Entrie
               {entry.date}
             </span>
             <textarea
-              ref={i === 0 ? firstTextRef : undefined}
+              ref={(el) => {
+                if (el) textRefs.current.set(entry.id, el)
+                else textRefs.current.delete(entry.id)
+              }}
               aria-label="Entry text"
               className={`${medium(data.serif)} w-full resize-none bg-transparent text-mn-text outline-none placeholder:text-mn-text-secondary`}
               value={entry.text}
@@ -173,6 +209,7 @@ export function EntriesView({ data, editable, onChange }: ModuleViewProps<Entrie
               onFocus={() => setEditingId(entry.id)}
               onBlur={() => setEditingId((id) => (id === entry.id ? null : id))}
               onChange={(e) => patchEntry(i, { text: e.target.value })}
+              onKeyDown={(e) => handleTextKeyDown(e, i)}
             />
           </div>
         ))}

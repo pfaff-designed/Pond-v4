@@ -491,3 +491,30 @@ describe('EntriesView — the add line (KAN-356)', () => {
     expect(onChange).not.toHaveBeenCalled()
   })
 })
+
+describe('EntriesView — ↵ inside an entry’s own field (KAN-356)', () => {
+  it('commits the row and inserts a new blank entry immediately above it, focused', () => {
+    render(<Stateful data={updates} />)
+    const texts = screen.getAllByRole('textbox', { name: 'Entry text' })
+    fireEvent.change(texts[1], { target: { value: 'Landlord confirmed, and the keys.' } })
+    fireEvent.keyDown(texts[1], { key: 'Enter' })
+
+    const next = screen.getAllByRole('textbox', { name: 'Entry text' })
+    expect(next).toHaveLength(3)
+    // The committed edit survives the insert.
+    expect((next[2] as HTMLTextAreaElement).value).toBe('Landlord confirmed, and the keys.')
+    // The new blank row lands immediately above it (index 1, pushing the old
+    // second entry to index 2) — not necessarily at the very top of the stack.
+    expect((next[1] as HTMLTextAreaElement).value).toBe('')
+    expect((next[0] as HTMLTextAreaElement).value).toBe(updates.entries[0].text)
+    expect(document.activeElement).toBe(next[1])
+  })
+
+  it('Shift+↵ inserts a literal newline instead — no new entry', () => {
+    const onChange = jest.fn()
+    render(<EntriesView data={updates} editable onChange={onChange} />)
+    const texts = screen.getAllByRole('textbox', { name: 'Entry text' })
+    fireEvent.keyDown(texts[0], { key: 'Enter', shiftKey: true })
+    expect(onChange).not.toHaveBeenCalled()
+  })
+})
