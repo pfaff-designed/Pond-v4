@@ -72,3 +72,30 @@ export async function rankFirstInNowQueue(key: string): Promise<boolean> {
     return false
   }
 }
+
+export async function addIssueComment(key: string, text: string): Promise<boolean> {
+  const baseUrl = process.env.JIRA_BASE_URL
+
+  try {
+    const response = await fetch(`${baseUrl}/rest/api/3/issue/${key}/comment`, {
+      method: 'POST',
+      headers: {
+        Authorization: authHeader(),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        body: {
+          type: 'doc',
+          version: 1,
+          content: [{ type: 'paragraph', content: [{ type: 'text', text }] }],
+        },
+      }),
+    })
+
+    if (!response.ok) console.error(`addIssueComment failed for ${key}: ${response.status}`)
+    return response.ok
+  } catch (error) {
+    console.error(`addIssueComment failed for ${key}:`, error)
+    return false
+  }
+}
