@@ -577,7 +577,7 @@ export const RecordInk: Story = {
 async function assertEmpty(root: HTMLElement, p: Palette, m: Metrics = DESKTOP) {
   await assertChrome(root, p, m)
   const note = part(root, 'note')!
-  await expect(note.textContent).toBe('no page or record called “cabnet”')
+  await expect(note.textContent).toBe('no page or record called “cabinex”')
   const s = getComputedStyle(note)
   await expect(s.padding).toBe('10px 12px')
   await expect(s.fontFamily).toMatch(MONO)
@@ -585,24 +585,27 @@ async function assertEmpty(root: HTMLElement, p: Palette, m: Metrics = DESKTOP) 
   await expect(s.color).toBe(p.tier80)
   await expect(groups(root)).toEqual(['did you mean'])
   await expect(labels(root)).toEqual([
-    'ask pond about “cabnet”',
-    'new page “cabnet” under life',
+    'ask pond about “cabinex”',
+    'new page “cabinex” under life',
     'cabinet plan',
   ])
   await expect(root.querySelector('[aria-selected="true"] [data-part="label"]')!.textContent).toBe(
-    'ask pond about “cabnet”'
+    'ask pond about “cabinex”'
   )
 }
 
-/** `cabnet`: no dead end — the note, ask pond, make the page, a close spelling. */
+/** `cabinex`: no dead end — the note, ask pond, make the page, a close spelling.
+ * KAN-390's fuzzy subsequence tier now finds a real hit for the board's own `cabnet`,
+ * so the empty state here uses `cabinex` — same edit distance from "cabinet", but no
+ * item's label contains an "x", so it still misses every tier. */
 export const Empty: Story = {
   name: 'empty',
-  args: { open: true, defaultQuery: 'cabnet' },
+  args: { open: true, defaultQuery: 'cabinex' },
   play: async ({ canvasElement }) => assertEmpty(canvasElement, PAPER),
 }
 export const EmptyInk: Story = {
   name: 'empty · ink',
-  args: { open: true, defaultQuery: 'cabnet', ink: true },
+  args: { open: true, defaultQuery: 'cabinex', ink: true },
   play: async ({ canvasElement }) => assertEmpty(canvasElement, INK),
 }
 
@@ -699,10 +702,10 @@ export const MobileTyping: Story = {
   },
 }
 
-/** `cabnet`: the note is 13 on a phone. */
+/** `cabinex`: the note is 13 on a phone. */
 export const MobileEmpty: Story = {
   name: 'empty · mobile',
-  args: { open: true, defaultQuery: 'cabnet' },
+  args: { open: true, defaultQuery: 'cabinex' },
   globals: onPhone,
   play: async ({ canvasElement }) => {
     await assertPhone()
