@@ -518,3 +518,27 @@ describe('EntriesView — ↵ inside an entry’s own field (KAN-356)', () => {
     expect(onChange).not.toHaveBeenCalled()
   })
 })
+
+describe('EntriesView — the hover `remove` (KAN-356)', () => {
+  it('is editable mode only, one per row, at ink .68 until a row hover reveals it', () => {
+    render(<EntriesView data={updates} />)
+    expect(screen.queryByRole('button', { name: 'Remove entry' })).toBeNull()
+
+    render(<Stateful data={updates} />)
+    const removes = screen.getAllByRole('button', { name: 'Remove entry' })
+    expect(removes).toHaveLength(2)
+    for (const r of removes) {
+      expect(r.textContent).toBe('remove')
+      has(r, 'font-mono', 'text-mn-text-secondary', 'opacity-0', 'group-hover:opacity-100')
+    }
+  })
+
+  it('clicking it removes that entry via onChange, leaving the others', () => {
+    render(<Stateful data={updates} />)
+    fireEvent.click(screen.getAllByRole('button', { name: 'Remove entry' })[0])
+
+    const texts = screen.getAllByRole('textbox', { name: 'Entry text' })
+    expect(texts).toHaveLength(1)
+    expect((texts[0] as HTMLTextAreaElement).value).toBe(updates.entries[1].text)
+  })
+})

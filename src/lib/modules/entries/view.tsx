@@ -88,6 +88,15 @@ const SERIF = 'font-serif font-extralight text-[16.5px] leading-[1.6] [text-wrap
 /** The molecule's `editing` state: `boxShadow: inset 0 0 0 1.4px fg`, no background change. */
 const EDIT_RING = 'ring-[1.4px] ring-inset ring-mn-text'
 /**
+ * The hover `remove` (KAN-356) — no board draws it on `entry` either, so it
+ * follows `BlockCanvas.tsx`'s own hover-handle idiom: `group` on the row,
+ * `opacity-0` revealed by `group-hover`/`group-focus-within` (keyboard parity
+ * with a mouse hover), trailing-aligned over the row's end. Stays at ink .68
+ * throughout — it never earns full ink, same register as the add line.
+ */
+const REMOVE =
+  'absolute right-2 top-1/2 -translate-y-1/2 font-mono text-[10.5px] tracking-tight text-mn-text-secondary opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100'
+/**
  * The add line (KAN-356) — no board draws this row, the ticket's own build
  * instruction does ("as a quiet mono line"): machine-surface register, ink .68
  * throughout rather than the content rows' full ink, since it is an affordance, not
@@ -148,6 +157,10 @@ export function EntriesView({ data, editable, onChange }: ModuleViewProps<Entrie
     })
   }
 
+  function removeEntry(index: number) {
+    onChange?.({ ...data, entries: data.entries.filter((_, k) => k !== index) })
+  }
+
   function handleAddKeyDown(e: KeyboardEvent<HTMLInputElement>) {
     if (e.key !== 'Enter') return
     e.preventDefault()
@@ -192,10 +205,21 @@ export function EntriesView({ data, editable, onChange }: ModuleViewProps<Entrie
           onKeyDown={handleAddKeyDown}
         />
         {data.entries.map((entry, i) => (
-          <div key={entry.id} className={`${ROW} ${editingId === entry.id ? EDIT_RING : ''}`}>
+          <div
+            key={entry.id}
+            className={`${ROW} group relative ${editingId === entry.id ? EDIT_RING : ''}`}
+          >
             <span data-part="date" className={DATE}>
               {entry.date}
             </span>
+            <button
+              type="button"
+              aria-label="Remove entry"
+              className={REMOVE}
+              onClick={() => removeEntry(i)}
+            >
+              remove
+            </button>
             <textarea
               ref={(el) => {
                 if (el) textRefs.current.set(entry.id, el)
