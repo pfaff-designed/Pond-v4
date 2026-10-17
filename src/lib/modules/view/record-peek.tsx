@@ -11,7 +11,7 @@
  * the same `onEdit` (`setValue`) a table cell does.
  */
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { usePageCanvas } from '../page-canvas'
 import { coerceValue, type PropertySchema, type PropertyValue } from '@/lib/properties/schema'
@@ -96,17 +96,26 @@ export function RecordPeek({
     if (focusOnOpen) peekRef.current?.focus()
   }, [focusOnOpen])
   const canvas = usePageCanvas()
+  // Read once per mount / row change, not on every render: a later scroll moves this
+  // element along with the rest of the canvas's content natively, so re-reading
+  // scrollTop on an unrelated render would double-count that movement.
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- row.id isn't read in the body, but a swap to a new row (same canvas) must re-read scrollTop too
+  const top = useMemo(() => (canvas?.element?.scrollTop ?? 0) + 150, [canvas?.element, row.id])
   const peek = (
     <aside
       data-part="record-peek"
       aria-label={`Record: ${title}`}
       tabIndex={-1}
       ref={peekRef}
-      // Positioned against the page canvas (it is portaled there): `right 44 / top 150`
-      // are 6u.2's, and it scrolls with the page. Radius 20, 16/12/12, gap 6, and two
-      // layers of its own shadow that match no token.
+      style={{ top: `${top}px` }}
+      // Positioned against the page canvas (it is portaled there): `right 44` is 6u.2's.
+      // `top` is 150 below the canvas's visible top at the moment the peek opens (its
+      // scroll container's scrollTop + 150, read on mount and on `row.id` change) rather
+      // than 150 from the top of the scrolled content — then it scrolls with the page,
+      // same as before, because it is ordinary absolutely-positioned content inside the
+      // scrolling canvas. Off a canvas (no `usePageCanvas`, Storybook) top stays 150.
       className={[
-        'absolute top-[150px] right-[44px] z-30 flex w-[330px] flex-col gap-[6px] rounded-[20px] bg-mn-card px-[12px] pt-[16px] pb-[12px] outline-none',
+        'absolute right-[44px] z-30 flex w-[330px] flex-col gap-[6px] rounded-[20px] bg-mn-card px-[12px] pt-[16px] pb-[12px] outline-none',
         'shadow-[0_2px_6px_rgba(40,34,24,.08),0_20px_54px_rgba(40,34,24,.18)]',
         'dark:shadow-[0_2px_6px_rgba(0,0,0,.3),0_20px_54px_rgba(0,0,0,.45)]',
       ].join(' ')}

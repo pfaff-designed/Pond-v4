@@ -11,6 +11,7 @@ import { render, screen, fireEvent, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import { CollectionView } from '@/lib/modules/view/view'
+import { PageCanvas } from '@/lib/modules/page-canvas'
 import type { ViewBlock } from '@/lib/modules/view/schema'
 import type { CollectionRow } from '@/lib/modules/view/apply'
 import type { PropertySchema } from '@/lib/properties/schema'
@@ -208,6 +209,38 @@ describe('record peek — editing and navigation', () => {
     renderBoard()
     fireEvent.click(card('Pack the kiln'))
     expect(screen.queryByRole('button', { name: 'open ›' })).not.toBeInTheDocument()
+  })
+})
+
+describe('record peek — position on a scrolled canvas', () => {
+  const canvasEl = () => document.querySelector<HTMLElement>('.canvas')!
+
+  it('measures top from the canvas’s visible top, not the scrolled content’s', () => {
+    render(
+      <PageCanvas className="canvas">
+        <CollectionView config={config} schema={schema} rows={rows} />
+      </PageCanvas>
+    )
+    canvasEl().scrollTop = 800
+    fireEvent.click(card('Trim the rim'))
+    expect(peek()).toHaveStyle({ top: '950px' })
+  })
+
+  it('a canvas scrolled to the top keeps 150', () => {
+    render(
+      <PageCanvas className="canvas">
+        <CollectionView config={config} schema={schema} rows={rows} />
+      </PageCanvas>
+    )
+    canvasEl().scrollTop = 0
+    fireEvent.click(card('Trim the rim'))
+    expect(peek()).toHaveStyle({ top: '150px' })
+  })
+
+  it('off a canvas, top stays 150', () => {
+    renderBoard()
+    fireEvent.click(card('Trim the rim'))
+    expect(peek()).toHaveStyle({ top: '150px' })
   })
 })
 

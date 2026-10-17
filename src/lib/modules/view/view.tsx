@@ -91,6 +91,7 @@ import { RecordPeek } from './record-peek'
 import { CollectionList } from './list'
 import { CollectionCalendar } from './collection-calendar'
 import { useRecordSelection } from './use-record-selection'
+import { shouldSelectRowFromClick } from './card-click'
 import { ViewBar, type ViewBarView } from '@/components/molecules/ViewBar'
 import { useBlockRow } from '../block-row-context'
 
@@ -500,6 +501,7 @@ export function CollectionView({
         <CollectionBigNumber schema={schema} rows={processed} bigNumber={activeConfig.bigNumber} />
       ) : (
         <CollectionTable
+          viewKey={viewKey}
           schema={schema}
           rows={tableRows}
           struckIds={struckIds}
@@ -507,6 +509,7 @@ export function CollectionView({
           onEdit={onEdit}
           onAddRow={onAddRow}
           onRenameRow={onRenameRow}
+          onOpenRow={onOpenRow}
         />
       )}
     </div>
@@ -610,6 +613,7 @@ function ViewControls({
 // ── Table ─────────────────────────────────────────────────────────────────────
 
 function CollectionTable({
+  viewKey,
   schema,
   rows,
   struckIds,
@@ -617,7 +621,10 @@ function CollectionTable({
   onEdit,
   onAddRow,
   onRenameRow,
+  onOpenRow,
 }: {
+  /** The view block's id — what the page canvas keys its one peek and one orange pill by. */
+  viewKey: string
   schema: PropertySchema
   rows: CollectionRow[]
   /** Row ids an undo/redo just removed (KAN-139, s6o5) — still rendered,
@@ -627,8 +634,45 @@ function CollectionTable({
   onEdit?: (rowId: string, key: string, value: PropertyValue) => void
   onAddRow?: (values?: Record<string, PropertyValue>) => Promise<string | null>
   onRenameRow?: (rowId: string, title: string) => void
+  onOpenRow?: (rowId: string) => void
 }) {
   const { stepOut } = useBlockRow()
+  const [now] = useState(() => new Date())
+  const { selectedRow, select, selectWithPointer, keyboardProps } = useRecordSelection(
+    rows,
+    viewKey
+  )
+  const done = useDoneToggle({ schema, editable, onEdit })
+
+  // A click on the row's own space (not a cell's input/control) selects it and
+  // opens the board's peek beside the table; `shouldSelectRowFromClick` is the
+  // row-shaped predicate (unlike the card's, it doesn't exclude `td`/`th`,
+  // which is the row's entire clickable surface). A struck row (KAN-139) is an
+  // undo-removed record still drawn for the notice's duration — it must never
+  // select, or its peek would let a person edit a record that no longer exists.
+  function handleRowClick(rowId: string, struck: boolean, e: React.MouseEvent) {
+    if (struck) return
+    if (shouldSelectRowFromClick(e.target)) selectWithPointer(rowId)
+  }
+
+  // ↵ on the row itself (not a cell's input — `keyboardProps`' own guard) opens
+  // the record's page once the row is already selected; a first ↵ (or Space,
+  // any time) selects it instead, same as the board's keyboard behaviour, so
+  // a keyboard user reaches the peek before the page. Focus never moves into
+  // the peek from here (no `focusOnOpen`), so the second ↵ still lands on the
+  // row.
+  function handleRowKeyDown(rowId: string, e: React.KeyboardEvent<HTMLTableRowElement>) {
+    if (e.target !== e.currentTarget) return
+    if (e.key === 'Enter' && rowId === selectedRow?.id) {
+      e.preventDefault()
+      onOpenRow?.(rowId)
+      return
+    }
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      select({ id: rowId, via: 'keyboard' })
+    }
+  }
 
   // Return/↓ in the last row's last cell step out of the table (KAN-344) — the
   // "last cell" is the Row title input when there's no schema, else the last
@@ -668,19 +712,33 @@ function CollectionTable({
               (PondBlock state="empty", #239) and suppresses this view entirely. */}
           {rows.map((row, ri) => {
             const struck = struckIds?.has(row.id) ?? false
+            // Never true for a struck row (see `handleRowClick`), even if it was
+            // already selected before the undo that struck it — a stale selection
+            // dropping its highlight and peek, not keeping them on a dead record.
+            const selected = !struck && row.id === selectedRow?.id
             return (
               <tr
                 key={row.id}
-                className={
-                  struck
-                    ? `border-b border-mn-line last:border-b-0 align-top ${DIFF_REMOVAL_TEXT_CLASSNAME}`
-                    : 'border-b border-mn-line last:border-b-0 align-top'
-                }
+                data-row-id={row.id}
+                onClick={(e) => handleRowClick(row.id, struck, e)}
+                {...(struck ? {} : keyboardProps(row.id))}
+                onKeyDown={struck ? undefined : (e) => handleRowKeyDown(row.id, e)}
+                className={[
+                  'border-b border-mn-line last:border-b-0 align-top',
+                  struck ? DIFF_REMOVAL_TEXT_CLASSNAME : '',
+                  // `border-collapse` keeps a <tr>'s own radius from ever painting, so
+                  // the selected background and its outer rounding live on the end
+                  // tds instead (first/last below).
+                  'outline-[1.5px] outline-offset-1 outline-mn-text/50 outline-none focus-visible:outline-solid',
+                ].join(' ')}
               >
                 <td
-                  className={
-                    struck ? 'py-1.5 pr-3 font-medium' : 'py-1.5 pr-3 font-medium text-mn-text'
-                  }
+                  className={[
+                    struck ? 'py-1.5 pr-3 font-medium' : 'py-1.5 pr-3 font-medium text-mn-text',
+                    'rounded-l-[8px]',
+                    schema.length === 0 ? 'rounded-r-[8px]' : '',
+                    selected ? 'bg-mn-text/[0.07]' : '',
+                  ].join(' ')}
                   onKeyDown={(e) => handleCellKeyDown(ri, -1, e)}
                 >
                   {editable && onRenameRow && !struck ? (
@@ -689,7 +747,7 @@ function CollectionTable({
                       value={row.title}
                       placeholder="Untitled"
                       onCommit={(title) => onRenameRow(row.id, title)}
-                      className="w-full border-0 bg-transparent p-0 font-medium text-mn-text outline-none placeholder:text-mn-text-secondary"
+                      className="min-w-[4ch] max-w-full border-0 bg-transparent p-0 font-medium text-mn-text outline-none [field-sizing:content] placeholder:text-mn-text-secondary"
                     />
                   ) : (
                     row.title || 'Untitled'
@@ -698,7 +756,11 @@ function CollectionTable({
                 {schema.map((def, ci) => (
                   <td
                     key={def.id}
-                    className="py-1.5 pr-3"
+                    className={[
+                      'py-1.5 pr-3',
+                      ci === schema.length - 1 ? 'rounded-r-[8px]' : '',
+                      selected ? 'bg-mn-text/[0.07]' : '',
+                    ].join(' ')}
                     onKeyDown={(e) => handleCellKeyDown(ri, ci, e)}
                   >
                     <Cell
@@ -725,6 +787,21 @@ function CollectionTable({
         >
           + Add row
         </button>
+      )}
+
+      {selectedRow && !struckIds?.has(selectedRow.id) && (
+        <RecordPeek
+          key={selectedRow.id}
+          row={selectedRow}
+          schema={schema}
+          done={done.isDone(selectedRow)}
+          onToggleDone={done.toggle && (() => done.toggle?.(selectedRow))}
+          now={now}
+          editable={editable}
+          onEdit={onEdit}
+          onRenameRow={onRenameRow}
+          onOpenRow={onOpenRow}
+        />
       )}
     </div>
   )

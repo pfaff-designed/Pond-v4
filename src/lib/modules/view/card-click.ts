@@ -14,3 +14,16 @@ const INTERACTIVE =
 export function shouldSelectCardFromClick(target: EventTarget | null): boolean {
   return target instanceof Element && !target.closest(INTERACTIVE)
 }
+
+/**
+ * Selector for a table row's own interactive elements. Same as INTERACTIVE
+ * minus `td, th` — a row's entire clickable surface is inside a `td`, so
+ * excluding it (as the card predicate does) would never let a row select.
+ */
+const ROW_INTERACTIVE =
+  'button, input, a, textarea, select, [contenteditable], ' +
+  '[role="menu"], [role="menuitem"], [role="textbox"], [role="button"]'
+
+export function shouldSelectRowFromClick(target: EventTarget | null): boolean {
+  return target instanceof Element && !target.closest(ROW_INTERACTIVE)
+}
