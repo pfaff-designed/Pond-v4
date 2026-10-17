@@ -1,4 +1,4 @@
-import { buildOwnerEmailFields } from './owner-email'
+import { buildOwnerEmailFields, sendOwnerEmail } from './owner-email'
 
 const BASE = {
   reporterEmail: 'reporter@example.com',
@@ -62,5 +62,73 @@ describe('buildOwnerEmailFields', () => {
     expect(subject.startsWith('pond ·')).toBe(true)
     expect(subject).not.toMatch(/[A-Z]{2,}/)
     expect(html).not.toMatch(/!|act now|click here/i)
+  })
+})
+
+describe('sendOwnerEmail', () => {
+  const FIELDS = { subject: 'pond · problem reported: it spins', html: '<p>broken</p>' }
+  const ENV_VARS = ['RESEND_API_KEY', 'OWNER_EMAIL'] as const
+
+  beforeEach(() => {
+    process.env.RESEND_API_KEY = 'resend-secret'
+    process.env.OWNER_EMAIL = 'cmp7cc@gmail.com'
+  })
+
+  afterEach(() => {
+    for (const name of ENV_VARS) delete process.env[name]
+    jest.restoreAllMocks()
+  })
+
+  it('POSTs to Resend with the right URL, headers, and body, and returns the id', async () => {
+    const mockFetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ id: 'email-123' }),
+    })
+    global.fetch = mockFetch as unknown as typeof fetch
+
+    const result = await sendOwnerEmail(FIELDS)
+
+    expect(mockFetch).toHaveBeenCalledWith('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer resend-secret',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: 'Pond <noreply@pond.tools>',
+        to: 'cmp7cc@gmail.com',
+        subject: FIELDS.subject,
+        html: FIELDS.html,
+      }),
+    })
+    expect(result).toEqual({ id: 'email-123' })
+  })
+
+  it('throws when RESEND_API_KEY is missing', async () => {
+    delete process.env.RESEND_API_KEY
+    const mockFetch = jest.fn()
+    global.fetch = mockFetch as unknown as typeof fetch
+
+    await expect(sendOwnerEmail(FIELDS)).rejects.toThrow(/RESEND_API_KEY/)
+    expect(mockFetch).not.toHaveBeenCalled()
+  })
+
+  it('throws with the reason when the response is not ok', async () => {
+    const mockFetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => ({}),
+    })
+    global.fetch = mockFetch as unknown as typeof fetch
+
+    await expect(sendOwnerEmail(FIELDS)).rejects.toThrow(/500/)
+  })
+
+  it('throws with the reason when fetch itself throws', async () => {
+    const mockFetch = jest.fn().mockRejectedValue(new Error('network down'))
+    global.fetch = mockFetch as unknown as typeof fetch
+
+    await expect(sendOwnerEmail(FIELDS)).rejects.toThrow(/network down/)
   })
 })

@@ -27,6 +27,45 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;')
 }
 
+export interface SendOwnerEmailResult {
+  id: string
+}
+
+export async function sendOwnerEmail(fields: OwnerEmailFields): Promise<SendOwnerEmailResult> {
+  const apiKey = process.env.RESEND_API_KEY
+  if (!apiKey) {
+    throw new Error('RESEND_API_KEY is missing')
+  }
+
+  const ownerEmail = process.env.OWNER_EMAIL
+
+  let response: Response
+  try {
+    response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: 'Pond <noreply@pond.tools>',
+        to: ownerEmail,
+        subject: fields.subject,
+        html: fields.html,
+      }),
+    })
+  } catch (error) {
+    throw new Error(`Resend request failed: ${error instanceof Error ? error.message : String(error)}`)
+  }
+
+  if (!response.ok) {
+    throw new Error(`Resend responded with ${response.status}`)
+  }
+
+  const data = (await response.json()) as { id?: string }
+  return { id: data.id ?? '' }
+}
+
 export function buildOwnerEmailFields({
   reporterEmail,
   text,
