@@ -6,7 +6,7 @@
  * on (or inside) any of those must NOT also select it; only a click on the
  * card's passive body should.
  */
-import { shouldSelectCardFromClick } from './card-click'
+import { shouldSelectCardFromClick, shouldSelectRowFromClick } from './card-click'
 
 function buildCard(): HTMLElement {
   const li = document.createElement('li')
@@ -19,6 +19,16 @@ function buildCard(): HTMLElement {
   `
   document.body.appendChild(li)
   return li
+}
+
+function buildRow(): HTMLTableRowElement {
+  const tr = document.createElement('tr')
+  tr.innerHTML = `
+    <td class="title-cell"><input aria-label="Title" /></td>
+    <td class="value-cell"><span class="value">Doing</span></td>
+  `
+  document.body.appendChild(tr)
+  return tr
 }
 
 afterEach(() => {
@@ -54,5 +64,31 @@ describe('shouldSelectCardFromClick', () => {
   it('does NOT open from a non-element target', () => {
     expect(shouldSelectCardFromClick(null)).toBe(false)
     expect(shouldSelectCardFromClick(document)).toBe(false)
+  })
+})
+
+describe('shouldSelectRowFromClick', () => {
+  it('selects from a click on a bare td (no nested control)', () => {
+    const tr = buildRow()
+    expect(shouldSelectRowFromClick(tr)).toBe(true)
+    expect(shouldSelectRowFromClick(tr.querySelector('.value-cell'))).toBe(true)
+    expect(shouldSelectRowFromClick(tr.querySelector('.value'))).toBe(true)
+  })
+
+  it('does NOT select from a click on an input inside the cell', () => {
+    const tr = buildRow()
+    expect(shouldSelectRowFromClick(tr.querySelector('input'))).toBe(false)
+  })
+
+  it('does NOT select from a click on a button inside the cell', () => {
+    const tr = buildRow()
+    const td = tr.querySelector('.value-cell') as HTMLElement
+    td.innerHTML += '<button type="button">Open</button>'
+    expect(shouldSelectRowFromClick(td.querySelector('button'))).toBe(false)
+  })
+
+  it('does NOT select from a non-element target', () => {
+    expect(shouldSelectRowFromClick(null)).toBe(false)
+    expect(shouldSelectRowFromClick(document)).toBe(false)
   })
 })
