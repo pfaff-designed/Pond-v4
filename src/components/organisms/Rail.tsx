@@ -126,6 +126,7 @@ import { RailRenameField } from './RailRenameField'
 import { instantiateTemplate } from '@/lib/templates/instantiate'
 import { PREMADE_TEMPLATES } from '@/lib/templates/premade'
 import { NewPageMenu, type NewPageMenuAction } from '@/components/molecules/NewPageMenu'
+import { readExpandedIds, writeExpandedIds, pruneExpandedIds } from '@/lib/rail/expanded-store'
 
 // Re-exported so stories and consumers keep one import site for the tree types.
 export { LIFE_ID, buildTree, flattenVisible, isFolderNode, isAreaRow } from '@/lib/rail/tree'
@@ -1430,8 +1431,9 @@ export function Rail() {
     () => pushedGlyphs.reduce(pushRecentGlyph, pond?.recentGlyphs ?? []),
     [pond, pushedGlyphs]
   )
-  // Area folders start collapsed and open per session; Life starts expanded so
-  // the tree is visible on load (collapsing Life is the "collapse everything").
+  // Area folders persist their open/collapsed state per pond across reloads
+  // (see the persistence effect below); Life starts expanded so the tree is
+  // visible on load (collapsing Life is the "collapse everything").
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [lifeExpanded, setLifeExpanded] = useState(true)
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -1439,7 +1441,7 @@ export function Rail() {
   const [confirmTarget, setConfirmTarget] = useState<RailNode | null>(null)
   const { stageDeletion, notify } = useDeletionUndo()
 
-  const { data: pages = [], isLoading } = useQuery({
+  const { data: pages = [], isLoading, isSuccess } = useQuery({
     queryKey: pagesKey(pondId),
     queryFn: () => fetchPages(pondId),
   })
@@ -1460,13 +1462,100 @@ export function Rail() {
   }, [tree])
   const selectedNodeId = searchParams.get('nodeId')
 
+  // ── Rail remembers what was open (KAN-393) ──────────────────────────────────
+  // A pond switch must drop the previous pond's rows before the merge effect
+  // below runs, or a toggle on the new pond writes the old pond's lingering
+  // ids into its store too — `writeExpandedIds` persists the whole set, not a
+  // diff, and `expanded` is one Set shared across ponds since `Rail` itself
+  // never remounts on a switch. Declared ahead of the merge effect so it runs
+  // first on the same pondId change (React runs passive effects in source
+  // order); the merge effect then repopulates from the new pond's store.
+  //
+  // Only a REAL pond→pond switch clears — `prevPondIdRef.current` starting
+  // `null` (usePondId() before PondProvider's listPonds resolves, on a cold
+  // reload) and then landing on the first real id is not a switch, it's the
+  // same pond arriving late. Treating it as one wiped the ticket-25 reveal
+  // below, which had already run against the `pagesKey(null)` fallback fetch
+  // (resolves to the same pond's pages, #312): with `revealedForRef` already
+  // set, the reveal effect's once-per-selection guard then refused to run
+  // again, leaving a cold-reload deep link's ancestors collapsed for good. A
+  // real switch also drops `revealedForRef` so the new pond's open page
+  // re-reveals instead of being read as already-revealed.
+  const prevPondIdRef = useRef(pondId)
+  const revealedForRef = useRef<string | null>(null)
+  // Declared here, ahead of the reset effect below, so that effect's own
+  // real-switch branch can clear it (react-hooks/immutability wants a ref
+  // mutated before it's read by an earlier-registered effect). Also read by
+  // the write effect and set by the restore effect further down — gated by
+  // this ref so it fires exactly once per pond.
+  const loadedForRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (prevPondIdRef.current === pondId) return
+    const isPondSwitch = prevPondIdRef.current !== null
+    prevPondIdRef.current = pondId
+    if (!isPondSwitch) return
+    setExpanded(new Set())
+    revealedForRef.current = null
+    // On a real switch, A's `loadedForRef` pin must not survive onto B and
+    // then back onto A — otherwise switching back to A before B ever loads
+    // reads as "A already loaded", skipping the restore-on-mount re-read and
+    // letting the write effect persist this clear's empty `expanded` over
+    // A's real store.
+    loadedForRef.current = null
+  }, [pondId])
+
+  // Read this pond's stored expansion once per `pondId`, prune it against the
+  // loaded `pages` (a stored id may have been deleted elsewhere), and merge
+  // the result into `expanded` via a union — never a replace — so this can't
+  // fight the ancestor-reveal or KAN-122 child-reveal effects below regardless
+  // of effect order. Gated on `isSuccess`, not `!isLoading`: a failed fetch
+  // also leaves `isLoading` false with `pages` still `[]`, and pruning
+  // against that would mark the pond loaded and wipe the real stored ids
+  // before a retry ever lands them.
+
+  // Write `expanded` to the current pond's store whenever it (or the pond)
+  // changes — the only place this runs, now that `setExpanded` itself is
+  // pure, so it always writes under the `pondId` of the render it's in, not
+  // whatever pond a stale async closure remembers. Gated on `loadedForRef`
+  // (set by the restore effect below, once per pond) rather than "did pondId
+  // just change": the switch's own clear-to-`new Set()` is itself a render of
+  // `expanded`, and a guard that only tracks "did pondId change" still treats
+  // that render as the pond's second pass and writes `[]` before the restore
+  // effect has read the new pond's store — reproduces on every switch to an
+  // uncached pond, and under `React.StrictMode` even on a plain mount (effects
+  // run twice, and the second pass wrote `[]` before the first pass's restore
+  // landed). Gating on the same ref the restore effect sets means the write
+  // can never land before that pond's store has actually been read.
+  useEffect(() => {
+    if (!pondId || loadedForRef.current !== pondId) return
+    writeExpandedIds(pondId, Array.from(expanded))
+  }, [pondId, expanded])
+
+  useEffect(() => {
+    if (!pondId) return
+    if (!isSuccess) return
+    if (loadedForRef.current === pondId) return
+    loadedForRef.current = pondId
+    const validIds = new Set(pages.map((r) => r.id))
+    const stored = pruneExpandedIds(readExpandedIds(pondId), validIds)
+    if (stored.length === 0) return
+    /* eslint-disable react-hooks/set-state-in-effect */
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      for (const id of stored) next.add(id)
+      return next
+    })
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [pondId, isSuccess, pages, setExpanded])
+
   // ── Rail follows you (ticket-25) ────────────────────────────────────────────
   // When the selection changes — via a rail click, a children-grid card, the
   // breadcrumb, or a page created through chat / ＋ — auto-expand every folder on
   // the path to the current node (and Life itself) so it's revealed and its
   // ancestors highlight. We reveal a given selection exactly once (tracked by
-  // ref) so a manual re-collapse afterward isn't fought.
-  const revealedForRef = useRef<string | null>(null)
+  // ref) so a manual re-collapse afterward isn't fought. `revealedForRef`
+  // itself is declared above, alongside the pond-switch clear (KAN-393) that
+  // also resets it on a real pond switch.
   useEffect(() => {
     if (!selectedNodeId) {
       revealedForRef.current = null
