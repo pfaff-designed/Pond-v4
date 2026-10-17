@@ -27,7 +27,15 @@ export function useBlockCount(pageId: string | undefined): number {
   const { data } = useQuery({
     // A sub-key of `['page', pageId]` — renaming/editing the linked page
     // already invalidates that prefix (`use-capabilities.ts`'s `renamePage`,
-    // `accept.ts`), which invalidates this read along with it.
+    // `accept.ts`), which invalidates this read along with it. But a saved
+    // draft (`use-page-draft.ts`) only ever `setQueryData`s `['page', id]`
+    // itself, never this sub-key — so opening the link, editing, and
+    // returning to the parent remounts this query (the row unmounted with
+    // the parent's canvas while away) while the app-wide 30s `staleTime`
+    // (`providers.tsx`) still holds the pre-edit cached value, and react
+    // query's default `refetchOnMount` only refetches stale data. `staleTime:
+    // 0` + `refetchOnMount: 'always'` (same fix as `PageChangesPanel`'s
+    // KAN-303) makes it reread on every mount regardless.
     queryKey: ['page', pageId, 'block-count'] as const,
     queryFn: async () => {
       if (!pageId) return 0
@@ -36,6 +44,8 @@ export function useBlockCount(pageId: string | undefined): number {
       return blockCount(data?.blocks)
     },
     enabled: !!pageId,
+    staleTime: 0,
+    refetchOnMount: 'always',
   })
 
   return data ?? 0
