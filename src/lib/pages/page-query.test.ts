@@ -34,4 +34,12 @@ describe('pageQueryOptions', () => {
     expect(getSupabase).not.toHaveBeenCalled()
     expect(mockGetPage).not.toHaveBeenCalled()
   })
+
+  it('rejects when the fetch errors, instead of settling null like a deleted page', async () => {
+    const client = { tag: 'supabase' } as unknown as FakeClient
+    mockGetPage.mockRejectedValue(new Error('network error'))
+    const options = pageQueryOptions(() => client, 'page-1')
+
+    await expect(options.queryFn()).rejects.toThrow('network error')
+  })
 })

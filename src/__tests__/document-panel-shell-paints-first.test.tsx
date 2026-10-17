@@ -135,4 +135,25 @@ describe('DocumentPanel — the shell paints before the page lands', () => {
     expect(await screen.findByText('this page is gone — it may be in the trash')).toBeInTheDocument()
     expect(screen.queryByText('Loading…')).toBeNull()
   })
+
+  it("shows a quiet didn't-load line (not the gone line) when the fetch errors", async () => {
+    mockGetPage.mockRejectedValue(new Error('network error'))
+
+    renderPanel()
+
+    expect(
+      await screen.findByText("this page didn't load — reload to try again")
+    ).toBeInTheDocument()
+    expect(screen.queryByText('this page is gone — it may be in the trash')).toBeNull()
+    expect(screen.queryByText('Loading…')).toBeNull()
+  })
+
+  it("shows the gone line (not the didn't-load line) when the fetch settles null", async () => {
+    mockGetPage.mockResolvedValue(null)
+
+    renderPanel()
+
+    expect(await screen.findByText('this page is gone — it may be in the trash')).toBeInTheDocument()
+    expect(screen.queryByText("this page didn't load — reload to try again")).toBeNull()
+  })
 })

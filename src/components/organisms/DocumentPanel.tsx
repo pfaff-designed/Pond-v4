@@ -480,13 +480,23 @@ export function DocumentPanel() {
   // must not leave the pending shell above (or "Loading…" below) up forever —
   // the rail's row for the id can still be stale (it hasn't refetched yet),
   // so this checks the page query's own outcome, not whether a row exists.
+  // The two outcomes read differently: a settled `null` means the row itself
+  // is gone (deleted), while an error with no page data to fall back on means
+  // the fetch itself failed (network/RLS) — the page may still exist.
   // `pageIsError` only counts when there's no page data to fall back on — a
   // background refetch (e.g. another observer on the same `['page', id]` key,
   // like `PageChangesPanel`) erroring must not blank a page already on screen.
-  if (pageId && !isChangeLogNode && !isLoading && (page === null || (pageIsError && !page))) {
+  if (pageId && !isChangeLogNode && !isLoading && page === null) {
     return (
       <div className="flex h-full items-center justify-center text-mn-13 text-mn-text-secondary">
         this page is gone — it may be in the trash
+      </div>
+    )
+  }
+  if (pageId && !isChangeLogNode && !isLoading && pageIsError && !page) {
+    return (
+      <div className="flex h-full items-center justify-center text-mn-13 text-mn-text-secondary">
+        this page didn&apos;t load — reload to try again
       </div>
     )
   }
