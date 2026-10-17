@@ -163,4 +163,28 @@ describe('CollectionBoard — a status field with no options (KAN-377)', () => {
     expect(lanes[0].className).toContain('min-h-[380px]')
     expect(screen.getByRole('button', { name: '＋ task' })).toBeInTheDocument()
   })
+
+  it('a status field WITH options and zero rows draws its three lanes, each min-h-[380px] ending in ＋ task — no "No status" lane', () => {
+    initialSchema = [
+      ...titleOnly,
+      {
+        id: 'p-status',
+        name: 'status',
+        type: 'status',
+        options: [
+          { id: 'o-todo', label: 'to do' },
+          { id: 'o-doing', label: 'doing' },
+          { id: 'o-done', label: 'done' },
+        ],
+      },
+    ]
+
+    const { container } = renderView(board)
+
+    const lanes = container.querySelectorAll<HTMLElement>('[data-part="lane"]')
+    expect(Array.from(lanes).map((lane) => lane.dataset.lane)).toEqual(['to do', 'doing', 'done'])
+    lanes.forEach((lane) => expect(lane.className).toContain('min-h-[380px]'))
+    expect(screen.getAllByRole('button', { name: '＋ task' })).toHaveLength(3)
+    expect(screen.queryByText('No status')).not.toBeInTheDocument()
+  })
 })
