@@ -1490,6 +1490,30 @@ export function Rail() {
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [selectedNodeId, pages])
 
+  // ── Rail reveals a new child without leaving the parent (KAN-122) ──────────
+  // The `/ nested page` swap stays on the parent, so selection never changes
+  // and the reveal effect above never fires. Expand the selected row itself
+  // the moment its child set gains an id it didn't have last render, so the
+  // freshly made child is visible without navigating anywhere.
+  const childIdsRef = useRef<Map<string, Set<string>>>(new Map())
+  useEffect(() => {
+    if (!selectedNodeId) return
+    const prevChildren = childIdsRef.current.get(selectedNodeId)
+    const nextChildren = new Set(
+      pages.filter((r) => (r.parent_id ?? null) === selectedNodeId).map((r) => r.id)
+    )
+    childIdsRef.current.set(selectedNodeId, nextChildren)
+    if (!prevChildren) return
+    const gainedChild = [...nextChildren].some((id) => !prevChildren.has(id))
+    if (!gainedChild) return
+    setExpanded((prev) => {
+      if (prev.has(selectedNodeId)) return prev
+      const next = new Set(prev)
+      next.add(selectedNodeId)
+      return next
+    })
+  }, [selectedNodeId, pages])
+
   // Deferred commits fire up to ~6s after staging — read the selection fresh at
   // commit time via this ref, not the render-time closure value.
   const selectedNodeIdRef = useRef<string | null>(null)
