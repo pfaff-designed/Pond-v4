@@ -212,6 +212,80 @@ export async function findPagesLinkingTo(
 }
 
 /**
+ * Unlink every LIVE page outside the subtree that links into it, right
+ * before the caller trashes that subtree (KAN-448). Each matched parent goes
+ * through the exact same own-edit seam as `appendChildLinkToParent` — flush
+ * its pending save, read it fresh (the earlier `findPagesLinkingTo` read ran
+ * before the flush and may already be stale), write only if the fresh read
+ * still has the link, invalidate. Every removal across every parent is
+ * flattened onto `rootPageId`'s own `props.unlinkedLinks` — a plain
+ * read-merge-write, same shape as `markChildLinksMigrated` — written BEFORE
+ * returning, so the caller can sequence `trashPage` right after: a trashed
+ * row is RLS-hidden to everyone, including its own owner, so this must land
+ * first.
+ *
+ * Never throws: a failed unlink must not fail the trash it rides with
+ * (`appendChildLinkUnder`'s rule) — log and return.
+ */
+export async function unlinkTrashedSubtree(
+  supabase: SupabaseClient<Database>,
+  queryClient: QueryClient,
+  {
+    pondId,
+    rootPageId,
+    subtreeIds,
+  }: { pondId: string | null; rootPageId: string; subtreeIds: Set<string> }
+): Promise<void> {
+  try {
+    const parents = await findPagesLinkingTo(supabase, pondId, subtreeIds)
+    const removed: RemovedLink[] = []
+
+    for (const parent of parents) {
+      await flushPendingPageSave(parent.id)
+      const fresh = await getPage(supabase, parent.id)
+      if (!fresh) continue
+
+      const { blocks: nextBlocks, removed: parentRemoved } = removeLinksTo(
+        fresh.blocks,
+        subtreeIds,
+        parent.id
+      )
+      if (nextBlocks === fresh.blocks) continue
+
+      await commitBlocks(supabase, queryClient, parent.id, nextBlocks, {
+        ownEdit: true,
+        before: fresh.blocks,
+        pondId,
+      })
+      await queryClient.invalidateQueries({ queryKey: ['page', parent.id] })
+      removed.push(...parentRemoved)
+    }
+
+    if (removed.length === 0) return
+
+    const { data } = await supabase
+      .from('pages')
+      .select('props')
+      .eq('id', rootPageId)
+      .maybeSingle()
+    const current = (data as { props?: unknown } | null)?.props
+    const props: Record<string, unknown> =
+      current && typeof current === 'object' && !Array.isArray(current)
+        ? (current as Record<string, unknown>)
+        : {}
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabase as any)
+      .from('pages')
+      .update({ props: { ...props, unlinkedLinks: removed }, updated_at: new Date().toISOString() })
+      .eq('id', rootPageId)
+    if (error) throw new Error(error.message)
+  } catch (err) {
+    console.error('[page-link] trashed subtree not unlinked', rootPageId, err)
+  }
+}
+
+/**
  * Stamp `props.childLinksMigrated` on the `['page', pageId]` query cache, so
  * the upgrade effect's own-page cache read sees the stamp at once rather than
  * only after `markChildLinksMigrated`'s DB write resolves — otherwise a

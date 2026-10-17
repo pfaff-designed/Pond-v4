@@ -4,6 +4,7 @@ import {
   removeLinksTo,
   restoreLinks,
   findPagesLinkingTo,
+  unlinkTrashedSubtree,
 } from './child-links'
 import type { Block } from '@/lib/modules/content'
 import type { PondPage } from './client'
@@ -334,5 +335,191 @@ describe('findPagesLinkingTo', () => {
     await expect(
       findPagesLinkingTo(supabase as never, 'pond-1', new Set(['child-1']))
     ).rejects.toThrow(/boom/)
+  })
+})
+
+describe('unlinkTrashedSubtree', () => {
+  const parentPage = (id: string, blocks: Block[]) => ({
+    id,
+    parent_id: null,
+    type: 'page',
+    title: id,
+    blocks,
+    props: {},
+    order: 0,
+  })
+
+  /** One shared `.from('pages')` chain backing both `findPagesLinkingTo`'s
+   *  `.contains` read and this function's own `props` read/update. */
+  function makeSupabase({
+    containsResults = {},
+    propsRow = { props: {} },
+    updateError = null as { message: string } | null,
+  }: {
+    containsResults?: Record<string, unknown[]>
+    propsRow?: { props: unknown } | null
+    updateError?: { message: string } | null
+  } = {}) {
+    const update = jest.fn().mockReturnValue({
+      eq: jest.fn().mockResolvedValue({ error: updateError }),
+    })
+    const chain = {
+      select: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      is: jest.fn().mockReturnThis(),
+      contains: jest.fn((_col: string, value: Array<{ pageId: string }>) =>
+        Promise.resolve({ data: containsResults[value[0].pageId] ?? [], error: null })
+      ),
+      maybeSingle: jest.fn().mockResolvedValue({ data: propsRow }),
+      update,
+    }
+    return { from: jest.fn().mockReturnValue(chain), _chain: chain, update }
+  }
+
+  let invalidateQueries: jest.Mock
+  let queryClient: never
+
+  beforeEach(() => {
+    jest.clearAllMocks()
+    mockCommitBlocks.mockResolvedValue(undefined)
+    mockFlushPendingPageSave.mockResolvedValue(undefined)
+    invalidateQueries = jest.fn().mockResolvedValue(undefined)
+    queryClient = { invalidateQueries } as never
+  })
+
+  it('unlinks a parent found outside the subtree, committing and invalidating it', async () => {
+    const link1 = link('b1', 'child-1')
+    const text1 = text('b2')
+    const supabase = makeSupabase({
+      containsResults: { 'child-1': [parentPage('parent-a', [link1, text1])] },
+    })
+    mockGetPage.mockResolvedValue({
+      id: 'parent-a',
+      parentId: null,
+      type: 'page',
+      title: 'Parent A',
+      blocks: [link1, text1],
+      order: 0,
+      props: {},
+    })
+
+    await unlinkTrashedSubtree(supabase as never, queryClient, {
+      pondId: 'pond-1',
+      rootPageId: 'root-1',
+      subtreeIds: new Set(['child-1']),
+    })
+
+    expect(mockFlushPendingPageSave).toHaveBeenCalledWith('parent-a')
+    expect(mockCommitBlocks).toHaveBeenCalledTimes(1)
+    const [, , pageId, blocks, opts] = mockCommitBlocks.mock.calls[0]
+    expect(pageId).toBe('parent-a')
+    expect(blocks).toEqual([text1])
+    expect(opts).toMatchObject({ ownEdit: true, before: [link1, text1], pondId: 'pond-1' })
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['page', 'parent-a'] })
+
+    expect(supabase._chain.update).toHaveBeenCalledTimes(1)
+    const [payload] = supabase.update.mock.calls[0]
+    expect(payload.props.unlinkedLinks).toEqual([
+      { parentId: 'parent-a', block: link1, index: 0, beforeId: null },
+    ])
+  })
+
+  it('writes nothing to the root page when no live parent links into the subtree', async () => {
+    const supabase = makeSupabase({ containsResults: {} })
+
+    await unlinkTrashedSubtree(supabase as never, queryClient, {
+      pondId: 'pond-1',
+      rootPageId: 'root-1',
+      subtreeIds: new Set(['child-1']),
+    })
+
+    expect(mockCommitBlocks).not.toHaveBeenCalled()
+    expect(supabase._chain.update).not.toHaveBeenCalled()
+  })
+
+  it('flushes a changed parent\'s pending save and re-reads it before writing', async () => {
+    const order: string[] = []
+    const link1 = link('b1', 'child-1')
+    const supabase = makeSupabase({
+      containsResults: { 'child-1': [parentPage('parent-a', [link1])] },
+    })
+    mockFlushPendingPageSave.mockImplementation(async (id: string) => {
+      order.push(`flush:${id}`)
+    })
+    mockGetPage.mockImplementation(async () => {
+      order.push('getPage')
+      return {
+        id: 'parent-a',
+        parentId: null,
+        type: 'page',
+        title: 'Parent A',
+        blocks: [link1],
+        order: 0,
+        props: {},
+      }
+    })
+
+    await unlinkTrashedSubtree(supabase as never, queryClient, {
+      pondId: 'pond-1',
+      rootPageId: 'root-1',
+      subtreeIds: new Set(['child-1']),
+    })
+
+    expect(order).toEqual(['flush:parent-a', 'getPage'])
+  })
+
+  it('skips a parent whose fresh read no longer has the link', async () => {
+    const link1 = link('b1', 'child-1')
+    const supabase = makeSupabase({
+      containsResults: { 'child-1': [parentPage('parent-a', [link1])] },
+    })
+    mockGetPage.mockResolvedValue({
+      id: 'parent-a',
+      parentId: null,
+      type: 'page',
+      title: 'Parent A',
+      blocks: [text('b2')],
+      order: 0,
+      props: {},
+    })
+
+    await unlinkTrashedSubtree(supabase as never, queryClient, {
+      pondId: 'pond-1',
+      rootPageId: 'root-1',
+      subtreeIds: new Set(['child-1']),
+    })
+
+    expect(mockCommitBlocks).not.toHaveBeenCalled()
+    expect(invalidateQueries).not.toHaveBeenCalled()
+    expect(supabase._chain.update).not.toHaveBeenCalled()
+  })
+
+  it('never throws — logs and returns when the commit fails', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
+    const link1 = link('b1', 'child-1')
+    const supabase = makeSupabase({
+      containsResults: { 'child-1': [parentPage('parent-a', [link1])] },
+    })
+    mockGetPage.mockResolvedValue({
+      id: 'parent-a',
+      parentId: null,
+      type: 'page',
+      title: 'Parent A',
+      blocks: [link1],
+      order: 0,
+      props: {},
+    })
+    mockCommitBlocks.mockRejectedValue(new Error('boom'))
+
+    await expect(
+      unlinkTrashedSubtree(supabase as never, queryClient, {
+        pondId: 'pond-1',
+        rootPageId: 'root-1',
+        subtreeIds: new Set(['child-1']),
+      })
+    ).resolves.toBeUndefined()
+
+    expect(consoleError).toHaveBeenCalled()
+    consoleError.mockRestore()
   })
 })
