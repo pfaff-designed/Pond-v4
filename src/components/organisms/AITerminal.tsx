@@ -2695,6 +2695,25 @@ export function AITerminal() {
         )
         router.push(workspaceHref({ id: created.id, type: part.type, title: part.title }))
         void queryClient.invalidateQueries({ queryKey: pagesKey() })
+        // KAN-415: a failed link append is not a failed page creation — the page
+        // above has already landed and been navigated to. A database/record made
+        // this way is not a "page under a parent" for this rule (orchestrator note).
+        if (part.type === 'page') {
+          void (async () => {
+            try {
+              const supabase = getSupabase()
+              const resolvedParentId =
+                parentRef ??
+                queryClient.getQueryData<HomePage | null>(homeQueryKey(pondId))?.id ??
+                (await getOrCreateHomePage(supabase, pondId, pondName))?.id ??
+                null
+              if (!resolvedParentId) return
+              await appendChildLinkToParent(supabase, queryClient, resolvedParentId, created.id, pondId)
+            } catch (err) {
+              console.error('[page-link] child link not appended', created.id, err)
+            }
+          })()
+        }
         // The write landed — only now may the record say so. The log only grows,
         // so an `accepted` stamped before this point could never be taken back.
         logDecision(toolCallId, 'accepted')
@@ -2704,7 +2723,7 @@ export function AITerminal() {
         dispatch({ kind: 'revert', type: 'creates', id: toolCallId })
       }
     },
-    [getSupabase, queryClient, router, pondId, logDecision]
+    [getSupabase, queryClient, router, pondId, pondName, logDecision]
   )
 
   // ── define_schema resolution (#17 slice 5) ────────────────────────────────
