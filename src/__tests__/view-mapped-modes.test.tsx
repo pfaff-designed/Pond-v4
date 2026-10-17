@@ -23,7 +23,7 @@
  */
 
 import React from 'react'
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
@@ -774,6 +774,97 @@ describe('CollectionGallery — hover, selection and the peek (KAN-358)', () => 
       resolveAdd('pl-new')
     })
     expect(onAddRow).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('CollectionView — the gallery and calendar path, end to end (KAN-358)', () => {
+  it('gallery: hover a card, click opens the peek, ↵ opens the page, then ＋ add a record mints and selects a new card', async () => {
+    const user = userEvent.setup()
+    const onOpenRow = jest.fn()
+    const mint = jest.fn().mockResolvedValue('pl-new')
+    function Harness() {
+      const [rows, setRows] = React.useState(plants(2))
+      const onAddRow = async () => {
+        const id = await mint()
+        setRows((prev) => [...prev, row(id, '', {})])
+        return id as string
+      }
+      return (
+        <CollectionView
+          config={gallery}
+          schema={plantSchema}
+          rows={rows}
+          editable
+          onEdit={jest.fn()}
+          onAddRow={onAddRow}
+          onRenameRow={jest.fn()}
+          onOpenRow={onOpenRow}
+        />
+      )
+    }
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const { container } = render(
+      <QueryClientProvider client={client}>
+        <Harness />
+      </QueryClientProvider>
+    )
+    const [a] = container.querySelectorAll<HTMLElement>('[data-kind="record-card"]')
+
+    fireEvent.mouseEnter(a)
+    expect(a.dataset.state).toBe('hover')
+
+    await user.click(a)
+    expect(a.dataset.state).toBe('selected')
+    expect(screen.getByLabelText('Record: plant 0')).toBeInTheDocument()
+
+    container.querySelector<HTMLElement>('[data-row-focus="pl0"]')!.focus()
+    await user.keyboard('{Enter}')
+    expect(onOpenRow).toHaveBeenCalledWith('pl0')
+
+    const tile = screen.getByRole('button', { name: '＋ add a record' })
+    await user.click(tile)
+    expect(mint).toHaveBeenCalledTimes(1)
+    expect(screen.getByLabelText('Record: Untitled')).toBeInTheDocument()
+  })
+
+  it('calendar: clicking a dated event draws the selected ring and opens the peek; ↵ opens the page', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-09-10T12:00:00Z'))
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    const onOpenRow = jest.fn()
+    const calendar: ViewBlock = { id: 'v-calendar', type: 'view', mode: 'calendar' }
+    const calendarSchema: PropertySchema = [{ id: 'p-due', name: 'Due', type: 'date' }]
+    const calendarRows: CollectionRow[] = [row('r1', 'Trim the rim', { 'p-due': '2026-09-10' })]
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const { container } = render(
+      <QueryClientProvider client={client}>
+        <CollectionView
+          config={calendar}
+          schema={calendarSchema}
+          rows={calendarRows}
+          editable
+          onEdit={jest.fn()}
+          onAddRow={jest.fn()}
+          onRenameRow={jest.fn()}
+          onOpenRow={onOpenRow}
+        />
+      </QueryClientProvider>
+    )
+    const desktopWrap = [...container.querySelectorAll('div')].find((d) =>
+      d.classList.contains('md:flex')
+    )!
+    const item = within(desktopWrap).getByText('Trim the rim').closest('div')!
+    expect(item).not.toHaveClass('ring-[1.5px]')
+
+    await user.click(item)
+    expect(item).toHaveClass('ring-[1.5px]', 'ring-inset', 'ring-mn-text')
+    expect(screen.getByLabelText('Record: Trim the rim')).toBeInTheDocument()
+    expect(onOpenRow).not.toHaveBeenCalled()
+
+    item.focus()
+    await user.keyboard('{Enter}')
+    expect(onOpenRow).toHaveBeenCalledWith('r1')
+
+    jest.useRealTimers()
   })
 })
 
