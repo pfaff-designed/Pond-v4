@@ -77,17 +77,20 @@ describe('parseDateInput', () => {
 })
 
 describe('localToday', () => {
-  const originalTZ = process.env.TZ
-
   afterEach(() => {
-    process.env.TZ = originalTZ
+    jest.restoreAllMocks()
   })
 
   it('stays on the local calendar day late in the evening, even when UTC has already rolled over', () => {
-    process.env.TZ = 'America/New_York'
-    // 8pm EDT on 16 Oct 2026 is already 17 Oct past midnight UTC.
-    const lateEvening = new Date(2026, 9, 16, 20, 0, 0)
+    // Stand-in whose LOCAL getters read 16 Oct 2026 while its UTC getters read 17 Oct —
+    // true on any machine's zone, since the local getters are mocked directly rather than
+    // produced by setting process.env.TZ (which Node reads once and caches, so it is a
+    // no-op at runtime and the real local/UTC split only matches on a New York host).
+    const lateEvening = new Date(Date.UTC(2026, 9, 17, 3, 0, 0))
     expect(lateEvening.getUTCDate()).toBe(17)
+    jest.spyOn(lateEvening, 'getFullYear').mockReturnValue(2026)
+    jest.spyOn(lateEvening, 'getMonth').mockReturnValue(9)
+    jest.spyOn(lateEvening, 'getDate').mockReturnValue(16)
 
     const today = localToday(lateEvening)
     expect(today.getUTCFullYear()).toBe(2026)
