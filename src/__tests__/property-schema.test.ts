@@ -23,6 +23,9 @@ import {
   withSchema,
   withValue,
   addDateField,
+  addStatusField,
+  removeField,
+  DEFAULT_STATUS_OPTIONS,
   type PropertyDef,
   type PropertySchema,
 } from '@/lib/properties/schema'
@@ -264,6 +267,48 @@ describe('addDateField — the dateless-view remedy (#292)', () => {
     const withDate: PropertySchema = [...SCHEMA, { id: 'due2', name: 'date', type: 'text' }]
     const out = addDateField(withDate, () => 'new-id')
     expect(out[out.length - 1]).toEqual({ id: 'new-id', name: 'date 2', type: 'date' })
+  })
+})
+
+describe('addStatusField — the laneless-board remedy (#351)', () => {
+  const mintIds = (...ids: string[]) => {
+    let i = 0
+    return () => ids[i++]
+  }
+
+  it('appends a "status" field carrying the three default options as minted pairs', () => {
+    const out = addStatusField(SCHEMA, mintIds('field-id', 'opt-1', 'opt-2', 'opt-3'))
+    expect(out).toEqual([
+      ...SCHEMA,
+      {
+        id: 'field-id',
+        name: 'status',
+        type: 'status',
+        options: [
+          { id: 'opt-1', label: 'to do' },
+          { id: 'opt-2', label: 'doing' },
+          { id: 'opt-3', label: 'done' },
+        ],
+      },
+    ])
+    expect(DEFAULT_STATUS_OPTIONS).toEqual(['to do', 'doing', 'done'])
+  })
+
+  it('does not mutate the input schema', () => {
+    const before = [...SCHEMA]
+    addStatusField(SCHEMA, mintIds('field-id', 'opt-1', 'opt-2', 'opt-3'))
+    expect(SCHEMA).toEqual(before)
+  })
+
+  it('falls back to "status 2" when "status" already names another field', () => {
+    const withStatus: PropertySchema = [...SCHEMA, { id: 'other', name: 'status', type: 'text' }]
+    const out = addStatusField(withStatus, mintIds('field-id', 'opt-1', 'opt-2', 'opt-3'))
+    expect(out[out.length - 1].name).toBe('status 2')
+  })
+
+  it('is undone by removeField, same as addDateField', () => {
+    const out = addStatusField(SCHEMA, mintIds('field-id', 'opt-1', 'opt-2', 'opt-3'))
+    expect(removeField(out, 'field-id')).toEqual(SCHEMA)
   })
 })
 

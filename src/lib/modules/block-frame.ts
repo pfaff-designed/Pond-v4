@@ -221,6 +221,12 @@ export function viewFrameState(
   if (DATE_PLACED_MODES.has(block.mode) && !schema.some((def) => def.type === 'date')) {
     return { state: 'rest' }
   }
+  // KAN-351: a board with zero rows steps aside too — otherwise the frame's own
+  // `no rows yet · add a row` replaces the three lanes, and `add a row` would
+  // land a record with no status in the hidden "No status" lane (07.10: "the
+  // lane sets the status"). The view itself draws its lanes, or, with no
+  // select/status field, its own "add a status field" remedy.
+  if (block.mode === 'board') return { state: 'rest' }
   if (markEmpty === 'void') return { state: 'empty', chartLine: true }
   // #260: a kind that owns its empty line takes it from the kind, which also decides
   // its box, so the box and the line cannot disagree.

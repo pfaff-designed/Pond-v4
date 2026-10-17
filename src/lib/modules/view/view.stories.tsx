@@ -4,7 +4,7 @@ import { expect, fireEvent, fn, userEvent, within } from 'storybook/test'
 
 import { CollectionView } from './view'
 import { CollectionList } from './list'
-import { CALENDAR_EMPTY_LINE } from './kinds'
+import { BOARD_EMPTY_LINE, CALENDAR_EMPTY_LINE } from './kinds'
 import { PondBlock } from '@/components/organisms/PondBlock'
 import { PageCanvas } from '@/lib/modules/page-canvas'
 import type { CollectionRow } from './apply'
@@ -705,9 +705,7 @@ export const BoardNeedsGroupBy: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(
-      canvas.getByText('This board needs a group-by (select or status) property.')
-    ).toBeInTheDocument()
+    await expect(canvas.getByText(BOARD_EMPTY_LINE)).toBeInTheDocument()
   },
 }
 

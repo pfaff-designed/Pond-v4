@@ -410,6 +410,32 @@ describe('viewFrameState — a dateless list/gantt steps aside so the view’s o
   })
 })
 
+// ── A fresh board steps aside too, lanes and all (KAN-351) ────────────────────────
+
+describe('viewFrameState — a board with zero rows steps aside so its own lanes (or remedy) draw', () => {
+  const statusSchema: PropertySchema = [
+    { id: 'p-status', name: 'Status', type: 'status', options: [{ id: 'o-todo', label: 'to do' }] },
+  ]
+
+  it('a board with a status field and zero rows yields to the view (rest), not "no rows yet"', () => {
+    const block: ViewBlock = { id: 'v', type: 'view', mode: 'board' }
+    expect(viewFrameState(block, [], [], null, statusSchema)).toEqual({ state: 'rest' })
+  })
+
+  it('a board with no status/select field and zero rows also yields (rest): the view draws its own remedy', () => {
+    const block: ViewBlock = { id: 'v', type: 'view', mode: 'board' }
+    expect(viewFrameState(block, [], [], null, textOnlySchema)).toEqual({ state: 'rest' })
+  })
+
+  it('a board with rows is unchanged: the filtered-empty line still applies when filtered to nothing', () => {
+    const block: ViewBlock = { id: 'v', type: 'view', mode: 'board' }
+    expect(viewFrameState(block, [{ id: 'r1' }], [], null, statusSchema)).toEqual({
+      state: 'empty',
+      line: POND_BLOCK_FILTERED_EMPTY_LINE,
+    })
+  })
+})
+
 // ── activeSavedView feeding the engine for a non-first active view (KAN-321) ─────
 
 describe('blockFrame / viewFrameState on activeSavedView — a views-shaped block’s non-first active view', () => {
