@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { Decorator, Meta, StoryObj } from '@storybook/nextjs-vite'
-import { expect, userEvent, within } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 
 import { TodoView } from './view'
 import type { TodoBlock } from './schema'
@@ -38,10 +38,28 @@ const inkTheme: Decorator = (Story) => (
   </div>
 )
 
+/**
+ * Keeps every row off the real pointer. The vitest browser runner never moves
+ * Chromium's mouse, so it rests at the story iframe's origin (0, 0), and the
+ * first row renders there. Chromium sends that row trusted mouseover events at
+ * a moment of its own choosing after layout — a CI run logged
+ * `mouseover trusted=true t=div#m1 xy=0,0` — so `hovered` raced the play
+ * function: `Hover` lost its wash to row 1 and `Dot List` washed a row nothing
+ * hovered. That is correct product behaviour for a real pointer over a row; the
+ * stories just must not sit under one. The ink decorator's own padding is why
+ * the `Dark` twins never failed. `assertNoRealHover` states the premise.
+ */
+const offPointer: Decorator = (Story) => (
+  <div className="p-mn-6">
+    <Story />
+  </div>
+)
+
 const meta = {
   title: 'Modules/Todo',
   component: TodoView,
   parameters: { layout: 'padded' },
+  decorators: [offPointer],
 } satisfies Meta<typeof TodoView>
 
 export default meta
@@ -213,6 +231,11 @@ async function assertDone(row: HTMLElement, ink: Ink) {
   await expect(row.querySelector('[data-kind="checkbox"] [data-part="check"]')).not.toBeNull()
 }
 
+/** The real (resting) pointer is over no row, so only the play function's hover counts. */
+async function assertNoRealHover(root: HTMLElement) {
+  await expect(root.querySelector('[data-item-id]:hover')).toBeNull()
+}
+
 async function assertHover(row: HTMLElement, ink: Ink) {
   await assertRow(row)
   await expect(getComputedStyle(row).backgroundColor).toBe(ink.a5)
@@ -242,15 +265,18 @@ async function assertMethod(canvasElement: HTMLElement, ink: Ink) {
   await assertDone(rows[0], ink)
   await assertRest(rows[1], ink)
   await assertRest(rows[2], ink)
-  // The stack is the frame's row gap for the checklist kind, and the listener
-  // wrapper between row and stack is `display: contents` — without it the row is
-  // not the stack's own flex item and the 2px gap silently stops applying.
-  await expect(getComputedStyle(rows[0].parentElement!).display).toBe('contents')
+  // The stack is the frame's row gap for the checklist kind. The listener
+  // wrapper between row and stack is a real box, not `display: contents`
+  // (KAN-355 fix: Chrome does not reliably drag a `display: contents`
+  // source) — it is itself the stack's flex item, and the 2px gap applies
+  // between those wrappers.
+  await expect(getComputedStyle(rows[0].parentElement!).display).toBe('block')
   await expect(getComputedStyle(rows[0].parentElement!.parentElement!).rowGap).toBe('2px')
 }
 
 /** `dot`: list-rows with the 7px ink-.5 dot, weight 400, no box, no meta. */
 async function assertGroceries(canvasElement: HTMLElement, ink: Ink) {
+  await assertNoRealHover(canvasElement)
   const rows = rowsOf(canvasElement)
   await expect(rows).toHaveLength(5)
   for (const row of rows) {
@@ -300,6 +326,7 @@ export const Hover: Story = {
   args: { data: method },
   play: async ({ canvasElement }) => {
     const rows = rowsOf(canvasElement)
+    await assertNoRealHover(canvasElement)
     await userEvent.hover(rows[1])
     await assertHover(rows[1], onPaper())
     // Only the hovered row washes; its neighbours stay at rest.
@@ -552,8 +579,10 @@ export const EditingRing: Story = {
     await userEvent.click(field)
     await expect(row.dataset.state).toBe('editing')
     await assertEditRing(row, INK)
-    await userEvent.tab()
-    await expect(rowsOf(canvasElement)[0].dataset.state).not.toBe('editing')
+    // Tab no longer moves focus out of the item (KAN-355, lists stay flat) —
+    // blur directly to exercise the ring's clear-on-blur behaviour.
+    field.blur()
+    await waitFor(() => expect(rowsOf(canvasElement)[0].dataset.state).not.toBe('editing'))
     await expect(getComputedStyle(rowsOf(canvasElement)[0]).boxShadow).toBe('none')
   },
 }

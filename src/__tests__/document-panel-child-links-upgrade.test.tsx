@@ -121,7 +121,8 @@ const rowTitle = (row: Element) =>
 beforeEach(() => {
   jest.clearAllMocks()
   mockNodeId = 'page-1'
-  mockCommitBlocks.mockResolvedValue(undefined)
+  // The real `commitBlocks` resolves `{ remembered }` for an own-edit save (KAN-355).
+  mockCommitBlocks.mockResolvedValue({ remembered: Promise.resolve() })
   mockMarkChildLinksMigrated.mockResolvedValue(undefined)
   mockRows = [
     { id: 'child-creative', parent_id: 'page-1', type: 'page', title: 'Creative', order: 0, updated_at: '2026-01-01' },

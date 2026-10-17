@@ -20,10 +20,10 @@
  * `aria-readonly` (the board cannot draw "announced as checked", but a static
  * mockup has no way to express an ARIA tree, and that tree is engine logic that
  * survives a gut per AGENTS.md). Related, deliberately NOT fixed: the `todo`
- * view's `<ul>`/`<li>` stack became a `div` stack whose per-row listener wrapper
- * is `display: contents`, and `role="list"` / `listitem` are not reinstated on it
- * — `display: contents` drops roled elements from the accessibility tree in some
- * engines, so a role there would be announced inconsistently rather than reliably.
+ * view's `<ul>`/`<li>` stack became a `div` stack, and `role="list"` / `listitem`
+ * are not reinstated on its per-row listener wrapper (KAN-355: that wrapper was
+ * briefly `display: contents` and is now an ordinary box, for Chrome's native
+ * drag — see that view's own header for the drag wiring).
  *
  * Every colour resolves through the Make Noise role tokens (`--color-mn-*` /
  * `--color-raw-*` / the `card` surface role): none of the retired Press

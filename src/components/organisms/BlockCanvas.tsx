@@ -257,6 +257,27 @@ function focusBlockNeighbour(blocks: Block[], index: number) {
 }
 
 /**
+ * Focus a todo block's item field after it lands (KAN-355 fix): a `/list`/
+ * `/checklist` pick mints the block and lands it via `onChange` alone — a text
+ * landing keeps the host editor's focus, but a todo block has no editor of its
+ * own, so focus fell to `<body>` and the next keystroke was lost. Deferred a
+ * tick for the same reason as `focusBlockNeighbour` — the row that will hold
+ * `itemId` only exists once this render commits. Without `itemId`, the first
+ * item (a freshly minted list's only one).
+ */
+function focusTodoItem(blockId: string, itemId?: string) {
+  setTimeout(() => {
+    const host = document.getElementById(blockDomId(blockId))
+    const row = itemId
+      ? host?.querySelector<HTMLElement>(`[data-item-id="${itemId}"]`)
+      : host?.querySelector<HTMLElement>('[data-item-id]')
+    const input = row?.querySelector<HTMLInputElement>('input')
+    input?.focus()
+    input?.setSelectionRange(0, 0)
+  }, 0)
+}
+
+/**
  * Belt and braces for a preview's end (round 3 live finding 1): with the
  * block list never `display:none` any more, the host editor should simply
  * never have lost focus — but if something else already did (the
@@ -402,6 +423,11 @@ export function BlockCanvas({
     makePageFromRow: (placement, target) =>
       void makePage(instantiateTemplate(PREMADE_TEMPLATES.page), placement, target),
     makePageFromTemplate: (pick, target, index) => void makePageFromTemplate(pick, target, index),
+    // Only `todo` (list/checklist) has no editor of its own to keep focus in
+    // (KAN-355) — every other landed type keeps today's behaviour.
+    onLanded: (landed) => {
+      if (landed.type === 'todo') focusTodoItem(landed.id)
+    },
   })
   // KAN-198: the carried `?templates=1` names a page by id, not a boolean, so
   // the ref guard below survives the caller leaving the prop set after the
@@ -1795,6 +1821,17 @@ export function BlockCanvas({
 
 // ── Per-block editor ───────────────────────────────────────────────────────────
 
+// KAN-355: the one place a structural list/checklist edit (add/remove/move) is
+// committed — flushes the pending save before and after `apply`, so it lands as
+// its own debounced save/change-log record instead of merging with whatever
+// edit comes right before or after it. Shared by `useBlockEmptyState`'s todo
+// action and `BlockEditor`'s `commitStep` below.
+function commitStructural(pageId: string, apply: () => void) {
+  flushPendingPageSave(pageId)
+  apply()
+  flushPendingPageSave(pageId)
+}
+
 /**
  * The frame's state, offered action and (when the kind's line would be false) the
  * empty line for one block (#239). Emptiness is read off the block when it can be
@@ -1844,7 +1881,16 @@ function useBlockEmptyState(
   switch (block.type) {
     case 'todo':
       return blockIsEmpty(block)
-        ? { state: 'empty', onEmptyAction: () => onChange(addTodoItem(block)) }
+        ? {
+            state: 'empty',
+            onEmptyAction: () => {
+              commitStructural(pageId, () => {
+                const next = addTodoItem(block)
+                onChange(next)
+                focusTodoItem(block.id, next.items[next.items.length - 1].id)
+              })
+            },
+          }
         : { state: 'rest' }
     case 'table':
       return blockIsEmpty(block)
@@ -2071,28 +2117,33 @@ function BlockEditor({
       />
     ) : undefined
 
+  // `moduleData` carries the bar's LIVE `activeViewId` (above), so a config
+  // edit's `applyConfigPatch` spread would otherwise write it into the
+  // persisted block — switching the bar is reading, not editing (#421).
+  // Restore the block's own persisted `activeViewId` before this leaves
+  // `BlockCanvas`; the views-array patch itself already landed correctly.
+  function handleModuleChange(next: unknown) {
+    const committed =
+      block.type === 'view'
+        ? ({ ...(next as ViewBlock), activeViewId: block.activeViewId } as Block)
+        : (next as Block)
+    slash.handleTextChange(committed)
+    onChange(committed)
+  }
+
+  // KAN-355: a structural edit (add/remove/move/reorder) flushes the save the
+  // typing before it left pending, applies itself, then flushes again — so it
+  // lands as its own debounced save/change-log record instead of merging into
+  // whatever edit comes next inside the same 600ms pause.
+  function commitStep(patch: Block) {
+    commitStructural(pageId, () => handleModuleChange(patch))
+  }
+
   const view = (
-    <BlockRowProvider value={{ selected: state === 'selected', stepOut: onReturn }}>
+    <BlockRowProvider value={{ selected: state === 'selected', stepOut: onReturn, commitStep }}>
       <SlashLineContext.Provider value={slash.handleSlashLine}>
         <ActiveViewSelectionContext.Provider value={setActiveViewId}>
-          <ModuleView
-            type={block.type}
-            data={moduleData}
-            editable
-            onChange={(next) => {
-              // `moduleData` carries the bar's LIVE `activeViewId` (above), so a config
-              // edit's `applyConfigPatch` spread would otherwise write it into the
-              // persisted block — switching the bar is reading, not editing (#421).
-              // Restore the block's own persisted `activeViewId` before this leaves
-              // `BlockCanvas`; the views-array patch itself already landed correctly.
-              const committed =
-                block.type === 'view'
-                  ? ({ ...(next as ViewBlock), activeViewId: block.activeViewId } as Block)
-                  : (next as Block)
-              slash.handleTextChange(committed)
-              onChange(committed)
-            }}
-          />
+          <ModuleView type={block.type} data={moduleData} editable onChange={handleModuleChange} />
         </ActiveViewSelectionContext.Provider>
       </SlashLineContext.Provider>
     </BlockRowProvider>
