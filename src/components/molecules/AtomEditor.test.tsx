@@ -105,7 +105,8 @@ describe('AtomEditor — text', () => {
 
     await user.click(screen.getByRole('button', { name: 'v' }))
     const input = screen.getByLabelText('v')
-    await user.type(input, long)
+    input.focus()
+    await user.paste(long)
     await user.tab()
 
     expect(onCommit).toHaveBeenCalledWith(long)
