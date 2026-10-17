@@ -109,6 +109,16 @@ describe('ViewBar', () => {
     expect(addView).toHaveFocus()
   })
 
+  it('a reader render (showAddView=false, PATH_STEPS 9) hides "＋ view" but a different segment still calls onSelect', async () => {
+    const user = userEvent.setup()
+    const onSelect = jest.fn()
+    render(<ViewBar views={VIEWS} activeId="v-board" onSelect={onSelect} showAddView={false} />)
+
+    expect(screen.queryByRole('button', { name: 'add a view' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('tab', { name: 'timeline' }))
+    expect(onSelect).toHaveBeenCalledWith('v-timeline')
+  })
+
   it('picking a row calls onAddView with that mode and closes the picker', async () => {
     const user = userEvent.setup()
     const onAddView = jest.fn()
