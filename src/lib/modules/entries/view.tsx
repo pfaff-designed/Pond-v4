@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import type { KeyboardEvent } from 'react'
 import type { ModuleViewProps } from '../types'
 import { ENTRIES_EMPTY_LINE, type Entry, type EntriesBlock } from './schema'
 
@@ -50,9 +51,16 @@ const blankLine = (data: EntriesBlock) => data.placeholder ?? ENTRIES_EMPTY_LINE
  * not something a person retypes) and turns the text into a textarea in the
  * block's medium, emitting the whole next block through `onChange`. The focused
  * row wears the molecule's `editing` state — `boxShadow: inset 0 0 0 1.4px fg` — a
- * state the pre-KAN-356 implementation never drew. No add affordance is drawn here
- * (as `todo`): the frame's `write one` on the empty `log` card is the insert path,
- * via `addEntry`.
+ * state the pre-KAN-356 implementation never drew.
+ *
+ * A second insert path sits above the stack (KAN-356): a quiet mono add line,
+ * editable mode only — unlike `todo`, whose only add path is the frame's empty-state
+ * `add a step`, the ticket's own build instruction asks for this one explicitly.
+ * ↵ prepends a dated entry through `addEntry`'s now-optional `text` param (the same
+ * whole-block `onChange` contract `patchEntry` rides), clears the line, and focuses
+ * the new row's textarea once it exists post-round-trip (hence the `useEffect`, not
+ * an inline `.focus()` in the key handler). An empty ↵ is a no-op. The frame's
+ * `write one` on the empty `log` card still works too, via the same `addEntry`.
  */
 
 /**
@@ -70,6 +78,14 @@ const SANS = 'font-sans text-[13.5px] leading-normal [text-wrap:pretty]'
 const SERIF = 'font-serif font-extralight text-[16.5px] leading-[1.6] [text-wrap:pretty]'
 /** The molecule's `editing` state: `boxShadow: inset 0 0 0 1.4px fg`, no background change. */
 const EDIT_RING = 'ring-[1.4px] ring-inset ring-mn-text'
+/**
+ * The add line (KAN-356) — no board draws this row, the ticket's own build
+ * instruction does ("as a quiet mono line"): machine-surface register, ink .68
+ * throughout rather than the content rows' full ink, since it is an affordance, not
+ * authored prose.
+ */
+const ADD_LINE =
+  'w-full bg-transparent px-2 py-2 font-mono text-[12.5px] tracking-tight text-mn-text-secondary outline-none placeholder:text-mn-text-secondary'
 
 /** The block's medium for prose — the board's `d.serif` branch. */
 const medium = (serif: boolean | undefined) => (serif ? SERIF : SANS)
@@ -83,20 +99,37 @@ export function entryDateLabel(date: Date): string {
 }
 
 /**
- * Prepend one blank entry dated today — the log's insert path (#239), pure, through
- * the same whole-block `onChange(nextBlock)` contract the fields use. Newest first,
- * as the board's journal notes (`note: 'newest first'`) and both its fixtures read.
- * The frame's empty state (`write one`) is its one caller today.
+ * Prepend one entry dated today — the log's insert path (#239), pure, through the
+ * same whole-block `onChange(nextBlock)` contract the fields use. Newest first, as
+ * the board's journal notes (`note: 'newest first'`) and both its fixtures read.
+ * `text` defaults to `''` for the frame's empty-state caller (`write one`, a blank
+ * row to type into); the add line (KAN-356) passes its own typed text instead.
  */
-export function addEntry(data: EntriesBlock, now: Date = new Date()): EntriesBlock {
+export function addEntry(
+  data: EntriesBlock,
+  now: Date = new Date(),
+  text: string = ''
+): EntriesBlock {
   return {
     ...data,
-    entries: [{ id: crypto.randomUUID(), date: entryDateLabel(now), text: '' }, ...data.entries],
+    entries: [{ id: crypto.randomUUID(), date: entryDateLabel(now), text }, ...data.entries],
   }
 }
 
 export function EntriesView({ data, editable, onChange }: ModuleViewProps<EntriesBlock>) {
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [addValue, setAddValue] = useState('')
+  const firstTextRef = useRef<HTMLTextAreaElement | null>(null)
+  const focusNewEntry = useRef(false)
+
+  // Runs the render after an add — the new entry's textarea exists only once
+  // `onChange`'s data has round-tripped back through the host, so the focus can't
+  // happen inline in the key handler.
+  useEffect(() => {
+    if (!focusNewEntry.current) return
+    focusNewEntry.current = false
+    firstTextRef.current?.focus()
+  }, [data.entries])
 
   function patchEntry(index: number, patch: Partial<Entry>) {
     onChange?.({
@@ -105,15 +138,33 @@ export function EntriesView({ data, editable, onChange }: ModuleViewProps<Entrie
     })
   }
 
+  function handleAddKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key !== 'Enter') return
+    e.preventDefault()
+    if (addValue.trim() === '') return
+    focusNewEntry.current = true
+    onChange?.(addEntry(data, new Date(), addValue))
+    setAddValue('')
+  }
+
   if (editable) {
     return (
       <div className={STACK}>
+        <input
+          aria-label="Add entry"
+          className={ADD_LINE}
+          value={addValue}
+          placeholder="add an entry"
+          onChange={(e) => setAddValue(e.target.value)}
+          onKeyDown={handleAddKeyDown}
+        />
         {data.entries.map((entry, i) => (
           <div key={entry.id} className={`${ROW} ${editingId === entry.id ? EDIT_RING : ''}`}>
             <span data-part="date" className={DATE}>
               {entry.date}
             </span>
             <textarea
+              ref={i === 0 ? firstTextRef : undefined}
               aria-label="Entry text"
               className={`${medium(data.serif)} w-full resize-none bg-transparent text-mn-text outline-none placeholder:text-mn-text-secondary`}
               value={entry.text}

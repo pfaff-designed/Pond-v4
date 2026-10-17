@@ -389,7 +389,9 @@ describe('EntriesView — editable (a read-only date label + a prose field, per 
     expect(dates[0].textContent).toBe('28 oct')
     expect((texts[0] as HTMLTextAreaElement).value).toBe(updates.entries[0].text)
     for (const d of dates) has(d, ...DATE)
-    for (const row of Array.from(container.firstElementChild!.children)) has(row, ...ROW)
+    // The add line is the stack's first child now (KAN-356); only the entry
+    // rows — found through the text fields, not raw children — keep ROW's geometry.
+    for (const t of texts) has(t.parentElement!, ...ROW)
   })
 
   it('a focused row wears the molecule’s `editing` ring; blurring drops it', () => {
@@ -447,5 +449,45 @@ describe('EntriesView — editable (a read-only date label + a prose field, per 
   it('read-only renders no fields at all', () => {
     render(<EntriesView data={journal} />)
     expect(screen.queryByRole('textbox')).toBeNull()
+  })
+})
+
+describe('EntriesView — the add line (KAN-356)', () => {
+  it('sits above the stack, editable mode only', () => {
+    render(<EntriesView data={journal} />)
+    expect(screen.queryByRole('textbox', { name: 'Add entry' })).toBeNull()
+
+    render(<Stateful data={journal} />)
+    expect(screen.getAllByRole('textbox', { name: 'Add entry' })).toHaveLength(1)
+  })
+
+  it('↵ prepends a dated entry with the typed text, clears itself, and focuses the new row', () => {
+    render(<Stateful data={updates} />)
+    const add = screen.getByRole('textbox', { name: 'Add entry' })
+    fireEvent.change(add, { target: { value: 'booked the van' } })
+    fireEvent.keyDown(add, { key: 'Enter' })
+
+    expect((add as HTMLInputElement).value).toBe('')
+    const texts = screen.getAllByRole('textbox', { name: 'Entry text' })
+    expect(texts).toHaveLength(3)
+    expect((texts[0] as HTMLTextAreaElement).value).toBe('booked the van')
+    expect(document.activeElement).toBe(texts[0])
+  })
+
+  it('empty ↵ does nothing — no onChange, no new row', () => {
+    const onChange = jest.fn()
+    render(<EntriesView data={updates} editable onChange={onChange} />)
+    const add = screen.getByRole('textbox', { name: 'Add entry' })
+    fireEvent.keyDown(add, { key: 'Enter' })
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('whitespace-only ↵ does nothing either', () => {
+    const onChange = jest.fn()
+    render(<EntriesView data={updates} editable onChange={onChange} />)
+    const add = screen.getByRole('textbox', { name: 'Add entry' })
+    fireEvent.change(add, { target: { value: '   ' } })
+    fireEvent.keyDown(add, { key: 'Enter' })
+    expect(onChange).not.toHaveBeenCalled()
   })
 })
