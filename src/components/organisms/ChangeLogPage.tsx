@@ -178,6 +178,34 @@ function DeletedRecordCard({
   )
 }
 
+/** The "page is {title}" chip and its clear control — "all" and "by page"
+ *  both read the same `?page=` filter, so the chip (and clearing it) is
+ *  drawn once rather than copied per view. */
+function PageFilterChip({ title, onClear }: { title: string; onClear: () => void }) {
+  return (
+    <span className={PROPOSED_CHIP_CLASS}>
+      page is {title}
+      <button
+        type="button"
+        aria-label="clear page filter"
+        onClick={onClear}
+        className="ml-1 flex h-6 w-6 items-center justify-center text-mn-text-secondary hover:text-mn-text-meta"
+      >
+        <svg width="10" height="10" viewBox="0 0 12 12" fill="none" aria-hidden>
+          <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+        </svg>
+      </button>
+    </span>
+  )
+}
+
+/** "all" and "by page" share one empty-state line: a page filter narrows
+ *  what "empty" means, so both read off the same filter rather than each
+ *  hard-coding a copy of the unfiltered line. */
+function logEmptyCopy(pageFilterId: string | null): string {
+  return pageFilterId !== null ? 'no changes to this page yet' : 'nothing logged in this pond yet'
+}
+
 /** s6o1's five-column table body: the header row, one group head per group
  *  (a day header in "all", a page title in "by page"), and each group's rows
  *  — shared so a row/head change is made once, not once per view. */
@@ -328,7 +356,7 @@ export function ChangeLogPage() {
   // panel it came from. No pagination here, same as the panel's own list.
   const { data: pageFilteredRecords, isLoading: pageFilteredLoading } = useQuery({
     queryKey: changeLogPageFilteredKey(pondId, pageFilterId ?? ''),
-    enabled: view === 'all' && pageFilterId !== null,
+    enabled: (view === 'all' || view === 'by-page') && pageFilterId !== null,
     queryFn: async () => {
       const supabase = getSupabase()
       const {
@@ -549,24 +577,10 @@ export function ChangeLogPage() {
           <div className="rounded-mn-card bg-mn-card px-[10px] pt-[14px] pb-[6px] shadow-mn-card">
             {pageFilterId !== null && (
               <div className="flex flex-wrap gap-1.5 px-[10px] pb-[10px]">
-                <span className={PROPOSED_CHIP_CLASS}>
-                  page is {pageTitleById.get(pageFilterId) ?? 'deleted page'}
-                  <button
-                    type="button"
-                    aria-label="clear page filter"
-                    onClick={clearPageFilter}
-                    className="ml-1 flex h-6 w-6 items-center justify-center text-mn-text-secondary hover:text-mn-text-meta"
-                  >
-                    <svg width="10" height="10" viewBox="0 0 12 12" fill="none" aria-hidden>
-                      <path
-                        d="M3 3l6 6M9 3l-6 6"
-                        stroke="currentColor"
-                        strokeWidth="1.4"
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                  </button>
-                </span>
+                <PageFilterChip
+                  title={pageTitleById.get(pageFilterId) ?? 'deleted page'}
+                  onClear={clearPageFilter}
+                />
               </div>
             )}
             {activeRecordsLoading ? null : activeRecords.length === 0 ? (
@@ -574,9 +588,7 @@ export function ChangeLogPage() {
                 data-testid="change-log-empty"
                 className="px-[10px] pb-[8px] font-mono text-[12.5px] text-mn-text-secondary"
               >
-                {pageFilterId !== null
-                  ? 'no changes to this page yet'
-                  : 'nothing logged in this pond yet'}
+                {logEmptyCopy(pageFilterId)}
               </p>
             ) : (
               <LogGroupsTable
@@ -595,6 +607,12 @@ export function ChangeLogPage() {
             <div className="flex flex-wrap gap-1.5">
               <span className={PROPOSED_CHIP_CLASS}>grouped by page</span>
               <span className={PROPOSED_CHIP_CLASS}>newest first</span>
+              {pageFilterId !== null && (
+                <PageFilterChip
+                  title={pageTitleById.get(pageFilterId) ?? 'deleted page'}
+                  onClear={clearPageFilter}
+                />
+              )}
             </div>
             <div className="rounded-mn-card bg-mn-card px-[10px] pt-[14px] pb-[6px] shadow-mn-card">
               {activeRecordsLoading ? null : activeRecords.length === 0 ? (
@@ -602,7 +620,7 @@ export function ChangeLogPage() {
                   data-testid="change-log-empty"
                   className="px-[10px] pb-[8px] font-mono text-[12.5px] text-mn-text-secondary"
                 >
-                  nothing logged in this pond yet
+                  {logEmptyCopy(pageFilterId)}
                 </p>
               ) : (
                 <LogGroupsTable

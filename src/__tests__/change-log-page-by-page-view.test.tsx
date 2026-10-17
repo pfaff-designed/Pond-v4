@@ -19,9 +19,11 @@ jest.mock('@/lib/pond/context', () => ({
 }))
 
 const mockPush = jest.fn()
+const mockReplace = jest.fn()
+let mockSearchParams = new URLSearchParams()
 jest.mock('next/navigation', () => ({
-  useRouter: () => ({ push: mockPush, replace: jest.fn() }),
-  useSearchParams: () => ({ get: () => null }),
+  useRouter: () => ({ push: mockPush, replace: mockReplace }),
+  useSearchParams: () => mockSearchParams,
 }))
 
 jest.mock('@/lib/pond/name', () => ({
@@ -82,6 +84,7 @@ function renderPage() {
 
 beforeEach(() => {
   jest.clearAllMocks()
+  mockSearchParams = new URLSearchParams()
   mockListPages.mockResolvedValue([
     { id: 'page-1', title: 'launch plan' },
     { id: 'page-2', title: 'budget' },
@@ -217,5 +220,23 @@ describe('ChangeLogPage — the by page view', () => {
     const groupHeads = await screen.findAllByTestId('change-log-group-head')
     expect(groupHeads.map((el) => el.textContent)).toContain('budget')
     expect(mockListRecords).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps the page filter chip visible (with a working clear) after switching to "by page"', async () => {
+    mockSearchParams = new URLSearchParams({ page: 'page-1' })
+    mockListRecords.mockResolvedValue([record({ id: 'rec-filtered', targetPageId: 'page-1' })])
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByText(/page is launch plan/)
+
+    await user.click(screen.getByRole('tab', { name: 'by page' }))
+
+    expect(await screen.findByText(/page is launch plan/)).toBeInTheDocument()
+    const clearButton = screen.getByRole('button', { name: 'clear page filter' })
+
+    await user.click(clearButton)
+
+    expect(mockReplace).toHaveBeenCalledWith('?nodeId=__change_log__')
+    expect(screen.getByRole('tab', { name: 'by page' })).toHaveAttribute('aria-selected', 'true')
   })
 })
