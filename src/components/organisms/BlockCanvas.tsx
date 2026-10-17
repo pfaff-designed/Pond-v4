@@ -761,6 +761,26 @@ export function BlockCanvas({
     onChange(blocks.map((b, i) => (i === index ? next : b)))
   }
 
+  /**
+   * KAN-243 fix: `SavedViewBar`'s undo writes through THIS, never a plain
+   * `onChange(blocks.map(...))` closed over an index — that closure (as
+   * `renderBlockEditor`'s `(next) => setBlockAt(i, next)` is, below) spreads
+   * `next` over whatever `blocks` THAT RENDER saw, so a toast staged earlier and
+   * fired later would silently drop an edit made to another block in between
+   * (and, after a reorder, could even land on the wrong block by index).
+   * `blocksRef.current` is always the latest list, and matching by id rather
+   * than index survives a reorder too.
+   */
+  const writeBlock = useCallback(
+    (next: ViewBlock) =>
+      onChange(
+        blocksRef.current.map((b) =>
+          b.id === next.id ? { ...next, activeViewId: (b as ViewBlock).activeViewId } : b
+        )
+      ),
+    [onChange]
+  )
+
   function removeBlockAt(index: number) {
     const removed = blocks[index]
     if (!removed) return
@@ -1488,6 +1508,7 @@ export function BlockCanvas({
         chrome={chrome}
         untouched={untouched && i === 0}
         onChange={(next) => setBlockAt(i, next)}
+        writeBlock={writeBlock}
         onRemoveEmpty={() => removeEmptyLineAt(i)}
         onDeleteBlock={() => removeBlockAt(i)}
         onReturn={(patch) => insertLineAfter(i, patch)}
@@ -1927,6 +1948,7 @@ function BlockEditor({
   chrome = true,
   untouched = false,
   onChange,
+  writeBlock,
   onRemoveEmpty,
   onDeleteBlock,
   onReturn,
@@ -1966,6 +1988,10 @@ function BlockEditor({
   /** This block is the untouched page's one hint line (6f): its placeholder draws in the mono override. */
   untouched?: boolean
   onChange: (next: Block) => void
+  /** `BlockCanvas`'s own by-id write (KAN-243 fix) — see `SavedViewHost.writeBlock`.
+   *  Threaded to `savedViewHost` and the empty-state `SavedViewBar` directly,
+   *  since it's rendered outside the context provider below. */
+  writeBlock: (next: ViewBlock) => void
   /** Backspace in an empty text block. */
   onRemoveEmpty: () => void
   /** ⌘⌫ / Ctrl+⌫ on the focused block. */
@@ -2098,8 +2124,8 @@ function BlockEditor({
     if (block.type === 'view') latestViewBlockRef.current = moduleData as ViewBlock
   }, [block.type, moduleData])
   const savedViewHost = useMemo(
-    () => ({ latestBlock: latestViewBlockRef, getLatestSchema }),
-    [getLatestSchema]
+    () => ({ latestBlock: latestViewBlockRef, getLatestSchema, writeBlock }),
+    [getLatestSchema, writeBlock]
   )
 
   // KAN-321 fix: `state === 'empty'` swaps `children` (the module view, bar
@@ -2129,6 +2155,7 @@ function BlockEditor({
         onChange={commitViewChange}
         latestBlock={latestViewBlockRef}
         getLatestSchema={getLatestSchema}
+        writeBlock={writeBlock}
       />
     ) : undefined
 

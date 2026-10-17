@@ -458,6 +458,7 @@ export function CollectionView({
         onConfigChange={onConfigChange ? handleConfigChange : undefined}
         latestBlock={savedViewHost?.latestBlock}
         getLatestSchema={savedViewHost?.getLatestSchema}
+        writeBlock={savedViewHost?.writeBlock}
       />
       {activeConfig.mode === 'board' ? (
         <CollectionBoard
@@ -587,6 +588,7 @@ function ViewControls({
   onConfigChange,
   latestBlock,
   getLatestSchema,
+  writeBlock,
 }: {
   config: ViewBlock
   /** The raw, unresolved persisted block — `SavedViewBar`'s segments and its
@@ -606,6 +608,7 @@ function ViewControls({
    *  — see `SavedViewHostContext`. Absent off a bare story/test render. */
   latestBlock?: { readonly current: ViewBlock }
   getLatestSchema?: () => PropertySchema | null
+  writeBlock?: (next: ViewBlock) => void
 }) {
   // The head's fact: a board reads its lanes' property, a list the date it groups by.
   const groupDef =
@@ -652,6 +655,7 @@ function ViewControls({
               editable: !!editable,
               latestBlock,
               getLatestSchema,
+              writeBlock,
             }
             // `SavedViewBarProps` requires `updateSchema` together with `onChange`
             // (AGENTS.md "crash early") — a host with one but not the other gets

@@ -49,6 +49,13 @@ import { addDateField, addStatusField, removeField, type PropertySchema } from '
  * closing over the pre-add block would make undoing the OLDER one wipe out a
  * view a LATER add had since made, or — if the instance that staged it has since
  * unmounted (BlockCanvas's empty↔live swap) — read a block frozen before either.
+ *
+ * Undo's WRITE goes through `writeBlock`, never the plain `onChange` the add
+ * itself used — `onChange` is `BlockEditor`'s own `(next) => setBlockAt(i, next)`,
+ * which spreads `next` over THAT RENDER's `blocks`; a toast fired later, after an
+ * edit to a different block, would silently revert that edit too. `writeBlock`
+ * finds this block by id in the host's own latest list instead of trusting a
+ * stale array closure.
  */
 function runAddView(
   data: ViewBlock,
@@ -58,7 +65,8 @@ function runAddView(
   updateSchema: (next: PropertySchema) => void,
   onChange: (next: ViewBlock) => void,
   deletionUndo: NonNullable<ReturnType<typeof useOptionalDeletionUndo>>,
-  onSelect: (id: string) => void
+  onSelect: (id: string) => void,
+  writeBlock: (next: ViewBlock) => void
 ): void {
   const schema = getLatestSchema()
   if (!schema) return
@@ -93,7 +101,7 @@ function runAddView(
       const current = latestBlock.current
       const currentViews: ViewSavedView[] = current.views ?? []
       const removingShownView = current.activeViewId === addedViewId
-      onChange({
+      writeBlock({
         ...current,
         views: currentViews.filter((view) => view.id !== addedViewId),
         activeViewId: removingShownView ? previousActiveViewId : current.activeViewId,
@@ -130,6 +138,11 @@ interface SavedViewBarBase {
    *  a local ref tied to THIS instance's own props (today's behaviour there). */
   latestBlock?: { readonly current: ViewBlock }
   getLatestSchema?: () => PropertySchema | null
+  /** The host's own by-id write (`SavedViewHost.writeBlock`, KAN-243 fix) — the
+   *  undo's write path, so a toast fired after an edit to ANOTHER block never
+   *  spreads over a stale snapshot of the whole list. Absent only for a bare
+   *  story/test render, where undo falls back to `onChange`. */
+  writeBlock?: (next: ViewBlock) => void
 }
 
 export type SavedViewBarProps = SavedViewBarBase &
@@ -150,7 +163,7 @@ export type SavedViewBarProps = SavedViewBarBase &
   )
 
 export function SavedViewBar(props: SavedViewBarProps) {
-  const { block, schema, activeId, onSelect, editable, latestBlock, getLatestSchema } = props
+  const { block, schema, activeId, onSelect, editable, latestBlock, getLatestSchema, writeBlock } = props
   const deletionUndo = useOptionalDeletionUndo()
 
   // Local fallback only: a host that owns neither getter (a bare story/test
@@ -190,10 +203,22 @@ export function SavedViewBar(props: SavedViewBarProps) {
         props.updateSchema,
         props.onChange,
         deletionUndo,
-        onSelect
+        onSelect,
+        writeBlock ?? props.onChange
       )
     },
-    [editable, schema, deletionUndo, props.onChange, props.updateSchema, block, onSelect, getLatestSchema, latestBlock]
+    [
+      editable,
+      schema,
+      deletionUndo,
+      props.onChange,
+      props.updateSchema,
+      block,
+      onSelect,
+      getLatestSchema,
+      latestBlock,
+      writeBlock,
+    ]
   )
 
   // KAN-243 PATH_STEPS 1: a legacy block (no `views[]` yet — every view made from

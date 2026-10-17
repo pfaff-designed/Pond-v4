@@ -24,6 +24,15 @@ export interface SavedViewHost {
   /** Reads the collection's schema straight off react-query's cache —
    *  synchronous, so a same-tick remedy mint is visible to the very next read. */
   getLatestSchema: () => PropertySchema | null
+  /** Writes a view block by id against the host's OWN latest block list
+   *  (`blocksRef`), not a snapshot closed over at add time — `BlockEditor`'s
+   *  `onChange` prop is `(next) => setBlockAt(i, next)`, which spreads `next`
+   *  over THAT RENDER's `blocks`; an undo staged earlier and fired later would
+   *  overwrite any edit made to another block in between. Only the undo write
+   *  goes through this — the add itself runs in the current render, where
+   *  `onChange` is still fresh. Absent off a bare story/test render with no
+   *  host, where undo falls back to `onChange`. */
+  writeBlock?: (next: ViewBlock) => void
 }
 
 export const SavedViewHostContext = createContext<SavedViewHost | undefined>(undefined)

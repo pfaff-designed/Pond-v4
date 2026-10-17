@@ -165,6 +165,36 @@ describe('BlockCanvas — "＋ view" reaches an empty database too (KAN-243)', (
     expect(schemaAfterUndo.some((def) => def.type === 'status')).toBe(true)
   })
 
+  it('undoing an add-view toast after editing ANOTHER block leaves that edit alone (KAN-243 fix-3a)', async () => {
+    const todo: Block = {
+      id: 'b-todo',
+      type: 'todo',
+      items: [{ id: 'item-1', label: 'sand the top', checked: false }],
+    }
+    const user = userEvent.setup()
+    renderCanvas([table, todo])
+
+    await user.click(await screen.findByRole('button', { name: 'add a view' }))
+    await user.click(screen.getByRole('option', { name: 'board' }))
+    expect(screen.getByRole('tab', { name: 'board' })).toHaveAttribute('aria-selected', 'true')
+
+    // Edit the OTHER block, through the real canvas — this moves `blocks`
+    // past whatever the staged undo's own `onChange` closure saw at add time.
+    await user.click(screen.getByRole('checkbox', { name: 'sand the top' }))
+    expect(screen.getByRole('checkbox', { name: 'sand the top' })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Undo' }))
+
+    expect(screen.queryByRole('tab', { name: 'board' })).not.toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: 'sand the top' })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    )
+  })
+
   it('a legacy table WITH rows: picking "calendar" selects its tab and draws the real grid, through the live ViewControls bar', async () => {
     mockRows = [{ id: 'row-1', title: 'first task', values: {} }]
     const user = userEvent.setup()
