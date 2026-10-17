@@ -530,7 +530,7 @@ export function PondMolecule({
       selected
         ? 'shadow-mn-card ring-2 ring-mn-text'
         : hover
-          ? '-translate-y-px shadow-mn-md'
+          ? '-translate-y-px shadow-mn-card-hover'
           : 'shadow-mn-card',
       // `translate-y-*` compiles to `translate:`, so this must be translate-none.
       'motion-reduce:translate-none',
