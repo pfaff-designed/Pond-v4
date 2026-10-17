@@ -55,8 +55,9 @@ describe('TerminalDrawer — the scroll clearance var in zen (KAN-400)', () => {
   it('zen on, the card not asked: the scroll var is the zen pill footprint, not the hidden card’s', () => {
     render(<Host />)
     // jsdom does no layout — give the shell the height a real browser already
-    // would have, so `composerClearanceMarginPx`'s clamp has a real band to
-    // clamp against instead of `0`. No assertion's expected value changes.
+    // would have. A height-0 shell would drive `composerClearanceMarginPx`'s
+    // clamp floor (Math.max(0, …)) and read 0 instead of the published
+    // footprint. No assertion's expected value changes.
     shell().getBoundingClientRect = () => ({ height: 800 }) as DOMRect
     fireEvent.click(screen.getByRole('button', { name: 'enter zen' }))
 

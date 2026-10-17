@@ -112,7 +112,7 @@ export const composerClearanceMarginPx = (): number => {
     published === null ? composerFootprintPx(COMPOSER_REST_HEIGHT) + COMPOSER_CLEARANCE_GAP : published + COMPOSER_CLEARANCE_GAP
   if (!shell) return margin
   const maxMargin = shell.getBoundingClientRect().height - COMPOSER_TOP_CLEARANCE - COMPOSER_MIN_CARET_BAND
-  return Math.min(margin, maxMargin)
+  return Math.max(0, Math.min(margin, maxMargin))
 }
 
 /**

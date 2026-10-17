@@ -350,8 +350,9 @@ describe('TextView — the text block edits in place as rendered prose', () => {
     it("keeps reading the composer's live published footprint, not the one at mount", async () => {
       shell = document.createElement('div')
       shell.setAttribute('data-part', 'shell')
-      // jsdom does no layout, so a real height would read 0 and clamp the
-      // margin to nothing — mock an 800px scroller, as composer-clearance's
+      // jsdom does no layout, so a real height would read 0, driving the
+      // clamp's floor (Math.max(0, …)) and reading 0 instead of the
+      // published footprint — mock an 800px scroller, as composer-clearance's
       // own tests do.
       shell.getBoundingClientRect = () => ({ height: 800 } as DOMRect)
       shell.style.setProperty(COMPOSER_CLEARANCE_VAR, '125px')

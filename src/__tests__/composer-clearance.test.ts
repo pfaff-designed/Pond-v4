@@ -73,14 +73,22 @@ describe('composerClearanceMarginPx', () => {
     expect(composerClearanceMarginPx()).toBe(composerFootprintPx(COMPOSER_REST_HEIGHT) + COMPOSER_CLEARANCE_GAP)
   })
 
-  it('clamps to the shell height minus the top clearance and a caret band when the footprint would leave no room', () => {
-    shellEndingAt(800, '752px', 800)
+  it.each`
+    shellHeight | published  | expected
+    ${800}      | ${'752px'} | ${700}
+    ${800}      | ${'416px'} | ${440}
+    ${800}      | ${undefined} | ${149}
+    ${100}      | ${'416px'} | ${0}
+    ${0}        | ${'416px'} | ${0}
+    ${50}       | ${'416px'} | ${0}
+  `('clamps to the shell height minus the top clearance and a caret band ($shellHeight, $published)', ({ shellHeight, published, expected }) => {
+    shellEndingAt(800, published, shellHeight)
 
-    expect(composerClearanceMarginPx()).toBe(700)
+    expect(composerClearanceMarginPx()).toBe(expected)
   })
 
-  it('leaves the margin unclamped when it still fits inside the shell', () => {
-    shellEndingAt(800, '416px', 800)
+  it('leaves the margin unclamped against the shell\'s default (unconstrained) height', () => {
+    shellEndingAt(800, '416px')
 
     expect(composerClearanceMarginPx()).toBe(440)
   })
