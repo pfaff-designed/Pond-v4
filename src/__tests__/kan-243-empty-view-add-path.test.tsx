@@ -195,6 +195,42 @@ describe('BlockCanvas — "＋ view" reaches an empty database too (KAN-243)', (
     )
   })
 
+  it('undoing an add-view toast through the LIVE ViewControls bar (non-empty rows) leaves another block\'s edit alone (KAN-243 fix-3c)', async () => {
+    // Non-empty rows put `viewFrameState` at 'rest' from the first render, so
+    // the add lands through `ViewControls`' live bar (view.tsx:461's
+    // `writeBlock={savedViewHost?.writeBlock}`), never BlockCanvas's
+    // empty-state bar (BlockCanvas.tsx:2158's own, directly-passed `writeBlock`)
+    // — the only path fix-3a's own regression test (above) never exercised.
+    mockRows = [{ id: 'row-1', title: 'first task', values: {} }]
+    const todo: Block = {
+      id: 'b-todo',
+      type: 'todo',
+      items: [{ id: 'item-1', label: 'sand the top', checked: false }],
+    }
+    const user = userEvent.setup()
+    renderCanvas([table, todo])
+
+    await user.click(await screen.findByRole('button', { name: 'add a view' }))
+    await user.click(screen.getByRole('option', { name: /^calendar/ }))
+    expect(screen.getByRole('tab', { name: 'calendar' })).toHaveAttribute('aria-selected', 'true')
+
+    // Edit the OTHER block, through the real canvas — this moves `blocks`
+    // past whatever the staged undo's own `onChange` closure saw at add time.
+    await user.click(screen.getByRole('checkbox', { name: 'sand the top' }))
+    expect(screen.getByRole('checkbox', { name: 'sand the top' })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Undo' }))
+
+    expect(screen.queryByRole('tab', { name: 'calendar' })).not.toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: 'sand the top' })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    )
+  })
+
   it('a legacy table WITH rows: picking "calendar" selects its tab and draws the real grid, through the live ViewControls bar', async () => {
     mockRows = [{ id: 'row-1', title: 'first task', values: {} }]
     const user = userEvent.setup()
