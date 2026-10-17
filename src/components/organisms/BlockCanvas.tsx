@@ -48,6 +48,7 @@ import { applyView } from '@/lib/modules/view/apply'
 import { activeSavedView } from '@/lib/modules/view/schema'
 import { ActiveViewSelectionContext } from '@/lib/modules/view/active-view-context'
 import { SavedViewBar } from '@/lib/modules/view/saved-view-bar'
+import { compactChartMark } from '@/lib/modules/view/chart-compact'
 import type { PropertySchema } from '@/lib/properties/schema'
 import { CHART_EMPTY_LINE } from '@/lib/modules/chart/card'
 import { addTodoItem } from '@/lib/modules/todo/view'
@@ -2074,8 +2075,10 @@ function BlockEditor({
   const commitViewChange = (next: ViewBlock) =>
     onChange({ ...next, activeViewId: block.type === 'view' ? block.activeViewId : undefined })
 
+  // A compact chart mark's voidBox draws its own line alone — no tabs, no
+  // ＋ view — so it's excluded here whether or not it's wrapped in views[].
   const emptyStateViewBar =
-    state === 'empty' && block.type === 'view' ? (
+    state === 'empty' && block.type === 'view' && compactChartMark(block) === null ? (
       <SavedViewBar
         block={activeViewId ? { ...block, activeViewId } : block}
         schema={collectionSchema}
