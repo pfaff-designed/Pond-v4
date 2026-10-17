@@ -5,6 +5,8 @@ import {
   restoreLinks,
   findPagesLinkingTo,
   unlinkTrashedSubtree,
+  relinkRestoredSubtree,
+  type RemovedLink,
 } from './child-links'
 import type { Block } from '@/lib/modules/content'
 import type { PondPage } from './client'
@@ -520,6 +522,155 @@ describe('unlinkTrashedSubtree', () => {
     ).resolves.toBeUndefined()
 
     expect(consoleError).toHaveBeenCalled()
+    consoleError.mockRestore()
+  })
+})
+
+describe('relinkRestoredSubtree', () => {
+  const pageWith = (id: string, blocks: Block[]) => ({
+    id,
+    parentId: null,
+    type: 'page',
+    title: id,
+    blocks,
+    order: 0,
+    props: {},
+  })
+
+  function makeSupabase({
+    rootProps = { props: {} } as { props: unknown } | null,
+    updateError = null as { message: string } | null,
+  } = {}) {
+    const update = jest.fn().mockReturnValue({
+      eq: jest.fn().mockResolvedValue({ error: updateError }),
+    })
+    const chain = {
+      select: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      maybeSingle: jest.fn().mockResolvedValue({ data: rootProps }),
+      update,
+    }
+    return { from: jest.fn().mockReturnValue(chain), _chain: chain, update }
+  }
+
+  let invalidateQueries: jest.Mock
+  let queryClient: never
+
+  beforeEach(() => {
+    jest.clearAllMocks()
+    mockCommitBlocks.mockResolvedValue(undefined)
+    mockFlushPendingPageSave.mockResolvedValue(undefined)
+    invalidateQueries = jest.fn().mockResolvedValue(undefined)
+    queryClient = { invalidateQueries } as never
+  })
+
+  it('is a no-op when props.unlinkedLinks is absent', async () => {
+    const supabase = makeSupabase({ rootProps: { props: {} } })
+
+    await relinkRestoredSubtree(supabase as never, queryClient, {
+      pondId: 'pond-1',
+      rootPageId: 'root-1',
+    })
+
+    expect(mockGetPage).not.toHaveBeenCalled()
+    expect(supabase._chain.update).not.toHaveBeenCalled()
+  })
+
+  it('is a no-op when props.unlinkedLinks is an empty array', async () => {
+    const supabase = makeSupabase({ rootProps: { props: { unlinkedLinks: [] } } })
+
+    await relinkRestoredSubtree(supabase as never, queryClient, {
+      pondId: 'pond-1',
+      rootPageId: 'root-1',
+    })
+
+    expect(mockGetPage).not.toHaveBeenCalled()
+    expect(supabase._chain.update).not.toHaveBeenCalled()
+  })
+
+  it('restores a link to its parent, commits, invalidates, and clears the field', async () => {
+    const link1 = link('b1', 'child-1')
+    const text1 = text('b2')
+    const entry: RemovedLink = { parentId: 'parent-a', block: link1, index: 0, beforeId: null }
+    const supabase = makeSupabase({
+      rootProps: { props: { unlinkedLinks: [entry], other: 'kept' } },
+    })
+    mockGetPage.mockResolvedValue(pageWith('parent-a', [text1]))
+
+    await relinkRestoredSubtree(supabase as never, queryClient, {
+      pondId: 'pond-1',
+      rootPageId: 'root-1',
+    })
+
+    expect(mockFlushPendingPageSave).toHaveBeenCalledWith('parent-a')
+    expect(mockCommitBlocks).toHaveBeenCalledTimes(1)
+    const [, , pageId, blocks, opts] = mockCommitBlocks.mock.calls[0]
+    expect(pageId).toBe('parent-a')
+    expect(blocks).toEqual([link1, text1])
+    expect(opts).toMatchObject({ ownEdit: true, before: [text1], pondId: 'pond-1' })
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['page', 'parent-a'] })
+
+    expect(supabase._chain.update).toHaveBeenCalledTimes(1)
+    const [payload] = supabase.update.mock.calls[0]
+    expect(payload.props).toEqual({ other: 'kept' })
+  })
+
+  it('skips an entry whose parent no longer exists but still clears the field', async () => {
+    const link1 = link('b1', 'child-1')
+    const entry: RemovedLink = { parentId: 'gone', block: link1, index: 0, beforeId: null }
+    const supabase = makeSupabase({ rootProps: { props: { unlinkedLinks: [entry] } } })
+    mockGetPage.mockResolvedValue(null)
+
+    await relinkRestoredSubtree(supabase as never, queryClient, {
+      pondId: 'pond-1',
+      rootPageId: 'root-1',
+    })
+
+    expect(mockCommitBlocks).not.toHaveBeenCalled()
+    expect(invalidateQueries).not.toHaveBeenCalled()
+    expect(supabase._chain.update).toHaveBeenCalledTimes(1)
+    const [payload] = supabase.update.mock.calls[0]
+    expect(payload.props.unlinkedLinks).toBeUndefined()
+  })
+
+  it('groups two entries for the same parent into a single commit, in order', async () => {
+    const link1 = link('b1', 'child-1')
+    const link2 = link('b2', 'child-2')
+    const entries: RemovedLink[] = [
+      { parentId: 'parent-a', block: link1, index: 0, beforeId: null },
+      { parentId: 'parent-a', block: link2, index: 1, beforeId: 'b1' },
+    ]
+    const supabase = makeSupabase({ rootProps: { props: { unlinkedLinks: entries } } })
+    mockGetPage.mockResolvedValue(pageWith('parent-a', []))
+
+    await relinkRestoredSubtree(supabase as never, queryClient, {
+      pondId: 'pond-1',
+      rootPageId: 'root-1',
+    })
+
+    expect(mockGetPage).toHaveBeenCalledTimes(1)
+    expect(mockCommitBlocks).toHaveBeenCalledTimes(1)
+    const [, , , blocks] = mockCommitBlocks.mock.calls[0]
+    expect(blocks).toEqual([link1, link2])
+  })
+
+  it('never throws — logs and returns when a commit fails, leaving the field unwritten', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
+    const link1 = link('b1', 'child-1')
+    const entry: RemovedLink = { parentId: 'parent-a', block: link1, index: 0, beforeId: null }
+    const supabase = makeSupabase({ rootProps: { props: { unlinkedLinks: [entry] } } })
+    mockGetPage.mockResolvedValue(pageWith('parent-a', []))
+    mockCommitBlocks.mockRejectedValue(new Error('boom'))
+
+    await expect(
+      relinkRestoredSubtree(supabase as never, queryClient, {
+        pondId: 'pond-1',
+        rootPageId: 'root-1',
+      })
+    ).resolves.toBeUndefined()
+
+    expect(consoleError).toHaveBeenCalled()
+    expect(supabase._chain.update).not.toHaveBeenCalled()
     consoleError.mockRestore()
   })
 })

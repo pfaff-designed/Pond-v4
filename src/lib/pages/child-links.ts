@@ -286,6 +286,80 @@ export async function unlinkTrashedSubtree(
 }
 
 /**
+ * Undo `unlinkTrashedSubtree`'s write, once the subtree is restored (KAN-448).
+ * Reads `rootPageId`'s `props.unlinkedLinks` (absent or empty → no-op), then
+ * replays each entry's parent through the same own-edit seam: flush that
+ * parent's pending save (the same race `unlinkTrashedSubtree` guards against
+ * — a restore can land while the parent is the open, actively-saving page),
+ * read it fresh, `restoreLinks`, commit only if that actually changed the
+ * blocks, invalidate. Entries are grouped by `parentId` first so two links
+ * restoring onto the same page commit once, in their original relative
+ * order, not twice.
+ *
+ * `props.unlinkedLinks` is cleared once every entry has been attempted,
+ * success or not — a parent that's since vanished or already carries the
+ * link is as "done" as one that was freshly restored, and leaving the field
+ * behind would replay it again next restore.
+ *
+ * Never throws: a failed relink must not fail the restore it rides with
+ * (`unlinkTrashedSubtree`'s rule) — log and return.
+ */
+export async function relinkRestoredSubtree(
+  supabase: SupabaseClient<Database>,
+  queryClient: QueryClient,
+  { pondId, rootPageId }: { pondId: string | null; rootPageId: string }
+): Promise<void> {
+  try {
+    const { data } = await supabase
+      .from('pages')
+      .select('props')
+      .eq('id', rootPageId)
+      .maybeSingle()
+    const current = (data as { props?: unknown } | null)?.props
+    const props: Record<string, unknown> =
+      current && typeof current === 'object' && !Array.isArray(current)
+        ? (current as Record<string, unknown>)
+        : {}
+    const removed = Array.isArray(props.unlinkedLinks) ? (props.unlinkedLinks as RemovedLink[]) : []
+    if (removed.length === 0) return
+
+    const byParent = new Map<string, RemovedLink[]>()
+    for (const entry of removed) {
+      const entries = byParent.get(entry.parentId) ?? []
+      entries.push(entry)
+      byParent.set(entry.parentId, entries)
+    }
+
+    for (const [parentId, entries] of byParent) {
+      await flushPendingPageSave(parentId)
+      const parent = await getPage(supabase, parentId)
+      if (!parent) continue
+
+      const nextBlocks = restoreLinks(parent.blocks, entries)
+      if (nextBlocks === parent.blocks) continue
+
+      await commitBlocks(supabase, queryClient, parentId, nextBlocks, {
+        ownEdit: true,
+        before: parent.blocks,
+        pondId,
+      })
+      await queryClient.invalidateQueries({ queryKey: ['page', parentId] })
+    }
+
+    const restProps = { ...props }
+    delete restProps.unlinkedLinks
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabase as any)
+      .from('pages')
+      .update({ props: restProps, updated_at: new Date().toISOString() })
+      .eq('id', rootPageId)
+    if (error) throw new Error(error.message)
+  } catch (err) {
+    console.error('[page-link] restored subtree not relinked', rootPageId, err)
+  }
+}
+
+/**
  * Stamp `props.childLinksMigrated` on the `['page', pageId]` query cache, so
  * the upgrade effect's own-page cache read sees the stamp at once rather than
  * only after `markChildLinksMigrated`'s DB write resolves — otherwise a
