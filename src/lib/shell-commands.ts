@@ -151,3 +151,14 @@ export const useApplePlatform = (): boolean => {
   useEffect(() => notifyApplePlatformChange(), [])
   return useSyncExternalStore(subscribeApplePlatform, () => applePlatformSnapshot, () => true)
 }
+
+/**
+ * Marks a container (KAN-355: a list/checklist's rows) whose structural
+ * edits are page saves, not an editor's own history — a focused plain
+ * `<input>` inside one has nothing of its own for ⌘Z/⇧⌘Z to undo, so
+ * `ShellCommands`' `isEditable` treats it as not-editable and the chord
+ * falls through to the session's change-log undo instead of the browser's
+ * native input undo. One exported name, read by the container that stamps
+ * it and the listener that checks for it.
+ */
+export const SESSION_UNDO_SCOPE_ATTR = 'data-pond-session-undo'

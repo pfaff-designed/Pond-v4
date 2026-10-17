@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { Decorator, Meta, StoryObj } from '@storybook/nextjs-vite'
-import { expect, userEvent, within } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 
 import { TodoView } from './view'
 import type { TodoBlock } from './schema'
@@ -242,10 +242,12 @@ async function assertMethod(canvasElement: HTMLElement, ink: Ink) {
   await assertDone(rows[0], ink)
   await assertRest(rows[1], ink)
   await assertRest(rows[2], ink)
-  // The stack is the frame's row gap for the checklist kind, and the listener
-  // wrapper between row and stack is `display: contents` — without it the row is
-  // not the stack's own flex item and the 2px gap silently stops applying.
-  await expect(getComputedStyle(rows[0].parentElement!).display).toBe('contents')
+  // The stack is the frame's row gap for the checklist kind. The listener
+  // wrapper between row and stack is a real box, not `display: contents`
+  // (KAN-355 fix: Chrome does not reliably drag a `display: contents`
+  // source) — it is itself the stack's flex item, and the 2px gap applies
+  // between those wrappers.
+  await expect(getComputedStyle(rows[0].parentElement!).display).toBe('block')
   await expect(getComputedStyle(rows[0].parentElement!.parentElement!).rowGap).toBe('2px')
 }
 
@@ -552,8 +554,10 @@ export const EditingRing: Story = {
     await userEvent.click(field)
     await expect(row.dataset.state).toBe('editing')
     await assertEditRing(row, INK)
-    await userEvent.tab()
-    await expect(rowsOf(canvasElement)[0].dataset.state).not.toBe('editing')
+    // Tab no longer moves focus out of the item (KAN-355, lists stay flat) —
+    // blur directly to exercise the ring's clear-on-blur behaviour.
+    field.blur()
+    await waitFor(() => expect(rowsOf(canvasElement)[0].dataset.state).not.toBe('editing'))
     await expect(getComputedStyle(rowsOf(canvasElement)[0]).boxShadow).toBe('none')
   },
 }

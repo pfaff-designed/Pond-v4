@@ -103,7 +103,7 @@ describe('commitBlocks — a person’s own save is logged', () => {
     mockedAppend.mockRejectedValueOnce(new Error('rls'))
     const spy = jest.spyOn(console, 'error').mockImplementation(() => {})
 
-    await expect(ownSave(BEFORE, AFTER)).resolves.toBeUndefined()
+    await expect(ownSave(BEFORE, AFTER)).resolves.toEqual({ remembered: expect.anything() })
     await settle()
 
     expect(mockedSaveBlocks).toHaveBeenCalledWith(supabase, 'page-1', AFTER)
@@ -117,7 +117,7 @@ describe('commitBlocks — a person’s own save is logged', () => {
     getUser.mockRejectedValueOnce(new Error('offline'))
     const spy = jest.spyOn(console, 'error').mockImplementation(() => {})
 
-    await expect(ownSave(BEFORE, AFTER)).resolves.toBeUndefined()
+    await expect(ownSave(BEFORE, AFTER)).resolves.toEqual({ remembered: expect.anything() })
 
     expect(mockedAppend).not.toHaveBeenCalled()
     spy.mockRestore()

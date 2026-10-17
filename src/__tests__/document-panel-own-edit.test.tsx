@@ -75,10 +75,14 @@ function mount() {
   return { client, rerender: () => rerender(tree()) }
 }
 
+// What the real `commitBlocks` resolves to for an own-edit save (KAN-355):
+// `{ remembered }`, never a bare `undefined`.
+const committedNow = () => ({ remembered: Promise.resolve() })
+
 const deferred = () => {
   let resolve: () => void = () => {}
-  const promise = new Promise<void>((res) => {
-    resolve = () => res()
+  const promise = new Promise<{ remembered: Promise<void> }>((res) => {
+    resolve = () => res(committedNow())
   })
   return { promise, resolve }
 }
@@ -93,7 +97,7 @@ const savedCall = (n: number) => {
 beforeEach(() => {
   jest.clearAllMocks()
   mockNodeId = 'page-1'
-  mockCommitBlocks.mockResolvedValue(undefined)
+  mockCommitBlocks.mockResolvedValue(committedNow())
 })
 
 describe('DocumentPanel — each save says what it changed', () => {

@@ -369,11 +369,17 @@ describe('the checklist’s empty last item steps out, same as Return (KAN-344)'
     expect(opened[1]).toMatchObject({ type: 'text', content: '' })
   })
 
-  it('Return on the non-empty, not-last item still does nothing', async () => {
+  it('Return on a non-empty, not-last item inserts a new empty item directly below it (KAN-355)', async () => {
     const { onChange } = renderCanvas([checklistWithEmptyLastItem, note])
     const items = screen.getAllByRole('textbox', { name: 'Step' })
     fireEvent.keyDown(items[0], { key: 'Enter' })
-    expect(onChange).not.toHaveBeenCalled()
+
+    expect(onChange).toHaveBeenCalledTimes(1)
+    const next = onChange.mock.calls[0][0] as Block[]
+    expect(next.map((b) => b.id)).toEqual(['b-checklist', 'b-note'])
+    expect(next[0]).toMatchObject({
+      items: [{ label: 'sand the top' }, { label: '' }, { label: '' }],
+    })
   })
 
   it('Return on the single, non-empty, last item appends an empty item instead of stepping out', async () => {
