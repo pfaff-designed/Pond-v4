@@ -27,7 +27,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
-import { getPage } from '@/lib/pages/client'
+import { pageQueryOptions } from '@/lib/pages/page-query'
 import { usePageDraft } from '@/lib/pages/use-page-draft'
 import { getOrCreateHomePage } from '@/lib/pages/home'
 import { PropertyInspector } from '@/components/molecules/PropertyInspector'
@@ -199,8 +199,7 @@ export function DocumentPanel() {
   }, [nodeId, refetchFirstRunPending])
 
   const { data: page, isLoading } = useQuery({
-    queryKey: ['page', pageId],
-    queryFn: () => (pageId ? getPage(getSupabase(), pageId) : Promise.resolve(null)),
+    ...pageQueryOptions(getSupabase, pageId),
     enabled: !!pageId && !isChangeLogNode,
   })
 
