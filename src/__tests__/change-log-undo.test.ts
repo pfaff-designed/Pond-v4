@@ -565,6 +565,18 @@ describe('createSessionUndo', () => {
       await expect(first).rejects.toThrow(SessionUndoTimeoutError)
       await expect(second).resolves.toMatchObject({ outcome: 'done', step: STEP })
     })
+
+    it('does not let a trackPending promise that never settles block undo past the timeout', async () => {
+      const { store, run } = makeStore({ timeoutMs: 1000 })
+      store.remember(STEP)
+      store.trackPending(POND, new Promise<void>(() => {}))
+
+      const pending = store.undo(POND)
+      await jest.advanceTimersByTimeAsync(1000)
+
+      await expect(pending).resolves.toMatchObject({ outcome: 'done', step: STEP })
+      expect(run.undo).toHaveBeenCalledWith(STEP)
+    })
   })
 
   it('clears every pond', () => {

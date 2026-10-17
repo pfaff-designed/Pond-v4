@@ -144,9 +144,12 @@ export const createSessionUndo = (
     enqueue(async () => {
       // Wait out every `remember` still being logged for this pond FIRST, before
       // reading the stack at all — the record that `remember` is about to push
-      // may be the step this call is meant to take.
+      // may be the step this call is meant to take. Bounded: a hung append (no
+      // timeout of its own) must not freeze every later ⌘Z/⇧⌘Z in the tab.
       const inFlight = pending.get(pondId)
-      if (inFlight && inFlight.size > 0) await Promise.allSettled([...inFlight])
+      if (inFlight && inFlight.size > 0) {
+        await withTimeout(Promise.allSettled([...inFlight]), timeoutMs).catch(() => {})
+      }
       const history = histories.get(pondId)
       const from = direction === 'undo' ? history?.undo : history?.redo
       const taken = from?.pop()
