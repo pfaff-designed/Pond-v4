@@ -68,7 +68,7 @@ const gallery: Block = { id: 'b-gallery', type: 'view', mode: 'gallery' } as Blo
 function Harness({ initial }: { initial: Block[] }) {
   const [blocks, setBlocks] = React.useState(initial)
   return (
-    <BlockCanvas blocks={blocks} pageId="page-1" onChange={setBlocks} onUndoRemove={() => {}} />
+    <BlockCanvas blocks={blocks} pageId="page-1" onChange={setBlocks} />
   )
 }
 

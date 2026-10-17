@@ -241,7 +241,9 @@ jest.mock('@/lib/pages/commit', () => ({
         onPending?: (recordIds: readonly string[] | null) => void
       }
     ) => {
-      if (pageId !== fakePage.id) return
+      // KAN-355: `runSave` destructures commitBlocks' `{ remembered }`.
+      const done = { remembered: Promise.resolve() }
+      if (pageId !== fakePage.id) return done
       fakePage.blocks = blocks
       if (opts?.ownEdit) {
         const record = makeRecord({
@@ -263,6 +265,7 @@ jest.mock('@/lib/pages/commit', () => ({
           if ('content' in block) closeBlockHistory(block.id, block.content)
         }
       }
+      return done
     }
   ),
   propagateBlockWrite: jest.fn().mockResolvedValue(undefined),
