@@ -12,9 +12,21 @@
 import { useQuery } from '@tanstack/react-query'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 
-/** Pure: a page's live block count from its raw `blocks` column value. */
+/**
+ * A text block with no content to type into is furniture, not a block a
+ * person put there — same emptiness check `BlockCanvas.tsx`'s own
+ * `isBlankBesides` inlines (`b.type === 'text' && b.content.trim() === ''`).
+ */
+function isEmptyTextBlock(block: unknown): boolean {
+  if (typeof block !== 'object' || block === null) return false
+  const { type, content } = block as { type?: unknown; content?: unknown }
+  return type === 'text' && typeof content === 'string' && content.trim() === ''
+}
+
+/** Pure: a page's live block count from its raw `blocks` column value, counting only blocks with content. */
 export function blockCount(blocks: unknown): number {
-  return Array.isArray(blocks) ? blocks.length : 0
+  if (!Array.isArray(blocks)) return 0
+  return blocks.filter((block) => !isEmptyTextBlock(block)).length
 }
 
 /** Live block count for `pageId`, or 0 while unresolved/loading. */

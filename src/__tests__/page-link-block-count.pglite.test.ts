@@ -12,7 +12,7 @@ import { blockCount } from '@/lib/modules/page-link/use-block-count'
 const USER = '11111111-1111-1111-1111-111111111111'
 
 function makeBlocks(n: number): { id: string; type: 'text'; content: string }[] {
-  return Array.from({ length: n }, (_, i) => ({ id: `b-${i}`, type: 'text', content: '' }))
+  return Array.from({ length: n }, (_, i) => ({ id: `b-${i}`, type: 'text', content: `line ${i}` }))
 }
 
 async function addPage(db: PGlite, blocks: unknown[]): Promise<string> {

@@ -20,7 +20,7 @@ const fakeSupabase = makeFakeSupabase([
     parent_id: 'parent-1',
     type: 'page',
     title: 'cabinets',
-    blocks: [{ id: 'b-1', type: 'text', content: '' }],
+    blocks: [{ id: 'b-1', type: 'text', content: 'cabinet doors' }],
     props: {},
     order: 0,
   },
@@ -57,10 +57,10 @@ describe('useBlockCount — remount after the linked page saves', () => {
     fakeSupabase._pages.set('child-1', {
       ...before,
       blocks: [
-        { id: 'b-1', type: 'text', content: '' },
-        { id: 'b-2', type: 'text', content: '' },
-        { id: 'b-3', type: 'text', content: '' },
-        { id: 'b-4', type: 'text', content: '' },
+        { id: 'b-1', type: 'text', content: 'cabinet doors' },
+        { id: 'b-2', type: 'text', content: 'drawer pulls' },
+        { id: 'b-3', type: 'text', content: 'backsplash' },
+        { id: 'b-4', type: 'text', content: 'paint colour' },
       ],
     })
 
