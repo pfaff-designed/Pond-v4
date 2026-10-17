@@ -24,6 +24,8 @@ import type { ViewBlock, ViewSavedView } from './schema'
 import { useSiblingBlocks } from '../sibling-context'
 import { viewCollectionId } from '../block-frame'
 import { useCollectionRows } from './use-collection-rows'
+import { useStruckRows } from '@/lib/change-log/undo-strike'
+import { DIFF_REMOVAL_TEXT_CLASSNAME } from '@/components/molecules/PondMolecule'
 import { activeSavedView, applyConfigPatch } from './schema'
 import { ActiveViewSelectionContext } from './active-view-context'
 import {
@@ -161,6 +163,7 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
       config={data}
       schema={schema}
       rows={rows}
+      collectionId={collectionId}
       collectionName={collectionName}
       isLoading={isLoading}
       isError={isError}
@@ -183,6 +186,10 @@ export interface CollectionViewProps {
   config: ViewBlock
   schema: PropertySchema | null
   rows: CollectionRow[]
+  /** The collection's own page id — which row/block the undo-strike store's
+   *  entries belong to. Absent off a page host (Storybook), where no row can
+   *  ever be struck. */
+  collectionId?: string
   /** The database's own name — `9w`'s head row leads with it. Absent off a page
    *  host (Storybook, the AI terminal), where the head row simply has no name. */
   collectionName?: string
@@ -219,6 +226,7 @@ export function CollectionView({
   config,
   schema,
   rows,
+  collectionId,
   collectionName,
   isLoading,
   isError,
@@ -271,6 +279,20 @@ export function CollectionView({
     () => (schema ? applyView(rows, schema, activeConfig) : []),
     [rows, schema, activeConfig]
   )
+
+  // KAN-139 (s6o5): the row an undo/redo just removed from `rows` stays
+  // visible, struck through, while the notice shows — appended past whatever
+  // filter/sort `applyView` already ran, since it is no longer live data.
+  const struckRows = useStruckRows(collectionId)
+  const tableRows = useMemo(() => {
+    if (struckRows.length === 0) return processed
+    const present = new Set(processed.map((row) => row.id))
+    const extra = struckRows
+      .filter((row) => !present.has(row.id))
+      .map((row) => ({ id: row.id, title: row.title, values: row.values }))
+    return extra.length === 0 ? processed : [...processed, ...extra]
+  }, [processed, struckRows])
+  const struckIds = useMemo(() => new Set(struckRows.map((row) => row.id)), [struckRows])
 
   // A config edit (chart/big-number setup) must land on whichever view the bar has
   // LOCALLY selected, never the persisted `activeViewId` — a bar click never calls
@@ -408,7 +430,8 @@ export function CollectionView({
       ) : (
         <CollectionTable
           schema={schema}
-          rows={processed}
+          rows={tableRows}
+          struckIds={struckIds}
           editable={editable}
           onEdit={onEdit}
           onAddRow={onAddRow}
@@ -515,6 +538,7 @@ function ViewControls({
 function CollectionTable({
   schema,
   rows,
+  struckIds,
   editable,
   onEdit,
   onAddRow,
@@ -522,6 +546,9 @@ function CollectionTable({
 }: {
   schema: PropertySchema
   rows: CollectionRow[]
+  /** Row ids an undo/redo just removed (KAN-139, s6o5) — still rendered,
+   *  but painted struck through rather than editable. */
+  struckIds?: ReadonlySet<string>
   editable?: boolean
   onEdit?: (rowId: string, key: string, value: PropertyValue) => void
   onAddRow?: (values?: Record<string, PropertyValue>) => Promise<string | null>
@@ -548,35 +575,45 @@ function CollectionTable({
         <tbody>
           {/* No empty row of its own: on a page the frame owns the empty state
               (PondBlock state="empty", #239) and suppresses this view entirely. */}
-          {rows.map((row) => (
-            <tr key={row.id} className="border-b border-mn-line last:border-b-0 align-top">
-              <td className="py-1.5 pr-3 font-medium text-mn-text">
-                {editable && onRenameRow ? (
-                  <DraftInput
-                    aria-label="Row title"
-                    value={row.title}
-                    placeholder="Untitled"
-                    onCommit={(title) => onRenameRow(row.id, title)}
-                    className="w-full border-0 bg-transparent p-0 font-medium text-mn-text outline-none placeholder:text-mn-text-secondary"
-                  />
-                ) : (
-                  row.title || 'Untitled'
-                )}
-              </td>
-              {schema.map((def) => (
-                <td key={def.id} className="py-1.5 pr-3">
-                  <Cell
-                    def={def}
-                    value={coerceValue(def, row.values[def.id])}
-                    editable={!!editable}
-                    onChange={(v) => onEdit?.(row.id, def.id, v)}
-                    schema={schema}
-                    rowValues={row.values}
-                  />
+          {rows.map((row) => {
+            const struck = struckIds?.has(row.id) ?? false
+            return (
+              <tr
+                key={row.id}
+                className={
+                  struck
+                    ? `border-b border-mn-line last:border-b-0 align-top ${DIFF_REMOVAL_TEXT_CLASSNAME}`
+                    : 'border-b border-mn-line last:border-b-0 align-top'
+                }
+              >
+                <td className={struck ? 'py-1.5 pr-3 font-medium' : 'py-1.5 pr-3 font-medium text-mn-text'}>
+                  {editable && onRenameRow && !struck ? (
+                    <DraftInput
+                      aria-label="Row title"
+                      value={row.title}
+                      placeholder="Untitled"
+                      onCommit={(title) => onRenameRow(row.id, title)}
+                      className="w-full border-0 bg-transparent p-0 font-medium text-mn-text outline-none placeholder:text-mn-text-secondary"
+                    />
+                  ) : (
+                    row.title || 'Untitled'
+                  )}
                 </td>
-              ))}
-            </tr>
-          ))}
+                {schema.map((def) => (
+                  <td key={def.id} className="py-1.5 pr-3">
+                    <Cell
+                      def={def}
+                      value={coerceValue(def, row.values[def.id])}
+                      editable={!!editable && !struck}
+                      onChange={(v) => onEdit?.(row.id, def.id, v)}
+                      schema={schema}
+                      rowValues={row.values}
+                    />
+                  </td>
+                ))}
+              </tr>
+            )
+          })}
         </tbody>
       </table>
 

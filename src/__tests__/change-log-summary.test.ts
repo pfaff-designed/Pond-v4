@@ -4,7 +4,7 @@
  * "electrician → w/c 6 oct", "revert of 09:31".
  */
 
-import { describeChange } from '@/lib/change-log/page-changes'
+import { describeChange, describeUndoneEffect } from '@/lib/change-log/page-changes'
 import type { ChangeLogAction, ChangeLogRecord } from '@/lib/change-log/types'
 import type { Block } from '@/lib/documents/types'
 
@@ -247,6 +247,34 @@ describe('Pond’s edit to a table reads as the record it changed', () => {
       ['r2', 'worktop template', 'w/c 27 oct'],
     ])
     expect(describeEdit([BEFORE], [after])).toBe('edited schedule table')
+  })
+})
+
+describe('the undo notice reads the undone record backwards', () => {
+  const row = (
+    title: string,
+    values: Record<string, unknown> = {},
+    shown: Record<string, string> = {}
+  ) => ({ id: 'row-1', title, values, shown })
+
+  it('reads an undone add_row as removed, the board’s own example', () => {
+    expect(describeUndoneEffect(record('add_row', null, row('chickpeas, harissa')))).toBe(
+      'removed chickpeas, harissa'
+    )
+  })
+
+  it('reads an undone block edit as the reverse of what was written', () => {
+    const before = [text('b1', ENTRY)]
+    const after = [text('b1', `${ENTRY}\n\nSecond.`)]
+    expect(describeUndoneEffect(record('edit', before, after))).toBe('removed 1 paragraph')
+  })
+
+  it('reads an undone edit_row as the value it had before', () => {
+    const before = row('electrician', { when: 'o-29' }, { when: 'w/c 29 sep' })
+    const after = row('electrician', { when: 'o-6' }, { when: 'w/c 6 oct' })
+    expect(describeUndoneEffect(record('edit_row', before, after))).toBe(
+      'electrician → w/c 29 sep'
+    )
   })
 })
 

@@ -65,6 +65,12 @@ export const POND_MOLECULE_KINDS = [
   'task-card',
 ] as const
 
+/** The diff-line removal's struck-text treatment — red appears only here and in
+ *  globals.css (token-law.test.tsx). A struck table-row (table.tsx) reuses this
+ *  export rather than repeating the signal-removal class literal. */
+export const DIFF_REMOVAL_TEXT_CLASSNAME =
+  'text-mn-text-secondary line-through decoration-mn-signal-removal'
+
 export const POND_MOLECULE_STATES = [
   'rest',
   'hover',
@@ -752,9 +758,7 @@ export function PondMolecule({
           data-part="title"
           className={cn(
             'min-w-0 flex-1',
-            removal
-              ? 'text-mn-text-secondary line-through decoration-mn-signal-removal'
-              : 'text-mn-text'
+            removal ? DIFF_REMOVAL_TEXT_CLASSNAME : 'text-mn-text'
           )}
         >
           {children ?? displayTitle}
