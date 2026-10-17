@@ -741,7 +741,7 @@ function CollectionTable({
                       value={row.title}
                       placeholder="Untitled"
                       onCommit={(title) => onRenameRow(row.id, title)}
-                      className="w-full border-0 bg-transparent p-0 font-medium text-mn-text outline-none placeholder:text-mn-text-secondary"
+                      className="min-w-[4ch] max-w-full border-0 bg-transparent p-0 font-medium text-mn-text outline-none [field-sizing:content] placeholder:text-mn-text-secondary"
                     />
                   ) : (
                     row.title || 'Untitled'

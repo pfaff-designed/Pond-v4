@@ -35,12 +35,16 @@ const renderTable = (
       editable
       onEdit={onEdit}
       onOpenRow={onOpenRow}
+      onRenameRow={jest.fn()}
     />
   )
 
 const peek = () => document.querySelector('[data-part="record-peek"]')
-const cellOf = (title: string) => screen.getByText(title).closest('td') as HTMLTableCellElement
-const rowOf = (title: string) => screen.getByText(title).closest('tr') as HTMLTableRowElement
+// The title is a `DraftInput` (value, not text) whenever `onRenameRow` makes it
+// editable (every `renderTable` render); a struck row keeps it as plain text.
+const titleElementOf = (title: string) => screen.queryByDisplayValue(title) ?? screen.getByText(title)
+const cellOf = (title: string) => titleElementOf(title).closest('td') as HTMLTableCellElement
+const rowOf = (title: string) => titleElementOf(title).closest('tr') as HTMLTableRowElement
 
 describe('table — a row opens its record in the peek', () => {
   it('clicking a row’s cell padding selects it and opens its peek', async () => {
@@ -170,6 +174,14 @@ describe('table — a row opens its record in the peek', () => {
 
     await userEvent.click(cellOf('First'))
     expect(screen.getByLabelText('Record: First')).toBeInTheDocument()
+  })
+
+  it('a click inside the one-column table’s title input edits, opening no peek', async () => {
+    const oneColumnRows = [{ id: 'a', title: 'First', values: {} }]
+    renderTable(jest.fn(), jest.fn(), { schema: [], rows: oneColumnRows })
+
+    await userEvent.click(screen.getByDisplayValue('First'))
+    expect(peek()).toBeNull()
   })
 
   it('walks the person’s path: click selects, click swaps, ↵ opens the page, Esc clears', async () => {
