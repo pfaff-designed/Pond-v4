@@ -59,6 +59,7 @@ import {
   readStamp,
   researchEndedAt,
   researchEndedStamp,
+  turnPageLabel,
   turnReadContext,
   turnSendStamp,
   withEarlierAnswer,
@@ -1639,13 +1640,24 @@ export function AITerminal() {
       // `allPages` to load before resolving against it (same reasoning as
       // `resolveStampTarget`'s own `pagesLoaded` gate) rather than clearing the
       // pending refs and falling back to the ambient node for this one run.
+      //
+      // KAN-341 — `handleAskAgain` sets this SAME ref, alone (no `revising`
+      // toolCallId beside it), when the question it's resending stamped a
+      // page other than the one open now: the regenerated batch read THAT
+      // page, so its own card has to stamp it too, not the live `pageId`.
+      // Gated on `!revising` so the two uses never collide (request-changes
+      // always sets both refs together); consumed by whichever unstamped
+      // part this effect sees next, same write-once shape as the #98 path.
+      const askAgainTargetPageId = revising ? null : pendingRevisionTargetPageId.current
       const revisionTargetPageId = isRevisionOfThisPart
         ? pendingRevisionTargetPageId.current
-        : null
+        : askAgainTargetPageId
       if (revisionTargetPageId && !pagesLoaded) continue
       if (isRevisionOfThisPart) {
         dispatch({ kind: 'noteRevision', id: part.toolCallId, revisedFrom: revising })
         pendingRevisionOf.current = null
+        pendingRevisionTargetPageId.current = null
+      } else if (askAgainTargetPageId) {
         pendingRevisionTargetPageId.current = null
       }
       const resolved = resolveStampTarget({
@@ -1658,8 +1670,11 @@ export function AITerminal() {
         // contextLabel's stand-in for the open page at stamp time. KAN-96: a
         // revision's own target page reads its live title off `allPages`
         // instead, so the stamp never lands on the change log it was sent from.
+        // KAN-341: that target may be home, which `allPages` never carries.
         openNodeName: revisionTargetPageId
-          ? allPages.find((p) => p.id === revisionTargetPageId)?.title ?? null
+          ? (revisionTargetPageId === home?.id
+              ? home?.title
+              : allPages.find((p) => p.id === revisionTargetPageId)?.title) ?? null
           : contextLabel,
       })
       // 'defer' → stamp on a later run (pages still loading); null → leave
@@ -1668,7 +1683,17 @@ export function AITerminal() {
       if (resolved !== 'defer' && resolved !== null)
         dispatch({ kind: 'stampTarget', id: part.toolCallId, target: resolved })
     }
-  }, [messages, pageId, contextLabel, changeTargets, allPages, pagesLoaded, revisions])
+  }, [
+    messages,
+    pageId,
+    contextLabel,
+    home?.id,
+    home?.title,
+    changeTargets,
+    allPages,
+    pagesLoaded,
+    revisions,
+  ])
 
   // ── The revision ref lives for ONE turn (#98 review) ──────────────────────
   // `pendingRevisionOf` was set on send and cleared only when a propose_changes
@@ -3269,15 +3294,28 @@ export function AITerminal() {
       prev.map((m, i) => {
         if (!ids.has(m.id)) return m
         const isInitial = initialMessageIds.has(m.id)
+        const precedingUser = isInitial ? undefined : precedingUserMessage(prev, i)
         const turn = isInitial
           ? { openPageContext: true, wholePageRefIds: [] }
-          : turnReadContext(precedingUserMessage(prev, i))
+          : turnReadContext(precedingUser)
+        // KAN-341: the lead chip names the page THIS turn actually read —
+        // the question's own stamped `nodeId` — not the live open page, which
+        // may have moved on by the time an `ask again` answer lands.
+        const leadLabel = isInitial
+          ? ''
+          : turnPageLabel(precedingUser, {
+              pageId,
+              contextLabel,
+              homeId: home?.id ?? null,
+              homeTitle: home?.title ?? null,
+              resolvePageName,
+            })
         return withResearchEndedStamp(
           withLandedAt(
             withReadStamp(
               m,
               readChips({
-                contextLabel: isInitial ? '' : contextLabel,
+                contextLabel: leadLabel,
                 parts: m.parts as ReadPartLike[],
                 resolvePageName,
                 openPageContext: turn.openPageContext,
@@ -3294,7 +3332,10 @@ export function AITerminal() {
     pagesLoaded,
     messages,
     initialMessageIds,
+    pageId,
     contextLabel,
+    home?.id,
+    home?.title,
     resolvePageName,
     setMessages,
   ])
@@ -3364,21 +3405,30 @@ export function AITerminal() {
     // that user line, so it reads its own metadata instead of skipping past it.
     const questionMessage =
       message?.role === 'user' ? message : precedingUserMessage(messages, messageIndex)
+    // KAN-341: a hidden chip and any highlighted passages are THIS turn's
+    // own facts, not whatever navigation/reference state looks like right
+    // now (a chip hidden on A, then reset by visiting B and back; a
+    // passage ×'d since the question was sent) — read off the question's
+    // own send-time stamp via `turnSendStamp`, falling back to live state
+    // only when the message carries no stamp at all (a reseeded/old
+    // transcript, pre-dating this fix).
+    const turn = turnSendStamp(questionMessage, {
+      nodeId: pageId,
+      openPageContext: dismissedCurrentRefNodeId !== pageId,
+      references: dedupeWholePageReferences(references),
+    })
     clearError?.()
     const dispatchRegenerate = () => {
       dispatchGate.current = false
-      // KAN-341: a hidden chip and any highlighted passages are THIS turn's
-      // own facts, not whatever navigation/reference state looks like right
-      // now (a chip hidden on A, then reset by visiting B and back; a
-      // passage ×'d since the question was sent) — read off the question's
-      // own send-time stamp via `turnSendStamp`, falling back to live state
-      // only when the message carries no stamp at all (a reseeded/old
-      // transcript, pre-dating this fix).
-      const turn = turnSendStamp(questionMessage, {
-        nodeId: pageId,
-        openPageContext: dismissedCurrentRefNodeId !== pageId,
-        references: dedupeWholePageReferences(references),
-      })
+      // KAN-341: the question stamped a DIFFERENT page than the one open
+      // now (navigated away, then "ask again") — the regenerated batch's own
+      // propose_changes card has to stamp THAT page, not wherever the person
+      // is standing, so it rides the same ref the request-changes revision
+      // path (#98) uses for its own target page. Set only when the two
+      // differ: a plain ask again on the open page needs no override, and
+      // the stamping effect clears this the moment it consumes it, so it
+      // never outlives this one regenerated batch.
+      if (turn.nodeId !== pageId) pendingRevisionTargetPageId.current = turn.nodeId
       regenerate({
         body: {
           nodeId: turn.nodeId,
@@ -3396,9 +3446,11 @@ export function AITerminal() {
     }
     // KAN-302: same flush as sendText — a re-ask must see the page as it
     // stands now, not as it stood before an edit still in its save debounce.
+    // KAN-341: that page is the turn's own (`turn.nodeId`), not wherever the
+    // person is standing now — same reasoning as the regenerate body above.
     // A rejected flush must still reopen the gate (KAN-315) — otherwise a
     // failed save latches ask again closed for the rest of the session.
-    const pendingFlush = flushPendingPageSave(pageId)
+    const pendingFlush = flushPendingPageSave(turn.nodeId)
     if (pendingFlush) {
       void pendingFlush.then(dispatchRegenerate, () => {
         dispatchGate.current = false
@@ -3476,7 +3528,16 @@ export function AITerminal() {
       message.role === 'assistant'
         ? (readStamp(message.metadata) ??
           readChips({
-            contextLabel,
+            // KAN-341: before the stamp above lands, the lead chip still has
+            // to name the turn's own page, not wherever the person is
+            // standing now — same `turnPageLabel` the stamp effect uses.
+            contextLabel: turnPageLabel(precedingUserMessage(messages, messageIndex), {
+              pageId,
+              contextLabel,
+              homeId: home?.id ?? null,
+              homeTitle: home?.title ?? null,
+              resolvePageName,
+            }),
             parts: message.parts as ReadPartLike[],
             resolvePageName,
             ...turnReadContext(precedingUserMessage(messages, messageIndex)),

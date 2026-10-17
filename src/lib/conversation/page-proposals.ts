@@ -532,6 +532,36 @@ export function turnSendStamp(
   }
 }
 
+/**
+ * The title {@link readChips}' lead chip shows for a turn — the page the turn
+ * actually read ({@link turnSendStamp}'s own `nodeId`), not wherever the
+ * person has since navigated to (KAN-341: an `ask again` on page A, issued
+ * after opening page B, reads A, so the lead chip must name A). The open
+ * page's own live label is used when the stamp names the open page itself
+ * (the common case — nothing has moved on); home is named by its live title
+ * since it is stripped from the `pages` list `resolvePageName` reads; any
+ * other page resolves through `resolvePageName`. No stamp at all (a message
+ * sent before this fix, or reseeded) falls back to the live label — the only
+ * case the turn's own page can't be known.
+ */
+export function turnPageLabel(
+  message: { metadata?: unknown } | undefined,
+  opts: {
+    pageId: string | null
+    contextLabel: string
+    homeId: string | null
+    homeTitle: string | null
+    resolvePageName: (id: string) => string | undefined
+  }
+): string {
+  const meta = message?.metadata as { nodeId?: unknown; openPageContext?: unknown } | undefined
+  if (typeof meta?.openPageContext !== 'boolean') return opts.contextLabel
+  const stampedId = meta.nodeId === null || typeof meta.nodeId === 'string' ? meta.nodeId : null
+  if (stampedId === opts.pageId) return opts.contextLabel
+  if (stampedId !== null && stampedId === opts.homeId) return opts.homeTitle ?? opts.contextLabel
+  return (stampedId && opts.resolvePageName(stampedId)) ?? opts.contextLabel
+}
+
 // ── Earlier answers (6a frame 3: ask again replaces in place, the old one folds) ──
 
 /** An answer ask-again replaced — its parts verbatim, plus the stamps the

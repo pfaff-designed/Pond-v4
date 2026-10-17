@@ -1349,6 +1349,132 @@ describe('AITerminal — at the root, a diff card against the home page is not "
   })
 })
 
+describe('AITerminal — ask again on a stale page stamps the regenerated card to the question\'s own page, not the live one (KAN-341)', () => {
+  it('a propose_changes part with no targetPageId on the regenerated answer is stamped to A, so accept resolves to A, not B', async () => {
+    const user = userEvent.setup()
+    mockListPages.mockResolvedValue([
+      { id: 'page-a', parentId: null, type: 'page', title: 'Garden', blocks: [], order: 0, props: {} },
+      { id: 'page-b', parentId: null, type: 'page', title: 'Kitchen', blocks: [], order: 1, props: {} },
+    ])
+    mockAmbientNodeId = 'page-a'
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const tree = () => (
+      <QueryClientProvider client={queryClient}>
+        <AITerminal />
+      </QueryClientProvider>
+    )
+    const { rerender } = render(tree())
+    await waitReady()
+
+    await user.type(screen.getByRole('textbox'), 'tidy this page')
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1))
+    const [sentMessage] = mockSendMessage.mock.calls[0]
+
+    mockMessages = [
+      {
+        id: 'm-ask',
+        role: 'user',
+        parts: [{ type: 'text', text: 'tidy this page' }],
+        metadata: (sentMessage as { metadata: unknown }).metadata,
+      },
+      { id: 'm-answer', role: 'assistant', parts: [{ type: 'text', text: 'Tidied.' }] },
+    ]
+    rerender(tree())
+
+    // Navigate to B, THEN ask again — the resend still reads A's own stamp.
+    mockAmbientNodeId = 'page-b'
+    rerender(tree())
+    const askAgain = await screen.findByRole('button', { name: 'ask again' })
+    await user.click(askAgain)
+    await waitFor(() => expect(mockRegenerate).toHaveBeenCalledTimes(1))
+    const [regenerateOptions] = mockRegenerate.mock.calls[0]
+    expect(regenerateOptions.body.nodeId).toBe('page-a')
+
+    // The regenerated answer's own card: the model read A's blocks and never
+    // names a target page.
+    mockMessages = [
+      ...mockMessages,
+      {
+        id: 'm-answer-2',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'tool-propose_changes',
+            toolCallId: 'tc-ask-again',
+            state: 'input-available',
+            input: {
+              changes: [{ op: 'edit', blockId: 'b0', data: { type: 'text', content: 'tidy' } }],
+            },
+          },
+        ],
+      },
+    ]
+    rerender(tree())
+
+    const card = await screen.findByRole('group', { name: 'proposed edit' })
+    await waitFor(() => expect(within(card).getByText(/— Garden/)).toBeInTheDocument())
+
+    fireEvent.click(within(card).getByRole('button', { name: 'accept' }))
+    await waitFor(() => expect(mockWriteAcceptedChanges).toHaveBeenCalledTimes(1))
+    const [call] = mockWriteAcceptedChanges.mock.calls[0]
+    expect(resolveAcceptTarget(call.resolutions, call.toolCallId, call.openNodeId)).toBe('page-a')
+  })
+})
+
+describe('AITerminal — the regenerated answer\'s read row leads with the question\'s own page, not the live one (KAN-341)', () => {
+  it('ask again from B on a question asked on A shows A as the lead read chip', async () => {
+    const user = userEvent.setup()
+    mockListPages.mockResolvedValue([
+      { id: 'page-a', parentId: null, type: 'page', title: 'Garden', blocks: [], order: 0, props: {} },
+      { id: 'page-b', parentId: null, type: 'page', title: 'Kitchen', blocks: [], order: 1, props: {} },
+    ])
+    mockAmbientNodeId = 'page-a'
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const tree = () => (
+      <QueryClientProvider client={queryClient}>
+        <AITerminal />
+      </QueryClientProvider>
+    )
+    const { rerender } = render(tree())
+    await waitReady()
+
+    await user.type(screen.getByRole('textbox'), 'what is on this page')
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1))
+    const [sentMessage] = mockSendMessage.mock.calls[0]
+
+    mockMessages = [
+      {
+        id: 'm-ask',
+        role: 'user',
+        parts: [{ type: 'text', text: 'what is on this page' }],
+        metadata: (sentMessage as { metadata: unknown }).metadata,
+      },
+      { id: 'm-answer', role: 'assistant', parts: [{ type: 'text', text: 'The page has...' }] },
+    ]
+    rerender(tree())
+
+    mockAmbientNodeId = 'page-b'
+    rerender(tree())
+    const askAgain = await screen.findByRole('button', { name: 'ask again' })
+    await user.click(askAgain)
+    await waitFor(() => expect(mockRegenerate).toHaveBeenCalledTimes(1))
+
+    // "ask again" replaces the old answer in place — only the regenerated one
+    // remains, with no `read` stamp yet (that write goes through
+    // `setMessages`, which a reload/first paint hasn't caught up to).
+    mockMessages = [
+      mockMessages[0],
+      { id: 'm-answer-2', role: 'assistant', parts: [{ type: 'text', text: 'It has a bench.' }] },
+    ]
+    rerender(tree())
+
+    await screen.findByText('It has a bench.')
+    expect(screen.getAllByTestId('read-chip')[0]).toHaveTextContent('Garden')
+  })
+})
+
 describe('AITerminal — at the root, accepting a linked configure_view card uses the home id (KAN-341)', () => {
   it('accept calls configureViewFromProposal with pageId = the home id, not stuck on a null host', async () => {
     mockMessages = [
