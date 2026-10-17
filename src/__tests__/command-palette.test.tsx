@@ -131,7 +131,13 @@ describe('paletteEntries — the board’s states', () => {
       'action:ask pond about “cab”',
     ])
     const row = entries.find((e) => e.kind === 'row' && e.item.id === 'chase')
-    expect(row).toMatchObject({ pre: 'chase the ', hit: 'cab', post: 'inet quote' })
+    expect(row).toMatchObject({
+      runs: [
+        { text: 'chase the ', hit: false },
+        { text: 'cab', hit: true },
+        { text: 'inet quote', hit: false },
+      ],
+    })
     const ask = entries.find((e) => e.kind === 'row' && e.item.id === ASK_POND_ID)
     expect(ask).toMatchObject({ item: { kind: 'action', query: 'cab' } })
   })
@@ -150,7 +156,10 @@ describe('paletteEntries — the board’s states', () => {
       'G:actions',
       'action:ask pond about “acme”',
     ])
-    expect(entries[1]).toMatchObject({ sub: 'tasks · vendor acme cabinets', hit: '' })
+    expect(entries[1]).toMatchObject({
+      sub: 'tasks · vendor acme cabinets',
+      runs: [{ text: 'quote', hit: false }],
+    })
     // Records never sit under a scope or a `>`.
     expect(
       shape(paletteEntries([...PALETTE_ITEMS, byField], 'acme', { scope: MONEY_SCOPE }))
@@ -196,7 +205,13 @@ describe('paletteEntries — the board’s states', () => {
       'G:actions',
       'action:ask pond about “adobe”',
     ])
-    expect(entries[1]).toMatchObject({ sub: 'subscriptions · renews 28 sep', hit: 'adobe' })
+    expect(entries[1]).toMatchObject({
+      sub: 'subscriptions · renews 28 sep',
+      runs: [
+        { text: 'adobe', hit: true },
+        { text: ' creative cloud', hit: false },
+      ],
+    })
   })
 
   it('a query that matches only an action is the typing state, not empty — the action lists', () => {
@@ -601,9 +616,9 @@ describe('the gut: one morphing element — nothing of the dialog, the wash or t
   it('the group label is the page eyebrow and the split is #278’s — one owner each, no second copy', () => {
     expect(command).toMatch(/pageEyebrowClass/)
     expect(read('src/components/molecules/palette-entries.ts')).toMatch(
-      /import \{ normalizeQuery, splitMatch \} from '\.\/slash-entries'/
+      /import \{ type MatchRun, matchRuns, normalizeQuery \} from '\.\/slash-entries'/
     )
-    expect(read('src/components/molecules/palette-entries.ts')).not.toMatch(/function splitMatch/)
+    expect(read('src/components/molecules/palette-entries.ts')).not.toMatch(/function matchRuns/)
     expect(paletteRow).toMatch(/import \{ ENTER, HINT, MATCH, Mark \} from '\.\/slash-row'/)
     expect(paletteRow).not.toMatch(
       /underline-offset|decoration-\[|max-w-\[45%\]|const (HINT|ENTER|MATCH)\b/

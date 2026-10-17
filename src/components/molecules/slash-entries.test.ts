@@ -9,6 +9,7 @@ import {
   blankRowEntries,
   footItems,
   ICON,
+  matchRuns,
   MOBILE_ROW_CAP,
   rowEntries,
   slashMenuHeight,
@@ -18,7 +19,9 @@ import {
 } from './slash-entries'
 import { TEMPLATE_KINDS } from '@/lib/templates/types'
 
-const YOURS: readonly YourTemplate[] = [{ id: 't1', name: 'weeknight recipe', hint: 'from chickpeas…' }]
+const YOURS: readonly YourTemplate[] = [
+  { id: 't1', name: 'weeknight recipe', hint: 'from chickpeas…' },
+]
 
 const TEXT_ROW: SlashRow = { id: 't', label: 'text', group: 'text' }
 const TABLE_ROW: SlashRow = { id: 'table-row', label: 'table', group: 'blocks' }
@@ -27,7 +30,12 @@ const TABLE_ROW: SlashRow = { id: 'table-row', label: 'table', group: 'blocks' }
 const BLANK_ROWS: readonly SlashRow[] = [
   TEXT_ROW,
   TABLE_ROW,
-  { id: 'page-from-template', label: 'page from template', group: 'templates', submenu: 'templates' },
+  {
+    id: 'page-from-template',
+    label: 'page from template',
+    group: 'templates',
+    submenu: 'templates',
+  },
   { id: 'page', label: 'page', group: 'pages' },
 ]
 
@@ -107,7 +115,10 @@ describe('rowEntries: an unknown word after `/` (KAN-84)', () => {
 
   it('matches case-insensitively but keeps the word’s own casing, trimmed only', () => {
     const entries = rowEntries([TEXT_ROW], '  Wine  ')
-    expect(entries[0]).toMatchObject({ label: 'text — “Wine”', row: { freeText: { word: 'Wine' } } })
+    expect(entries[0]).toMatchObject({
+      label: 'text — “Wine”',
+      row: { freeText: { word: 'Wine' } },
+    })
     expect(entries[0].kind === 'row' && entries[0].hint).toBe('no block named Wine')
   })
 
@@ -188,11 +199,7 @@ describe('footItems', () => {
   })
 
   it('leading with templates, active row is a template pick: reads `apply`, not `new nested page`', () => {
-    expect(footItems('rows', '', 3, false, true, true)).toEqual([
-      '↑↓ move',
-      '→ preview',
-      '↵ apply',
-    ])
+    expect(footItems('rows', '', 3, false, true, true)).toEqual(['↑↓ move', '→ preview', '↵ apply'])
   })
 
   it('templates pane (non-empty page) keeps `new nested page` / `preview`, unchanged', () => {
@@ -205,8 +212,14 @@ describe('footItems', () => {
     expect(footItems('rows', '', 3, false, false, false, true)).toEqual(['↵ apply', 'esc back'])
     expect(footItems('rows', '', 3, false, false, true, true)).toEqual(['↵ apply', 'esc back'])
     expect(footItems('rows', '', 3, false, true, true, true)).toEqual(['↵ apply', 'esc back'])
-    expect(footItems('templates', '', 12, true, false, false, true)).toEqual(['↵ apply', 'esc back'])
-    expect(footItems('templates', '', 12, false, false, false, true)).toEqual(['↵ apply', 'esc back'])
+    expect(footItems('templates', '', 12, true, false, false, true)).toEqual([
+      '↵ apply',
+      'esc back',
+    ])
+    expect(footItems('templates', '', 12, false, false, false, true)).toEqual([
+      '↵ apply',
+      'esc back',
+    ])
   })
 
   it('active row is a free-text row: names what ↵ inserts, ahead of the match-count branches', () => {
@@ -216,5 +229,41 @@ describe('footItems', () => {
     expect(footItems('rows', 'wine', 2, false, false, false, false, 'heading')).toEqual([
       '↵ insert as heading',
     ])
+  })
+})
+
+describe('matchRuns (KAN-390)', () => {
+  it('a subsequence (fuzzy) match underlines every matched character as its own run', () => {
+    expect(matchRuns('new page', 'nwp')).toEqual([
+      { text: 'n', hit: true },
+      { text: 'e', hit: false },
+      { text: 'w', hit: true },
+      { text: ' ', hit: false },
+      { text: 'p', hit: true },
+      { text: 'age', hit: false },
+    ])
+  })
+
+  it('an exact match is one run, fully underlined', () => {
+    expect(matchRuns('new page', 'new page')).toEqual([{ text: 'new page', hit: true }])
+  })
+
+  it('a prefix match is one leading run, underlined, the rest plain', () => {
+    expect(matchRuns('new page', 'new')).toEqual([
+      { text: 'new', hit: true },
+      { text: ' page', hit: false },
+    ])
+  })
+
+  it('a substring match mid-label is one run, pre and post plain', () => {
+    expect(matchRuns('new page', 'w pa')).toEqual([
+      { text: 'ne', hit: false },
+      { text: 'w pa', hit: true },
+      { text: 'ge', hit: false },
+    ])
+  })
+
+  it('an empty query is one unmatched run', () => {
+    expect(matchRuns('new page', '')).toEqual([{ text: 'new page', hit: false }])
   })
 })

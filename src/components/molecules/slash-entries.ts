@@ -141,6 +141,53 @@ export function normalizeQuery(query: string): string {
   return query.trim().toLowerCase()
 }
 
+/** One stretch of a `matchRuns` split: a matched run underlines, the rest doesn't. */
+export interface MatchRun {
+  text: string
+  hit: boolean
+}
+
+/**
+ * The palette's highlight (KAN-390): a contiguous hit (exact / prefix / word-
+ * start / substring tier) still splits `pre` / `hit` / `post` like
+ * `splitMatch` — one run each side, at most one underlined. A subsequence
+ * (fuzzy) hit has no contiguous span to split, so this scatters the query's
+ * characters across `label` greedily (the same left-to-right scan
+ * `isSubsequence` in `palette-entries.ts` uses to score the tier) and merges
+ * adjacent matched characters into runs, so `nwp` against "new page"
+ * underlines `n`, `w`, `p` as three separate runs rather than one.
+ */
+export function matchRuns(label: string, q: string): MatchRun[] {
+  if (!q) return [{ text: label, hit: false }]
+  const foldedLabel = label.toLowerCase()
+  const foldedQuery = q.toLowerCase()
+  const at = foldedLabel.indexOf(foldedQuery)
+  if (at !== -1) {
+    const runs: MatchRun[] = []
+    if (at > 0) runs.push({ text: label.slice(0, at), hit: false })
+    runs.push({ text: label.slice(at, at + q.length), hit: true })
+    if (at + q.length < label.length) runs.push({ text: label.slice(at + q.length), hit: false })
+    return runs
+  }
+  const runs: MatchRun[] = []
+  let qi = 0
+  let run = ''
+  let runHit = false
+  for (const ch of label) {
+    const hit = qi < foldedQuery.length && ch.toLowerCase() === foldedQuery[qi]
+    if (hit) qi++
+    if (run && hit === runHit) {
+      run += ch
+      continue
+    }
+    if (run) runs.push({ text: run, hit: runHit })
+    run = ch
+    runHit = hit
+  }
+  if (run) runs.push({ text: run, hit: runHit })
+  return runs
+}
+
 /**
  * The DC's `mob` caps: the open list shows its first 12 entries, group heads
  * counted; the templates pane shows 8 premade shapes. A query is never capped.

@@ -21,7 +21,7 @@
  */
 
 import type { ZenAction } from '@/lib/layout/use-zen-commands'
-import { normalizeQuery, splitMatch } from './slash-entries'
+import { type MatchRun, matchRuns, normalizeQuery } from './slash-entries'
 
 export type PaletteKind = 'page' | 'database' | 'record' | 'action' | 'pond'
 
@@ -76,7 +76,7 @@ export interface PaletteScope {
 export type PaletteEntry =
   | { kind: 'group'; label: string }
   | { kind: 'note'; text: string }
-  | { kind: 'row'; item: PaletteItem; pre: string; hit: string; post: string; sub?: string }
+  | { kind: 'row'; item: PaletteItem; runs: readonly MatchRun[]; sub?: string }
 
 export interface PaletteOptions {
   scope?: PaletteScope | null
@@ -130,10 +130,7 @@ const VISIT_BOOST = 15
 
 /** Case- and mark-insensitive, so `cafe` matches `Café` (KAN-390). */
 function fold(s: string): string {
-  return s
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase()
+  return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 }
 
 function isSubsequence(label: string, q: string): boolean {
@@ -335,7 +332,7 @@ function group(label: string): PaletteEntry {
 }
 
 function row(item: PaletteItem, q: string, sub = item.sub): PaletteEntry {
-  return { kind: 'row', item, ...splitMatch(item.label, q), sub }
+  return { kind: 'row', item, runs: matchRuns(item.label, q), sub }
 }
 
 /** Levenshtein, small strings only — the palette compares a word to a query. */
