@@ -129,7 +129,12 @@ export const WithTheHandle: Story = {
   render: (args) => {
     const [height, setHeight] = useState<number | null>(null)
     return (
-      <TerminalDrawer {...args} height={height} onHeightChange={setHeight} onHeightCommit={setHeight}>
+      <TerminalDrawer
+        {...args}
+        height={height}
+        onHeightChange={setHeight}
+        onHeightCommit={setHeight}
+      >
         <Thread turns={4} />
       </TerminalDrawer>
     )
@@ -159,7 +164,9 @@ export const WithTheHandle: Story = {
     // End: as tall as the shell allows — the top stays 72px below the shell's top.
     await userEvent.keyboard('{End}')
     await expect(cardH()).toBe(composerMaxHeight(shell.clientHeight))
-    await expect(Math.round(card.getBoundingClientRect().top - shell.getBoundingClientRect().top)).toBe(72)
+    await expect(
+      Math.round(card.getBoundingClientRect().top - shell.getBoundingClientRect().top)
+    ).toBe(72)
 
     await userEvent.dblClick(handle)
     await expect(cardH()).toBe(COMPOSER_DEFAULT_HEIGHT)
@@ -482,12 +489,11 @@ export const ClosedInZenClearsTheZenFootprint: Story = {
 }
 
 /**
- * The slide must animate (280ms, `--ease-mn`), not jump — Tailwind v4's
- * `translate-y-*` utilities write the standalone `translate` property, which
- * `.motion-resolve` has to list alongside `transform` or only opacity eases.
- * `visibility` rides the same transition so the card leaves the a11y tree only
- * once the slide finishes; opening is instantly visible (CSS's to/from-`visible`
- * rule), closing hides at the end of the duration, never before.
+ * The slide must animate (280ms, `--ease-mn`), not jump — the slide drives
+ * through `transform`. `visibility` rides the same transition so the card
+ * leaves the a11y tree only once the slide finishes; opening is instantly
+ * visible (CSS's to/from-`visible` rule), closing hides at the end of the
+ * duration, never before.
  */
 export const ClosedSlideAnimates: Story = {
   name: 'closed · slide animates, hides only after',
@@ -505,7 +511,9 @@ export const ClosedSlideAnimates: Story = {
   play: async ({ canvas, canvasElement }) => {
     const card = canvasElement.querySelector<HTMLElement>('[data-part="composer-card"]')!
     const style = getComputedStyle(card)
-    await expect(style.transitionProperty.split(', ')).toEqual(expect.arrayContaining(['transform']))
+    await expect(style.transitionProperty.split(', ')).toEqual(
+      expect.arrayContaining(['transform'])
+    )
     await expect(style.visibility).toBe('visible')
 
     await userEvent.click(canvas.getByText('close'))
@@ -539,7 +547,9 @@ export const MaximizeDoesNotSlideSideways: Story = {
   play: async ({ canvas, canvasElement }) => {
     const card = canvasElement.querySelector<HTMLElement>('[data-part="composer-card"]')!
     const style = getComputedStyle(card)
-    await expect(style.transitionProperty.split(', ')).not.toEqual(expect.arrayContaining(['translate']))
+    await expect(style.transitionProperty.split(', ')).not.toEqual(
+      expect.arrayContaining(['translate'])
+    )
 
     await userEvent.click(canvas.getByText('toggle maximized'))
     // No `translate` transition means no running animation on that property —

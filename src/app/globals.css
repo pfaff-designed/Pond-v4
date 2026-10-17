@@ -659,16 +659,12 @@
     animation: motion-menu-in var(--motion-quick) var(--ease-out) both;
   }
 
-  /* Card resolve (ModuleDiffCard / ProposalGroup). Settle tier — the card eases
+  /* Card resolve (ModuleDiffCard / TerminalDrawer). Settle tier — the card eases
      down to inert as it dims, never snaps. Transition (not keyframe) so it rides
-     the status → resolved class flip both directions cleanly.
-     `translate` is listed alongside `transform`: Tailwind v4's `translate-y-*`
-     utilities write the standalone `translate` property, not `transform`, so a
-     card sliding via those utilities (TerminalDrawer's closed state) needs both
-     or the move jumps instead of animating. `visibility` rides the same
-     duration so it only flips to hidden once the slide finishes (CSS's
-     to/from-`visible` rule switches at 100% when leaving `visible`, 0% when
-     entering it) — close still slides, open is instantly visible. */
+     the status → resolved class flip both directions cleanly. `visibility`
+     rides the same duration so it only flips to hidden once the slide finishes
+     (CSS's to/from-`visible` rule switches at 100% when leaving `visible`, 0%
+     when entering it) — close still slides, open is instantly visible. */
   /* `translate` is deliberately NOT transitioned here: a card whose placement
      switches between the centred (`-translate-x-1/2`) and maximized (inset,
      no translate utility) classes would otherwise slide sideways on every
