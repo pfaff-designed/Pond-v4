@@ -1,4 +1,13 @@
-import { composerBottomBound, COMPOSER_CLEARANCE_VAR } from '@/lib/layout/composer-clearance'
+import {
+  composerBottomBound,
+  composerClearanceMarginPx,
+  COMPOSER_CLEARANCE_GAP,
+  COMPOSER_CLEARANCE_VAR,
+  COMPOSER_REST_HEIGHT,
+  COMPOSER_TOP_CLEARANCE,
+  composerFootprintPx,
+} from '@/lib/layout/composer-clearance'
+import { COMPOSER_TOP_CLEARANCE as COMPOSER_TOP_CLEARANCE_FROM_HEIGHT } from '@/lib/layout/composer-height'
 import { roomTowardSide } from '@/lib/layout/caret-anchor'
 
 const shellEndingAt = (bottom: number, footprintPx?: string): HTMLElement => {
@@ -45,5 +54,27 @@ describe('composerBottomBound', () => {
     const room = roomTowardSide(caret, bound, 'bottom')
 
     expect(caret.bottom + room).toBeLessThanOrEqual(559)
+  })
+})
+
+describe('composerClearanceMarginPx', () => {
+  afterEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  it('returns the published footprint plus the clearance gap', () => {
+    shellEndingAt(900, '125px')
+
+    expect(composerClearanceMarginPx()).toBe(125 + COMPOSER_CLEARANCE_GAP)
+  })
+
+  it('falls back to the card-at-rest footprint plus the gap when nothing has published', () => {
+    expect(composerClearanceMarginPx()).toBe(composerFootprintPx(COMPOSER_REST_HEIGHT) + COMPOSER_CLEARANCE_GAP)
+  })
+})
+
+describe('COMPOSER_TOP_CLEARANCE', () => {
+  it('is re-exported from composer-height.ts as the same binding', () => {
+    expect(COMPOSER_TOP_CLEARANCE_FROM_HEIGHT).toBe(COMPOSER_TOP_CLEARANCE)
   })
 })

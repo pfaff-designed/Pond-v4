@@ -23,9 +23,22 @@ export const COMPOSER_CLEARANCE_GAP = 24
 /** The collapsed tab sits on the shell's bottom edge, with no inset below it. */
 export const COMPOSER_TAB_INSET = 0
 
+/** Room above the card for the ⌘K pill: its 20px inset, its 40px, and 12px of air. */
+export const COMPOSER_TOP_CLEARANCE = 72
+
 /** The footprint the card publishes: its own height plus the inset below it. */
 export const composerFootprintPx = (cardHeight: number, inset = COMPOSER_BOTTOM_INSET): number =>
   cardHeight + inset
+
+/** The shell element the card publishes its footprint on, or null off a shell (SSR, Storybook). */
+const queryShell = (): HTMLElement | null =>
+  typeof document === 'undefined' ? null : document.querySelector<HTMLElement>('[data-part="shell"]')
+
+/** The footprint the shell is currently publishing, or null when nothing has. */
+const publishedFootprintPx = (shell: HTMLElement): number | null => {
+  const footprint = parseFloat(getComputedStyle(shell).getPropertyValue(COMPOSER_CLEARANCE_VAR))
+  return Number.isNaN(footprint) ? null : footprint
+}
 
 /**
  * The bottom padding a page surface carries so its last lines clear the
@@ -47,9 +60,23 @@ export const composerClearancePadding = (): string => {
  * mounted) the bound is the full viewport.
  */
 export const composerBottomBound = (viewportHeight: number): number => {
-  const shell = typeof document === 'undefined' ? null : document.querySelector<HTMLElement>('[data-part="shell"]')
+  const shell = queryShell()
   if (!shell) return viewportHeight
-  const footprint = parseFloat(getComputedStyle(shell).getPropertyValue(COMPOSER_CLEARANCE_VAR))
-  if (Number.isNaN(footprint)) return viewportHeight
+  const footprint = publishedFootprintPx(shell)
+  if (footprint === null) return viewportHeight
   return shell.getBoundingClientRect().bottom - footprint
+}
+
+/**
+ * The numeric clearance a scroll-margin can read in JS (CSS custom
+ * properties aren't readable as numbers): the published footprint plus
+ * `COMPOSER_CLEARANCE_GAP`, or the card-at-rest footprint plus the gap when
+ * nothing has published — the same fallback `composerClearancePadding()`'s
+ * calc string uses.
+ */
+export const composerClearanceMarginPx = (): number => {
+  const shell = queryShell()
+  const footprint = shell ? publishedFootprintPx(shell) : null
+  if (footprint === null) return composerFootprintPx(COMPOSER_REST_HEIGHT) + COMPOSER_CLEARANCE_GAP
+  return footprint + COMPOSER_CLEARANCE_GAP
 }
