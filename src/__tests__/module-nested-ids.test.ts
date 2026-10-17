@@ -70,6 +70,9 @@ const samples: Record<string, ModuleData> = {
       { date: '24 oct', text: 'Landlord confirmed the inventory date.' },
     ],
   },
+  // KAN-122: `pageId` references an existing page — no nested id-bearing
+  // collections, so a flat top-level id strip is the whole omit-chain.
+  'page-link': { type: 'page-link', pageId: 'page-1' },
 }
 
 /**

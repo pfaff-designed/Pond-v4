@@ -20,6 +20,7 @@ import { viewSchema } from './view/schema'
 import { imageSchema } from './image/schema'
 import { highlightSchema } from './highlight/schema'
 import { entriesSchema } from './entries/schema'
+import { pageLinkSchema } from './page-link/schema'
 
 /**
  * A block's width (6x), set from its handle. `'1/4' | '1/3' | '1/2' | '2/3' | '3/4'
@@ -53,6 +54,8 @@ export const blockSchema = z.discriminatedUnion('type', [
   highlightSchema.extend(blockWidthFields),
   // #250: dated prose — serif only when the block's own flag says so (ADR 0005 / 0007).
   entriesSchema.extend(blockWidthFields),
+  // KAN-122: the row `/ nested page` leaves behind at the `/` line's own index.
+  pageLinkSchema.extend(blockWidthFields),
 ])
 
 /** A content module persisted in a page's `blocks` array. */

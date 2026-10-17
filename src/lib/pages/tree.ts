@@ -32,6 +32,13 @@ export interface PageRow {
    */
   glyph?: string | null
   area_role?: string | null
+  /**
+   * KAN-122: rides along the same way `glyph`/`area_role` do, so
+   * `isNewNestedPage`/the `new` chip and row note derive from the one
+   * `['pages', pond]` cache without a second fetch. Stays small (write-once
+   * stamp keys only) — never the full props blob a page surface needs.
+   */
+  props?: Record<string, unknown> | null
 }
 
 export async function fetchPages(pondId: string | null): Promise<PageRow[]> {
@@ -53,7 +60,9 @@ export async function fetchPages(pondId: string | null): Promise<PageRow[]> {
     // #134: glyph + area_role ride along, so the ONE pagesKey() cache
     // the rail, breadcrumb and page surface already share is enough to resolve every
     // mark — no surface fetches anything extra to draw one.
-    .select('id, parent_id, type, title, "order", updated_at, glyph, area_role')
+    // KAN-122: props rides along too (small write-once stamps only), so the same
+    // cache resolves isNewNestedPage per row with no second fetch.
+    .select('id, parent_id, type, title, "order", updated_at, glyph, area_role, props')
     .eq('user_id', user.id)
     // #312: scoped by POND, not by workspace. The sandbox pond holds exactly the
     // `workspace='sandbox'` rows, so the pond filter already says everything the
@@ -88,7 +97,19 @@ export async function fetchPages(pondId: string | null): Promise<PageRow[]> {
  */
 export function insertPageOptimistic(
   queryClient: QueryClient,
-  page: { id: string; parentId: string | null; type: string; title: string },
+  page: {
+    id: string
+    parentId: string | null
+    type: string
+    title: string
+    /**
+     * KAN-122: a `/ nested page` row's created page carries `nestedFrom`/`kind`
+     * (and later `openedAt`) at creation. Passed through so `isNewNestedPage` is
+     * true on the optimistic row itself — the rail note and the link row's `new`
+     * chip show at once, not after the invalidate's refetch lands.
+     */
+    props?: Record<string, unknown> | null
+  },
   /**
    * #312: the pond whose cache to write. `setQueryData` is an EXACT key match,
    * unlike `invalidateQueries`, so writing `pagesKey()` while the reads
@@ -109,6 +130,7 @@ export function insertPageOptimistic(
         title: page.title,
         order: 0,
         updated_at: new Date().toISOString(),
+        ...(page.props ? { props: page.props } : {}),
       },
     ]
   })
@@ -159,6 +181,23 @@ export function applyAreaRoleOptimistic(
 ): void {
   queryClient.setQueryData<PageRow[]>(pagesKey(pondId), (rows) =>
     rows?.map((r) => (r.id === pick.id ? { ...r, area_role: pick.role } : r))
+  )
+}
+
+/**
+ * Optimistically merge props onto ONE row in the pagesKey() cache (KAN-122) —
+ * so a write-once stamp (e.g. `markOpened`'s `openedAt`) is reflected immediately,
+ * before its own write lands, and the `new` chip/row note disappear without
+ * waiting on a refetch. Mirrors `applyGlyphOptimistic`: touches only the picked
+ * row, merging onto whatever `props` it already carries rather than replacing it.
+ */
+export function applyPagePropsOptimistic(
+  queryClient: QueryClient,
+  patch: { id: string; props: Record<string, unknown> },
+  pondId: string | null
+): void {
+  queryClient.setQueryData<PageRow[]>(pagesKey(pondId), (rows) =>
+    rows?.map((r) => (r.id === patch.id ? { ...r, props: { ...r.props, ...patch.props } } : r))
   )
 }
 

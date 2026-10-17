@@ -68,6 +68,9 @@ const VIEW = {
 
 const EVERY_TYPE: Block[] = [TEXT, HIGHLIGHT, IMAGE, TODO, TABLE, ENTRIES, VIEW]
 
+/** Not in `EVERY_TYPE`/`CASES`: a page-link is dropped, never emptied — see below. */
+const PAGE_LINK = { id: 'b12', type: 'page-link', pageId: 'original-page' } as Block
+
 describe('templateBlocksFrom — structure and labels by default', () => {
   /**
    * `shape` is what must survive; `emptied` is what the block must look like
@@ -173,6 +176,17 @@ describe('templateBlocksFrom — structure and labels by default', () => {
     expect(templateBlocksFrom([], counter())).toEqual([])
   })
 
+  // ── A page-link is DROPPED, not emptied (KAN-122) ──────────────────────────
+
+  it('drops a page-link block entirely — an emptied pageId would be a dead, unfixable "page in trash" row on every page the template makes', () => {
+    const out = templateBlocksFrom([TEXT, PAGE_LINK, IMAGE], counter())
+    expect(out.map((b) => b.type)).toEqual(['text', 'image'])
+  })
+
+  it('a page saved as only a page-link saves as an empty template', () => {
+    expect(templateBlocksFrom([PAGE_LINK], counter())).toEqual([])
+  })
+
   // ── A block's own placeholder (KAN-103) survives being emptied ─────────────
 
   it('todo carries its first item’s placeholder forward onto the rebuilt row', () => {
@@ -260,5 +274,10 @@ describe('templateBlocksFrom — keepContent, the sheet’s one tick', () => {
     // Conservative reading of `6i` frame 4; flagged as open on KAN-10.
     const [out] = templateBlocksFrom([VIEW], counter(), { keepContent: true })
     expect(Object.hasOwn(out, 'collectionId')).toBe(false)
+  })
+
+  it('STILL drops a page-link block — this is also the "move onto a template" preview path (applyTemplate uses keepContent), so a previewed template never shows a dead link either', () => {
+    const out = templateBlocksFrom([TEXT, PAGE_LINK], counter(), { keepContent: true })
+    expect(out.map((b) => b.type)).toEqual(['text'])
   })
 })

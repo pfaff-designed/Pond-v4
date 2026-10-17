@@ -41,7 +41,8 @@ describe('view in the / menu', () => {
  *
  * The consequence this pins: the registry IS the palette again. There is no longer a
  * second, hidden tier of "registered but unmintable" types, so anything registered is
- * offered — the only exclusion left is the structural `page` container.
+ * offered — the only exclusions are the structural `page` container and `page-link`
+ * (KAN-122: minted only by `makePage`'s `/ nested page` swap, never picked directly).
  */
 describe('the deleted data-holding display blocks (#111)', () => {
   const deleted = [
@@ -66,8 +67,8 @@ describe('the deleted data-holding display blocks (#111)', () => {
     expect(emptyBlockForType(type)).toBeNull()
   })
 
-  it('every registered content type is reached by a row — `page` is the only exclusion', () => {
-    const registered = Object.keys(moduleDescriptors).filter((t) => t !== 'page')
+  it('every registered content type is reached by a row — `page`/`page-link` are the only exclusions', () => {
+    const registered = Object.keys(moduleDescriptors).filter((t) => t !== 'page' && t !== 'page-link')
     const reached = [...new Set(slashRows.map((r) => r.type).filter((t): t is string => !!t))]
     expect(reached.sort()).toEqual(registered.sort())
   })

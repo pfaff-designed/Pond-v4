@@ -41,6 +41,7 @@ const HEIGHT_BY_KIND: Record<string, number> = {
   heading: 44,
   highlight: 44,
   file: 44,
+  'page link': 44,
 }
 
 /** A kind the board never named (e.g. `timeline`, `calendar`) draws at the multi-row height. */
@@ -67,6 +68,8 @@ function outlineKind(block: Block): string {
       return 'file'
     case 'view':
       return viewKind(block).label
+    case 'page-link':
+      return 'page link'
   }
 }
 
@@ -92,6 +95,8 @@ function outlineIcon(block: Block): SlashIcon {
       return ICON.file
     case 'view':
       return viewKind(block).icon
+    case 'page-link':
+      return ICON.page
   }
 }
 

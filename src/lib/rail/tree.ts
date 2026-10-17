@@ -23,6 +23,9 @@ export interface RailNode {
   title: string
   order: number
   children: RailNode[]
+  /** KAN-122: rides along from `PageRow.props` so a row's `isNewNestedPage`
+   *  note derives here without a second fetch. */
+  props?: Record<string, unknown> | null
 }
 
 /**
@@ -50,6 +53,7 @@ export function buildTree(rows: PageRow[]): RailNode[] {
       title: r.title,
       order: r.order ?? 0,
       children: [],
+      props: r.props,
     })
   }
   const roots: RailNode[] = []

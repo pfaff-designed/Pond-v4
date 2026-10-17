@@ -200,6 +200,7 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
           id: rowId,
           title: rows.find((r) => r.id === rowId)?.title || 'Untitled',
           type: ROW_TYPE,
+          isNew: false,
         })
     : undefined
 

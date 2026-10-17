@@ -144,6 +144,7 @@ import type { BaseUIEvent } from '@base-ui/react/types'
 import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import { PageLinkProvider } from '@/lib/modules/page-link/context'
 import { usePageLinkCapabilities } from '@/lib/modules/page-link/use-capabilities'
+import { stampNestedPage } from '@/lib/pages/nested-page'
 import { cn } from '@/lib/utils'
 import type { Block } from '@/lib/documents/types'
 import type { BlockWidth } from '@/lib/modules/content'
@@ -377,6 +378,11 @@ export function BlockCanvas({
   // state, since the second pick can land mid-await, before a state update
   // guarding on a render would have committed.
   const applyInFlightRef = useRef(false)
+  // G9: guards `makePage` against a double pick on the same `/` line — keyed
+  // by the slash target's host, since two different lines making pages at
+  // once is fine, only the same one twice (before `createPage` resolves) is
+  // the double-submit.
+  const makePageInFlightRef = useRef<Set<string>>(new Set())
   // F27: link capabilities for card→page links, parented at THIS page. Provided to
   // every module view below via context — modules that don't link (all but kanban
   // today) simply never read it.
@@ -949,17 +955,28 @@ export function BlockCanvas({
 
   // The page a `/` pick makes, under this page or beside it, through the seams the
   // AI's create_page path uses (`instantiateTemplate`). A person's own template is
-  // copied with its content and stamped once with where it came from. Once the page
-  // exists, the `/` that summoned the menu goes — read against the blocks as they
-  // are then, since the awaits below outlive any snapshot. A failure leaves it.
-  // Returns whether the page actually got made — KAN-138's nested-page apply
-  // path needs this to know its write landed before retiring "just saved".
+  // copied with its content and stamped once with where it came from.
+  //
+  // `child` (the `/ nested page` row and `makePageFromTemplate`'s child path alike —
+  // both read as "does the same with nothing to move" under KAN-122's board) swaps
+  // the `/` line for a page-link block at the same index and stays on the parent;
+  // the made page is stamped nested-under-this-page once, read later by the rail's
+  // `new` row note and the link row's own chip. `sibling` keeps the pre-KAN-122
+  // behaviour: the `/` line is dropped and the person is taken to the new page.
+  // Read against the blocks as they are then, since the awaits below outlive any
+  // snapshot. A failure leaves the `/` line. Returns whether the page actually got
+  // made — KAN-138's nested-page apply path needs this to know its write landed
+  // before retiring "just saved".
   const makePage = async (
     source: NewPage | null,
     placement: 'sibling' | 'child',
     target: SlashTarget
   ): Promise<boolean> => {
     if (!source) return false
+    // G9: a second pick on the same `/` line while `createPage` below is still
+    // in flight is a no-op — two different lines each making a page is fine.
+    if (makePageInFlightRef.current.has(target.hostId)) return false
+    makePageInFlightRef.current.add(target.hostId)
     try {
       const supabase = getSupabase()
       const {
@@ -968,16 +985,22 @@ export function BlockCanvas({
       if (!user) return false
       const parentId =
         placement === 'child' ? pageId : ((await getPage(supabase, pageId))?.parentId ?? null)
+      const props =
+        placement === 'child' ? stampNestedPage(source.props ?? {}, pageId) : source.props
       const created = await createPage(supabase, user.id, {
         parentId,
         type: 'page',
         title: source.title,
         blocks: source.blocks,
-        ...(source.props ? { props: source.props } : {}),
+        ...(props ? { props } : {}),
         pondId,
       })
       if (source.schema) await defineSchema(supabase, created.id, source.schema)
-      const landing = landAtSlash(blocksRef.current, target, null)
+      const pageLinkBlock: Block | null =
+        placement === 'child'
+          ? { id: crypto.randomUUID(), type: 'page-link', pageId: created.id }
+          : null
+      const landing = landAtSlash(blocksRef.current, target, pageLinkBlock)
       if (landing) onChange(landing.next)
       insertPageOptimistic(
         queryClient,
@@ -986,15 +1009,25 @@ export function BlockCanvas({
           parentId,
           type: created.type,
           title: created.title,
+          props,
         },
         pondId
       )
       void queryClient.invalidateQueries({ queryKey: pagesKey() })
-      pageLinks.navigateToPage({ id: created.id, title: created.title, type: created.type })
+      if (placement === 'sibling') {
+        pageLinks.navigateToPage({
+          id: created.id,
+          title: created.title,
+          type: created.type,
+          isNew: false,
+        })
+      }
       return true
     } catch (err) {
       console.error('Failed to make the page', err)
       return false
+    } finally {
+      makePageInFlightRef.current.delete(target.hostId)
     }
   }
 

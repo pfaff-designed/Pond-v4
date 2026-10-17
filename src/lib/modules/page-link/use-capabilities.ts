@@ -65,7 +65,7 @@ export function usePageLinkCapabilities(containingPageId: string): PageLinkCapab
           pondId
         )
         void queryClient.invalidateQueries({ queryKey: pagesKey() })
-        return { id: created.id, title: created.title, type: created.type }
+        return { id: created.id, title: created.title, type: created.type, isNew: false }
       },
       renamePage: async (pageId, title) => {
         await updateTitle(getSupabase(), pageId, title.trim() || 'Untitled')

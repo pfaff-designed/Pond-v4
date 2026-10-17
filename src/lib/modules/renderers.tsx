@@ -18,6 +18,7 @@ import { ViewView } from './view/view'
 import { ImageView } from './image/view'
 import { HighlightView } from './highlight/view'
 import { EntriesView } from './entries/view'
+import { PageLinkView } from './page-link/view'
 
 /**
  * `type → { view, editor?, differ? }`. A plain keyed object literal — no framework,
@@ -42,6 +43,9 @@ export const moduleRenderers = {
   // #250: dated prose. Editing folds into the view (a date field + a textarea per
   // row, as todo); the diff card renders it read-only through ModuleView.
   entries: { view: EntriesView },
+  // KAN-122: the row `/ nested page` leaves behind. No editor facet — nothing on
+  // the row is edited in place; it only links out.
+  'page-link': { view: PageLinkView },
 }
 // Correctness is enforced at each view's definition (every view is typed as a
 // ModuleRenderer for its own data). A homogeneous `satisfies Record<…>` can't be

@@ -62,6 +62,9 @@ const samples: Record<string, Block> = {
       { id: 'e2', date: '24 oct', text: 'Landlord confirmed the inventory date.' },
     ],
   },
+  // KAN-122: no hydrated title in reach here, so serialize falls back to the
+  // generic name rather than the raw pageId.
+  'page-link': { id: 'b1', type: 'page-link', pageId: 'p1' },
 }
 
 function serialize(block: Block): string {

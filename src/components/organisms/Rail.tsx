@@ -73,6 +73,7 @@ import { PondSwitcher } from './PondSwitcher'
 import { workspaceUrl } from '@/lib/pages/nav'
 import { withTemplatesParam } from '@/lib/pages/templates-param'
 import { markIndex, resolveMark, type MarkSource, type PageMark } from '@/lib/pages/mark'
+import { isNewNestedPage } from '@/lib/pages/nested-page'
 import { markAccent, pushRecentGlyph, isAreaRole, type AreaRole } from '@/lib/rail/glyph-library'
 import { ancestorPath, areaOf } from '@/lib/pages/crumbs'
 import { GlyphPicker, glyphPickerHeight } from '@/components/molecules/GlyphPicker'
@@ -257,6 +258,11 @@ interface RailRowProps {
   /** A leading mark slot (an area's glyph, the Life root's waves — #91) —
    *  replaces the dot. */
   leading?: ReactNode
+  /** KAN-122: a non-shared row note (`new`, for a nested page not yet
+   *  opened) — mono, ink .68, `flex:none`. Rides alongside `row-tools`, never
+   *  replaces it. Absent once the page has been opened. KAN-75's shared row
+   *  notes reuse this same slot. */
+  rowNote?: string
 
   onSelect: (id: string) => void
   onToggle: (id: string) => void
@@ -309,6 +315,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
     accent,
     settleOnMount = false,
     leading,
+    rowNote,
     onSelect,
     onToggle,
     newPageMenuOpen = false,
@@ -487,6 +494,17 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
         trailing={
           isRenaming ? null : (
             <>
+              {/* A non-shared row note (KAN-122: `new`, for a nested page not yet
+                  opened) — sits in flow, right after the label, alongside the
+                  out-of-flow row-tools rather than replacing it. */}
+              {rowNote && (
+                <span
+                  data-part="row-note"
+                  className="flex-none font-mono text-[10px] lowercase text-mn-text-secondary max-md:text-[11px]"
+                >
+                  {rowNote}
+                </span>
+              )}
               {/* The row is the tree's roving tab stop; ＋ and × ride along on it rather
                 than adding stops of their own (tabIndex -1), reached instead by + and
                 Delete. The mark button is the one exception — it follows the row's own
@@ -1211,6 +1229,7 @@ export function RailView({
         }
         // A row revealed on expand (any non-top-level row) settles in rather than
         // popping. Keyed by id, so only newly-mounted rows animate.
+        rowNote={isNewNestedPage(node.props) ? 'new' : undefined}
         settleOnMount={depth > 0}
         onSelect={handleSelect}
         onToggle={onToggle}
@@ -1470,6 +1489,42 @@ export function Rail() {
     })
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [selectedNodeId, pages])
+
+  // ── Rail reveals a new child without leaving the parent (KAN-122) ──────────
+  // The `/ nested page` swap stays on the parent, so selection never changes
+  // and the reveal effect above never fires. Expand the selected row itself
+  // the moment its child set gains an id it didn't have last render, so the
+  // freshly made child is visible without navigating anywhere.
+  //
+  // `pages` defaults to `[]` while the query is loading, so a baseline taken
+  // before data arrives would record an empty child set and read every
+  // already-existing child as "gained" once the real rows land. Wait for the
+  // same ready condition the ancestor-reveal effect above uses (not loading,
+  // selected node present) before recording a baseline, and drop any stale
+  // baseline when the pond changes underneath the same `nodeId`.
+  const childIdsRef = useRef<Map<string, Set<string>>>(new Map())
+  useEffect(() => {
+    childIdsRef.current = new Map()
+  }, [pondId])
+  useEffect(() => {
+    if (!selectedNodeId) return
+    if (isLoading) return
+    if (!pages.some((r) => r.id === selectedNodeId)) return
+    const prevChildren = childIdsRef.current.get(selectedNodeId)
+    const nextChildren = new Set(
+      pages.filter((r) => (r.parent_id ?? null) === selectedNodeId).map((r) => r.id)
+    )
+    childIdsRef.current.set(selectedNodeId, nextChildren)
+    if (!prevChildren) return
+    const gainedChild = [...nextChildren].some((id) => !prevChildren.has(id))
+    if (!gainedChild) return
+    setExpanded((prev) => {
+      if (prev.has(selectedNodeId)) return prev
+      const next = new Set(prev)
+      next.add(selectedNodeId)
+      return next
+    })
+  }, [selectedNodeId, pages, isLoading])
 
   // Deferred commits fire up to ~6s after staging — read the selection fresh at
   // commit time via this ref, not the render-time closure value.
