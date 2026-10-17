@@ -42,6 +42,11 @@ describe('view kinds', () => {
     )
   })
 
+  it('the board kind owns its empty state (KAN-377): the frame never draws "no rows yet" over its lanes', () => {
+    const board: ViewBlock = { id: 'v', type: 'view', mode: 'board' }
+    expect(viewKind(board).empty.own).toBe(true)
+  })
+
   it('every stored view mode reads as its kind, with no migration', () => {
     for (const mode of VIEW_MODES) {
       const block: ViewBlock = { id: 'v', type: 'view', mode }

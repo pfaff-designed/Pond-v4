@@ -82,7 +82,9 @@ export interface ViewKind {
 
 export const VIEW_KINDS: Record<ViewMode, ViewKind> = {
   table: { label: 'table', icon: ICON.table, frame: 'table', empty: { box: 'box' } },
-  board: { label: 'board', icon: ICON.board, frame: null, empty: { box: 'box' } },
+  // KAN-351/KAN-377: the board draws its own empty state — its lanes, or, with no
+  // group field, its own "add a status field" remedy — so the frame steps aside.
+  board: { label: 'board', icon: ICON.board, frame: null, empty: { box: 'box', own: true } },
   calendar: {
     label: 'calendar',
     icon: ICON.calendar,

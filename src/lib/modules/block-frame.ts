@@ -221,12 +221,6 @@ export function viewFrameState(
   if (DATE_PLACED_MODES.has(block.mode) && !schema.some((def) => def.type === 'date')) {
     return { state: 'rest' }
   }
-  // KAN-351: a board with zero rows steps aside too — otherwise the frame's own
-  // `no rows yet · add a row` replaces the three lanes, and `add a row` would
-  // land a record with no status in the hidden "No status" lane (07.10: "the
-  // lane sets the status"). The view itself draws its lanes, or, with no
-  // select/status field, its own "add a status field" remedy.
-  if (block.mode === 'board') return { state: 'rest' }
   // KAN-352: a gantt with zero rows steps aside too — otherwise the frame's own
   // void line replaces the task column, and the view's own void branch (the same
   // line, plus the `add a task` row the frame has no action slot for) never
