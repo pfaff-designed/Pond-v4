@@ -371,5 +371,56 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
       expect(screen.getByLabelText('Record: Trim the rim')).toBeInTheDocument()
       expect(screen.queryByRole('textbox', { name: /Add an item/ })).not.toBeInTheDocument()
     })
+
+    it('↵ on an unselected stack item selects it without opening the record; ↵ again (selected) opens it', async () => {
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+      const onOpenRow = jest.fn()
+      const { container } = render(
+        <CollectionCalendar
+          schema={schemaWithDate}
+          rows={rows}
+          editable
+          onAddRow={jest.fn()}
+          onRenameRow={jest.fn()}
+          onOpenRow={onOpenRow}
+        />
+      )
+      const desktopWrap = [...container.querySelectorAll('div')].find((d) => d.classList.contains('md:flex'))!
+      const item = within(desktopWrap).getByText('Trim the rim').closest('div')!
+      item.focus()
+
+      await user.keyboard('{Enter}')
+
+      expect(item).toHaveClass('ring-[1.5px]')
+      expect(onOpenRow).not.toHaveBeenCalled()
+
+      await user.keyboard('{Enter}')
+
+      expect(onOpenRow).toHaveBeenCalledWith('r1')
+    })
+
+    it('a second click on the already-selected stack item also opens the record', async () => {
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+      const onOpenRow = jest.fn()
+      const { container } = render(
+        <CollectionCalendar
+          schema={schemaWithDate}
+          rows={rows}
+          editable
+          onAddRow={jest.fn()}
+          onRenameRow={jest.fn()}
+          onOpenRow={onOpenRow}
+        />
+      )
+      const desktopWrap = [...container.querySelectorAll('div')].find((d) => d.classList.contains('md:flex'))!
+      const item = within(desktopWrap).getByText('Trim the rim').closest('div')!
+
+      await user.click(item)
+      expect(onOpenRow).not.toHaveBeenCalled()
+
+      await user.click(item)
+
+      expect(onOpenRow).toHaveBeenCalledWith('r1')
+    })
   })
 })
