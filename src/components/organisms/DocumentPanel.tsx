@@ -23,7 +23,7 @@
  * debounced save, and the children grid; BlockCanvas owns the blocks.
  */
 
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
@@ -37,7 +37,6 @@ import { BacklinksPanel } from '@/components/organisms/BacklinksPanel'
 import { usePageChangesPanel } from '@/components/organisms/PageChangesPanel'
 import { readSchema, readValues, ROW_TYPE } from '@/lib/properties/schema'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
-import { ChildrenGrid } from '@/components/molecules/ChildrenGrid'
 import { ContentWidthHandle } from '@/components/molecules/ContentWidthHandle'
 import { useContentWidth } from '@/lib/layout/content-width'
 import { TEXT_BLOCK_INSET_PX, useSurfaceColumn } from '@/lib/layout/surface-column'
@@ -58,12 +57,11 @@ import { RECORD_PARAM, recordBreadcrumbTitle } from '@/lib/change-log/record-pag
 import { recordKey } from '@/lib/change-log/keys'
 import { getRecord } from '@/lib/change-log/store'
 import { DATABASES_ROOT_TITLE } from '@/lib/pages/databases-root'
-import { childCards } from '@/lib/pages/child-cards'
 import { isUntouchedPage, titleEyebrow } from '@/lib/pages/title-eyebrow'
 import { readMadeFrom } from '@/lib/pages/made-from'
 import { isNewNestedPage, markOpened } from '@/lib/pages/nested-page'
 import { applyPagePropsOptimistic } from '@/lib/pages/tree'
-import { workspaceUrl, WORKSPACE_PATH, type WorkspaceNodeRef } from '@/lib/pages/nav'
+import { WORKSPACE_PATH } from '@/lib/pages/nav'
 import { homeQueryKey, pagesKey } from '@/lib/pages/keys'
 import { usePagesRows } from '@/lib/pages/use-pages'
 import { usePond } from '@/lib/pond/context'
@@ -224,21 +222,12 @@ export function DocumentPanel() {
   }, [page, pondId, queryClient, getSupabase])
 
   // The flat page tree — the same cache the rail reads — so this page's own
-  // children can be shown below its blocks (ticket-22). `new Date()` is captured
-  // per rows/node change, so the cards' "updated Xd ago" captions refresh with
-  // the data rather than the wall clock. `rowsPending` holds the panel on the
-  // loading state until they land, so a page never paints without its children.
-  // `usePagesRows` (KAN-310 gap 1) drops a staged-for-delete id at once, so a
-  // card a rail delete just staged disappears here with no refetch.
+  // children (now ordinary page-link blocks, KAN-415) resolve against current
+  // rows/titles. `rowsPending` holds the panel on the loading state until they
+  // land, so a page never paints before its children are known. `usePagesRows`
+  // (KAN-310 gap 1) drops a staged-for-delete id at once, so a page-link a rail
+  // delete just staged resolves as gone here with no refetch.
   const { data: rows, isPending: rowsPending } = usePagesRows(pondId)
-  // The root's children are the top-level pages (`null` parent); the home row is
-  // never among the rows (fetchPages strips it), so it is never its own child.
-  const cards = useMemo(() => childCards(rows, nodeId, new Date()), [rows, nodeId])
-  // Card → page is the one navigation (lib/pages/nav): a card carries its own
-  // id/type/title, so the URL gets the same params a rail click would.
-  function goTo(ref: WorkspaceNodeRef | null) {
-    router.push(workspaceUrl(ref))
-  }
 
   // ticket-41: ids of blocks just inserted this session, so a freshly-inserted
   // block SETTLES in (motion-settle-in) while blocks present on page load do
@@ -461,15 +450,6 @@ export function DocumentPanel() {
 
         <div className={hiddenInZen}>
           <PageMentioned props={page.props} className="mt-8" />
-
-          {/* Content above, children below — the page's own blocks stay primary; its
-              nested pages read as a quiet index beneath them (ticket-22). Collapses
-              to nothing when the page has no children. */}
-          {cards.length > 0 && (
-            <div className="mt-12 border-t border-mn-hair pt-6">
-              <ChildrenGrid cards={cards} onOpenCard={goTo} />
-            </div>
-          )}
 
           {/* Backlinks (#39): the reverse of the one-way relations pointing at this page —
               derived on read, read-only, hidden when nothing links here. A row's collection

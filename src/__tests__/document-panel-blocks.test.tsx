@@ -40,8 +40,8 @@ jest.mock('@/lib/pond/context', () => ({
   usePondId: () => mockUsePondId(),
 }))
 
-// The composite surface (ticket-22) reads the flat page tree to derive this
-// node's children; per-test rows drive the children grid (empty = no grid).
+// DocumentPanel reads the flat page tree for its own title/children lookups
+// (parentTitle, breadcrumb path); per-test rows feed that, not any rendering.
 const mockFetchPages = jest.fn()
 jest.mock('@/lib/pages/tree', () => ({
   fetchPages: (...args: unknown[]) => mockFetchPages(...args),
@@ -194,98 +194,8 @@ describe('DocumentPanel block rendering (via the module registry)', () => {
   })
 })
 
-// ── The ticket-22 surface switch: blocks AND children on one surface ──────────
-// #108: the switch reads no type tag — a page shows the overview because it HAS
-// children and no blocks of its own. Everything below is a page.
-
 const NOW = new Date().toISOString()
-const nodeRow = (over: Record<string, unknown>) => ({
-  id: 'page-1',
-  parent_id: null,
-  type: 'page',
-  title: 'Workout Routines',
-  order: 0,
-  updated_at: NOW,
-  ...over,
-})
-const childRow = nodeRow({
-  id: 'child-1',
-  parent_id: 'page-1',
-  title: '3-Day Full-Body Dumbbell Routine',
-})
-const quote: Block[] = [{ id: 'b-quote', type: 'text', content: 'Consistency beats intensity' }]
 const tools = blocks[1]
-
-describe('every page is the one page surface (ticket-22, #108, #234): blocks and children both render', () => {
-  it('an area WITH blocks renders its content plus the children grid', async () => {
-    renderWith({ id: 'page-1', type: 'page', title: 'Workout Routines', blocks: quote }, [
-      nodeRow({}),
-      childRow,
-    ])
-    // Its own content is reachable: title editor + the block's reading view.
-    expect(await screen.findByLabelText('Page title')).toHaveValue('Workout Routines')
-    expect(await findTextBlock()).toHaveTextContent('Consistency beats intensity')
-    // And its children still show, below, as the shared grid.
-    expect(await screen.findByText('3-Day Full-Body Dumbbell Routine')).toBeInTheDocument()
-  })
-
-  it('a page with children and no blocks is the SAME page — title, add affordance, children', async () => {
-    renderWith({ id: 'page-1', type: 'page', title: 'Health', blocks: [] }, [
-      nodeRow({ title: 'Health' }),
-      childRow,
-    ])
-    expect(await screen.findByLabelText('Page title')).toHaveValue('Health')
-    expect(await screen.findByText('3-Day Full-Body Dumbbell Routine')).toBeInTheDocument()
-    expect(await screen.findByRole('button', { name: 'Add a block' })).toBeInTheDocument()
-    // #234: no bespoke container surface, no affordance of its own.
-    expect(screen.queryByRole('button', { name: '+ Add content' })).not.toBeInTheDocument()
-    expect(screen.queryByText(/at a glance/)).not.toBeInTheDocument()
-  })
-
-  it('a page with children persists a picked block to itself, with its children still below', async () => {
-    renderWith({ id: 'page-1', type: 'page', title: 'Health', blocks: [] }, [
-      nodeRow({ title: 'Health' }),
-      childRow,
-    ])
-    fireEvent.click(await screen.findByRole('button', { name: 'Add a block' }))
-    const editor = await findTextBlock()
-    writeInTextBlock(editor, '/')
-    // An empty page leads with its templates; typing a block's name returns to the blocks.
-    await screen.findByRole('listbox', { name: 'blocks' })
-    // #278: the query is the text typed on the page after the `/`.
-    writeInTextBlock(editor, '/check')
-    // The matched label is split pre / hit / post, so find the row by its whole text.
-    const row = await waitFor(() => {
-      const match = screen.getAllByRole('option').find((o) => o.textContent?.includes('checklist'))
-      if (!match) throw new Error('no checklist row')
-      return match
-    })
-    fireEvent.click(row)
-
-    await waitFor(() => expect(mockCommitBlocks).toHaveBeenCalled(), { timeout: 2000 })
-    const call = mockCommitBlocks.mock.calls.find(([, , pageId]) => pageId === 'page-1')!
-    expect((call[3] as Block[]).some((b) => b.type === 'todo')).toBe(true)
-    expect(screen.getByText('3-Day Full-Body Dumbbell Routine')).toBeInTheDocument()
-  })
-
-  // #108 — nothing is keyed on a type tag, and nothing on children either.
-  it('a childless page with no blocks renders the page, with no grid', async () => {
-    renderWith({ id: 'page-1', type: 'page', title: 'Fresh page', blocks: [] }, [
-      nodeRow({ title: 'Fresh page' }),
-    ])
-    expect(await screen.findByLabelText('Page title')).toHaveValue('Fresh page')
-    expect(screen.queryByText('3-Day Full-Body Dumbbell Routine')).not.toBeInTheDocument()
-  })
-
-  it('a project with children and no blocks gets the same page a page would', async () => {
-    renderWith({ id: 'page-1', type: 'project', title: 'Bench build', blocks: [] }, [
-      nodeRow({ type: 'project', title: 'Bench build' }),
-      childRow,
-    ])
-    expect(await screen.findByLabelText('Page title')).toHaveValue('Bench build')
-    expect(await screen.findByText('3-Day Full-Body Dumbbell Routine')).toBeInTheDocument()
-  })
-})
 
 // ── the `pages` group and the person's own templates ──────────────────
 

@@ -3,13 +3,11 @@
  *
  * getOrCreateHomePage returns the reserved per-user `home` row, creating it on
  * first access and being idempotent under a create race. The row must NOT leak
- * into the ['pages'] tree the rail and the children grid read — fetchPages strips
- * it — so Life's own blocks never become a rail child or one of Life's own cards.
+ * into the ['pages'] tree the rail reads — fetchPages strips it — so Life's own
+ * blocks never become a rail child.
  */
 
 import { getOrCreateHomePage, HOME_TYPE } from '@/lib/pages/home'
-import { childCards } from '@/lib/pages/child-cards'
-import type { PageRow } from '@/lib/pages/tree'
 
 // ── A tiny in-memory Supabase-ish double for the pages table ─────────────────
 // Enough surface for home.ts: auth.getUser, a filtered maybeSingle read, and an
@@ -154,36 +152,5 @@ describe('getOrCreateHomePage', () => {
     const home = await getOrCreateHomePage(sb, POND)
     expect(home!.id).toBe('home-winner')
     expect(sb._inserts).toHaveLength(0)
-  })
-})
-
-// ── The no-leak guarantee: a home row is stripped from the ['pages'] tree ─────
-// fetchPages does the DB-side `.neq('type','home')`, so the rows the children
-// grid ever sees never include a home row. This asserts the invariant directly:
-// a home row among the rows would (wrongly) become one of Life's own cards; the
-// rows the app actually feeds it never contain one (#234).
-
-describe('the root page’s children exclude the home row', () => {
-  const now = new Date('2026-08-30T12:00:00Z')
-  const row = (id: string, parent: string | null, type: string, title: string): PageRow => ({
-    id,
-    parent_id: parent,
-    type,
-    title,
-    order: 0,
-    updated_at: '2026-08-30T09:00:00Z',
-  })
-
-  it('lists only real top-level pages (home row never reaches the grid)', () => {
-    // What fetchPages returns: areas + content, NO home row.
-    const rows: PageRow[] = [
-      row('health', null, 'page', 'Health'),
-      row('sleep', 'health', 'page', 'Sleep'),
-      row('scratch', null, 'page', 'Scratchpad'),
-    ]
-    const cards = childCards(rows, null, now)
-    expect(cards.map((c) => c.title)).toEqual(['Health', 'Scratchpad'])
-    // The home row is not among the top-level cards.
-    expect(cards.some((c) => c.type === HOME_TYPE)).toBe(false)
   })
 })

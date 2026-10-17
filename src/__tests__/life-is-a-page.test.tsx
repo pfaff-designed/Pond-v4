@@ -4,9 +4,11 @@
  *
  * The root (no ?nodeId) renders through the SAME DocumentPanel path as every
  * other page: the reserved home row's title and blocks, the always-visible
- * "+ Add a block", and its nested pages — the top-level pages — through the one
- * shared children grid. No bespoke surface, no focal numeral, no closing line.
- * An area is the same page with pages inside it (#108).
+ * "+ Add a block". No bespoke surface, no focal numeral, no closing line. An
+ * area is the same page with pages inside it (#108). Nested pages themselves
+ * render as page-link blocks (KAN-415) — no longer anything DocumentPanel
+ * draws from `rows`, so this file keeps `rows` only for what still reads it:
+ * the breadcrumb path.
  *
  * AUDIT W9: the path (`PondCommand` at rest) starts at the root PAGE — its own
  * title — rather than assuming the pond is called "life".
@@ -33,8 +35,9 @@ jest.mock('next/navigation', () => ({
 
 jest.mock('@/lib/supabase/client', () => ({ createClient: () => ({}) }))
 
-// The children grid reads ['pages'] — top-level areas + content. NO home row
-// (it's stripped by fetchPages upstream), so Life is never its own child.
+// DocumentPanel's breadcrumb path reads ['pages'] — top-level areas + content.
+// NO home row (it's stripped by fetchPages upstream), so Life is never its own
+// child.
 const AREA_ROWS = [
   {
     id: 'health',
@@ -119,12 +122,10 @@ beforeEach(() => {
 })
 
 describe('Life is a page (#234)', () => {
-  it('renders the root as an ordinary page: its title, the add affordance, and its top-level pages', async () => {
+  it('renders the root as an ordinary page: its title and the add affordance', async () => {
     renderPanel()
     // The ordinary page header — the home row's own title, editable like any page.
     expect(await screen.findByLabelText('Page title')).toHaveValue('life')
-    // Its nested pages: the top-level pages, through the shared children grid.
-    expect(await screen.findByText('Health')).toBeInTheDocument()
     // Empty Life shows the always-visible foot add, like every page.
     expect(await screen.findByRole('button', { name: 'Add a block' })).toBeInTheDocument()
     // No bespoke surface survives: no closing line, no section label.
@@ -138,11 +139,10 @@ describe('Life is a page (#234)', () => {
     expect(mockGetPage).toHaveBeenCalledWith(expect.anything(), 'home-1')
   })
 
-  it('renders Life’s own blocks above its nested pages', async () => {
+  it('renders Life’s own blocks', async () => {
     HOME_BLOCKS = [{ id: 'b1', type: 'text', content: 'Welcome to my life' }]
     renderPanel()
     expect(await findTextBlock()).toHaveTextContent('Welcome to my life')
-    expect(await screen.findByText('Health')).toBeInTheDocument()
   })
 
   it('the path starts at the root page — its own title, not an assumed name (W9)', async () => {
@@ -150,32 +150,6 @@ describe('Life is a page (#234)', () => {
     renderPanel()
     expect(await screen.findByLabelText('Page title')).toHaveValue('home')
     await waitFor(() => expect(screen.getByTestId('command-path')).toHaveTextContent(/^home$/))
-  })
-
-  it('leaves the databases root out of Life’s nested pages (3c: a peer root)', async () => {
-    mockFetchPages.mockResolvedValue([
-      ...AREA_ROWS,
-      {
-        id: 'root-db',
-        parent_id: null,
-        type: 'page',
-        title: 'databases',
-        order: 9,
-        updated_at: '2026-08-30T09:00:00Z',
-      },
-      {
-        id: 'db-1',
-        parent_id: 'root-db',
-        type: 'page',
-        title: 'ingredients',
-        order: 0,
-        updated_at: '2026-08-30T09:00:00Z',
-      },
-    ])
-    renderPanel()
-    expect(await screen.findByText('Health')).toBeInTheDocument()
-    expect(screen.queryByText('databases')).not.toBeInTheDocument()
-    expect(screen.queryByText('ingredients')).not.toBeInTheDocument()
   })
 
   it('the add drops an empty text block ready to type — no palette (UI-audit Slice 2a)', async () => {
@@ -263,11 +237,10 @@ describe('Life is a page (#234)', () => {
 })
 
 describe('an area is the same page (#108, #234)', () => {
-  it('renders an area with no blocks of its own as an ordinary page with its pages below', async () => {
+  it('renders an area with no blocks of its own as an ordinary page', async () => {
     currentNodeId = 'health'
     renderPanel()
     expect(await screen.findByLabelText('Page title')).toHaveValue('Health')
-    expect(await screen.findByText('Sleep')).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: 'Add a block' })).toBeInTheDocument()
     // Nothing treats it as a distinct kind of thing.
     expect(screen.queryByText(/at a glance/)).not.toBeInTheDocument()

@@ -25,7 +25,7 @@ jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
   // The ancestor-reveal effect expands the databases root when its child is
   // the open page — the common path to a database row (just created, or
-  // opened from the children grid) and how a person reaches it to delete it.
+  // opened from a page-link) and how a person reaches it to delete it.
   useSearchParams: () => ({ get: (key: string) => (key === 'nodeId' ? 'db-1' : null) }),
 }))
 
