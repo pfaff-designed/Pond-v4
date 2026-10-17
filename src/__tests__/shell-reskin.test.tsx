@@ -501,12 +501,17 @@ describe('TerminalDrawer — the PondComposer card: floating glass, 560, 24 off 
 
   it('is centred on the area right of the rail — calc(50% + 113px) — and 24px off the bottom', () => {
     renderDrawer()
-    const classes = screen.getByRole('region', { name: 'composer' }).className.split(' ')
+    const card = screen.getByRole('region', { name: 'composer' })
+    const classes = card.className.split(' ')
     // The storyboards: left 246 / right 20 in a 1180 frame (rail 20+206+20).
     expect(classes).toContain('md:left-[calc(50%_+_113px)]')
     expect(classes).toContain('-translate-x-1/2')
     expect(classes).toContain('absolute')
-    expect(classes).toContain('bottom-6')
+    // `bottom` comes from the `--composer-card-bottom` var, not a `bottom-*`
+    // class, so a wrapping surface (zen) can override just the one property.
+    expect(classes).not.toContain('bottom-6')
+    expect(card.style.bottom).toBe('var(--composer-card-bottom)')
+    expect(card.style.getPropertyValue('--composer-card-bottom')).toBe(`${COMPOSER_BOTTOM_INSET}px`)
     expect(COMPOSER_BOTTOM_INSET).toBe(24)
   })
 
@@ -578,7 +583,10 @@ describe('TerminalDrawer — the PondComposer card: floating glass, 560, 24 off 
     expect(card.style.height).toBe('')
     expect(card.style.maxHeight).toBe('')
     expect(card.style.top).toBe(`${COMPOSER_TOP_CLEARANCE}px`)
-    expect(card.style.bottom).toBe(`${COMPOSER_BOTTOM_INSET}px`)
+    // `bottom` reads the `--composer-card-bottom` var (default 24px) rather than
+    // the literal, so a wrapping surface can override just the one property.
+    expect(card.style.bottom).toBe('var(--composer-card-bottom)')
+    expect(card.style.getPropertyValue('--composer-card-bottom')).toBe(`${COMPOSER_BOTTOM_INSET}px`)
     expect(card.style.left).toBe(`${20 + RAIL_WIDTH_PX + 20}px`)
     expect(card.style.right).toBe('20px')
     const classes = card.className.split(' ')
@@ -612,7 +620,9 @@ describe('TerminalDrawer — the PondComposer card: floating glass, 560, 24 off 
     expect(classes).toContain('motion-resolve')
     // The full height alone leaves the card's 24px inset still inside the
     // shell's bounds — it translates by height + the inset to clear it fully.
-    expect(classes).toContain('translate-y-[calc(100%+24px)]')
+    // Driven through `transform`, not `translate` (which `.motion-resolve`
+    // does not transition, to avoid an unrelated sideways slide on maximize).
+    expect(classes).toContain('[transform:translateY(calc(100%+var(--composer-card-bottom)))]')
     expect(classes).toContain('opacity-0')
     expect(classes).toContain('pointer-events-none')
     expect(card.getAttribute('aria-hidden')).toBe('true')
@@ -627,7 +637,9 @@ describe('TerminalDrawer — the PondComposer card: floating glass, 560, 24 off 
     // Same node: the card persisted across the toggle, only its slide classes changed.
     expect(container.querySelector('[data-part="composer-card"]')).toBe(card)
     const restoredClasses = card.className.split(' ')
-    expect(restoredClasses).not.toContain('translate-y-[calc(100%+24px)]')
+    expect(restoredClasses).not.toContain(
+      '[transform:translateY(calc(100%+var(--composer-card-bottom)))]'
+    )
     expect(restoredClasses).not.toContain('opacity-0')
     expect(restoredClasses).not.toContain('pointer-events-none')
     expect(card.hasAttribute('aria-hidden')).toBe(false)

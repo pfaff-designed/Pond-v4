@@ -476,7 +476,8 @@ describe('the composer card — maximize fills the canvas (KAN-323)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'maximize' }))
     expect(card().getAttribute('data-maximized')).toBe('true')
     expect(card().style.top).toBe(`${COMPOSER_TOP_CLEARANCE}px`)
-    expect(card().style.bottom).toBe(`${COMPOSER_BOTTOM_INSET}px`)
+    expect(card().style.bottom).toBe('var(--composer-card-bottom)')
+    expect(card().style.getPropertyValue('--composer-card-bottom')).toBe(`${COMPOSER_BOTTOM_INSET}px`)
     expect(card().style.left).toBe(`${20 + RAIL_WIDTH_PX + 20}px`)
     expect(card().style.height).toBe('')
 

@@ -472,12 +472,45 @@ export const ClosedSlideAnimates: Story = {
   play: async ({ canvas, canvasElement }) => {
     const card = canvasElement.querySelector<HTMLElement>('[data-part="composer-card"]')!
     const style = getComputedStyle(card)
-    await expect(style.transitionProperty.split(', ')).toEqual(expect.arrayContaining(['translate']))
+    await expect(style.transitionProperty.split(', ')).toEqual(expect.arrayContaining(['transform']))
     await expect(style.visibility).toBe('visible')
 
     await userEvent.click(canvas.getByText('close'))
     // Right after the toggle the slide has only just started — still visible.
     await expect(style.visibility).toBe('visible')
     await waitFor(() => expect(style.visibility).toBe('hidden'), { timeout: 1000 })
+  },
+}
+
+/**
+ * `translate` must NOT be a transitioned property: the card's placement swaps
+ * between the centred class (`-translate-x-1/2`, a `translate` value) and the
+ * maximized inset (no translate utility at all) on every maximize/restore, and
+ * if `.motion-resolve` eased that change the full-width card would appear to
+ * start half its width to the left and slide right. The closed slide animates
+ * through `transform` instead, which stays listed.
+ */
+export const MaximizeDoesNotSlideSideways: Story = {
+  name: 'maximize/restore does not animate translate',
+  tags: ['!dev'],
+  render: (args) => {
+    const [maximized, setMaximized] = useState(false)
+    return (
+      <>
+        <button onClick={() => setMaximized((value) => !value)}>toggle maximized</button>
+        <TerminalDrawer {...args} maximized={maximized} />
+      </>
+    )
+  },
+  args: { children: <Thread turns={1} /> },
+  play: async ({ canvas, canvasElement }) => {
+    const card = canvasElement.querySelector<HTMLElement>('[data-part="composer-card"]')!
+    const style = getComputedStyle(card)
+    await expect(style.transitionProperty.split(', ')).not.toEqual(expect.arrayContaining(['translate']))
+
+    await userEvent.click(canvas.getByText('toggle maximized'))
+    // No `translate` transition means no running animation on that property —
+    // the placement swap (and its implied translate jump) lands in one frame.
+    await expect(card.getAnimations().length).toBe(0)
   },
 }

@@ -25,7 +25,7 @@
  */
 
 import { useCallback, useLayoutEffect, useRef } from 'react'
-import type { ReactNode, RefObject } from 'react'
+import type { CSSProperties, ReactNode, RefObject } from 'react'
 import { ComposerHandle } from '@/components/molecules/ComposerHandle'
 import {
   COMPOSER_BOTTOM_INSET,
@@ -82,7 +82,10 @@ export interface TerminalDrawerProps {
 
 const PLACEMENT =
   'absolute left-1/2 z-30 w-[360px] max-w-full -translate-x-1/2 md:left-[calc(50%_+_113px)] md:w-[560px]'
-const CARD_PLACEMENT = cn(PLACEMENT, 'bottom-6')
+/** The card's own `bottom` comes from `--composer-card-bottom` (the style object
+ *  below), not a class, so a surface that wraps it (zen) can override the one
+ *  custom property rather than fighting a `bottom-6` utility with `!important`. */
+const CARD_PLACEMENT = PLACEMENT
 const TAB_PLACEMENT = cn(PLACEMENT, 'bottom-0')
 /** Maximized drops the centred placement for an absolute inset — position comes
  *  from style, not these classes. */
@@ -263,22 +266,28 @@ export const TerminalDrawer = ({
         // not just the hand-set tabIndex this used to need on each control.
         inert={collapsed || undefined}
         style={
-          maximized
-            ? {
-                top: COMPOSER_TOP_CLEARANCE,
-                bottom: COMPOSER_BOTTOM_INSET,
-                left: zen ? COMPOSER_MAXIMIZED_RIGHT_PX : COMPOSER_MAXIMIZED_LEFT_PX,
-                right: COMPOSER_MAXIMIZED_RIGHT_PX,
-              }
-            : showThread
-              ? { height: height ?? COMPOSER_DEFAULT_HEIGHT, maxHeight: COMPOSER_MAX_HEIGHT_CSS }
-              : undefined
+          {
+            // `bottom` always reads this var rather than a hard-coded inset, so
+            // a wrapping surface (zen) can move the card by overriding one
+            // custom property instead of out-fighting a utility class.
+            '--composer-card-bottom': `${COMPOSER_BOTTOM_INSET}px`,
+            bottom: 'var(--composer-card-bottom)',
+            ...(maximized
+              ? {
+                  top: COMPOSER_TOP_CLEARANCE,
+                  left: zen ? COMPOSER_MAXIMIZED_RIGHT_PX : COMPOSER_MAXIMIZED_LEFT_PX,
+                  right: COMPOSER_MAXIMIZED_RIGHT_PX,
+                }
+              : showThread
+                ? { height: height ?? COMPOSER_DEFAULT_HEIGHT, maxHeight: COMPOSER_MAX_HEIGHT_CSS }
+                : {}),
+          } as unknown as CSSProperties
         }
         className={cn(
           maximized ? MAXIMIZED_PLACEMENT : CARD_PLACEMENT,
           'motion-resolve group/composer mn-glass box-border flex flex-col gap-[14px] rounded-mn-card p-[14px] font-mono text-mn-text',
           collapsed
-            ? 'pointer-events-none invisible translate-y-[calc(100%+24px)] opacity-0'
+            ? 'pointer-events-none invisible [transform:translateY(calc(100%+var(--composer-card-bottom)))] opacity-0'
             : 'pointer-events-auto visible'
         )}
       >
