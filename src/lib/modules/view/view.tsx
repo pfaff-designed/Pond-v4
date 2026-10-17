@@ -92,7 +92,7 @@ import { RecordPeek } from './record-peek'
 import { CollectionList } from './list'
 import { CollectionCalendar } from './collection-calendar'
 import { useRecordSelection } from './use-record-selection'
-import { shouldSelectRowFromClick } from './card-click'
+import { shouldSelectCardFromClick, shouldSelectRowFromClick } from './card-click'
 import { ViewBar, type ViewBarView } from '@/components/molecules/ViewBar'
 import { useBlockRow } from '../block-row-context'
 
@@ -1138,10 +1138,8 @@ function CollectionGallery({
 }) {
   const [now] = useState(() => new Date())
   const [hoveredId, setHoveredId] = useState<string | null>(null)
-  const { selectedRow, select, rowProps, keyboardProps, selectOrOpenOnKey } = useRecordSelection(
-    rows,
-    viewKey
-  )
+  const { selectedRow, select, selectWithPointer, rowProps, keyboardProps, selectOrOpenOnKey } =
+    useRecordSelection(rows, viewKey)
   const done = useDoneToggle({ schema, editable, onEdit })
   // Guards handleAddRecord against a second click while its write is in flight
   // (AUDIT G9), same shape as CollectionBoard's handleAddCard.
@@ -1162,8 +1160,22 @@ function CollectionGallery({
   // ↵ on the card's own tab stop (not an inner control's) selects it; ↵ again on the
   // already-selected card opens its page — `useRecordSelection`'s own
   // `selectOrOpenOnKey`, shared with `CollectionTable`'s row and the calendar.
-  function handleCardKeyDown(rowId: string, e: React.KeyboardEvent<HTMLDivElement>) {
+  function handleCardKeyDown(rowId: string, e: React.KeyboardEvent<HTMLElement>) {
     selectOrOpenOnKey(rowId, e, onOpenRow)
+  }
+
+  // A card's own click must never bubble to the block row underneath it: that
+  // row's `handleClick` (BlockCanvas) focuses ITSELF on any click that isn't an
+  // inner control's, which would steal focus off the card and make the block's
+  // own ↵ fire instead of the card's — the calendar's own row click
+  // (`handleCalendarRowClick`) stops propagation for the same reason. A real
+  // browser moves focus to a clicked `tabIndex=0` element on its own; jsdom does
+  // not, so the explicit `.focus()` also keeps this testable with `userEvent.click`.
+  function handleCardClick(rowId: string, e: React.MouseEvent<HTMLElement>) {
+    e.stopPropagation()
+    if (!shouldSelectCardFromClick(e.target)) return
+    selectWithPointer(rowId)
+    e.currentTarget.focus()
   }
 
   return (
@@ -1174,11 +1186,13 @@ function CollectionGallery({
           const selected = row.id === selectedRow?.id
           const state = selected ? 'selected' : hoveredId === row.id ? 'hover' : 'rest'
           return (
-            <div
+            <article
               key={row.id}
+              aria-label={row.title || 'untitled'}
               className="w-[170px] rounded-[20px] outline-[1.5px] outline-offset-1 outline-mn-text/50 outline-none focus-visible:outline-solid"
               {...rowProps(row.id)}
               {...keyboardProps(row.id)}
+              onClick={(e) => handleCardClick(row.id, e)}
               onKeyDown={(e) => handleCardKeyDown(row.id, e)}
               onMouseEnter={() => setHoveredId(row.id)}
               onMouseLeave={() => setHoveredId((h) => (h === row.id ? null : h))}
@@ -1190,7 +1204,7 @@ function CollectionGallery({
                 meta={galleryCardMeta(schema, row) || '—'}
                 tag={galleryCardTag(schema, row)}
               />
-            </div>
+            </article>
           )
         })}
 
