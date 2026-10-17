@@ -118,6 +118,82 @@ export const PALETTE_FOOT_MOBILE: readonly string[] = ['↵ open', '> actions on
 /** How many close spellings `did you mean` offers. */
 const DID_YOU_MEAN_MAX = 3
 
+const EXACT_SCORE = 100
+const PREFIX_SCORE = 80
+const WORD_START_SCORE = 60
+const SUBSTRING_SCORE = 40
+const SUBSEQUENCE_SCORE = 20
+/** The full boost a visit at the newest position of `visits` adds; older positions scale down from it. */
+const VISIT_BOOST = 15
+
+/** Case- and mark-insensitive, so `cafe` matches `Café` (KAN-390). */
+function fold(s: string): string {
+  return s
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+}
+
+function isSubsequence(label: string, q: string): boolean {
+  let i = 0
+  for (const ch of label) {
+    if (ch === q[i]) i++
+    if (i === q.length) return true
+  }
+  return q.length === 0
+}
+
+function matchTier(foldedLabel: string, foldedQuery: string): number {
+  if (!foldedQuery) return 0
+  if (foldedLabel === foldedQuery) return EXACT_SCORE
+  if (foldedLabel.startsWith(foldedQuery)) return PREFIX_SCORE
+  const isWordStart = foldedLabel
+    .split(/[^a-z0-9]+/)
+    .some((word) => word && word !== foldedLabel && word.startsWith(foldedQuery))
+  if (isWordStart) return WORD_START_SCORE
+  if (foldedLabel.includes(foldedQuery)) return SUBSTRING_SCORE
+  if (isSubsequence(foldedLabel, foldedQuery)) return SUBSEQUENCE_SCORE
+  return 0
+}
+
+/**
+ * `visits` is newest first (`readRecentPageIds`'s shape): a hit at index 0
+ * gets the full boost, one at the last index barely more than none, scaled by
+ * `visits.length` so the curve holds whether the list is 3 or 20 long.
+ */
+function visitBoost(id: string, visits: readonly string[]): number {
+  if (!visits.length) return 0
+  const index = visits.indexOf(id)
+  return index === -1 ? 0 : VISIT_BOOST * (1 - index / visits.length)
+}
+
+/**
+ * Ranks `items` for `q` — exact beats a prefix, a prefix beats a word
+ * boundary, a contiguous substring beats a scattered subsequence; a label
+ * that doesn't even scatter-match scores 0 and is dropped, so the caller
+ * never has to filter twice. A visit boost and a depth tiebreak (shallower
+ * pages first) break ties within a tier; a full tie keeps `items`' own order
+ * (the `index` carried through `sort`, since engine stability isn't a given
+ * across the scores Node and the browser might produce here).
+ */
+export function rankPages(
+  items: readonly PaletteItem[],
+  q: string,
+  visits: readonly string[] = []
+): PaletteItem[] {
+  const foldedQuery = fold(q)
+  return items
+    .map((item, index) => ({ item, index, tier: matchTier(fold(item.label), foldedQuery) }))
+    .filter(({ tier }) => tier > 0)
+    .map(({ item, index, tier }) => ({
+      item,
+      index,
+      score: tier + visitBoost(item.id, visits) - (item.path?.length ?? 0),
+    }))
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .map(({ item }) => item)
+}
+
 export function paletteEntries(
   items: readonly PaletteItem[],
   query: string,
