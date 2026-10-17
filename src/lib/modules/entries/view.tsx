@@ -5,6 +5,7 @@ import type { KeyboardEvent, MutableRefObject } from 'react'
 import type { ModuleViewProps } from '../types'
 import { ENTRIES_EMPTY_LINE, type Entry, type EntriesBlock } from './schema'
 import { SESSION_UNDO_SCOPE_ATTR } from '@/lib/shell-commands'
+import { useBlockRow } from '@/lib/modules/block-row-context'
 
 /**
  * The block's own placeholder wins over the board's generic empty line. "Write
@@ -272,6 +273,11 @@ export function EntriesView({ data, editable, onChange }: ModuleViewProps<Entrie
   const [hoveredId, setHoveredId] = useState<string | null>(null)
   const [addValue, setAddValue] = useState('')
   const textRefs = useRef<Map<string, HTMLTextAreaElement>>(new Map())
+  const { commitStep } = useBlockRow()
+  // No `BlockRowProvider` above this view (page/view.tsx, a Storybook host) —
+  // there is no save to flush twice, so removal falls back to the view's own
+  // `onChange` rather than the context's absent default.
+  const commit = (patch: EntriesBlock) => (commitStep ?? onChange)?.(patch)
 
   // Runs after an insert's `onChange` round-trips back through the host — the new
   // entry's textarea doesn't exist in the DOM until then, so the focus can't happen
@@ -307,7 +313,7 @@ export function EntriesView({ data, editable, onChange }: ModuleViewProps<Entrie
   }
 
   function removeEntry(index: number) {
-    onChange?.({ ...data, entries: data.entries.filter((_, k) => k !== index) })
+    commit({ ...data, entries: data.entries.filter((_, k) => k !== index) })
   }
 
   function handleAddKeyDown(e: KeyboardEvent<HTMLInputElement>) {
