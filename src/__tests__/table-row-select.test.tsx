@@ -168,4 +168,26 @@ describe('table — a row opens its record in the peek', () => {
     await userEvent.click(cellOf('First'))
     expect(screen.getByLabelText('Record: First')).toBeInTheDocument()
   })
+
+  it('walks the person’s path: click selects, click swaps, ↵ opens the page, Esc clears', async () => {
+    const onOpenRow = jest.fn()
+    renderTable(jest.fn(), onOpenRow)
+
+    await userEvent.click(cellOf('First'))
+    expect(screen.getByLabelText('Record: First')).toBeInTheDocument()
+    expect(peek()?.className).toContain('bg-mn-card')
+
+    await userEvent.click(cellOf('Second'))
+    expect(screen.queryByLabelText('Record: First')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Record: Second')).toBeInTheDocument()
+
+    await userEvent.keyboard('{Enter}')
+    expect(onOpenRow).toHaveBeenCalledWith('b')
+
+    await userEvent.click(cellOf('First'))
+    expect(peek()).not.toBeNull()
+    await userEvent.keyboard('{Escape}')
+    expect(peek()).toBeNull()
+    expect(rowOf('First')).toHaveFocus()
+  })
 })
