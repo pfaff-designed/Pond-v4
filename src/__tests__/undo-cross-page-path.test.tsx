@@ -23,7 +23,7 @@ import { ShellCommands } from '@/components/organisms/ShellCommands'
 import { ChangeLogPage } from '@/components/organisms/ChangeLogPage'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { sessionUndo } from '@/lib/change-log/session-undo'
-import { workspaceUrl } from '@/lib/pages/nav'
+import { workspaceUrl, WORKSPACE_PATH } from '@/lib/pages/nav'
 import type { Block } from '@/lib/documents/types'
 import type { ChangeLogRecord } from '@/lib/change-log/types'
 import { findTextBlock, writeInTextBlock } from './helpers/text-block'
@@ -103,7 +103,11 @@ function makeRecord(
 
 // ── next/navigation: a small reactive mock so a push from inside `ShellCommands`
 // (the undo step opening page A) and a push driven directly by the test (the
-// "open B from the rail" step) both move the same `nodeId` every reader sees. ─
+// "open B from the rail" step) both move the same `nodeId` every reader sees.
+// Since KAN-449, on `/workspace` the undo step's own open goes through
+// `openWorkspaceUrl` → `window.history.pushState`, not `router.push` — so the
+// `pushState` spy (set up in `beforeEach`, below) feeds the same `mockNavigate`
+// `push` does, and `push`/`replace` stay as the never-called proof. ─────────
 
 const push = jest.fn((url: string) => mockNavigate(url))
 const replace = jest.fn()
@@ -355,12 +359,17 @@ function renderPath() {
   return queryClient
 }
 
+let pushState: jest.SpyInstance
+
 beforeEach(() => {
   jest.clearAllMocks()
   resetFakes()
   sessionUndo.clear()
   mockNodeId = mockPageA.id
   jest.spyOn(window.navigator, 'platform', 'get').mockReturnValue('MacIntel')
+  pushState = jest.spyOn(window.history, 'pushState').mockImplementation((_state, _title, url) => {
+    if (typeof url === 'string') mockNavigate(url)
+  })
 })
 
 afterEach(() => jest.restoreAllMocks())
@@ -451,12 +460,13 @@ describe('KAN-139 — ⌘Z steps back across pages (PATH_STEPS 1–4)', () => {
   })
 
   it('PATH_STEPS 7 & 9: page navigation only ever pushes (⌘[ is the browser\'s own back), and a reloaded session leaves ⌘Z a no-op', async () => {
+    // On `/workspace`, the undo step's own "open A" move goes through
+    // `openWorkspaceUrl` → the shallow `pushState` (KAN-449), not `router.push` —
+    // but it is still a push, onto the same history stack the browser's own
+    // back (⌘[ / Alt+Left) walks, and never a `replace`.
+    window.history.replaceState(null, '', WORKSPACE_PATH)
     renderPath()
 
-    // Step 7: both the test's own "open B" and the undo step's "open A" moves
-    // go through `router.push` — never `router.replace` — so the history stack
-    // the browser's own back (⌘[ / Alt+Left) walks already has every page on
-    // it; Pond needs no key handler for it.
     const field = await findTextBlock()
     writeInTextBlock(field, 'edited content')
     await waitFor(
@@ -467,7 +477,10 @@ describe('KAN-139 — ⌘Z steps back across pages (PATH_STEPS 1–4)', () => {
 
     act(() => mockNavigate(workspaceUrl({ id: mockPageB.id, type: 'page', title: mockPageB.title })))
     fireEvent.keyDown(document.body, { key: 'z', metaKey: true })
-    await waitFor(() => expect(push).toHaveBeenCalledWith(expect.stringContaining('nodeId=page-a')))
+    await waitFor(() =>
+      expect(pushState).toHaveBeenCalledWith(null, '', expect.stringContaining('nodeId=page-a'))
+    )
+    expect(push).not.toHaveBeenCalled()
     expect(replace).not.toHaveBeenCalled()
 
     // Step 9: a fresh session (simulated reload) has no undo stack to spend —
