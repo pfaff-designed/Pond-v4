@@ -2,10 +2,10 @@ import { useState } from 'react'
 import type { Decorator, Meta, StoryObj } from '@storybook/nextjs-vite'
 import { expect, userEvent, within } from 'storybook/test'
 
-import { EntriesView } from './view'
+import { EntriesView, addEntry } from './view'
 import { ENTRIES_EMPTY_LINE, type EntriesBlock } from './schema'
 import { PondBlock } from '@/components/organisms/PondBlock'
-import { blockFrame } from '@/lib/modules/block-frame'
+import { blockFrame, blockIsEmpty } from '@/lib/modules/block-frame'
 
 /**
  * The `entries` block (#250) — dated prose, serif only for the journal. The play
@@ -369,4 +369,77 @@ export const InLogCard: Story = {
     const body = row.parentElement!
     await expect(row.getBoundingClientRect().width).toBe(body.getBoundingClientRect().width)
   },
+}
+
+/**
+ * `InLogCard`, made editable and stateful: the empty state's `write one` is wired
+ * to `addEntry` (the same call `BlockCanvas.tsx:1796` makes), so the card starts
+ * truly empty and flips to `rest` the moment it has a row — the whole host a
+ * person sees, not `EntriesView` in isolation.
+ */
+function EditableLogHost({ data: initial }: { data: EntriesBlock }) {
+  const [data, setData] = useState(initial)
+  const frame = blockFrame(data)!
+  return (
+    <PondBlock
+      kind={frame.kind}
+      heading={frame.heading}
+      headNote={frame.headNote}
+      state={blockIsEmpty(data) ? 'empty' : 'rest'}
+      onEmptyAction={() => setData(addEntry(data))}
+    >
+      <EntriesView data={data} editable onChange={setData} />
+    </PondBlock>
+  )
+}
+
+/**
+ * KAN-356's path test (`PATH_STEPS`): write one → type "first" → add "second" via
+ * the add line → hover + remove "first" → only "second" remains. ⌘Z is NOT
+ * exercised here — add/remove ride the ordinary `onChange` → debounced
+ * `commitBlocks({ ownEdit: true })` path (`use-page-draft.ts`), which already logs
+ * a change-log record and calls `sessionUndo.remember` for every ordinary edit
+ * (the same path `patchEntry`'s typing already rides), identical in effect to
+ * `persistBlocksAsOwnEdit`'s immediate variant used for template-apply/drag-drop
+ * in `BlockCanvas.tsx`. The live verifier confirms ⌘Z in the real browser.
+ */
+async function walkPath(canvasElement: HTMLElement) {
+  const canvas = within(canvasElement)
+  await userEvent.click(canvas.getByRole('button', { name: 'write one' }))
+
+  const firstText = canvas.getByRole('textbox', { name: 'Entry text' })
+  await userEvent.type(firstText, 'first')
+  await expect(firstText).toHaveValue('first')
+
+  const addLine = canvas.getByRole('textbox', { name: 'Add entry' })
+  await userEvent.type(addLine, 'second{Enter}')
+  await expect(addLine).toHaveValue('')
+
+  const texts = canvas.getAllByRole('textbox', { name: 'Entry text' })
+  await expect(texts).toHaveLength(2)
+  await expect(texts[0]).toHaveValue('second') // newest first
+  await expect(texts[1]).toHaveValue('first')
+
+  const firstRow = texts[1].parentElement!
+  await userEvent.hover(firstRow)
+  await userEvent.click(within(firstRow).getByRole('button', { name: 'Remove entry' }))
+
+  const remaining = canvas.getAllByRole('textbox', { name: 'Entry text' })
+  await expect(remaining).toHaveLength(1)
+  await expect(remaining[0]).toHaveValue('second')
+}
+
+const emptyLog: EntriesBlock = { id: 'e3', type: 'entries', entries: [] }
+
+export const EditablePath: Story = {
+  args: { data: emptyLog },
+  render: (args) => <EditableLogHost data={args.data} />,
+  play: async ({ canvasElement }) => walkPath(canvasElement),
+}
+
+export const EditablePathDark: Story = {
+  args: { data: emptyLog },
+  decorators: [inkTheme],
+  render: (args) => <EditableLogHost data={args.data} />,
+  play: async ({ canvasElement }) => walkPath(canvasElement),
 }
