@@ -104,14 +104,20 @@ export function ViewKindPicker({
       ?.scrollIntoView({ block: 'nearest' })
   }, [active])
 
-  // A press outside the glass closes it, same as `SourcePicker.tsx`.
+  // A press outside the glass closes it, same as `SourcePicker.tsx` — except
+  // a press on the anchor itself, which isn't "outside": it's the button
+  // that opened this glass, and its own click handler (not this listener)
+  // owns toggling it shut.
   useEffect(() => {
     function onPointerDown(e: PointerEvent) {
-      if (glassRef.current && !glassRef.current.contains(e.target as Node)) onClose()
+      if (glassRef.current?.contains(e.target as Node)) return
+      const anchorEl = anchor && 'current' in anchor ? anchor.current : anchor
+      if (anchorEl instanceof Node && anchorEl.contains(e.target as Node)) return
+      onClose()
     }
     document.addEventListener('pointerdown', onPointerDown, true)
     return () => document.removeEventListener('pointerdown', onPointerDown, true)
-  }, [onClose])
+  }, [anchor, onClose])
 
   const style = useAnchoredBox(anchor, side, CHROME.widthPx)
 

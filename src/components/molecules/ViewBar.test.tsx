@@ -119,6 +119,17 @@ describe('ViewBar', () => {
     expect(onSelect).toHaveBeenCalledWith('v-timeline')
   })
 
+  it('clicking "＋ view" again while open closes it (the anchor press is not "outside")', async () => {
+    const user = userEvent.setup()
+    render(<Harness showAddView />)
+    const addView = screen.getByRole('button', { name: 'add a view' })
+    await user.click(addView)
+    expect(screen.getAllByRole('option')).toHaveLength(3)
+    await user.click(addView)
+    expect(screen.queryAllByRole('option')).toHaveLength(0)
+    expect(addView).toHaveFocus()
+  })
+
   it('picking a row calls onAddView with that mode and closes the picker', async () => {
     const user = userEvent.setup()
     const onAddView = jest.fn()
