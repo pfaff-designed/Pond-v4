@@ -117,6 +117,18 @@ const slashLineUnder = (editor: Editor): SlashLineAt | null => {
   return { line, element: element instanceof Element ? element : null }
 }
 
+/** The clearance ProseMirror's own scroll-follow reads live, shared by `scrollMargin` and `scrollThreshold`. */
+const COMPOSER_CLEARANCE_SIDES = {
+  get top() {
+    return COMPOSER_TOP_CLEARANCE
+  },
+  get bottom() {
+    return composerClearanceMarginPx()
+  },
+  left: 0,
+  right: 0,
+}
+
 const editorProps = {
   attributes: {
     class: TEXT_PROSE_CLASS,
@@ -129,25 +141,14 @@ const editorProps = {
   // The one markdown-paste path, text/plain-only or html-wrapper-only; see its
   // own comment for why `clipboardTextParser` can't own this instead.
   handlePaste: markdownHandlePaste,
-  // `@tiptap/core` spreads `editorProps` into the `EditorView` once, at
-  // mount (and again on `setOptions`), which bakes a `get scrollMargin()`
-  // defined here into a fixed value — ProseMirror's own `scrollRectIntoView`
-  // would then read the composer's footprint as it was at that one moment,
-  // not as it is when a later `tr.scrollIntoView()` actually runs. The
-  // spread only copies the *reference* to `scrollMargin`'s object, though, so
-  // giving that object itself live getters keeps `getSide`'s `value.bottom`
-  // read (on every scroll) current with the composer's published footprint
-  // (KAN-400).
-  scrollMargin: {
-    get top() {
-      return COMPOSER_TOP_CLEARANCE
-    },
-    get bottom() {
-      return composerClearanceMarginPx()
-    },
-    left: 0,
-    right: 0,
-  },
+  // The spread of `editorProps` into the `EditorView` copies only the
+  // *reference* to this object, so its getters stay live across every later
+  // `tr.scrollIntoView()`. `scrollThreshold` must match `scrollMargin`
+  // exactly: `<main>` runs the full column height under the floating card,
+  // so the rect ProseMirror won't scroll past is the same composer footprint
+  // the margin scrolls up to (KAN-400).
+  scrollMargin: COMPOSER_CLEARANCE_SIDES,
+  scrollThreshold: COMPOSER_CLEARANCE_SIDES,
 }
 
 /**

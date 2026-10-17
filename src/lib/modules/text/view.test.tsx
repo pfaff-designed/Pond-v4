@@ -359,6 +359,19 @@ describe('TextView — the text block edits in place as rendered prose', () => {
 
       expect(view.someProp('scrollMargin')).toEqual({ top: 72, bottom: 440, left: 0, right: 0 })
     })
+
+    it('gives scrollThreshold the same live clearance, so the caret never clears the margin without also clearing the rect it scrolls within', async () => {
+      shell = document.createElement('div')
+      shell.setAttribute('data-part', 'shell')
+      shell.style.setProperty(COMPOSER_CLEARANCE_VAR, '125px')
+      document.body.appendChild(shell)
+      render(<TextEditor data={sample} standIn={null} pressRef={{ current: null }} />)
+      const { view } = editorOf(await findField())
+
+      shell.style.setProperty(COMPOSER_CLEARANCE_VAR, '416px')
+
+      expect(view.someProp('scrollThreshold')).toEqual({ top: 72, bottom: 440, left: 0, right: 0 })
+    })
   })
 
   it('the stand-in records where it was pressed', () => {
