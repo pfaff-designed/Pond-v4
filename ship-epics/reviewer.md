@@ -48,6 +48,7 @@ Read the ticket (`JIRA.get TICKET`, as `harness.md` defines it) and the board fi
 - **Reachability.** Trace `PATH_STEPS` through the code, step by step, from a route under `src/app/**` through rendered components to the new code. Name the file at each hop. A step that only a story, a test or an unrendered component reaches is a **blocking** finding: the feature cannot be used.
 - Out-of-scope work, and work that belongs to a sibling ticket.
 - Anything only the browser can prove: say so, so the verifier checks it.
+- If `SPEC.md` has a `## Research` section, the built behaviour matches the behaviour it chose. A divergence is a finding.
 
 ## Return
 

@@ -66,6 +66,12 @@ The gates and the CI wait are the only steps that outlast a 600000ms call, and n
 
 `gh pr checks --watch` resumes cleanly if a poll ends mid-flight; `gates.sh` does not, which is why it runs under `BG` once rather than in restarted chunks.
 
+## Research
+
+| Name       | Call                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `RESEARCH` | Design references for orchestrator.md step 2b. **Mobbin:** the `mcp__mobbin__search_screens`, `search_flows` and `search_sections` tools (load them first if your harness defers tools). **Refero:** the `mcp__refero__*` tools when loaded, otherwise `bash REPO/ship-epics/refero.sh <tool> '<json>'`, e.g. `refero_search_screens '{"query":"kanban empty state","platform":"web"}'`, `refero_search_flows`, `refero_get_screen '{"ids":["…"]}'`. Cite every reference by app and link or id. |
+
 ## The one gate
 
 | Name           | Call                                                                                                                                                            |
