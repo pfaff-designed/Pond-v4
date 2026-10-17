@@ -17,7 +17,8 @@ import { useMemo, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { PondAtom } from '@/components/atoms/PondAtom'
 import { PondBlockEmpty } from '@/components/organisms/PondBlock'
-import type { PropertySchema } from '@/lib/properties/schema'
+import type { PropertySchema, PropertyValue } from '@/lib/properties/schema'
+import { AddRowInput } from './add-row-input'
 import {
   buildMonthGrid,
   dayItems,
@@ -76,7 +77,9 @@ function MonthDayStack({ items, moreCount }: { items: MonthDayCell['items']; mor
   return (
     <div className="flex flex-col gap-px px-1 pt-0.5 pb-2">
       {items.map((row) => (
-        <div key={row.id} className={DAY_ITEM_ROW}>
+        // A row is its own target (its own click behaviour, unbuilt here) — it must
+        // never fall through to the cell's "open the add input" click underneath it.
+        <div key={row.id} className={DAY_ITEM_ROW} onClick={(e) => e.stopPropagation()}>
           <span className={DAY_ITEM_DOT} />
           <span className={DAY_ITEM_TITLE}>{row.title}</span>
         </div>
@@ -86,9 +89,41 @@ function MonthDayStack({ items, moreCount }: { items: MonthDayCell['items']; mor
   )
 }
 
-function MonthDayCellView({ cell, columnIndex }: { cell: MonthDayCell; columnIndex: number }) {
+function MonthDayCellView({
+  cell,
+  columnIndex,
+  canAdd,
+  isAdding,
+  onOpenAdd,
+  onCommitAdd,
+  onCancelAdd,
+}: {
+  cell: MonthDayCell
+  columnIndex: number
+  canAdd: boolean
+  isAdding: boolean
+  onOpenAdd: () => void
+  onCommitAdd: (title: string) => void
+  onCancelAdd: () => void
+}) {
+  const openable = canAdd && !isAdding
   return (
     <div
+      data-part="calendar-day-cell"
+      data-iso={cell.iso}
+      role={openable ? 'button' : undefined}
+      tabIndex={openable ? 0 : undefined}
+      aria-label={openable ? `Add on ${cell.dayOfMonth} ${monthAbbr(cell.iso)}` : undefined}
+      onClick={openable ? onOpenAdd : undefined}
+      onKeyDown={
+        openable
+          ? (e) => {
+              if (e.key !== 'Enter' && e.key !== ' ') return
+              e.preventDefault()
+              onOpenAdd()
+            }
+          : undefined
+      }
       className={cn(
         'min-h-[108px] p-1.5',
         columnIndex !== 0 && 'border-l border-mn-text/[0.09] dark:border-mn-text/[0.14]',
@@ -97,6 +132,17 @@ function MonthDayCellView({ cell, columnIndex }: { cell: MonthDayCell; columnInd
     >
       <MonthDayNumber day={cell.dayOfMonth} isToday={cell.isToday} inMonth={cell.inMonth} />
       <MonthDayStack items={cell.items} moreCount={cell.moreCount} />
+      {isAdding && (
+        <AddRowInput
+          aria-label={`Add an item on ${cell.dayOfMonth} ${monthAbbr(cell.iso)}`}
+          placeholder="Untitled"
+          autoFocus
+          staysOpen={false}
+          onCommit={onCommitAdd}
+          onCancel={onCancelAdd}
+          className="w-full border-0 bg-transparent px-1 py-0.5 text-[11.5px] text-mn-text outline-none placeholder:text-mn-text-secondary"
+        />
+      )}
     </div>
   )
 }
@@ -219,11 +265,17 @@ export function CollectionCalendar({
   schema,
   rows,
   groupBy,
+  editable,
+  onAddRow,
+  onRenameRow,
   onAddDateField,
 }: {
   schema: PropertySchema
   rows: CollectionRow[]
   groupBy?: string
+  editable?: boolean
+  onAddRow?: (values?: Record<string, PropertyValue>) => Promise<string | null>
+  onRenameRow?: (rowId: string, title: string) => void
   onAddDateField?: () => void
 }) {
   const dateDef = useMemo(() => pickDateDef(schema, groupBy), [schema, groupBy])
@@ -231,10 +283,26 @@ export function CollectionCalendar({
   // the local calendar date, matching `due.ts`'s `dueAtom`, not UTC's.
   const [todayIso] = useState(() => localDateIso(new Date()))
   const [focusIso, setFocusIso] = useState(todayIso)
+  const [addingIso, setAddingIso] = useState<string | null>(null)
   const grid = useMemo(
     () => buildMonthGrid(focusIso, todayIso, rows, dateDef),
     [dateDef, focusIso, todayIso, rows]
   )
+
+  const canAdd = !!dateDef && !!editable && !!onAddRow
+
+  // The date rides in `addRow`'s own values rather than a follow-up `setValue` —
+  // one write, same one-change-log-record pause as `CollectionList`'s add
+  // (session undo for row adds is KAN-419).
+  const handleAddDay = async (iso: string, title: string) => {
+    if (!dateDef) return
+    try {
+      const id = await onAddRow?.({ [dateDef.id]: iso })
+      if (id) onRenameRow?.(id, title)
+    } catch (err) {
+      console.error('Failed to add a day', err)
+    }
+  }
 
   const focusIsToday = focusIso === todayIso
   const focusDayOfMonth = Number(focusIso.slice(8, 10))
@@ -310,7 +378,16 @@ export function CollectionCalendar({
         {grid.weeks.map((week, w) => (
           <div key={w} className="grid grid-cols-7 border-t border-mn-text/[0.09] dark:border-mn-text/[0.14]">
             {week.days.map((cell, i) => (
-              <MonthDayCellView key={cell.iso} cell={cell} columnIndex={i} />
+              <MonthDayCellView
+                key={cell.iso}
+                cell={cell}
+                columnIndex={i}
+                canAdd={canAdd}
+                isAdding={addingIso === cell.iso}
+                onOpenAdd={() => setAddingIso(cell.iso)}
+                onCommitAdd={(title) => void handleAddDay(cell.iso, title)}
+                onCancelAdd={() => setAddingIso(null)}
+              />
             ))}
           </div>
         ))}

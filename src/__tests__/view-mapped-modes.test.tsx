@@ -364,16 +364,16 @@ describe('CollectionGantt — PondTemplate.dc.html’s gHead / gRow / gTrack / b
 })
 
 describe('BlockCanvas — a gantt’s empty state is the board’s voidBox, not the table kind’s box', () => {
-  it('over an empty collection: the void box with the gantt line, alone', () => {
+  it('over an empty collection: the frame steps aside (rest, KAN-352) so the view draws its own void box, gantt line, and "add a task"', () => {
     renderCanvas([gantt])
     const c = cardOf('v-gantt')
     expect(c.dataset.blockKind).toBe('table')
-    expect(c.dataset.blockState).toBe('empty')
+    expect(c.dataset.blockState).toBe('rest')
     const box = c.querySelector<HTMLElement>('[data-part="empty"]')!
     expect(box.dataset.emptyBox).toBe('void')
     expect(box.textContent).toBe(GANTT_EMPTY_LINE)
     expect(c.textContent).not.toContain('no rows yet')
-    expect(c.querySelector('button')).toBeNull()
+    expect(c.querySelector('button')).toHaveTextContent('add a task')
   })
 
   it('whose filter hides every row: the filter line, in the void box', () => {

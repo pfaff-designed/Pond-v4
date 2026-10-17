@@ -21,6 +21,7 @@ import { useMemo, useState } from 'react'
 import { PondBlockEmpty } from '@/components/organisms/PondBlock'
 import { type PropertySchema, type PropertyValue } from '@/lib/properties/schema'
 import { useOrangeToday } from '../page-canvas'
+import { AddRowInput } from './add-row-input'
 import { displayValue, pickRepeatDef, type CollectionRow } from './apply'
 import { RepeatMark } from './cells'
 import { dueOfRow, firstOrangeToday } from './due'
@@ -41,6 +42,7 @@ export function CollectionList({
   groupBy,
   editable,
   onEdit,
+  onAddRow,
   onRenameRow,
   onOpenRow,
   onAddDateField,
@@ -53,6 +55,7 @@ export function CollectionList({
   groupBy?: string
   editable?: boolean
   onEdit?: (rowId: string, key: string, value: PropertyValue) => void
+  onAddRow?: (values?: Record<string, PropertyValue>) => Promise<string | null>
   onRenameRow?: (rowId: string, title: string) => void
   onOpenRow?: (rowId: string) => void
   /** KAN-292: mint a `date` field onto this collection's schema, offered when it
@@ -62,6 +65,7 @@ export function CollectionList({
   today?: Date
 }) {
   const [now] = useState(() => today ?? new Date())
+  const [addingRow, setAddingRow] = useState(false)
   const grouped = useMemo(
     () => groupRowsByDue(rows, schema, now, groupBy),
     [rows, schema, now, groupBy]
@@ -92,6 +96,19 @@ export function CollectionList({
   const { buckets } = grouped
   const repeatDef = pickRepeatDef(schema)
 
+  // ↵ with a title mints one record (addRow, then onRenameRow) in a single
+  // pause — one change-log record, same as every other mode's add (session
+  // undo for row adds is KAN-419). Closing the input afterward is
+  // `AddRowInput`'s own job (its `staysOpen` branch), not ours.
+  const handleAddItem = async (title: string) => {
+    try {
+      const id = await onAddRow?.()
+      if (id) onRenameRow?.(id, title)
+    } catch (err) {
+      console.error('Failed to add an item', err)
+    }
+  }
+
   return (
     <div ref={rootRef}>
       <div
@@ -102,7 +119,7 @@ export function CollectionList({
           'dark:shadow-[0_1px_2px_rgba(0,0,0,.3),0_8px_24px_rgba(0,0,0,.36)]',
         ].join(' ')}
       >
-        {buckets.length === 0 && (
+        {buckets.length === 0 && !(editable && onAddRow) && (
           <span className="text-[14px] text-mn-text-secondary">{LIST_EMPTY_LINE}</span>
         )}
         {buckets.map((bucket) => (
@@ -177,6 +194,35 @@ export function CollectionList({
             </ul>
           </section>
         ))}
+        {editable &&
+          onAddRow &&
+          (addingRow ? (
+            <AddRowInput
+              key="list-add-row-input"
+              aria-label="Add an item"
+              placeholder="Untitled"
+              autoFocus
+              staysOpen
+              onCommit={(title) => void handleAddItem(title)}
+              onCancel={() => setAddingRow(false)}
+              className={
+                buckets.length === 0
+                  ? 'w-full border-0 bg-transparent p-0 text-[14px] text-mn-text outline-none placeholder:text-mn-text-secondary'
+                  : '-mx-[6px] w-full border-0 bg-transparent px-[6px] py-[8px] text-[14px] text-mn-text outline-none placeholder:text-mn-text-secondary'
+              }
+            />
+          ) : buckets.length === 0 ? (
+            <PondBlockEmpty kind="list" onAction={() => setAddingRow(true)} />
+          ) : (
+            <button
+              type="button"
+              data-part="list-add"
+              onClick={() => setAddingRow(true)}
+              className="-mx-[6px] rounded-[8px] px-[6px] py-[8px] text-left text-[14px] text-mn-text-secondary transition-colors hover:bg-mn-text/[0.04] hover:text-mn-text motion-reduce:transition-none"
+            >
+              add an item
+            </button>
+          ))}
       </div>
 
       {selectedRow && (

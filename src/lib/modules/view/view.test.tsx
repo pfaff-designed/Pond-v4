@@ -6,7 +6,7 @@
  * `useDeletionUndo`'s `stageUndo`, gated on `editable`, and threads the SAME
  * handler into all three.
  */
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -16,7 +16,8 @@ import { ViewView } from './view'
 import { ActiveViewSelectionContext } from './active-view-context'
 import type { ViewBlock } from './schema'
 import type { PropertySchema } from '@/lib/properties/schema'
-import type { CollectionRow } from './apply'
+import { addDays, type CollectionRow } from './apply'
+import { localDateIso } from './due'
 import { rememberStruckRow } from '@/lib/change-log/undo-strike'
 import { clearUndoNotice, requestUndoNotice } from '@/lib/terminal-focus'
 import type { ChangeLogRecord } from '@/lib/change-log/types'
@@ -47,6 +48,12 @@ jest.mock('./use-collection-rows', () => ({
       const id = `r-new-${rows.length}`
       setRows((prev) => [...prev, { id, title: '', values: values ?? {} }])
       return id
+    })
+    // Mirrors the real hook closely enough that a committed add renders its typed
+    // text, not just a recorded call (KAN-352's path tests): patches the matching
+    // row in the same local `rows` state `addRow` above already updates.
+    renameRow.mockImplementation((rowId: string, title: string) => {
+      setRows((prev) => prev.map((row) => (row.id === rowId ? { ...row, title } : row)))
     })
     return {
       schema,
@@ -328,6 +335,232 @@ describe('CollectionBoard — the card-title input commits once, not per keystro
     expect(addRow).toHaveBeenCalledWith({ 'p-status': 'opt-todo' })
     const inputs = await screen.findAllByRole('textbox', { name: 'Card title' })
     expect(inputs).toHaveLength(2)
+  })
+})
+
+describe('CollectionGantt — the "add a task" foot row (KAN-352)', () => {
+  const ganttSchema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    { id: 'p-start', name: 'Start', type: 'date' },
+    { id: 'p-due', name: 'Due', type: 'date' },
+  ]
+
+  beforeEach(() => {
+    initialSchema = ganttSchema
+    initialRows = [
+      { id: 'r1', title: 'existing', values: { 'p-start': '2026-10-10', 'p-due': '2026-10-12' } },
+    ]
+  })
+
+  it('↵ with text adds a task dated today–tomorrow, renames it, and stays open', async () => {
+    const user = userEvent.setup()
+    renderView(gantt)
+
+    await user.click(screen.getByRole('button', { name: 'add a task' }))
+    const input = screen.getByRole('textbox', { name: 'Add a task' })
+    await user.type(input, 'plan')
+    await user.keyboard('{Enter}')
+
+    const todayIso = localDateIso(new Date())
+    expect(addRow).toHaveBeenCalledWith({
+      'p-start': todayIso,
+      'p-due': addDays(todayIso, 1),
+    })
+    expect(renameRow).toHaveBeenCalledWith('r-new-1', 'plan')
+    expect(screen.getByRole('textbox', { name: 'Add a task' })).toBeInTheDocument()
+  })
+
+  it('read-only (editable=false) draws no "add a task" row', () => {
+    renderView(gantt, false)
+    expect(screen.queryByRole('button', { name: 'add a task' })).not.toBeInTheDocument()
+  })
+})
+
+describe('ViewView — the path test: list, through the real host (KAN-352)', () => {
+  const listSchema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    { id: 'p-due', name: 'Due', type: 'date' },
+  ]
+
+  beforeEach(() => {
+    initialSchema = listSchema
+    initialRows = []
+  })
+
+  it('a zero-row editable list adds two items through the empty state and the foot row', async () => {
+    const user = userEvent.setup()
+    renderView(list)
+
+    await user.click(screen.getByRole('button', { name: 'add an item' }))
+    await user.type(screen.getByRole('textbox', { name: 'Add an item' }), 'milk')
+    await user.keyboard('{Enter}')
+
+    expect(screen.getByText('milk')).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Add an item' })).toBeInTheDocument()
+
+    await user.type(screen.getByRole('textbox', { name: 'Add an item' }), 'eggs')
+    await user.keyboard('{Enter}')
+
+    expect(screen.getByText('milk')).toBeInTheDocument()
+    expect(screen.getByText('eggs')).toBeInTheDocument()
+  })
+
+  it('a non-editable render shows no "add an item" anywhere', () => {
+    renderView(list, false)
+    expect(screen.queryByRole('button', { name: 'add an item' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: 'Add an item' })).not.toBeInTheDocument()
+  })
+})
+
+describe('ViewView — the path test: calendar, through the real host (KAN-352)', () => {
+  const calendarSchema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    { id: 'p-due', name: 'Due', type: 'date' },
+  ]
+
+  beforeEach(() => {
+    initialSchema = calendarSchema
+    initialRows = []
+  })
+
+  function cellFor(container: HTMLElement, iso: string) {
+    return container.querySelector<HTMLElement>(`[data-part="calendar-day-cell"][data-iso="${iso}"]`)!
+  }
+
+  const twentiethIso = `${localDateIso(new Date()).slice(0, 8)}20`
+
+  it('clicking the 20th’s blank cell, typing and ↵ shows dentist on the 20th; another day then Esc writes nothing', async () => {
+    const user = userEvent.setup()
+    const { container } = renderView(calendar)
+
+    await user.click(cellFor(container, twentiethIso))
+    await user.type(screen.getByRole('textbox', { name: /Add an item on 20/ }), 'dentist')
+    await user.keyboard('{Enter}')
+
+    expect(within(cellFor(container, twentiethIso)).getByText('dentist')).toBeInTheDocument()
+    expect(addRow).toHaveBeenCalledTimes(1)
+    expect(renameRow).toHaveBeenCalledTimes(1)
+
+    const anotherIso = addDays(twentiethIso, 1)
+    await user.click(cellFor(container, anotherIso))
+    await user.keyboard('{Escape}')
+
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    expect(within(cellFor(container, anotherIso)).queryByText('dentist')).not.toBeInTheDocument()
+    // No second record anywhere in the grid: the mocks' call counts stayed at
+    // the one `dentist` add from above.
+    expect(addRow).toHaveBeenCalledTimes(1)
+    expect(renameRow).toHaveBeenCalledTimes(1)
+  })
+
+  it('a non-editable render shows no input on any click', async () => {
+    const user = userEvent.setup()
+    const { container } = renderView(calendar, false)
+
+    await user.click(cellFor(container, twentiethIso))
+
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+  })
+})
+
+describe('ViewView — the path test: timeline, through the real host (KAN-352)', () => {
+  const ganttSchema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    { id: 'p-start', name: 'Start', type: 'date' },
+    { id: 'p-due', name: 'Due', type: 'date' },
+  ]
+
+  beforeEach(() => {
+    initialSchema = ganttSchema
+    initialRows = []
+  })
+
+  it('a dated, empty gantt adds a bar through "add a task" that stays draggable, with "add a task" still at the foot', async () => {
+    const user = userEvent.setup()
+    // The drag math (`pixelsToDays`) needs a real track width; jsdom's own
+    // `getBoundingClientRect` is all zeros, which `pixelsToDays` treats as
+    // "unmeasured" and zeroes the shift (apply.ts).
+    jest
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockReturnValue({ width: 300 } as DOMRect)
+    renderView(gantt)
+
+    await user.click(screen.getByRole('button', { name: 'add a task' }))
+    await user.type(screen.getByRole('textbox', { name: 'Add a task' }), 'plan')
+    await user.keyboard('{Enter}')
+
+    const todayIso = localDateIso(new Date())
+    const tomorrowIso = addDays(todayIso, 1)
+    expect(addRow).toHaveBeenCalledWith({ 'p-start': todayIso, 'p-due': tomorrowIso })
+    expect(renameRow).toHaveBeenCalledWith('r-new-0', 'plan')
+
+    const bar = screen.getByRole('button', { name: /Reschedule plan:/ })
+    expect(screen.getByRole('textbox', { name: 'Add a task' })).toBeInTheDocument()
+
+    // Drag the body (move) right by a full day's worth of pixels — the existing
+    // `onBarPointerDown`/`usePointerGanttDrag` wiring, unchanged by this ticket.
+    fireEvent.pointerDown(bar, { clientX: 0 })
+    fireEvent.pointerMove(bar, { clientX: 150 })
+    fireEvent.pointerUp(bar)
+
+    const dayAfterIso = addDays(tomorrowIso, 1)
+    expect(setValue).toHaveBeenCalledWith('r-new-0', 'p-start', tomorrowIso)
+    expect(setValue).toHaveBeenCalledWith('r-new-0', 'p-due', dayAfterIso)
+  })
+
+  it('a non-editable render shows no "add a task" row', () => {
+    renderView(gantt, false)
+    expect(screen.queryByRole('button', { name: 'add a task' })).not.toBeInTheDocument()
+  })
+})
+
+describe('CollectionGantt — the add-a-task row never remounts across the void→bars transition (KAN-352)', () => {
+  const ganttSchema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    { id: 'p-start', name: 'Start', type: 'date' },
+    { id: 'p-due', name: 'Due', type: 'date' },
+  ]
+
+  beforeEach(() => {
+    initialSchema = ganttSchema
+    initialRows = []
+  })
+
+  it('keeps the draft and focus while a slow addRow is still in flight', async () => {
+    const user = userEvent.setup()
+    const todayIso = localDateIso(new Date())
+    const tomorrowIso = addDays(todayIso, 1)
+    let resolveAdd: (id: string) => void = () => {}
+    // Deferred like the real hook's `getUser` + `createPage` round trip: the row only
+    // lands in `rows` (flipping the void branch to the bar list) once resolved.
+    addRow.mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          resolveAdd = (id: string) => {
+            updateRows([{ id, title: '', values: { 'p-start': todayIso, 'p-due': tomorrowIso } }])
+            resolve(id)
+          }
+        })
+    )
+
+    renderView(gantt)
+
+    await user.click(screen.getByRole('button', { name: 'add a task' }))
+    const input = screen.getByRole('textbox', { name: 'Add a task' })
+    await user.type(input, 'plan')
+    await user.keyboard('{Enter}')
+    // addRow is still awaiting — the void branch is still showing. Keep typing.
+    await user.type(input, 'de')
+
+    await act(async () => {
+      resolveAdd('r-new-0')
+      for (let i = 0; i < 5; i++) await Promise.resolve()
+    })
+
+    const liveInput = screen.getByRole('textbox', { name: 'Add a task' })
+    expect(liveInput).toHaveValue('de')
+    expect(liveInput).toHaveFocus()
+    expect(screen.getByRole('button', { name: /Reschedule plan:/ })).toBeInTheDocument()
   })
 })
 
