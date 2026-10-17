@@ -381,3 +381,36 @@ describe('AtomEditor — a very long unbroken value fits its column', () => {
     expect(input.className).toContain('max-w-full')
   })
 })
+
+describe('AtomEditor — rest-mode trigger only steals the keys its row step-out reads', () => {
+  // Mirrors the real listeners this bug silenced: `PageChangesPanel.tsx`'s
+  // ⌥⌘H chord and `use-record-selection.ts`/`zen.tsx`'s plain Esc are both
+  // `document.addEventListener('keydown', …)` — a value merely focused (not
+  // being edited) must not swallow either.
+  it('lets Esc and ⌥⌘H reach a document listener while focused, but still steals a plain Enter', async () => {
+    const user = userEvent.setup()
+    const documentHandler = jest.fn()
+    document.addEventListener('keydown', documentHandler)
+    try {
+      render(<AtomEditor kind="text" value="a" aria-label="Notes value" parse={parseText} onCommit={jest.fn()} />)
+      screen.getByRole('button', { name: 'Notes value' }).focus()
+
+      await user.keyboard('{Escape}')
+      expect(documentHandler).toHaveBeenCalledTimes(1)
+
+      documentHandler.mockClear()
+      await user.keyboard('{Alt>}{Meta>}h{/Meta}{/Alt}')
+      const codes = documentHandler.mock.calls.map(([e]) => (e as KeyboardEvent).code)
+      expect(codes).toContain('KeyH')
+
+      // Plain Enter is the one key a last-cell row step-out reads off this
+      // same trigger (KAN-344) — it must still open the editor, not bubble.
+      documentHandler.mockClear()
+      await user.keyboard('{Enter}')
+      expect(screen.getByLabelText('Notes value').tagName).toBe('INPUT')
+      expect(documentHandler).not.toHaveBeenCalled()
+    } finally {
+      document.removeEventListener('keydown', documentHandler)
+    }
+  })
+})

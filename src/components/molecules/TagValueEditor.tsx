@@ -32,6 +32,7 @@ import { PondControl } from '@/components/atoms/PondControl'
 import { FOCUS_VISIBLE_RING } from '@/components/atoms/focus-ring'
 import { cn } from '@/lib/utils'
 import type { PropertyOption } from '@/lib/properties/schema'
+import { isStepOutKey } from './AtomEditor'
 import { GLASS, LIST } from './picker-chrome'
 import { useAnchoredBox, type PickerAnchor } from './use-anchored-box'
 
@@ -148,10 +149,12 @@ export function TagValueEditor({
           if (!editable || wasOpenRef.current) return
           setOpen(true)
         }}
-        // A host row (the table's last-cell step-out, KAN-344) reads keydowns
-        // off this same element's ancestor — stop here so Enter opens the
-        // popover instead of being read as "leave the row".
-        onKeyDown={(e) => e.stopPropagation()}
+        // See `isStepOutKey` (AtomEditor.tsx) — only Enter (the key that opens
+        // this popover) is stopped here; everything else must still reach a
+        // document/window listener while this trigger is merely focused.
+        onKeyDown={(e) => {
+          if (isStepOutKey(e)) e.stopPropagation()
+        }}
         disabled={!editable}
         className={cn(
           'rounded-mn-chrome border-0 bg-transparent p-0 text-left',

@@ -452,4 +452,37 @@ describe('TagValueEditor', () => {
 
     expect(screen.getByRole('button', { name: 'Type value' })).toBeDisabled()
   })
+
+  // Mirrors the real listeners this bug silenced: `PageChangesPanel.tsx`'s
+  // ⌥⌘H chord and `use-record-selection.ts`/`zen.tsx`'s plain Esc are both
+  // `document.addEventListener('keydown', …)` — a chip merely focused (not
+  // open) must not swallow either.
+  it('lets Esc and ⌥⌘H reach a document listener while focused, but still steals a plain Enter', async () => {
+    const user = userEvent.setup()
+    const documentHandler = jest.fn()
+    document.addEventListener('keydown', documentHandler)
+    try {
+      render(
+        <TagValueEditor options={OPTIONS} value={null} empty aria-label="Type value" onChange={jest.fn()} />
+      )
+      screen.getByRole('button', { name: 'Type value' }).focus()
+
+      await user.keyboard('{Escape}')
+      expect(documentHandler).toHaveBeenCalledTimes(1)
+
+      documentHandler.mockClear()
+      await user.keyboard('{Alt>}{Meta>}h{/Meta}{/Alt}')
+      const codes = documentHandler.mock.calls.map(([e]) => (e as KeyboardEvent).code)
+      expect(codes).toContain('KeyH')
+
+      // Plain Enter is the key that opens this popover — it must still do
+      // that, not bubble.
+      documentHandler.mockClear()
+      await user.keyboard('{Enter}')
+      expect(screen.getByRole('listbox', { name: 'options' })).toBeInTheDocument()
+      expect(documentHandler).not.toHaveBeenCalled()
+    } finally {
+      document.removeEventListener('keydown', documentHandler)
+    }
+  })
 })
