@@ -165,7 +165,8 @@ describe('the undo/redo notice (KAN-139)', () => {
     expect(lines.footRight).toBeNull()
   })
 
-  it('toNoticeLines shows the "opened" clause when the step navigated', () => {
+  it('toNoticeLines shows the "opened" clause when the step navigated, Apple glyphs on a Mac', () => {
+    const platform = jest.spyOn(window.navigator, 'platform', 'get').mockReturnValue('MacIntel')
     const lines = toNoticeLines({
       direction: 'undo',
       pastTense: 'removed chickpeas, harissa',
@@ -176,6 +177,21 @@ describe('the undo/redo notice (KAN-139)', () => {
     expect(lines.headRight).toBe('opened recipes')
     expect(lines.footLeft).toBe('redo ⇧⌘Z')
     expect(lines.footRight).toBe('back to kitchen renovation ⌘[')
+    platform.mockRestore()
+  })
+
+  it('toNoticeLines reads Ctrl words off a Mac', () => {
+    const platform = jest.spyOn(window.navigator, 'platform', 'get').mockReturnValue('Win32')
+    const lines = toNoticeLines({
+      direction: 'undo',
+      pastTense: 'removed chickpeas, harissa',
+      openedPageTitle: 'recipes',
+      previousPageTitle: 'kitchen renovation',
+    })
+    expect(lines.headLeft).toBe('undo · Ctrl Z')
+    expect(lines.footLeft).toBe('redo Ctrl Shift Z')
+    expect(lines.footRight).toBe('back to kitchen renovation Ctrl [')
+    platform.mockRestore()
   })
 })
 

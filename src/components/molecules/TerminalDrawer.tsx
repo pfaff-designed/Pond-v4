@@ -40,6 +40,7 @@ import {
   COMPOSER_TOP_CLEARANCE,
 } from '@/lib/layout/composer-height'
 import { RAIL_WIDTH_PX } from '@/lib/layout/rail-width'
+import { ariaKeyshortcuts, formatChord, useApplePlatform } from '@/lib/shell-commands'
 import type { CSSVars } from '@/lib/css-vars'
 import { cn } from '@/lib/utils'
 
@@ -119,6 +120,10 @@ export const TerminalDrawer = ({
   unsized = false,
   cardRef: externalCardRef,
 }: TerminalDrawerProps) => {
+  // The server has no navigator, so this starts Apple-biased and corrects on mount —
+  // formatChord/ariaKeyshortcuts take it as a param rather than reading navigator live,
+  // so the tab's SSR and first client render always agree (no hydration mismatch).
+  const apple = useApplePlatform()
   const innerCardRef = useRef<HTMLElement>(null)
   const tabRef = useRef<HTMLElement>(null)
   const setCardRef = useCallback(
@@ -189,7 +194,7 @@ export const TerminalDrawer = ({
         type="button"
         onClick={onExpand}
         aria-expanded={false}
-        aria-keyshortcuts="Meta+J Control+J"
+        aria-keyshortcuts={ariaKeyshortcuts('mod+j', apple)}
         aria-label={landed ? 'Open composer — pond answered' : 'Open composer'}
         className="relative flex size-full cursor-pointer justify-center"
       >
@@ -229,7 +234,7 @@ export const TerminalDrawer = ({
           aria-hidden
           className="mt-3 text-[10.5px] text-mn-text-secondary"
         >
-          ⌘J
+          {formatChord('mod+j', apple)}
         </span>
       </button>
     </section>

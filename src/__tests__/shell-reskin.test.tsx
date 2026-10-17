@@ -522,6 +522,7 @@ describe('TerminalDrawer — the PondComposer card: floating glass, 560, 24 off 
   })
 
   it('collapsed is the tab: 30 high on the bottom edge, a pill with ⌘J, and it brings the card back', () => {
+    const platform = jest.spyOn(window.navigator, 'platform', 'get').mockReturnValue('MacIntel')
     const onExpand = jest.fn()
     const { container } = renderDrawer({ collapsed: true, onExpand })
     const tab = container.querySelector('[data-part="composer-tab"]')!
@@ -541,6 +542,7 @@ describe('TerminalDrawer — the PondComposer card: floating glass, 560, 24 off 
     expect(screen.queryByText('pond answered')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Open composer' }))
     expect(onExpand).toHaveBeenCalledTimes(1)
+    platform.mockRestore()
   })
 
   it('the collapsed tab is its own standalone, always-mounted element, distinct from the card', () => {
@@ -919,6 +921,7 @@ describe('WorkspaceShell — the chrome floats over one canvas', () => {
   }
 
   it('rail = paper card with the pond name; ⌘K lives in the command pill, settings in the rail foot', async () => {
+    const platform = jest.spyOn(window.navigator, 'platform', 'get').mockReturnValue('MacIntel')
     const { container } = renderShell()
     const aside = await screen.findByRole('complementary')
     expect(aside.className).toMatch(/\bbg-mn-card\b/)
@@ -934,6 +937,7 @@ describe('WorkspaceShell — the chrome floats over one canvas', () => {
     // The rail foot is databases and settings; no "New page" button anywhere.
     expect(screen.queryByRole('button', { name: 'New page' })).toBeNull()
     expect(aside.contains(screen.getByText('settings'))).toBe(true)
+    platform.mockRestore()
   })
 
   it('the command pill and the composer are SHELL-level absolutes, not column children (measured)', async () => {

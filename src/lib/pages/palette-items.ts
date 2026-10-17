@@ -23,6 +23,7 @@ import { markIndex, resolveMark } from '@/lib/pages/mark'
 import type { PageRow } from '@/lib/pages/tree'
 import type { Pond } from '@/lib/pond/client'
 import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
+import { formatChord } from '@/lib/shell-commands'
 
 /** The shell's two standing actions, in Pond's words; `action` is the job the host reads. */
 export const NEW_PAGE_ACTION: PaletteItem = {
@@ -117,7 +118,7 @@ export function paletteItems(
     IMPORT_A_PAGE_ACTION,
     REPORT_A_PROBLEM_ACTION,
     NEW_PAGE_ACTION,
-    ASK_POND_ACTION,
+    { ...ASK_POND_ACTION, key: formatChord('mod+j') },
     DEEP_RESEARCH_ACTION,
     ...(openPageId ? [SAVE_AS_TEMPLATE_ACTION] : []),
   ]
@@ -135,7 +136,6 @@ export const ZEN_ACTION: PaletteItem = {
   kind: 'action',
   action: 'zen',
   sub: 'this page, everything else hidden',
-  key: '⌘.',
   group: 'mode',
 }
 export const ZEN_ON_INK_ACTION: PaletteItem = {
@@ -155,10 +155,19 @@ export const LEAVE_ZEN_ACTION: PaletteItem = {
 }
 
 const MODE_IN_ZEN: readonly PaletteItem[] = [LEAVE_ZEN_ACTION]
-const MODE_OUT_OF_ZEN: readonly PaletteItem[] = [ZEN_ACTION, ZEN_ON_INK_ACTION]
 
-export const modeItems = (inZen: boolean): readonly PaletteItem[] =>
-  inZen ? MODE_IN_ZEN : MODE_OUT_OF_ZEN
+/** `modeItems(false)`'s cache, so `use-zen-commands.ts`'s render-time call returns the same array while the platform doesn't change. */
+let modeOutOfZenKey: string | null = null
+let modeOutOfZen: readonly PaletteItem[] | null = null
+
+export const modeItems = (inZen: boolean): readonly PaletteItem[] => {
+  if (inZen) return MODE_IN_ZEN
+  const key = formatChord('mod+.')
+  if (modeOutOfZen && modeOutOfZenKey === key) return modeOutOfZen
+  modeOutOfZenKey = key
+  modeOutOfZen = [{ ...ZEN_ACTION, key }, ZEN_ON_INK_ACTION]
+  return modeOutOfZen
+}
 
 /**
  * The other ponds, as `pond` rows — `PondPicker`'s `ponds` state: the pond's own
