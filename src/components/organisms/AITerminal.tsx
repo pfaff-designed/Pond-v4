@@ -17,9 +17,10 @@ import {
   type ProposalDecision,
 } from '@/lib/conversation/resolutions'
 import { getPage, listPages } from '@/lib/pages/client'
+import { getOrCreateHomePage } from '@/lib/pages/home'
 import { flushPendingPageSave } from '@/lib/pages/page-flush'
 import { usePond } from '@/lib/pond/context'
-import { pagesKey } from '@/lib/pages/keys'
+import { pagesKey, homeQueryKey } from '@/lib/pages/keys'
 import { usePagesRows } from '@/lib/pages/use-pages'
 import { usePondName } from '@/lib/pond/name'
 import {
@@ -58,7 +59,9 @@ import {
   readStamp,
   researchEndedAt,
   researchEndedStamp,
+  turnPageLabel,
   turnReadContext,
+  turnSendStamp,
   withEarlierAnswer,
   withReadStamp,
   withResearchEndedStamp,
@@ -478,6 +481,15 @@ export function AITerminal() {
   // may only load once the list has loaded and named this one. A `?pond=` the list
   // does not hold (yet) resolves to null too; only an empty list means no pond scope.
   const pondSettled = !pondsLoading && (pond !== null || ponds.length === 0)
+  // KAN-341: at the root there's no `?nodeId=`, so the open page is the pond's
+  // own home row — resolved the same way DocumentPanel resolves it, sharing its
+  // cache entry (`homeQueryKey`) so the two surfaces never create two roots.
+  const { data: home } = useQuery({
+    queryKey: homeQueryKey(pondId),
+    queryFn: () => getOrCreateHomePage(getSupabase(), pondId, pondName),
+    enabled: !pondsLoading,
+  })
+  const pageId = nodeId ?? home?.id ?? null
   const composerHeight = useComposerHeight()
   const { zen, composerAsked, askComposer, closeComposerAsk } = useZen()
   const inZen = zen !== null
@@ -655,13 +667,13 @@ export function AITerminal() {
   )
 
   // Current page blocks — the source of the "before" text in a diff card, and
-  // the array we rewrite when a proposal is accepted. Shares the ['page', nodeId]
+  // the array we rewrite when a proposal is accepted. Shares the ['page', pageId]
   // cache with DocumentPanel. The virtual change-log node has no `pages` row
   // (DocumentPanel's own `isChangeLogNode` guard), so it takes none of this path.
   const { data: currentPage } = useQuery({
-    queryKey: ['page', nodeId],
-    queryFn: () => (nodeId ? getPage(getSupabase(), nodeId) : Promise.resolve(null)),
-    enabled: !!nodeId && nodeId !== CHANGE_LOG_NODE_ID,
+    queryKey: ['page', pageId],
+    queryFn: () => (pageId ? getPage(getSupabase(), pageId) : Promise.resolve(null)),
+    enabled: !!pageId && pageId !== CHANGE_LOG_NODE_ID,
   })
 
   // The user's pages, used to populate the create_page destination picker, to
@@ -691,8 +703,8 @@ export function AITerminal() {
   // (a new answer's "read" chip, a same-page proposal card with no stamped
   // target) — `nodeName` is the breadcrumb's URL param, never updated by a
   // rename, so it is read only while the live title hasn't loaded yet.
-  const live = currentPage?.title ?? allPages.find((p) => p.id === nodeId)?.title
-  const contextLabel = live !== undefined ? live || 'Untitled' : nodeName || pondName
+  const live = currentPage?.title ?? allPages.find((p) => p.id === pageId)?.title
+  const contextLabel = live !== undefined ? live || 'Untitled' : nodeName || home?.title || pondName
   // Cross-page edit previews (ticket-30): an edit/remove aimed at ANOTHER page must
   // diff against THAT page's blocks, not the open page's. Fetch each distinct
   // stamped target id that isn't the open page, on the shared ['page', id] cache
@@ -702,12 +714,12 @@ export function AITerminal() {
   const crossPageTargetIds = useMemo(() => {
     const ids = new Set<string>()
     for (const t of Object.values(changeTargets ?? {})) {
-      if (t.nodeId && !t.missing && t.nodeId !== nodeId && t.nodeId !== CHANGE_LOG_NODE_ID) {
+      if (t.nodeId && !t.missing && t.nodeId !== pageId && t.nodeId !== CHANGE_LOG_NODE_ID) {
         ids.add(t.nodeId)
       }
     }
     return [...ids]
-  }, [changeTargets, nodeId])
+  }, [changeTargets, pageId])
   const crossPageQueries = useQueries({
     queries: crossPageTargetIds.map((id) => ({
       queryKey: ['page', id],
@@ -863,32 +875,39 @@ export function AITerminal() {
   const [references, setReferences] = useState<PageReference[]>([])
 
   // The open page goes with every question as the first chip (KAN-99, board
-  // 6e). `current:${nodeId}` is a stable id so it's addressable by × like any
-  // other reference; `dismissedCurrentRefNodeId` remembers that nodeId was
-  // dismissed for THIS visit, so this effect (which only re-runs on a real
-  // nodeId change) doesn't immediately reseed it — opening another page
-  // resets the dismissal, per the ticket's "state per page visit".
+  // 6e). `current:${pageId}` is a stable id so it's addressable by × like any
+  // other reference; `dismissedCurrentRefNodeId` remembers that pageId was
+  // dismissed for THIS visit, so the seeding effect below (which only re-runs
+  // on a real pageId change) doesn't immediately reseed it — opening another
+  // page resets the dismissal (KAN-341: nothing cleared it before, so a chip
+  // hidden on page A stayed hidden for good, even after leaving and coming
+  // back), per the ticket's "state per page visit".
   const [dismissedCurrentRefNodeId, setDismissedCurrentRefNodeId] = useState<string | null>(null)
-  // Guarded to fire once per `nodeId`/dismissal pair (both tracked in the
-  // dependency array, so this never cascades) — not a derived-state
-  // computation, so `react-hooks/set-state-in-effect` is disabled here, same
-  // as Rail.tsx's own "reveal the selection" effect.
-  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    const currentRefId = `current:${nodeId}`
+    // KAN-341: resets the per-visit dismissal on a real pageId change (opening
+    // another page) — a cause, not a derived-state computation.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setDismissedCurrentRefNodeId(null)
+  }, [pageId])
+  useEffect(() => {
+    const currentRefId = `current:${pageId}`
+    // Guarded to fire once per `pageId`/dismissal pair (both tracked in the
+    // dependency array, so this never cascades) — not a derived-state
+    // computation, so `react-hooks/set-state-in-effect` is disabled here, same
+    // as Rail.tsx's own "reveal the selection" effect.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setReferences((prev) => {
       const withoutStaleCurrent = prev.filter(
         (ref) => !ref.id.startsWith('current:') || ref.id === currentRefId
       )
-      if (!nodeId || dismissedCurrentRefNodeId === nodeId) return withoutStaleCurrent
+      if (!pageId || dismissedCurrentRefNodeId === pageId) return withoutStaleCurrent
       if (withoutStaleCurrent.some((ref) => ref.id === currentRefId)) return withoutStaleCurrent
       return [
-        { id: currentRefId, pageId: nodeId, blockId: null, range: null, quotedText: '' },
+        { id: currentRefId, pageId, blockId: null, range: null, quotedText: '' },
         ...withoutStaleCurrent,
       ]
     })
-  }, [nodeId, dismissedCurrentRefNodeId])
-  /* eslint-enable react-hooks/set-state-in-effect */
+  }, [pageId, dismissedCurrentRefNodeId])
 
   const handleAskFromSelection = useCallback(
     (ctx: SelectionContext) => {
@@ -896,12 +915,12 @@ export function AITerminal() {
       // to anchor a reference to — nothing is appended, but the composer still
       // focuses so typing a question works either way.
       const { blockId } = ctx
-      if (nodeId && blockId) {
+      if (pageId && blockId) {
         const range =
           ctx.from !== undefined && ctx.to !== undefined ? { from: ctx.from, to: ctx.to } : null
         setReferences((prev) => [
           ...prev,
-          { id: crypto.randomUUID(), pageId: nodeId, blockId, range, quotedText: ctx.text },
+          { id: crypto.randomUUID(), pageId, blockId, range, quotedText: ctx.text },
         ])
       }
       if (inZen) {
@@ -910,7 +929,7 @@ export function AITerminal() {
       }
       requestAnimationFrame(() => inputRef.current?.focus())
     },
-    [nodeId, inZen, composerOpen, askComposer]
+    [pageId, inZen, composerOpen, askComposer]
   )
 
   // The refs row's marks come off the same `pagesKey()` cache the rail and
@@ -931,7 +950,7 @@ export function AITerminal() {
       dedupeWholePageReferences(references).map((ref) => {
         const title =
           allPages.find((p) => p.id === ref.pageId)?.title ??
-          (ref.pageId === nodeId ? contextLabel : 'untitled')
+          (ref.pageId === pageId ? contextLabel : 'untitled')
         const mark = resolveMark(ref.pageId, pageMarks)
         // A whole-page reference (KAN-99's `@`-picker, `blockId: null`) has no
         // passage to quote — the chip reads as the title alone.
@@ -949,17 +968,17 @@ export function AITerminal() {
           label: `${title} — “${passage}”`,
         }
       }),
-    [references, allPages, nodeId, contextLabel, pageMarks]
+    [references, allPages, pageId, contextLabel, pageMarks]
   )
 
   const handleRemoveReference = useCallback(
     (key: string) => {
       setReferences((prev) => prev.filter((ref) => ref.id !== key))
       // Removing the current-page chip dismisses it for this visit — the
-      // seeding effect above only reseeds it once `nodeId` itself changes.
-      if (key === `current:${nodeId}`) setDismissedCurrentRefNodeId(nodeId)
+      // seeding effect above only reseeds it once `pageId` itself changes.
+      if (key === `current:${pageId}`) setDismissedCurrentRefNodeId(pageId)
     },
-    [nodeId]
+    [pageId]
   )
 
   // The mention pill (board 6e frame 4) paints under exactly the typed
@@ -972,10 +991,10 @@ export function AITerminal() {
         .map(
           (ref) =>
             allPages.find((p) => p.id === ref.pageId)?.title ??
-            (ref.pageId === nodeId ? contextLabel : undefined)
+            (ref.pageId === pageId ? contextLabel : undefined)
         )
         .filter((title): title is string => Boolean(title)),
-    [references, allPages, nodeId, contextLabel]
+    [references, allPages, pageId, contextLabel]
   )
 
   // ── @ mention picker (KAN-99, board 6e frame 3) ───────────────────────────
@@ -1621,27 +1640,41 @@ export function AITerminal() {
       // `allPages` to load before resolving against it (same reasoning as
       // `resolveStampTarget`'s own `pagesLoaded` gate) rather than clearing the
       // pending refs and falling back to the ambient node for this one run.
+      //
+      // KAN-341 — `handleAskAgain` sets this SAME ref, alone (no `revising`
+      // toolCallId beside it), when the question it's resending stamped a
+      // page other than the one open now: the regenerated batch read THAT
+      // page, so its own card has to stamp it too, not the live `pageId`.
+      // Gated on `!revising` so the two uses never collide (request-changes
+      // always sets both refs together); consumed by whichever unstamped
+      // part this effect sees next, same write-once shape as the #98 path.
+      const askAgainTargetPageId = revising ? null : pendingRevisionTargetPageId.current
       const revisionTargetPageId = isRevisionOfThisPart
         ? pendingRevisionTargetPageId.current
-        : null
+        : askAgainTargetPageId
       if (revisionTargetPageId && !pagesLoaded) continue
       if (isRevisionOfThisPart) {
         dispatch({ kind: 'noteRevision', id: part.toolCallId, revisedFrom: revising })
         pendingRevisionOf.current = null
+        pendingRevisionTargetPageId.current = null
+      } else if (askAgainTargetPageId) {
         pendingRevisionTargetPageId.current = null
       }
       const resolved = resolveStampTarget({
         targetPageId: part.input?.targetPageId,
         pages: allPages,
         pagesLoaded,
-        openNodeId: revisionTargetPageId ?? nodeId,
+        openNodeId: revisionTargetPageId ?? pageId,
         // KAN-302: the live label, not the stale `nodeName` URL param — same
         // fix as `contextLabel` above, since this write-once stamp's name IS
         // contextLabel's stand-in for the open page at stamp time. KAN-96: a
         // revision's own target page reads its live title off `allPages`
         // instead, so the stamp never lands on the change log it was sent from.
+        // KAN-341: that target may be home, which `allPages` never carries.
         openNodeName: revisionTargetPageId
-          ? allPages.find((p) => p.id === revisionTargetPageId)?.title ?? null
+          ? (revisionTargetPageId === home?.id
+              ? home?.title
+              : allPages.find((p) => p.id === revisionTargetPageId)?.title) ?? null
           : contextLabel,
       })
       // 'defer' → stamp on a later run (pages still loading); null → leave
@@ -1650,7 +1683,17 @@ export function AITerminal() {
       if (resolved !== 'defer' && resolved !== null)
         dispatch({ kind: 'stampTarget', id: part.toolCallId, target: resolved })
     }
-  }, [messages, nodeId, contextLabel, changeTargets, allPages, pagesLoaded, revisions])
+  }, [
+    messages,
+    pageId,
+    contextLabel,
+    home?.id,
+    home?.title,
+    changeTargets,
+    allPages,
+    pagesLoaded,
+    revisions,
+  ])
 
   // ── The revision ref lives for ONE turn (#98 review) ──────────────────────
   // `pendingRevisionOf` was set on send and cleared only when a propose_changes
@@ -1962,15 +2005,15 @@ export function AITerminal() {
     // References ride a thread, not the person: a new thread starts with
     // only the current page back in context (KAN-99 PATH_STEPS 1), and the
     // highlight-sync effect clears their page decorations. This clear
-    // changes neither `nodeId` nor `dismissedCurrentRefNodeId`, so the
+    // changes neither `pageId` nor `dismissedCurrentRefNodeId`, so the
     // seeding effect above would not otherwise re-run — reseed directly.
     setDismissedCurrentRefNodeId(null)
     setReferences(
-      nodeId
-        ? [{ id: `current:${nodeId}`, pageId: nodeId, blockId: null, range: null, quotedText: '' }]
+      pageId
+        ? [{ id: `current:${pageId}`, pageId, blockId: null, range: null, quotedText: '' }]
         : []
     )
-  }, [conversationId, setMessages, resetResolutions, getSupabase, pondId, nodeId])
+  }, [conversationId, setMessages, resetResolutions, getSupabase, pondId, pageId])
 
   // ── Lifecycle advancement (ticket-39) ─────────────────────────────────────
   // The phase moves on the OUTGOING user message (the user calls the shot): if a
@@ -2031,9 +2074,11 @@ export function AITerminal() {
       // and the passage stays highlighted) — removed only by its own × or by
       // the anchored text being edited away.
       const sentReferences = dedupeWholePageReferences(references)
-      const openPageContext = dismissedCurrentRefNodeId !== nodeId
+      const openPageContext = dismissedCurrentRefNodeId !== pageId
       const body = {
-        nodeId,
+        // KAN-341: the open page's own id — at the root, the home row `home`
+        // resolved above, so `/api/chat` gets a real node instead of null.
+        nodeId: pageId,
         nodeType,
         pondId,
         resolutions: outgoing,
@@ -2059,9 +2104,14 @@ export function AITerminal() {
         sentAt: new Date().toISOString(),
         openPageContext,
         research,
+        // KAN-341: the turn's own node and references, read back by
+        // `handleAskAgain` via `turnSendStamp` instead of recomputed from
+        // live state (which can have moved on by the time ask-again runs).
+        nodeId: pageId,
+        references: sentReferences,
         wholePageRefPageIds: sentReferences
           .filter(isWholePageReference)
-          .filter((ref) => ref.pageId !== nodeId)
+          .filter((ref) => ref.pageId !== pageId)
           .map((ref) => ref.pageId),
       }
       clearError?.()
@@ -2089,7 +2139,7 @@ export function AITerminal() {
       // `undefined` means nothing was pending, so the send stays in this tick.
       // A rejected flush must still reopen the gate (KAN-315) — otherwise a
       // failed save latches sending closed for the rest of the session.
-      const pendingFlush = flushPendingPageSave(nodeId)
+      const pendingFlush = flushPendingPageSave(pageId)
       if (pendingFlush) {
         void pendingFlush.then(dispatchSend, () => {
           dispatchGate.current = false
@@ -2105,9 +2155,9 @@ export function AITerminal() {
       resolutions,
       sendMessage,
       clearError,
-      nodeId,
       nodeType,
       pondId,
+      pageId,
       csvAttachment,
       clearCsvAttachment,
       fileParts,
@@ -2352,7 +2402,7 @@ export function AITerminal() {
         pondId,
         resolutions,
         toolCallId,
-        openNodeId: changePlace[toolCallId] ?? nodeId,
+        openNodeId: changePlace[toolCallId] ?? pageId,
         changes: indices.map((i) => allChanges[i]),
         // Ticket-31: refs resolve against the FULL batch (not just this click's
         // subset), with minted ids remembered per proposal across clicks.
@@ -2420,7 +2470,7 @@ export function AITerminal() {
       getSupabase,
       queryClient,
       resolutions,
-      nodeId,
+      pageId,
       changeTargets,
       changePlace,
       contextLabel,
@@ -2466,12 +2516,12 @@ export function AITerminal() {
       // A view-originated request names its own target page (KAN-96) so the
       // revised diff lands there, not on whatever node happens to be open —
       // e.g. the change log page itself. A thread-originated card omits it
-      // and keeps riding the ambient nodeId, since it's already on its page.
+      // and keeps riding the open page (pageId), since it's already on its page.
       // The stamping effect reads this same page id when it stamps the
       // revised batch, so the card never reads 'revised edit — change log'.
       pendingRevisionTargetPageId.current = targetPageId ?? null
       const body = {
-        nodeId: targetPageId ?? nodeId,
+        nodeId: targetPageId ?? pageId,
         nodeType: targetPageId ? 'page' : nodeType,
         pondId,
         resolutions: projectResolutions(next),
@@ -2492,7 +2542,7 @@ export function AITerminal() {
       clearError?.()
       sendMessage({ text: note, metadata }, { body })
     },
-    [isReady, proposals, logDecision, nodeId, nodeType, pondId, sendMessage, clearError]
+    [isReady, proposals, logDecision, pageId, nodeType, pondId, sendMessage, clearError]
   )
 
   // The proposed view's card has no mounted thread of its own to request
@@ -2908,7 +2958,7 @@ export function AITerminal() {
       // inline view is configured on the selected collection itself. Host = where the
       // block (and its ['page'] cache) lives, so that's what we invalidate.
       const linked = !!part?.targetCollection
-      const host = linked ? nodeId : selectedTargetId
+      const host = linked ? pageId : selectedTargetId
       if (!host) return
       dispatch({ kind: 'resolve', type: 'views', id: toolCallId, decision: 'accepted' })
       try {
@@ -2949,7 +2999,7 @@ export function AITerminal() {
         dispatch({ kind: 'revert', type: 'views', id: toolCallId })
       }
     },
-    [getSupabase, queryClient, nodeId, logDecision]
+    [getSupabase, queryClient, pageId, logDecision]
   )
 
   // ── make this a page ───────────────────────────────────────────────────────
@@ -3031,7 +3081,7 @@ export function AITerminal() {
             body: JSON.stringify({
               question: opts.question,
               prose: opts.prose,
-              openPageId: nodeId,
+              openPageId: pageId,
               // Ids, not the chip titles in `opts.read` — a title can collide
               // with an unrelated page of the same name (two "Untitled"s).
               read: opts.readIds,
@@ -3072,6 +3122,7 @@ export function AITerminal() {
     },
     [
       nodeId,
+      pageId,
       allPages,
       pageProposals,
       getSupabase,
@@ -3243,15 +3294,28 @@ export function AITerminal() {
       prev.map((m, i) => {
         if (!ids.has(m.id)) return m
         const isInitial = initialMessageIds.has(m.id)
+        const precedingUser = isInitial ? undefined : precedingUserMessage(prev, i)
         const turn = isInitial
           ? { openPageContext: true, wholePageRefIds: [] }
-          : turnReadContext(precedingUserMessage(prev, i))
+          : turnReadContext(precedingUser)
+        // KAN-341: the lead chip names the page THIS turn actually read —
+        // the question's own stamped `nodeId` — not the live open page, which
+        // may have moved on by the time an `ask again` answer lands.
+        const leadLabel = isInitial
+          ? ''
+          : turnPageLabel(precedingUser, {
+              pageId,
+              contextLabel,
+              homeId: home?.id ?? null,
+              homeTitle: home?.title ?? null,
+              resolvePageName,
+            })
         return withResearchEndedStamp(
           withLandedAt(
             withReadStamp(
               m,
               readChips({
-                contextLabel: isInitial ? '' : contextLabel,
+                contextLabel: leadLabel,
                 parts: m.parts as ReadPartLike[],
                 resolvePageName,
                 openPageContext: turn.openPageContext,
@@ -3268,7 +3332,10 @@ export function AITerminal() {
     pagesLoaded,
     messages,
     initialMessageIds,
+    pageId,
     contextLabel,
+    home?.id,
+    home?.title,
     resolvePageName,
     setMessages,
   ])
@@ -3333,16 +3400,57 @@ export function AITerminal() {
     const outgoing: ConversationResolutions = isLifecycleActive(lifecycle)
       ? { ...resolutions, lifecycle }
       : { ...resolutions, lifecycle: undefined }
+    // The question this turn is resending: a true "ask again" on an answer
+    // reads the user line above it; the trailing-error resend (above) IS
+    // that user line, so it reads its own metadata instead of skipping past it.
+    const questionMessage =
+      message?.role === 'user' ? message : precedingUserMessage(messages, messageIndex)
+    // KAN-341: a hidden chip and any highlighted passages are THIS turn's
+    // own facts, not whatever navigation/reference state looks like right
+    // now (a chip hidden on A, then reset by visiting B and back; a
+    // passage ×'d since the question was sent) — read off the question's
+    // own send-time stamp via `turnSendStamp`, falling back to live state
+    // only when the message carries no stamp at all (a reseeded/old
+    // transcript, pre-dating this fix).
+    const turn = turnSendStamp(questionMessage, {
+      nodeId: pageId,
+      openPageContext: dismissedCurrentRefNodeId !== pageId,
+      references: dedupeWholePageReferences(references),
+    })
     clearError?.()
     const dispatchRegenerate = () => {
       dispatchGate.current = false
-      regenerate({ body: { nodeId, nodeType, pondId, resolutions: outgoing, research } })
+      // KAN-341: the question stamped a DIFFERENT page than the one open
+      // now (navigated away, then "ask again") — the regenerated batch's own
+      // propose_changes card has to stamp THAT page, not wherever the person
+      // is standing, so it rides the same ref the request-changes revision
+      // path (#98) uses for its own target page. Set only when the two
+      // differ: a plain ask again on the open page needs no override, and
+      // the stamping effect clears this the moment it consumes it, so it
+      // never outlives this one regenerated batch.
+      if (turn.nodeId !== pageId) pendingRevisionTargetPageId.current = turn.nodeId
+      regenerate({
+        body: {
+          nodeId: turn.nodeId,
+          nodeType,
+          pondId,
+          resolutions: outgoing,
+          research,
+          references: turn.references,
+          openPageContext: turn.openPageContext,
+          // KAN-152: a record proposed on an ask-again answer still carries
+          // a "from thread" chip, same as `sendText`'s own body.
+          threadId: conversationId,
+        },
+      })
     }
     // KAN-302: same flush as sendText — a re-ask must see the page as it
     // stands now, not as it stood before an edit still in its save debounce.
+    // KAN-341: that page is the turn's own (`turn.nodeId`), not wherever the
+    // person is standing now — same reasoning as the regenerate body above.
     // A rejected flush must still reopen the gate (KAN-315) — otherwise a
     // failed save latches ask again closed for the rest of the session.
-    const pendingFlush = flushPendingPageSave(nodeId)
+    const pendingFlush = flushPendingPageSave(turn.nodeId)
     if (pendingFlush) {
       void pendingFlush.then(dispatchRegenerate, () => {
         dispatchGate.current = false
@@ -3420,7 +3528,16 @@ export function AITerminal() {
       message.role === 'assistant'
         ? (readStamp(message.metadata) ??
           readChips({
-            contextLabel,
+            // KAN-341: before the stamp above lands, the lead chip still has
+            // to name the turn's own page, not wherever the person is
+            // standing now — same `turnPageLabel` the stamp effect uses.
+            contextLabel: turnPageLabel(precedingUserMessage(messages, messageIndex), {
+              pageId,
+              contextLabel,
+              homeId: home?.id ?? null,
+              homeTitle: home?.title ?? null,
+              resolvePageName,
+            }),
             parts: message.parts as ReadPartLike[],
             resolvePageName,
             ...turnReadContext(precedingUserMessage(messages, messageIndex)),
@@ -3516,11 +3633,11 @@ export function AITerminal() {
       // A batch aimed at another page is diffed against THAT page's blocks.
       const target = changeTargets[part.toolCallId]
       const targetMissing = target?.missing === true
-      const crossPage = target && !targetMissing && target.nodeId !== nodeId ? target : null
+      const crossPage = target && !targetMissing && target.nodeId !== pageId ? target : null
       const targetBlocks = crossPage
         ? (blocksForTarget.get(crossPage.nodeId) ?? [])
         : (currentPage?.blocks ?? [])
-      const effectiveOpenNodeId = changePlace[part.toolCallId] ?? nodeId
+      const effectiveOpenNodeId = changePlace[part.toolCallId] ?? pageId
       const needsPlace =
         !targetMissing &&
         resolveAcceptTarget(resolutions, part.toolCallId, effectiveOpenNodeId) === null
@@ -3714,7 +3831,7 @@ export function AITerminal() {
                 // the placement route's candidate list, never the chip titles.
                 const readIds = [
                   ...new Set(
-                    [nodeId, ...readPageIds(message.parts as ReadPartLike[])].filter(
+                    [pageId, ...readPageIds(message.parts as ReadPartLike[])].filter(
                       (id): id is string => !!id
                     )
                   ),

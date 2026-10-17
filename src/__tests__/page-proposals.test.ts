@@ -29,10 +29,12 @@ import {
   researchEndedAt,
   stripChatFraming,
   turnReadContext,
+  turnSendStamp,
   withEarlierAnswer,
   type EarlierAnswer,
   type PageProposal,
 } from '@/lib/conversation/page-proposals'
+import type { PageReference } from '@/lib/references/reference'
 
 const PROSE =
   'One thing: the cabinet quote. The worktop template cannot be booked until the carcasses are measured, and the electrician wants a date before he holds the week. Everything else on the board is downstream of that.'
@@ -430,6 +432,57 @@ describe('precedingUserMessage / turnReadContext — this turn’s own sources (
   it('defaults to the pre-KAN-99 shape for a question stamped before this fix', () => {
     expect(turnReadContext(thread[2])).toEqual({ openPageContext: true, wholePageRefIds: [] })
     expect(turnReadContext(undefined)).toEqual({ openPageContext: true, wholePageRefIds: [] })
+  })
+})
+
+describe('turnSendStamp — ask again carries the original send, not live state (KAN-341)', () => {
+  const FALLBACK = {
+    nodeId: 'live-page',
+    openPageContext: true,
+    references: [{ id: 'r-live', pageId: 'live-page', blockId: null, range: null, quotedText: 'live' }],
+  }
+  const STAMPED_REF: PageReference = {
+    id: 'r-a',
+    pageId: 'page-a',
+    blockId: null,
+    range: null,
+    quotedText: 'the garden',
+  }
+
+  it.each([
+    ['no metadata at all falls back whole', undefined, FALLBACK],
+    [
+      'a KAN-99-only stamp (openPageContext, no nodeId) falls back whole, not just nodeId/references',
+      { openPageContext: false },
+      FALLBACK,
+    ],
+    [
+      'a full stamp is honoured as-is',
+      { nodeId: 'page-a', openPageContext: false, references: [STAMPED_REF] },
+      { nodeId: 'page-a', openPageContext: false, references: [STAMPED_REF] },
+    ],
+    [
+      'a full stamp with a null nodeId (asked from the pond root) keeps the null',
+      { nodeId: null, openPageContext: true, references: [] },
+      { nodeId: null, openPageContext: true, references: [] },
+    ],
+    [
+      'a non-array references value parses to empty, not the live fallback',
+      { nodeId: 'page-a', openPageContext: true, references: 'nope' },
+      { nodeId: 'page-a', openPageContext: true, references: [] },
+    ],
+    [
+      'a junk entry inside references is dropped, the valid one kept',
+      { nodeId: 'page-a', openPageContext: true, references: [STAMPED_REF, { junk: true }] },
+      { nodeId: 'page-a', openPageContext: true, references: [STAMPED_REF] },
+    ],
+    [
+      'a non-boolean openPageContext on an otherwise-full stamp falls back for that field alone',
+      { nodeId: 'page-a', openPageContext: 'yes', references: [STAMPED_REF] },
+      { nodeId: 'page-a', openPageContext: FALLBACK.openPageContext, references: [STAMPED_REF] },
+    ],
+  ] as const)('%s', (_label, metadata, expected) => {
+    expect(turnSendStamp({ metadata }, FALLBACK)).toEqual(expected)
   })
 })
 
