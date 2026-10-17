@@ -66,9 +66,8 @@ import { sessionUndo } from '@/lib/change-log/session-undo'
 import { trashPage } from '@/lib/change-log/trash'
 import { TrashRefusedError } from '@/lib/change-log/errors'
 import { jsonEqual } from '@/lib/json-equal'
-import { pagesKey, homeQueryKey } from '@/lib/pages/keys'
-import { getOrCreateHomePage, type HomePage } from '@/lib/pages/home'
-import { appendChildLinkToParent } from '@/lib/pages/child-links'
+import { pagesKey } from '@/lib/pages/keys'
+import { appendChildLinkUnder } from '@/lib/pages/child-links'
 import { usePondId, usePond } from '@/lib/pond/context'
 import { pushRecentGlyphToPond } from '@/lib/pond/client'
 import { PondSwitcher } from './PondSwitcher'
@@ -1698,20 +1697,7 @@ export function Rail() {
         )
         // KAN-415: a failed link append is not a failed page creation — the
         // page above has already landed and been navigated to.
-        void (async () => {
-          try {
-            const sb = createClient()
-            const resolvedParentId =
-              parentId ??
-              queryClient.getQueryData<HomePage | null>(homeQueryKey(pondId))?.id ??
-              (await getOrCreateHomePage(sb, pondId, pondName))?.id ??
-              null
-            if (!resolvedParentId) return
-            await appendChildLinkToParent(sb, queryClient, resolvedParentId, created.id, pondId)
-          } catch (err) {
-            console.error('[page-link] child link not appended', created.id, err)
-          }
-        })()
+        void appendChildLinkUnder(createClient(), queryClient, parentId, created.id, pondId, pondName)
       }
     } finally {
       setBusyId(null)
@@ -2002,20 +1988,7 @@ export function Rail() {
 
     // KAN-415: a failed link append is not a failed move — fired alongside it.
     if (isReparent) {
-      void (async () => {
-        try {
-          const sb = createClient()
-          const resolvedParentId =
-            move.newParentId ??
-            queryClient.getQueryData<HomePage | null>(homeQueryKey(pondId))?.id ??
-            (await getOrCreateHomePage(sb, pondId, pondName))?.id ??
-            null
-          if (!resolvedParentId) return
-          await appendChildLinkToParent(sb, queryClient, resolvedParentId, draggedId, pondId)
-        } catch (err) {
-          console.error('[page-link] child link not appended', draggedId, err)
-        }
-      })()
+      void appendChildLinkUnder(createClient(), queryClient, move.newParentId, draggedId, pondId, pondName)
     }
 
     try {

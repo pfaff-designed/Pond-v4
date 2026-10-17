@@ -6,7 +6,7 @@
  */
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { appendChildLinkToParent } from '@/lib/pages/child-links'
+import { appendChildLinkUnder } from '@/lib/pages/child-links'
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
@@ -42,7 +42,7 @@ jest.mock('@/lib/pages/create-page', () => ({
 }))
 
 jest.mock('@/lib/pages/child-links', () => ({
-  appendChildLinkToParent: jest.fn().mockResolvedValue(undefined),
+  appendChildLinkUnder: jest.fn().mockResolvedValue(undefined),
 }))
 
 jest.mock('@/lib/change-log/store', () => ({
@@ -146,8 +146,15 @@ it('accepting a page create_page proposal with a parent appends a link', async (
   const card = await screen.findByRole('group', { name: /proposed new page: spice rack/i })
   fireEvent.click(within(card).getByRole('button', { name: 'Create page' }))
 
-  await waitFor(() => expect(appendChildLinkToParent).toHaveBeenCalledTimes(1))
-  expect(appendChildLinkToParent).toHaveBeenCalledWith(expect.anything(), expect.anything(), 'kr-1', 'spice-1', null)
+  await waitFor(() => expect(appendChildLinkUnder).toHaveBeenCalledTimes(1))
+  expect(appendChildLinkUnder).toHaveBeenCalledWith(
+    expect.anything(),
+    expect.anything(),
+    'kr-1',
+    'spice-1',
+    null,
+    'life'
+  )
 })
 
 it('accepting a non-page create_page proposal (a database/record) does not append a link', async () => {
@@ -169,5 +176,5 @@ it('accepting a non-page create_page proposal (a database/record) does not appen
   fireEvent.click(within(card).getByRole('button', { name: 'Create page' }))
 
   await waitFor(() => expect(mockCreatePageFromProposal).toHaveBeenCalledTimes(1))
-  expect(appendChildLinkToParent).not.toHaveBeenCalled()
+  expect(appendChildLinkUnder).not.toHaveBeenCalled()
 })

@@ -19,7 +19,7 @@ import {
 import { getPage, listPages } from '@/lib/pages/client'
 import { flushPendingPageSave } from '@/lib/pages/page-flush'
 import { usePond } from '@/lib/pond/context'
-import { pagesKey, homeQueryKey } from '@/lib/pages/keys'
+import { pagesKey } from '@/lib/pages/keys'
 import { usePagesRows } from '@/lib/pages/use-pages'
 import { usePondName } from '@/lib/pond/name'
 import {
@@ -76,8 +76,7 @@ import { toParentOptions, ancestorPathLabel } from '@/lib/pages/parent-options'
 import { workspaceHref, workspaceUrl } from '@/lib/pages/nav'
 import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
 import { insertPageOptimistic, type PageRow } from '@/lib/pages/tree'
-import { getOrCreateHomePage, type HomePage } from '@/lib/pages/home'
-import { appendChildLinkToParent } from '@/lib/pages/child-links'
+import { appendChildLinkUnder } from '@/lib/pages/child-links'
 import { linkedPageIds, orderMentionPages } from '@/lib/pages/mention-pages'
 import { readRecentPageIds } from '@/lib/pages/recent-pages'
 import { writeAcceptedChanges } from '@/lib/pages/accept'
@@ -2699,20 +2698,7 @@ export function AITerminal() {
         // above has already landed and been navigated to. A database/record made
         // this way is not a "page under a parent" for this rule (orchestrator note).
         if (part.type === 'page') {
-          void (async () => {
-            try {
-              const supabase = getSupabase()
-              const resolvedParentId =
-                parentRef ??
-                queryClient.getQueryData<HomePage | null>(homeQueryKey(pondId))?.id ??
-                (await getOrCreateHomePage(supabase, pondId, pondName))?.id ??
-                null
-              if (!resolvedParentId) return
-              await appendChildLinkToParent(supabase, queryClient, resolvedParentId, created.id, pondId)
-            } catch (err) {
-              console.error('[page-link] child link not appended', created.id, err)
-            }
-          })()
+          void appendChildLinkUnder(getSupabase(), queryClient, parentRef, created.id, pondId, pondName)
         }
         // The write landed — only now may the record say so. The log only grows,
         // so an `accepted` stamped before this point could never be taken back.
@@ -3147,20 +3133,7 @@ export function AITerminal() {
         router.push(workspaceHref({ id: made.id, type: 'page', title: made.title }))
         // KAN-415: a failed link append is not a failed page creation — the
         // page above has already landed and been navigated to.
-        void (async () => {
-          try {
-            const supabase = getSupabase()
-            const resolvedParentId =
-              proposal.parentId ??
-              queryClient.getQueryData<HomePage | null>(homeQueryKey(pondId))?.id ??
-              (await getOrCreateHomePage(supabase, pondId, pondName))?.id ??
-              null
-            if (!resolvedParentId) return
-            await appendChildLinkToParent(supabase, queryClient, resolvedParentId, made.id, pondId)
-          } catch (err) {
-            console.error('[page-link] child link not appended', made.id, err)
-          }
-        })()
+        void appendChildLinkUnder(getSupabase(), queryClient, proposal.parentId, made.id, pondId, pondName)
         // The write landed — only now may the record say so (the log only grows).
         // Not the generic logDecision path: a create_page record has to remember
         // WHICH page it made, so undo (KAN-93) has something to trash —

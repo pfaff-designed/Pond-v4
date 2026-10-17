@@ -5,7 +5,7 @@
  */
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { appendChildLinkToParent } from '@/lib/pages/child-links'
+import { appendChildLinkUnder } from '@/lib/pages/child-links'
 
 const mockRouterPush = jest.fn()
 jest.mock('next/navigation', () => ({
@@ -48,7 +48,7 @@ jest.mock('@/lib/pages/tree', () => ({
 }))
 
 jest.mock('@/lib/pages/child-links', () => ({
-  appendChildLinkToParent: jest.fn().mockResolvedValue(undefined),
+  appendChildLinkUnder: jest.fn().mockResolvedValue(undefined),
 }))
 
 jest.mock('@/lib/change-log/store', () => ({
@@ -122,12 +122,13 @@ it('make page appends a page-link block to the made page’s parent', async () =
   const card = await screen.findByRole('group', { name: /new page — proposed/i })
   fireEvent.click(within(card).getByRole('button', { name: 'make page' }))
 
-  await waitFor(() => expect(appendChildLinkToParent).toHaveBeenCalledTimes(1))
-  expect(appendChildLinkToParent).toHaveBeenCalledWith(
+  await waitFor(() => expect(appendChildLinkUnder).toHaveBeenCalledTimes(1))
+  expect(appendChildLinkUnder).toHaveBeenCalledWith(
     expect.anything(),
     expect.anything(),
     'kr-1',
     'new-page-1',
-    null
+    null,
+    'life'
   )
 })

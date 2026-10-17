@@ -4,7 +4,7 @@
  * same-parent reorder (sibling order only) must not.
  */
 import { screen, fireEvent, waitFor } from '@testing-library/react'
-import { appendChildLinkToParent } from '@/lib/pages/child-links'
+import { appendChildLinkUnder } from '@/lib/pages/child-links'
 import { mountRail } from './helpers/rail-sweep-fixture'
 import type { PageRow } from '@/lib/pages/tree'
 
@@ -40,7 +40,7 @@ jest.mock('@/lib/change-log/store', () => ({
 }))
 
 jest.mock('@/lib/pages/child-links', () => ({
-  appendChildLinkToParent: jest.fn().mockResolvedValue(undefined),
+  appendChildLinkUnder: jest.fn().mockResolvedValue(undefined),
 }))
 
 const AT = '2026-01-01T00:00:00Z'
@@ -79,13 +79,14 @@ it('dropping a row into a new parent gives that parent a link', async () => {
   fireEvent(dragged, dragStartEvent())
   fireEvent(target, dropEvent(0))
 
-  await waitFor(() => expect(appendChildLinkToParent).toHaveBeenCalledTimes(1))
-  expect(appendChildLinkToParent).toHaveBeenCalledWith(
+  await waitFor(() => expect(appendChildLinkUnder).toHaveBeenCalledTimes(1))
+  expect(appendChildLinkUnder).toHaveBeenCalledWith(
     expect.anything(),
     expect.anything(),
     'page-b',
     'page-a',
-    'pond-1'
+    'pond-1',
+    'life'
   )
 })
 
@@ -100,5 +101,5 @@ it('a same-parent reorder does not append a second link', async () => {
   // the 'after' zone (frac > 0.75) rather than the default 'into'.
   fireEvent(target, dropEvent(1000))
 
-  expect(appendChildLinkToParent).not.toHaveBeenCalled()
+  expect(appendChildLinkUnder).not.toHaveBeenCalled()
 })

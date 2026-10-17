@@ -5,7 +5,7 @@
  */
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { appendChildLinkToParent } from '@/lib/pages/child-links'
+import { appendChildLinkUnder } from '@/lib/pages/child-links'
 import { mountRail } from './helpers/rail-sweep-fixture'
 
 jest.mock('next/navigation', () => ({
@@ -40,7 +40,7 @@ jest.mock('@/lib/change-log/store', () => ({
 }))
 
 jest.mock('@/lib/pages/child-links', () => ({
-  appendChildLinkToParent: jest.fn().mockResolvedValue(undefined),
+  appendChildLinkUnder: jest.fn().mockResolvedValue(undefined),
 }))
 
 afterEach(() => jest.clearAllMocks())
@@ -52,12 +52,13 @@ it("a row's + appends a page-link block to that row's page, not the root", async
   await screen.findByText('new page in Health')
   await userEvent.click(screen.getByRole('menuitem', { name: /^page/ }))
 
-  await waitFor(() => expect(appendChildLinkToParent).toHaveBeenCalledTimes(1))
-  expect(appendChildLinkToParent).toHaveBeenCalledWith(
+  await waitFor(() => expect(appendChildLinkUnder).toHaveBeenCalledTimes(1))
+  expect(appendChildLinkUnder).toHaveBeenCalledWith(
     expect.anything(),
     expect.anything(),
     'health',
     'new-page',
-    'pond-1'
+    'pond-1',
+    'life'
   )
 })

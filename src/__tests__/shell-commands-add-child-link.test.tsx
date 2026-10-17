@@ -8,7 +8,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ShellCommands } from '@/components/organisms/ShellCommands'
 import { PondContext, type PondContextValue } from '@/lib/pond/context'
-import { appendChildLinkToParent } from '@/lib/pages/child-links'
+import { appendChildLinkUnder } from '@/lib/pages/child-links'
 import type { Pond } from '@/lib/pond/client'
 
 jest.mock('next/navigation', () => ({
@@ -27,7 +27,7 @@ jest.mock('@/lib/pages/client', () => ({
 }))
 
 jest.mock('@/lib/pages/child-links', () => ({
-  appendChildLinkToParent: jest.fn().mockResolvedValue(undefined),
+  appendChildLinkUnder: jest.fn().mockResolvedValue(undefined),
 }))
 
 jest.mock('@/lib/pages/tree', () => ({
@@ -70,12 +70,13 @@ it("⌘K's new page row appends a page-link block to the page in view, not the r
 
   await user.click(await screen.findByRole('option', { name: /new page/ }))
 
-  await waitFor(() => expect(appendChildLinkToParent).toHaveBeenCalledTimes(1))
-  expect(appendChildLinkToParent).toHaveBeenCalledWith(
+  await waitFor(() => expect(appendChildLinkUnder).toHaveBeenCalledTimes(1))
+  expect(appendChildLinkUnder).toHaveBeenCalledWith(
     expect.anything(),
     expect.anything(),
     'health',
     'new-page',
-    'pond-1'
+    'pond-1',
+    'life'
   )
 })

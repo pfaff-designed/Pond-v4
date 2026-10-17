@@ -19,6 +19,9 @@ import { commitBlocks } from './commit'
 import type { PageRow } from './tree'
 import { withoutDatabasesRoot } from './databases-root'
 import { flushPendingPageSave } from './page-flush'
+import { sortedChildIds } from '@/lib/rail/tree'
+import { homeQueryKey } from './keys'
+import { getOrCreateHomePage, type HomePage } from './home'
 
 /**
  * Append a page-link to `childId` at the end of `blocks`, unless one already
@@ -71,18 +74,44 @@ export async function appendChildLinkToParent(
 }
 
 /**
+ * Every call site that creates or moves a page under a `parentId` that may be
+ * `null` (top-level) shares this: resolve `null` to the home row (the cache
+ * first, `getOrCreateHomePage` as the fallback), then append the link — and
+ * swallow failure rather than throw, since a failed link append must never
+ * fail the page create/move it rides along with (every caller's own rule).
+ */
+export async function appendChildLinkUnder(
+  supabase: SupabaseClient<Database>,
+  queryClient: QueryClient,
+  parentId: string | null,
+  childId: string,
+  pondId: string | null,
+  pondName: string
+): Promise<void> {
+  try {
+    const resolvedParentId =
+      parentId ??
+      queryClient.getQueryData<HomePage | null>(homeQueryKey(pondId))?.id ??
+      (await getOrCreateHomePage(supabase, pondId, pondName))?.id ??
+      null
+    if (!resolvedParentId) return
+    await appendChildLinkToParent(supabase, queryClient, resolvedParentId, childId, pondId)
+  } catch (err) {
+    console.error('[page-link] child link not appended', childId, err)
+  }
+}
+
+/**
  * The ids of a page's direct children, in the rail's own order — the same
- * scope and order the deleted `childCards` used (direct children, root scoped
- * via `withoutDatabasesRoot` when `parentId` is null — the home row's
- * children are the top-level pages). Pure, so the one-time upgrade's "which
+ * scope the deleted `childCards` used (root scoped via `withoutDatabasesRoot`
+ * when `parentId` is null — the home row's children are the top-level pages),
+ * sorted by `rail/tree.ts`'s own `sortedChildIds` so "rail order" can't drift
+ * between the rail and this upgrade. Pure, so the one-time upgrade's "which
  * children get a link" rule is unit-testable without a page or a client.
  */
 export function childLinkTargets(rows: PageRow[], parentId: string | null): string[] {
   const scope = parentId === null ? withoutDatabasesRoot(rows) : rows
-  return scope
-    .filter((r) => r.parent_id === parentId)
-    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.title.localeCompare(b.title))
-    .map((r) => r.id)
+  return sortedChildIds(scope, parentId)
 }
 
 /**
