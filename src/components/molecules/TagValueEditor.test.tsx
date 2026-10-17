@@ -356,6 +356,87 @@ describe('TagValueEditor', () => {
     expect(onChange).not.toHaveBeenCalled()
   })
 
+  it('Tab from the open popover closes it and reaches the next value, not the listbox', async () => {
+    const user = userEvent.setup()
+    render(
+      <>
+        <TagValueEditor
+          options={OPTIONS}
+          value={null}
+          empty
+          aria-label="First value"
+          onChange={jest.fn()}
+        />
+        <TagValueEditor
+          options={OPTIONS}
+          value={null}
+          empty
+          aria-label="Second value"
+          onChange={jest.fn()}
+        />
+      </>
+    )
+
+    await user.click(screen.getByRole('button', { name: 'First value' }))
+    expect(screen.getByRole('listbox')).toBeInTheDocument()
+
+    await user.tab()
+
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Second value' })).toHaveFocus()
+  })
+
+  it('Shift+Tab from the open popover closes it and reaches the previous value', async () => {
+    const user = userEvent.setup()
+    render(
+      <>
+        <TagValueEditor
+          options={OPTIONS}
+          value={null}
+          empty
+          aria-label="First value"
+          onChange={jest.fn()}
+        />
+        <TagValueEditor
+          options={OPTIONS}
+          value={null}
+          empty
+          aria-label="Second value"
+          onChange={jest.fn()}
+        />
+      </>
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Second value' }))
+    expect(screen.getByRole('listbox')).toBeInTheDocument()
+
+    await user.tab({ shift: true })
+
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'First value' })).toHaveFocus()
+  })
+
+  it('clicking an open chip\'s own trigger closes it, rather than keeping/reopening it', async () => {
+    const user = userEvent.setup()
+    render(
+      <TagValueEditor
+        options={OPTIONS}
+        value="o1"
+        label="event"
+        empty={false}
+        aria-label="Type value"
+        onChange={jest.fn()}
+      />
+    )
+
+    const trigger = screen.getByRole('button', { name: 'Type value' })
+    await user.click(trigger)
+    expect(screen.getByRole('listbox')).toBeInTheDocument()
+
+    await user.click(trigger)
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+  })
+
   it('a disabled editor renders no click target', () => {
     render(
       <TagValueEditor

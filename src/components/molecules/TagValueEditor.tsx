@@ -9,16 +9,20 @@
  * rather than theirs (those pickers' `slash-row.tsx` `Row` is a different
  * board row from this one).
  *
- * Typing filters by label; ↑↓ moves; ↵ picks; Esc closes with no change. A
- * `clear` row leads the list only while the query is empty — the active row
- * then defaults to the current value's own row (so opening and pressing ↵
- * leaves it unchanged), and typing hides `clear` and defaults the active row
- * to the first match. When the query matches no option's label exactly and
- * the host passes `onAddOption`, the LAST row is `＋ new tag "<query>"` —
- * picking it hands the typed label back to the host, which owns the schema
- * write (there's no `_schema` to add an option to from inside this component).
- * Omitting `onAddOption` (e.g. a host with no schema to write) drops the row
- * entirely rather than rendering a dead affordance.
+ * Typing filters by label; ↑↓ moves; ↵ picks; Esc or Tab/Shift+Tab closes
+ * with no change (Tab also hands focus on to the next/previous value, same
+ * as Tab-ing past a closed trigger). Clicking the trigger while its own
+ * popover is open closes it (toggle), rather than closing-then-reopening via
+ * the outside-dismiss path. A `clear` row leads the list only while the
+ * query is empty — the active row then defaults to the current value's own
+ * row (so opening and pressing ↵ leaves it unchanged), and typing hides
+ * `clear` and defaults the active row to the first match. When the query
+ * matches no option's label exactly and the host passes `onAddOption`, the
+ * LAST row is `＋ new tag "<query>"` — picking it hands the typed label back
+ * to the host, which owns the schema write (there's no `_schema` to add an
+ * option to from inside this component). Omitting `onAddOption` (e.g. a host
+ * with no schema to write) drops the row entirely rather than rendering a
+ * dead affordance.
  */
 
 import { useEffect, useRef, useState } from 'react'
@@ -105,6 +109,13 @@ export function TagValueEditor({
 }: TagValueEditorProps) {
   const [open, setOpen] = useState(false)
   const buttonRef = useRef<HTMLButtonElement>(null)
+  // A click on the OPEN popover's own trigger blurs the glass (focus moving
+  // to this button) before the click fires, which already closes the popover
+  // via `handleBlur` — so by the time `onClick` runs, `open` already reads
+  // `false` and a naive toggle would reopen it. Captured on pointerdown,
+  // before that blur happens, so `onClick` knows this is the close half of
+  // the toggle, not a fresh open.
+  const wasOpenRef = useRef(false)
 
   // `refocus` is false only for a dismiss caused by clicking some other
   // focusable element (the browser already moved focus there) — forcing it
@@ -130,7 +141,13 @@ export function TagValueEditor({
         ref={buttonRef}
         type="button"
         aria-label={ariaLabel}
-        onClick={() => editable && setOpen(true)}
+        onPointerDown={() => {
+          wasOpenRef.current = open
+        }}
+        onClick={() => {
+          if (!editable || wasOpenRef.current) return
+          setOpen(true)
+        }}
         // A host row (the table's last-cell step-out, KAN-344) reads keydowns
         // off this same element's ancestor — stop here so Enter opens the
         // popover instead of being read as "leave the row".
@@ -172,7 +189,8 @@ function TagPopover({
   anchor: PickerAnchor
   onPick: (next: string | null) => void
   onCreate?: (label: string) => void
-  /** Esc, from inside the glass — refocuses the trigger. */
+  /** Esc, or Tab leaving the filter input, from inside the glass —
+   *  refocuses the trigger. */
   onEscape: () => void
   /** A press outside the glass and its trigger — leaves focus where it fell. */
   onDismiss: () => void
@@ -213,6 +231,14 @@ function TagPopover({
       setActive((i) => Math.max(i - 1, 0))
     } else if (e.key === 'Escape') {
       e.preventDefault()
+      onEscape()
+    } else if (e.key === 'Tab') {
+      // No `preventDefault`: refocusing the trigger here (synchronously,
+      // before the browser's own Tab default action runs) makes the
+      // browser's native Tab/Shift+Tab continue FROM the trigger, landing on
+      // the next/previous value — rather than entering the listbox (a
+      // scrollable region browsers make focusable by default) or falling off
+      // the end of `document.body`, where `createPortal` mounts this glass.
       onEscape()
     } else if (e.key === 'Enter') {
       const row = rows[clamped]
