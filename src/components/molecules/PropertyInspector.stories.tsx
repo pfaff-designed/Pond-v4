@@ -189,6 +189,7 @@ export const InPropertiesCard: Story = {
       await expect(rs.gridTemplateColumns.split(' ')[0]).toBe('140px')
       await expect(rs.columnGap).toBe('12px')
       await expect(parseFloat(rs.minHeight)).toBe(34)
+      await expect(rs.borderRadius).toBe('8px')
       const label = row.querySelector<HTMLElement>('[data-part="label"]')!
       await expect(label.textContent).toBe(schema[i].name)
       const ls = getComputedStyle(label)
@@ -200,6 +201,12 @@ export const InPropertiesCard: Story = {
     const titleTrigger = canvas.getByRole('button', { name: 'Title value' })
     await expect(rows[0].contains(titleTrigger)).toBe(true)
     await expect(canvas.getByText('3')).toBeInTheDocument()
+
+    // field-row hover: ink .05 (Pond 02 frame line 53 'hover'), real CSS :hover.
+    const restBg = getComputedStyle(rows[0]).backgroundColor
+    await userEvent.hover(rows[0])
+    await expect(getComputedStyle(rows[0]).backgroundColor).not.toBe(restBg)
+    await userEvent.unhover(rows[0])
   },
 }
 

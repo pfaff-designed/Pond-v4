@@ -31,6 +31,8 @@
  * is the frame's (#239), and DocumentPanel sets it off the schema (`propertiesFrame`).
  */
 
+import { useState } from 'react'
+
 import { PondControl } from '@/components/atoms/PondControl'
 import { AtomEditor } from '@/components/molecules/AtomEditor'
 import { PondMolecule } from '@/components/molecules/PondMolecule'
@@ -72,6 +74,8 @@ export function PropertyInspector({
   editable = true,
   className,
 }: PropertyInspectorProps) {
+  const [hoveredId, setHoveredId] = useState<string | null>(null)
+
   if (schema.length === 0) return null
 
   return (
@@ -81,17 +85,31 @@ export function PropertyInspector({
       className={`flex flex-col ${POND_BLOCK_ROW_GAP.properties} ${className ?? ''}`}
     >
       {schema.map((def) => (
-        <PondMolecule key={def.id} kind="field-row" label={def.name} className="max-w-full">
-          <PropertyField
-            def={def}
-            value={coerceValue(def, values[def.id])}
-            editable={editable}
-            onChange={onChange}
-            onAddOption={onAddOption}
-            schema={schema}
-            values={values}
-          />
-        </PondMolecule>
+        // `contents` carries the pointer listeners the presentational molecule
+        // does not own, the same split `todo/view.tsx` uses for its rows.
+        <div
+          key={def.id}
+          className="contents"
+          onMouseEnter={() => setHoveredId(def.id)}
+          onMouseLeave={() => setHoveredId((id) => (id === def.id ? null : id))}
+        >
+          <PondMolecule
+            kind="field-row"
+            label={def.name}
+            state={hoveredId === def.id ? 'hover' : 'rest'}
+            className="max-w-full"
+          >
+            <PropertyField
+              def={def}
+              value={coerceValue(def, values[def.id])}
+              editable={editable}
+              onChange={onChange}
+              onAddOption={onAddOption}
+              schema={schema}
+              values={values}
+            />
+          </PondMolecule>
+        </div>
       ))}
     </div>
   )

@@ -646,7 +646,7 @@ export function PondMolecule({
         data-kind={kind}
         data-state={state}
         className={cn(
-          'grid w-full items-center gap-3 rounded-lg px-2 font-sans',
+          'grid w-full items-center gap-3 rounded-[8px] px-2 font-sans',
           mobile
             ? 'min-h-12 [grid-template-columns:120px_minmax(0,1fr)]'
             : 'min-h-[34px] [grid-template-columns:140px_minmax(0,1fr)]',
