@@ -12,6 +12,7 @@ import { useState } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { SiblingBlocksProvider } from '@/lib/modules/sibling-context'
+import { BlockRowProvider } from '@/lib/modules/block-row-context'
 import { ViewView } from './view'
 import { ActiveViewSelectionContext } from './active-view-context'
 import type { ViewBlock } from './schema'
@@ -602,6 +603,92 @@ describe('ViewView — the /table path end to end: add a row, type a title and a
     await user.keyboard('{Enter}')
     expect(setValue).toHaveBeenCalledTimes(1)
     expect(setValue).toHaveBeenCalledWith(rowId, 'p-date', '2026-10-20')
+  })
+})
+
+describe('CollectionTable — the last cell\'s date/tag editors keep their own Enter/↓ (KAN-350)', () => {
+  // date last, then select last, in two fixtures — the KAN-344 step-out guard
+  // only fires on the LAST column, so each atom needs a turn sitting there.
+  const dateLastSchema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    {
+      id: 'p-status',
+      name: 'Status',
+      type: 'select',
+      options: [
+        { id: 'opt-event', label: 'event' },
+        { id: 'opt-appt', label: 'appointment' },
+      ],
+    },
+    { id: 'p-date', name: 'Date', type: 'date' },
+  ]
+  const selectLastSchema: PropertySchema = [dateLastSchema[0], dateLastSchema[2], dateLastSchema[1]]
+
+  function renderTableWithStepOut(stepOut: jest.Mock) {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    return render(
+      <QueryClientProvider client={client}>
+        <DeletionUndoProvider>
+          <SiblingBlocksProvider value={{ blocks: [], pageId: 'page-1' }}>
+            <BlockRowProvider value={{ selected: true, stepOut }}>
+              <ViewView data={table} editable onChange={jest.fn()} />
+            </BlockRowProvider>
+          </SiblingBlocksProvider>
+        </DeletionUndoProvider>
+      </QueryClientProvider>
+    )
+  }
+
+  it('Enter on the last cell\'s date trigger opens the editor, not a stepped-out new line', async () => {
+    const user = userEvent.setup()
+    initialSchema = dateLastSchema
+    initialRows = [{ id: 'r1', title: 'only row', values: { 'p-status': 'opt-event' } }]
+    const stepOut = jest.fn()
+    renderTableWithStepOut(stepOut)
+
+    screen.getByRole('button', { name: 'Date value' }).focus()
+    await user.keyboard('{Enter}')
+
+    expect(screen.getByLabelText('Date value').tagName).toBe('INPUT')
+    expect(stepOut).not.toHaveBeenCalled()
+  })
+
+  it('↵ on a garbage date in the last cell keeps the draft open ("not a date"), without stepping out', async () => {
+    const user = userEvent.setup()
+    initialSchema = dateLastSchema
+    initialRows = [{ id: 'r1', title: 'only row', values: { 'p-status': 'opt-event' } }]
+    const stepOut = jest.fn()
+    renderTableWithStepOut(stepOut)
+
+    await user.click(screen.getByRole('button', { name: 'Date value' }))
+    const input = screen.getByLabelText('Date value')
+    await user.clear(input)
+    await user.type(input, 'not a day')
+    await user.keyboard('{Enter}')
+
+    expect(screen.getByText('not a date')).toBeInTheDocument()
+    expect(screen.getByLabelText('Date value')).toHaveValue('not a day')
+    expect(stepOut).not.toHaveBeenCalled()
+  })
+
+  it('↓ then ↵ inside the last cell\'s open tag popover picks a row, without stepping out', async () => {
+    const user = userEvent.setup()
+    initialSchema = selectLastSchema
+    initialRows = [{ id: 'r1', title: 'only row', values: { 'p-status': 'opt-event' } }]
+    const stepOut = jest.fn()
+    renderTableWithStepOut(stepOut)
+
+    await user.click(screen.getByRole('button', { name: 'Status value' }))
+    expect(screen.getByRole('listbox', { name: 'options' })).toBeInTheDocument()
+
+    await user.keyboard('{ArrowDown}')
+    expect(stepOut).not.toHaveBeenCalled()
+    expect(screen.getByRole('listbox', { name: 'options' })).toBeInTheDocument()
+
+    await user.keyboard('{Enter}')
+    expect(setValue).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+    expect(stepOut).not.toHaveBeenCalled()
   })
 })
 

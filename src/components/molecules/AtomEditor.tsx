@@ -121,6 +121,10 @@ export function AtomEditor({
         type="button"
         aria-label={ariaLabel}
         onClick={startEditing}
+        // A host row (the table's last-cell step-out, KAN-344) reads keydowns
+        // off this same element's ancestor — stop here so Enter/↓ open the
+        // editor instead of being read as "leave the row".
+        onKeyDown={(e) => e.stopPropagation()}
         className={cn(
           'rounded-mn-chrome border-0 bg-transparent p-0 text-left',
           FOCUS_VISIBLE_RING,
@@ -148,6 +152,9 @@ export function AtomEditor({
         }}
         onBlur={() => settle('revert', false)}
         onKeyDown={(e) => {
+          // Same ancestor-listener reason as the trigger button above —
+          // typing/Enter/Esc here is this editor's own business, not the row's.
+          e.stopPropagation()
           if (e.key === 'Enter') {
             e.preventDefault()
             settle('keep', true)

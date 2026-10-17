@@ -99,6 +99,10 @@ export function TagValueEditor({
         type="button"
         aria-label={ariaLabel}
         onClick={() => editable && setOpen(true)}
+        // A host row (the table's last-cell step-out, KAN-344) reads keydowns
+        // off this same element's ancestor — stop here so Enter opens the
+        // popover instead of being read as "leave the row".
+        onKeyDown={(e) => e.stopPropagation()}
         disabled={!editable}
         className={cn(
           'rounded-mn-chrome border-0 bg-transparent p-0 text-left',
@@ -172,6 +176,11 @@ function TagPopover({
   // a document-level listener would keep firing after Tab moved focus
   // elsewhere, since nothing here ever closed the popover on its own.
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    // `createPortal` keeps this in the REACT tree under the cell that opened
+    // it, so an un-stopped keydown still bubbles to a host row's own listener
+    // (the table's last-cell step-out, KAN-344) even though the DOM node sits
+    // in `document.body`.
+    e.stopPropagation()
     if (e.key === 'ArrowDown') {
       e.preventDefault()
       setActive((i) => Math.min(i + 1, rows.length - 1))
