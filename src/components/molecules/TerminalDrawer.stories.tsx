@@ -11,6 +11,7 @@ import {
   COMPOSER_MIN_HEIGHT,
   composerMaxHeight,
 } from '@/lib/layout/composer-height'
+import { ZEN_COMPOSER_CARD_OVERRIDE } from '@/lib/layout/zen'
 
 /**
  * The shell-side of the PondComposer card: where it sits, that it publishes its
@@ -446,6 +447,38 @@ export const ClosedMinimized: Story = {
   args: { collapsed: true, minimized: true, children: <Thread turns={4} /> },
   render: renderClosedInScroller,
   play: async ({ canvasElement }) => assertClosedLeavesNoTrace(canvasElement),
+}
+
+/**
+ * Zen overrides the card's `bottom` by `!important`-ing the class that sets
+ * `--composer-card-bottom`, not `bottom` itself — the inline style's `bottom:
+ * var(--composer-card-bottom)` has to keep reading the overridden var rather
+ * than get out-fought by a `bottom-[92px]!` utility the closed slide's own
+ * `calc(100% + var(...))` would never see. Proves the var wins (92, not the
+ * default 24) and that the closed slide clears the scroller by the zen
+ * footprint, not the ordinary one.
+ */
+export const ClosedInZenClearsTheZenFootprint: Story = {
+  name: 'closed · in zen, clears the zen footprint (92px)',
+  args: { collapsed: true, children: <Thread turns={4} /> },
+  render: (args) => (
+    <div data-testid="scroller" className="h-[30rem] w-[1180px] overflow-auto bg-mn-surface">
+      <div data-part="shell" className={`relative h-full ${ZEN_COMPOSER_CARD_OVERRIDE}`}>
+        <TerminalDrawer {...args} />
+      </div>
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const scroller = within(canvasElement).getByTestId('scroller')
+    const card = scroller.querySelector<HTMLElement>('[data-part="composer-card"]')!
+    const scrollerBottom = scroller.getBoundingClientRect().bottom
+
+    await expect(getComputedStyle(card).getPropertyValue('--composer-card-bottom').trim()).toBe(
+      '92px'
+    )
+    await expect(scroller.scrollHeight).toBe(scroller.clientHeight)
+    await expect(card.getBoundingClientRect().top).toBeGreaterThanOrEqual(scrollerBottom)
+  },
 }
 
 /**

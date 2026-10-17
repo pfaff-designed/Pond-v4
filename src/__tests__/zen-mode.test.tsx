@@ -427,7 +427,7 @@ describe('ZenComposerChrome — the composer’s card, shown only once asked', (
       expect.arrayContaining([
         '[&_[data-part="composer-card"]]:w-[560px]!',
         '[&_[data-part="composer-card"]]:left-1/2!',
-        '[&_[data-part="composer-card"]]:bottom-[92px]!',
+        '[&_[data-part="composer-card"]]:[--composer-card-bottom:92px]!',
         '[&_[data-part="composer-card"]]:gap-[12px]!',
         '[&_[data-part="composer-card"]]:[--mn-glass-bg:linear-gradient(160deg,rgba(255,255,255,.92),rgba(255,255,255,.76))]!',
         '[&_[data-part="composer-card"]]:[--mn-glass-border:1px_solid_rgba(255,255,255,.9)]!',
