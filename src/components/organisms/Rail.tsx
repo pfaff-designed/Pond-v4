@@ -1434,24 +1434,7 @@ export function Rail() {
   // Area folders persist their open/collapsed state per pond across reloads
   // (see the persistence effect below); Life starts expanded so the tree is
   // visible on load (collapsing Life is the "collapse everything").
-  const [expanded, setExpandedRaw] = useState<Set<string>>(new Set())
-  // KAN-393: every expand/collapse — manual or programmatic — persists to this
-  // pond's store so a reload keeps what was open (board `Pond 08 Edges` 8f).
-  // `setExpanded` shadows the raw setter so every existing call site persists
-  // without being touched individually. The updater itself stays pure (no
-  // I/O, no `pondId` capture) — a caller's closure (e.g. `handleAddChild`,
-  // async across a pond switch) can be stale by the time it resolves and
-  // calls this, and writing from inside the updater would persist under
-  // whichever pond that stale closure remembers. The persistence effect
-  // below writes instead, reading `pondId` fresh from the render it runs in.
-  // `useCallback`'d with no deps so its identity never changes, for the
-  // reveal effects' dep arrays below.
-  const setExpanded = useCallback(
-    (update: Set<string> | ((prev: Set<string>) => Set<string>)) => {
-      setExpandedRaw((prev) => (typeof update === 'function' ? update(prev) : update))
-    },
-    []
-  )
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [lifeExpanded, setLifeExpanded] = useState(true)
   const [busyId, setBusyId] = useState<string | null>(null)
   // The subtree-delete confirm (blast-radius modal); null when closed.
@@ -1505,7 +1488,7 @@ export function Rail() {
     const isPondSwitch = prevPondIdRef.current !== null
     prevPondIdRef.current = pondId
     if (!isPondSwitch) return
-    setExpandedRaw(new Set())
+    setExpanded(new Set())
     revealedForRef.current = null
   }, [pondId])
 
@@ -1586,7 +1569,7 @@ export function Rail() {
       return next
     })
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [selectedNodeId, pages, setExpanded])
+  }, [selectedNodeId, pages])
 
   // ── Rail reveals a new child without leaving the parent (KAN-122) ──────────
   // The `/ nested page` swap stays on the parent, so selection never changes
@@ -1622,7 +1605,7 @@ export function Rail() {
       next.add(selectedNodeId)
       return next
     })
-  }, [selectedNodeId, pages, isLoading, setExpanded])
+  }, [selectedNodeId, pages, isLoading])
 
   // Deferred commits fire up to ~6s after staging — read the selection fresh at
   // commit time via this ref, not the render-time closure value.
