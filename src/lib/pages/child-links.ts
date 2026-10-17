@@ -4,7 +4,10 @@
  * the same child") is unit-testable without a page or a client.
  * `appendChildLinkToParent` is the write seam every non-open-page caller
  * (rail add-child, make-this-a-page, reparent) shares, so that rule can't
- * drift between them.
+ * drift between them. `childLinkTargets` + `markChildLinksMigrated` back the
+ * one-time upgrade for a page that already had children before this ticket
+ * (DocumentPanel, the currently-open page, so IT goes through its own
+ * `commitLocalEdit` rather than this module's write seam).
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -13,6 +16,8 @@ import type { Database } from '@/lib/supabase/types'
 import type { Block } from '@/lib/modules/content'
 import { getPage } from './client'
 import { commitBlocks } from './commit'
+import type { PageRow } from './tree'
+import { withoutDatabasesRoot } from './databases-root'
 
 /**
  * Append a page-link to `childId` at the end of `blocks`, unless one already
@@ -56,4 +61,45 @@ export async function appendChildLinkToParent(
     pondId,
   })
   await queryClient.invalidateQueries({ queryKey: ['page', parentId] })
+}
+
+/**
+ * The ids of a page's direct children, in the rail's own order — the same
+ * scope and order the deleted `childCards` used (direct children, root scoped
+ * via `withoutDatabasesRoot` when `parentId` is null — the home row's
+ * children are the top-level pages). Pure, so the one-time upgrade's "which
+ * children get a link" rule is unit-testable without a page or a client.
+ */
+export function childLinkTargets(rows: PageRow[], parentId: string | null): string[] {
+  const scope = parentId === null ? withoutDatabasesRoot(rows) : rows
+  return scope
+    .filter((r) => r.parent_id === parentId)
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.title.localeCompare(b.title))
+    .map((r) => r.id)
+}
+
+/**
+ * Stamp `props.childLinksMigrated` on the open page itself, once its current
+ * children have each been given a page-link block (KAN-415's one-time
+ * upgrade) — read-merge-write on `props`, exactly like `nested-page.ts`'s
+ * `markOpened`, so the schema and every other prop are untouched. No-op once
+ * the stamp is already there, so a reload never re-runs the upgrade.
+ */
+export async function markChildLinksMigrated(
+  supabase: SupabaseClient<Database>,
+  pageId: string
+): Promise<void> {
+  const { data } = await supabase.from('pages').select('props').eq('id', pageId).maybeSingle()
+  const current = (data as { props?: unknown } | null)?.props
+  const props: Record<string, unknown> =
+    current && typeof current === 'object' && !Array.isArray(current)
+      ? (current as Record<string, unknown>)
+      : {}
+  if (props.childLinksMigrated === true) return
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any)
+    .from('pages')
+    .update({ props: { ...props, childLinksMigrated: true }, updated_at: new Date().toISOString() })
+    .eq('id', pageId)
+  if (error) throw new Error(error.message)
 }

@@ -64,6 +64,7 @@ import { applyPagePropsOptimistic } from '@/lib/pages/tree'
 import { WORKSPACE_PATH } from '@/lib/pages/nav'
 import { homeQueryKey, pagesKey } from '@/lib/pages/keys'
 import { usePagesRows } from '@/lib/pages/use-pages'
+import { appendChildLink, childLinkTargets, markChildLinksMigrated } from '@/lib/pages/child-links'
 import { usePond } from '@/lib/pond/context'
 import { PageCanvas } from '@/lib/modules/page-canvas'
 import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
@@ -264,6 +265,33 @@ export function DocumentPanel() {
     undoRemove,
     adoptSavedBlocks,
   } = usePageDraft({ page, pageId, pondId, getSupabase })
+
+  // KAN-415: child pages are ordinary page-link blocks on their parent now, not
+  // an auto-drawn grid, so a page saved before this ticket needs each of its
+  // CURRENT children appended once — the same scope and order the deleted
+  // `childCards` used (direct children, root scoped via `withoutDatabasesRoot`
+  // when `nodeId` is null, i.e. this is the home row). Goes through the
+  // editor's own `commitLocalEdit`, not a direct write, because this page is —
+  // by construction — the one currently open. Guarded by `migratedRef` keyed
+  // on the page id (not just `page.props`) so a double-mount/strict-mode
+  // re-render never re-appends while the server stamp is still in flight — the
+  // same guard shape as `openedMarked` above.
+  const migratedRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!page || rowsPending || migratedRef.current === page.id) return
+    if (page.props?.childLinksMigrated === true) return
+    migratedRef.current = page.id
+
+    const nextBlocks = childLinkTargets(rows, nodeId).reduce(
+      (blocks, childId) => appendChildLink(blocks, childId),
+      viewBlocks
+    )
+    if (nextBlocks !== viewBlocks) commitLocalEdit(nextBlocks)
+
+    void markChildLinksMigrated(getSupabase(), page.id).catch((err) => {
+      console.error('Failed to mark child links migrated', page.id, err)
+    })
+  }, [page, rows, rowsPending, nodeId, viewBlocks, commitLocalEdit, getSupabase])
 
   // "Changes to this page" (#103, storyboard frame 8): the log filtered to this
   // page, floating, ⌥⌘H. State, shortcut and surface all live with the panel; the
