@@ -31,10 +31,11 @@ export const COMPOSER_CLEARANCE_GAP = 24
 export const COMPOSER_SCROLL_CLEARANCE_VAR = '--pond-composer-scroll-clearance'
 
 /** The zen pill's own footprint (`ZenPill.tsx`): `bottom-[30px]`, plus its
- *  height (the row's `p-[5px]` round its `h-[36px]` items: 36 + 5 + 5). What
+ *  height (its `ITEM_CLASS` `h-[36px]` items, the row's `p-[5px]` round them,
+ *  and `PILL_GLASS`'s 1px `border` round the row: 36 + 5 + 5 + 1 + 1). What
  *  zen actually draws at the screen's bottom once the card itself is hidden. */
 export const ZEN_PILL_BOTTOM_INSET_PX = 30
-export const ZEN_PILL_HEIGHT_PX = 46
+export const ZEN_PILL_HEIGHT_PX = 48
 export const ZEN_PILL_FOOTPRINT_PX = ZEN_PILL_BOTTOM_INSET_PX + ZEN_PILL_HEIGHT_PX
 
 /** The collapsed tab sits on the shell's bottom edge, with no inset below it. */
