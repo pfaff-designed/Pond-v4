@@ -89,6 +89,7 @@ import { CollectionList } from './list'
 import { CollectionCalendar } from './collection-calendar'
 import { useRecordSelection } from './use-record-selection'
 import { ViewBar, type ViewBarView } from '@/components/molecules/ViewBar'
+import { useBlockRow } from '../block-row-context'
 
 // ── Registry entry: fetch, then draw ──────────────────────────────────────────
 
@@ -554,6 +555,23 @@ function CollectionTable({
   onAddRow?: (values?: Record<string, PropertyValue>) => Promise<string | null>
   onRenameRow?: (rowId: string, title: string) => void
 }) {
+  const { stepOut } = useBlockRow()
+
+  // Return/↓ in the last row's last cell step out of the table (KAN-344) — the
+  // "last cell" is the Row title input when there's no schema, else the last
+  // field's Cell. Every other cell keeps reading those keys itself (multi-line
+  // entry, moving down a column). `ci === -1` is the Row title sentinel, so an
+  // empty schema's last cell (schema.length - 1 === -1) still matches it.
+  function handleCellKeyDown(ri: number, ci: number, e: React.KeyboardEvent) {
+    if (ri !== rows.length - 1 || ci !== schema.length - 1) return
+    if (e.key !== 'Enter' && e.key !== 'ArrowDown') return
+    if (e.shiftKey || e.altKey || e.metaKey || e.ctrlKey) return
+    const target = e.target as HTMLElement
+    if (target.closest('textarea, [role="listbox"], [role="menu"]')) return
+    e.preventDefault()
+    stepOut()
+  }
+
   return (
     <div>
       <table className="w-full border-collapse text-left">
@@ -575,7 +593,7 @@ function CollectionTable({
         <tbody>
           {/* No empty row of its own: on a page the frame owns the empty state
               (PondBlock state="empty", #239) and suppresses this view entirely. */}
-          {rows.map((row) => {
+          {rows.map((row, ri) => {
             const struck = struckIds?.has(row.id) ?? false
             return (
               <tr
@@ -586,7 +604,10 @@ function CollectionTable({
                     : 'border-b border-mn-line last:border-b-0 align-top'
                 }
               >
-                <td className={struck ? 'py-1.5 pr-3 font-medium' : 'py-1.5 pr-3 font-medium text-mn-text'}>
+                <td
+                  className={struck ? 'py-1.5 pr-3 font-medium' : 'py-1.5 pr-3 font-medium text-mn-text'}
+                  onKeyDown={(e) => handleCellKeyDown(ri, -1, e)}
+                >
                   {editable && onRenameRow && !struck ? (
                     <DraftInput
                       aria-label="Row title"
@@ -599,8 +620,8 @@ function CollectionTable({
                     row.title || 'Untitled'
                   )}
                 </td>
-                {schema.map((def) => (
-                  <td key={def.id} className="py-1.5 pr-3">
+                {schema.map((def, ci) => (
+                  <td key={def.id} className="py-1.5 pr-3" onKeyDown={(e) => handleCellKeyDown(ri, ci, e)}>
                     <Cell
                       def={def}
                       value={coerceValue(def, row.values[def.id])}

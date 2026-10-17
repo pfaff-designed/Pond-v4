@@ -12,6 +12,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
+import { PageCanvas } from '@/lib/modules/page-canvas'
 import type { Block } from '@/lib/documents/types'
 import { textEditorOf, writeInTextBlock } from './helpers/text-block'
 
@@ -35,6 +36,26 @@ jest.mock('@/lib/pages/source-databases', () => ({
   ...jest.requireActual('@/lib/pages/source-databases'),
   fetchRecordCounts: jest.fn().mockResolvedValue(new Map()),
 }))
+jest.mock('@/lib/modules/view/use-collection-rows', () => ({
+  useCollectionRows: () => ({
+    schema: [
+      {
+        id: 'p-status',
+        name: 'status',
+        type: 'status',
+        options: [{ id: 'o-todo', label: 'to do' }],
+      },
+    ],
+    rows: [{ id: 'row-1', title: 'Trim the rim', values: { 'p-status': 'o-todo' } }],
+    isLoading: false,
+    isError: false,
+    setValue: jest.fn(),
+    addRow: jest.fn(),
+    removeRow: jest.fn(),
+    renameRow: jest.fn(),
+    updateSchema: jest.fn(),
+  }),
+}))
 const mockCreatePage = jest.fn()
 jest.mock('@/lib/pages/client', () => ({
   ...jest.requireActual('@/lib/pages/client'),
@@ -48,6 +69,26 @@ const table: Block = {
   type: 'table',
   columns: ['Tool', 'Location'],
   rows: [{ id: 'r1', cells: ['Saw', 'Wall'] }],
+}
+const image: Block = {
+  id: 'b-image',
+  type: 'image',
+  url: 'https://cdn.example/user-1/board.png',
+  filename: 'board.png',
+}
+const checklist: Block = {
+  id: 'b-checklist',
+  type: 'todo',
+  items: [{ id: 'i1', label: 'sand the top', checked: false }],
+}
+const board: Block = { id: 'b-board', type: 'view', mode: 'board', groupBy: 'p-status' }
+const checklistWithEmptyLastItem: Block = {
+  id: 'b-checklist',
+  type: 'todo',
+  items: [
+    { id: 'i1', label: 'sand the top', checked: false },
+    { id: 'i2', label: '', checked: false },
+  ],
 }
 const note: Block = { id: 'b-note', type: 'text', content: 'Cabinets are the only open cost.' }
 const prose: Block = { id: 'b-prose', type: 'text', content: 'soak overnight\n\nsimmer with bay' }
@@ -201,19 +242,151 @@ describe('Return after a block opens a line for `/`', () => {
     expect(blockRoot('b-note')).toHaveAttribute('tabindex', '-1')
   })
 
-  it('a non-text block is a named group that says Return opens a line, and shows a ring on keyboard focus', () => {
+  it('a non-text block is a named group that says Return opens a line, and shows PondBlock’s own selected state on focus', () => {
     renderCanvas([table, note])
     const group = screen.getByRole('group', { name: 'table' })
     expect(group).toBe(blockRoot('b-table'))
     expect(group).toHaveAttribute('aria-keyshortcuts', 'Enter')
-    expect(group).toHaveClass(
-      'rounded-mn-card',
-      'focus-visible:ring-2',
-      'focus-visible:ring-mn-text'
+    expect(group.querySelector('[data-block-state]')).toHaveAttribute('data-block-state', 'rest')
+    act(() => group.focus())
+    expect(group.querySelector('[data-block-state]')).toHaveAttribute(
+      'data-block-state',
+      'selected'
     )
-    expect(group).not.toHaveClass('outline-none')
     expect(blockRoot('b-note')).not.toHaveAttribute('role')
-    expect(blockRoot('b-note')).not.toHaveClass('focus-visible:ring-2')
+  })
+})
+
+describe('pointer selection draws PondBlock’s own `selected` state (07.05)', () => {
+  it('a click on the table card’s own padding selects the row; Esc clears it; the cell keeps its own focus', async () => {
+    const user = userEvent.setup()
+    renderCanvas([table, note])
+    const group = blockRoot('b-table')
+    const card = group.querySelector('[data-block-state]')!
+
+    await user.click(group)
+    expect(card).toHaveAttribute('data-block-state', 'selected')
+    await waitFor(() => expect(group).toHaveFocus())
+
+    await user.keyboard('{Escape}')
+    expect(card).toHaveAttribute('data-block-state', 'rest')
+    await waitFor(() => expect(group).not.toHaveFocus())
+
+    await user.click(screen.getByDisplayValue('Saw'))
+    expect(card).toHaveAttribute('data-block-state', 'rest')
+    expect(screen.getByDisplayValue('Saw')).toHaveFocus()
+  })
+
+  it('a click inside RecordPeek — portaled to the page canvas, outside the row’s own DOM — does not select the row', async () => {
+    const user = userEvent.setup()
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <DeletionUndoProvider>
+          <PageCanvas>
+            <Harness initial={[board]} onChange={jest.fn()} />
+          </PageCanvas>
+        </DeletionUndoProvider>
+      </QueryClientProvider>
+    )
+    const group = blockRoot('b-board')
+
+    // Open the peek from the keyboard, never a click on the row — isolates the
+    // portal's own click from the row's click handler.
+    screen.getByRole('article', { name: 'Trim the rim' }).focus()
+    await user.keyboard('{Enter}')
+    const peek = document.querySelector('[data-part="record-peek"]') as HTMLElement
+    expect(group.contains(peek)).toBe(false)
+
+    await user.click(within(peek).getByText('status'))
+
+    expect(group).not.toHaveFocus()
+    expect(document.querySelector('[data-part="record-peek"]')).not.toBeNull()
+  })
+})
+
+describe('↓ on a selected row steps out, same as Return (KAN-344)', () => {
+  it('↓ on a focused image block opens a new line after it', async () => {
+    const user = userEvent.setup()
+    const { onChange } = renderCanvas([image, note])
+    blockRoot('b-image').focus()
+    await user.keyboard('{ArrowDown}')
+
+    const opened = lastBlocks(onChange)
+    expect(opened.map((b) => b.id)).toEqual(['b-image', expect.any(String), 'b-note'])
+    expect(opened[1]).toMatchObject({ type: 'text', content: '' })
+  })
+
+  it('↓ on a focused table row does nothing: the table reads ↓ itself', async () => {
+    const { onChange } = renderCanvas([table, note])
+    fireEvent.keyDown(blockRoot('b-table'), { key: 'ArrowDown' })
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('↓ on a focused checklist row does nothing: the checklist reads ↓ itself', async () => {
+    const { onChange } = renderCanvas([checklist, note])
+    fireEvent.keyDown(blockRoot('b-checklist'), { key: 'ArrowDown' })
+    expect(onChange).not.toHaveBeenCalled()
+  })
+})
+
+describe('the table’s last cell steps out, same as Return (KAN-344)', () => {
+  it('Return in the last row’s last cell opens a new line after the table', async () => {
+    const { onChange } = renderCanvas([table, note])
+    fireEvent.keyDown(screen.getByDisplayValue('Wall'), { key: 'Enter' })
+
+    const opened = lastBlocks(onChange)
+    expect(opened.map((b) => b.id)).toEqual(['b-table', expect.any(String), 'b-note'])
+    expect(opened[1]).toMatchObject({ type: 'text', content: '' })
+  })
+
+  it('↓ in the last row’s last cell opens a new line after the table', async () => {
+    const { onChange } = renderCanvas([table, note])
+    fireEvent.keyDown(screen.getByDisplayValue('Wall'), { key: 'ArrowDown' })
+
+    const opened = lastBlocks(onChange)
+    expect(opened.map((b) => b.id)).toEqual(['b-table', expect.any(String), 'b-note'])
+    expect(opened[1]).toMatchObject({ type: 'text', content: '' })
+  })
+
+  it('Return in “Saw” (not the last cell) still does nothing', async () => {
+    const { onChange } = renderCanvas([table, note])
+    fireEvent.keyDown(await screen.findByDisplayValue('Saw'), { key: 'Enter' })
+    expect(onChange.mock.calls.some(([next]) => (next as Block[]).length !== 2)).toBe(false)
+  })
+})
+
+describe('the checklist’s empty last item steps out, same as Return (KAN-344)', () => {
+  it('Return on the empty last item removes it and opens a new line after the checklist', async () => {
+    const { onChange } = renderCanvas([checklistWithEmptyLastItem, note])
+    const items = screen.getAllByRole('textbox', { name: 'Step' })
+    fireEvent.keyDown(items[1], { key: 'Enter' })
+
+    const opened = lastBlocks(onChange)
+    expect(opened.map((b) => b.id)).toEqual(['b-checklist', expect.any(String), 'b-note'])
+    expect(opened[0]).toMatchObject({ items: [{ label: 'sand the top' }] })
+    expect(opened[1]).toMatchObject({ type: 'text', content: '' })
+  })
+
+  it('Return on the non-empty, not-last item still does nothing', async () => {
+    const { onChange } = renderCanvas([checklistWithEmptyLastItem, note])
+    const items = screen.getAllByRole('textbox', { name: 'Step' })
+    fireEvent.keyDown(items[0], { key: 'Enter' })
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('Return on the single, non-empty, last item appends an empty item instead of stepping out', async () => {
+    const { onChange } = renderCanvas([checklist, note])
+    const item = screen.getByRole('textbox', { name: 'Step' })
+    fireEvent.keyDown(item, { key: 'Enter' })
+
+    expect(onChange).toHaveBeenCalledTimes(1)
+    const next = onChange.mock.calls[0][0] as Block[]
+    expect(next.map((b) => b.id)).toEqual(['b-checklist', 'b-note'])
+    expect(next[0]).toMatchObject({
+      items: [{ label: 'sand the top' }, { label: '' }],
+    })
   })
 })
 

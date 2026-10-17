@@ -7,6 +7,7 @@
  */
 import React from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
   ChartCard,
@@ -16,6 +17,7 @@ import {
   chartEmptyLine,
   chartErrorLine,
 } from '@/lib/modules/chart/card'
+import { POND_BLOCK_SELECTED_RING } from '@/components/organisms/PondBlock'
 import {
   CHART_SKELETON,
   chartOnPath,
@@ -529,5 +531,23 @@ describe('BlockCanvas — a card chart is its own card; it is not wrapped in a b
     const host = document.getElementById('block-v2')!
     expect(host.querySelector<HTMLElement>('[data-block-kind]')!.dataset.blockKind).toBe('table')
     expect(host.querySelector('[data-chart-kind]')).toBeNull()
+  })
+})
+
+// `ChartCard` bypasses `PondBlock` (#227), so pointer selection (07.05) reaches it
+// through `BlockRowContext` rather than the `state` prop `PondBlock` threads for
+// every other kind — pinned separately from KAN-106's own row suite.
+describe('BlockCanvas — a click on the chart card’s own padding selects it, same ring as PondBlock (KAN-344)', () => {
+  it('draws PondBlock’s own `selected` ring on the chart card itself', async () => {
+    collection.rows = [weighIn('r1', '2026-09-01', 80.4), weighIn('r2', '2026-09-08', 80.1)]
+    const user = userEvent.setup()
+    renderCanvas([config])
+    const group = document.getElementById('block-v1')!
+    const card = group.querySelector<HTMLElement>('[data-chart-kind]')!
+    expect(card.dataset.chartState).toBe('rest')
+
+    await user.click(group)
+    expect(card.dataset.chartState).toBe('selected')
+    expect(card.className).toContain(POND_BLOCK_SELECTED_RING)
   })
 })

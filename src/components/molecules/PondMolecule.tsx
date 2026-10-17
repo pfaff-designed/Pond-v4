@@ -154,6 +154,12 @@ export interface PondMoleculeProps {
    */
   onTitleChange?: (next: string) => void
   /**
+   * list-row / check-row — forwarded `onKeyDown` on the title field (KAN-344: the
+   * checklist's own "Return on an empty last item steps out" rule). The molecule
+   * stays presentational — it does not interpret the key, only hands it to the host.
+   */
+  onTitleKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void
+  /**
    * list-row — a LIVE field in place of the title span (the rail's inline rename).
    * The host owns the field and its keys; the row keeps its own geometry.
    */
@@ -241,6 +247,7 @@ export function PondMolecule({
   leading,
   trailing,
   onTitleChange,
+  onTitleKeyDown,
   titleField,
   onToggle,
   children,
@@ -335,6 +342,7 @@ export function PondMolecule({
         value={title ?? ''}
         placeholder={emptyCopy}
         onChange={(e) => onTitleChange(e.target.value)}
+        onKeyDown={onTitleKeyDown}
       />
     )
   }
