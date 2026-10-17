@@ -305,7 +305,9 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
       )
 
       await user.click(within(cellFor(container, '2026-09-10')).getByText('Trim the rim'))
-      expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+      // Selecting the row opens its own peek (KAN-358) — its title/field inputs are
+      // not the day cell's add-row input, which is the one this guard is about.
+      expect(screen.queryByRole('textbox', { name: /Add an item/ })).not.toBeInTheDocument()
       expect(onAddRow).not.toHaveBeenCalled()
     })
 
@@ -337,5 +339,186 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
       )
       expect(noDate.querySelector('[data-part="calendar-day-cell"][role="button"]')).toBeNull()
     })
+  })
+
+  describe('selecting a day’s event (KAN-358)', () => {
+    beforeEach(() => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-09-10T12:00:00Z'))
+    })
+    afterEach(() => {
+      jest.useRealTimers()
+    })
+
+    it('clicking a stack item draws the selected ring and opens the record peek, without opening the day cell’s add input', async () => {
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+      const { container } = render(
+        <CollectionCalendar
+          schema={schemaWithDate}
+          rows={rows}
+          editable
+          onAddRow={jest.fn()}
+          onRenameRow={jest.fn()}
+        />
+      )
+      const desktopWrap = [...container.querySelectorAll('div')].find((d) => d.classList.contains('md:flex'))!
+      const item = within(desktopWrap).getByText('Trim the rim').closest('div')!
+      expect(item).not.toHaveClass('ring-[1.5px]')
+      expect(screen.queryByLabelText('Record: Trim the rim')).not.toBeInTheDocument()
+
+      await user.click(item)
+
+      expect(item).toHaveClass('ring-[1.5px]', 'ring-inset', 'ring-mn-text')
+      expect(screen.getByLabelText('Record: Trim the rim')).toBeInTheDocument()
+      expect(screen.queryByRole('textbox', { name: /Add an item/ })).not.toBeInTheDocument()
+    })
+
+    it('↵ on an unselected stack item selects it without opening the record; ↵ again (selected) opens it', async () => {
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+      const onOpenRow = jest.fn()
+      const { container } = render(
+        <CollectionCalendar
+          schema={schemaWithDate}
+          rows={rows}
+          editable
+          onAddRow={jest.fn()}
+          onRenameRow={jest.fn()}
+          onOpenRow={onOpenRow}
+        />
+      )
+      const desktopWrap = [...container.querySelectorAll('div')].find((d) => d.classList.contains('md:flex'))!
+      const item = within(desktopWrap).getByText('Trim the rim').closest('div')!
+      item.focus()
+
+      await user.keyboard('{Enter}')
+
+      expect(item).toHaveClass('ring-[1.5px]')
+      expect(onOpenRow).not.toHaveBeenCalled()
+
+      await user.keyboard('{Enter}')
+
+      expect(onOpenRow).toHaveBeenCalledWith('r1')
+    })
+
+    it('a second click on the already-selected stack item also opens the record', async () => {
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+      const onOpenRow = jest.fn()
+      const { container } = render(
+        <CollectionCalendar
+          schema={schemaWithDate}
+          rows={rows}
+          editable
+          onAddRow={jest.fn()}
+          onRenameRow={jest.fn()}
+          onOpenRow={onOpenRow}
+        />
+      )
+      const desktopWrap = [...container.querySelectorAll('div')].find((d) => d.classList.contains('md:flex'))!
+      const item = within(desktopWrap).getByText('Trim the rim').closest('div')!
+
+      await user.click(item)
+      expect(onOpenRow).not.toHaveBeenCalled()
+
+      await user.click(item)
+
+      expect(onOpenRow).toHaveBeenCalledWith('r1')
+    })
+  })
+
+  describe("selecting a day’s event in the mobile focus list (KAN-358)", () => {
+    beforeEach(() => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-09-10T12:00:00Z'))
+    })
+    afterEach(() => {
+      jest.useRealTimers()
+    })
+
+    it('clicking a focus-list row draws the selected ring and opens the record peek', async () => {
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+      const { container } = render(
+        <CollectionCalendar
+          schema={schemaWithDate}
+          rows={rows}
+          editable
+          onAddRow={jest.fn()}
+          onRenameRow={jest.fn()}
+        />
+      )
+      const focusList = container.querySelector<HTMLElement>('[data-part="calendar-focus-list"]')!
+      const item = within(focusList).getByText('Trim the rim').closest('div')!
+      expect(item).not.toHaveClass('ring-[1.5px]')
+      expect(screen.queryByLabelText('Record: Trim the rim')).not.toBeInTheDocument()
+
+      await user.click(item)
+
+      expect(item).toHaveClass('ring-[1.5px]', 'ring-inset', 'ring-mn-text')
+      expect(screen.getByLabelText('Record: Trim the rim')).toBeInTheDocument()
+    })
+
+    it('↵ on an unselected focus-list row selects it without opening the record; ↵ again (selected) opens it', async () => {
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+      const onOpenRow = jest.fn()
+      const { container } = render(
+        <CollectionCalendar
+          schema={schemaWithDate}
+          rows={rows}
+          editable
+          onAddRow={jest.fn()}
+          onRenameRow={jest.fn()}
+          onOpenRow={onOpenRow}
+        />
+      )
+      const focusList = container.querySelector<HTMLElement>('[data-part="calendar-focus-list"]')!
+      const item = within(focusList).getByText('Trim the rim').closest('div')!
+      item.focus()
+
+      await user.keyboard('{Enter}')
+
+      expect(item).toHaveClass('ring-[1.5px]')
+      expect(onOpenRow).not.toHaveBeenCalled()
+
+      await user.keyboard('{Enter}')
+
+      expect(onOpenRow).toHaveBeenCalledWith('r1')
+    })
+  })
+})
+
+describe('CollectionCalendar — a day cell is not a button around its events (KAN-358 fix)', () => {
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-09-10T12:00:00Z'))
+  })
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  function cellFor(container: HTMLElement, iso: string) {
+    return container.querySelector<HTMLElement>(`[data-part="calendar-day-cell"][data-iso="${iso}"]`)!
+  }
+
+  it('no day cell is role="button", addable or not', () => {
+    const { container } = render(
+      <CollectionCalendar schema={schemaWithDate} rows={rows} editable onAddRow={jest.fn()} onRenameRow={jest.fn()} />
+    )
+    expect(container.querySelector('[data-part="calendar-day-cell"][role="button"]')).toBeNull()
+  })
+
+  it('an addable day has its own "Add on …" button, reachable by keyboard and by click, that opens the add input', async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    const { container } = render(
+      <CollectionCalendar schema={schemaWithDate} rows={[]} editable onAddRow={jest.fn()} onRenameRow={jest.fn()} />
+    )
+    const addButton = within(cellFor(container, '2026-09-20')).getByRole('button', { name: 'Add on 20 sep' })
+
+    await user.click(addButton)
+
+    expect(screen.getByRole('textbox', { name: 'Add an item on 20 sep' })).toBeInTheDocument()
+  })
+
+  it('an event item sits inside the day cell but outside any role="button"', () => {
+    const { container } = render(
+      <CollectionCalendar schema={schemaWithDate} rows={rows} editable onAddRow={jest.fn()} onRenameRow={jest.fn()} />
+    )
+    const item = within(cellFor(container, '2026-09-10')).getByText('Trim the rim')
+    expect(item.closest('[role="button"]')).toBeNull()
   })
 })

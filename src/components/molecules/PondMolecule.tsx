@@ -269,6 +269,7 @@ export function PondMolecule({
   const emptyCopy = placeholder ?? EMPTY_TITLE[kind]
   const displayTitle = empty ? (emptyCopy ?? title ?? fixtureTitle) : (title ?? fixtureTitle)
   const displayMeta = meta ?? fixtureMeta
+  const displayTag = tag ?? 'recipe'
 
   /** The atom state the composed value atoms inherit (mockup `atomState`). */
   const atomState: PondAtomState = editing ? 'editing' : error ? 'error' : empty ? 'empty' : 'rest'
@@ -529,7 +530,7 @@ export function PondMolecule({
       selected
         ? 'shadow-mn-card ring-2 ring-mn-text'
         : hover
-          ? '-translate-y-px shadow-mn-md'
+          ? '-translate-y-px shadow-mn-card-hover'
           : 'shadow-mn-card',
       // `translate-y-*` compiles to `translate:`, so this must be translate-none.
       'motion-reduce:translate-none',
@@ -597,7 +598,7 @@ export function PondMolecule({
             {displayTitle}
           </span>
           <span className="flex items-center justify-between gap-1.5">
-            <PondAtom kind="tag" value={tag ?? 'recipe'} size={size} />
+            {displayTag !== '' && <PondAtom kind="tag" value={displayTag} size={size} />}
             <span data-part="meta" className={cellMeta}>
               {displayMeta}
             </span>

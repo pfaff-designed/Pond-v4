@@ -86,8 +86,8 @@ import { ROW_TYPE } from '@/lib/properties/schema'
 
 /** Where ⌘Z/⇧⌘Z belongs to the field itself (Tiptap's own undo, an input, a select) —
  * except an empty page-title input (`data-pond-page-title`), which has nothing of
- * its own to undo, and an input inside a `SESSION_UNDO_SCOPE_ATTR` container
- * (KAN-355: a list/checklist's rows), whose add/remove is the session's own step —
+ * its own to undo, and a field inside a `SESSION_UNDO_SCOPE_ATTR` container (a list
+ * or entry-log row), whose undo is the session's step, not the browser's field undo —
  * so the chord falls through to the session step instead. */
 const isEditable = (el: Element | null): boolean =>
   el !== null &&

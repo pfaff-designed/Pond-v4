@@ -97,14 +97,13 @@ describe('every field the twelve set survives strip → hydrate, and reaches the
       }
     )
 
-    it(`${kind}: labels, markers, serif and presentation reach serialize()`, () => {
+    it(`${kind}: labels, markers and presentation reach serialize()`, () => {
       for (const block of page.blocks) {
         const text = resolveDescriptor(block.type).serialize(block)
         const label = blockLabel(block)
         if (label) expect(text.startsWith(`${label}:`)).toBe(true)
         if (block.type === 'todo' && block.marker === 'dot') expect(text).toContain('List:')
         if (block.type === 'todo' && block.marker === 'none') expect(text).toContain('(no marker)')
-        if (block.type === 'entries' && block.serif) expect(text).toContain('(serif)')
         if (block.type === 'view' && block.chart?.presentation === 'compact') {
           expect(text).toContain('compact')
           expect(text).toContain(block.chart.kind)

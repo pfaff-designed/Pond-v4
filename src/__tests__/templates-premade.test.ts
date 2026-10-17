@@ -218,7 +218,6 @@ describe('placeholder copy (KAN-103) lives in the `placeholder` field, never in 
     expect(blocksOf('journal')[0]).toEqual({
       type: 'entries',
       label: 'entries',
-      serif: true,
       entries: [{ date: 'today', text: '' }],
     })
     expect(ENTRIES_EMPTY_LINE).toBe('write the first entry')

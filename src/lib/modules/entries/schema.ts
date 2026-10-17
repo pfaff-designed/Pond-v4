@@ -5,17 +5,10 @@ import { labelledBlockFields, type ModuleDescriptor } from '../types'
  * `entries` (#250, child 228b of #228) — dated prose: a log of short things the
  * person wrote, each under its date. A block under ADR 0007's sorting rule (authored
  * content, not an aggregation of records), measured off `PondTemplate.dc.html`'s
- * `renderVals()` (`k === 'entries'`). The board places it twice — `project`'s
- * `updates` (sans) and `journal`'s `entries` (`serif: 1`) — so the medium is a real
- * conditional, exercised by the board itself.
- *
- * **Where the serif flag lives — decided (issue #250, ruling 4; ADR 0005).** The
- * board's `serif` is a property of the TEMPLATE definition, but a template is data
- * with no live tie to the page made from it (`AUDIT.md` 6f), so nothing could look
- * the flag up at render time. It is therefore a field on this block's own schema,
- * optional and defaulting to sans, which the journal template sets to `true` when it
- * instantiates (228e's work). Named after the board's own flag so the lineage is
- * greppable. The view reads `data.serif` and nothing else — never an ancestor.
+ * `renderVals()` (`k === 'entries'`). The board places it in two templates —
+ * `project`'s `updates` and `journal`'s `entries` — and both render in the single
+ * serif register `PondMolecule.dc.html`'s `entry` kind specifies (KAN-444); there is
+ * no sans variant left to toggle.
  *
  * `date` is the label the board draws (`28 oct`, `today`): short authored copy in
  * the mono column, not a typed date — a dated log is prose with a date beside it,
@@ -42,12 +35,6 @@ export const entriesSchema = z
     type: z.literal('entries'),
     /** Newest first, as the board's `note: 'newest first'` and both its fixtures read. */
     entries: z.array(entrySchema),
-    /**
-     * The board's `serif` flag: the text is serif 200 / 16.5 / 1.6 when set, sans
-     * 13.5 / 1.5 otherwise. Set by the journal template at instantiation; absent means
-     * sans. See the module doc-comment for why it lives here.
-     */
-    serif: z.boolean().optional(),
     /** Block-level fallback for a blank entry's text, drawn at ink .68; never written to an entry's `text`. */
     placeholder: z
       .string()
@@ -85,12 +72,12 @@ export const entriesDescriptor: ModuleDescriptor<EntriesBlock> = {
     'A dated log of short written entries, newest first — journal entries, project updates, a record of what happened on which day. ' +
     'Each entry is a date label (lowercase, like "28 oct" or "today") and a few sentences of prose the person wrote. ' +
     'Use a table for structured records with columns, a plain text block for undated prose, and a checklist for things to do; ' +
-    'use entries when the point is what was written on which day. Set `serif: true` only for a journal (diary prose); leave it off for updates and logs.',
+    'use entries when the point is what was written on which day.',
   // `blocksToText` joins serialized lines with no type label, so bare rows would read
   // as prose and come back as a `text` block on a wholesale re-emit. The marker keeps
-  // a dated log a dated log, and carries the serif flag so a journal stays a journal.
+  // a dated log a dated log.
   serialize: (data) => {
-    const head = data.serif ? 'Entries (serif):' : 'Entries:'
+    const head = 'Entries:'
     if (data.entries.length === 0) return `${head} (no entries yet)`
     // One entry per line, so the boundary survives: the view supports multi-line
     // prose (`whitespace-pre-wrap`, an auto-growing textarea), and a raw newline would
