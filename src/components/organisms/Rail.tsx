@@ -500,7 +500,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
               {rowNote && (
                 <span
                   data-part="row-note"
-                  className="flex-none font-mono text-[10px] lowercase tracking-tight text-mn-text-secondary max-md:text-[11px]"
+                  className="flex-none font-mono text-[10px] lowercase text-mn-text-secondary max-md:text-[11px]"
                 >
                   {rowNote}
                 </span>

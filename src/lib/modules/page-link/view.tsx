@@ -68,7 +68,7 @@ export function PageLinkView({ data }: ModuleViewProps<PageLinkBlock>) {
       <PageIcon />
       <span className="flex-1 font-medium text-mn-text">{ref.title}</span>
       {ref.isNew && (
-        <span className="font-mono text-[10.5px] lowercase tracking-tight text-mn-text-meta">
+        <span className="font-mono text-[10.5px] lowercase text-mn-text-meta">
           new
         </span>
       )}
