@@ -335,23 +335,7 @@ export const addSavedView = (
   const existingViews: ViewSavedView[] =
     block.views && block.views.length > 0
       ? block.views
-      : [
-          {
-            id: mintId(),
-            label: block.label,
-            kind: block.mode,
-            config: {
-              groupBy: block.groupBy,
-              sort: block.sort,
-              filter: block.filter,
-              startDate: block.startDate,
-              endDate: block.endDate,
-              chart: block.chart,
-              bigNumber: block.bigNumber,
-              collectionId: block.collectionId,
-            },
-          },
-        ]
+      : [{ ...resolveActiveView(block), id: mintId() }]
 
   const takenLabels = new Set(
     existingViews.map((view) => (view.label ?? VIEW_KINDS[view.kind].label).toLowerCase())
