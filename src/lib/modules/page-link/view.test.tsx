@@ -12,6 +12,8 @@ import { PageLinkView } from './view'
 import type { PageLinkBlock } from './schema'
 import { pagesKey } from '@/lib/pages/keys'
 import type { PageRow } from '@/lib/pages/tree'
+import { BlockRowProvider } from '../block-row-context'
+import { POND_BLOCK_SELECTED_RING } from '@/components/organisms/PondBlock'
 
 // The real hook talks to Supabase through react-query; mocked here (mirrors
 // `view/view.test.tsx`'s `use-collection-rows` mock) so this file can assert
@@ -133,6 +135,36 @@ describe('PageLinkView — resolved', () => {
     )
     expect(screen.getByText('5 blocks')).toBeInTheDocument()
     expect(screen.queryByText('2 blocks')).not.toBeInTheDocument()
+  })
+})
+
+describe('PageLinkView — selected', () => {
+  const ringClasses = POND_BLOCK_SELECTED_RING.split(' ')
+
+  it('carries the selected ring when the canvas has the row selected', () => {
+    const caps = capabilities(ref)
+    render(
+      <PageLinkProvider value={caps}>
+        <BlockRowProvider value={{ selected: true, stepOut: jest.fn() }}>
+          <PageLinkView data={block} />
+        </BlockRowProvider>
+      </PageLinkProvider>
+    )
+    const row = screen.getByRole('button', { name: 'Open cabinets' })
+    for (const cls of ringClasses) expect(row).toHaveClass(cls)
+  })
+
+  it('carries no selected ring when the row is not selected', () => {
+    const caps = capabilities(ref)
+    render(
+      <PageLinkProvider value={caps}>
+        <BlockRowProvider value={{ selected: false, stepOut: jest.fn() }}>
+          <PageLinkView data={block} />
+        </BlockRowProvider>
+      </PageLinkProvider>
+    )
+    const row = screen.getByRole('button', { name: 'Open cabinets' })
+    for (const cls of ringClasses) expect(row).not.toHaveClass(cls)
   })
 })
 

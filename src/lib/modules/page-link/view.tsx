@@ -5,9 +5,12 @@ import { QueryClientContext, type QueryClient } from '@tanstack/react-query'
 import type { ModuleViewProps } from '../types'
 import { usePageLinks } from './context'
 import { useBlockCount } from './use-block-count'
+import { useBlockRow } from '../block-row-context'
 import type { PageLinkBlock } from './schema'
 import type { PageRow } from '@/lib/pages/tree'
 import { pagesKey } from '@/lib/pages/keys'
+import { cn } from '@/lib/utils'
+import { POND_BLOCK_SELECTED_RING } from '@/components/organisms/PondBlock'
 
 /**
  * The page-link row (6k frame 2), inline values: `display:flex;align-items:
@@ -60,10 +63,15 @@ export function PageLinkView({ data }: ModuleViewProps<PageLinkBlock>) {
   const cachedRow =
     !pageLinks && queryClient ? findCachedPageRow(queryClient, data.pageId) : null
   const blocks = useBlockCount(ref || cachedRow ? data.pageId : undefined)
+  // The canvas's own selection (⇧Tab / keyboard, ⌘⌫ target) reaches this row
+  // through `BlockRowContext` rather than `PondBlock` (07.05) — `block-frame.ts`
+  // draws no card around a page-link, same bridge KAN-344's chart card uses.
+  const { selected } = useBlockRow()
+  const selectedRing = selected && POND_BLOCK_SELECTED_RING
 
   if (!ref && !cachedRow) {
     return (
-      <div className={ROW}>
+      <div className={cn(ROW, selectedRing)}>
         <PageIcon />
         <span className="flex-1 text-mn-text-secondary">page in trash</span>
       </div>
@@ -75,7 +83,7 @@ export function PageLinkView({ data }: ModuleViewProps<PageLinkBlock>) {
   // host doesn't have — there is nothing to navigate with.
   if (!ref) {
     return (
-      <div className={ROW}>
+      <div className={cn(ROW, selectedRing)}>
         <PageIcon />
         <span className="flex-1 font-medium text-mn-text">{cachedRow!.title}</span>
         <span className="text-[12.5px] text-mn-text-secondary">
@@ -93,7 +101,11 @@ export function PageLinkView({ data }: ModuleViewProps<PageLinkBlock>) {
       role="button"
       tabIndex={0}
       aria-label={`Open ${ref.title}`}
-      className={`${ROW} cursor-pointer`}
+      className={cn(
+        ROW,
+        'cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-mn-text',
+        selectedRing
+      )}
       onClick={() => pageLinks!.navigateToPage(ref)}
       onKeyDown={(e) => {
         if (e.key !== 'Enter') return
