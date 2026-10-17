@@ -5,6 +5,7 @@ import type { TableBlock, TableRow } from './schema'
 import { sumColumn as sumTableColumn, formatTotal } from './sum'
 import { MarkdownInline } from '@/components/molecules/Markdown'
 import { pageEyebrowClass } from '@/components/atoms/kicker'
+import { useBlockRow } from '../block-row-context'
 
 /**
  * Append one empty row (a blank cell per column) — the table's insert path, pure,
@@ -33,6 +34,7 @@ export function TableView({ data, editable, onChange }: ModuleViewProps<TableBlo
   // missing columns/rows rather than crash the whole tree.
   const columns = data.columns ?? []
   const rows = data.rows ?? []
+  const { stepOut } = useBlockRow()
 
   // Sum footer (ticket-31). Only when `sumColumn` points at a real column AND at
   // least one cell parsed to a number — an all-junk column shows no footer rather
@@ -55,6 +57,17 @@ export function TableView({ data, editable, onChange }: ModuleViewProps<TableBlo
 
   function addRow() {
     onChange?.(addTableRow(data))
+  }
+
+  // Return/↓ in the last row's last cell step out of the table (KAN-344) — every
+  // other cell keeps reading those keys itself (multi-line entry, moving down a
+  // column), so this only fires at the one cell with nothing left to reach.
+  function handleCellKeyDown(ri: number, ci: number, e: React.KeyboardEvent) {
+    if (ri !== rows.length - 1 || ci !== columns.length - 1) return
+    if (e.key !== 'Enter' && e.key !== 'ArrowDown') return
+    if (e.shiftKey || e.altKey || e.metaKey || e.ctrlKey) return
+    e.preventDefault()
+    stepOut()
   }
 
   return (
@@ -89,6 +102,7 @@ export function TableView({ data, editable, onChange }: ModuleViewProps<TableBlo
                       value={row.cells[ci] ?? ''}
                       aria-label={`${columns[ci]}, row ${ri + 1}`}
                       onChange={(e) => patchCell(ri, ci, e.target.value)}
+                      onKeyDown={(e) => handleCellKeyDown(ri, ci, e)}
                     />
                   ) : (
                     // Read-only: inline markdown rendering (Fix-4 / F8) — bold/italic/code/links

@@ -7,7 +7,9 @@
  */
 
 /** Selector for elements whose clicks belong to themselves, not the card. */
-const INTERACTIVE = 'button, input, a, textarea, select, [role="menu"], [role="menuitem"]'
+const INTERACTIVE =
+  'button, input, a, textarea, select, td, th, [contenteditable], ' +
+  '[role="menu"], [role="menuitem"], [role="textbox"], [role="button"]'
 
 export function shouldSelectCardFromClick(target: EventTarget | null): boolean {
   return target instanceof Element && !target.closest(INTERACTIVE)

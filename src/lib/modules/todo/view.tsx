@@ -1,10 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ModuleViewProps } from '../types'
 import { POND_BLOCK_ROW_GAP, TODO_KIND, TODO_ROW } from '../block-frame'
 import { todoMarker, type TodoBlock, type TodoItem } from './schema'
 import { PondMolecule, type PondMoleculeState } from '@/components/molecules/PondMolecule'
+import { useBlockRow } from '../block-row-context'
 
 /**
  * Todo view (#219) — the check row and the board's `list` block, COMPOSED from
@@ -88,14 +89,50 @@ export function addTodoItem(data: TodoBlock): TodoBlock {
 export function TodoView({ data, editable, onChange }: ModuleViewProps<TodoBlock>) {
   const [hovered, setHovered] = useState<string | null>(null)
   const [editing, setEditing] = useState<string | null>(null)
+  const rowsRef = useRef<HTMLDivElement>(null)
+  const pendingFocusId = useRef<string | null>(null)
   const marker = todoMarker(data)
   const spec = TODO_ROW[marker]
+  const { stepOut } = useBlockRow()
 
   function patchItem(index: number, patch: Partial<TodoItem>) {
     onChange?.({
       ...data,
       items: data.items.map((it, k) => (k === index ? { ...it, ...patch } : it)),
     })
+  }
+
+  // A newly-appended item exists only after the `onChange` above commits and
+  // this re-renders with it; a `.focus()` call made inline in the key handler
+  // would still be targeting last render's (nonexistent) input.
+  useEffect(() => {
+    const id = pendingFocusId.current
+    if (!id) return
+    rowsRef.current?.querySelector<HTMLInputElement>(`[data-item-id="${id}"] input`)?.focus()
+    pendingFocusId.current = null
+  }, [data.items])
+
+  /**
+   * Return on the LAST item: an empty label leaves the list — the empty item
+   * is removed and the row steps out through its existing `insertLineAfter`,
+   * no second insert path, the removal riding along AS `stepOut`'s own patch
+   * in the one call (a separate `onChange` here would rebuild from the
+   * pre-patch block array and silently undo it). A non-empty label instead
+   * appends one more empty item (the block's own `addTodoItem` insert path)
+   * and moves focus there, so the empty-last-item case above becomes
+   * reachable by keyboard alone. Only the LAST item reacts.
+   */
+  function handleItemKeyDown(index: number, e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key !== 'Enter' || e.shiftKey || e.altKey || e.metaKey || e.ctrlKey) return
+    if (index !== data.items.length - 1) return
+    e.preventDefault()
+    if (data.items[index].label.trim() === '') {
+      stepOut({ ...data, items: data.items.slice(0, index) })
+      return
+    }
+    const next = addTodoItem(data)
+    pendingFocusId.current = next.items[next.items.length - 1].id
+    onChange?.(next)
   }
 
   /**
@@ -115,7 +152,7 @@ export function TodoView({ data, editable, onChange }: ModuleViewProps<TodoBlock
   }
 
   return (
-    <div className={`flex flex-col ${POND_BLOCK_ROW_GAP[TODO_KIND[marker]]}`}>
+    <div ref={rowsRef} className={`flex flex-col ${POND_BLOCK_ROW_GAP[TODO_KIND[marker]]}`}>
       {data.items.map((item, j) => {
         const row = {
           state: rowState(item),
@@ -124,6 +161,9 @@ export function TodoView({ data, editable, onChange }: ModuleViewProps<TodoBlock
           meta: item.meta ?? '',
           className: 'max-w-full',
           onTitleChange: editable ? (label: string) => patchItem(j, { label }) : undefined,
+          onTitleKeyDown: editable
+            ? (e: React.KeyboardEvent<HTMLInputElement>) => handleItemKeyDown(j, e)
+            : undefined,
         }
         return (
           // The wrapper carries the pointer/focus listeners the presentational
@@ -133,6 +173,7 @@ export function TodoView({ data, editable, onChange }: ModuleViewProps<TodoBlock
           // own focus ring and must not wash the row.
           <div
             key={item.id}
+            data-item-id={item.id}
             className="contents"
             onMouseEnter={() => setHovered(item.id)}
             onMouseLeave={() => setHovered((h) => (h === item.id ? null : h))}

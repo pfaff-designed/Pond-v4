@@ -29,6 +29,7 @@ import React, {
   type RefObject,
 } from 'react'
 import { SiblingBlocksProvider } from '@/lib/modules/sibling-context'
+import { BlockRowProvider } from '@/lib/modules/block-row-context'
 import { blockDomId, focusPageTitle, scrollToBlock } from '@/lib/modules/block-dom'
 import { blockLinkUrl, useBlockLinkArrival } from '@/lib/modules/block-link'
 import { ModuleView } from '@/lib/modules/renderers'
@@ -42,6 +43,7 @@ import {
   type PondBlockState,
 } from '@/lib/modules/block-frame'
 import { useCollectionRows } from '@/lib/modules/view/use-collection-rows'
+import { shouldSelectCardFromClick } from '@/lib/modules/view/card-click'
 import { applyView } from '@/lib/modules/view/apply'
 import { activeSavedView } from '@/lib/modules/view/schema'
 import { ActiveViewSelectionContext } from '@/lib/modules/view/active-view-context'
@@ -780,12 +782,16 @@ export function BlockCanvas({
   }
 
   // Return on a focused block opens an empty text block after it; its editor
-  // opens with the caret in it, ready for `/`.
-  function insertLineAfter(index: number) {
+  // opens with the caret in it, ready for `/`. An optional `patch` replaces the
+  // block at `index` in the SAME call (KAN-344's checklist: the empty item that
+  // triggered this must be gone in the array this inserts into, not left for a
+  // second `onChange` that would rebuild from the pre-patch `blocks` and drop it).
+  function insertLineAfter(index: number, patch?: Block) {
     const nb = emptyBlockForType('text')
     if (!nb) return
     markInserted(nb.id)
-    onChange([...blocks.slice(0, index + 1), nb, ...blocks.slice(index + 1)])
+    const base = patch ? blocks.map((b, i) => (i === index ? patch : b)) : blocks
+    onChange([...base.slice(0, index + 1), nb, ...base.slice(index + 1)])
   }
 
   /**
@@ -1429,7 +1435,7 @@ export function BlockCanvas({
         onChange={(next) => setBlockAt(i, next)}
         onRemoveEmpty={() => removeEmptyLineAt(i)}
         onDeleteBlock={() => removeBlockAt(i)}
-        onReturn={() => insertLineAfter(i)}
+        onReturn={(patch) => insertLineAfter(i, patch)}
         onMoveUp={() => moveBlockAt(i, 'up')}
         onMoveDown={() => moveBlockAt(i, 'down')}
         onSlashKey={() => openSlashMenuAt(i)}
@@ -1883,8 +1889,10 @@ function BlockEditor({
   onRemoveEmpty: () => void
   /** ⌘⌫ / Ctrl+⌫ on the focused block. */
   onDeleteBlock: () => void
-  /** Return on a focused block that is not text. */
-  onReturn: () => void
+  /** Return on a focused block that is not text. An optional `patch` replaces
+   *  this block in the same call (KAN-344: the checklist's "remove the empty
+   *  last item, then step out" is one `onChange`, never two). */
+  onReturn: (patch?: Block) => void
   onMoveUp?: () => void
   onMoveDown?: () => void
   onSlashKey?: () => void
@@ -1966,12 +1974,20 @@ function BlockEditor({
     }),
     [previewAnchorRef, slashSize]
   )
-  const { state, onEmptyAction, emptyLine } = useBlockEmptyState(
-    resolvedBlock,
-    frame,
-    pageId,
-    onChange
-  )
+  const {
+    state: baseState,
+    onEmptyAction,
+    emptyLine,
+  } = useBlockEmptyState(resolvedBlock, frame, pageId, onChange)
+  // Pointer-selected (07.05): a click on the row's own chrome — never a nested
+  // cell/input/button, which keeps its own focus — focuses the row and this
+  // becomes `selected`. Mirrors keyboard focus (`onFocus`/`onBlur` below), gated
+  // the same way: only when the ROW itself is the focus target, never a bubbled
+  // focus from a field it hosts. Renders through PondBlock's own `selected`
+  // state, never a second ring, so it only applies on top of `rest` — never
+  // overrides empty/loading/error.
+  const [rowSelected, setRowSelected] = useState(false)
+  const state = rowSelected && baseState === 'rest' ? 'selected' : baseState
 
   // The PondBlock-card and no-card branches below sit at different tree depths, so
   // flipping `frame` (e.g. board → timeline) remounts the module view underneath —
@@ -1997,28 +2013,30 @@ function BlockEditor({
     ) : undefined
 
   const view = (
-    <SlashLineContext.Provider value={slash.handleSlashLine}>
-      <ActiveViewSelectionContext.Provider value={setActiveViewId}>
-        <ModuleView
-          type={block.type}
-          data={moduleData}
-          editable
-          onChange={(next) => {
-            // `moduleData` carries the bar's LIVE `activeViewId` (above), so a config
-            // edit's `applyConfigPatch` spread would otherwise write it into the
-            // persisted block — switching the bar is reading, not editing (#421).
-            // Restore the block's own persisted `activeViewId` before this leaves
-            // `BlockCanvas`; the views-array patch itself already landed correctly.
-            const committed =
-              block.type === 'view'
-                ? ({ ...(next as ViewBlock), activeViewId: block.activeViewId } as Block)
-                : (next as Block)
-            slash.handleTextChange(committed)
-            onChange(committed)
-          }}
-        />
-      </ActiveViewSelectionContext.Provider>
-    </SlashLineContext.Provider>
+    <BlockRowProvider value={{ selected: state === 'selected', stepOut: onReturn }}>
+      <SlashLineContext.Provider value={slash.handleSlashLine}>
+        <ActiveViewSelectionContext.Provider value={setActiveViewId}>
+          <ModuleView
+            type={block.type}
+            data={moduleData}
+            editable
+            onChange={(next) => {
+              // `moduleData` carries the bar's LIVE `activeViewId` (above), so a config
+              // edit's `applyConfigPatch` spread would otherwise write it into the
+              // persisted block — switching the bar is reading, not editing (#421).
+              // Restore the block's own persisted `activeViewId` before this leaves
+              // `BlockCanvas`; the views-array patch itself already landed correctly.
+              const committed =
+                block.type === 'view'
+                  ? ({ ...(next as ViewBlock), activeViewId: block.activeViewId } as Block)
+                  : (next as Block)
+              slash.handleTextChange(committed)
+              onChange(committed)
+            }}
+          />
+        </ActiveViewSelectionContext.Provider>
+      </SlashLineContext.Provider>
+    </BlockRowProvider>
   )
 
   // ⌘⌫ deletes the focused block (`Pond 08 Edges` 8e) — on the CAPTURE phase,
@@ -2064,6 +2082,26 @@ function BlockEditor({
       onReturn()
       return
     }
+    // ↓ steps out of a selected row the same as Return (KAN-344) — but only for
+    // kinds with no in-field meaning for ↓. `table` and `todo` read it inside
+    // their own last-cell / empty-last-item rules instead (BlockRowContext's
+    // `stepOut`, wired at the module level); this generic branch would otherwise
+    // race theirs.
+    if (
+      e.key === 'ArrowDown' &&
+      e.target === e.currentTarget &&
+      block.type !== 'text' &&
+      block.type !== 'table' &&
+      block.type !== 'todo' &&
+      !e.shiftKey &&
+      !e.altKey &&
+      !e.metaKey &&
+      !e.ctrlKey
+    ) {
+      e.preventDefault()
+      onReturn()
+      return
+    }
     if (e.altKey && e.key === 'ArrowUp') {
       e.preventDefault()
       onMoveUp?.()
@@ -2071,6 +2109,12 @@ function BlockEditor({
     if (e.altKey && e.key === 'ArrowDown') {
       e.preventDefault()
       onMoveDown?.()
+    }
+    // Esc clears the pointer-selected row (07.05) — the row itself does not blur
+    // on Escape by default, so this blurs it explicitly; `handleBlur` below then
+    // drops `rowSelected`.
+    if (e.key === 'Escape' && e.target === e.currentTarget) {
+      rootRef.current?.blur()
     }
     // Backspace in an EMPTY text block removes it (Notion-style). Guarded so it
     // never fires while the `/` palette is open (that Backspace closes the menu,
@@ -2100,14 +2144,36 @@ function BlockEditor({
     if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) e.preventBaseUIHandler()
   }
 
+  // The row itself is "selected", never a bubbled focus from a field it hosts
+  // (a table cell, a todo item's input) — those keep their own focus ring.
+  function handleFocus(e: React.FocusEvent) {
+    if (e.target === e.currentTarget) setRowSelected(true)
+  }
+  function handleBlur(e: React.FocusEvent) {
+    if (e.target === e.currentTarget) setRowSelected(false)
+  }
+  // A click anywhere on the row's own chrome (padding, header, empty space)
+  // focuses the row; a click inside a cell/input/button/link leaves that
+  // field's own focus alone (`shouldSelectCardFromClick`, shared with the
+  // view's own row click). jsdom (unlike a real browser) never focuses a
+  // clicked `tabIndex=0` div on its own, so the explicit `.focus()` also
+  // makes this testable with `userEvent.click`.
+  // A portaled child (RecordPeek) renders outside this row in the DOM but
+  // stays inside it in the React tree, so its click still bubbles here even
+  // though `e.target` is not a DOM descendant of `e.currentTarget`.
+  function handleClick(e: React.MouseEvent) {
+    if (block.type === 'text') return
+    if (!e.currentTarget.contains(e.target as Node)) return
+    if (!shouldSelectCardFromClick(e.target)) return
+    rootRef.current?.focus()
+  }
+
   return (
     <div
       ref={rootRef}
       className={cn(
         'group relative',
-        block.type === 'text'
-          ? 'outline-none'
-          : 'rounded-mn-card focus-visible:ring-2 focus-visible:ring-mn-text',
+        'outline-none',
         settleOnMount && 'motion-settle-in',
         // `origin` (old place) from `PondBlock.dc.html` is opacity .4 ONLY — the
         // tilt and stepped-up shadow belong to the separate `lifted` copy, built
@@ -2134,6 +2200,9 @@ function BlockEditor({
       onDrop={onDrop}
       onKeyDownCapture={handleKeyDownCapture}
       onKeyDown={handleKeyDown}
+      onFocus={handleFocus}
+      onBlur={handleBlur}
+      onClick={handleClick}
     >
       {/* The drop line (6x `PondBlock.dc.html`'s `dropBar`): beside is a 2px bar
           9px into the gap off this block's near edge; above/below is a 2px bar

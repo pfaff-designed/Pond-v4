@@ -39,6 +39,7 @@ import { ChartCard, CHART_EMPTY_LINE } from '../chart/card'
 import { chartReads, type ChartCardState, type ChartProvenance } from '../chart/chrome'
 import { POND_BLOCK_FILTERED_EMPTY_LINE } from '../block-frame'
 import { blockLabel } from '../types'
+import { useBlockRow } from '../block-row-context'
 import type { PropertySchema } from '@/lib/properties/schema'
 
 export interface CollectionChartProps {
@@ -99,6 +100,13 @@ export function CollectionChart({
     state = 'empty'
     emptyLine = CHART_EMPTY_LINE
   }
+
+  // Pointer-selected (KAN-344): the chart card bypasses `PondBlock` (#227), so
+  // the row host's selection reaches it through `BlockRowContext` instead.
+  // Never overrides empty/loading/error — same precedence `PondBlock` itself
+  // applies, only on top of `rest`.
+  const { selected } = useBlockRow()
+  if (selected && state === 'rest') state = 'selected'
 
   const source = provenance?.source
   const reads =
