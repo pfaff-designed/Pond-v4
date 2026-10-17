@@ -187,12 +187,50 @@ export function fold(s: string): string {
 }
 
 /**
+ * The tightest subsequence window `q` fits in `text`: for every position
+ * where `q`'s first character matches, a greedy forward scan finds the
+ * earliest end for the rest of `q`; the scan whose window ends up shortest
+ * wins. Returns the matched indices for that window, in order — shared by
+ * `matchTier`'s span (`palette-entries.ts`, KAN-390) and `matchRuns`'
+ * highlight below, so a score and its underline can never disagree about
+ * which window matched. Anchoring on the first occurrence of `q[0]` alone
+ * (rather than trying every one) is the bug this guards: "pond projects"
+ * scored for `prj` would anchor on `pond`'s own `p` and span the whole
+ * label, instead of `projects`' tighter p-r-j. `null` when `q` is not a
+ * subsequence of `text` at all.
+ */
+export function subsequenceMatch(text: string, q: string): readonly number[] | null {
+  if (!q) return []
+  let best: number[] | null = null
+  for (let start = 0; start < text.length; start++) {
+    if (text[start] !== q[0]) continue
+    const positions = [start]
+    let pos = start + 1
+    let ok = true
+    for (let qi = 1; qi < q.length; qi++) {
+      const idx = text.indexOf(q[qi], pos)
+      if (idx === -1) {
+        ok = false
+        break
+      }
+      positions.push(idx)
+      pos = idx + 1
+    }
+    if (!ok) continue
+    if (!best || positions[positions.length - 1] - positions[0] < best[best.length - 1] - best[0]) {
+      best = positions
+    }
+  }
+  return best
+}
+
+/**
  * The palette's highlight (KAN-390): a contiguous hit (exact / prefix / word-
  * start / substring tier) still splits `pre` / `hit` / `post` like
  * `splitMatch` — one run each side, at most one underlined. A subsequence
  * (fuzzy) hit has no contiguous span to split, so this scatters the query's
- * characters across the folded label greedily (the same left-to-right scan
- * `isSubsequence` in `palette-entries.ts` uses to score the tier), maps each
+ * characters across the folded label using `subsequenceMatch`'s tightest
+ * window (the SAME scan that scored the tier, not a second one), maps each
  * matched folded position back to its original character via `foldLabel`'s
  * `map`, and merges adjacent matched characters into runs, so `nwp` against
  * "new page" underlines `n`, `w`, `p` as three separate runs rather than one.
@@ -206,13 +244,7 @@ export function matchRuns(label: string, q: string): MatchRun[] {
   if (at !== -1) {
     for (let i = at; i < at + foldedQuery.length; i++) hitAt.add(i)
   } else {
-    let qi = 0
-    for (let i = 0; i < foldedLabel.length && qi < foldedQuery.length; i++) {
-      if (foldedLabel[i] === foldedQuery[qi]) {
-        hitAt.add(i)
-        qi++
-      }
-    }
+    subsequenceMatch(foldedLabel, foldedQuery)?.forEach((i) => hitAt.add(i))
   }
   const sourceHit = new Array<boolean>(source.length).fill(false)
   hitAt.forEach((i) => {

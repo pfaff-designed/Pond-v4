@@ -270,4 +270,14 @@ describe('matchRuns (KAN-390)', () => {
   it('a diacritic match underlines the accented character whole, not just its base letter', () => {
     expect(matchRuns('Café', 'cafe')).toEqual([{ text: 'Café', hit: true }])
   })
+
+  it('anchors on the tightest window, not the first occurrence of q[0] — "Pond projects" + "prj" underlines inside "projects"', () => {
+    expect(matchRuns('Pond projects', 'prj')).toEqual([
+      { text: 'Pond ', hit: false },
+      { text: 'pr', hit: true },
+      { text: 'o', hit: false },
+      { text: 'j', hit: true },
+      { text: 'ects', hit: false },
+    ])
+  })
 })

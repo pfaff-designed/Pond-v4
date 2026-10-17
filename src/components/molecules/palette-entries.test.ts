@@ -88,6 +88,15 @@ describe('rankPages tiers', () => {
     expect(ranked.map((i) => i.id)).toEqual(['a'])
   })
 
+  it('anchors the subsequence span on the tightest window, not the first occurrence of q[0]', () => {
+    // "Pond projects" + "prj": anchoring on "Pond"'s own p gives a span of 9
+    // (over the 6-char cap) and would drop the hit; the tighter window
+    // starting at "projects"' own p scores span 4, within the cap.
+    const items = [page('a', 'Pond projects')]
+    const ranked = rankPages(items, 'prj')
+    expect(ranked.map((i) => i.id)).toEqual(['a'])
+  })
+
   it('drops a zero-score item entirely', () => {
     const items = [page('a', 'new page'), page('b', 'projects')]
     const ranked = rankPages(items, 'zzz')

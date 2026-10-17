@@ -21,7 +21,7 @@
  */
 
 import type { ZenAction } from '@/lib/layout/use-zen-commands'
-import { fold, type MatchRun, matchRuns, normalizeQuery } from './slash-entries'
+import { fold, type MatchRun, matchRuns, normalizeQuery, subsequenceMatch } from './slash-entries'
 
 export type PaletteKind = 'page' | 'database' | 'record' | 'action' | 'pond'
 
@@ -129,30 +129,6 @@ const SUBSEQUENCE_SCORE = 20
 const VISIT_BOOST = 15
 
 /**
- * The greedy earliest-end scan `matchTier`'s subsequence tier scores on: the
- * span from the first matched character to the last, picking each of `q`'s
- * characters at its earliest possible position in `label`. `-1` means `q` is
- * not a subsequence of `label` at all.
- */
-function subsequenceSpan(label: string, q: string): number {
-  if (!q) return 0
-  let i = 0
-  let first = -1
-  let last = -1
-  let pos = 0
-  for (const ch of label) {
-    if (ch === q[i]) {
-      if (first === -1) first = pos
-      last = pos
-      i++
-      if (i === q.length) break
-    }
-    pos++
-  }
-  return i === q.length ? last - first + 1 : -1
-}
-
-/**
  * The minimum word length a subsequence hit needs before it is even tried
  * (KAN-390: a 1- or 2-char query scatter-matches almost anything).
  */
@@ -182,7 +158,8 @@ function matchTier(item: PaletteItem, foldedQuery: string, q: string): number {
   if (isWordStart) return WORD_START_SCORE
   if (foldedLabel.includes(foldedQuery)) return SUBSTRING_SCORE
   if (foldedQuery.length < SUBSEQUENCE_MIN_QUERY_LENGTH) return 0
-  const span = subsequenceSpan(foldedLabel, foldedQuery)
+  const positions = subsequenceMatch(foldedLabel, foldedQuery)
+  const span = positions ? positions[positions.length - 1] - positions[0] + 1 : -1
   if (span === -1 || span > foldedQuery.length * SUBSEQUENCE_SPAN_FACTOR) return 0
   if (item.kind !== 'action' && isCloseSpelling(item.label, q)) return 0
   return SUBSEQUENCE_SCORE

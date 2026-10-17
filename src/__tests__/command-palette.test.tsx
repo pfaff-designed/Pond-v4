@@ -94,7 +94,7 @@ describe('paletteEntries — the board’s states', () => {
       'page:budget',
       'page:journal',
       'G:suggested',
-      'action:chase the cabinet quote',
+      'action:chase the cable quote',
       'action:log a workout',
     ])
   })
@@ -127,7 +127,7 @@ describe('paletteEntries — the board’s states', () => {
       'G:records',
       'record:cabinet quote',
       'G:actions',
-      'action:chase the cabinet quote',
+      'action:chase the cable quote',
       'action:ask pond about “cab”',
     ])
     const row = entries.find((e) => e.kind === 'row' && e.item.id === 'chase')
@@ -135,7 +135,7 @@ describe('paletteEntries — the board’s states', () => {
       runs: [
         { text: 'chase the ', hit: false },
         { text: 'cab', hit: true },
-        { text: 'inet quote', hit: false },
+        { text: 'le quote', hit: false },
       ],
     })
     const ask = entries.find((e) => e.kind === 'row' && e.item.id === ASK_POND_ID)
@@ -239,8 +239,8 @@ describe('paletteEntries — the board’s states', () => {
   it('empty: a note, ask pond, make the page under the pond, then a close spelling — no dead end', () => {
     // "cabnet" (the board's own query): close enough to "cabinet plan" for `didYouMean`'s
     // edit distance that KAN-390's subsequence tier excludes it as a near-miss spelling
-    // rather than list it as a hit, and "chase the cabinet quote"'s matched span is too
-    // wide for the subsequence tier's bound — so it still misses every tier.
+    // rather than list it as a hit; "chase the cable quote" has no "n" at all, so
+    // "cabnet" is not even a subsequence of it — it still misses every tier.
     const entries = paletteEntries(PALETTE_ITEMS, 'cabnet', { pondName: 'life' })
     expect(shape(entries)).toEqual([
       'N:no page or record called “cabnet”',
@@ -507,7 +507,7 @@ describe('open, it is a combobox in the same box — not a dialog, not a portal'
     const chase = screen
       .getAllByRole('option')
       .find(
-        (o) => o.querySelector('[data-part="label"]')!.textContent === 'chase the cabinet quote'
+        (o) => o.querySelector('[data-part="label"]')!.textContent === 'chase the cable quote'
       )!
     expect(chase.querySelector('[data-part="hit"]')!.textContent).toBe('cab')
     fireEvent.change(input(), { target: { value: 'cabnet' } })
@@ -629,10 +629,10 @@ describe('the gut: one morphing element — nothing of the dialog, the wash or t
   it('the group label is the page eyebrow and the split is #278’s — one owner each, no second copy', () => {
     expect(command).toMatch(/pageEyebrowClass/)
     expect(read('src/components/molecules/palette-entries.ts')).toMatch(
-      /import \{ fold, type MatchRun, matchRuns, normalizeQuery \} from '\.\/slash-entries'/
+      /import \{ fold, type MatchRun, matchRuns, normalizeQuery, subsequenceMatch \} from '\.\/slash-entries'/
     )
     expect(read('src/components/molecules/palette-entries.ts')).not.toMatch(
-      /function matchRuns|function fold\(/
+      /function matchRuns|function fold\(|function subsequenceMatch\(/
     )
     expect(paletteRow).toMatch(/import \{ ENTER, HINT, MATCH, Mark \} from '\.\/slash-row'/)
     expect(paletteRow).not.toMatch(
