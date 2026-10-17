@@ -11,7 +11,7 @@ import { Rail } from '@/components/organisms/Rail'
 import { PondContext, type PondContextValue } from '@/lib/pond/context'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { pagesKey } from '@/lib/pages/keys'
-import { readExpandedIds } from '@/lib/rail/expanded-store'
+import { readExpandedIds, writeExpandedIds } from '@/lib/rail/expanded-store'
 import type { PageRow } from '@/lib/pages/tree'
 import type { Pond } from '@/lib/pond/client'
 
@@ -83,5 +83,13 @@ describe('the rail persists expanded rows per pond (KAN-393)', () => {
     await userEvent.click(row.querySelector('button')!)
 
     expect(readExpandedIds('pond-1')).toEqual(['kitchen'])
+  })
+
+  it('renders a stored row as expanded on a cold mount, with no interaction', () => {
+    writeExpandedIds('pond-1', ['kitchen'])
+
+    mountRail([KITCHEN, CABINETS])
+
+    expect(screen.getByRole('treeitem', { name: 'Cabinets' })).toBeInTheDocument()
   })
 })

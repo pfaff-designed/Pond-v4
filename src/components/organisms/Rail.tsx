@@ -126,7 +126,7 @@ import { RailRenameField } from './RailRenameField'
 import { instantiateTemplate } from '@/lib/templates/instantiate'
 import { PREMADE_TEMPLATES } from '@/lib/templates/premade'
 import { NewPageMenu, type NewPageMenuAction } from '@/components/molecules/NewPageMenu'
-import { writeExpandedIds } from '@/lib/rail/expanded-store'
+import { readExpandedIds, writeExpandedIds, pruneExpandedIds } from '@/lib/rail/expanded-store'
 
 // Re-exported so stories and consumers keep one import site for the tree types.
 export { LIFE_ID, buildTree, flattenVisible, isFolderNode, isAreaRow } from '@/lib/rail/tree'
@@ -1477,6 +1477,32 @@ export function Rail() {
     return map
   }, [tree])
   const selectedNodeId = searchParams.get('nodeId')
+
+  // ── Rail remembers what was open (KAN-393) ──────────────────────────────────
+  // Read this pond's stored expansion once per `pondId`, prune it against the
+  // loaded `pages` (a stored id may have been deleted elsewhere), and merge
+  // the result into `expanded` via a union — never a replace — so this can't
+  // fight the ancestor-reveal or KAN-122 child-reveal effects below regardless
+  // of effect order. Gated by `loadedForRef` so it fires exactly once per pond:
+  // `pages` is `[]` while `isLoading`, and pruning against that would wipe the
+  // real stored ids before they ever reach the tree.
+  const loadedForRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!pondId) return
+    if (isLoading) return
+    if (loadedForRef.current === pondId) return
+    loadedForRef.current = pondId
+    const validIds = new Set(pages.map((r) => r.id))
+    const stored = pruneExpandedIds(readExpandedIds(pondId), validIds)
+    if (stored.length === 0) return
+    /* eslint-disable react-hooks/set-state-in-effect */
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      for (const id of stored) next.add(id)
+      return next
+    })
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [pondId, isLoading, pages, setExpanded])
 
   // ── Rail follows you (ticket-25) ────────────────────────────────────────────
   // When the selection changes — via a rail click, a children-grid card, the
