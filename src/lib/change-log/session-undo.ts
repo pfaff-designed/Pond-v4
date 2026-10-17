@@ -92,6 +92,11 @@ export interface SessionUndo {
   rememberPending: (step: PendingHistoryStep) => UndoHandle
   /** Whether `handle` (from `rememberPending`) is still the step undo would take next in `pondId`. */
   isTopUndo: (pondId: string, handle: UndoHandle) => boolean
+  /** Like `undo`, but only acts on `handle`'s own step, re-checked at its own
+   *  turn in the queue (a click's `isTopUndo` read can go stale behind
+   *  already-queued ⌘Zs) — `empty`, with no fall-through, if it's not on top
+   *  by then or its write resolved to nothing. */
+  undoHandle: (pondId: string, handle: UndoHandle) => Promise<SessionUndoOutcome>
   undo: (pondId: string) => Promise<SessionUndoOutcome>
   redo: (pondId: string) => Promise<SessionUndoOutcome>
   clear: () => void
@@ -189,8 +194,15 @@ export const createSessionUndo = (
     return next
   }
 
-  /** Pops at run time, not call time, so queued calls each take the then-newest step. */
-  const runQueued = (pondId: string, direction: 'undo' | 'redo'): Promise<SessionUndoOutcome> =>
+  /** Pops at run time, not call time, so queued calls each take the
+   *  then-newest step. `targetHandle` (`undoHandle`) restricts this to that
+   *  one step, re-checked here since a call ahead of it in the queue may
+   *  have changed what's on top since the caller asked. */
+  const runQueued = (
+    pondId: string,
+    direction: 'undo' | 'redo',
+    targetHandle?: UndoHandle
+  ): Promise<SessionUndoOutcome> =>
     enqueue(async () => {
       // Wait out every `remember` still being logged for this pond FIRST, before
       // reading the stack at all — the record that `remember` is about to push
@@ -208,6 +220,7 @@ export const createSessionUndo = (
       // A pending step that resolves to nothing written is dropped, not
       // reported as `empty` — real steps may still sit beneath it on the stack.
       while (true) {
+        if (targetHandle !== undefined && from.at(-1) !== targetHandle) return { outcome: 'empty' }
         const taken = from.pop()
         if (taken === undefined) return { outcome: 'empty' }
         const takenFrom = from.length
@@ -235,7 +248,10 @@ export const createSessionUndo = (
             throw err
           }
           if (!recordIds || recordIds.length === 0) {
-            if (settledBeforePress) continue
+            // A handle-targeted call stops here rather than falling through —
+            // its own step resolving to nothing written means there is
+            // nothing for IT to take back, regardless of the stack beneath it.
+            if (targetHandle === undefined && settledBeforePress) continue
             return { outcome: 'empty' }
           }
           step = {
@@ -324,6 +340,7 @@ export const createSessionUndo = (
       return step
     },
     isTopUndo: (pondId, handle) => histories.get(pondId)?.undo.at(-1) === handle,
+    undoHandle: (pondId, handle) => runQueued(pondId, 'undo', handle),
     undo: (pondId) => runQueued(pondId, 'undo'),
     redo: (pondId) => runQueued(pondId, 'redo'),
     clear: () => {

@@ -134,6 +134,7 @@ import { flushPendingPageSave } from '@/lib/pages/page-flush'
 import { appendOwnEdit, listRecords } from '@/lib/change-log/store'
 import { changeLogKey } from '@/lib/change-log/keys'
 import { sessionUndo, type UndoHandle } from '@/lib/change-log/session-undo'
+import { GRACE_WINDOW_MS } from '@/lib/deletion/deferred-commit'
 import { applyUndoOutcome } from '@/lib/change-log/undo-outcome'
 import { restorePage, trashPage } from '@/lib/change-log/trash'
 import { readSchema } from '@/lib/properties/schema'
@@ -392,7 +393,7 @@ export function BlockCanvas({
   listStyle,
   onPreviewNameChange,
 }: BlockCanvasProps) {
-  const { stageUndo, notify } = useDeletionUndo()
+  const { stageUndo, notify, dismiss } = useDeletionUndo()
   const getSupabase = useLazySupabase()
   const queryClient = useQueryClient()
   const pondId = usePondId()
@@ -810,9 +811,12 @@ export function BlockCanvas({
   // not recompute against stale, pre-write blocks.
   //
   // The toast outlives this delete's own step — a later ⌥↓/⌘⌫/⌘Z can leave it
-  // sitting beneath the top of the undo stack, or move it to redo. Its handle
-  // (KAN-368) lets the undo button check `isTopUndo` before acting, so a
-  // stale click can never reach past a later step to this one.
+  // sitting beneath the top of the undo stack, or move it to redo, and a
+  // failed/cancelled write never reaches the stack at all. `undoHandle`
+  // (KAN-368) checks `handle` at the moment the queue actually runs the
+  // click, not when it was clicked — a check made any earlier (e.g.
+  // `isTopUndo` here) can go stale behind queued ⌘Z's. The toast itself is
+  // also dismissed in both cases, rather than left showing a dead control.
   function removeBlockAt(id: string) {
     const current = blocksRef.current
     const index = current.findIndex((b) => b.id === id)
@@ -821,17 +825,33 @@ export function BlockCanvas({
     const next = current.filter((_, i) => i !== index)
     blocksRef.current = next
     let handle: UndoHandle | undefined
-    void persistBlocksAsOwnEdit(current, next, { onPending: (h) => (handle = h) })
+    const written = persistBlocksAsOwnEdit(current, next, { onPending: (h) => (handle = h) })
     focusBlockNeighbour(current, index)
-    stageUndo({
+    const toastId = stageUndo({
       message: `deleted ${changeLogBlockName(removed)} ·`,
       undoLabel: 'undo',
       scope: 'block',
       undo: () => {
-        if (!pondId || !handle || !sessionUndo.isTopUndo(pondId, handle)) return
-        return sessionUndo.undo(pondId).then((result) => applyUndoOutcome('undo', result, queryClient))
+        if (!pondId || !handle) return
+        return sessionUndo.undoHandle(pondId, handle).then((result) => applyUndoOutcome('undo', result, queryClient))
       },
     })
+    // A FAILED or cancelled write drops its step without ever reaching the
+    // undo stack — nothing left for the toast's own undo to act on.
+    void written.then((ok) => {
+      if (!ok) dismiss(toastId)
+    })
+    // A later structural action can sink this step beneath the stack's top —
+    // once that happens the toast's own undo can no longer reach it. Bounded
+    // by the toast's own lifetime: nothing left to watch once it's gone.
+    if (pondId) {
+      const stopWatching = sessionUndo.subscribe(() => {
+        if (!handle || sessionUndo.isTopUndo(pondId, handle)) return
+        stopWatching()
+        dismiss(toastId)
+      })
+      setTimeout(stopWatching, GRACE_WINDOW_MS)
+    }
   }
 
   /**

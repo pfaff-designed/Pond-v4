@@ -706,6 +706,59 @@ describe('createSessionUndo', () => {
         expect(store.isTopUndo(OTHER_POND, {})).toBe(false)
       })
     })
+
+    describe('undoHandle', () => {
+      it('undoes the handle’s own step when it is on top, same as undo', async () => {
+        const { store, run } = makeStore()
+        const handle = store.rememberPending({ pondId: POND, recordIds: Promise.resolve(['delete-1']) })
+
+        const outcome = await store.undoHandle(POND, handle)
+
+        expect(outcome).toMatchObject({ outcome: 'done', step: { pondId: POND, recordIds: ['delete-1'] } })
+        expect(run.undo).toHaveBeenCalledWith({ pondId: POND, recordIds: ['delete-1'] })
+        expect(store.getSnapshot(POND).canUndo).toBe(false)
+        expect(store.getSnapshot(POND).redoRecordIds).toEqual(['delete-1'])
+      })
+
+      it('returns empty without touching the stack when a FAILED or cancelled write leaves its step resolving to nothing, even while that step still sits on top', async () => {
+        const { store, run } = makeStore()
+        store.remember({ pondId: POND, recordIds: ['older'] })
+        const handle = store.rememberPending({ pondId: POND, recordIds: Promise.resolve(null) })
+
+        const outcome = await store.undoHandle(POND, handle)
+
+        expect(outcome).toEqual({ outcome: 'empty' })
+        expect(run.undo).not.toHaveBeenCalled()
+        // The real step beneath the dead one is untouched — a handle-targeted
+        // call never falls through, unlike a plain ⌘Z would.
+        expect(store.getSnapshot(POND).canUndo).toBe(true)
+        expect(store.getSnapshot(POND).topUndoRecordIds).toEqual(['older'])
+      })
+
+      it('returns empty without acting when the handle has sunk beneath later ⌘Z presses already queued ahead of it', async () => {
+        const { store, run } = makeStore()
+        store.remember({ pondId: POND, recordIds: ['x'] })
+        const handle = store.rememberPending({ pondId: POND, recordIds: Promise.resolve(['delete-1']) })
+        store.remember({ pondId: POND, recordIds: ['y'] })
+
+        // ⌘Z, ⌘Z, click — all three queued back to back, before any of them
+        // has actually run: the click's own `isTopUndo` read (at click time,
+        // before this call) saw the handle still on top, but by the time ITS
+        // turn in the queue comes up, the two ⌘Zs ahead of it have already
+        // taken 'y' then the handle's own step.
+        const first = store.undo(POND)
+        const second = store.undo(POND)
+        const third = store.undoHandle(POND, handle)
+
+        await expect(third).resolves.toEqual({ outcome: 'empty' })
+        await Promise.all([first, second])
+        expect(run.undo).toHaveBeenCalledTimes(2)
+        expect(run.undo).not.toHaveBeenCalledWith({ pondId: POND, recordIds: ['x'] })
+        // 'x' is still there for a real ⌘Z to take — the click never reached it.
+        expect(store.getSnapshot(POND).canUndo).toBe(true)
+        expect(store.getSnapshot(POND).topUndoRecordIds).toEqual(['x'])
+      })
+    })
   })
 
   describe('onUndone / onRedone', () => {

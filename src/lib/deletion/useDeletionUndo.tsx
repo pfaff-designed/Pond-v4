@@ -108,7 +108,8 @@ interface ActiveToast {
 
 interface DeletionUndoContextValue {
   stageDeletion: (input: StageDeletionInput) => void
-  stageUndo: (input: StageUndoInput) => void
+  /** Returns the toast's id, for a caller that may need to `dismiss` it later. */
+  stageUndo: (input: StageUndoInput) => string
   /**
    * Show a plain auto-expiring notice toast. When `action` is provided, a
    * secondary button appears alongside the dismiss control — useful for
@@ -118,6 +119,14 @@ interface DeletionUndoContextValue {
   notify: (message: string, action?: () => void, actionLabel?: string) => void
   /** Commit-and-clear every pending toast staged with this scope. */
   flushScope: (scope: string) => void
+  /**
+   * Remove a toast by the id `stageDeletion`/`stageUndo` returned, without
+   * waiting for its grace window — for a caller whose own toast has gone
+   * stale for a reason the toast itself can't see (KAN-368: a toast's undo
+   * button is tied to one session-undo step, which can sink beneath a later
+   * one, or evaporate on a failed write, while the toast is still showing).
+   */
+  dismiss: (id: string) => void
 }
 
 const DeletionUndoContext = createContext<DeletionUndoContextValue | null>(null)
@@ -137,7 +146,7 @@ export function DeletionUndoProvider({ children }: { children: React.ReactNode }
   }, [])
 
   const stage = useCallback(
-    (input: StageInput) => {
+    (input: StageInput): string => {
       const id =
         typeof crypto !== 'undefined' && 'randomUUID' in crypto
           ? crypto.randomUUID()
@@ -193,14 +202,20 @@ export function DeletionUndoProvider({ children }: { children: React.ReactNode }
           backstopId: input.id,
         },
       ])
+      return id
     },
     [remove]
   )
 
-  const stageDeletion = useCallback((input: StageDeletionInput) => stage(input), [stage])
+  const stageDeletion = useCallback(
+    (input: StageDeletionInput) => {
+      stage(input)
+    },
+    [stage]
+  )
 
   const stageUndo = useCallback(
-    ({ message, undo, undoLabel, scope }: StageUndoInput) =>
+    ({ message, undo, undoLabel, scope }: StageUndoInput): string =>
       stage({ message, undo, undoLabel, scope }),
     [stage]
   )
@@ -290,8 +305,8 @@ export function DeletionUndoProvider({ children }: { children: React.ReactNode }
   }, [flushAll])
 
   const value = useMemo(
-    () => ({ stageDeletion, stageUndo, notify, flushScope }),
-    [stageDeletion, stageUndo, notify, flushScope]
+    () => ({ stageDeletion, stageUndo, notify, flushScope, dismiss: handleDismiss }),
+    [stageDeletion, stageUndo, notify, flushScope, handleDismiss]
   )
 
   return (
