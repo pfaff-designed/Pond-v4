@@ -60,7 +60,7 @@ import { PLACEMENT } from '@/lib/layout/shell-placement'
 import { useZenCommands } from '@/lib/layout/use-zen-commands'
 import { workspaceUrl } from '@/lib/pages/nav'
 import { newPageParent, paletteItems, paletteScope, pondItems } from '@/lib/pages/palette-items'
-import { readRecentPageIds, writeRecent } from '@/lib/pages/recent-pages'
+import { readRecentPageIds } from '@/lib/pages/recent-pages'
 import { usePaletteRecords } from '@/lib/pages/use-palette-records'
 import { createPage } from '@/lib/pages/client'
 import { insertPageOptimistic } from '@/lib/pages/tree'
@@ -364,7 +364,6 @@ export function ShellCommands() {
           { id: created.id, parentId: parent.id, type: 'page', title: created.title },
           pondId
         )
-        writeRecent({ id: created.id, type: 'page', title: created.title }, pondId)
         router.push(workspaceUrl({ id: created.id, type: 'page', title: created.title }))
         void queryClient.invalidateQueries({ queryKey: pagesKey(pondId) })
         // KAN-415: a failed link append is not a failed page creation — the
@@ -427,20 +426,10 @@ export function ShellCommands() {
       }
       const page = pages.find((p) => p.id === item.id)
       if (page) {
-        writeRecent({ id: page.id, type: page.type, title: page.title }, pondId)
         router.push(workspaceUrl({ id: page.id, type: page.type, title: page.title }))
       }
     },
-    [
-      pages,
-      ponds,
-      router,
-      currentNodeId,
-      handleModeSelect,
-      startTemplateSheet,
-      handleCreatePage,
-      pondId,
-    ]
+    [pages, ponds, router, currentNodeId, handleModeSelect, startTemplateSheet, handleCreatePage]
   )
 
   const commandOpen = paletteOpen || templateSheetOpen
