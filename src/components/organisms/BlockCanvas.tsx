@@ -378,6 +378,11 @@ export function BlockCanvas({
   // state, since the second pick can land mid-await, before a state update
   // guarding on a render would have committed.
   const applyInFlightRef = useRef(false)
+  // G9: guards `makePage` against a double pick on the same `/` line — keyed
+  // by the slash target's host, since two different lines making pages at
+  // once is fine, only the same one twice (before `createPage` resolves) is
+  // the double-submit.
+  const makePageInFlightRef = useRef<Set<string>>(new Set())
   // F27: link capabilities for card→page links, parented at THIS page. Provided to
   // every module view below via context — modules that don't link (all but kanban
   // today) simply never read it.
@@ -968,6 +973,10 @@ export function BlockCanvas({
     target: SlashTarget
   ): Promise<boolean> => {
     if (!source) return false
+    // G9: a second pick on the same `/` line while `createPage` below is still
+    // in flight is a no-op — two different lines each making a page is fine.
+    if (makePageInFlightRef.current.has(target.hostId)) return false
+    makePageInFlightRef.current.add(target.hostId)
     try {
       const supabase = getSupabase()
       const {
@@ -1011,6 +1020,8 @@ export function BlockCanvas({
     } catch (err) {
       console.error('Failed to make the page', err)
       return false
+    } finally {
+      makePageInFlightRef.current.delete(target.hostId)
     }
   }
 
