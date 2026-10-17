@@ -470,6 +470,22 @@ describe('open, it is a combobox in the same box — not a dialog, not a portal'
     expect(onSelect).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'budget' }))
   })
 
+  it('arrowing to a page row fires onActiveItemChange with it (KAN-388) — a record/action row does not', () => {
+    const onActiveItemChange = jest.fn()
+    renderPalette({ onActiveItemChange })
+    expect(onActiveItemChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: 'kitchen', kind: 'page' })
+    )
+    fireEvent.keyDown(input(), { key: 'ArrowDown' })
+    expect(onActiveItemChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: 'budget', kind: 'page' })
+    )
+    fireEvent.change(input(), { target: { value: '> log' } })
+    const callsAfterActions = onActiveItemChange.mock.calls.length
+    fireEvent.keyDown(input(), { key: 'ArrowDown' })
+    expect(onActiveItemChange).toHaveBeenCalledTimes(callsAfterActions)
+  })
+
   it('typing filters, the hit is split pre / hit / post, and the empty state is the board’s note', () => {
     renderPalette()
     fireEvent.change(input(), { target: { value: 'cab' } })
