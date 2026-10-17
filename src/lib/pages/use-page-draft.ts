@@ -122,18 +122,24 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
   // block-level merge is deferred. Accept an AI edit with a settled ("Saved") panel.
   useEffect(() => {
     if (page && page.id !== loadedId.current) {
-      // Offline, leaving a page whose debounce hasn't fired yet: hold its
-      // draft now, under its own pageId, rather than leave it in the single
-      // `pendingSave` slot — the page being opened could type and overwrite
-      // it there before the old timer ever gets a chance to fire.
+      // Leaving a page whose debounce hasn't fired yet: the single
+      // `pendingSave` slot is shared by every page, and the page being
+      // opened could type and overwrite it there before the old timer ever
+      // gets a chance to fire. Offline, hold it under its own pageId; online,
+      // there's no reason to wait out the pause — start that save at once.
       const leavingId = loadedId.current
-      if (leavingId && !isOnlineRef.current && pendingSave.current?.pageId === leavingId) {
+      if (leavingId && pendingSave.current?.pageId === leavingId) {
         if (saveTimer.current) {
           clearTimeout(saveTimer.current)
           saveTimer.current = null
         }
-        holdOffline(pendingSave.current)
+        const p = pendingSave.current
         pendingSave.current = null
+        if (!isOnlineRef.current) {
+          holdOffline(p)
+        } else {
+          void startSaveRef.current(p.pageId, p.title, p.blocks, p.beforeAtSchedule)
+        }
       }
       loadedId.current = page.id
       serverSig.current = JSON.stringify(page.blocks)
@@ -422,6 +428,15 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
   const runRetryRef = useRef(runRetry)
   useEffect(() => {
     runRetryRef.current = runRetry
+  })
+
+  // Same reason as `flushNowRef`/`runRetryRef`: the seed effect above (which
+  // runs on every page switch, not just once) calls through this ref rather
+  // than closing over `startSave` directly, so react-hooks/exhaustive-deps
+  // doesn't need `startSave` added to that effect's dependency array.
+  const startSaveRef = useRef(startSave)
+  useEffect(() => {
+    startSaveRef.current = startSave
   })
 
   // `online` transition (KAN-407): flush the draft left pending by the offline

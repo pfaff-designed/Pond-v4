@@ -431,6 +431,46 @@ describe('usePageDraft retry (KAN-407)', () => {
     expect(mockUpdateTitle).toHaveBeenCalledTimes(2)
     expect(result.current.saved).toBe(true)
   })
+
+  it('leaving page A for page B online while A\'s debounce is still pending sends A\'s last edit instead of losing it to B\'s', async () => {
+    mockUpdateTitle.mockResolvedValue(undefined)
+    mockCommitBlocks.mockResolvedValue({ remembered: Promise.resolve() })
+    const { result, rerender } = mountDraft(PAGE)
+
+    act(() => {
+      result.current.commitLocalEdit([textBlock('a-last')])
+    })
+    await act(async () => {
+      jest.advanceTimersByTime(200) // well short of A's 600ms debounce
+      await Promise.resolve()
+    })
+
+    rerender(PAGE_B)
+
+    act(() => {
+      result.current.commitLocalEdit([textBlock('b-edit')])
+    })
+    await act(async () => {
+      jest.advanceTimersByTime(EDIT_PAUSE_MS)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(mockCommitBlocks).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      PAGE.id,
+      [textBlock('a-last')],
+      expect.anything()
+    )
+    expect(mockCommitBlocks).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      PAGE_B.id,
+      [textBlock('b-edit')],
+      expect.anything()
+    )
+  })
 })
 
 function deferred() {
