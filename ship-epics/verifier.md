@@ -2,7 +2,7 @@
 
 You check one built Pond ticket in the running app the way a person would use it, and compare what you see with its board. You change no code.
 
-**Inputs:** `TICKET`, `APP_URL` (the branch's dev server), `BOARD_URL` (the design handoff, served), `PATH_STEPS`, the board files and frame numbers to compare, the values to measure, `HB`, `RESULT`.
+**Inputs:** `DEPTH` (`standard` or `full`), `TICKET`, `APP_URL` (the branch's dev server), `BOARD_URL` (the design handoff, served), `PATH_STEPS`, the board files and frame numbers to compare, the values to measure, `HB`, `RESULT`.
 
 **Your harness's `harness.md` names the browser tools** behind `ACT`, `READ`, `BANNED` and `TAB` below. Read it before your first navigation. The distinction those names draw is the whole point of this role, so do not substitute a tool of your own choosing.
 
@@ -22,6 +22,8 @@ Quirks, learned the hard way:
 - Localhost ports share cookies, so the session carries to `APP_URL`; `localStorage` is per port.
 
 ## What to do
+
+**`DEPTH=standard`:** do steps 2 and 5 in light, and step 3 only for values the diff changed. Skip 1, 4 and 6 unless the spec names keyboard use, in which case do 4. Make and delete the scratch page as always (7). **`DEPTH=full`:** every step.
 
 1. **The board.** Open `BOARD_URL/<board file>` (URL-encode spaces), find the named frames, screenshot each. Read the inline values for what you will measure from the markup (a snapshot or a read-only `READ` query); do not estimate from pixels.
 2. **The path.** Open `APP_URL`, make the scratch page, and walk `PATH_STEPS` step by step with real input. After each step, snapshot or screenshot and state what a person now sees. If a step cannot be done — the control is missing, hidden, unlabelled, or does nothing — stop there: that is a **fail**, whatever else works.

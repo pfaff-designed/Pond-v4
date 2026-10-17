@@ -57,6 +57,21 @@ The boards fix how a surface **looks**. They are often silent on how it **behave
 
 Skip this step for tickets that only change values a board already draws.
 
+### 2c. Choose the depth
+
+Not every ticket needs every check. Choose `DEPTH` from the spec and the files it will touch, write it into `SPEC.md` as `DEPTH: <tier> — <one-line reason>`, and comment it on the ticket. The tiers decide steps 5, 7 and 9.2:
+
+| `DEPTH`    | When                                                                                                                                                                          | Review (5)                | Live check (7)                                                                                          | Local gates (9.2)                       |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| `light`    | Tests, stories, docs or copy only. Or a bug fix of a few lines whose cause is known, with no visual change, no persistence change and no new control.                         | One reviewer, `AXIS=both` | None. CI and the regression test are the proof.                                                         | `gates.sh WORKTREE origin/main related` |
+| `standard` | Behaviour on an existing surface (keys, focus, undo, a handler, data derivation) with no new board values to match.                                                           | Both axes                 | The path and the break pass, in light only. Measure values only where the diff changed one.             | `gates.sh WORKTREE origin/main related` |
+| `full`     | A new or rebuilt surface, board values to match, a new control, anything persisted (schema, a new field, a migration), deletion or data loss risk, auth, or several surfaces. | Both axes                 | Everything in `verifier.md`: the board side by side, every value, keyboard, break pass, light and dark. | `gates.sh WORKTREE` (everything)        |
+
+- **When unsure, go one tier up.** A tier is a floor, not a promise.
+- **Re-check the depth against the real diff after the build.** If the diff reached further than the spec suggested (a component under `src/components/`, a style, a persisted field, a migration), raise the tier before step 5. Never lower it after the build.
+- **A user-reported visual bug is at least `standard`.** It is verified where the user saw it.
+- CI runs the whole suite on every PR, whatever the tier. The tiers only decide what runs before the push and who looks.
+
 ### 3. Set up
 
 From `REPO`, never from inside a worktree:
@@ -88,6 +103,8 @@ and `LOOP/SPEC.md`: the ticket key and summary, its Jira description verbatim, `
 SHIP_DIR/ralph.sh LOOP WORKTREE HB RESULT > LOOP/ralph.out 2>&1
 ```
 
+**Size check, after the planning pass.** When `PLAN.md` first has items, count them. More than **8** build items means the ticket is bigger than one run lands well. Split it vertically now, before any item is built: keep the first working slice of the person's path (its entry point and the items under it) in this ticket, and move the rest into a new child ticket (`JIRA.comment` the proposed split on the ticket; the conductor creates the child). Then delete the moved items from `PLAN.md` and start the loop. Small tickets merge in one run; large ones run out of fix rounds.
+
 `RESULT` says `status: green` or `status: stopped` with a reason, and carries the commits and `PLAN.md` — whose `## Notes` (choices, deviations, outside_stream, causes, windows, path_test, verify_steps) feed the review, the verifier and the PR body.
 
 - `stopped — blocked: <step> — <why>`: a pass found a step this ticket cannot build. If it is a path step another ticket owns, that is the reachability gate failing late: comment the re-split on the ticket and return `needs-user`. Otherwise judge it, and either fix the plan or return `needs-user` with the question.
@@ -97,7 +114,7 @@ SHIP_DIR/ralph.sh LOOP WORKTREE HB RESULT > LOOP/ralph.out 2>&1
 
 ### 5. Review
 
-This is AGENTS.md's one gate. Run `REVIEW_SKILL` and follow it with these bindings: the fixed point is `origin/main`, the diff is `git -C WORKTREE diff origin/main...BRANCH`, the spec is the Jira ticket, the standards source is `WORKTREE/AGENTS.md`. Its two sub-agents are launched with `LAUNCH` as **reviewers** (`harness.md` fixes the agent kind and the model — code review runs on Opus; name it on every launch and every resume), both in **one message** so they run at once, and supervised together (one poll checks both heartbeats). Into each one's prompt, after the skill's brief, paste `SHIP_DIR/reviewer.md` with `AXIS` (`standards` / `spec`), `TICKET`, `WORKTREE`, `BRANCH`, `PATH_STEPS`, `OWNS`.
+This is AGENTS.md's one gate, at the depth step 2c chose. **`light`:** launch one reviewer with `AXIS=both` and skip `REVIEW_SKILL`'s two-agent split. **`standard` and `full`:** run `REVIEW_SKILL` and follow it with these bindings: the fixed point is `origin/main`, the diff is `git -C WORKTREE diff origin/main...BRANCH`, the spec is the Jira ticket, the standards source is `WORKTREE/AGENTS.md`. Its two sub-agents are launched with `LAUNCH` as **reviewers** (`harness.md` fixes the agent kind and the model — code review runs on Opus; name it on every launch and every resume), both in **one message** so they run at once, and supervised together (one poll checks both heartbeats). Into each one's prompt, after the skill's brief, paste `SHIP_DIR/reviewer.md` with `AXIS` (`standards` / `spec`), `TICKET`, `WORKTREE`, `BRANCH`, `PATH_STEPS`, `OWNS`.
 
 A reviewer finding is checked before it is acted on: open the cited file and confirm it. Reviewers are sometimes wrong (on 2026-10-09 one disputed a line count that was eslint's count against the raw one — both were right).
 
@@ -108,6 +125,8 @@ Confirmed blocking findings go back into the build loop: one item per finding, `
 Then re-review on the axis that found them. **At most two rounds** across review, live verification and CI together. A third is `stopped`.
 
 ### 7. Live verification
+
+**`light`: skip this step.** **`standard`:** pass the verifier `DEPTH=standard` (the path and the break pass, light only, values only where the diff changed one). **`full`:** `DEPTH=full`.
 
 The browser is one shared tab across every orchestrator. Take the lock first:
 
@@ -142,8 +161,8 @@ If the branch adds anything under `supabase/migrations/`: run `npm run test:pgli
 ### 9. Land it
 
 1. **Rebase** onto `origin/main` (`git -C WORKTREE fetch -q origin main && git -C WORKTREE rebase origin/main`). An unpushed branch may be squashed first (`git reset --soft $(git merge-base HEAD origin/main)` + one commit) so conflicts are resolved once. A conflict whose resolution changes behaviour is a fix round, then re-review.
-2. **Gates**: `SHIP_DIR/gates.sh WORKTREE` (tsc, jest, eslint on the changed files, Storybook if components or stories changed, pglite if a migration did). The full gates can outlast a single bounded call, so run them with `LONG`, beaten as `land: gates` with `LIMIT` 1500. Red after a rebase is a fix round.
-3. **Push** (`git -C WORKTREE push -q REMOTE BRANCH`) and **open the PR**: `gh pr create --repo pfaff-designed/Pond-v4 --base main --head BRANCH --title "KEY: <summary>" --body-file <file>`. The body says, in this order: the person's path; what the ticket's acceptance asked and where each is met; what the verifier measured against the board in light and dark; every choice made where the spec was silent; every deferral, with its ticket; the AUDIT p2/p3 items for this surface, resolved or deferred.
+2. **Gates**: `SHIP_DIR/gates.sh WORKTREE` for `full` (tsc, all of jest, eslint on the changed files, Storybook if components or stories changed, pglite if a migration did). For `light` and `standard`, `SHIP_DIR/gates.sh WORKTREE origin/main related` runs jest only on the tests related to the changed files and leaves Storybook to CI. The full gates can outlast a single bounded call, so run them with `LONG`, beaten as `land: gates` with `LIMIT` 1500. Red after a rebase is a fix round.
+3. **Push** (`git -C WORKTREE push -q REMOTE BRANCH`), **open the PR**, and **turn on auto-merge** at once (`gh pr merge <N> --repo pfaff-designed/Pond-v4 --squash --delete-branch --auto`), so the PR merges the moment CI is green. To open the PR: `gh pr create --repo pfaff-designed/Pond-v4 --base main --head BRANCH --title "KEY: <summary>" --body-file <file>`. The body says, in this order: the person's path; what the ticket's acceptance asked and where each is met; the `DEPTH` and its reason; what the verifier measured against the board (or `light: not live-checked`); every choice made where the spec was silent; every deferral, with its ticket; the AUDIT p2/p3 items for this surface, resolved or deferred.
 4. Move the ticket to **In Review** (`JIRA.transition`, `31`).
 5. **Wait for CI and act on what it says** — never start a watcher and move on. CI outlasts a single bounded call, so run the wait with `LONG`, beaten as `land: CI for #<N>` with `LIMIT` 1800:
 
@@ -153,7 +172,7 @@ If the branch adds anything under `supabase/migrations/`: run `npm run test:pgli
 
    Red: `gh run view <run> --repo pfaff-designed/Pond-v4 --log-failed`, fix through the build loop (a fix round: one `fix:` item per failure), push, wait again. A check that is still pending when `LONG`'s own deadline passes is a stall: say so and stop.
 
-6. **Merge**: `gh pr merge <N> --repo pfaff-designed/Pond-v4 --squash --delete-branch`. Ticket to **Done** (`JIRA.transition`, `41`).
+6. **Merged?** Auto-merge lands it when CI is green; confirm with `gh pr view <N> --repo pfaff-designed/Pond-v4 --json state` (`MERGED`). If auto-merge is unavailable, merge by hand: `gh pr merge <N> --repo pfaff-designed/Pond-v4 --squash --delete-branch`. Ticket to **Done** (`JIRA.transition`, `41`).
 7. **Write down the broken windows.** Collect each `windows:` line in `PLAN.md`'s notes, and each non-blocking reviewer note naming rot outside the diff, as `file:line — the rot`. Post them in one `JIRA.comment` on the epic, and list them in `RESULT` under `windows:`. The conductor specs them into tickets; you don't create tickets. Rot nobody writes down spreads (AGENTS.md, "Fix broken windows").
 8. **Refill `now`**: add the label (`JIRA.labels`) to this Workstream's next not-Done ticket that lacks it, if the queue holds fewer than 8.
 9. **Sweep**: `git -C REPO worktree remove --force WORKTREE`, `git -C REPO branch -D BRANCH`, `REPO/scripts/sweep.sh`.
@@ -168,7 +187,8 @@ One block per ticket you touched, then one line for the epic:
 KAN-123 · merged | needs-user | stopped | blocked
   path:      <the person's path, as verified>
   pr:        <url or none>
-  verified:  <what matched the board, light and dark; screenshot paths>
+  depth:     <light | standard | full — reason>
+  verified:  <what matched the board, light and dark; screenshot paths; or not live-checked (light)>
   user:      <the decision needed, if needs-user>
   reason:    <why, if stopped or blocked: the cause, not the symptom>
   options:   <if stopped or blocked: at least one way forward (smaller slice, other route, the user's decision)>
