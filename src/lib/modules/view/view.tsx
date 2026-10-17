@@ -20,7 +20,7 @@
 
 import { useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { ModuleViewProps } from '../types'
-import type { ViewBlock, ViewSavedView } from './schema'
+import type { ViewBlock, ViewMode, ViewSavedView } from './schema'
 import { useSiblingBlocks } from '../sibling-context'
 import { viewCollectionId } from '../block-frame'
 import { useCollectionRows } from './use-collection-rows'
@@ -69,7 +69,15 @@ import {
   GANTT_TRACK_STYLE,
 } from './gantt-shared'
 import { PondBlockEmpty } from '@/components/organisms/PondBlock'
-import { BOARD_EMPTY_LINE, GANTT_EMPTY_LINE, type ViewConfigPatch } from './kinds'
+import {
+  addViewRemedyLine,
+  BOARD_EMPTY_LINE,
+  GANTT_EMPTY_LINE,
+  hasRequiredField,
+  VIEW_KINDS,
+  type ViewConfigPatch,
+} from './kinds'
+import type { ViewKindPickerRow } from '@/components/molecules/ViewKindPicker'
 import {
   addDateField,
   addStatusField,
@@ -193,6 +201,24 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
           )
       : undefined
 
+  // KAN-243: the ＋ view picker's rows, one per `VIEW_KINDS` entry in its own table
+  // order. A kind needing a field the schema lacks carries the remedy hint; `disabled`
+  // only fires with no schema at all — defensive, since `showAddView` requires
+  // `editable` and a schema-less view renders the "needs a collection" notice below
+  // instead of `ViewControls` (so the picker itself never actually mounts without one).
+  const addViewRows: readonly ViewKindPickerRow[] = useMemo(
+    () =>
+      (Object.keys(VIEW_KINDS) as ViewMode[]).map((mode) => ({
+        mode,
+        remedyLine: schema && !hasRequiredField(mode, schema) ? addViewRemedyLine(mode) : undefined,
+        disabled: schema ? undefined : 'this view has no collection',
+      })),
+    [schema]
+  )
+  // Placeholder until the next item wires the real add — mints the remedy field (when
+  // needed) then the saved view, through one undo step.
+  const onAddView: (mode: ViewMode) => void = useCallback(() => {}, [])
+
   // Config edits (chart/big-number setup) rewrite the persisted view block through the
   // module's own onChange — the same whole-block save path every editable module uses.
   // `applyConfigPatch` (KAN-32) lands the patch on the ACTIVE saved view's config on a
@@ -237,6 +263,8 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
       chartProvenance={chartProvenance}
       onAddDateField={handleAddDateField}
       onAddStatusField={handleAddStatusField}
+      addViewRows={addViewRows}
+      onAddView={onAddView}
     />
   )
 }
@@ -285,6 +313,12 @@ export interface CollectionViewProps {
    *  board whose schema has no status/select property to group by. Absent when
    *  not `editable` (Storybook, a diff/proposal render) — no undrawn affordance there. */
   onAddStatusField?: () => void
+  /** KAN-243: the ＋ view picker's rows, one per `VIEW_KINDS` entry, carrying that
+   *  kind's remedy hint when the schema lacks what it needs. Absent when not
+   *  `editable` (Storybook, a diff/proposal render) — no undrawn affordance there. */
+  addViewRows?: readonly ViewKindPickerRow[]
+  /** KAN-243: pick a kind from the ＋ view picker. Absent when not `editable`. */
+  onAddView?: (mode: ViewMode) => void
 }
 
 export function CollectionView({
@@ -305,6 +339,8 @@ export function CollectionView({
   chartProvenance,
   onAddDateField,
   onAddStatusField,
+  addViewRows,
+  onAddView,
 }: CollectionViewProps) {
   // What the page canvas keys this view's peek and orange pill by.
   const instanceKey = useId()
@@ -424,6 +460,8 @@ export function CollectionView({
         activeViewId={localActiveViewId}
         onSelectView={config.views ? handleSelectView : undefined}
         showAddView={!!editable}
+        addViewRows={addViewRows}
+        onAddView={onAddView}
         editable={editable}
         onConfigChange={onConfigChange ? handleConfigChange : undefined}
       />
@@ -550,6 +588,8 @@ function ViewControls({
   activeViewId,
   onSelectView,
   showAddView,
+  addViewRows,
+  onAddView,
   editable,
   onConfigChange,
 }: {
@@ -561,6 +601,8 @@ function ViewControls({
   activeViewId?: string
   onSelectView?: (id: string) => void
   showAddView: boolean
+  addViewRows?: readonly ViewKindPickerRow[]
+  onAddView?: (mode: ViewMode) => void
   editable?: boolean
   onConfigChange?: (patch: ViewConfigPatch) => void
 }) {
@@ -608,9 +650,10 @@ function ViewControls({
             activeId={activeViewId}
             onSelect={onSelectView}
             // `ViewBar` requires addViewRows/onAddView only when showAddView is the
-            // literal `true` (KAN-243); ＋ view stays inert pending its own rows.
-            {...(showAddView
-              ? { showAddView: true, addViewRows: [], onAddView: () => {} }
+            // literal `true` (KAN-243) — falls back to `false` if either is somehow
+            // missing, rather than passing `ViewBar` a `true` it can't back up.
+            {...(showAddView && addViewRows && onAddView
+              ? { showAddView: true, addViewRows, onAddView }
               : { showAddView: false })}
           />
         )}

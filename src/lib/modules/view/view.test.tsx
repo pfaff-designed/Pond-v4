@@ -764,6 +764,39 @@ describe('CollectionView — the saved-view bar switches views as reading, not e
   })
 })
 
+describe('CollectionView — the ＋ view picker carries each kind\'s remedy line (KAN-243)', () => {
+  const onePickerView: ViewBlock = {
+    id: 'v-picker',
+    type: 'view',
+    mode: 'table',
+    views: [{ id: 'view-table', label: 'table', kind: 'table', config: {} }],
+    activeViewId: 'view-table',
+  }
+
+  beforeEach(() => {
+    initialSchema = dateless
+    initialRows = []
+  })
+
+  it('offers calendar, board and timeline with their remedy hint against a dateless, status-less schema', async () => {
+    const user = userEvent.setup()
+    renderView(onePickerView)
+
+    await user.click(screen.getByRole('button', { name: 'add a view' }))
+
+    expect(screen.getByRole('option', { name: /calendar/ })).toHaveTextContent(
+      'add a date field to use calendar'
+    )
+    expect(screen.getByRole('option', { name: /board/ })).toHaveTextContent(
+      'add a status field to use board'
+    )
+    expect(screen.getByRole('option', { name: /timeline/ })).toHaveTextContent(
+      'add a date field to use timeline'
+    )
+    expect(screen.getByRole('option', { name: /^table/ })).not.toHaveTextContent('add a')
+  })
+})
+
 describe('CollectionView — a config edit lands on the LOCALLY active view, not the persisted activeViewId (KAN-32)', () => {
   const chartSchema: PropertySchema = [
     { id: 'p-title', name: 'Title', type: 'text' },
