@@ -615,13 +615,19 @@ describe('`/` on an empty line inside a text block splits it at that line', () =
     ])
   })
 
-  it('a `page` pick removes only the `/` line and leaves one block, label and all', async () => {
+  it('a `nested page` pick leaves a page link where the `/` line was (KAN-122)', async () => {
     mockCreatePage.mockResolvedValue({ id: 'new-page', title: 'untitled', type: 'page' })
     const { onChange } = renderCanvas([{ ...prose, label: 'method' }])
     await slashAfterFirstLine()
     fireEvent.click(rowNamed(await screen.findByRole('listbox', { name: 'blocks' }), 'nested page'))
 
     await waitFor(() => expect(mockCreatePage).toHaveBeenCalled())
-    await waitFor(() => expect(lastBlocks(onChange)).toEqual([{ ...prose, label: 'method' }]))
+    await waitFor(() =>
+      expect(lastBlocks(onChange)).toEqual([
+        { id: 'b-prose', type: 'text', content: 'soak overnight', label: 'method' },
+        expect.objectContaining({ type: 'page-link', pageId: 'new-page' }),
+        { id: expect.any(String), type: 'text', content: 'simmer with bay' },
+      ])
+    )
   })
 })
