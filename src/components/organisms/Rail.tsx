@@ -1509,26 +1509,6 @@ export function Rail() {
     revealedForRef.current = null
   }, [pondId])
 
-  // Write `expanded` to the current pond's store whenever it (or the pond)
-  // changes — the only place this runs, now that `setExpanded` itself is
-  // pure, so it always writes under the `pondId` of the render it's in, not
-  // whatever pond a stale async closure remembers. `writeGuardPondIdRef`
-  // starts `null` so the very first pass for *any* pondId (mount, or a
-  // switch) is always skipped rather than written: `expanded` hasn't been
-  // merged from that pond's store yet (mount) or reset from the old pond's
-  // (switch), and writing it now would clobber the real stored value before
-  // the merge-read effect below ever gets to it. The reset/merge that
-  // follows immediately triggers the pass that writes the right set.
-  const writeGuardPondIdRef = useRef<string | null>(null)
-  useEffect(() => {
-    if (writeGuardPondIdRef.current !== pondId) {
-      writeGuardPondIdRef.current = pondId
-      return
-    }
-    if (!pondId) return
-    writeExpandedIds(pondId, Array.from(expanded))
-  }, [pondId, expanded])
-
   // Read this pond's stored expansion once per `pondId`, prune it against the
   // loaded `pages` (a stored id may have been deleted elsewhere), and merge
   // the result into `expanded` via a union — never a replace — so this can't
@@ -1537,8 +1517,28 @@ export function Rail() {
   // Gated on `isSuccess`, not `!isLoading`: a failed fetch also leaves
   // `isLoading` false with `pages` still `[]`, and pruning against that would
   // mark the pond loaded and wipe the real stored ids before a retry ever
-  // lands them.
+  // lands them. Declared ahead of the write effect below, which reads this
+  // same ref to know whether it's safe to write yet.
   const loadedForRef = useRef<string | null>(null)
+
+  // Write `expanded` to the current pond's store whenever it (or the pond)
+  // changes — the only place this runs, now that `setExpanded` itself is
+  // pure, so it always writes under the `pondId` of the render it's in, not
+  // whatever pond a stale async closure remembers. Gated on `loadedForRef`
+  // (set by the restore effect below, once per pond) rather than "did pondId
+  // just change": the switch's own clear-to-`new Set()` is itself a render of
+  // `expanded`, and a guard that only tracks "did pondId change" still treats
+  // that render as the pond's second pass and writes `[]` before the restore
+  // effect has read the new pond's store — reproduces on every switch to an
+  // uncached pond, and under `React.StrictMode` even on a plain mount (effects
+  // run twice, and the second pass wrote `[]` before the first pass's restore
+  // landed). Gating on the same ref the restore effect sets means the write
+  // can never land before that pond's store has actually been read.
+  useEffect(() => {
+    if (!pondId || loadedForRef.current !== pondId) return
+    writeExpandedIds(pondId, Array.from(expanded))
+  }, [pondId, expanded])
+
   useEffect(() => {
     if (!pondId) return
     if (!isSuccess) return
