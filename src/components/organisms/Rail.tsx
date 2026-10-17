@@ -71,7 +71,7 @@ import { appendChildLinkUnder } from '@/lib/pages/child-links'
 import { usePondId, usePond } from '@/lib/pond/context'
 import { pushRecentGlyphToPond } from '@/lib/pond/client'
 import { PondSwitcher } from './PondSwitcher'
-import { workspaceUrl } from '@/lib/pages/nav'
+import { openWorkspaceUrl, workspaceUrl } from '@/lib/pages/nav'
 import { withTemplatesParam } from '@/lib/pages/templates-param'
 import { markIndex, resolveMark, type MarkSource, type PageMark } from '@/lib/pages/mark'
 import { isNewNestedPage } from '@/lib/pages/nested-page'
@@ -1644,7 +1644,7 @@ export function Rail() {
     opts?: { openTemplates?: boolean }
   ) {
     const url = workspaceUrl(node)
-    router.push(opts?.openTemplates ? withTemplatesParam(url) : url)
+    openWorkspaceUrl(opts?.openTemplates ? withTemplatesParam(url) : url, router)
   }
 
   /** Run a mutation with a fresh client + user, refresh the tree, return its result. */
@@ -1836,7 +1836,7 @@ export function Rail() {
       // if the open page was in the deleted subtree, clear the workspace
       const selected = selectedNodeIdRef.current
       if (selected && subtreeIds(node).has(selected)) {
-        router.push(workspaceUrl(null))
+        openWorkspaceUrl(workspaceUrl(null), router)
       }
     } catch {
       restoreDeletedRow(removedRow)
@@ -1857,7 +1857,7 @@ export function Rail() {
 
     const removedRow = pages.find((r) => r.id === node.id)
     queryClient.setQueryData<PageRow[]>(pagesKey(pondId), (rows) => removeRow(rows ?? [], node.id))
-    if (selectedNodeId === node.id) router.push(workspaceUrl(null))
+    if (selectedNodeId === node.id) openWorkspaceUrl(workspaceUrl(null), router)
 
     stageDeletion({
       message: `Deleted "${node.title || 'Untitled'}"`,
@@ -2028,7 +2028,10 @@ export function Rail() {
     // The change log is a reserved virtual page — no `pages` row, so its own
     // URL is built by hand rather than through `nodeById`/`navigateTo`.
     if (id === CHANGE_LOG_NODE_ID) {
-      router.push(workspaceUrl({ id: CHANGE_LOG_NODE_ID, type: 'page', title: 'change log' }))
+      openWorkspaceUrl(
+        workspaceUrl({ id: CHANGE_LOG_NODE_ID, type: 'page', title: 'change log' }),
+        router
+      )
       return
     }
     const node = nodeById.get(id)
@@ -2118,7 +2121,7 @@ export function Rail() {
         onRename={handleRename}
         onPickGlyph={handlePickGlyph}
         onPickColour={handlePickColour}
-        onLife={() => router.push(workspaceUrl(null))}
+        onLife={() => openWorkspaceUrl(workspaceUrl(null), router)}
         onToggleLife={handleToggleLife}
         onOpenDatabases={handleOpenDatabases}
         canDrop={canDrop}
