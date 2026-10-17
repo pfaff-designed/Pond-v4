@@ -143,8 +143,11 @@ const SUBSEQUENCE_SPAN_FACTOR = 2
  * branches agree on what "close" means.
  */
 function isCloseSpelling(label: string, q: string): boolean {
-  const lower = label.toLowerCase()
-  return [lower, ...lower.split(/\s+/)].some((w) => editDistance(w, q) <= 2)
+  const folded = fold(label)
+  const foldedQuery = fold(q)
+  return [folded, ...folded.split(/[^\p{L}\p{N}]+/u)].some(
+    (w) => editDistance(w, foldedQuery) <= 2
+  )
 }
 
 function matchTier(item: PaletteItem, foldedQuery: string, q: string): number {
@@ -180,10 +183,11 @@ function visitBoost(id: string, visits: readonly string[]): number {
  * Ranks `items` for `q` — exact beats a prefix, a prefix beats a word
  * boundary, a contiguous substring beats a scattered subsequence; a label
  * that doesn't even scatter-match scores 0 and is dropped, so the caller
- * never has to filter twice. A visit boost and a depth tiebreak (shallower
- * pages first) break ties within a tier; a full tie keeps `items`' own order
- * (the `index` carried through `sort`, since engine stability isn't a given
- * across the scores Node and the browser might produce here).
+ * never has to filter twice. The visit boost and the depth tiebreak are
+ * added straight onto the tier score, not held back as a same-tier-only
+ * tiebreak — a recent, shallow page can outrank a higher tier's unboosted,
+ * deeper one. A full tie keeps `items`' own order (the `index` carried
+ * through `sort`).
  */
 export function rankPages(
   items: readonly PaletteItem[],

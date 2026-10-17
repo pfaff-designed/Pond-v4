@@ -148,7 +148,7 @@ export interface MatchRun {
 }
 
 /** NFD combining marks, stripped by `fold` so `cafe` matches `Café` (KAN-390). */
-const COMBINING_MARKS = /[̀-ͯ]/g
+const COMBINING_MARKS = /[\u0300-\u036f]/g
 
 /**
  * `label` folded one code point at a time (NFD, combining marks stripped,
