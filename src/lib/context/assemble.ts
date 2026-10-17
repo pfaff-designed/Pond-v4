@@ -258,18 +258,26 @@ type Sb = SupabaseClient<Database>
 export async function fetchNodeContext(
   sb: Sb,
   userId: string,
-  nodeId: string
+  nodeId: string,
+  /** #341: scopes the read to this pond, like `resolveMention`'s `pond`. Optional
+   *  until the other call sites thread it through — omitted, the read stays
+   *  unscoped by pond, as before. */
+  pond?: string | null
 ): Promise<NodeContextData | null> {
-  const { data: own } = await sb
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const q: any = sb
     .from('pages')
-    .select('type, title, blocks, props')
+    .select('type, title, blocks, props, deleted_at')
     .eq('id', nodeId)
     .eq('user_id', userId)
-    .maybeSingle()
+  const { data: own } = await (pond === undefined ? q : inPond(q, pond)).maybeSingle()
 
   if (!own) return null
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const row = own as any
+  // #341: a trashed row (migration 0027's `deleted_at`, not in the generated
+  // types) is left out — same as an id that never resolved.
+  if (row.deleted_at) return null
 
   const rawBlocks: Block[] = Array.isArray(row.blocks) ? (row.blocks as Block[]) : []
   // #19 read-hydration seam (decision 16): a `view` block draws this page's
@@ -488,16 +496,19 @@ export async function buildChatContext(
   const pond = await resolvePond(sb, userId, opts.pondId)
 
   if (opts.nodeId && !opts.skipNodeContext) {
-    const data = opts.nodeData !== undefined ? opts.nodeData : await fetchNodeContext(sb, userId, opts.nodeId)
+    const data =
+      opts.nodeData !== undefined ? opts.nodeData : await fetchNodeContext(sb, userId, opts.nodeId, pond)
     // Current node only: expose block ids so the model can target one in propose_changes.
-    if (data) blocks.push(formatNodeContext(data, { includeBlockIds: true }))
+    // #341: a resolved-but-unreadable node (another pond, or trashed) still rode the
+    // request — say so, rather than letting the model answer as if nothing was asked.
+    blocks.push(data ? formatNodeContext(data, { includeBlockIds: true }) : '[Current node] unavailable')
   }
 
   if (opts.latestUserText) {
     for (const name of parseMentions(opts.latestUserText)) {
       const ref = await resolveMention(sb, userId, name, pond)
       if (!ref) continue
-      const data = await fetchNodeContext(sb, userId, ref.nodeId)
+      const data = await fetchNodeContext(sb, userId, ref.nodeId, pond)
       if (data) blocks.push(formatNodeContext(data, { label: `Referenced: @${ref.name}` }))
     }
   }

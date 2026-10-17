@@ -241,9 +241,13 @@ export interface StampPageRef {
  *     do NOT stamp — a write-once stamp taken against an in-flight list would
  *     silently mis-resolve to the open page. The effect re-runs when the list
  *     resolves and stamps then (ticket-30 review, must-fix 1).
- *   - `targetPageId` present, pages loaded, id absent → stamp `missing: true`
- *     (deleted page / hallucinated id): the card shows a notice and Accept
- *     skips. Never falls back to the open page.
+ *   - `targetPageId` equal to the open page's own id → stamp the open page
+ *     (with its live name), even when that id is absent from `pages` — the
+ *     home page is stripped from `pages` (KAN-341), so a model naming the
+ *     open root page by id must not read as a deleted/hallucinated target.
+ *   - `targetPageId` present, pages loaded, id absent and not the open page →
+ *     stamp `missing: true` (deleted page / hallucinated id): the card shows
+ *     a notice and Accept skips. Never falls back to the open page.
  *   - no `targetPageId` → the open page when one is open (with its name — an
  *     empty name would mislabel the card), else `null` (leave unstamped;
  *     Accept then has nowhere safe to write and skips).
@@ -260,6 +264,9 @@ export function resolveStampTarget(opts: {
     if (!pagesLoaded) return 'defer'
     const page = pages.find((p) => p.id === targetPageId)
     if (page) return { nodeId: page.id, nodeName: page.title }
+    if (targetPageId === openNodeId && openNodeName) {
+      return { nodeId: openNodeId, nodeName: openNodeName }
+    }
     return { nodeId: targetPageId, nodeName: '', missing: true }
   }
   if (openNodeId && openNodeName) return { nodeId: openNodeId, nodeName: openNodeName }
