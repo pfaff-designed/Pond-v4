@@ -43,7 +43,7 @@ export const entriesSchema = z
     /** Newest first, as the board's `note: 'newest first'` and both its fixtures read. */
     entries: z.array(entrySchema),
     /**
-     * The board's `serif` flag: the text is serif 200 / 16 / 1.55 when set, sans
+     * The board's `serif` flag: the text is serif 200 / 16.5 / 1.6 when set, sans
      * 13.5 / 1.5 otherwise. Set by the journal template at instantiation; absent means
      * sans. See the module doc-comment for why it lives here.
      */

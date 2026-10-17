@@ -9,15 +9,16 @@ import { blockFrame } from '@/lib/modules/block-frame'
 
 /**
  * The `entries` block (#250) — dated prose, serif only for the journal. The play
- * functions assert the COMPUTED values against `PondTemplate.dc.html`'s
- * `renderVals()` (`k === 'entries'`; its frames render under a transform, so the
- * literals in that script are the source, never DOM geometry read off the board):
+ * functions assert the COMPUTED values against `PondMolecule.dc.html`'s `entry` kind
+ * (conductor's ruling, KAN-356: the library wins over the superseded
+ * `PondTemplate.dc.html` reading these numbers used to cite):
  *
  *   stack   flex column · gap 8
- *   entry   grid 52px minmax(0,1fr) · gap 12 · align-items baseline
+ *   entry   grid 56px minmax(0,1fr) · gap 14 · padding 10px 8px · radius 10 ·
+ *           align-items baseline
  *   edate   PP Neue Montreal Mono 10.5 · ink .68
  *   sans    PP Neue Montreal 13.5 / 1.5 · full ink              (project → updates)
- *   serif   PP Editorial New 200 / 16 / 1.55 · full ink          (journal → entries)
+ *   serif   PP Editorial New 200 / 16.5 / 1.6 · full ink         (journal → entries)
  *   empty   sans 13.5 / 1.5 · ink .68 — even on a serif block (`d.serif && filled`)
  *   both    text-wrap: pretty
  */
@@ -104,10 +105,15 @@ async function assertGeometry(canvasElement: HTMLElement, count: number) {
   for (const row of rows) {
     const cs = getComputedStyle(row)
     await expect(cs.display).toBe('grid')
-    // A laid-out grid resolves its tracks to px: the first is the board's 52.
-    await expect(cs.gridTemplateColumns.startsWith('52px ')).toBe(true)
-    await expect(cs.columnGap).toBe('12px')
+    // A laid-out grid resolves its tracks to px: the first is the molecule's 56.
+    await expect(cs.gridTemplateColumns.startsWith('56px ')).toBe(true)
+    await expect(cs.columnGap).toBe('14px')
     await expect(cs.alignItems).toBe('baseline')
+    await expect(cs.paddingTop).toBe('10px')
+    await expect(cs.paddingBottom).toBe('10px')
+    await expect(cs.paddingLeft).toBe('8px')
+    await expect(cs.paddingRight).toBe('8px')
+    await expect(cs.borderRadius).toBe('10px')
   }
 }
 
@@ -134,12 +140,12 @@ async function assertSans(cs: CSSStyleDeclaration, color: string) {
   await expect(cs.color).toBe(color)
 }
 
-/** The serif branch: PP Editorial New 200 / 16 / 1.55, `text-wrap: pretty`, full ink. */
+/** The serif branch: PP Editorial New 200 / 16.5 / 1.6, `text-wrap: pretty`, full ink. */
 async function assertSerif(cs: CSSStyleDeclaration, ink: string) {
   await expect(cs.fontFamily).toContain('PP Editorial New')
   await expect(cs.fontWeight).toBe('200')
-  await expect(cs.fontSize).toBe('16px')
-  await expect(cs.lineHeight).toBe('24.8px') // 1.55 × 16
+  await expect(cs.fontSize).toBe('16.5px')
+  await expect(cs.lineHeight).toBe('26.4px') // 1.6 × 16.5
   await expect(cs.textWrap).toBe('pretty')
   await expect(cs.color).toBe(ink)
 }
@@ -284,13 +290,13 @@ export const EditableJournal: Story = {
     await expect(ds.fontFamily).toContain('PP Neue Montreal Mono')
     await expect(ds.fontSize).toBe('10.5px')
     await expect(ds.color).toBe(INK_68)
-    // The editable row keeps the read-only row's geometry: the board's 52px grid at
-    // gap 12, baseline — the fields swap in, the layout does not change.
+    // The editable row keeps the read-only row's geometry: the molecule's 56px grid
+    // at gap 14, baseline — the fields swap in, the layout does not change.
     for (const t of texts) {
       const cs = getComputedStyle(t.parentElement!)
       await expect(cs.display).toBe('grid')
-      await expect(cs.gridTemplateColumns.startsWith('52px ')).toBe(true)
-      await expect(cs.columnGap).toBe('12px')
+      await expect(cs.gridTemplateColumns.startsWith('56px ')).toBe(true)
+      await expect(cs.columnGap).toBe('14px')
       await expect(cs.alignItems).toBe('baseline')
     }
     await userEvent.type(texts[1], ' Early night.')

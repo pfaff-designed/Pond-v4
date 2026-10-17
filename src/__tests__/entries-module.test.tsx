@@ -1,11 +1,14 @@
 /**
  * The `entries` block (#250, child 228b) — dated prose, serif only for the journal.
- * Measured off `PondTemplate.dc.html`'s `renderVals()` (`k === 'entries'`):
+ * Row geometry and serif size follow `PondMolecule.dc.html`'s `entry` kind
+ * (conductor's ruling, KAN-356: the library wins over the superseded
+ * `PondTemplate.dc.html` reading):
  *
  *   stack  flex column · gap 8
- *   entry  grid `52px minmax(0,1fr)` · gap 12 · align-items baseline
+ *   entry  grid `56px minmax(0,1fr)` · gap 14 · padding 10px 8px · radius 10 ·
+ *          align-items baseline
  *   edate  mono 10.5 · ink .68
- *   text   d.serif && filled ? serif 200 / 16 / 1.55 · full ink
+ *   text   d.serif && filled ? serif 200 / 16.5 / 1.6 · full ink
  *                            : sans 13.5 / 1.5 · full ink when filled, ink .68 when not
  *          both `text-wrap: pretty`
  *
@@ -248,19 +251,27 @@ describe('addEntry / entryDateLabel — the engine-shaped insert, newest first',
 
 // ── The view: two media, one flag ───────────────────────────────────────────────
 
-const ROW = ['grid', 'grid-cols-[52px_minmax(0,1fr)]', 'gap-mn-3', 'items-baseline']
+const ROW = [
+  'grid',
+  'items-baseline',
+  'gap-3.5',
+  'rounded-mn-row',
+  'px-2',
+  'py-2.5',
+  '[grid-template-columns:56px_minmax(0,1fr)]',
+]
 const DATE = ['font-mono', 'text-[10.5px]', 'text-mn-text-secondary']
 const SANS = ['font-sans', 'text-[13.5px]', 'leading-normal', '[text-wrap:pretty]']
 const SERIF = [
   'font-serif',
   'font-extralight', // 200 — never 400
-  'text-mn-16',
-  'leading-[1.55]',
+  'text-[16.5px]',
+  'leading-[1.6]',
   '[text-wrap:pretty]',
 ]
 
 describe('EntriesView — read-only', () => {
-  it('the stack is a flex column at gap 8; each row the 52px grid, gap 12, baseline', () => {
+  it('the stack is a flex column at gap 8; each row the molecule’s 56px grid, gap 14, baseline', () => {
     const { container } = render(<EntriesView data={updates} />)
     const stack = container.firstElementChild!
     has(stack, 'flex', 'flex-col', 'gap-mn-2')
@@ -280,11 +291,11 @@ describe('EntriesView — read-only', () => {
     const { container } = render(<EntriesView data={updates} />)
     for (const t of textsOf(container)) {
       has(t, ...SANS, 'text-mn-text')
-      lacks(t, 'font-serif', 'font-extralight', 'text-mn-16', 'leading-[1.55]')
+      lacks(t, 'font-serif', 'font-extralight', 'text-[16.5px]', 'leading-[1.6]')
     }
   })
 
-  it('with `serif: true` the text is SERIF 200 / 16 / 1.55 at full ink (journal → entries)', () => {
+  it('with `serif: true` the text is SERIF 200 / 16.5 / 1.6 at full ink (journal → entries)', () => {
     const { container } = render(<EntriesView data={journal} />)
     const texts = textsOf(container)
     expect(texts).toHaveLength(3)
@@ -353,10 +364,10 @@ describe('EntriesView — read-only', () => {
   })
 
   it('composes the size and colour tokens as plain strings, never through cn (#252)', () => {
-    // tailwind-merge drops one of `text-mn-16` / `text-mn-text` as both match `text-*`.
+    // tailwind-merge drops one of `text-[16.5px]` / `text-mn-text` as both match `text-*`.
     // The recipe must carry BOTH on the same element in both media.
     const { container } = render(<EntriesView data={journal} />)
-    has(textsOf(container)[0], 'text-mn-16', 'text-mn-text')
+    has(textsOf(container)[0], 'text-[16.5px]', 'text-mn-text')
     const { container: c2 } = render(<EntriesView data={updates} />)
     has(textsOf(c2)[0], 'text-[13.5px]', 'text-mn-text')
   })
@@ -380,7 +391,7 @@ describe('EntriesView — editable (every row is a date field + a prose field)',
     for (const row of Array.from(container.firstElementChild!.children)) has(row, ...ROW)
   })
 
-  it('the textarea wears the block’s medium: sans by default, serif 200 / 16 / 1.55 on a journal', () => {
+  it('the textarea wears the block’s medium: sans by default, serif 200 / 16.5 / 1.6 on a journal', () => {
     render(<Stateful data={updates} />)
     for (const t of screen.getAllByRole('textbox', { name: 'Entry text' })) {
       has(t, ...SANS, 'text-mn-text')
