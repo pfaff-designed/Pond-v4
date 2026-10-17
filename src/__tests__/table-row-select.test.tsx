@@ -12,7 +12,7 @@ import type { ViewBlock } from '@/lib/modules/view/schema'
 import type { PropertySchema } from '@/lib/properties/schema'
 
 const schema: PropertySchema = [{ id: 'f', name: 'note', type: 'text' }]
-const config: ViewBlock = { id: 'b', mode: 'table' }
+const config: ViewBlock = { id: 'b', type: 'view', mode: 'table' }
 const rows: CollectionRow[] = [
   { id: 'a', title: 'First', values: { f: 'one' } },
   { id: 'b', title: 'Second', values: { f: 'two' } },
