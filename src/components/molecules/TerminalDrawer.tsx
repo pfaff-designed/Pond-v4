@@ -32,13 +32,10 @@ import {
   COMPOSER_CARD_BOTTOM_VAR,
   COMPOSER_CLEARANCE_VAR,
   COMPOSER_TAB_INSET,
+  COMPOSER_TOP_CLEARANCE,
   composerFootprintPx,
 } from '@/lib/layout/composer-clearance'
-import {
-  COMPOSER_DEFAULT_HEIGHT,
-  COMPOSER_MAX_HEIGHT_CSS,
-  COMPOSER_TOP_CLEARANCE,
-} from '@/lib/layout/composer-height'
+import { COMPOSER_DEFAULT_HEIGHT, COMPOSER_MAX_HEIGHT_CSS } from '@/lib/layout/composer-height'
 import { RAIL_WIDTH_PX } from '@/lib/layout/rail-width'
 import { ariaKeyshortcuts, formatChord, useApplePlatform } from '@/lib/shell-commands'
 import type { CSSVars } from '@/lib/css-vars'

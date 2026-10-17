@@ -58,8 +58,8 @@ import { pageEyebrowClass } from '@/components/atoms/kicker'
 import { ANSWER_PROSE_CLASS } from '@/components/molecules/Markdown'
 import { dissolveConversation } from '@/lib/conversation/client'
 import { requestComposerToggle } from '@/lib/terminal-focus'
-import { COMPOSER_BOTTOM_INSET } from '@/lib/layout/composer-clearance'
-import { COMPOSER_DEFAULT_HEIGHT, COMPOSER_TOP_CLEARANCE } from '@/lib/layout/composer-height'
+import { COMPOSER_BOTTOM_INSET, COMPOSER_TOP_CLEARANCE } from '@/lib/layout/composer-clearance'
+import { COMPOSER_DEFAULT_HEIGHT } from '@/lib/layout/composer-height'
 import { RAIL_WIDTH_PX } from '@/lib/layout/rail-width'
 
 const renderTerminal = () =>

@@ -15,9 +15,6 @@
 import { useEffect, useState } from 'react'
 import { COMPOSER_BOTTOM_INSET, COMPOSER_TOP_CLEARANCE } from '@/lib/layout/composer-clearance'
 
-/** Re-exported so existing call sites (`TerminalDrawer.tsx`) keep importing it from here. */
-export { COMPOSER_TOP_CLEARANCE }
-
 export const COMPOSER_HEIGHT_KEY = 'pond:composer-height'
 /**
  * The card with a thread, until the person resizes it: the tallest state the

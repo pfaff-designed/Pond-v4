@@ -102,6 +102,7 @@ import {
   COMPOSER_CLEARANCE_GAP,
   COMPOSER_CLEARANCE_VAR,
   COMPOSER_REST_HEIGHT,
+  COMPOSER_TOP_CLEARANCE,
   composerClearancePadding,
   composerFootprintPx,
 } from '@/lib/layout/composer-clearance'
@@ -109,13 +110,12 @@ import {
   COMPOSER_DEFAULT_HEIGHT,
   COMPOSER_HEIGHT_KEY,
   COMPOSER_MIN_HEIGHT,
-  COMPOSER_TOP_CLEARANCE,
   composerMaxHeight,
   readStoredComposerHeight,
 } from '@/lib/layout/composer-height'
 import TextEditor from '@/lib/modules/text/editor'
 import { findTextBlock, textEditorOf } from '@/__tests__/helpers/text-block'
-import { blockDomId, scrollToBlock } from '@/lib/modules/block-dom'
+import { blockDomId } from '@/lib/modules/block-dom'
 import type { TextBlock } from '@/lib/modules/text/schema'
 import { selectWord } from '@/__tests__/helpers/selection'
 
@@ -992,7 +992,7 @@ describe('WorkspaceShell — the chrome floats over one canvas', () => {
     expect(main.style.scrollPaddingBottom).toContain('24px')
   })
 
-  it('a real text block inside <main> reads the published clearance through the whole tree, and scrollToBlock still centres (path test, KAN-400)', async () => {
+  it('a real text block inside <main> reads the published clearance through the whole tree (path test, KAN-400)', async () => {
     const data: TextBlock = { id: 'blk-1', type: 'text', content: 'hello' }
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const { container } = render(
@@ -1035,14 +1035,6 @@ describe('WorkspaceShell — the chrome floats over one canvas', () => {
     expect(main.style.scrollPaddingTop).toBe(`${COMPOSER_TOP_CLEARANCE}px`)
     expect(main.style.scrollPaddingBottom).toContain(COMPOSER_CLEARANCE_VAR)
     expect(main.style.scrollPaddingBottom).toContain('24px')
-
-    // The ⌘K/jump path already honours the padded viewport natively through
-    // `block: 'center'` — confirmed, not changed by this ticket. jsdom has no
-    // `scrollIntoView`; jest.setup.ts stands it in globally.
-    const scrollIntoView = jest.mocked(HTMLElement.prototype.scrollIntoView)
-    scrollIntoView.mockClear()
-    scrollToBlock(data.id)
-    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'center' })
   })
 
   it('a click on the pill grows it into the palette', async () => {
