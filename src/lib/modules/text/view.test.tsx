@@ -41,6 +41,31 @@ const canonical = (element: Element): string =>
     return `<${[child.tagName.toLowerCase(), ...attributes].join(' ')}>${canonical(child)}</>`
   }).join('')
 
+/** Dispatches a text/plain-only paste, the shape a terminal or plain editor puts on the clipboard. */
+const pastePlainText = (field: HTMLElement, text: string, options: { shiftKey?: boolean } = {}) => {
+  if (options.shiftKey) fireEvent.keyDown(field, { key: 'v', shiftKey: true, metaKey: true })
+  const event = new Event('paste', { bubbles: true, cancelable: true })
+  Object.defineProperty(event, 'clipboardData', {
+    value: {
+      types: ['text/plain'],
+      getData: (type: string) => (type === 'text/plain' ? text : ''),
+    },
+  })
+  fireEvent(field, event)
+}
+
+/** Dispatches a paste carrying both text/html and text/plain, the shape a browser puts on the clipboard. */
+const pasteHtml = (field: HTMLElement, html: string, text: string) => {
+  const event = new Event('paste', { bubbles: true, cancelable: true })
+  Object.defineProperty(event, 'clipboardData', {
+    value: {
+      types: ['text/html', 'text/plain'],
+      getData: (type: string) => (type === 'text/html' ? html : type === 'text/plain' ? text : ''),
+    },
+  })
+  fireEvent(field, event)
+}
+
 /** A host that keeps the block's state, as the page does. */
 const StatefulText = ({
   data,
@@ -403,5 +428,199 @@ describe('TextView — the text block edits in place as rendered prose', () => {
       expect(tokens).toContain(token)
     }
     expect(TEXT_PROSE_CLASS).not.toMatch(/border-mn-line/)
+  })
+
+  it('a text/plain-only markdown paste arrives typeset in the same block', async () => {
+    render(<TextView data={{ id: 't', type: 'text', content: '' }} editable onChange={() => {}} />)
+    const field = await findField()
+    pastePlainText(field, '# Title\n\n- one\n- two\n\n**bold**')
+    expect(within(field).getByRole('heading', { level: 1, name: 'Title' })).toBeInTheDocument()
+    expect(field.querySelectorAll('ul > li')).toHaveLength(2)
+    expect(within(field).getByText('bold').tagName).toBe('STRONG')
+    expect(field.textContent).not.toMatch(/#|\*\*/)
+  })
+
+  it('a text/plain-only paste that does not look like markdown still inserts literally', async () => {
+    render(<TextView data={{ id: 't', type: 'text', content: '' }} editable onChange={() => {}} />)
+    const field = await findField()
+    const prose = 'just some plain notes, nothing special here'
+    pastePlainText(field, prose)
+    expect(field.textContent).toBe(prose)
+    expect(field.querySelector('h1,h2,h3,strong,em,ul,ol')).toBeNull()
+  })
+
+  it('⌘⇧V/Ctrl+Shift+V pastes the same markdown clipboard literally', async () => {
+    render(<TextView data={{ id: 't', type: 'text', content: '' }} editable onChange={() => {}} />)
+    const field = await findField()
+    pastePlainText(field, '# Title\n\n**bold**', { shiftKey: true })
+    expect(field.textContent).toBe('# Title**bold**')
+    expect(field.querySelector('h1,strong')).toBeNull()
+  })
+
+  it('a text/plain-only paste of a bare URL still links (not markdown, so Link keeps its own paste rule)', async () => {
+    render(<TextView data={{ id: 't', type: 'text', content: '' }} editable onChange={() => {}} />)
+    const field = await findField()
+    pastePlainText(field, 'see https://example.com now')
+    expect(within(field).getByRole('link', { name: 'https://example.com' })).toHaveAttribute(
+      'href',
+      'https://example.com'
+    )
+  })
+
+  it('a markdown paste keeps a link target that differs from its visible text', async () => {
+    render(<TextView data={{ id: 't', type: 'text', content: '' }} editable onChange={() => {}} />)
+    const field = await findField()
+    pastePlainText(field, '**b** [https://b.com](https://a.com/x)')
+    const link = within(field).getByRole('link', { name: 'https://b.com' })
+    expect(link).toHaveAttribute('href', 'https://a.com/x')
+  })
+
+  it('a wrapper-only text/html paste (matching text/plain) parses as markdown', async () => {
+    render(<TextView data={{ id: 't', type: 'text', content: '' }} editable onChange={() => {}} />)
+    const field = await findField()
+    const text = '# Title\n\n**bold**'
+    pasteHtml(field, `<pre>${text}</pre>`, text)
+    expect(within(field).getByRole('heading', { level: 1, name: 'Title' })).toBeInTheDocument()
+    expect(within(field).getByText('bold').tagName).toBe('STRONG')
+    expect(field.textContent).not.toMatch(/#|\*\*/)
+  })
+
+  it('a structured text/html paste (list markup) is left to the default HTML paste', async () => {
+    render(<TextView data={{ id: 't', type: 'text', content: '' }} editable onChange={() => {}} />)
+    const field = await findField()
+    pasteHtml(field, '<ul><li>one</li><li>two</li></ul>', '# IGNORE ME')
+    expect(field.querySelectorAll('ul > li')).toHaveLength(2)
+    expect(field.textContent).not.toContain('IGNORE ME')
+    expect(field.querySelector('h1')).toBeNull()
+  })
+
+  it('a markdown paste at the end of a list item lands its heading as its own block, not merged into the item', async () => {
+    render(<TextView data={{ id: 't', type: 'text', content: '' }} editable onChange={() => {}} />)
+    const field = await findField()
+    const editor = editorOf(field)
+    act(() => {
+      editor.commands.setContent({
+        type: 'doc',
+        content: [
+          {
+            type: 'bulletList',
+            content: [
+              {
+                type: 'listItem',
+                content: [{ type: 'paragraph', content: [{ type: 'text', text: 'one' }] }],
+              },
+              {
+                type: 'listItem',
+                content: [{ type: 'paragraph', content: [{ type: 'text', text: 'two' }] }],
+              },
+            ],
+          },
+        ],
+      })
+      editor.commands.focus('end')
+    })
+    pastePlainText(field, '## Twice\n- one')
+    expect(within(field).getByRole('heading', { level: 2, name: 'Twice' })).toBeInTheDocument()
+    expect(field.querySelectorAll('ul > li')[1]).toHaveTextContent('two')
+  })
+
+  it('a markdown block paste mid-paragraph splits it, leaving the tail as its own paragraph', async () => {
+    render(<TextView data={{ id: 't', type: 'text', content: '' }} editable onChange={() => {}} />)
+    const field = await findField()
+    const editor = editorOf(field)
+    act(() => {
+      editor.commands.setContent({
+        type: 'doc',
+        content: [{ type: 'paragraph', content: [{ type: 'text', text: 'foobar' }] }],
+      })
+      editor.commands.setTextSelection(4)
+    })
+    pastePlainText(field, '# H')
+    expect(within(field).getByRole('heading', { level: 1, name: 'H' })).toBeInTheDocument()
+    const paragraphs = Array.from(field.querySelectorAll('p')).map((p) => p.textContent)
+    expect(paragraphs).toContain('foo')
+    expect(paragraphs).toContain('bar')
+  })
+
+  it('a markdown block paste at the start of a paragraph leaves that paragraph intact after it', async () => {
+    render(<TextView data={{ id: 't', type: 'text', content: '' }} editable onChange={() => {}} />)
+    const field = await findField()
+    const editor = editorOf(field)
+    act(() => {
+      editor.commands.setContent({
+        type: 'doc',
+        content: [{ type: 'paragraph', content: [{ type: 'text', text: 'bar' }] }],
+      })
+      editor.commands.setTextSelection(1)
+    })
+    pastePlainText(field, '# H')
+    expect(within(field).getByRole('heading', { level: 1, name: 'H' })).toBeInTheDocument()
+    expect(within(field).getByText('bar').tagName).toBe('P')
+  })
+
+  it('a full markdown document pastes typeset in one block, one ⌘Z undoes it, and typing still formats', async () => {
+    const handleChange = jest.fn()
+    render(<StatefulText data={{ id: 't', type: 'text', content: '' }} onChange={handleChange} />)
+    const field = await findField()
+    const document = [
+      '# Title',
+      '',
+      '- one',
+      '- two',
+      '',
+      '**bold**',
+      '',
+      '> a quote',
+      '',
+      '```',
+      'const x = 1',
+      '```',
+      '',
+      '[a link](https://example.com)',
+    ].join('\n')
+    pastePlainText(field, document)
+    expect(within(field).getByRole('heading', { level: 1, name: 'Title' })).toBeInTheDocument()
+    expect(field.querySelectorAll('ul > li')).toHaveLength(2)
+    expect(within(field).getByText('bold').tagName).toBe('STRONG')
+    expect(field.querySelector('blockquote')?.textContent).toBe('a quote')
+    expect(field.querySelector('pre code')?.textContent).toBe('const x = 1')
+    expect(within(field).getByRole('link', { name: 'a link' })).toHaveAttribute(
+      'href',
+      'https://example.com'
+    )
+
+    // jsdom reports no Mac platform, so the editor's Mod is Ctrl here.
+    fireEvent.keyDown(field, { key: 'z', ctrlKey: true })
+    expect(handleChange).toHaveBeenLastCalledWith({ id: 't', type: 'text', content: '' })
+
+    // jsdom's contenteditable never actually edits the DOM, so typing a rule's
+    // trigger is simulated the same way a real keystroke reaches it: ProseMirror's
+    // own `handleTextInput` prop, the one path a real browser's input event drives.
+    const editor = editorOf(field)
+    const typeOnAFreshLine = (text: string) => {
+      act(() => {
+        editor.commands.clearContent()
+        editor.commands.focus('end')
+      })
+      const { view } = editor
+      const { from, to } = view.state.selection
+      act(() => {
+        view.someProp('handleTextInput', (fire) =>
+          fire(view, from, to, text, () => view.state.tr)
+        )
+      })
+    }
+    typeOnAFreshLine('# ')
+    expect(field.querySelector('h1')).toBeInTheDocument()
+    typeOnAFreshLine('- ')
+    expect(field.querySelector('ul')).toBeInTheDocument()
+    typeOnAFreshLine('1. ')
+    expect(field.querySelector('ol')).toBeInTheDocument()
+    typeOnAFreshLine('> ')
+    expect(field.querySelector('blockquote')).toBeInTheDocument()
+    typeOnAFreshLine('``` ')
+    expect(field.querySelector('pre')).toBeInTheDocument()
+    typeOnAFreshLine('**x**')
+    expect(within(field).getByText('x').tagName).toBe('STRONG')
   })
 })
