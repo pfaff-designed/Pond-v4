@@ -82,6 +82,20 @@ export function ViewKindPicker({
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
+      // Tab moves focus off the glass onto whatever's next — let it, and
+      // close so this listener is gone before the next keydown (otherwise
+      // an ↵ on the control Tab landed on would still be read as a pick).
+      if (e.key === 'Tab') {
+        onClose()
+        return
+      }
+
+      const target = e.target as Node
+      const anchorEl = anchor && 'current' in anchor ? anchor.current : anchor
+      const onGlass = glassRef.current?.contains(target) ?? false
+      const onAnchor = anchorEl instanceof Node && anchorEl.contains(target)
+      if (!onGlass && !onAnchor) return
+
       let handled = true
       if (e.key === 'ArrowDown') select(active + 1)
       else if (e.key === 'ArrowUp') select(active - 1)
