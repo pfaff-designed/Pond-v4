@@ -80,8 +80,14 @@ jest.mock('@/lib/change-log/session-undo', () => ({
   sessionUndo: {
     undo: (...args: unknown[]) => mockSessionUndo(...args),
     redo: (...args: unknown[]) => mockSessionRedo(...args),
+    undoHandle: (...args: unknown[]) => mockSessionUndo(...args),
     remember: () => {},
-    rememberPending: () => {},
+    rememberPending: () => ({}),
+    // BlockCanvas's delete toast (KAN-368) watches the stack via `subscribe`
+    // and checks `isTopUndo` — this test never pushes a second step, so
+    // there's nothing for either to ever report.
+    subscribe: () => () => {},
+    isTopUndo: () => true,
   },
 }))
 
