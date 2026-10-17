@@ -108,7 +108,7 @@ describe('one record peek per page', () => {
     expect(peek.className).toContain('absolute')
     expect(peek.className).not.toContain('fixed')
     expect(peek.className).toContain('right-[44px]')
-    expect(peek.className).toContain('top-[150px]')
+    expect(peek).toHaveStyle({ top: '150px' })
   })
 })
 
