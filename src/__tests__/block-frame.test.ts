@@ -406,9 +406,9 @@ describe('viewFrameState — a dateless list/gantt steps aside so the view’s o
   })
 })
 
-// ── A fresh board steps aside too, lanes and all (KAN-351) ────────────────────────
+// ── A board always steps aside, lanes and all (KAN-351/KAN-377: `empty.own`) ─────
 
-describe('viewFrameState — a board with zero rows steps aside so its own lanes (or remedy) draw', () => {
+describe('viewFrameState — a board always yields to the view (rest): the kind owns its empty state', () => {
   const statusSchema: PropertySchema = [
     { id: 'p-status', name: 'Status', type: 'status', options: [{ id: 'o-todo', label: 'to do' }] },
   ]
@@ -423,12 +423,9 @@ describe('viewFrameState — a board with zero rows steps aside so its own lanes
     expect(viewFrameState(block, [], [], null, textOnlySchema)).toEqual({ state: 'rest' })
   })
 
-  it('a board with rows is unchanged: the filtered-empty line still applies when filtered to nothing', () => {
+  it('a board filtered to nothing also yields (rest): its lanes draw empty, not the frame\'s filtered line', () => {
     const block: ViewBlock = { id: 'v', type: 'view', mode: 'board' }
-    expect(viewFrameState(block, [{ id: 'r1' }], [], null, statusSchema)).toEqual({
-      state: 'empty',
-      line: POND_BLOCK_FILTERED_EMPTY_LINE,
-    })
+    expect(viewFrameState(block, [{ id: 'r1' }], [], null, statusSchema)).toEqual({ state: 'rest' })
   })
 })
 

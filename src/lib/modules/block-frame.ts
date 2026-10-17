@@ -188,8 +188,8 @@ export type ViewFrameState =
   { state: 'rest' } | { state: 'empty'; line?: string; chartLine?: true; addRow?: true }
 
 /** The modes that place rows by a date property — the ones a missing date field
- *  starves, not just empties (calendar is listed for completeness; its `empty.own`
- *  above already steps aside regardless of schema). */
+ *  starves, not just empties (calendar is listed for completeness: like board, its
+ *  `empty.own` above already steps aside regardless of schema). */
 const DATE_PLACED_MODES: ReadonlySet<ViewBlock['mode']> = new Set(['calendar', 'list', 'gantt'])
 
 export function viewFrameState(
@@ -206,8 +206,9 @@ export function viewFrameState(
   const mark = compactChartMark(block)
   const markEmpty = mark === null ? null : COMPACT_MARK_EMPTY[mark]
   if (markEmpty === 'grid') return { state: 'rest' }
-  // KAN-262: the calendar draws its own empty state too — chrome, grid and its
-  // `emptyLine` — so the frame's `no rows yet` never replaces it.
+  // KAN-262/KAN-377: the calendar and board each draw their own empty state —
+  // chrome/grid/lanes and their own line — so the frame's `no rows yet` never
+  // replaces either, filtered or not.
   if (viewKind(block).empty.own) return { state: 'rest' }
   if (rows.length > 0) {
     return processed.length === 0
@@ -221,12 +222,6 @@ export function viewFrameState(
   if (DATE_PLACED_MODES.has(block.mode) && !schema.some((def) => def.type === 'date')) {
     return { state: 'rest' }
   }
-  // KAN-351: a board with zero rows steps aside too — otherwise the frame's own
-  // `no rows yet · add a row` replaces the three lanes, and `add a row` would
-  // land a record with no status in the hidden "No status" lane (07.10: "the
-  // lane sets the status"). The view itself draws its lanes, or, with no
-  // select/status field, its own "add a status field" remedy.
-  if (block.mode === 'board') return { state: 'rest' }
   // KAN-352: a gantt with zero rows steps aside too — otherwise the frame's own
   // void line replaces the task column, and the view's own void branch (the same
   // line, plus the `add a task` row the frame has no action slot for) never

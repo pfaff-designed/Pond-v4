@@ -771,6 +771,8 @@ function CollectionBoard({
   // `today` is read once per mount: a board left open across midnight keeps the
   // day it was drawn on until it next renders fresh.
   const [now] = useState(() => new Date())
+  // Guards handleAddCard against a second click while its write is in flight.
+  const addingRef = useRef(false)
 
   // Dropping into a lane writes that option id onto the group-by property; the
   // "No <name>" lane clears it (null). A drop into the same lane is idempotent.
@@ -796,8 +798,13 @@ function CollectionBoard({
   const done = useDoneToggle({ schema, groupBy, editable, onEdit })
 
   // Hide the trailing "No <name>" lane while it's empty — a fresh board then reads as
-  // just its status lanes. It reappears the moment a card lands there unset.
-  const visibleGroups = (grouped?.groups ?? []).filter((g) => g.id !== null || g.rows.length > 0)
+  // just its status lanes. It reappears the moment a card lands there unset. Except
+  // when it's the only group: a status field with no options groups everything into
+  // it, so hiding it would leave zero lanes and no "＋ task" to add the first row.
+  const allGroups = grouped?.groups ?? []
+  const visibleGroups = allGroups.filter(
+    (g) => g.id !== null || g.rows.length > 0 || allGroups.length === 1
+  )
   const dueOf = dueOfRow(pickDateDef(schema, undefined), now)
   const orangeTodayId = useOrangeToday(
     viewKey,
@@ -827,13 +834,20 @@ function CollectionBoard({
   const { def: boardDef } = grouped
 
   // "＋ task": mint a row seeded with this lane's status (null → the "No <name>"
-  // lane), then focus its title so you can name it immediately.
+  // lane), then focus its title so you can name it immediately. A second click
+  // while the first write is in flight is a no-op (AUDIT G9) — a fast double-click
+  // must not mint two rows.
   const handleAddCard = async (optionId: string | null) => {
-    if (!onAddRow) return
-    const id = await onAddRow(optionId ? { [boardDef.id]: optionId } : {})
-    if (!id) return
-    setFocusRowId(id)
-    select({ id, via: 'pointer' })
+    if (!onAddRow || addingRef.current) return
+    addingRef.current = true
+    try {
+      const id = await onAddRow(optionId ? { [boardDef.id]: optionId } : {})
+      if (!id) return
+      setFocusRowId(id)
+      select({ id, via: 'pointer' })
+    } finally {
+      addingRef.current = false
+    }
   }
 
   const draggingRow = drag?.active ? rows.find((r) => r.id === drag.rowId) : undefined
