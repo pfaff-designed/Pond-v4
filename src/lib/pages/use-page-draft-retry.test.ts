@@ -92,7 +92,7 @@ describe('usePageDraft retry (KAN-407)', () => {
   it('the retry lands after backoff, clearing retrying and setting saved', async () => {
     mockUpdateTitle.mockRejectedValueOnce(new Error('network down'))
     mockUpdateTitle.mockResolvedValueOnce(undefined)
-    mockCommitBlocks.mockResolvedValue(undefined)
+    mockCommitBlocks.mockResolvedValue({ remembered: Promise.resolve() })
     const { result } = mountDraft()
 
     act(() => {
@@ -121,7 +121,7 @@ describe('usePageDraft retry (KAN-407)', () => {
     mockUpdateTitle.mockRejectedValueOnce(new Error('first fails')) // v1 attempt
     mockUpdateTitle.mockRejectedValueOnce(new Error('v2 attempt also fails')) // v2's own debounce attempt
     mockUpdateTitle.mockResolvedValueOnce(undefined) // the scheduled retry, carrying v2
-    mockCommitBlocks.mockResolvedValue(undefined)
+    mockCommitBlocks.mockResolvedValue({ remembered: Promise.resolve() })
     const { result } = mountDraft()
 
     act(() => {
@@ -178,7 +178,7 @@ describe('usePageDraft retry (KAN-407)', () => {
     mockUpdateTitle.mockRejectedValueOnce(new Error('A fails'))
     mockUpdateTitle.mockResolvedValueOnce(undefined) // A's retry
     mockUpdateTitle.mockResolvedValue(undefined) // anything else (B's own saves)
-    mockCommitBlocks.mockResolvedValue(undefined)
+    mockCommitBlocks.mockResolvedValue({ remembered: Promise.resolve() })
     const { result, rerender } = mountDraft(PAGE)
 
     act(() => {
@@ -212,7 +212,7 @@ describe('usePageDraft retry (KAN-407)', () => {
   it('a retry stuck mid-backoff when the network drops resumes at once back online', async () => {
     mockUpdateTitle.mockRejectedValueOnce(new Error('network down')) // the original failed save, while online
     mockUpdateTitle.mockResolvedValueOnce(undefined) // the retry, fired once back online
-    mockCommitBlocks.mockResolvedValue(undefined)
+    mockCommitBlocks.mockResolvedValue({ remembered: Promise.resolve() })
     const { result } = mountDraft()
 
     act(() => {
@@ -255,7 +255,7 @@ describe('usePageDraft retry (KAN-407)', () => {
     mockUpdateTitle.mockRejectedValueOnce(new Error('A fails')) // A's original attempt
     mockUpdateTitle.mockReturnValueOnce(pageBSave.promise) // B's own save, still in flight
     mockUpdateTitle.mockResolvedValueOnce(undefined) // A's retry
-    mockCommitBlocks.mockResolvedValue(undefined)
+    mockCommitBlocks.mockResolvedValue({ remembered: Promise.resolve() })
     const { result, rerender } = mountDraft(PAGE)
 
     act(() => {
@@ -301,7 +301,7 @@ describe('usePageDraft retry (KAN-407)', () => {
   it('returning to a page with a failed save keeps the edit instead of losing it to a reseed', async () => {
     mockUpdateTitle.mockRejectedValueOnce(new Error('A fails'))
     mockUpdateTitle.mockResolvedValueOnce(undefined) // A's retry, with the edit intact
-    mockCommitBlocks.mockResolvedValue(undefined)
+    mockCommitBlocks.mockResolvedValue({ remembered: Promise.resolve() })
     const { result, rerender } = mountDraft(PAGE)
 
     act(() => {
@@ -338,7 +338,7 @@ describe('usePageDraft retry (KAN-407)', () => {
     const firstSave = deferred()
     mockUpdateTitle.mockReturnValueOnce(firstSave.promise)
     mockUpdateTitle.mockResolvedValueOnce(undefined) // the newer (v2) save
-    mockCommitBlocks.mockResolvedValue(undefined)
+    mockCommitBlocks.mockResolvedValue({ remembered: Promise.resolve() })
     const { result } = mountDraft()
 
     act(() => {

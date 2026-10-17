@@ -65,7 +65,7 @@ beforeEach(() => {
   mockUpdateTitle.mockReset()
   mockCommitBlocks.mockReset()
   mockUpdateTitle.mockResolvedValue(undefined)
-  mockCommitBlocks.mockResolvedValue(undefined)
+  mockCommitBlocks.mockResolvedValue({ remembered: Promise.resolve() })
 })
 
 afterEach(() => {

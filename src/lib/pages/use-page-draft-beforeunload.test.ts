@@ -112,7 +112,7 @@ describe('usePageDraft beforeunload (KAN-407)', () => {
 
   it('is removed once the save lands', async () => {
     mockUpdateTitle.mockResolvedValue(undefined)
-    mockCommitBlocks.mockResolvedValue(undefined)
+    mockCommitBlocks.mockResolvedValue({ remembered: Promise.resolve() })
     const { result } = mountDraft()
 
     act(() => {
@@ -223,7 +223,7 @@ describe('usePageDraft beforeunload (KAN-407)', () => {
     expect(event.defaultPrevented).toBe(true)
 
     mockUpdateTitle.mockResolvedValue(undefined)
-    mockCommitBlocks.mockResolvedValue(undefined)
+    mockCommitBlocks.mockResolvedValue({ remembered: Promise.resolve() })
     await act(async () => {
       jest.advanceTimersByTime(2000)
       await Promise.resolve()
@@ -238,7 +238,7 @@ describe('usePageDraft beforeunload (KAN-407)', () => {
 describe('usePageDraft pagehide/visibilitychange flush (KAN-407)', () => {
   it('pagehide flushes a pending debounced save at once', async () => {
     mockUpdateTitle.mockResolvedValue(undefined)
-    mockCommitBlocks.mockResolvedValue(undefined)
+    mockCommitBlocks.mockResolvedValue({ remembered: Promise.resolve() })
     const { result } = mountDraft()
 
     act(() => {
@@ -258,7 +258,7 @@ describe('usePageDraft pagehide/visibilitychange flush (KAN-407)', () => {
 
   it('visibilitychange (hidden) flushes a pending debounced save at once', async () => {
     mockUpdateTitle.mockResolvedValue(undefined)
-    mockCommitBlocks.mockResolvedValue(undefined)
+    mockCommitBlocks.mockResolvedValue({ remembered: Promise.resolve() })
     const { result } = mountDraft()
 
     act(() => {
@@ -278,7 +278,7 @@ describe('usePageDraft pagehide/visibilitychange flush (KAN-407)', () => {
 
   it('while offline, visibilitychange (hidden) does not hit the network and keeps the draft pending; online then flushes it', async () => {
     mockUpdateTitle.mockResolvedValue(undefined)
-    mockCommitBlocks.mockResolvedValue(undefined)
+    mockCommitBlocks.mockResolvedValue({ remembered: Promise.resolve() })
     Object.defineProperty(window.navigator, 'onLine', { value: false, configurable: true })
     const { result } = mountDraft()
 

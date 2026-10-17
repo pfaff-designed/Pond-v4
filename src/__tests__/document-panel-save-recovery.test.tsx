@@ -52,7 +52,7 @@ beforeEach(() => {
   jest.useFakeTimers().setSystemTime(new Date(2026, 9, 17, 14, 2))
   jest.clearAllMocks()
   mockUpdateTitle.mockResolvedValue(undefined)
-  mockCommitBlocks.mockResolvedValue(undefined)
+  mockCommitBlocks.mockResolvedValue({ remembered: Promise.resolve() })
   setOnline(true)
 })
 
