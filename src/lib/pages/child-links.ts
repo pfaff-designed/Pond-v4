@@ -14,7 +14,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { QueryClient } from '@tanstack/react-query'
 import type { Database } from '@/lib/supabase/types'
 import type { Block } from '@/lib/modules/content'
-import { getPage, type PondPage } from './client'
+import { getPage, mapRow, PAGE_COLUMNS, type PondPage, type PageRow as PondPageRow } from './client'
 import { commitBlocks } from './commit'
 import type { PageRow } from './tree'
 import { withoutDatabasesRoot } from './databases-root'
@@ -22,6 +22,7 @@ import { flushPendingPageSave } from './page-flush'
 import { sortedChildIds } from '@/lib/rail/tree'
 import { homeQueryKey } from './keys'
 import { getOrCreateHomePage, type HomePage } from './home'
+import { inPond } from '@/lib/pond/scope'
 
 /**
  * Append a page-link to `childId` at the end of `blocks`, unless one already
@@ -170,6 +171,44 @@ export function restoreLinks(blocks: Block[], removed: RemovedLink[]): Block[] {
       beforeIndex === -1 ? Math.min(Math.max(entry.index, 0), current.length) : beforeIndex + 1
     return [...current.slice(0, insertAt), entry.block, ...current.slice(insertAt)]
   }, blocks)
+}
+
+/**
+ * Every LIVE page in `pond` whose `blocks` jsonb links to any id in
+ * `pageIds` (KAN-448: `pageIds` is a trashed subtree, so a page inside that
+ * subtree is never a caller-meaningful parent — descendants aren't edited by
+ * this ticket). Trashed rows are already invisible here: the SELECT policy
+ * hides a trashed row even from its own owner (`trash.ts`), so no extra
+ * status filter is needed.
+ *
+ * One `.contains('blocks', ...)` query per id rather than one combined OR —
+ * chaining `.contains()` on a single builder ANDs the filters, which is the
+ * wrong shape here. `pageIds` is always a handful at most (one subtree), so
+ * the fan-out stays cheap; a page linked to more than one id in the set comes
+ * back from more than one of these queries and is deduped by id below.
+ */
+export async function findPagesLinkingTo(
+  supabase: SupabaseClient<Database>,
+  pondId: string | null,
+  pageIds: Set<string>
+): Promise<PondPage[]> {
+  if (pageIds.size === 0) return []
+
+  const byId = new Map<string, PondPage>()
+  await Promise.all(
+    [...pageIds].map(async (pageId) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const q: any = (supabase as any).from('pages').select(PAGE_COLUMNS)
+      const { data, error } = await inPond(q, pondId).contains('blocks', [
+        { type: 'page-link', pageId },
+      ])
+      if (error) throw new Error(error.message)
+      for (const row of (data ?? []) as PondPageRow[]) {
+        if (!byId.has(row.id)) byId.set(row.id, mapRow(row))
+      }
+    })
+  )
+  return [...byId.values()]
 }
 
 /**

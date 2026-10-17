@@ -1,4 +1,10 @@
-import { appendChildLink, appendChildLinkToParent, removeLinksTo, restoreLinks } from './child-links'
+import {
+  appendChildLink,
+  appendChildLinkToParent,
+  removeLinksTo,
+  restoreLinks,
+  findPagesLinkingTo,
+} from './child-links'
 import type { Block } from '@/lib/modules/content'
 import type { PondPage } from './client'
 
@@ -7,6 +13,7 @@ const text = (id: string): Block => ({ id, type: 'text', content: id })
 
 const mockGetPage = jest.fn()
 jest.mock('./client', () => ({
+  ...jest.requireActual('./client'),
   getPage: (...args: unknown[]) => mockGetPage(...args),
 }))
 
@@ -248,5 +255,84 @@ describe('restoreLinks', () => {
       { parentId: 'parent-1', block: linkB, index: 2, beforeId: null },
     ])
     expect(next).toEqual([linkA, blocks[0], linkB])
+  })
+})
+
+describe('findPagesLinkingTo', () => {
+  function makeChain(overrides: Record<string, unknown> = {}) {
+    return {
+      select: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      is: jest.fn().mockReturnThis(),
+      contains: jest.fn().mockResolvedValue({ data: [], error: null }),
+      ...overrides,
+    }
+  }
+
+  const pageRow = (id: string, blocks: Block[]) => ({
+    id,
+    parent_id: null,
+    type: 'page',
+    title: id,
+    blocks,
+    props: {},
+    order: 0,
+  })
+
+  it('returns [] without querying when pageIds is empty', async () => {
+    const chain = makeChain()
+    const supabase = { from: jest.fn().mockReturnValue(chain) }
+
+    const out = await findPagesLinkingTo(supabase as never, 'pond-1', new Set())
+
+    expect(out).toEqual([])
+    expect(supabase.from).not.toHaveBeenCalled()
+  })
+
+  it('queries once per id, pond-scoped, and dedupes a page matched by more than one id', async () => {
+    const pageA = pageRow('parent-a', [link('b1', 'child-1')])
+    const pageB = pageRow('parent-b', [link('b2', 'child-2')])
+    const contains = jest.fn((_col: string, value: Array<{ pageId: string }>) => {
+      const pageId = value[0].pageId
+      if (pageId === 'child-1') return Promise.resolve({ data: [pageA], error: null })
+      if (pageId === 'child-2') return Promise.resolve({ data: [pageA, pageB], error: null })
+      return Promise.resolve({ data: [], error: null })
+    })
+    const chain = makeChain({ contains })
+    const supabase = { from: jest.fn().mockReturnValue(chain) }
+
+    const out = await findPagesLinkingTo(
+      supabase as never,
+      'pond-1',
+      new Set(['child-1', 'child-2'])
+    )
+
+    expect(supabase.from).toHaveBeenCalledWith('pages')
+    expect(chain.eq).toHaveBeenCalledWith('pond_id', 'pond-1')
+    expect(contains).toHaveBeenCalledWith('blocks', [{ type: 'page-link', pageId: 'child-1' }])
+    expect(contains).toHaveBeenCalledWith('blocks', [{ type: 'page-link', pageId: 'child-2' }])
+    expect(contains).toHaveBeenCalledTimes(2)
+    expect(out.map((p) => p.id).sort()).toEqual(['parent-a', 'parent-b'])
+  })
+
+  it('scopes to a null pond with .is rather than .eq', async () => {
+    const chain = makeChain()
+    const supabase = { from: jest.fn().mockReturnValue(chain) }
+
+    await findPagesLinkingTo(supabase as never, null, new Set(['child-1']))
+
+    expect(chain.is).toHaveBeenCalledWith('pond_id', null)
+    expect(chain.eq).not.toHaveBeenCalled()
+  })
+
+  it('throws when a read errors', async () => {
+    const chain = makeChain({
+      contains: jest.fn().mockResolvedValue({ data: null, error: { message: 'boom' } }),
+    })
+    const supabase = { from: jest.fn().mockReturnValue(chain) }
+
+    await expect(
+      findPagesLinkingTo(supabase as never, 'pond-1', new Set(['child-1']))
+    ).rejects.toThrow(/boom/)
   })
 })
