@@ -251,10 +251,9 @@ describe('usePageDraft retry (KAN-407)', () => {
   })
 
   it('page-1 retry landing while page-2 has a pending save does not mark page-2 saved', async () => {
-    const pageBSave = deferred()
     mockUpdateTitle.mockRejectedValueOnce(new Error('A fails')) // A's original attempt
-    mockUpdateTitle.mockReturnValueOnce(pageBSave.promise) // B's own save, still in flight
-    mockUpdateTitle.mockResolvedValueOnce(undefined) // A's retry
+    mockUpdateTitle.mockResolvedValueOnce(undefined) // A's retry, landing while B is only pending (nothing in flight yet)
+    mockUpdateTitle.mockResolvedValueOnce(undefined) // B's own debounced save
     mockCommitBlocks.mockResolvedValue({ remembered: Promise.resolve() })
     const { result, rerender } = mountDraft(PAGE)
 
@@ -262,39 +261,43 @@ describe('usePageDraft retry (KAN-407)', () => {
       result.current.commitLocalEdit([textBlock('a-edit')])
     })
     await act(async () => {
-      jest.advanceTimersByTime(EDIT_PAUSE_MS) // A's save fires and fails
+      jest.advanceTimersByTime(EDIT_PAUSE_MS) // A's save fires and fails; retry backs off 2000ms from here
       await Promise.resolve()
       await Promise.resolve()
     })
     expect(mockUpdateTitle).toHaveBeenCalledTimes(1)
 
     rerender(PAGE_B)
+
+    await act(async () => {
+      jest.advanceTimersByTime(1500) // well short of A's retry; B hasn't typed yet
+      await Promise.resolve()
+    })
     act(() => {
       result.current.commitLocalEdit([textBlock('b-edit')])
     })
+    expect(result.current.saved).toBe(false)
+
+    // Chained saves run one at a time (KAN-355): A's retry only lands here
+    // because nothing is in flight yet — B's own 600ms debounce (scheduled
+    // 100ms later) hasn't fired. The open page is B, so A landing must not
+    // touch B's `saved`.
     await act(async () => {
-      jest.advanceTimersByTime(EDIT_PAUSE_MS) // B's own debounce fires, save in flight
+      jest.advanceTimersByTime(500) // completes A's 2000ms backoff (600 + 1500 + 500)
       await Promise.resolve()
       await Promise.resolve()
     })
     expect(mockUpdateTitle).toHaveBeenCalledTimes(2)
+    expect(mockUpdateTitle).toHaveBeenNthCalledWith(2, expect.anything(), PAGE.id, expect.anything())
     expect(result.current.saved).toBe(false)
 
-    // A's retry fires and lands while B's own save is still in flight — the
-    // open page is B, so A landing must not touch B's `saved`.
     await act(async () => {
-      jest.advanceTimersByTime(2000 - EDIT_PAUSE_MS) // completes A's 2000ms backoff
+      jest.advanceTimersByTime(100) // completes B's own 600ms debounce (1500 + 600)
       await Promise.resolve()
       await Promise.resolve()
     })
     expect(mockUpdateTitle).toHaveBeenCalledTimes(3)
-    expect(result.current.saved).toBe(false)
-
-    await act(async () => {
-      pageBSave.resolve()
-      await Promise.resolve()
-      await Promise.resolve()
-    })
+    expect(mockUpdateTitle).toHaveBeenNthCalledWith(3, expect.anything(), PAGE_B.id, expect.anything())
     expect(result.current.saved).toBe(true)
   })
 
