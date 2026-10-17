@@ -28,7 +28,7 @@ export interface ProposeChangesPart {
   type: typeof PROPOSE_CHANGES_TYPE
   toolCallId: string
   state: string
-  input?: { targetPageId?: string; changes?: ModuleChange[] }
+  input?: { targetPageId?: string; changes?: ModuleChange[]; assumption?: string }
 }
 
 export function isProposeChangesPart(part: { type: string }): part is ProposeChangesPart {
@@ -76,6 +76,7 @@ export interface DefineSchemaPart {
     pageId?: string
     properties?: AiPropertyDef[]
     reason?: string
+    assumption?: string
   }
 }
 
@@ -102,6 +103,7 @@ export interface AddRowPart {
     title?: string
     props?: Record<string, unknown>
     reason?: string
+    assumption?: string
   }
 }
 
@@ -150,6 +152,7 @@ export interface ConfigureViewPart {
     /** Linked view (#41): NAME of ANOTHER collection whose rows this view draws. */
     targetCollection?: string
     reason?: string
+    assumption?: string
   }
 }
 
@@ -179,6 +182,7 @@ export interface LinkRecordsPart {
     relation?: string
     toRows?: string[]
     reason?: string
+    assumption?: string
   }
 }
 
@@ -210,6 +214,7 @@ export interface PromoteTablePart {
     pageId?: string
     blockId?: string
     reason?: string
+    assumption?: string
   }
 }
 
