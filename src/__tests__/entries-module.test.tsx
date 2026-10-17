@@ -1,11 +1,14 @@
 /**
  * The `entries` block (#250, child 228b) — dated prose, serif only for the journal.
- * Measured off `PondTemplate.dc.html`'s `renderVals()` (`k === 'entries'`):
+ * Row geometry and serif size follow `PondMolecule.dc.html`'s `entry` kind
+ * (conductor's ruling, KAN-356: the library wins over the superseded
+ * `PondTemplate.dc.html` reading):
  *
- *   stack  flex column · gap 8
- *   entry  grid `52px minmax(0,1fr)` · gap 12 · align-items baseline
+ *   stack  flex column · gap 2
+ *   entry  grid `56px minmax(0,1fr)` · gap 14 · padding 10px 8px · radius 10 ·
+ *          align-items baseline · hover bg ink .05 (`hoveredId` state, ink-alpha token)
  *   edate  mono 10.5 · ink .68
- *   text   d.serif && filled ? serif 200 / 16 / 1.55 · full ink
+ *   text   d.serif && filled ? serif 200 / 16.5 / 1.6 · full ink
  *                            : sans 13.5 / 1.5 · full ink when filled, ink .68 when not
  *          both `text-wrap: pretty`
  *
@@ -21,7 +24,7 @@
  */
 
 import React, { useState } from 'react'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, act } from '@testing-library/react'
 
 import {
   entriesSchema,
@@ -248,22 +251,30 @@ describe('addEntry / entryDateLabel — the engine-shaped insert, newest first',
 
 // ── The view: two media, one flag ───────────────────────────────────────────────
 
-const ROW = ['grid', 'grid-cols-[52px_minmax(0,1fr)]', 'gap-mn-3', 'items-baseline']
+const ROW = [
+  'grid',
+  'items-baseline',
+  'gap-3.5',
+  'rounded-mn-row',
+  'px-2',
+  'py-2.5',
+  '[grid-template-columns:56px_minmax(0,1fr)]',
+]
 const DATE = ['font-mono', 'text-[10.5px]', 'text-mn-text-secondary']
 const SANS = ['font-sans', 'text-[13.5px]', 'leading-normal', '[text-wrap:pretty]']
 const SERIF = [
   'font-serif',
   'font-extralight', // 200 — never 400
-  'text-mn-16',
-  'leading-[1.55]',
+  'text-[16.5px]',
+  'leading-[1.6]',
   '[text-wrap:pretty]',
 ]
 
 describe('EntriesView — read-only', () => {
-  it('the stack is a flex column at gap 8; each row the 52px grid, gap 12, baseline', () => {
+  it('the stack is a flex column at gap 2; each row the molecule’s 56px grid, gap 14, baseline', () => {
     const { container } = render(<EntriesView data={updates} />)
     const stack = container.firstElementChild!
-    has(stack, 'flex', 'flex-col', 'gap-mn-2')
+    has(stack, 'flex', 'flex-col', 'gap-[2px]')
     const rows = Array.from(stack.children)
     expect(rows).toHaveLength(2)
     for (const row of rows) has(row, ...ROW)
@@ -280,11 +291,11 @@ describe('EntriesView — read-only', () => {
     const { container } = render(<EntriesView data={updates} />)
     for (const t of textsOf(container)) {
       has(t, ...SANS, 'text-mn-text')
-      lacks(t, 'font-serif', 'font-extralight', 'text-mn-16', 'leading-[1.55]')
+      lacks(t, 'font-serif', 'font-extralight', 'text-[16.5px]', 'leading-[1.6]')
     }
   })
 
-  it('with `serif: true` the text is SERIF 200 / 16 / 1.55 at full ink (journal → entries)', () => {
+  it('with `serif: true` the text is SERIF 200 / 16.5 / 1.6 at full ink (journal → entries)', () => {
     const { container } = render(<EntriesView data={journal} />)
     const texts = textsOf(container)
     expect(texts).toHaveLength(3)
@@ -353,10 +364,10 @@ describe('EntriesView — read-only', () => {
   })
 
   it('composes the size and colour tokens as plain strings, never through cn (#252)', () => {
-    // tailwind-merge drops one of `text-mn-16` / `text-mn-text` as both match `text-*`.
+    // tailwind-merge drops one of `text-[16.5px]` / `text-mn-text` as both match `text-*`.
     // The recipe must carry BOTH on the same element in both media.
     const { container } = render(<EntriesView data={journal} />)
-    has(textsOf(container)[0], 'text-mn-16', 'text-mn-text')
+    has(textsOf(container)[0], 'text-[16.5px]', 'text-mn-text')
     const { container: c2 } = render(<EntriesView data={updates} />)
     has(textsOf(c2)[0], 'text-[13.5px]', 'text-mn-text')
   })
@@ -367,20 +378,47 @@ function Stateful({ data }: { data: EntriesBlock }) {
   return <EntriesView data={state} editable onChange={setState} />
 }
 
-describe('EntriesView — editable (every row is a date field + a prose field)', () => {
-  it('renders a mono date input and a textarea per entry, in the row grid', () => {
+describe('EntriesView — editable (a read-only date label + a prose field, per row)', () => {
+  it('keeps the date a read-only mono LABEL — no board draws a live date field for `entry` — and renders a textarea per entry, in the row grid', () => {
     const { container } = render(<Stateful data={updates} />)
-    const dates = screen.getAllByRole('textbox', { name: 'Entry date' })
+    expect(screen.queryAllByRole('textbox', { name: 'Entry date' })).toHaveLength(0)
+    const dates = datesOf(container)
     const texts = screen.getAllByRole('textbox', { name: 'Entry text' })
     expect(dates).toHaveLength(2)
     expect(texts).toHaveLength(2)
-    expect((dates[0] as HTMLInputElement).value).toBe('28 oct')
+    expect(dates[0].textContent).toBe('28 oct')
     expect((texts[0] as HTMLTextAreaElement).value).toBe(updates.entries[0].text)
     for (const d of dates) has(d, ...DATE)
-    for (const row of Array.from(container.firstElementChild!.children)) has(row, ...ROW)
+    // The add line is the stack's first child now (KAN-356); only the entry
+    // rows — found through the text fields, not raw children — keep ROW's geometry.
+    for (const t of texts) has(t.parentElement!, ...ROW, 'group')
   })
 
-  it('the textarea wears the block’s medium: sans by default, serif 200 / 16 / 1.55 on a journal', () => {
+  it('a focused row wears the molecule’s `editing` ring; blurring drops it', () => {
+    render(<Stateful data={updates} />)
+    const texts = screen.getAllByRole('textbox', { name: 'Entry text' })
+    const rows = texts.map((t) => t.parentElement!)
+    for (const row of rows) lacks(row, 'ring-mn-text')
+    act(() => texts[0].focus())
+    has(rows[0], 'ring-[1.4px]', 'ring-inset', 'ring-mn-text')
+    lacks(rows[1], 'ring-mn-text')
+    act(() => texts[0].blur())
+    lacks(rows[0], 'ring-mn-text')
+  })
+
+  it('a hovered row wears the molecule’s `hover` wash (ink .05); unhovering drops it', () => {
+    render(<Stateful data={updates} />)
+    const texts = screen.getAllByRole('textbox', { name: 'Entry text' })
+    const rows = texts.map((t) => t.parentElement!)
+    for (const row of rows) lacks(row, 'bg-mn-text/5')
+    fireEvent.mouseEnter(rows[0])
+    has(rows[0], 'bg-mn-text/5')
+    lacks(rows[1], 'bg-mn-text/5')
+    fireEvent.mouseLeave(rows[0])
+    lacks(rows[0], 'bg-mn-text/5')
+  })
+
+  it('the textarea wears the block’s medium: sans by default, serif 200 / 16.5 / 1.6 on a journal', () => {
     render(<Stateful data={updates} />)
     for (const t of screen.getAllByRole('textbox', { name: 'Entry text' })) {
       has(t, ...SANS, 'text-mn-text')
@@ -410,7 +448,7 @@ describe('EntriesView — editable (every row is a date field + a prose field)',
     fireEvent.change(screen.getAllByRole('textbox', { name: 'Entry text' })[1], {
       target: { value: 'Quiet day.' },
     })
-    expect(onChange).toHaveBeenCalledWith({
+    expect(onChange).toHaveBeenLastCalledWith({
       ...journal,
       entries: [
         journal.entries[0],
@@ -418,17 +456,182 @@ describe('EntriesView — editable (every row is a date field + a prose field)',
         journal.entries[2],
       ],
     })
-    fireEvent.change(screen.getAllByRole('textbox', { name: 'Entry date' })[0], {
-      target: { value: '26 oct' },
-    })
-    expect(onChange).toHaveBeenLastCalledWith({
-      ...journal,
-      entries: [{ ...journal.entries[0], date: '26 oct' }, journal.entries[1], journal.entries[2]],
-    })
   })
 
   it('read-only renders no fields at all', () => {
     render(<EntriesView data={journal} />)
     expect(screen.queryByRole('textbox')).toBeNull()
+  })
+})
+
+describe('EntriesView — the add line (KAN-356)', () => {
+  it('sits above the stack, editable mode only', () => {
+    render(<EntriesView data={journal} />)
+    expect(screen.queryByRole('textbox', { name: 'Add entry' })).toBeNull()
+
+    render(<Stateful data={journal} />)
+    expect(screen.getAllByRole('textbox', { name: 'Add entry' })).toHaveLength(1)
+  })
+
+  it('↵ prepends a dated entry with the typed text, clears itself, and focuses the new row', () => {
+    render(<Stateful data={updates} />)
+    const add = screen.getByRole('textbox', { name: 'Add entry' })
+    fireEvent.change(add, { target: { value: 'booked the van' } })
+    fireEvent.keyDown(add, { key: 'Enter' })
+
+    expect((add as HTMLInputElement).value).toBe('')
+    const texts = screen.getAllByRole('textbox', { name: 'Entry text' })
+    expect(texts).toHaveLength(3)
+    expect((texts[0] as HTMLTextAreaElement).value).toBe('booked the van')
+    expect(document.activeElement).toBe(texts[0])
+  })
+
+  it('empty ↵ does nothing — no onChange, no new row', () => {
+    const onChange = jest.fn()
+    render(<EntriesView data={updates} editable onChange={onChange} />)
+    const add = screen.getByRole('textbox', { name: 'Add entry' })
+    fireEvent.keyDown(add, { key: 'Enter' })
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('whitespace-only ↵ does nothing either', () => {
+    const onChange = jest.fn()
+    render(<EntriesView data={updates} editable onChange={onChange} />)
+    const add = screen.getByRole('textbox', { name: 'Add entry' })
+    fireEvent.change(add, { target: { value: '   ' } })
+    fireEvent.keyDown(add, { key: 'Enter' })
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('↵ while composing an IME candidate does nothing — no stray entry', () => {
+    const onChange = jest.fn()
+    render(<EntriesView data={updates} editable onChange={onChange} />)
+    const add = screen.getByRole('textbox', { name: 'Add entry' })
+    fireEvent.change(add, { target: { value: '予測' } })
+    fireEvent.keyDown(add, { key: 'Enter', isComposing: true })
+    expect(onChange).not.toHaveBeenCalled()
+    expect((add as HTMLInputElement).value).toBe('予測')
+  })
+})
+
+describe('EntriesView — ↵ inside an entry’s own field (KAN-356)', () => {
+  it('commits the row and inserts a new blank entry at the top of the stack, focused', () => {
+    render(<Stateful data={updates} />)
+    const texts = screen.getAllByRole('textbox', { name: 'Entry text' })
+    fireEvent.change(texts[1], { target: { value: 'Landlord confirmed, and the keys.' } })
+    fireEvent.keyDown(texts[1], { key: 'Enter' })
+
+    const next = screen.getAllByRole('textbox', { name: 'Entry text' })
+    expect(next).toHaveLength(3)
+    // Newest-first: the new blank row always lands at index 0, never beside
+    // the row it was typed into — both older entries are pushed down intact.
+    expect((next[0] as HTMLTextAreaElement).value).toBe('')
+    expect((next[1] as HTMLTextAreaElement).value).toBe(updates.entries[0].text)
+    // The committed edit survives the insert.
+    expect((next[2] as HTMLTextAreaElement).value).toBe('Landlord confirmed, and the keys.')
+    expect(document.activeElement).toBe(next[0])
+  })
+
+  it('Shift+↵ inserts a literal newline instead — no new entry', () => {
+    const onChange = jest.fn()
+    render(<EntriesView data={updates} editable onChange={onChange} />)
+    const texts = screen.getAllByRole('textbox', { name: 'Entry text' })
+    fireEvent.keyDown(texts[0], { key: 'Enter', shiftKey: true })
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('↵ while composing an IME candidate does nothing — no stray entry', () => {
+    const onChange = jest.fn()
+    render(<EntriesView data={updates} editable onChange={onChange} />)
+    const texts = screen.getAllByRole('textbox', { name: 'Entry text' })
+    fireEvent.keyDown(texts[0], { key: 'Enter', isComposing: true })
+    expect(onChange).not.toHaveBeenCalled()
+  })
+})
+
+describe('EntriesView — the hover `remove` (KAN-356)', () => {
+  it('is editable mode only, one per row, at ink .68 until a row hover reveals it', () => {
+    render(<EntriesView data={updates} />)
+    expect(screen.queryByRole('button', { name: 'Remove entry' })).toBeNull()
+
+    render(<Stateful data={updates} />)
+    const removes = screen.getAllByRole('button', { name: 'Remove entry' })
+    expect(removes).toHaveLength(2)
+    for (const r of removes) {
+      expect(r.textContent).toBe('remove')
+      has(r, 'font-mono', 'text-mn-text-secondary', 'opacity-0', 'group-hover:opacity-100')
+    }
+  })
+
+  it('clicking it removes that entry via onChange, leaving the others', () => {
+    render(<Stateful data={updates} />)
+    fireEvent.click(screen.getAllByRole('button', { name: 'Remove entry' })[0])
+
+    const texts = screen.getAllByRole('textbox', { name: 'Entry text' })
+    expect(texts).toHaveLength(1)
+    expect((texts[0] as HTMLTextAreaElement).value).toBe(updates.entries[1].text)
+  })
+
+  it('reserves its own width on the textarea (right padding) and sits after it in DOM order, so Tab reaches the text first', () => {
+    render(<Stateful data={updates} />)
+    const text = screen.getAllByRole('textbox', { name: 'Entry text' })[0]
+    const remove = screen.getAllByRole('button', { name: 'Remove entry' })[0]
+    has(text, 'pr-12')
+    const row = text.parentElement!
+    const rowChildren = Array.from(row.children)
+    expect(rowChildren.indexOf(text)).toBeLessThan(rowChildren.indexOf(remove))
+  })
+})
+
+describe('EntriesView — ⌫ in an empty entry’s own field (KAN-356)', () => {
+  it('removes that entry via onChange, and blurs rather than focusing a neighbour (so ⌘Z reaches the session undo step, not a focused field’s own undo — KAN-356 fix)', () => {
+    render(<Stateful data={{ ...updates, entries: [...updates.entries, { id: 'u3', date: '1 nov', text: '' }] }} />)
+    const texts = screen.getAllByRole('textbox', { name: 'Entry text' })
+    expect(texts).toHaveLength(3)
+    fireEvent.keyDown(texts[2], { key: 'Backspace' })
+
+    const next = screen.getAllByRole('textbox', { name: 'Entry text' })
+    expect(next).toHaveLength(2)
+    expect(document.activeElement).toBe(document.body)
+  })
+
+  it('with no previous entry, still blurs rather than focusing the next one', () => {
+    render(<Stateful data={{ ...updates, entries: [{ id: 'u0', date: '1 nov', text: '' }, ...updates.entries] }} />)
+    const texts = screen.getAllByRole('textbox', { name: 'Entry text' })
+    fireEvent.keyDown(texts[0], { key: 'Backspace' })
+
+    const next = screen.getAllByRole('textbox', { name: 'Entry text' })
+    expect(next).toHaveLength(2)
+    expect(document.activeElement).toBe(document.body)
+  })
+
+  it('as the only entry, removes it and leaves focus nowhere', () => {
+    const onlyEmpty: EntriesBlock = { ...updates, entries: [{ id: 'u0', date: '1 nov', text: '' }] }
+    render(<Stateful data={onlyEmpty} />)
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Entry text' }), { key: 'Backspace' })
+
+    expect(screen.queryByRole('textbox', { name: 'Entry text' })).toBeNull()
+    expect(document.activeElement).toBe(document.body)
+  })
+
+  it('does nothing when the entry has text — the browser deletes a character instead', () => {
+    const onChange = jest.fn()
+    render(<EntriesView data={updates} editable onChange={onChange} />)
+    fireEvent.keyDown(screen.getAllByRole('textbox', { name: 'Entry text' })[0], { key: 'Backspace' })
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('⌫ while composing an IME candidate does nothing, even on an empty row', () => {
+    const onChange = jest.fn()
+    render(
+      <EntriesView
+        data={{ ...updates, entries: [...updates.entries, { id: 'u3', date: '1 nov', text: '' }] }}
+        editable
+        onChange={onChange}
+      />
+    )
+    const texts = screen.getAllByRole('textbox', { name: 'Entry text' })
+    fireEvent.keyDown(texts[2], { key: 'Backspace', isComposing: true })
+    expect(onChange).not.toHaveBeenCalled()
   })
 })

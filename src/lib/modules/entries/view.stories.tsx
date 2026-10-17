@@ -2,22 +2,23 @@ import { useState } from 'react'
 import type { Decorator, Meta, StoryObj } from '@storybook/nextjs-vite'
 import { expect, userEvent, within } from 'storybook/test'
 
-import { EntriesView } from './view'
+import { EntriesView, addEntry } from './view'
 import { ENTRIES_EMPTY_LINE, type EntriesBlock } from './schema'
 import { PondBlock } from '@/components/organisms/PondBlock'
-import { blockFrame } from '@/lib/modules/block-frame'
+import { blockFrame, blockIsEmpty } from '@/lib/modules/block-frame'
 
 /**
  * The `entries` block (#250) — dated prose, serif only for the journal. The play
- * functions assert the COMPUTED values against `PondTemplate.dc.html`'s
- * `renderVals()` (`k === 'entries'`; its frames render under a transform, so the
- * literals in that script are the source, never DOM geometry read off the board):
+ * functions assert the COMPUTED values against `PondMolecule.dc.html`'s `entry` kind
+ * (conductor's ruling, KAN-356: the library wins over the superseded
+ * `PondTemplate.dc.html` reading these numbers used to cite):
  *
- *   stack   flex column · gap 8
- *   entry   grid 52px minmax(0,1fr) · gap 12 · align-items baseline
+ *   stack   flex column · gap 2
+ *   entry   grid 56px minmax(0,1fr) · gap 14 · padding 10px 8px · radius 10 ·
+ *           align-items baseline · hover bg ink .05 (ink-alpha token, editable only)
  *   edate   PP Neue Montreal Mono 10.5 · ink .68
  *   sans    PP Neue Montreal 13.5 / 1.5 · full ink              (project → updates)
- *   serif   PP Editorial New 200 / 16 / 1.55 · full ink          (journal → entries)
+ *   serif   PP Editorial New 200 / 16.5 / 1.6 · full ink         (journal → entries)
  *   empty   sans 13.5 / 1.5 · ink .68 — even on a serif block (`d.serif && filled`)
  *   both    text-wrap: pretty
  */
@@ -85,6 +86,23 @@ const PAPER = 'rgb(250, 249, 239)' // #FAF9EF
 const INK_68 = 'rgba(27, 29, 20, 0.68)'
 const PAPER_68 = 'rgba(250, 249, 239, 0.68)'
 
+/**
+ * The board writes its hover wash as `a(.05)` — ink at an alpha. Tailwind v4
+ * renders `bg-mn-text/5` as `color-mix(in oklab, <ink> 5%, transparent)`, which
+ * Chromium serialises as an `oklab(…)` string, not an `rgba()` literal (see
+ * `todo/view.stories.tsx`'s own `mix` probe, the repo's convention for this).
+ */
+function mix(base: string, pct: number): string {
+  const probe = document.createElement('span')
+  probe.style.color = `color-mix(in oklab, ${base} ${pct}%, transparent)`
+  document.body.appendChild(probe)
+  const out = getComputedStyle(probe).color
+  probe.remove()
+  return out
+}
+const INK_05 = () => mix(INK, 5)
+const PAPER_05 = () => mix(PAPER, 5)
+
 const rowsOf = (root: HTMLElement) =>
   Array.from(root.querySelectorAll<HTMLElement>('[data-part="date"]')).map((d) => d.parentElement!)
 const datesOf = (root: HTMLElement) =>
@@ -100,14 +118,19 @@ async function assertGeometry(canvasElement: HTMLElement, count: number) {
   const ss = getComputedStyle(stack)
   await expect(ss.display).toBe('flex')
   await expect(ss.flexDirection).toBe('column')
-  await expect(ss.rowGap).toBe('8px')
+  await expect(ss.rowGap).toBe('2px')
   for (const row of rows) {
     const cs = getComputedStyle(row)
     await expect(cs.display).toBe('grid')
-    // A laid-out grid resolves its tracks to px: the first is the board's 52.
-    await expect(cs.gridTemplateColumns.startsWith('52px ')).toBe(true)
-    await expect(cs.columnGap).toBe('12px')
+    // A laid-out grid resolves its tracks to px: the first is the molecule's 56.
+    await expect(cs.gridTemplateColumns.startsWith('56px ')).toBe(true)
+    await expect(cs.columnGap).toBe('14px')
     await expect(cs.alignItems).toBe('baseline')
+    await expect(cs.paddingTop).toBe('10px')
+    await expect(cs.paddingBottom).toBe('10px')
+    await expect(cs.paddingLeft).toBe('8px')
+    await expect(cs.paddingRight).toBe('8px')
+    await expect(cs.borderRadius).toBe('10px')
   }
 }
 
@@ -134,12 +157,12 @@ async function assertSans(cs: CSSStyleDeclaration, color: string) {
   await expect(cs.color).toBe(color)
 }
 
-/** The serif branch: PP Editorial New 200 / 16 / 1.55, `text-wrap: pretty`, full ink. */
+/** The serif branch: PP Editorial New 200 / 16.5 / 1.6, `text-wrap: pretty`, full ink. */
 async function assertSerif(cs: CSSStyleDeclaration, ink: string) {
   await expect(cs.fontFamily).toContain('PP Editorial New')
   await expect(cs.fontWeight).toBe('200')
-  await expect(cs.fontSize).toBe('16px')
-  await expect(cs.lineHeight).toBe('24.8px') // 1.55 × 16
+  await expect(cs.fontSize).toBe('16.5px')
+  await expect(cs.lineHeight).toBe('26.4px') // 1.6 × 16.5
   await expect(cs.textWrap).toBe('pretty')
   await expect(cs.color).toBe(ink)
 }
@@ -269,7 +292,12 @@ function Stateful({ data }: { data: EntriesBlock }) {
   return <EntriesView data={state} editable onChange={setState} />
 }
 
-/** Editable journal: the textarea wears the serif register; typing lands in the block. */
+/**
+ * Editable journal: the textarea wears the serif register; typing lands in the
+ * block. The date stays the read-only mono LABEL (no board draws a live date field
+ * for `entry` — it is system-set at `addEntry` time), and a focused row wears the
+ * molecule's `editing` ring: `boxShadow: inset 0 0 0 1.4px fg`.
+ */
 export const EditableJournal: Story = {
   args: { data: journal },
   render: (args) => <Stateful data={args.data} />,
@@ -279,20 +307,30 @@ export const EditableJournal: Story = {
     await expect(texts).toHaveLength(3)
     await assertSerif(getComputedStyle(texts[0]), INK)
     await expect((texts[0] as HTMLTextAreaElement).placeholder).toBe(ENTRIES_EMPTY_LINE)
-    const dates = canvas.getAllByRole('textbox', { name: 'Entry date' })
+    await expect(canvas.queryAllByRole('textbox', { name: 'Entry date' })).toHaveLength(0)
+    const dates = datesOf(canvasElement)
+    await expect(dates).toHaveLength(3)
     const ds = getComputedStyle(dates[0])
     await expect(ds.fontFamily).toContain('PP Neue Montreal Mono')
     await expect(ds.fontSize).toBe('10.5px')
     await expect(ds.color).toBe(INK_68)
-    // The editable row keeps the read-only row's geometry: the board's 52px grid at
-    // gap 12, baseline — the fields swap in, the layout does not change.
-    for (const t of texts) {
-      const cs = getComputedStyle(t.parentElement!)
+    // The editable row keeps the read-only row's geometry: the molecule's 56px grid
+    // at gap 14, baseline — the fields swap in, the layout does not change.
+    const rows = texts.map((t) => t.parentElement!)
+    for (const row of rows) {
+      const cs = getComputedStyle(row)
       await expect(cs.display).toBe('grid')
-      await expect(cs.gridTemplateColumns.startsWith('52px ')).toBe(true)
-      await expect(cs.columnGap).toBe('12px')
+      await expect(cs.gridTemplateColumns.startsWith('56px ')).toBe(true)
+      await expect(cs.columnGap).toBe('14px')
       await expect(cs.alignItems).toBe('baseline')
+      await expect(cs.boxShadow).toBe('none')
     }
+    await userEvent.click(texts[0])
+    await expect(getComputedStyle(rows[0]).boxShadow).toContain('inset')
+    await expect(getComputedStyle(rows[0]).boxShadow).toContain('1.4px')
+    await expect(getComputedStyle(rows[1]).boxShadow).toBe('none')
+    await userEvent.tab()
+    await expect(getComputedStyle(rows[0]).boxShadow).toBe('none')
     await userEvent.type(texts[1], ' Early night.')
     await expect(texts[1]).toHaveValue(
       'Quiet day. Finished the chapter and started the next. Early night.'
@@ -309,6 +347,10 @@ export const EditableUpdates: Story = {
     for (const t of canvas.getAllByRole('textbox', { name: 'Entry text' })) {
       await assertSans(getComputedStyle(t), INK)
     }
+    // The date is a read-only label here too — the project's `updates` has no
+    // more claim to a live date field than the journal does.
+    await expect(canvas.queryAllByRole('textbox', { name: 'Entry date' })).toHaveLength(0)
+    await expect(datesOf(canvasElement)).toHaveLength(2)
   },
 }
 
@@ -344,4 +386,85 @@ export const InLogCard: Story = {
     const body = row.parentElement!
     await expect(row.getBoundingClientRect().width).toBe(body.getBoundingClientRect().width)
   },
+}
+
+/**
+ * `InLogCard`, made editable and stateful: the empty state's `write one` is wired
+ * to `addEntry` (the same call `BlockCanvas.tsx:1796` makes), so the card starts
+ * truly empty and flips to `rest` the moment it has a row — the whole host a
+ * person sees, not `EntriesView` in isolation.
+ */
+function EditableLogHost({ data: initial }: { data: EntriesBlock }) {
+  const [data, setData] = useState(initial)
+  const frame = blockFrame(data)!
+  return (
+    <PondBlock
+      kind={frame.kind}
+      heading={frame.heading}
+      headNote={frame.headNote}
+      state={blockIsEmpty(data) ? 'empty' : 'rest'}
+      onEmptyAction={() => setData(addEntry(data))}
+    >
+      <EntriesView data={data} editable onChange={setData} />
+    </PondBlock>
+  )
+}
+
+/**
+ * KAN-356's path test (`PATH_STEPS`): write one → type "first" → add "second" via
+ * the add line → hover + remove "first" → only "second" remains. ⌘Z is NOT
+ * exercised here — add/remove ride the ordinary `onChange` → debounced
+ * `commitBlocks({ ownEdit: true })` path (`use-page-draft.ts`), which already logs
+ * a change-log record and calls `sessionUndo.remember` for every ordinary edit
+ * (the same path `patchEntry`'s typing already rides), identical in effect to
+ * `persistBlocksAsOwnEdit`'s immediate variant used for template-apply/drag-drop
+ * in `BlockCanvas.tsx`. The live verifier confirms ⌘Z in the real browser.
+ */
+async function walkPath(canvasElement: HTMLElement, hoverBg: () => string) {
+  const canvas = within(canvasElement)
+  await userEvent.click(canvas.getByRole('button', { name: 'write one' }))
+
+  const firstText = canvas.getByRole('textbox', { name: 'Entry text' })
+  await userEvent.type(firstText, 'first')
+  await expect(firstText).toHaveValue('first')
+
+  const addLine = canvas.getByRole('textbox', { name: 'Add entry' })
+  await userEvent.type(addLine, 'second{Enter}')
+  await expect(addLine).toHaveValue('')
+
+  const texts = canvas.getAllByRole('textbox', { name: 'Entry text' })
+  await expect(texts).toHaveLength(2)
+  await expect(texts[0]).toHaveValue('second') // newest first
+  await expect(texts[1]).toHaveValue('first')
+
+  const firstRow = texts[1].parentElement!
+  // Typing into `firstText` earlier left the pointer (and `hoveredId`) on this
+  // very row — move off it explicitly before asserting the rest state.
+  await userEvent.unhover(firstRow)
+  await expect(getComputedStyle(firstRow).backgroundColor).toBe('rgba(0, 0, 0, 0)')
+  await userEvent.hover(firstRow)
+  // `hoveredId` state (`onMouseEnter`/`onMouseLeave`) applies the molecule's
+  // `hover` wash (`a(.05)`) through the ink-alpha role token, so it reads
+  // correctly on both themes without a separate class.
+  await expect(getComputedStyle(firstRow).backgroundColor).toBe(hoverBg())
+  await userEvent.click(within(firstRow).getByRole('button', { name: 'Remove entry' }))
+
+  const remaining = canvas.getAllByRole('textbox', { name: 'Entry text' })
+  await expect(remaining).toHaveLength(1)
+  await expect(remaining[0]).toHaveValue('second')
+}
+
+const emptyLog: EntriesBlock = { id: 'e3', type: 'entries', entries: [] }
+
+export const EditablePath: Story = {
+  args: { data: emptyLog },
+  render: (args) => <EditableLogHost data={args.data} />,
+  play: async ({ canvasElement }) => walkPath(canvasElement, INK_05),
+}
+
+export const EditablePathDark: Story = {
+  args: { data: emptyLog },
+  decorators: [inkTheme],
+  render: (args) => <EditableLogHost data={args.data} />,
+  play: async ({ canvasElement }) => walkPath(canvasElement, PAPER_05),
 }
