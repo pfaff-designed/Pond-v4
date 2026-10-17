@@ -36,6 +36,7 @@ import type { PaletteItem } from '@/components/molecules/palette-entries'
 import { normalizeQuery } from '@/components/molecules/slash-entries'
 import { NewPondFlow } from '@/components/organisms/NewPondFlow'
 import { PondCommand } from '@/components/organisms/PondCommand'
+import { ReportProblemBox, type ReportProblemStatus } from '@/components/organisms/ReportProblemBox'
 import { UndoNotice } from '@/components/molecules/UndoNotice'
 import {
   clearUndoNotice,
@@ -55,6 +56,7 @@ import { describeChange, describeUndoneEffect } from '@/lib/change-log/page-chan
 import { getRecord } from '@/lib/change-log/store'
 import { rememberStruckRow } from '@/lib/change-log/undo-strike'
 import { useCommandPath } from '@/lib/layout/command-path'
+import { PLACEMENT } from '@/lib/layout/shell-placement'
 import { useZenCommands } from '@/lib/layout/use-zen-commands'
 import { workspaceUrl } from '@/lib/pages/nav'
 import { newPageParent, paletteItems, paletteScope, pondItems } from '@/lib/pages/palette-items'
@@ -73,9 +75,6 @@ import { pondHref } from '@/lib/pond/active'
 import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
 import { useSaveAsTemplateSheet } from '@/components/organisms/use-save-as-template-sheet'
 import { ROW_TYPE } from '@/lib/properties/schema'
-
-/** `Pond 05 Shell`'s placement: centred on the whole shell, 20px off its top. */
-const PLACEMENT = 'absolute top-5 left-[calc(50%_+_13px)] w-max -translate-x-1/2'
 
 /** Where ⌘Z/⇧⌘Z belongs to the field itself (Tiptap's own undo, an input, a select) —
  * except an empty page-title input (`data-pond-page-title`), which has nothing of
@@ -96,6 +95,11 @@ export function ShellCommands() {
   const [query, setQuery] = useState('')
   // `new pond “q”`: the sheet is open, holding the name the palette handed over.
   const [naming, setNaming] = useState<string | null>(null)
+  // `report a problem`: the box is open, mounted over the shell like the palette.
+  const [reportOpen, setReportOpen] = useState(false)
+  const [reportStatus, setReportStatus] = useState<ReportProblemStatus>('idle')
+  const [reportFiled, setReportFiled] = useState<{ key: string; url: string } | null>(null)
+  const [reportError, setReportError] = useState<string | null>(null)
   const pondId = usePondId()
   const pondName = usePondName()
   const { pond, ponds } = usePond()
@@ -190,12 +194,42 @@ export function ShellCommands() {
   } = templateSheet
   const closeNewPondSheet = useCallback(() => setNaming(null), [])
 
+  const closeReport = useCallback(() => {
+    setReportOpen(false)
+    setReportStatus('idle')
+    setReportFiled(null)
+    setReportError(null)
+  }, [])
+
+  const pageTitle = path.current
+  const handleReportSubmit = useCallback(
+    (text: string) => {
+      setReportStatus('sending')
+      fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, pageId: currentNodeId, pageTitle, url: window.location.href }),
+      })
+        .then(async (res) => {
+          if (!res.ok) throw new Error('not ok')
+          const data = (await res.json()) as { key: string; url: string }
+          setReportFiled({ key: data.key, url: data.url })
+          setReportStatus('filed')
+        })
+        .catch(() => {
+          setReportError("can't file reports right now")
+          setReportStatus('error')
+        })
+    },
+    [currentNodeId, pageTitle]
+  )
+
   // Global ⌘K → toggle the palette, or close the sheet it launched (the list is not
   // open then, so a toggle would raise it behind the sheet). Capture phase on the
   // document, so it fires before a focused editor/input can swallow it.
   const pondSheetOpen = naming !== null
   const zenCommands = useZenCommands({
-    blocked: templateSheetOpen || pondSheetOpen,
+    blocked: templateSheetOpen || pondSheetOpen || reportOpen,
     onEnter: closePalette,
   })
   const { inZen, handleModeSelect } = zenCommands
@@ -226,6 +260,7 @@ export function ShellCommands() {
         e.stopPropagation()
         if (templateSheetOpen) closeTemplateSheet()
         else if (pondSheetOpen) closeNewPondSheet()
+        else if (reportOpen) closeReport()
         else setPaletteOpen((prev) => !prev)
         return
       }
@@ -280,8 +315,10 @@ export function ShellCommands() {
   }, [
     templateSheetOpen,
     pondSheetOpen,
+    reportOpen,
     closeTemplateSheet,
     closeNewPondSheet,
+    closeReport,
     pondId,
     runUndoStep,
     clearShownNotice,
@@ -369,6 +406,13 @@ export function ShellCommands() {
         requestHtmlImportPicker()
         return
       }
+      if (item.action === 'report-a-problem') {
+        setReportStatus('idle')
+        setReportFiled(null)
+        setReportError(null)
+        setReportOpen(true)
+        return
+      }
       if (item.kind === 'pond') {
         router.push(pondHref(item.id, ponds.find((p) => p.id === item.id)?.lastPageId))
         return
@@ -391,6 +435,17 @@ export function ShellCommands() {
   return (
     <>
       {naming !== null && <NewPondFlow defaultName={naming} onClose={closeNewPondSheet} />}
+      {reportOpen && (
+        <ReportProblemBox
+          pageTitle={pageTitle}
+          status={reportStatus}
+          filedKey={reportFiled?.key}
+          filedUrl={reportFiled?.url}
+          errorText={reportError ?? undefined}
+          onSubmit={handleReportSubmit}
+          onClose={closeReport}
+        />
+      )}
       <PondCommand
         className={`${PLACEMENT} ${zenCommands.commandClassName(commandOpen)}`}
         path={path}

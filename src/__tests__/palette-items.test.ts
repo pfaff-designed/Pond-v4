@@ -5,7 +5,12 @@
  */
 
 import { paletteEntries } from '@/components/molecules/palette-entries'
-import { DEEP_RESEARCH_ACTION, IMPORT_A_PAGE_ACTION, paletteItems } from '@/lib/pages/palette-items'
+import {
+  DEEP_RESEARCH_ACTION,
+  IMPORT_A_PAGE_ACTION,
+  paletteItems,
+  REPORT_A_PROBLEM_ACTION,
+} from '@/lib/pages/palette-items'
 
 describe('IMPORT_A_PAGE_ACTION', () => {
   it('is an action row in Pond’s own words', () => {
@@ -28,6 +33,28 @@ describe('paletteItems — import a page', () => {
       const actions = items.map((i) => i.action)
       expect(actions).toContain('new-page')
       expect(actions).toContain('ask-pond')
+    }
+  })
+})
+
+describe('REPORT_A_PROBLEM_ACTION', () => {
+  it('is an action row in Pond’s own words', () => {
+    expect(REPORT_A_PROBLEM_ACTION).toMatchObject({
+      id: 'action:report-a-problem',
+      label: 'report a problem',
+      kind: 'action',
+      action: 'report-a-problem',
+    })
+  })
+})
+
+describe('paletteItems — report a problem', () => {
+  it('lists unconditionally, alongside new page and ask pond', () => {
+    const withoutOpenPage = paletteItems([], [])
+    const withOpenPage = paletteItems([], [], 'some-page')
+
+    for (const items of [withoutOpenPage, withOpenPage]) {
+      expect(items).toContainEqual(REPORT_A_PROBLEM_ACTION)
     }
   })
 })
