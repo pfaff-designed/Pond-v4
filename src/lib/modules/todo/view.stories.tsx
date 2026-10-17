@@ -38,10 +38,28 @@ const inkTheme: Decorator = (Story) => (
   </div>
 )
 
+/**
+ * Keeps every row off the real pointer. The vitest browser runner never moves
+ * Chromium's mouse, so it rests at the story iframe's origin (0, 0), and the
+ * first row renders there. Chromium sends that row trusted mouseover events at
+ * a moment of its own choosing after layout — a CI run logged
+ * `mouseover trusted=true t=div#m1 xy=0,0` — so `hovered` raced the play
+ * function: `Hover` lost its wash to row 1 and `Dot List` washed a row nothing
+ * hovered. That is correct product behaviour for a real pointer over a row; the
+ * stories just must not sit under one. The ink decorator's own padding is why
+ * the `Dark` twins never failed. `assertNoRealHover` states the premise.
+ */
+const offPointer: Decorator = (Story) => (
+  <div className="p-mn-6">
+    <Story />
+  </div>
+)
+
 const meta = {
   title: 'Modules/Todo',
   component: TodoView,
   parameters: { layout: 'padded' },
+  decorators: [offPointer],
 } satisfies Meta<typeof TodoView>
 
 export default meta
@@ -213,6 +231,11 @@ async function assertDone(row: HTMLElement, ink: Ink) {
   await expect(row.querySelector('[data-kind="checkbox"] [data-part="check"]')).not.toBeNull()
 }
 
+/** The real (resting) pointer is over no row, so only the play function's hover counts. */
+async function assertNoRealHover(root: HTMLElement) {
+  await expect(root.querySelector('[data-item-id]:hover')).toBeNull()
+}
+
 async function assertHover(row: HTMLElement, ink: Ink) {
   await assertRow(row)
   await expect(getComputedStyle(row).backgroundColor).toBe(ink.a5)
@@ -253,6 +276,7 @@ async function assertMethod(canvasElement: HTMLElement, ink: Ink) {
 
 /** `dot`: list-rows with the 7px ink-.5 dot, weight 400, no box, no meta. */
 async function assertGroceries(canvasElement: HTMLElement, ink: Ink) {
+  await assertNoRealHover(canvasElement)
   const rows = rowsOf(canvasElement)
   await expect(rows).toHaveLength(5)
   for (const row of rows) {
@@ -302,6 +326,7 @@ export const Hover: Story = {
   args: { data: method },
   play: async ({ canvasElement }) => {
     const rows = rowsOf(canvasElement)
+    await assertNoRealHover(canvasElement)
     await userEvent.hover(rows[1])
     await assertHover(rows[1], onPaper())
     // Only the hovered row washes; its neighbours stay at rest.
