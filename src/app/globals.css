@@ -273,6 +273,7 @@
 }
 
 :root {
+  color-scheme: light;
   /* ══ Make Noise RAW palette (issues #85/#86) — the one house palette ════════
      Source of truth: wayfinder/design_handoff_pond/_ds/mn/tokens/colors.css.
      Every colour in the app maps from here, named by what it IS. A theme
@@ -455,6 +456,7 @@
 }
 
 .dark {
+  color-scheme: dark;
   /* ══ Make Noise DARK — only roles reassign; a --raw-* value NEVER moves ══════
      Ground = ink, cards = dark card. Every shadcn/sidebar token in :root
      derives from the --mn- roles, so overriding them here re-themes the
@@ -771,5 +773,14 @@
   }
   html {
     @apply font-sans;
+  }
+  /* `setDarkClass` (lib/theme/mode) sets this attribute for one frame around
+     every flip — pill, OS-driven, and ink-hold — so surfaces snap together
+     instead of fading at different speeds. */
+  [data-theme-switching],
+  [data-theme-switching] *,
+  [data-theme-switching] *::before,
+  [data-theme-switching] *::after {
+    transition: none !important;
   }
 }
