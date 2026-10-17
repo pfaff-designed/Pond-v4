@@ -979,6 +979,14 @@ describe('WorkspaceShell — the chrome floats over one canvas', () => {
     expect(column.getAttribute('style')).toContain(COMPOSER_CLEARANCE_VAR)
   })
 
+  it('<main> carries scroll-padding so native caret-follow and scrollIntoView clear the pill and the card', async () => {
+    const { container } = renderShell()
+    const main = container.querySelector<HTMLElement>('main')!
+    expect(main.style.scrollPaddingTop).toBe(`${COMPOSER_TOP_CLEARANCE}px`)
+    expect(main.style.scrollPaddingBottom).toContain(COMPOSER_CLEARANCE_VAR)
+    expect(main.style.scrollPaddingBottom).toContain('24px')
+  })
+
   it('a click on the pill grows it into the palette', async () => {
     const { container } = renderShell()
     const opener = container.querySelector<HTMLElement>('[data-part="opener"]')!
