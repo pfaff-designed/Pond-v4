@@ -132,16 +132,21 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
     // the ['pages'] invalidation inside commitBlocks lands after the rename,
     // keeping the sidebar rename immediate.
     const supabase = getSupabase()
+    // Settles once the save's change-log record is on `sessionUndo`'s stack
+    // (commitBlocks's `remembered`) — awaited below, AFTER `setSaved`, so a
+    // ⌘Z that races in right after this save finds its own record already
+    // remembered instead of falling through to the previous step (KAN-355).
+    let remembered: Promise<void> = Promise.resolve()
     try {
       await updateTitle(supabase, id, nextTitle)
       // `ownEdit`: the page moved on under the person's own hand, so every
       // pending block diff aimed at it goes outdated — its card greys out,
       // drops accept and offers revise — and the save is logged as accepted.
-      await commitBlocks(supabase, queryClient, id, nextBlocks, {
+      ;({ remembered } = await commitBlocks(supabase, queryClient, id, nextBlocks, {
         ownEdit: true,
         before,
         pondId,
-      })
+      }))
     } catch (err) {
       if (advanced && lastSaved.current?.pageId === id && lastSaved.current.blocks === nextBlocks) {
         lastSaved.current = { pageId: id, blocks: before }
@@ -162,19 +167,36 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
     )
     setSaved(true)
     setSavedAt(new Date())
+    // Resolve `runSave` (and so `startSave`'s chain/`inFlightSave`/`flushNow`)
+    // only once the record above is remembered — never before "saved", and
+    // never rejects (commitBlocks's `remembered` already swallows its own
+    // failures).
+    await remembered
   }
 
   // Runs `runSave` and tracks it in `inFlightSave` for the window it is
   // actually awaiting its network round-trip — set synchronously, before
   // `runSave`'s first `await`, so nothing can observe the save as "started"
-  // without also finding it here.
+  // without also finding it here. Chained on the previous save (if any) so two
+  // saves of the same page never run at once and land out of order (KAN-355):
+  // `runSave`'s own `before`/`lastSaved` advance only runs once this save
+  // actually starts, which is now after the previous one has fully settled.
+  // With no previous save, `runSave` is called directly rather than through a
+  // `Promise.resolve().then(...)` hop — existing callers (`flushNow` in
+  // particular) rely on the first save's `updateTitle` having already been
+  // called by the time `startSave` returns, not one microtask later.
   function startSave(
     id: string,
     nextTitle: string,
     nextBlocks: Block[],
     beforeAtSchedule: Block[]
   ): Promise<void> {
-    const promise = runSave(id, nextTitle, nextBlocks, beforeAtSchedule).finally(() => {
+    const prev = inFlightSave.current
+    const promise = (
+      prev
+        ? prev.catch(() => {}).then(() => runSave(id, nextTitle, nextBlocks, beforeAtSchedule))
+        : runSave(id, nextTitle, nextBlocks, beforeAtSchedule)
+    ).finally(() => {
       if (inFlightSave.current === promise) inFlightSave.current = null
     })
     inFlightSave.current = promise

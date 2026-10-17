@@ -41,7 +41,8 @@ jest.mock('@/lib/pages/client', () => ({
 }))
 
 jest.mock('@/lib/pages/commit', () => ({
-  commitBlocks: jest.fn().mockResolvedValue(undefined),
+  // The real `commitBlocks` resolves `{ remembered }` for an own-edit save (KAN-355).
+  commitBlocks: jest.fn().mockResolvedValue({ remembered: Promise.resolve() }),
 }))
 
 const mockSetMadeFromHidden = jest.fn().mockResolvedValue(undefined)

@@ -48,7 +48,13 @@ import {
   requestUndoNotice,
   useUndoNotice,
 } from '@/lib/terminal-focus'
-import { isPaletteChord, isRedoChord, isUndoChord, onApplePlatform } from '@/lib/shell-commands'
+import {
+  isPaletteChord,
+  isRedoChord,
+  isUndoChord,
+  onApplePlatform,
+  SESSION_UNDO_SCOPE_ATTR,
+} from '@/lib/shell-commands'
 import { sessionUndo } from '@/lib/change-log/session-undo'
 import { editorHistoryEmptyFor } from '@/lib/modules/text/active-editor'
 import { applyUndoOutcome } from '@/lib/change-log/undo-outcome'
@@ -80,11 +86,14 @@ import { ROW_TYPE } from '@/lib/properties/schema'
 
 /** Where ⌘Z/⇧⌘Z belongs to the field itself (Tiptap's own undo, an input, a select) —
  * except an empty page-title input (`data-pond-page-title`), which has nothing of
- * its own to undo, so the chord falls through to the session step instead. */
+ * its own to undo, and an input inside a `SESSION_UNDO_SCOPE_ATTR` container
+ * (KAN-355: a list/checklist's rows), whose add/remove is the session's own step —
+ * so the chord falls through to the session step instead. */
 const isEditable = (el: Element | null): boolean =>
   el !== null &&
   el.matches('input, textarea, select, [contenteditable]') &&
-  !isEmptyPageTitleInput(el)
+  !isEmptyPageTitleInput(el) &&
+  !el.closest(`[${SESSION_UNDO_SCOPE_ATTR}]`)
 
 const isEmptyPageTitleInput = (el: Element): boolean =>
   el.hasAttribute('data-pond-page-title') && (el as HTMLInputElement).value === ''
