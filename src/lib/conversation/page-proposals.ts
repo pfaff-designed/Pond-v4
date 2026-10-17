@@ -21,6 +21,7 @@
  */
 
 import type { UIMessage } from 'ai'
+import { parseReferences } from '@/app/api/chat/references'
 import type { Block } from '@/lib/documents/types'
 import type { PageReference } from '@/lib/references/reference'
 
@@ -510,9 +511,13 @@ export function turnReadContext(message: { metadata?: unknown } | undefined): {
  * send (a hidden chip reset by visiting another page and back; a passage
  * ×'d after the question was asked). Read off the question message's own
  * metadata, stamped by `sendText` at send time, same reasoning as {@link
- * turnReadContext}. A message sent before this fix (or reseeded from a
- * saved transcript) carries no `openPageContext` field at all — that's the
- * only case `fallback` (the caller's live values) is used.
+ * turnReadContext}. The stamp is all-or-nothing: `nodeId` only exists on a
+ * message written by this fix, so its presence (not `openPageContext`'s,
+ * which main has stamped since KAN-99) is the canary — a question sent
+ * before this fix carries `openPageContext` alone and must fall back to
+ * `fallback` (the caller's live values) for all three fields, not just the
+ * two this stamp doesn't have, or a resend mixes a stamped chip-visibility
+ * flag with a live node/references the person has since navigated past.
  */
 export function turnSendStamp(
   message: { metadata?: unknown } | undefined,
@@ -521,14 +526,12 @@ export function turnSendStamp(
   const meta = message?.metadata as
     | { nodeId?: unknown; openPageContext?: unknown; references?: unknown }
     | undefined
-  if (typeof meta?.openPageContext !== 'boolean') return fallback
+  if (meta === undefined || meta === null || !('nodeId' in meta)) return fallback
   return {
     nodeId:
       meta.nodeId === null || typeof meta.nodeId === 'string' ? meta.nodeId : fallback.nodeId,
-    openPageContext: meta.openPageContext,
-    references: Array.isArray(meta.references)
-      ? (meta.references as PageReference[])
-      : fallback.references,
+    openPageContext: typeof meta.openPageContext === 'boolean' ? meta.openPageContext : fallback.openPageContext,
+    references: parseReferences(meta.references),
   }
 }
 
