@@ -72,6 +72,19 @@ const DAY_DOT = 'size-1 flex-none rounded-full bg-mn-text'
 const DAY_NUMBER_LIST = 'inline-flex h-[30px] min-w-[30px] self-start text-[20px] font-medium tabular-nums'
 /** `boxSt(o,13)`: the focused-day list's larger dot, `radius 4` (`sz > 11`). */
 const DAY_ITEM_DOT_LARGE = 'size-[13px] flex-none rounded-[4px] box-border ring-[1.4px] ring-inset ring-mn-text/[0.32]'
+/** The shared focus-visible outline (`view.tsx`'s table row / board card / gallery card) — a
+ *  tab stop needs its own visible ring, since the selected ring only draws once chosen. */
+const ROW_FOCUS_VISIBLE =
+  'outline-[1.5px] outline-offset-1 outline-mn-text/50 outline-none focus-visible:outline-solid'
+/** The day cell's own keyboard-only "add" control: a mouse user reaches `onOpenAdd` by
+ *  clicking the cell's blank space, so this stays `sr-only` until it is the thing with
+ *  focus, then draws as a small chip in the cell's corner. */
+const DAY_ADD_BUTTON = cn(
+  'sr-only focus-visible:not-sr-only focus-visible:absolute focus-visible:right-1 focus-visible:top-1 focus-visible:z-10',
+  'focus-visible:rounded-[6px] focus-visible:bg-mn-card focus-visible:px-1.5 focus-visible:py-0.5',
+  'focus-visible:text-[10.5px] focus-visible:font-medium focus-visible:text-mn-text',
+  ROW_FOCUS_VISIBLE
+)
 
 function MonthDayNumber({ day, isToday, inMonth }: { day: number; isToday: boolean; inMonth: boolean }) {
   if (isToday) {
@@ -150,7 +163,7 @@ function MonthDayStack({
       {items.map((row) => (
         <div
           key={row.id}
-          className={cn(DAY_ITEM_ROW, row.id === selectedId && DAY_ITEM_SELECTED_RING)}
+          className={cn(DAY_ITEM_ROW, ROW_FOCUS_VISIBLE, row.id === selectedId && DAY_ITEM_SELECTED_RING)}
           {...rowProps(row.id)}
           {...keyboardProps(row.id)}
           onKeyDown={(e) => handleCalendarRowKeyDown(row.id, selectedId, select, onOpenRow, e)}
@@ -199,21 +212,9 @@ function MonthDayCellView({
     <div
       data-part="calendar-day-cell"
       data-iso={cell.iso}
-      role={openable ? 'button' : undefined}
-      tabIndex={openable ? 0 : undefined}
-      aria-label={openable ? `Add on ${cell.dayOfMonth} ${monthAbbr(cell.iso)}` : undefined}
       onClick={openable ? onOpenAdd : undefined}
-      onKeyDown={
-        openable
-          ? (e) => {
-              if (e.key !== 'Enter' && e.key !== ' ') return
-              e.preventDefault()
-              onOpenAdd()
-            }
-          : undefined
-      }
       className={cn(
-        'min-h-[108px] p-1.5',
+        'relative min-h-[108px] p-1.5',
         columnIndex !== 0 && 'border-l border-mn-text/[0.09] dark:border-mn-text/[0.14]',
         columnIndex >= 5 && 'bg-mn-text/[0.025]'
       )}
@@ -229,6 +230,19 @@ function MonthDayCellView({
         select={select}
         onOpenRow={onOpenRow}
       />
+      {openable && (
+        <button
+          type="button"
+          aria-label={`Add on ${cell.dayOfMonth} ${monthAbbr(cell.iso)}`}
+          onClick={(e) => {
+            e.stopPropagation()
+            onOpenAdd()
+          }}
+          className={DAY_ADD_BUTTON}
+        >
+          ＋
+        </button>
+      )}
       {isAdding && (
         <AddRowInput
           aria-label={`Add an item on ${cell.dayOfMonth} ${monthAbbr(cell.iso)}`}
@@ -345,6 +359,7 @@ function FocusDayList({
               key={row.id}
               className={cn(
                 'flex min-h-11 min-w-0 items-center gap-2.5 rounded-[10px] px-2',
+                ROW_FOCUS_VISIBLE,
                 row.id === selectedId && DAY_ITEM_SELECTED_RING
               )}
               {...rowProps(row.id)}

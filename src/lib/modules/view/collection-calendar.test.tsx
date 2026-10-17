@@ -482,3 +482,43 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
     })
   })
 })
+
+describe('CollectionCalendar — a day cell is not a button around its events (KAN-358 fix)', () => {
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-09-10T12:00:00Z'))
+  })
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  function cellFor(container: HTMLElement, iso: string) {
+    return container.querySelector<HTMLElement>(`[data-part="calendar-day-cell"][data-iso="${iso}"]`)!
+  }
+
+  it('no day cell is role="button", addable or not', () => {
+    const { container } = render(
+      <CollectionCalendar schema={schemaWithDate} rows={rows} editable onAddRow={jest.fn()} onRenameRow={jest.fn()} />
+    )
+    expect(container.querySelector('[data-part="calendar-day-cell"][role="button"]')).toBeNull()
+  })
+
+  it('an addable day has its own "Add on …" button, reachable by keyboard and by click, that opens the add input', async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    const { container } = render(
+      <CollectionCalendar schema={schemaWithDate} rows={[]} editable onAddRow={jest.fn()} onRenameRow={jest.fn()} />
+    )
+    const addButton = within(cellFor(container, '2026-09-20')).getByRole('button', { name: 'Add on 20 sep' })
+
+    await user.click(addButton)
+
+    expect(screen.getByRole('textbox', { name: 'Add an item on 20 sep' })).toBeInTheDocument()
+  })
+
+  it('an event item sits inside the day cell but outside any role="button"', () => {
+    const { container } = render(
+      <CollectionCalendar schema={schemaWithDate} rows={rows} editable onAddRow={jest.fn()} onRenameRow={jest.fn()} />
+    )
+    const item = within(cellFor(container, '2026-09-10')).getByText('Trim the rim')
+    expect(item.closest('[role="button"]')).toBeNull()
+  })
+})
