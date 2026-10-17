@@ -1,4 +1,4 @@
-import { appendChildLink, appendChildLinkToParent } from './child-links'
+import { appendChildLink, appendChildLinkToParent, removeLinksTo } from './child-links'
 import type { Block } from '@/lib/modules/content'
 import type { PondPage } from './client'
 
@@ -117,5 +117,76 @@ describe('appendChildLinkToParent', () => {
 
     expect(mockCommitBlocks).not.toHaveBeenCalled()
     expect(invalidateQueries).not.toHaveBeenCalled()
+  })
+})
+
+describe('removeLinksTo', () => {
+  const link = (id: string, pageId: string): Block => ({ id, type: 'page-link', pageId })
+  const text = (id: string): Block => ({ id, type: 'text', content: id })
+
+  it('removes a link that is the only block', () => {
+    const blocks = [link('b1', 'child-1')]
+    const { blocks: next, removed } = removeLinksTo(blocks, new Set(['child-1']), 'parent-1')
+    expect(next).toEqual([])
+    expect(removed).toEqual([
+      { parentId: 'parent-1', block: blocks[0], index: 0, beforeId: null },
+    ])
+  })
+
+  it('removes a link that is first, keeping the rest in order', () => {
+    const blocks = [link('b1', 'child-1'), text('b2'), text('b3')]
+    const { blocks: next, removed } = removeLinksTo(blocks, new Set(['child-1']), 'parent-1')
+    expect(next).toEqual([blocks[1], blocks[2]])
+    expect(removed).toEqual([
+      { parentId: 'parent-1', block: blocks[0], index: 0, beforeId: null },
+    ])
+  })
+
+  it('removes a link in the middle', () => {
+    const blocks = [text('b1'), link('b2', 'child-1'), text('b3')]
+    const { blocks: next, removed } = removeLinksTo(blocks, new Set(['child-1']), 'parent-1')
+    expect(next).toEqual([blocks[0], blocks[2]])
+    expect(removed).toEqual([
+      { parentId: 'parent-1', block: blocks[1], index: 1, beforeId: 'b1' },
+    ])
+  })
+
+  it('removes a link that is last', () => {
+    const blocks = [text('b1'), text('b2'), link('b3', 'child-1')]
+    const { blocks: next, removed } = removeLinksTo(blocks, new Set(['child-1']), 'parent-1')
+    expect(next).toEqual([blocks[0], blocks[1]])
+    expect(removed).toEqual([
+      { parentId: 'parent-1', block: blocks[2], index: 2, beforeId: 'b2' },
+    ])
+  })
+
+  it('removes two links to different trashed ids on one page, each with its own index and beforeId', () => {
+    const blocks = [link('b1', 'child-1'), text('b2'), link('b3', 'child-2')]
+    const { blocks: next, removed } = removeLinksTo(
+      blocks,
+      new Set(['child-1', 'child-2']),
+      'parent-1'
+    )
+    expect(next).toEqual([blocks[1]])
+    expect(removed).toEqual([
+      { parentId: 'parent-1', block: blocks[0], index: 0, beforeId: null },
+      { parentId: 'parent-1', block: blocks[2], index: 2, beforeId: 'b2' },
+    ])
+  })
+
+  it('keeps a link whose pageId is not in the set', () => {
+    const blocks = [link('b1', 'child-1'), link('b2', 'other-child')]
+    const { blocks: next, removed } = removeLinksTo(blocks, new Set(['child-1']), 'parent-1')
+    expect(next).toEqual([blocks[1]])
+    expect(removed).toEqual([
+      { parentId: 'parent-1', block: blocks[0], index: 0, beforeId: null },
+    ])
+  })
+
+  it('returns the same blocks reference and an empty removed array when nothing matches', () => {
+    const blocks = [text('b1'), link('b2', 'other-child')]
+    const { blocks: next, removed } = removeLinksTo(blocks, new Set(['child-1']), 'parent-1')
+    expect(next).toBe(blocks)
+    expect(removed).toEqual([])
   })
 })

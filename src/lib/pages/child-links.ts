@@ -114,6 +114,40 @@ export function childLinkTargets(rows: PageRow[], parentId: string | null): stri
   return sortedChildIds(scope, parentId)
 }
 
+/** A page-link block removed from one parent, enough to put it back (KAN-448). */
+export interface RemovedLink {
+  parentId: string
+  block: Block
+  index: number
+  beforeId: string | null
+}
+
+/**
+ * Strip every page-link block whose `pageId` is in `pageIds` from `blocks`,
+ * recording each removal's position so `restoreLinks` can put it back later.
+ * `parentId` is stamped onto every `RemovedLink` since the pure core doesn't
+ * know which page it was called on — callers collect these across several
+ * parents (KAN-448's `unlinkTrashedSubtree`). No match returns the same
+ * `blocks` reference, mirroring `appendChildLink`'s no-op rule.
+ */
+export function removeLinksTo(
+  blocks: Block[],
+  pageIds: Set<string>,
+  parentId: string
+): { blocks: Block[]; removed: RemovedLink[] } {
+  const removed: RemovedLink[] = []
+  const next: Block[] = []
+  blocks.forEach((block, index) => {
+    if (block.type === 'page-link' && pageIds.has(block.pageId)) {
+      removed.push({ parentId, block, index, beforeId: index === 0 ? null : blocks[index - 1].id })
+      return
+    }
+    next.push(block)
+  })
+  if (removed.length === 0) return { blocks, removed }
+  return { blocks: next, removed }
+}
+
 /**
  * Stamp `props.childLinksMigrated` on the `['page', pageId]` query cache, so
  * the upgrade effect's own-page cache read sees the stamp at once rather than
