@@ -4,12 +4,15 @@
  * place and selects nothing (KAN-378).
  */
 
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { CollectionView } from '@/lib/modules/view/view'
 import type { CollectionRow } from '@/lib/modules/view/apply'
 import type { ViewBlock } from '@/lib/modules/view/schema'
 import type { PropertySchema } from '@/lib/properties/schema'
+import { rememberStruckRow } from '@/lib/change-log/undo-strike'
+import { clearUndoNotice, requestUndoNotice } from '@/lib/terminal-focus'
+import type { ChangeLogRecord } from '@/lib/change-log/types'
 
 const schema: PropertySchema = [{ id: 'f', name: 'note', type: 'text' }]
 const config: ViewBlock = { id: 'b', type: 'view', mode: 'table' }
@@ -189,5 +192,65 @@ describe('table — a row opens its record in the peek', () => {
     await userEvent.keyboard('{Escape}')
     expect(peek()).toBeNull()
     expect(rowOf('First')).toHaveFocus()
+  })
+})
+
+describe('a row an undo just removed (struck through) never selects (KAN-378)', () => {
+  // Same shape `rememberStruckRow`/`requestUndoNotice` take in view.test.tsx's own
+  // struck-row suite — `collectionId` on `CollectionView` is the prop path that
+  // reaches `struckIds` inside `CollectionTable`.
+  const rowSnapshot = (id: string, title: string) => ({ id, title, values: {}, shown: {} })
+
+  afterEach(() => act(() => clearUndoNotice()))
+
+  function renderStruck() {
+    rememberStruckRow({
+      targetPageId: 'page-1',
+      before: rowSnapshot('struck-1', 'Removed by undo'),
+      after: null,
+    } as unknown as ChangeLogRecord)
+
+    const onOpenRow = jest.fn()
+    render(
+      <CollectionView
+        config={config}
+        schema={schema}
+        rows={rows}
+        collectionId="page-1"
+        collectionName="tasks"
+        editable
+        onEdit={jest.fn()}
+        onOpenRow={onOpenRow}
+      />
+    )
+    act(() => {
+      requestUndoNotice({
+        direction: 'undo',
+        pastTense: 'removed Removed by undo',
+        previousPageTitle: 'tasks',
+      })
+    })
+    return { onOpenRow }
+  }
+
+  it('clicking a struck row’s padding opens no peek', async () => {
+    renderStruck()
+    const row = rowOf('Removed by undo')
+    expect(row).toHaveClass('line-through')
+
+    await userEvent.click(cellOf('Removed by undo'))
+    expect(peek()).toBeNull()
+  })
+
+  it('a struck row is not a tab stop, and ↵ does nothing', async () => {
+    const { onOpenRow } = renderStruck()
+    const row = rowOf('Removed by undo')
+    expect(row).not.toHaveAttribute('tabindex')
+
+    row.focus()
+    await userEvent.keyboard('{Enter}')
+    await userEvent.keyboard('{Enter}')
+    expect(peek()).toBeNull()
+    expect(onOpenRow).not.toHaveBeenCalled()
   })
 })

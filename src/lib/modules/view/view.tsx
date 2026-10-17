@@ -647,8 +647,11 @@ function CollectionTable({
   // A click on the row's own space (not a cell's input/control) selects it and
   // opens the board's peek beside the table; `shouldSelectRowFromClick` is the
   // row-shaped predicate (unlike the card's, it doesn't exclude `td`/`th`,
-  // which is the row's entire clickable surface).
-  function handleRowClick(rowId: string, e: React.MouseEvent) {
+  // which is the row's entire clickable surface). A struck row (KAN-139) is an
+  // undo-removed record still drawn for the notice's duration — it must never
+  // select, or its peek would let a person edit a record that no longer exists.
+  function handleRowClick(rowId: string, struck: boolean, e: React.MouseEvent) {
+    if (struck) return
     if (shouldSelectRowFromClick(e.target)) selectWithPointer(rowId)
   }
 
@@ -709,14 +712,17 @@ function CollectionTable({
               (PondBlock state="empty", #239) and suppresses this view entirely. */}
           {rows.map((row, ri) => {
             const struck = struckIds?.has(row.id) ?? false
-            const selected = row.id === selectedRow?.id
+            // Never true for a struck row (see `handleRowClick`), even if it was
+            // already selected before the undo that struck it — a stale selection
+            // dropping its highlight and peek, not keeping them on a dead record.
+            const selected = !struck && row.id === selectedRow?.id
             return (
               <tr
                 key={row.id}
                 data-row-id={row.id}
-                onClick={(e) => handleRowClick(row.id, e)}
-                {...keyboardProps(row.id)}
-                onKeyDown={(e) => handleRowKeyDown(row.id, e)}
+                onClick={(e) => handleRowClick(row.id, struck, e)}
+                {...(struck ? {} : keyboardProps(row.id))}
+                onKeyDown={struck ? undefined : (e) => handleRowKeyDown(row.id, e)}
                 className={[
                   'border-b border-mn-line last:border-b-0 align-top',
                   struck ? DIFF_REMOVAL_TEXT_CLASSNAME : '',
@@ -773,7 +779,7 @@ function CollectionTable({
         </button>
       )}
 
-      {selectedRow && (
+      {selectedRow && !struckIds?.has(selectedRow.id) && (
         <RecordPeek
           key={selectedRow.id}
           row={selectedRow}
