@@ -17,7 +17,7 @@ import { usePondName } from '@/lib/pond/name'
 import { PAGE_COLUMN_PAD_PX, useSurfaceColumn } from '@/lib/layout/surface-column'
 import { countWaiting, listRecords } from '@/lib/change-log/store'
 import { changeLogKey } from '@/lib/change-log/keys'
-import { buildLogRows } from '@/lib/change-log/log-page'
+import { buildLogPageGroups, buildLogRows, type LogGroup } from '@/lib/change-log/log-page'
 import { changeLogRecordUrl, changeLogUrl, PAGE_FILTER_PARAM } from '@/lib/change-log/record-page'
 import { clockTime } from '@/lib/change-log/page-changes'
 import { labelForStatus, WAITING_STATUSES } from '@/lib/change-log/status'
@@ -81,17 +81,17 @@ const DELETED_VIEW_COLUMN_PX = 700 + 2 * PAGE_COLUMN_PAD_PX
 const PROPOSED_VIEW_COLUMN_PX = 640 + 2 * PAGE_COLUMN_PAD_PX
 
 /**
- * s6o1's view bar. "all", "proposed" (KAN-96, s6o2) and "deleted" (KAN-97,
- * s6o6) are built; the rest are drawn per the board but stay inert
- * (PROJECT_RULES "nothing locked in": visible-but-inert over hidden, since no
- * view beyond those three exists yet).
+ * s6o1's view bar. "all", "proposed" (KAN-96, s6o2), "by page" (KAN-148,
+ * s6o1) and "deleted" (KAN-97, s6o6) are built; "memory" stays absent until
+ * KAN-173 ships the memory database (PROJECT_RULES "nothing locked in" is
+ * about inert affordances for an existing feature, not drawing a tab for a
+ * feature that doesn't exist yet).
  */
-const INERT_VIEWS = ['by page', 'memory'] as const
 const SEGMENT = `rounded-full px-[11px] py-[5px] ${FOCUS_VISIBLE_RING}`
 const SEGMENT_ON = `${SEGMENT} bg-mn-hover-fill font-medium text-mn-text`
 const SEGMENT_OFF = `${SEGMENT} text-mn-text-secondary`
 
-type ChangeLogView = 'all' | 'proposed' | 'deleted'
+type ChangeLogView = 'all' | 'proposed' | 'by-page' | 'deleted'
 
 /** s6o2's own chip: "status is proposed" · "newest first" — an inset hairline
  *  pill, ink .8, no fill (distinct from the filled `chipBaseClass` family). */
@@ -178,6 +178,112 @@ function DeletedRecordCard({
   )
 }
 
+/** The "page is {title}" chip and its clear control — "all" and "by page"
+ *  both read the same `?page=` filter, so the chip (and clearing it) is
+ *  drawn once rather than copied per view. */
+function PageFilterChip({ title, onClear }: { title: string; onClear: () => void }) {
+  return (
+    <span className={PROPOSED_CHIP_CLASS}>
+      page is {title}
+      <button
+        type="button"
+        aria-label="clear page filter"
+        onClick={onClear}
+        className="ml-1 flex h-6 w-6 items-center justify-center text-mn-text-secondary hover:text-mn-text-meta"
+      >
+        <svg width="10" height="10" viewBox="0 0 12 12" fill="none" aria-hidden>
+          <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+        </svg>
+      </button>
+    </span>
+  )
+}
+
+/** "all" and "by page" share one empty-state line: a page filter narrows
+ *  what "empty" means, so both read off the same filter rather than each
+ *  hard-coding a copy of the unfiltered line. */
+function logEmptyCopy(pageFilterId: string | null): string {
+  return pageFilterId !== null ? 'no changes to this page yet' : 'nothing logged in this pond yet'
+}
+
+/** s6o1's five-column table body: the header row, one group head per group
+ *  (a day header in "all", a page title in "by page"), and each group's rows
+ *  — shared so a row/head change is made once, not once per view. */
+function LogGroupsTable({
+  groups,
+  onOpen,
+  loadMore,
+}: {
+  groups: LogGroup[]
+  onOpen: (recordId: string) => void
+  loadMore?: { onFetch: () => void; isFetching: boolean }
+}) {
+  return (
+    <>
+      <div
+        className={`grid ${TABLE_COLUMNS} gap-x-[14px] border-b border-mn-line px-[10px] pb-2 text-[10.5px] font-medium tracking-[.1em] text-mn-text-secondary uppercase`}
+      >
+        <span>time</span>
+        <span>what</span>
+        <span>page</span>
+        <span>by</span>
+        <span>status</span>
+      </div>
+      {groups.map((group) => (
+        <div key={group.key}>
+          <div
+            data-testid="change-log-group-head"
+            className="px-[10px] pt-3 pb-[6px] text-[10.5px] font-medium tracking-[.1em] text-mn-text-secondary uppercase"
+          >
+            {group.label}
+          </div>
+          {group.rows.map((row) => (
+            <button
+              key={row.record.id}
+              type="button"
+              onClick={() => onOpen(row.record.id)}
+              className={`grid ${TABLE_COLUMNS} min-h-[38px] w-full items-center gap-x-[14px] border-b border-mn-hair px-[10px] text-left text-[13.5px]`}
+            >
+              <span className="font-mono text-[10.5px] text-mn-text-secondary">
+                {clockTime(row.record)}
+              </span>
+              <span className="truncate">{row.label}</span>
+              <span className="truncate text-[12.5px] text-mn-text-meta">{row.page}</span>
+              <span className="text-[12.5px] text-mn-text-meta">{row.by}</span>
+              {row.status.kind === 'pill' ? (
+                <span
+                  data-testid={`change-log-status-${row.record.id}`}
+                  className="justify-self-start rounded-full px-2 py-0.5 font-mono text-[10.5px] text-mn-text ring-1 ring-mn-mark-faint ring-inset"
+                >
+                  {labelForStatus(row.status.text)}
+                </span>
+              ) : (
+                <span
+                  data-testid={`change-log-status-${row.record.id}`}
+                  className="font-mono text-[10.5px] text-mn-text-secondary"
+                >
+                  {labelForStatus(row.status.text)}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      ))}
+      {loadMore && (
+        <button
+          type="button"
+          onClick={loadMore.onFetch}
+          disabled={loadMore.isFetching}
+          data-testid="change-log-load-more"
+          className="mt-1 w-full py-2 text-center font-mono text-[11px] lowercase tracking-[0.02em] text-mn-text-secondary disabled:opacity-60"
+        >
+          {loadMore.isFetching ? 'loading…' : 'load more'}
+        </button>
+      )}
+    </>
+  )
+}
+
 export function ChangeLogPage() {
   const getSupabase = useLazySupabase()
   const router = useRouter()
@@ -250,14 +356,18 @@ export function ChangeLogPage() {
   // panel it came from. No pagination here, same as the panel's own list.
   const { data: pageFilteredRecords, isLoading: pageFilteredLoading } = useQuery({
     queryKey: changeLogPageFilteredKey(pondId, pageFilterId ?? ''),
-    enabled: view === 'all' && pageFilterId !== null,
+    enabled: (view === 'all' || view === 'by-page') && pageFilterId !== null,
     queryFn: async () => {
       const supabase = getSupabase()
       const {
         data: { user },
       } = await supabase.auth.getUser()
       if (!user) return []
-      return listRecords(supabase, { userId: user.id, pondId, targetPageId: pageFilterId as string })
+      return listRecords(supabase, {
+        userId: user.id,
+        pondId,
+        targetPageId: pageFilterId as string,
+      })
     },
   })
 
@@ -277,12 +387,18 @@ export function ChangeLogPage() {
 
   const pageTitleById = useMemo(() => new Map(pages.map((p) => [p.id, p.title])), [pages])
   const activeRecords = useMemo(
-    () => (pageFilterId === null ? records : pageFilteredRecords ?? []),
+    () => (pageFilterId === null ? records : (pageFilteredRecords ?? [])),
     [pageFilterId, records, pageFilteredRecords]
   )
   const activeRecordsLoading = pageFilterId === null ? recordsLoading : pageFilteredLoading
   const groups = useMemo(
     () => buildLogRows(activeRecords, pageTitleById),
+    [activeRecords, pageTitleById]
+  )
+  // "by page" groups whatever the "all" query has already loaded — no
+  // separate fetch, same records regrouped.
+  const pageGroups = useMemo(
+    () => buildLogPageGroups(activeRecords, pageTitleById),
     [activeRecords, pageTitleById]
   )
   const clearPageFilter = () => router.replace(changeLogUrl())
@@ -405,27 +521,34 @@ export function ChangeLogPage() {
           change log
         </span>
         {view === 'all' && (
-          <>
-            <p className="max-w-[560px] font-serif text-[17px] leading-[1.6] font-extralight text-mn-text">
-              Every action in this pond, by you, by Pond and by anyone you share a page with. One
-              record for each, newest first.
-            </p>
-            <div className="flex items-end gap-[14px] pt-1 pb-[2px]">
-              <span
-                className="text-[88px] leading-[.9] font-light tracking-[-0.03em] text-mn-text"
-                data-testid="change-log-waiting-count"
-              >
-                {isLoading ? '–' : waiting}
-              </span>
-              <span className="pb-2 text-[13.5px] leading-[1.4] text-mn-text-meta">
-                proposed,
-                <br />
-                waiting on you
-              </span>
-            </div>
-          </>
+          <p className="max-w-[560px] font-serif text-[17px] leading-[1.6] font-extralight text-mn-text">
+            Every action in this pond, by you, by Pond and by anyone you share a page with. One
+            record for each, newest first.
+          </p>
         )}
-        <ViewTabsRoot value={view} onValueChange={handleViewChange} className="flex items-center gap-1 text-[12.5px]">
+        {/* "by page" keeps this lead figure when it switches in (KAN-148
+         *  acceptance) even though it drops "all"'s own descriptive
+         *  paragraph above. */}
+        {(view === 'all' || view === 'by-page') && (
+          <div className="flex items-end gap-[14px] pt-1 pb-[2px]">
+            <span
+              className="text-[88px] leading-[.9] font-light tracking-[-0.03em] text-mn-text"
+              data-testid="change-log-waiting-count"
+            >
+              {isLoading ? '–' : waiting}
+            </span>
+            <span className="pb-2 text-[13.5px] leading-[1.4] text-mn-text-meta">
+              proposed,
+              <br />
+              waiting on you
+            </span>
+          </div>
+        )}
+        <ViewTabsRoot
+          value={view}
+          onValueChange={handleViewChange}
+          className="flex items-center gap-1 text-[12.5px]"
+        >
           <ViewTabsList className="flex items-center gap-1">
             <ViewTabsTab value="all" className={view === 'all' ? SEGMENT_ON : SEGMENT_OFF}>
               all
@@ -436,15 +559,9 @@ export function ChangeLogPage() {
             >
               proposed
             </ViewTabsTab>
-            {INERT_VIEWS.map((inertView) => (
-              <span
-                key={inertView}
-                aria-hidden="true"
-                className="rounded-full px-[11px] py-[5px] text-mn-text-secondary"
-              >
-                {inertView}
-              </span>
-            ))}
+            <ViewTabsTab value="by-page" className={view === 'by-page' ? SEGMENT_ON : SEGMENT_OFF}>
+              by page
+            </ViewTabsTab>
             <ViewTabsTab value="deleted" className={view === 'deleted' ? SEGMENT_ON : SEGMENT_OFF}>
               deleted
             </ViewTabsTab>
@@ -460,24 +577,10 @@ export function ChangeLogPage() {
           <div className="rounded-mn-card bg-mn-card px-[10px] pt-[14px] pb-[6px] shadow-mn-card">
             {pageFilterId !== null && (
               <div className="flex flex-wrap gap-1.5 px-[10px] pb-[10px]">
-                <span className={PROPOSED_CHIP_CLASS}>
-                  page is {pageTitleById.get(pageFilterId) ?? 'deleted page'}
-                  <button
-                    type="button"
-                    aria-label="clear page filter"
-                    onClick={clearPageFilter}
-                    className="ml-1 flex h-6 w-6 items-center justify-center text-mn-text-secondary hover:text-mn-text-meta"
-                  >
-                    <svg width="10" height="10" viewBox="0 0 12 12" fill="none" aria-hidden>
-                      <path
-                        d="M3 3l6 6M9 3l-6 6"
-                        stroke="currentColor"
-                        strokeWidth="1.4"
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                  </button>
-                </span>
+                <PageFilterChip
+                  title={pageTitleById.get(pageFilterId) ?? 'deleted page'}
+                  onClear={clearPageFilter}
+                />
               </div>
             )}
             {activeRecordsLoading ? null : activeRecords.length === 0 ? (
@@ -485,72 +588,53 @@ export function ChangeLogPage() {
                 data-testid="change-log-empty"
                 className="px-[10px] pb-[8px] font-mono text-[12.5px] text-mn-text-secondary"
               >
-                {pageFilterId !== null
-                  ? 'no changes to this page yet'
-                  : 'nothing logged in this pond yet'}
+                {logEmptyCopy(pageFilterId)}
               </p>
             ) : (
-              <>
-                <div
-                  className={`grid ${TABLE_COLUMNS} gap-x-[14px] border-b border-mn-line px-[10px] pb-2 text-[10.5px] font-medium tracking-[.1em] text-mn-text-secondary uppercase`}
-                >
-                  <span>time</span>
-                  <span>what</span>
-                  <span>page</span>
-                  <span>by</span>
-                  <span>status</span>
-                </div>
-                {groups.map((group) => (
-                  <div key={group.label}>
-                    <div className="px-[10px] pt-3 pb-[6px] text-[10.5px] font-medium tracking-[.1em] text-mn-text-secondary uppercase">
-                      {group.label}
-                    </div>
-                    {group.rows.map((row) => (
-                      <button
-                        key={row.record.id}
-                        type="button"
-                        onClick={() => router.push(changeLogRecordUrl(row.record.id))}
-                        className={`grid ${TABLE_COLUMNS} min-h-[38px] w-full items-center gap-x-[14px] border-b border-mn-hair px-[10px] text-left text-[13.5px]`}
-                      >
-                        <span className="font-mono text-[10.5px] text-mn-text-secondary">
-                          {clockTime(row.record)}
-                        </span>
-                        <span className="truncate">{row.label}</span>
-                        <span className="truncate text-[12.5px] text-mn-text-meta">{row.page}</span>
-                        <span className="text-[12.5px] text-mn-text-meta">{row.by}</span>
-                        {row.status.kind === 'pill' ? (
-                          <span
-                            data-testid={`change-log-status-${row.record.id}`}
-                            className="justify-self-start rounded-full px-2 py-0.5 font-mono text-[10.5px] text-mn-text ring-1 ring-mn-mark-faint ring-inset"
-                          >
-                            {labelForStatus(row.status.text)}
-                          </span>
-                        ) : (
-                          <span
-                            data-testid={`change-log-status-${row.record.id}`}
-                            className="font-mono text-[10.5px] text-mn-text-secondary"
-                          >
-                            {labelForStatus(row.status.text)}
-                          </span>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                ))}
-                {pageFilterId === null && hasNextPage && (
-                  <button
-                    type="button"
-                    onClick={() => fetchNextPage()}
-                    disabled={isFetchingNextPage}
-                    data-testid="change-log-load-more"
-                    className="mt-1 w-full py-2 text-center font-mono text-[11px] lowercase tracking-[0.02em] text-mn-text-secondary disabled:opacity-60"
-                  >
-                    {isFetchingNextPage ? 'loading…' : 'load more'}
-                  </button>
-                )}
-              </>
+              <LogGroupsTable
+                groups={groups}
+                onOpen={(id) => router.push(changeLogRecordUrl(id))}
+                loadMore={
+                  pageFilterId === null && hasNextPage
+                    ? { onFetch: fetchNextPage, isFetching: isFetchingNextPage }
+                    : undefined
+                }
+              />
             )}
           </div>
+        ) : view === 'by-page' ? (
+          <>
+            <div className="flex flex-wrap gap-1.5">
+              <span className={PROPOSED_CHIP_CLASS}>grouped by page</span>
+              <span className={PROPOSED_CHIP_CLASS}>newest first</span>
+              {pageFilterId !== null && (
+                <PageFilterChip
+                  title={pageTitleById.get(pageFilterId) ?? 'deleted page'}
+                  onClear={clearPageFilter}
+                />
+              )}
+            </div>
+            <div className="rounded-mn-card bg-mn-card px-[10px] pt-[14px] pb-[6px] shadow-mn-card">
+              {activeRecordsLoading ? null : activeRecords.length === 0 ? (
+                <p
+                  data-testid="change-log-empty"
+                  className="px-[10px] pb-[8px] font-mono text-[12.5px] text-mn-text-secondary"
+                >
+                  {logEmptyCopy(pageFilterId)}
+                </p>
+              ) : (
+                <LogGroupsTable
+                  groups={pageGroups}
+                  onOpen={(id) => router.push(changeLogRecordUrl(id))}
+                  loadMore={
+                    pageFilterId === null && hasNextPage
+                      ? { onFetch: fetchNextPage, isFetching: isFetchingNextPage }
+                      : undefined
+                  }
+                />
+              )}
+            </div>
+          </>
         ) : view === 'proposed' ? (
           <>
             <div className="flex flex-wrap gap-1.5">
