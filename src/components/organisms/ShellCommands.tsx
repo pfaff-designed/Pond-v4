@@ -240,13 +240,13 @@ export function ShellCommands() {
     () =>
       paletteOpen
         ? [
-            ...paletteItems(pages, readRecentPageIds(), currentNodeId),
+            ...paletteItems(pages, readRecentPageIds(pondId), currentNodeId),
             ...zenCommands.items,
             ...pondItems(ponds, pond?.id ?? null),
             ...records,
           ]
         : [],
-    [pages, paletteOpen, currentNodeId, zenCommands.items, ponds, pond, records]
+    [pages, paletteOpen, currentNodeId, zenCommands.items, ponds, pond, records, pondId]
   )
   const scope = useMemo(() => paletteScope(pages, currentNodeId), [pages, currentNodeId])
 
@@ -364,7 +364,7 @@ export function ShellCommands() {
           { id: created.id, parentId: parent.id, type: 'page', title: created.title },
           pondId
         )
-        writeRecent({ id: created.id, type: 'page', title: created.title })
+        writeRecent({ id: created.id, type: 'page', title: created.title }, pondId)
         router.push(workspaceUrl({ id: created.id, type: 'page', title: created.title }))
         void queryClient.invalidateQueries({ queryKey: pagesKey(pondId) })
         // KAN-415: a failed link append is not a failed page creation — the
@@ -427,11 +427,20 @@ export function ShellCommands() {
       }
       const page = pages.find((p) => p.id === item.id)
       if (page) {
-        writeRecent({ id: page.id, type: page.type, title: page.title })
+        writeRecent({ id: page.id, type: page.type, title: page.title }, pondId)
         router.push(workspaceUrl({ id: page.id, type: page.type, title: page.title }))
       }
     },
-    [pages, ponds, router, currentNodeId, handleModeSelect, startTemplateSheet, handleCreatePage]
+    [
+      pages,
+      ponds,
+      router,
+      currentNodeId,
+      handleModeSelect,
+      startTemplateSheet,
+      handleCreatePage,
+      pondId,
+    ]
   )
 
   const commandOpen = paletteOpen || templateSheetOpen

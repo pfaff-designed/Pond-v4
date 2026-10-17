@@ -1054,7 +1054,7 @@ export function AITerminal() {
     const ordered = orderMentionPages(
       mentionPageRows,
       {
-        recentIds: readRecentPageIds(),
+        recentIds: readRecentPageIds(pondId),
         linkedIds: linkedPageIds(
           mentionPageRows,
           references.map((ref) => ref.pageId)
@@ -1073,7 +1073,7 @@ export function AITerminal() {
         sub: areaOf(allPages, p.id) ?? '',
       }
     })
-  }, [mentionQuery, mentionPageRows, pageMarks, allPages, references])
+  }, [mentionQuery, mentionPageRows, pageMarks, allPages, references, pondId])
 
   const handleMentionClose = useCallback(() => {
     suppressMentionReopenRef.current = true

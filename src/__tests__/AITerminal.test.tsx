@@ -94,6 +94,7 @@ import {
 } from '@/lib/terminal-focus'
 import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
 import { useZen, ZenComposerChrome, ZenProvider } from '@/lib/layout/zen'
+import { PondContext } from '@/lib/pond/context'
 import { COMPOSER_CLEARANCE_VAR } from '@/lib/layout/composer-clearance'
 
 const mockListPages = listPages as jest.Mock
@@ -941,11 +942,26 @@ describe('AITerminal — the @ mention picker opens, narrows and closes (KAN-99)
 
   it('sorts a recently-visited page above an unrelated match (orderMentionPages wiring)', async () => {
     window.localStorage.setItem(
-      'pond:recent-pages',
+      'pond:recent-pages:pond-1',
       JSON.stringify([{ id: 'p2', type: 'page', title: 'budget planning' }])
     )
     const user = userEvent.setup()
-    renderTerminal()
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <PondContext.Provider
+          value={{
+            pond: { id: 'pond-1', name: 'life', glyph: null, theme: 'paper', order: 0 },
+            ponds: [],
+            loading: false,
+            reload: () => {},
+            addPond: () => {},
+          }}
+        >
+          <AITerminal />
+        </PondContext.Provider>
+      </QueryClientProvider>
+    )
     await waitReady()
 
     const textbox = screen.getByRole('textbox', { name: 'Message Pond' })
