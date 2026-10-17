@@ -1486,11 +1486,26 @@ export function Rail() {
   // never remounts on a switch. Declared ahead of the merge effect so it runs
   // first on the same pondId change (React runs passive effects in source
   // order); the merge effect then repopulates from the new pond's store.
+  //
+  // Only a REAL pond→pond switch clears — `prevPondIdRef.current` starting
+  // `null` (usePondId() before PondProvider's listPonds resolves, on a cold
+  // reload) and then landing on the first real id is not a switch, it's the
+  // same pond arriving late. Treating it as one wiped the ticket-25 reveal
+  // below, which had already run against the `pagesKey(null)` fallback fetch
+  // (resolves to the same pond's pages, #312): with `revealedForRef` already
+  // set, the reveal effect's once-per-selection guard then refused to run
+  // again, leaving a cold-reload deep link's ancestors collapsed for good. A
+  // real switch also drops `revealedForRef` so the new pond's open page
+  // re-reveals instead of being read as already-revealed.
   const prevPondIdRef = useRef(pondId)
+  const revealedForRef = useRef<string | null>(null)
   useEffect(() => {
     if (prevPondIdRef.current === pondId) return
+    const isPondSwitch = prevPondIdRef.current !== null
     prevPondIdRef.current = pondId
+    if (!isPondSwitch) return
     setExpandedRaw(new Set())
+    revealedForRef.current = null
   }, [pondId])
 
   // Write `expanded` to the current pond's store whenever it (or the pond)
@@ -1545,8 +1560,9 @@ export function Rail() {
   // breadcrumb, or a page created through chat / ＋ — auto-expand every folder on
   // the path to the current node (and Life itself) so it's revealed and its
   // ancestors highlight. We reveal a given selection exactly once (tracked by
-  // ref) so a manual re-collapse afterward isn't fought.
-  const revealedForRef = useRef<string | null>(null)
+  // ref) so a manual re-collapse afterward isn't fought. `revealedForRef`
+  // itself is declared above, alongside the pond-switch clear (KAN-393) that
+  // also resets it on a real pond switch.
   useEffect(() => {
     if (!selectedNodeId) {
       revealedForRef.current = null
