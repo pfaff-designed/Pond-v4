@@ -106,26 +106,23 @@ function runAddView(
   })
 }
 
-export interface SavedViewBarProps {
+interface SavedViewBarBase {
   /** The raw, persisted view block — segments and `addSavedView` both read its
    *  `views[]` (or its legacy top-level mode+config) directly, never a
    *  per-saved-view resolved mirror. */
   block: ViewBlock
   /** This collection's current schema, off whichever `useCollectionRows` call
-   *  the host already made — `null` while loading or over a non-collection,
-   *  where the bar still draws (identification), just with no "＋ view". */
+   *  the host already made — `null` while loading or over a non-collection. The
+   *  bar still draws "＋ view" then (showAddView never gates on `schema`), but
+   *  every row in its picker renders disabled ("this view has no collection"),
+   *  since `onAddView` itself no-ops with no schema to add against. */
   schema: PropertySchema | null
-  /** Writes the collection's schema — the same mutator the remedy fields use. */
-  updateSchema: (next: PropertySchema) => void
   /** The bar's own LOCAL selection (KAN-36: switching is reading). */
   activeId: string | undefined
   /** A bar click's own handler; a pick (and its undo) reuse it to activate the
    *  view they add/restore (KAN-243). */
   onSelect: (id: string) => void
   editable: boolean
-  /** Absent on a reader / no-persistence host — gates "＋ view" the same way
-   *  every other insert does. */
-  onChange?: (next: ViewBlock) => void
   /** Host-owned reads of "what is current right now" (`SavedViewHost`, KAN-243
    *  fix) — pass the host's own getters so an undo staged by one bar instance
    *  still reads correctly after BlockCanvas swaps it for the other. Absent
@@ -135,17 +132,25 @@ export interface SavedViewBarProps {
   getLatestSchema?: () => PropertySchema | null
 }
 
-export function SavedViewBar({
-  block,
-  schema,
-  updateSchema,
-  activeId,
-  onSelect,
-  editable,
-  onChange,
-  latestBlock,
-  getLatestSchema,
-}: SavedViewBarProps) {
+export type SavedViewBarProps = SavedViewBarBase &
+  (
+    | {
+        /** The whole-block write a pick lands through. */
+        onChange: (next: ViewBlock) => void
+        /** Writes the collection's schema — the remedy fields' own mutator. Required
+         *  together with `onChange`: a host with one but not the other would let
+         *  `runAddView` add a remedy view with no remedy field, silently (AGENTS.md
+         *  "crash early" — the type forbids the half-wired state rather than
+         *  defaulting `updateSchema` to a no-op). */
+        updateSchema: (next: PropertySchema) => void
+      }
+    /** Absent on a reader / no-persistence host — gates "＋ view" the same way
+     *  every other insert does. */
+    | { onChange?: undefined; updateSchema?: undefined }
+  )
+
+export function SavedViewBar(props: SavedViewBarProps) {
+  const { block, schema, activeId, onSelect, editable, latestBlock, getLatestSchema } = props
   const deletionUndo = useOptionalDeletionUndo()
 
   // Local fallback only: a host that owns neither getter (a bare story/test
@@ -172,19 +177,23 @@ export function SavedViewBar({
 
   const onAddView = useCallback(
     (mode: ViewMode) => {
-      if (!editable || !schema || !deletionUndo || !onChange) return
+      // Narrowing `props.onChange` (rather than a separately destructured const)
+      // also narrows `props.updateSchema` to the required-together arm — the same
+      // property-access-on-`props` pattern `ViewBar.tsx` uses for its own
+      // `showAddView`-discriminated union.
+      if (!editable || !schema || !deletionUndo || !props.onChange) return
       runAddView(
         block,
         mode,
         getLatestSchema ?? (() => ownSchemaRef.current),
         latestBlock ?? ownBlockRef,
-        updateSchema,
-        onChange,
+        props.updateSchema,
+        props.onChange,
         deletionUndo,
         onSelect
       )
     },
-    [editable, schema, deletionUndo, onChange, block, updateSchema, onSelect, getLatestSchema, latestBlock]
+    [editable, schema, deletionUndo, props.onChange, props.updateSchema, block, onSelect, getLatestSchema, latestBlock]
   )
 
   // KAN-243 PATH_STEPS 1: a legacy block (no `views[]` yet — every view made from
@@ -208,7 +217,7 @@ export function SavedViewBar({
       views={barViews}
       activeId={barActiveId}
       onSelect={onSelect}
-      {...(editable && onChange
+      {...(editable && props.onChange
         ? { showAddView: true, addViewRows, onAddView }
         : { showAddView: false })}
     />

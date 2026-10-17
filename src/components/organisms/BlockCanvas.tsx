@@ -2073,12 +2073,14 @@ function BlockEditor({
   const [rowSelected, setRowSelected] = useState(false)
   const state = rowSelected && baseState === 'rest' ? 'selected' : baseState
 
-  // The PondBlock-card and no-card branches below sit at different tree depths, so
-  // flipping `frame` (e.g. board → timeline) remounts the module view underneath —
-  // CollectionView's own `localActiveViewId` would then reseed from the block's
-  // PERSISTED `activeViewId` and silently revert the bar to its stored tab. Carrying
-  // the bar's live selection through `activeViewId` here lets the remount reseed to
-  // the same tab instead.
+  // `frame`'s CARD kind never flips for an existing block (it reads the persisted,
+  // never-changing `block.mode`, not the active saved view's — the ruling above).
+  // What DOES remount the module view underneath is `PondBlock` swapping `children`
+  // for `PondBlockEmpty` on the empty↔rest `state` flip (e.g. picking a view whose
+  // own kind isn't empty, or its remedy field landing a row) — CollectionView's own
+  // `localActiveViewId` would then reseed from the block's PERSISTED `activeViewId`
+  // and silently revert the bar to its stored tab. Carrying the bar's live selection
+  // through `activeViewId` here lets the remount reseed to the same tab instead.
   const moduleData = useMemo(
     () => (block.type === 'view' && activeViewId ? { ...block, activeViewId } : block),
     [block, activeViewId]

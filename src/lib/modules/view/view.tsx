@@ -642,19 +642,27 @@ function ViewControls({
             </>
           )}
         </div>
-        {onSelectView && (
-          <SavedViewBar
-            block={rawBlock}
-            schema={schema}
-            updateSchema={updateSchema ?? (() => {})}
-            activeId={activeViewId}
-            onSelect={onSelectView}
-            editable={!!editable}
-            onChange={onChange}
-            latestBlock={latestBlock}
-            getLatestSchema={getLatestSchema}
-          />
-        )}
+        {onSelectView &&
+          (() => {
+            const savedViewBarProps = {
+              block: rawBlock,
+              schema,
+              activeId: activeViewId,
+              onSelect: onSelectView,
+              editable: !!editable,
+              latestBlock,
+              getLatestSchema,
+            }
+            // `SavedViewBarProps` requires `updateSchema` together with `onChange`
+            // (AGENTS.md "crash early") — a host with one but not the other gets
+            // neither, rather than a no-op `updateSchema` that would let a pick
+            // silently add a remedy view with no remedy field.
+            return onChange && updateSchema ? (
+              <SavedViewBar {...savedViewBarProps} onChange={onChange} updateSchema={updateSchema} />
+            ) : (
+              <SavedViewBar {...savedViewBarProps} />
+            )
+          })()}
       </div>
 
       {editable && onConfigChange && config.mode === 'chart' && (
