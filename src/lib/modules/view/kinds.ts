@@ -17,6 +17,7 @@
 import type { ViewBlock, ViewMode } from './schema'
 import type { BlockEmptyBox, PondBlockKind } from '../block-frame'
 import { ICON, type SlashIcon } from '@/components/molecules/slash-entries'
+import type { PropertySchema } from '@/lib/properties/schema'
 
 /**
  * The gantt kind's empty line — `PondTemplate.dc.html`'s `gantt` `e:` value verbatim
@@ -119,3 +120,42 @@ export function viewKind(block: { mode: ViewMode }): ViewKind {
 
 /** What a view may rewrite of its own config: anything but which block it is, or its kind. */
 export type ViewConfigPatch = Partial<Omit<ViewBlock, 'id' | 'type' | 'mode'>>
+
+/**
+ * Which property type a kind needs to draw anything but its own remedy notice
+ * (KAN-243's ＋ view gate at creation, carrying KAN-33's validation): a board
+ * buckets by a status/select lane (`view.tsx`'s `handleAddStatusField`), calendar
+ * and timeline place rows by a date (`handleAddDateField`) — the same two remedies
+ * the dateless/groupless empty states already offer. A mode absent from this table
+ * draws fine with no properties at all (table, list, gallery, chart, big-number),
+ * so {@link hasRequiredField} reads that absence as always satisfied.
+ */
+export const VIEW_KIND_REQUIREMENT: Partial<Record<ViewMode, 'date' | 'status'>> = {
+  board: 'status',
+  calendar: 'date',
+  gantt: 'date',
+}
+
+/**
+ * Whether `schema` already carries what `mode` needs ({@link VIEW_KIND_REQUIREMENT}).
+ * `'status'` also accepts a `select` property — the same either-or a board already
+ * groups by. A mode with no entry needs nothing, so this is always `true` for it.
+ */
+export function hasRequiredField(mode: ViewMode, schema: PropertySchema): boolean {
+  const need = VIEW_KIND_REQUIREMENT[mode]
+  if (!need) return true
+  return schema.some((d) => d.type === need || (need === 'status' && d.type === 'select'))
+}
+
+/**
+ * The ＋ view picker's remedy hint for a kind missing its required field —
+ * `"add a date field to use calendar"` — built off {@link VIEW_KINDS}'s own label so
+ * the two stay in sync: a relabelled kind never leaves a stale noun behind. Only
+ * meaningful for a kind in {@link VIEW_KIND_REQUIREMENT}; the caller gates every call
+ * behind `!hasRequiredField(mode, schema)`, so a requirement-less mode never reaches it.
+ */
+export function addViewRemedyLine(mode: ViewMode): string {
+  const need = VIEW_KIND_REQUIREMENT[mode]
+  if (!need) return ''
+  return `add a ${need} field to use ${VIEW_KINDS[mode].label}`
+}
