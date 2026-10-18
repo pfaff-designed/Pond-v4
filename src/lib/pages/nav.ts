@@ -31,7 +31,7 @@ export interface WorkspaceNodeRef {
  * URL is then pond-less and the shell resolves the person's first pond, which is
  * the behaviour before ponds existed.
  */
-function currentPondId(): string | null {
+export function currentPondId(): string | null {
   if (typeof window === 'undefined') return null
   return new URLSearchParams(window.location.search).get('pond')
 }

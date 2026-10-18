@@ -371,7 +371,7 @@ export function ChangeLogRecordPage({ recordId }: { recordId: string }) {
                 <Field label="reverted by">
                   <button
                     type="button"
-                    onClick={() => router.push(changeLogRecordUrl(revertedBy.recordId))}
+                    onClick={() => openWorkspaceUrl(changeLogRecordUrl(revertedBy.recordId), router)}
                     className="underline decoration-mn-mark-faint underline-offset-[3px]"
                   >
                     {revertedBy.clockLabel}

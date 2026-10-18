@@ -263,6 +263,30 @@ describe('ChangeLogRecordPage — buttons', () => {
     )
   })
 
+  it('"reverted by" pushes history shallowly on /workspace, never router.push (KAN-449)', async () => {
+    window.history.replaceState({}, '', WORKSPACE_PATH)
+    mockGetRecord.mockResolvedValue(record())
+    mockListRevertsOf.mockResolvedValue([
+      record({
+        id: 'rec-revert',
+        status: 'proposed',
+        links: { revertOf: 'rec-1' },
+        createdAt: '2026-09-30T09:40:00.000Z',
+      }),
+    ])
+
+    renderPage()
+
+    const revertedByButton = await screen.findByRole('button', { name: /revert · / })
+    const pushStateSpy = jest.spyOn(window.history, 'pushState')
+    fireEvent.click(revertedByButton)
+
+    expect(pushStateSpy).toHaveBeenCalledTimes(1)
+    expect(pushStateSpy.mock.calls[0][2]).toContain('rec-revert')
+    expect(mockPush).not.toHaveBeenCalled()
+    pushStateSpy.mockRestore()
+  })
+
   it('omits revert for a record canRevertRecord refuses', async () => {
     mockGetRecord.mockResolvedValue(record({ action: 'create_page', before: null, after: null }))
 
