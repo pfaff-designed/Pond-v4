@@ -147,10 +147,10 @@ export const Expanded: Story = {
     await expect(canvas.queryByText('Recipes')).not.toBeInTheDocument()
 
     // life + 4 top-level + Health's 2 + Personal's 2 = 9 visible rows, plus the
-    // foot's databases row.
+    // foot's databases row and its own trash row (KAN-504).
     const items = canvas.getAllByRole('treeitem')
     const rows = [...canvasElement.querySelectorAll<HTMLElement>('[data-kind="list-row"]')]
-    await expect(items).toHaveLength(10)
+    await expect(items).toHaveLength(11)
     await expect(rows).toHaveLength(items.length)
     for (const [i, row] of rows.entries()) {
       await expect(row.closest('[role="treeitem"]')).toBe(items[i])
@@ -1719,11 +1719,13 @@ export const KeyboardIntoDatabases: Story = {
     await expect(lastLifeRow).toHaveAttribute('tabindex', '0')
     await expect(changeLog).toHaveAttribute('tabindex', '-1')
 
-    // The heading itself is the LAST row in the flat order: change log, trash,
-    // ingredients, then the heading.
+    // The heading is the last databases row in the flat order: change log,
+    // ingredients, then the heading. Trash is its own row after it (KAN-504).
     changeLog.focus()
-    await userEvent.keyboard('{ArrowDown}{ArrowDown}{ArrowDown}')
+    await userEvent.keyboard('{ArrowDown}{ArrowDown}')
     await expect(databases).toHaveFocus()
+    await userEvent.keyboard('{ArrowDown}')
+    await expect(canvas.getByRole('treeitem', { name: /^trash/ })).toHaveFocus()
   },
 }
 
@@ -1966,10 +1968,11 @@ export const FootBand: Story = {
       await expect(css.rowGap).toBe('2px')
       await expect(css.padding).toBe('10px 8px 0px')
 
-      // databases tree first, then settings — in ONE element
+      // databases tree, then trash's own tree (KAN-504), then settings — in ONE element
       const tree = canvas.getByRole('tree', { name: 'Databases' })
+      const trash = scope.querySelector<HTMLElement>('[role="tree"][aria-label="Trash"]')!
       const settings = scope.querySelector<HTMLElement>('[data-part="settings"]')!
-      await expect([...foot.children]).toEqual([tree, settings])
+      await expect([...foot.children]).toEqual([tree, trash, settings])
       // KAN-486: the max-height / scroll clipping lives on the inner scroller
       // now, not the outer tree — the heading sits after it, outside the clip,
       // so it never moves when the scroller's content grows.
@@ -2029,8 +2032,9 @@ export const FootWithoutDatabasesRoot: Story = {
   tags: ['!dev'],
   play: async ({ canvasElement }) => {
     const foot = canvasElement.querySelector<HTMLElement>('[data-part="rail-foot"]')!
-    await expect(foot.children).toHaveLength(2)
+    await expect(foot.children).toHaveLength(3)
     await expect(foot.firstElementChild).toHaveAttribute('aria-label', 'Databases')
+    await expect(foot.children[1]).toHaveAttribute('aria-label', 'Trash')
     await expect(foot.firstElementChild).toHaveTextContent('databases')
     await expect(foot.lastElementChild).toHaveTextContent('settings')
   },
