@@ -68,6 +68,7 @@ import { jsonEqual } from '@/lib/json-equal'
 import { pagesKey } from '@/lib/pages/keys'
 import { appendChildLinkUnder, trashPageUnlinked } from '@/lib/pages/child-links'
 import { usePondId, usePond } from '@/lib/pond/context'
+import { useHomePage } from '@/lib/pages/use-home-page'
 import { pushRecentGlyphToPond } from '@/lib/pond/client'
 import { PondSwitcher } from './PondSwitcher'
 import { openWorkspaceUrl, workspaceUrl } from '@/lib/pages/nav'
@@ -552,11 +553,16 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
                 × stacks above ＋ (z-[1]) so ×'s point always resolves to × even if the
                 two ever overlap. */}
               {(onNewPageMenuOpenChange || (!isRoot && onDelete)) && (
-                <span data-part="row-tools" className="absolute inset-y-0 right-2 flex items-center">
+                <span
+                  data-part="row-tools"
+                  className="absolute inset-y-0 right-2 flex items-center"
+                >
                   {onNewPageMenuOpenChange && (
                     <span
                       className={`flex flex-none items-center transition-opacity motion-reduce:transition-none group-focus-within:mr-5 group-focus-within:opacity-100 group-focus-within:pointer-events-auto ${
-                        showPlus ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+                        showPlus
+                          ? 'opacity-100 pointer-events-auto'
+                          : 'opacity-0 pointer-events-none'
                       } ${hovered ? 'mr-5' : ''}`}
                     >
                       <NewPageMenu
@@ -592,7 +598,9 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
                   {!isRoot && onDelete && (
                     <span
                       className={`absolute inset-y-0 right-0 z-[1] flex items-center transition-opacity group-focus-within:opacity-100 group-focus-within:pointer-events-auto ${
-                        hovered ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+                        hovered
+                          ? 'opacity-100 pointer-events-auto'
+                          : 'opacity-0 pointer-events-none'
                       }`}
                     >
                       <button
@@ -650,6 +658,13 @@ export interface RailViewProps {
    * appears once the pond list is non-empty. Resolved by `usePondName`.
    */
   pondName: string
+  /**
+   * KAN-490: the first root row (the synthetic Life row) is labelled with the
+   * HOME ROW's own title, not the pond's name — the data model point that the
+   * home row IS the first root. Omitted, or while `useHomePage` is still
+   * loading, the row falls back to `pondName`.
+   */
+  rootTitle?: string | null
   /** The pond's own glyph — the root row's mark, the same one the head draws.
    *  Omit in Storybook and the root falls back to `LIFE_GLYPH`. */
   pondGlyph?: string
@@ -830,6 +845,7 @@ interface OpenGlyphPicker {
 export function RailView({
   tree,
   pondName,
+  rootTitle,
   pondGlyph = LIFE_GLYPH,
   recentGlyphs = [],
   marks,
@@ -853,6 +869,11 @@ export function RailView({
   canDrop,
   onMove,
 }: RailViewProps) {
+  // KAN-490: the home row's own title, falling back to the pond's name only
+  // while `useHomePage` is still loading (or for callers, like Storybook, that
+  // never pass one at all).
+  const rootLabel = rootTitle ?? pondName
+
   // Empty when the caller supplies none (Storybook): every row then resolves to
   // its derived mark, which is what the rail showed before marks were choosable.
   const markMap = useMemo(() => marks ?? new Map<string, MarkSource>(), [marks])
@@ -953,22 +974,22 @@ export function RailView({
   const flat = useMemo(
     () =>
       [
-        // #312/#320: the root row is named for the pond you are in, not the literal
-        // 'life' that `LIFE_NODE` carries.
-        ...flattenVisible(lifeTree, expanded, lifeExpanded, pondName),
+        // KAN-490: the root row is the home row, named for ITS title — the
+        // pond's name is only the fallback while that title is loading.
+        ...flattenVisible(lifeTree, expanded, lifeExpanded, rootLabel),
         ...databasesFlat,
         TRASH_ROW,
       ].filter((f) => !isStaged(f.id)), // KAN-300: a refetch mid-undo-toast can't resurrect a staged row
-    [lifeTree, expanded, lifeExpanded, databasesFlat, pondName]
+    [lifeTree, expanded, lifeExpanded, databasesFlat, rootLabel]
   )
   const visibleIds = useMemo(() => new Set(flat.map((f) => f.id)), [flat])
 
   const openAddChildMenu = useCallback(
     (id: string) => {
-      const title = id === LIFE_ID ? pondName : flat.find((f) => f.id === id)?.node.title ?? ''
+      const title = id === LIFE_ID ? rootLabel : (flat.find((f) => f.id === id)?.node.title ?? '')
       setNewPageMenu({ id, title })
     },
-    [flat, pondName]
+    [flat, rootLabel]
   )
   const closeAddChildMenu = useCallback(() => {
     const id = newPageMenu?.id
@@ -1179,15 +1200,13 @@ export function RailView({
         ref={setRowRef(id)}
         key={id}
         id={id}
-        // #312/#320: the root row is the POND you are in, not the word "life".
-        // This was a hard-coded literal, which is why a new pond's root row read
-        // `life` while its header read the pond's real name — and why overriding
+        // KAN-490: the root row is the home page, so its label is the home
+        // row's OWN title, not the word "life" or the pond's name — the data
+        // model point that the home row IS the first root. This was a
+        // hard-coded literal, which is why a new pond's root row read `life`
+        // while its header read the pond's real name — and why overriding
         // `LIFE_NODE.title` alone changed nothing.
-        //
-        // Lowercase, like every other line of the rail's source copy in `Pond 05
-        // Shell` — the capitals in the boards are the eyebrow's own text-transform.
-        // `usePondName()` supplies it, also lowercase.
-        title={pondName}
+        title={rootLabel}
         depth={0}
         isFolder={isFolder}
         isExpanded={lifeExpanded}
@@ -1475,7 +1494,11 @@ export function Rail() {
   const pondId = usePondId()
   const pondName = usePondName()
   const pondGlyph = usePondGlyph()
-  const { pond } = usePond()
+  const { pond, loading: pondLoading } = usePond()
+  // KAN-490: the root row reads the home row's OWN title (the data model point
+  // that the home row IS the first root), not the pond's name — `rootLabel`
+  // (in RailView) falls back to `pondName` only while this is still loading.
+  const { data: home } = useHomePage(pondId, pondName, !pondLoading)
   // The pond's own recent list, overridden optimistically the instant a pick
   // lands (KAN-248 7/8) — mirrors `applyGlyphOptimistic`'s "redraw before the
   // write settles", but as a session-only overlay rather than mirrored local
@@ -1499,7 +1522,11 @@ export function Rail() {
   const [confirmTarget, setConfirmTarget] = useState<RailNode | null>(null)
   const { stageDeletion, notify } = useDeletionUndo()
 
-  const { data: pages = [], isLoading, isSuccess } = useQuery({
+  const {
+    data: pages = [],
+    isLoading,
+    isSuccess,
+  } = useQuery({
     queryKey: pagesKey(pondId),
     queryFn: () => fetchPages(pondId),
   })
@@ -1871,7 +1898,14 @@ export function Rail() {
         )
         // KAN-415: a failed link append is not a failed page creation — the
         // page above has already landed and been navigated to.
-        void appendChildLinkUnder(createClient(), queryClient, parentId, created.id, pondId, pondName)
+        void appendChildLinkUnder(
+          createClient(),
+          queryClient,
+          parentId,
+          created.id,
+          pondId,
+          pondName
+        )
       }
     } finally {
       setBusyId(null)
@@ -2185,7 +2219,14 @@ export function Rail() {
 
     // KAN-415: a failed link append is not a failed move — fired alongside it.
     if (isReparent) {
-      void appendChildLinkUnder(createClient(), queryClient, move.newParentId, draggedId, pondId, pondName)
+      void appendChildLinkUnder(
+        createClient(),
+        queryClient,
+        move.newParentId,
+        draggedId,
+        pondId,
+        pondName
+      )
     }
 
     try {
@@ -2210,6 +2251,7 @@ export function Rail() {
       <RailView
         tree={tree}
         pondName={pondName}
+        rootTitle={home?.title ?? null}
         pondGlyph={pondGlyph}
         recentGlyphs={recentGlyphs}
         marks={marks}
