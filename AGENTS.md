@@ -132,6 +132,17 @@ The one thing that must survive is **engine logic the boards assume but do not d
 
 **A value written in a board is final.** Do not round it to a scale, snap it to a token, or reconcile it with prose elsewhere. `13.5px` means 13.5px.
 
+## Flows are benchmarked against Notion, Linear and Asana (decided 2026-10-17)
+
+The boards look right, but they under-cover flows and details. The user has decided: **the boards govern how Pond looks; Notion, Linear and Asana govern how its flows work.**
+
+- **Visual values stay with the board:** type, colour, spacing, radii, components (`Pond 02` still wins among boards).
+- **A flow follows the reference apps:** how you create, open, move, edit, undo, and find your way, and what each click and key does.
+  - Where a board is silent on a flow, do what the reference apps do.
+  - Where a board and the reference apps conflict on a flow, **the app wins**. Do not ask; say in the PR which app you followed, with a Mobbin/Refero screen or flow id.
+- An explicit user ruling on a ticket beats both. Example: the calendar day click opens the day view, KAN-453/455.
+- Flow work is done journey by journey. A journey review maps the reference app stage by stage, ranks the gaps that hurt intuitiveness, and tickets them as vertical S/M slices. The calendar review (KAN-453–460) is the template.
+
 # The design handoff is the spec. Build from it; do not re-litigate it.
 
 **Sync before you build.** `wayfinder/design_handoff_pond/` is a mirror of the design export. Run
