@@ -114,6 +114,11 @@ export function NewPondSheet({
     onCancelRef.current = onCancel
   }, [onCancel])
 
+  const pendingRef = useRef(pending)
+  useEffect(() => {
+    pendingRef.current = pending
+  }, [pending])
+
   useEffect(() => {
     // Capture phase, not bubble: PageChangesPanel keeps its own Escape
     // listener on `document`'s bubble phase, and same-target bubble listeners
@@ -126,6 +131,11 @@ export function NewPondSheet({
         if (e.isComposing) return
         e.preventDefault()
         e.stopPropagation()
+        // A pending make-pond cannot be cancelled: `back` is already
+        // disabled while pending, so Esc/← step-back must agree, and
+        // closing on Esc would still let `onCreate`'s navigation land in a
+        // pond the person just cancelled out of.
+        if (pendingRef.current) return
         if (step > 1) {
           setStep((s) => s - 1)
         } else {
@@ -133,7 +143,12 @@ export function NewPondSheet({
         }
         return
       }
-      if (e.key === 'ArrowLeft' && step > 1 && !(e.target instanceof HTMLInputElement)) {
+      if (
+        e.key === 'ArrowLeft' &&
+        step > 1 &&
+        !pendingRef.current &&
+        !(e.target instanceof HTMLInputElement)
+      ) {
         setStep((s) => s - 1)
       }
     }
@@ -147,7 +162,10 @@ export function NewPondSheet({
       <div
         className="fixed inset-0 z-[40] bg-raw-paper/[0.62] dark:bg-raw-ink/[0.62]"
         aria-hidden
-        onClick={onCancel}
+        onClick={() => {
+          if (pending) return
+          onCancel()
+        }}
       />
       <div
         role="dialog"

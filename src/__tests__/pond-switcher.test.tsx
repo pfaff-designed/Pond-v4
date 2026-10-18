@@ -388,4 +388,26 @@ describe('the pond switcher', () => {
     expect(screen.getByRole('dialog', { name: 'New pond' })).toBeInTheDocument()
     expect(push).not.toHaveBeenCalled()
   })
+
+  it('Esc and a scrim click do nothing while make pond is in flight', async () => {
+    const user = userEvent.setup()
+    // Never resolves within the test: `pending` stays true for its whole body.
+    ;(createPond as jest.Mock).mockReturnValue(new Promise(() => {}))
+    const { container } = renderSwitcher()
+    await user.click(await screen.findByRole('button', { name: /life/ }))
+    await user.click(screen.getByRole('menuitem', { name: /new pond/ }))
+    await user.type(screen.getByPlaceholderText('Name your pond'), 'Studio')
+    await user.click(screen.getByRole('button', { name: 'continue' }))
+    await user.click(screen.getByRole('button', { name: 'make pond' }))
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'make pond' })).toBeDisabled())
+
+    await user.keyboard('{Escape}')
+    const overlays = container.querySelectorAll('.fixed.inset-0')
+    fireEvent.click(overlays[overlays.length - 1])
+
+    const sheet = screen.getByRole('dialog', { name: 'New pond' })
+    expect(sheet).toHaveTextContent('2 of 2')
+    expect(push).not.toHaveBeenCalled()
+  })
 })
