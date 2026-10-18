@@ -609,6 +609,55 @@ describe('unlinkTrashedSubtree', () => {
     consoleError.mockRestore()
   })
 
+  it('unlinks the same child from two different parents, committing each and recording both entries on the root', async () => {
+    const linkA = link('bA', 'child-1')
+    const linkB = link('bB', 'child-1')
+    let rootProps: Record<string, unknown> = {}
+    const update = jest.fn((payload: { props: Record<string, unknown> }) => {
+      rootProps = payload.props
+      return { eq: jest.fn().mockResolvedValue({ error: null }) }
+    })
+    const chain = {
+      select: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      is: jest.fn().mockReturnThis(),
+      contains: jest.fn((_col: string, value: Array<{ pageId: string }>) =>
+        Promise.resolve({
+          data:
+            value[0].pageId === 'child-1'
+              ? [parentPage('parent-a', [linkA]), parentPage('parent-b', [linkB])]
+              : [],
+          error: null,
+        })
+      ),
+      maybeSingle: jest.fn(() => Promise.resolve({ data: { props: rootProps }, error: null })),
+      update,
+    }
+    const supabase = { from: jest.fn().mockReturnValue(chain) }
+    mockGetPage.mockImplementation(async (_supabase: unknown, id: string) => ({
+      id,
+      parentId: null,
+      type: 'page',
+      title: id,
+      blocks: id === 'parent-a' ? [linkA] : [linkB],
+      order: 0,
+      props: {},
+    }))
+
+    await unlinkTrashedSubtree(supabase as never, queryClient, {
+      pondId: 'pond-1',
+      rootPageId: 'root-1',
+      subtreeIds: new Set(['child-1']),
+    })
+
+    expect(mockCommitBlocks).toHaveBeenCalledTimes(2)
+    expect(update).toHaveBeenCalledTimes(2)
+    expect(rootProps.unlinkedLinks).toEqual([
+      { parentId: 'parent-a', block: linkA, index: 0, beforeId: null },
+      { parentId: 'parent-b', block: linkB, index: 0, beforeId: null },
+    ])
+  })
+
   it('writes nothing — and never commits — when the root-props read errors, rather than wiping existing props', async () => {
     const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
     const link1 = link('b1', 'child-1')
@@ -805,6 +854,34 @@ describe('relinkRestoredSubtree', () => {
     expect(supabase._chain.update).not.toHaveBeenCalled()
     expect(consoleError).toHaveBeenCalled()
     consoleError.mockRestore()
+  })
+
+  it('restores entries for two different parents, each committed separately at its saved position', async () => {
+    const linkA = link('bA', 'child-1')
+    const linkB = link('bB', 'child-2')
+    const anchor = text('anchor')
+    const other1 = text('other1')
+    const other2 = text('other2')
+    const entries: RemovedLink[] = [
+      { parentId: 'parent-a', block: linkA, index: 0, beforeId: null },
+      { parentId: 'parent-b', block: linkB, index: 0, beforeId: 'anchor' },
+    ]
+    const supabase = makeSupabase({ rootProps: { props: { unlinkedLinks: entries } } })
+    mockGetPage.mockImplementation(async (_supabase: unknown, id: string) =>
+      id === 'parent-a'
+        ? pageWith('parent-a', [other1])
+        : pageWith('parent-b', [other1, anchor, other2])
+    )
+
+    await relinkRestoredSubtree(supabase as never, queryClient, {
+      pondId: 'pond-1',
+      rootPageId: 'root-1',
+    })
+
+    expect(mockCommitBlocks).toHaveBeenCalledTimes(2)
+    const callForParent = (id: string) => mockCommitBlocks.mock.calls.find((call) => call[2] === id)
+    expect(callForParent('parent-a')?.[3]).toEqual([linkA, other1])
+    expect(callForParent('parent-b')?.[3]).toEqual([other1, anchor, linkB, other2])
   })
 
   it('drops a malformed unlinkedLinks entry at the read boundary instead of throwing', async () => {
