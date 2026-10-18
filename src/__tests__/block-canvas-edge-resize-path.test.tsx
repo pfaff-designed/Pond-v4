@@ -168,10 +168,14 @@ describe('PATH_STEPS 3-5: dragging the calendar edge snaps ¾ → ⅔ → ½, br
       dragRightEdge('b-cal', -500) // 500px = 50%: locks ½
       expect(readoutText('b-cal', 'right')).toBe('½')
 
-      dragRightEdge('b-cal', -540) // 460px = 46%: breaks the ½ lock, free
+      // -548.64: the pointer-delta is rendered px (`percentToRenderedPx`'s
+      // formula, which includes the row gap), not a naive percent*column
+      // scaling — this value is the one that lands the rendered edge at
+      // exactly 46%, breaking the ½ lock.
+      dragRightEdge('b-cal', -548.64)
       expect(readoutText('b-cal', 'right')).toBe('46%')
 
-      fireEvent.pointerUp(right, { clientX: -540 })
+      fireEvent.pointerUp(right, { clientX: -548.64 })
 
       expect(onChange).toHaveBeenCalledTimes(1)
       const committed = onChange.mock.calls[0][0] as Block[]

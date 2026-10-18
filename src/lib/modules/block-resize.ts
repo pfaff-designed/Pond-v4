@@ -6,7 +6,13 @@
  * locked, it stays locked until the pointer moves `RELEASE_PX` from that
  * same key, then it breaks out and tracks the pointer freely.
  */
-import { layoutRows, MIN_BLOCK_WIDTH_PX, widthPercent } from './layout-rows'
+import {
+  layoutRows,
+  MIN_BLOCK_WIDTH_PX,
+  percentToRenderedPx,
+  renderedPxToPercent,
+  widthPercent,
+} from './layout-rows'
 import type { BlockWidth } from './content'
 
 /** The six snap targets, in column order — each percent read from `widthPercent`
@@ -33,6 +39,18 @@ const RELEASE_PX = LOCK_PX * 2
  *  chain (e.g. `33.3 - 2`) lands a few `1e-15`s past an exact 16px, which is
  *  not a real pointer movement worth releasing the lock over. */
 const EPSILON_PX = 1e-9
+
+/**
+ * Float dust guard for the clamp floor: `renderedPxToPercent` and
+ * `percentToRenderedPx` round-trip through a division, which can land the
+ * floor a `~1e-11` sliver under `MIN_BLOCK_WIDTH_PX`'s own rendered px —
+ * inside `rowHolds`' stacking band (AGENTS.md "crash early" doesn't apply
+ * here; this is display math, not an impossible state). Nudging the floor
+ * up by this much is imperceptible to a real drag (it's absorbed entirely
+ * by the one-decimal rounding at the write boundary) but is many orders of
+ * magnitude past any float dust this round-trip can produce.
+ */
+const FLOOR_EPSILON_PERCENT = 1e-6
 
 export interface SnapResult {
   percent: number
@@ -86,10 +104,17 @@ export function snapPercent(
 
 /**
  * Resizes a block alone on its line from one of its edges: `startPercent`'s
- * pixel position plus `deltaPx` is snapped via `snapPercent`, then clamped to
- * `MIN_BLOCK_WIDTH_PX`..100%. A clamp overrides the snap's lock — the
- * reported width is no longer the locked key's own position, so `locked` is
- * `false` whenever the clamp actually moved the value.
+ * *rendered* pixel position (`percentToRenderedPx`, the same formula the
+ * block actually draws at) plus `deltaPx` — real pointer-move pixels — is
+ * converted back to a percent (`renderedPxToPercent`) and snapped via
+ * `snapPercent`, then clamped to `MIN_BLOCK_WIDTH_PX`..100% of *rendered*
+ * pixels (the clamp floor is `renderedPxToPercent(columnPx, MIN_BLOCK_WIDTH_PX)`,
+ * not the naive `MIN_BLOCK_WIDTH_PX / columnPx`, which lands inside the
+ * `rowHolds` stacking band for any width whose rendered size is shorter than
+ * its percent-of-column share — see `BLOCK_ROW_GAP_PX`). A clamp overrides
+ * the snap's lock — the reported width is no longer the locked key's own
+ * position, so `locked` is `false` whenever the clamp actually moved the
+ * value.
  */
 export function resizeAlone(
   columnPx: number,
@@ -97,9 +122,9 @@ export function resizeAlone(
   deltaPx: number,
   lockedPercent: number | null
 ): SnapResult {
-  const rawPercent = ((percentToPx(startPercent, columnPx) + deltaPx) / columnPx) * 100
+  const rawPercent = renderedPxToPercent(columnPx, percentToRenderedPx(columnPx, startPercent) + deltaPx)
   const snapped = snapPercent(rawPercent, columnPx, lockedPercent)
-  const minPercent = (MIN_BLOCK_WIDTH_PX / columnPx) * 100
+  const minPercent = renderedPxToPercent(columnPx, MIN_BLOCK_WIDTH_PX) + FLOOR_EPSILON_PERCENT
   const clampedPercent = Math.min(100, Math.max(minPercent, snapped.percent))
   if (clampedPercent !== snapped.percent) return { percent: clampedPercent, locked: false }
   return snapped

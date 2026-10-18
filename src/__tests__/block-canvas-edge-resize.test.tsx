@@ -115,10 +115,15 @@ describe('an alone-on-line edge drag (KAN-441)', () => {
       dragRightEdge('b-lone', -500) // 500px = 50%: locks ½
       expect(readoutText('b-lone', 'right')).toBe('½')
 
-      dragRightEdge('b-lone', -540) // 460px = 46%: breaks the ½ lock, and 46% is no other key's zone
+      // -548.64: the pointer-delta is rendered px (`percentToRenderedPx`'s
+      // formula, which includes the row gap), so it isn't simply 1000 * 0.54
+      // the way a naive percent*column scaling would read — this value is
+      // the one that lands the rendered edge at exactly 46%, breaking the ½
+      // lock (46% is no other key's zone).
+      dragRightEdge('b-lone', -548.64)
       expect(readoutText('b-lone', 'right')).toBe('46%')
 
-      fireEvent.pointerUp(right, { clientX: -540 })
+      fireEvent.pointerUp(right, { clientX: -548.64 })
 
       expect(onChange).toHaveBeenCalledTimes(1)
       expect(onChange).toHaveBeenCalledWith([{ ...lone, width: 46 }])
@@ -246,6 +251,49 @@ describe('an alone-on-line edge drag (KAN-441)', () => {
 
     expect(edgeHandle('b-lone', 'left')).toBeNull()
     expect(edgeHandle('b-lone', 'right')).toBeNull()
+  })
+
+  it('dragging far past the clamp releases a block that still renders beside-sized, not 100% wide', () => {
+    const ro = mockResizeObserver()
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const tree = (blocks: Block[], onChange: (next: Block[]) => void) => (
+      <QueryClientProvider client={client}>
+        <DeletionUndoProvider>
+          <BlockCanvas
+            blocks={blocks}
+            pageId="page-1"
+            pageTitle="sourdough, 78%"
+            onChange={onChange}
+            onUndoRemove={() => {}}
+          />
+        </DeletionUndoProvider>
+      </QueryClientProvider>
+    )
+    try {
+      const lone: Block = { id: 'b-lone', type: 'text', content: 'calendar' }
+      const onChange = jest.fn()
+      const { rerender } = render(tree([lone], onChange))
+      setColumnWidth('b-lone', 1000, ro)
+
+      const right = edgeHandle('b-lone', 'right')!
+      fireEvent.pointerDown(right, { clientX: 0 })
+      dragRightEdge('b-lone', -1_000_000) // far past the clamp floor
+      fireEvent.pointerUp(right, { clientX: -1_000_000 })
+
+      expect(onChange).toHaveBeenCalledTimes(1)
+      const [committed] = onChange.mock.calls[0][0]
+      expect(committed.width).not.toBe('full')
+
+      // Re-render with the committed width — this is the bug this item fixes:
+      // a clamp floor that renders under MIN_BLOCK_WIDTH_PX would make
+      // `rowHolds` stack it, and `blockWidthStyle` would then render it 100%
+      // wide on release: the opposite of the drag.
+      rerender(tree([committed], onChange))
+      setColumnWidth('b-lone', 1000, ro)
+      expect(sizingDiv('b-lone').style.width).not.toBe('100%')
+    } finally {
+      ro.restore()
+    }
   })
 
   it('renders no edge handle on blocks that share a row (the divider is a split-off child ticket)', () => {

@@ -427,10 +427,27 @@ export function isWithinPaddedZone(rect: Rect, point: Point, zone: DropZone): bo
 /** Below this, a block in a row is too narrow to be useful, so the row stacks (6x). */
 export const MIN_BLOCK_WIDTH_PX = 240
 
+/**
+ * `blockWidthStyle`'s formula, numeric: the actual rendered pixel width of a
+ * block at `percent` of a column `columnWidthPx` wide. The one home for this
+ * conversion (KAN-441) — an edge drag's clamp floor and its pointer-delta
+ * mapping both read it (via `renderedPxToPercent`) rather than the naive
+ * `percent/100 * columnWidthPx`, which ignores the `BLOCK_ROW_GAP_PX` term
+ * and so disagrees with what the renderer actually draws.
+ */
+export function percentToRenderedPx(columnWidthPx: number, percent: number): number {
+  const fraction = percent / 100
+  return (columnWidthPx + BLOCK_ROW_GAP_PX) * fraction - BLOCK_ROW_GAP_PX
+}
+
+/** Inverse of `percentToRenderedPx` — the percent whose rendered width is `renderedPx`. */
+export function renderedPxToPercent(columnWidthPx: number, renderedPx: number): number {
+  return ((renderedPx + BLOCK_ROW_GAP_PX) / (columnWidthPx + BLOCK_ROW_GAP_PX)) * 100
+}
+
 /** A block's actual pixel width at a given column width — `blockWidthStyle`'s formula, numeric. */
 function blockWidthPx(columnWidthPx: number, width: BlockWidth | number): number {
-  const fraction = widthPercent(width) / 100
-  return (columnWidthPx + BLOCK_ROW_GAP_PX) * fraction - BLOCK_ROW_GAP_PX
+  return percentToRenderedPx(columnWidthPx, widthPercent(width))
 }
 
 /**

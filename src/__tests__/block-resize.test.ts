@@ -4,7 +4,12 @@
  * from the lock).
  */
 import { handOffRowStartOnResize, KEY_WIDTHS, resizeAlone, snapPercent } from '@/lib/modules/block-resize'
-import { MIN_BLOCK_WIDTH_PX } from '@/lib/modules/layout-rows'
+import {
+  MIN_BLOCK_WIDTH_PX,
+  percentToRenderedPx,
+  renderedPxToPercent,
+  rowHolds,
+} from '@/lib/modules/layout-rows'
 import type { BlockWidth } from '@/lib/modules/content'
 
 interface TestBlock {
@@ -75,20 +80,45 @@ describe('snapPercent breaking out past the lock zone', () => {
 })
 
 describe('resizeAlone', () => {
-  // MIN_BLOCK_WIDTH_PX (240px) is 30% of COLUMN_PX (800px) — a clamp floor
-  // that lands clear of every key width, so a clamped result never reads as
-  // coincidentally locked.
-  const MIN_PERCENT = (MIN_BLOCK_WIDTH_PX / COLUMN_PX) * 100
+  // The clamp floor is the percent whose *rendered* width (`percentToRenderedPx`'s
+  // formula, which includes the `BLOCK_ROW_GAP_PX` term) is MIN_BLOCK_WIDTH_PX —
+  // not the naive `MIN_BLOCK_WIDTH_PX / COLUMN_PX`, which lands short of it.
+  const MIN_PERCENT = renderedPxToPercent(COLUMN_PX, MIN_BLOCK_WIDTH_PX)
+
+  // `deltaPx` is a real pointer-move distance in rendered px, so a case that
+  // needs to land exactly on a percent computes its delta off the renderer's
+  // own formula (`percentToRenderedPx`) rather than a plain percent*column
+  // scaling, which no longer matches what `resizeAlone` itself does.
+  const renderedDelta = (fromPercent: number, toPercent: number) =>
+    percentToRenderedPx(COLUMN_PX, toPercent) - percentToRenderedPx(COLUMN_PX, fromPercent)
 
   it.each<[string, number, number, number | null, { percent: number; locked: boolean }]>([
-    ['drags right from 50% to a free 60%, unlocked', 50, 80, null, { percent: 60, locked: false }],
-    ['drags left from 60% into the ½ lock zone', 60, -72, null, { percent: 50, locked: true }],
-    ['locks onto ¾ dragging right from 70%', 70, 40, null, { percent: 75, locked: true }],
+    [
+      'drags right from 50% to a free 60%, unlocked',
+      50,
+      renderedDelta(50, 60),
+      null,
+      { percent: 60, locked: false },
+    ],
+    [
+      'drags left from 60% into the ½ lock zone',
+      60,
+      renderedDelta(60, 51),
+      null,
+      { percent: 50, locked: true },
+    ],
+    [
+      'locks onto ¾ dragging right from 70%',
+      70,
+      renderedDelta(70, 75),
+      null,
+      { percent: 75, locked: true },
+    ],
     ['holds the ½ lock within the 16px release zone', 50, 8, 50, { percent: 50, locked: true }],
     [
       'breaks out of the ½ lock past 16px and tracks freely',
       50,
-      24,
+      renderedDelta(50, 53),
       50,
       { percent: 53, locked: false },
     ],
@@ -121,7 +151,24 @@ describe('resizeAlone', () => {
       { percent: 100, locked: false },
     ],
   ])('%s', (_description, startPercent, deltaPx, lockedPercent, expected) => {
-    expect(resizeAlone(COLUMN_PX, startPercent, deltaPx, lockedPercent)).toEqual(expected)
+    const result = resizeAlone(COLUMN_PX, startPercent, deltaPx, lockedPercent)
+    expect(result.locked).toBe(expected.locked)
+    // 4 decimal places: precise enough to catch a real regression, loose
+    // enough to absorb the clamp floor's own deliberate FLOOR_EPSILON_PERCENT
+    // nudge (1e-6) and the float round-trip through percentToRenderedPx/
+    // renderedPxToPercent above.
+    expect(result.percent).toBeCloseTo(expected.percent, 4)
+  })
+
+  // The clamp floor itself must render at least MIN_BLOCK_WIDTH_PX — the bug
+  // this item fixes: a naive `MIN_BLOCK_WIDTH_PX / columnPx` clamp floor
+  // rendered a few px *under* MIN_BLOCK_WIDTH_PX (the `BLOCK_ROW_GAP_PX` term
+  // the renderer applies but the old clamp math didn't), so `rowHolds` would
+  // stack a block that was just dragged to the clamp, flipping it to 100%
+  // wide on release — the opposite of the drag.
+  it.each([700, 1000])('the clamp floor at a %dpx column renders >= MIN_BLOCK_WIDTH_PX (rowHolds)', (columnPx) => {
+    const { percent } = resizeAlone(columnPx, 50, -1_000_000, null)
+    expect(rowHolds(columnPx, [percent])).toBe(true)
   })
 })
 
