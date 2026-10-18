@@ -26,13 +26,23 @@ import { PondCommand } from '@/components/organisms/PondCommand'
 import { ShellCommands } from '@/components/organisms/ShellCommands'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { sessionUndo } from '@/lib/change-log/session-undo'
+import { appendOwnEdit } from '@/lib/change-log/store'
 import { undoStep } from '@/lib/change-log/undo'
 import { blockWidthStyle } from '@/lib/modules/layout-rows'
 import type { Block } from '@/lib/documents/types'
 import type { ChangeLogRecord } from '@/lib/change-log/types'
 
+// The page-write queue (KAN-495) is a module-level registry keyed by page
+// id that deliberately outlives a `DocumentPanel` unmount, so sharing one
+// page id across `it()`s hands a later test the earlier one's writer —
+// closed over whatever `pondId` was in scope when that queue was first
+// created — instead of its own. Each test gets a fresh id (`mockPageId`,
+// the `mock`-prefixed name babel-plugin-jest-hoist requires to reference it
+// from this hoisted factory).
+let mockPageIdCounter = 0
+let mockPageId = 'page-1'
 jest.mock('next/navigation', () => ({
-  useSearchParams: () => ({ get: (key: string) => (key === 'nodeId' ? 'page-1' : null) }),
+  useSearchParams: () => ({ get: (key: string) => (key === 'nodeId' ? mockPageId : null) }),
   useRouter: () => ({ push: jest.fn() }),
 }))
 
@@ -42,10 +52,27 @@ jest.mock('@/lib/supabase/client', () => ({
 
 // Part 2 (⌘Z) overrides this to the pond `sessionUndo.remember`'s guard needs;
 // every other test here keeps the part-1 default (null skips `remember`).
+// `usePond()` is overridden alongside `usePondId()`, from the SAME value: in
+// production both read one `PondContext`, so `DocumentPanel` (which reads
+// `usePond().pond?.id`, not `usePondId()`) and `ShellCommands` (which reads
+// `usePondId()` directly) always agree. Leaving only `usePondId` mocked made
+// `DocumentPanel` fall through to the real `PondContext`'s no-provider
+// default (`pond: null`) regardless of what this mock returned — the write
+// landed with `pondId: null` even while `usePondId()` reported `'pond-1'`.
 const mockUsePondId = jest.fn<string | null, []>(() => null)
 jest.mock('@/lib/pond/context', () => ({
   ...jest.requireActual('@/lib/pond/context'),
   usePondId: () => mockUsePondId(),
+  usePond: () => {
+    const id = mockUsePondId()
+    return {
+      pond: id ? { id, name: null, glyph: null } : null,
+      ponds: [],
+      loading: false,
+      reload: jest.fn(),
+      addPond: jest.fn(),
+    }
+  },
 }))
 
 const mockFetchPages = jest.fn().mockResolvedValue([])
@@ -71,18 +98,16 @@ jest.mock('@/lib/pages/client', () => ({
   deletePage: jest.fn().mockResolvedValue(undefined),
 }))
 
-// Resolves the real shape (`{ remembered }`) rather than `undefined`: `commitLocalEdit`'s
-// own debounced save (fired by every `persistBlocksAsOwnEdit` caller's `onChange`, on
-// top of that function's own direct `saveBlocks`/`appendOwnEdit`) destructures `remembered`
-// off this return value 600ms later — an `undefined` return throws there and leaves
-// `usePageDraft`'s `saved` stuck `false` forever, which the KAN-440 undo-redraw test below
-// depends on turning back `true`.
-const mockCommitBlocks = jest.fn().mockResolvedValue({ remembered: Promise.resolve() })
-jest.mock('@/lib/pages/commit', () => ({
-  commitBlocks: (...args: unknown[]) => mockCommitBlocks(...args),
-}))
+// `@/lib/pages/commit` is left REAL here (unlike the old direct-write tests):
+// the queue's writer (KAN-495) is `createPageWriter`, which calls `commitBlocks`
+// internally — mocking `commitBlocks` at this level would also have to stand in
+// for `createPageWriter`, duplicating what `commitBlocks` already does. Only the
+// boundary it writes through (`saveBlocks` above, `appendOwnEdit`/`markOutdated`
+// below, and `fetch` for `reembedPage`) is mocked — same pattern as
+// `block-canvas-beside-drop.test.tsx`.
 jest.mock('@/lib/change-log/store', () => ({
   appendOwnEdit: jest.fn().mockResolvedValue({ id: 'record-1' }),
+  markOutdated: jest.fn().mockResolvedValue(undefined),
 }))
 // `session-undo.ts` stays real here (unlike part 1, and like `undo-accept-path.test.tsx`):
 // part 2 proves the drop's `remember` and ⌘Z's `undo` share one real stack, not two
@@ -100,10 +125,12 @@ beforeEach(() => {
   mockUsePondId.mockReturnValue(null)
   jest.mocked(undoStep).mockResolvedValue({ outcome: 'done', records: [] })
   sessionUndo.clear()
+  global.fetch = jest.fn().mockResolvedValue({ ok: true } as Response)
+  mockPageId = `page-${++mockPageIdCounter}`
 })
 
 function renderPath(blocks: Block[]) {
-  mockGetPage.mockResolvedValue({ id: 'page-1', title: 'Workshop', blocks })
+  mockGetPage.mockResolvedValue({ id: mockPageId, title: 'Workshop', blocks })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
@@ -250,6 +277,10 @@ describe('the side-by-side path (6x), minus ⌘Z', () => {
 
     dropAt('b-list', rect(0, 400, 0, 100), 200, 90)
 
+    // 2 calls, one per drop: both drops now write through the ONE structural
+    // entry point (KAN-495's `writeStructural`), not the old enqueue-then-
+    // `onChange` pair — so drop 1 never leaves a debounced typed save behind
+    // for drop 2's `flushNow()` to find and re-enqueue.
     await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(sizingWidth('b-table')).toBe('100%'))
     // The row's other block keeps the width it already had — Pond doesn't
@@ -309,7 +340,7 @@ describe('the side-by-side path (6x), minus ⌘Z', () => {
 })
 
 function renderPathWithShell(blocks: Block[]) {
-  mockGetPage.mockResolvedValue({ id: 'page-1', title: 'Workshop', blocks })
+  mockGetPage.mockResolvedValue({ id: mockPageId, title: 'Workshop', blocks })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
@@ -353,6 +384,7 @@ describe('the side-by-side path (6x), part 2: ⌘Z after a beside drop', () => {
     dropAt('b-list', rect(0, 400), 360, 50)
 
     await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalledTimes(1))
+    await new Promise((r) => setTimeout(r, 50))
     // The revert's own block restore is `undo.ts`'s already-tested path; this
     // proves only that the shell's ⌘Z reaches the real session stack the drop
     // remembered, for this pond, with exactly the drop's one record.
@@ -393,11 +425,10 @@ describe('the side-by-side path (6x), part 2: ⌘Z after a beside drop', () => {
 
     await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(blockOrder()).toEqual(['b-d', 'b-b', 'b-a']))
-    // `commitLocalEdit`'s own debounced save (on top of the drop's direct
-    // `saveBlocks`) must settle `saved` back to `true` before the undo's refetch
-    // can land — the EDIT_PAUSE_MS (600ms) debounce `waitFor`'s default timeout
-    // doesn't always clear, so give this one more room.
-    await waitFor(() => expect(mockCommitBlocks).toHaveBeenCalledTimes(1), { timeout: 2000 })
+    // The drop is one structural op on the page's write queue (KAN-495): its
+    // record must be appended (the queue idle, so `saved` is back to `true`)
+    // before the undo's refetch can be adopted.
+    await waitFor(() => expect(jest.mocked(appendOwnEdit)).toHaveBeenCalledTimes(1))
 
     const undoRecord: ChangeLogRecord = {
       id: 'undo-rec-1',
@@ -406,7 +437,7 @@ describe('the side-by-side path (6x), part 2: ⌘Z after a beside drop', () => {
       status: 'accepted',
       action: 'undo',
       actor: 'you',
-      targetPageId: 'page-1',
+      targetPageId: mockPageId,
       targetBlockId: null,
       before: null,
       after: null,
@@ -425,12 +456,11 @@ describe('the side-by-side path (6x), part 2: ⌘Z after a beside drop', () => {
     await waitFor(() => expect(undoStep).toHaveBeenCalledTimes(1))
 
     // The RPC boundary is mocked, but the redraw is real: `undoStep`'s `done`
-    // invalidates `['page', 'page-1']`, the panel refetches `getPage` (still
+    // invalidates `['page', mockPageId]`, the panel refetches `getPage` (still
     // resolving its original `[d, a, b]`, since nothing ever told the mock the
     // server changed — exactly what a real undo RPC restoring the row would
-    // leave it holding), and the draft adopts it because the drop's own
-    // `adoptSavedBlocks` moved `serverSig` to the POST-drop blocks, so the
-    // pre-drop blocks read back as changed.
+    // leave it holding), and the draft adopts it because the queue's head is
+    // the POST-drop blocks, so the pre-drop blocks read back as changed.
     await waitFor(() => expect(blockOrder()).toEqual(['b-d', 'b-a', 'b-b']))
     expect(sizingWidth('b-d')).toBe(asInlineStyle(blockWidthStyle('1/4')))
     expect(sizingWidth('b-a')).toBe(asInlineStyle(blockWidthStyle('1/4')))

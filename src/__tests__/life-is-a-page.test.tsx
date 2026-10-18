@@ -80,9 +80,11 @@ jest.mock('@/lib/pages/client', () => ({
 
 // The real `commitBlocks` resolves `{ remembered }` for an own-edit save (KAN-355).
 const mockCommitBlocks = jest.fn().mockResolvedValue({ remembered: Promise.resolve() })
-jest.mock('@/lib/pages/commit', () => ({
-  commitBlocks: (...args: unknown[]) => mockCommitBlocks(...args),
-}))
+jest.mock('@/lib/pages/commit', () =>
+  jest.requireActual('./helpers/page-commit-mock').pageCommitMock({
+    commitBlocks: (...args: unknown[]) => mockCommitBlocks(...args),
+  })
+)
 
 const PAGES: Record<string, Record<string, unknown>> = {
   health: { id: 'health', parentId: null, type: 'page', title: 'Health', blocks: [], props: {} },

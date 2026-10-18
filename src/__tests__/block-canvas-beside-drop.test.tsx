@@ -13,6 +13,10 @@ import { fireEvent, render, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
+import { getPageWriteQueue } from '@/lib/pages/page-flush'
+import { createPageWriteQueue } from '@/lib/pages/page-write-queue'
+import { createPageWriter } from '@/lib/pages/commit'
+import { createClient } from '@/lib/supabase/client'
 import type { Block } from '@/lib/documents/types'
 
 jest.mock('next/navigation', () => ({
@@ -38,22 +42,47 @@ jest.mock('@/lib/pages/client', () => ({
 }))
 
 const mockAppendOwnEdit = jest.fn().mockResolvedValue({ id: 'record-1' })
+const mockMarkOutdated = jest.fn().mockResolvedValue([])
 jest.mock('@/lib/change-log/store', () => ({
   appendOwnEdit: (...args: unknown[]) => mockAppendOwnEdit(...args),
+  markOutdated: (...args: unknown[]) => mockMarkOutdated(...args),
 }))
 const mockRemember = jest.fn()
 jest.mock('@/lib/change-log/session-undo', () => ({
-  sessionUndo: { remember: (...args: unknown[]) => mockRemember(...args) },
+  sessionUndo: {
+    remember: (...args: unknown[]) => mockRemember(...args),
+    trackPending: jest.fn(),
+  },
 }))
 
 beforeEach(() => {
   jest.clearAllMocks()
   mockSaveBlocks.mockResolvedValue(undefined)
   mockAppendOwnEdit.mockResolvedValue({ id: 'record-1' })
+  global.fetch = jest.fn().mockResolvedValue({ ok: true } as Response)
 })
 
+// `onStructuralWrite` — the caller's ONE structural entry point (KAN-495
+// moved its queue construction out of `BlockCanvas` into the caller,
+// `use-page-draft.ts`'s `writeStructural`: update local state, THEN enqueue).
+// Rebuilt here with the same real queue modules so this test's
+// `saveBlocks`/`appendOwnEdit`/`sessionUndo.remember` mocks (one layer
+// deeper) still see the drop's commit; `onChange` stands in for the "update
+// local state" half, same as `writeStructural`'s own `setBlocks`.
 function renderCanvas(blocks: Block[], onChange: (next: Block[]) => void) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const onStructuralWrite = (next: Block[]): Promise<boolean> => {
+    onChange(next)
+    return getPageWriteQueue('page-1', () =>
+      createPageWriteQueue(createPageWriter(createClient(), client, 'page-1', 'pond-1'), {
+        title: 'sourdough, 78%',
+        blocks,
+      })
+    )
+      .enqueue({ kind: 'structural', after: { title: 'sourdough, 78%', blocks: next } })
+      .then(() => true)
+      .catch(() => false)
+  }
   return render(
     <QueryClientProvider client={client}>
       <DeletionUndoProvider>
@@ -62,6 +91,7 @@ function renderCanvas(blocks: Block[], onChange: (next: Block[]) => void) {
           pageId="page-1"
           pageTitle="sourdough, 78%"
           onChange={onChange}
+          onStructuralWrite={onStructuralWrite}
           onUndoRemove={() => {}}
         />
       </DeletionUndoProvider>

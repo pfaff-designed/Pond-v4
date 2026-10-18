@@ -294,7 +294,7 @@ export function DocumentPanel() {
     onProperty,
     commitLocalEdit,
     undoRemove,
-    adoptSavedBlocks,
+    writeStructural,
   } = usePageDraft({ page, pageId, pondId, getSupabase })
 
   // KAN-415: child pages are ordinary page-link blocks on their parent now, not
@@ -591,7 +591,7 @@ export function DocumentPanel() {
           pageId={page.id}
           pageTitle={viewTitle}
           onChange={commitLocalEdit}
-          onBlocksPersisted={adoptSavedBlocks}
+          onStructuralWrite={writeStructural}
           onUndoRemove={undoRemove}
           insertedIds={insertedIds}
           chrome={!zen}
