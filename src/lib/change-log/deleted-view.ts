@@ -17,7 +17,8 @@ import { DAY_MS, daysBetween } from './log-page'
 import { readTrashSnapshot } from './summary'
 import type { ChangeLogRecord } from './types'
 
-const THIRTY_DAYS_MS = 30 * DAY_MS
+export const TRASH_RETENTION_DAYS = 30
+export const THIRTY_DAYS_MS = TRASH_RETENTION_DAYS * DAY_MS
 
 /** `12 aug` — s6o6's own register: day first, lowercase short month, no year. */
 const shortDate = (d: Date): string =>
