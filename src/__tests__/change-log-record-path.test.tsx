@@ -148,29 +148,31 @@ jest.mock('@/lib/pages/client', () => ({
 }))
 
 jest.mock('@/lib/pages/commit', () => ({
-  commitBlocks: jest.fn(
-    async (
-      _supabase: unknown,
-      _queryClient: unknown,
-      pageId: string,
-      blocks: Block[],
-      opts?: { ownEdit?: true; before?: Block[]; pondId?: string | null }
-    ) => {
-      if (pageId !== fakePage.id) return
-      fakePage.blocks = blocks
-      if (opts?.ownEdit) {
-        fakeChangeLog.push(
-          makeRecord({
-            status: 'accepted',
-            action: 'edit',
-            before: opts.before ?? null,
-            after: blocks,
-            targetPageId: pageId,
-          })
-        )
+  ...jest.requireActual('./helpers/page-commit-mock').pageCommitMock({
+    commitBlocks: jest.fn(
+      async (
+        _supabase: unknown,
+        _queryClient: unknown,
+        pageId: string,
+        blocks: Block[],
+        opts?: { ownEdit?: true; before?: Block[]; pondId?: string | null }
+      ) => {
+        if (pageId !== fakePage.id) return
+        fakePage.blocks = blocks
+        if (opts?.ownEdit) {
+          fakeChangeLog.push(
+            makeRecord({
+              status: 'accepted',
+              action: 'edit',
+              before: opts.before ?? null,
+              after: blocks,
+              targetPageId: pageId,
+            })
+          )
+        }
       }
-    }
-  ),
+    ),
+  }),
   propagateBlockWrite: jest.fn().mockResolvedValue(undefined),
 }))
 

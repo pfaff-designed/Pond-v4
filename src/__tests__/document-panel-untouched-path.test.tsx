@@ -46,7 +46,7 @@ jest.mock('@/lib/pages/client', () => ({
   updateTitle: jest.fn().mockResolvedValue(undefined),
   setProperty: jest.fn().mockResolvedValue(undefined),
 }))
-jest.mock('@/lib/pages/commit', () => ({ commitBlocks: jest.fn().mockResolvedValue(undefined) }))
+jest.mock('@/lib/pages/commit', () => jest.requireActual('./helpers/page-commit-mock').pageCommitMock())
 
 beforeEach(() => {
   jest.clearAllMocks()
