@@ -49,7 +49,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import { createPage, movePage, updateTitle } from '@/lib/pages/client'
-import { DuplicateTitleError } from '@/lib/pages/dedupe-title'
+import { DuplicateTitleError, nextAvailableTitle } from '@/lib/pages/dedupe-title'
 import {
   fetchPages,
   insertPageOptimistic,
@@ -709,6 +709,14 @@ export interface RailViewProps {
   onToggleLife: () => void
   /** Open the databases root, creating it first when the pond has none yet. */
   onOpenDatabases: () => void
+  /** The ＋ "new root folder" row (KAN-490). Creates a new root and hands back
+   *  its id so the rail can open inline rename on it — a real `<button>`'s own
+   *  Enter/Space already reach it as a click, no extra key handling needed. */
+  onAddRoot?: () => void
+  /** The id of a root just created by `onAddRoot`, so the rail opens inline
+   *  rename on it with its name selected — once per id (KAN-490: the row is
+   *  never navigated into, unlike an ordinary child add). */
+  autoRenameId?: string | null
   /** Would a drop offer a landing? (valid, non-cyclic target — F25.) A false
    *  return paints the not-allowed affordance instead of a drop-line. */
   canDrop: (draggedId: string, targetId: string, zone: DropZone) => boolean
@@ -873,6 +881,8 @@ export function RailView({
   onLife,
   onToggleLife,
   onOpenDatabases,
+  onAddRoot,
+  autoRenameId = null,
   canDrop,
   onMove,
 }: RailViewProps) {
@@ -1072,6 +1082,17 @@ export function RailView({
 
   // ── Inline rename (F2 / double-click) ───────────────────────────────────────
   const [renamingId, setRenamingId] = useState<string | null>(null)
+
+  // KAN-490: a root just made by the ＋ row opens rename itself — unlike an
+  // ordinary child add, which navigates into the new page instead. Guarded by
+  // a ref (not a bare id comparison) so a second root made with the SAME
+  // literal id would still open — defensive, since real ids never repeat.
+  const autoRenamedRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!autoRenameId || autoRenamedRef.current === autoRenameId) return
+    autoRenamedRef.current = autoRenameId
+    setRenamingId(autoRenameId)
+  }, [autoRenameId])
 
   const capabilitiesOf = (id: string): RowCapabilities => {
     const node = flat.find((f) => f.id === id)?.node
@@ -1392,6 +1413,7 @@ export function RailView({
                 type="button"
                 data-part="new-root-row"
                 aria-label="new root folder"
+                onClick={onAddRoot}
                 className="group relative flex w-full flex-shrink-0 items-center gap-[7px] rounded-mn-row py-[5px] pr-2 text-left text-mn-text-secondary outline-none transition-colors hover:text-mn-text focus-visible:ring-2 focus-visible:ring-mn-text/50 focus-visible:ring-offset-0"
                 style={{ paddingLeft: INDENT_BASE }}
               >
@@ -1969,6 +1991,57 @@ export function Rail() {
     }
   }
 
+  const addingRootRef = useRef(false)
+  // KAN-490: the id the ＋-root row just made, so `RailView` opens inline
+  // rename on it. Sticky on purpose — once consumed it never needs clearing,
+  // since a fresh create always hands back a new, different id.
+  const [pendingRootRenameId, setPendingRootRenameId] = useState<string | null>(null)
+
+  /**
+   * The ＋ "new root folder" row: a top-level page with `props.root`, not a
+   * child of the home row — `appendChildLinkUnder` is for the home page's own
+   * children and must not run here, or a link block would land on the home
+   * page for a page that isn't one of its children. Opens inline rename on
+   * the new row instead of navigating into it, unlike `handleAddChild`.
+   */
+  async function handleAddRoot() {
+    if (addingRootRef.current) return
+    addingRootRef.current = true
+    try {
+      // Top-level siblings: every `parent_id: null` page already in the tree
+      // (`fetchPages` strips the home row on purpose, so its title is added
+      // separately) plus the home row's own title.
+      const topLevelTitles = pages.filter((p) => p.parent_id === null).map((p) => p.title)
+      if (home?.title) topLevelTitles.push(home.title)
+      const title = nextAvailableTitle('Untitled', topLevelTitles)
+
+      const created = await withUser((sb, uid) =>
+        createPage(sb, uid, {
+          parentId: null,
+          title,
+          props: { root: true },
+          pondId,
+        })
+      )
+      if (created) {
+        insertPageOptimistic(
+          queryClient,
+          {
+            id: created.id,
+            parentId: null,
+            type: created.type,
+            title: created.title,
+            props: created.props,
+          },
+          pondId
+        )
+        setPendingRootRenameId(created.id)
+      }
+    } finally {
+      addingRootRef.current = false
+    }
+  }
+
   /** Put a single optimistically-removed row back (surgical) and reconcile. */
   function restoreDeletedRow(row: PageRow | undefined) {
     if (row) {
@@ -2329,6 +2402,8 @@ export function Rail() {
         onLife={() => openWorkspaceUrl(workspaceUrl(null), router)}
         onToggleLife={handleToggleLife}
         onOpenDatabases={handleOpenDatabases}
+        onAddRoot={handleAddRoot}
+        autoRenameId={pendingRootRenameId}
         canDrop={canDrop}
         onMove={handleMove}
       />
