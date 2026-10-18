@@ -14,6 +14,7 @@ import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { pagesKey } from '@/lib/pages/keys'
 import type { PageRow } from '@/lib/pages/tree'
 import type { Pond } from '@/lib/pond/client'
+import { TRASH_NODE_ID } from '@/lib/change-log/trash-view'
 
 const push = jest.fn()
 let currentNodeId: string | null = null
@@ -163,7 +164,7 @@ describe('Rail — the databases section collapses, starts collapsed, and rememb
     expect(push).not.toHaveBeenCalled()
   })
 
-  it('a URL opening a database child leaves the section collapsed; expanding it then shows that row', async () => {
+  it('a URL opening a database child leaves the section collapsed; expanding it then shows that row selected', async () => {
     currentNodeId = 'db-1'
     mount()
 
@@ -174,5 +175,21 @@ describe('Rail — the databases section collapses, starts collapsed, and rememb
     await waitFor(() =>
       expect(screen.getByRole('treeitem', { name: 'ingredients' })).toBeInTheDocument()
     )
+    expect(screen.getByRole('treeitem', { name: 'ingredients' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    )
+  })
+
+  it('a URL opening trash leaves the section collapsed; expanding it then shows trash selected', async () => {
+    currentNodeId = TRASH_NODE_ID
+    mount()
+
+    await waitFor(() => expect(heading()).toHaveAttribute('aria-expanded', 'false'))
+    expect(screen.queryByRole('treeitem', { name: 'trash' })).not.toBeInTheDocument()
+
+    fireEvent.click(heading())
+    await waitFor(() => expect(screen.getByRole('treeitem', { name: 'trash' })).toBeInTheDocument())
+    expect(screen.getByRole('treeitem', { name: 'trash' })).toHaveAttribute('aria-selected', 'true')
   })
 })
