@@ -1613,18 +1613,29 @@ export const DatabasesRoot: Story = {
  *  just call `onToggle`) wraps it the way `GlyphPickHarness` wraps marks. */
 function ExpandHarness(args: ComponentProps<typeof RailView>) {
   const [expanded, setExpanded] = useState<Set<string>>(args.expanded ?? new Set())
+  const toggle = (id: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
   return (
     <RailView
       {...args}
       expanded={expanded}
       onToggle={(id) => {
         args.onToggle(id)
-        setExpanded((prev) => {
-          const next = new Set(prev)
-          if (next.has(id)) next.delete(id)
-          else next.add(id)
-          return next
-        })
+        toggle(id)
+      }}
+      // The databases root click->toggle branch (KAN-486) lives in the real
+      // `Rail` container's `handleSelect`, which `RailView` alone has no
+      // equivalent of — the harness stands in for it, same as the real
+      // container does, so a click toggles here too.
+      onSelect={(id) => {
+        args.onSelect(id)
+        if (id === DATABASES.id) toggle(id)
       }}
     />
   )
@@ -1641,6 +1652,19 @@ export const HeadingStaysPutWhenExpanded: Story = {
   tags: ['!dev'],
   args: { tree: [...TREE, DATABASES], expanded: new Set() },
   render: (args) => <ExpandHarness {...args} />,
+  // The meta decorator's `h-screen` div is a block box, so `aside`'s
+  // `self-stretch` (which only does anything inside a flex container) is a
+  // no-op there — the real shell wraps the rail in a flex row instead
+  // (`WorkspaceShell.tsx`'s `data-part="shell"`). Without that, the foot
+  // grows the whole aside rather than staying bottom-anchored, and this
+  // story's whole premise goes untested.
+  decorators: [
+    (Story) => (
+      <div className="flex h-full">
+        <Story />
+      </div>
+    ),
+  ],
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     const heading = canvas.getByRole('treeitem', { name: /^databases/ })
