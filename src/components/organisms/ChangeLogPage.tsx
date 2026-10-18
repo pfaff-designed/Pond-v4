@@ -26,7 +26,7 @@ import { buildDeletedCards, type DeletedCard } from '@/lib/change-log/deleted-vi
 import { buildProposedCards } from '@/lib/change-log/proposed-view'
 import { ChangeLogAnswerActions } from '@/components/molecules/ChangeLogAnswerActions'
 import { ChangeRows } from '@/components/molecules/diff-card-parts'
-import { existingPageIds, restorePage } from '@/lib/change-log/trash'
+import { existingPageIds, PARENT_FALLBACK_LINE, restorePage } from '@/lib/change-log/trash'
 import { relinkRestoredSubtree } from '@/lib/pages/child-links'
 import { personFacingMessage } from '@/lib/change-log/errors'
 import { PondControl } from '@/components/atoms/PondControl'
@@ -99,10 +99,6 @@ type ChangeLogView = 'all' | 'proposed' | 'by-page' | 'deleted'
  *  pill, ink .8, no fill (distinct from the filled `chipBaseClass` family). */
 const PROPOSED_CHIP_CLASS =
   'rounded-full px-2 py-0.5 font-mono text-[10.5px] text-mn-text-meta ring-1 ring-inset ring-mn-text/20'
-
-/** `restore_page` (0027) falls back to the pond root when the original parent
- *  is itself trashed or gone — PATH_STEPS 6's "say so". */
-const PARENT_FALLBACK_LINE = 'put back at the top of the pond — its old place is gone'
 
 /** s6o6's row label/value pair: `130px minmax(0,1fr)`, the label at ink .68
  *  uppercase, the value at 13.5px. */

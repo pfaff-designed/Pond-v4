@@ -13,32 +13,40 @@
  * rail; the lead line, table and empty state read off the change log's own
  * registers (s6o1's table shell, `change-log-empty`'s mono secondary text).
  *
- * No restore control yet — that, and the PATH_STEPS walk, land in the next
- * item.
+ * Restore: a per-row text control calling `restorePage`, invalidating the
+ * same keys `ChangeLogPage`'s own restore does — the row leaves the table
+ * once the refetch it triggers pairs its `delete` record with the new
+ * `restore` (the same pairing `buildTrashRows` already excludes on), no
+ * manual removal. A parent-fallback restore reads its own freshly-fetched
+ * `restore` record for the flag and says so, same line as `ChangeLogPage`.
  */
 
-import { useMemo } from 'react'
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
+import { useMemo, useState } from 'react'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { usePondId } from '@/lib/pond/context'
 import { usePondName } from '@/lib/pond/name'
 import { useSurfaceColumn } from '@/lib/layout/surface-column'
 import { listRecords } from '@/lib/change-log/store'
 import { changeLogKey } from '@/lib/change-log/keys'
-import { existingPageIds } from '@/lib/change-log/trash'
+import { existingPageIds, PARENT_FALLBACK_LINE, restorePage } from '@/lib/change-log/trash'
+import { personFacingMessage } from '@/lib/change-log/errors'
 import { buildTrashRows, type TrashRow } from '@/lib/change-log/trash-view'
-import { TRASH_RETENTION_DAYS } from '@/lib/change-log/deleted-view'
+import { fellBackToPondRoot, groupByTarget, TRASH_RETENTION_DAYS } from '@/lib/change-log/deleted-view'
 import { readTrashSnapshot } from '@/lib/change-log/summary'
+import type { ChangeLogRecord } from '@/lib/change-log/types'
 import { listPages } from '@/lib/pages/client'
 import { pagesKey } from '@/lib/pages/keys'
 import { isArea } from '@/lib/pages/mark'
 import { areaGlyph } from '@/lib/rail/area-glyph'
 import { AreaMark } from '@/components/atoms/AreaMark'
+import { PondControl } from '@/components/atoms/PondControl'
 
-/** The trash table's own five-column grid — no board places trash in the
+/** The trash table's own six-column grid — no board places trash in the
  *  rail, so this reads off the change log's own `TABLE_COLUMNS` register
- *  (same shell, a column set sized for this table's own content instead). */
-const TRASH_TABLE_COLUMNS = 'grid-cols-[minmax(0,1fr)_170px_96px_88px_104px]'
+ *  (same shell, a column set sized for this table's own content instead),
+ *  with a trailing column for the restore control. */
+const TRASH_TABLE_COLUMNS = 'grid-cols-[minmax(0,1fr)_170px_96px_88px_104px_76px]'
 
 /** Keyset page size — same value and cursor pattern as the change log's own
  *  "all" tab (`ChangeLogPage.tsx`). */
@@ -52,6 +60,15 @@ const TRASH_COLUMN_PX = 840
  *  change-log root — same nesting every change-log query uses. */
 function trashKey(pondId: string | null) {
   return [...changeLogKey(), pondId, 'trash'] as const
+}
+
+/** One keyset page of the trash query's own cache — named so the restore
+ *  mutation can read it back out of `queryClient` after the invalidation it
+ *  triggers, the same way `ChangeLogPage`'s own restore reads its deleted
+ *  view's cache. */
+interface TrashRecordsPage {
+  records: ChangeLogRecord[]
+  goneIds: Set<string>
 }
 
 const pluralPages = (n: number): string => `${n} ${n === 1 ? 'page' : 'pages'}`
@@ -90,9 +107,21 @@ function areaGlyphForFormerParent(
 }
 
 /** One trash row: the page's title led by its area glyph (if any), then
- *  was-in / deleted / deleted-by / goes — `TRASH_TABLE_COLUMNS`'s five
- *  columns. */
-function TrashTableRow({ row, glyph }: { row: TrashRow; glyph: string | null }) {
+ *  was-in / deleted / deleted-by / goes, then restore —
+ *  `TRASH_TABLE_COLUMNS`'s six columns. `restore` is a plain text control,
+ *  always drawn (never a hover-only affordance), so it's keyboard-reachable
+ *  by tabbing through the table like every other control. */
+function TrashTableRow({
+  row,
+  glyph,
+  busy,
+  onRestore,
+}: {
+  row: TrashRow
+  glyph: string | null
+  busy: boolean
+  onRestore: () => void
+}) {
   return (
     <div
       data-testid="trash-row"
@@ -106,6 +135,9 @@ function TrashTableRow({ row, glyph }: { row: TrashRow; glyph: string | null }) 
       <span className="font-mono text-[10.5px] text-mn-text-secondary">{row.deletedAt}</span>
       <span className="text-[12.5px] text-mn-text-meta">{row.deletedBy}</span>
       <span className="text-[12.5px] font-medium text-mn-text">{row.goes}</span>
+      <PondControl kind="button" variant="ghost" disabled={busy} onClick={onRestore}>
+        {busy ? 'restoring…' : 'restore'}
+      </PondControl>
     </div>
   )
 }
@@ -115,6 +147,9 @@ export function TrashPage() {
   const pondId = usePondId()
   const pondName = usePondName()
   const { column } = useSurfaceColumn(TRASH_COLUMN_PX)
+  const queryClient = useQueryClient()
+  const [restoreError, setRestoreError] = useState<string | null>(null)
+  const [restoreNotice, setRestoreNotice] = useState<string | null>(null)
 
   // Each page resolves its own `existingPageIds` alongside its own records —
   // the same "still in trash vs emptied" split `changeLogDeletedKey` makes,
@@ -130,7 +165,7 @@ export function TrashPage() {
   } = useInfiniteQuery({
     queryKey: trashKey(pondId),
     initialPageParam: undefined as string | undefined,
-    queryFn: async ({ pageParam }) => {
+    queryFn: async ({ pageParam }): Promise<TrashRecordsPage> => {
       const supabase = getSupabase()
       const {
         data: { user },
@@ -195,6 +230,37 @@ export function TrashPage() {
     [records, pageTitleById, goneIds, pondName]
   )
 
+  const restoreMutation = useMutation({
+    mutationFn: (vars: { recordId: string; targetPageId: string | null }) =>
+      restorePage(getSupabase(), vars.recordId),
+    onMutate: () => {
+      setRestoreError(null)
+      setRestoreNotice(null)
+    },
+    onError: (err) => setRestoreError(personFacingMessage(err)),
+    onSuccess: async (_data, vars) => {
+      // Puts the page back in the rail/⌘K/pickers and refreshes every
+      // change-log view (this table included, since `trashKey` nests under
+      // `changeLogKey()`) in one go — same keys `ChangeLogPage`'s own
+      // restore invalidates.
+      queryClient.invalidateQueries({ queryKey: pagesKey(pondId) })
+      queryClient.invalidateQueries({ queryKey: ['rows'] })
+      queryClient.invalidateQueries({ queryKey: ['page'] })
+      await queryClient.invalidateQueries({ queryKey: changeLogKey() })
+      // The refetch this just triggered carries the new `restore` record —
+      // read its `parentFallback` back off it, the same pairing
+      // `buildTrashRows` already uses to exclude a restored row.
+      const refreshed = queryClient.getQueryData<{ pages: TrashRecordsPage[] }>(trashKey(pondId))
+      const allRecords = refreshed?.pages.flatMap((p) => p.records) ?? []
+      const sameTarget =
+        vars.targetPageId === null ? [] : groupByTarget(allRecords).get(vars.targetPageId) ?? []
+      const next = sameTarget[sameTarget.findIndex((r) => r.id === vars.recordId) + 1]
+      if (next?.action === 'restore' && fellBackToPondRoot(next.after)) {
+        setRestoreNotice(PARENT_FALLBACK_LINE)
+      }
+    },
+  })
+
   return (
     <div className="h-full overflow-y-auto">
       <div
@@ -208,6 +274,16 @@ export function TrashPage() {
         {!recordsLoading && (
           <p className="font-mono text-[12.5px] text-mn-text-secondary">
             {`${pluralPages(rows.length)} in trash · each goes ${TRASH_RETENTION_DAYS} days after it's deleted`}
+          </p>
+        )}
+        {restoreError && (
+          <p role="alert" className="font-mono text-[12.5px] text-mn-text-secondary">
+            {restoreError}
+          </p>
+        )}
+        {restoreNotice && (
+          <p role="status" className="font-mono text-[12.5px] text-mn-text-secondary">
+            {restoreNotice}
           </p>
         )}
         <div className="rounded-mn-card bg-mn-card px-[10px] pt-[14px] pb-[6px] shadow-mn-card">
@@ -228,6 +304,7 @@ export function TrashPage() {
                 <span>deleted</span>
                 <span>deleted by</span>
                 <span>goes</span>
+                <span />
               </div>
               {rows.map((row) => (
                 <TrashTableRow
@@ -237,6 +314,16 @@ export function TrashPage() {
                     readTrashSnapshot(row.record.before)?.parentId ?? null,
                     pagesById
                   )}
+                  busy={
+                    restoreMutation.isPending &&
+                    restoreMutation.variables?.recordId === row.record.id
+                  }
+                  onRestore={() =>
+                    restoreMutation.mutate({
+                      recordId: row.record.id,
+                      targetPageId: row.record.targetPageId,
+                    })
+                  }
                 />
               ))}
               {hasNextPage && (

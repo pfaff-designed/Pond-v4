@@ -5,7 +5,8 @@
  * Restore itself lands in the next item.
  */
 
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TrashPage } from '@/components/organisms/TrashPage'
 import type { ChangeLogRecord, TrashSnapshot } from '@/lib/change-log/types'
@@ -31,8 +32,11 @@ jest.mock('@/lib/change-log/store', () => ({
 }))
 
 const mockExistingPageIds = jest.fn()
+const mockRestorePage = jest.fn()
 jest.mock('@/lib/change-log/trash', () => ({
+  ...jest.requireActual('@/lib/change-log/trash'),
   existingPageIds: (...args: unknown[]) => mockExistingPageIds(...args),
+  restorePage: (...args: unknown[]) => mockRestorePage(...args),
 }))
 
 jest.mock('@/lib/pages/client', () => ({
@@ -86,6 +90,7 @@ function renderPage() {
 beforeEach(() => {
   jest.clearAllMocks()
   mockExistingPageIds.mockImplementation(async (_supabase, ids: string[]) => new Set(ids))
+  mockRestorePage.mockResolvedValue(undefined)
 })
 
 describe('TrashPage', () => {
@@ -149,5 +154,59 @@ describe('TrashPage', () => {
 
     expect(await screen.findAllByTestId('trash-row')).toHaveLength(1)
     expect(screen.queryByTestId('trash-load-more')).not.toBeInTheDocument()
+  })
+
+  it('restores through restorePage and removes the row from the table', async () => {
+    let answered = false
+    mockListRecords.mockImplementation(async () =>
+      answered
+        ? [record(), record({ id: 'restore-1', action: 'restore', createdAt: '2026-09-27T12:00:00.000Z' })]
+        : [record()]
+    )
+    mockRestorePage.mockImplementation(async () => {
+      answered = true
+    })
+
+    const user = userEvent.setup()
+    renderPage()
+
+    const restoreButton = await screen.findByRole('button', { name: 'restore' })
+    await user.click(restoreButton)
+
+    expect(mockRestorePage).toHaveBeenCalledWith(expect.anything(), 'rec-1')
+    await waitFor(() => {
+      expect(screen.queryByTestId('trash-row')).not.toBeInTheDocument()
+    })
+    expect(await screen.findByTestId('trash-empty')).toBeInTheDocument()
+  })
+
+  it('says so, as a notice, when the restore fell back to the pond root', async () => {
+    let answered = false
+    mockListRecords.mockImplementation(async () =>
+      answered
+        ? [
+            record(),
+            record({
+              id: 'restore-1',
+              action: 'restore',
+              createdAt: '2026-09-27T12:00:00.000Z',
+              after: { parentFallback: true },
+            }),
+          ]
+        : [record()]
+    )
+    mockRestorePage.mockImplementation(async () => {
+      answered = true
+    })
+
+    const user = userEvent.setup()
+    renderPage()
+
+    const restoreButton = await screen.findByRole('button', { name: 'restore' })
+    await user.click(restoreButton)
+
+    expect(
+      await screen.findByText('put back at the top of the pond — its old place is gone')
+    ).toBeInTheDocument()
   })
 })

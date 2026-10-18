@@ -44,7 +44,7 @@ const purgeDate = (createdAt: string): string => shortDate(new Date(Date.parse(c
  *  `after` when the original parent was trashed or gone — not part of the
  *  `TrashSnapshot` TS shape (`readTrashSnapshot` ignores it), just this one
  *  flag the deleted view needs to say so. */
-const fellBackToPondRoot = (after: unknown): boolean =>
+export const fellBackToPondRoot = (after: unknown): boolean =>
   typeof after === 'object' &&
   after !== null &&
   (after as { parentFallback?: unknown }).parentFallback === true
