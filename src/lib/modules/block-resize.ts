@@ -11,14 +11,16 @@ import type { BlockWidth } from './content'
 
 /** The six snap targets, in column order — each percent read from `widthPercent`
  *  so a key width and the matching named `BlockWidth` (`BlockWidthRow.tsx`'s own
- *  glyphs) can never drift apart. */
-export const KEY_WIDTHS: { label: string; percent: number }[] = [
-  { label: '¼', percent: widthPercent('1/4') },
-  { label: '⅓', percent: widthPercent('1/3') },
-  { label: '½', percent: widthPercent('1/2') },
-  { label: '⅔', percent: widthPercent('2/3') },
-  { label: '¾', percent: widthPercent('3/4') },
-  { label: 'full', percent: widthPercent('full') },
+ *  glyphs, which read their label/value pairs from this same array) can never
+ *  drift apart. `width` is the one home for the glyph→named mapping, so a
+ *  locked edge-drag release can commit the named form instead of its number. */
+export const KEY_WIDTHS: { label: string; percent: number; width: BlockWidth }[] = [
+  { label: '¼', percent: widthPercent('1/4'), width: '1/4' },
+  { label: '⅓', percent: widthPercent('1/3'), width: '1/3' },
+  { label: '½', percent: widthPercent('1/2'), width: '1/2' },
+  { label: '⅔', percent: widthPercent('2/3'), width: '2/3' },
+  { label: '¾', percent: widthPercent('3/4'), width: '3/4' },
+  { label: 'full', percent: widthPercent('full'), width: 'full' },
 ]
 
 /** Within this many px of a key width's position, the edge locks there. */

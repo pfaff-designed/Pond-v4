@@ -134,6 +134,69 @@ describe('an alone-on-line edge drag (KAN-441)', () => {
     }
   })
 
+  it('release while locked at ½ commits the named width, not a number', async () => {
+    const ro = mockResizeObserver()
+    try {
+      const lone: Block = { id: 'b-lone', type: 'text', content: 'calendar' }
+      const onChange = jest.fn()
+      renderCanvas([lone], onChange)
+      setColumnWidth('b-lone', 1000, ro)
+
+      const right = edgeHandle('b-lone', 'right')!
+      fireEvent.pointerDown(right, { clientX: 0 })
+      dragRightEdge('b-lone', -500) // 500px = 50%: locks ½
+      expect(readoutText('b-lone', 'right')).toBe('½')
+
+      fireEvent.pointerUp(right, { clientX: -500 })
+
+      expect(onChange).toHaveBeenCalledTimes(1)
+      expect(onChange).toHaveBeenCalledWith([{ ...lone, width: '1/2' }])
+    } finally {
+      ro.restore()
+    }
+  })
+
+  it('release locked at full commits the named width, not 100', () => {
+    const ro = mockResizeObserver()
+    try {
+      const lone: Block = { id: 'b-lone', type: 'text', content: 'calendar', width: '1/2' }
+      const onChange = jest.fn()
+      renderCanvas([lone], onChange)
+      setColumnWidth('b-lone', 1000, ro)
+
+      const right = edgeHandle('b-lone', 'right')!
+      fireEvent.pointerDown(right, { clientX: 0 })
+      dragRightEdge('b-lone', 500) // starts at 500px (50%); +500 reaches 1000px = 100%: locks full
+      expect(readoutText('b-lone', 'right')).toBe('full')
+
+      fireEvent.pointerUp(right, { clientX: 500 })
+
+      expect(onChange).toHaveBeenCalledTimes(1)
+      expect(onChange).toHaveBeenCalledWith([{ ...lone, width: 'full' }])
+    } finally {
+      ro.restore()
+    }
+  })
+
+  it('a pointerdown/pointerup with no movement writes nothing and stages no undo', () => {
+    const ro = mockResizeObserver()
+    try {
+      const lone: Block = { id: 'b-lone', type: 'text', content: 'calendar' }
+      const onChange = jest.fn()
+      renderCanvas([lone], onChange)
+      setColumnWidth('b-lone', 1000, ro)
+
+      const right = edgeHandle('b-lone', 'right')!
+      fireEvent.pointerDown(right, { clientX: 0 })
+      fireEvent.pointerUp(right, { clientX: 0 })
+
+      expect(onChange).not.toHaveBeenCalled()
+      expect(screen.queryByText('Set the block width')).toBeNull()
+    } finally {
+      ro.restore()
+    }
+  })
+
   it('Esc mid-drag restores the pre-drag width and writes nothing', () => {
     const ro = mockResizeObserver()
     try {

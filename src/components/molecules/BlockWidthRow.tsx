@@ -16,6 +16,7 @@
 
 import { useRef, useState, type FocusEvent, type KeyboardEvent } from 'react'
 import { Menu } from '@base-ui/react/menu'
+import { KEY_WIDTHS } from '@/lib/modules/block-resize'
 import type { BlockWidth } from '@/lib/modules/content'
 import type { PondMenuSize } from './PondMenu'
 
@@ -29,14 +30,11 @@ export interface BlockWidthRowProps {
   size?: PondMenuSize
 }
 
-const WIDTHS: { label: string; value: BlockWidth }[] = [
-  { label: '¼', value: '1/4' },
-  { label: '⅓', value: '1/3' },
-  { label: '½', value: '1/2' },
-  { label: '⅔', value: '2/3' },
-  { label: '¾', value: '3/4' },
-  { label: 'full', value: 'full' },
-]
+/** `block-resize.ts`'s `KEY_WIDTHS` is the one home for the glyph→named mapping. */
+const WIDTHS: { label: string; value: BlockWidth }[] = KEY_WIDTHS.map(({ label, width }) => ({
+  label,
+  value: width,
+}))
 
 const ROW = 'flex gap-[2px] px-[4px] pt-[2px] pb-[4px]'
 

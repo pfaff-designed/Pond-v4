@@ -85,6 +85,7 @@ import {
   planBesideDrop,
   rowHolds,
   widthPercent,
+  widthTenths,
   withoutRowStart,
   type DropZone,
   type Rect,
@@ -974,7 +975,13 @@ export function BlockCanvas({
     setEdgeDragActive(false)
     const before = blocks[st.index]
     if (!before) return
-    setBlockWidth(before, Math.round(st.livePercent * 10) / 10)
+    // Locked commits the named width (KEY_WIDTHS is the one home for the
+    // glyph→named mapping), not the number its position happens to round to —
+    // snapping to ½ must keep reading as '1/2' in the width row, not "custom".
+    const lockedKey = st.lockedPercent !== null ? KEY_WIDTHS.find((k) => k.percent === st.lockedPercent) : undefined
+    const committed: BlockWidth | number = lockedKey ? lockedKey.width : Math.round(st.livePercent * 10) / 10
+    if (widthTenths(committed) === widthTenths(before.width)) return
+    setBlockWidth(before, committed)
   }
 
   function handleEdgeResizePointerCancel(e: React.PointerEvent<HTMLDivElement>) {

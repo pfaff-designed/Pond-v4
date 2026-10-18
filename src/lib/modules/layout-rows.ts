@@ -55,7 +55,7 @@ export function widthPercent(width: BlockWidth | number | undefined): number {
  * generalized to cover a free numeric width packing or stacking beside a
  * named one (KAN-441).
  */
-function widthTenths(width: BlockWidth | number | undefined): number {
+export function widthTenths(width: BlockWidth | number | undefined): number {
   return Math.round(widthPercent(width) * 10)
 }
 
