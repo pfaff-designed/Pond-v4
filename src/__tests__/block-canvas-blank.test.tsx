@@ -427,6 +427,21 @@ describe('a template pick on a blank page applies in place (KAN-124)', () => {
     expect(insertPageOptimistic).not.toHaveBeenCalled()
   })
 
+  it("rule 2 (KAN-345): the applied template's own unwritten line ends up with the caret, same as any other session insert — `focusPageTitle` lands first, then the new line's own mount-time autofocus takes over, since the apply marked its ids inserted", async () => {
+    const user = userEvent.setup()
+    renderBlankPageHarness()
+
+    writeInTextBlock(await findTextBlock(), '/')
+    await screen.findByRole('listbox', { name: 'blocks' })
+    // The first template row is `page`; one ↓ reaches `notes`.
+    await user.keyboard('{ArrowDown}')
+    await user.keyboard('{Enter}')
+
+    const field = await findTextBlock()
+    await waitFor(() => expect(field).toHaveFocus())
+    expect(field).toHaveClass('ProseMirror-focused')
+  })
+
   it("writes the kind label and provenance stamp onto the page, preserving its existing props, and reflects them in the ['page', id] cache", async () => {
     const user = userEvent.setup()
     const existing = {

@@ -218,4 +218,61 @@ describe('the trailing gap below the last block (KAN-345 rule 3)', () => {
 
     expect(document.querySelector('[data-hover-ghost]')).toBeNull()
   })
+
+  it('a line minted this session does not re-autofocus after a page switch away and back (KAN-345 rule 2: `autofocusIds` is page-scoped, not session-scoped)', async () => {
+    const pages: Record<string, Block[]> = {
+      'page-a': [{ id: 'b-note', type: 'text', content: 'note' }],
+      'page-b': [{ id: 'b-other', type: 'text', content: 'other page' }],
+    }
+    function PageSwitchHarness({ pageId }: { pageId: string }) {
+      const [blocksByPage, setBlocksByPage] = useState(pages)
+      return (
+        <BlockCanvas
+          blocks={blocksByPage[pageId]}
+          pageId={pageId}
+          pageTitle="sourdough, 78%"
+          onChange={(next) => setBlocksByPage((prev) => ({ ...prev, [pageId]: next }))}
+          onUndoRemove={() => {}}
+        />
+      )
+    }
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const tree = (pageId: string) => (
+      <QueryClientProvider client={client}>
+        <DeletionUndoProvider>
+          <PageSwitchHarness pageId={pageId} />
+        </DeletionUndoProvider>
+      </QueryClientProvider>
+    )
+    const { rerender } = render(tree('page-a'))
+    await findTextBlock()
+
+    fireEvent.click(screen.getByTestId('trailing-block-gap'))
+    const fields = await waitFor(() => {
+      const found = screen.getAllByRole('textbox', { name: 'text block' })
+      expect(found).toHaveLength(2)
+      return found
+    })
+    await waitFor(() => expect(fields[1]).toHaveFocus())
+
+    // A real navigation away — page B's blocks carry none of page A's ids, so
+    // page A's own editors (including the one just minted) unmount entirely.
+    rerender(tree('page-b'))
+    await findTextBlock()
+
+    // Back to A: the SAME blocks (same ids, including the minted empty line)
+    // remount fresh. Without rule 2's page-scoped reset, `autofocusIds` would
+    // still carry that id from the earlier session action and re-autofocus it.
+    rerender(tree('page-a'))
+    const remounted = await waitFor(() => {
+      const found = screen.getAllByRole('textbox', { name: 'text block' })
+      expect(found).toHaveLength(2)
+      return found
+    })
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    })
+    expect(remounted[1]).not.toHaveFocus()
+    expect(remounted[1]).not.toHaveClass('ProseMirror-focused')
+  })
 })

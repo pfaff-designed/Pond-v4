@@ -312,8 +312,10 @@ function isEmptyTextLine(block: Block | undefined): block is TextBlock {
  * focus — an empty line never gets a second insert, even when its editor
  * isn't mounted yet: `focusTextBlock` returning `false` there is a documented
  * expected state (`focus.ts`, `immediatelyRender: false`), not a bug, so this
- * retries once on the next frame and otherwise leaves it — the unwritten line
- * autofocuses on mount anyway.
+ * retries once on the next frame and otherwise leaves it: a line that arrived
+ * with the page never autofocuses on mount by itself (rule 1), so a retry that
+ * still can't find a mounted editor simply gives up rather than claiming a
+ * guarantee that no longer holds.
  */
 function focusEmptyLineOrInsert(candidate: Block | undefined, insert: () => void) {
   if (!isEmptyTextLine(candidate)) {
@@ -698,6 +700,11 @@ export function BlockCanvas({
     if (previewing) {
       setPreviewing(null)
     }
+    // Rule 2's autofocus fact (KAN-345): `autofocusIds` otherwise outlives the
+    // page it was minted on — `BlockCanvas` isn't keyed by page (see above), so
+    // navigating away and back would re-autofocus (and re-show the hint on) a
+    // line this session inserted on a DIFFERENT page.
+    if (autofocusIds.size > 0) setAutofocusIds(new Set())
   }
 
   // The token itself is a ref (read inside an already-in-flight async
@@ -1271,6 +1278,11 @@ export function BlockCanvas({
     // commits (KAN-247), so this is the only direct-write path.
     const supabase = getSupabase()
     if (!(await persistBlocksAsOwnEdit(before, applied.blocks))) return
+    // Rule 2's autofocus fact (KAN-345): these blocks are session inserts too —
+    // without this, none of the applied template's unwritten lines would ever
+    // take the caret, since `markInserted` is the only thing that puts an id in
+    // `autofocusIds`.
+    for (const block of applied.blocks) markInserted(block.id)
     // KAN-138: applying a `yours` template retires its "just saved" lead — but
     // only once the blocks write above actually landed; a failed apply keeps
     // the lead so the person's retry still sees it first.

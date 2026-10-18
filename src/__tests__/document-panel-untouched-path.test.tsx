@@ -14,7 +14,7 @@
  */
 
 import React from 'react'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DocumentPanel } from '@/components/organisms/DocumentPanel'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
@@ -115,8 +115,17 @@ describe('an untouched page, walked end to end on its real surface (KAN-119)', (
     renderUntouchedPage()
 
     // No blur, no click: the line arrived with the page, so rule 1 says it
-    // never took focus on its own in the first place.
+    // never took focus on its own in the first place. Tiptap applies
+    // `autofocus` from a `window.setTimeout(..., 0)` queued at mount
+    // (`@tiptap/core`'s `Editor.mount`) — flush real time past that before
+    // asserting, or this reads "not focused yet" even with the bug (autofocus
+    // left on) still in place: confirmed with a bare 0ms flush, which still let
+    // this test pass with the bug reverted; 50ms (RTL's own default `waitFor`
+    // poll interval) reliably outlasts it.
     const field = await findTextBlock()
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    })
     expect(field).not.toHaveFocus()
     expect(field).not.toHaveClass('ProseMirror-focused')
     expect(document.body.textContent).not.toContain('blocks and templates')
