@@ -27,6 +27,7 @@ jest.mock('@/lib/pages/tree', () => ({ fetchPages: jest.fn().mockResolvedValue([
 jest.mock('@/lib/change-log/store', () => ({
   ...jest.requireActual('@/lib/change-log/store'),
   countWaiting: jest.fn().mockResolvedValue(0),
+  listRecords: jest.fn().mockResolvedValue([]),
 }))
 
 const mockGetPage = jest.fn()
@@ -34,6 +35,7 @@ jest.mock('@/lib/pages/client', () => ({
   getPage: (...args: unknown[]) => mockGetPage(...args),
   updateTitle: jest.fn().mockResolvedValue(undefined),
   setProperty: jest.fn().mockResolvedValue(undefined),
+  listPages: jest.fn().mockResolvedValue([]),
 }))
 jest.mock('@/lib/pages/commit', () => ({ commitBlocks: jest.fn().mockResolvedValue(undefined) }))
 
