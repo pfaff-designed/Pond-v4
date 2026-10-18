@@ -238,19 +238,19 @@ describe('PATH_STEPS 1–5 — the rail deletes a page, trash shows it, restore 
   it('walks the whole path on the real rail + document panel', async () => {
     mount()
 
-    // 1–2. Expanding `databases` reveals `change log` then `trash`, in that
-    // order, with neither a delete × nor a rename affordance. KAN-486: the
-    // `databases` heading itself renders LAST now (its rows sit above it,
-    // never below), so it is no longer `treeRows[0]`.
+    // 1–2. Trash (KAN-504) is its own top-level foot row, always visible,
+    // with neither a delete × nor a rename affordance — not a databases
+    // child, so expanding `databases` reveals `change log` among ITS OWN
+    // rows, with trash absent from them.
     const databasesTree = screen.getByRole('tree', { name: 'Databases' })
+    const trashRow = screen.getByRole('treeitem', { name: 'trash' })
+    expect(within(databasesTree).queryByRole('treeitem', { name: 'trash' })).not.toBeInTheDocument()
     fireEvent.click(within(databasesTree).getByRole('treeitem', { name: 'databases' }))
-    const trashRow = await within(databasesTree).findByRole('treeitem', { name: 'trash' })
-    const treeRows = within(databasesTree).getAllByRole('treeitem')
-    expect(treeRows[0]).toHaveAccessibleName('change log')
-    expect(treeRows[1]).toHaveAccessibleName('trash')
+    await within(databasesTree).findByRole('treeitem', { name: 'change log' })
+    expect(within(databasesTree).queryByRole('treeitem', { name: 'trash' })).not.toBeInTheDocument()
     expect(within(trashRow).queryByRole('button', { name: 'Delete trash' })).not.toBeInTheDocument()
     fireEvent.doubleClick(trashRow)
-    expect(within(databasesTree).queryByRole('textbox')).not.toBeInTheDocument()
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
 
     // 3. Delete "Marathon" (a leaf, under "Health") from the rail: expand
     // Health first so it's still expanded once the page comes back later.
@@ -298,9 +298,9 @@ describe('KAN-451 regression — trash mounted BEFORE a delete still shows it on
     mount()
 
     // Open `trash` FIRST, before anything is deleted — it reads empty.
-    const databasesTree = screen.getByRole('tree', { name: 'Databases' })
-    fireEvent.click(within(databasesTree).getByRole('treeitem', { name: 'databases' }))
-    const trashRow = await within(databasesTree).findByRole('treeitem', { name: 'trash' })
+    // Trash (KAN-504) is its own top-level foot row; no need to expand
+    // `databases` to reach it.
+    const trashRow = screen.getByRole('treeitem', { name: 'trash' })
     fireEvent.click(trashRow)
     const panel = screen.getByTestId('document-panel')
     expect(await within(panel).findByTestId('trash-empty')).toHaveTextContent('trash is empty')
@@ -331,5 +331,37 @@ describe('KAN-451 regression — trash mounted BEFORE a delete still shows it on
     expect(rows).toHaveLength(1)
     expect(within(rows[0]).getByText('Marathon')).toBeInTheDocument()
     expect(within(rows[0]).getByText('in 30 days')).toBeInTheDocument()
+  })
+})
+
+describe('KAN-504 regression — trash is its own top-level foot row, not a databases child', () => {
+  it('foot order is databases heading · trash · settings; expanding databases keeps change log in, trash out; trash still opens the trash page', async () => {
+    mount()
+
+    const databasesTree = screen.getByRole('tree', { name: 'Databases' })
+    const databasesHeading = within(databasesTree).getByRole('treeitem', { name: 'databases' })
+    const trashRow = screen.getByRole('treeitem', { name: 'trash' })
+    const settings = document.querySelector('[data-part="settings"]')
+    if (!settings) throw new Error('no settings row')
+
+    // Collapsed: databases heading · trash · settings, top to bottom.
+    expect(
+      databasesHeading.compareDocumentPosition(trashRow) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+    expect(
+      trashRow.compareDocumentPosition(settings) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+
+    // Expanding databases shows change log among ITS rows; trash stays out
+    // of them and stays put in its own tree.
+    fireEvent.click(databasesHeading)
+    await within(databasesTree).findByRole('treeitem', { name: 'change log' })
+    expect(within(databasesTree).queryByRole('treeitem', { name: 'trash' })).not.toBeInTheDocument()
+    expect(screen.getByRole('treeitem', { name: 'trash' })).toBe(trashRow)
+
+    // Trash still opens the trash page.
+    fireEvent.click(trashRow)
+    const panel = screen.getByTestId('document-panel')
+    expect(await within(panel).findByTestId('trash-empty')).toHaveTextContent('trash is empty')
   })
 })
