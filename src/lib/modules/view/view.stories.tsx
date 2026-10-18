@@ -1,10 +1,12 @@
 import { useState, type ComponentProps } from 'react'
 import type { Meta, StoryObj } from '@storybook/nextjs-vite'
 import { expect, fireEvent, fn, userEvent, within } from 'storybook/test'
+import { page, userEvent as realUserEvent } from 'vitest/browser'
 
 import { CollectionView } from './view'
 import { CollectionList } from './list'
 import { BOARD_EMPTY_LINE, CALENDAR_EMPTY_LINE } from './kinds'
+import { localDateIso } from './due'
 import { PondBlock } from '@/components/organisms/PondBlock'
 import { PageCanvas } from '@/lib/modules/page-canvas'
 import type { CollectionRow } from './apply'
@@ -1465,6 +1467,58 @@ export const CalendarNeedsDate: Story = {
     await expect(canvas.getByLabelText('Previous month')).toBeInTheDocument()
     await expect(canvas.getByLabelText('Next month')).toBeInTheDocument()
     await expect(canvas.getByText('today')).toBeInTheDocument()
+  },
+}
+
+/**
+ * KAN-385, live verifier round 3: 5 of 7 REAL calendar drags left a native text
+ * selection over the day cells (one opened `BlockCanvas`'s formatting toolbar).
+ * `fireEvent`'s synthetic pointer sequence (used by every other drag test in this
+ * file/suite) never anchors a selection the way Chromium's own mousedown does —
+ * only a REAL mouse catches this, so this story drives one with `vitest/browser`'s
+ * own `userEvent` (real Playwright input), never `storybook/test`'s synthetic one.
+ *
+ * Dates are relative to the real system clock (no mocking in browser mode): day 5
+ * and day 15 of the current month exist in every month, and the grid's initial
+ * `focusIso` is always the current month, so both are always on screen.
+ */
+const dragMonthPrefix = localDateIso(new Date()).slice(0, 8)
+const dragSourceIso = `${dragMonthPrefix}05`
+const dragTargetIso = `${dragMonthPrefix}15`
+const dragRows: CollectionRow[] = [
+  { id: 'r-drag', title: 'Glaze firing', values: { 'p-due': dragSourceIso } },
+]
+
+export const CalendarDragLeavesNoNativeSelection: Story = {
+  name: 'a real mouse drag moves the date and leaves no native selection',
+  args: { config: calendarConfig, schema, rows: dragRows, editable: true, onMoveDate: fn() },
+  // The month grid is `hidden md:flex` — a desktop viewport, not just a wide
+  // container, is what unhides it (same pattern as `GlyphPicker.stories.tsx`'s
+  // `OnScreenBelowAnchor`).
+  loaders: [
+    async () => {
+      const prevViewport = { width: window.innerWidth, height: window.innerHeight }
+      await page.viewport(1440, 900)
+      return { prevViewport }
+    },
+  ],
+  play: async ({ canvasElement, args, loaded }) => {
+    try {
+      const card = canvasElement.querySelector<HTMLElement>('[data-row-id="r-drag"]')
+      const target = canvasElement.querySelector<HTMLElement>(`[data-iso="${dragTargetIso}"]`)
+      if (!card || !target) {
+        throw new Error('calendar drag story: source card or target day cell not found')
+      }
+      await realUserEvent.dragAndDrop(card, target)
+
+      const selection = window.getSelection()
+      await expect(selection === null || selection.isCollapsed).toBe(true)
+      await expect(selection?.toString() ?? '').toBe('')
+      await expect(args.onMoveDate).toHaveBeenCalledWith('r-drag', 'p-due', dragTargetIso)
+    } finally {
+      const { width, height } = loaded.prevViewport as { width: number; height: number }
+      await page.viewport(width, height)
+    }
   },
 }
 
