@@ -16,7 +16,10 @@ import { useSyncExternalStore } from 'react'
 
 export interface AcceptMark {
   target: string
-  recordId: string
+  /** Null when the accept had no undoable change-log record (KAN-93's
+   *  BLOCK_ACTIONS gate) — the mark still shows, it just never clears via
+   *  `removeByRecordId` since there is nothing `sessionUndo` can undo. */
+  recordId: string | null
   acceptedAt: string
 }
 
@@ -45,7 +48,7 @@ export const registerPageOpen = (pageId: string): (() => void) => {
 export const recordAccept = (
   pageId: string,
   targets: string[],
-  recordId: string,
+  recordId: string | null,
   acceptedAt: string
 ): void => {
   if (targets.length === 0) return
