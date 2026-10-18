@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Cell } from './cells'
-import { formatAtomDate, parseDateInput } from '@/lib/properties/date-input'
+import { formatAtomDate, localToday, parseDateInput } from '@/lib/properties/date-input'
 import type { PropertyDef } from '@/lib/properties/schema'
 
 const textDef: PropertyDef = { id: 'p-1', name: 'Notes', type: 'text' }
@@ -89,7 +89,10 @@ describe('Cell — date editor', () => {
     expect(input).not.toHaveAttribute('type', 'date')
 
     await user.type(input, 'tomorrow')
-    const resolved = parseDateInput('tomorrow', new Date()) as string
+    // The cell resolves "today" via `localToday()`, which anchors to the local
+    // calendar day — not `new Date()`, which names the UTC day and can already
+    // be a day ahead of the local one in the evening west of UTC.
+    const resolved = parseDateInput('tomorrow', localToday()) as string
     expect(screen.getByText(formatAtomDate(resolved))).toBeInTheDocument()
 
     await user.keyboard('{Enter}')
