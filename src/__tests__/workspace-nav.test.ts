@@ -88,4 +88,30 @@ describe('openWorkspaceUrl', () => {
     expect(pushStateSpy).not.toHaveBeenCalled()
     pushStateSpy.mockRestore()
   })
+
+  it('re-opening the page already open on /workspace is a no-op: no push, no pushState, history unchanged', () => {
+    addressIs('?nodeId=b')
+    const push = jest.fn()
+    const pushStateSpy = jest.spyOn(window.history, 'pushState')
+    const lengthBefore = window.history.length
+
+    openWorkspaceUrl(`${WORKSPACE_PATH}?nodeId=b`, { push })
+
+    expect(pushStateSpy).not.toHaveBeenCalled()
+    expect(push).not.toHaveBeenCalled()
+    expect(window.history.length).toBe(lengthBefore)
+    pushStateSpy.mockRestore()
+  })
+
+  it('a different url on /workspace still pushes once', () => {
+    addressIs('?nodeId=b')
+    const push = jest.fn()
+    const pushStateSpy = jest.spyOn(window.history, 'pushState')
+
+    openWorkspaceUrl(`${WORKSPACE_PATH}?nodeId=c`, { push })
+
+    expect(pushStateSpy).toHaveBeenCalledTimes(1)
+    expect(push).not.toHaveBeenCalled()
+    pushStateSpy.mockRestore()
+  })
 })

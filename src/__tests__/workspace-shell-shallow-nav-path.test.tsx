@@ -230,8 +230,11 @@ describe('WorkspaceShell — a rail click switches pages with no RSC round trip 
     expect(await screen.findByDisplayValue(PAGE_B.title)).toBe(title())
     expect(push).not.toHaveBeenCalled()
 
+    const pushStateSpy = jest.spyOn(window.history, 'pushState')
     fireEvent.click(within(tree).getByRole('treeitem', { name: PAGE_B.title })) // no-op guard: still on B
     expect(title()).toHaveValue(PAGE_B.title)
+    expect(pushStateSpy).not.toHaveBeenCalled()
+    pushStateSpy.mockRestore()
 
     // Browser back: jsdom's own `history.back()` does not traverse entries
     // (confirmed: the location never moves), so this mirrors what the real

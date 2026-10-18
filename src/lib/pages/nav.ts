@@ -78,9 +78,18 @@ export interface WorkspaceNavRouter {
  * `pushState` switches the open page with no RSC round trip. Off `/workspace`
  * (Cover.tsx at `/`), pushState cannot change the route, so the caller still
  * needs a real navigation.
+ *
+ * Re-opening the page already open is a no-op: raw `pushState` has no
+ * same-URL check of its own (unlike `router.push`, which Next's app router
+ * resolves against the current href and replaces instead of pushing), so
+ * without this guard clicking the open page again pushed a duplicate entry
+ * and the first browser-back press did nothing.
  */
 export function openWorkspaceUrl(url: string, router: WorkspaceNavRouter): void {
   if (window.location.pathname === WORKSPACE_PATH) {
+    const target = new URL(url, window.location.href)
+    const current = `${window.location.pathname}${window.location.search}`
+    if (`${target.pathname}${target.search}` === current) return
     window.history.pushState(null, '', url)
     return
   }
