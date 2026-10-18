@@ -6,7 +6,10 @@ import { blockEmptyCopy, blockFrame, POND_BLOCK_ROW_GAP, TODO_KIND, TODO_ROW } f
 import { todoMarker, type TodoBlock, type TodoItem } from './schema'
 import { PondMolecule, type PondMoleculeState } from '@/components/molecules/PondMolecule'
 import { useBlockRow } from '../block-row-context'
+import { useSiblingBlocks } from '../sibling-context'
 import { SESSION_UNDO_SCOPE_ATTR } from '@/lib/shell-commands'
+import { useAcceptMarks } from '@/lib/change-log/accept-marks'
+import { formatClockTime } from '@/lib/change-log/page-changes'
 
 /**
  * Todo view (#219) — the check row and the board's `list` block, COMPOSED from
@@ -167,6 +170,23 @@ export function TodoView({ data, editable, onChange }: ModuleViewProps<TodoBlock
   // KAN-355's save-flush has nothing to flush, so a structural edit falls
   // back to the view's own `onChange` rather than the context's absent default.
   const commit = (patch: TodoBlock) => (commitStep ?? onChange)?.(patch)
+
+  // KAN-143's accept marks, read by target string (`block-frame.ts`'s own
+  // `useSiblingBlocks().pageId` — absent outside a page host, e.g. Storybook;
+  // the empty-string pageId then simply has no marks). A row's own mark wins;
+  // a block-level mark (no row touched its own fields) shows once, on the
+  // first row, never per item — the mark names the WHOLE row's value, not
+  // every item's.
+  const { pageId } = useSiblingBlocks()
+  const acceptMarks = useAcceptMarks(pageId ?? '')
+  const rowMarkPrefix = `block:${data.id}:row:`
+  const hasRowMark = acceptMarks.some((mark) => mark.target.startsWith(rowMarkPrefix))
+  const blockMark = acceptMarks.find((mark) => mark.target === `block:${data.id}`)
+  function changedLabelFor(item: TodoItem, index: number): string | undefined {
+    const rowMark = acceptMarks.find((mark) => mark.target === `${rowMarkPrefix}${item.id}`)
+    const mark = rowMark ?? (!hasRowMark && index === 0 ? blockMark : undefined)
+    return mark && `changed ${formatClockTime(mark.acceptedAt)}`
+  }
 
   function patchItem(index: number, patch: Partial<TodoItem>) {
     onChange?.({
@@ -411,6 +431,7 @@ export function TodoView({ data, editable, onChange }: ModuleViewProps<TodoBlock
           title: item.label,
           placeholder: item.placeholder,
           meta: item.meta ?? '',
+          changedLabel: changedLabelFor(item, j),
           className: 'max-w-full',
           onTitleChange: editable ? (label: string) => patchItem(j, { label }) : undefined,
           onTitleKeyDown: editable

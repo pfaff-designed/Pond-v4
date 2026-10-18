@@ -172,6 +172,14 @@ export interface PondMoleculeProps {
    */
   onToggle?: () => void
   /**
+   * list-row / check-row — the accept-mark session cue (KAN-143): "changed HH:MM",
+   * after the row's own value, when this row (or its block, with no row-level mark
+   * of its own) was just accepted into. `undefined` renders nothing — most rows
+   * carry no mark. `Pond 06.03` frame 4's exact values: mono 10.5, ink .8,
+   * margin-left 10px; `text-mn-text-meta` already IS ink .8 and flips in dark.
+   */
+  changedLabel?: string
+  /**
    * field-row — a LIVE control in place of the value atom (issue 260). The row keeps its
    * own geometry (the 140px label column, 34 min-height, gap 12) and the host's
    * input sits in the value cell, so `PropertyInspector` renders the molecule
@@ -250,6 +258,7 @@ export function PondMolecule({
   onTitleKeyDown,
   titleField,
   onToggle,
+  changedLabel,
   children,
   className,
 }: PondMoleculeProps) {
@@ -376,6 +385,18 @@ export function PondMolecule({
     <PondAtom kind="date" value={displayMeta} due={dueResolved} state={atomState} size={size} />
   )
 
+  /** KAN-143's accept-mark cue — its own span, after the row's value. Quiet by
+   *  design (PROJECT_RULES forbids a nudge colour here): ink .8 mono, never
+   *  orange or wheat. */
+  const changedMark = changedLabel && (
+    <span
+      data-part="changed"
+      className="font-mono lowercase text-[10.5px] text-mn-text-meta ml-[10px]"
+    >
+      {changedLabel}
+    </span>
+  )
+
   /* ── list-row: handle · dot · title · date atom ── */
   if (kind === 'list-row') {
     return (
@@ -403,6 +424,7 @@ export function PondMolecule({
             )
           )}
         {metaAtom}
+        {changedMark}
         {trailing}
       </div>
     )
@@ -470,6 +492,7 @@ export function PondMolecule({
           )
         )}
         {metaAtom}
+        {changedMark}
         {trailing}
       </div>
     )
@@ -765,10 +788,7 @@ export function PondMolecule({
         </span>
         <div
           data-part="title"
-          className={cn(
-            'min-w-0 flex-1',
-            removal ? DIFF_REMOVAL_TEXT_CLASSNAME : 'text-mn-text'
-          )}
+          className={cn('min-w-0 flex-1', removal ? DIFF_REMOVAL_TEXT_CLASSNAME : 'text-mn-text')}
         >
           {children ?? displayTitle}
         </div>
