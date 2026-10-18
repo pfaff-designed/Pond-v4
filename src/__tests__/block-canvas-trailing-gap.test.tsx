@@ -11,6 +11,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import type { Block } from '@/lib/documents/types'
+import { TEXT_BLOCK_TOP_INSET_PX } from '@/lib/layout/surface-column'
 import { BLOCK_ROW_GAP_PX } from '@/lib/modules/layout-rows'
 import { findTextBlock } from './helpers/text-block'
 
@@ -136,13 +137,13 @@ describe('the trailing gap below the last block (KAN-345 rule 3)', () => {
     expect(screen.queryByTestId('trailing-block-gap')).toBeNull()
   })
 
-  it("offsets its ghost row by BLOCK_ROW_GAP_PX, not a restated value — the same gap an appended block lands below the last one", async () => {
+  it("offsets its ghost row by BLOCK_ROW_GAP_PX plus the text wrapper's own top inset, not a restated value — so the real line it opens sits where the ghost text sat", async () => {
     const note: Block = { id: 'b-note', type: 'text', content: 'Cabinets are the only open cost.' }
     renderHarness([note])
     await findTextBlock()
 
     const gap = screen.getByTestId('trailing-block-gap')
-    expect(gap.style.paddingTop).toBe(`${BLOCK_ROW_GAP_PX}px`)
+    expect(gap.style.paddingTop).toBe(`${BLOCK_ROW_GAP_PX + TEXT_BLOCK_TOP_INSET_PX}px`)
   })
 
   it('clicking while the last empty line\'s editor is still a stand-in neither throws nor adds a second block', async () => {

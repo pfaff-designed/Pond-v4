@@ -106,7 +106,7 @@ import { descriptorFor } from '@/lib/modules/registry'
 import { useBelowMd } from '@/lib/layout/use-below-md'
 import { pageEyebrowClass } from '@/components/atoms/kicker'
 import { formatThreadTime } from '@/lib/conversation/page-proposals'
-import { TEXT_BLOCK_INSET_PX } from '@/lib/layout/surface-column'
+import { TEXT_BLOCK_INSET_PX, TEXT_BLOCK_TOP_INSET_PX } from '@/lib/layout/surface-column'
 import { PREMADE_TEMPLATES } from '@/lib/templates/premade'
 import { instantiateTemplate, type InstantiatedTemplate } from '@/lib/templates/instantiate'
 import { getTemplate, listTemplates } from '@/lib/templates/client'
@@ -2609,9 +2609,9 @@ function BlockEditor({
       ) : block.type === 'text' ? (
         // Bare prose: `padding 2px 4px`, no card.
         <div
-          className={cn('py-0.5', untouched && UNTOUCHED_HINT_CLASS, hoverGhost && HOVER_GHOST_CLASS)}
+          className={cn(untouched && UNTOUCHED_HINT_CLASS, hoverGhost && HOVER_GHOST_CLASS)}
           data-hover-ghost={hoverGhost || undefined}
-          style={{ paddingInline: TEXT_BLOCK_INSET_PX }}
+          style={{ paddingBlock: TEXT_BLOCK_TOP_INSET_PX, paddingInline: TEXT_BLOCK_INSET_PX }}
         >
           {block.pondStampAt && (
             <div className="flex items-baseline gap-[10px] pb-[10px]">

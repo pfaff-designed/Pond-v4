@@ -15,13 +15,17 @@ export const PROSE_LINE_PLACEHOLDER = 'type, or / for blocks'
  * the focused empty line's own placeholder (`TEXT_PROSE_CLASS`), and the
  * trailing-gap ghost row (`TrailingBlockGap`) — so a click from the ghost row to
  * the real line changes nothing about the type, only which element is real.
+ * Carries its own line-height (rule 3 fix, KAN-345): without it, the ghost row's
+ * ::before-less real element has nothing to match the ::before rules' inherited
+ * `leading-[1.6]` against, and the two line boxes disagree by a few px.
  * `TrailingBlockGap` imports this directly (a real element takes bare utility
- * classes); the two `::before` rules below restate its five values against their
+ * classes); the three `::before` rules below restate its six values against their
  * own selectors by hand — Tailwind's content scanner needs each variant+utility
  * pair to exist as complete literal text, so composing them from this string at
  * runtime would silently generate no CSS at all.
  */
-export const MACHINE_HINT_FRAGMENT = 'font-mono text-[13px] tracking-[0.02em] lowercase text-mn-text-secondary'
+export const MACHINE_HINT_FRAGMENT =
+  'font-mono text-[13px] tracking-[0.02em] lowercase leading-[1.6] text-mn-text-secondary'
 
 /**
  * What a blank text block's line reads: the block's own `placeholder`, or — when
@@ -110,6 +114,7 @@ export const TEXT_PROSE_CLASS = [
   '[&.ProseMirror-focused_:is(.is-editor-empty,.is-empty):not(:is(h1,h2,h3,h4,h5,h6))]:before:text-[13px]',
   '[&.ProseMirror-focused_:is(.is-editor-empty,.is-empty):not(:is(h1,h2,h3,h4,h5,h6))]:before:tracking-[0.02em]',
   '[&.ProseMirror-focused_:is(.is-editor-empty,.is-empty):not(:is(h1,h2,h3,h4,h5,h6))]:before:lowercase',
+  '[&.ProseMirror-focused_:is(.is-editor-empty,.is-empty):not(:is(h1,h2,h3,h4,h5,h6))]:before:leading-[1.6]',
   '[&.ProseMirror-focused_:is(.is-editor-empty,.is-empty):not(:is(h1,h2,h3,h4,h5,h6))]:before:text-mn-text-secondary',
   TEXT_STRUCTURE,
 ].join(' ')
@@ -129,7 +134,7 @@ export const TEXT_PROSE_CLASS = [
  * is the browser's native caret, not part of this rule — it isn't offset, so
  * typing still starts at the line's own left edge, not at the hint's inset.
  *
- * Carries `MACHINE_HINT_FRAGMENT`'s five values against its own selector (see
+ * Carries `MACHINE_HINT_FRAGMENT`'s six values against its own selector (see
  * that constant's comment for why they can't be composed from it at runtime),
  * plus the 6px margin above, which belongs to this one hint, not the fragment.
  */
@@ -138,6 +143,7 @@ export const UNTOUCHED_HINT_CLASS = [
   '[&_:is([data-text-prose],.ProseMirror)_.is-editor-empty]:before:text-[13px]',
   '[&_:is([data-text-prose],.ProseMirror)_.is-editor-empty]:before:tracking-[0.02em]',
   '[&_:is([data-text-prose],.ProseMirror)_.is-editor-empty]:before:lowercase',
+  '[&_:is([data-text-prose],.ProseMirror)_.is-editor-empty]:before:leading-[1.6]',
   '[&_:is([data-text-prose],.ProseMirror)_.is-editor-empty]:before:text-mn-text-secondary',
   '[&_:is([data-text-prose],.ProseMirror)_.is-editor-empty]:before:ml-[6px]',
 ].join(' ')
@@ -152,7 +158,7 @@ export const UNTOUCHED_HINT_CLASS = [
  * unconditional `content-none` rule on specificity (three classes to two) —
  * independent of focus, which is the one thing `.ProseMirror-focused`-gated
  * rule can't give a merely-hovered, unfocused line. Restates
- * `MACHINE_HINT_FRAGMENT`'s five values for the same reason `TEXT_PROSE_CLASS`
+ * `MACHINE_HINT_FRAGMENT`'s six values for the same reason `TEXT_PROSE_CLASS`
  * and `UNTOUCHED_HINT_CLASS` already do (see that constant's comment).
  */
 export const HOVER_GHOST_CLASS = [
@@ -161,6 +167,7 @@ export const HOVER_GHOST_CLASS = [
   '[&_.ProseMirror_.is-editor-empty]:before:text-[13px]',
   '[&_.ProseMirror_.is-editor-empty]:before:tracking-[0.02em]',
   '[&_.ProseMirror_.is-editor-empty]:before:lowercase',
+  '[&_.ProseMirror_.is-editor-empty]:before:leading-[1.6]',
   '[&_.ProseMirror_.is-editor-empty]:before:text-mn-text-secondary',
 ].join(' ')
 
