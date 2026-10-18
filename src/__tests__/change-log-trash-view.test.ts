@@ -111,11 +111,31 @@ describe('buildTrashRows', () => {
   it.each([
     ['30 days out, fresh', '2026-09-26T12:00:00.000Z', 'in 30 days'],
     ['exactly at the 3-day boundary', '2026-08-30T12:00:00.000Z', 'in 3 days'],
-    ['under 3 days — still a plain "in N days", never a colour flag', '2026-08-28T12:00:00.000Z', 'in 1 day'],
+    ['exactly 1 day left', '2026-08-28T12:00:00.000Z', 'in 1 day'],
+    ['0 days left — clamped to "today", never "in 0 days"', '2026-08-27T12:00:00.000Z', 'today'],
+    ['overdue by 1 day — clamped to "today", never a negative count', '2026-08-26T12:00:00.000Z', 'today'],
   ])('reads `goes` as %s: %s -> %s', (_label, createdAt, expected) => {
     const [row] = buildTrashRows([record({ createdAt })], new Map(), new Set(), 'life', NOW)
 
     expect(row.goes).toBe(expected)
+  })
+
+  it('counts `goes` from the second delete when a page is deleted, restored, then deleted again', () => {
+    const firstDelete = record({ id: 'rec-1', createdAt: '2026-08-01T12:00:00.000Z' })
+    const restore = record({
+      id: 'rec-2',
+      action: 'restore',
+      createdAt: '2026-08-05T12:00:00.000Z',
+      before: null,
+      after: snapshot(),
+    })
+    const secondDelete = record({ id: 'rec-3', createdAt: '2026-09-20T12:00:00.000Z' })
+
+    const rows = buildTrashRows([firstDelete, restore, secondDelete], new Map(), new Set(), 'life', NOW)
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0].record.id).toBe('rec-3')
+    expect(rows[0].goes).toBe('in 24 days')
   })
 
   it('keeps `TrashRow` free of any colour/urgency field — "ink only" is structural, not a flag', () => {

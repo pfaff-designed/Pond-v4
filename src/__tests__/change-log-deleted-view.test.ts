@@ -10,7 +10,7 @@
  * string — so these pass under any machine's local timezone.
  */
 
-import { buildDeletedCards, THIRTY_DAYS_MS, TRASH_RETENTION_DAYS } from '@/lib/change-log/deleted-view'
+import { buildDeletedCards, TRASH_RETENTION_MS, TRASH_RETENTION_DAYS } from '@/lib/change-log/deleted-view'
 import { DAY_MS } from '@/lib/change-log/log-page'
 import type { ChangeLogRecord, TrashSnapshot } from '@/lib/change-log/types'
 
@@ -201,6 +201,6 @@ describe('buildDeletedCards', () => {
   })
 })
 
-it('derives THIRTY_DAYS_MS from TRASH_RETENTION_DAYS', () => {
-  expect(THIRTY_DAYS_MS).toBe(TRASH_RETENTION_DAYS * DAY_MS)
+it('derives TRASH_RETENTION_MS from TRASH_RETENTION_DAYS', () => {
+  expect(TRASH_RETENTION_MS).toBe(TRASH_RETENTION_DAYS * DAY_MS)
 })

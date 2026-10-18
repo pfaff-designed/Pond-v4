@@ -13,7 +13,7 @@
  */
 
 import { daysBetween, dayHeaderLabel } from './log-page'
-import { groupByTarget, THIRTY_DAYS_MS } from './deleted-view'
+import { groupByTarget, TRASH_RETENTION_MS } from './deleted-view'
 import { readTrashSnapshot } from './summary'
 import type { ChangeLogRecord } from './types'
 
@@ -30,7 +30,7 @@ export interface TrashRow {
   wasIn: string
   deletedAt: string
   deletedBy: string
-  /** `in 12 days` / `in 1 day` — always rendered in ink, never the
+  /** `today` / `in 1 day` / `in 12 days` — always rendered in ink, never the
    *  burnt-orange "one dated thing" treatment, even this close to going
    *  (the spec's own override of the deleted view's own `restorableUntil`,
    *  which does highlight the single soonest one). */
@@ -41,11 +41,16 @@ const dayWord = (n: number): string => `${n} ${n === 1 ? 'day' : 'days'}`
 
 /** Calendar days from `now` until `createdAt + TRASH_RETENTION_DAYS` — the
  *  negation of `daysBetween`, which measures the other direction (elapsed
- *  days since `iso`, as of `now`). */
+ *  days since `iso`, as of `now`). Can go negative: the purge (KAN-452) isn't
+ *  built, so a trashed page can sit past its own retention window. */
 const daysUntilGone = (createdAt: string, now: Date): number => {
-  const purgeMoment = new Date(Date.parse(createdAt) + THIRTY_DAYS_MS).toISOString()
+  const purgeMoment = new Date(Date.parse(createdAt) + TRASH_RETENTION_MS).toISOString()
   return -daysBetween(now, purgeMoment)
 }
+
+/** `daysUntilGone` clamped at the reader: zero or overdue both read `today`,
+ *  never a negative day count. */
+const goesLabel = (daysLeft: number): string => (daysLeft <= 0 ? 'today' : `in ${dayWord(daysLeft)}`)
 
 /**
  * One row per `delete` record still in trash — the subtree's root only, as
@@ -92,7 +97,7 @@ export function buildTrashRows(
       wasIn,
       deletedAt: dayHeaderLabel(record.createdAt, now),
       deletedBy: record.actor,
-      goes: `in ${dayWord(daysUntilGone(record.createdAt, now))}`,
+      goes: goesLabel(daysUntilGone(record.createdAt, now)),
     })
   }
   return rows
