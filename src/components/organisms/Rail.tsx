@@ -1377,6 +1377,36 @@ export function RailView({
                   .map(renderRow)}
             </div>
 
+            {/* KAN-490: a real `<button>`, not a treeitem — `role="tree"` only
+              allows treeitem children (WAI-ARIA), and this row is reached by
+              Tab, not the tree's roving arrow-key focus. Always at rest (no
+              hover/focus gating, unlike every other row's tools): the board
+              draws the foot's analogous rest-state row (`newRow`/`settings`,
+              `PondRail.dc.html`) at the .68 ink tier, full ink only on
+              hover/focus — reused here. Bare ＋, no label (the deviations
+              note: Notion's "+ Add new" text isn't drawn; the ticket's row is
+              bare). Sits directly after the last root, above the databases
+              foot — still inside the scroller, so it scrolls with the tree. */}
+            {!isLoading && (
+              <button
+                type="button"
+                data-part="new-root-row"
+                aria-label="new root folder"
+                className="group relative flex w-full flex-shrink-0 items-center gap-[7px] rounded-mn-row py-[5px] pr-2 text-left text-mn-text-secondary outline-none transition-colors hover:text-mn-text focus-visible:ring-2 focus-visible:ring-mn-text/50 focus-visible:ring-offset-0"
+                style={{ paddingLeft: INDENT_BASE }}
+              >
+                <span className="w-[9px] flex-shrink-0" aria-hidden />
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+                  <path
+                    d="M6 2.4v7.2M2.4 6h7.2"
+                    stroke="currentColor"
+                    strokeWidth="1.4"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </button>
+            )}
+
             {/* Status lives OUTSIDE the tree — role="tree" only allows treeitem
               children (WAI-ARIA); a <p> inside it would be an illegal child.
               Loading = PondRail's skeleton bars (7f / G6); empty = its hint. */}
