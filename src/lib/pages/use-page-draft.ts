@@ -66,6 +66,14 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
   // debounce timer has already fired (pendingSave is null, runSave in flight)
   // returns THIS promise instead of racing ahead of it.
   const inFlightSave = useRef<Promise<void> | null>(null)
+  // The newest STARTED save's own before/after for this page, settled once
+  // that save's outcome is known: resolves to its own `nextBlocks` once it
+  // saves, or to the `before` it used if it fails. A save chained behind it
+  // (KAN-355) reads ITS `before` from here, not from `lastSaved` at run time —
+  // `lastSaved` is advanced synchronously by every started save (below), so a
+  // save ahead of this one that later fails can no longer correct a `before`
+  // already frozen from `lastSaved`'s post-failure value (KAN-368).
+  const lastStarted = useRef<{ pageId: string; stored: Promise<Block[]> } | null>(null)
 
   // Seed local editable state when a different page loads. On a *same-page*
   // refetch we normally leave local edits alone — but when there are no unsaved
@@ -121,7 +129,8 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
     nextTitle: string,
     nextBlocks: Block[],
     before: Block[],
-    resolveRecordIds: (recordIds: readonly string[] | null) => void
+    resolveRecordIds: (recordIds: readonly string[] | null) => void,
+    resolveStored: (blocks: Block[]) => void
   ) {
     // Title first, then blocks + sidebar-refresh + re-embed via the shared
     // commitBlocks (same tail the accepted-AI-edit path uses). Sequential so
@@ -146,6 +155,9 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
       }))
     } catch (err) {
       resolveRecordIds(null)
+      // A save chained behind this one (KAN-355) reads THIS save's `before`,
+      // not what it never managed to store.
+      resolveStored(before)
       if (lastSaved.current?.pageId === id && lastSaved.current.blocks === nextBlocks) {
         lastSaved.current = { pageId: id, blocks: before }
       }
@@ -165,6 +177,8 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
     )
     setSaved(true)
     setSavedAt(new Date())
+    // A save chained behind this one (KAN-355) reads this as ITS `before`.
+    resolveStored(nextBlocks)
     // Resolve `runSave` (and so `startSave`'s chain/`inFlightSave`/`flushNow`)
     // only once the record above is remembered — never before "saved", and
     // never rejects (commitBlocks's `remembered` already swallows its own
@@ -187,6 +201,17 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
     nextBlocks: Block[],
     beforeAtSchedule: Block[]
   ): Promise<void> {
+    const prev = inFlightSave.current
+    // A save chained behind another started save of the SAME page (KAN-355)
+    // takes its `before` from what that save ACTUALLY stored — resolved once
+    // it settles, below — rather than from `lastSavedOf` here: that read would
+    // be this call's own synchronous advance below if a chain of several saves
+    // is already mid-flight, which a later failure in one of them can no
+    // longer correct (KAN-368). With no such save in flight, `before` is
+    // computed synchronously exactly as before: the unchained first save must
+    // still call `updateTitle` synchronously, before any await — `flushNow`
+    // relies on it.
+    const priorStored = prev && lastStarted.current?.pageId === id ? lastStarted.current.stored : null
     // This save is one pause: the change log records it as one edit, from what
     // the page last saved to what it saves now. Captured and advanced HERE,
     // synchronously, the instant the save is started (not inside `runSave`,
@@ -198,6 +223,13 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
     // wrongly pick up that overwrite as this save's `before`.
     const before = lastSavedOf(id) ?? beforeAtSchedule
     if (lastSavedOf(id) !== null) lastSaved.current = { pageId: id, blocks: nextBlocks }
+    let resolveStored: (blocks: Block[]) => void = () => {}
+    lastStarted.current = {
+      pageId: id,
+      stored: new Promise<Block[]>((resolve) => {
+        resolveStored = resolve
+      }),
+    }
     // KAN-368: reserve this save's slot on the undo stack synchronously, the
     // instant the save is started — before it waits behind a previous save
     // (the KAN-355 chain) and before its own round trip — so a structural
@@ -214,12 +246,22 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
         }),
       })
     }
-    const prev = inFlightSave.current
-    const run = () => runSave(id, nextTitle, nextBlocks, before, resolveRecordIds)
-    const promise = (prev ? prev.catch(() => {}).then(run) : run()).finally(() => {
-      // Nothing may leave the slot unsettled: a throw before `commitBlocks`
-      // resolves it would hold every later ⌘Z for the timeout.
+    const run = (resolvedBefore: Block[]) =>
+      runSave(id, nextTitle, nextBlocks, resolvedBefore, resolveRecordIds, resolveStored)
+    // `priorStored` has already settled by the time `prev` (the save ahead of
+    // it) itself settles — `runSave`'s own success/failure tail resolves it
+    // before `prev`'s promise does — so chaining off it here adds no delay
+    // beyond the KAN-355 ordering `prev` already imposes. A `prev` for a
+    // DIFFERENT page (no `priorStored`) still gates ordering, just with
+    // `before` computed synchronously as above.
+    const promise = (
+      prev ? prev.catch(() => {}).then(() => (priorStored ?? Promise.resolve(before)).then(run)) : run(before)
+    ).finally(() => {
+      // Nothing may leave either slot unsettled: a throw before `commitBlocks`
+      // resolves them would hold every later ⌘Z, and every later chained
+      // save's `before`, for the timeout.
       resolveRecordIds(null)
+      resolveStored(before)
       if (inFlightSave.current === promise) inFlightSave.current = null
     })
     inFlightSave.current = promise

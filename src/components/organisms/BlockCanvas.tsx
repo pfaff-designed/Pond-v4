@@ -1248,8 +1248,8 @@ export function BlockCanvas({
    * THIS write, rather than reaching for whatever step is still on top of the
    * stack underneath it (KAN-368). This is also why `flushPendingPageSave` is
    * called first, synchronously, before this function registers its own
-   * step: a flushed typing edit still pending is itself registered, by
-   * `use-page-draft.ts`'s `runSave`, the instant ITS write starts — so its
+   * step: a flushed typing edit still pending has its own slot reserved, by
+   * `use-page-draft.ts`'s `startSave`, the instant ITS write starts — so its
    * step always lands BENEATH this one, never racing it for the same slot. A
    * write that lands nothing (a failed save, no user, a failed own-edit log)
    * resolves the pending promise to `null`, which `sessionUndo` drops without

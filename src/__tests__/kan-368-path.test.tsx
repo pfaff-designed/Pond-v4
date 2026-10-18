@@ -508,4 +508,66 @@ describe('KAN-368 path test', () => {
     expect(screen.getByText('A text one')).toBeInTheDocument()
     expect(screen.getByText('B text')).toBeInTheDocument()
   })
+
+  it('a chained save whose predecessor FAILS logs its own before as what the page actually held, not the failed save\'s after', async () => {
+    const a: Block = { id: 'b-a', type: 'text', content: 'A text' }
+    renderPath([a])
+    await screen.findByLabelText('Page title')
+
+    const fieldA = await textBlockIn('b-a')
+    act(() => {
+      textEditorOf(fieldA).commands.focus('end')
+    })
+    await waitFor(() => expect(fieldA).toHaveFocus())
+
+    // Save 1 (the first word's debounced save) is gated to reject — it never
+    // actually stores anything.
+    const mockedCommitBlocks = commitBlocks as jest.MockedFunction<typeof commitBlocks>
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
+    let rejectSave1: (err: Error) => void = () => {}
+    const gate = new Promise<void>((_resolve, reject) => {
+      rejectSave1 = reject
+    })
+    mockedCommitBlocks.mockImplementationOnce(async () => {
+      await gate
+      throw new Error('unreachable')
+    })
+
+    await userEvent.type(fieldA, ' one', { skipClick: true })
+    await waitFor(() => expect(fieldA.textContent).toBe('A text one'))
+
+    // Past the pause: save 1's debounce timer fires and it starts (gated, in
+    // flight, bound to fail).
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, EDIT_PAUSE_MS + 50))
+    })
+
+    await userEvent.type(fieldA, ' two', { skipClick: true })
+    await waitFor(() => expect(fieldA.textContent).toBe('A text one two'))
+
+    // Past the pause again: save 2's debounce timer fires too, chaining
+    // behind the still-gated (failing) save 1.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, EDIT_PAUSE_MS + 50))
+    })
+
+    rejectSave1(new Error('network error'))
+    await waitFor(() => expect(fakeChangeLog.length).toBe(1))
+
+    // Save 1 never stored anything, so it logs nothing — only save 2's
+    // record exists. The regression: its `before` must be what the page
+    // actually held before EITHER save (not save 1's `after`, which it never
+    // stored, and not a value frozen at save 2's own schedule time).
+    const [save2Record] = fakeChangeLog
+    expect(save2Record.before).toEqual([a])
+    expect(save2Record.after).toEqual([{ ...a, content: 'A text one two' }])
+
+    // One ⌘Z removes both words at once — the whole unsaved chain reverts to
+    // what the page last actually held.
+    fireEvent.keyDown(document.body, { key: 'z', metaKey: true })
+    await waitFor(() => expect(screen.getByText('A text')).toBeInTheDocument())
+    expect(screen.queryByText('A text one two')).not.toBeInTheDocument()
+
+    consoleError.mockRestore()
+  })
 })
