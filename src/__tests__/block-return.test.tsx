@@ -214,6 +214,12 @@ describe('Return after a block opens a line for `/`', () => {
     const user = userEvent.setup()
     const { onChange } = renderCanvas([note, emptyLine])
     const line = await textBlockIn('b-empty')
+    // KAN-345 rule 2: an empty line that merely arrived with the page never
+    // autofocuses on its own — this test is Backspace's, not autofocus's, so
+    // it puts the caret there itself, the way a person clicking in would.
+    act(() => {
+      textEditorOf(line).commands.focus('end')
+    })
     await waitFor(() => expect(line).toHaveFocus())
 
     await user.keyboard('{Backspace}')
@@ -229,6 +235,11 @@ describe('Return after a block opens a line for `/`', () => {
     const user = userEvent.setup()
     const { onChange } = renderCanvas([emptyLine, table])
     const line = await textBlockIn('b-empty')
+    // KAN-345 rule 2: see the note above — this test's own setup puts the
+    // caret in the line itself, same as a person clicking in would.
+    act(() => {
+      textEditorOf(line).commands.focus('end')
+    })
     await waitFor(() => expect(line).toHaveFocus())
 
     await user.keyboard('{Backspace}')

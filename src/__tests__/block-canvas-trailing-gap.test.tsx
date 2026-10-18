@@ -129,6 +129,21 @@ describe('the trailing gap below the last block (KAN-345 rule 3)', () => {
     })
   })
 
+  it('a block inserted via the gap on a page whose last block is not text opens with the caret in it (KAN-345 rule 2: a line minted this session autofocuses)', async () => {
+    const table: Block = {
+      id: 'b-table',
+      type: 'table',
+      columns: ['Tool', 'Location'],
+      rows: [{ id: 'r1', cells: ['Saw', 'Wall'] }],
+    }
+    renderHarness([table])
+
+    fireEvent.click(screen.getByTestId('trailing-block-gap'))
+
+    const field = await findTextBlock()
+    await waitFor(() => expect(field).toHaveFocus())
+  })
+
   it('with chrome={false} (read-only), no trailing-gap hit area is in the DOM at all', async () => {
     const note: Block = { id: 'b-note', type: 'text', content: 'Cabinets are the only open cost.' }
     renderHarness([note], false)

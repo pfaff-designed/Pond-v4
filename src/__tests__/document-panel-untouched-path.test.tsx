@@ -14,7 +14,7 @@
  */
 
 import React from 'react'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DocumentPanel } from '@/components/organisms/DocumentPanel'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
@@ -111,19 +111,20 @@ describe('an untouched page, walked end to end on its real surface (KAN-119)', (
     expect(screen.queryByText('new — in recipes')).toBeNull()
   })
 
-  it("the `page` template's own block authors no placeholder (KAN-345 supersedes the board's `blocks and templates` copy) — unfocused it shows no hint at all; focused it reads the generic line", async () => {
+  it("the `page` template's own seeded line never autofocuses on arrival (KAN-345 rule 1: a fresh page's body is blank at rest) — no hint at all until the trailing gap is clicked, then the generic line", async () => {
     renderUntouchedPage()
 
+    // No blur, no click: the line arrived with the page, so rule 1 says it
+    // never took focus on its own in the first place.
     const field = await findTextBlock()
-    field.blur()
-    await waitFor(() => expect(field).not.toHaveClass('ProseMirror-focused'))
-
+    expect(field).not.toHaveFocus()
+    expect(field).not.toHaveClass('ProseMirror-focused')
     expect(document.body.textContent).not.toContain('blocks and templates')
     expect(document.querySelector('[data-placeholder*="blocks and templates"]')).toBeNull()
-    expect(field).not.toHaveClass('ProseMirror-focused')
     expect(document.querySelector('[data-hover-ghost="true"]')).toBeNull()
 
-    field.focus()
+    fireEvent.click(screen.getByTestId('trailing-block-gap'))
+
     await waitFor(() => expect(field).toHaveClass('ProseMirror-focused'))
     const line = field.querySelector('.is-editor-empty')!
     expect(line).toHaveAttribute('data-placeholder', PROSE_LINE_PLACEHOLDER)

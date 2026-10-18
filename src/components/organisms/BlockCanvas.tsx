@@ -437,6 +437,15 @@ export function BlockCanvas({
   // once is fine, only the same one twice (before `createPage` resolves) is
   // the double-submit.
   const makePageInFlightRef = useRef<Set<string>>(new Set())
+  // Rule 2's fix (KAN-345): ids `markInserted` has minted THIS session, so a
+  // fresh empty line autofocuses on mount while one that merely arrived with
+  // the page never does — BlockCanvas is the one place that knows which ids
+  // it inserted, so it keeps its own record rather than the (optional,
+  // parent-owned) `insertedIds` prop, which a host may not pass at all. State,
+  // not a ref: this file's own lint bans reading `.current` during render
+  // (react-hooks/refs), and `renderBlockEditor` reads this set every render
+  // to compute each block's `autofocus` prop.
+  const [autofocusIds, setAutofocusIds] = useState<Set<string>>(() => new Set())
   // F27: link capabilities for card→page links, parented at THIS page. Provided to
   // every module view below via context — modules that don't link (all but kanban
   // today) simply never read it.
@@ -702,9 +711,14 @@ export function BlockCanvas({
   }, [pageId])
 
   // Mark a freshly-inserted block on the PARENT-owned insertedIds Set (see the
-  // prop doc): BlockCanvas doesn't own it, it just records into it.
+  // prop doc): BlockCanvas doesn't own it, it just records into it. Also marks
+  // `autofocusIds`, BlockCanvas's own record, for rule 2's autofocus fact —
+  // every insert path (trailing gap, between-row gap, `/` picks, Return)
+  // already calls this one function, so it stays the one place a session
+  // insert is recorded.
   function markInserted(id: string) {
     insertedIds?.add(id)
+    setAutofocusIds((prev) => (prev.has(id) ? prev : new Set(prev).add(id)))
   }
 
   /**
@@ -1594,7 +1608,7 @@ export function BlockCanvas({
             {view}
           </PondBlock>
         ) : block.type === 'text' ? (
-          <div className="py-0.5" style={{ paddingInline: TEXT_BLOCK_INSET_PX }}>
+          <div style={{ paddingBlock: TEXT_BLOCK_TOP_INSET_PX, paddingInline: TEXT_BLOCK_INSET_PX }}>
             {view}
           </div>
         ) : (
@@ -1612,6 +1626,7 @@ export function BlockCanvas({
         block={block}
         pageId={pageId}
         settleOnMount={insertedIds?.has(block.id) ?? false}
+        autofocus={autofocusIds.has(block.id)}
         chrome={chrome}
         untouched={untouched && i === 0}
         hoverGhost={
@@ -2106,6 +2121,7 @@ function BlockEditor({
   block,
   pageId,
   settleOnMount = false,
+  autofocus = false,
   chrome = true,
   untouched = false,
   hoverGhost = false,
@@ -2145,6 +2161,10 @@ function BlockEditor({
   block: Block
   pageId: string
   settleOnMount?: boolean
+  /** This id was minted by one of BlockCanvas's own insert paths this session
+   *  (rule 2, KAN-345) — the text module's empty line autofocuses on mount
+   *  only then, never for a line that merely arrived with the page. */
+  autofocus?: boolean
   chrome?: boolean
   /** This block is the untouched page's one hint line (6f): its placeholder draws in the mono override. */
   untouched?: boolean
@@ -2306,7 +2326,13 @@ function BlockEditor({
     <BlockRowProvider value={{ selected: state === 'selected', stepOut: onReturn, commitStep }}>
       <SlashLineContext.Provider value={slash.handleSlashLine}>
         <ActiveViewSelectionContext.Provider value={setActiveViewId}>
-          <ModuleView type={block.type} data={moduleData} editable onChange={handleModuleChange} />
+          <ModuleView
+            type={block.type}
+            data={moduleData}
+            editable
+            autofocus={autofocus}
+            onChange={handleModuleChange}
+          />
         </ActiveViewSelectionContext.Provider>
       </SlashLineContext.Provider>
     </BlockRowProvider>
