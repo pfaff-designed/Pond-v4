@@ -3,8 +3,7 @@
  * databases section starts collapsed, toggles both ways by click and by
  * keyboard, survives a remount (localStorage persistence, KAN-393), and stays
  * collapsed when a database child is reached by URL instead of by expanding
- * the section itself. Trash (KAN-504) is its own top-level foot row now, so
- * it is never subject to the databases section's own disclosure.
+ * the section itself.
  */
 import React from 'react'
 import { render, screen, within, fireEvent, waitFor, act } from '@testing-library/react'
@@ -209,8 +208,7 @@ describe('Rail — the databases section collapses, starts collapsed, and rememb
     const ingredients = screen.getByRole('treeitem', { name: 'ingredients' })
 
     // Rendering the heading LAST (KAN-486: its rows sit above it, never below)
-    // means every db row comes BEFORE it in document order. Trash (KAN-504)
-    // is no longer a database row, so it is not part of this group.
+    // means every db row comes BEFORE it in document order.
     for (const dbRow of [changeLog, ingredients]) {
       expect(
         dbRow.compareDocumentPosition(heading()) & Node.DOCUMENT_POSITION_FOLLOWING

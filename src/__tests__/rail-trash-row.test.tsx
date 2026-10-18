@@ -8,8 +8,9 @@
  * log row share): no delete ×, no F2/double-click rename.
  */
 import React from 'react'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { RailView, type RailNode } from '@/components/organisms/Rail'
+import { TRASH_NODE_ID } from '@/lib/change-log/trash-view'
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
@@ -83,6 +84,64 @@ describe('rail — the trash row (KAN-504)', () => {
     renderRail([health, databases], new Set(['root-db']))
     const row = screen.getByRole('treeitem', { name: 'trash' })
     expect(row).toHaveAttribute('draggable', 'false')
+  })
+
+  it('draws the plain reserved dot, not an area glyph — trash\'s `parentId: null` must not read as an area to resolveMark', () => {
+    renderRail([health, databases], new Set(['root-db']))
+    const trashRow = screen.getByRole('treeitem', { name: 'trash' })
+    const changeLogRow = screen.getByRole('treeitem', { name: 'change log' })
+    expect(trashRow.querySelector('[data-area-mark]')).not.toBeInTheDocument()
+    const trashDot = trashRow.querySelector('[data-part="dot"]')
+    const changeLogDot = changeLogRow.querySelector('[data-part="dot"]')
+    expect(trashDot).toBeInTheDocument()
+    expect(trashDot).toHaveClass(changeLogDot!.className)
+  })
+
+  it('is not styled as an area row — full-ink label and the extra top gap stay off, same as change log', () => {
+    renderRail([health, databases], new Set(['root-db']))
+    const trashRow = screen.getByRole('treeitem', { name: 'trash' })
+    const changeLogRow = screen.getByRole('treeitem', { name: 'change log' })
+    const trashTitle = within(trashRow).getByText('trash')
+    const changeLogTitle = within(changeLogRow).getByText('change log')
+    expect(trashTitle).not.toHaveClass('font-medium')
+    expect(trashRow).not.toHaveClass('mt-1')
+    expect(trashTitle.className).toBe(changeLogTitle.className)
+  })
+
+  it('keyboard: ↓ from the databases heading reaches trash, ↑ returns, Enter opens the trash page', () => {
+    const onSelect = jest.fn()
+    render(
+      <RailView
+        tree={[health, databases]}
+        pondName="life"
+        selectedId={null}
+        expanded={new Set(['root-db'])}
+        lifeExpanded
+        busyId={null}
+        isLoading={false}
+        isEmpty={false}
+        onSelect={onSelect}
+        onToggle={jest.fn()}
+        onAddChild={jest.fn()}
+        onDelete={jest.fn()}
+        onRename={jest.fn()}
+        onPickGlyph={jest.fn()}
+        onLife={jest.fn()}
+        onToggleLife={jest.fn()}
+        onOpenDatabases={jest.fn()}
+        canDrop={() => true}
+        onMove={jest.fn()}
+      />
+    )
+    const heading = screen.getByRole('treeitem', { name: 'databases' })
+    const trashRow = screen.getByRole('treeitem', { name: 'trash' })
+    act(() => heading.focus())
+    fireEvent.keyDown(heading, { key: 'ArrowDown' })
+    expect(trashRow).toHaveFocus()
+    fireEvent.keyDown(trashRow, { key: 'ArrowUp' })
+    expect(heading).toHaveFocus()
+    fireEvent.keyDown(trashRow, { key: 'Enter' })
+    expect(onSelect).toHaveBeenCalledWith(TRASH_NODE_ID)
   })
 
   it('takes none of +, Delete or F2 — no delete ×, no F2/double-click rename', () => {

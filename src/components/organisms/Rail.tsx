@@ -919,9 +919,7 @@ export function RailView({
     // the root always carries a caret even with zero database pages.
     const root = { ...rawRoot, isFolder: true }
     // KAN-94: the change log is the root's first child — shown only once the
-    // root itself is expanded, like any other child. KAN-504: trash used to
-    // be its second child here; it is now the foot's own top-level row
-    // (`TRASH_ROW`, below), not a databases child at all.
+    // root itself is expanded, like any other child.
     //
     // KAN-486: the heading renders LAST, after its own rows, not first — the
     // foot is bottom-anchored, so a heading drawn first would be pushed up
