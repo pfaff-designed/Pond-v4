@@ -43,12 +43,14 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { Icon } from '@/components/atoms/Icon'
 import { PondControl } from '@/components/atoms/PondControl'
+import { holdInkGround, holdPaperGround } from '@/lib/theme/mode'
 
 /** `s6m2`'s glyph row, in the board's order. The first is the column default. */
 const GLYPHS = ['lightning-03', 'waves-02', 'star-01', 'house', 'ring', 'heart'] as const
 
-/** `s6m2`'s theme row. `paper` is the column default. */
+/** `s6m2`'s theme row. `paper` is the column default. Only these two are live (#175 owns the rest). */
 const THEMES = ['paper', 'ink', 'sage', 'mist', 'navy', 'wheat', 'burnt orange', 'ember'] as const
+type LiveTheme = 'paper' | 'ink'
 
 /** `s6m3`'s suggested areas. Where they come from is unspecified (AUDIT 6m, p2). */
 const AREAS = ['clients', 'projects', 'studio', 'notes', 'finances', 'people', 'admin'] as const
@@ -105,17 +107,34 @@ function GlyphRow({ value, onChange }: { value: string; onChange: (glyph: string
   )
 }
 
-/** A pill: the board's one shape for a theme, an area and a selected tick. */
-function Pill({ children, on, muted }: { children: string; on?: boolean; muted?: boolean }) {
+/** A pill: the board's one shape for a theme, an area and a selected tick. Live when `onClick` is given. */
+function Pill({
+  children,
+  on,
+  muted,
+  onClick,
+}: {
+  children: string
+  on?: boolean
+  muted?: boolean
+  onClick?: () => void
+}) {
+  const className = `inline-flex items-center gap-[6px] rounded-full px-[11px] py-[6px] text-[12.5px] leading-[normal] outline-none ${
+    on
+      ? 'bg-mn-text text-raw-paper dark:text-raw-ink'
+      : 'text-mn-text ring-1 ring-mn-text/20 ring-inset'
+  } ${muted ? 'opacity-40' : ''}`
+
+  if (onClick) {
+    return (
+      <button type="button" aria-pressed={on} onClick={onClick} className={className}>
+        {children}
+      </button>
+    )
+  }
+
   return (
-    <span
-      aria-disabled={muted ? 'true' : undefined}
-      className={`inline-flex items-center gap-[6px] rounded-full px-[11px] py-[6px] text-[12.5px] leading-[normal] ${
-        on
-          ? 'bg-mn-text text-raw-paper dark:text-raw-ink'
-          : 'text-mn-text ring-1 ring-mn-text/20 ring-inset'
-      } ${muted ? 'opacity-40' : ''}`}
-    >
+    <span aria-disabled={muted ? 'true' : undefined} className={className}>
       {children}
     </span>
   )
@@ -142,6 +161,23 @@ export function NewPondSheet({
   const [name, setName] = useState(defaultName)
   // Step-1-level, not step-scoped: a step 2 → step 1 round trip must keep the pick.
   const [glyph, setGlyph] = useState<string>(GLYPHS[0])
+  const [theme, setTheme] = useState<LiveTheme>('paper')
+
+  // Nothing is held until the person actually picks a ground to preview — the
+  // default `paper` pill never forces light on a person who opened the sheet
+  // in dark. Swapping pills releases the old hold before acquiring the new one.
+  const releaseThemeHoldRef = useRef<(() => void) | null>(null)
+  const handleThemeChange = (next: LiveTheme) => {
+    if (next === theme) return
+    releaseThemeHoldRef.current?.()
+    releaseThemeHoldRef.current = next === 'ink' ? holdInkGround() : holdPaperGround()
+    setTheme(next)
+  }
+
+  // Every way the sheet closes (Esc, cancel, scrim, ⌘K, make-pond) unmounts it.
+  useEffect(() => {
+    return () => releaseThemeHoldRef.current?.()
+  }, [])
 
   const trimmed = name.trim()
   const blank = trimmed === ''
@@ -247,15 +283,21 @@ export function NewPondSheet({
             </div>
 
             {/* Eight pills because the board draws eight; only paper and ink are
-                built (#175 owns the other six), which is why the row is inert. */}
+                live (#175 owns the other six, which stay muted/inert). */}
             <div className="flex flex-col gap-[8px]">
               <span className={LABEL}>theme</span>
               <div className="flex flex-wrap gap-[6px]">
-                {THEMES.map((t) => (
-                  <Pill key={t} on={t === 'paper'} muted>
-                    {t}
-                  </Pill>
-                ))}
+                {THEMES.map((t) =>
+                  t === 'paper' || t === 'ink' ? (
+                    <Pill key={t} on={t === theme} onClick={() => handleThemeChange(t)}>
+                      {t}
+                    </Pill>
+                  ) : (
+                    <Pill key={t} muted>
+                      {t}
+                    </Pill>
+                  )
+                )}
               </div>
             </div>
           </>

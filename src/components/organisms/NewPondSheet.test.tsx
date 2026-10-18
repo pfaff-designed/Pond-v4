@@ -208,3 +208,44 @@ describe('NewPondSheet — the glyph row is a live radiogroup (KAN-501)', () => 
     expect(radios[3]).toHaveAttribute('aria-checked', 'true')
   })
 })
+
+describe('NewPondSheet — the paper/ink theme pills preview live (KAN-501)', () => {
+  afterEach(() => {
+    document.documentElement.classList.remove('dark')
+  })
+
+  it('clicking ink sets the dark class; clicking paper after clears it', async () => {
+    const user = userEvent.setup()
+    render(<NewPondSheet onCreate={jest.fn()} onCancel={jest.fn()} />)
+
+    await user.click(screen.getByRole('button', { name: 'ink' }))
+    expect(document.documentElement).toHaveClass('dark')
+
+    await user.click(screen.getByRole('button', { name: 'paper' }))
+    expect(document.documentElement).not.toHaveClass('dark')
+  })
+
+  it('unmounting after picking ink restores whatever mode was active before the sheet opened', async () => {
+    const user = userEvent.setup()
+    const { unmount } = render(<NewPondSheet onCreate={jest.fn()} onCancel={jest.fn()} />)
+
+    await user.click(screen.getByRole('button', { name: 'ink' }))
+    expect(document.documentElement).toHaveClass('dark')
+
+    unmount()
+    expect(document.documentElement).not.toHaveClass('dark')
+  })
+
+  it('back then continue keeps the picked pill selected', async () => {
+    const user = userEvent.setup()
+    render(<NewPondSheet onCreate={jest.fn()} onCancel={jest.fn()} />)
+
+    await user.type(screen.getByPlaceholderText('Name your pond'), 'Studio')
+    await user.click(screen.getByRole('button', { name: 'ink' }))
+    await user.click(screen.getByRole('button', { name: 'continue' }))
+    await user.click(screen.getByRole('button', { name: 'back' }))
+
+    expect(screen.getByRole('button', { name: 'ink' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'paper' })).toHaveAttribute('aria-pressed', 'false')
+  })
+})
