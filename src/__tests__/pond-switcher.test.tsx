@@ -246,20 +246,17 @@ describe('the pond switcher', () => {
     await waitFor(() => expect(push).toHaveBeenCalledWith('/workspace?pond=p-new'))
   })
 
-  it("skip makes it straight away — s6m2: skip gives 'untitled pond'", async () => {
-    ;(createPond as jest.Mock).mockResolvedValue({
-      ...LIFE,
-      id: 'p-untitled',
-      name: 'untitled pond',
-    })
+  it('skip no longer makes a pond — KAN-487: createPond refuses a blank name', async () => {
+    ;(createPond as jest.Mock).mockRejectedValue(new Error('createPond: a pond needs a name'))
     renderSwitcher()
     fireEvent.click(await screen.findByRole('button', { name: /life/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: /new pond/ }))
 
     fireEvent.click(screen.getByRole('button', { name: 'skip' }))
-    // Empty name: the column default supplies "untitled pond".
     await waitFor(() => expect(createPond).toHaveBeenCalledWith(''))
-    await waitFor(() => expect(push).toHaveBeenCalledWith('/workspace?pond=p-untitled'))
+    // The contract refuses the blank name: the sheet shows the failure, nothing opens.
+    await waitFor(() => expect(screen.getByText(/could not make it/)).toBeInTheDocument())
+    expect(push).not.toHaveBeenCalled()
   })
 
   it('surfaces a failure in the sheet instead of silently closing', async () => {
