@@ -90,7 +90,7 @@ import {
   type DropZone,
   type Rect,
 } from '@/lib/modules/layout-rows'
-import { KEY_WIDTHS, handOffRowStartOnResize, resizeAlone } from '@/lib/modules/block-resize'
+import { KEY_WIDTHS, handOffRowStartOnResize, resizeAlone, roundFreePercent } from '@/lib/modules/block-resize'
 import { SlashLineContext, type SlashLineAt } from '@/lib/modules/text/slash-line'
 import { useSlashLine } from '@/components/organisms/use-slash-line'
 import { focusTextBlock, hasTextBeforeCaret } from '@/lib/modules/text/focus'
@@ -979,7 +979,9 @@ export function BlockCanvas({
     // glyph→named mapping), not the number its position happens to round to —
     // snapping to ½ must keep reading as '1/2' in the width row, not "custom".
     const lockedKey = st.lockedPercent !== null ? KEY_WIDTHS.find((k) => k.percent === st.lockedPercent) : undefined
-    const committed: BlockWidth | number = lockedKey ? lockedKey.width : Math.round(st.livePercent * 10) / 10
+    const committed: BlockWidth | number = lockedKey
+      ? lockedKey.width
+      : roundFreePercent(st.livePercent, columnWidth)
     if (widthTenths(committed) === widthTenths(before.width)) return
     setBlockWidth(before, committed)
   }

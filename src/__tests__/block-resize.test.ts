@@ -3,7 +3,13 @@
  * locks within 8px of a key width's position, releases 8px further (16px
  * from the lock).
  */
-import { handOffRowStartOnResize, KEY_WIDTHS, resizeAlone, snapPercent } from '@/lib/modules/block-resize'
+import {
+  handOffRowStartOnResize,
+  KEY_WIDTHS,
+  resizeAlone,
+  roundFreePercent,
+  snapPercent,
+} from '@/lib/modules/block-resize'
 import {
   MIN_BLOCK_WIDTH_PX,
   percentToRenderedPx,
@@ -170,6 +176,27 @@ describe('resizeAlone', () => {
     const { percent } = resizeAlone(columnPx, 50, -1_000_000, null)
     expect(rowHolds(columnPx, [percent])).toBe(true)
   })
+})
+
+describe('roundFreePercent (the one-decimal commit never renders under the floor)', () => {
+  // The bug this item fixes: `Math.round(percent * 10) / 10`, applied to the
+  // *unrounded* clamp floor, rounds DOWN at roughly half of all column
+  // widths — e.g. at 900px the floor is 27.9476...%, which rounds to 27.9,
+  // renders 239.56px, and `rowHolds` then stacks the row, flipping the block
+  // to 100% wide on release (the opposite of the drag). Every integer column
+  // width in 241..2000 is exercised, not a sample, since which half rounds
+  // down depends on each column's own fraction, not on the column's size.
+  const committedAtFloor = (columnPx: number): number => {
+    const { percent } = resizeAlone(columnPx, 50, -1_000_000, null)
+    return roundFreePercent(percent, columnPx)
+  }
+
+  it.each(Array.from({ length: 2000 - 241 + 1 }, (_, i) => i + 241))(
+    'the committed floor at a %dpx column still satisfies rowHolds',
+    (columnPx) => {
+      expect(rowHolds(columnPx, [committedAtFloor(columnPx)])).toBe(true)
+    }
+  )
 })
 
 describe('snapPercent on a column too narrow for the lock zones to stay separate', () => {

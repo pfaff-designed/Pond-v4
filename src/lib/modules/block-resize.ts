@@ -46,8 +46,10 @@ const EPSILON_PX = 1e-9
  * floor a `~1e-11` sliver under `MIN_BLOCK_WIDTH_PX`'s own rendered px —
  * inside `rowHolds`' stacking band (AGENTS.md "crash early" doesn't apply
  * here; this is display math, not an impossible state). Nudging the floor
- * up by this much is imperceptible to a real drag (it's absorbed entirely
- * by the one-decimal rounding at the write boundary) but is many orders of
+ * up by this much guards only this *unrounded* live percent — it does not
+ * by itself protect the one-decimal value a free release actually writes,
+ * since ordinary rounding can still carry a value from just above the floor
+ * to just below it (see `roundFreePercent`). The nudge is many orders of
  * magnitude past any float dust this round-trip can produce.
  */
 const FLOOR_EPSILON_PERCENT = 1e-6
@@ -128,6 +130,24 @@ export function resizeAlone(
   const clampedPercent = Math.min(100, Math.max(minPercent, snapped.percent))
   if (clampedPercent !== snapped.percent) return { percent: clampedPercent, locked: false }
   return snapped
+}
+
+/**
+ * Rounds a free (unlocked) percent to one decimal place for commit — the one
+ * home for "a committed tenth never renders under the floor" (AGENTS.md DRY).
+ * Plain `Math.round(percent * 10) / 10` rounds DOWN at roughly half of all
+ * column widths when `percent` sits at or near the clamp floor: e.g. at a
+ * 900px column the floor is 27.9476...%, which rounds to 27.9, renders
+ * 239.56px, and `rowHolds` then stacks the row — the block the person just
+ * dragged renders 100% wide on release, the opposite of the drag. Ceils to
+ * the next tenth instead whenever the ordinary round would land under the
+ * column's own rendered floor; `percent` is always already `>=` that floor
+ * (`resizeAlone`'s own clamp), so ceiling can only move it up, never past 100.
+ */
+export function roundFreePercent(percent: number, columnPx: number): number {
+  const rounded = Math.round(percent * 10) / 10
+  if (percentToRenderedPx(columnPx, rounded) >= MIN_BLOCK_WIDTH_PX) return rounded
+  return Math.ceil(percent * 10) / 10
 }
 
 /**
