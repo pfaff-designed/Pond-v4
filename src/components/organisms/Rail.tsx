@@ -1720,8 +1720,15 @@ export function Rail() {
           // itself — read it fresh off the cache rather than reuse a stale
           // render's `nodeById` (this effect's own deps are `[]`), so a
           // leftover id with a since-cached child unlinks that child's
-          // parents too, not only the root's own.
-          const cachedRows = queryClient.getQueryData<PageRow[]>(pagesKey(pondId)) ?? []
+          // parents too, not only the root's own. This effect runs on mount,
+          // ahead of the rail's own `pages` query settling on a cold reload,
+          // so a bare cache read sees nothing yet — `fetchQuery` (same
+          // key/fn as that query) waits for the real rows instead of
+          // falling back to the leftover id alone.
+          const cachedRows = await queryClient.fetchQuery<PageRow[]>({
+            queryKey: pagesKey(pondId),
+            queryFn: () => fetchPages(pondId),
+          })
           const node = findRailNode(buildTree(cachedRows), id)
           await trashPageUnlinked(supabase, queryClient, {
             pondId,
