@@ -61,10 +61,15 @@ export type PageWriteQueue<T> = {
   /**
    * Drops the halted op instead of retrying it: `head()` stays at whatever
    * it held before that op was attempted (the failed write never applied,
-   * so there's nothing to roll forward to), and the queue resumes pumping
-   * anything already queued behind it. A no-op when not halted.
+   * so there's nothing to roll forward to). By default the queue resumes
+   * pumping anything already queued behind it (unchanged). `andQueued: true`
+   * discards that queued tail too, rejecting each one instead of applying
+   * it — for a caller (a template apply) whose `after` every later op was
+   * built on top of, so a queued op built on the discarded `after` must
+   * never land on the pre-discard `head()` it was never actually derived
+   * from. A no-op when not halted.
    */
-  discardHalted(): void
+  discardHalted(opts?: { andQueued?: boolean }): void
   /**
    * Sets `head()` directly for an external write (an accepted diff, an
    * undo/redo landing) that never goes through `writer`. Only legal while
@@ -216,16 +221,23 @@ export function createPageWriteQueue<T>(writer: PageWriter<T>, initial: T): Page
   }
 
   // Drops the halted op without retrying it: any `retry()` callers already
-  // waiting on it get rejected (it is never going to apply now), and anything
-  // already queued behind it resumes — same re-entry into `pump()` as
-  // `retry()` uses, just skipping straight past the halted op instead of
-  // re-attempting it.
-  function discardHalted(): void {
+  // waiting on it get rejected (it is never going to apply now). Without
+  // `andQueued`, anything already queued behind it resumes — same re-entry
+  // into `pump()` as `retry()` uses, just skipping straight past the halted
+  // op instead of re-attempting it. With `andQueued`, that queued tail is
+  // spliced out and rejected too, BEFORE `pump()` runs again, so none of it
+  // is ever applied against the pre-discard `head()` — it was built on top
+  // of the discarded op's `after`, not that.
+  function discardHalted(opts?: { andQueued?: boolean }): void {
     if (!haltedOp) return
     haltedOp = null
     const waiters = haltedWaiters.splice(0, haltedWaiters.length)
+    const discardedQueue = opts?.andQueued ? queued.splice(0, queued.length) : []
     notify()
     waiters.forEach((w) => w.reject(new Error('PageWriteQueue: halted op discarded')))
+    discardedQueue.forEach((entry) =>
+      entry.reject(new Error('PageWriteQueue: queued op discarded with its halted predecessor'))
+    )
     void pump()
   }
 

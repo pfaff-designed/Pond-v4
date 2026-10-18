@@ -393,7 +393,21 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
       .catch((err) => {
         console.error('[document] structural save failed', id, err)
         if (opts?.discardOnFailure) {
-          queue.discardHalted()
+          // The person may have kept typing against the now-discarded blocks
+          // while this write was failing — that debounce timer's `after` was
+          // built on top of them, so it must never fire and enqueue a typed
+          // write of content the store never actually held.
+          if (saveTimer.current) {
+            clearTimeout(saveTimer.current)
+            saveTimer.current = null
+          }
+          pendingSave.current = null
+          setPendingDebounce(false)
+          // Any op already queued behind the halt (a debounce that fired
+          // before the failure resolved) was built on this discarded
+          // `after` too — discard it with the halted op, not just the
+          // halted op itself, or it silently re-stores the failed apply.
+          queue.discardHalted({ andQueued: true })
           setBlocks(queue.head().blocks)
         }
         return false

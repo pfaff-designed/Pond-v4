@@ -170,6 +170,27 @@ describe('createPageWriteQueue', () => {
       expect(() => queue.discardHalted()).not.toThrow()
       expect(queue.halted()).toBe(false)
     })
+
+    it('{ andQueued: true } also discards anything queued behind the halted op, instead of resuming it', async () => {
+      const writer = jest.fn((_op: PageWriteOp<string>) => Promise.reject(new Error('nope')))
+      const queue = createPageWriteQueue<string>(writer, 'initial')
+
+      const first = queue.enqueue({ kind: 'structural', after: 'template' })
+      // Queued behind `first` before its rejection resolves — built on top of
+      // `template`, the very `after` the failure is about to discard.
+      const second = queue.enqueue({ kind: 'typed', after: 'template+typed' })
+      await expect(first).rejects.toThrow('nope')
+
+      queue.discardHalted({ andQueued: true })
+
+      await expect(second).rejects.toThrow()
+      // Neither the discarded op nor the queued one it was behind ever
+      // reached the writer a second time — `second` was never applied.
+      expect(writer).toHaveBeenCalledTimes(1)
+      expect(queue.head()).toBe('initial')
+      expect(queue.halted()).toBe(false)
+      expect(queue.idle()).toBe(true)
+    })
   })
 
   describe('rebase()', () => {
