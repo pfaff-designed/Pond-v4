@@ -1,14 +1,15 @@
 'use client'
 
 /**
- * The new-pond sheet — `Pond 06.13` `s6m2` / `s6m3` / `s6m4`.
+ * The new-pond sheet — `Pond 06.13` `s6m2` / `s6m3`.
  *
- * The board draws creating a pond as a three-step sheet over a paper scrim, NOT
- * an inline field in the switcher menu. #316 ruled that the sheet ships **whole**,
- * with `name` the only enabled control: glyph, theme and the areas step render in
- * `PondControl`'s own `disabled` state — one of the eight states
- * `PondControl.dc.html` specifies — so nothing is missing from the board and
- * nothing pretends to be live.
+ * The board draws creating a pond as a three-step sheet over a paper scrim (name/
+ * glyph/theme · areas · sources), NOT an inline field in the switcher menu. The
+ * sources step is a separate ticket's ask and is left out here, so this sheet is
+ * **two** steps. #316 ruled that the sheet ships **whole**, with `name` the only
+ * enabled control: glyph, theme and the areas step render in `PondControl`'s own
+ * `disabled` state — one of the eight states `PondControl.dc.html` specifies — so
+ * nothing is missing from the board and nothing pretends to be live.
  *
  * Every value here is read inline from the board's markup, not eyeballed:
  *
@@ -17,7 +18,7 @@
  *   glass    linear-gradient(160deg, rgba(255,255,255,.9), rgba(255,255,255,.72))
  *            border rgba(255,255,255,.9) · inset 0 1px 0 rgba(255,255,255,.7)
  *            + 0 20px 54px rgba(40,34,24,.16) · blur(24px) saturate(1.3)
- *   head     mono 11 · ink .68 · `new pond` ⟷ `N of 3`
+ *   head     mono 11 · ink .68 · `N of 2`
  *   title    22 / 500 / -.01em
  *   lede     13.5 / 1.55 · ink .8
  *   label    10.5 / 500 / .1em / uppercase · ink .68
@@ -25,8 +26,7 @@
  *            unselected ink .04 · the glyph itself 15px over currentColor
  *   chip     padding 6/11 · radius 999 · 12.5 · selected `#1B1D14`/paper
  *            unselected `inset 0 0 0 1px rgba(27,29,20,.2)`
- *   source   row padding 8/0 · border-top ink .09 · name 13.5/500 · sub mono 10.5 ink .68
- *   foot     gap 8 · padding-top 4 · ghost `skip` ⟷ primary `continue`
+ *   foot     gap 8 · padding-top 4 · primary `continue` ⟷ `make pond`
  *
  * **This sheet's glass is a THIRD recipe** — `.9 → .72` with a `.16` shadow —
  * distinct from both `--mn-glass` (`.86 → .64` / `.14`) and `PondRail`'s switcher
@@ -44,22 +44,14 @@ import { useState } from 'react'
 import { Icon } from '@/components/atoms/Icon'
 import { PondControl } from '@/components/atoms/PondControl'
 
-/** `s6m2`'s glyph row, in the board's order. The first is the skip default. */
+/** `s6m2`'s glyph row, in the board's order. The first is the column default. */
 const GLYPHS = ['lightning-03', 'waves-02', 'star-01', 'house', 'ring', 'heart'] as const
 
-/** `s6m2`'s theme row. `paper` is the skip default. */
+/** `s6m2`'s theme row. `paper` is the column default. */
 const THEMES = ['paper', 'ink', 'sage', 'mist', 'navy', 'wheat', 'burnt orange', 'ember'] as const
 
 /** `s6m3`'s suggested areas. Where they come from is unspecified (AUDIT 6m, p2). */
 const AREAS = ['clients', 'projects', 'studio', 'notes', 'finances', 'people', 'admin'] as const
-
-/** `s6m4`'s sources, with the board's own cadence copy. */
-const SOURCES = [
-  ['google sheet', 'syncs every 15 min'],
-  ['calendar', 'as events change'],
-  ['bank feed', 'as transactions arrive'],
-  ['csv file', 'copied once'],
-] as const
 
 const SHEET_GLASS =
   'bg-[linear-gradient(160deg,rgba(255,255,255,.9),rgba(255,255,255,.72))] ' +
@@ -89,7 +81,7 @@ function Pill({ children, on, muted }: { children: string; on?: boolean; muted?:
 }
 
 export interface NewPondSheetProps {
-  /** Submitted with the typed name — empty is legal and means "untitled pond". */
+  /** Submitted with the typed name — never blank; `continue`/`make pond` stay disabled until it isn't. */
   onCreate: (name: string) => void
   onCancel: () => void
   pending?: boolean
@@ -108,7 +100,7 @@ export function NewPondSheet({
   const [step, setStep] = useState(1)
   const [name, setName] = useState(defaultName)
 
-  const last = step === 3
+  const last = step === 2
 
   return (
     <>
@@ -125,7 +117,7 @@ export function NewPondSheet({
         className={`fixed top-[120px] left-1/2 z-[41] box-border flex w-[540px] -translate-x-1/2 flex-col gap-[18px] rounded-[20px] p-[22px_24px] text-mn-text ${SHEET_GLASS}`}
       >
         <div className="flex items-baseline justify-end font-mono text-[11px] leading-[normal] text-mn-text-secondary">
-          <span>{step} of 3</span>
+          <span>{step} of 2</span>
         </div>
 
         {step === 1 && (
@@ -199,35 +191,6 @@ export function NewPondSheet({
           </>
         )}
 
-        {step === 3 && (
-          <>
-            <span className="text-[22px] leading-[normal] font-medium tracking-[-0.01em]">
-              Sources
-            </span>
-            <p className="m-0 text-[13.5px] leading-[1.55] text-mn-text/80">
-              Each arrives under this pond&rsquo;s databases, read-only while connected.
-            </p>
-            {/* Genuinely blocked, not a choice: #161–#167 are open and ADR 0006
-                defers them, so there is nothing for `connect` to reach. */}
-            <div className="pointer-events-none flex flex-col opacity-40">
-              {SOURCES.map(([title, cadence]) => (
-                <div
-                  key={title}
-                  className="flex items-center gap-[12px] border-t border-mn-text/[0.09] py-[8px]"
-                >
-                  <div className="flex flex-1 flex-col gap-[2px]">
-                    <span className="text-[13.5px] leading-[normal] font-medium">{title}</span>
-                    <span className="font-mono text-[10.5px] leading-[normal] text-mn-text-secondary">
-                      {cadence}
-                    </span>
-                  </div>
-                  <PondControl kind="button" variant="secondary" label="connect" disabled />
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-
         {failure && (
           <div className="font-mono text-[10.5px] leading-[normal] text-mn-text/80">
             could not make it. {failure}
@@ -235,15 +198,6 @@ export function NewPondSheet({
         )}
 
         <div className="flex items-center gap-[8px] pt-[4px]">
-          {/* `s6m2`: "skip gives 'untitled pond', the first glyph and the paper
-              theme" — so skip creates, with the column defaults. */}
-          <PondControl
-            kind="button"
-            variant="ghost"
-            label="skip"
-            disabled={pending}
-            onClick={() => onCreate('')}
-          />
           <div className="flex-1" />
           <PondControl
             kind="button"

@@ -25,3 +25,20 @@ describe('NewPondSheet — one name field, a required name (KAN-487)', () => {
     expect(continueButton).toBeEnabled()
   })
 })
+
+describe('NewPondSheet — no sources step, no skip (KAN-488)', () => {
+  it('has no skip control and never shows more than "2" at either step', async () => {
+    const user = userEvent.setup()
+    render(<NewPondSheet onCreate={jest.fn()} onCancel={jest.fn()} />)
+
+    expect(screen.queryByRole('button', { name: 'skip' })).not.toBeInTheDocument()
+    expect(screen.getByText('1 of 2')).toBeInTheDocument()
+
+    await user.type(screen.getByPlaceholderText('Name your pond'), 'Studio')
+    await user.click(screen.getByRole('button', { name: 'continue' }))
+
+    expect(screen.queryByRole('button', { name: 'skip' })).not.toBeInTheDocument()
+    expect(screen.getByText('2 of 2')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'make pond' })).toBeInTheDocument()
+  })
+})
