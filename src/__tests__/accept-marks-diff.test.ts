@@ -82,6 +82,29 @@ describe('touchedMarks', () => {
       [text('a', 'one'), todo('t', [item('1', 'tiles')])],
       [],
     ],
+    [
+      // ai-composition.ts omits every item id from what the AI emits, so
+      // hydrateBlock mints a brand-new id for EVERY item on an AI-authored edit —
+      // even one whose label/checked survived unchanged. A pure id zip would see
+      // zero overlap and call all three rows touched; content must carry identity
+      // when ids don't overlap at all.
+      'an edit that remints every item id still leaves an untouched row untouched',
+      [
+        todo('t', [
+          item('i1', 'electrician, second fix', false),
+          item('i2', 'worktop template', false),
+          item('i3', 'tiles', false),
+        ]),
+      ],
+      [
+        todo('t', [
+          item('new1', 'electrician, second fix', true),
+          item('new2', 'worktop template', true),
+          item('new3', 'tiles', false),
+        ]),
+      ],
+      ['block:t:row:new1', 'block:t:row:new2', 'block:t:row:i1', 'block:t:row:i2'],
+    ],
   ])('%s', (_label, before, after, expected) => {
     expect(touchedMarks(before, after).sort()).toEqual([...expected].sort())
   })

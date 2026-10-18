@@ -8,9 +8,21 @@
  * A touched block is reported as one target, `block:<id>`, UNLESS it is a `todo`
  * block present on both sides — the only row-targeted kind this slice builds (table
  * rows are the split-off child; see the ticket). For a todo block, each touched item
- * (by id, same rule as blocks) is its own target, `block:<id>:row:<itemId>`; if the
- * block's own non-row fields (label, marker, …) also changed, that is reported too,
- * since no row target speaks for it.
+ * is its own target, `block:<id>:row:<itemId>`; if the block's own non-row fields
+ * (label, marker, …) also changed, that is reported too, since no row target speaks
+ * for it.
+ *
+ * Item identity is id-first, content-fallback — NOT pure id zipping, despite
+ * `touchedBlockIds`' own rule above it. `ai-composition.ts`'s omit-chain strips
+ * every item id from what the AI emits, so `hydrateBlock` mints a fresh id for
+ * EVERY item on an AI-authored edit, changed or not (`edits.ts`'s edit branch).
+ * A pure id zip would then see zero overlap between before/after ids and report
+ * every row touched, including ones whose label/checked never changed. So: ids
+ * present on both sides are compared directly; the ids left over on each side
+ * (added, removed, or — in practice — EVERY id on an AI edit) are paired off by
+ * content, and only a leftover with no content match on the other side is
+ * touched. Ids that happen to be stable (a person's own edit, this file's own
+ * synthetic tests) take the id path and never reach the content fallback.
  */
 
 import type { Block } from '@/lib/documents/types'
@@ -24,16 +36,45 @@ function indexItemsById(items: TodoItem[]): Map<string, TodoItem> {
   return map
 }
 
-/** Touched item ids, by the same by-id rule as {@link touchedBlockIds}. */
+function sameContent(a: TodoItem, b: TodoItem): boolean {
+  const { id: _a, ...restA } = a
+  const { id: _b, ...restB } = b
+  void _a
+  void _b
+  return jsonEqual(restA, restB)
+}
+
 function touchedItemIds(before: TodoItem[], after: TodoItem[]): string[] {
   const beforeById = indexItemsById(before)
   const afterById = indexItemsById(after)
-  const ids = new Set<string>([...beforeById.keys(), ...afterById.keys()])
-  const touched: string[] = []
-  for (const id of ids) {
-    if (!jsonEqual(beforeById.get(id) ?? null, afterById.get(id) ?? null)) touched.push(id)
+  const touched = new Set<string>()
+  const leftoverBefore: TodoItem[] = []
+  const leftoverAfter: TodoItem[] = []
+
+  for (const [id, beforeItem] of beforeById) {
+    const afterItem = afterById.get(id)
+    if (afterItem === undefined) {
+      leftoverBefore.push(beforeItem)
+      continue
+    }
+    if (!jsonEqual(beforeItem, afterItem)) touched.add(id)
   }
-  return touched
+  for (const [id, afterItem] of afterById) {
+    if (!beforeById.has(id)) leftoverAfter.push(afterItem)
+  }
+
+  const unmatchedBefore = [...leftoverBefore]
+  for (const afterItem of leftoverAfter) {
+    const matchIndex = unmatchedBefore.findIndex((beforeItem) => sameContent(beforeItem, afterItem))
+    if (matchIndex === -1) {
+      touched.add(afterItem.id)
+      continue
+    }
+    unmatchedBefore.splice(matchIndex, 1)
+  }
+  for (const beforeItem of unmatchedBefore) touched.add(beforeItem.id)
+
+  return [...touched]
 }
 
 /** The mark targets an accepted edit from `before` to `after` leaves. */
