@@ -181,24 +181,30 @@ export function handOffRowStartOnResize<
     rows.some((row) => row.some((b) => b.id === aId) && row.some((b) => b.id === bId))
 
   const rowsBefore = layoutRows(blocks)
-  const rowsAfter = layoutRows(withNewWidth)
-
-  const handOffToNext =
-    !!next &&
-    next.rowStart !== true &&
-    !sameRow(rowsBefore, resized.id, next.id) &&
-    sameRow(rowsAfter, resized.id, next.id)
 
   const handOffToSelf =
     resized.rowStart !== true &&
     !!prev &&
     !sameRow(rowsBefore, resized.id, prev.id) &&
-    sameRow(rowsAfter, resized.id, prev.id)
+    sameRow(layoutRows(withNewWidth), resized.id, prev.id)
+
+  // Self's own rowStart is decided first and applied before checking the next
+  // block: giving the resized block rowStart starts a fresh row at it, and
+  // that fresh row can newly have room for `next` even where `withNewWidth`
+  // alone (resized block still packed into `prev`'s row) would not show it.
+  const withSelfHandoff = handOffToSelf
+    ? withNewWidth.map((block) => (block.id === resized.id ? { ...block, rowStart: true } : block))
+    : withNewWidth
+
+  const handOffToNext =
+    !!next &&
+    next.rowStart !== true &&
+    !sameRow(rowsBefore, resized.id, next.id) &&
+    sameRow(layoutRows(withSelfHandoff), resized.id, next.id)
 
   if (!handOffToNext && !handOffToSelf) return withNewWidth
 
-  return withNewWidth.map((block) => {
-    if (handOffToSelf && block.id === resized.id) return { ...block, rowStart: true }
+  return withSelfHandoff.map((block) => {
     if (handOffToNext && next && block.id === next.id) return { ...block, rowStart: true }
     return block
   })

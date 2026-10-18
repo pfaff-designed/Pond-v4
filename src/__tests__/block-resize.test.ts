@@ -310,4 +310,39 @@ describe('handOffRowStartOnResize', () => {
       { id: 'c', width: '1/4', rowStart: true },
     ])
   })
+
+  it("self-handoff cascades to next: c only newly fits beside b once b's own self-handoff gives it a fresh row", () => {
+    const blocks: TestBlock[] = [
+      { id: 'a', width: '1/2' },
+      { id: 'b', width: 'full' },
+      { id: 'c', width: '1/2' },
+    ]
+    // Before: a alone (50), b alone (100), c alone (50) — none fit together.
+    // After b shrinks to '1/2' (50): a+b = 100 <= 100 (b newly joins a's row),
+    // but a+b+c = 150 > 100 — c does NOT newly fit next to a AND b in one row.
+    // Once b's own handoff gives it rowStart (starting a fresh row at b),
+    // b+c = 100 <= 100 in THAT row — c must get rowStart too, or it packs
+    // in beside b on release.
+    expect(handOffRowStartOnResize(blocks, 1, '1/2')).toEqual([
+      { id: 'a', width: '1/2' },
+      { id: 'b', width: '1/2', rowStart: true },
+      { id: 'c', width: '1/2', rowStart: true },
+    ])
+  })
+
+  it('self-handoff cascades to next: the same shape with a free width instead of a named one', () => {
+    const blocks: TestBlock[] = [
+      { id: 'a', width: '1/2' },
+      { id: 'b', width: 'full' },
+      { id: 'c', width: 40 },
+    ]
+    // After b shrinks to 46: a+b = 96 <= 100 (b newly joins a's row), but
+    // a+b+c = 136 > 100. Once b gets its own rowStart, b+c = 86 <= 100 in
+    // b's fresh row — c must get rowStart too.
+    expect(handOffRowStartOnResize(blocks, 1, 46)).toEqual([
+      { id: 'a', width: '1/2' },
+      { id: 'b', width: 46, rowStart: true },
+      { id: 'c', width: 40, rowStart: true },
+    ])
+  })
 })
