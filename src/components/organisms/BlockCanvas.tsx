@@ -8,8 +8,8 @@
  * It renders a `SiblingBlocksProvider`-wrapped list of blocks with the `/` palette
  * on an empty text block or an empty line inside one, Return on a focused block
  * opening a line after it, drag/⌥↑/⌥↓ reorder, per-block delete with undo — and,
- * at the foot, an always-visible "+ Add a block". The handle is the only block chrome: nothing is drawn between
- * blocks.
+ * below the last block, a hover-only hit area that opens a new line (KAN-345). The
+ * handle is the only block chrome: nothing is drawn between blocks at rest.
  *
  * Persistence is the CALLER's concern: BlockCanvas is controlled (it takes
  * `blocks` and emits the full next array via `onChange`), so DocumentPanel keeps
@@ -71,8 +71,9 @@ import {
   type PondMenuPlacement,
   type PondMenuSize,
 } from '@/components/molecules/PondMenu'
-import { AddBlockButton } from '@/components/molecules/AddBlockButton'
 import { BlockWidthRow } from '@/components/molecules/BlockWidthRow'
+import { TrailingBlockGap } from '@/components/molecules/TrailingBlockGap'
+import { BlockGapLine } from '@/components/molecules/BlockGapLine'
 import {
   BLOCK_ROW_GAP_PX,
   blockWidthStyle,
@@ -85,7 +86,7 @@ import {
 import { SlashLineContext, type SlashLineAt } from '@/lib/modules/text/slash-line'
 import { useSlashLine } from '@/components/organisms/use-slash-line'
 import { focusTextBlock, hasTextBeforeCaret } from '@/lib/modules/text/focus'
-import { UNTOUCHED_HINT_CLASS } from '@/lib/modules/text/prose'
+import { HOVER_GHOST_CLASS, UNTOUCHED_HINT_CLASS } from '@/lib/modules/text/prose'
 import {
   landAtSlash,
   undoLanding,
@@ -146,7 +147,7 @@ import { PageLinkProvider } from '@/lib/modules/page-link/context'
 import { usePageLinkCapabilities } from '@/lib/modules/page-link/use-capabilities'
 import { stampNestedPage } from '@/lib/pages/nested-page'
 import { cn } from '@/lib/utils'
-import type { Block } from '@/lib/documents/types'
+import type { Block, TextBlock } from '@/lib/documents/types'
 import type { BlockWidth } from '@/lib/modules/content'
 
 /** What a block is called to assistive tech: its heading, else its kind. */
@@ -186,6 +187,10 @@ function canvasListStyle(listStyle: CSSProperties | undefined): CSSProperties {
     alignItems: 'flex-start',
     columnGap: BLOCK_ROW_GAP_PX,
     rowGap: listStyle?.rowGap ?? BLOCK_ROW_GAP_PX,
+    // Rule 4's row-boundary line (KAN-345) is an absolutely positioned child
+    // of this list — out of the flex flow, so it adds no `rowGap` of its own
+    // — positioned against THIS box, not a further-out ancestor.
+    position: 'relative',
   }
 }
 
@@ -294,6 +299,33 @@ function restoreHostFocus(blocks: Block[], hostIndex: number | null) {
   if (host.type === 'text') focusTextBlock(element, 'end')
 }
 
+/** Rule 2/3/4's one home (KAN-345): the empty text line a trailing/row-gap click
+ * focuses instead of inserting a second one (G9). */
+function isEmptyTextLine(block: Block | undefined): block is TextBlock {
+  return block?.type === 'text' && block.content.trim() === ''
+}
+
+/**
+ * Rule 3/4's shared G9 guard (KAN-345): a second click that would otherwise
+ * land on an already-empty text line focuses that line instead of minting a
+ * second one. `insert` only runs when `candidate` isn't an empty line to
+ * focus — an empty line never gets a second insert, even when its editor
+ * isn't mounted yet: `focusTextBlock` returning `false` there is a documented
+ * expected state (`focus.ts`, `immediatelyRender: false`), not a bug, so this
+ * retries once on the next frame and otherwise leaves it — the unwritten line
+ * autofocuses on mount anyway.
+ */
+function focusEmptyLineOrInsert(candidate: Block | undefined, insert: () => void) {
+  if (!isEmptyTextLine(candidate)) {
+    insert()
+    return
+  }
+  if (focusTextBlock(document.getElementById(blockDomId(candidate.id)), 'end')) return
+  requestAnimationFrame(() => {
+    focusTextBlock(document.getElementById(blockDomId(candidate.id)), 'end')
+  })
+}
+
 export interface BlockCanvasProps {
   /** The blocks to render — controlled by the caller. */
   blocks: Block[]
@@ -335,12 +367,13 @@ export interface BlockCanvasProps {
   insertedIds?: Set<string>
   /** Move a block into a page of its own. Without it the block menu does not offer the move. */
   onMoveIntoNewPage?: (block: Block) => void
-  /** False hides the editing chrome — every block's handle and the foot add — mounted (zen: the page and nothing else). */
+  /** False hides the editing chrome — every block's handle and the trailing gap — mounted (zen: the page and nothing else). */
   chrome?: boolean
   /**
-   * The page is untouched (6f): no title, one empty text block. Hides the foot
-   * "+ Add a block" on top of the `chrome` check — the blank body draws no
-   * add-block affordance, only its one hint line.
+   * The page is untouched (6f): no title, one empty text block. Passed to
+   * block 0 only (`untouched && i === 0`) so its placeholder paints in the
+   * mono hint style (`UNTOUCHED_HINT_CLASS`); the trailing gap's own
+   * visibility is unaffected by this prop.
    */
   untouched?: boolean
   /**
@@ -441,6 +474,14 @@ export function BlockCanvas({
   }, [openTemplatesFor, pageId, openSlashMenuAt])
   // Which block index is mid-drag (null = no drag).
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null)
+  // Rule 3's fix (KAN-345): the pointer is over the trailing gap. Only read
+  // when the last block is already an empty text line (`trailingLineIsEmptyText`
+  // below) — that's the one case where the ghost text must paint on the real
+  // line's own position instead of a second row drawn below it. `TrailingBlockGap`
+  // clears this on `onMouseLeave`, which never fires if the gap unmounts or
+  // hides while the pointer is over it — `trailingGapVisible` below gates the
+  // paint and resets this flag for that case.
+  const [trailingGapHovered, setTrailingGapHovered] = useState(false)
   // The drop line hovered during a drag: which block it's over, which edge
   // (classifyDropZone), and — for an own-line (above/below) drop only — the
   // span to stretch it across the FULL content column rather than just this
@@ -502,7 +543,7 @@ export function BlockCanvas({
   // `enabled` needs it: a non-blank `/` has no sibling ranking to look up, so
   // it must not fetch `pageRows` at all.
   const isBlankBesides = (index: number) =>
-    blocks.every((b, bi) => bi === index || (b.type === 'text' && b.content.trim() === ''))
+    blocks.every((b, bi) => bi === index || isEmptyTextLine(b))
   const blankMenuOpen = slashMenuOpenAt !== null && isBlankBesides(slashMenuOpenAt)
   // The shared ['pages'] cache: the source picker's databases root AND (KAN-138)
   // the blank list's parent/sibling lookup, so it's read while either is open —
@@ -1259,13 +1300,22 @@ export function BlockCanvas({
     if (made && pick.origin === 'yours' && pondId) justSaved.clear(pondId, pick.id)
   }
 
-  // The foot add (UI-audit Slice 2a): drop an empty text block at the end, ready
-  // to type. Typing `/` in it summons the palette to swap to another block type.
+  // The trailing gap's add (UI-audit Slice 2a): drop an empty text block at
+  // the end, ready to type. The new block's own editor auto-focuses on mount
+  // (its content is "unwritten", `editor.tsx`'s `autofocus` rule) — nothing
+  // here focuses it.
   function addTextBlock() {
     const nb = emptyBlockForType('text')
     if (!nb) return
     markInserted(nb.id)
     onChange([...blocks, nb])
+  }
+
+  // Rule 3's trailing gap (KAN-345): `focusEmptyLineOrInsert`'s shared G9 guard
+  // — a fresh block's autofocus (above) covers the add branch; only the
+  // already-empty branch needs a manual focus.
+  function handleTrailingGapClick() {
+    focusEmptyLineOrInsert(blocks[blocks.length - 1], addTextBlock)
   }
 
   function moveBlockAt(index: number, dir: 'up' | 'down') {
@@ -1381,6 +1431,40 @@ export function BlockCanvas({
 
   const blockRows = useMemo(() => layoutRows(renderList), [renderList])
 
+  // Rule 3's fix (KAN-345): feeds the hover-ghost placement, which needs this
+  // read before `handleTrailingGapClick` is defined.
+  const trailingLine = blocks[blocks.length - 1]
+  const trailingLineIsEmptyText = isEmptyTextLine(trailingLine)
+
+  // Fix (KAN-345 rule 2): whether the trailing gap is actually visible —
+  // matches the conditions under which `TrailingBlockGap` below mounts
+  // (`chrome`) and is unhidden (`draggingIndex`, `previewing`). Gates
+  // `hoverGhost` directly (so a hide/unmount can't leave the stale flag
+  // painting the unfocused last line) and resets the flag itself, so
+  // becoming visible again later (e.g. leaving zen) starts un-hovered
+  // rather than resurrecting a ghost the pointer never re-entered — a
+  // guarded one-shot reset, not a cascade (same idiom as
+  // `use-animated-series-path.ts`).
+  const trailingGapVisible = chrome && draggingIndex === null && !previewing
+  useEffect(() => {
+    if (trailingGapVisible) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- guarded one-shot reset, not a cascade
+    setTrailingGapHovered(false)
+  }, [trailingGapVisible])
+
+  // Rule 4's between-row gap (KAN-345): a click anywhere along the boundary
+  // line below row `rowIndex` inserts after that ROW's last block, not the
+  // one item the clicked segment happens to render under — a side-by-side
+  // row has one boundary below it, not one per block. Same
+  // `focusEmptyLineOrInsert` G9 guard as `handleTrailingGapClick`.
+  function insertAfterRow(rowIndex: number) {
+    const row = blockRows[rowIndex]
+    const last = row[row.length - 1]
+    const index = blocks.findIndex((b) => b.id === last.id)
+    if (index === -1) return
+    focusEmptyLineOrInsert(blocks[index + 1], () => insertLineAfter(index))
+  }
+
   /**
    * Commits a beside drop (6x): `planBesideDrop` (the same planner the hover
    * line and preview read) splices the dragged block into the target's row
@@ -1455,15 +1539,37 @@ export function BlockCanvas({
   // measures and (if narrow) flips to stacked before the browser paints, so a
   // genuinely narrow window never paints the un-stacked share for one frame first.
   const [columnWidth, setColumnWidth] = useState(0)
+  // Rule 4's row-boundary line (KAN-345) anchors to the ROW's bottom, not any
+  // one item's — a side-by-side row's items can render at different heights
+  // (`alignItems: flex-start`), so the boundary is the tallest of them, read
+  // off their own rendered boxes (nothing in `layoutRows` carries height,
+  // only width). `itemSizingRefs` is keyed by block id, filled by each item's
+  // own sizing div below; a row's boundary is `max(item.bottom) - container.top`.
+  const itemSizingRefs = useRef(new Map<string, HTMLDivElement>())
+  const [rowBoundaryTops, setRowBoundaryTops] = useState<number[]>([])
   useLayoutEffect(() => {
     const el = canvasRef.current
     if (!el || typeof ResizeObserver === 'undefined') return
-    const read = () => setColumnWidth(el.getBoundingClientRect().width)
+    const read = () => {
+      const containerRect = el.getBoundingClientRect()
+      setColumnWidth(containerRect.width)
+      setRowBoundaryTops(
+        blockRows.slice(0, -1).map(
+          (row) =>
+            Math.max(
+              ...row.map(
+                (item) => itemSizingRefs.current.get(item.id)?.getBoundingClientRect().bottom ?? 0
+              )
+            ) - containerRect.top
+        )
+      )
+    }
     read()
     const ro = new ResizeObserver(read)
     ro.observe(el)
+    for (const node of itemSizingRefs.current.values()) ro.observe(node)
     return () => ro.disconnect()
-  }, [])
+  }, [blockRows])
 
   /**
    * The lifted copy shown at the planned slot while a beside drop is hovered
@@ -1508,6 +1614,12 @@ export function BlockCanvas({
         settleOnMount={insertedIds?.has(block.id) ?? false}
         chrome={chrome}
         untouched={untouched && i === 0}
+        hoverGhost={
+          i === blocks.length - 1 &&
+          trailingLineIsEmptyText &&
+          trailingGapVisible &&
+          trailingGapHovered
+        }
         onChange={(next) => setBlockAt(i, next)}
         onRemoveEmpty={() => removeEmptyLineAt(i)}
         onDeleteBlock={() => removeBlockAt(i)}
@@ -1761,13 +1873,47 @@ export function BlockCanvas({
                 // planned, so a flattened position no longer lines up with
                 // `blocks`' own index.
                 const i = blocks.findIndex((b) => b.id === item.id)
+                // Measured by `itemSizingRefs` (above) so the row-boundary
+                // line below — rendered once per ROW, not here — can anchor
+                // to this row's tallest item rather than this one's own box.
                 return (
                   <div
                     key={item.id}
-                    className="min-w-0 transition-[width] duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none"
+                    ref={(node) => {
+                      if (node) itemSizingRefs.current.set(item.id, node)
+                      else itemSizingRefs.current.delete(item.id)
+                    }}
+                    className="relative min-w-0 transition-[width] duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none"
                     style={{ width: sizingWidth }}
                   >
                     {renderBlockEditor(blocks[i], i)}
+                  </div>
+                )
+              })}
+            {/* Rule 4's boundary line (KAN-345): one per ROW boundary, full
+                content width — a side-by-side row's items can render at
+                different heights, so this is a sibling of the row's own
+                sizing divs, not nested in any one of them (nesting it in a
+                single item only spans that item's own width). `position:
+                absolute` takes it out of the flex flow entirely, so it adds
+                no `rowGap` edge of its own ("the gap stays 16px: no layout
+                shift" stays true). Skipped above the first row and below the
+                last (no boundary there). `top` is `rowBoundaryTops[rowIndex]`
+                — the row's own measured bottom — falling back to nothing
+                rendered until the first measurement lands (avoids a
+                mis-placed line at `top: 0` for one frame). */}
+            {chrome &&
+              draggingIndex === null &&
+              blockRows.slice(0, -1).map((_row, rowIndex) => {
+                const top = rowBoundaryTops[rowIndex]
+                if (top === undefined) return null
+                return (
+                  <div
+                    key={`gap-${rowIndex}`}
+                    className="absolute inset-x-0"
+                    style={{ top, height: BLOCK_ROW_GAP_PX }}
+                  >
+                    <BlockGapLine onClick={() => insertAfterRow(rowIndex)} />
                   </div>
                 )
               })}
@@ -1775,12 +1921,24 @@ export function BlockCanvas({
         </div>
       </SiblingBlocksProvider>
 
-      {/* The always-visible foot add (UI-audit Slice 2a): drops a text block; `/`
-          in it summons the palette to swap type. Hidden on an untouched page
-          (6f) and while a template is previewing (6f frame 3's outline stack
-          replaces the whole body) too — the blank body's only help is its one
-          hint line. */}
-      <AddBlockButton onAdd={addTextBlock} hidden={!chrome || untouched || !!previewing} />
+      {/* Rule 3's trailing gap (KAN-345): same spot the old always-visible add
+          foot used to occupy. `chrome` gates mounting — false renders no DOM
+          node at all, matching `BlockGapLine`'s own absence above. Once
+          mounted, `hidden` fades it (not unmount) during a drag or while a
+          template preview has replaced the body. */}
+      {chrome && (
+        <TrailingBlockGap
+          onClick={handleTrailingGapClick}
+          hidden={draggingIndex !== null || !!previewing}
+          // Rule 3's fix (KAN-345): when the last block is already an empty
+          // text line, that line's own placeholder paints in place (via
+          // `hoverGhost` above) — drawing a second ghost row here too would
+          // put the text in two places at once.
+          showGhostText={!trailingLineIsEmptyText}
+          onHoverChange={setTrailingGapHovered}
+        />
+      )}
+
       {/* The source picker, hung off the `/` line that summoned it. */}
       {sourcePicker && (
         <SourcePicker
@@ -1950,6 +2108,7 @@ function BlockEditor({
   settleOnMount = false,
   chrome = true,
   untouched = false,
+  hoverGhost = false,
   onChange,
   onRemoveEmpty,
   onDeleteBlock,
@@ -1989,6 +2148,10 @@ function BlockEditor({
   chrome?: boolean
   /** This block is the untouched page's one hint line (6f): its placeholder draws in the mono override. */
   untouched?: boolean
+  /** This block is the last, already-empty text line, and the trailing gap below it
+   *  is hovered (rule 3's fix, KAN-345): its own placeholder paints in place of a
+   *  second ghost row, so a click never moves which element shows the text. */
+  hoverGhost?: boolean
   onChange: (next: Block) => void
   /** Backspace in an empty text block. */
   onRemoveEmpty: () => void
@@ -2446,7 +2609,8 @@ function BlockEditor({
       ) : block.type === 'text' ? (
         // Bare prose: `padding 2px 4px`, no card.
         <div
-          className={cn('py-0.5', untouched && UNTOUCHED_HINT_CLASS)}
+          className={cn('py-0.5', untouched && UNTOUCHED_HINT_CLASS, hoverGhost && HOVER_GHOST_CLASS)}
+          data-hover-ghost={hoverGhost || undefined}
           style={{ paddingInline: TEXT_BLOCK_INSET_PX }}
         >
           {block.pondStampAt && (

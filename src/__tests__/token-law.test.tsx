@@ -484,8 +484,8 @@ describe('Page prose is full ink', () => {
   it('the text block’s empty placeholder sits on the 68 tier', async () => {
     render(<TextView data={{ id: 't1', type: 'text', content: '' }} editable onChange={() => {}} />)
     const field = await screen.findByRole('textbox', { name: 'text block' })
-    expect(field.querySelector('p')).toHaveAttribute('data-placeholder', 'write something')
-    expect(TEXT_PROSE_CLASS).toContain('[&_.is-editor-empty]:before:text-mn-text-secondary')
+    expect(field.querySelector('p')).toHaveAttribute('data-placeholder', 'type, or / for blocks')
+    expect(TEXT_PROSE_CLASS).toContain('[&_:is(.is-editor-empty,.is-empty)]:before:text-mn-text-secondary')
     expect(TEXT_PROSE_CLASS).not.toMatch(/mn-text-faint/)
   })
 })
@@ -855,5 +855,24 @@ describe('ink-tier contrast on paper and on both dark grounds', () => {
   it('the reminder due-dot reads ≥ 3:1 as a non-text mark on paper', () => {
     // Burnt orange is a MARK, so it answers to the 3:1 non-text ratio, not 4.5.
     expect(contrast(raw('burnt-orange'), raw('paper'))).toBeGreaterThanOrEqual(3)
+  })
+})
+
+// ── KAN-345: the page draws no default prompts at rest ────────────────────
+
+describe('source sweep — no "write something" or "+ add a block" at rest (KAN-345)', () => {
+  // `accept.ts` uses "write something else" in an undo-grouping comment about
+  // unrelated diffs, not the deleted empty-block copy — prose, not a UI string.
+  const PROSE_EXCEPTIONS = new Set(['src/lib/pages/accept.ts'])
+
+  it('no call site draws the deleted "write something" copy', () => {
+    const hits = linesMatching(/write something/i).filter(
+      (hit) => !PROSE_EXCEPTIONS.has(hit.split(':')[0])
+    )
+    expect(hits).toEqual([])
+  })
+
+  it('no call site draws the deleted "+ add a block" foot', () => {
+    expect(linesMatching(/\+ add a block/i)).toEqual([])
   })
 })

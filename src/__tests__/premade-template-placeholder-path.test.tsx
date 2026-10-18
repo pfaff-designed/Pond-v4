@@ -90,7 +90,7 @@ describe('applying `notes` through the real `/` menu leaves a placeholder, never
     renderPanel({ id: 'page-1', parentId: 'root-1', type: 'page', title: 'Health', blocks: [] })
 
     // PATH_STEPS 1–2: an empty page's `/` leads with templates.
-    await user.click(await screen.findByRole('button', { name: 'Add a block' }))
+    await user.click(await screen.findByTestId('trailing-block-gap'))
     const editor = await findTextBlock()
     writeInTextBlock(editor, '/')
     const menu = await screen.findByRole('listbox', { name: 'blocks' })

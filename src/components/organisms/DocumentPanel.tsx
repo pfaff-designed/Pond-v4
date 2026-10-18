@@ -18,9 +18,10 @@
  *
  * Manual block authoring (ticket-37, ticket-44): the user is an equal author to
  * the AI. The editor body — the `/` palette, Return after a block, reorder, and the
- * always-visible "+ Add a block" foot affordance — is the shared <BlockCanvas>,
- * so every page authors identically. This panel owns the title header and the
- * debounced save; BlockCanvas owns the blocks, page-link blocks included.
+ * hover-only trailing hit area that opens a new line (KAN-345) — is the shared
+ * <BlockCanvas>, so every page authors identically. This panel owns the title
+ * header and the debounced save; BlockCanvas owns the blocks, page-link blocks
+ * included.
  */
 
 import React, { useEffect, useRef, useState } from 'react'
@@ -580,9 +581,9 @@ export function DocumentPanel() {
         </div>
 
         {/* The shared authoring surface (ticket-44): the `/` palette, Return after
-            a block, reorder, bound metrics, and the always-visible "+ Add a block"
-            foot affordance. Controlled — it emits the full next array and this
-            panel schedules the debounced whole-array save. */}
+            a block, reorder, bound metrics, and the hover-only trailing hit area
+            that opens a new line (KAN-345). Controlled — it emits the full next
+            array and this panel schedules the debounced whole-array save. */}
         <BlockCanvas
           blocks={viewBlocks}
           pageId={page.id}

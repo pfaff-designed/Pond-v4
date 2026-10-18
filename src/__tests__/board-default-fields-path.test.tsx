@@ -81,7 +81,7 @@ describe('`/board` with no databases yet lands real lanes, and a card lands in o
     mockCreateClient.mockReturnValue(sb)
 
     const { container } = renderCanvas([])
-    fireEvent.click(await screen.findByRole('button', { name: 'Add a block' }))
+    fireEvent.click(await screen.findByTestId('trailing-block-gap'))
     const editor = await findTextBlock()
     writeInTextBlock(editor, '/')
     await screen.findByRole('listbox', { name: 'blocks' })
@@ -131,7 +131,7 @@ describe('`/calendar` with no databases yet lands a usable month grid (KAN-351)'
     mockCreateClient.mockReturnValue(sb)
 
     renderCanvas([])
-    fireEvent.click(await screen.findByRole('button', { name: 'Add a block' }))
+    fireEvent.click(await screen.findByTestId('trailing-block-gap'))
     const editor = await findTextBlock()
     writeInTextBlock(editor, '/')
     await screen.findByRole('listbox', { name: 'blocks' })

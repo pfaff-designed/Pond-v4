@@ -99,12 +99,13 @@ describe('an untouched page, walked end to end on its real surface (KAN-119)', (
     const menu = await screen.findByRole('listbox', { name: 'blocks' })
     expect(groupsOf(menu)).toEqual(['templates', BLANK_TEXT_GROUP, 'blocks', 'templates', 'pages'])
 
-    // PATH_STEP 5: typing a letter instead drops the hint/mono class and the
-    // eyebrow falls back to the ordinary save-state line.
+    // PATH_STEP 5: typing a letter instead drops the hint (tiptap removes
+    // `is-editor-empty`, which is what the mono `::before` rule is scoped to)
+    // and the eyebrow falls back to the ordinary save-state line.
     writeInTextBlock(field, 'h')
     await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument())
     const typedField = await findTextBlock()
-    expect(typedField.closest('[class*="before:font-mono"]')).toBeNull()
+    expect(typedField.querySelector('.is-editor-empty')).toBeNull()
     await waitFor(() => expect(screen.getByText('saving…')).toBeInTheDocument())
     expect(screen.queryByText('new — in recipes')).toBeNull()
   })

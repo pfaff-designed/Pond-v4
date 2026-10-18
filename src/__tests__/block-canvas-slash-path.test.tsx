@@ -262,8 +262,8 @@ describe('the free-text path for an unmatched word (KAN-114)', () => {
     // heading block (markdown `## wine`) reading `wine`. The whole-block `/`
     // path only opens from a block that is truly empty (`use-slash-line.ts`'s
     // `handleTextChange`), so the retyping happens in a fresh block from the
-    // foot's always-visible add, as it would on the real page.
-    await user.click(screen.getByRole('button', { name: 'Add a block' }))
+    // trailing gap, as it would on the real page.
+    await user.click(screen.getByTestId('trailing-block-gap'))
     editor = (await findAllTextBlocks()).at(-1)!
     writeInTextBlock(editor, '/')
     await screen.findByRole('listbox', { name: 'blocks' })
@@ -284,7 +284,7 @@ describe('the free-text path for an unmatched word (KAN-114)', () => {
     expect(await screen.findByRole('heading', { level: 2, name: 'wine' })).toBeInTheDocument()
 
     // 5: `/wine` a third time, esc closes the menu and leaves `/wine` as typed text.
-    await user.click(screen.getByRole('button', { name: 'Add a block' }))
+    await user.click(screen.getByTestId('trailing-block-gap'))
     editor = (await findAllTextBlocks()).at(-1)!
     writeInTextBlock(editor, '/')
     await screen.findByRole('listbox', { name: 'blocks' })
