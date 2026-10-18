@@ -116,7 +116,7 @@ describe('NewPondSheet — Enter in the name field (KAN-488)', () => {
     await user.click(screen.getByRole('button', { name: 'continue' }))
     await user.click(screen.getByRole('button', { name: 'make pond' }))
 
-    expect(onCreate).toHaveBeenCalledWith('Studio')
+    expect(onCreate).toHaveBeenCalledWith('Studio', { glyph: 'lightning-03' })
   })
 })
 

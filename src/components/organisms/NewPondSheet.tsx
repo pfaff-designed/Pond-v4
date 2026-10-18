@@ -141,8 +141,11 @@ function Pill({
 }
 
 export interface NewPondSheetProps {
-  /** Submitted with the typed name — never blank; `continue`/`make pond` stay disabled until it isn't. */
-  onCreate: (name: string) => void
+  /** Submitted with the trimmed name and the picked glyph/theme — never a blank
+   *  name; `continue`/`make pond` stay disabled until it isn't. `theme` is
+   *  omitted while still on the `paper` default, matching `createPond`'s
+   *  "defaults send nothing" contract. */
+  onCreate: (name: string, options: { glyph?: string; theme?: 'ink' }) => void
   onCancel: () => void
   pending?: boolean
   failure?: string | null
@@ -346,7 +349,11 @@ export function NewPondSheet({
             variant="primary"
             label={last ? 'make pond' : 'continue'}
             disabled={pending || blank}
-            onClick={() => (last ? onCreate(trimmed) : setStep((s) => s + 1))}
+            onClick={() =>
+              last
+                ? onCreate(trimmed, { glyph, ...(theme === 'ink' ? { theme } : {}) })
+                : setStep((s) => s + 1)
+            }
           />
         </div>
       </div>

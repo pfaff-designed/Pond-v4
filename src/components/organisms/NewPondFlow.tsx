@@ -22,8 +22,8 @@ export function NewPondFlow({
       defaultName={defaultName}
       pending={pending}
       failure={failure}
-      onCreate={(name) =>
-        void create(name).then((made) => {
+      onCreate={(name, options) =>
+        void create(name, options).then((made) => {
           if (made) onClose(true)
         })
       }
