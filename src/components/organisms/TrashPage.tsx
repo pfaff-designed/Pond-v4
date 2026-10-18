@@ -26,9 +26,17 @@
  * `restore` (the same pairing `buildTrashRows` already excludes on), no
  * manual removal. A parent-fallback restore reads its own freshly-fetched
  * `restore` record for the flag and says so, same line as `ChangeLogPage`.
+ *
+ * A row's restore click is guarded by a ref (`inFlightRecordIds`), checked
+ * and set synchronously in the click handler — `busy` alone only disables
+ * the control after React re-renders, too late to catch two clicks fired
+ * before that render (AUDIT G9). Once a restored row leaves the table, focus
+ * moves to the next row's restore control, else the previous row's, else the
+ * `trash` heading when the table is now empty — never left to fall to
+ * `<body>`.
  */
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { usePondId } from '@/lib/pond/context'
@@ -124,11 +132,16 @@ function TrashTableRow({
   glyph,
   busy,
   onRestore,
+  buttonRef,
 }: {
   row: TrashRow
   glyph: string | null
   busy: boolean
   onRestore: () => void
+  /** Keeps the row's own restore control findable by record id, for the
+   *  focus hop {@link TrashPage}'s own restore handler makes once the row
+   *  it was clicked on leaves the table. */
+  buttonRef: (el: HTMLElement | null) => void
 }) {
   return (
     <div
@@ -143,7 +156,7 @@ function TrashTableRow({
       <span className="font-mono text-[10.5px] text-mn-text-secondary">{row.deletedAt}</span>
       <span className="text-[12.5px] text-mn-text-meta">{row.deletedBy}</span>
       <span className="text-[12.5px] font-medium text-mn-text">{row.goes}</span>
-      <PondControl kind="button" variant="ghost" disabled={busy} onClick={onRestore}>
+      <PondControl kind="button" variant="ghost" disabled={busy} onClick={onRestore} ref={buttonRef}>
         {busy ? 'restoring…' : 'restore'}
       </PondControl>
     </div>
@@ -159,6 +172,17 @@ export function TrashPage() {
   const [restoreError, setRestoreError] = useState<string | null>(null)
   const [restoreNotice, setRestoreNotice] = useState<string | null>(null)
   const [visibleCount, setVisibleCount] = useState(RECORDS_PAGE_SIZE)
+  const headingRef = useRef<HTMLSpanElement>(null)
+  const restoreButtonRefs = useRef<Map<string, HTMLElement>>(new Map())
+  // A ref, not state: it must block a second click SYNCHRONOUSLY, in the
+  // click handler itself, before React has a chance to re-render and
+  // disable the button via `busy` — otherwise a fast double-click lands
+  // both clicks before the first render that would have disabled it.
+  const inFlightRecordIds = useRef<Set<string>>(new Set())
+  // recordId -> the row to focus once that record's row leaves `rows` (next
+  // row, else the previous row, else null for the heading) — set at click
+  // time, read by the effect below once the restore actually lands.
+  const pendingFocusTargets = useRef<Map<string, string | null>>(new Map())
 
   // N and the empty state are over derived ROWS, not records, so this fetches
   // EVERY delete/restore record for the pond — looping keyset pages itself
@@ -235,6 +259,9 @@ export function TrashPage() {
       setRestoreError(null)
       setRestoreNotice(null)
     },
+    onSettled: (_data, _error, vars) => {
+      inFlightRecordIds.current.delete(vars.recordId)
+    },
     onError: (err) => {
       // A refused restore (two tabs: the other already restored it) leaves a
       // stale row next to the error unless this also invalidates — the same
@@ -267,6 +294,44 @@ export function TrashPage() {
     },
   })
 
+  // One click = one write: `inFlightRecordIds` is checked and set here,
+  // synchronously, before `mutate` ever runs — a second click on the same
+  // row while the first is still in flight is a no-op, regardless of
+  // whether React has re-rendered `busy` yet (AUDIT G9).
+  const handleRestore = (recordId: string, targetPageId: string | null): void => {
+    if (inFlightRecordIds.current.has(recordId)) return
+    inFlightRecordIds.current.add(recordId)
+    const index = rows.findIndex((r) => r.record.id === recordId)
+    const neighborId =
+      index === -1
+        ? null
+        : index < rows.length - 1
+          ? rows[index + 1].record.id
+          : index > 0
+            ? rows[index - 1].record.id
+            : null
+    pendingFocusTargets.current.set(recordId, neighborId)
+    restoreMutation.mutate({ recordId, targetPageId })
+  }
+
+  // Fires once a pending restore's own row has actually left `rows` (the
+  // refetch landed) — never on the render where a restore merely started,
+  // and never at all if it was refused (the row stays, so this never
+  // consumes that entry). A keyboard user who just pressed this row's
+  // restore should not drop to `<body>` once it disappears.
+  useEffect(() => {
+    if (pendingFocusTargets.current.size === 0) return
+    for (const [recordId, neighborId] of pendingFocusTargets.current) {
+      if (rows.some((r) => r.record.id === recordId)) continue
+      pendingFocusTargets.current.delete(recordId)
+      if (neighborId) {
+        restoreButtonRefs.current.get(neighborId)?.focus()
+      } else {
+        headingRef.current?.focus()
+      }
+    }
+  }, [rows])
+
   return (
     <div className="h-full overflow-y-auto">
       <div
@@ -274,7 +339,11 @@ export function TrashPage() {
         data-testid="trash-column"
         className={`${column.className} flex flex-col gap-4`}
       >
-        <span className="font-serif text-[50px] leading-none font-extralight tracking-[-0.01em] text-mn-text">
+        <span
+          ref={headingRef}
+          tabIndex={-1}
+          className="font-serif text-[50px] leading-none font-extralight tracking-[-0.01em] text-mn-text"
+        >
           trash
         </span>
         {!recordsLoading && rows.length > 0 && (
@@ -324,12 +393,11 @@ export function TrashPage() {
                     restoreMutation.isPending &&
                     restoreMutation.variables?.recordId === row.record.id
                   }
-                  onRestore={() =>
-                    restoreMutation.mutate({
-                      recordId: row.record.id,
-                      targetPageId: row.record.targetPageId,
-                    })
-                  }
+                  onRestore={() => handleRestore(row.record.id, row.record.targetPageId)}
+                  buttonRef={(el) => {
+                    if (el) restoreButtonRefs.current.set(row.record.id, el)
+                    else restoreButtonRefs.current.delete(row.record.id)
+                  }}
                 />
               ))}
               {hasMoreRows && (

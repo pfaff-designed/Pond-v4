@@ -5,7 +5,7 @@
  * Restore itself lands in the next item.
  */
 
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TrashPage } from '@/components/organisms/TrashPage'
@@ -280,5 +280,108 @@ describe('TrashPage', () => {
     await waitFor(() => {
       expect(screen.queryByTestId('trash-row')).not.toBeInTheDocument()
     })
+  })
+
+  it('sends exactly one restore when a row is double-clicked before React re-renders', async () => {
+    mockListRecords.mockResolvedValue([record()])
+
+    renderPage()
+
+    const restoreButton = await screen.findByRole('button', { name: 'restore' })
+    // Both dispatches share ONE `act()` call, so React never gets a chance to
+    // commit `busy`'s disabled state between them — the same race a fast
+    // real double-click wins against a per-render disable.
+    act(() => {
+      fireEvent.click(restoreButton)
+      fireEvent.click(restoreButton)
+    })
+
+    await waitFor(() => {
+      expect(mockRestorePageRelinked).toHaveBeenCalledTimes(1)
+    })
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it("moves focus to the next row's restore control after restoring a row that isn't last", async () => {
+    let restoredTarget: string | null = null
+    const base = [
+      record({ id: 'del-1', targetPageId: 'page-1', before: snapshot({ title: 'first' }) }),
+      record({ id: 'del-2', targetPageId: 'page-2', before: snapshot({ title: 'second' }) }),
+    ]
+    mockListRecords.mockImplementation(async () =>
+      restoredTarget
+        ? [
+            ...base,
+            record({
+              id: 'restore-1',
+              action: 'restore',
+              targetPageId: restoredTarget,
+              createdAt: '2026-09-27T12:00:00.000Z',
+            }),
+          ]
+        : base
+    )
+    mockRestorePageRelinked.mockImplementation(async (_s, _q, vars: { rootPageId: string | null }) => {
+      restoredTarget = vars.rootPageId
+    })
+
+    const user = userEvent.setup()
+    renderPage()
+
+    const [firstRestore, secondRestore] = await screen.findAllByRole('button', { name: 'restore' })
+    await user.click(firstRestore)
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('trash-row')).toHaveLength(1)
+    })
+    expect(secondRestore).toHaveFocus()
+  })
+
+  it("moves focus to the previous row's restore control after restoring the last row", async () => {
+    let restoredTarget: string | null = null
+    const base = [
+      record({ id: 'del-1', targetPageId: 'page-1', before: snapshot({ title: 'first' }) }),
+      record({ id: 'del-2', targetPageId: 'page-2', before: snapshot({ title: 'second' }) }),
+    ]
+    mockListRecords.mockImplementation(async () =>
+      restoredTarget
+        ? [
+            ...base,
+            record({
+              id: 'restore-1',
+              action: 'restore',
+              targetPageId: restoredTarget,
+              createdAt: '2026-09-27T12:00:00.000Z',
+            }),
+          ]
+        : base
+    )
+    mockRestorePageRelinked.mockImplementation(async (_s, _q, vars: { rootPageId: string | null }) => {
+      restoredTarget = vars.rootPageId
+    })
+
+    const user = userEvent.setup()
+    renderPage()
+
+    const [firstRestore, secondRestore] = await screen.findAllByRole('button', { name: 'restore' })
+    await user.click(secondRestore)
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('trash-row')).toHaveLength(1)
+    })
+    expect(firstRestore).toHaveFocus()
+  })
+
+  it('moves focus to the heading when restoring the only row leaves trash empty', async () => {
+    mockListRecords.mockImplementation(async () => (mockRestorePageRelinked.mock.calls.length > 0 ? [] : [record()]))
+
+    const user = userEvent.setup()
+    renderPage()
+
+    const restoreButton = await screen.findByRole('button', { name: 'restore' })
+    await user.click(restoreButton)
+
+    expect(await screen.findByTestId('trash-empty')).toBeInTheDocument()
+    expect(screen.getByText('trash')).toHaveFocus()
   })
 })
