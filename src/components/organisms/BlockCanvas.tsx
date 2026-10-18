@@ -377,11 +377,13 @@ export interface BlockCanvasProps {
   onStructuralWrite?: (next: Block[], opts?: { discardOnFailure?: boolean }) => Promise<boolean>
   /**
    * Undo a block removal (ticket-44 review). The caller re-inserts `block` at
-   * `index` via a FUNCTIONAL state update against its LATEST blocks — NOT through
-   * `onChange`, which would re-base on the stale `blocks` snapshot captured when
-   * the toast was staged. This preserves DocumentPanel's original
-   * `setBlocks((current) => …)` correctness: an edit between remove and Undo
-   * must not be clobbered by the re-insert. Required whenever removal is possible.
+   * `index` against its LATEST blocks (read from a ref, not the `blocks` prop
+   * closed over at stage-time) and writes the result through its own
+   * structural write queue — NOT through `onChange`, which would re-base on
+   * the stale `blocks` snapshot captured when the toast was staged. This
+   * preserves DocumentPanel's original correctness: an edit between remove
+   * and Undo must not be clobbered by the re-insert. Required whenever
+   * removal is possible.
    *
    * `handedRowStartTo` (KAN-440): the id of the row-mate `detachKeepingRows`
    * handed the removed block's `rowStart` to, if any — omit when there was no
@@ -923,10 +925,11 @@ export function BlockCanvas({
       // re-inserts via the caller's own structural write too (its own
       // `onUndoRemove`/`undoRemove`), not the debounced save.
       //
-      // Route the re-insert through the caller's FUNCTIONAL update
-      // (onUndoRemove), NOT onChange: `blocks` here is the snapshot at
-      // stage-time, so an edit before Undo would otherwise re-base the insert on
-      // stale state and drop that edit (ticket-44 review). `handedRowStartTo`
+      // Route the re-insert through the caller's `onUndoRemove`, NOT
+      // onChange: `blocks` here is the snapshot at stage-time, so an edit
+      // before Undo would otherwise re-base the insert on stale state and
+      // drop that edit (ticket-44 review; `onUndoRemove` itself re-inserts
+      // against its own latest blocks, read from a ref). `handedRowStartTo`
       // (KAN-440) is the id `detachKeepingRows` just handed `removed`'s
       // `rowStart` to, if any — undo gives it back by omitting it there.
       scope: 'block',
@@ -1238,15 +1241,10 @@ export function BlockCanvas({
   // 6f: a blank page's own templates pick lands IN PLACE — this page's blocks
   // become the instantiated stack, no nested page, no navigate.
   //
-  // Apply is one undo step (KAN-93): the blocks write is logged directly as a
-  // single own-edit record and remembered with `sessionUndo`, the same way
-  // Rail's glyph/colour picks are — NOT the ordinary debounced save, which
-  // would log its own second record for the same change. The `['page', id]`
-  // cache carries the new blocks first, so `use-page-draft.ts`'s same-page
-  // "adopt" branch folds them into the open draft's own baseline (while it is
-  // still `saved`, before `onChange` below schedules anything) — by the time
-  // that debounced save fires, its before/after are both these blocks, so it
-  // logs nothing.
+  // Apply is one undo step (KAN-93): the blocks write goes through
+  // `onStructuralWrite` (the page's one write queue, KAN-495), so it lands as
+  // a single structural op — NOT the ordinary debounced save, which would
+  // enqueue its own second op for the same change.
   const applyTemplateInPlace = async (pick: TemplatePick) => {
     // G9: a second ↵ before this one finishes must not re-run the write — guard
     // the function itself (not menu-close timing, which races the same awaits).
