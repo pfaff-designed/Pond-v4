@@ -12,6 +12,7 @@ import { pagesKey } from '@/lib/pages/keys'
 import type { BlockedReason, RefusedReason, StaleReason } from './undo'
 import type { SessionUndoOutcome } from './session-undo'
 import { changeLogKey } from './keys'
+import { removeByRecordId } from './accept-marks'
 
 /** One line for a stale/blocked/refused ⌘Z or ⇧⌘Z, in the direction it was pressed. */
 export function noticeForReason(
@@ -70,6 +71,7 @@ export function applyUndoOutcome(
       result.records.map((record) => record.targetPageId).filter((id): id is string => id !== null)
     )
     for (const id of pageIds) void queryClient.invalidateQueries({ queryKey: ['page', id] })
+    for (const record of result.records) removeByRecordId(record.id)
     return
   }
   requestComposerNotice(noticeForReason(direction, result.reason))
