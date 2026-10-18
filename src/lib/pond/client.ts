@@ -13,6 +13,7 @@
 
 import { createClient } from '@/lib/supabase/client'
 import { pushRecentGlyph } from '@/lib/rail/glyph-library'
+import type { PondTheme } from '@/lib/supabase/types'
 
 export interface Pond {
   id: string
@@ -83,18 +84,23 @@ export async function listPonds(): Promise<Pond[]> {
   return ((data ?? []) as unknown as PondRow[]).map(mapPondRow)
 }
 
+export interface CreatePondOptions {
+  glyph?: string
+  theme?: PondTheme
+}
+
 /**
  * Make a pond. `s6m2`: the name is typed — there is no default, so a blank or
  * whitespace-only name throws here, at the seam, before the insert is ever
  * attempted (KAN-487: a caller that violates the contract is a bug, not a case
- * to recover from). Glyph and theme take their column defaults, so this sends
- * neither (#316 ships both controls disabled).
+ * to recover from). `glyph`/`theme` are optional: omitted means the column
+ * default, today's behaviour (KAN-501).
  *
  * Its root page is NOT created here. `getOrCreateHomePage` makes a root on first
  * open, and 0018 deliberately leaves `pages_one_home_per_user` in place, so the
  * root arrives with the slice that teaches `readHomeRow` about ponds (#313).
  */
-export async function createPond(name: string): Promise<Pond> {
+export async function createPond(name: string, options?: CreatePondOptions): Promise<Pond> {
   const trimmed = name.trim()
   if (!trimmed) throw new Error('createPond: a pond needs a name')
 
@@ -116,6 +122,8 @@ export async function createPond(name: string): Promise<Pond> {
       user_id: user.id,
       name: trimmed,
       order: existing.length,
+      ...(options?.glyph !== undefined ? { glyph: options.glyph } : {}),
+      ...(options?.theme !== undefined ? { theme: options.theme } : {}),
     })
     .select(COLUMNS)
     .single()
