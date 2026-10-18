@@ -6,7 +6,7 @@
  * locked, it stays locked until the pointer moves `RELEASE_PX` from that
  * same key, then it breaks out and tracks the pointer freely.
  */
-import { widthPercent } from './layout-rows'
+import { MIN_BLOCK_WIDTH_PX, widthPercent } from './layout-rows'
 
 /** The six snap targets, in column order — each percent read from `widthPercent`
  *  so a key width and the matching named `BlockWidth` (`BlockWidthRow.tsx`'s own
@@ -79,4 +79,25 @@ export function snapPercent(
   const { percent, distancePx } = nearestKeyWidth(rawPercent, columnPx)
   if (distancePx <= LOCK_PX + EPSILON_PX) return { percent, locked: true }
   return { percent: rawPercent, locked: false }
+}
+
+/**
+ * Resizes a block alone on its line from one of its edges: `startPercent`'s
+ * pixel position plus `deltaPx` is snapped via `snapPercent`, then clamped to
+ * `MIN_BLOCK_WIDTH_PX`..100%. A clamp overrides the snap's lock — the
+ * reported width is no longer the locked key's own position, so `locked` is
+ * `false` whenever the clamp actually moved the value.
+ */
+export function resizeAlone(
+  columnPx: number,
+  startPercent: number,
+  deltaPx: number,
+  lockedPercent: number | null
+): SnapResult {
+  const rawPercent = ((percentToPx(startPercent, columnPx) + deltaPx) / columnPx) * 100
+  const snapped = snapPercent(rawPercent, columnPx, lockedPercent)
+  const minPercent = (MIN_BLOCK_WIDTH_PX / columnPx) * 100
+  const clampedPercent = Math.min(100, Math.max(minPercent, snapped.percent))
+  if (clampedPercent !== snapped.percent) return { percent: clampedPercent, locked: false }
+  return snapped
 }

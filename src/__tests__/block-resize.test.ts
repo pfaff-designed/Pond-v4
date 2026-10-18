@@ -3,7 +3,8 @@
  * locks within 8px of a key width's position, releases 8px further (16px
  * from the lock).
  */
-import { KEY_WIDTHS, snapPercent } from '@/lib/modules/block-resize'
+import { KEY_WIDTHS, resizeAlone, snapPercent } from '@/lib/modules/block-resize'
+import { MIN_BLOCK_WIDTH_PX } from '@/lib/modules/layout-rows'
 
 // At this column width, 1% of the column is exactly 8px, so every test below
 // can be written in whole percent points instead of fiddly px/percent math.
@@ -63,6 +64,57 @@ describe('snapPercent breaking out past the lock zone', () => {
 
   it('a free percent well past full keeps tracking (clamping is resizeAlone\'s job, not this one\'s)', () => {
     expect(snapPercent(105, COLUMN_PX, 100)).toEqual({ percent: 105, locked: false })
+  })
+})
+
+describe('resizeAlone', () => {
+  // MIN_BLOCK_WIDTH_PX (240px) is 30% of COLUMN_PX (800px) — a clamp floor
+  // that lands clear of every key width, so a clamped result never reads as
+  // coincidentally locked.
+  const MIN_PERCENT = (MIN_BLOCK_WIDTH_PX / COLUMN_PX) * 100
+
+  it.each<[string, number, number, number | null, { percent: number; locked: boolean }]>([
+    ['drags right from 50% to a free 60%, unlocked', 50, 80, null, { percent: 60, locked: false }],
+    ['drags left from 60% into the ½ lock zone', 60, -72, null, { percent: 50, locked: true }],
+    ['locks onto ¾ dragging right from 70%', 70, 40, null, { percent: 75, locked: true }],
+    ['holds the ½ lock within the 16px release zone', 50, 8, 50, { percent: 50, locked: true }],
+    [
+      'breaks out of the ½ lock past 16px and tracks freely',
+      50,
+      24,
+      50,
+      { percent: 53, locked: false },
+    ],
+    [
+      'clamps at the floor dragging far left, unlocked',
+      50,
+      -500,
+      null,
+      { percent: MIN_PERCENT, locked: false },
+    ],
+    [
+      'clamps at the ceiling dragging far right, unlocked',
+      50,
+      500,
+      null,
+      { percent: 100, locked: false },
+    ],
+    [
+      'snap-then-break-out composed with the floor clamp: releasing a ⅓ lock far past the minimum clamps, unlocked',
+      33.3,
+      -200,
+      33.3,
+      { percent: MIN_PERCENT, locked: false },
+    ],
+    [
+      'snap-then-break-out composed with the ceiling clamp: releasing a ¾ lock far past full clamps, unlocked',
+      75,
+      500,
+      75,
+      { percent: 100, locked: false },
+    ],
+  ])('%s', (_description, startPercent, deltaPx, lockedPercent, expected) => {
+    expect(resizeAlone(COLUMN_PX, startPercent, deltaPx, lockedPercent)).toEqual(expected)
   })
 })
 
