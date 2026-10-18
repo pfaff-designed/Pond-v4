@@ -116,7 +116,11 @@ export function snapPercent(
  * its percent-of-column share — see `BLOCK_ROW_GAP_PX`). A clamp overrides
  * the snap's lock — the reported width is no longer the locked key's own
  * position, so `locked` is `false` whenever the clamp actually moved the
- * value.
+ * value — except at the upper clamp, 100%, which IS the `full` key's own
+ * position (`KEY_WIDTHS`'s `full` entry reads its percent from the same
+ * `widthPercent('full')` that this clamp's `100` literal matches), so that
+ * clamp reports `locked: true` rather than a free number the width row would
+ * then show as "custom · 100%" instead of `full`.
  */
 export function resizeAlone(
   columnPx: number,
@@ -128,6 +132,7 @@ export function resizeAlone(
   const snapped = snapPercent(rawPercent, columnPx, lockedPercent)
   const minPercent = renderedPxToPercent(columnPx, MIN_BLOCK_WIDTH_PX) + FLOOR_EPSILON_PERCENT
   const clampedPercent = Math.min(100, Math.max(minPercent, snapped.percent))
+  if (clampedPercent === 100) return { percent: 100, locked: true }
   if (clampedPercent !== snapped.percent) return { percent: clampedPercent, locked: false }
   return snapped
 }

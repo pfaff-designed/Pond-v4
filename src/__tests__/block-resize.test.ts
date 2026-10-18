@@ -136,11 +136,11 @@ describe('resizeAlone', () => {
       { percent: MIN_PERCENT, locked: false },
     ],
     [
-      'clamps at the ceiling dragging far right, unlocked',
+      'clamps at the ceiling dragging far right, reporting the full key locked',
       50,
       500,
       null,
-      { percent: 100, locked: false },
+      { percent: 100, locked: true },
     ],
     [
       'snap-then-break-out composed with the floor clamp: releasing a ⅓ lock far past the minimum clamps, unlocked',
@@ -150,11 +150,11 @@ describe('resizeAlone', () => {
       { percent: MIN_PERCENT, locked: false },
     ],
     [
-      'snap-then-break-out composed with the ceiling clamp: releasing a ¾ lock far past full clamps, unlocked',
+      'snap-then-break-out composed with the ceiling clamp: releasing a ¾ lock far past full clamps, reporting the full key locked',
       75,
       500,
       75,
-      { percent: 100, locked: false },
+      { percent: 100, locked: true },
     ],
   ])('%s', (_description, startPercent, deltaPx, lockedPercent, expected) => {
     const result = resizeAlone(COLUMN_PX, startPercent, deltaPx, lockedPercent)

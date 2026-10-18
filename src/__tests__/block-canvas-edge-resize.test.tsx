@@ -183,6 +183,28 @@ describe('an alone-on-line edge drag (KAN-441)', () => {
     }
   })
 
+  it('dragging past the right edge clamps to 100 and still commits the named full, not a number', () => {
+    const ro = mockResizeObserver()
+    try {
+      const lone: Block = { id: 'b-lone', type: 'text', content: 'calendar', width: '1/2' }
+      const onChange = jest.fn()
+      renderCanvas([lone], onChange)
+      setColumnWidth('b-lone', 1000, ro)
+
+      const right = edgeHandle('b-lone', 'right')!
+      fireEvent.pointerDown(right, { clientX: 0 })
+      dragRightEdge('b-lone', 1_000_000) // far past the column's right edge: clamps to 100%
+      expect(readoutText('b-lone', 'right')).toBe('full')
+
+      fireEvent.pointerUp(right, { clientX: 1_000_000 })
+
+      expect(onChange).toHaveBeenCalledTimes(1)
+      expect(onChange).toHaveBeenCalledWith([{ ...lone, width: 'full' }])
+    } finally {
+      ro.restore()
+    }
+  })
+
   it('a pointerdown/pointerup with no movement writes nothing and stages no undo', () => {
     const ro = mockResizeObserver()
     try {
