@@ -240,8 +240,8 @@ export function DocumentPanel() {
   // page's first open and clears on the following one — `consumeOnOpen` is
   // the one place that reads+clears that bookkeeping, keyed by pageId, the
   // same mount point `openedMarked` above owns. Guarded by `marksConsumedFor`
-  // rather than the effect's own mount/cleanup: `next.config` sets no
-  // `reactStrictMode`, so the App Router double-invokes this effect (mount →
+  // rather than the effect's own mount/cleanup: the App Router enables
+  // `reactStrictMode` by default, so it double-invokes this effect (mount →
   // cleanup → mount) on initial mount with the SAME pageId — consuming on
   // every run would read that phantom remount as a second open and clear
   // marks nobody has seen yet. The ref only matches a genuinely new pageId,

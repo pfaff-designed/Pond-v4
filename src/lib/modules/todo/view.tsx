@@ -9,7 +9,8 @@ import { useBlockRow } from '../block-row-context'
 import { useSiblingBlocks } from '../sibling-context'
 import { SESSION_UNDO_SCOPE_ATTR } from '@/lib/shell-commands'
 import { useAcceptMarks } from '@/lib/change-log/accept-marks'
-import { formatClockTime } from '@/lib/change-log/page-changes'
+import { markTarget } from '@/lib/change-log/accept-marks-diff'
+import { formatChangedLabel } from '@/lib/change-log/changed-mark'
 
 /**
  * Todo view (#219) — the check row and the board's `list` block, COMPOSED from
@@ -186,17 +187,20 @@ export function TodoView({ data, editable, onChange }: ModuleViewProps<TodoBlock
   // still names "this block changed", just at the row's own id.
   const { pageId } = useSiblingBlocks()
   const acceptMarks = useAcceptMarks(pageId ?? '')
-  const rowMarkPrefix = `block:${data.id}:row:`
+  const blockTarget = markTarget(data.id)
+  const rowMarkPrefix = `${blockTarget}:row:`
   const hasRenderedRowMark = data.items.some((item) =>
-    acceptMarks.some((mark) => mark.target === `${rowMarkPrefix}${item.id}`)
+    acceptMarks.some((mark) => mark.target === markTarget(data.id, item.id))
   )
   const blockMark =
-    acceptMarks.find((mark) => mark.target === `block:${data.id}`) ??
-    (hasRenderedRowMark ? undefined : acceptMarks.find((mark) => mark.target.startsWith(rowMarkPrefix)))
+    acceptMarks.find((mark) => mark.target === blockTarget) ??
+    (hasRenderedRowMark
+      ? undefined
+      : acceptMarks.find((mark) => mark.target.startsWith(rowMarkPrefix)))
   function changedLabelFor(item: TodoItem, index: number): string | undefined {
-    const rowMark = acceptMarks.find((mark) => mark.target === `${rowMarkPrefix}${item.id}`)
+    const rowMark = acceptMarks.find((mark) => mark.target === markTarget(data.id, item.id))
     const mark = rowMark ?? (!hasRenderedRowMark && index === 0 ? blockMark : undefined)
-    return mark && `changed ${formatClockTime(mark.acceptedAt)}`
+    return mark && formatChangedLabel(mark.acceptedAt)
   }
 
   function patchItem(index: number, patch: Partial<TodoItem>) {

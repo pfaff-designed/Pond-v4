@@ -87,7 +87,8 @@ import { useSlashLine } from '@/components/organisms/use-slash-line'
 import { focusTextBlock, hasTextBeforeCaret } from '@/lib/modules/text/focus'
 import { UNTOUCHED_HINT_CLASS } from '@/lib/modules/text/prose'
 import { useAcceptMarks } from '@/lib/change-log/accept-marks'
-import { formatClockTime } from '@/lib/change-log/page-changes'
+import { markTarget } from '@/lib/change-log/accept-marks-diff'
+import { ChangedMark, formatChangedLabel } from '@/lib/change-log/changed-mark'
 import {
   landAtSlash,
   undoLanding,
@@ -2061,12 +2062,8 @@ function BlockEditor({
   const blockMark =
     block.type === 'todo' && block.items.length > 0
       ? undefined
-      : acceptMarks.find((mark) => mark.target === `block:${block.id}`)
-  const changedMark = blockMark && (
-    <span data-part="changed" className="font-mono lowercase text-[10.5px] text-mn-text-meta ml-[10px]">
-      {`changed ${formatClockTime(blockMark.acceptedAt)}`}
-    </span>
-  )
+      : acceptMarks.find((mark) => mark.target === markTarget(block.id))
+  const changedMark = <ChangedMark label={blockMark && formatChangedLabel(blockMark.acceptedAt)} />
   const slash = useSlashLine({
     block,
     rootRef,

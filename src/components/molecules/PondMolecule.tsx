@@ -50,6 +50,7 @@ import { KindDot } from '@/components/atoms/PondAtom'
 import { pageEyebrowClass } from '@/components/atoms/kicker'
 import { cn } from '@/lib/utils'
 import { FOCUS_RING, FOCUS_VISIBLE_RING } from '@/components/atoms/focus-ring'
+import { ChangedMark } from '@/lib/change-log/changed-mark'
 
 export const POND_MOLECULE_KINDS = [
   'list-row',
@@ -385,17 +386,7 @@ export function PondMolecule({
     <PondAtom kind="date" value={displayMeta} due={dueResolved} state={atomState} size={size} />
   )
 
-  /** KAN-143's accept-mark cue — its own span, after the row's value. Quiet by
-   *  design (PROJECT_RULES forbids a nudge colour here): ink .8 mono, never
-   *  orange or wheat. */
-  const changedMark = changedLabel && (
-    <span
-      data-part="changed"
-      className="font-mono lowercase text-[10.5px] text-mn-text-meta ml-[10px]"
-    >
-      {changedLabel}
-    </span>
-  )
+  const changedMark = <ChangedMark label={changedLabel} />
 
   /* ── list-row: handle · dot · title · date atom ── */
   if (kind === 'list-row') {

@@ -30,6 +30,13 @@ import type { TodoItem } from '@/lib/modules/todo/schema'
 import { jsonEqual } from '@/lib/json-equal'
 import { indexById, touchedBlockIds } from './revert-plan'
 
+/** The mark target string for a block, or one of its rows — the one home for
+ *  this format (AGENTS.md "one home per fact"): `block:<id>` or
+ *  `block:<id>:row:<rowId>`. */
+export function markTarget(blockId: string, rowId?: string): string {
+  return rowId === undefined ? `block:${blockId}` : `block:${blockId}:row:${rowId}`
+}
+
 function indexItemsById(items: TodoItem[]): Map<string, TodoItem> {
   const map = new Map<string, TodoItem>()
   for (const item of items) map.set(item.id, item)
@@ -87,20 +94,20 @@ export function touchedMarks(before: Block[], after: Block[]): string[] {
     const afterBlock = afterById.get(blockId)
     // Added, removed, or changed kind — there is no row data to key against.
     if (beforeBlock === undefined || afterBlock === undefined) {
-      targets.push(`block:${blockId}`)
+      targets.push(markTarget(blockId))
       continue
     }
     if (beforeBlock.type !== 'todo' || afterBlock.type !== 'todo') {
-      targets.push(`block:${blockId}`)
+      targets.push(markTarget(blockId))
       continue
     }
     const itemIds = touchedItemIds(beforeBlock.items, afterBlock.items)
-    for (const itemId of itemIds) targets.push(`block:${blockId}:row:${itemId}`)
+    for (const itemId of itemIds) targets.push(markTarget(blockId, itemId))
     const { items: _beforeItems, ...beforeRest } = beforeBlock
     const { items: _afterItems, ...afterRest } = afterBlock
     void _beforeItems
     void _afterItems
-    if (!jsonEqual(beforeRest, afterRest)) targets.push(`block:${blockId}`)
+    if (!jsonEqual(beforeRest, afterRest)) targets.push(markTarget(blockId))
   }
   return targets
 }
