@@ -78,10 +78,13 @@ import {
   BLOCK_ROW_GAP_PX,
   blockWidthStyle,
   classifyDropZone,
+  detachKeepingRows,
+  isWithinPaddedZone,
   layoutRows,
   planBesideDrop,
   rowHolds,
   type DropZone,
+  type Rect,
 } from '@/lib/modules/layout-rows'
 import { SlashLineContext, type SlashLineAt } from '@/lib/modules/text/slash-line'
 import { useSlashLine } from '@/components/organisms/use-slash-line'
@@ -174,9 +177,13 @@ type NewPage = InstantiatedTemplate & { props?: Record<string, unknown> }
  * `flexWrap` so a 100%-wide sizing div (a stacked block) takes its own line,
  * which IS the stack. No row-level element exists to carry a regrouping key, so
  * a block changing rows can never remount — structurally impossible, not merely
- * untested. A host's `listStyle` (zen's 22px) only overrides `rowGap`; `display`,
- * `flexWrap` and `flexDirection` are reasserted here so a host passing
- * `flexDirection:'column'` (zen's own shape) can't turn off wrapping.
+ * untested. `rowGap` stays 0 here: a flex line's cross size clamps at zero
+ * (CSS Flexbox §9.4 step 8), so the forced row-break line below would double
+ * it. The vertical gap is carried on the blocks themselves instead (each
+ * sizing div's own `marginTop`, below) — `rowGapValue` is still the one home
+ * for a host's override (zen's 22px). `display`, `flexWrap` and
+ * `flexDirection` are reasserted here so a host passing `flexDirection:'column'`
+ * (zen's own shape) can't turn off wrapping.
  */
 function canvasListStyle(listStyle: CSSProperties | undefined): CSSProperties {
   return {
@@ -186,12 +193,29 @@ function canvasListStyle(listStyle: CSSProperties | undefined): CSSProperties {
     flexDirection: 'row',
     alignItems: 'flex-start',
     columnGap: BLOCK_ROW_GAP_PX,
-    rowGap: listStyle?.rowGap ?? BLOCK_ROW_GAP_PX,
+    rowGap: 0,
     // Rule 4's row-boundary line (KAN-345) is an absolutely positioned child
-    // of this list — out of the flex flow, so it adds no `rowGap` of its own
-    // — positioned against THIS box, not a further-out ancestor.
+    // of this list — out of the flex flow, so it adds no vertical spacing of
+    // its own — positioned against THIS box, not a further-out ancestor.
     position: 'relative',
   }
+}
+
+/** The one home for the list's effective row gap — every sizing div that
+ * carries it (below) reads it from here, so a host's `rowGap` override stays
+ * in sync at every read site by construction. */
+function rowGapValue(listStyle: CSSProperties | undefined): NonNullable<CSSProperties['rowGap']> {
+  return listStyle?.rowGap ?? BLOCK_ROW_GAP_PX
+}
+
+/** Sets `rowStart` on a copy of `block`, omitting the key rather than writing
+ * `false` (KAN-440) — matches `rowStart`'s own "absent means today's packing"
+ * convention everywhere else it's set. */
+function withRowStart<T extends { rowStart?: boolean }>(block: T, rowStart: boolean | undefined): T {
+  if (rowStart === true) return { ...block, rowStart: true }
+  const next = { ...block }
+  delete (next as { rowStart?: boolean }).rowStart
+  return next
 }
 
 /**
@@ -357,8 +381,14 @@ export interface BlockCanvasProps {
    * the toast was staged. This preserves DocumentPanel's original
    * `setBlocks((current) => …)` correctness: an edit between remove and Undo
    * must not be clobbered by the re-insert. Required whenever removal is possible.
+   *
+   * `handedRowStartTo` (KAN-440): the id of the row-mate `detachKeepingRows`
+   * handed the removed block's `rowStart` to, if any — omit when there was no
+   * handoff. The undo must omit `rowStart` from that block, against the LATEST
+   * blocks in the same functional update, so a removal that moved the row's
+   * start doesn't leave it moved after the removal itself is undone.
    */
-  onUndoRemove: (index: number, block: Block) => void
+  onUndoRemove: (index: number, block: Block, handedRowStartTo?: string | null) => void
   /**
    * Block ids inserted this session, so a freshly-inserted block SETTLES in
    * (motion-settle-in) while blocks present on load do not (ticket-41). The Set is
@@ -493,6 +523,34 @@ export function BlockCanvas({
   // hides while the pointer is over it — `trailingGapVisible` below gates the
   // paint and resets this flag for that case.
   const [trailingGapHovered, setTrailingGapHovered] = useState(false)
+  // Every block's rect, by id, as of the last snapshot (KAN-440): `onDragOver`
+  // classifies the hovered block's zone against THIS, never the live
+  // `getBoundingClientRect()` — the live rect moves under the pointer as soon
+  // as a beside preview resizes the row, which is the flicker this ticket
+  // fixes. Snapshotted fresh on dragstart, and on scroll while a drag is live
+  // (the listener below removes itself the moment it isn't).
+  const dragRectsRef = useRef<Map<string, Rect>>(new Map())
+  function snapshotDragRects() {
+    const next = new Map<string, Rect>()
+    for (const block of blocks) {
+      const rect = document.getElementById(blockDomId(block.id))?.getBoundingClientRect()
+      if (rect) next.set(block.id, rect)
+    }
+    dragRectsRef.current = next
+  }
+  // The zone currently shown for a live drag (KAN-440 hysteresis): held while the
+  // pointer stays within that zone's own padded sub-rect of the snapshot (above),
+  // so a preview-induced shift or a few px of jitter never reclassifies it. `null`
+  // whenever no zone is shown (drag not started, or hovering the dragged block's
+  // own origin). Reset alongside `dragRectsRef`'s re-snapshots, since a fresh
+  // snapshot means the next dragover starts from nothing sticky.
+  const stickyZoneRef = useRef<{ index: number; zone: DropZone } | null>(null)
+  useEffect(() => {
+    if (draggingIndex === null) return
+    window.addEventListener('scroll', snapshotDragRects, true)
+    return () => window.removeEventListener('scroll', snapshotDragRects, true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `snapshotDragRects` reads `blocks` fresh on every call; it doesn't need to be a dep for the listener to stay current.
+  }, [draggingIndex])
   // The drop line hovered during a drag: which block it's over, which edge
   // (classifyDropZone), and — for an own-line (above/below) drop only — the
   // span to stretch it across the FULL content column rather than just this
@@ -847,7 +905,8 @@ export function BlockCanvas({
   function removeBlockAt(index: number) {
     const removed = blocks[index]
     if (!removed) return
-    onChange(blocks.filter((_, i) => i !== index))
+    const { blocks: next, handedRowStartTo } = detachKeepingRows(blocks, index)
+    onChange(next)
     focusBlockNeighbour(blocks, index)
     stageDeletion({
       message: `Deleted ${removed.type} block`,
@@ -857,10 +916,12 @@ export function BlockCanvas({
       // Route the re-insert through the caller's FUNCTIONAL update
       // (onUndoRemove), NOT onChange: `blocks` here is the snapshot at
       // stage-time, so an edit before Undo would otherwise re-base the insert on
-      // stale state and drop that edit (ticket-44 review).
+      // stale state and drop that edit (ticket-44 review). `handedRowStartTo`
+      // (KAN-440) is the id `detachKeepingRows` just handed `removed`'s
+      // `rowStart` to, if any — undo gives it back by omitting it there.
       scope: 'block',
       commit: () => {},
-      undo: () => onUndoRemove(index, removed),
+      undo: () => onUndoRemove(index, removed, handedRowStartTo),
     })
   }
 
@@ -875,7 +936,11 @@ export function BlockCanvas({
     const neighbour = blocks[index - 1] ?? blocks[index + 1]
     if (!line || !neighbour) return
     if (line.type === 'text' && !line.label) {
-      onChange(blocks.filter((_, i) => i !== index))
+      // Via `detachKeepingRows` (KAN-440): an empty line can carry `rowStart`
+      // the same as any other block, so taking it out must hand that off to
+      // its row-mate the same way a real delete does, or the row-mate silently
+      // re-packs beside whatever came before.
+      onChange(detachKeepingRows(blocks, index).blocks)
       focusBlockNeighbour(blocks, index)
     } else {
       removeBlockAt(index)
@@ -1349,11 +1414,24 @@ export function BlockCanvas({
     focusEmptyLineOrInsert(blocks[blocks.length - 1], addTextBlock)
   }
 
+  // ⌥↑/⌥↓ swaps the two adjacent SLOTS, not the two blocks (KAN-440):
+  // `detachKeepingRows` hands `rowStart` to the row-mate a block leaves
+  // behind, which is right for a drop or a delete, but a swap never leaves
+  // either slot — each one is immediately refilled by the other block. Using
+  // `detachKeepingRows` here let the moved block arrive still carrying its
+  // OWN `rowStart`, splitting a row in two it used to swap within. Instead,
+  // `rowStart` stays with the position: whichever block now sits at `index`
+  // gets the flag `index` held before the swap, and likewise for `target` —
+  // so an in-row swap stays in its row, and a swap across a row boundary
+  // keeps both rows' boundaries, just with the two blocks at the seam traded.
   function moveBlockAt(index: number, dir: 'up' | 'down') {
     const target = dir === 'up' ? index - 1 : index + 1
     if (target < 0 || target >= blocks.length) return
+    const atIndex = blocks[index]
+    const atTarget = blocks[target]
     const next = [...blocks]
-    ;[next[index], next[target]] = [next[target], next[index]]
+    next[index] = withRowStart(atTarget, atIndex.rowStart)
+    next[target] = withRowStart(atIndex, atTarget.rowStart)
     onChange(next)
   }
 
@@ -1403,17 +1481,25 @@ export function BlockCanvas({
   // goes after the row's last member instead, so the planned row always
   // renders as one unbroken run. Off a drag, or off anything but a beside
   // hover, this is just `blocksForLayout`, one entry per block.
-  const renderList = useMemo<{ id: string; width: BlockWidth; ghost: boolean }[]>(() => {
+  const renderList = useMemo<
+    { id: string; width: BlockWidth; ghost: boolean; rowStart?: boolean }[]
+  >(() => {
     if (!besidePlan || draggingIndex === null) {
-      return blocksForLayout.map((b) => ({ id: b.id, width: b.width ?? 'full', ghost: false }))
+      return blocksForLayout.map((b) => ({
+        id: b.id,
+        width: b.width ?? 'full',
+        ghost: false,
+        rowStart: b.rowStart,
+      }))
     }
     const dragged = blocks[draggingIndex]
     const ghostId = `${dragged.id}::ghost`
-    const plannedWidth = besidePlan.find((b) => b.id === dragged.id)?.width ?? 'full'
+    const plannedDragged = besidePlan.find((b) => b.id === dragged.id)
+    const plannedWidth = plannedDragged?.width ?? 'full'
     const withGhost = besidePlan.map((b) =>
       b.id === dragged.id
-        ? { id: ghostId, width: plannedWidth, ghost: true }
-        : { id: b.id, width: b.width ?? 'full', ghost: false }
+        ? { id: ghostId, width: plannedWidth, ghost: true, rowStart: plannedDragged?.rowStart }
+        : { id: b.id, width: b.width ?? 'full', ghost: false, rowStart: b.rowStart }
     )
     const neighborId = draggingIndex < blocks.length - 1 ? blocks[draggingIndex + 1].id : null
     const neighborAt = neighborId ? withGhost.findIndex((item) => item.id === neighborId) : -1
@@ -1433,7 +1519,17 @@ export function BlockCanvas({
       if (insertAt > rowStart && insertAt <= rowEnd) insertAt = rowEnd + 1
     }
 
-    const origin = { id: dragged.id, width: dragged.width ?? 'full', ghost: false }
+    // The origin is a placeholder at the dragged block's OLD slot, not a row
+    // owner: carrying `dragged.rowStart` here forces it onto its own line even
+    // when the row before it has room, needlessly pushing every row after it
+    // down by one (KAN-440) — the row-mate `besidePlan` already handed
+    // `rowStart` to (`detachKeepingRows`) gets its own break regardless.
+    const origin = {
+      id: dragged.id,
+      width: dragged.width ?? 'full',
+      ghost: false,
+      rowStart: undefined,
+    }
     const withOrigin = [...withGhost]
     withOrigin.splice(insertAt, 0, origin)
 
@@ -1516,15 +1612,19 @@ export function BlockCanvas({
    * Commits an own-line drop (6x): splices the dragged block before/after the
    * TARGET'S ROW as a whole, not before/after the target block itself — so
    * dropping below the second block of a ½+½ row lands after both, not
-   * between them. Only the dragged block's width changes, to `full`; every
-   * other block is the same object reference, untouched (AGENTS.md: Pond
-   * doesn't widen what's left behind). One `persistBlocksAsOwnEdit` write, same
-   * as `commitBesideDrop` (KAN-247, KAN-124's direct-write pattern).
+   * between them. The dragged block's width changes to `full` and it carries
+   * `rowStart: true` (KAN-440), so a block left behind at a partial width
+   * never re-packs into this block's row; every other block is the same
+   * object reference, untouched (AGENTS.md: Pond doesn't widen what's left
+   * behind). One `persistBlocksAsOwnEdit` write, same as `commitBesideDrop`
+   * (KAN-247, KAN-124's direct-write pattern). Removes the dragged block via
+   * `detachKeepingRows`, so a row-mate it leaves behind inherits its
+   * `rowStart` instead of re-packing into the row before it.
    */
   async function commitOwnLineDrop(fromIndex: number, targetIndex: number, zone: 'above' | 'below') {
-    const dragged = { ...blocks[fromIndex], width: 'full' as BlockWidth }
+    const dragged = { ...blocks[fromIndex], width: 'full' as BlockWidth, rowStart: true as const }
     const target = blocks[targetIndex]
-    const withoutDragged = blocks.filter((_, i) => i !== fromIndex)
+    const { blocks: withoutDragged } = detachKeepingRows(blocks, fromIndex)
     const row = layoutRows(withoutDragged).find((r) => r.some((b) => b.id === target.id))
     if (!row) return
     const rowIds = new Set(row.map((b) => b.id))
@@ -1539,6 +1639,22 @@ export function BlockCanvas({
   }
 
   /**
+   * The zone currently shown lives in two places — `dropIndicator`/
+   * `previewWidth` state and `stickyZoneRef` — so every site that stops
+   * showing a zone clears both through this one function. Missing either
+   * leaves the other stale: `onDragOver`'s hysteresis check reads
+   * `stickyZoneRef` to decide whether a dragover is "unchanged" and, if so,
+   * returns before touching the state at all, so a ref left behind an
+   * already-cleared indicator makes the next dragover into that same zone a
+   * no-op forever.
+   */
+  function clearDropPreview() {
+    setDropIndicator(null)
+    setPreviewWidth(null)
+    stickyZoneRef.current = null
+  }
+
+  /**
    * Commits exactly the `dropIndicator` currently shown — not a fresh
    * classification of wherever the release landed. The lifted ghost is
    * `pointer-events-none` and the gap between blocks has no handler of its
@@ -1550,8 +1666,7 @@ export function BlockCanvas({
   function commitDropIndicator() {
     const fromIndex = draggingIndex
     const indicator = dropIndicator
-    setDropIndicator(null)
-    setPreviewWidth(null)
+    clearDropPreview()
     setDraggingIndex(null)
     if (fromIndex === null || !indicator || indicator.index === fromIndex) return
     if (indicator.zone === 'left' || indicator.zone === 'right') {
@@ -1578,22 +1693,38 @@ export function BlockCanvas({
   // own sizing div below; a row's boundary is `max(item.bottom) - container.top`.
   const itemSizingRefs = useRef(new Map<string, HTMLDivElement>())
   const [rowBoundaryTops, setRowBoundaryTops] = useState<number[]>([])
+  // The last measurement `read` (below) stored. `blockRows` is a new array on
+  // every render that changes a drag's preview, re-running the effect; a set
+  // state from a layout effect re-renders and commits even when the value is
+  // unchanged (React only bails out eagerly with no work pending), and
+  // KAN-440's hysteresis promises one commit per zone change. So `read` sets
+  // state only when the measurement actually moved.
+  const lastMeasureRef = useRef<{ width: number; tops: number[] } | null>(null)
   useLayoutEffect(() => {
     const el = canvasRef.current
     if (!el || typeof ResizeObserver === 'undefined') return
     const read = () => {
       const containerRect = el.getBoundingClientRect()
-      setColumnWidth(containerRect.width)
-      setRowBoundaryTops(
-        blockRows.slice(0, -1).map(
-          (row) =>
-            Math.max(
-              ...row.map(
-                (item) => itemSizingRefs.current.get(item.id)?.getBoundingClientRect().bottom ?? 0
-              )
-            ) - containerRect.top
-        )
+      const tops = blockRows.slice(0, -1).map(
+        (row) =>
+          Math.max(
+            ...row.map(
+              (item) => itemSizingRefs.current.get(item.id)?.getBoundingClientRect().bottom ?? 0
+            )
+          ) - containerRect.top
       )
+      const last = lastMeasureRef.current
+      if (
+        last &&
+        last.width === containerRect.width &&
+        last.tops.length === tops.length &&
+        last.tops.every((top, i) => top === tops[i])
+      ) {
+        return
+      }
+      lastMeasureRef.current = { width: containerRect.width, tops }
+      setColumnWidth(containerRect.width)
+      setRowBoundaryTops(tops)
     }
     read()
     const ro = new ResizeObserver(read)
@@ -1703,13 +1834,13 @@ export function BlockCanvas({
         onDragStart={(e) => {
           if (dragImageRef.current) e.dataTransfer?.setDragImage(dragImageRef.current, 0, 0)
           setMenuOpenAt(null)
-          setPreviewWidth(null)
+          clearDropPreview()
           setDraggingIndex(i)
+          snapshotDragRects()
         }}
         onDragEnd={() => {
           setDraggingIndex(null)
-          setDropIndicator(null)
-          setPreviewWidth(null)
+          clearDropPreview()
         }}
         onDragOver={(e) => {
           e.preventDefault()
@@ -1720,12 +1851,35 @@ export function BlockCanvas({
             // must clear too — otherwise a release here would still commit
             // that earlier target's plan (the drop just below commits
             // whatever indicator is shown, not what's under the pointer now).
-            setDropIndicator(null)
-            setPreviewWidth(null)
+            clearDropPreview()
             return
           }
-          const rect = e.currentTarget.getBoundingClientRect()
-          const zone = classifyDropZone(rect, { x: e.clientX, y: e.clientY })
+          // The snapshot taken at dragstart (re-taken on scroll while this
+          // drag is live), never the live rect: a beside preview resizes
+          // this very block mid-drag, and classifying against that moving
+          // target is the flicker this ticket fixes. Falls back to the live
+          // rect only if the snapshot never saw this block (it wasn't on the
+          // page at dragstart — a realtime insert mid-drag).
+          const rect = dragRectsRef.current.get(block.id) ?? e.currentTarget.getBoundingClientRect()
+          const point = { x: e.clientX, y: e.clientY }
+          // Hysteresis (KAN-440): once this block has a zone shown, keep it while
+          // the pointer stays within THAT zone's own padded sub-rect — never
+          // reclassify just because the preview itself moved. Only a point that
+          // actually clears the padding re-runs `classifyDropZone` from scratch.
+          const sticky = stickyZoneRef.current
+          const zone =
+            sticky && sticky.index === i && isWithinPaddedZone(rect, point, sticky.zone)
+              ? sticky.zone
+              : classifyDropZone(rect, point)
+          // Nothing classified differently from what's already shown for this
+          // block: `planned`/`changed` below are pure functions of
+          // (blocks, draggingIndex, target id, zone), none of which moved, so
+          // skip the state updates outright rather than recompute and reapply
+          // an identical plan on every one of the ~20 dragovers/s a still
+          // pointer fires.
+          const unchanged = sticky !== null && sticky.index === i && sticky.zone === zone
+          stickyZoneRef.current = { index: i, zone }
+          if (unchanged) return
           if (zone === 'left' || zone === 'right') {
             const planned = planBesideDrop(blocks, draggingIndex, blocks[i].id, zone)
             // `null`: the row already holds 4, or the widths this drop would
@@ -1735,8 +1889,7 @@ export function BlockCanvas({
             // above: a stale indicator from an earlier target must not survive
             // into a zone that offers no plan of its own.
             if (planned === null) {
-              setDropIndicator(null)
-              setPreviewWidth(null)
+              clearDropPreview()
               return
             }
             setDropIndicator({ index: i, zone })
@@ -1863,8 +2016,11 @@ export function BlockCanvas({
             onDragLeave={(e) => {
               const related = e.relatedTarget as Node | null
               if (related && canvasRef.current?.contains(related)) return
-              setDropIndicator(null)
-              setPreviewWidth(null)
+              // Clears `stickyZoneRef` too (`clearDropPreview`), not just the
+              // indicator: otherwise a dragover back into the SAME zone right
+              // after re-entering reads the ref as unchanged and returns
+              // before ever reshowing what this just cleared.
+              clearDropPreview()
             }}
           >
             {/*
@@ -1873,9 +2029,18 @@ export function BlockCanvas({
              * their outer array index, so a block moving from row 0 to row 1
              * would still remount even though its own `key` is unchanged — the
              * exact bug a flat array (one key namespace, block.id only) removes.
+             *
+             * `blockRows`' boundaries are not always where CSS would wrap on its
+             * own: a row left short of full by a `rowStart` block (KAN-440) has
+             * room for the next row's first block to pack in beside it, which is
+             * exactly the bug `rowStart` exists to stop. So every row after the
+             * first gets a forced break — a sibling, not a wrapper, so no block's
+             * own key or parent ever changes. The list's own `rowGap` is 0 (its
+             * doc comment above), so the break carries no margin of its own —
+             * the gap lives entirely on each row's sizing divs, below.
              */}
             {blockRows
-              .flatMap((row) => {
+              .flatMap((row, rowIndex) => {
                 const widths = row.map((item) => item.width)
                 // Widths and rows are kept, not shown: a row that stacks renders
                 // each of its blocks' sizing divs at 100% width, which — because
@@ -1883,11 +2048,34 @@ export function BlockCanvas({
                 // order. That IS the stack; no row-level wrapper is rendered at
                 // all, so a block shifting from one row to another regroups
                 // `blockRows` without touching any ancestor element, and a
-                // remount is impossible rather than merely untested.
+                // remount is impossible rather than untested.
                 const stacks = columnWidth > 0 && !rowHolds(columnWidth, widths)
-                return row.map((item) => ({ item, stacks }))
+                // Every sizing div starts its own flex line EXCEPT the page's
+                // very first block, and (within row 0, non-stacking) the rest of
+                // that one shared line: those stay at the top with no gap above
+                // them, every other sizing div gets one `rowGapValue` of
+                // `marginTop`. A stacking row puts each of its own members on
+                // their own line too, so only its first member (if that's also
+                // the page's first block) is spared.
+                const entries = row.map((item, itemIndex) => ({
+                  item,
+                  stacks,
+                  marginTop:
+                    rowIndex === 0 && (!stacks || itemIndex === 0) ? 0 : rowGapValue(listStyle),
+                }))
+                return rowIndex === 0 ? entries : [{ rowBreakBeforeId: row[0].id }, ...entries]
               })
-              .map(({ item, stacks }) => {
+              .map((entry) => {
+                if ('rowBreakBeforeId' in entry) {
+                  return (
+                    <div
+                      key={`row-break-${entry.rowBreakBeforeId}`}
+                      aria-hidden
+                      style={{ flexBasis: '100%', height: 0, margin: 0 }}
+                    />
+                  )
+                }
+                const { item, stacks, marginTop } = entry
                 const sizingWidth =
                   stacks || item.width === 'full' ? '100%' : blockWidthStyle(item.width)
                 // The ghost's id has no entry in `blocks` — it renders the
@@ -1895,7 +2083,7 @@ export function BlockCanvas({
                 // not through `renderBlockEditor`, which only real slots use.
                 if (item.ghost) {
                   return draggingIndex === null ? null : (
-                    <div key={item.id} style={{ width: sizingWidth }}>
+                    <div key={item.id} style={{ width: sizingWidth, marginTop }}>
                       {renderGhostBlock(blocks[draggingIndex])}
                     </div>
                   )
@@ -1916,7 +2104,7 @@ export function BlockCanvas({
                       else itemSizingRefs.current.delete(item.id)
                     }}
                     className="relative min-w-0 transition-[width] duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none"
-                    style={{ width: sizingWidth }}
+                    style={{ width: sizingWidth, marginTop }}
                   >
                     {renderBlockEditor(blocks[i], i)}
                   </div>
@@ -2130,10 +2318,16 @@ function useBlockEmptyState(
  * Return on the block itself — not on anything inside it — opens a line after a
  * block that is not text. A text block's Return is its editor's.
  *
- * A press on the handle, or ⌘/ (Ctrl+/ off Apple) anywhere in the block, opens
- * the block menu (`PondMenu` kind `block`), and the block wears the open ring
- * while it is open. A drag from the handle closes the menu its press opened.
+ * A click on the handle — a press that ends in pointerup within
+ * `HANDLE_PRESS_MOVE_THRESHOLD_PX` of where it started — or ⌘/ (Ctrl+/ off
+ * Apple) anywhere in the block, opens the block menu (`PondMenu` kind
+ * `block`), and the block wears the open ring while it is open. Base UI's own
+ * trigger opens on pointerdown; `handlePointerOpenChange` below drops that and
+ * any open that arrives after the press has moved past the threshold, so a
+ * press that becomes a drag never opens it (KAN-440 comment 1) — ⌘/ is never
+ * gated by this, so a stuck press state from an earlier drag can't block it.
  */
+const HANDLE_PRESS_MOVE_THRESHOLD_PX = 4
 function BlockEditor({
   block,
   pageId,
@@ -2237,6 +2431,30 @@ function BlockEditor({
   onDrop?: (e: React.DragEvent) => void
 }) {
   const [dragArmed, setDragArmed] = useState(false)
+  // Gate for the handle's menu (KAN-440 comment 1): Base UI's `Menu.Trigger`
+  // opens on native `mousedown`, before a press is known to be a click or the
+  // start of a drag. `pressRef` tracks whether the handle's press is still
+  // down, whether it has moved past the drag threshold since `onPointerDown`,
+  // and (for the toggle-click fix below) whether the menu was already open
+  // when this press started. `handlePointerOpenChange` drops any
+  // `open === true` while `down` or `moved` is true, so only a genuine click
+  // (pointerup with no movement past the threshold) opens the menu from the
+  // handle — a drag never does. An HTML5 drag ends in `pointercancel`/the
+  // row's `dragend`, never `pointerup`, so both reset `pressRef` too —
+  // otherwise `down` stays true forever and blocks every later open from
+  // this handle, ⌘/ and Enter included.
+  const pressRef = useRef({ down: false, moved: false, startX: 0, startY: 0, openAtDown: false })
+  // A press that drifts off the handle before releasing never fires the
+  // handle's own `pointerup` — without `setPointerCapture`, the browser
+  // delivers `pointerup` to whatever element is under the pointer at release,
+  // not the one that started the press (KAN-440). `down` then stays stuck
+  // true forever, which blocks a later Enter/Space open the same way a stuck
+  // drag does. A document-level listener, armed on this handle's own
+  // `pointerdown`, catches the release wherever it lands. Torn down on the
+  // next `pointerdown` (so only one is ever live) and on unmount (AGENTS.md
+  // "finish what you start").
+  const pressEndCleanupRef = useRef<(() => void) | null>(null)
+  useEffect(() => () => pressEndCleanupRef.current?.(), [])
   const rootRef = useRef<HTMLDivElement>(null)
   // KAN-321: the empty-state fetch must read whichever saved view the bar has
   // switched to, not the block's top-level mode/filter.
@@ -2382,7 +2600,7 @@ function BlockEditor({
   function handleKeyDown(e: React.KeyboardEvent) {
     if (isBlockMenuChord(e.nativeEvent)) {
       e.preventDefault()
-      onMenuOpenChange?.(true)
+      handleMenuOpenChange(true)
       return
     }
     if (
@@ -2454,6 +2672,97 @@ function BlockEditor({
     }
   }
 
+  // The ungated setter — ⌘/ (`handleKeyDown` above) calls this directly, never
+  // `handlePointerOpenChange` below: a stuck pointer state from an earlier
+  // drag must never block the keyboard. A close always passes through here
+  // regardless of caller.
+  function handleMenuOpenChange(open: boolean) {
+    onMenuOpenChange?.(open)
+  }
+
+  // The gate (see `pressRef` above): a POINTER-originated open — Base UI's own
+  // pointerdown-driven request (routed here via `PondMenu`'s `onOpenChange`)
+  // and the handle's own click below — is dropped while the press is still
+  // down or has moved past the drag threshold, so only a genuine click opens
+  // the menu from the handle and a drag never does.
+  function handlePointerOpenChange(open: boolean) {
+    if (open && (pressRef.current.down || pressRef.current.moved)) return
+    handleMenuOpenChange(open)
+  }
+
+  function handleTriggerPointerDown(e: React.PointerEvent) {
+    pressRef.current = {
+      down: true,
+      moved: false,
+      startX: e.clientX,
+      startY: e.clientY,
+      openAtDown: menuOpen ?? false,
+    }
+    setDragArmed(true)
+
+    pressEndCleanupRef.current?.()
+    const handleNode = e.currentTarget
+    const handleDocumentPressEnd = (ev: PointerEvent) => {
+      pressEndCleanupRef.current = null
+      document.removeEventListener('pointerup', handleDocumentPressEnd)
+      document.removeEventListener('pointercancel', handleDocumentPressEnd)
+      // A `pointerup` ON the handle itself is followed by this same press's
+      // own `click` (see `handleTriggerClick`), which still needs `moved`/
+      // `openAtDown` exactly as this press left them — its own `onPointerUp`
+      // below already resets `down` for that case. Only a release that lands
+      // elsewhere, where no click is ever coming, is safe to reset here. A
+      // `pointercancel` never leads to a click either way, wherever it lands.
+      const onHandleRelease =
+        ev.type === 'pointerup' &&
+        (ev.target === handleNode || (ev.target instanceof Node && handleNode.contains(ev.target)))
+      if (onHandleRelease) return
+      pressRef.current.down = false
+      pressRef.current.moved = false
+      pressRef.current.openAtDown = false
+      setDragArmed(false)
+    }
+    document.addEventListener('pointerup', handleDocumentPressEnd)
+    document.addEventListener('pointercancel', handleDocumentPressEnd)
+    pressEndCleanupRef.current = () => {
+      document.removeEventListener('pointerup', handleDocumentPressEnd)
+      document.removeEventListener('pointercancel', handleDocumentPressEnd)
+    }
+  }
+  // Moved only past `HANDLE_PRESS_MOVE_THRESHOLD_PX` from the pointerdown
+  // point — the spec is silent on a threshold (Notion uses one); a 1px jitter
+  // on a shaky click must not suppress the click that follows (KAN-440).
+  function handleTriggerPointerMove(e: React.PointerEvent) {
+    if (!pressRef.current.down) return
+    const dx = e.clientX - pressRef.current.startX
+    const dy = e.clientY - pressRef.current.startY
+    if (dx * dx + dy * dy > HANDLE_PRESS_MOVE_THRESHOLD_PX * HANDLE_PRESS_MOVE_THRESHOLD_PX) {
+      pressRef.current.moved = true
+    }
+  }
+  function handleTriggerPointerUp() {
+    pressRef.current.down = false
+    setDragArmed(false)
+  }
+  // An HTML5 drag never fires `pointerup` on the handle — it ends in
+  // `pointercancel` (here) or the row's `dragend` below — so without this,
+  // `down` stays true forever and every later open from this handle (the
+  // click, ⌘/'s own gate-free path never minds, but the trigger's click does)
+  // stays blocked.
+  function handleTriggerPointerCancel() {
+    pressRef.current.down = false
+    pressRef.current.moved = false
+    setDragArmed(false)
+  }
+  // The click that ends an unmoved press. Toggle against the open state the
+  // PRESS saw at pointerdown, not the live prop: Base UI's own trigger closes
+  // an already-open menu on this same press's mousedown (before this click
+  // fires), so a click that started on an open menu is that close's trailing
+  // click, not a new open request, and must not reopen it.
+  function handleTriggerClick() {
+    if (pressRef.current.openAtDown) return
+    handlePointerOpenChange(true)
+  }
+
   // ⌥↑/⌥↓ on the handle reorder the block: the menu's trigger would otherwise
   // take the arrow to open the menu and keep it from reaching the block.
   const handleTriggerKeyDown = (e: BaseUIEvent<React.KeyboardEvent<HTMLButtonElement>>) => {
@@ -2510,6 +2819,11 @@ function BlockEditor({
       onDragStart={onDragStart}
       onDragEnd={() => {
         setDragArmed(false)
+        // The row's own dragend, not the handle's pointerup, is how an HTML5
+        // drag from this handle ends (KAN-440) — reset here too, or `down`
+        // stays true and blocks every later open from this handle.
+        pressRef.current.down = false
+        pressRef.current.moved = false
         onDragEnd?.()
       }}
       onDragOver={onDragOver}
@@ -2575,7 +2889,7 @@ function BlockEditor({
           size={menuSize}
           groups={menuGroups}
           open={menuOpen ?? false}
-          onOpenChange={onMenuOpenChange ?? (() => {})}
+          onOpenChange={handlePointerOpenChange}
           onSelect={onMenuSelect ?? (() => {})}
           placement={{ anchor: rootRef, ...MENU_PLACEMENT[menuSize] }}
           trigger={
@@ -2588,8 +2902,11 @@ function BlockEditor({
               )}
               title="Block menu · drag to reorder"
               aria-label="Block menu"
-              onPointerDown={() => setDragArmed(true)}
-              onPointerUp={() => setDragArmed(false)}
+              onPointerDown={handleTriggerPointerDown}
+              onPointerMove={handleTriggerPointerMove}
+              onPointerUp={handleTriggerPointerUp}
+              onPointerCancel={handleTriggerPointerCancel}
+              onClick={handleTriggerClick}
               onKeyDown={handleTriggerKeyDown}
             >
               <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor" aria-hidden>
