@@ -158,10 +158,11 @@ export const holdInkGround = (): (() => void) => acquireHold(true)
 export const holdPaperGround = (): (() => void) => acquireHold(false)
 
 /**
- * Sets `.dark` directly: a non-preview, non-persisted apply (switching into a
- * pond with its own theme). Never writes `localStorage`. While a hold is live
- * the ground stays the hold's, not this call's — only `heldChoice` moves, so
- * the hold's own release later restores to this mode instead of a stale one.
+ * Sets `.dark` directly: a non-preview, non-persisted apply of a new pond's
+ * picked theme, once, at creation (`NewPondFlow`). Never writes `localStorage`.
+ * While a hold is live the ground stays the hold's, not this call's — only
+ * `heldChoice` moves, so the hold's own release later restores to this mode
+ * instead of a stale one.
  */
 export const setMode = (mode: Mode): void => {
   if (holds.length > 0) {

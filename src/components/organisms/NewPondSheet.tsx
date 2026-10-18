@@ -6,10 +6,11 @@
  * The board draws creating a pond as a three-step sheet over a paper scrim (name/
  * glyph/theme · areas · sources), NOT an inline field in the switcher menu. The
  * sources step is a separate ticket's ask and is left out here, so this sheet is
- * **two** steps. #316 ruled that the sheet ships **whole**, with `name` the only
- * enabled control: glyph, theme and the areas step render in `PondControl`'s own
- * `disabled` state — one of the eight states `PondControl.dc.html` specifies — so
- * nothing is missing from the board and nothing pretends to be live.
+ * **two** steps. #316 ruled that the sheet ships **whole**: name, the glyph row
+ * and the paper/ink theme pills are live; the areas step and the other six theme
+ * pills stay in `PondControl`'s own `disabled` state — one of the eight states
+ * `PondControl.dc.html` specifies (#175 owns them) — so nothing is missing from
+ * the board and nothing pretends to be live.
  *
  * Every value here is read inline from the board's markup, not eyeballed:
  *

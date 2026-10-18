@@ -95,6 +95,25 @@ describe('NewPondFlow applies the picked theme once, at creation (KAN-501)', () 
     expect(isDark()).toBe(true)
   })
 
+  it('ink then paper while already dark settles light once the sheet unmounts', async () => {
+    create.mockResolvedValueOnce({ ...STUDIO, theme: 'paper' })
+    html.classList.add('dark')
+    const user = userEvent.setup()
+    const onClose = jest.fn()
+    render(<Host onClose={onClose} />)
+
+    await user.type(screen.getByPlaceholderText('Name your pond'), 'Studio')
+    await user.click(screen.getByRole('button', { name: 'ink' }))
+    await user.click(screen.getByRole('button', { name: 'paper' }))
+
+    await user.click(screen.getByRole('button', { name: 'continue' }))
+    await user.click(screen.getByRole('button', { name: 'make pond' }))
+
+    await waitFor(() => expect(onClose).toHaveBeenCalledWith(true))
+    expect(create).toHaveBeenCalledWith('Studio', { glyph: 'lightning-03', theme: 'paper' })
+    expect(isDark()).toBe(false)
+  })
+
   it('make pond without touching a pill while already dark leaves dark unchanged', async () => {
     create.mockResolvedValueOnce({ ...STUDIO, theme: 'paper' })
     html.classList.add('dark')
