@@ -209,9 +209,8 @@ describe('the pond switcher', () => {
     // `s6m2`: a sheet over a paper scrim, with the step counter and the title.
     const sheet = screen.getByRole('dialog', { name: 'New pond' })
     expect(sheet).toBeInTheDocument()
-    expect(sheet).toHaveTextContent('new pond')
+    expect(sheet).toHaveTextContent('New pond')
     expect(sheet).toHaveTextContent('1 of 3')
-    expect(sheet).toHaveTextContent('Name it')
     // The board's rows are PRESENT, not omitted — #316 ships them disabled.
     expect(sheet).toHaveTextContent('glyph')
     expect(sheet).toHaveTextContent('theme')
@@ -225,7 +224,7 @@ describe('the pond switcher', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: /new pond/ }))
 
     const sheet = screen.getByRole('dialog', { name: 'New pond' })
-    fireEvent.change(screen.getByPlaceholderText('make noise'), {
+    fireEvent.change(screen.getByPlaceholderText('Name your pond'), {
       target: { value: 'red door guys' },
     })
 

@@ -124,25 +124,24 @@ export function NewPondSheet({
         aria-label="New pond"
         className={`fixed top-[120px] left-1/2 z-[41] box-border flex w-[540px] -translate-x-1/2 flex-col gap-[18px] rounded-[20px] p-[22px_24px] text-mn-text ${SHEET_GLASS}`}
       >
-        <div className="flex items-baseline justify-between font-mono text-[11px] leading-[normal] text-mn-text-secondary">
-          <span>new pond</span>
+        <div className="flex items-baseline justify-end font-mono text-[11px] leading-[normal] text-mn-text-secondary">
           <span>{step} of 3</span>
         </div>
 
         {step === 1 && (
           <>
             <span className="text-[22px] leading-[normal] font-medium tracking-[-0.01em]">
-              Name it
+              New pond
             </span>
 
             <div className="flex flex-col gap-[8px]">
-              <span className={LABEL}>name</span>
               <PondControl
                 kind="field"
-                label="make noise"
+                label="Name your pond"
                 value={name}
                 onValueChange={setName}
                 disabled={pending}
+                autoFocus
               />
             </div>
 
@@ -250,7 +249,7 @@ export function NewPondSheet({
             kind="button"
             variant="primary"
             label={last ? 'make pond' : 'continue'}
-            disabled={pending}
+            disabled={pending || name.trim() === ''}
             onClick={() => (last ? onCreate(name) : setStep((s) => s + 1))}
           />
         </div>
