@@ -185,23 +185,26 @@ const changeLogRow = (rootId: string): FlatRow => ({
   setSize: 1,
 })
 
-/** The databases root's second child (KAN-451), directly after `changeLogRow` —
- *  same reserved-virtual shape, same reasons: no row, no migration. */
-const trashRow = (rootId: string): FlatRow => ({
+/** The rail foot's own top-level row (KAN-504), between the databases tree
+ *  and `settings` — not a databases child, so it needs no root to exist
+ *  under and no expand to show: a plain module-level constant, same
+ *  reserved-virtual shape as `DATABASES_PLACEHOLDER_ROW`, same reasons as
+ *  `changeLogRow` (no row, no migration). */
+const TRASH_ROW: FlatRow = {
   id: TRASH_NODE_ID,
   node: {
     id: TRASH_NODE_ID,
-    parentId: rootId,
+    parentId: null,
     type: 'page',
     title: 'trash',
-    order: -1,
+    order: 0,
     children: [],
   },
-  depth: 1,
+  depth: 0,
   isFolder: false,
   posInSet: 1,
   setSize: 1,
-})
+}
 
 /** Px of extra left-pad per depth level — the guides land on these gridlines. */
 /** What the rail lets a row do, derived once per row so no site re-derives it. */
@@ -912,12 +915,13 @@ export function RailView({
     const [rawRoot, ...rest] = flattenVisible([databasesRoot], expanded, true)
       .slice(1) // drop the synthetic Life row flattenVisible always leads with
       .map((f) => ({ ...f, depth: f.depth - 1 }))
-    // KAN-486: change log + trash are always the root's first two children once
-    // it exists, so the root always carries a caret even with zero database pages.
+    // KAN-486: change log is always the root's first child once it exists, so
+    // the root always carries a caret even with zero database pages.
     const root = { ...rawRoot, isFolder: true }
-    // KAN-94/KAN-451: the change log and trash are the root's first two
-    // children — shown only once the root itself is expanded, like any other
-    // child.
+    // KAN-94: the change log is the root's first child — shown only once the
+    // root itself is expanded, like any other child. KAN-504: trash used to
+    // be its second child here; it is now the foot's own top-level row
+    // (`TRASH_ROW`, below), not a databases child at all.
     //
     // KAN-486: the heading renders LAST, after its own rows, not first — the
     // foot is bottom-anchored, so a heading drawn first would be pushed up
@@ -926,7 +930,7 @@ export function RailView({
     // collapsed (its children are gated by `expanded` inside `flattenVisible`),
     // so collapsed stays `[root]` alone.
     const rows = expanded.has(databasesRoot.id)
-      ? [changeLogRow(databasesRoot.id), trashRow(databasesRoot.id), ...rest, root]
+      ? [changeLogRow(databasesRoot.id), ...rest, root]
       : [root]
     return rows.filter((f) => !isStaged(f.id)) // KAN-300: a refetch mid-undo-toast can't resurrect a staged row
   }, [databasesRoot, expanded])
@@ -939,10 +943,10 @@ export function RailView({
   const databasesHeadingRow = databasesFlat.find((f) => f.id === databasesHeadingId)
   const databasesScrollRows = databasesFlat.filter((f) => f.id !== databasesHeadingId)
 
-  // The ONE flattened list — Life first, the databases root last — driving
+  // The ONE flattened list — Life, then databases, then trash last — driving
   // render, ARIA coordinates, and keyboard order alike (they can't drift; see
-  // lib/rail/tree.ts). Rendered as two trees below but ONE keyboard order, so
-  // ↑/↓ walk from the last Life row into databases.
+  // lib/rail/tree.ts). Rendered as three trees below but ONE keyboard order, so
+  // ↑/↓ walk from the last Life row into databases, then into trash.
   const flat = useMemo(
     () =>
       [
@@ -950,6 +954,7 @@ export function RailView({
         // 'life' that `LIFE_NODE` carries.
         ...flattenVisible(lifeTree, expanded, lifeExpanded, pondName),
         ...databasesFlat,
+        TRASH_ROW,
       ].filter((f) => !isStaged(f.id)), // KAN-300: a refetch mid-undo-toast can't resurrect a staged row
     [lifeTree, expanded, lifeExpanded, databasesFlat, pondName]
   )
@@ -1217,7 +1222,10 @@ export function RailView({
         isSelected={id === selectedId}
         isFocused={rovingId === id}
         isBusy={id === busyId}
-        isArea={isAreaRow(node)}
+        // KAN-504: trash's own node carries `parentId: null` for the keyboard
+        // tree/ArrowLeft only — it never reads as an area's bigger label and
+        // full ink the way a real top-level page does.
+        isArea={isAreaRow(node) && id !== TRASH_NODE_ID}
         isDbRoot={isDatabasesRoot(node)}
         posInSet={posInSet}
         setSize={setSize}
@@ -1229,9 +1237,11 @@ export function RailView({
             DATABASES_MARK
           ) : id === CHANGE_LOG_NODE_ID || id === TRASH_NODE_ID ? (
             // Reserved virtual row: no page behind it to write a mark to, so the
-            // glyph picker never opens here (KAN-94/KAN-451).
+            // glyph picker never opens here (KAN-94/KAN-451). KAN-504: trash's
+            // `parentId: null` would otherwise read as an area to `resolveMark`
+            // and derive a hashed glyph for it — forced back to its plain dot.
             <span className="inline-flex flex-none items-center" aria-hidden>
-              {markGlyph(mark, markAccent(mark.role), id === selectedId)}
+              {markGlyph({ ...mark, glyph: null }, markAccent(mark.role), id === selectedId)}
             </span>
           ) : (
             markButton(
@@ -1307,7 +1317,10 @@ export function RailView({
         >
           <div className="min-h-0 flex-1 overflow-y-auto px-2">
             <div role="tree" aria-label="Workspace" aria-multiselectable={false}>
-              {!isLoading && flat.filter((f) => !databasesIds.has(f.id)).map(renderRow)}
+              {!isLoading &&
+                flat
+                  .filter((f) => !databasesIds.has(f.id) && f.id !== TRASH_NODE_ID)
+                  .map(renderRow)}
             </div>
 
             {/* Status lives OUTSIDE the tree — role="tree" only allows treeitem
@@ -1354,12 +1367,14 @@ export function RailView({
 
         {/* The foot: a full-width hairline, then the databases root (3c: the
           pond's SECOND root, its own ARIA tree so the structure says what the rail
-          says) and `settings`. KAN-486: the heading is the LAST row, after its own
-          rows, and sits outside the scroller — the scroller is capped at 40vh so an
-          expanded root scrolls inside the foot instead of swallowing the rail or
-          pushing the heading out from under the pointer. The scroller clips at its
-          padding box, so it carries 2px of padding (cancelled by a -2px margin) to
-          keep the rows' 2px focus ring visible. */}
+          says), trash (KAN-504: its own top-level row, its own tree, always
+          visible — not a databases child) and `settings`. KAN-486: the heading
+          is the LAST row, after its own rows, and sits outside the scroller —
+          the scroller is capped at 40vh so an expanded root scrolls inside the
+          foot instead of swallowing the rail or pushing the heading out from
+          under the pointer. The scroller clips at its padding box, so it
+          carries 2px of padding (cancelled by a -2px margin) to keep the rows'
+          2px focus ring visible. */}
         <div
           data-part="rail-foot"
           className="flex flex-col gap-0.5 border-t border-mn-text/[0.09] px-2 pt-2.5"
@@ -1373,6 +1388,9 @@ export function RailView({
               {databasesScrollRows.map(renderRow)}
             </div>
             {databasesHeadingRow && renderRow(databasesHeadingRow)}
+          </div>
+          <div role="tree" aria-label="Trash" aria-multiselectable={false}>
+            {renderRow(TRASH_ROW)}
           </div>
           {/* Not interactive until a settings surface exists: a dead button is worse
             than none. */}
