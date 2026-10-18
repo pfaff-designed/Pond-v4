@@ -1003,9 +1003,8 @@ export const KeyboardNav: Story = {
 /**
  * #96: the rail is a PAPER card (`PondRail`, measured: the card paper, the card
  * shadow, radius 20, 206 wide, no backdrop blur) headed by the pond's glyph and
- * name (13.5 / 500, full ink) with the reminders bell at
- * the right. With no pond provider there are no ponds, so no switcher button and
- * no chevron — and the bell is decorative, never a button.
+ * name (13.5 / 500, full ink). With no pond provider there are no ponds, so no
+ * switcher button and no chevron.
  */
 export const PaperCardHead: Story = {
   tags: ['!dev'],
@@ -1022,7 +1021,7 @@ export const PaperCardHead: Story = {
     await expect(name).not.toHaveClass('uppercase')
     await expect(head.querySelector('[data-pond-mark]')).not.toBeNull()
     await expect(head.querySelector('button')).toBeNull()
-    await expect(head.querySelector('[data-part="reminders-bell"]')).not.toBeNull()
+    await expect(head.querySelector('[data-part="reminders-bell"]')).toBeNull()
   },
 }
 
@@ -1311,7 +1310,7 @@ export const PaperCardComputed: Story = {
       await expect(mark.style.width).toBe('13px')
       await expect(head.querySelector('[data-area-mark]')).toBeNull()
 
-      // `head`: padding 0 16px 12px, name left / bell right, centred, gap 8.
+      // `head`: padding 0 16px 12px, centred, gap 8.
       const headCss = getComputedStyle(head)
       await expect(headCss.padding).toBe('0px 16px 12px')
       await expect(headCss.justifyContent).toBe('space-between')
@@ -1323,26 +1322,9 @@ export const PaperCardComputed: Story = {
       await expect(switcherCss.padding).toBe('4px 6px')
       await expect(switcherCss.margin).toBe('-4px -6px')
       await expect(switcherCss.borderTopLeftRadius).toBe('8px')
-      // With no pond provider there are no ponds: no switcher button, and the bell
-      // is not one.
+      // With no pond provider there are no ponds: no switcher button, and no bell.
       await expect(head.querySelector('button')).toBeNull()
-
-      // The reminders bell: 12×12, stroke 1.4, the .8 ink tier, a decorative mark
-      // outside the ARIA tree that is neither a button nor a tab stop (#198 owns
-      // its behaviour).
-      const bell = head.querySelector<HTMLElement>('[data-part="reminders-bell"]')!
-      await expect(bell).not.toBeNull()
-      await expect(bell.closest('[role="tree"]')).toBeNull()
-      await expect(bell.getAttribute('aria-hidden')).toBe('true')
-      await expect(bell.hasAttribute('tabindex')).toBe(false)
-      const bellBox = bell.getBoundingClientRect()
-      await expect(bellBox.width).toBe(12)
-      await expect(bellBox.height).toBe(12)
-      await expect(bell.getAttribute('viewBox')).toBe('0 0 14 14')
-      await expect(getComputedStyle(bell).strokeWidth).toBe('1.4px')
-      await expect(getComputedStyle(bell).color).toBe(
-        theme === 'light' ? 'rgba(27, 29, 20, 0.8)' : 'rgba(250, 249, 239, 0.8)'
-      )
+      await expect(head.querySelector('[data-part="reminders-bell"]')).toBeNull()
     }
   },
 }

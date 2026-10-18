@@ -8,7 +8,7 @@
  * rail header. Nothing else in the rail changes until you pick."
  *
  * The head is the pond's 13px glyph, its name at 13.5 / 500 in full ink and a 9px
- * chevron, padded `0 16px 12px`, with `trailing` (the reminders bell) at the far end.
+ * chevron, padded `0 16px 12px`.
  *
  * ⌘1–⌘3 and their hints bind only in a desktop app: the browser keeps them for tab
  * switching (AUDIT K1, decided 8 oct). Deliberately not here yet, each recorded as
@@ -17,7 +17,7 @@
  * that kept `import from notes` out of #177.
  */
 
-import { useState, type ReactNode } from 'react'
+import { useState } from 'react'
 import { usePond } from '@/lib/pond/context'
 import { Caret } from '@/components/atoms/Caret'
 import { PondMark } from '@/components/atoms/PondMark'
@@ -46,11 +46,9 @@ function Plus() {
 
 interface PondSwitcherProps {
   fallbackName: string
-  /** The head's right-hand end (the rail's reminders bell). */
-  trailing?: ReactNode
 }
 
-export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
+export function PondSwitcher({ fallbackName }: PondSwitcherProps) {
   const [open, setOpen] = useState(false)
   const [naming, setNaming] = useState(false)
   const { pond: active, ponds } = usePond()
@@ -97,8 +95,6 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
       ) : (
         <span className={switcherClass}>{label}</span>
       )}
-
-      {trailing}
 
       {open && hasPonds && (
         <>
