@@ -6,7 +6,8 @@
  * locked, it stays locked until the pointer moves `RELEASE_PX` from that
  * same key, then it breaks out and tracks the pointer freely.
  */
-import { MIN_BLOCK_WIDTH_PX, widthPercent } from './layout-rows'
+import { layoutRows, MIN_BLOCK_WIDTH_PX, widthPercent } from './layout-rows'
+import type { BlockWidth } from './content'
 
 /** The six snap targets, in column order — each percent read from `widthPercent`
  *  so a key width and the matching named `BlockWidth` (`BlockWidthRow.tsx`'s own
@@ -100,4 +101,35 @@ export function resizeAlone(
   const clampedPercent = Math.min(100, Math.max(minPercent, snapped.percent))
   if (clampedPercent !== snapped.percent) return { percent: clampedPercent, locked: false }
   return snapped
+}
+
+/**
+ * Applies `newWidth` to `blocks[index]` and, only when that shrink just opened
+ * enough room in its row for the next block to pack into it per `layoutRows`,
+ * adds `rowStart: true` to that next block so the row stays as it was (SPEC.md's
+ * rowStart contract: a resize changes widths only, never re-packs). Does
+ * nothing beyond the width write when: there is no next block; the next block
+ * already carries `rowStart` (it already won't repack); the resize is a grow or
+ * no-op (a row can only ever newly admit a block by shrinking, never by
+ * growing); the next block was already in the resized block's row before the
+ * resize (nothing changes for it); or the next block still doesn't fit after
+ * the resize.
+ */
+export function handOffRowStartOnResize<
+  T extends { id: string; width?: BlockWidth | number; rowStart?: boolean },
+>(blocks: readonly T[], index: number, newWidth: BlockWidth | number): T[] {
+  const resized = blocks[index]
+  const next = blocks[index + 1]
+  const withNewWidth = blocks.map((block, i) => (i === index ? { ...block, width: newWidth } : block))
+
+  if (!resized || !next || next.rowStart === true) return withNewWidth
+  if (widthPercent(newWidth) >= widthPercent(resized.width)) return withNewWidth
+
+  const sameRow = (rows: T[][], aId: string, bId: string): boolean =>
+    rows.some((row) => row.some((b) => b.id === aId) && row.some((b) => b.id === bId))
+
+  if (sameRow(layoutRows(blocks), resized.id, next.id)) return withNewWidth
+  if (!sameRow(layoutRows(withNewWidth), resized.id, next.id)) return withNewWidth
+
+  return withNewWidth.map((block) => (block.id === next.id ? { ...block, rowStart: true } : block))
 }

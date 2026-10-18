@@ -3,8 +3,15 @@
  * locks within 8px of a key width's position, releases 8px further (16px
  * from the lock).
  */
-import { KEY_WIDTHS, resizeAlone, snapPercent } from '@/lib/modules/block-resize'
+import { handOffRowStartOnResize, KEY_WIDTHS, resizeAlone, snapPercent } from '@/lib/modules/block-resize'
 import { MIN_BLOCK_WIDTH_PX } from '@/lib/modules/layout-rows'
+import type { BlockWidth } from '@/lib/modules/content'
+
+interface TestBlock {
+  id: string
+  width?: BlockWidth | number
+  rowStart?: boolean
+}
 
 // At this column width, 1% of the column is exactly 8px, so every test below
 // can be written in whole percent points instead of fiddly px/percent math.
@@ -131,5 +138,51 @@ describe('snapPercent on a column too narrow for the lock zones to stay separate
     [45, 50], // between ⅓ and ½, closer to ½
   ])('rawPercent %s locks onto %s', (rawPercent, expectedKey) => {
     expect(snapPercent(rawPercent, NARROW_COLUMN_PX, null)).toEqual({ percent: expectedKey, locked: true })
+  })
+})
+
+describe('handOffRowStartOnResize', () => {
+  it('shrink-opens-room: a shrink that newly fits the next block hands it rowStart', () => {
+    const blocks: TestBlock[] = [{ id: 'a', width: '3/4' }, { id: 'b', width: '1/3' }]
+    // 75 + 33.3 = 108.3 > 100 before the shrink; 50 + 33.3 = 83.3 <= 100 after.
+    expect(handOffRowStartOnResize(blocks, 0, 50)).toEqual([
+      { id: 'a', width: 50 },
+      { id: 'b', width: '1/3', rowStart: true },
+    ])
+  })
+
+  it('shrink-no-room: a shrink that still overflows the row hands off nothing', () => {
+    const blocks: TestBlock[] = [{ id: 'a', width: '3/4' }, { id: 'b', width: 'full' }]
+    // 75 + 100 = 175 before; 74 + 100 = 174 after — still well over 100.
+    expect(handOffRowStartOnResize(blocks, 0, 74)).toEqual([
+      { id: 'a', width: 74 },
+      { id: 'b', width: 'full' },
+    ])
+  })
+
+  it('grow: never hands off rowStart, even if the grow would overflow the row', () => {
+    const blocks: TestBlock[] = [{ id: 'a', width: '1/4' }, { id: 'b', width: '3/4' }]
+    // 25 -> 50 is a grow; 50 + 75 = 125 would overflow, but growing is never a handoff.
+    expect(handOffRowStartOnResize(blocks, 0, 50)).toEqual([
+      { id: 'a', width: 50 },
+      { id: 'b', width: '3/4' },
+    ])
+  })
+
+  it('already rowStart: a next block that already carries rowStart is left alone', () => {
+    const blocks: TestBlock[] = [
+      { id: 'a', width: '3/4' },
+      { id: 'b', width: '1/4', rowStart: true },
+    ]
+    // 50 + 25 = 75 would newly fit, but b already starts its own row.
+    expect(handOffRowStartOnResize(blocks, 0, 50)).toEqual([
+      { id: 'a', width: 50 },
+      { id: 'b', width: '1/4', rowStart: true },
+    ])
+  })
+
+  it('last-block-in-list: no next block means nothing to hand off', () => {
+    const blocks: TestBlock[] = [{ id: 'a', width: '3/4' }]
+    expect(handOffRowStartOnResize(blocks, 0, 50)).toEqual([{ id: 'a', width: 50 }])
   })
 })
