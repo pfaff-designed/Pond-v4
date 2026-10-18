@@ -50,10 +50,12 @@ export async function getOrCreateHomePage(
   supabase: SupabaseClient<Database>,
   pondId: string | null,
   /**
-   * #320: "a pond is born with one row, its root, titled with the pond's own
-   * name." Omitted, the root falls back to `life` — which is right for the first
-   * pond and wrong for every other, so a pond surface passes its name.
+   * KAN-490: the home row is the rail's first ROOT, so it is titled the same
+   * way any other root is — "Untitled" — not with the pond's own name (#320's
+   * rule is superseded). Kept in the signature so callers that still pass it
+   * (e.g. `appendChildLinkUnder`'s own fallback argument) need no change.
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   pondName?: string | null
 ): Promise<HomePage | null> {
   const {
@@ -77,12 +79,10 @@ export async function getOrCreateHomePage(
       ...(pond ? { pond_id: pond } : {}),
       parent_id: null,
       type: HOME_TYPE,
-      // #320: titled with the POND's name. Lowercase, like every other page name
-      // Pond writes (#101 review): the rail and the breadcrumb render a title raw,
-      // and the AI reads this one in the workspace outline. A pond created before
-      // this keeps 'Life' until the one-off row correction lands (gated, batched
-      // with migration 0017).
-      title: pondName?.trim() || 'life',
+      // KAN-490: a NEW home row is the first root, titled "Untitled" like any
+      // other root — never the pond's name. A pond created before this keeps
+      // its existing title; existing rows are never rewritten.
+      title: 'Untitled',
       blocks: [],
       props: {},
     })
@@ -98,7 +98,7 @@ export async function getOrCreateHomePage(
 
   return {
     id: data.id as string,
-    title: (data.title as string) ?? pondName ?? 'life',
+    title: (data.title as string) ?? 'Untitled',
     blocks: toBlocks(data.blocks),
   }
 }
