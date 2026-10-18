@@ -565,8 +565,9 @@ describe('WorkspaceShell — zen from ⌘K, and back with esc', () => {
     expect(properties.isConnected).toBe(true)
     expect(properties.closest('.hidden')).not.toBeNull()
     expect(handles.every((h) => h.hidden)).toBe(true)
-    const add = screen.getByRole('button', { name: 'Add a block', hidden: true })
-    expect(add.parentElement!.hidden).toBe(true)
+    // KAN-345: the trailing gap only mounts while `chrome` is true, same as
+    // the foot add it replaced — zen's `chrome={false}` unmounts it outright.
+    expect(screen.queryByTestId('trailing-block-gap')).not.toBeInTheDocument()
     // handle -> BlockEditor root -> per-block sizing div -> list (no row div).
     const list = handles[0].parentElement!.parentElement!.parentElement!
     expect(getComputedStyle(list).display).toBe('flex')
@@ -575,7 +576,7 @@ describe('WorkspaceShell — zen from ⌘K, and back with esc', () => {
     await esc()
     expect(properties.closest('.hidden')).toBeNull()
     expect(handles.some((h) => h.hidden)).toBe(false)
-    expect(add.parentElement!.hidden).toBe(false)
+    expect(screen.getByTestId('trailing-block-gap')).toBeInTheDocument()
     expect(list.style.rowGap).toBe('16px')
   })
 

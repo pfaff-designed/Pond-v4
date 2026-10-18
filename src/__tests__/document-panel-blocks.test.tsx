@@ -201,7 +201,7 @@ const tools = blocks[1]
 
 describe('the / menu on an empty page makes pages', () => {
   async function openSlash(typed: string) {
-    fireEvent.click(await screen.findByRole('button', { name: 'Add a block' }))
+    fireEvent.click(await screen.findByTestId('trailing-block-gap'))
     const editor = await findTextBlock()
     writeInTextBlock(editor, '/')
     return { editor, typed }

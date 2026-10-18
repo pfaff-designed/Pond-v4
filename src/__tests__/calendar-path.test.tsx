@@ -183,7 +183,7 @@ afterEach(() => {
 describe('`/calendar` path (KAN-262)', () => {
   it('picking a database with dated rows lands the month grid, its chrome, and a day’s ＋{n} overflow', async () => {
     const { container } = renderCanvas([])
-    fireEvent.click(await screen.findByRole('button', { name: 'Add a block' }))
+    fireEvent.click(await screen.findByTestId('trailing-block-gap'))
     const editor = await findTextBlock()
     // An empty page leads with its templates; typing a block's name returns to the blocks.
     writeInTextBlock(editor, '/')
@@ -215,7 +215,7 @@ describe('`/calendar` path (KAN-262)', () => {
 
   it('a database with no date field renders the emptyLine copy, not an error', async () => {
     renderCanvas([])
-    fireEvent.click(await screen.findByRole('button', { name: 'Add a block' }))
+    fireEvent.click(await screen.findByTestId('trailing-block-gap'))
     const editor = await findTextBlock()
     writeInTextBlock(editor, '/')
     await screen.findByRole('listbox', { name: 'blocks' })
@@ -232,7 +232,7 @@ describe('`/calendar` path (KAN-262)', () => {
 
   it('a database with no records draws the calendar’s own chrome and emptyLine, not the frame’s `no rows yet` (decision a)', async () => {
     renderCanvas([])
-    fireEvent.click(await screen.findByRole('button', { name: 'Add a block' }))
+    fireEvent.click(await screen.findByTestId('trailing-block-gap'))
     const editor = await findTextBlock()
     writeInTextBlock(editor, '/')
     await screen.findByRole('listbox', { name: 'blocks' })

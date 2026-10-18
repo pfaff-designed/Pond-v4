@@ -297,7 +297,6 @@ export const EmptyAndLoading: Story = {
       ['relation', 'link a record'],
       ['person', 'assign someone'],
       ['heading', 'untitled'],
-      ['prose', 'write something'],
       ['link', 'add a link'],
       ['file', 'attach a file'],
       ['image', 'drop an image'],
@@ -306,8 +305,15 @@ export const EmptyAndLoading: Story = {
       await expect(atom(canvasElement, kind).textContent).toBe(placeholder)
     }
 
-    // `text` has no placeholder of its own — the board's fallback word is "empty".
-    const [emptyText, loadingText] = [...canvasElement.querySelectorAll('[data-kind="text"]')]
+    // `prose` and `text` have no placeholder of their own — nothing outside the
+    // text-block editor renders an empty prose atom, so both fall to the board's
+    // generic fallback word "empty" (the text-block editor's own empty-line
+    // placeholder is drawn by `text/prose.ts`, not this atom).
+    const [emptyProse, emptyText, loadingText] = [
+      atom(canvasElement, 'prose'),
+      ...canvasElement.querySelectorAll('[data-kind="text"]'),
+    ]
+    await expect(emptyProse.textContent).toBe('empty')
     await expect(emptyText.textContent).toBe('empty')
     await expect(loadingText.textContent).toBe('…')
 
