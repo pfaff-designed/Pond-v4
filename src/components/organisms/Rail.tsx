@@ -1759,6 +1759,10 @@ export function Rail() {
           unstageId(id)
           queryClient.setQueryData<PageRow[]>(pagesKey(pondId), (rows) => removeRow(rows ?? [], id))
           queryClient.invalidateQueries({ queryKey: pagesKey() })
+          // Same reason as `commitDelete`'s own invalidate (KAN-451): the
+          // trash page/change log read the `delete` record this sweep's
+          // `trashPageUnlinked` just wrote, nested under `changeLogKey()`.
+          queryClient.invalidateQueries({ queryKey: changeLogKey() })
         } catch (err) {
           // 'not-found' also covers an already-trashed page (trash_page's own
           // refusal) — a pagehide flush that landed before this sweep ran, or a
@@ -1886,6 +1890,15 @@ export function Rail() {
         queryClient.invalidateQueries({ queryKey: ['rows'] })
         queryClient.invalidateQueries({ queryKey: ['page'] })
       }
+      // The trash page/change log (KAN-451) read the `delete` record
+      // `trashPageUnlinked` just wrote, via `trashKey`/`changeLogDeletedKey`,
+      // both nested under `changeLogKey()` — never `pagesKey()`. Unlike the
+      // `rows`/`page` invalidates above, this is NOT skipped on a
+      // flush-driven commit: that skip exists because an outer write races
+      // its OWN optimistic update to the SAME key (`pagesKey`); no outer
+      // write here ever touches `changeLogKey()` optimistically, so there is
+      // nothing to race and nothing else ever invalidates it on this path.
+      await queryClient.invalidateQueries({ queryKey: changeLogKey() })
       // if the open page was in the deleted subtree, clear the workspace
       const selected = selectedNodeIdRef.current
       if (selected && subtreeIds(node).has(selected)) {

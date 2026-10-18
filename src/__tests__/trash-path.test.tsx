@@ -17,12 +17,13 @@
  */
 
 import React from 'react'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Rail } from '@/components/organisms/Rail'
 import { DocumentPanel } from '@/components/organisms/DocumentPanel'
 import { PondContext, type PondContextValue } from '@/lib/pond/context'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
+import { GRACE_WINDOW_MS } from '@/lib/deletion/deferred-commit'
 import { pagesKey } from '@/lib/pages/keys'
 import type { PageRow } from '@/lib/pages/tree'
 import type { Pond } from '@/lib/pond/client'
@@ -282,5 +283,50 @@ describe('PATH_STEPS 1–5 — the rail deletes a page, trash shows it, restore 
     expect(Number(restoredRow.getAttribute('aria-level'))).toBe(
       Number(healthRow.getAttribute('aria-level')) + 1
     )
+  })
+})
+
+describe('KAN-451 regression — trash mounted BEFORE a delete still shows it once the deferred commit lands', () => {
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  it('shows the deleted page as the top trash row, with trash left mounted the whole time', async () => {
+    mount()
+
+    // Open `trash` FIRST, before anything is deleted — it reads empty.
+    const databasesTree = screen.getByRole('tree', { name: 'Databases' })
+    fireEvent.click(within(databasesTree).getByRole('treeitem', { name: 'databases' }))
+    const trashRow = await within(databasesTree).findByRole('treeitem', { name: 'trash' })
+    fireEvent.click(trashRow)
+    const panel = screen.getByTestId('document-panel')
+    expect(await within(panel).findByTestId('trash-empty')).toHaveTextContent('trash is empty')
+
+    // Delete "Marathon" from the rail and let the deferred commit land on
+    // its OWN grace timer — never press "Dismiss". Trash stays mounted
+    // throughout; nothing re-navigates to it.
+    jest.useFakeTimers()
+    const workspaceTree = screen.getByRole('tree', { name: 'Workspace' })
+    const healthRow = within(workspaceTree).getByRole('treeitem', { name: 'Health' })
+    fireEvent.keyDown(healthRow, { key: 'ArrowRight' })
+    const marathonRow = await within(workspaceTree).findByRole('treeitem', { name: 'Marathon' })
+    fireEvent.mouseEnter(marathonRow)
+    fireEvent.click(within(marathonRow).getByRole('button', { name: 'Delete Marathon' }))
+    await waitFor(() =>
+      expect(within(workspaceTree).queryByRole('treeitem', { name: 'Marathon' })).not.toBeInTheDocument()
+    )
+    expect(records).toHaveLength(0)
+
+    await act(async () => {
+      jest.advanceTimersByTime(GRACE_WINDOW_MS + 1)
+    })
+    await waitFor(() => expect(records).toHaveLength(1))
+
+    // Trash, still mounted the whole time, now shows the page as its top row
+    // — no Dismiss click, no re-opening trash, no manual refetch.
+    const rows = await within(panel).findAllByTestId('trash-row')
+    expect(rows).toHaveLength(1)
+    expect(within(rows[0]).getByText('Marathon')).toBeInTheDocument()
+    expect(within(rows[0]).getByText('in 30 days')).toBeInTheDocument()
   })
 })
