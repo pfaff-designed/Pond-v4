@@ -2070,10 +2070,10 @@ export function Rail() {
     })
   }
 
-  /** Open a page — strictly navigation; expansion belongs to the caret alone.
-   *  The databases root is a disclosure, not a page: clicking it toggles
-   *  expansion instead of navigating (KAN-486 — it no longer has a
-   *  destination page reachable from here; ⌘K / the breadcrumb still reach it). */
+  /** Open a page — navigation, except for the databases root: it is a
+   *  disclosure, not a page, so clicking it toggles expansion instead
+   *  (KAN-486 — it no longer has a destination page reachable from here;
+   *  ⌘K / the breadcrumb still reach it). */
   function handleSelect(id: string) {
     // The change log and trash are reserved virtual pages — no `pages` row,
     // so their own URLs are built by hand rather than through
