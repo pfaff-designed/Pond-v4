@@ -74,6 +74,7 @@ import {
 import { BlockWidthRow } from '@/components/molecules/BlockWidthRow'
 import { TrailingBlockGap } from '@/components/molecules/TrailingBlockGap'
 import { BlockGapLine } from '@/components/molecules/BlockGapLine'
+import { BlockEdgeHandle } from '@/components/molecules/BlockEdgeHandle'
 import {
   BLOCK_ROW_GAP_PX,
   blockWidthStyle,
@@ -83,9 +84,12 @@ import {
   layoutRows,
   planBesideDrop,
   rowHolds,
+  widthPercent,
+  withoutRowStart,
   type DropZone,
   type Rect,
 } from '@/lib/modules/layout-rows'
+import { KEY_WIDTHS, handOffRowStartOnResize, resizeAlone } from '@/lib/modules/block-resize'
 import { SlashLineContext, type SlashLineAt } from '@/lib/modules/text/slash-line'
 import { useSlashLine } from '@/components/organisms/use-slash-line'
 import { focusTextBlock, hasTextBeforeCaret } from '@/lib/modules/text/focus'
@@ -846,20 +850,145 @@ export function BlockCanvas({
   }
 
   /**
-   * The width row's keep (6x): the same in-place-swap-by-id route as
-   * `convertBlock`, so the undo toast restores the block's previous width
-   * (absent means `full`). Pond binds no ⌘Z anywhere — inside a focused text
-   * block that key reaches the editor instead — so the toast is the undo the
-   * board's "click to keep, with undo" has here.
+   * The width row's keep (6x) and an edge-drag release (KAN-441): the same
+   * in-place-swap-by-id route, extended to take a free numeric width and to
+   * run it through `handOffRowStartOnResize` — a shrink that just opened room
+   * for the next block hands it `rowStart` so the row stays as it was (the
+   * rowStart contract, SPEC.md). The undo toast restores the block's previous
+   * width (absent means `full`) AND, when this write handed off `rowStart`,
+   * clears it from whichever block inherited it — one undo step for both.
+   * Pond binds no ⌘Z anywhere — inside a focused text block that key reaches
+   * the editor instead — so the toast is the undo the board's "click to keep,
+   * with undo" has here.
    */
-  const setBlockWidth = (before: Block, width: BlockWidth) => {
-    const after = { ...before, width } as Block
-    onChange(blocks.map((b) => (b.id === before.id ? after : b)))
+  const setBlockWidth = (before: Block, width: BlockWidth | number) => {
+    const index = blocks.findIndex((b) => b.id === before.id)
+    if (index === -1) return
+    const after = handOffRowStartOnResize(blocks, index, width)
+    const next = blocks[index + 1]
+    const handedRowStartToId =
+      next && next.rowStart !== true && after[index + 1]?.rowStart === true ? next.id : null
+    onChange(after)
     stageUndo({
       message: 'Set the block width',
       scope: 'block',
-      undo: () => onChange(blocksRef.current.map((b) => (b.id === before.id ? before : b))),
+      undo: () =>
+        onChange(
+          blocksRef.current.map((b) => {
+            if (b.id === before.id) return before
+            if (handedRowStartToId && b.id === handedRowStartToId) return withoutRowStart(b)
+            return b
+          })
+        ),
     })
+  }
+
+  /**
+   * An alone-on-line edge drag (KAN-441): a ref, not state, for the live
+   * pointer math — `resizeAlone`'s own hysteresis (`lockedPercent`) threads
+   * call to call, and a drag fires many moves per gesture that only need to
+   * update the rendered preview, not re-run an effect. `edgePreview` is that
+   * preview: the live percent and lock state for whichever block (`index`) is
+   * mid-drag, read by the sizing div below to override its width and by the
+   * handle's readout chip. `null` off a drag.
+   */
+  const edgeDragRef = useRef<{
+    pointerId: number
+    index: number
+    side: 'left' | 'right'
+    startClientX: number
+    startPercent: number
+    lockedPercent: number | null
+    livePercent: number
+  } | null>(null)
+  const [edgePreview, setEdgePreview] = useState<{
+    index: number
+    percent: number
+    locked: boolean
+  } | null>(null)
+  const [edgeDragActive, setEdgeDragActive] = useState(false)
+
+  // Esc cancels with no write, and the whole gesture shows the resize cursor
+  // even where the pointer leaves the 8px strip (pointer capture keeps the
+  // move/up events, not the OS cursor) — both acquired and released in this
+  // one effect, which also covers an unmount mid-drag for free.
+  useEffect(() => {
+    if (!edgeDragActive) return
+    function handleEdgeResizeKeyDown(e: KeyboardEvent) {
+      if (e.key !== 'Escape') return
+      edgeDragRef.current = null
+      setEdgePreview(null)
+      setEdgeDragActive(false)
+    }
+    document.body.style.userSelect = 'none'
+    document.body.style.cursor = 'ew-resize'
+    document.addEventListener('keydown', handleEdgeResizeKeyDown)
+    return () => {
+      document.removeEventListener('keydown', handleEdgeResizeKeyDown)
+      document.body.style.removeProperty('cursor')
+      document.body.style.removeProperty('user-select')
+    }
+  }, [edgeDragActive])
+
+  function handleEdgeResizePointerDown(
+    e: React.PointerEvent<HTMLDivElement>,
+    index: number,
+    side: 'left' | 'right'
+  ) {
+    if (edgeDragRef.current) return
+    e.preventDefault()
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId)
+    } catch {
+      /* capture can fail for an already-released pointer; the drag still works while over the strip */
+    }
+    const startPercent = widthPercent(blocks[index]?.width)
+    edgeDragRef.current = {
+      pointerId: e.pointerId,
+      index,
+      side,
+      startClientX: e.clientX,
+      startPercent,
+      lockedPercent: null,
+      livePercent: startPercent,
+    }
+    setEdgePreview({ index, percent: startPercent, locked: false })
+    setEdgeDragActive(true)
+  }
+
+  function handleEdgeResizePointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    const st = edgeDragRef.current
+    if (!st || e.pointerId !== st.pointerId) return
+    const deltaPx = st.side === 'right' ? e.clientX - st.startClientX : st.startClientX - e.clientX
+    const { percent, locked } = resizeAlone(columnWidth, st.startPercent, deltaPx, st.lockedPercent)
+    st.lockedPercent = locked ? percent : null
+    st.livePercent = percent
+    setEdgePreview({ index: st.index, percent, locked })
+  }
+
+  function handleEdgeResizePointerUp(e: React.PointerEvent<HTMLDivElement>) {
+    const st = edgeDragRef.current
+    if (!st || e.pointerId !== st.pointerId) return
+    edgeDragRef.current = null
+    setEdgePreview(null)
+    setEdgeDragActive(false)
+    const before = blocks[st.index]
+    if (!before) return
+    setBlockWidth(before, Math.round(st.livePercent * 10) / 10)
+  }
+
+  function handleEdgeResizePointerCancel(e: React.PointerEvent<HTMLDivElement>) {
+    const st = edgeDragRef.current
+    if (!st || e.pointerId !== st.pointerId) return
+    edgeDragRef.current = null
+    setEdgePreview(null)
+    setEdgeDragActive(false)
+  }
+
+  /** The handle's readout chip (KAN-441): the key glyph while snapped, a free percent otherwise. */
+  function edgeResizeReadout(percent: number, locked: boolean): string {
+    const key = locked ? KEY_WIDTHS.find((k) => k.percent === percent) : undefined
+    return key ? key.label : `${Math.round(percent)}%`
   }
 
   /** The page's own URL, anchored at the block — arriving there lands on it. */
@@ -1429,7 +1558,7 @@ export function BlockCanvas({
   // renders as one unbroken run. Off a drag, or off anything but a beside
   // hover, this is just `blocksForLayout`, one entry per block.
   const renderList = useMemo<
-    { id: string; width: BlockWidth; ghost: boolean; rowStart?: boolean }[]
+    { id: string; width: BlockWidth | number; ghost: boolean; rowStart?: boolean }[]
   >(() => {
     if (!besidePlan || draggingIndex === null) {
       return blocksForLayout.map((b) => ({
@@ -2007,6 +2136,10 @@ export function BlockCanvas({
                 const entries = row.map((item, itemIndex) => ({
                   item,
                   stacks,
+                  // Alone on its line (no row-mate): both edges render a resize
+                  // handle (KAN-441). A row-sharing block renders none in this
+                  // slice — the shared divider is the split-off child ticket.
+                  aloneOnLine: row.length === 1,
                   marginTop:
                     rowIndex === 0 && (!stacks || itemIndex === 0) ? 0 : rowGapValue(listStyle),
                 }))
@@ -2022,9 +2155,19 @@ export function BlockCanvas({
                     />
                   )
                 }
-                const { item, stacks, marginTop } = entry
-                const sizingWidth =
-                  stacks || item.width === 'full' ? '100%' : blockWidthStyle(item.width)
+                const { item, stacks, aloneOnLine, marginTop } = entry
+                // A live edge drag previews this block's width locally — never
+                // written to `blocks` until release — so it overrides the
+                // committed width here rather than going through `stacks`.
+                const resizing =
+                  !item.ghost && edgePreview && blocks[edgePreview.index]?.id === item.id
+                    ? edgePreview
+                    : null
+                const sizingWidth = resizing
+                  ? blockWidthStyle(resizing.percent)
+                  : stacks || item.width === 'full'
+                    ? '100%'
+                    : blockWidthStyle(item.width)
                 // The ghost's id has no entry in `blocks` — it renders the
                 // dragged block's own content read-only (`renderGhostBlock`),
                 // not through `renderBlockEditor`, which only real slots use.
@@ -2054,6 +2197,32 @@ export function BlockCanvas({
                     style={{ width: sizingWidth, marginTop }}
                   >
                     {renderBlockEditor(blocks[i], i)}
+                    {aloneOnLine && (
+                      <>
+                        <BlockEdgeHandle
+                          side="left"
+                          hidden={!chrome || draggingIndex !== null}
+                          dragging={resizing !== null}
+                          readout={resizing ? edgeResizeReadout(resizing.percent, resizing.locked) : undefined}
+                          valueNow={resizing ? resizing.percent : widthPercent(item.width)}
+                          onPointerDown={(e) => handleEdgeResizePointerDown(e, i, 'left')}
+                          onPointerMove={handleEdgeResizePointerMove}
+                          onPointerUp={handleEdgeResizePointerUp}
+                          onPointerCancel={handleEdgeResizePointerCancel}
+                        />
+                        <BlockEdgeHandle
+                          side="right"
+                          hidden={!chrome || draggingIndex !== null}
+                          dragging={resizing !== null}
+                          readout={resizing ? edgeResizeReadout(resizing.percent, resizing.locked) : undefined}
+                          valueNow={resizing ? resizing.percent : widthPercent(item.width)}
+                          onPointerDown={(e) => handleEdgeResizePointerDown(e, i, 'right')}
+                          onPointerMove={handleEdgeResizePointerMove}
+                          onPointerUp={handleEdgeResizePointerUp}
+                          onPointerCancel={handleEdgeResizePointerCancel}
+                        />
+                      </>
+                    )}
                   </div>
                 )
               })}
