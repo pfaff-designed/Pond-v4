@@ -80,4 +80,39 @@ describe('PondProvider applies a pond theme only on a mid-session switch', () =>
     await waitFor(() => expect(screen.getByTestId('probe')).toHaveTextContent('p-ink'))
     await waitFor(() => expect(isDark()).toBe(true))
   })
+
+  it('still applies the next pond’s theme after an interim resolution to no pond', async () => {
+    ;(listPonds as jest.Mock).mockResolvedValue([INK_POND, PAPER_POND])
+    mockSearch = 'pond=p-paper'
+
+    const { rerender } = render(
+      <PondProvider>
+        <Probe />
+      </PondProvider>
+    )
+
+    await waitFor(() => expect(screen.getByTestId('probe')).toHaveTextContent('p-paper'))
+    expect(isDark()).toBe(false)
+
+    // A `?pond=` not yet in the list resolves to null mid-session.
+    mockSearch = 'pond=p-not-yet-created'
+    rerender(
+      <PondProvider>
+        <Probe />
+      </PondProvider>
+    )
+
+    await waitFor(() => expect(screen.getByTestId('probe')).toHaveTextContent('none'))
+    expect(isDark()).toBe(false)
+
+    mockSearch = 'pond=p-ink'
+    rerender(
+      <PondProvider>
+        <Probe />
+      </PondProvider>
+    )
+
+    await waitFor(() => expect(screen.getByTestId('probe')).toHaveTextContent('p-ink'))
+    await waitFor(() => expect(isDark()).toBe(true))
+  })
 })

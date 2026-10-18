@@ -59,9 +59,11 @@ export function PondProvider({ children }: { children: React.ReactNode }) {
   // pond switch. Null across remounts (tests, story swaps) is correct: that
   // reads as "no snapshot yet", never a write.
   const previousRenderRef = useRef<LastPageRender | null>(null)
-  // The last pond id this provider resolved to, so a switch mid-session can be
-  // told apart from the first resolution (page load) — null until a pond has
-  // resolved once, which is exactly the render that must stay silent.
+  // The last NON-NULL pond id this provider resolved to, so a switch mid-session
+  // can be told apart from the first resolution (page load) — null until a pond
+  // has resolved once, which is exactly the render that must stay silent. A
+  // `?pond=` not yet in the list resolves to null; that must not clear this, or
+  // the next real pond to resolve reads as a first load and skips its theme.
   const previousPondIdRef = useRef<string | null>(null)
 
   const reload = useCallback(() => setNonce((n) => n + 1), [])
@@ -99,7 +101,7 @@ export function PondProvider({ children }: { children: React.ReactNode }) {
     const previousId = previousPondIdRef.current
     const currentId = pond?.id ?? null
     const currentTheme = pond?.theme ?? null
-    previousPondIdRef.current = currentId
+    if (currentId !== null) previousPondIdRef.current = currentId
     if (previousId === null || currentId === null || currentId === previousId) return
     setMode(currentTheme === 'ink' ? 'dark' : 'light')
   }, [pond?.id, pond?.theme])
