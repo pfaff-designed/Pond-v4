@@ -2078,13 +2078,18 @@ export function Rail() {
    *  it), so clicking it must also expand it here or its children are never
    *  reachable by mouse. */
   function handleSelect(id: string) {
-    // The change log is a reserved virtual page — no `pages` row, so its own
-    // URL is built by hand rather than through `nodeById`/`navigateTo`.
+    // The change log and trash are reserved virtual pages — no `pages` row,
+    // so their own URLs are built by hand rather than through
+    // `nodeById`/`navigateTo`.
     if (id === CHANGE_LOG_NODE_ID) {
       openWorkspaceUrl(
         workspaceUrl({ id: CHANGE_LOG_NODE_ID, type: 'page', title: 'change log' }),
         router
       )
+      return
+    }
+    if (id === TRASH_NODE_ID) {
+      openWorkspaceUrl(workspaceUrl({ id: TRASH_NODE_ID, type: 'page', title: 'trash' }), router)
       return
     }
     const node = nodeById.get(id)
