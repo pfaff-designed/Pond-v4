@@ -1974,8 +1974,12 @@ export function BlockCanvas({
             // width it will take while hovering, before the drop lands.
             const changed = planned.reduce<{ blockId: string; width: BlockWidth }[]>(
               (acc, next) => {
-                const current = blocks.find((b) => b.id === next.id)
                 const nextWidth = next.width ?? 'full'
+                // `planBesideDrop` only ever sets a named width (from
+                // `widthsForDropBeside`); a numeric width here belongs to a
+                // block outside the planned row, untouched and so never previewed.
+                if (typeof nextWidth === 'number') return acc
+                const current = blocks.find((b) => b.id === next.id)
                 if ((current?.width ?? 'full') !== nextWidth) {
                   acc.push({ blockId: next.id, width: nextWidth })
                 }

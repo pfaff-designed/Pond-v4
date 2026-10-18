@@ -148,18 +148,27 @@ export function widthsForDropBeside(existing: readonly BlockWidth[]): BlockWidth
  * (KAN-440), so if it carried `rowStart` and left a row-mate behind, that
  * row-mate inherits it rather than silently re-packing into the row before it.
  */
-export function planBesideDrop<T extends { id: string; width?: BlockWidth; rowStart?: boolean }>(
-  blocks: readonly T[],
-  fromIndex: number,
-  targetId: string,
-  zone: 'left' | 'right'
-): T[] | null {
+export function planBesideDrop<
+  T extends { id: string; width?: BlockWidth | number; rowStart?: boolean },
+>(blocks: readonly T[], fromIndex: number, targetId: string, zone: 'left' | 'right'): T[] | null {
   const dragged = blocks[fromIndex]
   const { blocks: withoutDragged } = detachKeepingRows(blocks, fromIndex)
   const row = layoutRows(withoutDragged).find((r) => r.some((b) => b.id === targetId))
   if (!row) return null
 
-  const widths = widthsForDropBeside(row.map((b) => b.width ?? 'full'))
+  const widths = widthsForDropBeside(
+    row.map((b) => {
+      // A row-mate only ever carries a free-resized numeric width if it's alone
+      // on its line (this ticket's scope) — which can't also be a row-mate.
+      if (typeof b.width === 'number') {
+        if (process.env.NODE_ENV !== 'production') {
+          throw new Error('planBesideDrop: a row-mate held a free-resized width')
+        }
+        return 'full'
+      }
+      return b.width ?? 'full'
+    })
+  )
   if (!widths) return null
 
   const nextWidth = new Map(row.map((b, i) => [b.id, widths[i]]))
