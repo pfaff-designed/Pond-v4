@@ -13,7 +13,7 @@ import type { Editor } from '@tiptap/react'
 import type { Level } from '@tiptap/extension-heading'
 import { isActive } from '@tiptap/core'
 import { AllSelection, TextSelection, type Selection as PMSelection } from '@tiptap/pm/state'
-import { editableEditorForSelection, editorForSelection } from '@/lib/modules/text/active-editor'
+import { editableEditorForSelection } from '@/lib/modules/text/active-editor'
 import {
   activeMarks,
   currentTextStyle,
@@ -233,15 +233,13 @@ const NO_MARKS: ActiveMarks = { bold: false, italic: false }
 const FIRST_ITEM_ID: SelectionBarItemId = 'text-style'
 
 /**
- * Identifies a selection by editor position where an editor owns it, else by
- * text, so a selection the bar was dismissed from reads the same after the
- * editor takes focus back.
+ * Identifies `sel` by its range in `editor`'s own positions. `editor` is the
+ * one `editableEditorForSelection` already resolved for this exact
+ * selection, which only happens once both `anchorNode` and `focusNode` are set.
  */
-const selectionKey = (sel: Selection): string => {
-  const editor = editorForSelection(sel)
-  if (!editor || !sel.anchorNode || !sel.focusNode) return sel.toString().trim()
-  const anchor = editor.view.posAtDOM(sel.anchorNode, sel.anchorOffset)
-  const head = editor.view.posAtDOM(sel.focusNode, sel.focusOffset)
+const selectionKey = (editor: Editor, sel: Selection): string => {
+  const anchor = editor.view.posAtDOM(sel.anchorNode!, sel.anchorOffset)
+  const head = editor.view.posAtDOM(sel.focusNode!, sel.focusOffset)
   return `${anchor}-${head}`
 }
 
@@ -371,7 +369,7 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
         return
       }
 
-      const key = selectionKey(sel)
+      const key = selectionKey(editor, sel)
       if (dismissedKeyRef.current !== null) {
         if (dismissedKeyRef.current === key) return
         dismissedKeyRef.current = null
@@ -498,7 +496,7 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
 
   const applyMark = (toggle: (editor: Editor) => void) => () => {
     const sel = window.getSelection()
-    const editor = sel && editorForSelection(sel)
+    const editor = sel && editableEditorForSelection(sel)
     if (!editor) return
     syncEditorSelection(editor, sel)
     toggle(editor)
@@ -513,7 +511,7 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
       return
     }
     const sel = window.getSelection()
-    const editor = sel && editorForSelection(sel)
+    const editor = sel && editableEditorForSelection(sel)
     if (!editor) return
     syncEditorSelection(editor, sel)
     const { from, to } = editor.state.selection
@@ -556,7 +554,7 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
   // pick acts on the editor the bar was drawn for.
   const chooseStyle = (level: Level | null) => () => {
     const sel = window.getSelection()
-    const selectedEditor = sel && editorForSelection(sel)
+    const selectedEditor = sel && editableEditorForSelection(sel)
     if (sel && selectedEditor) syncEditorSelection(selectedEditor, sel)
     const editor = selectedEditor ?? shownSelectionRef.current?.editor
     if (editor) {
