@@ -334,9 +334,10 @@ function SheetHarness({ pending, failure = null }: SheetHarnessProps) {
 
 /**
  * `s6m2`: a SHEET over a paper scrim, not a field in the menu — and the board's
- * rows are PRESENT, not omitted. #316 ships glyph, theme and the later steps in
- * `PondControl`'s own `disabled` state, so nothing is missing from the board and
- * nothing pretends to be live.
+ * rows are PRESENT, not omitted. #316 ships the glyph row and the paper/ink
+ * pills live; the areas step and the other six theme pills stay in
+ * `PondControl`'s own `disabled` state, so nothing is missing from the board
+ * and nothing pretends to be live beyond what's built.
  */
 export const TheSheet: Story = {
   name: 'new',
@@ -405,7 +406,7 @@ export const WalkingTheSteps: Story = {
     await expect(canvas.queryByRole('button', { name: 'skip' })).not.toBeInTheDocument()
 
     await userEvent.click(canvas.getByRole('button', { name: 'make pond' }))
-    await expect(onCreate).toHaveBeenCalledWith('red door guys')
+    await expect(onCreate).toHaveBeenCalledWith('red door guys', { glyph: 'lightning-03' })
   },
 }
 

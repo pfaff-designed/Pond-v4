@@ -116,7 +116,35 @@ describe('NewPondSheet — Enter in the name field (KAN-488)', () => {
     await user.click(screen.getByRole('button', { name: 'continue' }))
     await user.click(screen.getByRole('button', { name: 'make pond' }))
 
-    expect(onCreate).toHaveBeenCalledWith('Studio')
+    expect(onCreate).toHaveBeenCalledWith('Studio', { glyph: 'lightning-03' })
+  })
+
+  it('"make pond" after picking ink sends theme: "ink"', async () => {
+    const user = userEvent.setup()
+    const onCreate = jest.fn()
+    render(<NewPondSheet onCreate={onCreate} onCancel={jest.fn()} />)
+
+    await user.type(screen.getByPlaceholderText('Name your pond'), 'Studio')
+    await user.click(screen.getByRole('button', { name: 'ink' }))
+    await user.click(screen.getByRole('button', { name: 'continue' }))
+    await user.click(screen.getByRole('button', { name: 'make pond' }))
+
+    expect(onCreate).toHaveBeenCalledWith('Studio', { glyph: 'lightning-03', theme: 'ink' })
+    document.documentElement.classList.remove('dark')
+  })
+
+  it('"make pond" after picking ink then paper sends theme: "paper"', async () => {
+    const user = userEvent.setup()
+    const onCreate = jest.fn()
+    render(<NewPondSheet onCreate={onCreate} onCancel={jest.fn()} />)
+
+    await user.type(screen.getByPlaceholderText('Name your pond'), 'Studio')
+    await user.click(screen.getByRole('button', { name: 'ink' }))
+    await user.click(screen.getByRole('button', { name: 'paper' }))
+    await user.click(screen.getByRole('button', { name: 'continue' }))
+    await user.click(screen.getByRole('button', { name: 'make pond' }))
+
+    expect(onCreate).toHaveBeenCalledWith('Studio', { glyph: 'lightning-03', theme: 'paper' })
   })
 })
 
@@ -152,5 +180,121 @@ describe('NewPondSheet — no sources step, no skip (KAN-488)', () => {
     expect(screen.queryByRole('button', { name: 'skip' })).not.toBeInTheDocument()
     expect(screen.getByText('2 of 2')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'make pond' })).toBeInTheDocument()
+  })
+})
+
+describe('NewPondSheet — the glyph row is a live radiogroup (KAN-501)', () => {
+  it('the first glyph starts checked', () => {
+    render(<NewPondSheet onCreate={jest.fn()} onCancel={jest.fn()} />)
+
+    const radios = screen.getAllByRole('radio')
+    expect(radios).toHaveLength(6)
+    expect(radios[0]).toHaveAttribute('aria-checked', 'true')
+    for (const radio of radios.slice(1)) {
+      expect(radio).toHaveAttribute('aria-checked', 'false')
+    }
+  })
+
+  it('clicking another glyph checks it and unchecks the first', async () => {
+    const user = userEvent.setup()
+    render(<NewPondSheet onCreate={jest.fn()} onCancel={jest.fn()} />)
+
+    const radios = screen.getAllByRole('radio')
+    await user.click(radios[2])
+
+    expect(radios[0]).toHaveAttribute('aria-checked', 'false')
+    expect(radios[2]).toHaveAttribute('aria-checked', 'true')
+  })
+
+  it('an arrow key moves the checked glyph and focus', async () => {
+    const user = userEvent.setup()
+    render(<NewPondSheet onCreate={jest.fn()} onCancel={jest.fn()} />)
+
+    const radios = screen.getAllByRole('radio')
+    await user.click(radios[0])
+    await user.keyboard('{ArrowRight}')
+
+    expect(radios[0]).toHaveAttribute('aria-checked', 'false')
+    expect(radios[1]).toHaveAttribute('aria-checked', 'true')
+    expect(radios[1]).toHaveFocus()
+
+    await user.keyboard('{ArrowLeft}')
+    expect(radios[0]).toHaveAttribute('aria-checked', 'true')
+    expect(radios[0]).toHaveFocus()
+  })
+
+  it('back then continue keeps the picked glyph checked', async () => {
+    const user = userEvent.setup()
+    render(<NewPondSheet onCreate={jest.fn()} onCancel={jest.fn()} />)
+
+    await user.type(screen.getByPlaceholderText('Name your pond'), 'Studio')
+    await user.click(screen.getAllByRole('radio')[3])
+    await user.click(screen.getByRole('button', { name: 'continue' }))
+    await user.click(screen.getByRole('button', { name: 'back' }))
+
+    const radios = screen.getAllByRole('radio')
+    expect(radios[3]).toHaveAttribute('aria-checked', 'true')
+  })
+})
+
+describe('NewPondSheet — the glyph radios have accessible names (KAN-501)', () => {
+  it('names a glyph by its id without the numeric suffix, and clicking it checks it', async () => {
+    const user = userEvent.setup()
+    render(<NewPondSheet onCreate={jest.fn()} onCancel={jest.fn()} />)
+
+    const waves = screen.getByRole('radio', { name: 'waves' })
+    expect(waves).toHaveAttribute('aria-checked', 'false')
+
+    await user.click(waves)
+
+    expect(waves).toHaveAttribute('aria-checked', 'true')
+  })
+
+  it('gives all six radios distinct accessible names', () => {
+    render(<NewPondSheet onCreate={jest.fn()} onCancel={jest.fn()} />)
+
+    const names = screen.getAllByRole('radio').map((radio) => radio.getAttribute('aria-label'))
+    expect(new Set(names).size).toBe(6)
+  })
+})
+
+describe('NewPondSheet — the paper/ink theme pills preview live (KAN-501)', () => {
+  afterEach(() => {
+    document.documentElement.classList.remove('dark')
+  })
+
+  it('clicking ink sets the dark class; clicking paper after clears it', async () => {
+    const user = userEvent.setup()
+    render(<NewPondSheet onCreate={jest.fn()} onCancel={jest.fn()} />)
+
+    await user.click(screen.getByRole('button', { name: 'ink' }))
+    expect(document.documentElement).toHaveClass('dark')
+
+    await user.click(screen.getByRole('button', { name: 'paper' }))
+    expect(document.documentElement).not.toHaveClass('dark')
+  })
+
+  it('unmounting after picking ink restores whatever mode was active before the sheet opened', async () => {
+    const user = userEvent.setup()
+    const { unmount } = render(<NewPondSheet onCreate={jest.fn()} onCancel={jest.fn()} />)
+
+    await user.click(screen.getByRole('button', { name: 'ink' }))
+    expect(document.documentElement).toHaveClass('dark')
+
+    unmount()
+    expect(document.documentElement).not.toHaveClass('dark')
+  })
+
+  it('back then continue keeps the picked pill selected', async () => {
+    const user = userEvent.setup()
+    render(<NewPondSheet onCreate={jest.fn()} onCancel={jest.fn()} />)
+
+    await user.type(screen.getByPlaceholderText('Name your pond'), 'Studio')
+    await user.click(screen.getByRole('button', { name: 'ink' }))
+    await user.click(screen.getByRole('button', { name: 'continue' }))
+    await user.click(screen.getByRole('button', { name: 'back' }))
+
+    expect(screen.getByRole('button', { name: 'ink' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'paper' })).toHaveAttribute('aria-pressed', 'false')
   })
 })

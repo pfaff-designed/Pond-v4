@@ -54,6 +54,38 @@ describe('createPond — the name contract', () => {
     expect(chain.insert).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'Studio', user_id: 'u-1' })
     )
+    expect(chain.insert.mock.calls[0][0]).not.toHaveProperty('glyph')
+    expect(chain.insert.mock.calls[0][0]).not.toHaveProperty('theme')
     expect(pond.name).toBe('Studio')
+  })
+
+  it('inserts glyph and theme when given', async () => {
+    const insertedRow = {
+      id: 'p-2',
+      name: 'Studio',
+      glyph: 'lightning-03',
+      theme: 'ink',
+      order: 0,
+      recentGlyphs: null,
+      lastPage: null,
+    }
+    const chain = {
+      select: jest.fn().mockReturnThis(),
+      insert: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      order: jest.fn().mockResolvedValue({ data: [], error: null }),
+      single: jest.fn().mockResolvedValue({ data: insertedRow, error: null }),
+    }
+    const supabase = {
+      auth: { getUser: jest.fn().mockResolvedValue({ data: { user: { id: 'u-1' } } }) },
+      from: jest.fn().mockReturnValue(chain),
+    }
+    ;(createClient as jest.Mock).mockReturnValue(supabase)
+
+    await createPond('Studio', { glyph: 'lightning-03', theme: 'ink' })
+
+    expect(chain.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'Studio', glyph: 'lightning-03', theme: 'ink' })
+    )
   })
 })

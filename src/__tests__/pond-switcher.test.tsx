@@ -258,7 +258,7 @@ describe('the pond switcher', () => {
 
     await user.click(screen.getByRole('button', { name: 'continue' }))
     await user.click(screen.getByRole('button', { name: 'make pond' }))
-    await waitFor(() => expect(createPond).toHaveBeenCalledWith('Studio'))
+    await waitFor(() => expect(createPond).toHaveBeenCalledWith('Studio', { glyph: 'lightning-03' }))
     await waitFor(() => expect(push).toHaveBeenCalledWith('/workspace?pond=p-new'))
   })
 

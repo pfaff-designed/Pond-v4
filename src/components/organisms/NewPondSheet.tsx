@@ -6,10 +6,11 @@
  * The board draws creating a pond as a three-step sheet over a paper scrim (name/
  * glyph/theme · areas · sources), NOT an inline field in the switcher menu. The
  * sources step is a separate ticket's ask and is left out here, so this sheet is
- * **two** steps. #316 ruled that the sheet ships **whole**, with `name` the only
- * enabled control: glyph, theme and the areas step render in `PondControl`'s own
- * `disabled` state — one of the eight states `PondControl.dc.html` specifies — so
- * nothing is missing from the board and nothing pretends to be live.
+ * **two** steps. #316 ruled that the sheet ships **whole**: name, the glyph row
+ * and the paper/ink theme pills are live; the areas step and the other six theme
+ * pills stay in `PondControl`'s own `disabled` state — one of the eight states
+ * `PondControl.dc.html` specifies (#175 owns them) — so nothing is missing from
+ * the board and nothing pretends to be live.
  *
  * Every value here is read inline from the board's markup, not eyeballed:
  *
@@ -40,15 +41,21 @@
  * with one root, per #320).
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { Icon } from '@/components/atoms/Icon'
+import { FOCUS_VISIBLE_RING } from '@/components/atoms/focus-ring'
 import { PondControl } from '@/components/atoms/PondControl'
+import { holdInkGround, holdPaperGround } from '@/lib/theme/mode'
 
 /** `s6m2`'s glyph row, in the board's order. The first is the column default. */
 const GLYPHS = ['lightning-03', 'waves-02', 'star-01', 'house', 'ring', 'heart'] as const
 
-/** `s6m2`'s theme row. `paper` is the column default. */
+/** A glyph's accessible name: its library id without the glyph library's `-NN` suffix. */
+const glyphLabel = (glyph: string) => glyph.replace(/-\d+$/, '')
+
+/** `s6m2`'s theme row. `paper` is the column default. Only these two are live (#175 owns the rest). */
 const THEMES = ['paper', 'ink', 'sage', 'mist', 'navy', 'wheat', 'burnt orange', 'ember'] as const
+type LiveTheme = 'paper' | 'ink'
 
 /** `s6m3`'s suggested areas. Where they come from is unspecified (AUDIT 6m, p2). */
 const AREAS = ['clients', 'projects', 'studio', 'notes', 'finances', 'people', 'admin'] as const
@@ -65,25 +72,86 @@ const SHEET_GLASS =
 const LABEL =
   'text-[10.5px] leading-[normal] font-medium tracking-[0.1em] uppercase text-mn-text-secondary'
 
-/** A pill: the board's one shape for a theme, an area and a selected tick. */
-function Pill({ children, on, muted }: { children: string; on?: boolean; muted?: boolean }) {
+const GLYPH_CELL = `flex h-[34px] w-[34px] items-center justify-center rounded-[10px] ${FOCUS_VISIBLE_RING}`
+const GLYPH_SELECTED = 'bg-mn-text/[0.05] shadow-[inset_0_0_0_2px_var(--mn-text)]'
+const GLYPH_UNSELECTED = 'bg-mn-text/[0.04]'
+
+/** `s6m2`'s glyph row: a real radiogroup, roving tabindex, clamped (no wrap) ←/→. */
+function GlyphRow({ value, onChange }: { value: string; onChange: (glyph: string) => void }) {
+  const cellRefs = useRef<(HTMLButtonElement | null)[]>([])
+
+  const handleKeyDown = (index: number) => (e: ReactKeyboardEvent<HTMLButtonElement>) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+    const target = index + (e.key === 'ArrowRight' ? 1 : -1)
+    if (target < 0 || target >= GLYPHS.length) return
+    e.preventDefault()
+    onChange(GLYPHS[target])
+    cellRefs.current[target]?.focus()
+  }
+
   return (
-    <span
-      aria-disabled={muted ? 'true' : undefined}
-      className={`inline-flex items-center gap-[6px] rounded-full px-[11px] py-[6px] text-[12.5px] leading-[normal] ${
-        on
-          ? 'bg-mn-text text-raw-paper dark:text-raw-ink'
-          : 'text-mn-text ring-1 ring-mn-text/20 ring-inset'
-      } ${muted ? 'opacity-40' : ''}`}
-    >
+    <div role="radiogroup" aria-label="glyph" className="flex flex-wrap gap-[6px]">
+      {GLYPHS.map((g, i) => (
+        <button
+          key={g}
+          type="button"
+          ref={(el) => {
+            cellRefs.current[i] = el
+          }}
+          role="radio"
+          aria-checked={g === value}
+          aria-label={glyphLabel(g)}
+          tabIndex={g === value ? 0 : -1}
+          onClick={() => onChange(g)}
+          onKeyDown={handleKeyDown(i)}
+          className={`${GLYPH_CELL} ${g === value ? GLYPH_SELECTED : GLYPH_UNSELECTED}`}
+        >
+          <Icon name={g} size={15} />
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/** A pill: the board's one shape for a theme, an area and a selected tick. Live when `onClick` is given. */
+function Pill({
+  children,
+  on,
+  muted,
+  onClick,
+}: {
+  children: string
+  on?: boolean
+  muted?: boolean
+  onClick?: () => void
+}) {
+  const className = `inline-flex items-center gap-[6px] rounded-full px-[11px] py-[6px] text-[12.5px] leading-[normal] ${FOCUS_VISIBLE_RING} ${
+    on
+      ? 'bg-mn-text text-raw-paper dark:text-raw-ink'
+      : 'text-mn-text ring-1 ring-mn-text/20 ring-inset'
+  } ${muted ? 'opacity-40' : ''}`
+
+  if (onClick) {
+    return (
+      <button type="button" aria-pressed={on} onClick={onClick} className={className}>
+        {children}
+      </button>
+    )
+  }
+
+  return (
+    <span aria-disabled={muted ? 'true' : undefined} className={className}>
       {children}
     </span>
   )
 }
 
 export interface NewPondSheetProps {
-  /** Submitted with the typed name — never blank; `continue`/`make pond` stay disabled until it isn't. */
-  onCreate: (name: string) => void
+  /** Submitted with the trimmed name and the picked glyph/theme — never a blank
+   *  name; `continue`/`make pond` stay disabled until it isn't. `theme` is sent
+   *  only when a pill was actually clicked (a preview hold is live), so an
+   *  untouched sheet leaves the person's own mode alone on create. */
+  onCreate: (name: string, options: { glyph?: string; theme?: LiveTheme }) => void
   onCancel: () => void
   pending?: boolean
   failure?: string | null
@@ -100,6 +168,25 @@ export function NewPondSheet({
 }: NewPondSheetProps) {
   const [step, setStep] = useState(1)
   const [name, setName] = useState(defaultName)
+  // Step-1-level, not step-scoped: a step 2 → step 1 round trip must keep the pick.
+  const [glyph, setGlyph] = useState<string>(GLYPHS[0])
+  const [theme, setTheme] = useState<LiveTheme>('paper')
+
+  // Nothing is held until the person actually picks a ground to preview — the
+  // default `paper` pill never forces light on a person who opened the sheet
+  // in dark. Swapping pills releases the old hold before acquiring the new one.
+  const releaseThemeHoldRef = useRef<(() => void) | null>(null)
+  const handleThemeChange = (next: LiveTheme) => {
+    if (next === theme) return
+    releaseThemeHoldRef.current?.()
+    releaseThemeHoldRef.current = next === 'ink' ? holdInkGround() : holdPaperGround()
+    setTheme(next)
+  }
+
+  // Every way the sheet closes (Esc, cancel, scrim, ⌘K, make-pond) unmounts it.
+  useEffect(() => {
+    return () => releaseThemeHoldRef.current?.()
+  }, [])
 
   const trimmed = name.trim()
   const blank = trimmed === ''
@@ -201,32 +288,25 @@ export function NewPondSheet({
 
             <div className="flex flex-col gap-[8px]">
               <span className={LABEL}>glyph</span>
-              <div className="pointer-events-none flex flex-wrap gap-[6px] opacity-40">
-                {GLYPHS.map((g, i) => (
-                  <span
-                    key={g}
-                    className={`flex h-[34px] w-[34px] items-center justify-center rounded-[10px] ${
-                      i === 0
-                        ? 'bg-mn-text/[0.05] shadow-[inset_0_0_0_2px_var(--mn-text)]'
-                        : 'bg-mn-text/[0.04]'
-                    }`}
-                  >
-                    <Icon name={g} size={15} />
-                  </span>
-                ))}
-              </div>
+              <GlyphRow value={glyph} onChange={setGlyph} />
             </div>
 
             {/* Eight pills because the board draws eight; only paper and ink are
-                built (#175 owns the other six), which is why the row is inert. */}
+                live (#175 owns the other six, which stay muted/inert). */}
             <div className="flex flex-col gap-[8px]">
               <span className={LABEL}>theme</span>
               <div className="flex flex-wrap gap-[6px]">
-                {THEMES.map((t) => (
-                  <Pill key={t} on={t === 'paper'} muted>
-                    {t}
-                  </Pill>
-                ))}
+                {THEMES.map((t) =>
+                  t === 'paper' || t === 'ink' ? (
+                    <Pill key={t} on={t === theme} onClick={() => handleThemeChange(t)}>
+                      {t}
+                    </Pill>
+                  ) : (
+                    <Pill key={t} muted>
+                      {t}
+                    </Pill>
+                  )
+                )}
               </div>
             </div>
           </>
@@ -275,7 +355,14 @@ export function NewPondSheet({
             variant="primary"
             label={last ? 'make pond' : 'continue'}
             disabled={pending || blank}
-            onClick={() => (last ? onCreate(trimmed) : setStep((s) => s + 1))}
+            onClick={() =>
+              last
+                ? onCreate(trimmed, {
+                    glyph,
+                    ...(releaseThemeHoldRef.current ? { theme } : {}),
+                  })
+                : setStep((s) => s + 1)
+            }
           />
         </div>
       </div>
