@@ -42,6 +42,7 @@
 
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { Icon } from '@/components/atoms/Icon'
+import { FOCUS_VISIBLE_RING } from '@/components/atoms/focus-ring'
 import { PondControl } from '@/components/atoms/PondControl'
 import { holdInkGround, holdPaperGround } from '@/lib/theme/mode'
 
@@ -67,7 +68,7 @@ const SHEET_GLASS =
 const LABEL =
   'text-[10.5px] leading-[normal] font-medium tracking-[0.1em] uppercase text-mn-text-secondary'
 
-const GLYPH_CELL = 'flex h-[34px] w-[34px] items-center justify-center rounded-[10px] outline-none'
+const GLYPH_CELL = `flex h-[34px] w-[34px] items-center justify-center rounded-[10px] outline-none ${FOCUS_VISIBLE_RING}`
 const GLYPH_SELECTED = 'bg-mn-text/[0.05] shadow-[inset_0_0_0_2px_var(--mn-text)]'
 const GLYPH_UNSELECTED = 'bg-mn-text/[0.04]'
 
@@ -119,7 +120,7 @@ function Pill({
   muted?: boolean
   onClick?: () => void
 }) {
-  const className = `inline-flex items-center gap-[6px] rounded-full px-[11px] py-[6px] text-[12.5px] leading-[normal] outline-none ${
+  const className = `inline-flex items-center gap-[6px] rounded-full px-[11px] py-[6px] text-[12.5px] leading-[normal] outline-none ${FOCUS_VISIBLE_RING} ${
     on
       ? 'bg-mn-text text-raw-paper dark:text-raw-ink'
       : 'text-mn-text ring-1 ring-mn-text/20 ring-inset'
