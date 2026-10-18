@@ -1471,6 +1471,7 @@ export function Rail() {
     walk(tree)
     return map
   }, [tree])
+  const databasesRootId = useMemo(() => tree.find(isDatabasesRoot)?.id ?? null, [tree])
   const selectedNodeId = searchParams.get('nodeId')
 
   // ── Rail remembers what was open (KAN-393) ──────────────────────────────────
@@ -1575,7 +1576,11 @@ export function Rail() {
     if (selectedNodeId === revealedForRef.current) return
     // Wait until the node itself is present so its ancestor chain is resolvable.
     if (!pages.some((r) => r.id === selectedNodeId)) return
-    const ancestors = ancestorPath(pages, selectedNodeId).map((c) => c.id)
+    // The databases root is excluded: it is a disclosure the person toggles
+    // themselves (KAN-486), not a folder navigation should force open.
+    const ancestors = ancestorPath(pages, selectedNodeId)
+      .map((c) => c.id)
+      .filter((id) => id !== databasesRootId)
     revealedForRef.current = selectedNodeId
     // The two reveals below respond to an external navigation (URL ?nodeId, incl.
     // chat/＋ creation) — open Life and every ancestor folder so the current node
@@ -1589,7 +1594,7 @@ export function Rail() {
       return next
     })
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [selectedNodeId, pages])
+  }, [selectedNodeId, pages, databasesRootId])
 
   // ── Rail reveals a new child without leaving the parent (KAN-122) ──────────
   // The `/ nested page` swap stays on the parent, so selection never changes
