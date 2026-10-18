@@ -239,13 +239,15 @@ describe('PATH_STEPS 1–5 — the rail deletes a page, trash shows it, restore 
     mount()
 
     // 1–2. Expanding `databases` reveals `change log` then `trash`, in that
-    // order, with neither a delete × nor a rename affordance.
+    // order, with neither a delete × nor a rename affordance. KAN-486: the
+    // `databases` heading itself renders LAST now (its rows sit above it,
+    // never below), so it is no longer `treeRows[0]`.
     const databasesTree = screen.getByRole('tree', { name: 'Databases' })
     fireEvent.click(within(databasesTree).getByRole('treeitem', { name: 'databases' }))
     const trashRow = await within(databasesTree).findByRole('treeitem', { name: 'trash' })
     const treeRows = within(databasesTree).getAllByRole('treeitem')
-    expect(treeRows[1]).toHaveAccessibleName('change log')
-    expect(treeRows[2]).toHaveAccessibleName('trash')
+    expect(treeRows[0]).toHaveAccessibleName('change log')
+    expect(treeRows[1]).toHaveAccessibleName('trash')
     expect(within(trashRow).queryByRole('button', { name: 'Delete trash' })).not.toBeInTheDocument()
     fireEvent.doubleClick(trashRow)
     expect(within(databasesTree).queryByRole('textbox')).not.toBeInTheDocument()

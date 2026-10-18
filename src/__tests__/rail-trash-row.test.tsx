@@ -55,9 +55,11 @@ describe('rail — the trash row (KAN-451)', () => {
   it('renders directly after the change log row, once the databases root is expanded', () => {
     renderExpanded()
     const foot = screen.getByRole('tree', { name: 'Databases' })
+    // KAN-486: the heading is the LAST row now (its own rows sit above it,
+    // never below), so `change log`/`trash` lead the list rather than follow it.
     const rows = within(foot).getAllByRole('treeitem')
-    expect(rows[1]).toHaveAccessibleName('change log')
-    expect(rows[2]).toHaveAccessibleName('trash')
+    expect(rows[0]).toHaveAccessibleName('change log')
+    expect(rows[1]).toHaveAccessibleName('trash')
   })
 
   it('a pond with no databases root shows neither the row nor a dangling click target', () => {

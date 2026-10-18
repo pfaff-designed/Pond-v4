@@ -115,6 +115,7 @@ describe('Rail — the databases section collapses, starts collapsed, and rememb
     let head = heading()
     expect(head).toHaveAttribute('aria-expanded', 'false')
     expect(caretSvgOf(head)).not.toHaveClass('rotate-90')
+    expect(caretSvgOf(head)).not.toHaveClass('-rotate-90')
     expect(screen.queryByRole('treeitem', { name: 'change log' })).not.toBeInTheDocument()
     expect(screen.queryByRole('treeitem', { name: 'trash' })).not.toBeInTheDocument()
     expect(screen.queryByRole('treeitem', { name: 'ingredients' })).not.toBeInTheDocument()
@@ -122,7 +123,9 @@ describe('Rail — the databases section collapses, starts collapsed, and rememb
     fireEvent.click(head)
     await waitFor(() => expect(heading()).toHaveAttribute('aria-expanded', 'true'))
     head = heading()
-    expect(caretSvgOf(head)).toHaveClass('rotate-90')
+    // The heading's rows render ABOVE it, never below — its caret points UP
+    // when open (Conductor decision A), not down like an ordinary folder row.
+    expect(caretSvgOf(head)).toHaveClass('-rotate-90')
     expect(screen.getByRole('treeitem', { name: 'change log' })).toBeInTheDocument()
     expect(screen.getByRole('treeitem', { name: 'trash' })).toBeInTheDocument()
     expect(screen.getByRole('treeitem', { name: 'ingredients' })).toBeInTheDocument()
@@ -191,5 +194,39 @@ describe('Rail — the databases section collapses, starts collapsed, and rememb
     fireEvent.click(heading())
     await waitFor(() => expect(screen.getByRole('treeitem', { name: 'trash' })).toBeInTheDocument())
     expect(screen.getByRole('treeitem', { name: 'trash' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('every database row precedes the heading in DOM order, and ArrowDown/ArrowUp walk that same order', async () => {
+    mount()
+    fireEvent.click(heading())
+    await waitFor(() =>
+      expect(screen.getByRole('treeitem', { name: 'ingredients' })).toBeInTheDocument()
+    )
+    const changeLog = screen.getByRole('treeitem', { name: 'change log' })
+    const trash = screen.getByRole('treeitem', { name: 'trash' })
+    const ingredients = screen.getByRole('treeitem', { name: 'ingredients' })
+
+    // Rendering the heading LAST (KAN-486: its rows sit above it, never below)
+    // means every db row comes BEFORE it in document order.
+    for (const dbRow of [changeLog, trash, ingredients]) {
+      expect(
+        dbRow.compareDocumentPosition(heading()) & Node.DOCUMENT_POSITION_FOLLOWING
+      ).toBeTruthy()
+    }
+
+    act(() => changeLog.focus())
+    fireEvent.keyDown(changeLog, { key: 'ArrowDown' })
+    expect(trash).toHaveFocus()
+    fireEvent.keyDown(trash, { key: 'ArrowDown' })
+    expect(ingredients).toHaveFocus()
+    fireEvent.keyDown(ingredients, { key: 'ArrowDown' })
+    expect(heading()).toHaveFocus()
+
+    fireEvent.keyDown(heading(), { key: 'ArrowUp' })
+    expect(ingredients).toHaveFocus()
+    fireEvent.keyDown(ingredients, { key: 'ArrowUp' })
+    expect(trash).toHaveFocus()
+    fireEvent.keyDown(trash, { key: 'ArrowUp' })
+    expect(changeLog).toHaveFocus()
   })
 })
