@@ -90,6 +90,7 @@ import {
 } from '@/lib/pages/databases-root'
 import { usePondName } from '@/lib/pond/name'
 import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
+import { TRASH_NODE_ID } from '@/lib/change-log/trash-view'
 import { RAIL_WIDTH_PX } from '@/lib/layout/rail-width'
 import {
   LIFE_ID,
@@ -184,6 +185,24 @@ const changeLogRow = (rootId: string): FlatRow => ({
   setSize: 1,
 })
 
+/** The databases root's second child (KAN-451), directly after `changeLogRow` —
+ *  same reserved-virtual shape, same reasons: no row, no migration. */
+const trashRow = (rootId: string): FlatRow => ({
+  id: TRASH_NODE_ID,
+  node: {
+    id: TRASH_NODE_ID,
+    parentId: rootId,
+    type: 'page',
+    title: 'trash',
+    order: -1,
+    children: [],
+  },
+  depth: 1,
+  isFolder: false,
+  posInSet: 1,
+  setSize: 1,
+})
+
 /** Px of extra left-pad per depth level — the guides land on these gridlines. */
 /** What the rail lets a row do, derived once per row so no site re-derives it. */
 interface RowCapabilities {
@@ -215,7 +234,8 @@ const NO_CAPABILITIES: RowCapabilities = {
  */
 const rowCapabilities = (id: string, node: RailNode): RowCapabilities => {
   if (id === LIFE_ID) return { ...NO_CAPABILITIES, droppable: true, addable: true }
-  if (id === DATABASES_PLACEHOLDER_ID || id === CHANGE_LOG_NODE_ID) return NO_CAPABILITIES
+  if (id === DATABASES_PLACEHOLDER_ID || id === CHANGE_LOG_NODE_ID || id === TRASH_NODE_ID)
+    return NO_CAPABILITIES
   if (isDatabasesRoot(node)) return { ...NO_CAPABILITIES, draggable: true, droppable: true }
   return { draggable: true, droppable: true, addable: true, deletable: true, renameable: true }
 }
@@ -913,10 +933,11 @@ export function RailView({
     const [root, ...rest] = flattenVisible([databasesRoot], expanded, true)
       .slice(1) // drop the synthetic Life row flattenVisible always leads with
       .map((f) => ({ ...f, depth: f.depth - 1 }))
-    // KAN-94: the change log is the root's first child — shown only once the
-    // root itself is expanded, like any other child.
+    // KAN-94/KAN-451: the change log and trash are the root's first two
+    // children — shown only once the root itself is expanded, like any other
+    // child.
     const rows = expanded.has(databasesRoot.id)
-      ? [root, changeLogRow(databasesRoot.id), ...rest]
+      ? [root, changeLogRow(databasesRoot.id), trashRow(databasesRoot.id), ...rest]
       : [root, ...rest]
     return rows.filter((f) => !isStaged(f.id)) // KAN-300: a refetch mid-undo-toast can't resurrect a staged row
   }, [databasesRoot, expanded])
@@ -1210,9 +1231,9 @@ export function RailView({
         leading={
           isDatabasesRoot(node) ? (
             DATABASES_MARK
-          ) : id === CHANGE_LOG_NODE_ID ? (
+          ) : id === CHANGE_LOG_NODE_ID || id === TRASH_NODE_ID ? (
             // Reserved virtual row: no page behind it to write a mark to, so the
-            // glyph picker never opens here (KAN-94).
+            // glyph picker never opens here (KAN-94/KAN-451).
             <span className="inline-flex flex-none items-center" aria-hidden>
               {markGlyph(mark, markAccent(mark.role), id === selectedId)}
             </span>
