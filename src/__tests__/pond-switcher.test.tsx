@@ -14,6 +14,7 @@
 
 import React from 'react'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { PondSwitcher } from '@/components/organisms/PondSwitcher'
 import { PondProvider } from '@/lib/pond/context'
 
@@ -201,7 +202,7 @@ describe('the pond switcher', () => {
     expect(lifeRow).toHaveAttribute('href', `/workspace?pond=p-life&nodeId=${PAGE_X}`)
   })
 
-  it("opens the board's three-step sheet, not a field in the menu", async () => {
+  it("opens the sheet's first of two steps, not a field in the menu", async () => {
     renderSwitcher()
     fireEvent.click(await screen.findByRole('button', { name: /life/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: /new pond/ }))
@@ -210,60 +211,95 @@ describe('the pond switcher', () => {
     const sheet = screen.getByRole('dialog', { name: 'New pond' })
     expect(sheet).toBeInTheDocument()
     expect(sheet).toHaveTextContent('New pond')
-    expect(sheet).toHaveTextContent('1 of 3')
+    expect(sheet).toHaveTextContent('1 of 2')
     // The board's rows are PRESENT, not omitted — #316 ships them disabled.
     expect(sheet).toHaveTextContent('glyph')
     expect(sheet).toHaveTextContent('theme')
     expect(sheet).toHaveTextContent('burnt orange')
   })
 
-  it('walks 1 of 3 → 2 of 3 → 3 of 3, then makes the pond', async () => {
-    ;(createPond as jest.Mock).mockResolvedValue({ ...NOISE, id: 'p-new', name: 'red door guys' })
+  it('walks the full path end to end: name → areas → make pond, with back and cancel', async () => {
+    const user = userEvent.setup()
+    ;(createPond as jest.Mock).mockResolvedValue({ ...NOISE, id: 'p-new', name: 'Studio' })
     renderSwitcher()
-    fireEvent.click(await screen.findByRole('button', { name: /life/ }))
-    fireEvent.click(screen.getByRole('menuitem', { name: /new pond/ }))
+    await user.click(await screen.findByRole('button', { name: /life/ }))
+    await user.click(screen.getByRole('menuitem', { name: /new pond/ }))
 
     const sheet = screen.getByRole('dialog', { name: 'New pond' })
-    fireEvent.change(screen.getByPlaceholderText('Name your pond'), {
-      target: { value: 'red door guys' },
-    })
+    expect(sheet).toHaveTextContent('1 of 2')
+    const nameField = screen.getByPlaceholderText('Name your pond')
+    const continueButton = screen.getByRole('button', { name: 'continue' })
+    expect(continueButton).toBeDisabled()
 
-    fireEvent.click(screen.getByRole('button', { name: 'continue' }))
-    expect(sheet).toHaveTextContent('2 of 3')
+    // ↵ on a blank name does nothing.
+    await user.type(nameField, '{Enter}')
+    expect(sheet).toHaveTextContent('1 of 2')
+
+    await user.type(nameField, 'Studio')
+    expect(continueButton).toBeEnabled()
+
+    await user.click(continueButton)
+    expect(sheet).toHaveTextContent('2 of 2')
     expect(sheet).toHaveTextContent('Areas')
-    expect(sheet).toHaveTextContent('Areas are pages with pages inside')
+    expect(screen.getByText('clients')).toHaveAttribute('aria-disabled', 'true')
 
-    fireEvent.click(screen.getByRole('button', { name: 'continue' }))
-    expect(sheet).toHaveTextContent('3 of 3')
-    expect(sheet).toHaveTextContent('Sources')
-    expect(sheet).toHaveTextContent('google sheet')
+    // Back keeps the name.
+    await user.click(screen.getByRole('button', { name: 'back' }))
+    expect(sheet).toHaveTextContent('1 of 2')
+    expect(screen.getByPlaceholderText('Name your pond')).toHaveValue('Studio')
 
-    // The last step's primary names what it does, per W6 ("an accept may be named
-    // for what it does").
-    fireEvent.click(screen.getByRole('button', { name: 'make pond' }))
-    await waitFor(() => expect(createPond).toHaveBeenCalledWith('red door guys'))
+    await user.click(screen.getByRole('button', { name: 'continue' }))
+    expect(sheet).toHaveTextContent('2 of 2')
+
+    // Esc on step 2 goes back, not cancel.
+    await user.keyboard('{Escape}')
+    expect(screen.getByRole('dialog', { name: 'New pond' })).toHaveTextContent('1 of 2')
+    expect(screen.getByPlaceholderText('Name your pond')).toHaveValue('Studio')
+
+    await user.click(screen.getByRole('button', { name: 'continue' }))
+    await user.click(screen.getByRole('button', { name: 'make pond' }))
+    await waitFor(() => expect(createPond).toHaveBeenCalledWith('Studio'))
     await waitFor(() => expect(push).toHaveBeenCalledWith('/workspace?pond=p-new'))
   })
 
-  it('skip no longer makes a pond — KAN-487: createPond refuses a blank name', async () => {
-    ;(createPond as jest.Mock).mockRejectedValue(new Error('createPond: a pond needs a name'))
+  it('Esc on step 1 cancels and creates nothing', async () => {
+    const user = userEvent.setup()
     renderSwitcher()
-    fireEvent.click(await screen.findByRole('button', { name: /life/ }))
-    fireEvent.click(screen.getByRole('menuitem', { name: /new pond/ }))
+    await user.click(await screen.findByRole('button', { name: /life/ }))
+    await user.click(screen.getByRole('menuitem', { name: /new pond/ }))
+    expect(screen.getByRole('dialog', { name: 'New pond' })).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'skip' }))
-    await waitFor(() => expect(createPond).toHaveBeenCalledWith(''))
-    // The contract refuses the blank name: the sheet shows the failure, nothing opens.
-    await waitFor(() => expect(screen.getByText(/could not make it/)).toBeInTheDocument())
-    expect(push).not.toHaveBeenCalled()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog', { name: 'New pond' })).not.toBeInTheDocument()
+    expect(createPond).not.toHaveBeenCalled()
+  })
+
+  it('a scrim click cancels and creates nothing', async () => {
+    const user = userEvent.setup()
+    const { container } = renderSwitcher()
+    await user.click(await screen.findByRole('button', { name: /life/ }))
+    await user.click(screen.getByRole('menuitem', { name: /new pond/ }))
+    expect(screen.getByRole('dialog', { name: 'New pond' })).toBeInTheDocument()
+
+    // The sheet's own scrim, not the switcher menu's click-away div — both are
+    // full-bleed overlays, and the sheet's is the later of the two since
+    // NewPondFlow mounts after the still-open menu in PondSwitcher's JSX.
+    const overlays = container.querySelectorAll('.fixed.inset-0')
+    fireEvent.click(overlays[overlays.length - 1])
+
+    expect(screen.queryByRole('dialog', { name: 'New pond' })).not.toBeInTheDocument()
+    expect(createPond).not.toHaveBeenCalled()
   })
 
   it('surfaces a failure in the sheet instead of silently closing', async () => {
+    const user = userEvent.setup()
     ;(createPond as jest.Mock).mockRejectedValue(new Error('relation "ponds" does not exist'))
     renderSwitcher()
-    fireEvent.click(await screen.findByRole('button', { name: /life/ }))
-    fireEvent.click(screen.getByRole('menuitem', { name: /new pond/ }))
-    fireEvent.click(screen.getByRole('button', { name: 'skip' }))
+    await user.click(await screen.findByRole('button', { name: /life/ }))
+    await user.click(screen.getByRole('menuitem', { name: /new pond/ }))
+    await user.type(screen.getByPlaceholderText('Name your pond'), 'Studio')
+    await user.click(screen.getByRole('button', { name: 'continue' }))
+    await user.click(screen.getByRole('button', { name: 'make pond' }))
 
     await waitFor(() => expect(screen.getByText(/could not make it/)).toBeInTheDocument())
     expect(screen.getByRole('dialog', { name: 'New pond' })).toBeInTheDocument()
