@@ -470,7 +470,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
 
       {/* caret — toggles the folder without navigating and without taking
           focus (the row keeps the roving tab stop); leaf gets a spacer */}
-      {isDbRoot ? null : isFolder ? (
+      {isFolder ? (
         <button
           type="button"
           tabIndex={-1}
@@ -906,9 +906,12 @@ export function RailView({
   )
   const databasesFlat = useMemo(() => {
     if (!databasesRoot) return [DATABASES_PLACEHOLDER_ROW]
-    const [root, ...rest] = flattenVisible([databasesRoot], expanded, true)
+    const [rawRoot, ...rest] = flattenVisible([databasesRoot], expanded, true)
       .slice(1) // drop the synthetic Life row flattenVisible always leads with
       .map((f) => ({ ...f, depth: f.depth - 1 }))
+    // KAN-486: change log + trash are always the root's first two children once
+    // it exists, so the root always carries a caret even with zero database pages.
+    const root = { ...rawRoot, isFolder: true }
     // KAN-94/KAN-451: the change log and trash are the root's first two
     // children — shown only once the root itself is expanded, like any other
     // child.

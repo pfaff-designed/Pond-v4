@@ -1531,9 +1531,11 @@ export const ChosenMarks: Story = {
  *
  * Geometry: `padding 6px 8px`
  * (the foot supplies the 10px under the hairline), `gap 9`, `font-size 13.5` /
- * `font-weight 500`, radius 10, and no chevron. Its mark is a hand-drawn
- * cylinder in `currentColor` — a FUNCTIONAL mark (stroke 1.4, round caps and
- * joins), not an area glyph, because the root is not one of Life's areas.
+ * `font-weight 500`, radius 10, and — KAN-486 — the rail's existing folder
+ * chevron, since change log and trash are always its first two children once
+ * the root exists. Its mark is a hand-drawn cylinder in `currentColor` — a
+ * FUNCTIONAL mark (stroke 1.4, round caps and joins), not an area glyph,
+ * because the root is not one of Life's areas.
  */
 const DATABASES: RailNode = node(
   'root-db',
@@ -1562,8 +1564,10 @@ export const DatabasesRoot: Story = {
     await expect(life.parentElement!.contains(foot)).toBe(false)
 
     // A functional mark, not an area one — and so no area hue to disagree with.
+    // `svg[width="13"]` is the mark itself — the caret (KAN-486) is its own 9×9
+    // svg and also carries `stroke="currentColor"`, so a bare selector would hit it instead.
     const rootRow = canvas.getByRole('treeitem', { name: /databases/ })
-    const svg = rootRow.querySelector<SVGSVGElement>('svg[stroke="currentColor"]')!
+    const svg = rootRow.querySelector<SVGSVGElement>('svg[width="13"][stroke="currentColor"]')!
     await expect(svg).toBeInTheDocument()
     await expect(svg.getAttribute('stroke-width')).toBe('1.4')
     await expect(svg.getAttribute('stroke-linecap')).toBe('round')
@@ -1582,20 +1586,23 @@ export const DatabasesRoot: Story = {
     const title = body.querySelector<HTMLElement>('[data-part="title"]')!
     await expect(getComputedStyle(title).fontWeight).toBe('500')
 
-    // The row box: padding 6px 8px, the mark and label 9px apart, and no caret
-    // slot — the mark is the first thing in the row.
+    // The row box: padding 6px 8px, the mark and label 9px apart, and the
+    // caret — KAN-486 — now leads the row, the same slot a folder row draws.
     const rowCss = getComputedStyle(rootRow)
     await expect(rowCss.padding).toBe('6px 8px')
     await expect(rowCss.columnGap).toBe('9px')
     await expect(css.columnGap).toBe('9px')
     await expect(rootRow).toHaveAttribute('aria-expanded', 'true')
+    const caret = rootRow.querySelector<HTMLButtonElement>('button[aria-hidden="true"]')!
+    await expect(caret).not.toBeNull()
+    await expect(caret.querySelector('svg')).toHaveClass('rotate-90') // expanded
     const inFlow = [...rootRow.children].filter((c) => getComputedStyle(c).position !== 'absolute')
-    await expect(inFlow).toEqual([body])
-    await expect(rootRow.querySelector('button[aria-hidden="true"]')).toBeNull()
-    // 8px foot padding + 8px row padding = the mark at x 16 from the rail's edge.
+    await expect(inFlow).toEqual([caret, body])
+    // 8px foot padding + 8px row padding + the 9px caret + the 9px gap to it
+    // = the mark at x 34 from the rail's edge.
     const aside = canvasElement.querySelector('aside')!
     const markLeft = svg.getBoundingClientRect().left - aside.getBoundingClientRect().left
-    await expect(Math.abs(markLeft - 16)).toBeLessThan(0.01)
+    await expect(Math.abs(markLeft - 34)).toBeLessThan(0.01)
   },
 }
 
