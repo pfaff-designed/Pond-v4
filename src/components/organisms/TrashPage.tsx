@@ -29,7 +29,7 @@ import { usePondName } from '@/lib/pond/name'
 import { useSurfaceColumn } from '@/lib/layout/surface-column'
 import { listRecords } from '@/lib/change-log/store'
 import { changeLogKey } from '@/lib/change-log/keys'
-import { existingPageIds, PARENT_FALLBACK_LINE, restorePage } from '@/lib/change-log/trash'
+import { existingPageIds, PARENT_FALLBACK_LINE } from '@/lib/change-log/trash'
 import { personFacingMessage } from '@/lib/change-log/errors'
 import { buildTrashRows, type TrashRow } from '@/lib/change-log/trash-view'
 import { fellBackToPondRoot, groupByTarget, TRASH_RETENTION_DAYS } from '@/lib/change-log/deleted-view'
@@ -37,6 +37,7 @@ import { readTrashSnapshot } from '@/lib/change-log/summary'
 import type { ChangeLogRecord } from '@/lib/change-log/types'
 import { listPages } from '@/lib/pages/client'
 import { pagesKey } from '@/lib/pages/keys'
+import { restorePageRelinked } from '@/lib/pages/child-links'
 import { isArea } from '@/lib/pages/mark'
 import { areaGlyph } from '@/lib/rail/area-glyph'
 import { AreaMark } from '@/components/atoms/AreaMark'
@@ -232,7 +233,11 @@ export function TrashPage() {
 
   const restoreMutation = useMutation({
     mutationFn: (vars: { recordId: string; targetPageId: string | null }) =>
-      restorePage(getSupabase(), vars.recordId),
+      restorePageRelinked(getSupabase(), queryClient, {
+        pondId,
+        recordId: vars.recordId,
+        rootPageId: vars.targetPageId,
+      }),
     onMutate: () => {
       setRestoreError(null)
       setRestoreNotice(null)

@@ -26,8 +26,8 @@ import { buildDeletedCards, type DeletedCard } from '@/lib/change-log/deleted-vi
 import { buildProposedCards } from '@/lib/change-log/proposed-view'
 import { ChangeLogAnswerActions } from '@/components/molecules/ChangeLogAnswerActions'
 import { ChangeRows } from '@/components/molecules/diff-card-parts'
-import { existingPageIds, PARENT_FALLBACK_LINE, restorePage } from '@/lib/change-log/trash'
-import { relinkRestoredSubtree } from '@/lib/pages/child-links'
+import { existingPageIds, PARENT_FALLBACK_LINE } from '@/lib/change-log/trash'
+import { restorePageRelinked } from '@/lib/pages/child-links'
 import { personFacingMessage } from '@/lib/change-log/errors'
 import { PondControl } from '@/components/atoms/PondControl'
 import { FOCUS_VISIBLE_RING } from '@/components/atoms/focus-ring'
@@ -483,7 +483,14 @@ export function ChangeLogPage() {
   }, [deletedCards])
 
   const restoreMutation = useMutation({
-    mutationFn: (recordId: string) => restorePage(getSupabase(), recordId),
+    mutationFn: (recordId: string) => {
+      const restoredCard = deletedCards.find((card) => card.record.id === recordId)
+      return restorePageRelinked(getSupabase(), queryClient, {
+        pondId,
+        recordId,
+        rootPageId: restoredCard?.record.targetPageId ?? null,
+      })
+    },
     onMutate: () => {
       setRestoreError(null)
       setRestoreNotice(null)
@@ -493,13 +500,6 @@ export function ChangeLogPage() {
       // Puts the page back in the rail/⌘K/pickers and refreshes every
       // change-log view (the deleted card itself, and the new `restore` row
       // in "all") in one go.
-      const restoredCard = deletedCards.find((card) => card.record.id === recordId)
-      if (restoredCard?.record.targetPageId) {
-        await relinkRestoredSubtree(getSupabase(), queryClient, {
-          pondId,
-          rootPageId: restoredCard.record.targetPageId,
-        })
-      }
       queryClient.invalidateQueries({ queryKey: pagesKey(pondId) })
       queryClient.invalidateQueries({ queryKey: ['rows'] })
       queryClient.invalidateQueries({ queryKey: ['page'] })

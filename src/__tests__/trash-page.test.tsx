@@ -32,16 +32,19 @@ jest.mock('@/lib/change-log/store', () => ({
 }))
 
 const mockExistingPageIds = jest.fn()
-const mockRestorePage = jest.fn()
 jest.mock('@/lib/change-log/trash', () => ({
   ...jest.requireActual('@/lib/change-log/trash'),
   existingPageIds: (...args: unknown[]) => mockExistingPageIds(...args),
-  restorePage: (...args: unknown[]) => mockRestorePage(...args),
 }))
 
 jest.mock('@/lib/pages/client', () => ({
   ...jest.requireActual('@/lib/pages/client'),
   listPages: jest.fn().mockResolvedValue([]),
+}))
+
+const mockRestorePageRelinked = jest.fn()
+jest.mock('@/lib/pages/child-links', () => ({
+  restorePageRelinked: (...args: unknown[]) => mockRestorePageRelinked(...args),
 }))
 
 const snapshot = (over: Partial<TrashSnapshot> = {}): TrashSnapshot => ({
@@ -90,7 +93,7 @@ function renderPage() {
 beforeEach(() => {
   jest.clearAllMocks()
   mockExistingPageIds.mockImplementation(async (_supabase, ids: string[]) => new Set(ids))
-  mockRestorePage.mockResolvedValue(undefined)
+  mockRestorePageRelinked.mockResolvedValue(undefined)
 })
 
 describe('TrashPage', () => {
@@ -156,14 +159,14 @@ describe('TrashPage', () => {
     expect(screen.queryByTestId('trash-load-more')).not.toBeInTheDocument()
   })
 
-  it('restores through restorePage and removes the row from the table', async () => {
+  it('restores through restorePageRelinked and removes the row from the table', async () => {
     let answered = false
     mockListRecords.mockImplementation(async () =>
       answered
         ? [record(), record({ id: 'restore-1', action: 'restore', createdAt: '2026-09-27T12:00:00.000Z' })]
         : [record()]
     )
-    mockRestorePage.mockImplementation(async () => {
+    mockRestorePageRelinked.mockImplementation(async () => {
       answered = true
     })
 
@@ -173,7 +176,11 @@ describe('TrashPage', () => {
     const restoreButton = await screen.findByRole('button', { name: 'restore' })
     await user.click(restoreButton)
 
-    expect(mockRestorePage).toHaveBeenCalledWith(expect.anything(), 'rec-1')
+    expect(mockRestorePageRelinked).toHaveBeenCalledWith(expect.anything(), expect.anything(), {
+      pondId: 'pond-1',
+      recordId: 'rec-1',
+      rootPageId: 'page-1',
+    })
     await waitFor(() => {
       expect(screen.queryByTestId('trash-row')).not.toBeInTheDocument()
     })
@@ -195,7 +202,7 @@ describe('TrashPage', () => {
           ]
         : [record()]
     )
-    mockRestorePage.mockImplementation(async () => {
+    mockRestorePageRelinked.mockImplementation(async () => {
       answered = true
     })
 
