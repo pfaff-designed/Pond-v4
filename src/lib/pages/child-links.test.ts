@@ -6,6 +6,7 @@ import {
   findPagesLinkingTo,
   unlinkTrashedSubtree,
   relinkRestoredSubtree,
+  trashPageUnlinked,
   type RemovedLink,
 } from './child-links'
 import type { Block } from '@/lib/modules/content'
@@ -28,6 +29,11 @@ jest.mock('./commit', () => ({
 const mockFlushPendingPageSave = jest.fn()
 jest.mock('./page-flush', () => ({
   flushPendingPageSave: (...args: unknown[]) => mockFlushPendingPageSave(...args),
+}))
+
+const mockTrashPage = jest.fn()
+jest.mock('@/lib/change-log/trash', () => ({
+  trashPage: (...args: unknown[]) => mockTrashPage(...args),
 }))
 
 describe('appendChildLink', () => {
@@ -818,5 +824,139 @@ describe('relinkRestoredSubtree', () => {
     expect(mockGetPage).toHaveBeenCalledTimes(1)
     expect(mockGetPage).toHaveBeenCalledWith(supabase, 'parent-a')
     expect(mockCommitBlocks).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('trashPageUnlinked', () => {
+  const parentPage = (id: string, blocks: Block[]) => ({
+    id,
+    parent_id: null,
+    type: 'page',
+    title: id,
+    blocks,
+    props: {},
+    order: 0,
+  })
+
+  /** One shared `.from('pages')` chain backing `findPagesLinkingTo`'s
+   *  `.contains` read and the root's own `props` read/write — `update`
+   *  mutates the props a later `maybeSingle` read sees, so a test can assert
+   *  the unlink's write is what the relink-on-throw path reads back. */
+  function makeSupabase({
+    containsResults = {} as Record<string, unknown[]>,
+    initialProps = {} as Record<string, unknown>,
+  } = {}) {
+    let props = { ...initialProps }
+    const maybeSingle = jest.fn(() => Promise.resolve({ data: { props }, error: null }))
+    const update = jest.fn((payload: { props: Record<string, unknown> }) => {
+      props = payload.props
+      return { eq: jest.fn().mockResolvedValue({ error: null }) }
+    })
+    const chain = {
+      select: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      is: jest.fn().mockReturnThis(),
+      contains: jest.fn((_col: string, value: Array<{ pageId: string }>) =>
+        Promise.resolve({ data: containsResults[value[0].pageId] ?? [], error: null })
+      ),
+      maybeSingle,
+      update,
+    }
+    return { from: jest.fn().mockReturnValue(chain), _chain: chain, update }
+  }
+
+  let invalidateQueries: jest.Mock
+  let queryClient: never
+
+  beforeEach(() => {
+    jest.clearAllMocks()
+    mockCommitBlocks.mockResolvedValue(undefined)
+    mockFlushPendingPageSave.mockResolvedValue(undefined)
+    invalidateQueries = jest.fn().mockResolvedValue(undefined)
+    queryClient = { invalidateQueries } as never
+  })
+
+  it('unlinks then trashes, and never relinks, when trashPage succeeds', async () => {
+    const link1 = link('b1', 'child-1')
+    const supabase = makeSupabase({
+      containsResults: { 'child-1': [parentPage('parent-a', [link1])] },
+    })
+    mockGetPage.mockResolvedValue({
+      id: 'parent-a',
+      parentId: null,
+      type: 'page',
+      title: 'Parent A',
+      blocks: [link1],
+      order: 0,
+      props: {},
+    })
+    mockTrashPage.mockResolvedValue(undefined)
+
+    await trashPageUnlinked(supabase as never, queryClient, {
+      pondId: 'pond-1',
+      rootPageId: 'root-1',
+      subtreeIds: new Set(['child-1']),
+    })
+
+    expect(mockTrashPage).toHaveBeenCalledWith(supabase, 'root-1')
+    expect(mockCommitBlocks).toHaveBeenCalledTimes(1)
+    const [, , , unlinkedBlocks] = mockCommitBlocks.mock.calls[0]
+    expect(unlinkedBlocks).toEqual([])
+    expect(supabase._chain.update).toHaveBeenCalledTimes(1)
+  })
+
+  it('relinks every unlinked parent and rethrows when trashPage itself throws', async () => {
+    const link1 = link('b1', 'child-1')
+    const supabase = makeSupabase({
+      containsResults: { 'child-1': [parentPage('parent-a', [link1])] },
+    })
+    // Phase 1 (unlink, inside `unlinkTrashedSubtree`): the parent still has
+    // the link. Phase 2 (relink, inside `relinkRestoredSubtree`, run only
+    // because `trashPage` below throws): the parent no longer has it — the
+    // unlink's own commit (mocked, so it doesn't really mutate anything) is
+    // what a real DB would have landed by then.
+    mockGetPage
+      .mockResolvedValueOnce({
+        id: 'parent-a',
+        parentId: null,
+        type: 'page',
+        title: 'Parent A',
+        blocks: [link1],
+        order: 0,
+        props: {},
+      })
+      .mockResolvedValueOnce({
+        id: 'parent-a',
+        parentId: null,
+        type: 'page',
+        title: 'Parent A',
+        blocks: [],
+        order: 0,
+        props: {},
+      })
+    mockTrashPage.mockRejectedValue(new Error('network'))
+
+    await expect(
+      trashPageUnlinked(supabase as never, queryClient, {
+        pondId: 'pond-1',
+        rootPageId: 'root-1',
+        subtreeIds: new Set(['child-1']),
+      })
+    ).rejects.toThrow('network')
+
+    expect(mockCommitBlocks).toHaveBeenCalledTimes(2)
+    const [, , unlinkPageId, unlinkedBlocks] = mockCommitBlocks.mock.calls[0]
+    expect(unlinkPageId).toBe('parent-a')
+    expect(unlinkedBlocks).toEqual([])
+    const [, , relinkPageId, relinkedBlocks] = mockCommitBlocks.mock.calls[1]
+    expect(relinkPageId).toBe('parent-a')
+    expect(relinkedBlocks).toEqual([link1])
+
+    // The root's props carried `unlinkedLinks` long enough for the relink to
+    // read it, then the relink cleared it — never left dangling for a
+    // caller that doesn't know to look.
+    expect(supabase._chain.update).toHaveBeenCalledTimes(2)
+    const [relinkPayload] = supabase.update.mock.calls[1]
+    expect(relinkPayload.props.unlinkedLinks).toBeUndefined()
   })
 })

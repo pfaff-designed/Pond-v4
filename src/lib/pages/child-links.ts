@@ -24,6 +24,7 @@ import {
   type PageRow as PondPageRow,
 } from './client'
 import { commitBlocks } from './commit'
+import { trashPage } from '@/lib/change-log/trash'
 import type { PageRow } from './tree'
 import { withoutDatabasesRoot } from './databases-root'
 import { flushPendingPageSave } from './page-flush'
@@ -407,6 +408,35 @@ export async function relinkRestoredSubtree(
     await saveProps(supabase, rootPageId, restProps)
   } catch (err) {
     console.error('[page-link] restored subtree not relinked', rootPageId, err)
+  }
+}
+
+/**
+ * The one seam both Rail call sites use to trash a subtree (KAN-448): unlink
+ * it, trash it, and — if `trashPage` itself throws (network, a
+ * `TrashRefusedError`) — relink what was just unlinked before rethrowing, so
+ * a caller's own failure handling (the rail's "Couldn't delete" + restored
+ * row) is never left facing a live page whose links are gone and a
+ * `props.unlinkedLinks` nobody will ever clear. The two call sites had
+ * drifted to calling `unlinkTrashedSubtree`/`trashPage` separately, with one
+ * passing only the node's own id as `subtreeIds` rather than its whole live
+ * subtree — this seam gives them no way to drift again.
+ */
+export async function trashPageUnlinked(
+  supabase: SupabaseClient<Database>,
+  queryClient: QueryClient,
+  {
+    pondId,
+    rootPageId,
+    subtreeIds,
+  }: { pondId: string | null; rootPageId: string; subtreeIds: Set<string> }
+): Promise<void> {
+  await unlinkTrashedSubtree(supabase, queryClient, { pondId, rootPageId, subtreeIds })
+  try {
+    await trashPage(supabase, rootPageId)
+  } catch (err) {
+    await relinkRestoredSubtree(supabase, queryClient, { pondId, rootPageId })
+    throw err
   }
 }
 

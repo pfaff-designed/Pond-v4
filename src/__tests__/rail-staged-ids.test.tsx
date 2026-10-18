@@ -18,8 +18,7 @@ import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { isStaged, stageId, unstageId } from '@/lib/deletion/staged-ids'
 import { pagesKey } from '@/lib/pages/keys'
 import { deletePage } from '@/lib/pages/client'
-import { unlinkTrashedSubtree } from '@/lib/pages/child-links'
-import { trashPage } from '@/lib/change-log/trash'
+import { trashPageUnlinked } from '@/lib/pages/child-links'
 import type { PageRow } from '@/lib/pages/tree'
 import type { Pond } from '@/lib/pond/client'
 
@@ -56,11 +55,7 @@ jest.mock('@/lib/change-log/store', () => ({
 
 jest.mock('@/lib/pages/child-links', () => ({
   appendChildLinkUnder: jest.fn().mockResolvedValue(undefined),
-  unlinkTrashedSubtree: jest.fn().mockResolvedValue(undefined),
-}))
-
-jest.mock('@/lib/change-log/trash', () => ({
-  trashPage: jest.fn().mockResolvedValue(undefined),
+  trashPageUnlinked: jest.fn().mockResolvedValue(undefined),
 }))
 
 const AT = '2026-01-01T00:00:00Z'
@@ -147,17 +142,11 @@ describe('Rail — staged-ids wiring (KAN-300)', () => {
   })
 
   // KAN-448: the staged delete's own commit (not the optimistic stage) is
-  // the only moment `unlinkTrashedSubtree` may run — undoing from the toast
-  // must leave a trashed page's links untouched.
-  it('a committed delete unlinks the subtree before trashPage runs', async () => {
-    const order: string[] = []
-    ;(unlinkTrashedSubtree as jest.Mock).mockImplementation(async () => {
-      order.push('unlink')
-    })
-    ;(trashPage as jest.Mock).mockImplementation(async () => {
-      order.push('trash')
-    })
-
+  // the only moment `trashPageUnlinked` may run — undoing from the toast
+  // must leave a trashed page's links untouched. The unlink-before-trash
+  // ordering itself, and the relink-on-throw path, are `trashPageUnlinked`'s
+  // own contract — covered in `child-links.test.ts`, not re-asserted here.
+  it('a committed delete calls the one unlink-trash seam with the node\'s subtree', async () => {
     const client = newClient(ROWS)
     mount(client)
     const user = userEvent.setup()
@@ -169,17 +158,15 @@ describe('Rail — staged-ids wiring (KAN-300)', () => {
     // Dismiss flushes the deferred commit ahead of the grace window.
     await user.click(await screen.findByRole('button', { name: 'Dismiss' }))
 
-    await waitFor(() => expect(trashPage).toHaveBeenCalled())
-    expect(unlinkTrashedSubtree).toHaveBeenCalledWith(expect.anything(), expect.anything(), {
+    await waitFor(() => expect(trashPageUnlinked).toHaveBeenCalled())
+    expect(trashPageUnlinked).toHaveBeenCalledWith(expect.anything(), expect.anything(), {
       pondId: 'pond-1',
       rootPageId: 'sleep',
       subtreeIds: new Set(['sleep']),
     })
-    expect(trashPage).toHaveBeenCalledWith(expect.anything(), 'sleep')
-    expect(order).toEqual(['unlink', 'trash'])
   })
 
-  it('clicking undo on the toast never unlinks — the commit never ran', async () => {
+  it('clicking undo on the toast never calls the unlink-trash seam — the commit never ran', async () => {
     const client = newClient(ROWS)
     mount(client)
     const user = userEvent.setup()
@@ -191,7 +178,6 @@ describe('Rail — staged-ids wiring (KAN-300)', () => {
     await user.click(await screen.findByRole('button', { name: 'Undo' }))
 
     await screen.findByRole('treeitem', { name: /Sleep/ })
-    expect(unlinkTrashedSubtree).not.toHaveBeenCalled()
-    expect(trashPage).not.toHaveBeenCalled()
+    expect(trashPageUnlinked).not.toHaveBeenCalled()
   })
 })
