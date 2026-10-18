@@ -218,4 +218,58 @@ describe('groupByPause', () => {
 
     expect(onPause).toHaveBeenCalledWith({ status: 'a' }, { status: 'd' }, 'pond-2')
   })
+
+  describe('closeKey', () => {
+    it('does nothing for a key with no open group', () => {
+      const { onPause, groups } = setup()
+
+      expect(() => groups.closeKey('row-1')).not.toThrow()
+
+      expect(onPause).not.toHaveBeenCalled()
+    })
+
+    it('logs an open, already-settled group at once, with no pause to wait for', async () => {
+      const { onPause, groups, change } = setup()
+
+      change('row-1', { status: 'a' }, { field: 'status', value: 'b' }, landed())
+      await settle()
+      expect(onPause).not.toHaveBeenCalled()
+
+      groups.closeKey('row-1')
+
+      expect(onPause).toHaveBeenCalledTimes(1)
+      expect(onPause).toHaveBeenCalledWith({ status: 'a' }, { status: 'b' }, 'pond-1')
+    })
+
+    it('logs a group with writes still in flight only once they settle', async () => {
+      const { onPause, groups, change } = setup()
+      const slow = deferred()
+
+      change('row-1', { status: 'a' }, { field: 'status', value: 'b' }, slow.promise)
+      groups.closeKey('row-1')
+      expect(onPause).not.toHaveBeenCalled()
+
+      slow.resolve()
+      await settle()
+
+      expect(onPause).toHaveBeenCalledTimes(1)
+      expect(onPause).toHaveBeenCalledWith({ status: 'a' }, { status: 'b' }, 'pond-1')
+    })
+
+    it('a change on the same key after closeKey opens a new group, never folding into the closed one', async () => {
+      const { onPause, groups, change } = setup()
+
+      change('row-1', { status: 'a' }, { field: 'status', value: 'b' }, landed())
+      await settle()
+      groups.closeKey('row-1')
+      expect(onPause).toHaveBeenCalledTimes(1)
+
+      change('row-1', { status: 'b' }, { field: 'status', value: 'c' }, landed())
+      await settle()
+      jest.advanceTimersByTime(EDIT_PAUSE_MS)
+
+      expect(onPause).toHaveBeenCalledTimes(2)
+      expect(onPause).toHaveBeenLastCalledWith({ status: 'b' }, { status: 'c' }, 'pond-1')
+    })
+  })
 })

@@ -130,10 +130,10 @@ export async function recordOwnRowEdit(
     before: RowSnapshot | null
     after: RowSnapshot
   }
-): Promise<void> {
+): Promise<ChangeLogRecord | null> {
   const userId = await sessionUserId(supabase, opts.collectionId)
-  if (!userId) return
-  await appendUnlessUnchanged(supabase, {
+  if (!userId) return null
+  return appendUnlessUnchanged(supabase, {
     userId,
     pondId: opts.pondId,
     action: opts.before === null ? 'add_row' : 'edit_row',

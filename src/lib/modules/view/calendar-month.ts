@@ -70,8 +70,9 @@ function mondayDow(iso: string): number {
 }
 
 /** A row's date value, bucketed to its `YYYY-MM-DD` day part — `null` for an
- *  undated row, which the month span never shows. */
-function rowDateIso(row: CollectionRow, dateDef: PropertyDef): string | null {
+ *  undated row, which the month span never shows. Exported so a drop handler can
+ *  compare a row's own day against the drop target without re-deriving it. */
+export function rowDateIso(row: CollectionRow, dateDef: PropertyDef): string | null {
   const value = coerceValue(dateDef, row.values[dateDef.id])
   return typeof value === 'string' && value ? value.slice(0, 10) : null
 }
@@ -160,6 +161,18 @@ export function stepMonth(focusIso: string, direction: -1 | 1): string {
  *  harmless for the grid, since only `today`'s year/month are read. */
 export function goToday(todayIso: string): string {
   return todayIso
+}
+
+/** The date value a drop onto `dayIso` should write: a date-only value becomes
+ *  `dayIso` outright; a datetime value keeps everything from its `T` onward
+ *  (time, seconds, zone) and only its date part moves. String-sliced, never
+ *  `Date`-parsed, so a drop can't shear across a month/year/leap-day edge. A
+ *  non-string or missing value has no time part to keep, so it becomes `dayIso`. */
+export function dateForDrop(value: unknown, dayIso: string): string {
+  if (typeof value !== 'string') return dayIso
+  const tIndex = value.indexOf('T')
+  if (tIndex === -1) return dayIso
+  return dayIso + value.slice(tIndex)
 }
 
 /** `dow` — Monday-first weekday index, for the focused-day list's own head label

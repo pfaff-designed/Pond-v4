@@ -12,6 +12,7 @@ import { act, renderHook, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useCollectionRows } from '@/lib/modules/view/use-collection-rows'
 import { PondContext, type PondContextValue } from '@/lib/pond/context'
+import { sessionUndo } from '@/lib/change-log/session-undo'
 import type { ChangeLogRecord } from '@/lib/change-log/types'
 import type { Pond } from '@/lib/pond/client'
 import type { PropertySchema } from '@/lib/properties/schema'
@@ -20,6 +21,15 @@ jest.mock('@/lib/supabase/client', () => ({
   createClient: () => ({
     auth: { getUser: async () => ({ data: { user: { id: 'user-1' } } }) },
   }),
+}))
+
+// `sessionUndo` (the real singleton) runs its RPCs through `undoStep`/`redoStep` —
+// mocked here so a real `sessionUndo.undo()` call in a test can be timed against
+// `setValueAsStep`'s write and log without reaching a database.
+const mockUndoStep = jest.fn()
+jest.mock('@/lib/change-log/undo', () => ({
+  undoStep: (...args: unknown[]) => mockUndoStep(...args),
+  redoStep: jest.fn(),
 }))
 
 const SCHEMA = [
@@ -115,11 +125,13 @@ const snapshot = (title: string, status: string, stage: string, stageLabel: stri
 
 beforeEach(() => {
   jest.clearAllMocks()
+  sessionUndo.clear()
   activePond = null
   mockSetProperty.mockResolvedValue(undefined)
   mockUpdateTitle.mockResolvedValue(undefined)
   mockGetCollectionRows.mockResolvedValue([ROW])
   mockAppendOwnEdit.mockResolvedValue({ id: 'rec-1' } as ChangeLogRecord)
+  mockUndoStep.mockResolvedValue({ outcome: 'done', records: [] })
 })
 
 describe('useCollectionRows — record edits are logged by pause', () => {
@@ -348,5 +360,172 @@ describe('useCollectionRows — a schema edit is logged at once, not by pause (K
 
     await waitFor(() => expect(spy).toHaveBeenCalled())
     spy.mockRestore()
+  })
+})
+
+describe('useCollectionRows — setValueAsStep logs its own record, as its own pause group', () => {
+  it('two calls on the same row in one tick each produce their own record', async () => {
+    const { result } = await mounted()
+
+    act(() => {
+      result.current.setValueAsStep('row-1', 'status', 'weeknight')
+      result.current.setValueAsStep('row-1', 'status', 'cooking')
+    })
+
+    // Neither call waits out the pause, and the second never folds into the
+    // first's group: both are logged, in order, as two records.
+    await waitFor(() => expect(mockAppendOwnEdit).toHaveBeenCalledTimes(2))
+    expect(mockAppendOwnEdit.mock.calls[0][1]).toMatchObject({
+      action: 'edit_row',
+      before: { values: { status: 'want' } },
+      after: { values: { status: 'weeknight' } },
+    })
+    expect(mockAppendOwnEdit.mock.calls[1][1]).toMatchObject({
+      action: 'edit_row',
+      before: { values: { status: 'weeknight' } },
+      after: { values: { status: 'cooking' } },
+    })
+  })
+
+  it('a value equal to what is stored appends nothing', async () => {
+    const { result } = await mounted()
+
+    await act(async () => {
+      result.current.setValueAsStep('row-1', 'status', 'want')
+    })
+
+    expect(mockAppendOwnEdit).not.toHaveBeenCalled()
+  })
+
+  it('a refused write is logged as nothing — no record, no undo step', async () => {
+    activePond = pondNamed('pond-1')
+    mockSetProperty.mockRejectedValueOnce(new Error('rls'))
+    const remember = jest.spyOn(sessionUndo, 'remember')
+    const { result } = await mounted()
+
+    await act(async () => {
+      result.current.setValueAsStep('row-1', 'status', 'weeknight')
+    })
+    await waitOutThePause()
+
+    expect(mockAppendOwnEdit).not.toHaveBeenCalled()
+    expect(remember).not.toHaveBeenCalled()
+    expect(sessionUndo.getSnapshot('pond-1').canUndo).toBe(false)
+  })
+
+  it('a typed edit then a drop on the same row within the pause logs two records, in order', async () => {
+    mockAppendOwnEdit
+      .mockResolvedValueOnce({ id: 'rec-typed' } as ChangeLogRecord)
+      .mockResolvedValueOnce({ id: 'rec-drop' } as ChangeLogRecord)
+    const { result } = await mounted()
+
+    act(() => {
+      result.current.setValue('row-1', 'status', 'weeknight')
+      result.current.setValueAsStep('row-1', 'stage', 'o-cooked')
+    })
+
+    await waitFor(() => expect(mockAppendOwnEdit).toHaveBeenCalledTimes(2))
+    // The typed edit's own pause closes — and logs — ahead of the drop's.
+    expect(mockAppendOwnEdit.mock.calls[0][1]).toMatchObject({
+      before: snapshot('dal', 'want', 'o-want', 'want to cook'),
+      after: snapshot('dal', 'weeknight', 'o-want', 'want to cook'),
+    })
+    // The drop's own group starts from what the typed edit actually left stored.
+    expect(mockAppendOwnEdit.mock.calls[1][1]).toMatchObject({
+      before: snapshot('dal', 'weeknight', 'o-want', 'want to cook'),
+      after: snapshot('dal', 'weeknight', 'o-cooked', 'cooked'),
+    })
+  })
+})
+
+describe('useCollectionRows — setValueAsStep wires session-undo', () => {
+  it('the record becomes the top of the undo stack for its pond', async () => {
+    activePond = pondNamed('pond-1')
+    mockAppendOwnEdit.mockResolvedValue({ id: 'rec-1' } as ChangeLogRecord)
+    const { result } = await mounted()
+
+    await act(async () => {
+      result.current.setValueAsStep('row-1', 'status', 'weeknight')
+    })
+
+    await waitFor(() =>
+      expect(sessionUndo.getSnapshot('pond-1').topUndoRecordIds).toEqual(['rec-1'])
+    )
+  })
+
+  it('two fast drops are two steps, not one', async () => {
+    activePond = pondNamed('pond-1')
+    mockAppendOwnEdit
+      .mockResolvedValueOnce({ id: 'rec-1' } as ChangeLogRecord)
+      .mockResolvedValueOnce({ id: 'rec-2' } as ChangeLogRecord)
+    const remember = jest.spyOn(sessionUndo, 'remember')
+    const { result } = await mounted()
+
+    act(() => {
+      result.current.setValueAsStep('row-1', 'status', 'weeknight')
+      result.current.setValueAsStep('row-1', 'status', 'cooking')
+    })
+
+    await waitFor(() => expect(remember).toHaveBeenCalledTimes(2))
+    expect(remember.mock.calls[0][0]).toMatchObject({ pondId: 'pond-1', recordIds: ['rec-1'] })
+    expect(remember.mock.calls[1][0]).toMatchObject({ pondId: 'pond-1', recordIds: ['rec-2'] })
+  })
+
+  it('an unchanged write remembers nothing', async () => {
+    activePond = pondNamed('pond-1')
+    const remember = jest.spyOn(sessionUndo, 'remember')
+    const { result } = await mounted()
+
+    await act(async () => {
+      result.current.setValueAsStep('row-1', 'status', 'want')
+    })
+
+    expect(remember).not.toHaveBeenCalled()
+    expect(sessionUndo.getSnapshot('pond-1').canUndo).toBe(false)
+  })
+
+  it('no pond remembers nothing even when the record lands', async () => {
+    activePond = null
+    mockAppendOwnEdit.mockResolvedValue({ id: 'rec-2' } as ChangeLogRecord)
+    const remember = jest.spyOn(sessionUndo, 'remember')
+    const { result } = await mounted()
+
+    await act(async () => {
+      result.current.setValueAsStep('row-1', 'status', 'weeknight')
+    })
+
+    expect(remember).not.toHaveBeenCalled()
+  })
+
+  it('a ⌘Z pressed while the drop’s write is still in flight waits for it, then takes the drop’s record', async () => {
+    activePond = pondNamed('pond-1')
+    // Something already on the stack — if undo ran before the drop's own step
+    // landed, this is what it would wrongly take instead.
+    sessionUndo.remember({ pondId: 'pond-1', recordIds: ['rec-before'] })
+    const write = deferred()
+    mockSetProperty.mockReturnValueOnce(write.promise)
+    // The append resolves at once once it's reached: only the write is held
+    // open, so a version that logs (and remembers) BEFORE the write settles —
+    // the bug this test is for — fires immediately instead of waiting.
+    mockAppendOwnEdit.mockResolvedValueOnce({ id: 'rec-drop' } as ChangeLogRecord)
+    const { result } = await mounted()
+
+    act(() => {
+      result.current.setValueAsStep('row-1', 'status', 'weeknight')
+    })
+    const undo = sessionUndo.undo('pond-1')
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(mockAppendOwnEdit).not.toHaveBeenCalled()
+    expect(mockUndoStep).not.toHaveBeenCalled()
+
+    await act(async () => write.resolve())
+    await undo
+
+    expect(mockAppendOwnEdit).toHaveBeenCalled()
+    expect(mockUndoStep).toHaveBeenCalledWith(
+      expect.anything(),
+      { pondId: 'pond-1', recordIds: ['rec-drop'] }
+    )
   })
 })

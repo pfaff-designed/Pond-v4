@@ -1,4 +1,4 @@
-import { buildMonthGrid, goToday, stepMonth } from './calendar-month'
+import { buildMonthGrid, dateForDrop, goToday, stepMonth } from './calendar-month'
 import type { CollectionRow } from './apply'
 import type { PropertyDef } from '@/lib/properties/schema'
 
@@ -93,6 +93,25 @@ describe('stepMonth', () => {
   it('reflects in the built grid', () => {
     const next = buildMonthGrid(stepMonth('2026-09-15', 1), '2026-09-23', [], dueDef)
     expect(next.periodLabel).toBe('october 2026')
+  })
+})
+
+describe('dateForDrop', () => {
+  it.each([
+    ['date-only', '2026-09-12', '2026-09-15', '2026-09-15'],
+    ['datetime with seconds', '2026-09-12T09:30:45', '2026-09-15', '2026-09-15T09:30:45'],
+    ['datetime with zone', '2026-09-12T09:30:00+02:00', '2026-09-15', '2026-09-15T09:30:00+02:00'],
+    ['cross-month', '2026-09-28T09:30:00Z', '2026-10-02', '2026-10-02T09:30:00Z'],
+    ['cross-year', '2026-12-28T09:30:00Z', '2027-01-03', '2027-01-03T09:30:00Z'],
+    ['leap day', '2027-02-27T09:30:00Z', '2028-02-29', '2028-02-29T09:30:00Z'],
+  ])('%s', (_label, value, dayIso, expected) => {
+    expect(dateForDrop(value, dayIso)).toBe(expected)
+  })
+
+  it('treats a non-string or missing value as date-only', () => {
+    expect(dateForDrop(undefined, '2026-09-15')).toBe('2026-09-15')
+    expect(dateForDrop(null, '2026-09-15')).toBe('2026-09-15')
+    expect(dateForDrop(42, '2026-09-15')).toBe('2026-09-15')
   })
 })
 

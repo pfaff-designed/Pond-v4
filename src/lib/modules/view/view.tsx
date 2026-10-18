@@ -51,7 +51,12 @@ import { isChartCard } from './chart-compact'
 import { useChartProvenance } from './use-chart-provenance'
 import type { ChartProvenance } from '../chart/chrome'
 import { ViewNotice } from './notice'
-import { usePointerBucketDrag } from './use-pointer-bucket-drag'
+import {
+  DRAG_ACTIVE_CLASS,
+  DRAG_LIFT_CLASS,
+  DRAG_OVER_CLASS,
+  usePointerBucketDrag,
+} from './use-pointer-bucket-drag'
 import { isStepOutKey } from './step-out-key'
 import { usePointerGanttDrag } from './use-gantt-bar-drag'
 import {
@@ -242,6 +247,7 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
     isLoading,
     isError,
     setValue,
+    setValueAsStep,
     addRow,
     renameRow,
     updateSchema,
@@ -346,6 +352,7 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
       editable={editable}
       linked={!!data.collectionId}
       onEdit={setValue}
+      onMoveDate={setValueAsStep}
       onAddRow={addRow}
       onRenameRow={renameRow}
       onConfigChange={onConfigChange}
@@ -380,6 +387,9 @@ export interface CollectionViewProps {
    *  "target unavailable" notice when a linked target is deleted or isn't a collection. */
   linked?: boolean
   onEdit?: (rowId: string, key: string, value: PropertyValue) => void
+  /** A calendar drag-drop's own date write (KAN-385) — logged and undone separately
+   *  from `onEdit`'s pause-grouped edits. Only the calendar branch forwards it. */
+  onMoveDate?: (rowId: string, key: string, value: PropertyValue) => void
   /** Manual card/row authoring (board-authoring Slice 2). Present only on the live
    *  editable host; Storybook renders static data and omits them. */
   onAddRow?: (values?: Record<string, PropertyValue>) => Promise<string | null>
@@ -422,6 +432,7 @@ export function CollectionView({
   editable,
   linked,
   onEdit,
+  onMoveDate,
   onAddRow,
   onRenameRow,
   onConfigChange,
@@ -587,6 +598,7 @@ export function CollectionView({
           groupBy={activeConfig.groupBy}
           editable={editable}
           onEdit={onEdit}
+          onMoveDate={onMoveDate}
           onAddRow={onAddRow}
           onRenameRow={onRenameRow}
           onOpenRow={onOpenRow}
@@ -1054,8 +1066,15 @@ function CollectionBoard({
 
   // Dropping into a lane writes that option id onto the group-by property; the
   // "No <name>" lane clears it (null). A drop into the same lane is idempotent.
-  const { drag, overKey, registerBucket, onCardPointerDown, isClickSuppressed, containerHandlers } =
-    usePointerBucketDrag({
+  const {
+    drag,
+    overKey,
+    registerBucket,
+    onCardPointerDown,
+    isClickSuppressed,
+    containerHandlers,
+    containerClassName,
+  } = usePointerBucketDrag({
       editable: !!editable,
       onDrop: (rowId, key) => {
         if (!grouped) return
@@ -1132,7 +1151,7 @@ function CollectionBoard({
   const repeatDef = pickRepeatDef(schema)
 
   return (
-    <div ref={boardRef} {...containerHandlers}>
+    <div ref={boardRef} className={containerClassName} {...containerHandlers}>
       {/*
         The board is a GRID of equal lanes, not a horizontally scrolling row:
         `repeat(N, minmax(0,1fr))` at gap 10, N the lane count. A lane is an option of
@@ -1158,7 +1177,7 @@ function CollectionBoard({
               className={[
                 'flex min-h-[380px] flex-col gap-[7px] rounded-[16px] p-[7px]',
                 'transition-colors duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none',
-                isOver ? 'bg-mn-text/[0.08]' : 'bg-mn-text/[0.04]',
+                isOver ? DRAG_OVER_CLASS : 'bg-mn-text/[0.04]',
               ].join(' ')}
             >
               <header
@@ -1186,15 +1205,7 @@ function CollectionBoard({
                     {...keyboardProps(row.id)}
                     // The card is the drag target: a press anywhere on it starts a
                     // candidate drag, and below the hook's threshold it stays a click.
-                    onPointerDown={
-                      editable
-                        ? (e) => {
-                            if (!(e.target instanceof Element) || !e.target.closest('button, a')) {
-                              onCardPointerDown(e, row.id)
-                            }
-                          }
-                        : undefined
-                    }
+                    onPointerDown={editable ? (e) => onCardPointerDown(e, row.id) : undefined}
                     // The shadow matches no token (`--mn-shadow-card`'s second layer is
                     // 0 8px 24px), so it is written out.
                     className={[
@@ -1205,7 +1216,7 @@ function CollectionBoard({
                       // `mn-text` flips to paper in dark, so the outline does too.
                       ROW_FOCUS_VISIBLE_BASE,
                       isSelected ? 'outline-solid' : 'outline-none focus-visible:outline-solid',
-                      isDragging ? 'opacity-30' : '',
+                      isDragging ? DRAG_LIFT_CLASS : '',
                       editable ? 'cursor-grab' : 'cursor-pointer',
                     ].join(' ')}
                   >
@@ -1606,7 +1617,7 @@ function CollectionGantt({
 
   return (
     <div {...containerHandlers}>
-      <div className={drag?.active ? 'cursor-grabbing select-none' : undefined}>
+      <div className={drag?.active ? `cursor-grabbing ${DRAG_ACTIVE_CLASS}` : undefined}>
         {noBars ? (
           <PondBlockEmpty box="void" line={GANTT_EMPTY_LINE} />
         ) : (

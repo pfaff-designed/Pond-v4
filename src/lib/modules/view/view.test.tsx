@@ -339,6 +339,68 @@ describe('CollectionBoard — the card-title input commits once, not per keystro
   })
 })
 
+describe('CollectionBoard — a press on the card-title input still starts a drag (KAN-385)', () => {
+  const dragBoardSchema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    {
+      id: 'p-status',
+      name: 'Status',
+      type: 'select',
+      options: [
+        { id: 'opt-todo', label: 'Todo' },
+        { id: 'opt-doing', label: 'Doing' },
+      ],
+    },
+  ]
+
+  beforeEach(() => {
+    initialSchema = dragBoardSchema
+    initialRows = [{ id: 'r1', title: 'kan385', values: { 'p-status': 'opt-todo' } }]
+  })
+
+  afterEach(() => jest.restoreAllMocks())
+
+  it('a pointerdown on the card-title input does not preventDefault — the field keeps native focus/caret', () => {
+    renderView(board)
+    const input = screen.getByRole('textbox', { name: 'Card title' })
+
+    expect(fireEvent.pointerDown(input, { clientX: 10, clientY: 10 })).toBe(true)
+  })
+
+  it('dragging from the card-title input onto another lane moves the card there', () => {
+    const { container } = renderView(board)
+    const input = screen.getByRole('textbox', { name: 'Card title' })
+
+    // Give the "Doing" lane a real rect so the drop lands there; every other
+    // element (including the "Todo" lane under the press) stays zeroed.
+    const doingLane = container.querySelector('[data-lane="Doing"]') as HTMLElement
+    jest.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: HTMLElement
+    ) {
+      const [left, top, right, bottom] = this === doingLane ? [200, 0, 300, 100] : [0, 0, 0, 0]
+      return {
+        left,
+        top,
+        right,
+        bottom,
+        width: right - left,
+        height: bottom - top,
+        x: left,
+        y: top,
+        toJSON() {
+          return this
+        },
+      } as DOMRect
+    })
+
+    fireEvent.pointerDown(input, { clientX: 10, clientY: 10 })
+    fireEvent.pointerMove(input, { clientX: 250, clientY: 50 })
+    fireEvent.pointerUp(input)
+
+    expect(setValue).toHaveBeenCalledWith('r1', 'p-status', 'opt-doing')
+  })
+})
+
 describe('CollectionGantt — the "add a task" foot row (KAN-352)', () => {
   const ganttSchema: PropertySchema = [
     { id: 'p-title', name: 'Title', type: 'text' },

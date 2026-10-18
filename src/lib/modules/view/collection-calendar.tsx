@@ -21,9 +21,11 @@ import type { PropertySchema, PropertyValue } from '@/lib/properties/schema'
 import { AddRowInput } from './add-row-input'
 import {
   buildMonthGrid,
+  dateForDrop,
   dayItems,
   goToday,
   monthAbbr,
+  rowDateIso,
   stepMonth,
   weekdayIndex,
   type MonthDayCell,
@@ -33,6 +35,12 @@ import { localDateIso } from './due'
 import { CALENDAR_EMPTY_LINE } from './kinds'
 import { RecordPeek } from './record-peek'
 import { useDoneToggle } from './use-done-toggle'
+import {
+  DRAG_LIFT_CLASS,
+  DRAG_OVER_CLASS,
+  usePointerBucketDrag,
+  type PointerBucketDrag,
+} from './use-pointer-bucket-drag'
 import { ROW_FOCUS_VISIBLE, useRecordSelection } from './use-record-selection'
 
 /** The shape `useRecordSelection` hands back for a row-typed-id container (the
@@ -96,8 +104,12 @@ function handleCalendarRowClick(
   selectedId: string | undefined,
   selectWithPointer: RowSelection['selectWithPointer'],
   onOpenRow: ((rowId: string) => void) | undefined,
+  isClickSuppressed: PointerBucketDrag['isClickSuppressed'],
   e: React.MouseEvent<HTMLDivElement>
 ) {
+  // A drag's trailing click lands here too (its row is the click's target) —
+  // it must never open or select, same as `selectWithPointer`'s own guard below.
+  if (isClickSuppressed()) return
   // A row is its own target — it must never fall through to the cell's
   // "open the add input" click underneath it, so it stops that click too.
   e.stopPropagation()
@@ -112,6 +124,10 @@ function MonthDayStack({
   items,
   moreCount,
   selectedId,
+  draggingRowId,
+  editable,
+  onCardPointerDown,
+  isClickSuppressed,
   rowProps,
   keyboardProps,
   selectWithPointer,
@@ -121,6 +137,10 @@ function MonthDayStack({
   items: MonthDayCell['items']
   moreCount: number
   selectedId?: string
+  draggingRowId?: string
+  editable?: boolean
+  onCardPointerDown: PointerBucketDrag['onCardPointerDown']
+  isClickSuppressed: PointerBucketDrag['isClickSuppressed']
   rowProps: RowSelection['rowProps']
   keyboardProps: RowSelection['keyboardProps']
   selectWithPointer: RowSelection['selectWithPointer']
@@ -133,11 +153,19 @@ function MonthDayStack({
       {items.map((row) => (
         <div
           key={row.id}
-          className={cn(DAY_ITEM_ROW, ROW_FOCUS_VISIBLE, row.id === selectedId && DAY_ITEM_SELECTED_RING)}
+          className={cn(
+            DAY_ITEM_ROW,
+            ROW_FOCUS_VISIBLE,
+            row.id === selectedId && DAY_ITEM_SELECTED_RING,
+            row.id === draggingRowId && DRAG_LIFT_CLASS
+          )}
           {...rowProps(row.id)}
           {...keyboardProps(row.id)}
           onKeyDown={(e) => selectOrOpenOnKey(row.id, e, onOpenRow)}
-          onClick={(e) => handleCalendarRowClick(row.id, selectedId, selectWithPointer, onOpenRow, e)}
+          onClick={(e) =>
+            handleCalendarRowClick(row.id, selectedId, selectWithPointer, onOpenRow, isClickSuppressed, e)
+          }
+          onPointerDown={editable ? (e) => onCardPointerDown(e, row.id) : undefined}
         >
           <span className={DAY_ITEM_DOT} />
           <span className={DAY_ITEM_TITLE}>{row.title}</span>
@@ -157,6 +185,12 @@ function MonthDayCellView({
   onCommitAdd,
   onCancelAdd,
   selectedId,
+  draggingRowId,
+  isOver,
+  editable,
+  registerBucket,
+  onCardPointerDown,
+  isClickSuppressed,
   rowProps,
   keyboardProps,
   selectWithPointer,
@@ -171,6 +205,12 @@ function MonthDayCellView({
   onCommitAdd: (title: string) => void
   onCancelAdd: () => void
   selectedId?: string
+  draggingRowId?: string
+  isOver: boolean
+  editable?: boolean
+  registerBucket: PointerBucketDrag['registerBucket']
+  onCardPointerDown: PointerBucketDrag['onCardPointerDown']
+  isClickSuppressed: PointerBucketDrag['isClickSuppressed']
   rowProps: RowSelection['rowProps']
   keyboardProps: RowSelection['keyboardProps']
   selectWithPointer: RowSelection['selectWithPointer']
@@ -178,15 +218,22 @@ function MonthDayCellView({
   onOpenRow?: (rowId: string) => void
 }) {
   const openable = canAdd && !isAdding
+  // A drag released over blank cell space still fires a trailing click here —
+  // it must never open the add input (mirrors `handleCalendarRowClick`, above).
+  const handleCellClick = () => {
+    if (isClickSuppressed()) return
+    onOpenAdd()
+  }
   return (
     <div
       data-part="calendar-day-cell"
       data-iso={cell.iso}
-      onClick={openable ? onOpenAdd : undefined}
+      ref={registerBucket(cell.iso)}
+      onClick={openable ? handleCellClick : undefined}
       className={cn(
-        'relative min-h-[108px] p-1.5',
+        'relative min-h-[108px] p-1.5 transition-colors duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none',
         columnIndex !== 0 && 'border-l border-mn-text/[0.09] dark:border-mn-text/[0.14]',
-        columnIndex >= 5 && 'bg-mn-text/[0.025]'
+        isOver ? DRAG_OVER_CLASS : columnIndex >= 5 ? 'bg-mn-text/[0.025]' : ''
       )}
     >
       <MonthDayNumber day={cell.dayOfMonth} isToday={cell.isToday} inMonth={cell.inMonth} />
@@ -194,6 +241,10 @@ function MonthDayCellView({
         items={cell.items}
         moreCount={cell.moreCount}
         selectedId={selectedId}
+        draggingRowId={draggingRowId}
+        editable={editable}
+        onCardPointerDown={onCardPointerDown}
+        isClickSuppressed={isClickSuppressed}
         rowProps={rowProps}
         keyboardProps={keyboardProps}
         selectWithPointer={selectWithPointer}
@@ -292,6 +343,7 @@ function FocusDayList({
   label,
   items,
   selectedId,
+  isClickSuppressed,
   rowProps,
   keyboardProps,
   selectWithPointer,
@@ -303,6 +355,7 @@ function FocusDayList({
   label: string
   items: CollectionRow[]
   selectedId?: string
+  isClickSuppressed: PointerBucketDrag['isClickSuppressed']
   rowProps: RowSelection['rowProps']
   keyboardProps: RowSelection['keyboardProps']
   selectWithPointer: RowSelection['selectWithPointer']
@@ -335,7 +388,9 @@ function FocusDayList({
               {...rowProps(row.id)}
               {...keyboardProps(row.id)}
               onKeyDown={(e) => selectOrOpenOnKey(row.id, e, onOpenRow)}
-              onClick={(e) => handleCalendarRowClick(row.id, selectedId, selectWithPointer, onOpenRow, e)}
+              onClick={(e) =>
+                handleCalendarRowClick(row.id, selectedId, selectWithPointer, onOpenRow, isClickSuppressed, e)
+              }
             >
               <span className={DAY_ITEM_DOT_LARGE} />
               <span className="min-w-0 flex-1 truncate text-[15px] leading-[1.3] text-mn-text">
@@ -376,6 +431,7 @@ export function CollectionCalendar({
   onRenameRow,
   onOpenRow,
   onAddDateField,
+  onMoveDate,
 }: {
   /** The view block's id — what the page canvas keys its one peek and one orange
    *  pill by. Optional: every existing direct render of this component predates
@@ -390,6 +446,7 @@ export function CollectionCalendar({
   onRenameRow?: (rowId: string, title: string) => void
   onOpenRow?: (rowId: string) => void
   onAddDateField?: () => void
+  onMoveDate?: (rowId: string, key: string, value: PropertyValue) => void
 }) {
   const dateDef = useMemo(() => pickDateDef(schema, groupBy), [schema, groupBy])
   // `today` is read once per mount, as the board reads its own `now` (view.tsx);
@@ -402,8 +459,29 @@ export function CollectionCalendar({
     () => buildMonthGrid(focusIso, todayIso, rows, dateDef),
     [dateDef, focusIso, todayIso, rows]
   )
+
+  // Dropping on a day cell writes that day to the date field; a drop back onto the
+  // row's own current day is a no-op (no write, no log, no undo step).
+  const {
+    drag,
+    overKey,
+    registerBucket,
+    onCardPointerDown,
+    isClickSuppressed,
+    containerHandlers,
+    containerClassName,
+  } = usePointerBucketDrag({
+      editable: !!editable,
+      onDrop: (rowId, key) => {
+        if (!dateDef || !onMoveDate) return
+        const row = rows.find((r) => r.id === rowId)
+        if (!row || rowDateIso(row, dateDef) === key) return
+        onMoveDate(rowId, dateDef.id, dateForDrop(row.values[dateDef.id], key))
+      },
+    })
+
   const { selectedRow, rowProps, keyboardProps, selectWithPointer, selectOrOpenOnKey } =
-    useRecordSelection(rows, viewKey ?? 'calendar')
+    useRecordSelection(rows, viewKey ?? 'calendar', { isClickSuppressed })
   const done = useDoneToggle({ schema, editable, onEdit })
 
   const canAdd = !!dateDef && !!editable && !!onAddRow
@@ -484,7 +562,7 @@ export function CollectionCalendar({
           <span className="px-0.5 text-[13px] text-mn-text-secondary">{CALENDAR_EMPTY_LINE}</span>
         )
       )}
-      <div className="hidden md:flex md:flex-col">
+      <div className={cn('hidden md:flex md:flex-col', containerClassName)} {...containerHandlers}>
         <div className="grid grid-cols-7">
           {DOW_LABELS.map((l) => (
             <span key={l} className={DOW_HEAD}>
@@ -505,6 +583,12 @@ export function CollectionCalendar({
                 onCommitAdd={(title) => void handleAddDay(cell.iso, title)}
                 onCancelAdd={() => setAddingIso(null)}
                 selectedId={selectedRow?.id}
+                draggingRowId={drag?.active ? drag.rowId : undefined}
+                isOver={!!editable && !!drag?.active && overKey === cell.iso}
+                editable={editable}
+                registerBucket={registerBucket}
+                onCardPointerDown={onCardPointerDown}
+                isClickSuppressed={isClickSuppressed}
                 rowProps={rowProps}
                 keyboardProps={keyboardProps}
                 selectWithPointer={selectWithPointer}
@@ -538,6 +622,7 @@ export function CollectionCalendar({
         label={focusLabel}
         items={focusItems}
         selectedId={selectedRow?.id}
+        isClickSuppressed={isClickSuppressed}
         rowProps={rowProps}
         keyboardProps={keyboardProps}
         selectWithPointer={selectWithPointer}
