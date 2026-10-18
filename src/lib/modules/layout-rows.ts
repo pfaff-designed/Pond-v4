@@ -299,19 +299,29 @@ function pointInRect(rect: Rect, point: Point): boolean {
  * quarters at the shared 25%/75%-height edges), then the right quarter before the left
  * one, so a point exactly on the rect's midline — equidistant from both — resolves to
  * `right`, matching the "nearer to, ties go right" rule.
+ *
+ * `onDragOver` fires for points outside the dragstart snapshot rect too (a block's
+ * handle sits outside its own root; a beside preview can push a row below its
+ * snapshotted position) — a point outside `rect` is clamped onto it first, so it
+ * classifies as whichever zone its nearest in-rect point would.
  */
 export function classifyDropZone(rect: Rect, point: Point): DropZone {
+  const clamped: Point = {
+    x: Math.min(Math.max(point.x, rect.left), rect.right),
+    y: Math.min(Math.max(point.y, rect.top), rect.bottom),
+  }
+
   const [leftOuter, leftQuarter] = dropZoneRects(rect, 'left')
   const [rightOuter, rightQuarter] = dropZoneRects(rect, 'right')
   const [above] = dropZoneRects(rect, 'above')
   const [below] = dropZoneRects(rect, 'below')
 
-  if (pointInRect(leftOuter, point)) return 'left'
-  if (pointInRect(rightOuter, point)) return 'right'
-  if (pointInRect(above, point)) return 'above'
-  if (pointInRect(below, point)) return 'below'
-  if (pointInRect(rightQuarter, point)) return 'right'
-  if (pointInRect(leftQuarter, point)) return 'left'
+  if (pointInRect(leftOuter, clamped)) return 'left'
+  if (pointInRect(rightOuter, clamped)) return 'right'
+  if (pointInRect(above, clamped)) return 'above'
+  if (pointInRect(below, clamped)) return 'below'
+  if (pointInRect(rightQuarter, clamped)) return 'right'
+  if (pointInRect(leftQuarter, clamped)) return 'left'
 
   // Unreachable: the outer strips, above/below and the two quarters together already
   // cover every point in the rect, so one of the checks above always returns first.

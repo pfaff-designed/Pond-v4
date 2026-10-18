@@ -13,7 +13,7 @@ import {
   withoutRowStart,
 } from '@/lib/modules/layout-rows'
 import type { BlockWidth } from '@/lib/modules/content'
-import type { Rect } from '@/lib/modules/layout-rows'
+import type { DropZone, Point, Rect } from '@/lib/modules/layout-rows'
 
 function blocks(...widths: (BlockWidth | undefined)[]): { id: string; width?: BlockWidth }[] {
   return widths.map((width, i) => ({ id: `b${i}`, width }))
@@ -410,6 +410,21 @@ describe('classifyDropZone', () => {
     const offsetRect: Rect = { left: 50, right: 150, top: 20, bottom: 220 }
     expect(classifyDropZone(offsetRect, { x: 62.5, y: 120 })).toBe('left')
     expect(classifyDropZone(offsetRect, { x: 100, y: 45 })).toBe('above')
+  })
+
+  describe('a point outside the rect (KAN-440: onDragOver fires for these too)', () => {
+    it.each<[string, Point, DropZone]>([
+      ['left of the rect at mid-height', { x: -20, y: 100 }, 'left'],
+      ['below the rect in the middle width', { x: 50, y: 260 }, 'below'],
+      ['above the rect in the middle width', { x: 50, y: -60 }, 'above'],
+      ['right of the rect at mid-height', { x: 150, y: 100 }, 'right'],
+      ['outside the top-left corner', { x: -20, y: -60 }, 'left'],
+      ['outside the top-right corner', { x: 150, y: -60 }, 'right'],
+      ['outside the bottom-left corner', { x: -20, y: 260 }, 'left'],
+      ['outside the bottom-right corner', { x: 150, y: 260 }, 'right'],
+    ])('%s classifies as %s', (_label, point, expected) => {
+      expect(classifyDropZone(rect, point)).toBe(expected)
+    })
   })
 })
 
