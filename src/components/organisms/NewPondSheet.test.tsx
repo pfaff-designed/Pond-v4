@@ -154,3 +154,57 @@ describe('NewPondSheet — no sources step, no skip (KAN-488)', () => {
     expect(screen.getByRole('button', { name: 'make pond' })).toBeInTheDocument()
   })
 })
+
+describe('NewPondSheet — the glyph row is a live radiogroup (KAN-501)', () => {
+  it('the first glyph starts checked', () => {
+    render(<NewPondSheet onCreate={jest.fn()} onCancel={jest.fn()} />)
+
+    const radios = screen.getAllByRole('radio')
+    expect(radios).toHaveLength(6)
+    expect(radios[0]).toHaveAttribute('aria-checked', 'true')
+    for (const radio of radios.slice(1)) {
+      expect(radio).toHaveAttribute('aria-checked', 'false')
+    }
+  })
+
+  it('clicking another glyph checks it and unchecks the first', async () => {
+    const user = userEvent.setup()
+    render(<NewPondSheet onCreate={jest.fn()} onCancel={jest.fn()} />)
+
+    const radios = screen.getAllByRole('radio')
+    await user.click(radios[2])
+
+    expect(radios[0]).toHaveAttribute('aria-checked', 'false')
+    expect(radios[2]).toHaveAttribute('aria-checked', 'true')
+  })
+
+  it('an arrow key moves the checked glyph and focus', async () => {
+    const user = userEvent.setup()
+    render(<NewPondSheet onCreate={jest.fn()} onCancel={jest.fn()} />)
+
+    const radios = screen.getAllByRole('radio')
+    await user.click(radios[0])
+    await user.keyboard('{ArrowRight}')
+
+    expect(radios[0]).toHaveAttribute('aria-checked', 'false')
+    expect(radios[1]).toHaveAttribute('aria-checked', 'true')
+    expect(radios[1]).toHaveFocus()
+
+    await user.keyboard('{ArrowLeft}')
+    expect(radios[0]).toHaveAttribute('aria-checked', 'true')
+    expect(radios[0]).toHaveFocus()
+  })
+
+  it('back then continue keeps the picked glyph checked', async () => {
+    const user = userEvent.setup()
+    render(<NewPondSheet onCreate={jest.fn()} onCancel={jest.fn()} />)
+
+    await user.type(screen.getByPlaceholderText('Name your pond'), 'Studio')
+    await user.click(screen.getAllByRole('radio')[3])
+    await user.click(screen.getByRole('button', { name: 'continue' }))
+    await user.click(screen.getByRole('button', { name: 'back' }))
+
+    const radios = screen.getAllByRole('radio')
+    expect(radios[3]).toHaveAttribute('aria-checked', 'true')
+  })
+})

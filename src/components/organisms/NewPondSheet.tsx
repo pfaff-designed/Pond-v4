@@ -40,7 +40,7 @@
  * with one root, per #320).
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { Icon } from '@/components/atoms/Icon'
 import { PondControl } from '@/components/atoms/PondControl'
 
@@ -64,6 +64,46 @@ const SHEET_GLASS =
 
 const LABEL =
   'text-[10.5px] leading-[normal] font-medium tracking-[0.1em] uppercase text-mn-text-secondary'
+
+const GLYPH_CELL = 'flex h-[34px] w-[34px] items-center justify-center rounded-[10px] outline-none'
+const GLYPH_SELECTED = 'bg-mn-text/[0.05] shadow-[inset_0_0_0_2px_var(--mn-text)]'
+const GLYPH_UNSELECTED = 'bg-mn-text/[0.04]'
+
+/** `s6m2`'s glyph row: a real radiogroup, roving tabindex, clamped (no wrap) ←/→. */
+function GlyphRow({ value, onChange }: { value: string; onChange: (glyph: string) => void }) {
+  const cellRefs = useRef<(HTMLButtonElement | null)[]>([])
+
+  const handleKeyDown = (index: number) => (e: ReactKeyboardEvent<HTMLButtonElement>) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+    const target = index + (e.key === 'ArrowRight' ? 1 : -1)
+    if (target < 0 || target >= GLYPHS.length) return
+    e.preventDefault()
+    onChange(GLYPHS[target])
+    cellRefs.current[target]?.focus()
+  }
+
+  return (
+    <div role="radiogroup" aria-label="glyph" className="flex flex-wrap gap-[6px]">
+      {GLYPHS.map((g, i) => (
+        <button
+          key={g}
+          type="button"
+          ref={(el) => {
+            cellRefs.current[i] = el
+          }}
+          role="radio"
+          aria-checked={g === value}
+          tabIndex={g === value ? 0 : -1}
+          onClick={() => onChange(g)}
+          onKeyDown={handleKeyDown(i)}
+          className={`${GLYPH_CELL} ${g === value ? GLYPH_SELECTED : GLYPH_UNSELECTED}`}
+        >
+          <Icon name={g} size={15} />
+        </button>
+      ))}
+    </div>
+  )
+}
 
 /** A pill: the board's one shape for a theme, an area and a selected tick. */
 function Pill({ children, on, muted }: { children: string; on?: boolean; muted?: boolean }) {
@@ -100,6 +140,8 @@ export function NewPondSheet({
 }: NewPondSheetProps) {
   const [step, setStep] = useState(1)
   const [name, setName] = useState(defaultName)
+  // Step-1-level, not step-scoped: a step 2 → step 1 round trip must keep the pick.
+  const [glyph, setGlyph] = useState<string>(GLYPHS[0])
 
   const trimmed = name.trim()
   const blank = trimmed === ''
@@ -201,20 +243,7 @@ export function NewPondSheet({
 
             <div className="flex flex-col gap-[8px]">
               <span className={LABEL}>glyph</span>
-              <div className="pointer-events-none flex flex-wrap gap-[6px] opacity-40">
-                {GLYPHS.map((g, i) => (
-                  <span
-                    key={g}
-                    className={`flex h-[34px] w-[34px] items-center justify-center rounded-[10px] ${
-                      i === 0
-                        ? 'bg-mn-text/[0.05] shadow-[inset_0_0_0_2px_var(--mn-text)]'
-                        : 'bg-mn-text/[0.04]'
-                    }`}
-                  >
-                    <Icon name={g} size={15} />
-                  </span>
-                ))}
-              </div>
+              <GlyphRow value={glyph} onChange={setGlyph} />
             </div>
 
             {/* Eight pills because the board draws eight; only paper and ink are
