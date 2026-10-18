@@ -123,6 +123,7 @@ export function NewPondSheet({
     // that listener (which checks `e.defaultPrevented`) from firing at all.
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        if (e.isComposing) return
         e.preventDefault()
         e.stopPropagation()
         if (step > 1) {

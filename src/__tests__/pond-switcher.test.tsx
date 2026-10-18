@@ -304,6 +304,21 @@ describe('the pond switcher', () => {
     expect(createPond).not.toHaveBeenCalled()
   })
 
+  it('Escape mid-IME-composition only dismisses the composition, not the sheet', async () => {
+    const user = userEvent.setup()
+    renderSwitcher()
+    await user.click(await screen.findByRole('button', { name: /life/ }))
+    await user.click(screen.getByRole('menuitem', { name: /new pond/ }))
+
+    const field = screen.getByPlaceholderText('Name your pond')
+    await user.type(field, 'Studio')
+    fireEvent.keyDown(field, { key: 'Escape', isComposing: true })
+
+    expect(screen.getByRole('dialog', { name: 'New pond' })).toBeInTheDocument()
+    expect(field).toHaveValue('Studio')
+    expect(createPond).not.toHaveBeenCalled()
+  })
+
   it('Esc on step 1 cancels and creates nothing', async () => {
     const user = userEvent.setup()
     renderSwitcher()
