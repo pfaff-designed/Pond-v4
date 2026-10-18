@@ -86,6 +86,40 @@ describe('NewPondSheet — back and Esc (KAN-488)', () => {
   })
 })
 
+describe('NewPondSheet — Enter in the name field (KAN-488)', () => {
+  it('Enter with a blank name is a no-op', async () => {
+    const user = userEvent.setup()
+    render(<NewPondSheet onCreate={jest.fn()} onCancel={jest.fn()} />)
+
+    await user.click(screen.getByPlaceholderText('Name your pond'))
+    await user.keyboard('{Enter}')
+
+    expect(screen.getByText('1 of 2')).toBeInTheDocument()
+  })
+
+  it('Enter with a name advances a step', async () => {
+    const user = userEvent.setup()
+    render(<NewPondSheet onCreate={jest.fn()} onCancel={jest.fn()} />)
+
+    await user.type(screen.getByPlaceholderText('Name your pond'), 'Studio')
+    await user.keyboard('{Enter}')
+
+    expect(screen.getByText('2 of 2')).toBeInTheDocument()
+  })
+
+  it('"make pond" calls onCreate with the trimmed name', async () => {
+    const user = userEvent.setup()
+    const onCreate = jest.fn()
+    render(<NewPondSheet onCreate={onCreate} onCancel={jest.fn()} />)
+
+    await user.type(screen.getByPlaceholderText('Name your pond'), '  Studio  ')
+    await user.click(screen.getByRole('button', { name: 'continue' }))
+    await user.click(screen.getByRole('button', { name: 'make pond' }))
+
+    expect(onCreate).toHaveBeenCalledWith('Studio')
+  })
+})
+
 describe('NewPondSheet — no sources step, no skip (KAN-488)', () => {
   it('has no skip control and never shows more than "2" at either step', async () => {
     const user = userEvent.setup()

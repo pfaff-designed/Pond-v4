@@ -151,6 +151,11 @@ export function NewPondSheet({
                 onValueChange={setName}
                 disabled={pending}
                 autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && name.trim() !== '') {
+                    setStep((s) => s + 1)
+                  }
+                }}
               />
             </div>
 
@@ -230,7 +235,7 @@ export function NewPondSheet({
             variant="primary"
             label={last ? 'make pond' : 'continue'}
             disabled={pending || name.trim() === ''}
-            onClick={() => (last ? onCreate(name) : setStep((s) => s + 1))}
+            onClick={() => (last ? onCreate(name.trim()) : setStep((s) => s + 1))}
           />
         </div>
       </div>
