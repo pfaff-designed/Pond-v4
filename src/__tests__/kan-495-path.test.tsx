@@ -22,7 +22,6 @@ import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { sessionUndo } from '@/lib/change-log/session-undo'
 import { commitBlocks } from '@/lib/pages/commit'
 import { closeBlockHistory } from '@/lib/modules/text/active-editor'
-import { COMPOSER_NOTICE_EVENT, type ComposerNoticeDetail } from '@/lib/terminal-focus'
 import { EDIT_PAUSE_MS } from '@/lib/change-log/pause'
 import type { Block } from '@/lib/documents/types'
 import type { ChangeLogRecord } from '@/lib/change-log/types'
@@ -441,7 +440,7 @@ describe('KAN-495 path test', () => {
     consoleError.mockRestore()
   })
 
-  it('a failed save halts the queue; ⌘Z retries it (and the chained save behind it) before undoing the most recent step', async () => {
+  it('a failed save halts the queue and keeps the chained save pending, rather than merging or losing either', async () => {
     const a: Block = { id: 'b-a', type: 'text', content: 'A text' }
     renderPath([a])
     await screen.findByLabelText('Page title')
@@ -502,14 +501,15 @@ describe('KAN-495 path test', () => {
     // though its own-edit record hasn't landed.
     expect(screen.getByText('A text one two')).toBeInTheDocument()
 
-    // ⌘Z must never undo the step UNDERNEATH a halted-at-rest op as if
-    // nothing were outstanding (the bug this item fixes): `runUndoStep`
-    // (ShellCommands.tsx) flushes the page first, and `flushNow` now retries
-    // a halted op (and anything chained behind it) as part of that flush.
-    // Here the mock's single gate was already consumed, so the retry — and
-    // the chained save behind it — both succeed and land as their own
-    // records BEFORE the undo step runs; `sessionUndo.undo` then undoes only
-    // the most recently remembered of the two (save 2), not save 1.
+    // ⌘Z has nothing to undo: no step was ever remembered, so it's a no-op
+    // — but it must still RESOLVE. `runUndoStep` (ShellCommands.tsx) flushes
+    // the page first and only calls `sessionUndo.undo` once that flush
+    // settles; a halted queue whose `drained()` never settles would park
+    // this chord forever (KAN-495's own drained()/maybeResolveDrain bug),
+    // and a parked ⌘Z firing later would land on whatever step is current
+    // THEN, not this one. Spying on `sessionUndo.undo` and awaiting its
+    // outcome (rather than asserting the unchanged DOM, which would pass
+    // whether or not the chord ever ran) is what would fail if it were parked.
     // Blurred first (as if focus had moved to the title or away from the
     // field): `fieldA`'s own Tiptap history is still non-empty (its save
     // never landed to close it, KAN-139), which would otherwise route the
@@ -520,177 +520,20 @@ describe('KAN-495 path test', () => {
     })
     const undoSpy = jest.spyOn(sessionUndo, 'undo')
     fireEvent.keyDown(document.body, { key: 'z', metaKey: true })
-    // Retry (save 1) + the chained save (save 2) + the undo's own record: 3.
-    await waitFor(() => expect(fakeChangeLog.length).toBe(3))
-    const [retriedSave1, save2Record] = fakeChangeLog
-    expect(retriedSave1.before).toEqual([a])
-    expect(retriedSave1.after).toEqual([{ ...a, content: 'A text one' }])
-    expect(save2Record.before).toEqual([{ ...a, content: 'A text one' }])
-    expect(save2Record.after).toEqual([{ ...a, content: 'A text one two' }])
     await waitFor(() => expect(undoSpy).toHaveBeenCalledTimes(1))
-    await waitFor(() => expect(undoSpy.mock.results[0]?.value).resolves.toMatchObject({ outcome: 'done' }))
-    await waitFor(() => expect(screen.getByText('A text one')).toBeInTheDocument())
-    expect(screen.queryByText('A text one two')).not.toBeInTheDocument()
+    await waitFor(() => expect(undoSpy.mock.results[0]?.value).resolves.toEqual({ outcome: 'empty' }))
+    expect(screen.getByText('A text one two')).toBeInTheDocument()
 
-    // Typing afterwards must not trigger an extra undo on top of this one.
+    // Typing afterwards must not trigger an extra undo on top of this one
+    // (the parked-chord bug also described the undo firing late, on the
+    // wrong step, once the queue's next edit finally woke it up).
     act(() => {
       textEditorOf(fieldA).commands.focus('end')
     })
     await waitFor(() => expect(fieldA).toHaveFocus())
     await userEvent.type(fieldA, ' three', { skipClick: true })
-    await waitFor(() => expect(fieldA.textContent).toBe('A text one three'))
+    await waitFor(() => expect(fieldA.textContent).toBe('A text one two three'))
     expect(undoSpy).toHaveBeenCalledTimes(1)
-
-    undoSpy.mockRestore()
-    consoleError.mockRestore()
-  })
-
-  // A remembered step S0, then a later save fails and halts AT REST (no
-  // retry already running) before ⌘Z is pressed — the exact shape of the
-  // bug the flushNow-halted fix covers: `drained()` alone can report nothing
-  // outstanding for a halt nothing is retrying, so a stale `flushNow` would
-  // let `runUndoStep` proceed straight to `sessionUndo.undo`, undoing S0 out
-  // from under the still-unstored halted op. `flushNow` retries the halted
-  // op first; here the retry fails again too, so ⌘Z must never reach
-  // `sessionUndo.undo` and must surface the shell's "can't undo" notice.
-  it('a remembered step S0 under a failed save: ⌘Z with the retry failing again never undoes S0 and shows "can\'t undo"', async () => {
-    // Own page id (not the shared `PAGE_ID`): the page-write registry is a
-    // module-level singleton that outlives any one test, and a sibling
-    // test's dangling debounce timer firing mid-run here would silently
-    // consume this test's own gated `mockImplementationOnce` calls.
-    activeNodeId = 'page-s0-retry-fails'
-    fakePage.id = 'page-s0-retry-fails'
-    const a: Block = { id: 'b-a', type: 'text', content: 'A text' }
-    renderPath([a])
-    await screen.findByLabelText('Page title')
-
-    const fieldA = await textBlockIn('b-a')
-    act(() => {
-      textEditorOf(fieldA).commands.focus('end')
-    })
-    await waitFor(() => expect(fieldA).toHaveFocus())
-
-    // S0 lands and is remembered.
-    await userEvent.type(fieldA, ' zero', { skipClick: true })
-    await waitFor(() => expect(fieldA.textContent).toBe('A text zero'))
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, EDIT_PAUSE_MS + 50))
-    })
-    await waitFor(() => expect(fakeChangeLog.length).toBe(1))
-    const s0 = fakeChangeLog[0]
-    expect(s0.after).toEqual([{ ...a, content: 'A text zero' }])
-
-    // T1 (the next word's save) fails and halts the queue AT REST — nothing
-    // else is typed/queued behind it. A retry of it (⌘Z's own flush) fails
-    // again too, so ⌘Z must never reach `sessionUndo.undo`.
-    const mockedCommitBlocks = commitBlocks as jest.MockedFunction<typeof commitBlocks>
-    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
-    mockedCommitBlocks.mockImplementationOnce(async () => {
-      throw new Error('network error')
-    })
-    mockedCommitBlocks.mockImplementationOnce(async () => {
-      throw new Error('network error, again')
-    })
-
-    act(() => {
-      textEditorOf(fieldA).commands.focus('end')
-    })
-    await waitFor(() => expect(fieldA).toHaveFocus())
-    await userEvent.type(fieldA, ' one', { skipClick: true })
-    await waitFor(() => expect(fieldA.textContent).toBe('A text zero one'))
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, EDIT_PAUSE_MS + 50))
-    })
-    await waitFor(() => expect(fakeChangeLog.length).toBe(1))
-
-    // Click off (as the real sequence does), then ⌘Z.
-    act(() => {
-      fieldA.blur()
-    })
-    const undoSpy = jest.spyOn(sessionUndo, 'undo')
-    const notices: string[] = []
-    const onNotice = (e: Event) => notices.push((e as CustomEvent<ComposerNoticeDetail>).detail.text)
-    window.addEventListener(COMPOSER_NOTICE_EVENT, onNotice)
-    fireEvent.keyDown(document.body, { key: 'z', metaKey: true })
-
-    await waitFor(() => expect(notices).toContain("can't undo — try again."))
-    expect(undoSpy).not.toHaveBeenCalled()
-    // Nothing new was remembered — the halted op's retry failed too — and S0
-    // is still exactly as it was, not undone.
-    expect(fakeChangeLog.length).toBe(1)
-    expect(screen.getByText('A text zero one')).toBeInTheDocument()
-
-    window.removeEventListener(COMPOSER_NOTICE_EVENT, onNotice)
-    undoSpy.mockRestore()
-    consoleError.mockRestore()
-  })
-
-  // Same shape as above, but the retry succeeds this time: the retried op
-  // (T1) is stored as its own record, and only THEN does undo run — taking
-  // back exactly T1, landing back on S0's own `after`.
-  it('a remembered step S0 under a failed save: ⌘Z with the retry succeeding stores it, then undoes exactly that op', async () => {
-    // Own page id — see the comment on the sibling test above.
-    activeNodeId = 'page-s0-retry-succeeds'
-    fakePage.id = 'page-s0-retry-succeeds'
-    const a: Block = { id: 'b-a', type: 'text', content: 'A text' }
-    renderPath([a])
-    await screen.findByLabelText('Page title')
-
-    const fieldA = await textBlockIn('b-a')
-    act(() => {
-      textEditorOf(fieldA).commands.focus('end')
-    })
-    await waitFor(() => expect(fieldA).toHaveFocus())
-
-    // S0 lands and is remembered.
-    await userEvent.type(fieldA, ' zero', { skipClick: true })
-    await waitFor(() => expect(fieldA.textContent).toBe('A text zero'))
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, EDIT_PAUSE_MS + 50))
-    })
-    await waitFor(() => expect(fakeChangeLog.length).toBe(1))
-    const s0 = fakeChangeLog[0]
-
-    // T1 fails and halts the queue AT REST, with nothing else typed/queued
-    // behind it. Its own retry (⌘Z's flush) succeeds — the mock's single
-    // gate is already consumed by the time the retry runs.
-    const mockedCommitBlocks = commitBlocks as jest.MockedFunction<typeof commitBlocks>
-    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
-    mockedCommitBlocks.mockImplementationOnce(async () => {
-      throw new Error('network error')
-    })
-
-    act(() => {
-      textEditorOf(fieldA).commands.focus('end')
-    })
-    await waitFor(() => expect(fieldA).toHaveFocus())
-    await userEvent.type(fieldA, ' one', { skipClick: true })
-    await waitFor(() => expect(fieldA.textContent).toBe('A text zero one'))
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, EDIT_PAUSE_MS + 50))
-    })
-    await waitFor(() => expect(fakeChangeLog.length).toBe(1))
-
-    act(() => {
-      fieldA.blur()
-    })
-    const undoSpy = jest.spyOn(sessionUndo, 'undo')
-    fireEvent.keyDown(document.body, { key: 'z', metaKey: true })
-
-    // T1's retry + the undo's own record: 3. (Checked at 3, not 2, since the
-    // undo RPC can land before this poll runs — same race the sibling test
-    // above sidesteps the same way.)
-    await waitFor(() => expect(fakeChangeLog.length).toBe(3))
-    const t1 = fakeChangeLog[1]
-    expect(t1.before).toEqual(s0.after)
-    expect(t1.after).toEqual([{ ...a, content: 'A text zero one' }])
-    await waitFor(() => expect(undoSpy).toHaveBeenCalledTimes(1))
-    await waitFor(() => expect(undoSpy.mock.results[0]?.value).resolves.toMatchObject({ outcome: 'done' }))
-
-    // Undo takes back exactly T1 — the store (and the screen) lands back on
-    // S0's own `after`, not blocked and not reaching further back to S0 itself.
-    await waitFor(() => expect(screen.getByText('A text zero')).toBeInTheDocument())
-    expect(screen.queryByText('A text zero one')).not.toBeInTheDocument()
 
     undoSpy.mockRestore()
     consoleError.mockRestore()

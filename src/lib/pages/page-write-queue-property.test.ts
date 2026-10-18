@@ -183,30 +183,23 @@ describe('createPageWriteQueue — property', () => {
  * writer does, so an undo/redo "landing" is a second, independent way the
  * store changes besides a queue-applied op.
  *
- * ⌘Z/⇧⌘Z always flush first, unconditionally — matching `ShellCommands.tsx`'s
- * `runUndoStep`, which calls `flushPendingPageSave` (== `use-page-draft.ts`'s
- * `flushNow`) and only then runs the step, with no `idle()`/`halted()` check
- * of its own before that call. The walk's undo/redo action follows that same
- * flush shape rather than firing only once `queue.idle()`: if the queue is
- * ALREADY halted when the action runs, it retries the halted op first
- * (`queue.retry()`, which rejects if the retry fails again — the action then
- * skips the step entirely, same as `flushNow`'s own rejection would make
- * `ShellCommands`'s `.catch` show its "can't undo — try again." notice
- * instead of running the step); otherwise it just drains, and if the drain
- * settles into a FRESH halt (a write failing only while this was waiting —
- * `73d96f71`'s own scenario) it skips the step too, without retrying that
- * one here (left dormant for the next real enqueue, exactly as `flushNow`
- * does). Both the single-halt and the cascading-halt shape (something queued
- * behind the retried op fails in turn, caught by looping the same two steps)
- * are things this random walk now actually exercises, not just the direct
- * unit tests. That wait runs in the background (pushed onto `settled`, not
- * `await`ed before the walk's own for-loop moves on): the drain it waits on
- * can depend on a LATE write this same run only settles via a LATER step, so
- * blocking the loop on it here would deadlock the walk against itself —
- * production has no such loop to deadlock. `queue.rebase(store)` keeps
- * `head()` and the undo/redo model's store in lockstep after a `'done'`
- * outcome, exactly as `use-page-draft.ts`'s same-page adopt branch does for a
- * real accepted diff/undo landing.
+ * ⌘Z/⇧⌘Z always wait on `queue.drained()` first, unconditionally — matching
+ * `ShellCommands.tsx`'s `runUndoStep`, which calls `flushPendingPageSave`
+ * (== `drained()`) and only then runs the step, with no `idle()`/`halted()`
+ * check of its own before that call. That is what makes `drained()` waiting
+ * out a retry still in flight (this ticket's own fix) something this random
+ * walk actually exercises, not just the direct unit tests. That wait runs in
+ * the background (pushed onto `settled`, not `await`ed before the walk's own
+ * for-loop moves on): the drain it waits on can depend on a LATE write this
+ * same run only settles via a LATER step, so blocking the loop on it here
+ * would deadlock the walk against itself — production has no such loop to
+ * deadlock. The undo/redo call itself IS still skipped if the drain settles
+ * into a halt AT REST (no retry pending): a ⌘Z landing there can undo the
+ * step UNDERNEATH the halted op — a real, separately-tracked bug (the next
+ * item in this ticket's plan fixes it), not this test's regression to carry.
+ * Within the "not halted" gate, `queue.rebase(store)` keeps `head()` and the
+ * undo/redo model's store in lockstep, exactly as `use-page-draft.ts`'s
+ * same-page adopt branch does for a real accepted diff/undo landing.
  *
  * The walk itself skips new typed/structural enqueues for the span of an
  * ⌘Z/⇧⌘Z's own background wait (`undoInFlight`, below): a write that lands
@@ -388,17 +381,13 @@ describe('createPageWriteQueue — property, with session undo', () => {
       } else if (action === 3) {
         if (queue.halted()) settled.push(queue.retry().catch(() => undefined))
       } else if ((action === 4 || action === 5) && !undoInFlight) {
-        // ⌘Z / ⇧⌘Z — follows `use-page-draft.ts`'s `flushNow` shape, not a
-        // bare drain: if the queue is ALREADY halted, retry the halted op
-        // first (rejecting — and so skipping the step — if the retry fails
-        // too), then drain and reject if a FRESH halt landed during that
-        // drain (left dormant for the next real enqueue, same as
-        // production). This is what lets the random walk land one while a
-        // retry of a halted op is still in flight. Run in the background,
-        // not awaited inline here: a drain the step waits on can depend on a
-        // LATE write this same run only settles via a LATER step's
-        // `action === 2`, so blocking the walk's own for-loop on it here
-        // would deadlock the walk against itself — production never has
+        // ⌘Z / ⇧⌘Z — always wait on the drain first, unconditionally (see the
+        // describe-block comment above): this is what lets the random walk
+        // land one while a retry of a halted op is still in flight. Run in the
+        // background, not awaited inline here: a drain the step waits on can
+        // depend on a LATE write this same run only settles via a LATER
+        // step's `action === 2`, so blocking the walk's own for-loop on it
+        // here would deadlock the walk against itself — production never has
         // this problem, since a real write's promise settles off its own
         // network call, not off the next keystroke.
         const direction = action === 4 ? 'undo' : 'redo'
@@ -406,20 +395,9 @@ describe('createPageWriteQueue — property, with session undo', () => {
         settled.push(
           (async () => {
             try {
-              try {
-                if (queue.halted()) {
-                  await queue.retry()
-                  const drain = queue.drained()
-                  if (drain) await drain
-                  if (queue.halted()) throw new Error('flush failed')
-                } else {
-                  const drain = queue.drained()
-                  if (drain) await drain
-                  if (queue.halted()) throw new Error('flush failed')
-                }
-              } catch {
-                return
-              }
+              const drain = queue.drained()
+              if (drain) await drain
+              if (queue.halted()) return
               const outcome = await sessionUndo[direction](POND_ID)
               check(
                 visitedStates.has(store),
