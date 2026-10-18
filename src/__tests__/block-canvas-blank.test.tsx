@@ -8,7 +8,7 @@
 import React, { useEffect, useState } from 'react'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { insertPageOptimistic } from '@/lib/pages/tree'
@@ -429,57 +429,6 @@ function renderBlankPageHarness(
 }
 
 /**
- * Unlike `BlankPageHarness` (whose `blocks` is a plain `useState` fed only by
- * `onChange`), this one mirrors `DocumentPanel`'s own wiring: `blocks` is read
- * off the `['page', pageId]` query cache. `persistBlocksAsOwnEdit` writes that
- * cache optimistically, synchronously, ahead of its own `await saveBlocks(...)`
- * — a plain-`useState` harness can't surface a block that mounts from that
- * optimistic write before the save resolves, which is exactly the ordering
- * the regression below depends on.
- */
-function BlankPageQueryHarness() {
-  const { data: page } = useQuery<PondPage | null>({
-    queryKey: ['page', 'page-1'],
-    queryFn: () => Promise.resolve(null),
-    staleTime: Infinity,
-  })
-  return (
-    <>
-      <input aria-label="title" data-pond-page-title />
-      <BlockCanvas
-        blocks={page?.blocks ?? []}
-        pageId="page-1"
-        pageTitle="sourdough, 78%"
-        onChange={() => {}}
-        onUndoRemove={() => {}}
-      />
-    </>
-  )
-}
-
-function renderBlankPageQueryHarness(
-  client: QueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-) {
-  client.setQueryData<PondPage>(['page', 'page-1'], {
-    id: 'page-1',
-    parentId: null,
-    type: 'page',
-    title: 'sourdough, 78%',
-    blocks: [{ id: 'b-empty', type: 'text', content: '' }],
-    props: {},
-    order: 0,
-  })
-  render(
-    <QueryClientProvider client={client}>
-      <DeletionUndoProvider>
-        <BlankPageQueryHarness />
-      </DeletionUndoProvider>
-    </QueryClientProvider>
-  )
-  return client
-}
-
-/**
  * `DocumentPanel` stays mounted across `?nodeId` changes and `BlockCanvas` is
  * never keyed by page — this harness owns `previewName` itself (a REAL
  * `useState` setter passed as `onPreviewNameChange`, not a `jest.fn()`
@@ -551,7 +500,7 @@ describe('a template pick on a blank page applies in place (KAN-124)', () => {
     expect(field).toHaveClass('ProseMirror-focused')
   })
 
-  it("rule 2 (KAN-345) regression: the applied template's own unwritten line is marked a session insert BEFORE the save round-trip lands, so it still autofocuses on mount even while the write is still in flight — `persistBlocksAsOwnEdit`'s own optimistic cache write mounts it long before a slow `saveBlocks` resolves", async () => {
+  it("rule 2 (KAN-345) regression: the applied template's own unwritten line is marked a session insert BEFORE the save round-trip lands, so it still autofocuses on mount even while the write is still in flight — the queue's own write is still pending when the applied line mounts", async () => {
     const user = userEvent.setup()
     let resolveSave: (() => void) | undefined
     mockSaveBlocks.mockImplementationOnce(
@@ -560,7 +509,7 @@ describe('a template pick on a blank page applies in place (KAN-124)', () => {
           resolveSave = resolve
         })
     )
-    renderBlankPageQueryHarness()
+    renderBlankPageHarness()
 
     writeInTextBlock(await findTextBlock(), '/')
     await screen.findByRole('listbox', { name: 'blocks' })
@@ -568,12 +517,12 @@ describe('a template pick on a blank page applies in place (KAN-124)', () => {
     await user.keyboard('{ArrowDown}')
     await user.keyboard('{Enter}')
 
-    // The applied template's blocks already mounted — the optimistic
-    // `queryClient.setQueryData` inside `persistBlocksAsOwnEdit` ran before its
-    // `await saveBlocks(...)`, which is still pending here.
-    expect(mockSaveBlocks).toHaveBeenCalledTimes(1)
+    // The applied template's blocks already mounted and took focus — the
+    // queue's own write (`saveBlocks`, held pending above) hasn't resolved yet.
+    await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalledTimes(1))
     const field = await findTextBlock()
     await waitFor(() => expect(field).toHaveFocus())
+    expect(mockAppendOwnEdit).not.toHaveBeenCalled()
 
     resolveSave?.()
     await waitFor(() => expect(mockAppendOwnEdit).toHaveBeenCalledTimes(1))
