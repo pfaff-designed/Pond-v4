@@ -78,7 +78,7 @@ export interface DeletedCard {
  * other would produce. So the next entry after a `delete`, if any, is always
  * that `restore`.
  */
-const groupByTarget = (records: ChangeLogRecord[]): Map<string, ChangeLogRecord[]> => {
+export const groupByTarget = (records: ChangeLogRecord[]): Map<string, ChangeLogRecord[]> => {
   const byTarget = new Map<string, ChangeLogRecord[]>()
   for (const record of records) {
     if (record.targetPageId === null) continue
