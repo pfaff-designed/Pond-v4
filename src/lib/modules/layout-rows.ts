@@ -109,28 +109,57 @@ const EQUAL_SHARE_WIDTH: Record<number, BlockWidth> = {
 /** Below a quarter, a dropped block can't fit beside anything — the row shares equally instead (6x). */
 const MIN_ROOM_TWELFTHS = TWELFTHS['1/4']
 
+/** `MIN_ROOM_TWELFTHS`'s quarter, in tenths-of-a-percent — the numeric-width branch's threshold (KAN-441). */
+const MIN_ROOM_PERCENT_TENTHS = 250
+
 /**
  * The widths for `[...existing, droppedBlock]` when a block is dropped beside a
- * row, or `null` if the row already holds the max of four (6x). With room for at
- * least a quarter, the dropped block takes the widest `BlockWidth` that fits the
- * room and the existing blocks keep their widths untouched. With less room —
- * including none, and the "sixth after ⅓ + ½" case — every block in the row,
- * existing and dropped alike, becomes the equal share for the new count.
+ * row, or `null` if the row already holds the max of four (6x). Named-only rows
+ * (no numeric width in `existing`) behave exactly as before, by exact twelfths:
+ * with room for at least a quarter, the dropped block takes the widest
+ * `BlockWidth` that fits the room and the existing blocks keep their widths
+ * untouched; with less room — including none, and the "sixth after ⅓ + ½" case
+ * — every block in the row, existing and dropped alike, becomes the equal share
+ * for the new count.
+ *
+ * A row holding a numeric width (KAN-441 — only possible today from a block
+ * resized alone on its line, so `existing` has exactly one entry) is compared
+ * in percent-tenths instead, the same integer comparison `layoutRows` uses:
+ * with at least 25% of room left, the dropped block takes exactly that room as
+ * a free percent and the existing widths are untouched, so the row stays full
+ * and the resized block keeps its width; with less room, every block —
+ * existing and dropped alike — becomes the equal (named) share, same as the
+ * named-only case.
  */
-export function widthsForDropBeside(existing: readonly BlockWidth[]): BlockWidth[] | null {
+export function widthsForDropBeside(
+  existing: readonly (BlockWidth | number)[]
+): (BlockWidth | number)[] | null {
   if (existing.length >= 4) return null
 
-  const used = existing.reduce((sum, width) => sum + toTwelfths(width), 0)
+  if (existing.some((width) => typeof width === 'number')) {
+    const usedTenths = existing.reduce<number>((sum, width) => sum + widthTenths(width), 0)
+    const roomTenths = 1000 - usedTenths
+
+    if (roomTenths >= MIN_ROOM_PERCENT_TENTHS) {
+      return [...existing, roomTenths / 10]
+    }
+
+    const share = EQUAL_SHARE_WIDTH[existing.length + 1]
+    return [...existing.map(() => share), share]
+  }
+
+  const named = existing as BlockWidth[]
+  const used = named.reduce((sum, width) => sum + toTwelfths(width), 0)
   const room = 12 - used
 
   if (room >= MIN_ROOM_TWELFTHS) {
     const taken = TWELFTHS_ASCENDING.filter(([, twelfths]) => twelfths <= room).pop()
     // room >= MIN_ROOM_TWELFTHS guarantees at least '1/4' fits, so `taken` always exists.
-    return [...existing, taken![0]]
+    return [...named, taken![0]]
   }
 
-  const share = EQUAL_SHARE_WIDTH[existing.length + 1]
-  return [...existing.map(() => share), share]
+  const share = EQUAL_SHARE_WIDTH[named.length + 1]
+  return [...named.map(() => share), share]
 }
 
 /**
@@ -156,19 +185,7 @@ export function planBesideDrop<
   const row = layoutRows(withoutDragged).find((r) => r.some((b) => b.id === targetId))
   if (!row) return null
 
-  const widths = widthsForDropBeside(
-    row.map((b) => {
-      // A row-mate only ever carries a free-resized numeric width if it's alone
-      // on its line (this ticket's scope) — which can't also be a row-mate.
-      if (typeof b.width === 'number') {
-        if (process.env.NODE_ENV !== 'production') {
-          throw new Error('planBesideDrop: a row-mate held a free-resized width')
-        }
-        return 'full'
-      }
-      return b.width ?? 'full'
-    })
-  )
+  const widths = widthsForDropBeside(row.map((b) => b.width ?? 'full'))
   if (!widths) return null
 
   const nextWidth = new Map(row.map((b, i) => [b.id, widths[i]]))

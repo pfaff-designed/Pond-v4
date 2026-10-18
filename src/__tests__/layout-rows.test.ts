@@ -282,6 +282,18 @@ describe('widthsForDropBeside', () => {
   it('refuses a drop into a row that already holds 4', () => {
     expect(widthsForDropBeside(['1/4', '1/4', '1/4', '1/4'])).toBeNull()
   })
+
+  it('drops beside a 46%-resized target, taking exactly the room left (KAN-441)', () => {
+    expect(widthsForDropBeside([46])).toEqual([46, 54])
+  })
+
+  it('drops beside an 80%-resized target with too little room, sharing equally instead', () => {
+    expect(widthsForDropBeside([80])).toEqual(['1/2', '1/2'])
+  })
+
+  it('leaves a named-only row unchanged (the numeric branch never fires without a numeric width)', () => {
+    expect(widthsForDropBeside(['1/2'])).toEqual(['1/2', '1/2'])
+  })
 })
 
 describe('planBesideDrop', () => {
@@ -319,6 +331,17 @@ describe('planBesideDrop', () => {
     const quarters = ['q1', 'q2', 'q3', 'q4'].map((id) => ({ id, width: '1/4' as BlockWidth }))
     const d = { id: 'd', width: 'full' as BlockWidth }
     expect(planBesideDrop([...quarters, d], 4, 'q1', 'left')).toBeNull()
+  })
+
+  it('plans a drop beside a 46%-resized target alone on its line, without throwing (KAN-441)', () => {
+    const target = { id: 'target', width: 46 }
+    const dragged = { id: 'dragged', width: 'full' as BlockWidth }
+    expect(() => planBesideDrop([target, dragged], 1, 'target', 'right')).not.toThrow()
+    const next = planBesideDrop([target, dragged], 1, 'target', 'right')
+    expect(next).toEqual([
+      { id: 'target', width: 46, rowStart: true },
+      { id: 'dragged', width: 54 },
+    ])
   })
 
   // Comment 2's three before-states: pre-fix every beside drop into these rows

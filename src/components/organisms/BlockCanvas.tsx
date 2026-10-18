@@ -705,7 +705,7 @@ export function BlockCanvas({
   // `onOpenChange` to `handleMenuOpenChange` below) and at every drag exit, so
   // a stale preview can never survive the menu or drag it came from.
   const [previewWidth, setPreviewWidth] = useState<
-    { blockId: string; width: BlockWidth }[] | null
+    { blockId: string; width: BlockWidth | number }[] | null
   >(null)
 
   // 6f frame 3: the template under preview, as flat outlines over the blank
@@ -1971,14 +1971,13 @@ export function BlockCanvas({
             setDropIndicator({ index: i, zone })
             // Every block `planned` sets a new width for previews live, not
             // just the dragged block — so the target row already shows the
-            // width it will take while hovering, before the drop lands.
-            const changed = planned.reduce<{ blockId: string; width: BlockWidth }[]>(
+            // width it will take while hovering, before the drop lands. A
+            // numeric width is a legitimate result now (KAN-441 — the dropped
+            // block takes the free room left beside a resized target), so it
+            // previews the same as a named one.
+            const changed = planned.reduce<{ blockId: string; width: BlockWidth | number }[]>(
               (acc, next) => {
                 const nextWidth = next.width ?? 'full'
-                // `planBesideDrop` only ever sets a named width (from
-                // `widthsForDropBeside`); a numeric width here belongs to a
-                // block outside the planned row, untouched and so never previewed.
-                if (typeof nextWidth === 'number') return acc
                 const current = blocks.find((b) => b.id === next.id)
                 if ((current?.width ?? 'full') !== nextWidth) {
                   acc.push({ blockId: next.id, width: nextWidth })
