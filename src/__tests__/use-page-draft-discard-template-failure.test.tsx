@@ -215,4 +215,65 @@ describe('writeStructural discardOnFailure discards what was built on it (KAN-49
     expect(mockWriter).toHaveBeenCalledTimes(2)
     expect(mockWriter.mock.calls[1][0]).toMatchObject({ after: { blocks: [typedOnB] } })
   })
+
+  it('coming back to a page while its template apply is in flight shows those blocks, and a failure drops only typing done on them', async () => {
+    const pageA = { ...PAGE, id: 'page-template-fail-return' }
+    const pageB: PondPage = {
+      ...PAGE,
+      id: 'page-template-fail-return-B',
+      title: 'B',
+      blocks: [{ id: 'b-1', type: 'text', content: 'page b' }],
+    }
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    // The open page is already in the cache, the way DocumentPanel's query leaves it.
+    client.setQueryData(['page', pageA.id], pageA)
+    client.setQueryData(['page', pageB.id], pageB)
+    const { result, rerender } = renderHook(
+      ({ page }: { page: PondPage }) => {
+        const getSupabase = useLazySupabase()
+        return usePageDraft({ page, pageId: page.id, pondId: 'pond-1', getSupabase })
+      },
+      { wrapper: wrapper(client), initialProps: { page: pageA } }
+    )
+
+    let rejectTemplate: (err: unknown) => void = () => {}
+    mockWriter.mockImplementationOnce(
+      () => new Promise<void>((_resolve, reject) => (rejectTemplate = reject))
+    )
+
+    let applyResult!: Promise<boolean>
+    act(() => {
+      applyResult = result.current.writeStructural([templateLine], { discardOnFailure: true })
+    })
+
+    // The cache is what a return trip reads. It must already hold the blocks
+    // in flight, or coming back paints the pre-template page.
+    const cachedA = client.getQueryData<PondPage>(['page', pageA.id])
+    expect(cachedA?.blocks).toEqual([templateLine])
+
+    rerender({ page: pageB })
+    rerender({ page: cachedA ?? pageA })
+    expect(result.current.viewBlocks).toEqual([templateLine])
+
+    const typedOnTemplate: Block = { ...templateLine, content: 'alpha' }
+    act(() => {
+      result.current.commitLocalEdit([typedOnTemplate])
+    })
+
+    await act(async () => {
+      rejectTemplate(new Error('saveBlocks failed'))
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(await applyResult).toBe(false)
+    expect(result.current.viewBlocks).toEqual([original])
+    expect(client.getQueryData<PondPage>(['page', pageA.id])?.blocks).toEqual([original])
+
+    mockWriter.mockResolvedValue(undefined)
+    act(() => {
+      jest.advanceTimersByTime(600)
+    })
+    expect(mockWriter).toHaveBeenCalledTimes(1)
+  })
 })

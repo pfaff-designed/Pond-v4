@@ -345,6 +345,14 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
   function enqueueStructural(id: string, next: Block[], opts?: StructuralWriteOpts): Promise<boolean> {
     flushNow()
     const queue = queueFor(id, { title: viewTitle, blocks: next })
+    // The cache is what a return trip reads. Write the in-flight blocks now,
+    // not when the save resolves: leaving and coming back before it settles
+    // would otherwise paint the pre-write page, and a word typed on that
+    // stale screen is then thrown away with the failed apply — or, if the
+    // apply lands, stored over the blocks the person never saw.
+    queryClient.setQueryData(['page', id], (prev: PondPage | null | undefined) =>
+      prev ? { ...prev, blocks: next } : prev
+    )
     return queue
       .enqueue({ kind: 'structural', after: { title: viewTitle, blocks: next } })
       .then(() => {
@@ -364,6 +372,13 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
           // This is that page's queue, so it is safe after the person has
           // moved on: page B has its own queue.
           queue.discardHalted({ andQueued: true })
+          const stored = queue.head()
+          // Roll the optimistic cache back even when another page is open.
+          // A later visit reads this cache; leaving the discarded blocks
+          // here would rebase the queue onto a template the store never held.
+          queryClient.setQueryData(['page', id], (prev: PondPage | null | undefined) =>
+            prev ? { ...prev, title: stored.title, blocks: stored.blocks } : prev
+          )
           // The debounce timer and the on-screen blocks are the OPEN page's,
           // not this write's. A template apply on A that fails after the
           // person has opened B must not cancel B's pending save or repaint
@@ -379,7 +394,7 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
             pendingSave.current = null
             setPendingDebounce(false)
           }
-          if (loadedId.current === id) setBlocks(queue.head().blocks)
+          if (loadedId.current === id) setBlocks(stored.blocks)
         }
         return false
       })
