@@ -63,8 +63,12 @@ export const isArea = (page: Pick<MarkSource, 'parentId' | 'type' | 'title'>): b
  * The area `page` sits in — itself when it is one — or undefined when its chain
  * ends anywhere but an area (the databases subtree, the home row, or a parent
  * the index does not hold). `seen` guards a malformed parent cycle.
+ *
+ * Exported for `TrashPage.tsx`'s own former-parent walk (KAN-451): a trashed
+ * page's leading glyph needs the same area-of-a-live-page answer this module
+ * already owns, not a second copy of the walk.
  */
-const areaOf = (
+export const areaOf = (
   page: MarkSource,
   byId: ReadonlyMap<string, MarkSource>
 ): MarkSource | undefined => {

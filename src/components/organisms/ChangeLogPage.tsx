@@ -32,7 +32,7 @@ import { personFacingMessage } from '@/lib/change-log/errors'
 import { PondControl } from '@/components/atoms/PondControl'
 import { FOCUS_VISIBLE_RING } from '@/components/atoms/focus-ring'
 import { ViewTabsList, ViewTabsRoot, ViewTabsTab } from '@/components/molecules/view-tabs'
-import { listPages } from '@/lib/pages/client'
+import { useFullPages } from '@/lib/pages/use-pages'
 import { pagesKey } from '@/lib/pages/keys'
 
 /** s6o1's table: the five-column grid every header, day-group and record row shares. */
@@ -370,18 +370,8 @@ export function ChangeLogPage() {
   })
 
   // The same `['pages', pondId, 'full']` cache AITerminal's destination picker
-  // reads — one page-title fetch, not a second one just for this table.
-  const { data: pages = [] } = useQuery({
-    queryKey: [...pagesKey(pondId), 'full'],
-    queryFn: async () => {
-      const supabase = getSupabase()
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) return []
-      return listPages(supabase, user.id, pondId)
-    },
-  })
+  // (and `TrashPage`) reads — one shared hook, not a second fetch per table.
+  const { data: pages = [] } = useFullPages(pondId)
 
   const pageTitleById = useMemo(() => new Map(pages.map((p) => [p.id, p.title])), [pages])
   const activeRecords = useMemo(

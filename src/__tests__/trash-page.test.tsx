@@ -9,6 +9,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TrashPage } from '@/components/organisms/TrashPage'
+import { TrashRefusedError } from '@/lib/change-log/errors'
 import type { ChangeLogRecord, TrashSnapshot } from '@/lib/change-log/types'
 
 jest.mock('@/lib/pond/context', () => ({
@@ -253,5 +254,31 @@ describe('TrashPage', () => {
     expect(
       await screen.findByText('put back at the top of the pond — its old place is gone')
     ).toBeInTheDocument()
+  })
+
+  it('shows the error and drops the row when a restore is refused (already restored in another tab)', async () => {
+    let alreadyRestored = false
+    mockListRecords.mockImplementation(async () =>
+      alreadyRestored
+        ? [record(), record({ id: 'restore-1', action: 'restore', createdAt: '2026-09-27T12:00:00.000Z' })]
+        : [record()]
+    )
+    mockRestorePageRelinked.mockImplementation(async () => {
+      alreadyRestored = true
+      throw new TrashRefusedError('already-restored', 'change log: already restored')
+    })
+
+    const user = userEvent.setup()
+    renderPage()
+
+    const restoreButton = await screen.findByRole('button', { name: 'restore' })
+    await user.click(restoreButton)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'that page has already been restored'
+    )
+    await waitFor(() => {
+      expect(screen.queryByTestId('trash-row')).not.toBeInTheDocument()
+    })
   })
 })

@@ -42,10 +42,10 @@ import { buildTrashRows, type TrashRow } from '@/lib/change-log/trash-view'
 import { fellBackToPondRoot, groupByTarget, TRASH_RETENTION_DAYS } from '@/lib/change-log/deleted-view'
 import { readTrashSnapshot } from '@/lib/change-log/summary'
 import type { ChangeLogRecord } from '@/lib/change-log/types'
-import { listPages } from '@/lib/pages/client'
 import { pagesKey } from '@/lib/pages/keys'
+import { useFullPages } from '@/lib/pages/use-pages'
 import { restorePageRelinked } from '@/lib/pages/child-links'
-import { isArea } from '@/lib/pages/mark'
+import { areaOf } from '@/lib/pages/mark'
 import { areaGlyph } from '@/lib/rail/area-glyph'
 import { AreaMark } from '@/components/atoms/AreaMark'
 import { PondControl } from '@/components/atoms/PondControl'
@@ -83,10 +83,10 @@ interface TrashRecords {
 
 const pluralPages = (n: number): string => `${n} ${n === 1 ? 'page' : 'pages'}`
 
-/** The slice of a live page this walk needs — a subset of `MarkSource`, built
- *  straight off the shared `listPages` cache (which carries no `glyph`/
- *  `area_role`, so only the title-derived automatic glyph is ever drawn
- *  here). */
+/** The slice of a live page `mark.ts`'s `areaOf` needs — a subset of
+ *  `MarkSource`, built straight off the shared `useFullPages` cache (which
+ *  carries no `glyph`/`area_role`, so only the title-derived automatic
+ *  glyph is ever drawn here). */
 interface LivePageNode {
   id: string
   parentId: string | null
@@ -96,24 +96,22 @@ interface LivePageNode {
 
 /**
  * A trashed page's leading glyph: walk its former parent up the LIVE pages
- * tree to the area it sat in, and draw that area's automatic glyph — none
- * when the chain is gone or the page was already at the pond root. A
- * trashed page's own mark is unreadable (RLS hides a trashed row's content,
- * and 0027's `TrashSnapshot` carries no mark), so the area is the only glyph
- * this row can truthfully draw without a migration.
+ * tree to the area it sat in (`mark.ts`'s own `areaOf` walk — this epic owns
+ * that file), and draw that area's automatic glyph — none when the chain is
+ * gone or the page was already at the pond root. A trashed page's own mark
+ * is unreadable (RLS hides a trashed row's content, and 0027's
+ * `TrashSnapshot` carries no mark), so the area is the only glyph this row
+ * can truthfully draw without a migration.
  */
 function areaGlyphForFormerParent(
   parentId: string | null,
   pagesById: ReadonlyMap<string, LivePageNode>
 ): string | null {
   if (parentId === null) return null
-  const seen = new Set<string>()
-  let cursor = pagesById.get(parentId)
-  while (cursor && !isArea(cursor) && cursor.parentId !== null && !seen.has(cursor.id)) {
-    seen.add(cursor.id)
-    cursor = pagesById.get(cursor.parentId)
-  }
-  return cursor && isArea(cursor) ? areaGlyph(cursor.title) : null
+  const start = pagesById.get(parentId)
+  if (!start) return null
+  const area = areaOf(start, pagesById)
+  return area ? areaGlyph(area.title) : null
 }
 
 /** One trash row: the page's title led by its area glyph (if any), then
@@ -208,18 +206,8 @@ export function TrashPage() {
   const goneIds = useMemo(() => trashData?.goneIds ?? new Set<string>(), [trashData])
 
   // The same `[...pagesKey(pondId), 'full']` cache `ChangeLogPage` reads —
-  // one page-title/tree fetch, not a second one just for this table.
-  const { data: pages = [] } = useQuery({
-    queryKey: [...pagesKey(pondId), 'full'],
-    queryFn: async () => {
-      const supabase = getSupabase()
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) return []
-      return listPages(supabase, user.id, pondId)
-    },
-  })
+  // one shared hook, not a second fetch just for this table.
+  const { data: pages = [] } = useFullPages(pondId)
 
   const pageTitleById = useMemo(() => new Map(pages.map((p) => [p.id, p.title])), [pages])
   const pagesById = useMemo(
@@ -247,7 +235,15 @@ export function TrashPage() {
       setRestoreError(null)
       setRestoreNotice(null)
     },
-    onError: (err) => setRestoreError(personFacingMessage(err)),
+    onError: (err) => {
+      // A refused restore (two tabs: the other already restored it) leaves a
+      // stale row next to the error unless this also invalidates — the same
+      // keys `onSuccess` below invalidates, so the refetch it triggers drops
+      // the now-restored row from the table.
+      setRestoreError(personFacingMessage(err))
+      queryClient.invalidateQueries({ queryKey: trashKey(pondId) })
+      queryClient.invalidateQueries({ queryKey: changeLogKey() })
+    },
     onSuccess: async (_data, vars) => {
       // Puts the page back in the rail/⌘K/pickers and refreshes every
       // change-log view (this table included, since `trashKey` nests under
