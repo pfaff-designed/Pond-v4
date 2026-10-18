@@ -25,15 +25,53 @@ function toTwelfths(width: BlockWidth | undefined): number {
 }
 
 /**
- * Pack `blocks` into rows: each row's widths sum to 12 twelfths (full) or less. A
- * block that would push the current row over 12 starts a new row instead, and so
- * does a block carrying `rowStart: true`, even with room left in the current row
- * (KAN-440) — a drop plan sets it so a partial-width block left behind never
- * re-packs the rows after it. Rows are built in array order, so flattening them
- * back out reproduces that order — a caller that needs a block's original index
- * can read it off the flattened position instead of threading a wrapper through.
+ * A named width's fixed percent of the content column, rounded to one decimal
+ * place (⅓ and ⅔ don't divide evenly) — the same rounding a free width is kept
+ * to at its write boundary (KAN-441), so a block committed at a snapped ⅓ and
+ * a block set to the named `'1/3'` render pixel-identical via `widthPercent`.
  */
-export function layoutRows<T extends { width?: BlockWidth; rowStart?: boolean }>(
+const NAMED_WIDTH_PERCENT: Record<BlockWidth, number> = {
+  '1/4': 25,
+  '1/3': 33.3,
+  '1/2': 50,
+  '2/3': 66.7,
+  '3/4': 75,
+  full: 100,
+}
+
+/**
+ * A width's percent of the content column (KAN-441): a named width's fixed
+ * percent (`NAMED_WIDTH_PERCENT`), or a free width's own value — a number
+ * already IS its percent of the column. Absent means full (6x).
+ */
+export function widthPercent(width: BlockWidth | number | undefined): number {
+  if (typeof width === 'number') return width
+  return NAMED_WIDTH_PERCENT[width ?? 'full']
+}
+
+/**
+ * `widthPercent`, in tenths of a percent (integer) rather than a float — row
+ * sums compare exactly this way, the same reason `TWELFTHS` exists, now
+ * generalized to cover a free numeric width packing or stacking beside a
+ * named one (KAN-441).
+ */
+function widthTenths(width: BlockWidth | number | undefined): number {
+  return Math.round(widthPercent(width) * 10)
+}
+
+/**
+ * Pack `blocks` into rows: each row's widths sum to 1000 tenths-of-a-percent
+ * (full) or less. A block that would push the current row over starts a new
+ * row instead, and so does a block carrying `rowStart: true`, even with room
+ * left in the current row (KAN-440) — a drop plan sets it so a partial-width
+ * block left behind never re-packs the rows after it. A free numeric width
+ * (KAN-441) packs and overflows by its own percent the same way, alongside
+ * named widths in the same row. Rows are built in array order, so flattening
+ * them back out reproduces that order — a caller that needs a block's
+ * original index can read it off the flattened position instead of threading
+ * a wrapper through.
+ */
+export function layoutRows<T extends { width?: BlockWidth | number; rowStart?: boolean }>(
   blocks: readonly T[]
 ): T[][] {
   const rows: T[][] = []
@@ -41,8 +79,8 @@ export function layoutRows<T extends { width?: BlockWidth; rowStart?: boolean }>
   let used = 0
 
   for (const block of blocks) {
-    const width = toTwelfths(block.width)
-    if (row.length > 0 && (block.rowStart === true || used + width > 12)) {
+    const width = widthTenths(block.width)
+    if (row.length > 0 && (block.rowStart === true || used + width > 1000)) {
       rows.push(row)
       row = []
       used = 0
@@ -183,7 +221,7 @@ export interface DetachKeepingRowsResult<T> {
  * other block is the same reference, untouched.
  */
 export function detachKeepingRows<
-  T extends { id: string; width?: BlockWidth; rowStart?: boolean },
+  T extends { id: string; width?: BlockWidth | number; rowStart?: boolean },
 >(blocks: readonly T[], index: number): DetachKeepingRowsResult<T> {
   const removed = blocks[index]
   const rest = blocks.filter((_, i) => i !== index)
@@ -216,15 +254,16 @@ export const BLOCK_ROW_GAP_PX = 16
 
 /**
  * A block's own CSS width, independent of its row-mates: `(100% + gap) *
- * fraction - gap`. Summed over a row whose fractions add to a full twelve
- * twelfths, the `- gap` terms cancel the real gaps between the blocks exactly,
- * so the row totals 100% for any number of blocks in it — the formula
+ * fraction - gap`. Summed over a row whose fractions add to a full 100%,
+ * the `- gap` terms cancel the real gaps between the blocks exactly, so the
+ * row totals 100% for any number of blocks in it — the formula
  * `Pond 06.23 Blocks side by side.dc.html` draws its rows with. A row whose
  * fractions add to less than full is short by the same amount, which is the
- * leftover paper at the row's end.
+ * leftover paper at the row's end. A free numeric width (KAN-441) renders by
+ * its own percent, via `widthPercent`.
  */
-export function blockWidthStyle(width: BlockWidth = 'full'): string {
-  const fraction = TWELFTHS[width] / 12
+export function blockWidthStyle(width: BlockWidth | number = 'full'): string {
+  const fraction = widthPercent(width) / 100
   return `calc((100% + ${BLOCK_ROW_GAP_PX}px) * ${fraction} - ${BLOCK_ROW_GAP_PX}px)`
 }
 
@@ -360,19 +399,20 @@ export function isWithinPaddedZone(rect: Rect, point: Point, zone: DropZone): bo
 }
 
 /** Below this, a block in a row is too narrow to be useful, so the row stacks (6x). */
-const MIN_BLOCK_WIDTH_PX = 240
+export const MIN_BLOCK_WIDTH_PX = 240
 
 /** A block's actual pixel width at a given column width — `blockWidthStyle`'s formula, numeric. */
-function blockWidthPx(columnWidthPx: number, width: BlockWidth): number {
-  const fraction = TWELFTHS[width] / 12
+function blockWidthPx(columnWidthPx: number, width: BlockWidth | number): number {
+  const fraction = widthPercent(width) / 100
   return (columnWidthPx + BLOCK_ROW_GAP_PX) * fraction - BLOCK_ROW_GAP_PX
 }
 
 /**
  * A row holds while every block in it gets at least `MIN_BLOCK_WIDTH_PX` of the
  * column; below that it stacks instead (6x), each block full width in reading
- * order. `widths` is the row's blocks' own widths, absent meaning full.
+ * order. `widths` is the row's blocks' own widths, absent meaning full — a free
+ * numeric width (KAN-441) stacks by the same rule, via `blockWidthPx`.
  */
-export function rowHolds(columnWidthPx: number, widths: readonly BlockWidth[]): boolean {
+export function rowHolds(columnWidthPx: number, widths: readonly (BlockWidth | number)[]): boolean {
   return widths.every((width) => blockWidthPx(columnWidthPx, width) >= MIN_BLOCK_WIDTH_PX)
 }

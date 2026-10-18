@@ -3,12 +3,15 @@
  * to full or less, in array order.
  */
 import {
+  BLOCK_ROW_GAP_PX,
+  blockWidthStyle,
   classifyDropZone,
   detachKeepingRows,
   isWithinPaddedZone,
   layoutRows,
   planBesideDrop,
   rowHolds,
+  widthPercent,
   widthsForDropBeside,
   withoutRowStart,
 } from '@/lib/modules/layout-rows'
@@ -90,6 +93,52 @@ describe('layoutRows', () => {
       const b = { id: 'b', width: '1/2' as BlockWidth }
       expect(layoutRows([a, b])).toEqual([[a, b]])
     })
+  })
+
+  // A free numeric width (KAN-441, set by dragging a block's edge) packs and
+  // overflows by its own percent, alongside named widths in the same row.
+  describe('a free numeric width packs by percent, not twelfths (KAN-441)', () => {
+    it('packs 40% beside a named ½ — the 90% sum leaves room', () => {
+      const a = { id: 'a', width: 40 }
+      const b = { id: 'b', width: '1/2' as BlockWidth }
+      expect(layoutRows([a, b])).toEqual([[a, b]])
+    })
+
+    it('starts a new row when the numeric width would push the sum past 100%', () => {
+      const a = { id: 'a', width: 60 }
+      const b = { id: 'b', width: '1/2' as BlockWidth }
+      expect(layoutRows([a, b])).toEqual([[a], [b]])
+    })
+
+    it('packs two numeric widths that sum to exactly 100%', () => {
+      const a = { id: 'a', width: 46 }
+      const b = { id: 'b', width: 54 }
+      expect(layoutRows([a, b])).toEqual([[a, b]])
+    })
+
+    it('three numeric widths that sum to just over 100% split off the last', () => {
+      const a = { id: 'a', width: 40 }
+      const b = { id: 'b', width: 40 }
+      const c = { id: 'c', width: 20.1 }
+      expect(layoutRows([a, b, c])).toEqual([[a, b], [c]])
+    })
+  })
+})
+
+describe('widthPercent', () => {
+  it.each<[BlockWidth | number | undefined, number]>([
+    ['1/4', 25],
+    ['1/3', 33.3],
+    ['1/2', 50],
+    ['2/3', 66.7],
+    ['3/4', 75],
+    ['full', 100],
+    [undefined, 100],
+    [46, 46],
+    [1, 1],
+    [100, 100],
+  ])('widthPercent(%s) is %s', (width, expected) => {
+    expect(widthPercent(width)).toBe(expected)
   })
 })
 
@@ -185,6 +234,27 @@ describe('rowHolds', () => {
 
   it('stacks a ⅓ + ½ row when the sixth-sized block is too narrow', () => {
     expect(rowHolds(700, ['1/3', '1/2'])).toBe(false)
+  })
+
+  it('holds a numeric width exactly as it would the equal named one', () => {
+    expect(rowHolds(496, [50, 50])).toBe(true)
+  })
+
+  it('stacks a numeric width below 240px the same as a named one would', () => {
+    expect(rowHolds(600, [30, 70])).toBe(false)
+  })
+})
+
+describe('blockWidthStyle', () => {
+  it('renders a numeric width by its own percent', () => {
+    const fraction = 0.46
+    expect(blockWidthStyle(46)).toBe(
+      `calc((100% + ${BLOCK_ROW_GAP_PX}px) * ${fraction} - ${BLOCK_ROW_GAP_PX}px)`
+    )
+  })
+
+  it('renders a numeric width identically to the equal named one', () => {
+    expect(blockWidthStyle(50)).toBe(blockWidthStyle('1/2'))
   })
 })
 
