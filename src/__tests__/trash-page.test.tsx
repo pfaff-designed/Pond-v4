@@ -127,15 +127,48 @@ describe('TrashPage', () => {
     ).toBeInTheDocument()
   })
 
-  it('says so plainly when nothing has been trashed', async () => {
+  it('says so plainly when nothing has been trashed, with no lead line', async () => {
     mockListRecords.mockResolvedValue([])
     renderPage()
 
     expect(await screen.findByTestId('trash-empty')).toHaveTextContent('trash is empty')
+    expect(screen.queryByText(/pages? in trash/)).not.toBeInTheDocument()
   })
 
-  it('shows load more only once a full page signals there may be another', async () => {
-    const fullPage: ChangeLogRecord[] = Array.from({ length: 50 }, (_, i) =>
+  it('fetches every record page so a still-trashed page past 60 newer delete/restore pairs is listed', async () => {
+    // 60 pairs (restore newer than its own delete), newest first, then one
+    // still-trashed delete older than all of them — three keyset pages of
+    // listRecords (50 + 50 + 21) must all be fetched for this row to appear.
+    const at = (i: number) => new Date(2026, 8, 26, 12, 0, -i).toISOString()
+    const pairs: ChangeLogRecord[] = Array.from({ length: 60 }, (_, i) => [
+      record({ id: `restore-${i}`, action: 'restore', targetPageId: `pair-${i}`, createdAt: at(2 * i) }),
+      record({ id: `del-${i}`, targetPageId: `pair-${i}`, createdAt: at(2 * i + 1) }),
+    ]).flat()
+    const remaining = record({
+      id: 'del-remaining',
+      targetPageId: 'page-remaining',
+      before: snapshot({ title: 'old quotes' }),
+      createdAt: at(120),
+    })
+    const all = [...pairs, remaining]
+    mockListRecords.mockImplementation(async (_supabase, opts: { before?: string; limit: number }) => {
+      const pool = opts.before
+        ? all.filter((r) => Date.parse(r.createdAt) < Date.parse(opts.before!))
+        : all
+      return pool.slice(0, opts.limit)
+    })
+
+    renderPage()
+
+    expect(await screen.findAllByTestId('trash-row')).toHaveLength(1)
+    expect(screen.getByText('old quotes')).toBeInTheDocument()
+    expect(
+      await screen.findByText("1 page in trash · each goes 30 days after it's deleted")
+    ).toBeInTheDocument()
+  })
+
+  it('paginates the derived rows, not the records, and counts every one in the lead line', async () => {
+    const stillTrashed: ChangeLogRecord[] = Array.from({ length: 120 }, (_, i) =>
       record({
         id: `del-${i}`,
         targetPageId: `page-${i}`,
@@ -143,20 +176,25 @@ describe('TrashPage', () => {
         createdAt: new Date(2026, 8, 26, 12, 0, -i).toISOString(),
       })
     )
-    mockListRecords.mockResolvedValue(fullPage)
+    mockListRecords.mockImplementation(async (_supabase, opts: { before?: string; limit: number }) => {
+      const pool = opts.before
+        ? stillTrashed.filter((r) => Date.parse(r.createdAt) < Date.parse(opts.before!))
+        : stillTrashed
+      return pool.slice(0, opts.limit)
+    })
 
+    const user = userEvent.setup()
     renderPage()
 
+    expect(
+      await screen.findByText("120 pages in trash · each goes 30 days after it's deleted")
+    ).toBeInTheDocument()
     expect(await screen.findAllByTestId('trash-row')).toHaveLength(50)
     expect(screen.getByTestId('trash-load-more')).toBeInTheDocument()
-  })
 
-  it('hides load more once a short page signals the trash is exhausted', async () => {
-    mockListRecords.mockResolvedValue([record()])
-    renderPage()
+    await user.click(screen.getByTestId('trash-load-more'))
 
-    expect(await screen.findAllByTestId('trash-row')).toHaveLength(1)
-    expect(screen.queryByTestId('trash-load-more')).not.toBeInTheDocument()
+    expect(await screen.findAllByTestId('trash-row')).toHaveLength(100)
   })
 
   it('restores through restorePageRelinked and removes the row from the table', async () => {

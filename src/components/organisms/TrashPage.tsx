@@ -4,14 +4,21 @@
  * The trash page (KAN-451; `TRASH_NODE_ID`): a reserved virtual node like the
  * change log, rendered in `DocumentPanel` in place of the `getPage`/rows path.
  *
- * Rows come from `buildTrashRows` over every `delete`/`restore` record, read
- * keyset-paginated the same way the change log's own "all" tab reads its
- * records (`RECORDS_PAGE_SIZE`, `useInfiniteQuery`) — each page also resolves
- * `existingPageIds` for its own delete targets, the same "still in trash vs
- * emptied" split `ChangeLogPage`'s `deleted` view makes (0027 part 2 hides a
- * trashed row from even its own owner's SELECT). No board places trash in the
- * rail; the lead line, table and empty state read off the change log's own
- * registers (s6o1's table shell, `change-log-empty`'s mono secondary text).
+ * Rows come from `buildTrashRows` over EVERY `delete`/`restore` record for
+ * the pond: the query fetches every keyset page itself (`RECORDS_PAGE_SIZE`
+ * at a time, looping until a short page) rather than stopping at one, because
+ * `N` and the empty state are derived from ROWS, not records — a pond whose
+ * newest records are all delete/restore pairs would otherwise read as empty,
+ * and `N` would only ever count the first page's worth. Delete/restore
+ * records are low-volume (ordinary edits don't produce them), so fetching
+ * every one is cheap; it's the derived ROWS that get paginated, client-side,
+ * 50 at a time behind "load more". Once every record is in, one
+ * `existingPageIds` call resolves every delete target at once — the same
+ * "still in trash vs emptied" split `ChangeLogPage`'s `deleted` view makes
+ * (0027 part 2 hides a trashed row from even its own owner's SELECT). No
+ * board places trash in the rail; the lead line, table and empty state read
+ * off the change log's own registers (s6o1's table shell, `change-log-empty`'s
+ * mono secondary text).
  *
  * Restore: a per-row text control calling `restorePage`, invalidating the
  * same keys `ChangeLogPage`'s own restore does — the row leaves the table
@@ -22,7 +29,7 @@
  */
 
 import { useMemo, useState } from 'react'
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { usePondId } from '@/lib/pond/context'
 import { usePondName } from '@/lib/pond/name'
@@ -49,8 +56,10 @@ import { PondControl } from '@/components/atoms/PondControl'
  *  with a trailing column for the restore control. */
 const TRASH_TABLE_COLUMNS = 'grid-cols-[minmax(0,1fr)_170px_96px_88px_104px_76px]'
 
-/** Keyset page size — same value and cursor pattern as the change log's own
- *  "all" tab (`ChangeLogPage.tsx`). */
+/** Keyset page size for the records FETCH (every page is fetched, looped
+ *  internally) and the client-side page size for the derived ROWS table —
+ *  same value, same "load more" cursor feel as the change log's own "all"
+ *  tab (`ChangeLogPage.tsx`), two different things it paginates. */
 const RECORDS_PAGE_SIZE = 50
 
 /** The trash page's own content column — no board of its own, so this reads
@@ -63,11 +72,11 @@ function trashKey(pondId: string | null) {
   return [...changeLogKey(), pondId, 'trash'] as const
 }
 
-/** One keyset page of the trash query's own cache — named so the restore
- *  mutation can read it back out of `queryClient` after the invalidation it
- *  triggers, the same way `ChangeLogPage`'s own restore reads its deleted
- *  view's cache. */
-interface TrashRecordsPage {
+/** The trash query's own cache shape — EVERY `delete`/`restore` record for
+ *  the pond, already fully paged in, named so the restore mutation can read
+ *  it back out of `queryClient` after the invalidation it triggers, the same
+ *  way `ChangeLogPage`'s own restore reads its deleted view's cache. */
+interface TrashRecords {
   records: ChangeLogRecord[]
   goneIds: Set<string>
 }
@@ -151,34 +160,36 @@ export function TrashPage() {
   const queryClient = useQueryClient()
   const [restoreError, setRestoreError] = useState<string | null>(null)
   const [restoreNotice, setRestoreNotice] = useState<string | null>(null)
+  const [visibleCount, setVisibleCount] = useState(RECORDS_PAGE_SIZE)
 
-  // Each page resolves its own `existingPageIds` alongside its own records —
-  // the same "still in trash vs emptied" split `changeLogDeletedKey` makes,
-  // just paginated: a delete's answering `restore` always has an earlier
-  // (newer) `createdAt`, so it is always loaded by the time a later page
-  // reaches the delete it answers.
-  const {
-    data: recordPages,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
-    isLoading: recordsLoading,
-  } = useInfiniteQuery({
+  // N and the empty state are over derived ROWS, not records, so this fetches
+  // EVERY delete/restore record for the pond — looping keyset pages itself
+  // until a short page signals the end — rather than stopping at one page
+  // and letting `buildTrashRows` see only a slice. Delete/restore records are
+  // low-volume, so fetching all of them is cheap; it's the ROWS that get
+  // paginated client-side, below.
+  const { data: trashData, isLoading: recordsLoading } = useQuery({
     queryKey: trashKey(pondId),
-    initialPageParam: undefined as string | undefined,
-    queryFn: async ({ pageParam }): Promise<TrashRecordsPage> => {
+    queryFn: async (): Promise<TrashRecords> => {
       const supabase = getSupabase()
       const {
         data: { user },
       } = await supabase.auth.getUser()
       if (!user) return { records: [], goneIds: new Set<string>() }
-      const records = await listRecords(supabase, {
-        userId: user.id,
-        pondId,
-        action: ['delete', 'restore'],
-        limit: RECORDS_PAGE_SIZE,
-        before: pageParam,
-      })
+      const records: ChangeLogRecord[] = []
+      let before: string | undefined
+      for (;;) {
+        const page = await listRecords(supabase, {
+          userId: user.id,
+          pondId,
+          action: ['delete', 'restore'],
+          limit: RECORDS_PAGE_SIZE,
+          before,
+        })
+        records.push(...page)
+        if (page.length < RECORDS_PAGE_SIZE) break
+        before = page[page.length - 1].createdAt
+      }
       const rootIds = [
         ...new Set(
           records
@@ -191,20 +202,10 @@ export function TrashPage() {
       const goneIds = new Set(rootIds.filter((id) => !existing.has(id)))
       return { records, goneIds }
     },
-    getNextPageParam: (lastPage) =>
-      lastPage.records.length < RECORDS_PAGE_SIZE
-        ? undefined
-        : lastPage.records[lastPage.records.length - 1].createdAt,
   })
 
-  const records = useMemo(() => recordPages?.pages.flatMap((p) => p.records) ?? [], [recordPages])
-  const goneIds = useMemo(() => {
-    const all = new Set<string>()
-    for (const page of recordPages?.pages ?? []) {
-      for (const id of page.goneIds) all.add(id)
-    }
-    return all
-  }, [recordPages])
+  const records = useMemo(() => trashData?.records ?? [], [trashData])
+  const goneIds = useMemo(() => trashData?.goneIds ?? new Set<string>(), [trashData])
 
   // The same `[...pagesKey(pondId), 'full']` cache `ChangeLogPage` reads —
   // one page-title/tree fetch, not a second one just for this table.
@@ -230,6 +231,10 @@ export function TrashPage() {
     () => buildTrashRows(records, pageTitleById, goneIds, pondName, new Date()),
     [records, pageTitleById, goneIds, pondName]
   )
+  // N and "load more" paginate the derived ROWS, client-side — every record
+  // is already fetched above, so this is a slice, not a query.
+  const visibleRows = rows.slice(0, visibleCount)
+  const hasMoreRows = visibleCount < rows.length
 
   const restoreMutation = useMutation({
     mutationFn: (vars: { recordId: string; targetPageId: string | null }) =>
@@ -255,8 +260,8 @@ export function TrashPage() {
       // The refetch this just triggered carries the new `restore` record —
       // read its `parentFallback` back off it, the same pairing
       // `buildTrashRows` already uses to exclude a restored row.
-      const refreshed = queryClient.getQueryData<{ pages: TrashRecordsPage[] }>(trashKey(pondId))
-      const allRecords = refreshed?.pages.flatMap((p) => p.records) ?? []
+      const refreshed = queryClient.getQueryData<TrashRecords>(trashKey(pondId))
+      const allRecords = refreshed?.records ?? []
       const sameTarget =
         vars.targetPageId === null ? [] : groupByTarget(allRecords).get(vars.targetPageId) ?? []
       const next = sameTarget[sameTarget.findIndex((r) => r.id === vars.recordId) + 1]
@@ -276,7 +281,7 @@ export function TrashPage() {
         <span className="font-serif text-[50px] leading-none font-extralight tracking-[-0.01em] text-mn-text">
           trash
         </span>
-        {!recordsLoading && (
+        {!recordsLoading && rows.length > 0 && (
           <p className="font-mono text-[12.5px] text-mn-text-secondary">
             {`${pluralPages(rows.length)} in trash · each goes ${TRASH_RETENTION_DAYS} days after it's deleted`}
           </p>
@@ -311,7 +316,7 @@ export function TrashPage() {
                 <span>goes</span>
                 <span />
               </div>
-              {rows.map((row) => (
+              {visibleRows.map((row) => (
                 <TrashTableRow
                   key={row.record.id}
                   row={row}
@@ -331,15 +336,14 @@ export function TrashPage() {
                   }
                 />
               ))}
-              {hasNextPage && (
+              {hasMoreRows && (
                 <button
                   type="button"
-                  onClick={() => fetchNextPage()}
-                  disabled={isFetchingNextPage}
+                  onClick={() => setVisibleCount((n) => n + RECORDS_PAGE_SIZE)}
                   data-testid="trash-load-more"
                   className="mt-1 w-full py-2 text-center font-mono text-[11px] lowercase tracking-[0.02em] text-mn-text-secondary disabled:opacity-60"
                 >
-                  {isFetchingNextPage ? 'loading…' : 'load more'}
+                  load more
                 </button>
               )}
             </>
