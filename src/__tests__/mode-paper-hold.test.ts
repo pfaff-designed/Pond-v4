@@ -79,7 +79,7 @@ describe('setMode', () => {
     expect(window.localStorage.getItem('pond:mode')).toBeNull()
   })
 
-  it('does not disturb a hold’s baseline: releasing an ink hold after setMode restores setMode’s ground', () => {
+  it('does not disturb a hold’s baseline: releasing a paper hold after setMode restores setMode’s ground', () => {
     setMode('dark')
     let release = () => {}
     act(() => {
@@ -89,5 +89,33 @@ describe('setMode', () => {
 
     act(() => release())
     expect(ink()).toBe(true)
+  })
+
+  it('a live paper hold keeps its ground when setMode is called; the mode only surfaces on release', () => {
+    let release = () => {}
+    act(() => {
+      release = holdPaperGround()
+    })
+    expect(ink()).toBe(false)
+
+    act(() => setMode('dark'))
+    expect(ink()).toBe(false)
+
+    act(() => release())
+    expect(ink()).toBe(true)
+  })
+
+  it('a live ink hold keeps its ground when setMode is called; the mode only surfaces on release', () => {
+    let release = () => {}
+    act(() => {
+      release = holdInkGround()
+    })
+    expect(ink()).toBe(true)
+
+    act(() => setMode('light'))
+    expect(ink()).toBe(true)
+
+    act(() => release())
+    expect(ink()).toBe(false)
   })
 })
