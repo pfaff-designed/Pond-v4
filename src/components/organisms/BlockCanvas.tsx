@@ -1277,12 +1277,17 @@ export function BlockCanvas({
     // baseline and double-log this same apply. Shared with drag-drop's
     // commits (KAN-247), so this is the only direct-write path.
     const supabase = getSupabase()
-    if (!(await persistBlocksAsOwnEdit(before, applied.blocks))) return
     // Rule 2's autofocus fact (KAN-345): these blocks are session inserts too —
     // without this, none of the applied template's unwritten lines would ever
     // take the caret, since `markInserted` is the only thing that puts an id in
-    // `autofocusIds`.
+    // `autofocusIds`. Marked BEFORE the write below, not after: that write's own
+    // `queryClient.setQueryData` mounts these blocks optimistically ahead of its
+    // `await saveBlocks(...)`, so marking them after would let the real editors
+    // mount — and read `autofocus` once, at mount — before this ever ran. A
+    // failed write rolls the blocks back, so stale ids left in the set are
+    // harmless.
     for (const block of applied.blocks) markInserted(block.id)
+    if (!(await persistBlocksAsOwnEdit(before, applied.blocks))) return
     // KAN-138: applying a `yours` template retires its "just saved" lead — but
     // only once the blocks write above actually landed; a failed apply keeps
     // the lead so the person's retry still sees it first.
