@@ -232,4 +232,55 @@ describe('handOffRowStartOnResize', () => {
     const blocks: TestBlock[] = [{ id: 'a', width: '3/4' }]
     expect(handOffRowStartOnResize(blocks, 0, 50)).toEqual([{ id: 'a', width: 50 }])
   })
+
+  it('self-handoff: shrinking the resized block itself into room above its own line hands IT rowStart', () => {
+    const blocks: TestBlock[] = [{ id: 'a', width: '1/2' }, { id: 'b', width: 'full' }]
+    // 50 + 100 = 150 > 100 before (b is alone on its own line); 50 + 46 = 96 <= 100 after.
+    expect(handOffRowStartOnResize(blocks, 1, 46)).toEqual([
+      { id: 'a', width: '1/2' },
+      { id: 'b', width: 46, rowStart: true },
+    ])
+  })
+
+  it('self-handoff: the same, snapped to a named width instead of a free one', () => {
+    const blocks: TestBlock[] = [{ id: 'a', width: '1/2' }, { id: 'b', width: 'full' }]
+    // 50 + 50 = 100 <= 100 after — b would newly pack beside a.
+    expect(handOffRowStartOnResize(blocks, 1, '1/2')).toEqual([
+      { id: 'a', width: '1/2' },
+      { id: 'b', width: '1/2', rowStart: true },
+    ])
+  })
+
+  it('self-handoff: a resized block that already carries rowStart is left alone', () => {
+    const blocks: TestBlock[] = [{ id: 'a', width: '1/2' }, { id: 'b', width: 'full', rowStart: true }]
+    expect(handOffRowStartOnResize(blocks, 1, 46)).toEqual([
+      { id: 'a', width: '1/2' },
+      { id: 'b', width: 46, rowStart: true },
+    ])
+  })
+
+  it('self-handoff: no handoff when the previous row is already full', () => {
+    const blocks: TestBlock[] = [{ id: 'a', width: 'full' }, { id: 'b', width: 'full' }]
+    // a alone already fills its row at 100 — no shrink of b can ever fit beside it.
+    expect(handOffRowStartOnResize(blocks, 1, 10)).toEqual([
+      { id: 'a', width: 'full' },
+      { id: 'b', width: 10 },
+    ])
+  })
+
+  it('both handoffs at once: a middle block that newly packs beside both its neighbours hands rowStart to itself AND the next block', () => {
+    const blocks: TestBlock[] = [
+      { id: 'a', width: '1/2' },
+      { id: 'b', width: 'full' },
+      { id: 'c', width: '1/4' },
+    ]
+    // Before: a alone (50), b alone (100), c alone (25) — none fit together.
+    // After b shrinks to 20: a+b = 70 <= 100 (b newly joins a's row), and
+    // a+b+c = 95 <= 100 (c would also newly join) — both need protecting.
+    expect(handOffRowStartOnResize(blocks, 1, 20)).toEqual([
+      { id: 'a', width: '1/2' },
+      { id: 'b', width: 20, rowStart: true },
+      { id: 'c', width: '1/4', rowStart: true },
+    ])
+  })
 })

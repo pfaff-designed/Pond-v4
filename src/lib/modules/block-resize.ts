@@ -132,31 +132,54 @@ export function resizeAlone(
 
 /**
  * Applies `newWidth` to `blocks[index]` and, only when that shrink just opened
- * enough room in its row for the next block to pack into it per `layoutRows`,
- * adds `rowStart: true` to that next block so the row stays as it was (SPEC.md's
- * rowStart contract: a resize changes widths only, never re-packs). Does
- * nothing beyond the width write when: there is no next block; the next block
- * already carries `rowStart` (it already won't repack); the resize is a grow or
- * no-op (a row can only ever newly admit a block by shrinking, never by
- * growing); the next block was already in the resized block's row before the
- * resize (nothing changes for it); or the next block still doesn't fit after
- * the resize.
+ * enough room for a row-mate to newly pack in per `layoutRows`, adds
+ * `rowStart: true` to whichever block would otherwise newly join a row (SPEC.md's
+ * rowStart contract: a resize changes widths only, never re-packs). Two
+ * directions can each newly admit a block: the next block can pack into the
+ * resized block's own row, and the resized block itself can pack UP into the
+ * previous block's row — shrinking a block alone on its line doesn't just
+ * risk pulling its neighbour in, it can walk itself into the row above. Either
+ * handoff is skipped when: there is no such neighbour; that neighbour already
+ * carries `rowStart` (next) or the resized block itself already does (self —
+ * it already won't repack); the resize is a grow or no-op (a row can only ever
+ * newly admit a block by shrinking, never by growing); the pair was already in
+ * the same row before the resize (nothing changes for it); or the pair still
+ * doesn't share a row after the resize.
  */
 export function handOffRowStartOnResize<
   T extends { id: string; width?: BlockWidth | number; rowStart?: boolean },
 >(blocks: readonly T[], index: number, newWidth: BlockWidth | number): T[] {
   const resized = blocks[index]
   const next = blocks[index + 1]
+  const prev = blocks[index - 1]
   const withNewWidth = blocks.map((block, i) => (i === index ? { ...block, width: newWidth } : block))
 
-  if (!resized || !next || next.rowStart === true) return withNewWidth
+  if (!resized) return withNewWidth
   if (widthPercent(newWidth) >= widthPercent(resized.width)) return withNewWidth
 
   const sameRow = (rows: T[][], aId: string, bId: string): boolean =>
     rows.some((row) => row.some((b) => b.id === aId) && row.some((b) => b.id === bId))
 
-  if (sameRow(layoutRows(blocks), resized.id, next.id)) return withNewWidth
-  if (!sameRow(layoutRows(withNewWidth), resized.id, next.id)) return withNewWidth
+  const rowsBefore = layoutRows(blocks)
+  const rowsAfter = layoutRows(withNewWidth)
 
-  return withNewWidth.map((block) => (block.id === next.id ? { ...block, rowStart: true } : block))
+  const handOffToNext =
+    !!next &&
+    next.rowStart !== true &&
+    !sameRow(rowsBefore, resized.id, next.id) &&
+    sameRow(rowsAfter, resized.id, next.id)
+
+  const handOffToSelf =
+    resized.rowStart !== true &&
+    !!prev &&
+    !sameRow(rowsBefore, resized.id, prev.id) &&
+    sameRow(rowsAfter, resized.id, prev.id)
+
+  if (!handOffToNext && !handOffToSelf) return withNewWidth
+
+  return withNewWidth.map((block) => {
+    if (handOffToSelf && block.id === resized.id) return { ...block, rowStart: true }
+    if (handOffToNext && next && block.id === next.id) return { ...block, rowStart: true }
+    return block
+  })
 }
