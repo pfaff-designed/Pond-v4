@@ -65,6 +65,18 @@ describe('accept-marks', () => {
     releaseP2()
   })
 
+  it('an older, already-seen mark and a newer, unseen mark on the same page clear independently', () => {
+    const release = registerPageOpen('p1')
+    recordAccept('p1', ['block:a'], 'rec1', '2026-10-17T07:13:00.000Z') // born seen: p1 is mounted
+    release()
+    recordAccept('p1', ['block:b'], 'rec2', '2026-10-17T07:20:00.000Z') // born unseen: p1 is closed
+    registerPageOpen('p1')
+    expect(consumeOnOpen('p1')).toEqual([
+      { target: 'block:b', recordId: 'rec2', acceptedAt: '2026-10-17T07:20:00.000Z' },
+    ])
+    expect(consumeOnOpen('p1')).toEqual([])
+  })
+
   it('a second accept on the same target replaces it rather than duplicating', () => {
     const release = registerPageOpen('p1')
     consumeOnOpen('p1')
