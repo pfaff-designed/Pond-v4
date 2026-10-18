@@ -40,7 +40,7 @@
  * with one root, per #320).
  */
 
-import { useState, type KeyboardEvent } from 'react'
+import { useEffect, useState } from 'react'
 import { Icon } from '@/components/atoms/Icon'
 import { PondControl } from '@/components/atoms/PondControl'
 
@@ -101,23 +101,32 @@ export function NewPondSheet({
   const [step, setStep] = useState(1)
   const [name, setName] = useState(defaultName)
 
+  const trimmed = name.trim()
+  const blank = trimmed === ''
   const last = step === 2
 
-  /** Esc steps back then cancels; ← does only the back-step, and only outside the name field it would otherwise move the caret in. */
-  const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === 'Escape') {
-      e.stopPropagation()
-      if (step > 1) {
-        setStep((s) => s - 1)
-      } else {
-        onCancel()
+  // A step change unmounts whatever was focused (the name field on advancing,
+  // `back` on returning to step 1), dropping focus to <body> — a listener on
+  // the dialog div's onKeyDown would then never see the key again. Esc/← are
+  // handled on `document` instead, for as long as the sheet is mounted.
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        if (step > 1) {
+          setStep((s) => s - 1)
+        } else {
+          onCancel()
+        }
+        return
       }
-      return
+      if (e.key === 'ArrowLeft' && step > 1 && !(e.target instanceof HTMLInputElement)) {
+        setStep((s) => s - 1)
+      }
     }
-    if (e.key === 'ArrowLeft' && step > 1 && (e.target as HTMLElement).tagName !== 'INPUT') {
-      setStep((s) => s - 1)
-    }
-  }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [step, onCancel])
 
   return (
     <>
@@ -132,7 +141,6 @@ export function NewPondSheet({
         aria-modal="true"
         aria-label="New pond"
         className={`fixed top-[120px] left-1/2 z-[41] box-border flex w-[540px] -translate-x-1/2 flex-col gap-[18px] rounded-[20px] p-[22px_24px] text-mn-text ${SHEET_GLASS}`}
-        onKeyDown={handleKeyDown}
       >
         <div className="flex items-baseline justify-end font-mono text-[11px] leading-[normal] text-mn-text-secondary">
           <span>{step} of 2</span>
@@ -153,7 +161,7 @@ export function NewPondSheet({
                 disabled={pending}
                 autoFocus
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && name.trim() !== '') {
+                  if (e.key === 'Enter' && !blank) {
                     setStep((s) => s + 1)
                   }
                 }}
@@ -235,8 +243,8 @@ export function NewPondSheet({
             kind="button"
             variant="primary"
             label={last ? 'make pond' : 'continue'}
-            disabled={pending || name.trim() === ''}
-            onClick={() => (last ? onCreate(name.trim()) : setStep((s) => s + 1))}
+            disabled={pending || blank}
+            onClick={() => (last ? onCreate(trimmed) : setStep((s) => s + 1))}
           />
         </div>
       </div>

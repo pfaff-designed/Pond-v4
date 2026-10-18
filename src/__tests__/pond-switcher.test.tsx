@@ -262,6 +262,48 @@ describe('the pond switcher', () => {
     await waitFor(() => expect(push).toHaveBeenCalledWith('/workspace?pond=p-new'))
   })
 
+  // Both tests below fire Escape with `document.body` as the event's own
+  // target — exactly what the real bug produces: a step change unmounts the
+  // element that was focused and nothing inside the sheet claims it, so the
+  // next keydown's target is <body>, outside the dialog div's own subtree.
+  // A listener that only sits on the dialog's `onKeyDown` never sees that
+  // event; `document.body.focus()` cannot reproduce it on its own, since
+  // step 1's name field re-claims focus via its own `autoFocus` the moment
+  // it remounts.
+
+  it('Escape still steps back once its target is <body> (Enter unmounted the name field)', async () => {
+    const user = userEvent.setup()
+    renderSwitcher()
+    await user.click(await screen.findByRole('button', { name: /life/ }))
+    await user.click(screen.getByRole('menuitem', { name: /new pond/ }))
+
+    await user.type(screen.getByPlaceholderText('Name your pond'), 'Studio{Enter}')
+    const sheet = screen.getByRole('dialog', { name: 'New pond' })
+    expect(sheet).toHaveTextContent('2 of 2')
+
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+
+    expect(screen.getByRole('dialog', { name: 'New pond' })).toHaveTextContent('1 of 2')
+    expect(screen.getByPlaceholderText('Name your pond')).toHaveValue('Studio')
+  })
+
+  it('Escape still cancels once its target is <body> (back unmounted itself)', async () => {
+    const user = userEvent.setup()
+    renderSwitcher()
+    await user.click(await screen.findByRole('button', { name: /life/ }))
+    await user.click(screen.getByRole('menuitem', { name: /new pond/ }))
+
+    await user.type(screen.getByPlaceholderText('Name your pond'), 'Studio')
+    await user.click(screen.getByRole('button', { name: 'continue' }))
+    expect(screen.getByRole('dialog', { name: 'New pond' })).toHaveTextContent('2 of 2')
+
+    await user.click(screen.getByRole('button', { name: 'back' }))
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+
+    expect(screen.queryByRole('dialog', { name: 'New pond' })).not.toBeInTheDocument()
+    expect(createPond).not.toHaveBeenCalled()
+  })
+
   it('Esc on step 1 cancels and creates nothing', async () => {
     const user = userEvent.setup()
     renderSwitcher()
