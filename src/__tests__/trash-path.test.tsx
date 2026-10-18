@@ -211,6 +211,7 @@ const PROVIDER_VALUE: PondContextValue = {
 
 beforeEach(() => {
   jest.clearAllMocks()
+  window.localStorage.clear()
   ;(jest.requireMock('next/navigation') as { __reset: () => void }).__reset()
   livePages = ROWS.map((r) => ({ ...r }))
   records = []
