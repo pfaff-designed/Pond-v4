@@ -333,6 +333,32 @@ describe('the pond switcher', () => {
     expect(createPond).not.toHaveBeenCalled()
   })
 
+  it("beats a page panel's own Escape listener on the document bubble phase", async () => {
+    // Simulates PageChangesPanel's document-level bubble listener: it only acts
+    // on an Escape that reaches it with `defaultPrevented` still false. Mounted
+    // BEFORE the sheet opens, matching the real registration order.
+    const recorder = jest.fn()
+    const handlePanelLike = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !e.defaultPrevented) recorder()
+    }
+    document.addEventListener('keydown', handlePanelLike)
+    try {
+      const user = userEvent.setup()
+      renderSwitcher()
+      await user.click(await screen.findByRole('button', { name: /life/ }))
+      await user.click(screen.getByRole('menuitem', { name: /new pond/ }))
+      expect(screen.getByRole('dialog', { name: 'New pond' })).toBeInTheDocument()
+
+      await user.keyboard('{Escape}')
+
+      expect(screen.queryByRole('dialog', { name: 'New pond' })).not.toBeInTheDocument()
+      expect(createPond).not.toHaveBeenCalled()
+      expect(recorder).not.toHaveBeenCalled()
+    } finally {
+      document.removeEventListener('keydown', handlePanelLike)
+    }
+  })
+
   it('surfaces a failure in the sheet instead of silently closing', async () => {
     const user = userEvent.setup()
     ;(createPond as jest.Mock).mockRejectedValue(new Error('relation "ponds" does not exist'))

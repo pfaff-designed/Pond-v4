@@ -40,7 +40,7 @@
  * with one root, per #320).
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Icon } from '@/components/atoms/Icon'
 import { PondControl } from '@/components/atoms/PondControl'
 
@@ -109,14 +109,26 @@ export function NewPondSheet({
   // `back` on returning to step 1), dropping focus to <body> — a listener on
   // the dialog div's onKeyDown would then never see the key again. Esc/← are
   // handled on `document` instead, for as long as the sheet is mounted.
+  const onCancelRef = useRef(onCancel)
   useEffect(() => {
+    onCancelRef.current = onCancel
+  }, [onCancel])
+
+  useEffect(() => {
+    // Capture phase, not bubble: PageChangesPanel keeps its own Escape
+    // listener on `document`'s bubble phase, and same-target bubble listeners
+    // fire in registration order, so a later `stopPropagation` can't stop an
+    // earlier one from already having acted. Capture always runs first,
+    // regardless of mount order, so preventDefault/stopPropagation here keep
+    // that listener (which checks `e.defaultPrevented`) from firing at all.
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        e.preventDefault()
         e.stopPropagation()
         if (step > 1) {
           setStep((s) => s - 1)
         } else {
-          onCancel()
+          onCancelRef.current()
         }
         return
       }
@@ -124,9 +136,9 @@ export function NewPondSheet({
         setStep((s) => s - 1)
       }
     }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [step, onCancel])
+    document.addEventListener('keydown', handleKeyDown, true)
+    return () => document.removeEventListener('keydown', handleKeyDown, true)
+  }, [step])
 
   return (
     <>
