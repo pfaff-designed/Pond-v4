@@ -20,8 +20,8 @@ import type { BlockWidth } from '@/lib/modules/content'
 import type { PondMenuSize } from './PondMenu'
 
 export interface BlockWidthRowProps {
-  /** Absent reads as `full` — a block with no width. */
-  width: BlockWidth | undefined
+  /** Absent reads as `full` — a block with no width. A number (KAN-441) is a free percent: no cell fills. */
+  width: BlockWidth | number | undefined
   onSelect: (width: BlockWidth) => void
   /** Hovering a non-kept cell previews it; leaving the row clears the preview with `null`. */
   onPreview?: (width: BlockWidth | null) => void
@@ -61,10 +61,19 @@ const NOTE = 'px-[10px] pt-[8px] pb-[4px] font-mono text-[11px] leading-[1.5] te
 const PHONE_NOTE = 'widths show on wider screens. on a phone every block is full.'
 
 export const BlockWidthRow = ({ width, onSelect, onPreview, size = 'desktop' }: BlockWidthRowProps) => {
-  const current = width ?? 'full'
+  // A free percent (KAN-441) fills none of the six named cells — `current`
+  // stays `null` rather than the number itself, so `value === current` below
+  // can never match a cell by coincidence.
+  const isCustom = typeof width === 'number'
+  const current = isCustom ? null : width ?? 'full'
   const [hovered, setHovered] = useState<BlockWidth | null>(null)
   const hoveredLabel = WIDTHS.find(({ value }) => value === hovered)?.label
-  const noteText = size === 'mobile' ? PHONE_NOTE : hoveredLabel && `showing ${hoveredLabel} on the page · click to keep, esc to go back`
+  const noteText =
+    size === 'mobile'
+      ? PHONE_NOTE
+      : hoveredLabel
+      ? `showing ${hoveredLabel} on the page · click to keep, esc to go back`
+      : isCustom && `custom · ${Math.round(width)}%`
   const cellRefs = useRef<(HTMLElement | null)[]>([])
   const rowRef = useRef<HTMLDivElement>(null)
 
