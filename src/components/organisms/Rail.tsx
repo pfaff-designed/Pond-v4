@@ -63,11 +63,10 @@ import { setPageGlyph, setAreaRole } from '@/lib/pages/mark-client'
 import { appendOwnEdit } from '@/lib/change-log/store'
 import { changeLogKey } from '@/lib/change-log/keys'
 import { sessionUndo } from '@/lib/change-log/session-undo'
-import { trashPage } from '@/lib/change-log/trash'
 import { TrashRefusedError } from '@/lib/change-log/errors'
 import { jsonEqual } from '@/lib/json-equal'
 import { pagesKey } from '@/lib/pages/keys'
-import { appendChildLinkUnder } from '@/lib/pages/child-links'
+import { appendChildLinkUnder, trashPageUnlinked } from '@/lib/pages/child-links'
 import { usePondId, usePond } from '@/lib/pond/context'
 import { pushRecentGlyphToPond } from '@/lib/pond/client'
 import { PondSwitcher } from './PondSwitcher'
@@ -1408,6 +1407,18 @@ export function RailView({
   )
 }
 
+/** The node for `id` within `roots`, by id — the leftover sweep's own way to
+ *  find a stale id's LIVE subtree (KAN-448) before trashing it, since it has
+ *  no `RailNode` for that id handed to it the way `handleDelete` does. */
+function findRailNode(roots: RailNode[], id: string): RailNode | undefined {
+  for (const node of roots) {
+    if (node.id === id) return node
+    const found = findRailNode(node.children, id)
+    if (found) return found
+  }
+  return undefined
+}
+
 // ── Container ────────────────────────────────────────────────────────────────
 
 export function Rail() {
@@ -1705,7 +1716,25 @@ export function Rail() {
             data: { user },
           } = await supabase.auth.getUser()
           if (!user) continue // no signed-in user — leave staged, retry on a later mount
-          await trashPage(supabase, id)
+          // `trash_page` trashes this id's whole LIVE subtree, not just
+          // itself — read it fresh off the cache rather than reuse a stale
+          // render's `nodeById` (this effect's own deps are `[]`), so a
+          // leftover id with a since-cached child unlinks that child's
+          // parents too, not only the root's own. This effect runs on mount,
+          // ahead of the rail's own `pages` query settling on a cold reload,
+          // so a bare cache read sees nothing yet — `fetchQuery` (same
+          // key/fn as that query) waits for the real rows instead of
+          // falling back to the leftover id alone.
+          const cachedRows = await queryClient.fetchQuery<PageRow[]>({
+            queryKey: pagesKey(pondId),
+            queryFn: () => fetchPages(pondId),
+          })
+          const node = findRailNode(buildTree(cachedRows), id)
+          await trashPageUnlinked(supabase, queryClient, {
+            pondId,
+            rootPageId: id,
+            subtreeIds: node ? subtreeIds(node) : new Set([id]),
+          })
           unstageId(id)
           queryClient.setQueryData<PageRow[]>(pagesKey(pondId), (rows) => removeRow(rows ?? [], id))
           queryClient.invalidateQueries({ queryKey: pagesKey() })
@@ -1817,9 +1846,12 @@ export function Rail() {
   ) {
     try {
       await withUser(
-        async (sb) => {
-          await trashPage(sb, node.id)
-        },
+        (sb) =>
+          trashPageUnlinked(sb, queryClient, {
+            pondId,
+            rootPageId: node.id,
+            subtreeIds: subtreeIds(node),
+          }),
         reason,
         onWriteSettled
       )
