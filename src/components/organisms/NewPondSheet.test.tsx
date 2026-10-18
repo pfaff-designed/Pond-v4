@@ -237,6 +237,27 @@ describe('NewPondSheet — the glyph row is a live radiogroup (KAN-501)', () => 
   })
 })
 
+describe('NewPondSheet — the glyph radios have accessible names (KAN-501)', () => {
+  it('names a glyph by its id without the numeric suffix, and clicking it checks it', async () => {
+    const user = userEvent.setup()
+    render(<NewPondSheet onCreate={jest.fn()} onCancel={jest.fn()} />)
+
+    const waves = screen.getByRole('radio', { name: 'waves' })
+    expect(waves).toHaveAttribute('aria-checked', 'false')
+
+    await user.click(waves)
+
+    expect(waves).toHaveAttribute('aria-checked', 'true')
+  })
+
+  it('gives all six radios distinct accessible names', () => {
+    render(<NewPondSheet onCreate={jest.fn()} onCancel={jest.fn()} />)
+
+    const names = screen.getAllByRole('radio').map((radio) => radio.getAttribute('aria-label'))
+    expect(new Set(names).size).toBe(6)
+  })
+})
+
 describe('NewPondSheet — the paper/ink theme pills preview live (KAN-501)', () => {
   afterEach(() => {
     document.documentElement.classList.remove('dark')

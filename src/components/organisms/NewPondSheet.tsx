@@ -49,6 +49,9 @@ import { holdInkGround, holdPaperGround } from '@/lib/theme/mode'
 /** `s6m2`'s glyph row, in the board's order. The first is the column default. */
 const GLYPHS = ['lightning-03', 'waves-02', 'star-01', 'house', 'ring', 'heart'] as const
 
+/** A glyph's accessible name: its library id without the glyph library's `-NN` suffix. */
+const glyphLabel = (glyph: string) => glyph.replace(/-\d+$/, '')
+
 /** `s6m2`'s theme row. `paper` is the column default. Only these two are live (#175 owns the rest). */
 const THEMES = ['paper', 'ink', 'sage', 'mist', 'navy', 'wheat', 'burnt orange', 'ember'] as const
 type LiveTheme = 'paper' | 'ink'
@@ -96,6 +99,7 @@ function GlyphRow({ value, onChange }: { value: string; onChange: (glyph: string
           }}
           role="radio"
           aria-checked={g === value}
+          aria-label={glyphLabel(g)}
           tabIndex={g === value ? 0 : -1}
           onClick={() => onChange(g)}
           onKeyDown={handleKeyDown(i)}
