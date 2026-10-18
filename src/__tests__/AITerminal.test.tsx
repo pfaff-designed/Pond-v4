@@ -13,10 +13,11 @@
  * query client).
  */
 
-import React from 'react'
+import React, { useEffect } from 'react'
 import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { EditorContent, useEditor } from '@tiptap/react'
 
 // ── Module mocks — must be defined before imports ─────────────────────────
 
@@ -124,6 +125,8 @@ import { COMPOSER_CLEARANCE_VAR } from '@/lib/layout/composer-clearance'
 import { writeAcceptedChanges } from '@/lib/pages/accept'
 import { configureViewFromProposal } from '@/lib/pages/configure-view'
 import { resolveAcceptTarget } from '@/lib/conversation/resolutions'
+import { registerTextEditor } from '@/lib/modules/text/active-editor'
+import { proseExtensions } from '@/lib/modules/text/extensions'
 import { clearSelection, selectWord } from './helpers/selection'
 
 const mockListPages = listPages as jest.Mock
@@ -168,6 +171,32 @@ const smallHtmlFile = () =>
   new File(['<html><body><h1>hi</h1><p>hello</p></body></html>'], 'running-log.html', {
     type: 'text/html',
   })
+
+/** A registered, editable text-block editor standing in for a real page block — the bar only opens inside one. */
+function PassageBlockHost() {
+  const editor = useEditor({
+    extensions: proseExtensions,
+    content: '<p>hello garden</p>',
+    immediatelyRender: false,
+  })
+
+  useEffect(() => {
+    if (!editor) return
+    return registerTextEditor(editor)
+  }, [editor])
+
+  if (!editor) return null
+  return (
+    <div data-block-id="home-block-1">
+      <EditorContent editor={editor} />
+    </div>
+  )
+}
+
+/** `waitReady`, but disambiguated by name — `PassageBlockHost`'s own editor is a second `textbox`. */
+async function waitComposerReady() {
+  await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Pond' })).not.toBeDisabled())
+}
 
 beforeEach(() => {
   mockSendMessage.mockClear()
@@ -1184,16 +1213,16 @@ describe('AITerminal — ask again keeps a passage ×d since the original send (
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const tree = () => (
       <QueryClientProvider client={queryClient}>
-        <div data-block-id="home-block-1">hello garden</div>
+        <PassageBlockHost />
         <AITerminal />
       </QueryClientProvider>
     )
     const { rerender } = render(tree())
-    await waitReady()
+    await waitComposerReady()
 
     selectWord(screen.getByText('hello garden'), 'garden')
     await user.click(await screen.findByRole('button', { name: 'ask pond' }))
-    await user.type(screen.getByRole('textbox'), 'what is this?')
+    await user.type(screen.getByRole('textbox', { name: 'Message Pond' }), 'what is this?')
     await user.keyboard('{Enter}')
     await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1))
     const [sentMessage] = mockSendMessage.mock.calls[0]
@@ -1590,16 +1619,16 @@ describe('AITerminal — ask-from-selection at the root uses the home id (KAN-34
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(
       <QueryClientProvider client={queryClient}>
-        <div data-block-id="home-block-1">hello garden</div>
+        <PassageBlockHost />
         <AITerminal />
       </QueryClientProvider>
     )
-    await waitReady()
+    await waitComposerReady()
 
     selectWord(screen.getByText('hello garden'), 'garden')
     await user.click(await screen.findByRole('button', { name: 'ask pond' }))
 
-    await user.type(screen.getByRole('textbox'), 'what is this?')
+    await user.type(screen.getByRole('textbox', { name: 'Message Pond' }), 'what is this?')
     await user.keyboard('{Enter}')
 
     await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1))
