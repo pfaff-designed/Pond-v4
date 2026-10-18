@@ -1,12 +1,14 @@
 'use client'
 
 /**
- * A block's edge-resize handle (KAN-441) — an 8px `ew-resize` strip on the
- * block's left or right edge. At true rest nothing is drawn; hovering fades
- * in the grip pill at ink .2 over `--motion-quick` (150ms); dragging holds it
- * at ink 100 and adds the mono readout chip (`½` while snapped, `47%` once
- * broken out). The grip reuses `BlockCanvas.tsx`'s own ⋮⋮ dots (its handle,
- * line 2912) rather than a new glyph.
+ * A block's edge-resize handle (KAN-441) — an 8px `ew-resize` strip straddling
+ * the block's left or right edge (4px in, 4px out), so the pill sits on the
+ * edge line rather than inside the block. At true rest nothing is drawn;
+ * hovering fades in a 2×40px pill at ink .2 over `--motion-quick` (150ms);
+ * dragging holds it at ink 100 and adds the mono readout chip (`½` while
+ * snapped, `47%` once broken out). The pill is the same grip as
+ * `ContentWidthHandle.tsx`'s column handle (`h-10 w-1 rounded-full`), 2px
+ * wide here to match this ticket's spec.
  *
  * Presentational only — pointer wiring (arming a drag, committing a width)
  * is the next item's job; this component just renders the three states and
@@ -56,7 +58,7 @@ export function BlockEdgeHandle({
       data-dragging={dragging || undefined}
       className={cn(
         'group absolute inset-y-0 z-[1] flex w-2 cursor-ew-resize touch-none items-center justify-center',
-        side === 'left' ? 'left-0' : 'right-0'
+        side === 'left' ? '-left-1' : '-right-1'
       )}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
@@ -65,26 +67,16 @@ export function BlockEdgeHandle({
     >
       {/* The grip pill: nothing at true rest, ink .2 on hover, ink 100 while
           dragging — a dragging strip stays lit regardless of hover. */}
-      <svg
-        width="10"
-        height="40"
-        viewBox="0 0 10 40"
-        fill="currentColor"
+      <span
         aria-hidden
+        data-testid="block-edge-handle-pill"
         className={cn(
-          'transition-opacity duration-[var(--motion-quick)] ease-[var(--ease-mn)]',
+          'h-10 w-0.5 rounded-full bg-mn-text transition-opacity duration-[var(--motion-quick)] ease-[var(--ease-mn)]',
           dragging
-            ? 'text-mn-text opacity-100'
-            : 'text-mn-text opacity-0 group-hover:opacity-20 group-focus-within:opacity-20'
+            ? 'opacity-100'
+            : 'opacity-0 group-hover:opacity-20 group-focus-within:opacity-20'
         )}
-      >
-        <circle cx="3" cy="15" r="1.1" />
-        <circle cx="7" cy="15" r="1.1" />
-        <circle cx="3" cy="20" r="1.1" />
-        <circle cx="7" cy="20" r="1.1" />
-        <circle cx="3" cy="25" r="1.1" />
-        <circle cx="7" cy="25" r="1.1" />
-      </svg>
+      />
       {dragging && readout && (
         <span
           data-testid="block-edge-handle-readout"
