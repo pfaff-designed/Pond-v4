@@ -61,8 +61,11 @@ import { PondControl } from '@/components/atoms/PondControl'
 /** The trash table's own six-column grid — no board places trash in the
  *  rail, so this reads off the change log's own `TABLE_COLUMNS` register
  *  (same shell, a column set sized for this table's own content instead),
- *  with a trailing column for the restore control. */
-const TRASH_TABLE_COLUMNS = 'grid-cols-[minmax(0,1fr)_170px_96px_88px_104px_76px]'
+ *  with a trailing column for the restore control. `page` carries the row's
+ *  primary datum (the trashed page's own title), so its flexible share
+ *  (1.6fr) stays wider than `was in`'s (1fr) at every surface width instead
+ *  of the two splitting evenly. */
+const TRASH_TABLE_COLUMNS = 'grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_96px_88px_104px_76px]'
 
 /** Keyset page size for the records FETCH (every page is fetched, looped
  *  internally) and the client-side page size for the derived ROWS table —
