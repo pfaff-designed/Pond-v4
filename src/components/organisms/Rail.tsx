@@ -2066,9 +2066,9 @@ export function Rail() {
   }
 
   /** Open a page — strictly navigation; expansion belongs to the caret alone.
-   *  The databases root is the one row with no caret (PondRail draws none for
-   *  it), so clicking it must also expand it here or its children are never
-   *  reachable by mouse. */
+   *  The databases root is a disclosure, not a page: clicking it toggles
+   *  expansion instead of navigating (KAN-486 — it no longer has a
+   *  destination page reachable from here; ⌘K / the breadcrumb still reach it). */
   function handleSelect(id: string) {
     // The change log and trash are reserved virtual pages — no `pages` row,
     // so their own URLs are built by hand rather than through
@@ -2086,7 +2086,10 @@ export function Rail() {
     }
     const node = nodeById.get(id)
     if (!node) return
-    if (isDatabasesRoot(node)) setExpanded((prev) => new Set(prev).add(id))
+    if (isDatabasesRoot(node)) {
+      handleToggle(id)
+      return
+    }
     navigateTo(node)
   }
 
