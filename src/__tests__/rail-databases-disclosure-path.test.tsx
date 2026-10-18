@@ -3,7 +3,8 @@
  * databases section starts collapsed, toggles both ways by click and by
  * keyboard, survives a remount (localStorage persistence, KAN-393), and stays
  * collapsed when a database child is reached by URL instead of by expanding
- * the section itself.
+ * the section itself. Trash (KAN-504) is its own top-level foot row now, so
+ * it is never subject to the databases section's own disclosure.
  */
 import React from 'react'
 import { render, screen, within, fireEvent, waitFor, act } from '@testing-library/react'
@@ -117,7 +118,6 @@ describe('Rail — the databases section collapses, starts collapsed, and rememb
     expect(caretSvgOf(head)).not.toHaveClass('rotate-90')
     expect(caretSvgOf(head)).not.toHaveClass('-rotate-90')
     expect(screen.queryByRole('treeitem', { name: 'change log' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('treeitem', { name: 'trash' })).not.toBeInTheDocument()
     expect(screen.queryByRole('treeitem', { name: 'ingredients' })).not.toBeInTheDocument()
 
     fireEvent.click(head)
@@ -127,7 +127,6 @@ describe('Rail — the databases section collapses, starts collapsed, and rememb
     // when open (Conductor decision A), not down like an ordinary folder row.
     expect(caretSvgOf(head)).toHaveClass('-rotate-90')
     expect(screen.getByRole('treeitem', { name: 'change log' })).toBeInTheDocument()
-    expect(screen.getByRole('treeitem', { name: 'trash' })).toBeInTheDocument()
     expect(screen.getByRole('treeitem', { name: 'ingredients' })).toBeInTheDocument()
     expect(push).not.toHaveBeenCalled()
 
@@ -184,15 +183,19 @@ describe('Rail — the databases section collapses, starts collapsed, and rememb
     )
   })
 
-  it('a URL opening trash leaves the section collapsed; expanding it then shows trash selected', async () => {
+  it('a URL opening trash shows it selected immediately, regardless of the databases section being collapsed or expanded', async () => {
     currentNodeId = TRASH_NODE_ID
     mount()
 
+    // Trash is its own top-level row (KAN-504) with no ancestors of its own,
+    // so there is nothing for the databases section's disclosure to gate —
+    // it starts collapsed, same as any other pond, while trash is already there.
     await waitFor(() => expect(heading()).toHaveAttribute('aria-expanded', 'false'))
-    expect(screen.queryByRole('treeitem', { name: 'trash' })).not.toBeInTheDocument()
+    expect(screen.getByRole('treeitem', { name: 'trash' })).toBeInTheDocument()
+    expect(screen.getByRole('treeitem', { name: 'trash' })).toHaveAttribute('aria-selected', 'true')
 
     fireEvent.click(heading())
-    await waitFor(() => expect(screen.getByRole('treeitem', { name: 'trash' })).toBeInTheDocument())
+    await waitFor(() => expect(heading()).toHaveAttribute('aria-expanded', 'true'))
     expect(screen.getByRole('treeitem', { name: 'trash' })).toHaveAttribute('aria-selected', 'true')
   })
 
@@ -203,12 +206,12 @@ describe('Rail — the databases section collapses, starts collapsed, and rememb
       expect(screen.getByRole('treeitem', { name: 'ingredients' })).toBeInTheDocument()
     )
     const changeLog = screen.getByRole('treeitem', { name: 'change log' })
-    const trash = screen.getByRole('treeitem', { name: 'trash' })
     const ingredients = screen.getByRole('treeitem', { name: 'ingredients' })
 
     // Rendering the heading LAST (KAN-486: its rows sit above it, never below)
-    // means every db row comes BEFORE it in document order.
-    for (const dbRow of [changeLog, trash, ingredients]) {
+    // means every db row comes BEFORE it in document order. Trash (KAN-504)
+    // is no longer a database row, so it is not part of this group.
+    for (const dbRow of [changeLog, ingredients]) {
       expect(
         dbRow.compareDocumentPosition(heading()) & Node.DOCUMENT_POSITION_FOLLOWING
       ).toBeTruthy()
@@ -216,8 +219,6 @@ describe('Rail — the databases section collapses, starts collapsed, and rememb
 
     act(() => changeLog.focus())
     fireEvent.keyDown(changeLog, { key: 'ArrowDown' })
-    expect(trash).toHaveFocus()
-    fireEvent.keyDown(trash, { key: 'ArrowDown' })
     expect(ingredients).toHaveFocus()
     fireEvent.keyDown(ingredients, { key: 'ArrowDown' })
     expect(heading()).toHaveFocus()
@@ -225,8 +226,6 @@ describe('Rail — the databases section collapses, starts collapsed, and rememb
     fireEvent.keyDown(heading(), { key: 'ArrowUp' })
     expect(ingredients).toHaveFocus()
     fireEvent.keyDown(ingredients, { key: 'ArrowUp' })
-    expect(trash).toHaveFocus()
-    fireEvent.keyDown(trash, { key: 'ArrowUp' })
     expect(changeLog).toHaveFocus()
   })
 })
