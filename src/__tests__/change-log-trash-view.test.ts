@@ -8,7 +8,8 @@
  * orange, since the model carries no such flag at all.
  */
 
-import { buildTrashRows } from '@/lib/change-log/trash-view'
+import { buildTrashRows, isVirtualNodeId, TRASH_NODE_ID } from '@/lib/change-log/trash-view'
+import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
 import type { ChangeLogRecord, TrashSnapshot } from '@/lib/change-log/types'
 
 const NOW = new Date('2026-09-26T12:00:00.000Z')
@@ -144,5 +145,16 @@ describe('buildTrashRows', () => {
     expect(Object.keys(row).sort()).toEqual(
       ['deletedAt', 'deletedBy', 'goes', 'page', 'record', 'wasIn'].sort()
     )
+  })
+})
+
+describe('isVirtualNodeId', () => {
+  it.each([
+    [CHANGE_LOG_NODE_ID, true],
+    [TRASH_NODE_ID, true],
+    ['page-1', false],
+    ['', false],
+  ])('%s -> %s', (id, expected) => {
+    expect(isVirtualNodeId(id)).toBe(expected)
   })
 })

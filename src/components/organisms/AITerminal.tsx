@@ -78,6 +78,7 @@ import { MadePageActions } from '@/components/molecules/MadePageActions'
 import { toParentOptions, ancestorPathLabel } from '@/lib/pages/parent-options'
 import { openWorkspaceUrl, workspaceHref, workspaceUrl } from '@/lib/pages/nav'
 import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
+import { isVirtualNodeId } from '@/lib/change-log/trash-view'
 import { insertPageOptimistic, type PageRow } from '@/lib/pages/tree'
 import { appendChildLinkUnder } from '@/lib/pages/child-links'
 import { linkedPageIds, orderMentionPages } from '@/lib/pages/mention-pages'
@@ -668,12 +669,12 @@ export function AITerminal() {
 
   // Current page blocks — the source of the "before" text in a diff card, and
   // the array we rewrite when a proposal is accepted. Shares the ['page', pageId]
-  // cache with DocumentPanel. The virtual change-log node has no `pages` row
-  // (DocumentPanel's own `isChangeLogNode` guard), so it takes none of this path.
+  // cache with DocumentPanel. A reserved virtual node (change log, trash) has no
+  // `pages` row (DocumentPanel's own guard), so it takes none of this path.
   const { data: currentPage } = useQuery({
     queryKey: ['page', pageId],
     queryFn: () => (pageId ? getPage(getSupabase(), pageId) : Promise.resolve(null)),
-    enabled: !!pageId && pageId !== CHANGE_LOG_NODE_ID,
+    enabled: !!pageId && !isVirtualNodeId(pageId),
   })
 
   // The user's pages, used to populate the create_page destination picker, to
@@ -714,7 +715,7 @@ export function AITerminal() {
   const crossPageTargetIds = useMemo(() => {
     const ids = new Set<string>()
     for (const t of Object.values(changeTargets ?? {})) {
-      if (t.nodeId && !t.missing && t.nodeId !== pageId && t.nodeId !== CHANGE_LOG_NODE_ID) {
+      if (t.nodeId && !t.missing && t.nodeId !== pageId && !isVirtualNodeId(t.nodeId)) {
         ids.add(t.nodeId)
       }
     }

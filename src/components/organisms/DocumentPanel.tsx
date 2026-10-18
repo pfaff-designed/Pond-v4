@@ -58,7 +58,7 @@ import { usePublishCommandPath } from '@/lib/layout/command-path'
 import { commandPath } from '@/lib/pages/command-path'
 import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
 import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
-import { TRASH_NODE_ID } from '@/lib/change-log/trash-view'
+import { isVirtualNodeId, TRASH_NODE_ID } from '@/lib/change-log/trash-view'
 import { ChangeLogPage } from '@/components/organisms/ChangeLogPage'
 import { ChangeLogRecordPage } from '@/components/organisms/ChangeLogRecordPage'
 import { TrashPage } from '@/components/organisms/TrashPage'
@@ -214,7 +214,7 @@ export function DocumentPanel() {
   const { data: page, isLoading } = useQuery({
     queryKey: ['page', pageId],
     queryFn: () => (pageId ? getPage(getSupabase(), pageId) : Promise.resolve(null)),
-    enabled: !!pageId && !isChangeLogNode && !isTrashNode,
+    enabled: !!pageId && !isVirtualNodeId(pageId),
   })
 
   // KAN-122: a page made by `/ nested page` carries `new` (the chip on its

@@ -12,13 +12,22 @@
  * no React.
  */
 
-import { daysBetween, dayHeaderLabel } from './log-page'
+import { CHANGE_LOG_NODE_ID, daysBetween, dayHeaderLabel } from './log-page'
 import { groupByTarget, TRASH_RETENTION_MS } from './deleted-view'
 import { readTrashSnapshot } from './summary'
 import type { ChangeLogRecord } from './types'
 
 /** The rail/URL id for the trash page. Never a real page id. */
 export const TRASH_NODE_ID = '__trash__'
+
+/** True for either reserved virtual node — the change log or trash — neither
+ *  of which has a `pages` row behind it, so a page-id-keyed query (`getPage`,
+ *  a cross-page target fetch) must never run against it. Lives here, not
+ *  `log-page.ts`, because this module already imports from that one; the
+ *  reverse import would cycle. */
+export function isVirtualNodeId(id: string): boolean {
+  return id === CHANGE_LOG_NODE_ID || id === TRASH_NODE_ID
+}
 
 export interface TrashRow {
   /** The `delete` record this row renders — its id is what `restorePage` takes. */
