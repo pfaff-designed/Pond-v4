@@ -161,7 +161,10 @@ function parseUnlinkedLinks(value: unknown): RemovedLink[] {
  * `getPage`'s swallow-to-`null` (KAN-448) — every caller here merges onto
  * whatever this returns and writes the merge back, so a transient read
  * failure silently treated as "no props" would wipe the page's real props
- * (`status`, `_schema`, `mark`, `childLinksMigrated`, ...) on write.
+ * (`status`, `_schema`, `mark`, `childLinksMigrated`, ...) on write. A `null`
+ * row with no error (missing, or RLS-hidden) throws too, for the same
+ * reason: `readMergeWriteProps`'s write must never run against a row that
+ * was never actually read.
  */
 async function readPageProps(
   supabase: SupabaseClient<Database>,
@@ -173,7 +176,8 @@ async function readPageProps(
     .eq('id', pageId)
     .maybeSingle()
   if (error) throw new Error(error.message)
-  const current = (data as { props?: unknown } | null)?.props
+  if (data === null) throw new Error(`page ${pageId} not found while reading props`)
+  const current = (data as { props?: unknown }).props
   return current && typeof current === 'object' && !Array.isArray(current)
     ? (current as Record<string, unknown>)
     : {}

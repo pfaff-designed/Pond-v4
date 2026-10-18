@@ -708,6 +708,37 @@ describe('unlinkTrashedSubtree', () => {
     expect(consoleError).toHaveBeenCalled()
     consoleError.mockRestore()
   })
+
+  it('writes nothing — and never commits a parent — when the root-props read returns no row and no error', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
+    const link1 = link('b1', 'child-1')
+    const supabase = makeSupabase({
+      containsResults: { 'child-1': [parentPage('parent-a', [link1])] },
+    })
+    supabase._chain.maybeSingle.mockResolvedValue({ data: null, error: null })
+    mockGetPage.mockResolvedValue({
+      id: 'parent-a',
+      parentId: null,
+      type: 'page',
+      title: 'Parent A',
+      blocks: [link1],
+      order: 0,
+      props: {},
+    })
+
+    await expect(
+      unlinkTrashedSubtree(supabase as never, queryClient, {
+        pondId: 'pond-1',
+        rootPageId: 'root-1',
+        subtreeIds: new Set(['child-1']),
+      })
+    ).resolves.toBeUndefined()
+
+    expect(supabase._chain.update).not.toHaveBeenCalled()
+    expect(mockCommitBlocks).not.toHaveBeenCalled()
+    expect(consoleError).toHaveBeenCalled()
+    consoleError.mockRestore()
+  })
 })
 
 describe('relinkRestoredSubtree', () => {
