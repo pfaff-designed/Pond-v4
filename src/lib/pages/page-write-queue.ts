@@ -120,19 +120,20 @@ export function createPageWriteQueue<T>(writer: PageWriter<T>, initial: T): Page
     })
   }
 
-  // `notify()` fires from inside `pump()`'s loop, before `pumping` has
-  // unwound back to false (the loop's next iteration, not `isIdle()`'s own
-  // `!pumping`, is what decides whether there's more to do) — so this checks
-  // `queued`/`haltedOp` directly, same as `notify()`'s own callers already
-  // relied on before `drained()` existed, rather than `isIdle()`.
-  //
-  // A halt is terminal for drain purposes: nothing in `queued` applies again
-  // until an explicit `retry()`/`enqueue()` resumes the queue, so a caller
-  // already waiting on `drained()` must not be parked on that — callers
-  // proceed against `head()`, which already excludes the failed op.
+  // "Halted at rest" (`haltedOp !== null && !pumping`) is what's terminal for
+  // drain purposes, NOT bare `haltedOp !== null` — `haltedOp` stays set for
+  // the whole span of a retry attempt too (cleared only on that attempt's
+  // success), so checking it alone would resolve a waiting `drained()` while
+  // a retry of that very op is still in flight. `pumping` is checked directly
+  // rather than `isIdle()`: this runs from inside `pump()`'s own loop, before
+  // its `finally` has unwound `pumping` back to false, and from that
+  // `finally` itself once it has — never from an arbitrary outside call, so
+  // there's no mid-await window to account for here the way `drained()`'s own
+  // outer check needs to.
   function maybeResolveDrain(): void {
     if (!drainPromise) return
     if (outstandingSettles !== 0) return
+    if (pumping) return
     if (haltedOp === null && queued.length !== 0) return
     const waiters = drainWaiters.splice(0, drainWaiters.length)
     drainPromise = null
@@ -189,6 +190,13 @@ export function createPageWriteQueue<T>(writer: PageWriter<T>, initial: T): Page
       }
     } finally {
       pumping = false
+      // A retry that rejects again (the halted-op branch's own `catch`)
+      // returns without calling `notify()` — nothing else would otherwise
+      // resolve a `drained()` promise created while that retry was in
+      // flight. Safe to call unconditionally: every other exit path already
+      // called `notify()` (hence `maybeResolveDrain()`) itself, while
+      // `pumping` was still `true`, so this is the only resolution it gets.
+      maybeResolveDrain()
     }
   }
 
@@ -260,14 +268,19 @@ export function createPageWriteQueue<T>(writer: PageWriter<T>, initial: T): Page
     // or a settle's own resolution, both of which fire after the state they
     // check has already finished changing for that op.
     if (isIdle() && outstandingSettles === 0) return undefined
-    // Halted, with no settle still outstanding: a halt never resumes on its
-    // own, so there's nothing left for THIS call to wait on. Nothing else
-    // queued behind it — truly nothing outstanding — returns `undefined`,
-    // same as the idle case above. Something still queued behind the halt
-    // stays pending (it won't apply until a retry), but a caller already
-    // can't wait on that via `drained()` — resolve now rather than create a
+    // Halted AT REST (`!pumping` — a retry of `haltedOp` is NOT in flight),
+    // with no settle still outstanding: a halt never resumes on its own, so
+    // there's nothing left for THIS call to wait on. Nothing else queued
+    // behind it — truly nothing outstanding — returns `undefined`, same as
+    // the idle case above. Something still queued behind the halt stays
+    // pending (it won't apply until a retry), but a caller already can't
+    // wait on that via `drained()` — resolve now rather than create a
     // promise `maybeResolveDrain` has no future trigger to settle.
-    if (haltedOp !== null && outstandingSettles === 0) {
+    //
+    // While `pumping` IS true (a retry of `haltedOp` already under way), this
+    // is NOT at rest — fall through and create a real promise, so a caller
+    // doesn't proceed against a store that retry might still change.
+    if (haltedOp !== null && !pumping && outstandingSettles === 0) {
       return queued.length === 0 ? undefined : Promise.resolve()
     }
     drainPromise = new Promise<void>((resolve) => {

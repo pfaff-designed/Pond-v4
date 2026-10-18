@@ -308,6 +308,74 @@ describe('createPageWriteQueue', () => {
       expect(drained).not.toBeUndefined()
       await drained
     })
+
+    it('stays pending while a retry of the halted op is in flight, resolving once it and the op behind it both apply', async () => {
+      let attempt = 0
+      const pending: Array<() => void> = []
+      const writer = jest.fn((_op: PageWriteOp<string>) => {
+        attempt += 1
+        if (attempt === 1) return Promise.reject(new Error('transient'))
+        if (attempt === 2) return new Promise<void>((resolve) => pending.push(resolve))
+        return Promise.resolve()
+      })
+      const queue = createPageWriteQueue<string>(writer, 'initial')
+
+      await expect(queue.enqueue({ kind: 'typed', after: 'a' })).rejects.toThrow('transient')
+      expect(queue.halted()).toBe(true)
+
+      // Enqueuing while halted retries 'a' first (attempt 2, held above)
+      // before even looking at 'b' — the retry is what's "in flight" below.
+      const second = queue.enqueue({ kind: 'typed', after: 'b' })
+
+      const drained = queue.drained()
+      expect(drained).not.toBeUndefined()
+
+      let settled = false
+      drained?.then(() => (settled = true))
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(settled).toBe(false)
+
+      pending[0]()
+      await second
+      await drained
+
+      expect(settled).toBe(true)
+      expect(queue.halted()).toBe(false)
+      expect(queue.head()).toBe('b')
+    })
+
+    it('resolves (does not hang) when a retry still in flight rejects again', async () => {
+      let attempt = 0
+      const rejecters: Array<(err: unknown) => void> = []
+      const writer = jest.fn((_op: PageWriteOp<string>) => {
+        attempt += 1
+        if (attempt === 1) return Promise.reject(new Error('transient'))
+        return new Promise<void>((_resolve, reject) => rejecters.push(reject))
+      })
+      const queue = createPageWriteQueue<string>(writer, 'initial')
+
+      await expect(queue.enqueue({ kind: 'typed', after: 'a' })).rejects.toThrow('transient')
+      expect(queue.halted()).toBe(true)
+
+      // 'b' sits queued behind the retry; it never applies in this test.
+      void queue.enqueue({ kind: 'typed', after: 'b' })
+
+      const drained = queue.drained()
+      expect(drained).not.toBeUndefined()
+
+      let settled = false
+      drained?.then(() => (settled = true))
+      await Promise.resolve()
+      expect(settled).toBe(false)
+
+      rejecters[0](new Error('transient again'))
+      await drained
+
+      expect(settled).toBe(true)
+      expect(queue.halted()).toBe(true)
+      expect(queue.head()).toBe('initial')
+    })
   })
 
   describe('subscribe()', () => {

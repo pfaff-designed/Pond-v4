@@ -181,14 +181,45 @@ describe('createPageWriteQueue — property', () => {
  * Same queue, now paired with a real `createSessionUndo` (not a mock of it) —
  * a fake `SessionUndoRunner` reads and writes the SAME model store the queue's
  * writer does, so an undo/redo "landing" is a second, independent way the
- * store changes besides a queue-applied op. ⌘Z/⇧⌘Z are only fired while
- * `queue.idle()` — matching `ShellCommands.tsx`'s own `flushPendingPageSave`
- * guard before a step — because landing one while the queue is mid-flight or
- * halted is KAN-407's seam (retrying a halted op against a store an undo has
- * since moved), not this ticket's. Within that gate, `queue.rebase(store)`
- * keeps `head()` and the undo/redo model's store in lockstep, exactly as
- * `use-page-draft.ts`'s same-page adopt branch does for a real accepted
- * diff/undo landing.
+ * store changes besides a queue-applied op.
+ *
+ * ⌘Z/⇧⌘Z always wait on `queue.drained()` first, unconditionally — matching
+ * `ShellCommands.tsx`'s `runUndoStep`, which calls `flushPendingPageSave`
+ * (== `drained()`) and only then runs the step, with no `idle()`/`halted()`
+ * check of its own before that call. That is what makes `drained()` waiting
+ * out a retry still in flight (this ticket's own fix) something this random
+ * walk actually exercises, not just the direct unit tests. That wait runs in
+ * the background (pushed onto `settled`, not `await`ed before the walk's own
+ * for-loop moves on): the drain it waits on can depend on a LATE write this
+ * same run only settles via a LATER step, so blocking the loop on it here
+ * would deadlock the walk against itself — production has no such loop to
+ * deadlock. The undo/redo call itself IS still skipped if the drain settles
+ * into a halt AT REST (no retry pending): a ⌘Z landing there can undo the
+ * step UNDERNEATH the halted op — a real, separately-tracked bug (the next
+ * item in this ticket's plan fixes it), not this test's regression to carry.
+ * Within the "not halted" gate, `queue.rebase(store)` keeps `head()` and the
+ * undo/redo model's store in lockstep, exactly as `use-page-draft.ts`'s
+ * same-page adopt branch does for a real accepted diff/undo landing.
+ *
+ * The walk itself skips new typed/structural enqueues for the span of an
+ * ⌘Z/⇧⌘Z's own background wait (`undoInFlight`, below): a write that lands
+ * in that window applies with `before = head()`, which the queue keeps
+ * correct on its own, but this MODEL's `store` only moves once the undo/redo
+ * callback actually runs — a real race (an undo/redo landing underneath a
+ * write that doesn't yet know about it is KAN-407's seam, same as the
+ * original gate above), not this ticket's drained()-during-retry fix.
+ * Excluding it from the walk keeps the model's own bookkeeping sound without
+ * masking the retry-in-flight scenario this item does cover, which lives
+ * entirely inside the queue's own halt/retry bookkeeping and is untouched by
+ * this flag. A second ⌘Z/⇧⌘Z landing while the first is still in its own
+ * background wait is excluded the same way (`!undoInFlight` on this branch
+ * too) — overlapping calls into the real `sessionUndo` would race each
+ * other's mutation of this model's `store`/`undoneIds`, which is this test
+ * harness's limitation, not something `createPageWriteQueue` governs.
+ *
+ * `sessionUndo.trackPending` is called from inside the writer, right after a
+ * write lands and before its record is remembered — same as `commit.ts`'s
+ * `commitBlocks` (a rejected write never reaches it) — not at enqueue time.
  */
 describe('createPageWriteQueue — property, with session undo', () => {
   const POND_ID = 'pond-1'
@@ -278,7 +309,16 @@ describe('createPageWriteQueue — property, with session undo', () => {
       visitedStates.add(store)
       const id = `r${seed}-${nextRecordId++}`
       recordsById.set(id, { before: op.before, after: op.after })
+      // `commit.ts`'s own order: `trackPending` gets the record-append
+      // promise BEFORE it resolves, right after the write lands — not at
+      // enqueue time, so a rejected write never reaches this at all.
+      let resolveLogged: () => void = () => {}
+      const logged = new Promise<void>((resolve) => {
+        resolveLogged = resolve
+      })
+      sessionUndo.trackPending(POND_ID, logged)
       sessionUndo.remember({ pondId: POND_ID, recordIds: [id] })
+      resolveLogged()
     }
 
     const writer: PageWriter<Store> = (op) => {
@@ -314,34 +354,63 @@ describe('createPageWriteQueue — property, with session undo', () => {
     const queue = createPageWriteQueue<Store>(writer, store)
     const settled: Array<Promise<unknown>> = []
 
+    // Set for the span of an ⌘Z/⇧⌘Z's own background wait (below): a NEW
+    // enqueue landing in that window applies with `before = head()`, which
+    // the queue itself keeps correct, but the MODEL's `store` only moves once
+    // the undo/redo callback actually runs — KAN-407's seam (see the
+    // describe-block comment), not this item's drained()-during-retry fix.
+    // Skipping new enqueues for that one span keeps the walk's own model (not
+    // the queue) internally consistent without masking the retry-in-flight
+    // scenario this item does cover — that one lives entirely inside the
+    // queue's own halt/retry bookkeeping, untouched by this flag. Also gates
+    // a second ⌘Z/⇧⌘Z firing while the first is still waiting, for the same
+    // reason (see the describe-block comment's last paragraph).
+    let undoInFlight = false
+
     const steps = 16 + randomInt(24)
     for (let step = 0; step < steps; step += 1) {
       const action = randomInt(7)
-      if (action === 0 || action === 1) {
+      if ((action === 0 || action === 1) && !undoInFlight) {
         nextValue += 1
         const value = nextValue
         enqueuedValues.add(value)
         const kind: PageWriteKind = action === 0 ? 'typed' : 'structural'
-        const op = queue.enqueue({ kind, after: value })
-        sessionUndo.trackPending(POND_ID, op.catch(() => undefined))
-        settled.push(op.catch(() => undefined))
+        settled.push(queue.enqueue({ kind, after: value }).catch(() => undefined))
       } else if (action === 2) {
         pendingLate.shift()?.settle()
       } else if (action === 3) {
         if (queue.halted()) settled.push(queue.retry().catch(() => undefined))
-      } else if (action === 4 || action === 5) {
-        // ⌘Z / ⇧⌘Z — only while idle (see the describe-block comment above).
-        if (queue.idle()) {
-          const direction = action === 4 ? 'undo' : 'redo'
-          const outcome = await sessionUndo[direction](POND_ID)
-          check(
-            visitedStates.has(store),
-            `after ${direction}, store ${store} was never a state the store actually held`
-          )
-          if (outcome.outcome === 'done' && queue.idle()) {
-            queue.rebase(store)
-          }
-        }
+      } else if ((action === 4 || action === 5) && !undoInFlight) {
+        // ⌘Z / ⇧⌘Z — always wait on the drain first, unconditionally (see the
+        // describe-block comment above): this is what lets the random walk
+        // land one while a retry of a halted op is still in flight. Run in the
+        // background, not awaited inline here: a drain the step waits on can
+        // depend on a LATE write this same run only settles via a LATER
+        // step's `action === 2`, so blocking the walk's own for-loop on it
+        // here would deadlock the walk against itself — production never has
+        // this problem, since a real write's promise settles off its own
+        // network call, not off the next keystroke.
+        const direction = action === 4 ? 'undo' : 'redo'
+        undoInFlight = true
+        settled.push(
+          (async () => {
+            try {
+              const drain = queue.drained()
+              if (drain) await drain
+              if (queue.halted()) return
+              const outcome = await sessionUndo[direction](POND_ID)
+              check(
+                visitedStates.has(store),
+                `after ${direction}, store ${store} was never a state the store actually held`
+              )
+              if (outcome.outcome === 'done' && queue.idle()) {
+                queue.rebase(store)
+              }
+            } finally {
+              undoInFlight = false
+            }
+          })()
+        )
       } else {
         const drain = queue.drained()
         if (drain) settled.push(drain)
