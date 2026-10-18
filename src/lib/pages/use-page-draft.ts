@@ -13,6 +13,7 @@ import { useQueryClient } from '@tanstack/react-query'
 
 import { EDIT_PAUSE_MS } from '@/lib/change-log/pause'
 import type { Block } from '@/lib/documents/types'
+import { withoutRowStart } from '@/lib/modules/layout-rows'
 import { setProperty, updateTitle, type PondPage } from '@/lib/pages/client'
 import { commitBlocks } from '@/lib/pages/commit'
 import type { HomePage } from '@/lib/pages/home'
@@ -28,6 +29,27 @@ interface PageDraftInput {
   pageId: string | null
   pondId: string | null
   getSupabase: () => ReturnType<typeof createClient>
+}
+
+/**
+ * Pure (KAN-440): re-inserts `block` at `index` into `current`, having first
+ * reversed any `detachKeepingRows` handoff the removal made — `handedRowStartTo`
+ * is the id `removeBlockAt` recorded at stage-time, so undo omits `rowStart`
+ * from exactly that block, against `current` (the LATEST blocks, not the
+ * stage-time snapshot). Exported so `undoRemove`'s own contract is directly
+ * testable without rendering the hook.
+ */
+export function withUndoneRemove(
+  current: Block[],
+  index: number,
+  block: Block,
+  handedRowStartTo?: string | null
+): Block[] {
+  const restored = handedRowStartTo
+    ? current.map((b) => (b.id === handedRowStartTo ? withoutRowStart(b) : b))
+    : current
+  const at = Math.min(index, restored.length)
+  return [...restored.slice(0, at), block, ...restored.slice(at)]
 }
 
 export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInput) {
@@ -295,10 +317,9 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
   // via a functional update, so an edit made between the delete and the Undo
   // isn't clobbered by a re-base on the stale stage-time snapshot (the original
   // DocumentPanel behaviour, preserved through BlockCanvas.onUndoRemove).
-  function undoRemove(index: number, block: Block) {
+  function undoRemove(index: number, block: Block, handedRowStartTo?: string | null) {
     setBlocks((current) => {
-      const at = Math.min(index, current.length)
-      const next = [...current.slice(0, at), block, ...current.slice(at)]
+      const next = withUndoneRemove(current, index, block, handedRowStartTo)
       scheduleSave(viewTitle, next)
       return next
     })

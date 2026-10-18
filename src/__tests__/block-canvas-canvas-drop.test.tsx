@@ -86,6 +86,17 @@ function dragOver(targetId: string, targetRect: DOMRect, x: number, y: number) {
   fireEvent(target, event)
 }
 
+/**
+ * Mocks `blockId`'s rect BEFORE a caller's `fireEvent.dragStart`: dragstart
+ * snapshots every block's rect (KAN-440), so a mock set afterward (as `dragOver`
+ * does, for the live rect a real drag would re-read) is invisible to the
+ * classification that snapshot drives — see `block-canvas-beside-drop.test.tsx`'s
+ * own `dragAndDrop` helper, which mocks before dragstart for the same reason.
+ */
+function mockRect(blockId: string, targetRect: DOMRect) {
+  jest.spyOn(blockRoot(blockId), 'getBoundingClientRect').mockReturnValue(targetRect)
+}
+
 function dropAt(el: Element, x: number, y: number) {
   const event = new MouseEvent('drop', { bubbles: true, cancelable: true })
   Object.defineProperty(event, 'clientX', { value: x })
@@ -99,6 +110,7 @@ describe('the canvas root keeps and commits the indicator the ghost would otherw
     const table: Block = { id: 'b-table', type: 'text', content: 'table' }
     renderCanvas([log, table], () => {})
 
+    mockRect('b-log', rect(0, 400))
     fireEvent.dragStart(blockRoot('b-table'))
     // x=360 of a 400-wide rect is 90% across: the outer-right 25%, beside-right of the log.
     dragOver('b-log', rect(0, 400), 360, 50)
@@ -121,6 +133,7 @@ describe('the canvas root keeps and commits the indicator the ghost would otherw
       result = next
     })
 
+    mockRect('b-log', rect(0, 400))
     fireEvent.dragStart(blockRoot('b-table'))
     dragOver('b-log', rect(0, 400), 360, 50)
 
@@ -129,7 +142,7 @@ describe('the canvas root keeps and commits the indicator the ghost would otherw
 
     await waitFor(() =>
       expect(result).toEqual([
-        { ...log, width: '1/2' },
+        { ...log, width: '1/2', rowStart: true },
         { ...table, width: '1/2' },
       ])
     )
@@ -144,6 +157,7 @@ describe('the canvas root keeps and commits the indicator the ghost would otherw
       result = next
     })
 
+    mockRect('b-log', rect(0, 400))
     fireEvent.dragStart(blockRoot('b-table'))
     dragOver('b-log', rect(0, 400), 360, 50)
 
@@ -164,6 +178,7 @@ describe('a zone that offers no plan clears the previous target\'s indicator', (
     const onChange = jest.fn()
     renderCanvas([a, b], onChange)
 
+    mockRect('b-b', rect(0, 400))
     fireEvent.dragStart(blockRoot('b-a'))
     // x=360 of a 400-wide rect is 90% across: the outer-right 25%, beside-right of b.
     dragOver('b-b', rect(0, 400), 360, 50)
@@ -189,6 +204,8 @@ describe('a zone that offers no plan clears the previous target\'s indicator', (
     const onChange = jest.fn()
     renderCanvas([a, b, c, d, e, f], onChange)
 
+    mockRect('b-b', rect(0, 400))
+    mockRect('b-c', rect(0, 400))
     fireEvent.dragStart(blockRoot('b-a'))
     dragOver('b-b', rect(0, 400), 360, 50)
     expect(blockRoot('b-b').querySelector('[data-part="drop-bar"]')).not.toBeNull()

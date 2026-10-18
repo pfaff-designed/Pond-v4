@@ -107,6 +107,7 @@ import { TEXT_PROSE_CLASS } from '@/lib/modules/text/prose'
 import { useRecordSelection } from '@/lib/modules/view/use-record-selection'
 import { TerminalDrawer } from '@/components/molecules/TerminalDrawer'
 import { COMPOSER_CLEARANCE_VAR, composerFootprintPx } from '@/lib/layout/composer-clearance'
+import { getPage } from '@/lib/pages/client'
 
 const onPlatform = (platform: string) =>
   jest.spyOn(window.navigator, 'platform', 'get').mockReturnValue(platform)
@@ -551,6 +552,20 @@ describe('WorkspaceShell — zen from ⌘K, and back with esc', () => {
   })
 
   it('what is left is the page’s own text: no properties, no handles, 22 between blocks', async () => {
+    // A second block, so the gap between rows is actually observable: KAN-440
+    // moved it off the list's own `rowGap` (now fixed at 0, so two rows don't
+    // double it) onto each row's own `marginTop`.
+    ;(getPage as jest.Mock).mockResolvedValueOnce({
+      id: 'journal',
+      parentId: null,
+      type: 'page',
+      title: 'sunday, 21 sep',
+      blocks: [
+        { id: 'b1', type: 'text', content: 'the morning was grey' },
+        { id: 'b2', type: 'text', content: 'then it cleared' },
+      ],
+      props: { _schema: [] },
+    })
     const { container } = renderShell()
     await ready()
     const properties = container.querySelector('[data-block-kind="properties"]')!
@@ -569,15 +584,16 @@ describe('WorkspaceShell — zen from ⌘K, and back with esc', () => {
     // the foot add it replaced — zen's `chrome={false}` unmounts it outright.
     expect(screen.queryByTestId('trailing-block-gap')).not.toBeInTheDocument()
     // handle -> BlockEditor root -> per-block sizing div -> list (no row div).
-    const list = handles[0].parentElement!.parentElement!.parentElement!
+    const sizingDivs = handles.map((h) => h.parentElement!.parentElement!)
+    const list = sizingDivs[0].parentElement!
     expect(getComputedStyle(list).display).toBe('flex')
-    expect(getComputedStyle(list).rowGap).toBe('22px')
+    expect(sizingDivs[1].style.marginTop).toBe('22px')
 
     await esc()
     expect(properties.closest('.hidden')).toBeNull()
     expect(handles.some((h) => h.hidden)).toBe(false)
     expect(screen.getByTestId('trailing-block-gap')).toBeInTheDocument()
-    expect(list.style.rowGap).toBe('16px')
+    expect(sizingDivs[1].style.marginTop).toBe('16px')
   })
 
   it('esc leaves, and puts everything back — the rail, the breadcrumb, the composer and the scroll', async () => {

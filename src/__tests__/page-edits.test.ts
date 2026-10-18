@@ -104,6 +104,25 @@ describe('applyProposedChanges (t16 multi-op Accept path)', () => {
     })
   })
 
+  it('edits: keeps the block\'s existing rowStart (KAN-440) — a Pond diff never repacks rows', () => {
+    const rowStarted: Block[] = [
+      { id: 'b', type: 'text', content: 'second', width: '1/2', rowStart: true },
+    ]
+    const change: ModuleChange = {
+      op: 'edit',
+      blockId: 'b',
+      data: { type: 'text', content: 'rewritten' },
+    }
+    const { blocks } = applyProposedChanges(rowStarted, [change], counter())
+    expect(blocks.find((b) => b.id === 'b')).toEqual({
+      id: 'b',
+      type: 'text',
+      content: 'rewritten',
+      width: '1/2',
+      rowStart: true,
+    })
+  })
+
   it("edits: a hydrated replacement's own width never overrides the target's kept (absent) width (KAN-43)", () => {
     const noWidth: Block[] = [{ id: 'b', type: 'text', content: 'second' }]
     // `data` is typed against moduleDataSchema, which never carries a `width` — this
@@ -141,6 +160,18 @@ describe('applyProposedChanges (t16 multi-op Accept path)', () => {
     const { blocks, applied } = applyProposedChanges(base, [change], counter())
     expect(applied).toBe(1)
     expect(blocks.map((b) => b.id)).toEqual(['a', 'c'])
+  })
+
+  it('removes: a rowStart holder hands rowStart to the row-mate it leaves behind (KAN-440)', () => {
+    const rowStarted: Block[] = [
+      { id: 'a', type: 'text', content: 'first', width: '1/2', rowStart: true },
+      { id: 'x', type: 'text', content: 'second', width: '1/2', rowStart: true },
+      { id: 'y', type: 'text', content: 'third', width: '1/2' },
+    ]
+    const change: ModuleChange = { op: 'remove', blockId: 'x' }
+    const { blocks, applied } = applyProposedChanges(rowStarted, [change], counter())
+    expect(applied).toBe(1)
+    expect(blocks).toEqual([rowStarted[0], { ...rowStarted[2], rowStart: true }])
   })
 
   it('skips ops targeting a missing block instead of failing the batch', () => {

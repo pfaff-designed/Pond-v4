@@ -80,11 +80,14 @@ function rect(left: number, width: number, top = 0, height = 100): DOMRect {
  * at `(x, y)` within `targetRect`. jsdom's `DragEvent` drops `clientX`/
  * `clientY` from its init dict, so the point is defined directly on a plain
  * `MouseEvent` instead — see `block-canvas-drop-line.test.tsx`'s own `dragOver`.
+ * The target's rect is mocked BEFORE `dragstart` fires: dragstart snapshots
+ * every block's rect (KAN-440), so a mock set afterward is invisible to the
+ * classification it drives.
  */
 function dragAndDrop(sourceId: string, targetId: string, targetRect: DOMRect, x: number, y: number) {
-  fireEvent.dragStart(blockRoot(sourceId))
   const target = blockRoot(targetId)
   jest.spyOn(target, 'getBoundingClientRect').mockReturnValue(targetRect)
+  fireEvent.dragStart(blockRoot(sourceId))
   const over = new MouseEvent('dragover', { bubbles: true, cancelable: true })
   Object.defineProperty(over, 'clientX', { value: x })
   Object.defineProperty(over, 'clientY', { value: y })
@@ -109,7 +112,7 @@ describe('committing a beside drop', () => {
     dragAndDrop('b-a', 'b-b', rect(0, 400), 360, 50)
 
     const expected = [
-      { ...b, width: '1/2' },
+      { ...b, width: '1/2', rowStart: true },
       { ...a, width: '1/2' },
     ]
     await waitFor(() => expect(result).toEqual(expected))
@@ -137,7 +140,7 @@ describe('committing a beside drop', () => {
     // Room = 12 - 4 = 8 twelfths → widest fit is 2/3.
     await waitFor(() =>
       expect(result).toEqual([
-        { ...third, width: '1/3' },
+        { ...third, width: '1/3', rowStart: true },
         { ...dropped, width: '2/3' },
       ])
     )
@@ -157,11 +160,49 @@ describe('committing a beside drop', () => {
 
     await waitFor(() =>
       expect(result).toEqual([
-        { ...left, width: '1/3' },
+        { ...left, width: '1/3', rowStart: true },
         { ...right, width: '1/3' },
         { ...dropped, width: '1/3' },
       ])
     )
+  })
+
+  it('undo restores the flag: the own-edit record keeps each block\'s exact pre-drop rowStart (KAN-440)', async () => {
+    // A already holds `rowStart` from an earlier drop; C (full, no flag) is
+    // dragged beside A's left edge, so C becomes the new row start and A's
+    // flag is cleared. `sessionUndo`'s undo step (proved generically in
+    // change-log-undo.test.ts / .pglite.test.ts) swaps the page back to this
+    // very `before` array — so a `before` that is reference-equal to the
+    // pre-drop blocks is what makes that swap restore A's `rowStart: true`
+    // and C's absent `rowStart` exactly, with no separate undo path to test.
+    const a: Block = { id: 'b-a', type: 'text', content: 'a', width: '1/2', rowStart: true }
+    const b: Block = { id: 'b-b', type: 'text', content: 'b', width: '1/2' }
+    const c: Block = { id: 'b-c', type: 'text', content: 'c' }
+    const before = [a, b, c]
+    let result: Block[] | null = null
+    renderCanvas(before, (next) => {
+      result = next
+    })
+
+    // x=40 of a 400-wide rect is 10% across: the outer-left 25%, beside-left of a.
+    dragAndDrop('b-c', 'b-a', rect(0, 400), 40, 50)
+
+    const expected = [
+      { ...c, width: '1/3', rowStart: true },
+      { ...a, width: '1/3', rowStart: undefined },
+      { ...b, width: '1/3' },
+    ]
+    await waitFor(() => expect(result).toEqual(expected))
+    expect(result![1]).not.toHaveProperty('rowStart')
+
+    expect(mockAppendOwnEdit.mock.calls[0][1]).toEqual(
+      expect.objectContaining({ before, after: expected })
+    )
+    // `before` is the exact pre-drop array (same objects, same `rowStart`
+    // values) — the undo RPC swaps the page back to this, so a is `rowStart:
+    // true` again and c's key is simply gone, byte-identical to before the drop.
+    expect(mockAppendOwnEdit.mock.calls[0][1].before).toBe(before)
+    expect(mockAppendOwnEdit.mock.calls[0][1].before[0]).toEqual({ ...a, rowStart: true })
   })
 
   it('splices before the target on a left-beside drop', async () => {
@@ -178,7 +219,7 @@ describe('committing a beside drop', () => {
     dragAndDrop('b-c', 'b-b', rect(0, 400), 40, 50)
 
     await waitFor(() =>
-      expect(result).toEqual([a, { ...c, width: '1/2' }, { ...b, width: '1/2' }])
+      expect(result).toEqual([a, { ...c, width: '1/2', rowStart: true }, { ...b, width: '1/2' }])
     )
   })
 })
