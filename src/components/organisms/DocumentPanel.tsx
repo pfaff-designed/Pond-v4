@@ -57,6 +57,7 @@ import {
 import { usePublishCommandPath } from '@/lib/layout/command-path'
 import { commandPath } from '@/lib/pages/command-path'
 import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
+import { consumeOnOpen, registerPageOpen } from '@/lib/change-log/accept-marks'
 import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
 import { ChangeLogPage } from '@/components/organisms/ChangeLogPage'
 import { ChangeLogRecordPage } from '@/components/organisms/ChangeLogRecordPage'
@@ -235,6 +236,27 @@ export function DocumentPanel() {
       queryClient.invalidateQueries({ queryKey: pagesKey(pondId) })
     })
   }, [page, pondId, queryClient, getSupabase])
+  // KAN-143: a mark set elsewhere (the composer, a record page) shows on this
+  // page's first open and clears on the following one — `consumeOnOpen` is
+  // the one place that reads+clears that bookkeeping, keyed by pageId, the
+  // same mount point `openedMarked` above owns. Guarded by `marksConsumedFor`
+  // rather than the effect's own mount/cleanup: `next.config` sets no
+  // `reactStrictMode`, so the App Router double-invokes this effect (mount →
+  // cleanup → mount) on initial mount with the SAME pageId — consuming on
+  // every run would read that phantom remount as a second open and clear
+  // marks nobody has seen yet. The ref only matches a genuinely new pageId,
+  // never reset on cleanup, so a real navigation away and back still consumes
+  // again.
+  const marksConsumedFor = useRef<string | null>(null)
+  useEffect(() => {
+    if (!pageId) return
+    const unregister = registerPageOpen(pageId)
+    if (marksConsumedFor.current !== pageId) {
+      marksConsumedFor.current = pageId
+      consumeOnOpen(pageId)
+    }
+    return unregister
+  }, [pageId])
   // KAN-350: a row page's `_schema` lives on its PARENT collection — the row's own
   // `props` holds only its values. The parent is read through the SAME `['page', id]`
   // cache every other page read shares (no bespoke key), keyed off `page.parentId`
