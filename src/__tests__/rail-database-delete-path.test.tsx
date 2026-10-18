@@ -23,9 +23,9 @@ import type { Pond } from '@/lib/pond/client'
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
-  // The ancestor-reveal effect expands the databases root when its child is
-  // the open page — the common path to a database row (just created, or
-  // opened from a page-link) and how a person reaches it to delete it.
+  // The databases root is excluded from the ancestor-reveal effect (KAN-486):
+  // opening a database page elsewhere never forces the section open, so the
+  // test below opens it itself before reaching "ingredients".
   useSearchParams: () => ({ get: (key: string) => (key === 'nodeId' ? 'db-1' : null) }),
 }))
 
@@ -101,10 +101,12 @@ function mount(client: QueryClient) {
   )
 }
 
-/** The databases foot tree, waiting for the ancestor-reveal effect to have
- *  expanded the root so "ingredients" is visible. */
+/** The databases foot tree starts collapsed (KAN-486); click the heading open
+ *  to reach "ingredients". */
 async function findIngredientsRow() {
   const foot = screen.getByRole('tree', { name: 'Databases' })
+  const heading = within(foot).getByRole('treeitem', { name: 'databases' })
+  if (heading.getAttribute('aria-expanded') !== 'true') fireEvent.click(heading)
   await waitFor(() =>
     expect(within(foot).getByRole('treeitem', { name: 'ingredients' })).toBeInTheDocument()
   )

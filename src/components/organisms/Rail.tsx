@@ -268,7 +268,8 @@ interface RailRowProps {
   /** An area row — the raised label voice + its accent dot. The caller decides
    *  with `isAreaRow` (a top-level page). */
   isArea?: boolean
-  /** The databases root: the foot band's first row, drawn without a caret. */
+  /** The databases root: the foot band's LAST row (KAN-486: it never moves —
+   *  its own rows render above it), caret up when open, right when closed. */
   isDbRoot?: boolean
   posInSet?: number
   setSize?: number
@@ -470,7 +471,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
 
       {/* caret — toggles the folder without navigating and without taking
           focus (the row keeps the roving tab stop); leaf gets a spacer */}
-      {isDbRoot ? null : isFolder ? (
+      {isFolder ? (
         <button
           type="button"
           tabIndex={-1}
@@ -482,7 +483,9 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
             onToggle(id)
           }}
         >
-          <Caret className={isExpanded ? 'rotate-90' : undefined} />
+          {/* KAN-486: the databases root's rows render above it, never below —
+              so its caret points UP when open rather than down. */}
+          <Caret className={isExpanded ? (isDbRoot ? '-rotate-90' : 'rotate-90') : undefined} />
         </button>
       ) : (
         <span className="w-[9px] flex-shrink-0" aria-hidden />
@@ -906,18 +909,35 @@ export function RailView({
   )
   const databasesFlat = useMemo(() => {
     if (!databasesRoot) return [DATABASES_PLACEHOLDER_ROW]
-    const [root, ...rest] = flattenVisible([databasesRoot], expanded, true)
+    const [rawRoot, ...rest] = flattenVisible([databasesRoot], expanded, true)
       .slice(1) // drop the synthetic Life row flattenVisible always leads with
       .map((f) => ({ ...f, depth: f.depth - 1 }))
+    // KAN-486: change log + trash are always the root's first two children once
+    // it exists, so the root always carries a caret even with zero database pages.
+    const root = { ...rawRoot, isFolder: true }
     // KAN-94/KAN-451: the change log and trash are the root's first two
     // children — shown only once the root itself is expanded, like any other
     // child.
+    //
+    // KAN-486: the heading renders LAST, after its own rows, not first — the
+    // foot is bottom-anchored, so a heading drawn first would be pushed up
+    // by every row that expands below it. Rendering it last keeps it outside
+    // the scroller entirely, so it never moves. `rest` is always empty while
+    // collapsed (its children are gated by `expanded` inside `flattenVisible`),
+    // so collapsed stays `[root]` alone.
     const rows = expanded.has(databasesRoot.id)
-      ? [root, changeLogRow(databasesRoot.id), trashRow(databasesRoot.id), ...rest]
-      : [root, ...rest]
+      ? [changeLogRow(databasesRoot.id), trashRow(databasesRoot.id), ...rest, root]
+      : [root]
     return rows.filter((f) => !isStaged(f.id)) // KAN-300: a refetch mid-undo-toast can't resurrect a staged row
   }, [databasesRoot, expanded])
   const databasesIds = useMemo(() => new Set(databasesFlat.map((f) => f.id)), [databasesFlat])
+  // KAN-486: the heading is found by id, not by array position — a staged
+  // delete (the mount-time leftover sweep) can filter the root itself out of
+  // `databasesFlat` while its children briefly survive, and the last
+  // surviving row must not be mistaken for the heading when that happens.
+  const databasesHeadingId = databasesRoot?.id ?? DATABASES_PLACEHOLDER_ID
+  const databasesHeadingRow = databasesFlat.find((f) => f.id === databasesHeadingId)
+  const databasesScrollRows = databasesFlat.filter((f) => f.id !== databasesHeadingId)
 
   // The ONE flattened list — Life first, the databases root last — driving
   // render, ARIA coordinates, and keyboard order alike (they can't drift; see
@@ -1334,21 +1354,25 @@ export function RailView({
 
         {/* The foot: a full-width hairline, then the databases root (3c: the
           pond's SECOND root, its own ARIA tree so the structure says what the rail
-          says) and `settings`. The databases tree is capped at 40vh so an expanded
-          root scrolls inside the foot instead of swallowing the rail. The scroller
-          clips at its padding box, so it carries 2px of padding (cancelled by a -2px
-          margin) to keep the rows' 2px focus ring visible. */}
+          says) and `settings`. KAN-486: the heading is the LAST row, after its own
+          rows, and sits outside the scroller — the scroller is capped at 40vh so an
+          expanded root scrolls inside the foot instead of swallowing the rail or
+          pushing the heading out from under the pointer. The scroller clips at its
+          padding box, so it carries 2px of padding (cancelled by a -2px margin) to
+          keep the rows' 2px focus ring visible. */}
         <div
           data-part="rail-foot"
           className="flex flex-col gap-0.5 border-t border-mn-text/[0.09] px-2 pt-2.5"
         >
-          <div
-            role="tree"
-            aria-label="Databases"
-            aria-multiselectable={false}
-            className="-m-0.5 max-h-[40vh] overflow-y-auto p-0.5"
-          >
-            {databasesFlat.map(renderRow)}
+          <div role="tree" aria-label="Databases" aria-multiselectable={false}>
+            <div
+              role="group"
+              data-part="databases-scroller"
+              className="-m-0.5 max-h-[40vh] overflow-y-auto p-0.5"
+            >
+              {databasesScrollRows.map(renderRow)}
+            </div>
+            {databasesHeadingRow && renderRow(databasesHeadingRow)}
           </div>
           {/* Not interactive until a settings surface exists: a dead button is worse
             than none. */}
@@ -1468,6 +1492,7 @@ export function Rail() {
     walk(tree)
     return map
   }, [tree])
+  const databasesRootId = useMemo(() => tree.find(isDatabasesRoot)?.id ?? null, [tree])
   const selectedNodeId = searchParams.get('nodeId')
 
   // ── Rail remembers what was open (KAN-393) ──────────────────────────────────
@@ -1572,7 +1597,11 @@ export function Rail() {
     if (selectedNodeId === revealedForRef.current) return
     // Wait until the node itself is present so its ancestor chain is resolvable.
     if (!pages.some((r) => r.id === selectedNodeId)) return
-    const ancestors = ancestorPath(pages, selectedNodeId).map((c) => c.id)
+    // The databases root is excluded: it is a disclosure the person toggles
+    // themselves (KAN-486), not a folder navigation should force open.
+    const ancestors = ancestorPath(pages, selectedNodeId)
+      .map((c) => c.id)
+      .filter((id) => id !== databasesRootId)
     revealedForRef.current = selectedNodeId
     // The two reveals below respond to an external navigation (URL ?nodeId, incl.
     // chat/＋ creation) — open Life and every ancestor folder so the current node
@@ -1586,7 +1615,7 @@ export function Rail() {
       return next
     })
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [selectedNodeId, pages])
+  }, [selectedNodeId, pages, databasesRootId])
 
   // ── Rail reveals a new child without leaving the parent (KAN-122) ──────────
   // The `/ nested page` swap stays on the parent, so selection never changes
@@ -2062,10 +2091,10 @@ export function Rail() {
     })
   }
 
-  /** Open a page — strictly navigation; expansion belongs to the caret alone.
-   *  The databases root is the one row with no caret (PondRail draws none for
-   *  it), so clicking it must also expand it here or its children are never
-   *  reachable by mouse. */
+  /** Open a page — navigation, except for the databases root: it is a
+   *  disclosure, not a page, so clicking it toggles expansion instead
+   *  (KAN-486 — it no longer has a destination page reachable from here;
+   *  ⌘K / the breadcrumb still reach it). */
   function handleSelect(id: string) {
     // The change log and trash are reserved virtual pages — no `pages` row,
     // so their own URLs are built by hand rather than through
@@ -2083,7 +2112,10 @@ export function Rail() {
     }
     const node = nodeById.get(id)
     if (!node) return
-    if (isDatabasesRoot(node)) setExpanded((prev) => new Set(prev).add(id))
+    if (isDatabasesRoot(node)) {
+      handleToggle(id)
+      return
+    }
     navigateTo(node)
   }
 
