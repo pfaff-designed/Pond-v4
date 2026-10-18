@@ -86,6 +86,8 @@ import { SlashLineContext, type SlashLineAt } from '@/lib/modules/text/slash-lin
 import { useSlashLine } from '@/components/organisms/use-slash-line'
 import { focusTextBlock, hasTextBeforeCaret } from '@/lib/modules/text/focus'
 import { UNTOUCHED_HINT_CLASS } from '@/lib/modules/text/prose'
+import { useAcceptMarks } from '@/lib/change-log/accept-marks'
+import { formatClockTime } from '@/lib/change-log/page-changes'
 import {
   landAtSlash,
   undoLanding,
@@ -2050,6 +2052,17 @@ function BlockEditor({
   // views-shaped block; it only matters here because it used to read
   // `resolvedBlock` instead, whose mode DOES track the active view.
   const frame = blockFrame(block)
+  // KAN-143: the accept-mark cue for a block kind with no rows of its own — a
+  // row kind (todo) carries the mark per row instead (`todo/view.tsx`), so this
+  // is scoped to the one row-less kind the acceptance criteria names (text).
+  const acceptMarks = useAcceptMarks(pageId)
+  const textBlockMark =
+    block.type === 'text' ? acceptMarks.find((mark) => mark.target === `block:${block.id}`) : undefined
+  const changedMark = textBlockMark && (
+    <span data-part="changed" className="font-mono lowercase text-[10.5px] text-mn-text-meta ml-[10px]">
+      {`changed ${formatClockTime(textBlockMark.acceptedAt)}`}
+    </span>
+  )
   const slash = useSlashLine({
     block,
     rootRef,
@@ -2458,6 +2471,7 @@ function BlockEditor({
             </div>
           )}
           {view}
+          {changedMark}
         </div>
       ) : (
         // #227: a block that is its OWN card — the chart card — sits on the page as it is.
