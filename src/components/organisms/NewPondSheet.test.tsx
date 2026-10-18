@@ -120,6 +120,24 @@ describe('NewPondSheet — Enter in the name field (KAN-488)', () => {
   })
 })
 
+describe('NewPondSheet — areas step pills and field are aria-disabled (KAN-488)', () => {
+  it('the areas pills and "add your own" field report aria-disabled and have no click action', async () => {
+    const user = userEvent.setup()
+    render(<NewPondSheet onCreate={jest.fn()} onCancel={jest.fn()} />)
+
+    await user.type(screen.getByPlaceholderText('Name your pond'), 'Studio')
+    await user.click(screen.getByRole('button', { name: 'continue' }))
+
+    const pill = screen.getByText('clients')
+    expect(pill).toHaveAttribute('aria-disabled', 'true')
+    const field = screen.getByPlaceholderText('add your own')
+    expect(field).toHaveAttribute('aria-disabled', 'true')
+
+    await user.click(pill)
+    expect(screen.getByText('2 of 2')).toBeInTheDocument()
+  })
+})
+
 describe('NewPondSheet — no sources step, no skip (KAN-488)', () => {
   it('has no skip control and never shows more than "2" at either step', async () => {
     const user = userEvent.setup()

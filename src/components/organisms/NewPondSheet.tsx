@@ -69,6 +69,7 @@ const LABEL =
 function Pill({ children, on, muted }: { children: string; on?: boolean; muted?: boolean }) {
   return (
     <span
+      aria-disabled={muted ? 'true' : undefined}
       className={`inline-flex items-center gap-[6px] rounded-full px-[11px] py-[6px] text-[12.5px] leading-[normal] ${
         on
           ? 'bg-mn-text text-raw-paper dark:text-raw-ink'
@@ -208,7 +209,7 @@ export function NewPondSheet({
               ))}
             </div>
             <div className="pointer-events-none opacity-40">
-              <PondControl kind="field" label="add your own" disabled />
+              <PondControl kind="field" label="add your own" disabled aria-disabled="true" />
             </div>
           </>
         )}
