@@ -707,30 +707,6 @@ const DATABASES_MARK = (
   </span>
 )
 
-/**
- * The head's reminders bell: 12×12, stroke 1.4, round caps, the .8 ink tier. A
- * decorative mark — opening `coming up` is #198, and a dead button is worse than
- * none, so it is neither focusable nor a button.
- */
-const REMINDERS_BELL = (
-  <svg
-    data-part="reminders-bell"
-    aria-hidden
-    width="12"
-    height="12"
-    viewBox="0 0 14 14"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.4"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    className="flex-none text-mn-text-meta"
-  >
-    <path d="M3.5 10V6.5a3.5 3.5 0 0 1 7 0V10l1 1H2.5z" />
-    <path d="M5.8 12.4h2.4" />
-  </svg>
-)
-
 const TRANSPARENT_GIF =
   'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
 let blankDragImage: HTMLImageElement | null = null
@@ -1302,7 +1278,7 @@ export function RailView({
         {/* The switcher chevron appears only once there is a pond to list: before
           migration 0018 `listPonds()` returns [] and the head is the plain name,
           rather than an affordance that opens an empty menu. */}
-        <PondSwitcher fallbackName={pondName} trailing={REMINDERS_BELL} />
+        <PondSwitcher fallbackName={pondName} />
 
         <div
           ref={bodyRef}
@@ -1374,8 +1350,8 @@ export function RailView({
           >
             {databasesFlat.map(renderRow)}
           </div>
-          {/* Not interactive until a settings surface exists: like the bell, a dead
-            button is worse than none. */}
+          {/* Not interactive until a settings surface exists: a dead button is worse
+            than none. */}
           <div
             data-part="settings"
             className="px-2 py-[6px] text-[12.5px] leading-[normal] text-mn-text-secondary"
