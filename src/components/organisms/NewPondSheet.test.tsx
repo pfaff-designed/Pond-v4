@@ -26,6 +26,66 @@ describe('NewPondSheet — one name field, a required name (KAN-487)', () => {
   })
 })
 
+describe('NewPondSheet — back and Esc (KAN-488)', () => {
+  it('Escape or ArrowLeft on step 2 returns to step 1 with the name intact', async () => {
+    const user = userEvent.setup()
+    render(<NewPondSheet onCreate={jest.fn()} onCancel={jest.fn()} />)
+
+    await user.type(screen.getByPlaceholderText('Name your pond'), 'Studio')
+    await user.click(screen.getByRole('button', { name: 'continue' }))
+    expect(screen.getByText('2 of 2')).toBeInTheDocument()
+
+    await user.keyboard('{Escape}')
+    expect(screen.getByText('1 of 2')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('Name your pond')).toHaveValue('Studio')
+
+    await user.click(screen.getByRole('button', { name: 'continue' }))
+    expect(screen.getByText('2 of 2')).toBeInTheDocument()
+
+    await user.keyboard('{ArrowLeft}')
+    expect(screen.getByText('1 of 2')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('Name your pond')).toHaveValue('Studio')
+  })
+
+  it('Escape on step 1 calls onCancel', async () => {
+    const user = userEvent.setup()
+    const onCancel = jest.fn()
+    render(<NewPondSheet onCreate={jest.fn()} onCancel={onCancel} />)
+
+    await user.keyboard('{Escape}')
+    expect(onCancel).toHaveBeenCalledTimes(1)
+  })
+
+  it('ArrowLeft while focus is in the name field moves the caret instead of going back', async () => {
+    const user = userEvent.setup()
+    render(<NewPondSheet onCreate={jest.fn()} onCancel={jest.fn()} />)
+
+    const field = screen.getByPlaceholderText('Name your pond')
+    await user.type(field, 'Studio')
+    await user.keyboard('{ArrowLeft}')
+
+    expect(screen.getByText('1 of 2')).toBeInTheDocument()
+    expect(field).toHaveValue('Studio')
+  })
+
+  it('shows a ghost "back" control from step 2 on, with no back control on step 1', async () => {
+    const user = userEvent.setup()
+    render(<NewPondSheet onCreate={jest.fn()} onCancel={jest.fn()} />)
+
+    expect(screen.queryByRole('button', { name: 'back' })).not.toBeInTheDocument()
+
+    await user.type(screen.getByPlaceholderText('Name your pond'), 'Studio')
+    await user.click(screen.getByRole('button', { name: 'continue' }))
+
+    const backButton = screen.getByRole('button', { name: 'back' })
+    expect(backButton).toBeInTheDocument()
+
+    await user.click(backButton)
+    expect(screen.getByText('1 of 2')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('Name your pond')).toHaveValue('Studio')
+  })
+})
+
 describe('NewPondSheet — no sources step, no skip (KAN-488)', () => {
   it('has no skip control and never shows more than "2" at either step', async () => {
     const user = userEvent.setup()

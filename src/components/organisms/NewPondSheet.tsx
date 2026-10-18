@@ -40,7 +40,7 @@
  * with one root, per #320).
  */
 
-import { useState } from 'react'
+import { useState, type KeyboardEvent } from 'react'
 import { Icon } from '@/components/atoms/Icon'
 import { PondControl } from '@/components/atoms/PondControl'
 
@@ -102,6 +102,22 @@ export function NewPondSheet({
 
   const last = step === 2
 
+  /** Esc steps back then cancels; ← does only the back-step, and only outside the name field it would otherwise move the caret in. */
+  const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Escape') {
+      e.stopPropagation()
+      if (step > 1) {
+        setStep((s) => s - 1)
+      } else {
+        onCancel()
+      }
+      return
+    }
+    if (e.key === 'ArrowLeft' && step > 1 && (e.target as HTMLElement).tagName !== 'INPUT') {
+      setStep((s) => s - 1)
+    }
+  }
+
   return (
     <>
       {/* `s6m2`: the scrim is PAPER at .62 — not the ink dialog backdrop. */}
@@ -115,6 +131,7 @@ export function NewPondSheet({
         aria-modal="true"
         aria-label="New pond"
         className={`fixed top-[120px] left-1/2 z-[41] box-border flex w-[540px] -translate-x-1/2 flex-col gap-[18px] rounded-[20px] p-[22px_24px] text-mn-text ${SHEET_GLASS}`}
+        onKeyDown={handleKeyDown}
       >
         <div className="flex items-baseline justify-end font-mono text-[11px] leading-[normal] text-mn-text-secondary">
           <span>{step} of 2</span>
@@ -198,6 +215,15 @@ export function NewPondSheet({
         )}
 
         <div className="flex items-center gap-[8px] pt-[4px]">
+          {step > 1 && (
+            <PondControl
+              kind="button"
+              variant="ghost"
+              label="back"
+              disabled={pending}
+              onClick={() => setStep((s) => s - 1)}
+            />
+          )}
           <div className="flex-1" />
           <PondControl
             kind="button"
