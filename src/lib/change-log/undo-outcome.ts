@@ -71,7 +71,12 @@ export function applyUndoOutcome(
       result.records.map((record) => record.targetPageId).filter((id): id is string => id !== null)
     )
     for (const id of pageIds) void queryClient.invalidateQueries({ queryKey: ['page', id] })
-    for (const record of result.records) removeByRecordId(record.id)
+    // `result.records` are the NEW undo/redo records the RPC just logged, never
+    // the original accept's record id `recordAccept` stored a mark under
+    // (`undo.ts`: "each gains an `undo`/`redo` record" — a different id). The
+    // original ids are `result.step.recordIds`. Only an undo clears marks: the
+    // redone change is not re-marked (spec is silent; chosen in KAN-143 PLAN.md).
+    if (direction === 'undo') for (const id of result.step.recordIds) removeByRecordId(id)
     return
   }
   requestComposerNotice(noticeForReason(direction, result.reason))

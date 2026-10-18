@@ -264,6 +264,7 @@ describe('ShellCommands — a landed step redraws the page, rail and change log'
     jest.mocked(sessionUndo.undo).mockResolvedValueOnce({
       outcome: 'done',
       records: [{ targetPageId: 'page-1' }, { targetPageId: 'page-2' }, { targetPageId: null }],
+      step: { pondId: 'pond-1', recordIds: ['rec-1', 'rec-2'] },
     } as never)
     const invalidateQueries = renderWithClient()
 
@@ -331,7 +332,11 @@ describe('ShellCommands — a landed step redraws the page, rail and change log'
       )
     )
 
-    jest.mocked(sessionUndo.undo).mockResolvedValueOnce({ outcome: 'done', records: [] } as never)
+    jest.mocked(sessionUndo.undo).mockResolvedValueOnce({
+      outcome: 'done',
+      records: [],
+      step: { pondId: 'pond-1', recordIds: ['rec-1'] },
+    } as never)
     fireEvent.keyDown(document.body, { key: 'z', metaKey: true })
 
     await waitFor(() => expect(requestComposerNotice).toHaveBeenLastCalledWith(''))

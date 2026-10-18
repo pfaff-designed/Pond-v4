@@ -69,6 +69,7 @@ describe('ShellCommands — a done step opens the record’s own page first', ()
     jest.mocked(sessionUndo.undo).mockResolvedValueOnce({
       outcome: 'done',
       records: [{ targetPageId: 'page-a' }],
+      step: { pondId: 'pond-1', recordIds: ['rec-a'] },
     } as never)
     renderShell()
 
@@ -85,6 +86,7 @@ describe('ShellCommands — a done step opens the record’s own page first', ()
     jest.mocked(sessionUndo.undo).mockResolvedValueOnce({
       outcome: 'done',
       records: [{ targetPageId: 'page-b' }],
+      step: { pondId: 'pond-1', recordIds: ['rec-b'] },
     } as never)
     renderShell()
 
