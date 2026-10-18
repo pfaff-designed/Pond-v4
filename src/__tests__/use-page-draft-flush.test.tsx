@@ -69,10 +69,12 @@ function mountDraft(pageId: string) {
 
 function deferred<T = void>() {
   let resolve: (value: T) => void = () => {}
-  const promise = new Promise<T>((res) => {
+  let reject: (reason: unknown) => void = () => {}
+  const promise = new Promise<T>((res, rej) => {
     resolve = res
+    reject = rej
   })
-  return { promise, resolve }
+  return { promise, resolve, reject }
 }
 
 // What the real `commitBlocks` resolves to for an own-edit save (`remembered`
@@ -226,6 +228,74 @@ describe('usePageDraft flushNow (KAN-302)', () => {
       await flush
     })
     expect(settled).toBe(true)
+  })
+})
+
+describe('usePageDraft flushNow on a halted queue (KAN-495)', () => {
+  it('halted at rest: flushNow() retries the halted op, rejecting if the retry fails too', async () => {
+    const pageId = 'page-halted-retry-fails'
+    const { result } = mountDraft(pageId)
+
+    mockCommitBlocks.mockRejectedValueOnce(new Error('first write failed'))
+    await act(async () => {
+      await result.current.writeStructural([textBlock('A')])
+    })
+    expect(mockCommitBlocks).toHaveBeenCalledTimes(1)
+
+    mockCommitBlocks.mockRejectedValueOnce(new Error('retry failed too'))
+    let flush: Promise<void> | undefined
+    act(() => {
+      flush = flushPendingPageSave(pageId)
+    })
+    expect(flush).toBeDefined()
+    await expect(flush).rejects.toThrow('retry failed too')
+    expect(mockCommitBlocks).toHaveBeenCalledTimes(2)
+  })
+
+  it('halted at rest: flushNow() retries the halted op and resolves once the retry applies', async () => {
+    const pageId = 'page-halted-retry-succeeds'
+    const { result } = mountDraft(pageId)
+
+    mockCommitBlocks.mockRejectedValueOnce(new Error('first write failed'))
+    await act(async () => {
+      await result.current.writeStructural([textBlock('A')])
+    })
+    expect(mockCommitBlocks).toHaveBeenCalledTimes(1)
+
+    mockCommitBlocks.mockResolvedValueOnce(committedNow())
+    let flush: Promise<void> | undefined
+    act(() => {
+      flush = flushPendingPageSave(pageId)
+    })
+    expect(flush).toBeDefined()
+    await act(async () => {
+      await flush
+    })
+    expect(mockCommitBlocks).toHaveBeenCalledTimes(2)
+  })
+
+  it('a write in flight that then fails: flushNow(), already awaited, rejects too', async () => {
+    const pageId = 'page-inflight-rejects'
+    const held = deferred<{ remembered: Promise<void> }>()
+    mockCommitBlocks.mockReturnValueOnce(held.promise)
+    const { result } = mountDraft(pageId)
+
+    let write: Promise<boolean> | undefined
+    act(() => {
+      write = result.current.writeStructural([textBlock('A')])
+    })
+    let flush: Promise<void> | undefined
+    act(() => {
+      flush = flushPendingPageSave(pageId)
+    })
+    expect(flush).toBeDefined()
+
+    held.reject(new Error('write failed'))
+    await expect(flush).rejects.toThrow('page save failed')
+    // `writeStructural`'s own promise swallows the failure (it resolves to
+    // `false`, not a rejection) — awaited here only so the test doesn't leave
+    // this settling after the assertions above.
+    await write
   })
 })
 

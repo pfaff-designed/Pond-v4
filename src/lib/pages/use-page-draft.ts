@@ -76,6 +76,9 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
   // The save a debounce timer is currently waiting to fire, if any — held so
   // `flushNow` (KAN-302) can run it immediately instead of waiting out the pause.
   const pendingSave = useRef<{ pageId: string; title: string; blocks: Block[] } | null>(null)
+  // `flushNow`'s own wrapped drain promises, keyed by the underlying
+  // `queue.drained()` promise they wrap — see `flushNow`'s own comment.
+  const flushWraps = useRef(new Map<Promise<void>, Promise<void>>())
   // The latest `pondId` prop, read by the queue's writer AT WRITE TIME, never
   // at queue-creation time: `queueFor`'s `createQueue` callback only ever runs
   // ONCE per page id (the registry below is lazy), so closing over `pondId`
@@ -264,10 +267,23 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
   // pause — the composer calls this (via the page-flush registry) before
   // sending a message, so Pond's next read of the page never lands inside
   // the debounce window (KAN-302). Hands the pending save to the queue
-  // (synchronously — nothing else can slip in ahead of it), then returns
-  // the queue's own drain promise, which already covers that write plus
-  // anything else still outstanding (KAN-495: the queue is the only record
-  // of what's in flight).
+  // (synchronously — nothing else can slip in ahead of it).
+  //
+  // A queue that is ALREADY HALTED when this runs is never just drained:
+  // `drained()` resolves at once for a halt at rest (callers may proceed
+  // against what's stored), but the halted op's own write never reached the
+  // store, so ⌘Z must not run underneath it. Retry it first; if the retry
+  // fails again, reject — the failed op stays halted for the next enqueue to
+  // retry, same as today. If the queue only halts WHILE this call is
+  // waiting on `drained()` (a save failing mid-flush), that's `73d96f71`'s
+  // scenario and stays dormant for the next real enqueue to retry, so the
+  // post-drain halted check rejects instead of silently retrying it here.
+  //
+  // `drain.then(...)`'s result is cached per `drain` (not per call): two
+  // flushes made while the same write is still outstanding must return the
+  // SAME promise object (KAN-355's own regression — `drained()` already
+  // guarantees this for `drain` itself; wrapping it with `.then()` on every
+  // call would otherwise hand back a fresh object each time).
   function flushNow(): Promise<void> | undefined {
     const id = loadedId.current
     if (saveTimer.current) {
@@ -281,7 +297,27 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
       void enqueueTyped(p.pageId, p.title, p.blocks)
     }
     if (!id) return undefined
-    return queueFor(id, { title: viewTitle, blocks: viewBlocks }).drained()
+    const queue = queueFor(id, { title: viewTitle, blocks: viewBlocks })
+    if (queue.halted()) {
+      return (async () => {
+        await queue.retry()
+        const drain = queue.drained()
+        if (drain) await drain
+        if (queue.halted()) throw new Error('page save failed')
+      })()
+    }
+    const drain = queue.drained()
+    if (drain === undefined) return undefined
+    const cached = flushWraps.current.get(drain)
+    if (cached) return cached
+    const wrapped = drain.then(() => {
+      if (queue.halted()) throw new Error('page save failed')
+    })
+    flushWraps.current.set(drain, wrapped)
+    void wrapped.catch(() => {}).finally(() => {
+      flushWraps.current.delete(drain)
+    })
+    return wrapped
   }
 
   // `flushNow` is recreated every render; the registry entry stays stable per
