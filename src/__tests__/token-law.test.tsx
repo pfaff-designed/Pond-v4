@@ -875,4 +875,11 @@ describe('source sweep — no "write something" or "+ add a block" at rest (KAN-
   it('no call site draws the deleted "+ add a block" foot', () => {
     expect(linesMatching(/\+ add a block/i)).toEqual([])
   })
+
+  // The premade `page` template authored this as its text block's own
+  // `placeholder`; KAN-345 rule 1/2 supersedes it — the block now authors none,
+  // falling to `PROSE_LINE_PLACEHOLDER` (`type, or / for blocks`).
+  it('no call site draws the superseded "blocks and templates" board copy', () => {
+    expect(linesMatching(/blocks and templates/i)).toEqual([])
+  })
 })

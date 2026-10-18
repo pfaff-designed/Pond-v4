@@ -20,6 +20,7 @@ import { DocumentPanel } from '@/components/organisms/DocumentPanel'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { PREMADE_TEMPLATES } from '@/lib/templates/premade'
 import { instantiateTemplate } from '@/lib/templates/instantiate'
+import { PROSE_LINE_PLACEHOLDER } from '@/lib/modules/text/prose'
 import { BLANK_TEXT_GROUP } from '@/components/molecules/slash-entries'
 import { findTextBlock, findAllTextBlocks, writeInTextBlock } from './helpers/text-block'
 
@@ -108,5 +109,23 @@ describe('an untouched page, walked end to end on its real surface (KAN-119)', (
     expect(typedField.querySelector('.is-editor-empty')).toBeNull()
     await waitFor(() => expect(screen.getByText('saving…')).toBeInTheDocument())
     expect(screen.queryByText('new — in recipes')).toBeNull()
+  })
+
+  it("the `page` template's own block authors no placeholder (KAN-345 supersedes the board's `blocks and templates` copy) — unfocused it shows no hint at all; focused it reads the generic line", async () => {
+    renderUntouchedPage()
+
+    const field = await findTextBlock()
+    field.blur()
+    await waitFor(() => expect(field).not.toHaveClass('ProseMirror-focused'))
+
+    expect(document.body.textContent).not.toContain('blocks and templates')
+    expect(document.querySelector('[data-placeholder*="blocks and templates"]')).toBeNull()
+    expect(field).not.toHaveClass('ProseMirror-focused')
+    expect(document.querySelector('[data-hover-ghost="true"]')).toBeNull()
+
+    field.focus()
+    await waitFor(() => expect(field).toHaveClass('ProseMirror-focused'))
+    const line = field.querySelector('.is-editor-empty')!
+    expect(line).toHaveAttribute('data-placeholder', PROSE_LINE_PLACEHOLDER)
   })
 })
