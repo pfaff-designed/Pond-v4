@@ -100,6 +100,8 @@ import {
   buildTree,
   flattenVisible,
   isAreaRow,
+  isExtraRootNode,
+  splitExtraRoots,
   treeKeyCommand,
   focusFallback,
   canMove,
@@ -243,6 +245,11 @@ const rowCapabilities = (id: string, node: RailNode): RowCapabilities => {
   if (id === DATABASES_PLACEHOLDER_ID || id === CHANGE_LOG_NODE_ID || id === TRASH_NODE_ID)
     return NO_CAPABILITIES
   if (isDatabasesRoot(node)) return { ...NO_CAPABILITIES, draggable: true, droppable: true }
+  // KAN-490/491: an extra root never drags — a drop must not leave `props.root`
+  // on a page with a parent, so dragging is disallowed outright rather than
+  // special-cased at drop time.
+  if (isExtraRootNode(node))
+    return { draggable: false, droppable: true, addable: true, deletable: true, renameable: true }
   return { draggable: true, droppable: true, addable: true, deletable: true, renameable: true }
 }
 
@@ -936,6 +943,23 @@ export function RailView({
     () => (databasesRoot ? tree.filter((n) => n !== databasesRoot) : tree),
     [tree, databasesRoot]
   )
+
+  // KAN-490/491: extra roots (`props.root === true`) are lifted out of Life's
+  // own children and flattened each on their own, the same trick as
+  // `databasesFlat` below — depth 0, their own caret/expansion, never gated by
+  // Life's collapse. Unlike the databases root, an extra root's `isFolder`
+  // reflects its real children (no synthetic rows to force it true).
+  const { children: lifeChildren, extraRoots } = useMemo(() => splitExtraRoots(lifeTree), [lifeTree])
+  const extraRootsFlat = useMemo(
+    () =>
+      extraRoots.flatMap((root) =>
+        flattenVisible([root], expanded, true)
+          .slice(1) // drop the synthetic leading Life row flattenVisible always leads with
+          .map((f) => ({ ...f, depth: f.depth - 1 }))
+      ),
+    [extraRoots, expanded]
+  )
+
   const databasesFlat = useMemo(() => {
     if (!databasesRoot) return [DATABASES_PLACEHOLDER_ROW]
     const [rawRoot, ...rest] = flattenVisible([databasesRoot], expanded, true)
@@ -976,11 +1000,14 @@ export function RailView({
       [
         // KAN-490: the root row is the home row, named for ITS title — the
         // pond's name is only the fallback while that title is loading.
-        ...flattenVisible(lifeTree, expanded, lifeExpanded, rootLabel),
+        ...flattenVisible(lifeChildren, expanded, lifeExpanded, rootLabel),
+        // KAN-490/491: extra roots render after Life's own rows, before the
+        // databases foot, regardless of whether Life itself is expanded.
+        ...extraRootsFlat,
         ...databasesFlat,
         TRASH_ROW,
       ].filter((f) => !isStaged(f.id)), // KAN-300: a refetch mid-undo-toast can't resurrect a staged row
-    [lifeTree, expanded, lifeExpanded, databasesFlat, rootLabel]
+    [lifeChildren, expanded, lifeExpanded, extraRootsFlat, databasesFlat, rootLabel]
   )
   const visibleIds = useMemo(() => new Set(flat.map((f) => f.id)), [flat])
 
