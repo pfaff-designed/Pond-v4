@@ -19,6 +19,7 @@ import { countWaiting, listRecords } from '@/lib/change-log/store'
 import { changeLogKey } from '@/lib/change-log/keys'
 import { buildLogPageGroups, buildLogRows, type LogGroup } from '@/lib/change-log/log-page'
 import { changeLogRecordUrl, changeLogUrl, PAGE_FILTER_PARAM } from '@/lib/change-log/record-page'
+import { openWorkspaceUrl } from '@/lib/pages/nav'
 import { clockTime } from '@/lib/change-log/page-changes'
 import { labelForStatus, WAITING_STATUSES } from '@/lib/change-log/status'
 import { buildDeletedCards, type DeletedCard } from '@/lib/change-log/deleted-view'
@@ -593,7 +594,7 @@ export function ChangeLogPage() {
             ) : (
               <LogGroupsTable
                 groups={groups}
-                onOpen={(id) => router.push(changeLogRecordUrl(id))}
+                onOpen={(id) => openWorkspaceUrl(changeLogRecordUrl(id), router)}
                 loadMore={
                   pageFilterId === null && hasNextPage
                     ? { onFetch: fetchNextPage, isFetching: isFetchingNextPage }
@@ -625,7 +626,7 @@ export function ChangeLogPage() {
               ) : (
                 <LogGroupsTable
                   groups={pageGroups}
-                  onOpen={(id) => router.push(changeLogRecordUrl(id))}
+                  onOpen={(id) => openWorkspaceUrl(changeLogRecordUrl(id), router)}
                   loadMore={
                     pageFilterId === null && hasNextPage
                       ? { onFetch: fetchNextPage, isFetching: isFetchingNextPage }
@@ -671,11 +672,11 @@ export function ChangeLogPage() {
                       <div
                         role="button"
                         tabIndex={0}
-                        onClick={() => router.push(changeLogRecordUrl(card.record.id))}
+                        onClick={() => openWorkspaceUrl(changeLogRecordUrl(card.record.id), router)}
                         onKeyDown={(e) => {
                           if (e.key !== 'Enter' && e.key !== ' ') return
                           e.preventDefault()
-                          router.push(changeLogRecordUrl(card.record.id))
+                          openWorkspaceUrl(changeLogRecordUrl(card.record.id), router)
                         }}
                         className="flex cursor-pointer flex-col gap-[10px]"
                       >

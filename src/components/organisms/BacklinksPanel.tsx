@@ -13,7 +13,7 @@ import { useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { BacklinksSection } from '@/components/molecules/BacklinksSection'
 import { useBacklinks } from '@/lib/modules/view/use-backlinks'
-import { workspaceHref } from '@/lib/pages/nav'
+import { openWorkspaceUrl, workspaceHref } from '@/lib/pages/nav'
 
 export interface BacklinksPanelProps {
   /** The open page (backlink target). Undefined disables the hook. */
@@ -36,7 +36,7 @@ export function BacklinksPanel({ targetId, targetCollectionId, className }: Back
   }, [groups])
 
   function onOpen(id: string) {
-    router.push(workspaceHref({ id, type: 'page', title: titleById.get(id) ?? id }))
+    openWorkspaceUrl(workspaceHref({ id, type: 'page', title: titleById.get(id) ?? id }), router)
   }
 
   return <BacklinksSection groups={groups} onOpen={onOpen} className={className} />

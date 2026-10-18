@@ -8,6 +8,7 @@ import type { Block } from '@/lib/documents/types'
 import type { ChangePreview } from '@/lib/modules/preview'
 import { blockLabel } from '@/lib/modules/types'
 import { descriptorFor, resolveDescriptor } from '@/lib/modules/registry'
+import { currentPondId } from '@/lib/pages/nav'
 import { CHANGE_LOG_NODE_ID, pageLabel } from './log-page'
 import { clockTime, describeChange, formatClockTime } from './page-changes'
 import { buildDiffRows } from './proposed-view'
@@ -19,9 +20,14 @@ import { BLOCK_ACTIONS, type ChangeLogRecord } from './types'
 export const RECORD_PARAM = 'record'
 
 /** The workspace URL for one record's page — one more param on the existing
- *  `?nodeId=__change_log__` change log route, not a new router concept. */
+ *  `?nodeId=__change_log__` change log route, not a new router concept.
+ *  Carries `?pond=` the same way `workspaceUrl` does — this is a relative,
+ *  query-only URL, so a shallow open replaces the whole search string and
+ *  would otherwise drop the pond you're in. */
 export function changeLogRecordUrl(recordId: string): string {
   const params = new URLSearchParams({ nodeId: CHANGE_LOG_NODE_ID, [RECORD_PARAM]: recordId })
+  const pond = currentPondId()
+  if (pond) params.set('pond', pond)
   return `?${params.toString()}`
 }
 
@@ -29,9 +35,12 @@ export function changeLogRecordUrl(recordId: string): string {
 export const PAGE_FILTER_PARAM = 'page'
 
 /** The workspace URL for the change log filtered to one page's own records —
- *  the panel's "open in change log" link. */
+ *  the panel's "open in change log" link. Carries `?pond=` for the same
+ *  reason {@link changeLogRecordUrl} does. */
 export function changeLogPageFilterUrl(pageId: string): string {
   const params = new URLSearchParams({ nodeId: CHANGE_LOG_NODE_ID, [PAGE_FILTER_PARAM]: pageId })
+  const pond = currentPondId()
+  if (pond) params.set('pond', pond)
   return `?${params.toString()}`
 }
 

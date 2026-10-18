@@ -22,7 +22,7 @@ import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
 import { PondContext, type PondContextValue } from '@/lib/pond/context'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { pagesKey } from '@/lib/pages/keys'
-import { workspaceHref } from '@/lib/pages/nav'
+import { workspaceHref, WORKSPACE_PATH } from '@/lib/pages/nav'
 import type { Pond } from '@/lib/pond/client'
 import type { ChangeLogRecord } from '@/lib/change-log/types'
 import { withPathProbe } from './helpers/command-path-probe'
@@ -220,19 +220,30 @@ describe('PATH_STEPS 1–4 — the rail opens the change log in the real panel',
 })
 
 describe('PATH_STEPS 5 — the composer opens the change log', () => {
-  it('"open the change log" fires the same navigation', async () => {
+  // KAN-449: on `/workspace`, this fires `openWorkspaceUrl`, which pushes
+  // history shallowly rather than through the mocked router's `push`.
+  beforeEach(() => {
+    window.history.replaceState(null, '', WORKSPACE_PATH)
+  })
+
+  it('"open the change log" fires the same navigation, shallowly', async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const pushStateSpy = jest.spyOn(window.history, 'pushState')
     render(
       <QueryClientProvider client={queryClient}>
         <AITerminal />
       </QueryClientProvider>
     )
 
-    const push = (jest.requireMock('next/navigation') as { __push: jest.Mock }).__push
     await waitFor(() =>
-      expect(push).toHaveBeenCalledWith(
+      expect(pushStateSpy).toHaveBeenCalledWith(
+        null,
+        '',
         workspaceHref({ id: CHANGE_LOG_NODE_ID, type: 'page', title: 'change log' })
       )
     )
+    const push = (jest.requireMock('next/navigation') as { __push: jest.Mock }).__push
+    expect(push).not.toHaveBeenCalled()
+    pushStateSpy.mockRestore()
   })
 })

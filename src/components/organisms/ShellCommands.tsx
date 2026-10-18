@@ -64,7 +64,7 @@ import { rememberStruckRow } from '@/lib/change-log/undo-strike'
 import { useCommandPath } from '@/lib/layout/command-path'
 import { PLACEMENT } from '@/lib/layout/shell-placement'
 import { useZenCommands } from '@/lib/layout/use-zen-commands'
-import { workspaceUrl } from '@/lib/pages/nav'
+import { openWorkspaceUrl, workspaceUrl } from '@/lib/pages/nav'
 import { flushPendingPageSave } from '@/lib/pages/page-flush'
 import { newPageParent, paletteItems, paletteScope, pondItems } from '@/lib/pages/palette-items'
 import { readRecentPageIds, writeRecent } from '@/lib/pages/recent-pages'
@@ -172,7 +172,7 @@ export function ShellCommands() {
             const target = pages?.find((p) => p.id === targetPageId)
             if (target) {
               openedPageTitle = target.title
-              router.push(workspaceUrl({ id: target.id, type: target.type, title: target.title }))
+              openWorkspaceUrl(workspaceUrl({ id: target.id, type: target.type, title: target.title }), router)
             }
           }
           const originalId = direction === 'undo' ? record?.links?.undoOf : record?.links?.redoOf
@@ -382,7 +382,7 @@ export function ShellCommands() {
           pondId
         )
         writeRecent({ id: created.id, type: 'page', title: created.title })
-        router.push(workspaceUrl({ id: created.id, type: 'page', title: created.title }))
+        openWorkspaceUrl(workspaceUrl({ id: created.id, type: 'page', title: created.title }), router)
         void queryClient.invalidateQueries({ queryKey: pagesKey(pondId) })
         // KAN-415: a failed link append is not a failed page creation — the
         // page above has already landed and been navigated to.
@@ -439,13 +439,13 @@ export function ShellCommands() {
         return
       }
       if (item.kind === 'record') {
-        router.push(workspaceUrl({ id: item.id, type: ROW_TYPE, title: item.label }))
+        openWorkspaceUrl(workspaceUrl({ id: item.id, type: ROW_TYPE, title: item.label }), router)
         return
       }
       const page = pages.find((p) => p.id === item.id)
       if (page) {
         writeRecent({ id: page.id, type: page.type, title: page.title })
-        router.push(workspaceUrl({ id: page.id, type: page.type, title: page.title }))
+        openWorkspaceUrl(workspaceUrl({ id: page.id, type: page.type, title: page.title }), router)
       }
     },
     [pages, ponds, router, currentNodeId, handleModeSelect, startTemplateSheet, handleCreatePage]

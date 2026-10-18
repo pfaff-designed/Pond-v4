@@ -28,7 +28,7 @@ import { MadeFromChip } from '@/components/molecules/MadeFromChip'
 import { MentionedCard } from '@/components/molecules/MentionedCard'
 import { readMadeFrom, setMadeFromHidden, withMadeFromHidden } from '@/lib/pages/made-from'
 import { readMentioned } from '@/lib/pages/mentioned'
-import { workspaceUrl } from '@/lib/pages/nav'
+import { openWorkspaceUrl, workspaceUrl } from '@/lib/pages/nav'
 import { requestThreadMessage } from '@/lib/terminal-focus'
 
 export interface PageProvenanceProps {
@@ -88,7 +88,9 @@ export function PageMentioned({
   return (
     <MentionedCard
       mentioned={mentioned}
-      onOpenMention={(ref, title) => router.push(workspaceUrl({ id: ref, type: 'page', title }))}
+      onOpenMention={(ref, title) =>
+        openWorkspaceUrl(workspaceUrl({ id: ref, type: 'page', title }), router)
+      }
       className={className}
     />
   )
