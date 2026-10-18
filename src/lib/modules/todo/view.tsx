@@ -176,15 +176,26 @@ export function TodoView({ data, editable, onChange }: ModuleViewProps<TodoBlock
   // the empty-string pageId then simply has no marks). A row's own mark wins;
   // a block-level mark (no row touched its own fields) shows once, on the
   // first row, never per item — the mark names the WHOLE row's value, not
-  // every item's.
+  // every item's. `hasRenderedRowMark` only counts a row mark against an id
+  // IN `data.items` right now — a removed row's own mark is still in
+  // `acceptMarks` (the store never drops it) but has no row left to carry
+  // it, so it must not suppress the block-level fallback (a delete-only
+  // accept would otherwise show nothing at all). That orphaned row mark is
+  // also the fallback's own SOURCE when there is no `block:<id>` entry
+  // (`touchedMarks` emits only row targets for a pure item delete) — it
+  // still names "this block changed", just at the row's own id.
   const { pageId } = useSiblingBlocks()
   const acceptMarks = useAcceptMarks(pageId ?? '')
   const rowMarkPrefix = `block:${data.id}:row:`
-  const hasRowMark = acceptMarks.some((mark) => mark.target.startsWith(rowMarkPrefix))
-  const blockMark = acceptMarks.find((mark) => mark.target === `block:${data.id}`)
+  const hasRenderedRowMark = data.items.some((item) =>
+    acceptMarks.some((mark) => mark.target === `${rowMarkPrefix}${item.id}`)
+  )
+  const blockMark =
+    acceptMarks.find((mark) => mark.target === `block:${data.id}`) ??
+    (hasRenderedRowMark ? undefined : acceptMarks.find((mark) => mark.target.startsWith(rowMarkPrefix)))
   function changedLabelFor(item: TodoItem, index: number): string | undefined {
     const rowMark = acceptMarks.find((mark) => mark.target === `${rowMarkPrefix}${item.id}`)
-    const mark = rowMark ?? (!hasRowMark && index === 0 ? blockMark : undefined)
+    const mark = rowMark ?? (!hasRenderedRowMark && index === 0 ? blockMark : undefined)
     return mark && `changed ${formatClockTime(mark.acceptedAt)}`
   }
 

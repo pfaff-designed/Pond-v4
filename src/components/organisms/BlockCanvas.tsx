@@ -2052,15 +2052,19 @@ function BlockEditor({
   // views-shaped block; it only matters here because it used to read
   // `resolvedBlock` instead, whose mode DOES track the active view.
   const frame = blockFrame(block)
-  // KAN-143: the accept-mark cue for a block kind with no rows of its own — a
-  // row kind (todo) carries the mark per row instead (`todo/view.tsx`), so this
-  // is scoped to the one row-less kind the acceptance criteria names (text).
+  // KAN-143: the block-level accept-mark cue, kind-agnostic — a touched `todo`
+  // with rows draws its mark per row instead (`todo/view.tsx`'s own fallback),
+  // so this steps aside only there, and only while it has a row to carry it;
+  // a zero-item todo has no row renderer to fall back to, so it still lands
+  // here, same as a table, a labelled text block or any other row-less kind.
   const acceptMarks = useAcceptMarks(pageId)
-  const textBlockMark =
-    block.type === 'text' ? acceptMarks.find((mark) => mark.target === `block:${block.id}`) : undefined
-  const changedMark = textBlockMark && (
+  const blockMark =
+    block.type === 'todo' && block.items.length > 0
+      ? undefined
+      : acceptMarks.find((mark) => mark.target === `block:${block.id}`)
+  const changedMark = blockMark && (
     <span data-part="changed" className="font-mono lowercase text-[10.5px] text-mn-text-meta ml-[10px]">
-      {`changed ${formatClockTime(textBlockMark.acceptedAt)}`}
+      {`changed ${formatClockTime(blockMark.acceptedAt)}`}
     </span>
   )
   const slash = useSlashLine({
@@ -2455,6 +2459,7 @@ function BlockEditor({
           size={menuSize}
         >
           {view}
+          {changedMark}
         </PondBlock>
       ) : block.type === 'text' ? (
         // Bare prose: `padding 2px 4px`, no card.
@@ -2475,7 +2480,10 @@ function BlockEditor({
         </div>
       ) : (
         // #227: a block that is its OWN card — the chart card — sits on the page as it is.
-        view
+        <>
+          {view}
+          {changedMark}
+        </>
       )}
     </div>
   )
