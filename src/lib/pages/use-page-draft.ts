@@ -120,16 +120,9 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
     id: string,
     nextTitle: string,
     nextBlocks: Block[],
-    beforeAtSchedule: Block[],
+    before: Block[],
     resolveRecordIds: (recordIds: readonly string[] | null) => void
   ) {
-    // This save is one pause: the change log records it as one edit, from what
-    // the page last saved to what it saves now. Advanced before the first await
-    // so a save that fires while this one is in flight starts from here, and
-    // set back if this one fails, so the next starts from what is stored.
-    const before = lastSavedOf(id) ?? beforeAtSchedule
-    const advanced = lastSavedOf(id) !== null
-    if (advanced) lastSaved.current = { pageId: id, blocks: nextBlocks }
     // Title first, then blocks + sidebar-refresh + re-embed via the shared
     // commitBlocks (same tail the accepted-AI-edit path uses). Sequential so
     // the ['pages'] invalidation inside commitBlocks lands after the rename,
@@ -153,7 +146,7 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
       }))
     } catch (err) {
       resolveRecordIds(null)
-      if (advanced && lastSaved.current?.pageId === id && lastSaved.current.blocks === nextBlocks) {
+      if (lastSaved.current?.pageId === id && lastSaved.current.blocks === nextBlocks) {
         lastSaved.current = { pageId: id, blocks: before }
       }
       console.error('[document] save failed', id, err)
@@ -183,9 +176,7 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
   // actually awaiting its network round-trip — set synchronously, before
   // `runSave`'s first `await`, so nothing can observe the save as "started"
   // without also finding it here. Chained on the previous save (if any) so two
-  // saves of the same page never run at once and land out of order (KAN-355):
-  // `runSave`'s own `before`/`lastSaved` advance only runs once this save
-  // actually starts, which is now after the previous one has fully settled.
+  // saves of the same page never run at once and land out of order (KAN-355).
   // With no previous save, `runSave` is called directly rather than through a
   // `Promise.resolve().then(...)` hop — existing callers (`flushNow` in
   // particular) rely on the first save's `updateTitle` having already been
@@ -196,6 +187,17 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
     nextBlocks: Block[],
     beforeAtSchedule: Block[]
   ): Promise<void> {
+    // This save is one pause: the change log records it as one edit, from what
+    // the page last saved to what it saves now. Captured and advanced HERE,
+    // synchronously, the instant the save is started (not inside `runSave`,
+    // which may not actually run until a chained previous save settles) — the
+    // same moment the undo slot below is reserved. A structural edit that
+    // flushes this save (`persistBlocksAsOwnEdit`) overwrites `lastSaved` to
+    // its OWN `after` right after kicking this off, before this save's chained
+    // turn comes up; reading `lastSavedOf` again at that later point would
+    // wrongly pick up that overwrite as this save's `before`.
+    const before = lastSavedOf(id) ?? beforeAtSchedule
+    if (lastSavedOf(id) !== null) lastSaved.current = { pageId: id, blocks: nextBlocks }
     // KAN-368: reserve this save's slot on the undo stack synchronously, the
     // instant the save is started — before it waits behind a previous save
     // (the KAN-355 chain) and before its own round trip — so a structural
@@ -213,7 +215,7 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
       })
     }
     const prev = inFlightSave.current
-    const run = () => runSave(id, nextTitle, nextBlocks, beforeAtSchedule, resolveRecordIds)
+    const run = () => runSave(id, nextTitle, nextBlocks, before, resolveRecordIds)
     const promise = (prev ? prev.catch(() => {}).then(run) : run()).finally(() => {
       // Nothing may leave the slot unsettled: a throw before `commitBlocks`
       // resolves it would hold every later ⌘Z for the timeout.

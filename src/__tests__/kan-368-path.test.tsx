@@ -25,6 +25,7 @@ import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { sessionUndo } from '@/lib/change-log/session-undo'
 import { commitBlocks } from '@/lib/pages/commit'
 import { closeBlockHistory } from '@/lib/modules/text/active-editor'
+import { EDIT_PAUSE_MS } from '@/lib/change-log/pause'
 import type { Block } from '@/lib/documents/types'
 import type { ChangeLogRecord } from '@/lib/change-log/types'
 
@@ -432,5 +433,79 @@ describe('KAN-368 path test', () => {
     fireEvent.keyDown(document.body, { key: 'z', metaKey: true })
     await waitFor(() => expect(screen.queryByText('A text extra')).not.toBeInTheDocument())
     expect(screen.getByText('A text')).toBeInTheDocument()
+  })
+
+  it('a debounced save chained behind an in-flight one logs its own before, not the structural edit racing it', async () => {
+    const a: Block = { id: 'b-a', type: 'text', content: 'A text' }
+    const b: Block = { id: 'b-b', type: 'text', content: 'B text' }
+    renderPath([a, b])
+    await screen.findByLabelText('Page title')
+
+    const fieldA = await textBlockIn('b-a')
+    act(() => {
+      textEditorOf(fieldA).commands.focus('end')
+    })
+    await waitFor(() => expect(fieldA).toHaveFocus())
+
+    // Hold save 1 (the first word's debounced save) on an unresolved gate, so
+    // it's still in flight when the second word's save is scheduled and B is
+    // deleted.
+    const mockedCommitBlocks = commitBlocks as jest.MockedFunction<typeof commitBlocks>
+    const realImpl = mockedCommitBlocks.getMockImplementation()!
+    let releaseSave1: () => void = () => {}
+    const gate = new Promise<void>((resolve) => {
+      releaseSave1 = resolve
+    })
+    mockedCommitBlocks.mockImplementationOnce(async (...callArgs) => {
+      await gate
+      return realImpl(...callArgs)
+    })
+
+    await userEvent.type(fieldA, ' one', { skipClick: true })
+    await waitFor(() => expect(fieldA.textContent).toBe('A text one'))
+
+    // Past the pause: save 1's debounce timer fires and it starts (gated, in
+    // flight).
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, EDIT_PAUSE_MS + 50))
+    })
+
+    await userEvent.type(fieldA, ' two', { skipClick: true })
+    await waitFor(() => expect(fieldA.textContent).toBe('A text one two'))
+
+    // ⌘⌫ on B flushes save 2 (chained behind the still-gated save 1) before
+    // writing its own own-edit record.
+    const fieldB = await textBlockIn('b-b')
+    fieldB.focus()
+    await waitFor(() => expect(fieldB).toHaveFocus())
+    fireEvent.keyDown(fieldB, { key: 'Backspace', metaKey: true })
+    await waitFor(() => expect(screen.queryByText('B text')).not.toBeInTheDocument())
+
+    releaseSave1()
+    await waitFor(() => expect(fakeChangeLog.length).toBe(3))
+
+    const [save1Record, save2Record, deleteRecord] = fakeChangeLog
+    expect(save1Record.before).toEqual([a, b])
+    expect(save1Record.after).toEqual([{ ...a, content: 'A text one' }, b])
+    // The regression: save 2's `before` must be what save 1 actually left
+    // behind — not the structural delete's own `after`, which lands locally
+    // before save 2's chained write runs.
+    expect(save2Record.before).toEqual([{ ...a, content: 'A text one' }, b])
+    expect(save2Record.after).toEqual([{ ...a, content: 'A text one two' }, b])
+    expect(deleteRecord.before).toEqual([{ ...a, content: 'A text one two' }, b])
+    expect(deleteRecord.after).toEqual([{ ...a, content: 'A text one two' }])
+
+    // ⌘Z undoes the delete first: B comes back, both words still there.
+    fireEvent.keyDown(document.body, { key: 'z', metaKey: true })
+    await waitFor(() => expect(screen.getByText('B text')).toBeInTheDocument())
+    expect(screen.getByText('A text one two')).toBeInTheDocument()
+
+    // A second ⌘Z undoes save 2's typing step — ONLY the second word goes,
+    // B stays. (The bug this guards: a wrongly-ordered save 2 record undoes
+    // back to "no B", deleting it again and losing the second word for good.)
+    fireEvent.keyDown(document.body, { key: 'z', metaKey: true })
+    await waitFor(() => expect(screen.queryByText('A text one two')).not.toBeInTheDocument())
+    expect(screen.getByText('A text one')).toBeInTheDocument()
+    expect(screen.getByText('B text')).toBeInTheDocument()
   })
 })
