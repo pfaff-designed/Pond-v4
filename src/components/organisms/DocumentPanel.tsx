@@ -462,7 +462,9 @@ export function DocumentPanel() {
       : isTrashNode
         ? {
             glyph: pond?.glyph ?? LIFE_GLYPH,
-            trail: [home?.title || pondName || 'life', DATABASES_ROOT_TITLE],
+            // Trash is its own top-level rail row (KAN-504), not a databases
+            // child — unlike change log above, its trail carries no databases crumb.
+            trail: [home?.title || pondName || 'life'],
             current: 'trash',
             role: null,
           }

@@ -11,6 +11,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DocumentPanel } from '@/components/organisms/DocumentPanel'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { TRASH_NODE_ID } from '@/lib/change-log/trash-view'
+import { withPathProbe } from './helpers/command-path-probe'
 
 jest.mock('next/navigation', () => ({
   useSearchParams: () => ({
@@ -50,6 +51,17 @@ function renderPanel() {
   )
 }
 
+function renderPanelWithPathProbe() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(
+    <QueryClientProvider client={client}>
+      <DeletionUndoProvider>
+        {withPathProbe(<DocumentPanel />)}
+      </DeletionUndoProvider>
+    </QueryClientProvider>
+  )
+}
+
 beforeEach(() => jest.clearAllMocks())
 
 describe('DocumentPanel — the virtual trash node', () => {
@@ -57,5 +69,12 @@ describe('DocumentPanel — the virtual trash node', () => {
     renderPanel()
     await screen.findByText('trash is empty')
     expect(mockGetPage).not.toHaveBeenCalled()
+  })
+
+  it('publishes a breadcrumb trail with no databases crumb (KAN-504: trash is a top-level rail row, not a databases child)', async () => {
+    renderPanelWithPathProbe()
+    await screen.findByText('trash is empty')
+    const path = screen.getByTestId('command-path')
+    expect(path.textContent).toBe('life › trash')
   })
 })
