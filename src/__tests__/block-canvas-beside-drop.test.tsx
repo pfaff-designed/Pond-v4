@@ -55,11 +55,19 @@ jest.mock('@/lib/change-log/session-undo', () => ({
   },
 }))
 
+// The page-write queue (KAN-495) is a module-level registry keyed by page id
+// that outlives a test's unmount, so sharing one page id across `it()`s hands
+// a later test the earlier one's queue head as its own `before` — see
+// `block-canvas-side-by-side-path.test.tsx`'s own note on the same registry.
+let mockPageIdCounter = 0
+let mockPageId = 'page-1'
+
 beforeEach(() => {
   jest.clearAllMocks()
   mockSaveBlocks.mockResolvedValue(undefined)
   mockAppendOwnEdit.mockResolvedValue({ id: 'record-1' })
   global.fetch = jest.fn().mockResolvedValue({ ok: true } as Response)
+  mockPageId = `page-${++mockPageIdCounter}`
 })
 
 // `onStructuralWrite` — the caller's ONE structural entry point (KAN-495
@@ -73,8 +81,8 @@ function renderCanvas(blocks: Block[], onChange: (next: Block[]) => void) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const onStructuralWrite = (next: Block[]): Promise<boolean> => {
     onChange(next)
-    return getPageWriteQueue('page-1', () =>
-      createPageWriteQueue(createPageWriter(createClient(), client, 'page-1', 'pond-1'), {
+    return getPageWriteQueue(mockPageId, () =>
+      createPageWriteQueue(createPageWriter(createClient(), client, mockPageId, 'pond-1'), {
         title: 'sourdough, 78%',
         blocks,
       })
@@ -88,7 +96,7 @@ function renderCanvas(blocks: Block[], onChange: (next: Block[]) => void) {
       <DeletionUndoProvider>
         <BlockCanvas
           blocks={blocks}
-          pageId="page-1"
+          pageId={mockPageId}
           pageTitle="sourdough, 78%"
           onChange={onChange}
           onStructuralWrite={onStructuralWrite}
