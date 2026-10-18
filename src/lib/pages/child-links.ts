@@ -255,6 +255,12 @@ export function restoreLinks(blocks: Block[], removed: RemovedLink[]): Block[] {
  * wrong shape here. `pageIds` is always a handful at most (one subtree), so
  * the fan-out stays cheap; a page linked to more than one id in the set comes
  * back from more than one of these queries and is deduped by id below.
+ *
+ * The containment value is passed as a JSON string, not the JS array
+ * literal: postgrest-js only serialises an array argument as a Postgres
+ * array literal (`cs.{...}`), which Postgres then rejects against a `jsonb`
+ * column with "invalid input syntax for type json" — no link is ever found,
+ * let alone removed.
  */
 export async function findPagesLinkingTo(
   supabase: SupabaseClient<Database>,
@@ -268,9 +274,10 @@ export async function findPagesLinkingTo(
     [...pageIds].map(async (pageId) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const q: any = (supabase as any).from('pages').select(PAGE_COLUMNS)
-      const { data, error } = await inPond(q, pondId).contains('blocks', [
-        { type: 'page-link', pageId },
-      ])
+      const { data, error } = await inPond(q, pondId).contains(
+        'blocks',
+        JSON.stringify([{ type: 'page-link', pageId }])
+      )
       if (error) throw new Error(error.message)
       for (const row of (data ?? []) as PondPageRow[]) {
         if (!byId.has(row.id)) byId.set(row.id, mapRow(row))

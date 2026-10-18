@@ -301,8 +301,8 @@ describe('findPagesLinkingTo', () => {
   it('queries once per id, pond-scoped, and dedupes a page matched by more than one id', async () => {
     const pageA = pageRow('parent-a', [link('b1', 'child-1')])
     const pageB = pageRow('parent-b', [link('b2', 'child-2')])
-    const contains = jest.fn((_col: string, value: Array<{ pageId: string }>) => {
-      const pageId = value[0].pageId
+    const contains = jest.fn((_col: string, value: string) => {
+      const pageId = (JSON.parse(value) as Array<{ pageId: string }>)[0].pageId
       if (pageId === 'child-1') return Promise.resolve({ data: [pageA], error: null })
       if (pageId === 'child-2') return Promise.resolve({ data: [pageA, pageB], error: null })
       return Promise.resolve({ data: [], error: null })
@@ -318,10 +318,28 @@ describe('findPagesLinkingTo', () => {
 
     expect(supabase.from).toHaveBeenCalledWith('pages')
     expect(chain.eq).toHaveBeenCalledWith('pond_id', 'pond-1')
-    expect(contains).toHaveBeenCalledWith('blocks', [{ type: 'page-link', pageId: 'child-1' }])
-    expect(contains).toHaveBeenCalledWith('blocks', [{ type: 'page-link', pageId: 'child-2' }])
+    expect(contains).toHaveBeenCalledWith(
+      'blocks',
+      JSON.stringify([{ type: 'page-link', pageId: 'child-1' }])
+    )
+    expect(contains).toHaveBeenCalledWith(
+      'blocks',
+      JSON.stringify([{ type: 'page-link', pageId: 'child-2' }])
+    )
     expect(contains).toHaveBeenCalledTimes(2)
     expect(out.map((p) => p.id).sort()).toEqual(['parent-a', 'parent-b'])
+  })
+
+  it('passes the containment value as a JSON string, not a JS array', async () => {
+    const contains = jest.fn().mockResolvedValue({ data: [], error: null })
+    const chain = makeChain({ contains })
+    const supabase = { from: jest.fn().mockReturnValue(chain) }
+
+    await findPagesLinkingTo(supabase as never, 'pond-1', new Set(['child-1']))
+
+    const [, value] = contains.mock.calls[0]
+    expect(typeof value).toBe('string')
+    expect(value).toEqual(JSON.stringify([{ type: 'page-link', pageId: 'child-1' }]))
   })
 
   it('scopes to a null pond with .is rather than .eq', async () => {
@@ -375,9 +393,10 @@ describe('unlinkTrashedSubtree', () => {
       select: jest.fn().mockReturnThis(),
       eq: jest.fn().mockReturnThis(),
       is: jest.fn().mockReturnThis(),
-      contains: jest.fn((_col: string, value: Array<{ pageId: string }>) =>
-        Promise.resolve({ data: containsResults[value[0].pageId] ?? [], error: null })
-      ),
+      contains: jest.fn((_col: string, value: string) => {
+        const pageId = (JSON.parse(value) as Array<{ pageId: string }>)[0].pageId
+        return Promise.resolve({ data: containsResults[pageId] ?? [], error: null })
+      }),
       maybeSingle: jest.fn().mockResolvedValue({ data: propsRow }),
       update,
     }
@@ -621,15 +640,16 @@ describe('unlinkTrashedSubtree', () => {
       select: jest.fn().mockReturnThis(),
       eq: jest.fn().mockReturnThis(),
       is: jest.fn().mockReturnThis(),
-      contains: jest.fn((_col: string, value: Array<{ pageId: string }>) =>
-        Promise.resolve({
+      contains: jest.fn((_col: string, value: string) => {
+        const pageId = (JSON.parse(value) as Array<{ pageId: string }>)[0].pageId
+        return Promise.resolve({
           data:
-            value[0].pageId === 'child-1'
+            pageId === 'child-1'
               ? [parentPage('parent-a', [linkA]), parentPage('parent-b', [linkB])]
               : [],
           error: null,
         })
-      ),
+      }),
       maybeSingle: jest.fn(() => Promise.resolve({ data: { props: rootProps }, error: null })),
       update,
     }
@@ -933,9 +953,10 @@ describe('trashPageUnlinked', () => {
       select: jest.fn().mockReturnThis(),
       eq: jest.fn().mockReturnThis(),
       is: jest.fn().mockReturnThis(),
-      contains: jest.fn((_col: string, value: Array<{ pageId: string }>) =>
-        Promise.resolve({ data: containsResults[value[0].pageId] ?? [], error: null })
-      ),
+      contains: jest.fn((_col: string, value: string) => {
+        const pageId = (JSON.parse(value) as Array<{ pageId: string }>)[0].pageId
+        return Promise.resolve({ data: containsResults[pageId] ?? [], error: null })
+      }),
       maybeSingle,
       update,
     }
