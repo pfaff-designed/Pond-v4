@@ -118,6 +118,34 @@ describe('NewPondSheet — Enter in the name field (KAN-488)', () => {
 
     expect(onCreate).toHaveBeenCalledWith('Studio', { glyph: 'lightning-03' })
   })
+
+  it('"make pond" after picking ink sends theme: "ink"', async () => {
+    const user = userEvent.setup()
+    const onCreate = jest.fn()
+    render(<NewPondSheet onCreate={onCreate} onCancel={jest.fn()} />)
+
+    await user.type(screen.getByPlaceholderText('Name your pond'), 'Studio')
+    await user.click(screen.getByRole('button', { name: 'ink' }))
+    await user.click(screen.getByRole('button', { name: 'continue' }))
+    await user.click(screen.getByRole('button', { name: 'make pond' }))
+
+    expect(onCreate).toHaveBeenCalledWith('Studio', { glyph: 'lightning-03', theme: 'ink' })
+    document.documentElement.classList.remove('dark')
+  })
+
+  it('"make pond" after picking ink then paper sends theme: "paper"', async () => {
+    const user = userEvent.setup()
+    const onCreate = jest.fn()
+    render(<NewPondSheet onCreate={onCreate} onCancel={jest.fn()} />)
+
+    await user.type(screen.getByPlaceholderText('Name your pond'), 'Studio')
+    await user.click(screen.getByRole('button', { name: 'ink' }))
+    await user.click(screen.getByRole('button', { name: 'paper' }))
+    await user.click(screen.getByRole('button', { name: 'continue' }))
+    await user.click(screen.getByRole('button', { name: 'make pond' }))
+
+    expect(onCreate).toHaveBeenCalledWith('Studio', { glyph: 'lightning-03', theme: 'paper' })
+  })
 })
 
 describe('NewPondSheet — areas step pills and field are aria-disabled (KAN-488)', () => {

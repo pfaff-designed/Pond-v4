@@ -1,8 +1,9 @@
 /**
- * `PondProvider` applies a pond's own theme the moment you switch INTO it
- * mid-session (create, switcher, ⌘K) — never on the first resolution, so a
- * person's own stored mode is never overridden on open (SPEC.md "Consequence
- * of the stored domain"). Mocks `@/lib/pond/client` the same way
+ * The pond theme applies at creation only (KAN-501 scope cut; applying it on
+ * switch moved to KAN-503). `PondProvider` must never flip the mode just
+ * because `?pond=` changed — every existing pond defaults to `theme: 'paper'`
+ * (0018), so applying it on switch would stomp a person's own dark mode
+ * (KAN-413). Mocks `@/lib/pond/client` the same way
  * `pond-context-last-page.test.tsx` does.
  */
 
@@ -24,8 +25,8 @@ jest.mock('@/lib/pond/client', () => ({
 
 import { listPonds, setPondLastPage } from '@/lib/pond/client'
 
-const INK_POND = { id: 'p-ink', name: 'studio', glyph: null, theme: 'ink', order: 0 }
-const PAPER_POND = { id: 'p-paper', name: 'life', glyph: null, theme: 'paper', order: 1 }
+const PAPER_POND = { id: 'p-paper', name: 'life', glyph: null, theme: 'paper', order: 0 }
+const INK_POND = { id: 'p-ink', name: 'studio', glyph: null, theme: 'ink', order: 1 }
 
 const html = document.documentElement
 const isDark = () => html.classList.contains('dark')
@@ -37,28 +38,13 @@ function Probe() {
 
 beforeEach(() => {
   mockSearch = ''
-  html.classList.remove('dark')
   ;(setPondLastPage as jest.Mock).mockReset().mockResolvedValue(undefined)
-  ;(listPonds as jest.Mock).mockReset()
+  ;(listPonds as jest.Mock).mockReset().mockResolvedValue([PAPER_POND, INK_POND])
 })
 
-describe('PondProvider applies a pond theme only on a mid-session switch', () => {
-  it('does not touch the dark class on the first resolution (page load)', async () => {
-    ;(listPonds as jest.Mock).mockResolvedValue([INK_POND, PAPER_POND])
-    mockSearch = 'pond=p-ink'
-
-    render(
-      <PondProvider>
-        <Probe />
-      </PondProvider>
-    )
-
-    await waitFor(() => expect(screen.getByTestId('probe')).toHaveTextContent('p-ink'))
-    expect(isDark()).toBe(false)
-  })
-
-  it('applies the newly switched-to pond’s theme on a later rerender', async () => {
-    ;(listPonds as jest.Mock).mockResolvedValue([INK_POND, PAPER_POND])
+describe('switching ponds never changes the mode', () => {
+  it('leaves a dark mode unchanged across paper -> ink -> paper', async () => {
+    html.classList.add('dark')
     mockSearch = 'pond=p-paper'
 
     const { rerender } = render(
@@ -66,7 +52,39 @@ describe('PondProvider applies a pond theme only on a mid-session switch', () =>
         <Probe />
       </PondProvider>
     )
+    await waitFor(() => expect(screen.getByTestId('probe')).toHaveTextContent('p-paper'))
+    expect(isDark()).toBe(true)
 
+    mockSearch = 'pond=p-ink'
+    rerender(
+      <PondProvider>
+        <Probe />
+      </PondProvider>
+    )
+    await waitFor(() => expect(screen.getByTestId('probe')).toHaveTextContent('p-ink'))
+    expect(isDark()).toBe(true)
+
+    mockSearch = 'pond=p-paper'
+    rerender(
+      <PondProvider>
+        <Probe />
+      </PondProvider>
+    )
+    await waitFor(() => expect(screen.getByTestId('probe')).toHaveTextContent('p-paper'))
+    expect(isDark()).toBe(true)
+
+    html.classList.remove('dark')
+  })
+
+  it('leaves a light mode unchanged across paper -> ink -> paper', async () => {
+    html.classList.remove('dark')
+    mockSearch = 'pond=p-paper'
+
+    const { rerender } = render(
+      <PondProvider>
+        <Probe />
+      </PondProvider>
+    )
     await waitFor(() => expect(screen.getByTestId('probe')).toHaveTextContent('p-paper'))
     expect(isDark()).toBe(false)
 
@@ -76,43 +94,16 @@ describe('PondProvider applies a pond theme only on a mid-session switch', () =>
         <Probe />
       </PondProvider>
     )
-
     await waitFor(() => expect(screen.getByTestId('probe')).toHaveTextContent('p-ink'))
-    await waitFor(() => expect(isDark()).toBe(true))
-  })
+    expect(isDark()).toBe(false)
 
-  it('still applies the next pond’s theme after an interim resolution to no pond', async () => {
-    ;(listPonds as jest.Mock).mockResolvedValue([INK_POND, PAPER_POND])
     mockSearch = 'pond=p-paper'
-
-    const { rerender } = render(
+    rerender(
       <PondProvider>
         <Probe />
       </PondProvider>
     )
-
     await waitFor(() => expect(screen.getByTestId('probe')).toHaveTextContent('p-paper'))
     expect(isDark()).toBe(false)
-
-    // A `?pond=` not yet in the list resolves to null mid-session.
-    mockSearch = 'pond=p-not-yet-created'
-    rerender(
-      <PondProvider>
-        <Probe />
-      </PondProvider>
-    )
-
-    await waitFor(() => expect(screen.getByTestId('probe')).toHaveTextContent('none'))
-    expect(isDark()).toBe(false)
-
-    mockSearch = 'pond=p-ink'
-    rerender(
-      <PondProvider>
-        <Probe />
-      </PondProvider>
-    )
-
-    await waitFor(() => expect(screen.getByTestId('probe')).toHaveTextContent('p-ink'))
-    await waitFor(() => expect(isDark()).toBe(true))
   })
 })

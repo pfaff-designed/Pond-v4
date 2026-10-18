@@ -143,10 +143,10 @@ function Pill({
 
 export interface NewPondSheetProps {
   /** Submitted with the trimmed name and the picked glyph/theme — never a blank
-   *  name; `continue`/`make pond` stay disabled until it isn't. `theme` is
-   *  omitted while still on the `paper` default, matching `createPond`'s
-   *  "defaults send nothing" contract. */
-  onCreate: (name: string, options: { glyph?: string; theme?: 'ink' }) => void
+   *  name; `continue`/`make pond` stay disabled until it isn't. `theme` is sent
+   *  only when a pill was actually clicked (a preview hold is live), so an
+   *  untouched sheet leaves the person's own mode alone on create. */
+  onCreate: (name: string, options: { glyph?: string; theme?: LiveTheme }) => void
   onCancel: () => void
   pending?: boolean
   failure?: string | null
@@ -352,7 +352,10 @@ export function NewPondSheet({
             disabled={pending || blank}
             onClick={() =>
               last
-                ? onCreate(trimmed, { glyph, ...(theme === 'ink' ? { theme } : {}) })
+                ? onCreate(trimmed, {
+                    glyph,
+                    ...(releaseThemeHoldRef.current ? { theme } : {}),
+                  })
                 : setStep((s) => s + 1)
             }
           />

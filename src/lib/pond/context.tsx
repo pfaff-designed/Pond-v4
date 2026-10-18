@@ -18,7 +18,6 @@ import { useSearchParams } from 'next/navigation'
 import { listPonds, setPondLastPage, type Pond } from './client'
 import { resolveActivePond, useActivePondId } from './active'
 import { nextLastPageWrite, type LastPageRender } from './last-page'
-import { setMode } from '@/lib/theme/mode'
 
 export interface PondContextValue {
   /** The active pond, or null before the list has loaded. */
@@ -59,12 +58,6 @@ export function PondProvider({ children }: { children: React.ReactNode }) {
   // pond switch. Null across remounts (tests, story swaps) is correct: that
   // reads as "no snapshot yet", never a write.
   const previousRenderRef = useRef<LastPageRender | null>(null)
-  // The last NON-NULL pond id this provider resolved to, so a switch mid-session
-  // can be told apart from the first resolution (page load) — null until a pond
-  // has resolved once, which is exactly the render that must stay silent. A
-  // `?pond=` not yet in the list resolves to null; that must not clear this, or
-  // the next real pond to resolve reads as a first load and skips its theme.
-  const previousPondIdRef = useRef<string | null>(null)
 
   const reload = useCallback(() => setNonce((n) => n + 1), [])
 
@@ -92,19 +85,6 @@ export function PondProvider({ children }: { children: React.ReactNode }) {
   }, [nonce])
 
   const pond = resolveActivePond(ponds, activeId)
-
-  // Applies a pond's own theme the moment you switch INTO it during a session
-  // (create, switcher, ⌘K) — never on the first resolution, so a person's own
-  // stored mode is never overridden on open (SPEC.md "Consequence of the
-  // stored domain").
-  useEffect(() => {
-    const previousId = previousPondIdRef.current
-    const currentId = pond?.id ?? null
-    const currentTheme = pond?.theme ?? null
-    if (currentId !== null) previousPondIdRef.current = currentId
-    if (previousId === null || currentId === null || currentId === previousId) return
-    setMode(currentTheme === 'ink' ? 'dark' : 'light')
-  }, [pond?.id, pond?.theme])
 
   // `s6m6`'s write: a `?nodeId=` change within the SAME pond is remembered as
   // that pond's `last_page_id`. `nextLastPageWrite` is the pure decision;
