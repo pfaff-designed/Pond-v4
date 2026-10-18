@@ -254,6 +254,11 @@ describe('Return after a block opens a line for `/`', () => {
     const b: Block = { id: 'b-b', type: 'text', content: 'b', width: '1/2' }
     const { onChange } = renderCanvas([c, e, b])
     const line = await textBlockIn('b-e')
+    // KAN-345 rule 2: an empty line no longer takes focus on mount, so put the
+    // caret in it the way a person clicking in would.
+    act(() => {
+      textEditorOf(line).commands.focus('end')
+    })
     await waitFor(() => expect(line).toHaveFocus())
 
     await user.keyboard('{Backspace}')

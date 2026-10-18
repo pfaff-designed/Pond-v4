@@ -1693,22 +1693,38 @@ export function BlockCanvas({
   // own sizing div below; a row's boundary is `max(item.bottom) - container.top`.
   const itemSizingRefs = useRef(new Map<string, HTMLDivElement>())
   const [rowBoundaryTops, setRowBoundaryTops] = useState<number[]>([])
+  // The last measurement `read` (below) stored. `blockRows` is a new array on
+  // every render that changes a drag's preview, re-running the effect; a set
+  // state from a layout effect re-renders and commits even when the value is
+  // unchanged (React only bails out eagerly with no work pending), and
+  // KAN-440's hysteresis promises one commit per zone change. So `read` sets
+  // state only when the measurement actually moved.
+  const lastMeasureRef = useRef<{ width: number; tops: number[] } | null>(null)
   useLayoutEffect(() => {
     const el = canvasRef.current
     if (!el || typeof ResizeObserver === 'undefined') return
     const read = () => {
       const containerRect = el.getBoundingClientRect()
-      setColumnWidth(containerRect.width)
-      setRowBoundaryTops(
-        blockRows.slice(0, -1).map(
-          (row) =>
-            Math.max(
-              ...row.map(
-                (item) => itemSizingRefs.current.get(item.id)?.getBoundingClientRect().bottom ?? 0
-              )
-            ) - containerRect.top
-        )
+      const tops = blockRows.slice(0, -1).map(
+        (row) =>
+          Math.max(
+            ...row.map(
+              (item) => itemSizingRefs.current.get(item.id)?.getBoundingClientRect().bottom ?? 0
+            )
+          ) - containerRect.top
       )
+      const last = lastMeasureRef.current
+      if (
+        last &&
+        last.width === containerRect.width &&
+        last.tops.length === tops.length &&
+        last.tops.every((top, i) => top === tops[i])
+      ) {
+        return
+      }
+      lastMeasureRef.current = { width: containerRect.width, tops }
+      setColumnWidth(containerRect.width)
+      setRowBoundaryTops(tops)
     }
     read()
     const ro = new ResizeObserver(read)
