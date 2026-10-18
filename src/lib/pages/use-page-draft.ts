@@ -357,22 +357,29 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
       .catch((err) => {
         console.error('[document] structural save failed', id, err)
         if (opts?.discardOnFailure) {
-          // The person may have kept typing against the now-discarded blocks
-          // while this write was failing — that debounce timer's `after` was
-          // built on top of them, so it must never fire and enqueue a typed
-          // write of content the store never actually held.
-          if (saveTimer.current) {
-            clearTimeout(saveTimer.current)
-            saveTimer.current = null
-          }
-          pendingSave.current = null
-          setPendingDebounce(false)
           // Any op already queued behind the halt (a debounce that fired
           // before the failure resolved) was built on this discarded
           // `after` too — discard it with the halted op, not just the
           // halted op itself, or it silently re-stores the failed apply.
+          // This is that page's queue, so it is safe after the person has
+          // moved on: page B has its own queue.
           queue.discardHalted({ andQueued: true })
-          setBlocks(queue.head().blocks)
+          // The debounce timer and the on-screen blocks are the OPEN page's,
+          // not this write's. A template apply on A that fails after the
+          // person has opened B must not cancel B's pending save or repaint
+          // B with A's stored blocks — B's next keystroke would then save
+          // A's blocks over B. Only a pending save that still belongs to
+          // this page, and a screen that is still this page, get rewound.
+          const pending = pendingSave.current
+          if (pending?.pageId === id) {
+            if (saveTimer.current) {
+              clearTimeout(saveTimer.current)
+              saveTimer.current = null
+            }
+            pendingSave.current = null
+            setPendingDebounce(false)
+          }
+          if (loadedId.current === id) setBlocks(queue.head().blocks)
         }
         return false
       })

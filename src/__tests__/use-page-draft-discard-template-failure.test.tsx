@@ -157,4 +157,62 @@ describe('writeStructural discardOnFailure discards what was built on it (KAN-49
     expect(mockWriter).toHaveBeenCalledTimes(1)
     expect(result.current.viewBlocks).toEqual([original])
   })
+
+  it("a template apply that fails after the person moved to another page leaves that page alone", async () => {
+    const pageA = { ...PAGE, id: 'page-template-fail-A' }
+    const pageB: PondPage = {
+      ...PAGE,
+      id: 'page-template-fail-B',
+      title: 'B',
+      blocks: [{ id: 'b-1', type: 'text', content: 'page b' }],
+    }
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const { result, rerender } = renderHook(
+      ({ page }: { page: PondPage }) => {
+        const getSupabase = useLazySupabase()
+        return usePageDraft({ page, pageId: page.id, pondId: 'pond-1', getSupabase })
+      },
+      { wrapper: wrapper(client), initialProps: { page: pageA } }
+    )
+
+    let rejectTemplate: (err: unknown) => void = () => {}
+    mockWriter.mockImplementationOnce(
+      () => new Promise<void>((_resolve, reject) => (rejectTemplate = reject))
+    )
+
+    // Template apply on A, still in flight.
+    let applyResult!: Promise<boolean>
+    act(() => {
+      applyResult = result.current.writeStructural([templateLine], { discardOnFailure: true })
+    })
+
+    // The person moves to B and types; the pause hasn't elapsed yet.
+    rerender({ page: pageB })
+    const typedOnB: Block = { id: 'b-1', type: 'text', content: 'page b, edited' }
+    act(() => {
+      result.current.commitLocalEdit([typedOnB])
+    })
+
+    // A's template save now fails.
+    await act(async () => {
+      rejectTemplate(new Error('saveBlocks failed'))
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(await applyResult).toBe(false)
+
+    // B still shows what the person typed on B, never A's blocks.
+    expect(result.current.viewBlocks).toEqual([typedOnB])
+    expect(result.current.saved).toBe(false)
+
+    // B's own pending save still fires, carrying B's content.
+    mockWriter.mockResolvedValue(undefined)
+    await act(async () => {
+      jest.advanceTimersByTime(600)
+      await Promise.resolve()
+    })
+    expect(mockWriter).toHaveBeenCalledTimes(2)
+    expect(mockWriter.mock.calls[1][0]).toMatchObject({ after: { blocks: [typedOnB] } })
+  })
 })
