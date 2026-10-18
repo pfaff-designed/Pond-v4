@@ -50,7 +50,7 @@ describe("KAN-489: the selection bar opens only for the page canvas's own editab
       </>
     )
 
-    selectText(screen.getByText('Name it'))
+    selectText(screen.getByText('New pond'))
 
     expect(screen.queryByRole('toolbar', { name: 'selection' })).not.toBeInTheDocument()
   })
