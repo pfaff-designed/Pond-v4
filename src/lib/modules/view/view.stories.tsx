@@ -1691,6 +1691,93 @@ export const CalendarHoverAdd: Story = {
   },
 }
 
+/**
+ * KAN-454. The quiet line `n without a date` opens the undated records.
+ * Picking one arms placement (`pick a day for <title>`). Clicking a day of
+ * the current month writes that date through `onMoveDate`, the record sits
+ * on the day, and the line count drops.
+ *
+ * The month grid is `hidden md:flex`, so this story sets a desktop viewport
+ * the same way `CalendarHoverAdd` does. The day is the 21st of the current
+ * month, which every month contains, and the grid opens on the current month.
+ */
+const placeDayIso = `${localDateIso(new Date()).slice(0, 8)}21`
+
+const undatedCalendarRows: CollectionRow[] = [
+  { id: 'r-dentist', title: 'dentist', values: {} },
+  { id: 'r-optician', title: 'optician', values: {} },
+]
+
+function CalendarWithoutADateHarness({
+  config,
+  hostSchema,
+}: {
+  config: ViewBlock
+  hostSchema: PropertySchema
+}) {
+  const [data, setData] = useState<CollectionRow[]>(undatedCalendarRows)
+  const handleMoveDate = (rowId: string, key: string, value: PropertyValue) => {
+    setData((prev) =>
+      prev.map((row) =>
+        row.id === rowId ? { ...row, values: { ...row.values, [key]: value } } : row
+      )
+    )
+  }
+  return (
+    <CollectionView
+      config={config}
+      schema={hostSchema}
+      rows={data}
+      editable
+      onMoveDate={handleMoveDate}
+    />
+  )
+}
+
+export const CalendarWithoutADate: Story = {
+  args: { config: calendarConfig, schema, rows: undatedCalendarRows, editable: true },
+  render: (args) => (
+    <CalendarWithoutADateHarness config={args.config} hostSchema={args.schema ?? schema} />
+  ),
+  loaders: [
+    async () => {
+      const prevViewport = { width: window.innerWidth, height: window.innerHeight }
+      await page.viewport(1440, 900)
+      return { prevViewport }
+    },
+  ],
+  play: async ({ canvasElement, loaded }) => {
+    try {
+      const canvas = within(canvasElement)
+      await expect(canvas.getByRole('button', { name: '2 without a date' })).toBeInTheDocument()
+      await userEvent.click(canvas.getByRole('button', { name: '2 without a date' }))
+
+      const list = await canvas.findByRole('listbox', { name: 'without a date' })
+      await expect(within(list).getByRole('option', { name: 'dentist' })).toBeInTheDocument()
+      await expect(within(list).getByRole('option', { name: 'optician' })).toBeInTheDocument()
+      await userEvent.click(within(list).getByRole('option', { name: 'dentist' }))
+
+      await expect(canvas.queryByRole('listbox', { name: 'without a date' })).not.toBeInTheDocument()
+      await expect(canvas.getByRole('button', { name: 'pick a day for dentist' })).toBeInTheDocument()
+
+      const cell = canvasElement.querySelector<HTMLElement>(`[data-iso="${placeDayIso}"]`)
+      if (!cell) throw new Error('calendar without-a-date story: day cell not found')
+      await expect(cell).toHaveClass('hover:bg-mn-hover-fill')
+      await userEvent.click(cell)
+
+      await expect(within(cell).getByText('dentist')).toBeInTheDocument()
+      await expect(within(cell).queryByText('optician')).not.toBeInTheDocument()
+      await expect(canvas.getByRole('button', { name: '1 without a date' })).toBeInTheDocument()
+      await expect(
+        canvas.queryByRole('button', { name: 'pick a day for dentist' })
+      ).not.toBeInTheDocument()
+    } finally {
+      const { width, height } = loaded.prevViewport as { width: number; height: number }
+      await page.viewport(width, height)
+    }
+  },
+}
+
 // ── Gallery ─────────────────────────────────────────────────────────────────────
 
 /**
