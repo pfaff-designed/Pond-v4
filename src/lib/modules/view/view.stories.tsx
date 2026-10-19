@@ -1475,6 +1475,38 @@ export const ListNeedsADate: Story = {
   },
 }
 
+/**
+ * A list grouped by status (KAN-524). `listSchema`'s field is already named
+ * `status`, so the unset bucket reads `No status`. Each group has a heading
+ * and a count. A record with no value for that field sits in the unset group.
+ */
+export const ListGroupedByStatusAndFlatWhenNone: Story = {
+  args: {
+    config: { id: 'v-list-status', type: 'view', mode: 'list', groupBy: 'l-status' },
+    schema: listSchema,
+    rows: [
+      { id: 'cabinet', title: 'cabinet quote', values: { 'l-status': 'l-todo' } },
+      { id: 'skip', title: 'skip hire returned', values: { 'l-status': 'l-done' } },
+      { id: 'samples', title: 'order samples', values: {} },
+    ],
+  },
+  play: async ({ canvasElement }) => {
+    const groups = [...canvasElement.querySelectorAll<HTMLElement>('[data-part="list-group"]')]
+    const headingOf = (group: HTMLElement) => {
+      const heading = group.querySelector('[data-part="list-group-label"]')
+      const label = heading?.querySelector('span')
+      return (label ?? heading)?.textContent ?? ''
+    }
+    for (const group of groups) {
+      await expect(group.querySelector('[data-part="list-group-label"]')).not.toBeNull()
+      await expect(group.querySelector('[data-part="list-group-count"]')).not.toBeNull()
+    }
+    await expect(groups.map(headingOf)).toEqual(['to do', 'done', 'No status'])
+    const unset = groups.find((group) => headingOf(group) === 'No status')!
+    await expect(within(unset).getByText('order samples')).toBeInTheDocument()
+  },
+}
+
 // ── Calendar (month span, #262 1/3) ──────────────────────────────────────────────
 
 /** The month span's chrome over a dated collection: period label, prev/next, today. */
