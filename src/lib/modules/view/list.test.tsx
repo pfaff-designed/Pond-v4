@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { act, render, screen } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { CollectionList, LIST_EMPTY_LINE } from './list'
+import { CALENDAR_EMPTY_LINE } from './kinds'
 import type { CollectionRow } from './apply'
 import type { PropertySchema } from '@/lib/properties/schema'
 
@@ -193,5 +194,131 @@ describe('CollectionList — the add input never remounts across the empty→foo
     expect(screen.getByText('milk')).toBeInTheDocument()
     expect(input).toHaveValue('eg')
     expect(input).toHaveFocus()
+  })
+})
+
+const OPTION_COLOR = '#648F7B'
+
+const statusSchema: PropertySchema = [
+  {
+    id: 'p-status',
+    name: 'status',
+    type: 'status',
+    options: [
+      { id: 'opt-later', label: 'Later', color: OPTION_COLOR },
+      { id: 'opt-now', label: 'Now', color: OPTION_COLOR },
+    ],
+  },
+  { id: 'p-title', name: 'Title', type: 'text' },
+  { id: 'p-due', name: 'Due', type: 'date' },
+  { id: 'p-repeat', name: 'repeats', type: 'text' },
+]
+
+const statusRows: CollectionRow[] = [
+  {
+    id: 'r-now',
+    title: 'paint the door',
+    values: { 'p-status': 'opt-now', 'p-due': '2026-10-21', 'p-repeat': 'every mon' },
+  },
+  { id: 'r-empty', title: 'loose end', values: {} },
+]
+
+const LIST_TODAY = new Date(2026, 9, 19)
+
+const headingLabels = (container: HTMLElement): string[] =>
+  [...container.querySelectorAll<HTMLElement>('[data-part="list-group"]')].map((group) => {
+    const heading = group.querySelector('[data-part="list-group-label"]')
+    const label = heading?.querySelector('span')
+    return (label ?? heading)?.textContent ?? ''
+  })
+
+describe('CollectionList — group by status (KAN-521)', () => {
+  it('renders one heading per option in schema order, then No status, with an empty count', () => {
+    const { container } = render(
+      <CollectionList
+        viewKey="v1"
+        schema={statusSchema}
+        rows={statusRows}
+        groupBy="p-status"
+        today={LIST_TODAY}
+      />
+    )
+
+    const groups = [...container.querySelectorAll<HTMLElement>('[data-part="list-group"]')]
+    expect(headingLabels(container)).toEqual(['Later', 'Now', 'No status'])
+    expect(
+      groups.map((group) => group.querySelector('[data-part="list-group-count"]')?.textContent)
+    ).toEqual(['0', '1', '1'])
+
+    const later = groups[0]!
+    const now = groups[1]!
+    const noStatus = groups[2]!
+    expect(within(later).queryByRole('listitem')).not.toBeInTheDocument()
+    expect(within(now).getByText('paint the door')).toBeInTheDocument()
+    expect(within(noStatus).getByText('loose end')).toBeInTheDocument()
+
+    const heading = later.querySelector('[data-part="list-group-label"]')
+    expect(heading).toHaveClass(
+      'flex',
+      'justify-between',
+      'text-[10.5px]',
+      'font-medium',
+      'tracking-[.1em]',
+      'text-mn-text-secondary',
+      'uppercase'
+    )
+    expect(heading?.children).toHaveLength(2)
+    expect(container.innerHTML).not.toContain(OPTION_COLOR)
+
+    expect(within(now).getByRole('checkbox', { name: 'paint the door done' })).toBeInTheDocument()
+    expect(within(now).getByText('every mon')).toBeInTheDocument()
+    expect(within(now).getByText('wed 21')).toBeInTheDocument()
+  })
+
+  it('a date groupBy still shows a due bucket, and so does no groupBy', () => {
+    const dated: CollectionRow[] = [
+      { id: 'r1', title: 'milk', values: { 'p-due': '2026-10-19' } },
+    ]
+    const datedRender = render(
+      <CollectionList
+        viewKey="v1"
+        schema={statusSchema}
+        rows={dated}
+        groupBy="p-due"
+        today={LIST_TODAY}
+      />
+    )
+    expect(datedRender.container.querySelector('[data-group="today"]')).not.toBeNull()
+    expect(datedRender.container.querySelector('[data-part="list-group-count"]')).toBeNull()
+    datedRender.unmount()
+
+    const open = render(
+      <CollectionList viewKey="v1" schema={statusSchema} rows={dated} today={LIST_TODAY} />
+    )
+    expect(open.container.querySelector('[data-group="today"]')).not.toBeNull()
+  })
+
+  it('a status groupBy shows the rows when the schema has no date', () => {
+    const schema: PropertySchema = [
+      {
+        id: 'p-status',
+        name: 'status',
+        type: 'status',
+        options: [{ id: 'opt-now', label: 'Now' }],
+      },
+      { id: 'p-title', name: 'Title', type: 'text' },
+    ]
+    render(
+      <CollectionList
+        viewKey="v1"
+        schema={schema}
+        rows={[{ id: 'r1', title: 'milk', values: { 'p-status': 'opt-now' } }]}
+        groupBy="p-status"
+        today={LIST_TODAY}
+      />
+    )
+    expect(screen.getByText('milk')).toBeInTheDocument()
+    expect(screen.getByText('Now')).toBeInTheDocument()
+    expect(screen.queryByText(CALENDAR_EMPTY_LINE)).not.toBeInTheDocument()
   })
 })

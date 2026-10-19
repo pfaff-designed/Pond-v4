@@ -1,10 +1,11 @@
 'use client'
 
 /**
- * List view (`Pond 06.21` 6v): the collection's records as a checklist, grouped by
- * when they are due. One card — radius 20, padding 16/18, the 2u card shadow, gap 20
- * between groups — with a group label over each run of rows. It is read from the same
- * rows every other view draws; the groups come from `groupRowsByDue` at render time.
+ * List view (`Pond 06.21` 6v): the collection's records as a checklist. One card —
+ * radius 20, padding 16/18, the 2u card shadow, gap 20 between groups — with a group
+ * label over each run of rows. A select or status `groupBy` draws `groupRows` (one
+ * heading per option in schema order, then `No ${field name}`, empty options included).
+ * A date `groupBy`, or none, still draws `groupRowsByDue`. Same rows as every other view.
  *
  * A row's title is its tab stop: click, Enter or Space selects the record and opens
  * its peek (6u.2), exactly as a board card does. The checkbox is the person's own
@@ -22,7 +23,7 @@ import { PondBlockEmpty } from '@/components/organisms/PondBlock'
 import { type PropertySchema, type PropertyValue } from '@/lib/properties/schema'
 import { useOrangeToday } from '../page-canvas'
 import { AddRowInput } from './add-row-input'
-import { displayValue, pickRepeatDef, type CollectionRow } from './apply'
+import { displayValue, groupRows, pickDateDef, pickRepeatDef, type CollectionRow } from './apply'
 import { RepeatMark } from './cells'
 import { dueOfRow, firstOrangeToday } from './due'
 import { DueMark } from './due-mark'
@@ -34,6 +35,14 @@ import { useDoneToggle } from './use-done-toggle'
 import { ROW_FOCUS_VISIBLE_BASE, useRecordSelection } from './use-record-selection'
 
 export const LIST_EMPTY_LINE = 'no records yet'
+
+/** One drawn group. `showCount` is the select/status heading; a due bucket leaves it off. */
+type ListSection = {
+  key: string
+  label: string
+  rows: CollectionRow[]
+  showCount: boolean
+}
 
 export function CollectionList({
   viewKey,
@@ -66,34 +75,48 @@ export function CollectionList({
 }) {
   const [now] = useState(() => today ?? new Date())
   const [addingRow, setAddingRow] = useState(false)
-  const grouped = useMemo(
-    () => groupRowsByDue(rows, schema, now, groupBy),
-    [rows, schema, now, groupBy]
-  )
+  const sections = useMemo((): ListSection[] | null => {
+    const byField = groupRows(rows, schema, groupBy)
+    if (byField) {
+      return byField.groups.map((group) => ({
+        key: group.id ?? group.label,
+        label: group.label,
+        rows: group.rows,
+        showCount: true,
+      }))
+    }
+    const byDue = groupRowsByDue(rows, schema, now, groupBy)
+    if (!byDue) return null
+    return byDue.buckets.map((bucket) => ({
+      key: bucket.id,
+      label: bucket.id,
+      rows: bucket.rows,
+      showCount: false,
+    }))
+  }, [rows, schema, now, groupBy])
   const { rootRef, selection, selectedRow, rowProps, buttonProps } = useRecordSelection(
     rows,
     viewKey
   )
   const done = useDoneToggle({ schema, groupBy, editable, onEdit })
-  const dueOf = dueOfRow(grouped?.dateDef, now)
+  const dueOf = dueOfRow(pickDateDef(schema, groupBy), now)
   const orangeTodayId = useOrangeToday(
     viewKey,
     rootRef,
     firstOrangeToday(
-      (grouped?.buckets ?? []).flatMap((b) => b.rows),
+      (sections ?? []).flatMap((section) => section.rows),
       dueOf,
       done.isDone
     )
   )
 
-  if (!grouped) {
+  if (!sections) {
     return onAddDateField ? (
       <PondBlockEmpty line={CALENDAR_EMPTY_LINE} action="add a date field" onAction={onAddDateField} />
     ) : (
       <span className="text-[14px] text-mn-text-secondary">{CALENDAR_EMPTY_LINE}</span>
     )
   }
-  const { buckets } = grouped
   const repeatDef = pickRepeatDef(schema)
 
   // ↵ with a title mints one record (addRow, then onRenameRow) in a single
@@ -119,26 +142,37 @@ export function CollectionList({
           'dark:shadow-[0_1px_2px_rgba(0,0,0,.3),0_8px_24px_rgba(0,0,0,.36)]',
         ].join(' ')}
       >
-        {buckets.length === 0 && !(editable && onAddRow) && (
+        {sections.length === 0 && !(editable && onAddRow) && (
           <span className="text-[14px] text-mn-text-secondary">{LIST_EMPTY_LINE}</span>
         )}
-        {buckets.map((bucket) => (
+        {sections.map((section) => (
           <section
-            key={bucket.id}
+            key={section.key}
             data-part="list-group"
-            data-group={bucket.id}
-            aria-label={bucket.id}
+            data-group={section.label}
+            aria-label={section.label}
             className="flex flex-col"
           >
-            <span
-              data-part="list-group-label"
-              aria-hidden
-              className="pb-[4px] text-[10.5px] font-medium tracking-[.1em] text-mn-text-secondary uppercase"
-            >
-              {bucket.id}
-            </span>
+            {section.showCount ? (
+              <div
+                data-part="list-group-label"
+                aria-hidden
+                className="flex justify-between pb-[4px] text-[10.5px] font-medium tracking-[.1em] text-mn-text-secondary uppercase"
+              >
+                <span>{section.label}</span>
+                <span data-part="list-group-count">{section.rows.length}</span>
+              </div>
+            ) : (
+              <span
+                data-part="list-group-label"
+                aria-hidden
+                className="pb-[4px] text-[10.5px] font-medium tracking-[.1em] text-mn-text-secondary uppercase"
+              >
+                {section.label}
+              </span>
+            )}
             <ul className="m-0 flex list-none flex-col p-0">
-              {bucket.rows.map((row) => {
+              {section.rows.map((row) => {
                 const rowDone = done.isDone(row)
                 const isSelected = row.id === selectedRow?.id
                 const repeat = repeatDef ? displayValue(repeatDef, row.values[repeatDef.id]) : ''
@@ -206,12 +240,12 @@ export function CollectionList({
               onCommit={(title) => void handleAddItem(title)}
               onCancel={() => setAddingRow(false)}
               className={
-                buckets.length === 0
+                sections.length === 0
                   ? 'w-full border-0 bg-transparent p-0 text-[14px] text-mn-text outline-none placeholder:text-mn-text-secondary'
                   : '-mx-[6px] w-full border-0 bg-transparent px-[6px] py-[8px] text-[14px] text-mn-text outline-none placeholder:text-mn-text-secondary'
               }
             />
-          ) : buckets.length === 0 ? (
+          ) : sections.length === 0 ? (
             <PondBlockEmpty kind="list" onAction={() => setAddingRow(true)} />
           ) : (
             <button
