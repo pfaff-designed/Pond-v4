@@ -6,7 +6,7 @@
  * `useDeletionUndo`'s `stageUndo`, gated on `editable`, and threads the SAME
  * handler into all three.
  */
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -14,6 +14,7 @@ import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { SiblingBlocksProvider } from '@/lib/modules/sibling-context'
 import { BlockRowProvider } from '@/lib/modules/block-row-context'
 import { ViewView } from './view'
+import { LAYOUT_MENU_MODES, VIEW_KINDS } from './kinds'
 import { ActiveViewSelectionContext } from './active-view-context'
 import type { ViewBlock } from './schema'
 import type { PropertySchema } from '@/lib/properties/schema'
@@ -805,6 +806,38 @@ describe('CollectionView — every mode/groupBy/sort/filter/chart/bigNumber read
   })
 })
 
+const layoutNames = LAYOUT_MENU_MODES.map((mode) => VIEW_KINDS[mode].label)
+
+describe('ViewView — the layout menu sits in the head (KAN-519)', () => {
+  it('a legacy table shows a button named table and no saved-view tab; opening it lists the seven layouts, and Esc does not call onChange', async () => {
+    const user = userEvent.setup()
+    const onChange = jest.fn()
+    renderView(table, true, onChange)
+
+    expect(screen.getByRole('button', { name: 'table' })).toBeInTheDocument()
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'table' }))
+    const menu = await screen.findByRole('menu', { name: 'layout' })
+    expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(layoutNames)
+
+    await waitFor(() =>
+      expect(screen.getByRole('menu', { name: 'layout' }).contains(document.activeElement)).toBe(true)
+    )
+    await user.keyboard('{Escape}')
+
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('editable={false} shows the word table and no layout button', () => {
+    renderView(table, false)
+
+    const word = screen.getByText('table')
+    expect(word.closest('button')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'table' })).not.toBeInTheDocument()
+  })
+})
+
 describe('CollectionView — the saved-view bar switches views as reading, not editing (KAN-36)', () => {
   const barSchema: PropertySchema = [
     { id: 'p-title', name: 'Title', type: 'text' },
@@ -880,7 +913,7 @@ describe('CollectionView — the saved-view bar switches views as reading, not e
     expect(screen.getByText('Todo')).toBeInTheDocument()
   })
 
-  it('a legacy (no views) block shows the name and record count, with no bar', () => {
+  it('a legacy (no views) block shows the name and record count, with no saved-view tab', () => {
     renderView(board, false)
 
     expect(screen.getByText('Trips')).toBeInTheDocument()

@@ -20,7 +20,7 @@
 
 import { useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { ModuleViewProps } from '../types'
-import type { ViewBlock, ViewSavedView } from './schema'
+import type { ViewBlock, ViewMode, ViewSavedView } from './schema'
 import { useSiblingBlocks } from '../sibling-context'
 import { viewCollectionId } from '../block-frame'
 import { useCollectionRows } from './use-collection-rows'
@@ -106,7 +106,7 @@ import { CollectionList } from './list'
 import { CollectionCalendar } from './collection-calendar'
 import { ROW_FOCUS_VISIBLE, ROW_FOCUS_VISIBLE_BASE, useRecordSelection } from './use-record-selection'
 import { shouldSelectCardFromClick, shouldSelectRowFromClick } from './card-click'
-import { ViewBar, type ViewBarView } from '@/components/molecules/ViewBar'
+import { ViewBar, ViewLayoutMenu, type ViewBarView } from '@/components/molecules/ViewBar'
 import { useBlockRow } from '../block-row-context'
 
 /**
@@ -394,8 +394,8 @@ export interface CollectionViewProps {
    *  editable host; Storybook renders static data and omits them. */
   onAddRow?: (values?: Record<string, PropertyValue>) => Promise<string | null>
   onRenameRow?: (rowId: string, title: string) => void
-  /** Rewrite the view block's own config — chart and big-number setup. Never its
-   *  kind (fixed once made, KAN-44). Absent on read-only / Storybook hosts. The
+  /** Rewrite the view block's own config — chart and big-number setup, and a
+   *  layout choice (`mode`, KAN-519). Absent on read-only / Storybook hosts. The
    *  optional second arg is which saved view's config to land the patch on (KAN-32
    *  fix) — `CollectionView` passes its own LOCAL active view, never the
    *  persisted `activeViewId`. */
@@ -678,8 +678,9 @@ export function CollectionView({
  * gate"). The saved-view bar is reading too (switching is not editing), so it
  * renders whenever the block has `views`; only "＋ view" and the chart/big-
  * number setup below it are affordances, gated on `editable && onConfigChange`.
- * A view's kind is fixed once made (ADR 0009), so there is no in-place switch
- * between kinds here.
+ * The layout chip sits before those tabs on every view, including a legacy
+ * block with no `views[]` (KAN-519). Choosing a layout writes that view's kind
+ * in place through the same gate. A reader sees the word and gets no button.
  */
 function ViewControls({
   config,
@@ -712,6 +713,10 @@ function ViewControls({
         ? pickDateDef(schema, config.groupBy)
         : undefined
   const groupName = groupDef?.name.toLowerCase()
+  const layoutEditable = Boolean(editable && onConfigChange)
+  const handleLayout = (mode: ViewMode) => {
+    onConfigChange?.({ mode })
+  }
 
   return (
     <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -739,17 +744,24 @@ function ViewControls({
             </>
           )}
         </div>
-        {savedViews && savedViews.length > 0 && activeViewId && onSelectView && (
-          <ViewBar
-            views={savedViews.map((view): ViewBarView => ({
-              id: view.id,
-              label: view.label ?? view.kind,
-            }))}
-            activeId={activeViewId}
-            onSelect={onSelectView}
-            showAddView={showAddView}
+        <div className="flex items-center gap-[4px]">
+          <ViewLayoutMenu
+            mode={config.mode}
+            editable={layoutEditable}
+            onLayout={handleLayout}
           />
-        )}
+          {savedViews && savedViews.length > 0 && activeViewId && onSelectView && (
+            <ViewBar
+              views={savedViews.map((view): ViewBarView => ({
+                id: view.id,
+                label: view.label ?? view.kind,
+              }))}
+              activeId={activeViewId}
+              onSelect={onSelectView}
+              showAddView={showAddView}
+            />
+          )}
+        </div>
       </div>
 
       {editable && onConfigChange && config.mode === 'chart' && (
