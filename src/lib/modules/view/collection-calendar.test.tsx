@@ -372,6 +372,59 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
       expect(mint).toHaveBeenCalledTimes(1)
     })
 
+    it('a typed title stays on the day after Esc closes the peek', async () => {
+      const iso = '2026-09-20'
+      const renames: Array<[string, string]> = []
+      function Harness() {
+        const [liveRows, setLiveRows] = useState<CollectionRow[]>([])
+        const onAddRow = async (values?: Record<string, PropertyValue>) => {
+          const id = 'r-new'
+          setLiveRows((prev) => [...prev, { id, title: '', values: values ?? {} }])
+          return id
+        }
+        // The calendar calls onRenameRow and does not store the title. The
+        // harness applies it the way the page does, so the day's stack can show it.
+        const onRenameRow = (rowId: string, title: string) => {
+          renames.push([rowId, title])
+          setLiveRows((prev) => prev.map((row) => (row.id === rowId ? { ...row, title } : row)))
+        }
+        return (
+          <CollectionCalendar
+            schema={schemaWithDate}
+            rows={liveRows}
+            editable
+            onAddRow={onAddRow}
+            onRenameRow={onRenameRow}
+          />
+        )
+      }
+      const { container } = render(<Harness />)
+      // The month is already pinned to the faked today. Real timers let the
+      // add's state update flush; modern fake timers hold React's scheduler.
+      jest.useRealTimers()
+      const user = userEvent.setup()
+
+      await user.click(within(cellFor(container, iso)).getByRole('button', { name: 'Add on 20 sep' }))
+      await act(async () => {
+        for (let i = 0; i < 5; i++) await Promise.resolve()
+      })
+
+      expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Record title' }))
+      // Enter commits before Esc. Esc on a still-dirty title reverts and writes nothing.
+      await user.keyboard('dentist{Enter}')
+
+      const cell = cellFor(container, iso)
+      expect(renames).toEqual([['r-new', 'dentist']])
+      expect(within(cell).getByText('dentist')).toBeInTheDocument()
+      expect(screen.getByLabelText('Record: dentist')).toBeInTheDocument()
+
+      await user.keyboard('{Escape}')
+
+      expect(screen.queryByLabelText('Record: dentist')).not.toBeInTheDocument()
+      expect(within(cell).getByText('dentist')).toBeInTheDocument()
+      expect(renames).toEqual([['r-new', 'dentist']])
+    })
+
     it('clicking an existing day-item row never opens the input (stopPropagation on MonthDayStack)', async () => {
       const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
       const onAddRow = jest.fn().mockResolvedValue('r-new')
