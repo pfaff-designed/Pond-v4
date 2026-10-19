@@ -75,13 +75,87 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
     expect(screen.getByText('today')).toBeInTheDocument()
   })
 
-  it('shows how many records lack a date when some records have one', () => {
-    const mixed: CollectionRow[] = [
-      { id: 'r1', title: 'Trim the rim', values: { 'p-due': '2026-09-10' } },
-      { id: 'r2', title: 'Undated', values: {} },
-    ]
-    render(<CollectionCalendar schema={schemaWithDate} rows={mixed} />)
-    expect(screen.getByText('1 without a date')).toBeInTheDocument()
+  describe('records without a date (KAN-454)', () => {
+    const dated: CollectionRow = {
+      id: 'r1',
+      title: 'Trim the rim',
+      values: { 'p-due': '2026-09-10' },
+    }
+    const undated = (id: string, title: string): CollectionRow => ({
+      id,
+      title,
+      values: {},
+    })
+
+    it('shows n without a date under the header, in the empty-line style, when some records lack a date', () => {
+      render(
+        <CollectionCalendar
+          schema={schemaWithDate}
+          rows={[dated, undated('r2', 'dentist'), undated('r3', 'optician')]}
+        />
+      )
+      const line = screen.getByText('2 without a date')
+      expect(line.tagName).toBe('SPAN')
+      expect(line).toHaveClass(
+        'px-0.5',
+        'text-[13px]',
+        'font-mono',
+        'lowercase',
+        'text-mn-text-secondary'
+      )
+      const header = screen.getByRole('button', { name: 'today' }).closest('div.flex-wrap')
+      expect(line.previousElementSibling).toBe(header)
+      expect(line.nextElementSibling).toHaveClass('md:flex')
+      expect(screen.queryByText(CALENDAR_EMPTY_LINE)).not.toBeInTheDocument()
+      expect(screen.getAllByText('mon').length).toBeGreaterThan(0)
+    })
+
+    it('does not show the line when every record has a date', () => {
+      render(<CollectionCalendar schema={schemaWithDate} rows={[dated]} />)
+      expect(screen.queryByText(/without a date/)).not.toBeInTheDocument()
+    })
+
+    it('does not show the line when the collection has no records', () => {
+      render(<CollectionCalendar schema={schemaWithDate} rows={[]} />)
+      expect(screen.queryByText(/without a date/)).not.toBeInTheDocument()
+      expect(screen.getByText(CALENDAR_EMPTY_LINE)).toBeInTheDocument()
+    })
+
+    it('does not show the line when the collection has no date field', () => {
+      render(<CollectionCalendar schema={schemaNoDate} rows={[undated('r2', 'dentist')]} />)
+      expect(screen.queryByText(/without a date/)).not.toBeInTheDocument()
+      expect(screen.getByText(CALENDAR_EMPTY_LINE)).toBeInTheDocument()
+    })
+
+    it('updates the count when a record gains a date', () => {
+      const Harness = () => {
+        const [items, setItems] = useState<CollectionRow[]>([
+          dated,
+          undated('r2', 'dentist'),
+          undated('r3', 'optician'),
+        ])
+        const handleDateDentist = () => {
+          setItems([
+            dated,
+            { id: 'r2', title: 'dentist', values: { 'p-due': '2026-09-21' } },
+            undated('r3', 'optician'),
+          ])
+        }
+        return (
+          <>
+            <button type="button" onClick={handleDateDentist}>
+              date dentist
+            </button>
+            <CollectionCalendar schema={schemaWithDate} rows={items} />
+          </>
+        )
+      }
+      render(<Harness />)
+      expect(screen.getByText('2 without a date')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'date dentist' }))
+      expect(screen.getByText('1 without a date')).toBeInTheDocument()
+      expect(screen.queryByText('2 without a date')).not.toBeInTheDocument()
+    })
   })
 
   it('says none with a date when every record is undated', () => {
