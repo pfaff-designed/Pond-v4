@@ -5,7 +5,7 @@ import { CollectionList, LIST_EMPTY_LINE } from './list'
 import { DUE_BUCKETS } from './due-buckets'
 import { CALENDAR_EMPTY_LINE } from './kinds'
 import type { CollectionRow } from './apply'
-import type { PropertySchema } from '@/lib/properties/schema'
+import type { PropertySchema, PropertyValue } from '@/lib/properties/schema'
 
 const schemaWithDate: PropertySchema = [
   { id: 'p-due', name: 'Due', type: 'date' },
@@ -437,5 +437,78 @@ describe('CollectionList — a flat list (KAN-521)', () => {
     expect(screen.getByText('loose end')).toBeInTheDocument()
     expect(container.querySelector('[data-group="this week"]')).toBeNull()
     expect(container.querySelector('[data-group="no date"]')).toBeNull()
+  })
+})
+
+describe('CollectionList — ticking while grouped by a select (KAN-521)', () => {
+  it('ticks the status that has done and leaves the row under its select', async () => {
+    const user = userEvent.setup()
+    const onEdit = jest.fn()
+    const schema: PropertySchema = [
+      {
+        id: 'p-stage',
+        name: 'stage',
+        type: 'select',
+        options: [
+          { id: 'opt-sketch', label: 'Sketch' },
+          { id: 'opt-paint', label: 'Paint' },
+        ],
+      },
+      {
+        id: 'p-status',
+        name: 'status',
+        type: 'status',
+        options: [
+          { id: 'opt-open', label: 'Open' },
+          { id: 'opt-done', label: 'Done' },
+        ],
+      },
+      { id: 'p-title', name: 'Title', type: 'text' },
+    ]
+
+    function ListGroupedByStage() {
+      const [rows, setRows] = useState<CollectionRow[]>([
+        {
+          id: 'r-door',
+          title: 'the door',
+          values: { 'p-stage': 'opt-sketch', 'p-status': 'opt-open' },
+        },
+      ])
+      const handleEdit = (rowId: string, key: string, value: PropertyValue) => {
+        onEdit(rowId, key, value)
+        setRows((prev) =>
+          prev.map((row) =>
+            row.id === rowId ? { ...row, values: { ...row.values, [key]: value } } : row
+          )
+        )
+      }
+      return (
+        <CollectionList
+          viewKey="v-tick"
+          schema={schema}
+          rows={rows}
+          groupBy="p-stage"
+          editable
+          onEdit={handleEdit}
+          today={LIST_TODAY}
+        />
+      )
+    }
+
+    const { container } = render(<ListGroupedByStage />)
+    expect(headingLabels(container)).toEqual(['Sketch', 'Paint', 'No stage'])
+
+    const checkbox = screen.getByRole('checkbox', { name: 'the door done' })
+    expect(checkbox).toBeEnabled()
+    await user.click(checkbox)
+
+    expect(onEdit).toHaveBeenCalledTimes(1)
+    expect(onEdit).toHaveBeenCalledWith('r-door', 'p-status', 'opt-done')
+
+    const groups = [...container.querySelectorAll<HTMLElement>('[data-part="list-group"]')]
+    expect(within(groups[0]!).getByText('the door')).toBeInTheDocument()
+    expect(within(groups[1]!).queryByText('the door')).not.toBeInTheDocument()
+    expect(within(groups[2]!).queryByText('the door')).not.toBeInTheDocument()
+    expect(within(groups[0]!).getByRole('checkbox', { name: 'the door done' })).toBeChecked()
   })
 })

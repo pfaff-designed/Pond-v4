@@ -111,7 +111,10 @@ export function CollectionList({
     rows,
     viewKey
   )
-  const done = useDoneToggle({ schema, groupBy, editable, onEdit })
+  // The heading is not the tick. A date groupBy already resolved the done status
+  // on its own; a select or status heading must do the same, or the check is
+  // inert or writes that heading and the row jumps.
+  const done = useDoneToggle({ schema, editable, onEdit })
   const dueOf = dueOfRow(pickDateDef(schema, groupBy), now)
   const orangeTodayId = useOrangeToday(
     viewKey,
