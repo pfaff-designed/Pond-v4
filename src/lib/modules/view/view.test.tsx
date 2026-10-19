@@ -79,7 +79,11 @@ const gantt: ViewBlock = { id: 'v-gantt', type: 'view', mode: 'gantt' }
 const table: ViewBlock = { id: 'v-table', type: 'view', mode: 'table' }
 const board: ViewBlock = { id: 'v-board', type: 'view', mode: 'board' }
 
-function renderView(data: ViewBlock, editable = true, onChange: (next: ViewBlock) => void = jest.fn()) {
+function renderView(
+  data: ViewBlock,
+  editable = true,
+  onChange: (next: ViewBlock) => void = jest.fn()
+) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
@@ -231,7 +235,7 @@ describe('CollectionTable — a row an undo just removed stays struck through (K
   // still mounted.
   const rowSnapshot = (id: string, title: string) => ({ id, title, values: {}, shown: {} })
 
-  it('keeps the board\'s own example visible, struck through, once the row is gone from the data', () => {
+  it("keeps the board's own example visible, struck through, once the row is gone from the data", () => {
     initialRows = []
     // The undo record's OWN before/after (migration 0021): `before` is the row
     // as it showed right before the step, `after` is null once it's undone —
@@ -518,7 +522,9 @@ describe('ViewView — the path test: calendar, through the real host (KAN-352)'
   })
 
   function cellFor(container: HTMLElement, iso: string) {
-    return container.querySelector<HTMLElement>(`[data-part="calendar-day-cell"][data-iso="${iso}"]`)!
+    return container.querySelector<HTMLElement>(
+      `[data-part="calendar-day-cell"][data-iso="${iso}"]`
+    )!
   }
 
   const twentiethIso = `${localDateIso(new Date()).slice(0, 8)}20`
@@ -699,7 +705,7 @@ describe('ViewView — the /table path end to end: add a row, type a title and a
   })
 })
 
-describe('CollectionTable — the last cell\'s date/tag editors keep their own Enter/↓ (KAN-350)', () => {
+describe("CollectionTable — the last cell's date/tag editors keep their own Enter/↓ (KAN-350)", () => {
   // date last, then select last, in two fixtures — the KAN-344 step-out guard
   // only fires on the LAST column, so each atom needs a turn sitting there.
   const dateLastSchema: PropertySchema = [
@@ -732,7 +738,7 @@ describe('CollectionTable — the last cell\'s date/tag editors keep their own E
     )
   }
 
-  it('Enter on the last cell\'s date trigger opens the editor, not a stepped-out new line', async () => {
+  it("Enter on the last cell's date trigger opens the editor, not a stepped-out new line", async () => {
     const user = userEvent.setup()
     initialSchema = dateLastSchema
     initialRows = [{ id: 'r1', title: 'only row', values: { 'p-status': 'opt-event' } }]
@@ -764,7 +770,7 @@ describe('CollectionTable — the last cell\'s date/tag editors keep their own E
     expect(stepOut).not.toHaveBeenCalled()
   })
 
-  it('↓ then ↵ inside the last cell\'s open tag popover picks a row, without stepping out', async () => {
+  it("↓ then ↵ inside the last cell's open tag popover picks a row, without stepping out", async () => {
     const user = userEvent.setup()
     initialSchema = selectLastSchema
     initialRows = [{ id: 'r1', title: 'only row', values: { 'p-status': 'opt-event' } }]
@@ -827,7 +833,7 @@ describe('CollectionView — every mode/groupBy/sort/filter/chart/bigNumber read
     expect(screen.queryByRole('button', { name: '＋ task' })).not.toBeInTheDocument()
   })
 
-  it('never leaks the OTHER saved view\'s groupBy into the active (gantt) render', () => {
+  it("never leaks the OTHER saved view's groupBy into the active (gantt) render", () => {
     renderView(multiView)
 
     // The board's lane head ("Todo", its row count) only ever draws inside a board —
@@ -849,10 +855,16 @@ describe('ViewView — the layout menu sits in the head (KAN-519)', () => {
 
     await user.click(screen.getByRole('button', { name: 'table' }))
     const menu = await screen.findByRole('menu', { name: 'layout' })
-    expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(layoutNames)
+    expect(
+      within(menu)
+        .getAllByRole('menuitem')
+        .map((item) => item.textContent)
+    ).toEqual(layoutNames)
 
     await waitFor(() =>
-      expect(screen.getByRole('menu', { name: 'layout' }).contains(document.activeElement)).toBe(true)
+      expect(screen.getByRole('menu', { name: 'layout' }).contains(document.activeElement)).toBe(
+        true
+      )
     )
     await user.keyboard('{Escape}')
 
@@ -1073,6 +1085,65 @@ describe('ViewView — choosing Timeline on a dated legacy table (KAN-523)', () 
 
     const label = container.querySelector('[data-part="gantt-label"]')
     expect(label).toHaveTextContent('Standup')
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+  })
+})
+
+describe('ViewView — choosing Gallery on a dated legacy table (KAN-523)', () => {
+  const datedSchema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    {
+      id: 'p-status',
+      name: 'Status',
+      type: 'status',
+      options: [{ id: 'opt-todo', label: 'Todo' }],
+    },
+    { id: 'p-due', name: 'Due', type: 'date' },
+  ]
+
+  const legacyTable: ViewBlock = {
+    id: 'v-standup',
+    type: 'view',
+    mode: 'table',
+    filter: { property: 'p-status', op: 'eq', value: 'opt-todo' },
+    sort: { key: 'p-title', dir: 'asc' },
+  }
+
+  beforeEach(() => {
+    initialSchema = datedSchema
+    initialRows = [
+      {
+        id: 'r-standup',
+        title: 'Standup',
+        values: { 'p-status': 'opt-todo', 'p-due': '2026-06-01' },
+      },
+    ]
+  })
+
+  it('writes mode gallery on the same block and shows Standup as a gallery card, with no saved view', async () => {
+    const user = userEvent.setup()
+    const onChange = jest.fn()
+    const { container } = renderStatefulView(legacyTable, onChange)
+
+    expect(screen.getByRole('table')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('Standup')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'table' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'gallery' }))
+
+    expect(onChange).toHaveBeenCalledTimes(1)
+    const next = onChange.mock.calls[0][0] as ViewBlock
+    expect(next).toEqual({ ...legacyTable, mode: 'gallery' })
+    expect(next.id).toBe(legacyTable.id)
+    expect(next).not.toHaveProperty('views')
+    expect(next.filter).toEqual(legacyTable.filter)
+    expect(next.sort).toEqual(legacyTable.sort)
+
+    const gallery = container.querySelector('[data-part="gallery"]')
+    expect(gallery).toBeInstanceOf(HTMLElement)
+    expect(
+      within(gallery as HTMLElement).getByRole('article', { name: 'Standup' })
+    ).toBeInTheDocument()
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
   })
 })
@@ -1318,10 +1389,7 @@ describe('CollectionView — the saved-view bar switches views as reading, not e
   })
 
   it('joins no separator when there is no config fact to join (gantt has no groupBy)', () => {
-    const { container } = renderView(
-      { id: 'v-gantt-only', type: 'view', mode: 'gantt' },
-      false
-    )
+    const { container } = renderView({ id: 'v-gantt-only', type: 'view', mode: 'gantt' }, false)
 
     const head = container.querySelector('[data-part="view-head"]')
     expect(head).toHaveTextContent('1 record')
@@ -1418,7 +1486,10 @@ describe('CollectionView — a config edit lands on the LOCALLY active view, not
 
     expect(onChange).toHaveBeenCalledTimes(1)
     const patched = onChange.mock.calls[0][0] as ViewBlock
-    expect(patched.views?.[1]).toMatchObject({ id: 'view-chart', config: { chart: { kind: 'line' } } })
+    expect(patched.views?.[1]).toMatchObject({
+      id: 'view-chart',
+      config: { chart: { kind: 'line' } },
+    })
     expect(patched.views?.[0]).toEqual(boardAndChartView.views![0])
   })
 })
