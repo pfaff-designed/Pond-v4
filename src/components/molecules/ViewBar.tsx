@@ -22,8 +22,13 @@
  * slot, outside the pill (Views 3/4 wires it; KAN-243).
  */
 
+import { useRef, useState, type KeyboardEvent } from 'react'
+import type { BaseUIEvent } from '@base-ui/react/types'
 import { FOCUS_VISIBLE_RING } from '@/components/atoms/focus-ring'
+import { PondMenu, type PondMenuGroup } from '@/components/molecules/PondMenu'
 import { ViewTabsList, ViewTabsRoot, ViewTabsTab } from '@/components/molecules/view-tabs'
+import { LAYOUT_MENU_MODES, VIEW_KINDS } from '@/lib/modules/view/kinds'
+import type { ViewMode } from '@/lib/modules/view/schema'
 
 export interface ViewBarView {
   id: string
@@ -68,5 +73,76 @@ export function ViewBar({ views, activeId, onSelect, showAddView }: ViewBarProps
         </span>
       )}
     </ViewTabsRoot>
+  )
+}
+
+/**
+ * The view's layout chip (KAN-519). Closed, one chip named with the current
+ * layout. Rows are `LAYOUT_MENU_MODES`, each named from `VIEW_KINDS`.
+ * Choosing the open layout is not a change. A reader sees the word and gets
+ * no button. The chip wears this file's pill classes.
+ */
+export interface ViewLayoutMenuProps {
+  mode: ViewMode
+  editable: boolean
+  onLayout: (mode: ViewMode) => void
+}
+
+const LAYOUT_MENU_GROUPS: PondMenuGroup<ViewMode>[] = [
+  {
+    id: 'layout',
+    label: 'layout',
+    items: LAYOUT_MENU_MODES.map((mode) => ({
+      id: mode,
+      label: VIEW_KINDS[mode].label,
+      action: mode,
+    })),
+  },
+]
+
+export const ViewLayoutMenu = ({ mode, editable, onLayout }: ViewLayoutMenuProps) => {
+  const anchorRef = useRef<HTMLDivElement>(null)
+  const [open, setOpen] = useState(false)
+  const label = VIEW_KINDS[mode].label
+
+  const handleSelect = (next: ViewMode) => {
+    if (next === mode) return
+    onLayout(next)
+  }
+
+  // List navigation counts Enter and Space as navigation keys and only opens on the arrow key.
+  const handleChipKeyDown = (event: BaseUIEvent<KeyboardEvent<HTMLButtonElement>>) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    event.preventDefault()
+    event.stopPropagation()
+    event.preventBaseUIHandler()
+    setOpen(true)
+  }
+
+  if (!editable) {
+    return (
+      <span className={SEGMENT_ROW}>
+        <span className={`${SEGMENT} ${SEGMENT_ON}`}>{label}</span>
+      </span>
+    )
+  }
+
+  return (
+    <div ref={anchorRef} className={SEGMENT_ROW}>
+      <PondMenu
+        kind="block"
+        label="layout"
+        groups={LAYOUT_MENU_GROUPS}
+        open={open}
+        onOpenChange={setOpen}
+        onSelect={handleSelect}
+        trigger={
+          <button type="button" className={`${SEGMENT} ${SEGMENT_ON}`} onKeyDown={handleChipKeyDown}>
+            {label}
+          </button>
+        }
+        placement={{ anchor: anchorRef, align: 'start', top: 40, alignOffset: -8 }}
+      />
+    </div>
   )
 }

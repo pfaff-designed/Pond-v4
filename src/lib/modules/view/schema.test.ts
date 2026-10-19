@@ -3,7 +3,15 @@
  * one view built from its legacy `mode`+config; a block with `views` reads the
  * active one, falling back to `views[0]` when `activeViewId` is missing or stale.
  */
-import { activeSavedView, applyConfigPatch, resolveActiveView, viewSchema, type ViewBlock } from './schema'
+import type { ViewConfigPatch } from './kinds'
+import {
+  activeSavedView,
+  applyConfigPatch,
+  resolveActiveView,
+  viewSchema,
+  type ViewBlock,
+  type ViewMode,
+} from './schema'
 
 const legacyBlock: ViewBlock = {
   id: 'b-1',
@@ -121,6 +129,200 @@ describe('applyConfigPatch', () => {
     expect(patched.activeViewId).toBe('v-timeline')
     // Bit-for-bit: the untouched view is the SAME object, not a re-built copy.
     expect(patched.views![0]).toBe(untouchedBoardView)
+  })
+})
+
+describe('applyConfigPatch mode', () => {
+  const kept = {
+    groupBy: 'p-status',
+    sort: { key: 'p-name', dir: 'asc' as const },
+    filter: { property: 'p-name', op: 'eq' as const, value: 'standup' },
+    startDate: 'p-start',
+    endDate: 'p-end',
+    chart: { kind: 'bar' as const, series: [{ property: 'p-n', agg: 'count' as const }] },
+    bigNumber: { agg: 'count' as const },
+    collectionId: 'col-1',
+  }
+
+  const legacy: ViewBlock = {
+    id: 'b-legacy',
+    type: 'view',
+    mode: 'table',
+    ...kept,
+  }
+
+  const rows = {
+    id: 'v-table',
+    label: 'rows',
+    kind: 'table' as const,
+    config: kept,
+  }
+  const lanes = {
+    id: 'v-board',
+    label: 'lanes',
+    kind: 'board' as const,
+    config: { groupBy: 'p-priority', sort: { key: 'p-rank', dir: 'desc' as const } },
+  }
+  const dates = {
+    id: 'v-cal',
+    label: 'dates',
+    kind: 'calendar' as const,
+    config: { startDate: 'p-due', filter: { property: 'p-open', op: 'eq' as const, value: 'yes' } },
+  }
+
+  const saved: ViewBlock = {
+    id: 'b-saved',
+    type: 'view',
+    mode: 'list',
+    groupBy: 'p-top',
+    sort: { key: 'p-top-name', dir: 'desc' },
+    views: [rows, lanes, dates],
+    activeViewId: 'v-board',
+  }
+
+  const noActive: ViewBlock = { ...saved, activeViewId: undefined }
+
+  const layoutPatch = (mode: ViewMode): ViewConfigPatch => ({ mode })
+
+  it('ViewConfigPatch includes mode', () => {
+    expect(layoutPatch('calendar').mode).toBe('calendar')
+  })
+
+  it.each<[string, ViewBlock, ViewConfigPatch, string | undefined, (block: ViewBlock, patched: ViewBlock) => void]>([
+    [
+      'legacy block writes top-level mode and leaves views absent',
+      legacy,
+      { mode: 'board' },
+      undefined,
+      (_block, patched) => {
+        expect(patched.mode).toBe('board')
+        expect(patched).not.toHaveProperty('views')
+        expect(patched.id).toBe('b-legacy')
+        expect(patched.groupBy).toBe(kept.groupBy)
+        expect(patched.sort).toEqual(kept.sort)
+        expect(patched.filter).toEqual(kept.filter)
+        expect(patched.startDate).toBe(kept.startDate)
+        expect(patched.endDate).toBe(kept.endDate)
+        expect(patched.chart).toEqual(kept.chart)
+        expect(patched.bigNumber).toEqual(kept.bigNumber)
+        expect(patched.collectionId).toBe(kept.collectionId)
+      },
+    ],
+    [
+      'local activeId writes kind on that saved view only',
+      saved,
+      { mode: 'gallery' },
+      'v-table',
+      (block, patched) => {
+        expect(patched.views?.[0]).toEqual({ ...rows, kind: 'gallery' })
+        expect(patched.views?.[0]?.id).toBe('v-table')
+        expect(patched.views?.[0]?.label).toBe('rows')
+        expect(patched.views?.[0]?.config).toEqual(kept)
+        expect(patched.views?.[1]).toBe(block.views?.[1])
+        expect(patched.views?.[2]).toBe(block.views?.[2])
+        expect(patched.mode).toBe('list')
+        expect(patched.groupBy).toBe('p-top')
+        expect(patched.sort).toEqual(block.sort)
+        expect(patched.activeViewId).toBe('v-board')
+      },
+    ],
+    [
+      'activeViewId is the saved view when no local activeId is passed',
+      saved,
+      { mode: 'gantt' },
+      undefined,
+      (block, patched) => {
+        expect(patched.views?.[1]).toEqual({ ...lanes, kind: 'gantt' })
+        expect(patched.views?.[1]?.id).toBe('v-board')
+        expect(patched.views?.[1]?.label).toBe('lanes')
+        expect(patched.views?.[1]?.config).toEqual(lanes.config)
+        expect(patched.views?.[0]).toBe(block.views?.[0])
+        expect(patched.views?.[2]).toBe(block.views?.[2])
+        expect(patched.mode).toBe('list')
+        expect(patched.activeViewId).toBe('v-board')
+      },
+    ],
+    [
+      'views[0] is the saved view when activeViewId is absent',
+      noActive,
+      { mode: 'chart' },
+      undefined,
+      (block, patched) => {
+        expect(patched.views?.[0]).toEqual({ ...rows, kind: 'chart' })
+        expect(patched.views?.[0]?.id).toBe('v-table')
+        expect(patched.views?.[0]?.label).toBe('rows')
+        expect(patched.views?.[0]?.config).toEqual(kept)
+        expect(patched.views?.[1]).toBe(block.views?.[1])
+        expect(patched.views?.[2]).toBe(block.views?.[2])
+        expect(patched.mode).toBe('list')
+        expect(patched.activeViewId).toBeUndefined()
+      },
+    ],
+    [
+      'the same mode on a legacy block returns the same block',
+      legacy,
+      { mode: 'table' },
+      undefined,
+      (block, patched) => {
+        expect(patched).toBe(block)
+      },
+    ],
+    [
+      'the same mode on the active saved view returns the same block',
+      saved,
+      { mode: 'board' },
+      undefined,
+      (block, patched) => {
+        expect(patched).toBe(block)
+      },
+    ],
+    [
+      'the same mode on a local activeId returns the same block',
+      saved,
+      { mode: 'calendar' },
+      'v-cal',
+      (block, patched) => {
+        expect(patched).toBe(block)
+      },
+    ],
+    [
+      'the same mode on views[0] returns the same block when activeViewId is absent',
+      noActive,
+      { mode: 'table' },
+      undefined,
+      (block, patched) => {
+        expect(patched).toBe(block)
+      },
+    ],
+    [
+      'a patch with no mode on a legacy block stays today’s write',
+      legacy,
+      { groupBy: 'p-priority' },
+      undefined,
+      (block, patched) => {
+        expect(patched).toEqual({ ...block, groupBy: 'p-priority' })
+        expect(patched).not.toHaveProperty('views')
+      },
+    ],
+    [
+      'a patch with no mode on a views block stays today’s write',
+      saved,
+      { startDate: 'p-start-2' },
+      undefined,
+      (block, patched) => {
+        expect(patched.views?.[1]).toEqual({
+          ...lanes,
+          config: { ...lanes.config, startDate: 'p-start-2' },
+        })
+        expect(patched.views?.[0]).toBe(block.views?.[0])
+        expect(patched.views?.[2]).toBe(block.views?.[2])
+        expect(patched.mode).toBe(block.mode)
+        expect(patched.activeViewId).toBe(block.activeViewId)
+        expect({ ...patched, views: undefined }).toEqual({ ...block, views: undefined })
+      },
+    ],
+  ])('%s', (_name, block, patch, activeId, assert) => {
+    assert(block, applyConfigPatch(block, patch, activeId))
   })
 })
 

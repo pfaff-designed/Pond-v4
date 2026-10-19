@@ -233,8 +233,8 @@ export const TableEmptyBare: Story = {
 
 /**
  * `Pond 06.21 Tasks` 6u.1's head row (KAN-59): the database's name and how the view
- * reads it. A view's kind is fixed once made (ADR 0009, KAN-44), so the head carries
- * no switch between kinds; the bar over a block's saved views is KAN-32's.
+ * reads it. An editable head carries the layout chip named with the current layout
+ * (KAN-519). The bar over a block's saved views is KAN-32's.
  *
  * Values read inline from 6u.1:
  *
@@ -266,12 +266,12 @@ export const ViewHeadGeometry: Story = {
     await expect(facts).toHaveTextContent(/^grouped by status$/)
     // …as text. There is no group-by select.
     await expect(within(head).queryByRole('combobox')).toBeNull()
-    // A kind is fixed once made: nothing in the head switches it.
-    await expect(within(head).queryAllByRole('button')).toHaveLength(0)
+    // The layout chip is the button named with the current layout (KAN-519).
+    await expect(within(head).getByRole('button', { name: 'board' })).toBeInTheDocument()
   },
 }
 
-/** Every kind is its own block (ADR 0009): none draws a switch to another kind. */
+/** An editable gantt head carries the layout chip named timeline (KAN-519). */
 export const ViewHeadSwitchesNoKind: Story = {
   args: {
     config: ganttConfig,
@@ -284,9 +284,7 @@ export const ViewHeadSwitchesNoKind: Story = {
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement)
     await expect(canvasElement.querySelector('[data-part="db-name"]')).toBeInTheDocument()
-    for (const kind of ['board', 'timeline', 'table', 'calendar', 'list']) {
-      await expect(canvas.queryByRole('button', { name: kind })).toBeNull()
-    }
+    await expect(canvas.getByRole('button', { name: 'timeline' })).toBeInTheDocument()
     await expect(args.onConfigChange).not.toHaveBeenCalled()
   },
 }
@@ -1419,7 +1417,7 @@ export const PageHoldsOneOrangeAndOnePeek: Story = {
 
 /**
  * 6v's head: the database's name and `grouped by due`, drawn above the card, not
- * inside it. No switch to another kind (ADR 0009, KAN-44).
+ * inside it. An editable head carries the layout chip named list (KAN-519).
  */
 export const ListHead: Story = {
   args: { ...listArgs, collectionName: 'tasks', editable: true, onConfigChange: fn() },
@@ -1427,7 +1425,7 @@ export const ListHead: Story = {
     const head = canvasElement.querySelector<HTMLElement>('[data-part="view-head"]')!
     await expect(head).toHaveTextContent('tasks')
     await expect(head).toHaveTextContent('grouped by due')
-    await expect(within(head).queryAllByRole('button')).toHaveLength(0)
+    await expect(within(head).getByRole('button', { name: 'list' })).toBeInTheDocument()
     await expect(canvasElement.querySelector('[data-part="list-card"]')!.contains(head)).toBe(false)
   },
 }
