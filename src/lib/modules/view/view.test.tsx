@@ -965,6 +965,62 @@ describe('ViewView — choosing Calendar when the schema has no date field (KAN-
   })
 })
 
+describe('ViewView — choosing List on a dated legacy table (KAN-523)', () => {
+  const datedSchema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    {
+      id: 'p-status',
+      name: 'Status',
+      type: 'status',
+      options: [{ id: 'opt-todo', label: 'Todo' }],
+    },
+    { id: 'p-due', name: 'Due', type: 'date' },
+  ]
+
+  const legacyTable: ViewBlock = {
+    id: 'v-standup',
+    type: 'view',
+    mode: 'table',
+    filter: { property: 'p-status', op: 'eq', value: 'opt-todo' },
+    sort: { key: 'p-title', dir: 'asc' },
+  }
+
+  beforeEach(() => {
+    initialSchema = datedSchema
+    initialRows = [
+      {
+        id: 'r-standup',
+        title: 'Standup',
+        values: { 'p-status': 'opt-todo', 'p-due': '2026-06-01' },
+      },
+    ]
+  })
+
+  it('writes mode list on the same block and shows Standup as a list row, with no saved view', async () => {
+    const user = userEvent.setup()
+    const onChange = jest.fn()
+    const { container } = renderStatefulView(legacyTable, onChange)
+
+    expect(screen.getByRole('table')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('Standup')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'table' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'list' }))
+
+    expect(onChange).toHaveBeenCalledTimes(1)
+    const next = onChange.mock.calls[0][0] as ViewBlock
+    expect(next).toEqual({ ...legacyTable, mode: 'list' })
+    expect(next.id).toBe(legacyTable.id)
+    expect(next).not.toHaveProperty('views')
+    expect(next.filter).toEqual(legacyTable.filter)
+    expect(next.sort).toEqual(legacyTable.sort)
+
+    const row = container.querySelector('[data-part="list-row"]')
+    expect(row).toHaveTextContent('Standup')
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+  })
+})
+
 describe('ViewView — a layout write that changes the kind is one structural commit (KAN-519)', () => {
   const statusSchema: PropertySchema = [
     { id: 'p-title', name: 'Title', type: 'text' },
