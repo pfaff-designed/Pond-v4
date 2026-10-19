@@ -322,9 +322,22 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
   // active view is whichever one `CollectionView`'s bar has LOCALLY selected, not the
   // persisted `activeViewId` — a person can switch the bar without that being an edit,
   // so `activeId` arrives from `CollectionView` on every call.
+  // A write that changes the resolved kind (KAN-519) is structural. `commitStep` is
+  // the host's flush (BlockCanvas), so the shell undo chord restores that one block.
+  // No host — Storybook, a bare `ViewView` — has nothing to flush, and the same
+  // next block falls back to `onChange` (todo/entries). The same kind is not a commit.
+  const { commitStep } = useBlockRow()
+  const commit = (next: ViewBlock) => (commitStep ?? onChange)?.(next)
   const onConfigChange = onChange
-    ? (patch: ViewConfigPatch, activeId?: string) =>
-        onChange(applyConfigPatch(data, patch, activeId))
+    ? (patch: ViewConfigPatch, activeId?: string) => {
+        const next = applyConfigPatch(data, patch, activeId)
+        const kindOf = (block: ViewBlock) => activeSavedView(block, activeId).mode
+        if (kindOf(data) !== kindOf(next)) {
+          commit(next)
+          return
+        }
+        onChange(next)
+      }
     : undefined
 
   // A row IS a page: `open ›` on the record peek navigates to it through the page-link

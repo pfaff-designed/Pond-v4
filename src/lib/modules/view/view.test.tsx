@@ -964,6 +964,82 @@ describe('ViewView — choosing Calendar when the schema has no date field (KAN-
   })
 })
 
+describe('ViewView — a layout write that changes the kind is one structural commit (KAN-519)', () => {
+  const statusSchema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    {
+      id: 'p-status',
+      name: 'Status',
+      type: 'status',
+      options: [{ id: 'opt-todo', label: 'Todo' }],
+    },
+  ]
+
+  const legacyTable: ViewBlock = {
+    id: 'v-standup',
+    type: 'view',
+    mode: 'table',
+    filter: { property: 'p-status', op: 'eq', value: 'opt-todo' },
+    sort: { key: 'p-title', dir: 'asc' },
+  }
+
+  beforeEach(() => {
+    initialSchema = statusSchema
+    initialRows = [{ id: 'r-standup', title: 'Standup', values: { 'p-status': 'opt-todo' } }]
+  })
+
+  it('calls commitStep once for table to board, never for board to board, and the captured previous block is the table', async () => {
+    const user = userEvent.setup()
+    const commitStep = jest.fn()
+    const onChange = jest.fn()
+    let previous: ViewBlock = legacyTable
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const tree = (block: ViewBlock) => (
+      <QueryClientProvider client={client}>
+        <DeletionUndoProvider>
+          <SiblingBlocksProvider value={{ blocks: [], pageId: 'page-1' }}>
+            <BlockRowProvider
+              value={{
+                selected: false,
+                stepOut: () => {},
+                commitStep: (patch) => {
+                  previous = block
+                  commitStep(patch)
+                },
+              }}
+            >
+              <ViewView data={block} editable onChange={onChange} />
+            </BlockRowProvider>
+          </SiblingBlocksProvider>
+        </DeletionUndoProvider>
+      </QueryClientProvider>
+    )
+
+    const { rerender } = render(tree(legacyTable))
+
+    await user.click(screen.getByRole('button', { name: 'table' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'board' }))
+
+    expect(commitStep).toHaveBeenCalledTimes(1)
+    expect(onChange).not.toHaveBeenCalled()
+    const next = commitStep.mock.calls[0][0] as ViewBlock
+    expect(next).toEqual({ ...legacyTable, mode: 'board' })
+
+    rerender(tree(next))
+
+    await user.click(screen.getByRole('button', { name: 'board' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'board' }))
+
+    expect(commitStep).toHaveBeenCalledTimes(1)
+
+    rerender(tree(previous))
+
+    expect(screen.getByRole('table')).toBeInTheDocument()
+    expect(screen.queryByRole('article', { name: 'Standup' })).not.toBeInTheDocument()
+  })
+})
+
 describe('CollectionView — the saved-view bar switches views as reading, not editing (KAN-36)', () => {
   const barSchema: PropertySchema = [
     { id: 'p-title', name: 'Title', type: 'text' },
