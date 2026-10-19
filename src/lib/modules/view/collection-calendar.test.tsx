@@ -177,8 +177,8 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
       expect(within(list).queryByRole('option', { name: 'Trim the rim' })).not.toBeInTheDocument()
       expect(dentist).toHaveAttribute('data-part', 'row')
       expect(optician).toHaveAttribute('data-part', 'row')
-      expect(dentist.querySelector('[data-area-mark]')).toBeNull()
-      expect(optician.querySelector('[data-area-mark]')).toBeNull()
+      expect(dentist.querySelector('[data-part="icon"] span')).toHaveClass('size-[9px]', 'rounded-[2.5px]')
+      expect(optician.querySelector('[data-part="icon"] span')).toHaveClass('size-[9px]', 'rounded-[2.5px]')
 
       await user.click(screen.getByRole('button', { name: '2 without a date' }))
       expect(screen.queryByRole('listbox', { name: 'without a date' })).not.toBeInTheDocument()
@@ -212,6 +212,7 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
       const optician = within(list).getByRole('option', { name: 'optician' })
       expect(dentist.querySelector('[data-area-mark] [data-icon="heart"]')).not.toBeNull()
       expect(optician.querySelector('[data-icon="ring"]')).not.toBeNull()
+      expect(within(list).queryByRole('option', { name: dated.title })).not.toBeInTheDocument()
     })
 
     it('picking a record arms placement, day cells take a hover state, and Escape writes nothing', async () => {

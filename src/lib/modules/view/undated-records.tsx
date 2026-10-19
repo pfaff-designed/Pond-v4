@@ -27,10 +27,13 @@ const rowEntry = (row: CollectionRow): RowEntry => ({
 
 export function UndatedRecords({
   rows,
+  pageMarkClassName,
   onClose,
   onPick,
 }: {
   rows: readonly CollectionRow[]
+  /** The calendar's record mark (`DAY_ITEM_DOT`), one home for that class. */
+  pageMarkClassName: string
   onClose: () => void
   onPick: (row: CollectionRow) => void
 }) {
@@ -60,7 +63,9 @@ export function UndatedRecords({
             selected={false}
             onHover={handleRowIdle}
             onPick={() => onPick(row)}
-            mark={row.glyph ? <AreaMark glyph={row.glyph} /> : undefined}
+            mark={
+              row.glyph ? <AreaMark glyph={row.glyph} /> : <span className={pageMarkClassName} />
+            }
           />
         ))}
       </div>

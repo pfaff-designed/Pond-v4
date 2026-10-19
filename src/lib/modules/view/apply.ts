@@ -32,7 +32,7 @@ export interface CollectionRow {
   id: string
   title: string
   values: Record<string, unknown>
-  /** Area glyph for the undated picker. Absent means no mark. */
+  /** Area glyph name. The undated picker draws it; absent keeps the record dot. */
   glyph?: string | null
 }
 
