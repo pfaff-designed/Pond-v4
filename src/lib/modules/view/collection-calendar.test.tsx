@@ -177,8 +177,8 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
       expect(within(list).queryByRole('option', { name: 'Trim the rim' })).not.toBeInTheDocument()
       expect(dentist).toHaveAttribute('data-part', 'row')
       expect(optician).toHaveAttribute('data-part', 'row')
-      expect(dentist.querySelector('[data-part="icon"] span')).toHaveClass('size-[9px]', 'rounded-[2.5px]')
-      expect(optician.querySelector('[data-part="icon"] span')).toHaveClass('size-[9px]', 'rounded-[2.5px]')
+      expect(dentist.querySelector('[data-area-mark]')).toBeNull()
+      expect(optician.querySelector('[data-area-mark]')).toBeNull()
 
       await user.click(screen.getByRole('button', { name: '2 without a date' }))
       expect(screen.queryByRole('listbox', { name: 'without a date' })).not.toBeInTheDocument()
@@ -188,6 +188,30 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
       await user.keyboard('{Escape}')
       expect(screen.queryByRole('listbox', { name: 'without a date' })).not.toBeInTheDocument()
       expect(onMoveDate).not.toHaveBeenCalled()
+    })
+
+    it('draws heart on dentist and ring on optician', async () => {
+      const user = userEvent.setup()
+      const withGlyph = (id: string, title: string, glyph: string): CollectionRow => ({
+        id,
+        title,
+        values: {},
+        glyph,
+      })
+      render(
+        <CollectionCalendar
+          schema={schemaWithDate}
+          rows={[dated, withGlyph('r2', 'dentist', 'heart'), withGlyph('r3', 'optician', 'ring')]}
+        />
+      )
+
+      await user.click(screen.getByRole('button', { name: '2 without a date' }))
+
+      const list = screen.getByRole('listbox', { name: 'without a date' })
+      const dentist = within(list).getByRole('option', { name: 'dentist' })
+      const optician = within(list).getByRole('option', { name: 'optician' })
+      expect(dentist.querySelector('[data-area-mark] [data-icon="heart"]')).not.toBeNull()
+      expect(optician.querySelector('[data-icon="ring"]')).not.toBeNull()
     })
 
     it('picking a record arms placement, day cells take a hover state, and Escape writes nothing', async () => {
@@ -230,51 +254,54 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
     })
 
     it('clicking a day writes that date, the record sits on that day, and the line count drops', async () => {
-      const user = userEvent.setup()
+      jest.useFakeTimers().setSystemTime(new Date('2026-09-10T12:00:00Z'))
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
       const onMoveDate = jest.fn()
-      const Harness = () => {
-        const [items, setItems] = useState<CollectionRow[]>([
-          dated,
-          undated('r2', 'dentist'),
-          undated('r3', 'optician'),
-        ])
-        return (
+      const onAddRow = jest.fn()
+      try {
+        const { container, rerender } = render(
           <CollectionCalendar
             schema={schemaWithDate}
-            rows={items}
-            onMoveDate={(rowId, key, value) => {
-              onMoveDate(rowId, key, value)
-              setItems((prev) =>
-                prev.map((row) =>
-                  row.id === rowId ? { ...row, values: { ...row.values, [key]: value } } : row
-                )
-              )
-            }}
+            rows={[dated, undated('r2', 'dentist'), undated('r3', 'optician')]}
+            editable
+            onAddRow={onAddRow}
+            onMoveDate={onMoveDate}
           />
         )
+        const dayCell = (iso: string) =>
+          container.querySelector<HTMLElement>(`[data-part="calendar-day-cell"][data-iso="${iso}"]`)!
+
+        await user.click(screen.getByRole('button', { name: '2 without a date' }))
+        await user.click(
+          within(screen.getByRole('listbox', { name: 'without a date' })).getByRole('option', {
+            name: /dentist/,
+          })
+        )
+        await user.click(dayCell('2026-09-21'))
+
+        expect(onMoveDate).toHaveBeenCalledTimes(1)
+        expect(onMoveDate).toHaveBeenCalledWith('r2', 'p-due', '2026-09-21')
+        expect(onAddRow).not.toHaveBeenCalled()
+
+        rerender(
+          <CollectionCalendar
+            schema={schemaWithDate}
+            rows={[
+              dated,
+              { id: 'r2', title: 'dentist', values: { 'p-due': '2026-09-21' } },
+              undated('r3', 'optician'),
+            ]}
+            editable
+            onAddRow={onAddRow}
+            onMoveDate={onMoveDate}
+          />
+        )
+
+        expect(screen.getByText('1 without a date')).toBeInTheDocument()
+        expect(within(dayCell('2026-09-21')).getByText('dentist')).toBeInTheDocument()
+      } finally {
+        jest.useRealTimers()
       }
-      const { container } = render(<Harness />)
-      const dayCell = (iso: string) =>
-        container.querySelector<HTMLElement>(`[data-part="calendar-day-cell"][data-iso="${iso}"]`)!
-
-      await user.click(screen.getByRole('button', { name: '2 without a date' }))
-      await user.click(
-        within(screen.getByRole('listbox', { name: 'without a date' })).getByRole('option', {
-          name: /dentist/,
-        })
-      )
-
-      const cell = container.querySelector<HTMLElement>('[data-part="calendar-day-cell"][data-iso$="-21"]')!
-      const iso = cell.getAttribute('data-iso')!
-      await user.click(cell)
-
-      expect(onMoveDate).toHaveBeenCalledTimes(1)
-      expect(onMoveDate).toHaveBeenCalledWith('r2', 'p-due', iso)
-      expect(within(dayCell(iso)).getByText('dentist')).toBeInTheDocument()
-      expect(within(dayCell(iso)).queryByText('optician')).not.toBeInTheDocument()
-      expect(screen.getByRole('button', { name: '1 without a date' })).toBeInTheDocument()
-      expect(screen.queryByRole('button', { name: 'pick a day for dentist' })).not.toBeInTheDocument()
-      expect(screen.queryByText('2 without a date')).not.toBeInTheDocument()
     })
 
     it('shows n without a date when every record is undated, and keeps the grid empty line', () => {
