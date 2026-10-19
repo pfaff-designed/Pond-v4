@@ -100,25 +100,31 @@ function renderView(
 function StatefulView({
   initial,
   onChange,
+  editable = true,
 }: {
   initial: ViewBlock
   onChange: (next: ViewBlock) => void
+  editable?: boolean
 }) {
   const [data, setData] = useState(initial)
   const handleChange = (next: ViewBlock) => {
     onChange(next)
     setData(next)
   }
-  return <ViewView data={data} editable onChange={handleChange} />
+  return <ViewView data={data} editable={editable} onChange={handleChange} />
 }
 
-function renderStatefulView(initial: ViewBlock, onChange: (next: ViewBlock) => void) {
+function renderStatefulView(
+  initial: ViewBlock,
+  onChange: (next: ViewBlock) => void,
+  editable = true
+) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
       <DeletionUndoProvider>
         <SiblingBlocksProvider value={{ blocks: [], pageId: 'page-1' }}>
-          <StatefulView initial={initial} onChange={onChange} />
+          <StatefulView initial={initial} onChange={onChange} editable={editable} />
         </SiblingBlocksProvider>
       </DeletionUndoProvider>
     </QueryClientProvider>
@@ -2045,5 +2051,97 @@ describe('ViewView — the path test: a premade-shaped tasks block, end to end (
     expect(screen.getByRole('tab', { name: 'board' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'timeline' })).toBeInTheDocument()
     expect(screen.queryByText('＋ view')).not.toBeInTheDocument()
+  })
+})
+
+const FACT_CLASS = 'text-[10.5px] font-medium text-mn-text-meta'
+
+describe('ViewView — the list head groups from its fact (KAN-521)', () => {
+  const datedSchema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    { id: 'p-due', name: 'Due', type: 'date' },
+    {
+      id: 'p-status',
+      name: 'Status',
+      type: 'status',
+      options: [{ id: 'opt-todo', label: 'Todo' }],
+    },
+  ]
+
+  const listBlock: ViewBlock = { id: 'v-list', type: 'view', mode: 'list' }
+  const boardBlock: ViewBlock = { id: 'v-board', type: 'view', mode: 'board' }
+
+  beforeEach(() => {
+    initialSchema = datedSchema
+    initialRows = [
+      {
+        id: 'r-standup',
+        title: 'Standup',
+        values: { 'p-status': 'opt-todo', 'p-due': '2026-06-01' },
+      },
+    ]
+  })
+
+  it('an editable list opens status and none from grouped by due, and choosing status writes that patch', async () => {
+    const user = userEvent.setup()
+    const onChange = jest.fn()
+    const { container } = renderStatefulView(listBlock, onChange)
+
+    const head = container.querySelector('[data-part="view-head"]')
+    expect(head).toHaveTextContent(/grouped by due/)
+
+    const fact = screen.getByRole('button', { name: 'grouped by due' })
+    expect(fact).toHaveAttribute('data-part', 'db-facts')
+    expect(fact.className).toContain(FACT_CLASS)
+
+    await user.click(fact)
+    const menu = await screen.findByRole('menu', { name: 'group' })
+    expect(
+      within(menu)
+        .getAllByRole('menuitem')
+        .map((item) => item.textContent)
+    ).toEqual(['Status', 'none'])
+
+    await user.click(within(menu).getByRole('menuitem', { name: 'Status' }))
+
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(onChange.mock.calls[0][0]).toEqual({ ...listBlock, groupBy: 'p-status' })
+    expect(head).toHaveTextContent(/grouped by status/)
+    expect(head).not.toHaveTextContent(/grouped by due/)
+    expect(screen.getByRole('button', { name: 'grouped by status' })).toBeInTheDocument()
+  })
+
+  it('Enter and Space on the grouped-by fact open the group menu', async () => {
+    const user = userEvent.setup()
+    renderStatefulView(listBlock, jest.fn())
+    const fact = screen.getByRole('button', { name: 'grouped by due' })
+    fact.focus()
+    fireEvent.keyDown(fact, { key: 'Enter' })
+    expect(screen.getByRole('menu', { name: 'group' })).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    await waitFor(() =>
+      expect(screen.queryByRole('menu', { name: 'group' })).not.toBeInTheDocument()
+    )
+    fireEvent.keyDown(fact, { key: ' ' })
+    expect(screen.getByRole('menu', { name: 'group' })).toBeInTheDocument()
+  })
+
+  it('a reader sees the fact and no button', () => {
+    const { container } = renderStatefulView(listBlock, jest.fn(), false)
+    const fact = container.querySelector('[data-part="db-facts"]')
+    expect(fact).toHaveTextContent('grouped by due')
+    expect(fact?.tagName).toBe('SPAN')
+    expect(fact?.className).toContain(FACT_CLASS)
+    expect(fact?.closest('button')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'grouped by due' })).not.toBeInTheDocument()
+  })
+
+  it('a board head is not a button', () => {
+    const { container } = renderStatefulView(boardBlock, jest.fn())
+    const fact = container.querySelector('[data-part="db-facts"]')
+    expect(fact).toHaveTextContent('grouped by status')
+    expect(fact?.tagName).toBe('SPAN')
+    expect(fact?.closest('button')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'grouped by status' })).not.toBeInTheDocument()
   })
 })

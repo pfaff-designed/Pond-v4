@@ -27,8 +27,16 @@ import type { BaseUIEvent } from '@base-ui/react/types'
 import { FOCUS_VISIBLE_RING } from '@/components/atoms/focus-ring'
 import { PondMenu, type PondMenuGroup } from '@/components/molecules/PondMenu'
 import { ViewTabsList, ViewTabsRoot, ViewTabsTab } from '@/components/molecules/view-tabs'
+import {
+  LIST_GROUP_NONE,
+  listGroupFact,
+  listGroupFields,
+  listGroupPatch,
+  type ListGroupConfig,
+} from '@/lib/modules/view/apply'
 import { LAYOUT_MENU_MODES, VIEW_KINDS } from '@/lib/modules/view/kinds'
 import type { ViewMode } from '@/lib/modules/view/schema'
+import type { PropertySchema } from '@/lib/properties/schema'
 
 export interface ViewBarView {
   id: string
@@ -88,6 +96,20 @@ export interface ViewLayoutMenuProps {
   onLayout: (mode: ViewMode) => void
 }
 
+// List navigation counts Enter and Space as navigation keys and only opens on the arrow key.
+const openMenuOnActivationKey = (
+  event: BaseUIEvent<KeyboardEvent<HTMLButtonElement>>,
+  open: () => void
+) => {
+  if (event.key !== 'Enter' && event.key !== ' ') return
+  event.preventDefault()
+  event.stopPropagation()
+  event.preventBaseUIHandler()
+  open()
+}
+
+const MENU_PLACEMENT = { align: 'start' as const, top: 40, alignOffset: -8 }
+
 const LAYOUT_MENU_GROUPS: PondMenuGroup<ViewMode>[] = [
   {
     id: 'layout',
@@ -110,13 +132,8 @@ export const ViewLayoutMenu = ({ mode, editable, onLayout }: ViewLayoutMenuProps
     onLayout(next)
   }
 
-  // List navigation counts Enter and Space as navigation keys and only opens on the arrow key.
   const handleChipKeyDown = (event: BaseUIEvent<KeyboardEvent<HTMLButtonElement>>) => {
-    if (event.key !== 'Enter' && event.key !== ' ') return
-    event.preventDefault()
-    event.stopPropagation()
-    event.preventBaseUIHandler()
-    setOpen(true)
+    openMenuOnActivationKey(event, () => setOpen(true))
   }
 
   if (!editable) {
@@ -137,12 +154,112 @@ export const ViewLayoutMenu = ({ mode, editable, onLayout }: ViewLayoutMenuProps
         onOpenChange={setOpen}
         onSelect={handleSelect}
         trigger={
-          <button type="button" className={`${SEGMENT} ${SEGMENT_ON}`} onKeyDown={handleChipKeyDown}>
+          <button
+            type="button"
+            className={`${SEGMENT} ${SEGMENT_ON}`}
+            onKeyDown={handleChipKeyDown}
+          >
             {label}
           </button>
         }
-        placement={{ anchor: anchorRef, align: 'start', top: 40, alignOffset: -8 }}
+        placement={{ anchor: anchorRef, ...MENU_PLACEMENT }}
       />
     </div>
+  )
+}
+
+/**
+ * The list head's group fact (KAN-521). Closed, the sentence from `listGroupFact`.
+ * Rows are each select and status field's schema name, then none. A reader sees
+ * the sentence and gets no button. `grouped by none` is hidden from a reader.
+ */
+export interface ViewGroupMenuProps {
+  schema: PropertySchema
+  groupBy?: string
+  listFlat?: boolean
+  editable: boolean
+  onGroup: (patch: ListGroupConfig) => void
+}
+
+const FACT = 'text-[10.5px] font-medium text-mn-text-meta'
+
+export const ViewGroupMenu = ({
+  schema,
+  groupBy,
+  listFlat,
+  editable,
+  onGroup,
+}: ViewGroupMenuProps) => {
+  const anchorRef = useRef<HTMLDivElement>(null)
+  const [open, setOpen] = useState(false)
+  const fact = listGroupFact(schema, { groupBy, listFlat })
+
+  if (!editable && !fact.shownToReader) return null
+
+  const separator = (
+    <span aria-hidden="true" className={FACT}>
+      ·
+    </span>
+  )
+
+  if (!editable) {
+    return (
+      <>
+        {separator}
+        <span data-part="db-facts" className={FACT}>
+          {fact.label}
+        </span>
+      </>
+    )
+  }
+
+  const groups: PondMenuGroup<string>[] = [
+    {
+      id: 'group',
+      label: 'group',
+      items: [
+        ...listGroupFields(schema).map((field) => ({
+          id: field.id,
+          label: field.name,
+          action: field.id,
+        })),
+        { id: LIST_GROUP_NONE, label: LIST_GROUP_NONE, action: LIST_GROUP_NONE },
+      ],
+    },
+  ]
+
+  const handleSelect = (choice: string) => {
+    onGroup(listGroupPatch(schema, { groupBy, listFlat }, choice))
+  }
+
+  const handleFactKeyDown = (event: BaseUIEvent<KeyboardEvent<HTMLButtonElement>>) => {
+    openMenuOnActivationKey(event, () => setOpen(true))
+  }
+
+  return (
+    <>
+      {separator}
+      <div ref={anchorRef}>
+        <PondMenu
+          kind="block"
+          label="group"
+          groups={groups}
+          open={open}
+          onOpenChange={setOpen}
+          onSelect={handleSelect}
+          trigger={
+            <button
+              type="button"
+              data-part="db-facts"
+              className={`${FACT} border-0 bg-transparent p-0 ${FOCUS_VISIBLE_RING}`}
+              onKeyDown={handleFactKeyDown}
+            >
+              {fact.label}
+            </button>
+          }
+          placement={{ anchor: anchorRef, ...MENU_PLACEMENT }}
+        />
+      </div>
+    </>
   )
 }

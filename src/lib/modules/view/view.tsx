@@ -104,9 +104,18 @@ import { DraftInput } from '@/components/atoms/draft-input'
 import { RecordPeek } from './record-peek'
 import { CollectionList } from './list'
 import { CollectionCalendar } from './collection-calendar'
-import { ROW_FOCUS_VISIBLE, ROW_FOCUS_VISIBLE_BASE, useRecordSelection } from './use-record-selection'
+import {
+  ROW_FOCUS_VISIBLE,
+  ROW_FOCUS_VISIBLE_BASE,
+  useRecordSelection,
+} from './use-record-selection'
 import { shouldSelectCardFromClick, shouldSelectRowFromClick } from './card-click'
-import { ViewBar, ViewLayoutMenu, type ViewBarView } from '@/components/molecules/ViewBar'
+import {
+  ViewBar,
+  ViewGroupMenu,
+  ViewLayoutMenu,
+  type ViewBarView,
+} from '@/components/molecules/ViewBar'
 import { useBlockRow } from '../block-row-context'
 
 /**
@@ -694,6 +703,8 @@ export function CollectionView({
  * The layout chip sits before those tabs on every view, including a legacy
  * block with no `views[]` (KAN-519). Choosing a layout writes that view's kind
  * in place through the same gate. A reader sees the word and gets no button.
+ * A list's fact is that same gate (KAN-521): a button when editable, the
+ * sentence alone for a reader. A board's fact stays the span.
  */
 function ViewControls({
   config,
@@ -718,13 +729,8 @@ function ViewControls({
   editable?: boolean
   onConfigChange?: (patch: ViewConfigPatch) => void
 }) {
-  // The head's fact: a board reads its lanes' property, a list the date it groups by.
-  const groupDef =
-    config.mode === 'board'
-      ? pickGroupDef(schema, config.groupBy)
-      : config.mode === 'list'
-        ? pickDateDef(schema, config.groupBy)
-        : undefined
+  // A board's fact names its lanes. A list's fact is `ViewGroupMenu`.
+  const groupDef = config.mode === 'board' ? pickGroupDef(schema, config.groupBy) : undefined
   const groupName = groupDef?.name.toLowerCase()
   const layoutEditable = Boolean(editable && onConfigChange)
   const handleLayout = (mode: ViewMode) => {
@@ -746,6 +752,15 @@ function ViewControls({
           <span data-part="db-count" className="text-[10.5px] font-medium text-mn-text-meta">
             {recordCount} record{recordCount === 1 ? '' : 's'}
           </span>
+          {config.mode === 'list' && (
+            <ViewGroupMenu
+              schema={schema}
+              groupBy={config.groupBy}
+              listFlat={config.listFlat}
+              editable={layoutEditable}
+              onGroup={(patch) => onConfigChange?.(patch)}
+            />
+          )}
           {groupName && (
             <>
               <span aria-hidden="true" className="text-[10.5px] font-medium text-mn-text-meta">
@@ -758,11 +773,7 @@ function ViewControls({
           )}
         </div>
         <div className="flex items-center gap-[4px]">
-          <ViewLayoutMenu
-            mode={config.mode}
-            editable={layoutEditable}
-            onLayout={handleLayout}
-          />
+          <ViewLayoutMenu mode={config.mode} editable={layoutEditable} onLayout={handleLayout} />
           {savedViews && savedViews.length > 0 && activeViewId && onSelectView && (
             <ViewBar
               views={savedViews.map((view): ViewBarView => ({
@@ -1100,13 +1111,13 @@ function CollectionBoard({
     containerHandlers,
     containerClassName,
   } = usePointerBucketDrag({
-      editable: !!editable,
-      onDrop: (rowId, key) => {
-        if (!grouped) return
-        const target = grouped.groups.find((g) => groupKey(g.id) === key)
-        if (target) onEdit?.(rowId, grouped.def.id, target.id)
-      },
-    })
+    editable: !!editable,
+    onDrop: (rowId, key) => {
+      if (!grouped) return
+      const target = grouped.groups.find((g) => groupKey(g.id) === key)
+      if (target) onEdit?.(rowId, grouped.def.id, target.id)
+    },
+  })
 
   const {
     rootRef: boardRef,
