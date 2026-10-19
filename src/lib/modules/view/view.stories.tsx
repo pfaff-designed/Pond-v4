@@ -7,6 +7,7 @@ import { CollectionView } from './view'
 import { CollectionList } from './list'
 import { BOARD_EMPTY_LINE, CALENDAR_EMPTY_LINE } from './kinds'
 import { localDateIso } from './due'
+import { formatAtomDate } from '@/lib/properties/date-input'
 import { PondBlock } from '@/components/organisms/PondBlock'
 import { PageCanvas } from '@/lib/modules/page-canvas'
 import type { CollectionRow } from './apply'
@@ -1605,6 +1606,84 @@ export const CalendarDragLeavesNoNativeSelection: Story = {
       await expect(selection === null || selection.isCollapsed).toBe(true)
       await expect(selection?.toString() ?? '').toBe('')
       await expect(args.onMoveDate).toHaveBeenCalledWith('r-drag', 'p-due', dragTargetIso)
+    } finally {
+      const { width, height } = loaded.prevViewport as { width: number; height: number }
+      await page.viewport(width, height)
+    }
+  },
+}
+
+/**
+ * KAN-453. Hovering a day of the current month shows the plus, and clicking it
+ * opens the new record's peek with the title focused and that day already set.
+ *
+ * `StatefulView` does not implement `onAddRow`, so this harness appends the
+ * minted row with the date values the calendar passed. The month grid is
+ * `hidden md:flex`, and `storybook/test` hover does not apply `:hover` — the
+ * same real-input constraint as `CalendarDragLeavesNoNativeSelection`. The day
+ * is `localDateIso(new Date())`, so it stays on the current month without a
+ * clock mock. The date reads `formatAtomDate` (`en-US`, UTC noon).
+ */
+const hoverAddIso = localDateIso(new Date())
+
+function CalendarHoverAddHarness({
+  config,
+  hostSchema,
+}: {
+  config: ViewBlock
+  hostSchema: PropertySchema
+}) {
+  const [data, setData] = useState<CollectionRow[]>([])
+  const handleAddRow = async (values?: Record<string, PropertyValue>) => {
+    const id = 'r-new'
+    setData((prev) => [...prev, { id, title: '', values: values ?? {} }])
+    return id
+  }
+  // The peek draws a title input only when a rename handler is present.
+  const handleRenameRow = (rowId: string, title: string) => {
+    setData((prev) => prev.map((row) => (row.id === rowId ? { ...row, title } : row)))
+  }
+  return (
+    <CollectionView
+      config={config}
+      schema={hostSchema}
+      rows={data}
+      editable
+      onAddRow={handleAddRow}
+      onRenameRow={handleRenameRow}
+    />
+  )
+}
+
+export const CalendarHoverAdd: Story = {
+  args: { config: calendarConfig, schema, rows: [] },
+  render: (args) => (
+    <CalendarHoverAddHarness config={args.config} hostSchema={args.schema ?? schema} />
+  ),
+  loaders: [
+    async () => {
+      const prevViewport = { width: window.innerWidth, height: window.innerHeight }
+      await page.viewport(1440, 900)
+      return { prevViewport }
+    },
+  ],
+  play: async ({ canvasElement, loaded }) => {
+    try {
+      const cell = canvasElement.querySelector<HTMLElement>(`[data-iso="${hoverAddIso}"]`)
+      if (!cell) throw new Error('calendar hover-add story: day cell not found')
+      const plus = within(cell).getByRole('button', { name: /^Add on / })
+      await realUserEvent.hover(cell)
+      await expect(getComputedStyle(plus).opacity).toBe('1')
+      await realUserEvent.click(plus)
+
+      const body = within(document.body)
+      const peek = await body.findByRole('complementary', { name: 'Record: Untitled' })
+      await expect(peek).toBeInTheDocument()
+      const title = await body.findByRole('textbox', { name: 'Record title' })
+      await expect(title).toHaveFocus()
+      await expect(body.getByRole('button', { name: 'Due value' })).toHaveTextContent(
+        formatAtomDate(hoverAddIso)
+      )
     } finally {
       const { width, height } = loaded.prevViewport as { width: number; height: number }
       await page.viewport(width, height)

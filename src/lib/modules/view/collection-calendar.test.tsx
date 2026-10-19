@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { CollectionCalendar } from './collection-calendar'
 import { CollectionView } from './view'
 import { CALENDAR_EMPTY_LINE } from './kinds'
 import { localDateIso } from './due'
+import { formatAtomDate } from '@/lib/properties/date-input'
 import type { PropertySchema, PropertyValue } from '@/lib/properties/schema'
 import type { CollectionRow } from './apply'
 import type { ViewBlock } from './schema'
@@ -277,27 +278,151 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
       return container.querySelector<HTMLElement>(`[data-part="calendar-day-cell"][data-iso="${iso}"]`)!
     }
 
-    it('clicking a day’s blank area, typing and ↵ adds that day’s record then closes the input', async () => {
+    it('the plus and Enter add that day’s record; a blank click does not', async () => {
       const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
-      const onAddRow = jest.fn().mockResolvedValue('r-new')
+      let resolveAdd: (id: string) => void = () => {}
+      const onAddRow = jest.fn(
+        () =>
+          new Promise<string>((resolve) => {
+            resolveAdd = resolve
+          })
+      )
       const onRenameRow = jest.fn()
       const { container } = render(
         <CollectionCalendar
           schema={schemaWithDate}
-          rows={[]}
+          rows={rows}
           editable
           onAddRow={onAddRow}
           onRenameRow={onRenameRow}
         />
       )
 
-      await user.click(cellFor(container, '2026-09-20'))
-      const input = screen.getByRole('textbox', { name: 'Add an item on 20 sep' })
-      await user.type(input, 'dentist{Enter}')
+      // Enter on a stack item selects it (KAN-358). It must not also add a day.
+      const occupied = within(cellFor(container, '2026-09-10')).getByText('Trim the rim').closest('div')!
+      occupied.focus()
+      await user.keyboard('{Enter}')
+      expect(onAddRow).not.toHaveBeenCalled()
 
+      const cell = cellFor(container, '2026-09-20')
+      const plus = within(cell).getByRole('button', { name: 'Add on 20 sep' })
+      await user.click(plus)
+      await user.click(plus)
+      expect(onAddRow).toHaveBeenCalledTimes(1)
       expect(onAddRow).toHaveBeenCalledWith({ 'p-due': '2026-09-20' })
-      expect(onRenameRow).toHaveBeenCalledWith('r-new', 'dentist')
-      expect(screen.queryByRole('textbox', { name: 'Add an item on 20 sep' })).not.toBeInTheDocument()
+
+      await act(async () => {
+        resolveAdd('r-new')
+        for (let i = 0; i < 5; i++) await Promise.resolve()
+      })
+
+      cell.focus()
+      await user.keyboard('{Enter}')
+      expect(onAddRow).toHaveBeenCalledTimes(2)
+      expect(onAddRow).toHaveBeenLastCalledWith({ 'p-due': '2026-09-20' })
+
+      await act(async () => {
+        resolveAdd('r-new-2')
+        for (let i = 0; i < 5; i++) await Promise.resolve()
+      })
+
+      fireEvent.click(cell)
+      await user.click(within(cell).getByText('20'))
+      expect(onAddRow).toHaveBeenCalledTimes(2)
+      expect(onRenameRow).not.toHaveBeenCalled()
+      expect(screen.queryByRole('textbox', { name: /Add an item/ })).not.toBeInTheDocument()
+    })
+
+    it('adding from the plus selects the record, opens the peek, and focuses the title with the date set', async () => {
+      const iso = '2026-09-20'
+      const mint = jest.fn().mockResolvedValue('r-new')
+      function Harness() {
+        const [liveRows, setLiveRows] = useState<CollectionRow[]>([])
+        const onAddRow = async (values?: Record<string, PropertyValue>) => {
+          const id = await mint()
+          setLiveRows((prev) => [...prev, { id: id as string, title: '', values: values ?? {} }])
+          return id as string
+        }
+        return (
+          <CollectionCalendar
+            schema={schemaWithDate}
+            rows={liveRows}
+            editable
+            onAddRow={onAddRow}
+            onRenameRow={jest.fn()}
+          />
+        )
+      }
+      const { container } = render(<Harness />)
+      // The month is already pinned to the faked today. Real timers let the
+      // add's state update flush; modern fake timers hold React's scheduler.
+      jest.useRealTimers()
+      const user = userEvent.setup()
+
+      await user.click(within(cellFor(container, iso)).getByRole('button', { name: 'Add on 20 sep' }))
+      await act(async () => {
+        for (let i = 0; i < 5; i++) await Promise.resolve()
+      })
+
+      const item = cellFor(container, iso).querySelector<HTMLElement>('[data-row-id="r-new"]')
+      expect(item).toHaveClass('ring-[1.5px]', 'ring-inset', 'ring-mn-text')
+      expect(screen.getByLabelText('Record: Untitled')).toBeInTheDocument()
+      expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Record title' }))
+      expect(screen.getByRole('button', { name: 'Due value' })).toHaveTextContent(formatAtomDate(iso))
+      expect(mint).toHaveBeenCalledTimes(1)
+    })
+
+    it('a typed title stays on the day after Esc closes the peek', async () => {
+      const iso = '2026-09-20'
+      const renames: Array<[string, string]> = []
+      function Harness() {
+        const [liveRows, setLiveRows] = useState<CollectionRow[]>([])
+        const onAddRow = async (values?: Record<string, PropertyValue>) => {
+          const id = 'r-new'
+          setLiveRows((prev) => [...prev, { id, title: '', values: values ?? {} }])
+          return id
+        }
+        // The calendar calls onRenameRow and does not store the title. The
+        // harness applies it the way the page does, so the day's stack can show it.
+        const onRenameRow = (rowId: string, title: string) => {
+          renames.push([rowId, title])
+          setLiveRows((prev) => prev.map((row) => (row.id === rowId ? { ...row, title } : row)))
+        }
+        return (
+          <CollectionCalendar
+            schema={schemaWithDate}
+            rows={liveRows}
+            editable
+            onAddRow={onAddRow}
+            onRenameRow={onRenameRow}
+          />
+        )
+      }
+      const { container } = render(<Harness />)
+      // The month is already pinned to the faked today. Real timers let the
+      // add's state update flush; modern fake timers hold React's scheduler.
+      jest.useRealTimers()
+      const user = userEvent.setup()
+
+      await user.click(within(cellFor(container, iso)).getByRole('button', { name: 'Add on 20 sep' }))
+      await act(async () => {
+        for (let i = 0; i < 5; i++) await Promise.resolve()
+      })
+
+      expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Record title' }))
+      // Enter commits before Esc. Esc on a still-dirty title reverts and writes nothing.
+      await user.keyboard('dentist{Enter}')
+
+      const cell = cellFor(container, iso)
+      expect(renames).toEqual([['r-new', 'dentist']])
+      expect(within(cell).getByText('dentist')).toBeInTheDocument()
+      expect(screen.getByLabelText('Record: dentist')).toBeInTheDocument()
+
+      await user.keyboard('{Escape}')
+
+      expect(screen.queryByLabelText('Record: dentist')).not.toBeInTheDocument()
+      expect(within(cell).getByText('dentist')).toBeInTheDocument()
+      expect(renames).toEqual([['r-new', 'dentist']])
     })
 
     it('clicking an existing day-item row never opens the input (stopPropagation on MonthDayStack)', async () => {
@@ -314,7 +439,7 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
       expect(onAddRow).not.toHaveBeenCalled()
     })
 
-    it('Esc after opening calls neither addRow nor onRenameRow', async () => {
+    it('Escape on the focused day cell adds nothing', async () => {
       const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
       const onAddRow = jest.fn().mockResolvedValue('r-new')
       const onRenameRow = jest.fn()
@@ -322,13 +447,12 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
         <CollectionCalendar schema={schemaWithDate} rows={[]} editable onAddRow={onAddRow} onRenameRow={onRenameRow} />
       )
 
-      await user.click(cellFor(container, '2026-09-20'))
-      const input = screen.getByRole('textbox', { name: 'Add an item on 20 sep' })
-      await user.type(input, 'nope{Escape}')
+      cellFor(container, '2026-09-20').focus()
+      await user.keyboard('{Escape}')
 
       expect(onAddRow).not.toHaveBeenCalled()
       expect(onRenameRow).not.toHaveBeenCalled()
-      expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+      expect(screen.queryByRole('textbox', { name: /Add an item/ })).not.toBeInTheDocument()
     })
 
     it('not editable (or no date property) draws no clickable cell at all', () => {
@@ -505,16 +629,18 @@ describe('CollectionCalendar — a day cell is not a button around its events (K
     expect(container.querySelector('[data-part="calendar-day-cell"][role="button"]')).toBeNull()
   })
 
-  it('an addable day has its own "Add on …" button, reachable by keyboard and by click, that opens the add input', async () => {
+  it('an addable day’s "Add on …" button adds that day and does not open an inline input', async () => {
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    const onAddRow = jest.fn().mockResolvedValue('r-new')
     const { container } = render(
-      <CollectionCalendar schema={schemaWithDate} rows={[]} editable onAddRow={jest.fn()} onRenameRow={jest.fn()} />
+      <CollectionCalendar schema={schemaWithDate} rows={[]} editable onAddRow={onAddRow} onRenameRow={jest.fn()} />
     )
     const addButton = within(cellFor(container, '2026-09-20')).getByRole('button', { name: 'Add on 20 sep' })
 
     await user.click(addButton)
 
-    expect(screen.getByRole('textbox', { name: 'Add an item on 20 sep' })).toBeInTheDocument()
+    expect(onAddRow).toHaveBeenCalledWith({ 'p-due': '2026-09-20' })
+    expect(screen.queryByRole('textbox', { name: /Add an item/ })).not.toBeInTheDocument()
   })
 
   it('an event item sits inside the day cell but outside any role="button"', () => {
@@ -523,6 +649,45 @@ describe('CollectionCalendar — a day cell is not a button around its events (K
     )
     const item = within(cellFor(container, '2026-09-10')).getByText('Trim the rim')
     expect(item.closest('[role="button"]')).toBeNull()
+  })
+
+  it('a hovered or focused day cell shows a hand-drawn plus', () => {
+    const { container } = render(
+      <CollectionCalendar schema={schemaWithDate} rows={[]} editable onAddRow={jest.fn()} onRenameRow={jest.fn()} />
+    )
+    const cell = cellFor(container, '2026-09-20')
+    const addButton = within(cell).getByRole('button', { name: 'Add on 20 sep' })
+    const plus = addButton.querySelector('svg')
+
+    // `userEvent.hover` does not set :hover in jsdom, so the reveal is the
+    // named group classes. Bare `group` would also match BlockCanvas's wrapper.
+    expect(cell).toHaveClass('group/day')
+    expect(cell).not.toHaveClass('group')
+    expect(cell).toHaveAttribute('tabindex', '0')
+    cell.focus()
+    expect(document.activeElement).toBe(cell)
+
+    expect(addButton).toHaveAttribute('tabindex', '-1')
+    expect(addButton).not.toHaveClass('sr-only')
+    expect(addButton).toHaveClass(
+      'absolute',
+      'right-1',
+      'top-1',
+      'text-mn-text-secondary',
+      'opacity-0',
+      'group-hover/day:opacity-100',
+      'group-focus-within/day:opacity-100'
+    )
+    expect(addButton).not.toHaveTextContent('＋')
+    expect(plus).not.toBeNull()
+    expect(plus).toHaveAttribute('width', '12')
+    expect(plus).toHaveAttribute('height', '12')
+    expect(plus).toHaveAttribute('viewBox', '0 0 12 12')
+    expect(plus).toHaveAttribute('stroke', 'currentColor')
+    expect(plus).toHaveAttribute('stroke-width', '1.4')
+    expect(plus).toHaveAttribute('stroke-linecap', 'round')
+    expect(plus).toHaveAttribute('aria-hidden', 'true')
+    expect(plus?.querySelector('path')).toHaveAttribute('d', 'M6 2.4v7.2M2.4 6h7.2')
   })
 })
 
@@ -760,6 +925,7 @@ describe('CollectionView — dragging a calendar event onto another day (KAN-385
     // lands on the cell itself, same as a real browser's release target.
     fireEvent.click(cell)
 
+    expect(onAddRow).not.toHaveBeenCalled()
     expect(screen.queryByRole('textbox', { name: /Add an item/ })).not.toBeInTheDocument()
   })
 })
