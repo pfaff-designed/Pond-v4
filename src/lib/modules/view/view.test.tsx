@@ -8,7 +8,7 @@
  */
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { SiblingBlocksProvider } from '@/lib/modules/sibling-context'
@@ -16,6 +16,7 @@ import { BlockRowProvider } from '@/lib/modules/block-row-context'
 import { ViewView } from './view'
 import { CALENDAR_EMPTY_LINE, LAYOUT_MENU_MODES, VIEW_KINDS } from './kinds'
 import { ActiveViewSelectionContext } from './active-view-context'
+import type { Block } from '@/lib/documents/types'
 import type { ViewBlock } from './schema'
 import type { PropertySchema } from '@/lib/properties/schema'
 import { addDays, type CollectionRow } from './apply'
@@ -1037,6 +1038,125 @@ describe('ViewView — a layout write that changes the kind is one structural co
 
     expect(screen.getByRole('table')).toBeInTheDocument()
     expect(screen.queryByRole('article', { name: 'Standup' })).not.toBeInTheDocument()
+  })
+})
+
+/**
+ * The page host's one structural step (KAN-519). `commitStep` keeps the block
+ * that was on screen, then draws the next one. Stepping back sets that kept
+ * block again. No platform chord: CI is Linux, and the shell undo is BlockCanvas.
+ */
+function LayoutPath({
+  initial,
+  onReady,
+}: {
+  initial: ViewBlock
+  onReady: (stepBack: () => void) => void
+}) {
+  const [data, setData] = useState(initial)
+  const beforeLastRef = useRef(initial)
+
+  useEffect(() => {
+    onReady(() => {
+      setData(beforeLastRef.current)
+    })
+  }, [onReady])
+
+  const handleCommit = (next: Block) => {
+    beforeLastRef.current = data
+    setData(next as ViewBlock)
+  }
+  return (
+    <BlockRowProvider
+      value={{
+        selected: false,
+        stepOut: () => {},
+        commitStep: handleCommit,
+      }}
+    >
+      <ViewView data={data} editable onChange={() => {}} />
+    </BlockRowProvider>
+  )
+}
+
+function renderLayoutPath(initial: ViewBlock, onReady: (stepBack: () => void) => void) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(
+    <QueryClientProvider client={client}>
+      <DeletionUndoProvider>
+        <SiblingBlocksProvider value={{ blocks: [], pageId: 'page-1' }}>
+          <LayoutPath initial={initial} onReady={onReady} />
+        </SiblingBlocksProvider>
+      </DeletionUndoProvider>
+    </QueryClientProvider>
+  )
+}
+
+describe('ViewView — the path: layout menu, board, table, calendar, one step back (KAN-519)', () => {
+  const statusSchema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    {
+      id: 'p-status',
+      name: 'Status',
+      type: 'status',
+      options: [{ id: 'opt-todo', label: 'Todo' }],
+    },
+  ]
+
+  const legacyTable: ViewBlock = {
+    id: 'v-standup',
+    type: 'view',
+    mode: 'table',
+    filter: { property: 'p-status', op: 'eq', value: 'opt-todo' },
+    sort: { key: 'p-title', dir: 'asc' },
+  }
+
+  beforeEach(() => {
+    initialSchema = statusSchema
+    initialRows = [{ id: 'r-standup', title: 'Standup', values: { 'p-status': 'opt-todo' } }]
+  })
+
+  it('opens the layout menu and walks board, table, calendar, then one step back to the table', async () => {
+    const user = userEvent.setup()
+    let stepBack = (): void => {}
+    const handleReady = (next: () => void) => {
+      stepBack = next
+    }
+    const { container } = renderLayoutPath(legacyTable, handleReady)
+
+    expect(screen.getByRole('table')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('Standup')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'table' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'board' }))
+
+    expect(screen.getByRole('article', { name: 'Standup' })).toBeInTheDocument()
+    const head = container.querySelector('[data-part="view-head"]')
+    expect(head).toHaveTextContent(/grouped by status/)
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'board' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'table' }))
+
+    const table = screen.getByRole('table')
+    expect(within(table).getByDisplayValue('Standup')).toBeInTheDocument()
+    expect(screen.queryByRole('article', { name: 'Standup' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'table' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'calendar' }))
+
+    expect(screen.getByText(CALENDAR_EMPTY_LINE)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'add a date field' })).toBeInTheDocument()
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+
+    act(() => {
+      stepBack()
+    })
+
+    expect(screen.getByRole('table')).toBeInTheDocument()
+    expect(within(screen.getByRole('table')).getByDisplayValue('Standup')).toBeInTheDocument()
+    expect(screen.queryByText(CALENDAR_EMPTY_LINE)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'add a date field' })).not.toBeInTheDocument()
   })
 })
 
