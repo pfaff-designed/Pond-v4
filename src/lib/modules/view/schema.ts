@@ -176,6 +176,11 @@ export const viewSavedViewConfigSchema = z.object({
   chart: viewChartConfigSchema.optional(),
   bigNumber: viewBigNumberConfigSchema.optional(),
   collectionId: z.string().optional(),
+  /**
+   * List only (KAN-521). `true` is one flat run of rows. Absent and `false` keep
+   * today's due buckets. Board and calendar do not read it.
+   */
+  listFlat: z.boolean().optional(),
 })
 export type ViewSavedViewConfig = z.infer<typeof viewSavedViewConfigSchema>
 
@@ -217,6 +222,11 @@ export const viewSchema = z
     /** A linked view over ANOTHER collection (#41) — draws that collection's rows instead of the host page's. */
     collectionId: z.string().optional(),
     /**
+     * List only (KAN-521). `true` is one flat run of rows. Absent and `false` keep
+     * today's due buckets. Board and calendar do not read it.
+     */
+    listFlat: z.boolean().optional(),
+    /**
      * Several saved views of the same database (KAN-32). Optional: a block with no
      * `views` is the back-compat shape above (one view, built from `mode`+config)
      * — read it through `resolveActiveView`, never `mode`/`groupBy`/etc. directly.
@@ -252,6 +262,7 @@ export const resolveActiveView = (
         chart: block.chart,
         bigNumber: block.bigNumber,
         collectionId: block.collectionId,
+        listFlat: block.listFlat,
       },
     }
   }
@@ -284,6 +295,7 @@ export const activeSavedView = (block: ViewBlock, selectedId?: string): ViewBloc
     chart: resolved.config.chart,
     bigNumber: resolved.config.bigNumber,
     collectionId: resolved.config.collectionId,
+    listFlat: resolved.config.listFlat,
   }
 }
 
@@ -302,7 +314,23 @@ export const activeSavedView = (block: ViewBlock, selectedId?: string): ViewBloc
  * views stay, top-level `mode` stays). Other fields in that patch still follow the
  * write above. The same mode, with no other fields, returns the same block. A
  * patch with no `mode` is the write above.
+ *
+ * A patch key set to `undefined` is deleted after the spread (`Object.keys`
+ * includes it), so a later pass can clear `listFlat` or a select/status
+ * `groupBy`. A key the patch omits stays. `mode` is written only when the
+ * patch sets one: the no-mode branch never spreads it.
  */
+const dropUndefinedPatchKeys = <T extends Partial<ViewSavedViewConfig>>(
+  merged: T,
+  patch: Partial<ViewSavedViewConfig>
+): T => {
+  const next = { ...merged }
+  for (const key of Object.keys(patch) as (keyof ViewSavedViewConfig)[]) {
+    if (patch[key] === undefined) delete next[key]
+  }
+  return next
+}
+
 export const applyConfigPatch = (
   block: ViewBlock,
   patch: Partial<ViewSavedViewConfig> & { mode?: ViewMode },
@@ -312,14 +340,18 @@ export const applyConfigPatch = (
   activeId?: string
 ): ViewBlock => {
   if (patch.mode === undefined) {
+    const config: Partial<ViewSavedViewConfig> & { mode?: ViewMode } = { ...patch }
+    delete config.mode
     if (!block.views || block.views.length === 0) {
-      return { ...block, ...patch }
+      return dropUndefinedPatchKeys({ ...block, ...config }, config)
     }
     const target = activeId ?? block.activeViewId ?? block.views[0].id
     return {
       ...block,
       views: block.views.map((view) =>
-        view.id === target ? { ...view, config: { ...view.config, ...patch } } : view
+        view.id === target
+          ? { ...view, config: dropUndefinedPatchKeys({ ...view.config, ...config }, config) }
+          : view
       ),
     }
   }
@@ -329,7 +361,7 @@ export const applyConfigPatch = (
 
   if (!block.views || block.views.length === 0) {
     if (mode === block.mode && !writesConfig) return block
-    return { ...block, ...config, mode }
+    return dropUndefinedPatchKeys({ ...block, ...config, mode }, config)
   }
 
   const target = activeId ?? block.activeViewId ?? block.views[0].id
@@ -341,7 +373,11 @@ export const applyConfigPatch = (
     views: block.views.map((view) => {
       if (view.id !== target) return view
       if (!writesConfig) return { ...view, kind: mode }
-      return { ...view, kind: mode, config: { ...view.config, ...config } }
+      return {
+        ...view,
+        kind: mode,
+        config: dropUndefinedPatchKeys({ ...view.config, ...config }, config),
+      }
     }),
   }
 }

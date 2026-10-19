@@ -220,6 +220,84 @@ export function groupRows(
   return { def, groups }
 }
 
+/** The view fields the list's group menu reads and writes (KAN-521). */
+export interface ListGroupConfig {
+  groupBy?: string
+  listFlat?: boolean
+}
+
+/** What the list head says, and whether a reader is shown that sentence. */
+export interface ListGroupFact {
+  label: string
+  shownToReader: boolean
+}
+
+/** Menu choice that clears a select/status grouping. A property id is the other choice. */
+export const LIST_GROUP_NONE = 'none'
+
+const isSelectOrStatus = (def: PropertyDef | undefined): def is PropertyDef =>
+  def?.type === 'select' || def?.type === 'status'
+
+const selectOrStatus = (
+  schema: PropertySchema,
+  id: string | undefined
+): PropertyDef | undefined => {
+  if (!id) return undefined
+  const def = defById(schema, id)
+  return isSelectOrStatus(def) ? def : undefined
+}
+
+/**
+ * Select and status fields a list may group by, in schema order (KAN-521).
+ * A date stays out: the list already buckets by one through `pickDateDef`.
+ */
+export const listGroupFields = (schema: PropertySchema): PropertyDef[] =>
+  schema.filter((def) => isSelectOrStatus(def))
+
+/**
+ * The config patch for one menu choice. A field sets `groupBy` and sets
+ * `listFlat` to `undefined` so `applyConfigPatch` deletes the key. `none`
+ * sets `listFlat: true` and sets `groupBy` to `undefined` only when it names
+ * a select or status — a date id is omitted, so the calendar keeps it. The
+ * choice already stored returns `{}` (`listFlat: false` is not that store:
+ * only an absent key is the field's clear).
+ */
+export const listGroupPatch = (
+  schema: PropertySchema,
+  config: ListGroupConfig,
+  choice: string
+): ListGroupConfig => {
+  if (choice === LIST_GROUP_NONE) {
+    const clearsGroupBy = selectOrStatus(schema, config.groupBy) !== undefined
+    if (config.listFlat === true && !clearsGroupBy) return {}
+    if (clearsGroupBy) return { listFlat: true, groupBy: undefined }
+    return { listFlat: true }
+  }
+
+  const field = selectOrStatus(schema, choice)
+  if (!field) return {}
+  if (config.groupBy === field.id && config.listFlat === undefined) return {}
+  return { groupBy: field.id, listFlat: undefined }
+}
+
+/**
+ * The head's fact. A select or status `groupBy` wins even when `listFlat` is
+ * also set, so the sentence cannot name a date the body is not using. Otherwise
+ * a date from `pickDateDef` while the list is not flat. Otherwise `grouped by
+ * none`, which a reader does not see.
+ */
+export const listGroupFact = (schema: PropertySchema, config: ListGroupConfig): ListGroupFact => {
+  const grouped = selectOrStatus(schema, config.groupBy)
+  if (grouped) {
+    return { label: `grouped by ${grouped.name.toLowerCase()}`, shownToReader: true }
+  }
+  if (config.listFlat !== true) {
+    const date = pickDateDef(schema, config.groupBy)
+    if (date) return { label: `grouped by ${date.name.toLowerCase()}`, shownToReader: true }
+  }
+  return { label: 'grouped by none', shownToReader: false }
+}
+
 /**
  * Which select/status property a board buckets by: the one the view names, when it is
  * a select or status. `groupBy` is shared by every mode (a calendar or list names a

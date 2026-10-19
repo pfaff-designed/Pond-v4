@@ -48,6 +48,7 @@ describe('resolveActiveView', () => {
         chart: undefined,
         bigNumber: undefined,
         collectionId: undefined,
+        listFlat: undefined,
       },
     })
   })
@@ -72,7 +73,7 @@ describe('resolveActiveView', () => {
 
 describe('activeSavedView', () => {
   it('returns a legacy block (no views) as an equivalent copy of itself', () => {
-    expect(activeSavedView(legacyBlock)).toEqual(legacyBlock)
+    expect(activeSavedView(legacyBlock)).toEqual({ ...legacyBlock, listFlat: undefined })
   })
 
   it('mirrors activeViewId’s view onto the block shape when no selectedId is given', () => {
@@ -87,6 +88,7 @@ describe('activeSavedView', () => {
       chart: undefined,
       bigNumber: undefined,
       collectionId: undefined,
+      listFlat: undefined,
     })
   })
 
@@ -103,6 +105,7 @@ describe('activeSavedView', () => {
       chart: undefined,
       bigNumber: undefined,
       collectionId: undefined,
+      listFlat: undefined,
     })
   })
 })
@@ -345,5 +348,116 @@ describe('viewSchema.parse', () => {
     expect(patched.views![0]).toEqual(parsed.views![0])
     // Every top-level field (mode, groupBy, sort, …) is untouched by the patch.
     expect({ ...patched, views: undefined }).toEqual({ ...parsed, views: undefined })
+  })
+})
+
+describe('listFlat (KAN-521)', () => {
+  const flatLegacy: ViewBlock = { ...legacyBlock, mode: 'list', groupBy: 'p-due', listFlat: true }
+
+  const flatSaved = (): ViewBlock => ({
+    ...multiViewBlock,
+    views: [
+      multiViewBlock.views![0],
+      {
+        ...multiViewBlock.views![1],
+        config: { startDate: 'p-start', groupBy: 'p-due', listFlat: true },
+      },
+    ],
+  })
+
+  it('parses absent listFlat with the key missing on a legacy block and on a saved view', () => {
+    expect(viewSchema.parse(legacyBlock)).not.toHaveProperty('listFlat')
+
+    const saved = viewSchema.parse(multiViewBlock)
+    expect(saved.views?.[0]?.config).not.toHaveProperty('listFlat')
+    expect(saved.views?.[1]?.config).not.toHaveProperty('listFlat')
+  })
+
+  it('round-trips listFlat true on a legacy block and on a saved view', () => {
+    expect(viewSchema.parse(flatLegacy)).toEqual(flatLegacy)
+
+    const saved = flatSaved()
+    expect(viewSchema.parse(saved)).toEqual(saved)
+  })
+
+  it('keeps listFlat false: only true flattens, false is today’s due buckets', () => {
+    const legacy: ViewBlock = { ...flatLegacy, listFlat: false }
+    expect(viewSchema.parse(legacy).listFlat).toBe(false)
+
+    const saved = flatSaved()
+    saved.views![1].config = { ...saved.views![1].config, listFlat: false }
+    expect(viewSchema.parse(saved).views?.[1]?.config?.listFlat).toBe(false)
+  })
+
+  it('copies listFlat through resolveActiveView and activeSavedView', () => {
+    const legacy = viewSchema.parse(flatLegacy)
+    expect(resolveActiveView(legacy).config.listFlat).toBe(true)
+    expect(activeSavedView(legacy)).toEqual(legacy)
+
+    const saved = viewSchema.parse(flatSaved())
+    expect(resolveActiveView(saved).config.listFlat).toBe(true)
+    expect(activeSavedView(saved).listFlat).toBe(true)
+    expect(activeSavedView(saved).mode).toBe('gantt')
+    expect(activeSavedView(saved).groupBy).toBe('p-due')
+  })
+
+  it('applyConfigPatch of { listFlat: undefined } removes it and leaves mode and a date groupBy', () => {
+    const cleared = applyConfigPatch(flatLegacy, { listFlat: undefined })
+    expect(cleared).not.toHaveProperty('listFlat')
+    expect(cleared.groupBy).toBe('p-due')
+    expect(cleared.mode).toBe('list')
+    expect(cleared.sort).toEqual(flatLegacy.sort)
+  })
+
+  it('applyConfigPatch of { groupBy: undefined } removes a select id', () => {
+    const cleared = applyConfigPatch(legacyBlock, { groupBy: undefined })
+    expect(cleared).not.toHaveProperty('groupBy')
+    expect(cleared.mode).toBe(legacyBlock.mode)
+    expect(cleared.sort).toEqual(legacyBlock.sort)
+    expect(cleared).not.toHaveProperty('listFlat')
+  })
+
+  it('a date groupBy left out of the patch stays', () => {
+    const patched = applyConfigPatch(flatLegacy, { sort: { key: 'p-name', dir: 'desc' } })
+    expect(patched.groupBy).toBe('p-due')
+    expect(patched.listFlat).toBe(true)
+    expect(patched.mode).toBe('list')
+  })
+
+  it('a views[] patch lands on the active view only', () => {
+    const block = flatSaved()
+    const board = block.views![0]
+
+    const cleared = applyConfigPatch(block, { listFlat: undefined })
+    expect(cleared.views?.[1]?.config).not.toHaveProperty('listFlat')
+    expect(cleared.views?.[1]?.config?.groupBy).toBe('p-due')
+    expect(cleared.views?.[1]?.config?.startDate).toBe('p-start')
+    expect(cleared.views?.[0]).toBe(board)
+    expect(cleared.mode).toBe(block.mode)
+    expect(cleared.activeViewId).toBe('v-timeline')
+    expect(cleared).not.toHaveProperty('listFlat')
+
+    const ungrouped = applyConfigPatch(block, { groupBy: undefined })
+    expect(ungrouped.views?.[1]?.config).not.toHaveProperty('groupBy')
+    expect(ungrouped.views?.[1]?.config?.listFlat).toBe(true)
+    expect(ungrouped.views?.[1]?.config?.startDate).toBe('p-start')
+    expect(ungrouped.views?.[0]).toBe(board)
+    expect(ungrouped.groupBy).toBe(block.groupBy)
+  })
+
+  it('a mode write still sets mode while an undefined listFlat in the same patch is removed', () => {
+    const cleared = applyConfigPatch(flatLegacy, { mode: 'board', listFlat: undefined })
+    expect(cleared.mode).toBe('board')
+    expect(cleared).not.toHaveProperty('listFlat')
+    expect(cleared.groupBy).toBe('p-due')
+
+    const block = flatSaved()
+    const board = block.views![0]
+    const switched = applyConfigPatch(block, { mode: 'list', listFlat: undefined })
+    expect(switched.views?.[1]?.kind).toBe('list')
+    expect(switched.views?.[1]?.config).not.toHaveProperty('listFlat')
+    expect(switched.views?.[1]?.config?.groupBy).toBe('p-due')
+    expect(switched.views?.[0]).toBe(board)
+    expect(switched.mode).toBe(block.mode)
   })
 })

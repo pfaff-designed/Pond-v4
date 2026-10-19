@@ -18,8 +18,9 @@ import { BOARD_EMPTY_LINE, CALENDAR_EMPTY_LINE, LAYOUT_MENU_MODES, VIEW_KINDS } 
 import { ActiveViewSelectionContext } from './active-view-context'
 import type { Block } from '@/lib/documents/types'
 import type { ViewBlock } from './schema'
-import type { PropertySchema } from '@/lib/properties/schema'
+import type { PropertySchema, PropertyValue } from '@/lib/properties/schema'
 import { addDays, type CollectionRow } from './apply'
+import { DUE_BUCKETS } from './due-buckets'
 import { localDateIso } from './due'
 import { rememberStruckRow } from '@/lib/change-log/undo-strike'
 import { clearUndoNotice, requestUndoNotice } from '@/lib/terminal-focus'
@@ -32,6 +33,10 @@ const dateless: PropertySchema = [{ id: 'p-title', name: 'Title', type: 'text' }
 // never see it change their own `rows: []`/`dateless` default.
 let initialRows: CollectionRow[] = []
 let initialSchema: PropertySchema = dateless
+// The path describe points `setValue` at this. The file `beforeEach` resets both
+// to a no-op: `mockImplementation` survives `mockClear`, so a later test must
+// not inherit a row patch.
+let applyRowValue: (rowId: string, key: string, value: PropertyValue) => void = () => {}
 
 const updateSchema = jest.fn()
 const renameRow = jest.fn()
@@ -58,6 +63,13 @@ jest.mock('./use-collection-rows', () => ({
     renameRow.mockImplementation((rowId: string, title: string) => {
       setRows((prev) => prev.map((row) => (row.id === rowId ? { ...row, title } : row)))
     })
+    applyRowValue = (rowId: string, key: string, value: PropertyValue) => {
+      setRows((prev) =>
+        prev.map((row) =>
+          row.id === rowId ? { ...row, values: { ...row.values, [key]: value } } : row
+        )
+      )
+    }
     return {
       schema,
       rows,
@@ -100,25 +112,31 @@ function renderView(
 function StatefulView({
   initial,
   onChange,
+  editable = true,
 }: {
   initial: ViewBlock
   onChange: (next: ViewBlock) => void
+  editable?: boolean
 }) {
   const [data, setData] = useState(initial)
   const handleChange = (next: ViewBlock) => {
     onChange(next)
     setData(next)
   }
-  return <ViewView data={data} editable onChange={handleChange} />
+  return <ViewView data={data} editable={editable} onChange={handleChange} />
 }
 
-function renderStatefulView(initial: ViewBlock, onChange: (next: ViewBlock) => void) {
+function renderStatefulView(
+  initial: ViewBlock,
+  onChange: (next: ViewBlock) => void,
+  editable = true
+) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
       <DeletionUndoProvider>
         <SiblingBlocksProvider value={{ blocks: [], pageId: 'page-1' }}>
-          <StatefulView initial={initial} onChange={onChange} />
+          <StatefulView initial={initial} onChange={onChange} editable={editable} />
         </SiblingBlocksProvider>
       </DeletionUndoProvider>
     </QueryClientProvider>
@@ -131,6 +149,8 @@ beforeEach(() => {
   updateRows.mockClear()
   addRow.mockClear()
   setValue.mockClear()
+  setValue.mockImplementation(() => {})
+  applyRowValue = () => {}
   initialRows = []
   initialSchema = dateless
 })
@@ -2045,5 +2065,332 @@ describe('ViewView — the path test: a premade-shaped tasks block, end to end (
     expect(screen.getByRole('tab', { name: 'board' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'timeline' })).toBeInTheDocument()
     expect(screen.queryByText('＋ view')).not.toBeInTheDocument()
+  })
+})
+
+const FACT_CLASS = 'text-[10.5px] font-medium text-mn-text-meta'
+
+describe('ViewView — the list head groups from its fact (KAN-521)', () => {
+  const datedSchema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    { id: 'p-due', name: 'Due', type: 'date' },
+    {
+      id: 'p-status',
+      name: 'Status',
+      type: 'status',
+      options: [{ id: 'opt-todo', label: 'Todo' }],
+    },
+  ]
+
+  const listBlock: ViewBlock = { id: 'v-list', type: 'view', mode: 'list' }
+  const boardBlock: ViewBlock = { id: 'v-board', type: 'view', mode: 'board' }
+
+  beforeEach(() => {
+    initialSchema = datedSchema
+    initialRows = [
+      {
+        id: 'r-standup',
+        title: 'Standup',
+        values: { 'p-status': 'opt-todo', 'p-due': '2026-06-01' },
+      },
+    ]
+  })
+
+  it('an editable list opens status and none from grouped by due, and choosing status writes that patch', async () => {
+    const user = userEvent.setup()
+    const onChange = jest.fn()
+    const { container } = renderStatefulView(listBlock, onChange)
+
+    const head = container.querySelector('[data-part="view-head"]')
+    expect(head).toHaveTextContent(/grouped by due/)
+
+    const fact = screen.getByRole('button', { name: 'grouped by due' })
+    expect(fact).toHaveAttribute('data-part', 'db-facts')
+    expect(fact.className).toContain(FACT_CLASS)
+
+    await user.click(fact)
+    const menu = await screen.findByRole('menu', { name: 'group' })
+    expect(
+      within(menu)
+        .getAllByRole('menuitem')
+        .map((item) => item.textContent)
+    ).toEqual(['Status', 'none'])
+
+    await user.click(within(menu).getByRole('menuitem', { name: 'Status' }))
+
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(onChange.mock.calls[0][0]).toEqual({ ...listBlock, groupBy: 'p-status' })
+    expect(head).toHaveTextContent(/grouped by status/)
+    expect(head).not.toHaveTextContent(/grouped by due/)
+    expect(screen.getByRole('button', { name: 'grouped by status' })).toBeInTheDocument()
+  })
+
+  it('Enter and Space on the grouped-by fact open the group menu', async () => {
+    const user = userEvent.setup()
+    renderStatefulView(listBlock, jest.fn())
+    const fact = screen.getByRole('button', { name: 'grouped by due' })
+    fact.focus()
+    fireEvent.keyDown(fact, { key: 'Enter' })
+    expect(screen.getByRole('menu', { name: 'group' })).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    await waitFor(() =>
+      expect(screen.queryByRole('menu', { name: 'group' })).not.toBeInTheDocument()
+    )
+    fireEvent.keyDown(fact, { key: ' ' })
+    expect(screen.getByRole('menu', { name: 'group' })).toBeInTheDocument()
+  })
+
+  it('a reader sees the fact and no button', () => {
+    const { container } = renderStatefulView(listBlock, jest.fn(), false)
+    const fact = container.querySelector('[data-part="db-facts"]')
+    expect(fact).toHaveTextContent('grouped by due')
+    expect(fact?.tagName).toBe('SPAN')
+    expect(fact?.className).toContain(FACT_CLASS)
+    expect(fact?.closest('button')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'grouped by due' })).not.toBeInTheDocument()
+  })
+
+  it('a board head is not a button', () => {
+    const { container } = renderStatefulView(boardBlock, jest.fn())
+    const fact = container.querySelector('[data-part="db-facts"]')
+    expect(fact).toHaveTextContent('grouped by status')
+    expect(fact?.tagName).toBe('SPAN')
+    expect(fact?.closest('button')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'grouped by status' })).not.toBeInTheDocument()
+  })
+})
+
+describe('ViewView — listFlat stays on the list (KAN-521)', () => {
+  const schema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    { id: 'p-due', name: 'Due', type: 'date' },
+    {
+      id: 'p-status',
+      name: 'Status',
+      type: 'status',
+      options: [{ id: 'opt-todo', label: 'Todo' }],
+    },
+  ]
+  const due = localDateIso(new Date())
+
+  beforeEach(() => {
+    initialSchema = schema
+    initialRows = [{ id: 'r1', title: 'Standup', values: { 'p-status': 'opt-todo', 'p-due': due } }]
+  })
+
+  it('passes listFlat into the list, so a dated list draws one run', () => {
+    const { container } = renderStatefulView(
+      { id: 'v-list', type: 'view', mode: 'list', listFlat: true },
+      jest.fn()
+    )
+    expect(screen.getByText('Standup')).toBeInTheDocument()
+    expect(container.querySelector('[data-part="list-group"]')).toBeNull()
+    expect(container.querySelector('[data-part="list-group-label"]')).toBeNull()
+  })
+
+  it('a board with listFlat still draws its lanes and grouped by status', () => {
+    const { container } = renderStatefulView(
+      { id: 'v-board', type: 'view', mode: 'board', listFlat: true },
+      jest.fn()
+    )
+    const head = container.querySelector('[data-part="view-head"]')
+    expect(head).toHaveTextContent(/grouped by status/)
+    const todo = container.querySelector<HTMLElement>('[data-part="lane"][data-lane="Todo"]')
+    expect(container.querySelector('[data-part="lanes"]')).not.toBeNull()
+    expect(todo).not.toBeNull()
+    expect(within(todo!).getByRole('article', { name: 'Standup' })).toBeInTheDocument()
+  })
+
+  it('a calendar with listFlat still places the row on its date', () => {
+    const { container } = renderStatefulView(
+      { id: 'v-cal', type: 'view', mode: 'calendar', listFlat: true },
+      jest.fn()
+    )
+    const cell = container.querySelector<HTMLElement>(
+      `[data-part="calendar-day-cell"][data-iso="${due}"]`
+    )
+    expect(cell).not.toBeNull()
+    expect(within(cell!).getByText('Standup')).toBeInTheDocument()
+  })
+})
+
+describe('ViewView — group a list from the head (KAN-521)', () => {
+  const schema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    { id: 'p-due', name: 'Due', type: 'date' },
+    {
+      id: 'p-status',
+      name: 'status',
+      type: 'status',
+      options: [
+        { id: 'opt-todo', label: 'Todo' },
+        { id: 'opt-doing', label: 'Doing' },
+      ],
+    },
+  ]
+  const listBlock: ViewBlock = { id: 'v-list', type: 'view', mode: 'list' }
+
+  const headings = (container: HTMLElement): string[] =>
+    [...container.querySelectorAll<HTMLElement>('[data-part="list-group"]')].map((group) => {
+      const heading = group.querySelector('[data-part="list-group-label"]')
+      const label = heading?.querySelector('span')
+      return (label ?? heading)?.textContent ?? ''
+    })
+
+  const counts = (container: HTMLElement): string[] =>
+    [...container.querySelectorAll<HTMLElement>('[data-part="list-group"]')].map(
+      (group) => group.querySelector('[data-part="list-group-count"]')?.textContent ?? ''
+    )
+
+  const dueLabelsPresent = (container: HTMLElement): boolean =>
+    DUE_BUCKETS.some((id) => container.querySelector(`[data-group="${id}"]`) !== null)
+
+  const rowTitles = (container: HTMLElement): string[] =>
+    [...container.querySelectorAll<HTMLElement>('[data-part="list-row"]')].map(
+      (row) => row.querySelector('button:not([role="checkbox"])')?.textContent ?? ''
+    )
+
+  beforeEach(() => {
+    initialSchema = schema
+    initialRows = [
+      {
+        id: 'r-todo',
+        title: 'Standup',
+        values: { 'p-status': 'opt-todo', 'p-due': '2020-01-01' },
+      },
+      { id: 'r-empty', title: 'Loose', values: { 'p-due': '2020-01-01' } },
+    ]
+    setValue.mockImplementation((rowId: string, key: string, value: PropertyValue) => {
+      applyRowValue(rowId, key, value)
+    })
+  })
+
+  it('groups by the status field, flattens, then moves an empty row when its status changes', async () => {
+    const user = userEvent.setup()
+    const { container } = renderStatefulView(listBlock, jest.fn())
+
+    const head = container.querySelector('[data-part="view-head"]')
+    expect(head).toHaveTextContent(/grouped by due/)
+    expect(dueLabelsPresent(container)).toBe(true)
+
+    await user.click(screen.getByRole('button', { name: 'grouped by due' }))
+    const statusMenu = await screen.findByRole('menu', { name: 'group' })
+    await user.click(within(statusMenu).getByRole('menuitem', { name: 'status' }))
+    await waitFor(() =>
+      expect(screen.queryByRole('menu', { name: 'group' })).not.toBeInTheDocument()
+    )
+
+    expect(headings(container)).toEqual(['Todo', 'Doing', 'No status'])
+    expect(counts(container)).toEqual(['1', '0', '1'])
+    const noStatus = container.querySelector<HTMLElement>('[data-group="No status"]')
+    expect(noStatus).not.toBeNull()
+    expect(within(noStatus!).getByText('Loose')).toBeInTheDocument()
+    expect(dueLabelsPresent(container)).toBe(false)
+
+    await user.click(screen.getByRole('button', { name: 'grouped by status' }))
+    const noneMenu = await screen.findByRole('menu', { name: 'group' })
+    await user.click(within(noneMenu).getByRole('menuitem', { name: 'none' }))
+    await waitFor(() =>
+      expect(screen.queryByRole('menu', { name: 'group' })).not.toBeInTheDocument()
+    )
+
+    expect(container.querySelector('[data-part="list-group"]')).toBeNull()
+    expect(container.querySelector('[data-part="list-group-label"]')).toBeNull()
+    expect(rowTitles(container)).toEqual(['Standup', 'Loose'])
+    expect(container.querySelectorAll('[data-part="list-card"] ul')).toHaveLength(1)
+    expect(dueLabelsPresent(container)).toBe(false)
+
+    await user.click(screen.getByRole('button', { name: 'grouped by none' }))
+    const againMenu = await screen.findByRole('menu', { name: 'group' })
+    await user.click(within(againMenu).getByRole('menuitem', { name: 'status' }))
+    await waitFor(() =>
+      expect(screen.queryByRole('menu', { name: 'group' })).not.toBeInTheDocument()
+    )
+    expect(headings(container)).toEqual(['Todo', 'Doing', 'No status'])
+
+    await user.click(screen.getByRole('button', { name: 'Loose' }))
+    const peek = screen.getByRole('complementary', { name: 'Record: Loose' })
+    await user.click(within(peek).getByRole('button', { name: 'status value' }))
+    const options = await screen.findByRole('listbox', { name: 'options' })
+    await user.click(within(options).getByRole('option', { name: 'Doing' }))
+
+    await waitFor(() => {
+      expect(counts(container)).toEqual(['1', '1', '0'])
+    })
+    const doing = container.querySelector<HTMLElement>('[data-group="Doing"]')
+    const emptied = container.querySelector<HTMLElement>('[data-group="No status"]')
+    expect(doing).not.toBeNull()
+    expect(emptied).not.toBeNull()
+    expect(within(doing!).getByText('Loose')).toBeInTheDocument()
+    expect(within(emptied!).queryByText('Loose')).not.toBeInTheDocument()
+    expect(
+      within(container.querySelector('[data-group="Todo"]')!).getByText('Standup')
+    ).toBeInTheDocument()
+  })
+})
+
+describe('ViewView — a group choice is one structural commit (KAN-521)', () => {
+  const datedSchema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    { id: 'p-due', name: 'Due', type: 'date' },
+    {
+      id: 'p-status',
+      name: 'Status',
+      type: 'status',
+      options: [{ id: 'opt-todo', label: 'Todo' }],
+    },
+  ]
+  const listBlock: ViewBlock = { id: 'v-list', type: 'view', mode: 'list' }
+
+  beforeEach(() => {
+    initialSchema = datedSchema
+    initialRows = [
+      {
+        id: 'r-standup',
+        title: 'Standup',
+        values: { 'p-status': 'opt-todo', 'p-due': '2026-06-01' },
+      },
+    ]
+  })
+
+  it('calls commitStep for a group choice and calls neither when the current field is chosen again', async () => {
+    const user = userEvent.setup()
+    const commitStep = jest.fn()
+    const onChange = jest.fn()
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const tree = (block: ViewBlock) => (
+      <QueryClientProvider client={client}>
+        <DeletionUndoProvider>
+          <SiblingBlocksProvider value={{ blocks: [], pageId: 'page-1' }}>
+            <BlockRowProvider
+              value={{
+                selected: false,
+                stepOut: () => {},
+                commitStep,
+              }}
+            >
+              <ViewView data={block} editable onChange={onChange} />
+            </BlockRowProvider>
+          </SiblingBlocksProvider>
+        </DeletionUndoProvider>
+      </QueryClientProvider>
+    )
+
+    const { rerender } = render(tree(listBlock))
+
+    await user.click(screen.getByRole('button', { name: 'grouped by due' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Status' }))
+
+    expect(commitStep).toHaveBeenCalledTimes(1)
+    expect(onChange).not.toHaveBeenCalled()
+    expect(commitStep.mock.calls[0][0]).toEqual({ ...listBlock, groupBy: 'p-status' })
+
+    rerender(tree({ ...listBlock, groupBy: 'p-status' }))
+
+    await user.click(screen.getByRole('button', { name: 'grouped by status' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Status' }))
+
+    expect(commitStep).toHaveBeenCalledTimes(1)
+    expect(onChange).not.toHaveBeenCalled()
   })
 })
