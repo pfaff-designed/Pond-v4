@@ -1475,21 +1475,35 @@ export const ListNeedsADate: Story = {
   },
 }
 
+const statusGroupRows: CollectionRow[] = [
+  { id: 'cabinet', title: 'cabinet quote', values: { 'l-status': 'l-todo' } },
+  { id: 'skip', title: 'skip hire returned', values: { 'l-status': 'l-done' } },
+  { id: 'samples', title: 'order samples', values: {} },
+]
+
 /**
- * A list grouped by status (KAN-524). `listSchema`'s field is already named
- * `status`, so the unset bucket reads `No status`. Each group has a heading
- * and a count. A record with no value for that field sits in the unset group.
+ * A list grouped by status, and the same rows flat when grouping is none
+ * (KAN-524). `listSchema`'s field is already named `status`, so the unset
+ * bucket reads `No status`. Each group has a heading and a count. A record
+ * with no value for that field sits in the unset group. The second view sets
+ * `listFlat` and omits `groupBy`, so those rows draw with no group headings.
  */
 export const ListGroupedByStatusAndFlatWhenNone: Story = {
   args: {
     config: { id: 'v-list-status', type: 'view', mode: 'list', groupBy: 'l-status' },
     schema: listSchema,
-    rows: [
-      { id: 'cabinet', title: 'cabinet quote', values: { 'l-status': 'l-todo' } },
-      { id: 'skip', title: 'skip hire returned', values: { 'l-status': 'l-done' } },
-      { id: 'samples', title: 'order samples', values: {} },
-    ],
+    rows: statusGroupRows,
   },
+  render: (args) => (
+    <>
+      <CollectionView {...args} />
+      <CollectionView
+        config={{ id: 'v-list-flat', type: 'view', mode: 'list', listFlat: true }}
+        schema={args.schema}
+        rows={args.rows}
+      />
+    </>
+  ),
   play: async ({ canvasElement }) => {
     const groups = [...canvasElement.querySelectorAll<HTMLElement>('[data-part="list-group"]')]
     const headingOf = (group: HTMLElement) => {
@@ -1503,7 +1517,20 @@ export const ListGroupedByStatusAndFlatWhenNone: Story = {
     }
     await expect(groups.map(headingOf)).toEqual(['to do', 'done', 'No status'])
     const unset = groups.find((group) => headingOf(group) === 'No status')!
-    await expect(within(unset).getByText('order samples')).toBeInTheDocument()
+    const unsetTitle = within(unset).getByRole('button', { name: 'order samples' })
+    await userEvent.click(unsetTitle)
+    await expect(within(unset).getByRole('button', { name: 'order samples' })).toBeInTheDocument()
+
+    const flat = [...canvasElement.querySelectorAll<HTMLElement>('[data-part="list-card"]')].find(
+      (card) => card.querySelector('[data-part="list-group"]') === null
+    )
+    await expect(flat).toBeTruthy()
+    const flatView = within(flat!)
+    for (const name of ['cabinet quote', 'skip hire returned', 'order samples']) {
+      await expect(flatView.getByRole('button', { name })).toBeInTheDocument()
+    }
+    await expect(flat!.querySelector('[data-part="list-group"]')).toBeNull()
+    await expect(flat!.querySelector('[data-part="list-group-label"]')).toBeNull()
   },
 }
 
