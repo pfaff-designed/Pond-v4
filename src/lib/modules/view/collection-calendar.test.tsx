@@ -5,6 +5,7 @@ import { CollectionCalendar } from './collection-calendar'
 import { CollectionView } from './view'
 import { CALENDAR_EMPTY_LINE } from './kinds'
 import { localDateIso } from './due'
+import { formatAtomDate } from '@/lib/properties/date-input'
 import type { PropertySchema, PropertyValue } from '@/lib/properties/schema'
 import type { CollectionRow } from './apply'
 import type { ViewBlock } from './schema'
@@ -330,6 +331,45 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
       expect(onAddRow).toHaveBeenCalledTimes(2)
       expect(onRenameRow).not.toHaveBeenCalled()
       expect(screen.queryByRole('textbox', { name: /Add an item/ })).not.toBeInTheDocument()
+    })
+
+    it('adding from the plus selects the record, opens the peek, and focuses the title with the date set', async () => {
+      const iso = '2026-09-20'
+      const mint = jest.fn().mockResolvedValue('r-new')
+      function Harness() {
+        const [liveRows, setLiveRows] = useState<CollectionRow[]>([])
+        const onAddRow = async (values?: Record<string, PropertyValue>) => {
+          const id = await mint()
+          setLiveRows((prev) => [...prev, { id: id as string, title: '', values: values ?? {} }])
+          return id as string
+        }
+        return (
+          <CollectionCalendar
+            schema={schemaWithDate}
+            rows={liveRows}
+            editable
+            onAddRow={onAddRow}
+            onRenameRow={jest.fn()}
+          />
+        )
+      }
+      const { container } = render(<Harness />)
+      // The month is already pinned to the faked today. Real timers let the
+      // add's state update flush; modern fake timers hold React's scheduler.
+      jest.useRealTimers()
+      const user = userEvent.setup()
+
+      await user.click(within(cellFor(container, iso)).getByRole('button', { name: 'Add on 20 sep' }))
+      await act(async () => {
+        for (let i = 0; i < 5; i++) await Promise.resolve()
+      })
+
+      const item = cellFor(container, iso).querySelector<HTMLElement>('[data-row-id="r-new"]')
+      expect(item).toHaveClass('ring-[1.5px]', 'ring-inset', 'ring-mn-text')
+      expect(screen.getByLabelText('Record: Untitled')).toBeInTheDocument()
+      expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Record title' }))
+      expect(screen.getByRole('button', { name: 'Due value' })).toHaveTextContent(formatAtomDate(iso))
+      expect(mint).toHaveBeenCalledTimes(1)
     })
 
     it('clicking an existing day-item row never opens the input (stopPropagation on MonthDayStack)', async () => {

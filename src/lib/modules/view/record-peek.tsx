@@ -71,6 +71,7 @@ export function RecordPeek({
   now,
   editable,
   focusOnOpen,
+  focusTitle,
   onEdit,
   onRenameRow,
   onOpenRow,
@@ -85,6 +86,9 @@ export function RecordPeek({
   editable?: boolean
   /** Move focus into the peek on mount — set when the card was opened from the keyboard. */
   focusOnOpen?: boolean
+  /** Move focus to the title. Only for a record this add just created — a keyboard
+   *  select of an existing row keeps focus on that row (KAN-358). */
+  focusTitle?: boolean
   onEdit?: (rowId: string, key: string, value: PropertyValue) => void
   onRenameRow?: (rowId: string, title: string) => void
   /** Present when the host can navigate; absent hides `open ›`. */
@@ -93,8 +97,12 @@ export function RecordPeek({
   const title = row.title || 'Untitled'
   const peekRef = useRef<HTMLElement>(null)
   useEffect(() => {
+    if (focusTitle) {
+      peekRef.current?.querySelector<HTMLInputElement>('input[aria-label="Record title"]')?.focus()
+      return
+    }
     if (focusOnOpen) peekRef.current?.focus()
-  }, [focusOnOpen])
+  }, [focusOnOpen, focusTitle])
   const canvas = usePageCanvas()
   // Read once per mount / row change, not on every render: a later scroll moves this
   // element along with the rest of the canvas's content natively, so re-reading

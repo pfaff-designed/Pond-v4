@@ -470,7 +470,7 @@ export function CollectionCalendar({
       },
     })
 
-  const { selectedRow, rowProps, keyboardProps, selectWithPointer, selectOrOpenOnKey } =
+  const { selectedRow, select, rowProps, keyboardProps, selectWithPointer, selectOrOpenOnKey } =
     useRecordSelection(rows, viewKey ?? 'calendar', { isClickSuppressed })
   const done = useDoneToggle({ schema, editable, onEdit })
 
@@ -478,6 +478,9 @@ export function CollectionCalendar({
   // Guards handleAddDay against a second click while its write is in flight
   // (AUDIT G9), same shape as CollectionGallery's handleAddRecord.
   const addingRef = useRef(false)
+  // The id this click just added. `focusTitle` is that id only — a keyboard
+  // select of an existing stack item must not move focus into the peek (KAN-358).
+  const [focusTitleId, setFocusTitleId] = useState<string | null>(null)
 
   // The date rides in `addRow`'s own values rather than a follow-up `setValue` —
   // one write, same one-change-log-record pause as `CollectionList`'s add
@@ -486,7 +489,10 @@ export function CollectionCalendar({
     if (!dateDef || !onAddRow || addingRef.current) return
     addingRef.current = true
     try {
-      await onAddRow({ [dateDef.id]: iso })
+      const id = await onAddRow({ [dateDef.id]: iso })
+      if (!id) return
+      setFocusTitleId(id)
+      select({ id, via: 'keyboard' })
     } catch (err) {
       console.error('Failed to add a day', err)
     } finally {
@@ -630,6 +636,7 @@ export function CollectionCalendar({
           onToggleDone={done.toggle && (() => done.toggle?.(selectedRow))}
           now={now}
           editable={editable}
+          focusTitle={selectedRow.id === focusTitleId}
           onEdit={onEdit}
           onRenameRow={onRenameRow}
           onOpenRow={onOpenRow}
