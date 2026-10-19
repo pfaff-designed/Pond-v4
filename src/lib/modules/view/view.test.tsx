@@ -1253,6 +1253,92 @@ describe('ViewView — choosing Board when the schema has no status or select fi
   })
 })
 
+describe('ViewView — switching a non-first saved view to Board (KAN-523)', () => {
+  const datedSchema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    {
+      id: 'p-status',
+      name: 'Status',
+      type: 'status',
+      options: [{ id: 'opt-todo', label: 'Todo' }],
+    },
+    { id: 'p-due', name: 'Due', type: 'date' },
+  ]
+
+  const rowsView = {
+    id: 'view-rows',
+    label: 'rows',
+    kind: 'table' as const,
+  }
+  const queueView = {
+    id: 'view-queue',
+    label: 'queue',
+    kind: 'list' as const,
+  }
+
+  const savedViews: ViewBlock = {
+    id: 'v-standup',
+    type: 'view',
+    mode: 'table',
+    views: [rowsView, queueView],
+    activeViewId: 'view-rows',
+  }
+
+  beforeEach(() => {
+    initialSchema = datedSchema
+    initialRows = [
+      {
+        id: 'r-standup',
+        title: 'Standup',
+        values: { 'p-status': 'opt-todo', 'p-due': '2026-06-01' },
+      },
+    ]
+  })
+
+  it('writes kind board on the open saved view only, and a remount still shows that view as a board', async () => {
+    const user = userEvent.setup()
+    const onChange = jest.fn()
+    const { unmount } = renderStatefulView(savedViews, onChange)
+
+    expect(screen.getByRole('button', { name: 'table' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'rows' })).toHaveAttribute('aria-selected', 'true')
+
+    await user.click(screen.getByRole('tab', { name: 'queue' }))
+
+    expect(onChange).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'list' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'list' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'board' }))
+
+    expect(onChange).toHaveBeenCalledTimes(1)
+    const next = onChange.mock.calls[0][0] as ViewBlock
+    expect(next.views).toHaveLength(2)
+    expect(next.views?.[1]).toEqual({ ...queueView, kind: 'board' })
+    expect(next.views?.[1]?.id).toBe(queueView.id)
+    expect(next.views?.[1]?.label).toBe(queueView.label)
+    expect(next.views?.[0]).toBe(rowsView)
+    expect(next.mode).toBe(savedViews.mode)
+    expect(next.activeViewId).toBe(savedViews.activeViewId)
+
+    unmount()
+    renderView(next)
+
+    expect(next.views?.[0]?.kind).toBe('table')
+    expect(screen.getByRole('button', { name: 'table' })).toBeInTheDocument()
+    expect(screen.getByRole('table')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'rows' })).toHaveAttribute('aria-selected', 'true')
+
+    await user.click(screen.getByRole('tab', { name: 'queue' }))
+
+    expect(screen.getByRole('button', { name: 'board' })).toBeInTheDocument()
+    const card = screen.getByRole('article', { name: 'Standup' })
+    expect(card).toHaveAttribute('data-part', 'card')
+    expect(within(card).getByDisplayValue('Standup')).toBeInTheDocument()
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+  })
+})
+
 describe('ViewView — a layout write that changes the kind is one structural commit (KAN-519)', () => {
   const statusSchema: PropertySchema = [
     { id: 'p-title', name: 'Title', type: 'text' },
