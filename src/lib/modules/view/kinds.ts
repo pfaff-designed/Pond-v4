@@ -133,5 +133,5 @@ export function viewKind(block: { mode: ViewMode }): ViewKind {
   return VIEW_KINDS[block.mode] ?? VIEW_KINDS.table
 }
 
-/** What a view may rewrite of its own config: anything but which block it is, or its kind. */
-export type ViewConfigPatch = Partial<Omit<ViewBlock, 'id' | 'type' | 'mode'>>
+/** What a view may rewrite of its own config: anything but which block it is. `mode` writes the kind (KAN-519). */
+export type ViewConfigPatch = Partial<Omit<ViewBlock, 'id' | 'type'>>

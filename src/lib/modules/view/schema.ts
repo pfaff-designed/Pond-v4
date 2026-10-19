@@ -180,8 +180,9 @@ export const viewSavedViewConfigSchema = z.object({
 export type ViewSavedViewConfig = z.infer<typeof viewSavedViewConfigSchema>
 
 /**
- * One saved view in a block's `views[]` (KAN-32): a fixed `kind` (never flips)
- * plus its own config.
+ * One saved view in a block's `views[]` (KAN-32): its `kind` plus its own config.
+ * KAN-519 may write `kind` in place through `applyConfigPatch` (same id; `label`
+ * stays). `configure_view` still does not flip one saved view onto another kind.
  */
 export const viewSavedViewSchema = z.object({
   id: z.string(),
@@ -294,24 +295,54 @@ export const activeSavedView = (block: ViewBlock, selectedId?: string): ViewBloc
  * is what replaces the retired "flipping mode back and forth never loses a
  * setup" tolerance: each view now keeps its own config permanently, instead of
  * the block hoarding every mode's leftover fields.
+ *
+ * An optional `mode` (KAN-519) writes the kind in place: top-level `mode` on a
+ * legacy block (`views` stays absent), or `kind` on the active saved view (local
+ * `activeId`, else `activeViewId`, else `views[0]` — same id, `label` and sibling
+ * views stay, top-level `mode` stays). Other fields in that patch still follow the
+ * write above. The same mode, with no other fields, returns the same block. A
+ * patch with no `mode` is the write above.
  */
 export const applyConfigPatch = (
   block: ViewBlock,
-  patch: Partial<ViewSavedViewConfig>,
+  patch: Partial<ViewSavedViewConfig> & { mode?: ViewMode },
   /** The view actually showing (KAN-32 fix): the LOCAL selection a person's bar
    *  click lands on, which can diverge from the persisted `activeViewId` — a
    *  caller with no local selection (or a legacy block) omits it. */
   activeId?: string
 ): ViewBlock => {
-  if (!block.views || block.views.length === 0) {
-    return { ...block, ...patch }
+  if (patch.mode === undefined) {
+    if (!block.views || block.views.length === 0) {
+      return { ...block, ...patch }
+    }
+    const target = activeId ?? block.activeViewId ?? block.views[0].id
+    return {
+      ...block,
+      views: block.views.map((view) =>
+        view.id === target ? { ...view, config: { ...view.config, ...patch } } : view
+      ),
+    }
   }
+
+  const { mode, ...config } = patch
+  const writesConfig = Object.keys(config).length > 0
+
+  if (!block.views || block.views.length === 0) {
+    if (mode === block.mode && !writesConfig) return block
+    return { ...block, ...config, mode }
+  }
+
   const target = activeId ?? block.activeViewId ?? block.views[0].id
+  const active = block.views.find((view) => view.id === target)
+  if (active && mode === active.kind && !writesConfig) return block
+
   return {
     ...block,
-    views: block.views.map((view) =>
-      view.id === target ? { ...view, config: { ...view.config, ...patch } } : view
-    ),
+    views: block.views.map((view) => {
+      if (view.id !== target) return view
+      if (!writesConfig) return { ...view, kind: mode }
+      return { ...view, kind: mode, config: { ...view.config, ...config } }
+    }),
   }
 }
 
