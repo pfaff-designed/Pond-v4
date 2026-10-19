@@ -292,6 +292,8 @@ export const ViewHeadSwitchesNoKind: Story = {
 /**
  * The layout chip is named with the current layout, and the body behind it is
  * that layout (KAN-524). Gallery is one of list, timeline, gallery, and chart.
+ * Opening the chip lists those four by their kind labels. The gallery stays
+ * the body while the menu is open.
  */
 export const LayoutChipOffersListTimelineGalleryAndChart: Story = {
   args: {
@@ -306,6 +308,17 @@ export const LayoutChipOffersListTimelineGalleryAndChart: Story = {
     await expect(canvas.getByRole('button', { name: 'gallery' })).toBeInTheDocument()
     const gallery = canvasElement.querySelector('[data-part="gallery"]')
     await expect(gallery).toHaveTextContent('Trim the rim')
+
+    await userEvent.click(canvas.getByRole('button', { name: 'gallery' }))
+    const menu = await within(document.body).findByRole('menu', { name: 'layout' })
+    const items = within(menu)
+    await expect(items.getByRole('menuitem', { name: 'list' })).toBeInTheDocument()
+    await expect(items.getByRole('menuitem', { name: 'timeline' })).toBeInTheDocument()
+    await expect(items.getByRole('menuitem', { name: 'gallery' })).toBeInTheDocument()
+    await expect(items.getByRole('menuitem', { name: 'chart' })).toBeInTheDocument()
+    await expect(canvasElement.querySelector('[data-part="gallery"]')).toHaveTextContent(
+      'Trim the rim'
+    )
   },
 }
 
