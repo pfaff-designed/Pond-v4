@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { CollectionList, LIST_EMPTY_LINE } from './list'
+import { DUE_BUCKETS } from './due-buckets'
 import { CALENDAR_EMPTY_LINE } from './kinds'
 import type { CollectionRow } from './apply'
 import type { PropertySchema } from '@/lib/properties/schema'
@@ -320,5 +321,121 @@ describe('CollectionList — group by status (KAN-521)', () => {
     expect(screen.getByText('milk')).toBeInTheDocument()
     expect(screen.getByText('Now')).toBeInTheDocument()
     expect(screen.queryByText(CALENDAR_EMPTY_LINE)).not.toBeInTheDocument()
+  })
+})
+
+const rowTitles = (container: HTMLElement): string[] =>
+  [...container.querySelectorAll<HTMLElement>('[data-part="list-row"]')].map(
+    (row) => row.querySelector('button:not([role="checkbox"])')?.textContent ?? ''
+  )
+
+/** Rows a date field would split across due buckets, including `done` and `no date`. */
+const flatSchema: PropertySchema = [
+  {
+    id: 'p-status',
+    name: 'status',
+    type: 'status',
+    options: [
+      { id: 'opt-now', label: 'Now' },
+      { id: 'opt-done', label: 'Done' },
+    ],
+  },
+  { id: 'p-title', name: 'Title', type: 'text' },
+  { id: 'p-due', name: 'Due', type: 'date' },
+  { id: 'p-repeat', name: 'repeats', type: 'text' },
+]
+
+const flatRows: CollectionRow[] = [
+  { id: 'r-next', title: 'later task', values: { 'p-due': '2026-10-28', 'p-status': 'opt-now' } },
+  {
+    id: 'r-today',
+    title: 'milk',
+    values: { 'p-due': '2026-10-19', 'p-status': 'opt-now', 'p-repeat': 'every mon' },
+  },
+  { id: 'r-open', title: 'loose end', values: { 'p-status': 'opt-now' } },
+  { id: 'r-done', title: 'filed', values: { 'p-due': '2026-10-19', 'p-status': 'opt-done' } },
+  { id: 'r-week', title: 'paint the door', values: { 'p-due': '2026-10-21', 'p-status': 'opt-now' } },
+]
+
+describe('CollectionList — a flat list (KAN-521)', () => {
+  it('listFlat draws one flat run and skips due buckets a date field would have drawn', () => {
+    const { container } = render(
+      <CollectionList
+        viewKey="v1"
+        schema={flatSchema}
+        rows={flatRows}
+        listFlat
+        today={LIST_TODAY}
+      />
+    )
+
+    expect(rowTitles(container)).toEqual([
+      'later task',
+      'milk',
+      'loose end',
+      'filed',
+      'paint the door',
+    ])
+    expect(container.querySelector('[data-part="list-group"]')).toBeNull()
+    expect(container.querySelector('[data-part="list-group-label"]')).toBeNull()
+    expect(container.querySelectorAll('[data-part="list-card"] ul')).toHaveLength(1)
+    for (const id of DUE_BUCKETS) {
+      expect(container.querySelector(`[data-group="${id}"]`)).toBeNull()
+    }
+    expect(screen.getByRole('checkbox', { name: 'milk done' })).toBeInTheDocument()
+    expect(screen.getByText('every mon')).toBeInTheDocument()
+    expect(screen.getByText('wed 21')).toBeInTheDocument()
+  })
+
+  it('listFlat false still draws the due buckets', () => {
+    const { container } = render(
+      <CollectionList
+        viewKey="v1"
+        schema={flatSchema}
+        rows={flatRows}
+        listFlat={false}
+        today={LIST_TODAY}
+      />
+    )
+    expect(container.querySelector('[data-group="today"]')).not.toBeNull()
+    expect(container.querySelector('[data-group="done"]')).not.toBeNull()
+    expect(container.querySelector('[data-group="no date"]')).not.toBeNull()
+  })
+
+  it('listFlat with no date field draws the rows, not the add-a-date line', () => {
+    const schema: PropertySchema = [{ id: 'p-title', name: 'Title', type: 'text' }]
+    const { container } = render(
+      <CollectionList
+        viewKey="v1"
+        schema={schema}
+        rows={[{ id: 'r1', title: 'milk', values: {} }]}
+        listFlat
+        today={LIST_TODAY}
+        onAddDateField={() => undefined}
+      />
+    )
+    expect(screen.getByText('milk')).toBeInTheDocument()
+    expect(screen.queryByText(CALENDAR_EMPTY_LINE)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'add a date field' })).not.toBeInTheDocument()
+    expect(container.querySelector('[data-part="list-group"]')).toBeNull()
+    expect(container.querySelector('[data-part="list-group-label"]')).toBeNull()
+  })
+
+  it('a select or status groupBy still groups when listFlat is also set', () => {
+    const { container } = render(
+      <CollectionList
+        viewKey="v1"
+        schema={statusSchema}
+        rows={statusRows}
+        groupBy="p-status"
+        listFlat
+        today={LIST_TODAY}
+      />
+    )
+    expect(headingLabels(container)).toEqual(['Later', 'Now', 'No status'])
+    expect(screen.getByText('paint the door')).toBeInTheDocument()
+    expect(screen.getByText('loose end')).toBeInTheDocument()
+    expect(container.querySelector('[data-group="this week"]')).toBeNull()
+    expect(container.querySelector('[data-group="no date"]')).toBeNull()
   })
 })

@@ -3,9 +3,13 @@
 /**
  * List view (`Pond 06.21` 6v): the collection's records as a checklist. One card —
  * radius 20, padding 16/18, the 2u card shadow, gap 20 between groups — with a group
- * label over each run of rows. A select or status `groupBy` draws `groupRows` (one
- * heading per option in schema order, then `No ${field name}`, empty options included).
- * A date `groupBy`, or none, still draws `groupRowsByDue`. Same rows as every other view.
+ * label over each run of rows. A select or status `groupBy` draws `groupRows` even
+ * when `listFlat` is also set (one heading per option in schema order, then
+ * `No ${field name}`, empty options included), so the head and the body cannot
+ * disagree. `listFlat === true` with no select or status `groupBy` draws one flat
+ * run of those same rows: no headings and no due buckets, including when a date
+ * field would have bucketed them and when the schema has no date. Otherwise a date
+ * `groupBy`, or none, still draws `groupRowsByDue`. Same rows as every other view.
  *
  * A row's title is its tab stop: click, Enter or Space selects the record and opens
  * its peek (6u.2), exactly as a board card does. The checkbox is the person's own
@@ -15,7 +19,8 @@
  * `PondBlockEmpty`'s emptyBox with the `add a date field` remedy, but only when
  * `onAddDateField` is wired — a read-only render keeps the bare line instead, no
  * button to offer. True whether or not the collection already holds records
- * (unlike `LIST_EMPTY_LINE`, which means zero rows).
+ * (unlike `LIST_EMPTY_LINE`, which means zero rows). `listFlat === true` does not
+ * take that path: the rows draw flat, or the list's own empty line when there are none.
  */
 
 import { useMemo, useState } from 'react'
@@ -36,12 +41,14 @@ import { ROW_FOCUS_VISIBLE_BASE, useRecordSelection } from './use-record-selecti
 
 export const LIST_EMPTY_LINE = 'no records yet'
 
-/** One drawn group. `showCount` is the select/status heading; a due bucket leaves it off. */
+/** One drawn run. `showCount` is the select/status heading; a due bucket leaves it off. */
 type ListSection = {
   key: string
   label: string
   rows: CollectionRow[]
   showCount: boolean
+  /** Absent shows the heading. `false` is the flat run, whose label is unused. */
+  showHeading?: boolean
 }
 
 export function CollectionList({
@@ -49,6 +56,7 @@ export function CollectionList({
   schema,
   rows,
   groupBy,
+  listFlat,
   editable,
   onEdit,
   onAddRow,
@@ -62,6 +70,8 @@ export function CollectionList({
   schema: PropertySchema
   rows: CollectionRow[]
   groupBy?: string
+  /** Only `true` skips due buckets. A select or status `groupBy` still wins. */
+  listFlat?: boolean
   editable?: boolean
   onEdit?: (rowId: string, key: string, value: PropertyValue) => void
   onAddRow?: (values?: Record<string, PropertyValue>) => Promise<string | null>
@@ -85,6 +95,9 @@ export function CollectionList({
         showCount: true,
       }))
     }
+    if (listFlat === true) {
+      return rows.length === 0 ? [] : [{ key: 'flat', label: '', rows, showCount: false, showHeading: false }]
+    }
     const byDue = groupRowsByDue(rows, schema, now, groupBy)
     if (!byDue) return null
     return byDue.buckets.map((bucket) => ({
@@ -93,7 +106,7 @@ export function CollectionList({
       rows: bucket.rows,
       showCount: false,
     }))
-  }, [rows, schema, now, groupBy])
+  }, [rows, schema, now, groupBy, listFlat])
   const { rootRef, selection, selectedRow, rowProps, buttonProps } = useRecordSelection(
     rows,
     viewKey
@@ -148,29 +161,30 @@ export function CollectionList({
         {sections.map((section) => (
           <section
             key={section.key}
-            data-part="list-group"
-            data-group={section.label}
-            aria-label={section.label}
+            data-part={section.showHeading === false ? undefined : 'list-group'}
+            data-group={section.showHeading === false ? undefined : section.label}
+            aria-label={section.showHeading === false ? undefined : section.label}
             className="flex flex-col"
           >
-            {section.showCount ? (
-              <div
-                data-part="list-group-label"
-                aria-hidden
-                className="flex justify-between pb-[4px] text-[10.5px] font-medium tracking-[.1em] text-mn-text-secondary uppercase"
-              >
-                <span>{section.label}</span>
-                <span data-part="list-group-count">{section.rows.length}</span>
-              </div>
-            ) : (
-              <span
-                data-part="list-group-label"
-                aria-hidden
-                className="pb-[4px] text-[10.5px] font-medium tracking-[.1em] text-mn-text-secondary uppercase"
-              >
-                {section.label}
-              </span>
-            )}
+            {section.showHeading !== false &&
+              (section.showCount ? (
+                <div
+                  data-part="list-group-label"
+                  aria-hidden
+                  className="flex justify-between pb-[4px] text-[10.5px] font-medium tracking-[.1em] text-mn-text-secondary uppercase"
+                >
+                  <span>{section.label}</span>
+                  <span data-part="list-group-count">{section.rows.length}</span>
+                </div>
+              ) : (
+                <span
+                  data-part="list-group-label"
+                  aria-hidden
+                  className="pb-[4px] text-[10.5px] font-medium tracking-[.1em] text-mn-text-secondary uppercase"
+                >
+                  {section.label}
+                </span>
+              ))}
             <ul className="m-0 flex list-none flex-col p-0">
               {section.rows.map((row) => {
                 const rowDone = done.isDone(row)
