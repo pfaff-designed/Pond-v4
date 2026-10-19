@@ -504,6 +504,10 @@ export function CollectionCalendar({
   const focusDayOfMonth = Number(focusIso.slice(8, 10))
   const focusLabel = `${DOW_LABELS[weekdayIndex(focusIso)]} ${monthAbbr(focusIso)}${focusIsToday ? ' · today' : ''}`
   const focusItems = dayItems(rows, dateDef, focusIso)
+  const undatedCount = dateDef
+    ? rows.filter((row) => rowDateIso(row, dateDef) === null).length
+    : 0
+  const showUndatedLine = !!dateDef && undatedCount > 0 && undatedCount < rows.length
 
   return (
     <div
@@ -548,6 +552,11 @@ export function CollectionCalendar({
           </button>
         </div>
       </div>
+      {showUndatedLine ? (
+        <span className="px-0.5 text-[13px] font-mono lowercase text-mn-text-secondary">
+          {undatedCount} without a date
+        </span>
+      ) : null}
       {!dateDef ? (
         onAddDateField ? (
           <PondBlockEmpty

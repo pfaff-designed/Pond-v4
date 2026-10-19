@@ -75,6 +75,15 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
     expect(screen.getByText('today')).toBeInTheDocument()
   })
 
+  it('shows how many records lack a date when some records have one', () => {
+    const mixed: CollectionRow[] = [
+      { id: 'r1', title: 'Trim the rim', values: { 'p-due': '2026-09-10' } },
+      { id: 'r2', title: 'Undated', values: {} },
+    ]
+    render(<CollectionCalendar schema={schemaWithDate} rows={mixed} />)
+    expect(screen.getByText('1 without a date')).toBeInTheDocument()
+  })
+
   describe('the desktop month grid', () => {
     beforeEach(() => {
       jest.useFakeTimers().setSystemTime(new Date('2026-09-10T12:00:00Z'))
