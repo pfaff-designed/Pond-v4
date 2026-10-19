@@ -14,7 +14,7 @@ import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { SiblingBlocksProvider } from '@/lib/modules/sibling-context'
 import { BlockRowProvider } from '@/lib/modules/block-row-context'
 import { ViewView } from './view'
-import { LAYOUT_MENU_MODES, VIEW_KINDS } from './kinds'
+import { CALENDAR_EMPTY_LINE, LAYOUT_MENU_MODES, VIEW_KINDS } from './kinds'
 import { ActiveViewSelectionContext } from './active-view-context'
 import type { ViewBlock } from './schema'
 import type { PropertySchema } from '@/lib/properties/schema'
@@ -914,6 +914,52 @@ describe('ViewView — choosing Board on a legacy table (KAN-519)', () => {
     expect(screen.getByDisplayValue('Standup')).toBeInTheDocument()
     const head = container.querySelector('[data-part="view-head"]')
     expect(head).toHaveTextContent(/1 record\s*·\s*grouped by status/)
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+  })
+})
+
+describe('ViewView — choosing Calendar when the schema has no date field (KAN-519)', () => {
+  const statusSchema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    {
+      id: 'p-status',
+      name: 'Status',
+      type: 'status',
+      options: [{ id: 'opt-todo', label: 'Todo' }],
+    },
+  ]
+
+  const legacyTable: ViewBlock = {
+    id: 'v-standup',
+    type: 'view',
+    mode: 'table',
+    filter: { property: 'p-status', op: 'eq', value: 'opt-todo' },
+    sort: { key: 'p-title', dir: 'asc' },
+  }
+
+  beforeEach(() => {
+    initialSchema = statusSchema
+    initialRows = [{ id: 'r-standup', title: 'Standup', values: { 'p-status': 'opt-todo' } }]
+  })
+
+  it('writes mode calendar and shows the date line and add a date field', async () => {
+    const user = userEvent.setup()
+    const onChange = jest.fn()
+    renderStatefulView(legacyTable, onChange)
+
+    await user.click(screen.getByRole('button', { name: 'table' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'calendar' }))
+
+    expect(onChange).toHaveBeenCalledTimes(1)
+    const next = onChange.mock.calls[0][0] as ViewBlock
+    expect(next).toEqual({ ...legacyTable, mode: 'calendar' })
+    expect(next.id).toBe(legacyTable.id)
+    expect(next).not.toHaveProperty('views')
+    expect(next.filter).toEqual(legacyTable.filter)
+    expect(next.sort).toEqual(legacyTable.sort)
+
+    expect(screen.getByText(CALENDAR_EMPTY_LINE)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'add a date field' })).toBeInTheDocument()
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
   })
 })
