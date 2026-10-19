@@ -331,17 +331,22 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
   // active view is whichever one `CollectionView`'s bar has LOCALLY selected, not the
   // persisted `activeViewId` — a person can switch the bar without that being an edit,
   // so `activeId` arrives from `CollectionView` on every call.
-  // A write that changes the resolved kind (KAN-519) is structural. `commitStep` is
-  // the host's flush (BlockCanvas), so the shell undo chord restores that one block.
-  // No host — Storybook, a bare `ViewView` — has nothing to flush, and the same
-  // next block falls back to `onChange` (todo/entries). The same kind is not a commit.
+  // A write that changes the resolved kind (KAN-519) is structural. A list group
+  // choice is the same kind and is structural too (KAN-521): the patch carries
+  // `listFlat` or `groupBy`. `commitStep` is the host's flush (BlockCanvas), so
+  // the shell undo chord restores that one block. No host — Storybook, a bare
+  // `ViewView` — has nothing to flush, and the same next block falls back to
+  // `onChange` (todo/entries). An empty patch (the current group row) writes
+  // nothing, the same early return as `ViewLayoutMenu`.
   const { commitStep } = useBlockRow()
   const commit = (next: ViewBlock) => (commitStep ?? onChange)?.(next)
   const onConfigChange = onChange
     ? (patch: ViewConfigPatch, activeId?: string) => {
+        if (Object.keys(patch).length === 0) return
         const next = applyConfigPatch(data, patch, activeId)
         const kindOf = (block: ViewBlock) => activeSavedView(block, activeId).mode
-        if (kindOf(data) !== kindOf(next)) {
+        const groups = 'listFlat' in patch || 'groupBy' in patch
+        if (groups || kindOf(data) !== kindOf(next)) {
           commit(next)
           return
         }

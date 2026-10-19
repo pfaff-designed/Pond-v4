@@ -2328,3 +2328,69 @@ describe('ViewView — group a list from the head (KAN-521)', () => {
     ).toBeInTheDocument()
   })
 })
+
+describe('ViewView — a group choice is one structural commit (KAN-521)', () => {
+  const datedSchema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    { id: 'p-due', name: 'Due', type: 'date' },
+    {
+      id: 'p-status',
+      name: 'Status',
+      type: 'status',
+      options: [{ id: 'opt-todo', label: 'Todo' }],
+    },
+  ]
+  const listBlock: ViewBlock = { id: 'v-list', type: 'view', mode: 'list' }
+
+  beforeEach(() => {
+    initialSchema = datedSchema
+    initialRows = [
+      {
+        id: 'r-standup',
+        title: 'Standup',
+        values: { 'p-status': 'opt-todo', 'p-due': '2026-06-01' },
+      },
+    ]
+  })
+
+  it('calls commitStep for a group choice and calls neither when the current field is chosen again', async () => {
+    const user = userEvent.setup()
+    const commitStep = jest.fn()
+    const onChange = jest.fn()
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const tree = (block: ViewBlock) => (
+      <QueryClientProvider client={client}>
+        <DeletionUndoProvider>
+          <SiblingBlocksProvider value={{ blocks: [], pageId: 'page-1' }}>
+            <BlockRowProvider
+              value={{
+                selected: false,
+                stepOut: () => {},
+                commitStep,
+              }}
+            >
+              <ViewView data={block} editable onChange={onChange} />
+            </BlockRowProvider>
+          </SiblingBlocksProvider>
+        </DeletionUndoProvider>
+      </QueryClientProvider>
+    )
+
+    const { rerender } = render(tree(listBlock))
+
+    await user.click(screen.getByRole('button', { name: 'grouped by due' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Status' }))
+
+    expect(commitStep).toHaveBeenCalledTimes(1)
+    expect(onChange).not.toHaveBeenCalled()
+    expect(commitStep.mock.calls[0][0]).toEqual({ ...listBlock, groupBy: 'p-status' })
+
+    rerender(tree({ ...listBlock, groupBy: 'p-status' }))
+
+    await user.click(screen.getByRole('button', { name: 'grouped by status' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Status' }))
+
+    expect(commitStep).toHaveBeenCalledTimes(1)
+    expect(onChange).not.toHaveBeenCalled()
+  })
+})
