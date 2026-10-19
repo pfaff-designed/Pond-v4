@@ -32,6 +32,8 @@ export interface CollectionRow {
   id: string
   title: string
   values: Record<string, unknown>
+  /** Area glyph the undated-record picker draws. Absent draws the row with no mark. */
+  glyph?: string | null
 }
 
 /** Look a property up in the schema by id. */

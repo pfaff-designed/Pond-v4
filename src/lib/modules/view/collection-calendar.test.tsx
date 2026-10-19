@@ -157,6 +157,33 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
       expect(screen.queryByText('2 without a date')).not.toBeInTheDocument()
     })
 
+    it('clicking the line opens a picker list of the undated records, each with its title and area glyph', async () => {
+      const user = userEvent.setup()
+      render(
+        <CollectionCalendar
+          schema={schemaWithDate}
+          rows={[
+            { ...dated, glyph: 'ramp' },
+            { ...undated('r2', 'dentist'), glyph: 'heart' },
+            { ...undated('r3', 'optician'), glyph: 'ring' },
+          ]}
+        />
+      )
+      expect(screen.queryByRole('listbox', { name: 'without a date' })).not.toBeInTheDocument()
+
+      await user.click(screen.getByRole('button', { name: '2 without a date' }))
+
+      const list = screen.getByRole('listbox', { name: 'without a date' })
+      expect(list.closest('[data-part="glass"]')).not.toBeNull()
+      const dentist = within(list).getByRole('option', { name: /dentist/ })
+      const optician = within(list).getByRole('option', { name: /optician/ })
+      expect(within(list).queryByRole('option', { name: /Trim the rim/ })).not.toBeInTheDocument()
+      expect(dentist).toHaveAttribute('data-part', 'row')
+      expect(optician).toHaveAttribute('data-part', 'row')
+      expect(dentist.querySelector('[data-area-mark] [data-icon="heart"]')).not.toBeNull()
+      expect(optician.querySelector('[data-area-mark] [data-icon="ring"]')).not.toBeNull()
+    })
+
     it('shows n without a date when every record is undated, and keeps the grid empty line', () => {
       render(
         <CollectionCalendar
