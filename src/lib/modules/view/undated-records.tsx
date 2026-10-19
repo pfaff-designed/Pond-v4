@@ -1,0 +1,65 @@
+'use client'
+
+/**
+ * The undated-record list (KAN-454): a PondPicker glass of the records that
+ * have no calendar date, each a mono row with its title and area glyph.
+ * Opening the list does not write a date; Escape only closes it.
+ */
+
+import { type KeyboardEvent as ReactKeyboardEvent, useEffect } from 'react'
+import { AreaMark } from '@/components/atoms/AreaMark'
+import { GLASS, LIST } from '@/components/molecules/picker-chrome'
+import { Row, type RowEntry } from '@/components/molecules/slash-row'
+import type { CollectionRow } from './apply'
+
+const handleRowIdle = () => undefined
+
+const rowEntry = (row: CollectionRow): RowEntry => ({
+  kind: 'row',
+  id: row.id,
+  label: row.title,
+  pre: row.title,
+  hit: '',
+  post: '',
+})
+
+export function UndatedRecords({
+  rows,
+  onClose,
+}: {
+  rows: readonly CollectionRow[]
+  onClose: () => void
+}) {
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      onClose()
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
+
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'Escape') return
+    event.preventDefault()
+    onClose()
+  }
+
+  return (
+    <div data-part="glass" className={GLASS}>
+      <div role="listbox" aria-label="without a date" className={LIST} onKeyDown={handleKeyDown}>
+        {rows.map((row) => (
+          <Row
+            key={row.id}
+            entry={rowEntry(row)}
+            selected={false}
+            onHover={handleRowIdle}
+            onPick={handleRowIdle}
+            mark={row.glyph ? <AreaMark glyph={row.glyph} /> : undefined}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}

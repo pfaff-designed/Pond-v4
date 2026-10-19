@@ -33,6 +33,7 @@ import { pickDateDef, type CollectionRow } from './apply'
 import { localDateIso } from './due'
 import { CALENDAR_EMPTY_LINE } from './kinds'
 import { RecordPeek } from './record-peek'
+import { UndatedRecords } from './undated-records'
 import { useDoneToggle } from './use-done-toggle'
 import {
   DRAG_LIFT_CLASS,
@@ -481,6 +482,7 @@ export function CollectionCalendar({
   // The id this click just added. `focusTitle` is that id only — a keyboard
   // select of an existing stack item must not move focus into the peek (KAN-358).
   const [focusTitleId, setFocusTitleId] = useState<string | null>(null)
+  const [undatedOpen, setUndatedOpen] = useState(false)
 
   // The date rides in `addRow`'s own values rather than a follow-up `setValue` —
   // one write, same one-change-log-record pause as `CollectionList`'s add
@@ -504,9 +506,8 @@ export function CollectionCalendar({
   const focusDayOfMonth = Number(focusIso.slice(8, 10))
   const focusLabel = `${DOW_LABELS[weekdayIndex(focusIso)]} ${monthAbbr(focusIso)}${focusIsToday ? ' · today' : ''}`
   const focusItems = dayItems(rows, dateDef, focusIso)
-  const undatedCount = dateDef
-    ? rows.filter((row) => rowDateIso(row, dateDef) === null).length
-    : 0
+  const undatedRows = dateDef ? rows.filter((row) => rowDateIso(row, dateDef) === null) : []
+  const undatedCount = undatedRows.length
   const showUndatedLine = !!dateDef && undatedCount > 0
 
   return (
@@ -553,9 +554,17 @@ export function CollectionCalendar({
         </div>
       </div>
       {showUndatedLine ? (
-        <span className="px-0.5 text-[13px] font-mono lowercase text-mn-text-secondary">
+        <button
+          type="button"
+          aria-expanded={undatedOpen}
+          onClick={() => setUndatedOpen((open) => !open)}
+          className="px-0.5 text-left text-[13px] font-mono lowercase text-mn-text-secondary"
+        >
           {undatedCount} without a date
-        </span>
+        </button>
+      ) : null}
+      {showUndatedLine && undatedOpen ? (
+        <UndatedRecords rows={undatedRows} onClose={() => setUndatedOpen(false)} />
       ) : null}
       {!dateDef ? (
         onAddDateField ? (

@@ -95,7 +95,7 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
         />
       )
       const line = screen.getByText('2 without a date')
-      expect(line.tagName).toBe('SPAN')
+      expect(line.tagName).toBe('BUTTON')
       expect(line).toHaveClass(
         'px-0.5',
         'text-[13px]',
@@ -167,6 +167,27 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
       expect(screen.getByText('3 without a date')).toBeInTheDocument()
       expect(screen.getByText('3 records, none with a date')).toBeInTheDocument()
       expect(screen.queryByText(CALENDAR_EMPTY_LINE)).not.toBeInTheDocument()
+    })
+
+    it('opens dentist, checkup, and lab, then Escape closes the list', () => {
+      const onMoveDate = jest.fn()
+      render(
+        <CollectionCalendar
+          schema={schemaWithDate}
+          rows={[undated('d1', 'dentist'), undated('d2', 'checkup'), undated('d3', 'lab')]}
+          onMoveDate={onMoveDate}
+        />
+      )
+      expect(screen.getByRole('button', { name: '3 without a date' })).toBeInTheDocument()
+      expect(screen.getByText('3 records, none with a date')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: '3 without a date' }))
+      const list = screen.getByRole('listbox', { name: 'without a date' })
+      expect(within(list).getByRole('option', { name: 'dentist' })).toBeInTheDocument()
+      expect(within(list).getByRole('option', { name: 'checkup' })).toBeInTheDocument()
+      expect(within(list).getByRole('option', { name: 'lab' })).toBeInTheDocument()
+      fireEvent.keyDown(list, { key: 'Escape' })
+      expect(screen.queryByRole('listbox', { name: 'without a date' })).not.toBeInTheDocument()
+      expect(onMoveDate).not.toHaveBeenCalled()
     })
   })
 
