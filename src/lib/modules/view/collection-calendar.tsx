@@ -507,7 +507,7 @@ export function CollectionCalendar({
   const undatedCount = dateDef
     ? rows.filter((row) => rowDateIso(row, dateDef) === null).length
     : 0
-  const showUndatedLine = !!dateDef && undatedCount > 0 && undatedCount < rows.length
+  const showUndatedLine = !!dateDef && undatedCount > 0
 
   return (
     <div

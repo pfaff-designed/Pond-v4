@@ -156,6 +156,18 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
       expect(screen.getByText('1 without a date')).toBeInTheDocument()
       expect(screen.queryByText('2 without a date')).not.toBeInTheDocument()
     })
+
+    it('shows n without a date when every record is undated, and keeps the grid empty line', () => {
+      render(
+        <CollectionCalendar
+          schema={schemaWithDate}
+          rows={[undated('r1', 'dentist'), undated('r2', 'optician'), undated('r3', 'library')]}
+        />
+      )
+      expect(screen.getByText('3 without a date')).toBeInTheDocument()
+      expect(screen.getByText('3 records, none with a date')).toBeInTheDocument()
+      expect(screen.queryByText(CALENDAR_EMPTY_LINE)).not.toBeInTheDocument()
+    })
   })
 
   it('says none with a date when every record is undated', () => {
