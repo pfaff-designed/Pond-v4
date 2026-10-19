@@ -459,3 +459,21 @@ function blockWidthPx(columnWidthPx: number, width: BlockWidth | number): number
 export function rowHolds(columnWidthPx: number, widths: readonly (BlockWidth | number)[]): boolean {
   return widths.every((width) => blockWidthPx(columnWidthPx, width) >= MIN_BLOCK_WIDTH_PX)
 }
+
+/**
+ * A row is drawn stacked — every block 100% wide — once the column is measured
+ * and `rowHolds` says no. The one home for that decision: the canvas's sizing
+ * divs and `drawnWidthPercent` both read it. An unmeasured column (0) never stacks.
+ */
+export function rowStacks(columnWidthPx: number, widths: readonly (BlockWidth | number)[]): boolean {
+  return columnWidthPx > 0 && !rowHolds(columnWidthPx, widths)
+}
+
+/**
+ * The percent of the column a block alone on its line is DRAWN at: 100 when its
+ * stored width would stack, else the stored width. A drag starts from this, not
+ * from the stored width, so pressing an edge never changes what is on screen.
+ */
+export function drawnWidthPercent(columnWidthPx: number, width: BlockWidth | number | undefined): number {
+  return rowStacks(columnWidthPx, [width ?? 'full']) ? 100 : widthPercent(width)
+}

@@ -7,10 +7,12 @@ import {
   blockWidthStyle,
   classifyDropZone,
   detachKeepingRows,
+  drawnWidthPercent,
   isWithinPaddedZone,
   layoutRows,
   planBesideDrop,
   rowHolds,
+  rowStacks,
   widthPercent,
   widthsForDropBeside,
   withoutRowStart,
@@ -242,6 +244,28 @@ describe('rowHolds', () => {
 
   it('stacks a numeric width below 240px the same as a named one would', () => {
     expect(rowHolds(600, [30, 70])).toBe(false)
+  })
+})
+
+describe('rowStacks / drawnWidthPercent', () => {
+  it.each<[number, BlockWidth | number | undefined, number]>([
+    [0, '1/3', 33.3], // an unmeasured column never stacks
+    [672, '1/3', 100], // 213px renders under the 240px floor: drawn full
+    [672, '1/4', 100],
+    [672, '1/2', 50], // 328px holds
+    [672, 46, 46],
+    [672, 20, 100], // a free width under the floor is drawn full too
+    [672, undefined, 100],
+    [672, 'full', 100],
+    [390, '1/2', 100], // a phone column stacks a ½
+  ])('column %ipx, width %s is drawn at %f%%', (column, width, drawn) => {
+    expect(drawnWidthPercent(column, width)).toBe(drawn)
+  })
+
+  it('rowStacks is the negation of rowHolds once the column is measured', () => {
+    expect(rowStacks(672, ['1/3'])).toBe(true)
+    expect(rowStacks(672, ['1/2'])).toBe(false)
+    expect(rowStacks(0, ['1/3'])).toBe(false)
   })
 })
 

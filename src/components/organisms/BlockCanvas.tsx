@@ -82,9 +82,9 @@ import {
   detachKeepingRows,
   isWithinPaddedZone,
   layoutRows,
+  drawnWidthPercent,
   planBesideDrop,
-  rowHolds,
-  widthPercent,
+  rowStacks,
   widthTenths,
   withoutRowStart,
   type DropZone,
@@ -943,7 +943,9 @@ export function BlockCanvas({
     } catch {
       /* capture can fail for an already-released pointer; the drag still works while over the strip */
     }
-    const startPercent = widthPercent(blocks[index]?.width)
+    // The drawn width, not the stored one: a width that stacks is drawn full,
+    // and the drag must begin from what the person sees.
+    const startPercent = drawnWidthPercent(columnWidth, blocks[index]?.width)
     edgeDragRef.current = {
       pointerId: e.pointerId,
       index,
@@ -982,7 +984,12 @@ export function BlockCanvas({
     const committed: BlockWidth | number = lockedKey
       ? lockedKey.width
       : roundFreePercent(st.livePercent, columnWidth)
-    if (widthTenths(committed) === widthTenths(before.width)) return
+    // Unchanged from the stored width, or from the drawn start (a stacked
+    // block's press-and-release commits 'full' against a stored '1/3'): no write.
+    const unchanged =
+      widthTenths(committed) === widthTenths(before.width) ||
+      widthTenths(committed) === widthTenths(st.startPercent)
+    if (unchanged) return
     setBlockWidth(before, committed)
   }
 
@@ -2137,7 +2144,7 @@ export function BlockCanvas({
                 // all, so a block shifting from one row to another regroups
                 // `blockRows` without touching any ancestor element, and a
                 // remount is impossible rather than untested.
-                const stacks = columnWidth > 0 && !rowHolds(columnWidth, widths)
+                const stacks = rowStacks(columnWidth, widths)
                 // Every sizing div starts its own flex line EXCEPT the page's
                 // very first block, and (within row 0, non-stacking) the rest of
                 // that one shared line: those stay at the top with no gap above
@@ -2216,7 +2223,7 @@ export function BlockCanvas({
                           hidden={!chrome || draggingIndex !== null}
                           dragging={resizing !== null}
                           readout={resizing ? edgeResizeReadout(resizing.percent, resizing.locked) : undefined}
-                          valueNow={resizing ? resizing.percent : widthPercent(item.width)}
+                          valueNow={resizing ? resizing.percent : drawnWidthPercent(columnWidth, item.width)}
                           onPointerDown={(e) => handleEdgeResizePointerDown(e, i, 'left')}
                           onPointerMove={handleEdgeResizePointerMove}
                           onPointerUp={handleEdgeResizePointerUp}
@@ -2227,7 +2234,7 @@ export function BlockCanvas({
                           hidden={!chrome || draggingIndex !== null}
                           dragging={resizing !== null}
                           readout={resizing ? edgeResizeReadout(resizing.percent, resizing.locked) : undefined}
-                          valueNow={resizing ? resizing.percent : widthPercent(item.width)}
+                          valueNow={resizing ? resizing.percent : drawnWidthPercent(columnWidth, item.width)}
                           onPointerDown={(e) => handleEdgeResizePointerDown(e, i, 'right')}
                           onPointerMove={handleEdgeResizePointerMove}
                           onPointerUp={handleEdgeResizePointerUp}

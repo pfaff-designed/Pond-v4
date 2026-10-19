@@ -224,6 +224,76 @@ describe('an alone-on-line edge drag (KAN-441)', () => {
     }
   })
 
+  describe('a lone block stored narrower than the stack floor is drawn full width', () => {
+    // At the default 672px column ⅓ renders 213px (under MIN_BLOCK_WIDTH_PX), so
+    // `rowHolds` stacks it and it is DRAWN 100% wide: the drag starts from that.
+    it('releasing without a move writes nothing (the drawn start is not a change)', () => {
+      const ro = mockResizeObserver()
+      try {
+        const lone: Block = { id: 'b-lone', type: 'text', content: 'calendar', width: '1/3' }
+        const onChange = jest.fn()
+        renderCanvas([lone], onChange)
+        setColumnWidth('b-lone', 672, ro)
+
+        const right = edgeHandle('b-lone', 'right')!
+        fireEvent.pointerDown(right, { clientX: 0 })
+        fireEvent.pointerUp(right, { clientX: 0 })
+
+        expect(onChange).not.toHaveBeenCalled()
+        expect(screen.queryByText('Set the block width')).toBeNull()
+      } finally {
+        ro.restore()
+      }
+    })
+
+    it('pressing its edge keeps it drawn full width and releasing writes nothing', () => {
+      const ro = mockResizeObserver()
+      try {
+        const lone: Block = { id: 'b-lone', type: 'text', content: 'calendar', width: '1/3' }
+        const onChange = jest.fn()
+        renderCanvas([lone], onChange)
+        setColumnWidth('b-lone', 672, ro)
+        expect(sizingDiv('b-lone').style.width).toBe('100%')
+
+        const right = edgeHandle('b-lone', 'right')!
+        fireEvent.pointerDown(right, { clientX: 0 })
+        // The live preview renders through `blockWidthStyle(100)`: the same
+        // full width as the stacked '100%', spelled as a calc.
+        expect(sizingDiv('b-lone').style.width).toMatch(/^(100%|calc\(-16px \+ 1 \* \(100% \+ 16px\)\))$/)
+
+        fireEvent.pointerUp(right, { clientX: 0 })
+
+        expect(onChange).not.toHaveBeenCalled()
+        expect(screen.queryByText('Set the block width')).toBeNull()
+      } finally {
+        ro.restore()
+      }
+    })
+
+    it('a small move off the drawn full width commits a near-full width, not the stack floor', () => {
+      const ro = mockResizeObserver()
+      try {
+        const lone: Block = { id: 'b-lone', type: 'text', content: 'calendar', width: '1/3' }
+        const onChange = jest.fn()
+        renderCanvas([lone], onChange)
+        setColumnWidth('b-lone', 672, ro)
+
+        const right = edgeHandle('b-lone', 'right')!
+        fireEvent.pointerDown(right, { clientX: 0 })
+        dragRightEdge('b-lone', -20) // 20px off the drawn 672px: clear of the full key's 8px lock
+        fireEvent.pointerUp(right, { clientX: -20 })
+
+        expect(onChange).toHaveBeenCalledTimes(1)
+        const [committed] = onChange.mock.calls[0][0]
+        expect(typeof committed.width).toBe('number')
+        expect(committed.width).toBeGreaterThan(95)
+        expect(committed.width).toBeLessThan(100)
+      } finally {
+        ro.restore()
+      }
+    })
+  })
+
   it('Esc mid-drag restores the pre-drag width and writes nothing', () => {
     const ro = mockResizeObserver()
     try {
