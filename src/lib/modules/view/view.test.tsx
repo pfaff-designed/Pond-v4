@@ -14,7 +14,7 @@ import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { SiblingBlocksProvider } from '@/lib/modules/sibling-context'
 import { BlockRowProvider } from '@/lib/modules/block-row-context'
 import { ViewView } from './view'
-import { CALENDAR_EMPTY_LINE, LAYOUT_MENU_MODES, VIEW_KINDS } from './kinds'
+import { BOARD_EMPTY_LINE, CALENDAR_EMPTY_LINE, LAYOUT_MENU_MODES, VIEW_KINDS } from './kinds'
 import { ActiveViewSelectionContext } from './active-view-context'
 import type { Block } from '@/lib/documents/types'
 import type { ViewBlock } from './schema'
@@ -79,7 +79,11 @@ const gantt: ViewBlock = { id: 'v-gantt', type: 'view', mode: 'gantt' }
 const table: ViewBlock = { id: 'v-table', type: 'view', mode: 'table' }
 const board: ViewBlock = { id: 'v-board', type: 'view', mode: 'board' }
 
-function renderView(data: ViewBlock, editable = true, onChange: (next: ViewBlock) => void = jest.fn()) {
+function renderView(
+  data: ViewBlock,
+  editable = true,
+  onChange: (next: ViewBlock) => void = jest.fn()
+) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
@@ -231,7 +235,7 @@ describe('CollectionTable — a row an undo just removed stays struck through (K
   // still mounted.
   const rowSnapshot = (id: string, title: string) => ({ id, title, values: {}, shown: {} })
 
-  it('keeps the board\'s own example visible, struck through, once the row is gone from the data', () => {
+  it("keeps the board's own example visible, struck through, once the row is gone from the data", () => {
     initialRows = []
     // The undo record's OWN before/after (migration 0021): `before` is the row
     // as it showed right before the step, `after` is null once it's undone —
@@ -518,7 +522,9 @@ describe('ViewView — the path test: calendar, through the real host (KAN-352)'
   })
 
   function cellFor(container: HTMLElement, iso: string) {
-    return container.querySelector<HTMLElement>(`[data-part="calendar-day-cell"][data-iso="${iso}"]`)!
+    return container.querySelector<HTMLElement>(
+      `[data-part="calendar-day-cell"][data-iso="${iso}"]`
+    )!
   }
 
   const twentiethIso = `${localDateIso(new Date()).slice(0, 8)}20`
@@ -699,7 +705,7 @@ describe('ViewView — the /table path end to end: add a row, type a title and a
   })
 })
 
-describe('CollectionTable — the last cell\'s date/tag editors keep their own Enter/↓ (KAN-350)', () => {
+describe("CollectionTable — the last cell's date/tag editors keep their own Enter/↓ (KAN-350)", () => {
   // date last, then select last, in two fixtures — the KAN-344 step-out guard
   // only fires on the LAST column, so each atom needs a turn sitting there.
   const dateLastSchema: PropertySchema = [
@@ -732,7 +738,7 @@ describe('CollectionTable — the last cell\'s date/tag editors keep their own E
     )
   }
 
-  it('Enter on the last cell\'s date trigger opens the editor, not a stepped-out new line', async () => {
+  it("Enter on the last cell's date trigger opens the editor, not a stepped-out new line", async () => {
     const user = userEvent.setup()
     initialSchema = dateLastSchema
     initialRows = [{ id: 'r1', title: 'only row', values: { 'p-status': 'opt-event' } }]
@@ -764,7 +770,7 @@ describe('CollectionTable — the last cell\'s date/tag editors keep their own E
     expect(stepOut).not.toHaveBeenCalled()
   })
 
-  it('↓ then ↵ inside the last cell\'s open tag popover picks a row, without stepping out', async () => {
+  it("↓ then ↵ inside the last cell's open tag popover picks a row, without stepping out", async () => {
     const user = userEvent.setup()
     initialSchema = selectLastSchema
     initialRows = [{ id: 'r1', title: 'only row', values: { 'p-status': 'opt-event' } }]
@@ -827,7 +833,7 @@ describe('CollectionView — every mode/groupBy/sort/filter/chart/bigNumber read
     expect(screen.queryByRole('button', { name: '＋ task' })).not.toBeInTheDocument()
   })
 
-  it('never leaks the OTHER saved view\'s groupBy into the active (gantt) render', () => {
+  it("never leaks the OTHER saved view's groupBy into the active (gantt) render", () => {
     renderView(multiView)
 
     // The board's lane head ("Todo", its row count) only ever draws inside a board —
@@ -849,10 +855,16 @@ describe('ViewView — the layout menu sits in the head (KAN-519)', () => {
 
     await user.click(screen.getByRole('button', { name: 'table' }))
     const menu = await screen.findByRole('menu', { name: 'layout' })
-    expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(layoutNames)
+    expect(
+      within(menu)
+        .getAllByRole('menuitem')
+        .map((item) => item.textContent)
+    ).toEqual(layoutNames)
 
     await waitFor(() =>
-      expect(screen.getByRole('menu', { name: 'layout' }).contains(document.activeElement)).toBe(true)
+      expect(screen.getByRole('menu', { name: 'layout' }).contains(document.activeElement)).toBe(
+        true
+      )
     )
     await user.keyboard('{Escape}')
 
@@ -965,6 +977,368 @@ describe('ViewView — choosing Calendar when the schema has no date field (KAN-
   })
 })
 
+describe('ViewView — choosing List on a dated legacy table (KAN-523)', () => {
+  const datedSchema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    {
+      id: 'p-status',
+      name: 'Status',
+      type: 'status',
+      options: [{ id: 'opt-todo', label: 'Todo' }],
+    },
+    { id: 'p-due', name: 'Due', type: 'date' },
+  ]
+
+  const legacyTable: ViewBlock = {
+    id: 'v-standup',
+    type: 'view',
+    mode: 'table',
+    filter: { property: 'p-status', op: 'eq', value: 'opt-todo' },
+    sort: { key: 'p-title', dir: 'asc' },
+  }
+
+  beforeEach(() => {
+    initialSchema = datedSchema
+    initialRows = [
+      {
+        id: 'r-standup',
+        title: 'Standup',
+        values: { 'p-status': 'opt-todo', 'p-due': '2026-06-01' },
+      },
+    ]
+  })
+
+  it('writes mode list on the same block and shows Standup as a list row, with no saved view', async () => {
+    const user = userEvent.setup()
+    const onChange = jest.fn()
+    const { container } = renderStatefulView(legacyTable, onChange)
+
+    expect(screen.getByRole('table')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('Standup')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'table' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'list' }))
+
+    expect(onChange).toHaveBeenCalledTimes(1)
+    const next = onChange.mock.calls[0][0] as ViewBlock
+    expect(next).toEqual({ ...legacyTable, mode: 'list' })
+    expect(next.id).toBe(legacyTable.id)
+    expect(next).not.toHaveProperty('views')
+    expect(next.filter).toEqual(legacyTable.filter)
+    expect(next.sort).toEqual(legacyTable.sort)
+
+    const row = container.querySelector('[data-part="list-row"]')
+    expect(row).toHaveTextContent('Standup')
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+  })
+})
+
+describe('ViewView — choosing Timeline on a dated legacy table (KAN-523)', () => {
+  const datedSchema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    {
+      id: 'p-status',
+      name: 'Status',
+      type: 'status',
+      options: [{ id: 'opt-todo', label: 'Todo' }],
+    },
+    { id: 'p-due', name: 'Due', type: 'date' },
+  ]
+
+  const legacyTable: ViewBlock = {
+    id: 'v-standup',
+    type: 'view',
+    mode: 'table',
+    filter: { property: 'p-status', op: 'eq', value: 'opt-todo' },
+    sort: { key: 'p-title', dir: 'asc' },
+  }
+
+  beforeEach(() => {
+    initialSchema = datedSchema
+    initialRows = [
+      {
+        id: 'r-standup',
+        title: 'Standup',
+        values: { 'p-status': 'opt-todo', 'p-due': '2026-06-01' },
+      },
+    ]
+  })
+
+  it('writes mode gantt on the same block and draws Standup on the timeline, with no saved view', async () => {
+    const user = userEvent.setup()
+    const onChange = jest.fn()
+    const { container } = renderStatefulView(legacyTable, onChange)
+
+    expect(screen.getByRole('table')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('Standup')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'table' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'timeline' }))
+
+    expect(onChange).toHaveBeenCalledTimes(1)
+    const next = onChange.mock.calls[0][0] as ViewBlock
+    expect(next).toEqual({ ...legacyTable, mode: 'gantt' })
+    expect(next.id).toBe(legacyTable.id)
+    expect(next).not.toHaveProperty('views')
+    expect(next.filter).toEqual(legacyTable.filter)
+    expect(next.sort).toEqual(legacyTable.sort)
+
+    const label = container.querySelector('[data-part="gantt-label"]')
+    expect(label).toHaveTextContent('Standup')
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+  })
+})
+
+describe('ViewView — choosing Gallery on a dated legacy table (KAN-523)', () => {
+  const datedSchema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    {
+      id: 'p-status',
+      name: 'Status',
+      type: 'status',
+      options: [{ id: 'opt-todo', label: 'Todo' }],
+    },
+    { id: 'p-due', name: 'Due', type: 'date' },
+  ]
+
+  const legacyTable: ViewBlock = {
+    id: 'v-standup',
+    type: 'view',
+    mode: 'table',
+    filter: { property: 'p-status', op: 'eq', value: 'opt-todo' },
+    sort: { key: 'p-title', dir: 'asc' },
+  }
+
+  beforeEach(() => {
+    initialSchema = datedSchema
+    initialRows = [
+      {
+        id: 'r-standup',
+        title: 'Standup',
+        values: { 'p-status': 'opt-todo', 'p-due': '2026-06-01' },
+      },
+    ]
+  })
+
+  it('writes mode gallery on the same block and shows Standup as a gallery card, with no saved view', async () => {
+    const user = userEvent.setup()
+    const onChange = jest.fn()
+    const { container } = renderStatefulView(legacyTable, onChange)
+
+    expect(screen.getByRole('table')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('Standup')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'table' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'gallery' }))
+
+    expect(onChange).toHaveBeenCalledTimes(1)
+    const next = onChange.mock.calls[0][0] as ViewBlock
+    expect(next).toEqual({ ...legacyTable, mode: 'gallery' })
+    expect(next.id).toBe(legacyTable.id)
+    expect(next).not.toHaveProperty('views')
+    expect(next.filter).toEqual(legacyTable.filter)
+    expect(next.sort).toEqual(legacyTable.sort)
+
+    const gallery = container.querySelector('[data-part="gallery"]')
+    expect(gallery).toBeInstanceOf(HTMLElement)
+    expect(
+      within(gallery as HTMLElement).getByRole('article', { name: 'Standup' })
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+  })
+})
+
+describe('ViewView — choosing Chart on a dated legacy table (KAN-523)', () => {
+  const datedSchema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    {
+      id: 'p-status',
+      name: 'Status',
+      type: 'status',
+      options: [{ id: 'opt-todo', label: 'Todo' }],
+    },
+    { id: 'p-due', name: 'Due', type: 'date' },
+  ]
+
+  const legacyTable: ViewBlock = {
+    id: 'v-standup',
+    type: 'view',
+    mode: 'table',
+    filter: { property: 'p-status', op: 'eq', value: 'opt-todo' },
+    sort: { key: 'p-title', dir: 'asc' },
+  }
+
+  beforeEach(() => {
+    initialSchema = datedSchema
+    initialRows = [
+      {
+        id: 'r-standup',
+        title: 'Standup',
+        values: { 'p-status': 'opt-todo', 'p-due': '2026-06-01' },
+      },
+    ]
+  })
+
+  it('writes mode chart on the same block without a chart config and shows the chart card', async () => {
+    const user = userEvent.setup()
+    const onChange = jest.fn()
+    const { container } = renderStatefulView(legacyTable, onChange)
+
+    expect(screen.getByRole('table')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('Standup')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'table' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'chart' }))
+
+    expect(onChange).toHaveBeenCalledTimes(1)
+    const next = onChange.mock.calls[0][0] as ViewBlock
+    expect(next).toEqual({ ...legacyTable, mode: 'chart' })
+    expect(next.id).toBe(legacyTable.id)
+    expect(next).not.toHaveProperty('views')
+    expect(next).not.toHaveProperty('chart')
+    expect(next.filter).toEqual(legacyTable.filter)
+    expect(next.sort).toEqual(legacyTable.sort)
+
+    expect(container.querySelector('[data-part="plot"]')).toBeInstanceOf(HTMLElement)
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+  })
+})
+
+describe('ViewView — choosing Board when the schema has no status or select field (KAN-523)', () => {
+  const datedSchema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    { id: 'p-due', name: 'Due', type: 'date' },
+  ]
+
+  const legacyTable: ViewBlock = {
+    id: 'v-standup',
+    type: 'view',
+    mode: 'table',
+    filter: { property: 'p-status', op: 'eq', value: 'opt-todo' },
+    sort: { key: 'p-title', dir: 'asc' },
+  }
+
+  beforeEach(() => {
+    initialSchema = datedSchema
+    initialRows = [
+      {
+        id: 'r-standup',
+        title: 'Standup',
+        values: { 'p-due': '2026-06-01' },
+      },
+    ]
+  })
+
+  it('writes mode board on the same block and shows the status line and add a status field', async () => {
+    const user = userEvent.setup()
+    const onChange = jest.fn()
+    renderStatefulView(legacyTable, onChange)
+
+    expect(screen.getByRole('table')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'table' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'board' }))
+
+    expect(onChange).toHaveBeenCalledTimes(1)
+    const next = onChange.mock.calls[0][0] as ViewBlock
+    expect(next).toEqual({ ...legacyTable, mode: 'board' })
+    expect(next.id).toBe(legacyTable.id)
+    expect(next).not.toHaveProperty('views')
+    expect(next.filter).toEqual(legacyTable.filter)
+    expect(next.sort).toEqual(legacyTable.sort)
+
+    expect(screen.getByText(BOARD_EMPTY_LINE)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'add a status field' })).toBeInTheDocument()
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+  })
+})
+
+describe('ViewView — switching a non-first saved view to Board (KAN-523)', () => {
+  const datedSchema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    {
+      id: 'p-status',
+      name: 'Status',
+      type: 'status',
+      options: [{ id: 'opt-todo', label: 'Todo' }],
+    },
+    { id: 'p-due', name: 'Due', type: 'date' },
+  ]
+
+  const rowsView = {
+    id: 'view-rows',
+    label: 'rows',
+    kind: 'table' as const,
+  }
+  const queueView = {
+    id: 'view-queue',
+    label: 'queue',
+    kind: 'list' as const,
+  }
+
+  const savedViews: ViewBlock = {
+    id: 'v-standup',
+    type: 'view',
+    mode: 'table',
+    views: [rowsView, queueView],
+    activeViewId: 'view-rows',
+  }
+
+  beforeEach(() => {
+    initialSchema = datedSchema
+    initialRows = [
+      {
+        id: 'r-standup',
+        title: 'Standup',
+        values: { 'p-status': 'opt-todo', 'p-due': '2026-06-01' },
+      },
+    ]
+  })
+
+  it('writes kind board on the open saved view only, and a remount still shows that view as a board', async () => {
+    const user = userEvent.setup()
+    const onChange = jest.fn()
+    const { unmount } = renderStatefulView(savedViews, onChange)
+
+    expect(screen.getByRole('button', { name: 'table' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'rows' })).toHaveAttribute('aria-selected', 'true')
+
+    await user.click(screen.getByRole('tab', { name: 'queue' }))
+
+    expect(onChange).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'list' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'list' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'board' }))
+
+    expect(onChange).toHaveBeenCalledTimes(1)
+    const next = onChange.mock.calls[0][0] as ViewBlock
+    expect(next.views).toHaveLength(2)
+    expect(next.views?.[1]).toEqual({ ...queueView, kind: 'board' })
+    expect(next.views?.[1]?.id).toBe(queueView.id)
+    expect(next.views?.[1]?.label).toBe(queueView.label)
+    expect(next.views?.[0]).toBe(rowsView)
+    expect(next.mode).toBe(savedViews.mode)
+    expect(next.activeViewId).toBe(savedViews.activeViewId)
+
+    unmount()
+    renderView(next)
+
+    expect(next.views?.[0]?.kind).toBe('table')
+    expect(screen.getByRole('button', { name: 'table' })).toBeInTheDocument()
+    expect(screen.getByRole('table')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'rows' })).toHaveAttribute('aria-selected', 'true')
+
+    await user.click(screen.getByRole('tab', { name: 'queue' }))
+
+    expect(screen.getByRole('button', { name: 'board' })).toBeInTheDocument()
+    const card = screen.getByRole('article', { name: 'Standup' })
+    expect(card).toHaveAttribute('data-part', 'card')
+    expect(within(card).getByDisplayValue('Standup')).toBeInTheDocument()
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+  })
+})
+
 describe('ViewView — a layout write that changes the kind is one structural commit (KAN-519)', () => {
   const statusSchema: PropertySchema = [
     { id: 'p-title', name: 'Title', type: 'text' },
@@ -1044,27 +1418,42 @@ describe('ViewView — a layout write that changes the kind is one structural co
 /**
  * The page host's one structural step (KAN-519). `commitStep` keeps the block
  * that was on screen, then draws the next one. Stepping back sets that kept
- * block again. No platform chord: CI is Linux, and the shell undo is BlockCanvas.
+ * block again. `reload` remounts `ViewView` on that written block: the bar
+ * seeds once from `activeViewId`, so only a fresh mount reads the saved view
+ * the way a reload does, and the kept block is still there for one step back.
+ * No platform chord: CI is Linux, and the shell undo is BlockCanvas.
  */
 function LayoutPath({
   initial,
   onReady,
+  onCommit,
+  onChange,
 }: {
   initial: ViewBlock
-  onReady: (stepBack: () => void) => void
+  onReady: (stepBack: () => void, reload: () => void) => void
+  onCommit?: (next: ViewBlock) => void
+  onChange?: (next: ViewBlock) => void
 }) {
   const [data, setData] = useState(initial)
+  const [generation, setGeneration] = useState(0)
   const beforeLastRef = useRef(initial)
 
   useEffect(() => {
-    onReady(() => {
-      setData(beforeLastRef.current)
-    })
+    onReady(
+      () => {
+        setData(beforeLastRef.current)
+      },
+      () => {
+        setGeneration((current) => current + 1)
+      }
+    )
   }, [onReady])
 
   const handleCommit = (next: Block) => {
     beforeLastRef.current = data
-    setData(next as ViewBlock)
+    const written = next as ViewBlock
+    onCommit?.(written)
+    setData(written)
   }
   return (
     <BlockRowProvider
@@ -1074,18 +1463,35 @@ function LayoutPath({
         commitStep: handleCommit,
       }}
     >
-      <ViewView data={data} editable onChange={() => {}} />
+      <ViewView
+        key={generation > 0 ? generation : undefined}
+        data={data}
+        editable
+        onChange={onChange ?? (() => {})}
+      />
     </BlockRowProvider>
   )
 }
 
-function renderLayoutPath(initial: ViewBlock, onReady: (stepBack: () => void) => void) {
+function renderLayoutPath(
+  initial: ViewBlock,
+  onReady: (stepBack: () => void, reload: () => void) => void,
+  options?: {
+    onCommit?: (next: ViewBlock) => void
+    onChange?: (next: ViewBlock) => void
+  }
+) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
       <DeletionUndoProvider>
         <SiblingBlocksProvider value={{ blocks: [], pageId: 'page-1' }}>
-          <LayoutPath initial={initial} onReady={onReady} />
+          <LayoutPath
+            initial={initial}
+            onReady={onReady}
+            onCommit={options?.onCommit}
+            onChange={options?.onChange}
+          />
         </SiblingBlocksProvider>
       </DeletionUndoProvider>
     </QueryClientProvider>
@@ -1160,6 +1566,250 @@ describe('ViewView — the path: layout menu, board, table, calendar, one step b
   })
 })
 
+describe('ViewView — one layout write steps back to the previous kind (KAN-523)', () => {
+  const datedSchema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    {
+      id: 'p-status',
+      name: 'Status',
+      type: 'status',
+      options: [{ id: 'opt-todo', label: 'Todo' }],
+    },
+    { id: 'p-due', name: 'Due', type: 'date' },
+  ]
+
+  const legacyTable: ViewBlock = {
+    id: 'v-standup',
+    type: 'view',
+    mode: 'table',
+    filter: { property: 'p-status', op: 'eq', value: 'opt-todo' },
+    sort: { key: 'p-title', dir: 'asc' },
+  }
+
+  beforeEach(() => {
+    initialSchema = datedSchema
+    initialRows = [
+      {
+        id: 'r-standup',
+        title: 'Standup',
+        values: { 'p-status': 'opt-todo', 'p-due': '2026-06-01' },
+      },
+    ]
+  })
+
+  it('chooses timeline as one structural step, and one step back restores the table and the chip', async () => {
+    const user = userEvent.setup()
+    let stepBack = (): void => {}
+    const handleReady = (next: () => void) => {
+      stepBack = next
+    }
+    const { container } = renderLayoutPath(legacyTable, handleReady)
+
+    expect(screen.getByRole('button', { name: 'table' })).toBeInTheDocument()
+    expect(screen.getByRole('table')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('Standup')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'table' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'timeline' }))
+
+    const label = container.querySelector('[data-part="gantt-label"]')
+    expect(label).toHaveTextContent('Standup')
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+
+    act(() => {
+      stepBack()
+    })
+
+    const table = screen.getByRole('table')
+    expect(within(table).getByDisplayValue('Standup')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'table' })).toBeInTheDocument()
+    expect(container.querySelector('[data-part="gantt-label"]')).not.toBeInTheDocument()
+  })
+})
+
+describe('ViewView — the path: list, timeline, gallery, chart, board, saved view, one step back (KAN-523)', () => {
+  const datedSchema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    {
+      id: 'p-status',
+      name: 'Status',
+      type: 'status',
+      options: [{ id: 'opt-todo', label: 'Todo' }],
+    },
+    { id: 'p-due', name: 'Due', type: 'date' },
+  ]
+  const statuslessSchema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    { id: 'p-due', name: 'Due', type: 'date' },
+  ]
+
+  const legacyTable: ViewBlock = {
+    id: 'v-standup',
+    type: 'view',
+    mode: 'table',
+    filter: { property: 'p-status', op: 'eq', value: 'opt-todo' },
+    sort: { key: 'p-title', dir: 'asc' },
+  }
+
+  const rowsView = {
+    id: 'view-rows',
+    label: 'rows',
+    kind: 'table' as const,
+  }
+  const queueView = {
+    id: 'view-queue',
+    label: 'queue',
+    kind: 'list' as const,
+  }
+  const savedViews: ViewBlock = {
+    id: 'v-standup',
+    type: 'view',
+    mode: 'table',
+    views: [rowsView, queueView],
+    activeViewId: 'view-rows',
+  }
+
+  const datedRow: CollectionRow = {
+    id: 'r-standup',
+    title: 'Standup',
+    values: { 'p-status': 'opt-todo', 'p-due': '2026-06-01' },
+  }
+
+  beforeEach(() => {
+    initialSchema = datedSchema
+    initialRows = [datedRow]
+  })
+
+  it('walks list, timeline, gallery, and chart, then a status-less board, then keeps a saved view as a board after remount and one step back', async () => {
+    const user = userEvent.setup()
+    const onChange = jest.fn()
+    const first = renderStatefulView(legacyTable, onChange)
+
+    await user.click(screen.getByRole('button', { name: 'table' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'list' }))
+
+    expect(onChange).toHaveBeenCalledTimes(1)
+    const listed = onChange.mock.calls[0][0] as ViewBlock
+    expect(listed).toEqual({ ...legacyTable, mode: 'list' })
+    expect(listed).not.toHaveProperty('views')
+    expect(first.container.querySelector('[data-part="list-row"]')).toHaveTextContent('Standup')
+
+    await user.click(screen.getByRole('button', { name: 'list' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'timeline' }))
+
+    expect(onChange).toHaveBeenCalledTimes(2)
+    expect(first.container.querySelector('[data-part="gantt-label"]')).toHaveTextContent('Standup')
+
+    await user.click(screen.getByRole('button', { name: 'timeline' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'gallery' }))
+
+    expect(onChange).toHaveBeenCalledTimes(3)
+    const gallery = first.container.querySelector('[data-part="gallery"]')
+    expect(gallery).toBeInstanceOf(HTMLElement)
+    expect(
+      within(gallery as HTMLElement).getByRole('article', { name: 'Standup' })
+    ).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'gallery' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'chart' }))
+
+    expect(onChange).toHaveBeenCalledTimes(4)
+    const charted = onChange.mock.calls[3][0] as ViewBlock
+    expect(charted).toEqual({ ...legacyTable, mode: 'chart' })
+    expect(charted).not.toHaveProperty('views')
+    expect(charted).not.toHaveProperty('chart')
+    expect(first.container.querySelector('[data-part="plot"]')).toBeInstanceOf(HTMLElement)
+
+    first.unmount()
+
+    initialSchema = statuslessSchema
+    initialRows = [{ id: 'r-standup', title: 'Standup', values: { 'p-due': '2026-06-01' } }]
+    const onBoard = jest.fn()
+    const second = renderStatefulView(legacyTable, onBoard)
+
+    await user.click(screen.getByRole('button', { name: 'table' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'board' }))
+
+    expect(onBoard).toHaveBeenCalledTimes(1)
+    const boarded = onBoard.mock.calls[0][0] as ViewBlock
+    expect(boarded).toEqual({ ...legacyTable, mode: 'board' })
+    expect(boarded).not.toHaveProperty('views')
+    expect(screen.getByText(BOARD_EMPTY_LINE)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'add a status field' })).toBeInTheDocument()
+
+    second.unmount()
+
+    initialSchema = datedSchema
+    initialRows = [datedRow]
+    const onSavedChange = jest.fn()
+    const commits: ViewBlock[] = []
+    let stepBack = (): void => {}
+    let reload = (): void => {}
+    const third = renderLayoutPath(
+      savedViews,
+      (nextStepBack, nextReload) => {
+        stepBack = nextStepBack
+        reload = nextReload
+      },
+      {
+        onChange: onSavedChange,
+        onCommit: (next) => {
+          commits.push(next)
+        },
+      }
+    )
+
+    expect(screen.getByRole('button', { name: 'table' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'rows' })).toHaveAttribute('aria-selected', 'true')
+
+    await user.click(screen.getByRole('tab', { name: 'queue' }))
+
+    expect(onSavedChange).not.toHaveBeenCalled()
+    expect(commits).toHaveLength(0)
+    expect(screen.getByRole('button', { name: 'list' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'list' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'board' }))
+
+    expect(onSavedChange).not.toHaveBeenCalled()
+    expect(commits).toHaveLength(1)
+    const written = commits[0]
+    expect(written.views?.[1]).toEqual({ ...queueView, kind: 'board' })
+    expect(written.views?.[1]?.id).toBe(queueView.id)
+    expect(written.views?.[1]?.label).toBe(queueView.label)
+    expect(written.views?.[0]).toBe(rowsView)
+    expect(written.mode).toBe(savedViews.mode)
+    expect(written.activeViewId).toBe(savedViews.activeViewId)
+
+    act(() => {
+      reload()
+    })
+
+    expect(written.views?.[0]?.kind).toBe('table')
+    expect(screen.getByRole('button', { name: 'table' })).toBeInTheDocument()
+    expect(screen.getByRole('table')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'rows' })).toHaveAttribute('aria-selected', 'true')
+
+    await user.click(screen.getByRole('tab', { name: 'queue' }))
+
+    expect(screen.getByRole('button', { name: 'board' })).toBeInTheDocument()
+    const card = screen.getByRole('article', { name: 'Standup' })
+    expect(card).toHaveAttribute('data-part', 'card')
+    expect(within(card).getByDisplayValue('Standup')).toBeInTheDocument()
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+
+    act(() => {
+      stepBack()
+    })
+
+    expect(screen.getByRole('tab', { name: 'queue' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('button', { name: 'list' })).toBeInTheDocument()
+    expect(third.container.querySelector('[data-part="list-row"]')).toHaveTextContent('Standup')
+    expect(screen.queryByRole('article', { name: 'Standup' })).not.toBeInTheDocument()
+    expect(written.views?.[0]).toBe(rowsView)
+  })
+})
+
 describe('CollectionView — the saved-view bar switches views as reading, not editing (KAN-36)', () => {
   const barSchema: PropertySchema = [
     { id: 'p-title', name: 'Title', type: 'text' },
@@ -1206,10 +1856,7 @@ describe('CollectionView — the saved-view bar switches views as reading, not e
   })
 
   it('joins no separator when there is no config fact to join (gantt has no groupBy)', () => {
-    const { container } = renderView(
-      { id: 'v-gantt-only', type: 'view', mode: 'gantt' },
-      false
-    )
+    const { container } = renderView({ id: 'v-gantt-only', type: 'view', mode: 'gantt' }, false)
 
     const head = container.querySelector('[data-part="view-head"]')
     expect(head).toHaveTextContent('1 record')
@@ -1306,7 +1953,10 @@ describe('CollectionView — a config edit lands on the LOCALLY active view, not
 
     expect(onChange).toHaveBeenCalledTimes(1)
     const patched = onChange.mock.calls[0][0] as ViewBlock
-    expect(patched.views?.[1]).toMatchObject({ id: 'view-chart', config: { chart: { kind: 'line' } } })
+    expect(patched.views?.[1]).toMatchObject({
+      id: 'view-chart',
+      config: { chart: { kind: 'line' } },
+    })
     expect(patched.views?.[0]).toEqual(boardAndChartView.views![0])
   })
 })
