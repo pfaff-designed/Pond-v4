@@ -91,6 +91,35 @@ function renderView(data: ViewBlock, editable = true, onChange: (next: ViewBlock
   )
 }
 
+/** Holds the block the layout write returns, so the same `ViewView` redraws it. */
+function StatefulView({
+  initial,
+  onChange,
+}: {
+  initial: ViewBlock
+  onChange: (next: ViewBlock) => void
+}) {
+  const [data, setData] = useState(initial)
+  const handleChange = (next: ViewBlock) => {
+    onChange(next)
+    setData(next)
+  }
+  return <ViewView data={data} editable onChange={handleChange} />
+}
+
+function renderStatefulView(initial: ViewBlock, onChange: (next: ViewBlock) => void) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(
+    <QueryClientProvider client={client}>
+      <DeletionUndoProvider>
+        <SiblingBlocksProvider value={{ blocks: [], pageId: 'page-1' }}>
+          <StatefulView initial={initial} onChange={onChange} />
+        </SiblingBlocksProvider>
+      </DeletionUndoProvider>
+    </QueryClientProvider>
+  )
+}
+
 beforeEach(() => {
   updateSchema.mockClear()
   renameRow.mockClear()
@@ -835,6 +864,57 @@ describe('ViewView — the layout menu sits in the head (KAN-519)', () => {
     const word = screen.getByText('table')
     expect(word.closest('button')).toBeNull()
     expect(screen.queryByRole('button', { name: 'table' })).not.toBeInTheDocument()
+  })
+})
+
+describe('ViewView — choosing Board on a legacy table (KAN-519)', () => {
+  const statusSchema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    {
+      id: 'p-status',
+      name: 'Status',
+      type: 'status',
+      options: [{ id: 'opt-todo', label: 'Todo' }],
+    },
+  ]
+
+  const legacyTable: ViewBlock = {
+    id: 'v-standup',
+    type: 'view',
+    mode: 'table',
+    filter: { property: 'p-status', op: 'eq', value: 'opt-todo' },
+    sort: { key: 'p-title', dir: 'asc' },
+  }
+
+  beforeEach(() => {
+    initialSchema = statusSchema
+    initialRows = [{ id: 'r-standup', title: 'Standup', values: { 'p-status': 'opt-todo' } }]
+  })
+
+  it('writes mode board on the same block and draws Standup as a card, grouped by status', async () => {
+    const user = userEvent.setup()
+    const onChange = jest.fn()
+    const { container } = renderStatefulView(legacyTable, onChange)
+
+    expect(screen.getByRole('table')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('Standup')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'table' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'board' }))
+
+    expect(onChange).toHaveBeenCalledTimes(1)
+    const next = onChange.mock.calls[0][0] as ViewBlock
+    expect(next).toEqual({ ...legacyTable, mode: 'board' })
+    expect(next.id).toBe(legacyTable.id)
+    expect(next).not.toHaveProperty('views')
+    expect(next.filter).toEqual(legacyTable.filter)
+    expect(next.sort).toEqual(legacyTable.sort)
+
+    expect(screen.getByRole('article', { name: 'Standup' })).toBeInTheDocument()
+    expect(screen.getByDisplayValue('Standup')).toBeInTheDocument()
+    const head = container.querySelector('[data-part="view-head"]')
+    expect(head).toHaveTextContent(/1 record\s*·\s*grouped by status/)
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
   })
 })
 
