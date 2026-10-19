@@ -567,11 +567,13 @@ export function CollectionCalendar({
         ) : (
           <span className="px-0.5 text-[13px] text-mn-text-secondary">{CALENDAR_EMPTY_LINE}</span>
         )
-      ) : (
-        rows.length === 0 && (
-          <span className="px-0.5 text-[13px] text-mn-text-secondary">{CALENDAR_EMPTY_LINE}</span>
-        )
-      )}
+      ) : rows.length === 0 ? (
+        <span className="px-0.5 text-[13px] text-mn-text-secondary">{CALENDAR_EMPTY_LINE}</span>
+      ) : undatedCount === rows.length ? (
+        <span className="px-0.5 text-[13px] font-mono lowercase text-mn-text-secondary">
+          {undatedCount} records, none with a date
+        </span>
+      ) : null}
       <div className={cn('hidden md:flex md:flex-col', containerClassName)} {...containerHandlers}>
         <div className="grid grid-cols-7">
           {DOW_LABELS.map((l) => (

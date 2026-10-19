@@ -84,6 +84,23 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
     expect(screen.getByText('1 without a date')).toBeInTheDocument()
   })
 
+  it('says none with a date when every record is undated', () => {
+    const undated: CollectionRow[] = [
+      { id: 'r1', title: 'Trim the rim', values: {} },
+      { id: 'r2', title: 'Undated', values: {} },
+    ]
+    render(<CollectionCalendar schema={schemaWithDate} rows={undated} />)
+    expect(screen.getByText('2 records, none with a date')).toBeInTheDocument()
+    expect(
+      screen.queryByText('nothing in this view has a date. records show here once they have one.')
+    ).not.toBeInTheDocument()
+  })
+
+  it('still shows the empty line when the dated collection has no records', () => {
+    render(<CollectionCalendar schema={schemaWithDate} rows={[]} />)
+    expect(screen.getByText(CALENDAR_EMPTY_LINE)).toBeInTheDocument()
+  })
+
   describe('the desktop month grid', () => {
     beforeEach(() => {
       jest.useFakeTimers().setSystemTime(new Date('2026-09-10T12:00:00Z'))
