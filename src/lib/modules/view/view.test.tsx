@@ -548,6 +548,7 @@ describe('ViewView — the path test: calendar, through the real host (KAN-352)'
   }
 
   const twentiethIso = `${localDateIso(new Date()).slice(0, 8)}20`
+  const twentyFirstIso = `${localDateIso(new Date()).slice(0, 8)}21`
 
   it('clicking the 20th’s plus adds a record dated that day, and a blank click adds nothing', async () => {
     const user = userEvent.setup()
@@ -568,6 +569,39 @@ describe('ViewView — the path test: calendar, through the real host (KAN-352)'
     expect(addRow).toHaveBeenCalledTimes(1)
     expect(renameRow).not.toHaveBeenCalled()
     expect(screen.queryByRole('textbox', { name: /Add an item/ })).not.toBeInTheDocument()
+  })
+
+  it('calendar: hover the 21st, add, name it, Esc keeps it, a blank click adds nothing (KAN-453)', async () => {
+    const user = userEvent.setup()
+    const { container } = renderView(calendar)
+    const cell = cellFor(container, twentyFirstIso)
+
+    await user.hover(cell)
+    await user.click(within(cell).getByRole('button', { name: /Add on 21/ }))
+
+    expect(addRow).toHaveBeenCalledTimes(1)
+    expect(addRow).toHaveBeenCalledWith({ 'p-due': twentyFirstIso })
+    expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Record title' }))
+
+    // Enter commits. Esc on a still-dirty title reverts and writes nothing.
+    await user.keyboard('dentist{Enter}')
+
+    expect(within(cell).getByText('dentist')).toBeInTheDocument()
+    expect(screen.getByLabelText('Record: dentist')).toBeInTheDocument()
+
+    await user.keyboard('{Escape}')
+
+    expect(screen.queryByLabelText('Record: dentist')).not.toBeInTheDocument()
+    expect(within(cell).getByText('dentist')).toBeInTheDocument()
+    expect(addRow).toHaveBeenCalledTimes(1)
+
+    await user.click(within(cell).getByText('21'))
+
+    expect(addRow).toHaveBeenCalledTimes(1)
+    expect(renameRow).toHaveBeenCalledTimes(1)
+    expect(renameRow).toHaveBeenCalledWith('r-new-0', 'dentist')
+    expect(screen.queryByRole('textbox', { name: /Add an item/ })).not.toBeInTheDocument()
+    expect(screen.queryByPlaceholderText('Untitled')).not.toBeInTheDocument()
   })
 
   it('a non-editable render shows no input on any click', async () => {
