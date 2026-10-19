@@ -157,37 +157,70 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
       expect(screen.queryByText('2 without a date')).not.toBeInTheDocument()
     })
 
-    it('clicking 2 without a date lists dentist and optician, not the dated record', async () => {
+    it('clicking the line opens a picker list of the undated records, each with its title and area glyph', async () => {
+      const user = userEvent.setup()
+      render(
+        <CollectionCalendar
+          schema={schemaWithDate}
+          rows={[
+            { ...dated, glyph: 'ramp' },
+            { ...undated('r2', 'dentist'), glyph: 'heart' },
+            { ...undated('r3', 'optician'), glyph: 'ring' },
+          ]}
+        />
+      )
+      expect(screen.queryByRole('listbox', { name: 'without a date' })).not.toBeInTheDocument()
+
+      await user.click(screen.getByRole('button', { name: '2 without a date' }))
+
+      const list = screen.getByRole('listbox', { name: 'without a date' })
+      expect(list.closest('[data-part="glass"]')).not.toBeNull()
+      const dentist = within(list).getByRole('option', { name: /dentist/ })
+      const optician = within(list).getByRole('option', { name: /optician/ })
+      expect(within(list).queryByRole('option', { name: /Trim the rim/ })).not.toBeInTheDocument()
+      expect(dentist).toHaveAttribute('data-part', 'row')
+      expect(optician).toHaveAttribute('data-part', 'row')
+      expect(dentist.querySelector('[data-area-mark] [data-icon="heart"]')).not.toBeNull()
+      expect(optician.querySelector('[data-area-mark] [data-icon="ring"]')).not.toBeNull()
+    })
+
+    it('picking a record arms placement, day cells take a hover state, and Escape writes nothing', async () => {
       const user = userEvent.setup()
       const onMoveDate = jest.fn()
-      render(
+      const { container } = render(
         <CollectionCalendar
           schema={schemaWithDate}
           rows={[dated, undated('r2', 'dentist'), undated('r3', 'optician')]}
           onMoveDate={onMoveDate}
         />
       )
+      const dayCells = () => container.querySelectorAll('[data-part="calendar-day-cell"]')
+      expect(dayCells().length).toBeGreaterThan(0)
+      for (const cell of dayCells()) {
+        expect(cell).not.toHaveClass('hover:bg-mn-hover-fill')
+      }
 
       await user.click(screen.getByRole('button', { name: '2 without a date' }))
+      await user.click(
+        within(screen.getByRole('listbox', { name: 'without a date' })).getByRole('option', {
+          name: /dentist/,
+        })
+      )
 
-      const list = screen.getByRole('listbox', { name: 'without a date' })
-      expect(list.closest('[data-part="glass"]')).not.toBeNull()
-      const dentist = within(list).getByRole('option', { name: 'dentist' })
-      const optician = within(list).getByRole('option', { name: 'optician' })
-      expect(within(list).queryByRole('option', { name: 'Trim the rim' })).not.toBeInTheDocument()
-      expect(dentist).toHaveAttribute('data-part', 'row')
-      expect(optician).toHaveAttribute('data-part', 'row')
-      expect(dentist.querySelector('[data-part="icon"] span')).toHaveClass('size-[9px]', 'rounded-[2.5px]')
-      expect(optician.querySelector('[data-part="icon"] span')).toHaveClass('size-[9px]', 'rounded-[2.5px]')
-
-      await user.click(screen.getByRole('button', { name: '2 without a date' }))
       expect(screen.queryByRole('listbox', { name: 'without a date' })).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'pick a day for dentist' })).toBeInTheDocument()
+      for (const cell of dayCells()) {
+        expect(cell).toHaveClass('hover:bg-mn-hover-fill')
+      }
 
-      await user.click(screen.getByRole('button', { name: '2 without a date' }))
-      expect(screen.getByRole('listbox', { name: 'without a date' })).toBeInTheDocument()
       await user.keyboard('{Escape}')
-      expect(screen.queryByRole('listbox', { name: 'without a date' })).not.toBeInTheDocument()
+
+      expect(screen.getByRole('button', { name: '2 without a date' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'pick a day for dentist' })).not.toBeInTheDocument()
       expect(onMoveDate).not.toHaveBeenCalled()
+      for (const cell of dayCells()) {
+        expect(cell).not.toHaveClass('hover:bg-mn-hover-fill')
+      }
     })
 
     it('shows n without a date when every record is undated, and keeps the grid empty line', () => {

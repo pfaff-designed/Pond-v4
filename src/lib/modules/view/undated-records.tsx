@@ -2,16 +2,15 @@
 
 /**
  * The undated-record list (KAN-454): a PondPicker glass of the records that
- * have no calendar date. `CollectionRow` is id, title, and values — no area
- * glyph — so each row leads with the calendar's own record mark. Opening the
- * list does not write a date; Escape only closes it.
+ * have no calendar date, each a mono row with its title and area glyph.
+ * Opening the list does not write a date. Picking a row arms placement in the
+ * calendar; Escape only closes the list.
  */
 
 import { type KeyboardEvent as ReactKeyboardEvent, useEffect } from 'react'
-
-import { GLASS, LIST, SLASH_SIZES } from '@/components/molecules/picker-chrome'
+import { AreaMark } from '@/components/atoms/AreaMark'
+import { GLASS, LIST } from '@/components/molecules/picker-chrome'
 import { Row, type RowEntry } from '@/components/molecules/slash-row'
-
 import type { CollectionRow } from './apply'
 
 const handleRowIdle = () => undefined
@@ -27,13 +26,12 @@ const rowEntry = (row: CollectionRow): RowEntry => ({
 
 export function UndatedRecords({
   rows,
-  pageMarkClassName,
   onClose,
+  onPick,
 }: {
   rows: readonly CollectionRow[]
-  /** The calendar's record mark (`DAY_ITEM_DOT`), one home for that class. */
-  pageMarkClassName: string
   onClose: () => void
+  onPick: (row: CollectionRow) => void
 }) {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -52,7 +50,7 @@ export function UndatedRecords({
   }
 
   return (
-    <div data-part="glass" className={`${GLASS} ${SLASH_SIZES.desktop.width}`}>
+    <div data-part="glass" className={GLASS}>
       <div role="listbox" aria-label="without a date" className={LIST} onKeyDown={handleKeyDown}>
         {rows.map((row) => (
           <Row
@@ -60,8 +58,8 @@ export function UndatedRecords({
             entry={rowEntry(row)}
             selected={false}
             onHover={handleRowIdle}
-            onPick={handleRowIdle}
-            mark={<span className={pageMarkClassName} />}
+            onPick={() => onPick(row)}
+            mark={row.glyph ? <AreaMark glyph={row.glyph} /> : undefined}
           />
         ))}
       </div>

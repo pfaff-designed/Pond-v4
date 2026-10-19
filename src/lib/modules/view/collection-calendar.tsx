@@ -13,7 +13,7 @@
  * board's bare `emptyLine` span instead; there is no button to offer.
  */
 
-import { useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
 import { cn } from '@/lib/utils'
 import { PondAtom } from '@/components/atoms/PondAtom'
 import { PondBlockEmpty } from '@/components/organisms/PondBlock'
@@ -86,6 +86,9 @@ const DAY_ITEM_DOT_LARGE = 'size-[13px] flex-none rounded-[4px] box-border ring-
  *  entered the block. */
 const DAY_ADD_BUTTON =
   'absolute right-1 top-1 text-mn-text-secondary opacity-0 group-hover/day:opacity-100 group-focus-within/day:opacity-100'
+/** Armed placement (KAN-454): the same hover fill as the month nav, so a day reads as a target. */
+const DAY_PLACE_HOVER = 'cursor-pointer hover:bg-mn-hover-fill'
+const UNDATED_LINE = 'px-0.5 text-left text-[13px] font-mono lowercase text-mn-text-secondary'
 
 function MonthDayNumber({ day, isToday, inMonth }: { day: number; isToday: boolean; inMonth: boolean }) {
   if (isToday) {
@@ -181,6 +184,7 @@ function MonthDayCellView({
   selectedId,
   draggingRowId,
   isOver,
+  armed,
   editable,
   registerBucket,
   onCardPointerDown,
@@ -198,6 +202,8 @@ function MonthDayCellView({
   selectedId?: string
   draggingRowId?: string
   isOver: boolean
+  /** While a record is armed, the cell takes the month-nav hover fill. */
+  armed: boolean
   editable?: boolean
   registerBucket: PointerBucketDrag['registerBucket']
   onCardPointerDown: PointerBucketDrag['onCardPointerDown']
@@ -230,7 +236,8 @@ function MonthDayCellView({
       className={cn(
         'group/day relative min-h-[108px] p-1.5 transition-colors duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none',
         columnIndex !== 0 && 'border-l border-mn-text/[0.09] dark:border-mn-text/[0.14]',
-        isOver ? DRAG_OVER_CLASS : columnIndex >= 5 ? 'bg-mn-text/[0.025]' : ''
+        isOver ? DRAG_OVER_CLASS : columnIndex >= 5 ? 'bg-mn-text/[0.025]' : '',
+        armed && DAY_PLACE_HOVER
       )}
     >
       <MonthDayNumber day={cell.dayOfMonth} isToday={cell.isToday} inMonth={cell.inMonth} />
@@ -483,6 +490,28 @@ export function CollectionCalendar({
   // select of an existing stack item must not move focus into the peek (KAN-358).
   const [focusTitleId, setFocusTitleId] = useState<string | null>(null)
   const [undatedOpen, setUndatedOpen] = useState(false)
+  const [placement, setPlacement] = useState<{ id: string; title: string } | null>(null)
+
+  useEffect(() => {
+    if (!placement) return
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      setPlacement(null)
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [placement])
+
+  const handlePickUndated = (row: CollectionRow) => {
+    setPlacement({ id: row.id, title: row.title })
+    setUndatedOpen(false)
+  }
+
+  const handleUndatedLineClick = () => {
+    if (placement) return
+    setUndatedOpen((open) => !open)
+  }
 
   // The date rides in `addRow`'s own values rather than a follow-up `setValue` —
   // one write, same one-change-log-record pause as `CollectionList`'s add
@@ -509,6 +538,9 @@ export function CollectionCalendar({
   const undatedRows = dateDef ? rows.filter((row) => rowDateIso(row, dateDef) === null) : []
   const undatedCount = undatedRows.length
   const showUndatedLine = !!dateDef && undatedCount > 0
+  const undatedLabel = placement
+    ? `pick a day for ${placement.title.toLowerCase()}`
+    : `${undatedCount} without a date`
 
   return (
     <div
@@ -556,18 +588,18 @@ export function CollectionCalendar({
       {showUndatedLine ? (
         <button
           type="button"
-          aria-expanded={undatedOpen}
-          onClick={() => setUndatedOpen((open) => !open)}
-          className="px-0.5 text-left text-[13px] font-mono lowercase text-mn-text-secondary"
+          aria-expanded={placement ? undefined : undatedOpen}
+          onClick={handleUndatedLineClick}
+          className={UNDATED_LINE}
         >
-          {undatedCount} without a date
+          {undatedLabel}
         </button>
       ) : null}
-      {showUndatedLine && undatedOpen ? (
+      {showUndatedLine && undatedOpen && !placement ? (
         <UndatedRecords
           rows={undatedRows}
-          pageMarkClassName={DAY_ITEM_DOT}
           onClose={() => setUndatedOpen(false)}
+          onPick={handlePickUndated}
         />
       ) : null}
       {!dateDef ? (
@@ -607,6 +639,7 @@ export function CollectionCalendar({
                 selectedId={selectedRow?.id}
                 draggingRowId={drag?.active ? drag.rowId : undefined}
                 isOver={!!editable && !!drag?.active && overKey === cell.iso}
+                armed={placement !== null}
                 editable={editable}
                 registerBucket={registerBucket}
                 onCardPointerDown={onCardPointerDown}
