@@ -80,15 +80,12 @@ const DAY_DOT = 'size-1 flex-none rounded-full bg-mn-text'
 const DAY_NUMBER_LIST = 'inline-flex h-[30px] min-w-[30px] self-start text-[20px] font-medium tabular-nums'
 /** `boxSt(o,13)`: the focused-day list's larger dot, `radius 4` (`sz > 11`). */
 const DAY_ITEM_DOT_LARGE = 'size-[13px] flex-none rounded-[4px] box-border ring-[1.4px] ring-inset ring-mn-text/[0.32]'
-/** The day cell's own keyboard-only "add" control: a mouse user reaches `onOpenAdd` by
- *  clicking the cell's blank space, so this stays `sr-only` until it is the thing with
- *  focus, then draws as a small chip in the cell's corner. */
-const DAY_ADD_BUTTON = cn(
-  'sr-only focus-visible:not-sr-only focus-visible:absolute focus-visible:right-1 focus-visible:top-1 focus-visible:z-10',
-  'focus-visible:rounded-[6px] focus-visible:bg-mn-card focus-visible:px-1.5 focus-visible:py-0.5',
-  'focus-visible:text-[10.5px] focus-visible:font-medium focus-visible:text-mn-text',
-  ROW_FOCUS_VISIBLE
-)
+/** The day cell's add mark. Hidden until that cell is hovered or focus-within.
+ *  Named `group/day`, not a bare `group`: BlockCanvas's block wrapper is already
+ *  `group`, and a bare one would reveal every day's plus as soon as the pointer
+ *  entered the block. */
+const DAY_ADD_BUTTON =
+  'absolute right-1 top-1 text-mn-text-secondary opacity-0 group-hover/day:opacity-100 group-focus-within/day:opacity-100'
 
 function MonthDayNumber({ day, isToday, inMonth }: { day: number; isToday: boolean; inMonth: boolean }) {
   if (isToday) {
@@ -230,8 +227,9 @@ function MonthDayCellView({
       data-iso={cell.iso}
       ref={registerBucket(cell.iso)}
       onClick={openable ? handleCellClick : undefined}
+      tabIndex={canAdd ? 0 : undefined}
       className={cn(
-        'relative min-h-[108px] p-1.5 transition-colors duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none',
+        'group/day relative min-h-[108px] p-1.5 transition-colors duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none',
         columnIndex !== 0 && 'border-l border-mn-text/[0.09] dark:border-mn-text/[0.14]',
         isOver ? DRAG_OVER_CLASS : columnIndex >= 5 ? 'bg-mn-text/[0.025]' : ''
       )}
@@ -254,6 +252,7 @@ function MonthDayCellView({
       {openable && (
         <button
           type="button"
+          tabIndex={-1}
           aria-label={`Add on ${cell.dayOfMonth} ${monthAbbr(cell.iso)}`}
           onClick={(e) => {
             e.stopPropagation()
@@ -261,7 +260,7 @@ function MonthDayCellView({
           }}
           className={DAY_ADD_BUTTON}
         >
-          ＋
+          <DayPlus />
         </button>
       )}
       {isAdding && (
@@ -401,6 +400,14 @@ function FocusDayList({
         )}
       </div>
     </div>
+  )
+}
+
+function DayPlus() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" aria-hidden>
+      <path d="M6 2.4v7.2M2.4 6h7.2" />
+    </svg>
   )
 }
 

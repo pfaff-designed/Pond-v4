@@ -524,6 +524,45 @@ describe('CollectionCalendar — a day cell is not a button around its events (K
     const item = within(cellFor(container, '2026-09-10')).getByText('Trim the rim')
     expect(item.closest('[role="button"]')).toBeNull()
   })
+
+  it('a hovered or focused day cell shows a hand-drawn plus', () => {
+    const { container } = render(
+      <CollectionCalendar schema={schemaWithDate} rows={[]} editable onAddRow={jest.fn()} onRenameRow={jest.fn()} />
+    )
+    const cell = cellFor(container, '2026-09-20')
+    const addButton = within(cell).getByRole('button', { name: 'Add on 20 sep' })
+    const plus = addButton.querySelector('svg')
+
+    // `userEvent.hover` does not set :hover in jsdom, so the reveal is the
+    // named group classes. Bare `group` would also match BlockCanvas's wrapper.
+    expect(cell).toHaveClass('group/day')
+    expect(cell).not.toHaveClass('group')
+    expect(cell).toHaveAttribute('tabindex', '0')
+    cell.focus()
+    expect(document.activeElement).toBe(cell)
+
+    expect(addButton).toHaveAttribute('tabindex', '-1')
+    expect(addButton).not.toHaveClass('sr-only')
+    expect(addButton).toHaveClass(
+      'absolute',
+      'right-1',
+      'top-1',
+      'text-mn-text-secondary',
+      'opacity-0',
+      'group-hover/day:opacity-100',
+      'group-focus-within/day:opacity-100'
+    )
+    expect(addButton).not.toHaveTextContent('＋')
+    expect(plus).not.toBeNull()
+    expect(plus).toHaveAttribute('width', '12')
+    expect(plus).toHaveAttribute('height', '12')
+    expect(plus).toHaveAttribute('viewBox', '0 0 12 12')
+    expect(plus).toHaveAttribute('stroke', 'currentColor')
+    expect(plus).toHaveAttribute('stroke-width', '1.4')
+    expect(plus).toHaveAttribute('stroke-linecap', 'round')
+    expect(plus).toHaveAttribute('aria-hidden', 'true')
+    expect(plus?.querySelector('path')).toHaveAttribute('d', 'M6 2.4v7.2M2.4 6h7.2')
+  })
 })
 
 describe('CollectionView — dragging a calendar event onto another day (KAN-385 path)', () => {
