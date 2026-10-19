@@ -13,12 +13,11 @@
  * board's bare `emptyLine` span instead; there is no button to offer.
  */
 
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
 import { cn } from '@/lib/utils'
 import { PondAtom } from '@/components/atoms/PondAtom'
 import { PondBlockEmpty } from '@/components/organisms/PondBlock'
 import type { PropertySchema, PropertyValue } from '@/lib/properties/schema'
-import { AddRowInput } from './add-row-input'
 import {
   buildMonthGrid,
   dateForDrop,
@@ -107,8 +106,8 @@ function handleCalendarRowClick(
   // A drag's trailing click lands here too (its row is the click's target) —
   // it must never open or select, same as `selectWithPointer`'s own guard below.
   if (isClickSuppressed()) return
-  // A row is its own target — it must never fall through to the cell's
-  // "open the add input" click underneath it, so it stops that click too.
+  // A row is its own target. Stopping the click keeps it off the block row
+  // underneath, which focuses itself on a click that is not an inner control.
   e.stopPropagation()
   if (rowId === selectedId) {
     onOpenRow?.(rowId)
@@ -177,10 +176,7 @@ function MonthDayCellView({
   cell,
   columnIndex,
   canAdd,
-  isAdding,
-  onOpenAdd,
-  onCommitAdd,
-  onCancelAdd,
+  onAdd,
   selectedId,
   draggingRowId,
   isOver,
@@ -197,10 +193,7 @@ function MonthDayCellView({
   cell: MonthDayCell
   columnIndex: number
   canAdd: boolean
-  isAdding: boolean
-  onOpenAdd: () => void
-  onCommitAdd: (title: string) => void
-  onCancelAdd: () => void
+  onAdd: () => void
   selectedId?: string
   draggingRowId?: string
   isOver: boolean
@@ -214,19 +207,24 @@ function MonthDayCellView({
   selectOrOpenOnKey: RowSelection['selectOrOpenOnKey']
   onOpenRow?: (rowId: string) => void
 }) {
-  const openable = canAdd && !isAdding
-  // A drag released over blank cell space still fires a trailing click here —
-  // it must never open the add input (mirrors `handleCalendarRowClick`, above).
-  const handleCellClick = () => {
-    if (isClickSuppressed()) return
-    onOpenAdd()
+  // A stack item's Enter bubbles. Only the cell itself adds; the item's own
+  // Enter still selects (KAN-358). The cell has no click handler: blank space
+  // and a drag's trailing click add nothing.
+  const handleCellKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'Enter' || event.target !== event.currentTarget) return
+    event.preventDefault()
+    onAdd()
+  }
+  const handlePlusClick = (event: MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation()
+    onAdd()
   }
   return (
     <div
       data-part="calendar-day-cell"
       data-iso={cell.iso}
       ref={registerBucket(cell.iso)}
-      onClick={openable ? handleCellClick : undefined}
+      onKeyDown={canAdd ? handleCellKeyDown : undefined}
       tabIndex={canAdd ? 0 : undefined}
       className={cn(
         'group/day relative min-h-[108px] p-1.5 transition-colors duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none',
@@ -249,30 +247,16 @@ function MonthDayCellView({
         selectOrOpenOnKey={selectOrOpenOnKey}
         onOpenRow={onOpenRow}
       />
-      {openable && (
+      {canAdd && (
         <button
           type="button"
           tabIndex={-1}
           aria-label={`Add on ${cell.dayOfMonth} ${monthAbbr(cell.iso)}`}
-          onClick={(e) => {
-            e.stopPropagation()
-            onOpenAdd()
-          }}
+          onClick={handlePlusClick}
           className={DAY_ADD_BUTTON}
         >
           <DayPlus />
         </button>
-      )}
-      {isAdding && (
-        <AddRowInput
-          aria-label={`Add an item on ${cell.dayOfMonth} ${monthAbbr(cell.iso)}`}
-          placeholder="Untitled"
-          autoFocus
-          staysOpen={false}
-          onCommit={onCommitAdd}
-          onCancel={onCancelAdd}
-          className="w-full border-0 bg-transparent px-1 py-0.5 text-[11.5px] text-mn-text outline-none placeholder:text-mn-text-secondary"
-        />
       )}
     </div>
   )
@@ -461,7 +445,6 @@ export function CollectionCalendar({
   const [todayIso] = useState(() => localDateIso(new Date()))
   const [now] = useState(() => new Date())
   const [focusIso, setFocusIso] = useState(todayIso)
-  const [addingIso, setAddingIso] = useState<string | null>(null)
   const grid = useMemo(
     () => buildMonthGrid(focusIso, todayIso, rows, dateDef),
     [dateDef, focusIso, todayIso, rows]
@@ -492,17 +475,22 @@ export function CollectionCalendar({
   const done = useDoneToggle({ schema, editable, onEdit })
 
   const canAdd = !!dateDef && !!editable && !!onAddRow
+  // Guards handleAddDay against a second click while its write is in flight
+  // (AUDIT G9), same shape as CollectionGallery's handleAddRecord.
+  const addingRef = useRef(false)
 
   // The date rides in `addRow`'s own values rather than a follow-up `setValue` —
   // one write, same one-change-log-record pause as `CollectionList`'s add
   // (session undo for row adds is KAN-419).
-  const handleAddDay = async (iso: string, title: string) => {
-    if (!dateDef) return
+  const handleAddDay = async (iso: string) => {
+    if (!dateDef || !onAddRow || addingRef.current) return
+    addingRef.current = true
     try {
-      const id = await onAddRow?.({ [dateDef.id]: iso })
-      if (id) onRenameRow?.(id, title)
+      await onAddRow({ [dateDef.id]: iso })
     } catch (err) {
       console.error('Failed to add a day', err)
+    } finally {
+      addingRef.current = false
     }
   }
 
@@ -585,10 +573,7 @@ export function CollectionCalendar({
                 cell={cell}
                 columnIndex={i}
                 canAdd={canAdd}
-                isAdding={addingIso === cell.iso}
-                onOpenAdd={() => setAddingIso(cell.iso)}
-                onCommitAdd={(title) => void handleAddDay(cell.iso, title)}
-                onCancelAdd={() => setAddingIso(null)}
+                onAdd={() => void handleAddDay(cell.iso)}
                 selectedId={selectedRow?.id}
                 draggingRowId={drag?.active ? drag.rowId : undefined}
                 isOver={!!editable && !!drag?.active && overKey === cell.iso}
