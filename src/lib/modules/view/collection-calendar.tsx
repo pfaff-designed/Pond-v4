@@ -598,6 +598,7 @@ export function CollectionCalendar({
       {showUndatedLine && undatedOpen && !placement ? (
         <UndatedRecords
           rows={undatedRows}
+          pageMarkClassName={DAY_ITEM_DOT}
           onClose={() => setUndatedOpen(false)}
           onPick={handlePickUndated}
         />

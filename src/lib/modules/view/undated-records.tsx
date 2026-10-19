@@ -8,8 +8,8 @@
  */
 
 import { type KeyboardEvent as ReactKeyboardEvent, useEffect } from 'react'
-import { AreaMark } from '@/components/atoms/AreaMark'
-import { GLASS, LIST } from '@/components/molecules/picker-chrome'
+
+import { GLASS, LIST, SLASH_SIZES } from '@/components/molecules/picker-chrome'
 import { Row, type RowEntry } from '@/components/molecules/slash-row'
 import type { CollectionRow } from './apply'
 
@@ -26,10 +26,13 @@ const rowEntry = (row: CollectionRow): RowEntry => ({
 
 export function UndatedRecords({
   rows,
+  pageMarkClassName,
   onClose,
   onPick,
 }: {
   rows: readonly CollectionRow[]
+  /** The calendar's record mark (`DAY_ITEM_DOT`), one home for that class. */
+  pageMarkClassName: string
   onClose: () => void
   onPick: (row: CollectionRow) => void
 }) {
@@ -50,7 +53,7 @@ export function UndatedRecords({
   }
 
   return (
-    <div data-part="glass" className={GLASS}>
+    <div data-part="glass" className={`${GLASS} ${SLASH_SIZES.desktop.width}`}>
       <div role="listbox" aria-label="without a date" className={LIST} onKeyDown={handleKeyDown}>
         {rows.map((row) => (
           <Row
@@ -59,7 +62,7 @@ export function UndatedRecords({
             selected={false}
             onHover={handleRowIdle}
             onPick={() => onPick(row)}
-            mark={row.glyph ? <AreaMark glyph={row.glyph} /> : undefined}
+            mark={<span className={pageMarkClassName} />}
           />
         ))}
       </div>
