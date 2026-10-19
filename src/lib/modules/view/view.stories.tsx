@@ -289,6 +289,39 @@ export const ViewHeadSwitchesNoKind: Story = {
   },
 }
 
+/**
+ * The layout chip is named with the current layout, and the body behind it is
+ * that layout (KAN-524). Gallery is one of list, timeline, gallery, and chart.
+ * Opening the chip lists those four by their kind labels. The gallery stays
+ * the body while the menu is open.
+ */
+export const LayoutChipOffersListTimelineGalleryAndChart: Story = {
+  args: {
+    config: galleryConfig,
+    schema,
+    rows,
+    editable: true,
+    onConfigChange: fn(),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByRole('button', { name: 'gallery' })).toBeInTheDocument()
+    const gallery = canvasElement.querySelector('[data-part="gallery"]')
+    await expect(gallery).toHaveTextContent('Trim the rim')
+
+    await userEvent.click(canvas.getByRole('button', { name: 'gallery' }))
+    const menu = await within(document.body).findByRole('menu', { name: 'layout' })
+    const items = within(menu)
+    await expect(items.getByRole('menuitem', { name: 'list' })).toBeInTheDocument()
+    await expect(items.getByRole('menuitem', { name: 'timeline' })).toBeInTheDocument()
+    await expect(items.getByRole('menuitem', { name: 'gallery' })).toBeInTheDocument()
+    await expect(items.getByRole('menuitem', { name: 'chart' })).toBeInTheDocument()
+    await expect(canvasElement.querySelector('[data-part="gallery"]')).toHaveTextContent(
+      'Trim the rim'
+    )
+  },
+}
+
 /** The group-by clause belongs to the mode that has one — a table claims no grouping. */
 export const ViewHeadFactsPerMode: Story = {
   args: {
@@ -1439,6 +1472,65 @@ export const ListNeedsADate: Story = {
         'nothing in this view has a date. records show here once they have one.'
       )
     ).toBeInTheDocument()
+  },
+}
+
+const statusGroupRows: CollectionRow[] = [
+  { id: 'cabinet', title: 'cabinet quote', values: { 'l-status': 'l-todo' } },
+  { id: 'skip', title: 'skip hire returned', values: { 'l-status': 'l-done' } },
+  { id: 'samples', title: 'order samples', values: {} },
+]
+
+/**
+ * A list grouped by status, and the same rows flat when grouping is none
+ * (KAN-524). `listSchema`'s field is already named `status`, so the unset
+ * bucket reads `No status`. Each group has a heading and a count. A record
+ * with no value for that field sits in the unset group. The second view sets
+ * `listFlat` and omits `groupBy`, so those rows draw with no group headings.
+ */
+export const ListGroupedByStatusAndFlatWhenNone: Story = {
+  args: {
+    config: { id: 'v-list-status', type: 'view', mode: 'list', groupBy: 'l-status' },
+    schema: listSchema,
+    rows: statusGroupRows,
+  },
+  render: (args) => (
+    <>
+      <CollectionView {...args} />
+      <CollectionView
+        config={{ id: 'v-list-flat', type: 'view', mode: 'list', listFlat: true }}
+        schema={args.schema}
+        rows={args.rows}
+      />
+    </>
+  ),
+  play: async ({ canvasElement }) => {
+    const groups = [...canvasElement.querySelectorAll<HTMLElement>('[data-part="list-group"]')]
+    const headingOf = (group: HTMLElement) => {
+      const heading = group.querySelector('[data-part="list-group-label"]')
+      const label = heading?.querySelector('span')
+      return (label ?? heading)?.textContent ?? ''
+    }
+    for (const group of groups) {
+      await expect(group.querySelector('[data-part="list-group-label"]')).not.toBeNull()
+      await expect(group.querySelector('[data-part="list-group-count"]')).not.toBeNull()
+    }
+    await expect(groups.map(headingOf)).toEqual(['to do', 'done', 'No status'])
+    const unset = groups.find((group) => headingOf(group) === 'No status')!
+    const unsetTitle = within(unset).getByRole('button', { name: 'order samples' })
+    await userEvent.click(unsetTitle)
+    await expect(within(unset).getByRole('button', { name: 'order samples' })).toBeInTheDocument()
+
+    const flat = [...canvasElement.querySelectorAll<HTMLElement>('[data-part="list-card"]')].find(
+      (card) => card.querySelector('[data-part="list-group"]') === null
+    )
+    await expect(flat).toBeTruthy()
+    const flatView = within(flat!)
+    for (const name of ['cabinet quote', 'skip hire returned', 'order samples']) {
+      await expect(flatView.getByRole('button', { name })).toBeInTheDocument()
+    }
+    await expect(flat!.querySelector('[data-part="list-group"]')).toBeNull()
+    await expect(flat!.querySelector('[data-part="list-group-label"]')).toBeNull()
   },
 }
 
