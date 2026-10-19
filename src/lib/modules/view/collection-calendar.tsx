@@ -13,7 +13,7 @@
  * board's bare `emptyLine` span instead; there is no button to offer.
  */
 
-import { useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
 import { cn } from '@/lib/utils'
 import { PondAtom } from '@/components/atoms/PondAtom'
 import { PondBlockEmpty } from '@/components/organisms/PondBlock'
@@ -483,6 +483,23 @@ export function CollectionCalendar({
   // select of an existing stack item must not move focus into the peek (KAN-358).
   const [focusTitleId, setFocusTitleId] = useState<string | null>(null)
   const [undatedOpen, setUndatedOpen] = useState(false)
+  const [placement, setPlacement] = useState<{ id: string; title: string } | null>(null)
+
+  useEffect(() => {
+    if (!placement) return
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      setPlacement(null)
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [placement])
+
+  const handlePickUndated = (row: CollectionRow) => {
+    setPlacement({ id: row.id, title: row.title })
+    setUndatedOpen(false)
+  }
 
   // The date rides in `addRow`'s own values rather than a follow-up `setValue` —
   // one write, same one-change-log-record pause as `CollectionList`'s add
@@ -509,6 +526,9 @@ export function CollectionCalendar({
   const undatedRows = dateDef ? rows.filter((row) => rowDateIso(row, dateDef) === null) : []
   const undatedCount = undatedRows.length
   const showUndatedLine = !!dateDef && undatedCount > 0
+  const undatedLabel = placement
+    ? `pick a day for ${placement.title.toLowerCase()}`
+    : `${undatedCount} without a date`
 
   return (
     <div
@@ -556,15 +576,19 @@ export function CollectionCalendar({
       {showUndatedLine ? (
         <button
           type="button"
-          aria-expanded={undatedOpen}
-          onClick={() => setUndatedOpen((open) => !open)}
-          className="px-0.5 text-left text-[13px] font-mono lowercase text-mn-text-secondary"
+          aria-expanded={placing ? undefined : undatedOpen}
+          onClick={handleUndatedLineClick}
+          className={UNDATED_LINE}
         >
-          {undatedCount} without a date
+          {placing ? `pick a day for ${placing.title}` : `${undatedCount} without a date`}
         </button>
       ) : null}
-      {showUndatedLine && undatedOpen ? (
-        <UndatedRecords rows={undatedRows} onClose={() => setUndatedOpen(false)} />
+      {showUndatedLine && undatedOpen && !placing ? (
+        <UndatedRecords
+          rows={undatedRows}
+          onClose={() => setUndatedOpen(false)}
+          onPick={handlePickUndated}
+        />
       ) : null}
       {!dateDef ? (
         onAddDateField ? (
