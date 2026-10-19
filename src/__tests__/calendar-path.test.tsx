@@ -7,14 +7,36 @@
 
 import React from 'react'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
+import { ShellCommands } from '@/components/organisms/ShellCommands'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
+import { sessionUndo } from '@/lib/change-log/session-undo'
+import type { ChangeLogRecord } from '@/lib/change-log/types'
 import type { Block } from '@/lib/documents/types'
 import type { PondPage } from '@/lib/pages/client'
+import { PondContext, type PondContextValue } from '@/lib/pond/context'
+import type { Pond } from '@/lib/pond/client'
+import { isApplePlatform } from '@/lib/platform'
 import { withSchema, type PropertySchema } from '@/lib/properties/schema'
 import { CALENDAR_EMPTY_LINE } from '@/lib/modules/view/kinds'
 import { findTextBlock, writeInTextBlock } from './helpers/text-block'
+
+// The date write logs through the real `appendOwnEdit` export. Only that
+// boundary is replaced, so `sessionUndo.remember` still runs. `undoStep` is
+// the RPC the shell's session-undo listener calls; the stack itself stays real.
+jest.mock('@/lib/change-log/store', () => ({
+  ...jest.requireActual('@/lib/change-log/store'),
+  appendOwnEdit: jest.fn(async () => ({ id: 'rec-date' })),
+}))
+
+const mockUndoStep = jest.fn()
+jest.mock('@/lib/change-log/undo', () => ({
+  ...jest.requireActual('@/lib/change-log/undo'),
+  undoStep: (...args: unknown[]) => mockUndoStep(...args),
+  redoStep: jest.fn(),
+}))
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
@@ -65,6 +87,14 @@ const databaseRows = [
     order: 2,
     updated_at: '',
   },
+  {
+    id: 'db-visits',
+    parent_id: 'root',
+    type: 'database',
+    title: 'visits',
+    order: 3,
+    updated_at: '',
+  },
 ]
 
 const schemaWithDate: PropertySchema = [
@@ -103,6 +133,15 @@ const PAGES: Record<string, PondPage> = {
     order: 0,
     props: withSchema({}, schemaNoDate),
   },
+  'db-visits': {
+    id: 'db-visits',
+    parentId: 'root',
+    type: 'page',
+    title: 'visits',
+    blocks: [],
+    order: 0,
+    props: withSchema({}, schemaWithDate),
+  },
 }
 
 const rowPage = (
@@ -131,6 +170,11 @@ const ROWS_BY_COLLECTION: Record<string, PondPage[]> = {
   // A record exists, but the collection's own schema has no date property — the
   // "no rows at all" frame box (viewFrameState) is a different, earlier case.
   'db-notes': [rowPage('r1', 'db-notes', 'a note', {})],
+  'db-visits': [
+    rowPage('r-dentist', 'db-visits', 'dentist', {}),
+    rowPage('r-optician', 'db-visits', 'optician', {}),
+    rowPage('r-library', 'db-visits', 'library', {}),
+  ],
 }
 
 const mockGetPage = jest.fn((_supabase: unknown, id: string) => Promise.resolve(PAGES[id] ?? null))
@@ -142,6 +186,9 @@ jest.mock('@/lib/pages/client', () => ({
   getPage: (supabase: unknown, id: string) => mockGetPage(supabase, id),
   getCollectionRows: (supabase: unknown, userId: string, id: string) =>
     mockGetCollectionRows(supabase, userId, id),
+  // The day click writes through `setProperty`. This file's client stub has no
+  // table API, and a rejected write rolls the optimistic row back.
+  setProperty: jest.fn().mockResolvedValue(undefined),
 }))
 
 /** `BlockCanvas` is controlled — a harness re-renders it with `onChange`'s next
@@ -248,5 +295,37 @@ describe('`/calendar` path (KAN-262)', () => {
     expect(screen.getByLabelText('Next month')).toBeInTheDocument()
     expect(screen.queryByText('no rows yet')).not.toBeInTheDocument()
     expect(screen.queryByText('add a row')).not.toBeInTheDocument()
+  })
+})
+
+describe('`/calendar` undated records (KAN-454)', () => {
+  it('dates dentist from the page, and the line drops from 3 without a date to 2', async () => {
+    const { container } = renderCanvas([])
+    fireEvent.click(await screen.findByTestId('trailing-block-gap'))
+    const editor = await findTextBlock()
+    writeInTextBlock(editor, '/')
+    await screen.findByRole('listbox', { name: 'blocks' })
+    writeInTextBlock(editor, '/calendar')
+    const menu = await screen.findByRole('listbox', { name: 'blocks' })
+    fireEvent.click(within(menu).getByText('calendar'))
+
+    const picker = await screen.findByRole('listbox', { name: '/calendar' })
+    fireEvent.click(await within(picker).findByRole('option', { name: /visits/ }))
+
+    fireEvent.click(await screen.findByRole('button', { name: '3 without a date' }))
+    const list = await screen.findByRole('listbox', { name: 'without a date' })
+    fireEvent.click(within(list).getByRole('option', { name: 'dentist' }))
+
+    const desktopWrap = [...container.querySelectorAll('div')].find((d) =>
+      d.classList.contains('md:flex')
+    )!
+    const dayCell = () =>
+      [...desktopWrap.querySelectorAll<HTMLElement>('[data-part="calendar-day-cell"]')].find((cell) =>
+        cell.dataset.iso?.endsWith('-21')
+      )!
+    fireEvent.click(dayCell())
+
+    await waitFor(() => expect(within(dayCell()).getByText('dentist')).toBeInTheDocument())
+    expect(screen.getByRole('button', { name: '2 without a date' })).toBeInTheDocument()
   })
 })
