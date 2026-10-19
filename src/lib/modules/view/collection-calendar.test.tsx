@@ -229,6 +229,54 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
       }
     })
 
+    it('clicking a day writes that date, the record sits on that day, and the line count drops', async () => {
+      const user = userEvent.setup()
+      const onMoveDate = jest.fn()
+      const Harness = () => {
+        const [items, setItems] = useState<CollectionRow[]>([
+          dated,
+          undated('r2', 'dentist'),
+          undated('r3', 'optician'),
+        ])
+        return (
+          <CollectionCalendar
+            schema={schemaWithDate}
+            rows={items}
+            onMoveDate={(rowId, key, value) => {
+              onMoveDate(rowId, key, value)
+              setItems((prev) =>
+                prev.map((row) =>
+                  row.id === rowId ? { ...row, values: { ...row.values, [key]: value } } : row
+                )
+              )
+            }}
+          />
+        )
+      }
+      const { container } = render(<Harness />)
+      const dayCell = (iso: string) =>
+        container.querySelector<HTMLElement>(`[data-part="calendar-day-cell"][data-iso="${iso}"]`)!
+
+      await user.click(screen.getByRole('button', { name: '2 without a date' }))
+      await user.click(
+        within(screen.getByRole('listbox', { name: 'without a date' })).getByRole('option', {
+          name: /dentist/,
+        })
+      )
+
+      const cell = container.querySelector<HTMLElement>('[data-part="calendar-day-cell"][data-iso$="-21"]')!
+      const iso = cell.getAttribute('data-iso')!
+      await user.click(cell)
+
+      expect(onMoveDate).toHaveBeenCalledTimes(1)
+      expect(onMoveDate).toHaveBeenCalledWith('r2', 'p-due', iso)
+      expect(within(dayCell(iso)).getByText('dentist')).toBeInTheDocument()
+      expect(within(dayCell(iso)).queryByText('optician')).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: '1 without a date' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'pick a day for dentist' })).not.toBeInTheDocument()
+      expect(screen.queryByText('2 without a date')).not.toBeInTheDocument()
+    })
+
     it('shows n without a date when every record is undated, and keeps the grid empty line', () => {
       render(
         <CollectionCalendar

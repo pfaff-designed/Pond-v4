@@ -194,6 +194,7 @@ function MonthDayCellView({
   selectWithPointer,
   selectOrOpenOnKey,
   onOpenRow,
+  onPlace,
 }: {
   cell: MonthDayCell
   columnIndex: number
@@ -213,10 +214,16 @@ function MonthDayCellView({
   selectWithPointer: RowSelection['selectWithPointer']
   selectOrOpenOnKey: RowSelection['selectOrOpenOnKey']
   onOpenRow?: (rowId: string) => void
+  /** Armed placement: a click on this day writes that date. Absent, the cell stays clickless. */
+  onPlace?: (iso: string) => void
 }) {
   // A stack item's Enter bubbles. Only the cell itself adds; the item's own
-  // Enter still selects (KAN-358). The cell has no click handler: blank space
-  // and a drag's trailing click add nothing.
+  // Enter still selects (KAN-358). With nothing armed the cell has no click
+  // handler: blank space and a drag's trailing click add nothing.
+  const handlePlaceClick = (event: MouseEvent<HTMLDivElement>) => {
+    event.stopPropagation()
+    onPlace?.(cell.iso)
+  }
   const handleCellKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'Enter' || event.target !== event.currentTarget) return
     event.preventDefault()
@@ -231,6 +238,7 @@ function MonthDayCellView({
       data-part="calendar-day-cell"
       data-iso={cell.iso}
       ref={registerBucket(cell.iso)}
+      onClick={onPlace ? handlePlaceClick : undefined}
       onKeyDown={canAdd ? handleCellKeyDown : undefined}
       tabIndex={canAdd ? 0 : undefined}
       className={cn(
@@ -513,6 +521,17 @@ export function CollectionCalendar({
     setUndatedOpen((open) => !open)
   }
 
+  // The same own edit a drop uses: `onMoveDate` is `setValueAsStep` (KAN-385).
+  // A click on the row's own day writes nothing. Clearing the arm is the gesture ending.
+  const handlePlaceOnDay = (iso: string) => {
+    if (!placement || !dateDef || !onMoveDate) return
+    const row = rows.find((candidate) => candidate.id === placement.id)
+    if (row && rowDateIso(row, dateDef) !== iso) {
+      onMoveDate(placement.id, dateDef.id, dateForDrop(row.values[dateDef.id], iso))
+    }
+    setPlacement(null)
+  }
+
   // The date rides in `addRow`'s own values rather than a follow-up `setValue` —
   // one write, same one-change-log-record pause as `CollectionList`'s add
   // (session undo for row adds is KAN-419).
@@ -641,6 +660,7 @@ export function CollectionCalendar({
                 draggingRowId={drag?.active ? drag.rowId : undefined}
                 isOver={!!editable && !!drag?.active && overKey === cell.iso}
                 armed={placement !== null}
+                onPlace={placement ? handlePlaceOnDay : undefined}
                 editable={editable}
                 registerBucket={registerBucket}
                 onCardPointerDown={onCardPointerDown}
