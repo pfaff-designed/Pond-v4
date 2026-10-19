@@ -2145,3 +2145,59 @@ describe('ViewView — the list head groups from its fact (KAN-521)', () => {
     expect(screen.queryByRole('button', { name: 'grouped by status' })).not.toBeInTheDocument()
   })
 })
+
+describe('ViewView — listFlat stays on the list (KAN-521)', () => {
+  const schema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    { id: 'p-due', name: 'Due', type: 'date' },
+    {
+      id: 'p-status',
+      name: 'Status',
+      type: 'status',
+      options: [{ id: 'opt-todo', label: 'Todo' }],
+    },
+  ]
+  const due = localDateIso(new Date())
+
+  beforeEach(() => {
+    initialSchema = schema
+    initialRows = [
+      { id: 'r1', title: 'Standup', values: { 'p-status': 'opt-todo', 'p-due': due } },
+    ]
+  })
+
+  it('passes listFlat into the list, so a dated list draws one run', () => {
+    const { container } = renderStatefulView(
+      { id: 'v-list', type: 'view', mode: 'list', listFlat: true },
+      jest.fn()
+    )
+    expect(screen.getByText('Standup')).toBeInTheDocument()
+    expect(container.querySelector('[data-part="list-group"]')).toBeNull()
+    expect(container.querySelector('[data-part="list-group-label"]')).toBeNull()
+  })
+
+  it('a board with listFlat still draws its lanes and grouped by status', () => {
+    const { container } = renderStatefulView(
+      { id: 'v-board', type: 'view', mode: 'board', listFlat: true },
+      jest.fn()
+    )
+    const head = container.querySelector('[data-part="view-head"]')
+    expect(head).toHaveTextContent(/grouped by status/)
+    const todo = container.querySelector<HTMLElement>('[data-part="lane"][data-lane="Todo"]')
+    expect(container.querySelector('[data-part="lanes"]')).not.toBeNull()
+    expect(todo).not.toBeNull()
+    expect(within(todo!).getByRole('article', { name: 'Standup' })).toBeInTheDocument()
+  })
+
+  it('a calendar with listFlat still places the row on its date', () => {
+    const { container } = renderStatefulView(
+      { id: 'v-cal', type: 'view', mode: 'calendar', listFlat: true },
+      jest.fn()
+    )
+    const cell = container.querySelector<HTMLElement>(
+      `[data-part="calendar-day-cell"][data-iso="${due}"]`
+    )
+    expect(cell).not.toBeNull()
+    expect(within(cell!).getByText('Standup')).toBeInTheDocument()
+  })
+})

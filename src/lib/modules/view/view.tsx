@@ -605,6 +605,7 @@ export function CollectionView({
           schema={schema}
           rows={processed}
           groupBy={activeConfig.groupBy}
+          listFlat={activeConfig.listFlat}
           editable={editable}
           onEdit={onEdit}
           onAddRow={onAddRow}
