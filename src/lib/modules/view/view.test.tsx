@@ -1534,6 +1534,67 @@ describe('ViewView — the path: layout menu, board, table, calendar, one step b
   })
 })
 
+describe('ViewView — one layout write steps back to the previous kind (KAN-523)', () => {
+  const datedSchema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    {
+      id: 'p-status',
+      name: 'Status',
+      type: 'status',
+      options: [{ id: 'opt-todo', label: 'Todo' }],
+    },
+    { id: 'p-due', name: 'Due', type: 'date' },
+  ]
+
+  const legacyTable: ViewBlock = {
+    id: 'v-standup',
+    type: 'view',
+    mode: 'table',
+    filter: { property: 'p-status', op: 'eq', value: 'opt-todo' },
+    sort: { key: 'p-title', dir: 'asc' },
+  }
+
+  beforeEach(() => {
+    initialSchema = datedSchema
+    initialRows = [
+      {
+        id: 'r-standup',
+        title: 'Standup',
+        values: { 'p-status': 'opt-todo', 'p-due': '2026-06-01' },
+      },
+    ]
+  })
+
+  it('chooses timeline as one structural step, and one step back restores the table and the chip', async () => {
+    const user = userEvent.setup()
+    let stepBack = (): void => {}
+    const handleReady = (next: () => void) => {
+      stepBack = next
+    }
+    const { container } = renderLayoutPath(legacyTable, handleReady)
+
+    expect(screen.getByRole('button', { name: 'table' })).toBeInTheDocument()
+    expect(screen.getByRole('table')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('Standup')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'table' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'timeline' }))
+
+    const label = container.querySelector('[data-part="gantt-label"]')
+    expect(label).toHaveTextContent('Standup')
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+
+    act(() => {
+      stepBack()
+    })
+
+    const table = screen.getByRole('table')
+    expect(within(table).getByDisplayValue('Standup')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'table' })).toBeInTheDocument()
+    expect(container.querySelector('[data-part="gantt-label"]')).not.toBeInTheDocument()
+  })
+})
+
 describe('CollectionView — the saved-view bar switches views as reading, not editing (KAN-36)', () => {
   const barSchema: PropertySchema = [
     { id: 'p-title', name: 'Title', type: 'text' },
