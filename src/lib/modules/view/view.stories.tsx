@@ -289,6 +289,26 @@ export const ViewHeadSwitchesNoKind: Story = {
   },
 }
 
+/**
+ * The layout chip is named with the current layout, and the body behind it is
+ * that layout (KAN-524). Gallery is one of list, timeline, gallery, and chart.
+ */
+export const LayoutChipOffersListTimelineGalleryAndChart: Story = {
+  args: {
+    config: galleryConfig,
+    schema,
+    rows,
+    editable: true,
+    onConfigChange: fn(),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByRole('button', { name: 'gallery' })).toBeInTheDocument()
+    const gallery = canvasElement.querySelector('[data-part="gallery"]')
+    await expect(gallery).toHaveTextContent('Trim the rim')
+  },
+}
+
 /** The group-by clause belongs to the mode that has one — a table claims no grouping. */
 export const ViewHeadFactsPerMode: Story = {
   args: {
