@@ -4,7 +4,7 @@
  */
 
 import { useState } from 'react'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ViewBar, ViewLayoutMenu, type ViewBarView } from '@/components/molecules/ViewBar'
 import { LAYOUT_MENU_MODES, VIEW_KINDS } from '@/lib/modules/view/kinds'
@@ -134,6 +134,24 @@ describe('ViewLayoutMenu', () => {
     await user.click(await screen.findByRole('menuitem', { name: 'timeline' }))
     expect(onLayout).not.toHaveBeenCalled()
     await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+  })
+
+  it('Enter and Space on the focused closed chip open the layout menu', async () => {
+    const user = userEvent.setup()
+    renderLayout('table', true)
+    const chip = screen.getByRole('button', { name: 'table' })
+    chip.focus()
+    expect(chip).toHaveAttribute('aria-haspopup', 'menu')
+    expect(chip).toHaveAttribute('aria-expanded', 'false')
+    // Keydown only. The activation click is not what opens this menu.
+    fireEvent.keyDown(chip, { key: 'Enter' })
+    expect(screen.getByRole('menu', { name: 'layout' })).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('menu', { name: 'layout' })).not.toBeInTheDocument())
+    expect(chip).toHaveFocus()
+    expect(chip).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.keyDown(chip, { key: ' ' })
+    expect(screen.getByRole('menu', { name: 'layout' })).toBeInTheDocument()
   })
 
   it('Esc closes and does not call', async () => {

@@ -22,7 +22,8 @@
  * slot, outside the pill (Views 3/4 wires it; KAN-243).
  */
 
-import { useRef, useState } from 'react'
+import { useRef, useState, type KeyboardEvent } from 'react'
+import type { BaseUIEvent } from '@base-ui/react/types'
 import { FOCUS_VISIBLE_RING } from '@/components/atoms/focus-ring'
 import { PondMenu, type PondMenuGroup } from '@/components/molecules/PondMenu'
 import { ViewTabsList, ViewTabsRoot, ViewTabsTab } from '@/components/molecules/view-tabs'
@@ -109,6 +110,15 @@ export const ViewLayoutMenu = ({ mode, editable, onLayout }: ViewLayoutMenuProps
     onLayout(next)
   }
 
+  // List navigation counts Enter and Space as navigation keys and only opens on the arrow key.
+  const handleChipKeyDown = (event: BaseUIEvent<KeyboardEvent<HTMLButtonElement>>) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    event.preventDefault()
+    event.stopPropagation()
+    event.preventBaseUIHandler()
+    setOpen(true)
+  }
+
   if (!editable) {
     return (
       <span className={SEGMENT_ROW}>
@@ -127,7 +137,7 @@ export const ViewLayoutMenu = ({ mode, editable, onLayout }: ViewLayoutMenuProps
         onOpenChange={setOpen}
         onSelect={handleSelect}
         trigger={
-          <button type="button" className={`${SEGMENT} ${SEGMENT_ON}`}>
+          <button type="button" className={`${SEGMENT} ${SEGMENT_ON}`} onKeyDown={handleChipKeyDown}>
             {label}
           </button>
         }
