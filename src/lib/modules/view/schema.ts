@@ -164,6 +164,12 @@ export const viewBigNumberConfigSchema = z.object({
 export type ViewBigNumberConfig = z.infer<typeof viewBigNumberConfigSchema>
 
 /**
+ * Calendar span (KAN-455). `'month'` or `'day'`. The key stays off the parsed
+ * object when the block omits it. A reader uses `span ?? 'month'`.
+ */
+const calendarSpanSchema = z.enum(['month', 'day'])
+
+/**
  * A saved view's own config (KAN-32): the same per-mode clauses `viewSchema` has
  * always carried at the top level, scoped to one view instead of the whole block.
  */
@@ -181,6 +187,11 @@ export const viewSavedViewConfigSchema = z.object({
    * today's due buckets. Board and calendar do not read it.
    */
   listFlat: z.boolean().optional(),
+  /**
+   * Calendar only (KAN-455). `'month'` or `'day'`. The key stays off the parsed
+   * object when the block omits it. A reader uses `span ?? 'month'`.
+   */
+  span: calendarSpanSchema.optional(),
 })
 export type ViewSavedViewConfig = z.infer<typeof viewSavedViewConfigSchema>
 
@@ -227,6 +238,11 @@ export const viewSchema = z
      */
     listFlat: z.boolean().optional(),
     /**
+     * Calendar only (KAN-455). `'month'` or `'day'`. The key stays off the parsed
+     * object when the block omits it. A reader uses `span ?? 'month'`.
+     */
+    span: calendarSpanSchema.optional(),
+    /**
      * Several saved views of the same database (KAN-32). Optional: a block with no
      * `views` is the back-compat shape above (one view, built from `mode`+config)
      * — read it through `resolveActiveView`, never `mode`/`groupBy`/etc. directly.
@@ -263,6 +279,7 @@ export const resolveActiveView = (
         bigNumber: block.bigNumber,
         collectionId: block.collectionId,
         listFlat: block.listFlat,
+        span: block.span,
       },
     }
   }
@@ -296,6 +313,7 @@ export const activeSavedView = (block: ViewBlock, selectedId?: string): ViewBloc
     bigNumber: resolved.config.bigNumber,
     collectionId: resolved.config.collectionId,
     listFlat: resolved.config.listFlat,
+    span: resolved.config.span,
   }
 }
 

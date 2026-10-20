@@ -177,8 +177,14 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
       expect(within(list).queryByRole('option', { name: 'Trim the rim' })).not.toBeInTheDocument()
       expect(dentist).toHaveAttribute('data-part', 'row')
       expect(optician).toHaveAttribute('data-part', 'row')
-      expect(dentist.querySelector('[data-part="icon"] span')).toHaveClass('size-[9px]', 'rounded-[2.5px]')
-      expect(optician.querySelector('[data-part="icon"] span')).toHaveClass('size-[9px]', 'rounded-[2.5px]')
+      expect(dentist.querySelector('[data-part="icon"] span')).toHaveClass(
+        'size-[9px]',
+        'rounded-[2.5px]'
+      )
+      expect(optician.querySelector('[data-part="icon"] span')).toHaveClass(
+        'size-[9px]',
+        'rounded-[2.5px]'
+      )
 
       await user.click(screen.getByRole('button', { name: '2 without a date' }))
       expect(screen.queryByRole('listbox', { name: 'without a date' })).not.toBeInTheDocument()
@@ -247,7 +253,9 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
       await user.keyboard('{Escape}')
 
       expect(screen.getByRole('button', { name: '2 without a date' })).toBeInTheDocument()
-      expect(screen.queryByRole('button', { name: 'pick a day for dentist' })).not.toBeInTheDocument()
+      expect(
+        screen.queryByRole('button', { name: 'pick a day for dentist' })
+      ).not.toBeInTheDocument()
       expect(onMoveDate).not.toHaveBeenCalled()
       for (const cell of dayCells()) {
         expect(cell).not.toHaveClass('hover:bg-mn-hover-fill')
@@ -270,7 +278,9 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
           />
         )
         const dayCell = (iso: string) =>
-          container.querySelector<HTMLElement>(`[data-part="calendar-day-cell"][data-iso="${iso}"]`)!
+          container.querySelector<HTMLElement>(
+            `[data-part="calendar-day-cell"][data-iso="${iso}"]`
+          )!
 
         await user.click(screen.getByRole('button', { name: '2 without a date' }))
         await user.click(
@@ -372,7 +382,9 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
         { id: 'r4', title: 'fourth', values: { 'p-due': '2026-09-10' } },
       ]
       const { container } = render(<CollectionCalendar schema={schemaWithDate} rows={fourRows} />)
-      const desktopWrap = [...container.querySelectorAll('div')].find((d) => d.classList.contains('md:flex'))!
+      const desktopWrap = [...container.querySelectorAll('div')].find((d) =>
+        d.classList.contains('md:flex')
+      )!
       expect(within(desktopWrap).getByText('first')).toBeInTheDocument()
       expect(within(desktopWrap).getByText('second')).toBeInTheDocument()
       expect(within(desktopWrap).getByText('third')).toBeInTheDocument()
@@ -382,7 +394,9 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
 
     it("today's cell carries the orange chip", () => {
       const { container } = render(<CollectionCalendar schema={schemaWithDate} rows={rows} />)
-      const desktopWrap = [...container.querySelectorAll('div')].find((d) => d.classList.contains('md:flex'))!
+      const desktopWrap = [...container.querySelectorAll('div')].find((d) =>
+        d.classList.contains('md:flex')
+      )!
       expect(within(desktopWrap).getByText('10')).toHaveClass('bg-mn-signal-dated')
     })
   })
@@ -445,7 +459,9 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
 
       const { container } = render(<CollectionCalendar schema={schemaWithDate} rows={rows} />)
       expect(screen.getByText(expectedLabel)).toBeInTheDocument()
-      const desktopWrap = [...container.querySelectorAll('div')].find((d) => d.classList.contains('md:flex'))!
+      const desktopWrap = [...container.querySelectorAll('div')].find((d) =>
+        d.classList.contains('md:flex')
+      )!
       const todayChip = desktopWrap.querySelector('[data-part="due-today"]')
       expect(todayChip).toHaveTextContent(expectedDay)
     })
@@ -467,9 +483,13 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
         { id: 'r4', title: 'fourth', values: { 'p-due': '2026-09-10' } },
       ]
       const { container } = render(<CollectionCalendar schema={schemaWithDate} rows={fourRows} />)
-      const grids = [...container.querySelectorAll('div')].filter((d) => d.classList.contains('grid-cols-7'))
+      const grids = [...container.querySelectorAll('div')].filter((d) =>
+        d.classList.contains('grid-cols-7')
+      )
       const mobileGrid = grids.find((g) => g.classList.contains('md:hidden'))
-      const desktopWrap = [...container.querySelectorAll('div')].find((d) => d.classList.contains('md:flex'))
+      const desktopWrap = [...container.querySelectorAll('div')].find((d) =>
+        d.classList.contains('md:flex')
+      )
       expect(mobileGrid).toBeTruthy()
       expect(desktopWrap).toBeTruthy()
       // desktop draws rows (week grids), mobile draws dots — the two never coexist at one breakpoint.
@@ -483,7 +503,9 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
 
     it("today's dot-grid chip carries the orange signal, same as desktop", () => {
       const { container } = render(<CollectionCalendar schema={schemaWithDate} rows={rows} />)
-      const desktopWrap = [...container.querySelectorAll('div')].find((d) => d.classList.contains('md:flex'))!
+      const desktopWrap = [...container.querySelectorAll('div')].find((d) =>
+        d.classList.contains('md:flex')
+      )!
       const mobileGrid = [...container.querySelectorAll('div')].find(
         (d) => d.classList.contains('grid-cols-7') && d.classList.contains('md:hidden')
       )!
@@ -556,7 +578,9 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
     })
 
     function cellFor(container: HTMLElement, iso: string) {
-      return container.querySelector<HTMLElement>(`[data-part="calendar-day-cell"][data-iso="${iso}"]`)!
+      return container.querySelector<HTMLElement>(
+        `[data-part="calendar-day-cell"][data-iso="${iso}"]`
+      )!
     }
 
     it('the plus and Enter add that day’s record; a blank click does not', async () => {
@@ -580,7 +604,9 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
       )
 
       // Enter on a stack item selects it (KAN-358). It must not also add a day.
-      const occupied = within(cellFor(container, '2026-09-10')).getByText('Trim the rim').closest('div')!
+      const occupied = within(cellFor(container, '2026-09-10'))
+        .getByText('Trim the rim')
+        .closest('div')!
       occupied.focus()
       await user.keyboard('{Enter}')
       expect(onAddRow).not.toHaveBeenCalled()
@@ -607,8 +633,8 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
         for (let i = 0; i < 5; i++) await Promise.resolve()
       })
 
+      // Blank space opens the day (KAN-455) and must not add a record.
       fireEvent.click(cell)
-      await user.click(within(cell).getByText('20'))
       expect(onAddRow).toHaveBeenCalledTimes(2)
       expect(onRenameRow).not.toHaveBeenCalled()
       expect(screen.queryByRole('textbox', { name: /Add an item/ })).not.toBeInTheDocument()
@@ -640,7 +666,9 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
       jest.useRealTimers()
       const user = userEvent.setup()
 
-      await user.click(within(cellFor(container, iso)).getByRole('button', { name: 'Add on 20 sep' }))
+      await user.click(
+        within(cellFor(container, iso)).getByRole('button', { name: 'Add on 20 sep' })
+      )
       await act(async () => {
         for (let i = 0; i < 5; i++) await Promise.resolve()
       })
@@ -649,7 +677,9 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
       expect(item).toHaveClass('ring-[1.5px]', 'ring-inset', 'ring-mn-text')
       expect(screen.getByLabelText('Record: Untitled')).toBeInTheDocument()
       expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Record title' }))
-      expect(screen.getByRole('button', { name: 'Due value' })).toHaveTextContent(formatAtomDate(iso))
+      expect(screen.getByRole('button', { name: 'Due value' })).toHaveTextContent(
+        formatAtomDate(iso)
+      )
       expect(mint).toHaveBeenCalledTimes(1)
     })
 
@@ -685,7 +715,9 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
       jest.useRealTimers()
       const user = userEvent.setup()
 
-      await user.click(within(cellFor(container, iso)).getByRole('button', { name: 'Add on 20 sep' }))
+      await user.click(
+        within(cellFor(container, iso)).getByRole('button', { name: 'Add on 20 sep' })
+      )
       await act(async () => {
         for (let i = 0; i < 5; i++) await Promise.resolve()
       })
@@ -710,7 +742,13 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
       const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
       const onAddRow = jest.fn().mockResolvedValue('r-new')
       const { container } = render(
-        <CollectionCalendar schema={schemaWithDate} rows={rows} editable onAddRow={onAddRow} onRenameRow={jest.fn()} />
+        <CollectionCalendar
+          schema={schemaWithDate}
+          rows={rows}
+          editable
+          onAddRow={onAddRow}
+          onRenameRow={jest.fn()}
+        />
       )
 
       await user.click(within(cellFor(container, '2026-09-10')).getByText('Trim the rim'))
@@ -725,7 +763,13 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
       const onAddRow = jest.fn().mockResolvedValue('r-new')
       const onRenameRow = jest.fn()
       const { container } = render(
-        <CollectionCalendar schema={schemaWithDate} rows={[]} editable onAddRow={onAddRow} onRenameRow={onRenameRow} />
+        <CollectionCalendar
+          schema={schemaWithDate}
+          rows={[]}
+          editable
+          onAddRow={onAddRow}
+          onRenameRow={onRenameRow}
+        />
       )
 
       cellFor(container, '2026-09-20').focus()
@@ -738,12 +782,23 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
 
     it('not editable (or no date property) draws no clickable cell at all', () => {
       const { container: notEditable } = render(
-        <CollectionCalendar schema={schemaWithDate} rows={[]} onAddRow={jest.fn()} onRenameRow={jest.fn()} />
+        <CollectionCalendar
+          schema={schemaWithDate}
+          rows={[]}
+          onAddRow={jest.fn()}
+          onRenameRow={jest.fn()}
+        />
       )
       expect(cellFor(notEditable, '2026-09-20')).not.toHaveAttribute('role', 'button')
 
       const { container: noDate } = render(
-        <CollectionCalendar schema={schemaNoDate} rows={rows} editable onAddRow={jest.fn()} onRenameRow={jest.fn()} />
+        <CollectionCalendar
+          schema={schemaNoDate}
+          rows={rows}
+          editable
+          onAddRow={jest.fn()}
+          onRenameRow={jest.fn()}
+        />
       )
       expect(noDate.querySelector('[data-part="calendar-day-cell"][role="button"]')).toBeNull()
     })
@@ -768,7 +823,9 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
           onRenameRow={jest.fn()}
         />
       )
-      const desktopWrap = [...container.querySelectorAll('div')].find((d) => d.classList.contains('md:flex'))!
+      const desktopWrap = [...container.querySelectorAll('div')].find((d) =>
+        d.classList.contains('md:flex')
+      )!
       const item = within(desktopWrap).getByText('Trim the rim').closest('div')!
       expect(item).not.toHaveClass('ring-[1.5px]')
       expect(screen.queryByLabelText('Record: Trim the rim')).not.toBeInTheDocument()
@@ -793,7 +850,9 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
           onOpenRow={onOpenRow}
         />
       )
-      const desktopWrap = [...container.querySelectorAll('div')].find((d) => d.classList.contains('md:flex'))!
+      const desktopWrap = [...container.querySelectorAll('div')].find((d) =>
+        d.classList.contains('md:flex')
+      )!
       const item = within(desktopWrap).getByText('Trim the rim').closest('div')!
       item.focus()
 
@@ -820,7 +879,9 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
           onOpenRow={onOpenRow}
         />
       )
-      const desktopWrap = [...container.querySelectorAll('div')].find((d) => d.classList.contains('md:flex'))!
+      const desktopWrap = [...container.querySelectorAll('div')].find((d) =>
+        d.classList.contains('md:flex')
+      )!
       const item = within(desktopWrap).getByText('Trim the rim').closest('div')!
 
       await user.click(item)
@@ -832,7 +893,7 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
     })
   })
 
-  describe("selecting a day’s event in the mobile focus list (KAN-358)", () => {
+  describe('selecting a day’s event in the mobile focus list (KAN-358)', () => {
     beforeEach(() => {
       jest.useFakeTimers().setSystemTime(new Date('2026-09-10T12:00:00Z'))
     })
@@ -900,12 +961,20 @@ describe('CollectionCalendar — a day cell is not a button around its events (K
   })
 
   function cellFor(container: HTMLElement, iso: string) {
-    return container.querySelector<HTMLElement>(`[data-part="calendar-day-cell"][data-iso="${iso}"]`)!
+    return container.querySelector<HTMLElement>(
+      `[data-part="calendar-day-cell"][data-iso="${iso}"]`
+    )!
   }
 
   it('no day cell is role="button", addable or not', () => {
     const { container } = render(
-      <CollectionCalendar schema={schemaWithDate} rows={rows} editable onAddRow={jest.fn()} onRenameRow={jest.fn()} />
+      <CollectionCalendar
+        schema={schemaWithDate}
+        rows={rows}
+        editable
+        onAddRow={jest.fn()}
+        onRenameRow={jest.fn()}
+      />
     )
     expect(container.querySelector('[data-part="calendar-day-cell"][role="button"]')).toBeNull()
   })
@@ -914,9 +983,17 @@ describe('CollectionCalendar — a day cell is not a button around its events (K
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
     const onAddRow = jest.fn().mockResolvedValue('r-new')
     const { container } = render(
-      <CollectionCalendar schema={schemaWithDate} rows={[]} editable onAddRow={onAddRow} onRenameRow={jest.fn()} />
+      <CollectionCalendar
+        schema={schemaWithDate}
+        rows={[]}
+        editable
+        onAddRow={onAddRow}
+        onRenameRow={jest.fn()}
+      />
     )
-    const addButton = within(cellFor(container, '2026-09-20')).getByRole('button', { name: 'Add on 20 sep' })
+    const addButton = within(cellFor(container, '2026-09-20')).getByRole('button', {
+      name: 'Add on 20 sep',
+    })
 
     await user.click(addButton)
 
@@ -926,7 +1003,13 @@ describe('CollectionCalendar — a day cell is not a button around its events (K
 
   it('an event item sits inside the day cell but outside any role="button"', () => {
     const { container } = render(
-      <CollectionCalendar schema={schemaWithDate} rows={rows} editable onAddRow={jest.fn()} onRenameRow={jest.fn()} />
+      <CollectionCalendar
+        schema={schemaWithDate}
+        rows={rows}
+        editable
+        onAddRow={jest.fn()}
+        onRenameRow={jest.fn()}
+      />
     )
     const item = within(cellFor(container, '2026-09-10')).getByText('Trim the rim')
     expect(item.closest('[role="button"]')).toBeNull()
@@ -934,7 +1017,13 @@ describe('CollectionCalendar — a day cell is not a button around its events (K
 
   it('a hovered or focused day cell shows a hand-drawn plus', () => {
     const { container } = render(
-      <CollectionCalendar schema={schemaWithDate} rows={[]} editable onAddRow={jest.fn()} onRenameRow={jest.fn()} />
+      <CollectionCalendar
+        schema={schemaWithDate}
+        rows={[]}
+        editable
+        onAddRow={jest.fn()}
+        onRenameRow={jest.fn()}
+      />
     )
     const cell = cellFor(container, '2026-09-20')
     const addButton = within(cell).getByRole('button', { name: 'Add on 20 sep' })
@@ -1013,7 +1102,9 @@ describe('CollectionView — dragging a calendar event onto another day (KAN-385
   })
 
   function cellFor(container: HTMLElement, iso: string) {
-    return container.querySelector<HTMLElement>(`[data-part="calendar-day-cell"][data-iso="${iso}"]`)!
+    return container.querySelector<HTMLElement>(
+      `[data-part="calendar-day-cell"][data-iso="${iso}"]`
+    )!
   }
 
   function rowItem(container: HTMLElement, iso: string) {
@@ -1046,7 +1137,11 @@ describe('CollectionView — dragging a calendar event onto another day (KAN-385
   /** `onMoveDate` wired to a stateful harness, the way `moveRowDate` really is —
    *  so a completed drop's write is observable in the re-rendered grid, not just
    *  in the mock's call args. */
-  function CalendarHarness({ onMoveDate }: { onMoveDate: (rowId: string, key: string, value: PropertyValue) => void }) {
+  function CalendarHarness({
+    onMoveDate,
+  }: {
+    onMoveDate: (rowId: string, key: string, value: PropertyValue) => void
+  }) {
     const [rows, setRows] = useState<CollectionRow[]>(dragRows)
     return (
       <CollectionView
@@ -1078,7 +1173,9 @@ describe('CollectionView — dragging a calendar event onto another day (KAN-385
 
     expect(onMoveDate).toHaveBeenCalledWith('r1', 'p-due', '2026-09-15')
     expect(within(cellFor(container, '2026-09-15')).getByText('Trim the rim')).toBeInTheDocument()
-    expect(within(cellFor(container, '2026-09-12')).queryByText('Trim the rim')).not.toBeInTheDocument()
+    expect(
+      within(cellFor(container, '2026-09-12')).queryByText('Trim the rim')
+    ).not.toBeInTheDocument()
   })
 
   it('the grid container carries select-none only while a drag is active, so native text selection never races the drag', () => {
@@ -1208,5 +1305,456 @@ describe('CollectionView — dragging a calendar event onto another day (KAN-385
 
     expect(onAddRow).not.toHaveBeenCalled()
     expect(screen.queryByRole('textbox', { name: /Add an item/ })).not.toBeInTheDocument()
+  })
+})
+
+describe('span pill (KAN-455)', () => {
+  const calendarConfig: ViewBlock = { id: 'cal', type: 'view', mode: 'calendar' }
+
+  it('month is selected by default, week and agenda are absent, choosing day reports { span: day }', async () => {
+    const user = userEvent.setup()
+    const onConfigChange = jest.fn()
+    render(
+      <CollectionCalendar schema={schemaWithDate} rows={rows} onConfigChange={onConfigChange} />
+    )
+
+    const group = screen.getByRole('radiogroup', { name: 'span' })
+    expect(within(group).getByRole('radio', { name: 'month' })).toBeChecked()
+    expect(within(group).getByRole('radio', { name: 'day' })).not.toBeChecked()
+    expect(within(group).queryByRole('radio', { name: 'week' })).not.toBeInTheDocument()
+    expect(within(group).queryByRole('radio', { name: 'agenda' })).not.toBeInTheDocument()
+    expect(group).not.toHaveTextContent('week')
+    expect(group).not.toHaveTextContent('agenda')
+
+    await user.click(within(group).getByRole('radio', { name: 'day' }))
+
+    expect(within(group).getByRole('radio', { name: 'day' })).toBeChecked()
+    expect(within(group).getByRole('radio', { name: 'month' })).not.toBeChecked()
+    expect(onConfigChange).toHaveBeenCalledTimes(1)
+    expect(onConfigChange).toHaveBeenCalledWith({ span: 'day' })
+  })
+
+  it('seeds the selected span from the view field, and an absent field stays month', () => {
+    const { rerender } = render(
+      <CollectionCalendar schema={schemaWithDate} rows={rows} span="day" />
+    )
+    const group = screen.getByRole('radiogroup', { name: 'span' })
+    expect(within(group).getByRole('radio', { name: 'day' })).toBeChecked()
+
+    rerender(<CollectionCalendar schema={schemaWithDate} rows={rows} />)
+    expect(within(group).getByRole('radio', { name: 'month' })).toBeChecked()
+  })
+
+  it('CollectionView passes the active view span and reports { span: day } through its config handler', async () => {
+    const user = userEvent.setup()
+    const onConfigChange = jest.fn()
+    render(
+      <CollectionView
+        config={{ ...calendarConfig, span: 'day' }}
+        schema={schemaWithDate}
+        rows={rows}
+        onConfigChange={onConfigChange}
+      />
+    )
+
+    const group = screen.getByRole('radiogroup', { name: 'span' })
+    expect(within(group).getByRole('radio', { name: 'day' })).toBeChecked()
+
+    await user.click(within(group).getByRole('radio', { name: 'month' }))
+
+    expect(onConfigChange).toHaveBeenCalledWith({ span: 'month' }, undefined)
+  })
+})
+
+describe('day header (KAN-455)', () => {
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
+  })
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  it('when the span is day, the period is the day, prev and next step a day, and today stays on the day span', async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    const onConfigChange = jest.fn()
+    render(
+      <CollectionCalendar
+        schema={schemaWithDate}
+        rows={rows}
+        span="day"
+        onConfigChange={onConfigChange}
+      />
+    )
+
+    expect(screen.getByText('mon 19 oct 2026')).toBeInTheDocument()
+    expect(screen.queryByText('october 2026')).not.toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'day' })).toBeChecked()
+    expect(screen.queryByRole('button', { name: 'Previous month' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Next month' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Previous day' }))
+    expect(screen.getByText('sun 18 oct 2026')).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'day' })).toBeChecked()
+
+    await user.click(screen.getByRole('button', { name: 'Next day' }))
+    await user.click(screen.getByRole('button', { name: 'Next day' }))
+    expect(screen.getByText('tue 20 oct 2026')).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'day' })).toBeChecked()
+
+    await user.click(screen.getByRole('button', { name: 'today' }))
+    expect(screen.getByText('mon 19 oct 2026')).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'day' })).toBeChecked()
+    expect(onConfigChange).not.toHaveBeenCalled()
+  })
+
+  it('choosing day from the pill switches the header onto that day without a month step', async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    render(<CollectionCalendar schema={schemaWithDate} rows={rows} />)
+
+    expect(screen.getByText('october 2026')).toBeInTheDocument()
+    await user.click(screen.getByRole('radio', { name: 'day' }))
+
+    expect(screen.getByText('mon 19 oct 2026')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Previous day' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Next day' })).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'day' })).toBeChecked()
+  })
+
+  it('the month span keeps Previous month and Next month and steps by month', async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    render(<CollectionCalendar schema={schemaWithDate} rows={rows} />)
+
+    expect(screen.getByText('october 2026')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Previous month' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Next month' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Previous day' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Next day' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Next month' }))
+    expect(screen.getByText('november 2026')).toBeInTheDocument()
+    expect(screen.queryByText('sun 1 nov 2026')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Previous month' }))
+    expect(screen.getByText('october 2026')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Next month' }))
+    await user.click(screen.getByRole('button', { name: 'today' }))
+    expect(screen.getByText('october 2026')).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'month' })).toBeChecked()
+  })
+})
+
+describe('day body (KAN-455)', () => {
+  const dayRows: CollectionRow[] = [
+    { id: 'dentist', title: 'dentist', values: { 'p-due': '2026-10-21' } },
+    { id: 'visit', title: 'site visit', values: { 'p-due': '2026-10-21T10:00:00' } },
+  ]
+
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  function bodies(container: HTMLElement) {
+    const desktop = container.querySelector<HTMLElement>(
+      '[data-part="calendar-day-body"][data-size="desktop"]'
+    )
+    const mobile = container.querySelector<HTMLElement>(
+      '[data-part="calendar-day-body"][data-size="mobile"]'
+    )
+    if (!desktop || !mobile) throw new Error('day body missing a metric')
+    return { desktop, mobile }
+  }
+
+  it('puts a date-only dentist in the all-day row and 10:00 in the hour grid after it', () => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 21, 12, 0, 0))
+    const { container } = render(
+      <CollectionCalendar schema={schemaWithDate} rows={dayRows} span="day" />
+    )
+
+    expect(container.querySelector('[data-part="calendar-day-cell"]')).toBeNull()
+    expect(container.querySelector('[data-part="calendar-focus-list"]')).toBeNull()
+    expect(container.querySelectorAll('[data-part="calendar-day-body"]')).toHaveLength(2)
+
+    const { desktop, mobile } = bodies(container)
+    expect(desktop).toHaveClass('hidden', 'md:flex')
+    expect(mobile).toHaveClass('md:hidden')
+    expect(mobile).not.toHaveClass('hidden')
+
+    for (const body of [desktop, mobile]) {
+      const allDay = body.querySelector<HTMLElement>('[data-part="calendar-all-day"]')!
+      const grid = body.querySelector<HTMLElement>('[data-part="calendar-hour-grid"]')!
+      expect(allDay.compareDocumentPosition(grid) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+      expect(within(allDay).getByText('all day')).toHaveClass(
+        'text-[10.5px]',
+        'font-medium',
+        'text-mn-text-secondary'
+      )
+      expect(allDay).toHaveClass('py-[6px]', 'border-mn-text/[0.09]', 'dark:border-mn-text/[0.14]')
+      expect(allDay.style.gridTemplateRows).toBe('repeat(1, 24px)')
+      const item = within(allDay)
+        .getByText('dentist')
+        .closest('[data-part="calendar-all-day-item"]')
+      expect(item).toHaveClass('h-[22px]')
+      expect(within(allDay).getByText('dentist')).toHaveClass('text-[11.5px]', 'font-medium')
+      expect(within(allDay).queryByText('10:00')).not.toBeInTheDocument()
+      expect(within(allDay).queryByText('site visit')).not.toBeInTheDocument()
+
+      const labels = [...grid.querySelectorAll('[data-part="calendar-hour-label"]')].map(
+        (node) => node.textContent
+      )
+      expect(labels).toEqual([
+        '08:00',
+        '09:00',
+        '10:00',
+        '11:00',
+        '12:00',
+        '13:00',
+        '14:00',
+        '15:00',
+        '16:00',
+        '17:00',
+        '18:00',
+      ])
+      expect(grid.querySelector('[data-part="calendar-hour-label"]')).toHaveClass(
+        'text-[10.5px]',
+        'font-medium',
+        'tabular-nums',
+        'text-mn-text-secondary'
+      )
+
+      const event = grid.querySelector<HTMLElement>('[data-part="calendar-timed-event"]')!
+      expect(event.compareDocumentPosition(allDay) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy()
+      expect(within(event).getByText('site visit')).toHaveClass('text-[12px]', 'font-medium')
+      const time = event.querySelector('[data-part="calendar-event-time"]')
+      expect(time).toHaveTextContent('10:00')
+      expect(time).toHaveClass('text-[10.5px]', 'font-medium', 'text-mn-text/80', 'tabular-nums')
+      expect(event).toHaveClass(
+        'rounded-[8px]',
+        'bg-mn-drag-ghost',
+        'shadow-[0_1px_2px_rgba(40,34,24,.08),0_2px_8px_rgba(40,34,24,.07)]',
+        'dark:shadow-[0_1px_2px_rgba(0,0,0,.3),0_2px_8px_rgba(0,0,0,.3)]'
+      )
+      expect(event.style.height).toBe('22px')
+    }
+
+    const { desktop: desk, mobile: phone } = bodies(container)
+    const deskAll = desk.querySelector<HTMLElement>('[data-part="calendar-all-day"]')!
+    const phoneAll = phone.querySelector<HTMLElement>('[data-part="calendar-all-day"]')!
+    expect(deskAll.style.gridTemplateColumns).toBe('52px minmax(0,1fr)')
+    expect(phoneAll.style.gridTemplateColumns).toBe('40px minmax(0,1fr)')
+    expect(desk.querySelector<HTMLElement>('[data-part="calendar-hour-grid"]')!.style.height).toBe(
+      '484px'
+    )
+    expect(phone.querySelector<HTMLElement>('[data-part="calendar-hour-grid"]')!.style.height).toBe(
+      '528px'
+    )
+
+    const deskEvent = desk.querySelector<HTMLElement>('[data-part="calendar-timed-event"]')!
+    const phoneEvent = phone.querySelector<HTMLElement>('[data-part="calendar-timed-event"]')!
+    expect(deskEvent.style.top).toBe('89px')
+    expect(phoneEvent.style.top).toBe('97px')
+
+    const deskNow = desk.querySelector<HTMLElement>('[data-part="calendar-now"]')!
+    const phoneNow = phone.querySelector<HTMLElement>('[data-part="calendar-now"]')!
+    expect(deskNow).toHaveClass('h-[1.4px]', 'bg-mn-text')
+    expect(deskNow.querySelector('[data-part="calendar-now-dot"]')).toHaveClass(
+      'size-[7px]',
+      'bg-mn-text'
+    )
+    expect(deskNow.style.top).toBe('176px')
+    expect(phoneNow.style.top).toBe('192px')
+  })
+
+  it('draws the now line only on today, and not once the clock leaves 08:00–19:00', async () => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 21, 12, 0, 0))
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    const { container } = render(
+      <CollectionCalendar schema={schemaWithDate} rows={dayRows} span="day" />
+    )
+    expect(container.querySelectorAll('[data-part="calendar-now"]')).toHaveLength(2)
+
+    await user.click(screen.getByRole('button', { name: 'Next day' }))
+    expect(screen.getByText('thu 22 oct 2026')).toBeInTheDocument()
+    expect(container.querySelector('[data-part="calendar-now"]')).toBeNull()
+  })
+
+  it('draws no now line when the clock is outside 08:00–19:00', () => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 21, 20, 0, 0))
+    const { container } = render(
+      <CollectionCalendar schema={schemaWithDate} rows={dayRows} span="day" />
+    )
+    expect(screen.getByText('wed 21 oct 2026')).toBeInTheDocument()
+    expect(container.querySelector('[data-part="calendar-now"]')).toBeNull()
+    expect(container.querySelector('[data-part="calendar-event-time"]')).toHaveTextContent('10:00')
+  })
+})
+
+describe('blank click opens the day (KAN-455)', () => {
+  const openRows: CollectionRow[] = [
+    { id: 'dentist', title: 'dentist', values: { 'p-due': '2026-10-21' } },
+    { id: 'undated', title: 'optician', values: {} },
+  ]
+
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
+  })
+  afterEach(() => {
+    jest.useRealTimers()
+    jest.restoreAllMocks()
+  })
+
+  function cellFor(container: HTMLElement, iso: string) {
+    return container.querySelector<HTMLElement>(
+      `[data-part="calendar-day-cell"][data-iso="${iso}"]`
+    )!
+  }
+
+  it('blank click opens the day from the day number or the cell padding', async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    const onConfigChange = jest.fn()
+    const { container, unmount } = render(
+      <CollectionCalendar
+        schema={schemaWithDate}
+        rows={openRows}
+        onConfigChange={onConfigChange}
+      />
+    )
+
+    expect(screen.getByText('october 2026')).toBeInTheDocument()
+    await user.click(within(cellFor(container, '2026-10-21')).getByText('21'))
+
+    expect(screen.getByText('wed 21 oct 2026')).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'day' })).toBeChecked()
+    expect(screen.queryByText('october 2026')).not.toBeInTheDocument()
+    expect(container.querySelector('[data-part="calendar-day-cell"]')).toBeNull()
+    const allDay = container.querySelector<HTMLElement>('[data-part="calendar-all-day"]')!
+    expect(within(allDay).getByText('dentist')).toBeInTheDocument()
+    expect(onConfigChange).toHaveBeenCalledTimes(1)
+    expect(onConfigChange).toHaveBeenCalledWith({ span: 'day' })
+
+    unmount()
+    onConfigChange.mockClear()
+    const padding = render(
+      <CollectionCalendar
+        schema={schemaWithDate}
+        rows={openRows}
+        onConfigChange={onConfigChange}
+      />
+    )
+    fireEvent.click(cellFor(padding.container, '2026-10-22'))
+
+    expect(screen.getByText('thu 22 oct 2026')).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'day' })).toBeChecked()
+    expect(onConfigChange).toHaveBeenCalledTimes(1)
+    expect(onConfigChange).toHaveBeenCalledWith({ span: 'day' })
+  })
+
+  it('blank click opens nothing from the plus, Enter, a record, a drag, or an armed cell, and a mobile dot only moves the focus', async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    const onAddRow = jest.fn().mockResolvedValue('r-new')
+    const onMoveDate = jest.fn()
+    const onConfigChange = jest.fn()
+    const { container, unmount } = render(
+      <CollectionCalendar
+        schema={schemaWithDate}
+        rows={openRows}
+        editable
+        onAddRow={onAddRow}
+        onRenameRow={jest.fn()}
+        onMoveDate={onMoveDate}
+        onConfigChange={onConfigChange}
+      />
+    )
+
+    await user.click(
+      within(cellFor(container, '2026-10-21')).getByRole('button', { name: 'Add on 21 oct' })
+    )
+    expect(onAddRow).toHaveBeenCalledTimes(1)
+    expect(onAddRow).toHaveBeenCalledWith({ 'p-due': '2026-10-21' })
+    expect(screen.getByRole('radio', { name: 'month' })).toBeChecked()
+    expect(screen.getByText('october 2026')).toBeInTheDocument()
+
+    const empty = cellFor(container, '2026-10-22')
+    empty.focus()
+    await user.keyboard('{Enter}')
+    expect(onAddRow).toHaveBeenCalledTimes(2)
+    expect(onAddRow).toHaveBeenLastCalledWith({ 'p-due': '2026-10-22' })
+    expect(screen.getByRole('radio', { name: 'month' })).toBeChecked()
+
+    await user.click(within(cellFor(container, '2026-10-21')).getByText('dentist'))
+    expect(screen.getByText('october 2026')).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'month' })).toBeChecked()
+    expect(container.querySelector('[data-part="calendar-day-body"]')).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: '22 oct' }))
+    expect(screen.getByText('october 2026')).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'month' })).toBeChecked()
+    expect(screen.queryByText('thu 22 oct 2026')).not.toBeInTheDocument()
+    const focusList = container.querySelector<HTMLElement>('[data-part="calendar-focus-list"]')!
+    expect(within(focusList).getByText('thu oct')).toBeInTheDocument()
+    expect(within(focusList).queryByText('mon oct · today')).not.toBeInTheDocument()
+    expect(container.querySelector('[data-part="calendar-day-body"]')).toBeNull()
+    expect(onConfigChange).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: '1 without a date' }))
+    await user.click(
+      within(screen.getByRole('listbox', { name: 'without a date' })).getByRole('option', {
+        name: /optician/,
+      })
+    )
+    await user.click(cellFor(container, '2026-10-23'))
+    expect(onMoveDate).toHaveBeenCalledTimes(1)
+    expect(onMoveDate).toHaveBeenCalledWith('undated', 'p-due', '2026-10-23')
+    expect(onAddRow).toHaveBeenCalledTimes(2)
+    expect(screen.getByText('october 2026')).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'month' })).toBeChecked()
+    expect(container.querySelector('[data-part="calendar-day-cell"]')).not.toBeNull()
+    expect(onConfigChange).not.toHaveBeenCalled()
+    unmount()
+
+    const DAY_RECTS: Record<string, [number, number, number, number]> = {
+      '2026-10-21': [0, 0, 100, 100],
+    }
+    jest.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: HTMLElement
+    ) {
+      const iso = this.getAttribute('data-iso')
+      const [left, top, right, bottom] = (iso && DAY_RECTS[iso]) || [0, 0, 0, 0]
+      return {
+        left,
+        top,
+        right,
+        bottom,
+        width: right - left,
+        height: bottom - top,
+        x: left,
+        y: top,
+        toJSON() {
+          return this
+        },
+      } as DOMRect
+    })
+    const dragChange = jest.fn()
+    const dragged = render(
+      <CollectionCalendar
+        schema={schemaWithDate}
+        rows={openRows}
+        editable
+        onMoveDate={jest.fn()}
+        onConfigChange={dragChange}
+      />
+    )
+    const dragCell = cellFor(dragged.container, '2026-10-21')
+    const item = within(dragCell).getByText('dentist').closest('div')!
+    fireEvent.pointerDown(item, { clientX: 10, clientY: 10 })
+    fireEvent.pointerMove(item, { clientX: 50, clientY: 50 })
+    fireEvent.pointerUp(item)
+    fireEvent.click(dragCell)
+    expect(within(dragged.container).getByText('october 2026')).toBeInTheDocument()
+    expect(within(dragged.container).getByRole('radio', { name: 'month' })).toBeChecked()
+    expect(within(dragged.container).queryByText('wed 21 oct 2026')).not.toBeInTheDocument()
+    expect(dragged.container.querySelector('[data-part="calendar-day-cell"]')).not.toBeNull()
+    expect(dragChange).not.toHaveBeenCalled()
   })
 })

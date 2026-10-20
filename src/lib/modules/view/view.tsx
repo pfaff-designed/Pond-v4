@@ -631,6 +631,8 @@ export function CollectionView({
           onRenameRow={onRenameRow}
           onOpenRow={onOpenRow}
           onAddDateField={onAddDateField}
+          span={activeConfig.span}
+          onConfigChange={onConfigChange ? handleConfigChange : undefined}
         />
       ) : activeConfig.mode === 'gallery' ? (
         <CollectionGallery

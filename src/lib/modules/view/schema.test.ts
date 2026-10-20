@@ -49,6 +49,7 @@ describe('resolveActiveView', () => {
         bigNumber: undefined,
         collectionId: undefined,
         listFlat: undefined,
+        span: undefined,
       },
     })
   })
@@ -73,7 +74,11 @@ describe('resolveActiveView', () => {
 
 describe('activeSavedView', () => {
   it('returns a legacy block (no views) as an equivalent copy of itself', () => {
-    expect(activeSavedView(legacyBlock)).toEqual({ ...legacyBlock, listFlat: undefined })
+    expect(activeSavedView(legacyBlock)).toEqual({
+      ...legacyBlock,
+      listFlat: undefined,
+      span: undefined,
+    })
   })
 
   it('mirrors activeViewId’s view onto the block shape when no selectedId is given', () => {
@@ -89,6 +94,7 @@ describe('activeSavedView', () => {
       bigNumber: undefined,
       collectionId: undefined,
       listFlat: undefined,
+      span: undefined,
     })
   })
 
@@ -106,6 +112,7 @@ describe('activeSavedView', () => {
       bigNumber: undefined,
       collectionId: undefined,
       listFlat: undefined,
+      span: undefined,
     })
   })
 })
@@ -392,7 +399,7 @@ describe('listFlat (KAN-521)', () => {
   it('copies listFlat through resolveActiveView and activeSavedView', () => {
     const legacy = viewSchema.parse(flatLegacy)
     expect(resolveActiveView(legacy).config.listFlat).toBe(true)
-    expect(activeSavedView(legacy)).toEqual(legacy)
+    expect(activeSavedView(legacy)).toEqual({ ...legacy, span: undefined })
 
     const saved = viewSchema.parse(flatSaved())
     expect(resolveActiveView(saved).config.listFlat).toBe(true)
@@ -459,5 +466,43 @@ describe('listFlat (KAN-521)', () => {
     expect(switched.views?.[1]?.config?.groupBy).toBe('p-due')
     expect(switched.views?.[0]).toBe(board)
     expect(switched.mode).toBe(block.mode)
+  })
+})
+
+describe('span (KAN-455)', () => {
+  const dayLegacy: ViewBlock = { ...legacyBlock, mode: 'calendar', span: 'day' }
+
+  const daySaved = (): ViewBlock => ({
+    id: 'b-cal',
+    type: 'view',
+    mode: 'board',
+    views: [
+      { id: 'v-board', label: 'board', kind: 'board', config: { groupBy: 'p-status' } },
+      { id: 'v-day', label: 'day', kind: 'calendar', config: { span: 'day' } },
+    ],
+    activeViewId: 'v-day',
+  })
+
+  it('parses a legacy block with no span unchanged', () => {
+    const parsed = viewSchema.parse(legacyBlock)
+    expect(parsed).toEqual(legacyBlock)
+    expect(parsed).not.toHaveProperty('span')
+    expect(parsed.span ?? 'month').toBe('month')
+  })
+
+  it('round-trips span: day on a legacy block and on a saved view', () => {
+    expect(viewSchema.parse(dayLegacy)).toEqual(dayLegacy)
+    expect(viewSchema.parse(dayLegacy).span ?? 'month').toBe('day')
+
+    const saved = daySaved()
+    expect(viewSchema.parse(saved)).toEqual(saved)
+  })
+
+  it('resolveActiveView returns span from a views[] config', () => {
+    const saved = viewSchema.parse(daySaved())
+    expect(resolveActiveView(saved).config.span).toBe('day')
+    expect(resolveActiveView(saved).config.span ?? 'month').toBe('day')
+    expect(activeSavedView(saved).span).toBe('day')
+    expect(activeSavedView(saved).mode).toBe('calendar')
   })
 })

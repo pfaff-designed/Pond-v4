@@ -1778,6 +1778,89 @@ export const CalendarWithoutADate: Story = {
   },
 }
 
+/**
+ * KAN-455. A blank click on the 21st — the day number, not the dentist row —
+ * opens that day. Previous day steps back one. Month returns the month label.
+ *
+ * The month grid is `hidden md:flex`, so the loader sets a 1440×900 viewport
+ * before render. It also fixes `new Date()` at local noon on 19 Oct 2026, so
+ * the grid opens on October and the 21st is on screen.
+ */
+const blankDayRows: CollectionRow[] = [
+  { id: 'dentist', title: 'dentist', values: { 'p-due': '2026-10-21' } },
+]
+
+/** `new Date()` and `Date.now()` stay at local noon on 19 Oct 2026. Dated
+ *  constructions (`new Date(y, m, d)`, an ISO string) keep the real clock. */
+function fixClockAtLocalNoonOn19Oct2026(): () => void {
+  const RealDate = globalThis.Date
+  const fixed = new RealDate(2026, 9, 19, 12, 0, 0).getTime()
+
+  class FixedDate extends RealDate {
+    // `ConstructorParameters<typeof Date>` is a 1-tuple, so `length === 0`
+    // does not typecheck. `unknown[]` is the zero-arg `new Date()` this freezes.
+    constructor(...args: unknown[]) {
+      if (args.length === 0) {
+        super(fixed)
+      } else {
+        super(...(args as unknown as [number]))
+      }
+    }
+
+    static override now(): number {
+      return fixed
+    }
+  }
+
+  globalThis.Date = FixedDate as DateConstructor
+  return () => {
+    globalThis.Date = RealDate
+  }
+}
+
+export const CalendarBlankDay: Story = {
+  name: 'blank day opens that day',
+  args: { config: calendarConfig, schema, rows: blankDayRows },
+  loaders: [
+    async () => {
+      const prevViewport = { width: window.innerWidth, height: window.innerHeight }
+      await page.viewport(1440, 900)
+      const restoreClock = fixClockAtLocalNoonOn19Oct2026()
+      return { prevViewport, restoreClock }
+    },
+  ],
+  play: async ({ canvasElement, loaded }) => {
+    try {
+      const canvas = within(canvasElement)
+      const cell = canvasElement.querySelector<HTMLElement>(
+        '[data-part="calendar-day-cell"][data-iso="2026-10-21"]'
+      )
+      if (!cell) throw new Error('calendar blank-day story: day cell 2026-10-21 not found')
+      await userEvent.click(within(cell).getByText('21'))
+
+      // The day body is drawn twice (desktop and mobile). The visible one is
+      // the desktop copy; the phone copy is `md:hidden` at this viewport.
+      const desktopDay = canvasElement.querySelector<HTMLElement>(
+        '[data-part="calendar-day-body"][data-size="desktop"]'
+      )
+      if (!desktopDay) throw new Error('calendar blank-day story: desktop day body missing')
+      await expect(within(desktopDay).getByText('dentist')).toBeVisible()
+      await expect(canvas.getByText('wed 21 oct 2026')).toBeInTheDocument()
+
+      await userEvent.click(canvas.getByRole('button', { name: 'Previous day' }))
+      await expect(canvas.getByText('tue 20 oct 2026')).toBeInTheDocument()
+
+      await userEvent.click(canvas.getByRole('radio', { name: 'month' }))
+      await expect(canvas.getByText('october 2026')).toBeInTheDocument()
+    } finally {
+      const restoreClock = loaded.restoreClock as (() => void) | undefined
+      restoreClock?.()
+      const { width, height } = loaded.prevViewport as { width: number; height: number }
+      await page.viewport(width, height)
+    }
+  },
+}
+
 // ── Gallery ─────────────────────────────────────────────────────────────────────
 
 /**
