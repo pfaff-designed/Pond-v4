@@ -129,8 +129,7 @@ const DAY_DOT = 'size-1 flex-none rounded-full bg-mn-text'
  * the month grid's mobile chip is 13px and is not reused here.
  */
 const STRIP_COLUMN = 'flex flex-col items-center gap-1 rounded-[14px] py-[6px]'
-const STRIP_DOW =
-  'text-[10.5px] font-medium uppercase tracking-[.1em] text-mn-text-secondary'
+const STRIP_DOW = 'text-[10.5px] font-medium uppercase tracking-[.1em] text-mn-text-secondary'
 const STRIP_NUMBER =
   'inline-flex h-7 min-w-7 items-center justify-center rounded-full px-1 text-[14px] font-medium tabular-nums'
 const STRIP_DOT = 'size-1 flex-none rounded-full'
@@ -598,8 +597,7 @@ function clockHm(date: Date): string {
 }
 
 /** Desktop week head, the DC's `tDays` (`todayNum(t, 26, 15)`). */
-const WEEK_HEAD_DOW =
-  'text-[10.5px] font-medium uppercase tracking-[.1em] text-mn-text-secondary'
+const WEEK_HEAD_DOW = 'text-[10.5px] font-medium uppercase tracking-[.1em] text-mn-text-secondary'
 const WEEK_NUMBER =
   'inline-flex h-[26px] min-w-[26px] items-center justify-center rounded-full px-1 text-[15px] font-medium tabular-nums'
 /** `52px repeat(7,minmax(0,1fr))` — gutter plus Monday-first days. */
@@ -619,6 +617,13 @@ function WeekBody({
   rows,
   dateDef,
   onOpenDay,
+  editable,
+  drag,
+  overKey,
+  registerBucket,
+  onCardPointerDown,
+  containerHandlers,
+  containerClassName,
 }: {
   startIso: string
   todayIso: string
@@ -626,6 +631,13 @@ function WeekBody({
   rows: CollectionRow[]
   dateDef: PropertyDef | undefined
   onOpenDay: (iso: string) => void
+  editable?: boolean
+  drag: PointerBucketDrag['drag']
+  overKey: PointerBucketDrag['overKey']
+  registerBucket: PointerBucketDrag['registerBucket']
+  onCardPointerDown: PointerBucketDrag['onCardPointerDown']
+  containerHandlers: PointerBucketDrag['containerHandlers']
+  containerClassName: PointerBucketDrag['containerClassName']
 }) {
   const rowHeight = DAY_ROW_HEIGHT.desktop
   const gutter = DAY_GUTTER.desktop
@@ -639,7 +651,8 @@ function WeekBody({
     <div
       data-part="calendar-week-body"
       data-size="desktop"
-      className="hidden md:flex md:flex-col"
+      className={cn('hidden md:flex md:flex-col', containerClassName)}
+      {...containerHandlers}
     >
       <div className="grid" style={{ gridTemplateColumns: WEEK_COLUMNS }}>
         <span />
@@ -682,8 +695,12 @@ function WeekBody({
             <div
               key={row.id}
               data-part="calendar-all-day-item"
-              className={ALL_DAY_ITEM}
+              className={cn(
+                ALL_DAY_ITEM,
+                drag?.active && drag.rowId === row.id && DRAG_LIFT_CLASS
+              )}
               style={{ gridColumn: index + 2, gridRow: rowIndex + 1 }}
+              onPointerDown={editable ? (e) => onCardPointerDown(e, row.id) : undefined}
             >
               <span className={DAY_ITEM_DOT} />
               <span className={ALL_DAY_TITLE}>{row.title}</span>
@@ -728,19 +745,17 @@ function WeekBody({
               key={iso}
               data-part="calendar-week-column"
               data-iso={iso}
+              ref={registerBucket(iso)}
               className={cn(
                 'relative border-l',
                 DAY_HAIR_BORDER,
-                weekend && 'bg-mn-text/[0.025]'
+                drag?.active && overKey === iso ? DRAG_OVER_CLASS : weekend && 'bg-mn-text/[0.025]'
               )}
               style={{ gridRow: 1, gridColumn: index + 2 }}
             >
               {timed.map((event) => {
                 const top = (event.startHours - DAY_HOUR_START) * rowHeight + 1
-                const height = Math.max(
-                  (event.endHours - event.startHours) * rowHeight - 3,
-                  22
-                )
+                const height = Math.max((event.endHours - event.startHours) * rowHeight - 3, 22)
                 const compact = height < 34
                 return (
                   <div
@@ -750,9 +765,11 @@ function WeekBody({
                       TIMED_EVENT,
                       compact
                         ? 'flex-row items-center gap-[6px] px-2 py-[3px]'
-                        : 'flex-col items-stretch gap-[2px] px-2 py-[6px]'
+                        : 'flex-col items-stretch gap-[2px] px-2 py-[6px]',
+                      drag?.active && drag.rowId === event.row.id && DRAG_LIFT_CLASS
                     )}
                     style={{ top, height }}
+                    onPointerDown={editable ? (e) => onCardPointerDown(e, event.row.id) : undefined}
                   >
                     <span className={cn(TIMED_TITLE, compact && 'min-w-0 flex-1')}>
                       {event.row.title}
@@ -814,12 +831,7 @@ function CalendarWeekStrip({
           >
             <span className={STRIP_DOW}>{day.letter}</span>
             {isToday ? (
-              <PondAtom
-                kind="date"
-                due="today"
-                value={String(day.day)}
-                className={STRIP_NUMBER}
-              />
+              <PondAtom kind="date" due="today" value={String(day.day)} className={STRIP_NUMBER} />
             ) : (
               <span className={cn(STRIP_NUMBER, 'text-mn-text')}>{day.day}</span>
             )}
@@ -1021,10 +1033,7 @@ export function CollectionCalendar({
     [dateDef, focusIso, todayIso, rows]
   )
   const dayRows = useMemo(() => splitDayRows(rows, dateDef, focusIso), [dateDef, focusIso, rows])
-  const weekStrip = useMemo(
-    () => stripWeek(focusIso, rows, dateDef),
-    [dateDef, focusIso, rows]
-  )
+  const weekStrip = useMemo(() => stripWeek(focusIso, rows, dateDef), [dateDef, focusIso, rows])
   // The open focus is session state. A week span labels `weekRange` of that
   // focus and steps seven days; a day span labels and steps that day; a month
   // span keeps the month label and `stepMonth`. `today` only moves the focus,
@@ -1263,6 +1272,13 @@ export function CollectionCalendar({
             rows={rows}
             dateDef={dateDef}
             onOpenDay={handleOpenDay}
+            editable={editable}
+            drag={drag}
+            overKey={overKey}
+            registerBucket={registerBucket}
+            onCardPointerDown={onCardPointerDown}
+            containerHandlers={containerHandlers}
+            containerClassName={containerClassName}
           />
         </>
       ) : (

@@ -1620,16 +1620,10 @@ describe('week body', () => {
       'tabular-nums'
     )
 
-    const columns = [
-      ...body.querySelectorAll<HTMLElement>('[data-part="calendar-week-column"]'),
-    ]
+    const columns = [...body.querySelectorAll<HTMLElement>('[data-part="calendar-week-column"]')]
     expect(columns.map((column) => column.dataset.iso)).toEqual(isos)
     for (const column of columns) {
-      expect(column).toHaveClass(
-        'border-l',
-        'border-mn-text/[0.09]',
-        'dark:border-mn-text/[0.14]'
-      )
+      expect(column).toHaveClass('border-l', 'border-mn-text/[0.09]', 'dark:border-mn-text/[0.14]')
     }
     expect(columns[5]).toHaveClass('bg-mn-text/[0.025]')
     expect(columns[6]).toHaveClass('bg-mn-text/[0.025]')
@@ -1670,9 +1664,9 @@ describe('week body', () => {
 
     const wednesday = columns[2]
     if (!wednesday) throw new Error('wednesday column missing')
-    const event = within(wednesday).getByText('dentist').closest<HTMLElement>(
-      '[data-part="calendar-timed-event"]'
-    )
+    const event = within(wednesday)
+      .getByText('dentist')
+      .closest<HTMLElement>('[data-part="calendar-timed-event"]')
     expect(event).not.toBeNull()
     if (!event) return
     expect(event.style.top).toBe('89px')
@@ -1844,7 +1838,9 @@ describe('week phone', () => {
       'aria-current',
       'date'
     )
-    expect(within(strip).getByRole('button', { name: 'thu 22' })).not.toHaveAttribute('aria-current')
+    expect(within(strip).getByRole('button', { name: 'thu 22' })).not.toHaveAttribute(
+      'aria-current'
+    )
 
     const focusList = container.querySelector<HTMLElement>('[data-part="calendar-focus-list"]')
     expect(focusList).not.toBeNull()
@@ -1869,7 +1865,9 @@ describe('week phone', () => {
       'aria-current',
       'date'
     )
-    expect(within(strip).getByRole('button', { name: 'mon 19' })).not.toHaveAttribute('aria-current')
+    expect(within(strip).getByRole('button', { name: 'mon 19' })).not.toHaveAttribute(
+      'aria-current'
+    )
     expect(within(focusList).getByText('optician')).toBeInTheDocument()
     expect(within(focusList).queryByText('dentist')).not.toBeInTheDocument()
     expect(screen.getByRole('radio', { name: 'week' })).toBeChecked()
@@ -2049,11 +2047,7 @@ describe('blank click opens the day (KAN-455)', () => {
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
     const onConfigChange = jest.fn()
     const { container, unmount } = render(
-      <CollectionCalendar
-        schema={schemaWithDate}
-        rows={openRows}
-        onConfigChange={onConfigChange}
-      />
+      <CollectionCalendar schema={schemaWithDate} rows={openRows} onConfigChange={onConfigChange} />
     )
 
     expect(screen.getByText('october 2026')).toBeInTheDocument()
@@ -2071,11 +2065,7 @@ describe('blank click opens the day (KAN-455)', () => {
     unmount()
     onConfigChange.mockClear()
     const padding = render(
-      <CollectionCalendar
-        schema={schemaWithDate}
-        rows={openRows}
-        onConfigChange={onConfigChange}
-      />
+      <CollectionCalendar schema={schemaWithDate} rows={openRows} onConfigChange={onConfigChange} />
     )
     fireEvent.click(cellFor(padding.container, '2026-10-22'))
 
@@ -2191,5 +2181,295 @@ describe('blank click opens the day (KAN-455)', () => {
     expect(within(dragged.container).queryByText('wed 21 oct 2026')).not.toBeInTheDocument()
     expect(dragged.container.querySelector('[data-part="calendar-day-cell"]')).not.toBeNull()
     expect(dragChange).not.toHaveBeenCalled()
+  })
+})
+
+describe('KAN-526 week drag', () => {
+  const weekConfig: ViewBlock = { id: 'cal', type: 'view', mode: 'calendar', span: 'week' }
+  const weekRows: CollectionRow[] = [
+    { id: 'dentist', title: 'dentist', values: { 'p-due': '2026-10-21T10:00:00' } },
+    { id: 'alcove', title: 'confirm alcove', values: { 'p-due': '2026-10-21' } },
+  ]
+  /** The pointer-position rect each week column resolves to, keyed by its `data-iso`
+   *  (`usePointerBucketDrag` hit-tests the bucket under the pointer by DOM rect).
+   *  Any element not named here falls back to jsdom's all-zero rect. */
+  const DAY_RECTS: Record<string, [number, number, number, number]> = {
+    '2026-10-21': [0, 0, 100, 100],
+    '2026-10-22': [200, 0, 300, 100],
+  }
+
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
+    jest.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: HTMLElement
+    ) {
+      const iso = this.getAttribute('data-iso')
+      const [left, top, right, bottom] = (iso && DAY_RECTS[iso]) || [0, 0, 0, 0]
+      return {
+        left,
+        top,
+        right,
+        bottom,
+        width: right - left,
+        height: bottom - top,
+        x: left,
+        y: top,
+        toJSON() {
+          return this
+        },
+      } as DOMRect
+    })
+  })
+  afterEach(() => {
+    jest.useRealTimers()
+    jest.restoreAllMocks()
+  })
+
+  const columnFor = (container: HTMLElement, iso: string) =>
+    container.querySelector<HTMLElement>(`[data-part="calendar-week-column"][data-iso="${iso}"]`)!
+
+  const timedDentist = (container: HTMLElement, iso: string) =>
+    within(columnFor(container, iso))
+      .getByText('dentist')
+      .closest<HTMLElement>('[data-part="calendar-timed-event"]')!
+
+  const weekBody = (container: HTMLElement) =>
+    container.querySelector<HTMLElement>('[data-part="calendar-week-body"]')!
+
+  const renderStatic = (
+    onMoveDate: (rowId: string, key: string, value: PropertyValue) => void,
+    editable = true
+  ) =>
+    render(
+      <CollectionView
+        config={weekConfig}
+        schema={schemaWithDate}
+        rows={weekRows}
+        collectionName="tasks"
+        editable={editable}
+        onConfigChange={jest.fn()}
+        onEdit={jest.fn()}
+        onMoveDate={onMoveDate}
+      />
+    )
+
+  const CalendarHarness = ({
+    onMoveDate,
+  }: {
+    onMoveDate: (rowId: string, key: string, value: PropertyValue) => void
+  }) => {
+    const [rows, setRows] = useState<CollectionRow[]>(weekRows)
+    return (
+      <CollectionView
+        config={weekConfig}
+        schema={schemaWithDate}
+        rows={rows}
+        collectionName="tasks"
+        editable
+        onConfigChange={jest.fn()}
+        onEdit={jest.fn()}
+        onMoveDate={(rowId, key, value) => {
+          onMoveDate(rowId, key, value)
+          setRows((prev) =>
+            prev.map((row) =>
+              row.id === rowId ? { ...row, values: { ...row.values, [key]: value } } : row
+            )
+          )
+        }}
+      />
+    )
+  }
+
+  it('dragging dentist from Wednesday onto Thursday writes 2026-10-22T10:00:00 and shows it in that column', () => {
+    const onMoveDate = jest.fn()
+    const { container } = render(<CalendarHarness onMoveDate={onMoveDate} />)
+    const item = timedDentist(container, '2026-10-21')
+
+    fireEvent.pointerDown(item, { clientX: 10, clientY: 10 })
+    fireEvent.pointerMove(item, { clientX: 250, clientY: 50 })
+    fireEvent.pointerUp(item)
+
+    expect(onMoveDate).toHaveBeenCalledWith('dentist', 'p-due', '2026-10-22T10:00:00')
+    const moved = within(columnFor(container, '2026-10-22'))
+      .getByText('dentist')
+      .closest<HTMLElement>('[data-part="calendar-timed-event"]')
+    expect(moved).not.toBeNull()
+    if (!moved) return
+    expect(within(moved).getByText('10:00')).toBeInTheDocument()
+    expect(
+      within(columnFor(container, '2026-10-21')).queryByText('dentist')
+    ).not.toBeInTheDocument()
+  })
+
+  it('a move that stays inside Wednesday’s rect calls nothing', () => {
+    const onMoveDate = jest.fn()
+    const { container } = renderStatic(onMoveDate)
+    const item = timedDentist(container, '2026-10-21')
+
+    fireEvent.pointerDown(item, { clientX: 10, clientY: 10 })
+    fireEvent.pointerMove(item, { clientX: 50, clientY: 50 })
+    fireEvent.pointerUp(item)
+
+    expect(onMoveDate).not.toHaveBeenCalled()
+  })
+
+  it('pointerLeave on the week body after a move onto Thursday calls nothing', () => {
+    const onMoveDate = jest.fn()
+    const { container } = renderStatic(onMoveDate)
+    const item = timedDentist(container, '2026-10-21')
+
+    fireEvent.pointerDown(item, { clientX: 10, clientY: 10 })
+    fireEvent.pointerMove(item, { clientX: 250, clientY: 50 })
+    fireEvent.pointerLeave(weekBody(container))
+
+    expect(onMoveDate).not.toHaveBeenCalled()
+  })
+
+  it('editable false, the same sequence, calls nothing', () => {
+    const onMoveDate = jest.fn()
+    const { container } = renderStatic(onMoveDate, false)
+    const item = timedDentist(container, '2026-10-21')
+
+    fireEvent.pointerDown(item, { clientX: 10, clientY: 10 })
+    fireEvent.pointerMove(item, { clientX: 250, clientY: 50 })
+    fireEvent.pointerUp(item)
+
+    expect(onMoveDate).not.toHaveBeenCalled()
+  })
+})
+
+describe('KAN-526 week all-day drag', () => {
+  const weekConfig: ViewBlock = { id: 'cal', type: 'view', mode: 'calendar', span: 'week' }
+  const weekRows: CollectionRow[] = [
+    { id: 'dentist', title: 'dentist', values: { 'p-due': '2026-10-21T10:00:00' } },
+    { id: 'alcove', title: 'confirm alcove', values: { 'p-due': '2026-10-21' } },
+  ]
+  /** The pointer-position rect each week column resolves to, keyed by its `data-iso`.
+   *  The all-day row is not a bucket; a date-only item drops on the column under the pointer. */
+  const DAY_RECTS: Record<string, [number, number, number, number]> = {
+    '2026-10-21': [0, 0, 100, 100],
+    '2026-10-23': [400, 0, 500, 100],
+  }
+
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
+    jest.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: HTMLElement
+    ) {
+      const iso = this.getAttribute('data-iso')
+      const [left, top, right, bottom] = (iso && DAY_RECTS[iso]) || [0, 0, 0, 0]
+      return {
+        left,
+        top,
+        right,
+        bottom,
+        width: right - left,
+        height: bottom - top,
+        x: left,
+        y: top,
+        toJSON() {
+          return this
+        },
+      } as DOMRect
+    })
+  })
+  afterEach(() => {
+    jest.useRealTimers()
+    jest.restoreAllMocks()
+  })
+
+  const columnFor = (container: HTMLElement, iso: string) =>
+    container.querySelector<HTMLElement>(`[data-part="calendar-week-column"][data-iso="${iso}"]`)!
+
+  const allDayRow = (container: HTMLElement) =>
+    container.querySelector<HTMLElement>(
+      '[data-part="calendar-week-body"] [data-part="calendar-all-day"]'
+    )!
+
+  const alcoveItem = (container: HTMLElement) =>
+    within(allDayRow(container))
+      .getByText('confirm alcove')
+      .closest<HTMLElement>('[data-part="calendar-all-day-item"]')!
+
+  const renderStatic = (
+    onMoveDate: (rowId: string, key: string, value: PropertyValue) => void
+  ) =>
+    render(
+      <CollectionView
+        config={weekConfig}
+        schema={schemaWithDate}
+        rows={weekRows}
+        collectionName="tasks"
+        editable
+        onConfigChange={jest.fn()}
+        onEdit={jest.fn()}
+        onMoveDate={onMoveDate}
+      />
+    )
+
+  const CalendarHarness = ({
+    onMoveDate,
+  }: {
+    onMoveDate: (rowId: string, key: string, value: PropertyValue) => void
+  }) => {
+    const [rows, setRows] = useState<CollectionRow[]>(weekRows)
+    return (
+      <CollectionView
+        config={weekConfig}
+        schema={schemaWithDate}
+        rows={rows}
+        collectionName="tasks"
+        editable
+        onConfigChange={jest.fn()}
+        onEdit={jest.fn()}
+        onMoveDate={(rowId, key, value) => {
+          onMoveDate(rowId, key, value)
+          setRows((prev) =>
+            prev.map((row) =>
+              row.id === rowId ? { ...row, values: { ...row.values, [key]: value } } : row
+            )
+          )
+        }}
+      />
+    )
+  }
+
+  it('dragging confirm alcove from Wednesday onto Friday writes 2026-10-23 and keeps it in the all-day row', () => {
+    const onMoveDate = jest.fn()
+    const { container } = render(<CalendarHarness onMoveDate={onMoveDate} />)
+    const item = alcoveItem(container)
+
+    fireEvent.pointerDown(item, { clientX: 10, clientY: 10 })
+    fireEvent.pointerMove(item, { clientX: 450, clientY: 50 })
+    fireEvent.pointerUp(item)
+
+    expect(onMoveDate).toHaveBeenCalledWith('alcove', 'p-due', '2026-10-23')
+    expect(onMoveDate.mock.calls[0][2]).not.toMatch(/T/)
+
+    const allDay = allDayRow(container)
+    const title = within(allDay).getByText('confirm alcove')
+    const moved = title.closest<HTMLElement>('[data-part="calendar-all-day-item"]')
+    expect(moved).not.toBeNull()
+    if (!moved) return
+    expect(moved.style.gridColumn).toBe(columnFor(container, '2026-10-23').style.gridColumn)
+    expect(title.closest('[data-part="calendar-timed-event"]')).toBeNull()
+
+    const wednesdayColumn = columnFor(container, '2026-10-21').style.gridColumn
+    const stillOnWednesday = Array.from(
+      allDay.querySelectorAll<HTMLElement>('[data-part="calendar-all-day-item"]')
+    ).filter((el) => el.style.gridColumn === wednesdayColumn)
+    expect(stillOnWednesday.some((el) => el.textContent?.includes('confirm alcove'))).toBe(false)
+  })
+
+  it('a drop that stays inside Wednesday’s rect calls nothing', () => {
+    const onMoveDate = jest.fn()
+    const { container } = renderStatic(onMoveDate)
+    const item = alcoveItem(container)
+
+    fireEvent.pointerDown(item, { clientX: 10, clientY: 10 })
+    fireEvent.pointerMove(item, { clientX: 50, clientY: 50 })
+    fireEvent.pointerUp(item)
+
+    expect(onMoveDate).not.toHaveBeenCalled()
   })
 })
