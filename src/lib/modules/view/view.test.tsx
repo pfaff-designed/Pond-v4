@@ -859,6 +859,128 @@ describe('KAN-526', () => {
   })
 })
 
+describe('KAN-458', () => {
+  const calendarSchema: PropertySchema = [
+    { id: 'p-start', name: 'Start', type: 'date' },
+    { id: 'p-end', name: 'End', type: 'date' },
+  ]
+  const DAY_RECTS: Record<string, [number, number, number, number]> = {
+    '2026-10-12': [0, 0, 100, 100],
+    '2026-10-19': [200, 0, 300, 100],
+  }
+  type DateStep = { key: string; value: PropertyValue }
+  // One write, one undo. `stepBack` is that record — the ⌘Z chord lives on
+  // BlockCanvas, and this file does not press it (CI is Linux).
+  let undoStack: { rowId: string; entries: DateStep[] }[] = []
+  let storedValues: Record<string, PropertyValue> = {}
+
+  const stepBack = () => {
+    const snapshot = undoStack.pop()
+    if (!snapshot) return
+    act(() => {
+      for (const entry of snapshot.entries) {
+        storedValues[entry.key] = entry.value
+        applyRowValue(snapshot.rowId, entry.key, entry.value)
+      }
+    })
+  }
+
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
+    initialSchema = calendarSchema
+    initialRows = [
+      {
+        id: 'trip',
+        title: 'trip',
+        values: { 'p-start': '2026-10-12', 'p-end': '2026-10-14' },
+      },
+    ]
+    storedValues = { 'p-start': '2026-10-12', 'p-end': '2026-10-14' }
+    undoStack = []
+    setValuesAsStep.mockImplementation((rowId: string, entries: DateStep[]) => {
+      const previous = entries.map((entry) => ({
+        key: entry.key,
+        value: storedValues[entry.key] ?? null,
+      }))
+      undoStack.length = 0
+      undoStack.push({ rowId, entries: previous })
+      for (const entry of entries) {
+        storedValues[entry.key] = entry.value
+        applyRowValue(rowId, entry.key, entry.value)
+      }
+    })
+    jest.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: HTMLElement
+    ) {
+      const iso = this.getAttribute('data-iso')
+      const [left, top, right, bottom] = (iso && DAY_RECTS[iso]) || [0, 0, 0, 0]
+      return {
+        left,
+        top,
+        right,
+        bottom,
+        width: right - left,
+        height: bottom - top,
+        x: left,
+        y: top,
+        toJSON() {
+          return this
+        },
+      } as DOMRect
+    })
+  })
+
+  afterEach(() => {
+    jest.useRealTimers()
+    jest.restoreAllMocks()
+  })
+
+  const barInWeek = (container: HTMLElement, iso: string) => {
+    const cell = container.querySelector<HTMLElement>(
+      `[data-part="calendar-day-cell"][data-iso="${iso}"]`
+    )
+    return cell?.parentElement?.querySelector<HTMLElement>('[data-part="calendar-bar"]') ?? null
+  }
+
+  const covers = (bar: HTMLElement | null, days: readonly string[]) => {
+    expect(bar).not.toBeNull()
+    expect(bar?.style.gridColumn).toBe('1 / 4')
+    const week = bar?.parentElement
+    for (const iso of days) {
+      expect(
+        week?.querySelector(`[data-part="calendar-day-cell"][data-iso="${iso}"]`)
+      ).not.toBeNull()
+    }
+  }
+
+  it('dragging the month bar onto the 19th writes both dates, and stepBack restores the 12th', () => {
+    userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    const { container } = renderView(calendar)
+
+    expect(screen.getByText('october 2026')).toBeInTheDocument()
+
+    const bar = container.querySelector<HTMLElement>('[data-part="calendar-bar"]')
+    expect(bar).not.toBeNull()
+    if (!bar) return
+
+    fireEvent.pointerDown(bar, { clientX: 10, clientY: 10 })
+    fireEvent.pointerMove(bar, { clientX: 250, clientY: 50 })
+    fireEvent.pointerUp(bar)
+
+    covers(barInWeek(container, '2026-10-19'), ['2026-10-19', '2026-10-20', '2026-10-21'])
+    expect(setValuesAsStep).toHaveBeenCalledTimes(1)
+    expect(setValuesAsStep).toHaveBeenCalledWith('trip', [
+      { key: 'p-start', value: '2026-10-19' },
+      { key: 'p-end', value: '2026-10-21' },
+    ])
+    expect(setValueAsStep).not.toHaveBeenCalled()
+
+    stepBack()
+
+    covers(barInWeek(container, '2026-10-12'), ['2026-10-12', '2026-10-13', '2026-10-14'])
+  })
+})
+
 describe('ViewView — the path test: timeline, through the real host (KAN-352)', () => {
   const ganttSchema: PropertySchema = [
     { id: 'p-title', name: 'Title', type: 'text' },
