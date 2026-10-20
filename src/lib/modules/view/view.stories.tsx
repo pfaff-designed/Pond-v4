@@ -2040,6 +2040,93 @@ export const CalendarWeekSpan: Story = {
 }
 
 /**
+ * KAN-457. Agenda lists what's coming, grouped by day. The month opens first;
+ * choosing agenda shows the two-week window from this Monday.
+ *
+ * Same static `CollectionView` mount as `CalendarWeekSpan`. The loader sets
+ * 1440×900 and fixes the clock at local noon on 19 Oct 2026, so October is
+ * open and the agenda period is `from 19 oct`.
+ */
+const agendaSpanRows: CollectionRow[] = [
+  { id: 'alcove', title: 'confirm alcove', values: { 'p-due': '2026-10-19' } },
+  { id: 'dentist', title: 'dentist', values: { 'p-due': '2026-10-20T10:00:00' } },
+  { id: 'plaster', title: 'plaster', values: { 'p-due': '2026-10-21' } },
+  { id: 'optician', title: 'optician', values: { 'p-due': '2026-10-21T09:00:00' } },
+  { id: 'skip', title: 'skip hire', values: { 'p-due': '2026-10-18' } },
+  { id: 'renew', title: 'renew', values: { 'p-due': '2026-11-02' } },
+]
+
+export const CalendarAgendaSpan: Story = {
+  name: 'agenda span',
+  args: { config: calendarConfig, schema, rows: agendaSpanRows },
+  loaders: [
+    async () => {
+      const prevViewport = { width: window.innerWidth, height: window.innerHeight }
+      await page.viewport(1440, 900)
+      const restoreClock = fixClockAtLocalNoonOn19Oct2026()
+      return { prevViewport, restoreClock }
+    },
+  ],
+  play: async ({ canvasElement, loaded }) => {
+    try {
+      const canvas = within(canvasElement)
+      await expect(canvas.getByText('october 2026')).toBeVisible()
+      await userEvent.click(canvas.getByRole('radio', { name: 'agenda' }))
+
+      await expect(canvas.getByText('from 19 oct')).toBeVisible()
+
+      const list = canvasElement.querySelector<HTMLElement>('[data-part="calendar-agenda"]')
+      if (!list) throw new Error('calendar agenda span story: agenda list missing')
+
+      const today = list.querySelector<HTMLElement>(
+        '[data-part="calendar-agenda-day"][data-iso="2026-10-19"]'
+      )
+      if (!today) throw new Error('calendar agenda span story: today missing')
+      const alcove = within(today)
+        .getByText('confirm alcove')
+        .closest<HTMLElement>('[data-part="calendar-agenda-item"]')
+      if (!alcove) throw new Error('calendar agenda span story: confirm alcove is not an agenda item')
+      await expect(alcove.querySelector('[data-part="calendar-agenda-time"]')).toBeNull()
+
+      const tomorrow = list.querySelector<HTMLElement>(
+        '[data-part="calendar-agenda-day"][data-iso="2026-10-20"]'
+      )
+      if (!tomorrow) throw new Error('calendar agenda span story: tomorrow missing')
+      const dentist = within(tomorrow)
+        .getByText('dentist')
+        .closest<HTMLElement>('[data-part="calendar-agenda-item"]')
+      if (!dentist) throw new Error('calendar agenda span story: dentist is not an agenda item')
+      await expect(within(dentist).getByText('10:00')).toBeVisible()
+
+      const wednesday = list.querySelector<HTMLElement>(
+        '[data-part="calendar-agenda-day"][data-iso="2026-10-21"]'
+      )
+      if (!wednesday) throw new Error('calendar agenda span story: Wednesday missing')
+      const wednesdayItems = [
+        ...wednesday.querySelectorAll<HTMLElement>('[data-part="calendar-agenda-item"]'),
+      ]
+      await expect(wednesdayItems).toHaveLength(2)
+      await expect(wednesdayItems[0]?.textContent).toContain('plaster')
+      await expect(wednesdayItems[0]?.querySelector('[data-part="calendar-agenda-time"]')).toBeNull()
+      await expect(wednesdayItems[1]?.textContent).toContain('optician')
+      const opticianTime = wednesdayItems[1]?.querySelector('[data-part="calendar-agenda-time"]')
+      await expect(opticianTime).toHaveTextContent('09:00')
+
+      await expect(canvas.queryByText('skip hire')).not.toBeInTheDocument()
+      await expect(canvas.queryByText('renew')).not.toBeInTheDocument()
+
+      await userEvent.click(dentist)
+      await expect(canvas.getByLabelText('Record: dentist')).toBeVisible()
+    } finally {
+      const restoreClock = loaded.restoreClock as (() => void) | undefined
+      restoreClock?.()
+      const { width, height } = loaded.prevViewport as { width: number; height: number }
+      await page.viewport(width, height)
+    }
+  },
+}
+
+/**
  * KAN-526. Dragging a week item onto another day writes that day. A timed
  * value keeps its time; a date-only value stays in the all-day row.
  *
