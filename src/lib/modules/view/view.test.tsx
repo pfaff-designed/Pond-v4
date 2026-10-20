@@ -614,6 +614,61 @@ describe('ViewView — the path test: calendar, through the real host (KAN-352)'
   })
 })
 
+describe('ViewView — a blank day click opens that day (KAN-455)', () => {
+  const calendarSchema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    { id: 'p-due', name: 'Due', type: 'date' },
+  ]
+
+  beforeEach(() => {
+    initialSchema = calendarSchema
+    initialRows = [{ id: 'dentist', title: 'dentist', values: { 'p-due': '2026-10-21' } }]
+  })
+
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  function cellFor(container: HTMLElement, iso: string) {
+    return container.querySelector<HTMLElement>(
+      `[data-part="calendar-day-cell"][data-iso="${iso}"]`
+    )
+  }
+
+  it('clicking the day number opens that day, steps back one day, and month returns the cell', async () => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    const onChange = jest.fn()
+    const { container } = renderView(calendar, true, onChange)
+    const cell = cellFor(container, '2026-10-21')
+    if (!cell) throw new Error('month cell 2026-10-21 missing')
+
+    await user.click(within(cell).getByText('21'))
+
+    expect(screen.getByText('wed 21 oct 2026')).toBeInTheDocument()
+    expect(screen.queryByText('october 2026')).not.toBeInTheDocument()
+    expect(cellFor(container, '2026-10-21')).toBeNull()
+    const allDay = container.querySelector('[data-part="calendar-all-day"]')
+    expect(allDay).not.toBeNull()
+    expect(within(allDay as HTMLElement).getByText('dentist')).toBeInTheDocument()
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ span: 'day' }))
+
+    await user.click(screen.getByRole('button', { name: 'Previous day' }))
+
+    expect(screen.getByText('tue 20 oct 2026')).toBeInTheDocument()
+    expect(onChange).toHaveBeenCalledTimes(1)
+
+    await user.click(screen.getByRole('radio', { name: 'month' }))
+
+    expect(screen.getByText('october 2026')).toBeInTheDocument()
+    expect(screen.queryByText('tue 20 oct 2026')).not.toBeInTheDocument()
+    expect(cellFor(container, '2026-10-21')).not.toBeNull()
+    expect(onChange).toHaveBeenCalledTimes(2)
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ span: 'month' }))
+  })
+})
+
 describe('ViewView — the path test: timeline, through the real host (KAN-352)', () => {
   const ganttSchema: PropertySchema = [
     { id: 'p-title', name: 'Title', type: 'text' },
