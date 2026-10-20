@@ -1821,6 +1821,50 @@ describe('agenda list', () => {
   })
 })
 
+describe('agenda peek', () => {
+  const dentist: CollectionRow = {
+    id: 'dentist',
+    title: 'dentist',
+    values: { 'p-due': '2026-10-20T10:00:00' },
+  }
+
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
+  })
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  it('clicking an agenda item selects it and opens the existing peek, and does not open the record', async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    const onOpenRow = jest.fn()
+    const { container } = render(
+      <CollectionCalendar
+        schema={schemaWithDate}
+        rows={[dentist]}
+        span="agenda"
+        onOpenRow={onOpenRow}
+      />
+    )
+
+    const item = container.querySelector<HTMLElement>(
+      '[data-part="calendar-agenda-item"]'
+    )
+    expect(item).not.toBeNull()
+    if (!item) return
+    expect(item).not.toHaveClass('ring-[1.5px]')
+    expect(screen.queryByLabelText('Record: dentist')).not.toBeInTheDocument()
+    expect(container.querySelectorAll('[data-part="record-peek"]')).toHaveLength(0)
+
+    await user.click(item)
+
+    expect(item).toHaveClass('ring-[1.5px]', 'ring-inset', 'ring-mn-text')
+    expect(screen.getByLabelText('Record: dentist')).toBeInTheDocument()
+    expect(container.querySelectorAll('[data-part="record-peek"]')).toHaveLength(1)
+    expect(onOpenRow).not.toHaveBeenCalled()
+  })
+})
+
 describe('agenda empty', () => {
   const skipHire: CollectionRow = {
     id: 'skip',

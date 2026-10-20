@@ -543,12 +543,100 @@ const agendaGroupHasRows = (group: AgendaGroup): boolean =>
 const AgendaNone = () => <span className={AGENDA_NONE}>nothing dated</span>
 
 /**
+ * One agenda row. The click and key calls are the month stack's: the first
+ * click selects and the peek `CollectionCalendar` already mounts for
+ * `selectedRow` opens; a second click on the selected row opens the page.
+ */
+function AgendaItem({
+  row,
+  timeLabel,
+  selectedId,
+  isClickSuppressed,
+  rowProps,
+  keyboardProps,
+  selectWithPointer,
+  selectOrOpenOnKey,
+  onOpenRow,
+}: {
+  row: CollectionRow
+  timeLabel?: string
+  selectedId?: string
+  isClickSuppressed: PointerBucketDrag['isClickSuppressed']
+  rowProps: RowSelection['rowProps']
+  keyboardProps: RowSelection['keyboardProps']
+  selectWithPointer: RowSelection['selectWithPointer']
+  selectOrOpenOnKey: RowSelection['selectOrOpenOnKey']
+  onOpenRow?: (rowId: string) => void
+}) {
+  return (
+    <div
+      data-part="calendar-agenda-item"
+      className={cn(
+        AGENDA_ITEM,
+        ROW_FOCUS_VISIBLE,
+        row.id === selectedId && DAY_ITEM_SELECTED_RING
+      )}
+      {...rowProps(row.id)}
+      {...keyboardProps(row.id)}
+      onKeyDown={(e) => selectOrOpenOnKey(row.id, e, onOpenRow)}
+      onClick={(e) =>
+        handleCalendarRowClick(
+          row.id,
+          selectedId,
+          selectWithPointer,
+          onOpenRow,
+          isClickSuppressed,
+          e
+        )
+      }
+    >
+      <span className={DAY_ITEM_DOT_LARGE} />
+      <span className={AGENDA_TITLE}>{row.title}</span>
+      {timeLabel ? (
+        <span data-part="calendar-agenda-time" className={AGENDA_TIME}>
+          {timeLabel}
+        </span>
+      ) : null}
+    </div>
+  )
+}
+
+/**
  * The agenda span's list (`PondCalendar.dc.html` lines 239–244). Groups are
  * `buildAgenda`: untimed rows, then timed rows. An untimed row has no time node.
  * Today with no rows keeps its heading and draws `nothing dated` under it. A
  * window with no groups draws that line once, with no day heading.
  */
-function AgendaList({ groups, todayIso }: { groups: readonly AgendaGroup[]; todayIso: string }) {
+function AgendaList({
+  groups,
+  todayIso,
+  selectedId,
+  isClickSuppressed,
+  rowProps,
+  keyboardProps,
+  selectWithPointer,
+  selectOrOpenOnKey,
+  onOpenRow,
+}: {
+  groups: readonly AgendaGroup[]
+  todayIso: string
+  selectedId?: string
+  isClickSuppressed: PointerBucketDrag['isClickSuppressed']
+  rowProps: RowSelection['rowProps']
+  keyboardProps: RowSelection['keyboardProps']
+  selectWithPointer: RowSelection['selectWithPointer']
+  selectOrOpenOnKey: RowSelection['selectOrOpenOnKey']
+  onOpenRow?: (rowId: string) => void
+}) {
+  const itemProps = {
+    selectedId,
+    isClickSuppressed,
+    rowProps,
+    keyboardProps,
+    selectWithPointer,
+    selectOrOpenOnKey,
+    onOpenRow,
+  }
   return (
     <div data-part="calendar-agenda" className="flex flex-col">
       {groups.length === 0 ? (
@@ -572,23 +660,15 @@ function AgendaList({ groups, todayIso }: { groups: readonly AgendaGroup[]; toda
               {agendaGroupHasRows(group) ? (
                 <>
                   {group.rows.untimed.map((row) => (
-                    <div key={row.id} data-part="calendar-agenda-item" className={AGENDA_ITEM}>
-                      <span className={DAY_ITEM_DOT_LARGE} />
-                      <span className={AGENDA_TITLE}>{row.title}</span>
-                    </div>
+                    <AgendaItem key={row.id} row={row} {...itemProps} />
                   ))}
                   {group.rows.timed.map((timed) => (
-                    <div
+                    <AgendaItem
                       key={timed.row.id}
-                      data-part="calendar-agenda-item"
-                      className={AGENDA_ITEM}
-                    >
-                      <span className={DAY_ITEM_DOT_LARGE} />
-                      <span className={AGENDA_TITLE}>{timed.row.title}</span>
-                      <span data-part="calendar-agenda-time" className={AGENDA_TIME}>
-                        {timed.timeLabel}
-                      </span>
-                    </div>
+                      row={timed.row}
+                      timeLabel={timed.timeLabel}
+                      {...itemProps}
+                    />
                   ))}
                 </>
               ) : (
@@ -1407,7 +1487,17 @@ export function CollectionCalendar({
         </>
       ) : span === 'agenda' ? (
         calendarOwnEmpty ? null : (
-          <AgendaList groups={agendaGroups} todayIso={todayIso} />
+          <AgendaList
+            groups={agendaGroups}
+            todayIso={todayIso}
+            selectedId={selectedRow?.id}
+            isClickSuppressed={isClickSuppressed}
+            rowProps={rowProps}
+            keyboardProps={keyboardProps}
+            selectWithPointer={selectWithPointer}
+            selectOrOpenOnKey={selectOrOpenOnKey}
+            onOpenRow={onOpenRow}
+          />
         )
       ) : (
         <>
