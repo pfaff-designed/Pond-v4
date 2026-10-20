@@ -1941,6 +1941,37 @@ describe('agenda reach', () => {
     expect(screen.queryByText('skip hire')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'load more' })).toBeNull()
   })
+
+  it('agenda step replaces the window', async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    const { container } = render(
+      <CollectionCalendar schema={schemaWithDate} rows={agendaRows} span="agenda" />
+    )
+
+    reachAgendaEnd()
+
+    expect(screen.getByText('renew')).toBeInTheDocument()
+    expect(screen.getByText('from 19 oct')).toBeInTheDocument()
+    expect(screen.getByText('confirm alcove')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Next agenda' }))
+
+    expect(screen.getByText('from 2 nov')).toBeInTheDocument()
+    expect(screen.queryByText('confirm alcove')).not.toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'agenda' })).toBeChecked()
+
+    await user.click(screen.getByRole('button', { name: 'today' }))
+
+    expect(screen.getByText('from 19 oct')).toBeInTheDocument()
+    expect(screen.getByText('confirm alcove')).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'agenda' })).toBeChecked()
+
+    await user.click(screen.getByRole('button', { name: 'Previous agenda' }))
+
+    expect(screen.getByText('from 5 oct')).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'agenda' })).toBeChecked()
+    expect(container.querySelector('[data-part="calendar-agenda"]')).not.toBeNull()
+  })
 })
 
 describe('agenda peek', () => {

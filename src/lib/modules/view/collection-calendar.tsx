@@ -1294,9 +1294,11 @@ export function CollectionCalendar({
         ? 'Next day'
         : 'Next month'
   const handleStepFocus = (direction: -1 | 1) => {
+    setAgendaExtensions(0)
     setFocusIso((current) => stepFocus(current, direction))
   }
   const handleToday = () => {
+    setAgendaExtensions(0)
     setFocusIso(goToday(todayIso))
   }
   // Desktop `goDay`: blank space opens that day. A mobile month dot only moves
