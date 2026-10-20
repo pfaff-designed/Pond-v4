@@ -1268,3 +1268,81 @@ describe('span pill (KAN-455)', () => {
     expect(onConfigChange).toHaveBeenCalledWith({ span: 'month' }, undefined)
   })
 })
+
+describe('day header (KAN-455)', () => {
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
+  })
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  it('when the span is day, the period is the day, prev and next step a day, and today stays on the day span', async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    const onConfigChange = jest.fn()
+    render(
+      <CollectionCalendar
+        schema={schemaWithDate}
+        rows={rows}
+        span="day"
+        onConfigChange={onConfigChange}
+      />
+    )
+
+    expect(screen.getByText('mon 19 oct 2026')).toBeInTheDocument()
+    expect(screen.queryByText('october 2026')).not.toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'day' })).toBeChecked()
+    expect(screen.queryByRole('button', { name: 'Previous month' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Next month' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Previous day' }))
+    expect(screen.getByText('sun 18 oct 2026')).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'day' })).toBeChecked()
+
+    await user.click(screen.getByRole('button', { name: 'Next day' }))
+    await user.click(screen.getByRole('button', { name: 'Next day' }))
+    expect(screen.getByText('tue 20 oct 2026')).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'day' })).toBeChecked()
+
+    await user.click(screen.getByRole('button', { name: 'today' }))
+    expect(screen.getByText('mon 19 oct 2026')).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'day' })).toBeChecked()
+    expect(onConfigChange).not.toHaveBeenCalled()
+  })
+
+  it('choosing day from the pill switches the header onto that day without a month step', async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    render(<CollectionCalendar schema={schemaWithDate} rows={rows} />)
+
+    expect(screen.getByText('october 2026')).toBeInTheDocument()
+    await user.click(screen.getByRole('radio', { name: 'day' }))
+
+    expect(screen.getByText('mon 19 oct 2026')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Previous day' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Next day' })).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'day' })).toBeChecked()
+  })
+
+  it('the month span keeps Previous month and Next month and steps by month', async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    render(<CollectionCalendar schema={schemaWithDate} rows={rows} />)
+
+    expect(screen.getByText('october 2026')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Previous month' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Next month' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Previous day' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Next day' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Next month' }))
+    expect(screen.getByText('november 2026')).toBeInTheDocument()
+    expect(screen.queryByText('sun 1 nov 2026')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Previous month' }))
+    expect(screen.getByText('october 2026')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Next month' }))
+    await user.click(screen.getByRole('button', { name: 'today' }))
+    expect(screen.getByText('october 2026')).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'month' })).toBeChecked()
+  })
+})

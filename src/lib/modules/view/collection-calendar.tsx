@@ -34,6 +34,7 @@ import {
   type MonthDayCell,
 } from './calendar-month'
 import { pickDateDef, type CollectionRow } from './apply'
+import { dayPeriodLabel, stepDay } from './calendar-day'
 import { localDateIso } from './due'
 import { CALENDAR_EMPTY_LINE } from './kinds'
 import { RecordPeek } from './record-peek'
@@ -515,6 +516,19 @@ export function CollectionCalendar({
     () => buildMonthGrid(focusIso, todayIso, rows, dateDef),
     [dateDef, focusIso, todayIso, rows]
   )
+  // The open day is session state. A day span labels and steps that day; a
+  // month span keeps the month label and `stepMonth`. `today` only moves the
+  // focus, so it never leaves the span.
+  const periodLabel = span === 'day' ? dayPeriodLabel(focusIso) : grid.periodLabel
+  const stepFocus = span === 'day' ? stepDay : stepMonth
+  const previousName = span === 'day' ? 'Previous day' : 'Previous month'
+  const nextName = span === 'day' ? 'Next day' : 'Next month'
+  const handleStepFocus = (direction: -1 | 1) => {
+    setFocusIso((current) => stepFocus(current, direction))
+  }
+  const handleToday = () => {
+    setFocusIso(goToday(todayIso))
+  }
 
   // Dropping on a day cell writes that day to the date field; a drop back onto the
   // row's own current day is a no-op (no write, no log, no undo step).
@@ -623,21 +637,21 @@ export function CollectionCalendar({
       <div className="flex flex-wrap items-center justify-between gap-[10px]">
         <div className="flex w-full items-center justify-between gap-1.5 md:w-auto md:justify-normal">
           <span className="min-w-0 text-base font-medium tabular-nums md:min-w-[150px] md:text-[15px]">
-            {grid.periodLabel}
+            {periodLabel}
           </span>
           <div className="flex items-center gap-0.5">
             <button
               type="button"
-              aria-label="Previous month"
-              onClick={() => setFocusIso((f) => stepMonth(f, -1))}
+              aria-label={previousName}
+              onClick={() => handleStepFocus(-1)}
               className={NAV_BTN}
             >
               <ChevronLeft />
             </button>
             <button
               type="button"
-              aria-label="Next month"
-              onClick={() => setFocusIso((f) => stepMonth(f, 1))}
+              aria-label={nextName}
+              onClick={() => handleStepFocus(1)}
               className={NAV_BTN}
             >
               <ChevronRight />
@@ -648,7 +662,7 @@ export function CollectionCalendar({
           <SpanPill value={span} onChange={handleSpanChange} />
           <button
             type="button"
-            onClick={() => setFocusIso(goToday(todayIso))}
+            onClick={handleToday}
             className="rounded-mn-pill px-3.5 py-3 text-xs font-medium ring-1 ring-inset ring-mn-text/20 md:px-3 md:py-1.5 md:text-[10.5px]"
           >
             today
