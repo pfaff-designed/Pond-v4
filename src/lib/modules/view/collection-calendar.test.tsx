@@ -1577,6 +1577,91 @@ describe('week header', () => {
   })
 })
 
+describe('agenda header', () => {
+  const thisWindow = 'from 19 oct'
+  const nextWindow = 'from 2 nov'
+
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
+  })
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  it('when the span is agenda, the period is the agenda window, prev and next step fourteen days, and today stays on the agenda span', async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    const onConfigChange = jest.fn()
+    render(
+      <CollectionCalendar
+        schema={schemaWithDate}
+        rows={rows}
+        span="agenda"
+        onConfigChange={onConfigChange}
+      />
+    )
+
+    expect(screen.getByText(thisWindow)).toBeInTheDocument()
+    expect(screen.queryByText('october 2026')).not.toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'agenda' })).toBeChecked()
+    expect(screen.getByRole('button', { name: 'Previous agenda' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Next agenda' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Previous month' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Next month' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Previous week' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Next week' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Previous day' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Next day' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Next agenda' }))
+    expect(screen.getByText(nextWindow)).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'agenda' })).toBeChecked()
+
+    await user.click(screen.getByRole('button', { name: 'Previous agenda' }))
+    expect(screen.getByText(thisWindow)).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'agenda' })).toBeChecked()
+
+    await user.click(screen.getByRole('button', { name: 'Next agenda' }))
+    expect(screen.getByText(nextWindow)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'today' }))
+    expect(screen.getByText(thisWindow)).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'agenda' })).toBeChecked()
+    expect(onConfigChange).not.toHaveBeenCalled()
+  })
+
+  it('the month span keeps Previous month and Next month and the month label', () => {
+    render(<CollectionCalendar schema={schemaWithDate} rows={rows} span="month" />)
+
+    expect(screen.getByText('october 2026')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Previous month' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Next month' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Previous agenda' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Next agenda' })).not.toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'month' })).toBeChecked()
+  })
+
+  it('the week span keeps Previous week and Next week and the week label', () => {
+    render(<CollectionCalendar schema={schemaWithDate} rows={rows} span="week" />)
+
+    expect(screen.getByText('19 \u2013 25 oct 2026')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Previous week' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Next week' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Previous agenda' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Next agenda' })).not.toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'week' })).toBeChecked()
+  })
+
+  it('the day span keeps Previous day and Next day and the day label', () => {
+    render(<CollectionCalendar schema={schemaWithDate} rows={rows} span="day" />)
+
+    expect(screen.getByText('mon 19 oct 2026')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Previous day' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Next day' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Previous agenda' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Next agenda' })).not.toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'day' })).toBeChecked()
+  })
+})
+
 describe('week body', () => {
   const weekRows: CollectionRow[] = [
     { id: 'dentist', title: 'dentist', values: { 'p-due': '2026-10-21T10:00:00' } },
@@ -2431,9 +2516,7 @@ describe('KAN-526 week all-day drag', () => {
       .getByText('confirm alcove')
       .closest<HTMLElement>('[data-part="calendar-all-day-item"]')!
 
-  const renderStatic = (
-    onMoveDate: (rowId: string, key: string, value: PropertyValue) => void
-  ) =>
+  const renderStatic = (onMoveDate: (rowId: string, key: string, value: PropertyValue) => void) =>
     render(
       <CollectionView
         config={weekConfig}

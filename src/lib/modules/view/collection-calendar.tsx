@@ -58,6 +58,7 @@ import {
   type DayTimedRow,
   type StripDay,
 } from './calendar-day'
+import { agendaPeriodLabel, agendaRange, stepAgenda } from './calendar-agenda'
 import { stepWeek, weekPeriodLabel, weekRange } from './calendar-week'
 import { localDateIso } from './due'
 import { CALENDAR_EMPTY_LINE } from './kinds'
@@ -695,10 +696,7 @@ function WeekBody({
             <div
               key={row.id}
               data-part="calendar-all-day-item"
-              className={cn(
-                ALL_DAY_ITEM,
-                drag?.active && drag.rowId === row.id && DRAG_LIFT_CLASS
-              )}
+              className={cn(ALL_DAY_ITEM, drag?.active && drag.rowId === row.id && DRAG_LIFT_CLASS)}
               style={{ gridColumn: index + 2, gridRow: rowIndex + 1 }}
               onPointerDown={editable ? (e) => onCardPointerDown(e, row.id) : undefined}
             >
@@ -1035,25 +1033,44 @@ export function CollectionCalendar({
   const dayRows = useMemo(() => splitDayRows(rows, dateDef, focusIso), [dateDef, focusIso, rows])
   const weekStrip = useMemo(() => stripWeek(focusIso, rows, dateDef), [dateDef, focusIso, rows])
   // The open focus is session state. A week span labels `weekRange` of that
-  // focus and steps seven days; a day span labels and steps that day; a month
-  // span keeps the month label and `stepMonth`. `today` only moves the focus,
-  // so it never leaves the span. A week span draws the desktop week body
-  // (day heads, all-day row, hour grid). On a phone (`mob && span === 'week'`)
-  // that grid stays hidden: the week strip and the focused-day list show
-  // instead, and a strip tap only moves the focus.
+  // focus and steps seven days; a day span labels and steps that day; an
+  // agenda span labels `agendaRange(focus).start` (`from 19 oct`) and steps
+  // fourteen days via `stepAgenda`; a month span keeps the month label and
+  // `stepMonth`. `today` only moves the focus, so it never leaves the span.
+  // A week span draws the desktop week body (day heads, all-day row, hour
+  // grid). On a phone (`mob && span === 'week'`) that grid stays hidden: the
+  // week strip and the focused-day list show instead, and a strip tap only
+  // moves the focus. Agenda still draws the month grid until the list lands.
   const openWeek = span === 'week' ? weekRange(focusIso) : null
-  const periodLabel = openWeek
-    ? weekPeriodLabel(openWeek.start, openWeek.end)
-    : span === 'day'
-      ? dayPeriodLabel(focusIso)
-      : grid.periodLabel
-  const stepFocus = openWeek ? stepWeek : span === 'day' ? stepDay : stepMonth
-  const previousName = openWeek
-    ? 'Previous week'
-    : span === 'day'
-      ? 'Previous day'
-      : 'Previous month'
-  const nextName = openWeek ? 'Next week' : span === 'day' ? 'Next day' : 'Next month'
+  const openAgenda = span === 'agenda' ? agendaRange(focusIso) : null
+  const periodLabel = openAgenda
+    ? agendaPeriodLabel(openAgenda.start)
+    : openWeek
+      ? weekPeriodLabel(openWeek.start, openWeek.end)
+      : span === 'day'
+        ? dayPeriodLabel(focusIso)
+        : grid.periodLabel
+  const stepFocus = openAgenda
+    ? stepAgenda
+    : openWeek
+      ? stepWeek
+      : span === 'day'
+        ? stepDay
+        : stepMonth
+  const previousName = openAgenda
+    ? 'Previous agenda'
+    : openWeek
+      ? 'Previous week'
+      : span === 'day'
+        ? 'Previous day'
+        : 'Previous month'
+  const nextName = openAgenda
+    ? 'Next agenda'
+    : openWeek
+      ? 'Next week'
+      : span === 'day'
+        ? 'Next day'
+        : 'Next month'
   const handleStepFocus = (direction: -1 | 1) => {
     setFocusIso((current) => stepFocus(current, direction))
   }
