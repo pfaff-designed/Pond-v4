@@ -7,10 +7,10 @@
  * day's own list, the DC's `showList` for
  * `mob && span === 'month'`) draws while the span is month. A week span unmounts
  * that grid and draws the desktop week body (`PondCalendar.dc.html` `isTime` for
- * `span === 'week'`): seven day heads, then the hour grid. The all-day row above
- * that grid is a later item. A day span unmounts the month grid and draws the day
- * body — all-day row, then the hour grid — at the desktop metrics and again at
- * the mobile ones (`PondCalendar.dc.html` `isTime`).
+ * `span === 'week'`): seven day heads, the all-day row, then the hour grid.
+ * A day span unmounts the month grid and draws the day body — all-day row, then
+ * the hour grid — at the desktop metrics and again at the mobile ones
+ * (`PondCalendar.dc.html` `isTime`).
  * On a phone the day span draws one Monday-first week strip before both bodies
  * (`PondCalendar.dc.html` lines 185–192).
  * A blank click on a desktop month cell opens that day (`goDay`). A mobile month
@@ -607,9 +607,10 @@ const WEEK_COLUMNS = '52px repeat(7,minmax(0,1fr))'
 
 /**
  * Desktop week body (`isTime` for `span === 'week'`, `PondCalendar.dc.html`
- * lines 194–228). Day heads, then the hour grid. The all-day row between them
- * is a later item. Positions reuse the day span's hour geometry. An empty hour
- * is not a control; a day head opens that day.
+ * lines 194–228). Day heads, the all-day row (`adRow`, lines 204–216), then the
+ * hour grid. A date with no `T` sits in that day's column; a timed row stays in
+ * the hours. One date per row — no multi-day bars. Positions reuse the day
+ * span's hour geometry. An empty hour is not a control; a day head opens that day.
  */
 function WeekBody({
   startIso,
@@ -631,6 +632,8 @@ function WeekBody({
   const bodyHeight = (DAY_HOUR_END - DAY_HOUR_START) * rowHeight
   const hours = dayHourLabels()
   const days = Array.from({ length: 7 }, (_, offset) => addDays(startIso, offset))
+  const untimedByDay = days.map((iso) => splitDayRows(rows, dateDef, iso).untimed)
+  const allDayTracks = Math.max(1, ...untimedByDay.map((items) => items.length))
 
   return (
     <div
@@ -662,6 +665,31 @@ function WeekBody({
             </button>
           )
         })}
+      </div>
+      <div
+        data-part="calendar-all-day"
+        className={cn('grid border-y py-[6px]', DAY_HAIR_BORDER)}
+        style={{
+          gridTemplateColumns: WEEK_COLUMNS,
+          gridTemplateRows: `repeat(${allDayTracks}, 24px)`,
+        }}
+      >
+        <span className={ALL_DAY_LABEL} style={{ gridColumn: 1, gridRow: 1 }}>
+          all day
+        </span>
+        {untimedByDay.map((items, index) =>
+          items.map((row, rowIndex) => (
+            <div
+              key={row.id}
+              data-part="calendar-all-day-item"
+              className={ALL_DAY_ITEM}
+              style={{ gridColumn: index + 2, gridRow: rowIndex + 1 }}
+            >
+              <span className={DAY_ITEM_DOT} />
+              <span className={ALL_DAY_TITLE}>{row.title}</span>
+            </div>
+          ))
+        )}
       </div>
       <div
         data-part="calendar-hour-grid"
@@ -1001,7 +1029,7 @@ export function CollectionCalendar({
   // focus and steps seven days; a day span labels and steps that day; a month
   // span keeps the month label and `stepMonth`. `today` only moves the focus,
   // so it never leaves the span. A week span draws the desktop week body
-  // instead of the month grid. The all-day row above the hours is a later item.
+  // (day heads, all-day row, hour grid) instead of the month grid.
   const openWeek = span === 'week' ? weekRange(focusIso) : null
   const periodLabel = openWeek
     ? weekPeriodLabel(openWeek.start, openWeek.end)

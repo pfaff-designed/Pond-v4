@@ -1579,7 +1579,6 @@ describe('week body', () => {
     expect(body).toHaveClass('hidden', 'md:flex', 'md:flex-col')
     expect(container.querySelector('[data-part="calendar-day-cell"]')).toBeNull()
     expect(container.querySelector('[data-part="calendar-day-body"]')).toBeNull()
-    expect(body.querySelector('[data-part="calendar-all-day"]')).toBeNull()
 
     const headButtons = heads.map((name) => within(body).getByRole('button', { name }))
     expect(headButtons).toHaveLength(7)
@@ -1719,6 +1718,92 @@ describe('week body', () => {
     expect(dayBody.querySelector('[data-part="calendar-event-time"]')).toHaveTextContent('10:00')
     expect(onConfigChange).toHaveBeenCalledTimes(1)
     expect(onConfigChange).toHaveBeenCalledWith({ span: 'day' })
+  })
+})
+
+describe('week all day', () => {
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
+  })
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  it('puts date-only confirm alcove in Wednesday’s all-day column and keeps dentist in the hour grid', () => {
+    const weekRows: CollectionRow[] = [
+      { id: 'dentist', title: 'dentist', values: { 'p-due': '2026-10-21T10:00:00' } },
+      { id: 'alcove', title: 'confirm alcove', values: { 'p-due': '2026-10-21' } },
+    ]
+    const { container } = render(
+      <CollectionCalendar schema={schemaWithDate} rows={weekRows} span="week" />
+    )
+
+    const body = container.querySelector<HTMLElement>('[data-part="calendar-week-body"]')
+    expect(body).not.toBeNull()
+    if (!body) return
+    const allDay = body.querySelector<HTMLElement>('[data-part="calendar-all-day"]')
+    const grid = body.querySelector<HTMLElement>('[data-part="calendar-hour-grid"]')
+    expect(allDay).not.toBeNull()
+    expect(grid).not.toBeNull()
+    if (!allDay || !grid) return
+
+    expect(allDay.compareDocumentPosition(grid) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(allDay.style.gridTemplateColumns).toBe('52px repeat(7,minmax(0,1fr))')
+    expect(allDay).toHaveClass(
+      'py-[6px]',
+      'border-y',
+      'border-mn-text/[0.09]',
+      'dark:border-mn-text/[0.14]'
+    )
+    expect(within(allDay).getByText('all day')).toHaveClass(
+      'text-[10.5px]',
+      'font-medium',
+      'text-mn-text-secondary'
+    )
+
+    const wednesday = body.querySelector<HTMLElement>(
+      '[data-part="calendar-week-column"][data-iso="2026-10-21"]'
+    )
+    expect(wednesday).not.toBeNull()
+    if (!wednesday) return
+    const item = within(allDay)
+      .getByText('confirm alcove')
+      .closest<HTMLElement>('[data-part="calendar-all-day-item"]')
+    expect(item).not.toBeNull()
+    if (!item) return
+    expect(item.style.gridColumn).toBe(wednesday.style.gridColumn)
+    expect(item).toHaveClass('h-[22px]')
+    expect(item.querySelector('span')).toHaveClass('size-[9px]')
+    expect(within(item).getByText('confirm alcove')).toHaveClass('text-[11.5px]', 'font-medium')
+
+    expect(within(allDay).queryByText('dentist')).not.toBeInTheDocument()
+    expect(within(grid).queryByText('confirm alcove')).not.toBeInTheDocument()
+    expect(within(wednesday).getByText('dentist')).toBeInTheDocument()
+    expect(wednesday.querySelector('[data-part="calendar-event-time"]')).toHaveTextContent('10:00')
+  })
+
+  it('keeps the all day label and one track when the week has only a timed row', () => {
+    const weekRows: CollectionRow[] = [
+      { id: 'dentist', title: 'dentist', values: { 'p-due': '2026-10-21T10:00:00' } },
+    ]
+    const { container } = render(
+      <CollectionCalendar schema={schemaWithDate} rows={weekRows} span="week" />
+    )
+
+    const body = container.querySelector<HTMLElement>('[data-part="calendar-week-body"]')
+    expect(body).not.toBeNull()
+    if (!body) return
+    const allDay = body.querySelector<HTMLElement>('[data-part="calendar-all-day"]')
+    expect(allDay).not.toBeNull()
+    if (!allDay) return
+    expect(within(allDay).getByText('all day')).toBeInTheDocument()
+    expect(allDay.style.gridTemplateRows).toBe('repeat(1, 24px)')
+    expect(allDay.querySelector('[data-part="calendar-all-day-item"]')).toBeNull()
+
+    const grid = body.querySelector<HTMLElement>('[data-part="calendar-hour-grid"]')
+    expect(grid).not.toBeNull()
+    if (!grid) return
+    expect(within(grid).getByText('dentist')).toBeInTheDocument()
   })
 })
 
