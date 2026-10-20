@@ -1465,6 +1465,78 @@ describe('day header (KAN-455)', () => {
   })
 })
 
+describe('week header', () => {
+  const thisWeek = '19 \u2013 25 oct 2026'
+  const nextWeek = '26 oct \u2013 1 nov 2026'
+
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
+  })
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  it('when the span is week, the period is the week, prev and next step a week, and today stays on the week span', async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    const onConfigChange = jest.fn()
+    render(
+      <CollectionCalendar
+        schema={schemaWithDate}
+        rows={rows}
+        span="week"
+        onConfigChange={onConfigChange}
+      />
+    )
+
+    expect(screen.getByText(thisWeek)).toBeInTheDocument()
+    expect(screen.queryByText('october 2026')).not.toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'week' })).toBeChecked()
+    expect(screen.getByRole('button', { name: 'Previous week' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Next week' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Previous month' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Next month' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Previous day' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Next day' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Next week' }))
+    expect(screen.getByText(nextWeek)).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'week' })).toBeChecked()
+
+    await user.click(screen.getByRole('button', { name: 'Previous week' }))
+    expect(screen.getByText(thisWeek)).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'week' })).toBeChecked()
+
+    await user.click(screen.getByRole('button', { name: 'Next week' }))
+    expect(screen.getByText(nextWeek)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'today' }))
+    expect(screen.getByText(thisWeek)).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'week' })).toBeChecked()
+    expect(onConfigChange).not.toHaveBeenCalled()
+  })
+
+  it('the month span keeps Previous month and Next month', () => {
+    render(<CollectionCalendar schema={schemaWithDate} rows={rows} span="month" />)
+
+    expect(screen.getByText('october 2026')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Previous month' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Next month' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Previous week' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Next week' })).not.toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'month' })).toBeChecked()
+  })
+
+  it('the day span keeps Previous day and Next day', () => {
+    render(<CollectionCalendar schema={schemaWithDate} rows={rows} span="day" />)
+
+    expect(screen.getByText('mon 19 oct 2026')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Previous day' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Next day' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Previous week' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Next week' })).not.toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'day' })).toBeChecked()
+  })
+})
+
 describe('day body (KAN-455)', () => {
   const dayRows: CollectionRow[] = [
     { id: 'dentist', title: 'dentist', values: { 'p-due': '2026-10-21' } },

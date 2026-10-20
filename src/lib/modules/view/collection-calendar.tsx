@@ -55,6 +55,7 @@ import {
   type DayTimedRow,
   type StripDay,
 } from './calendar-day'
+import { stepWeek, weekPeriodLabel, weekRange } from './calendar-week'
 import { localDateIso } from './due'
 import { CALENDAR_EMPTY_LINE } from './kinds'
 import { RecordPeek } from './record-peek'
@@ -835,13 +836,24 @@ export function CollectionCalendar({
     () => stripWeek(focusIso, rows, dateDef),
     [dateDef, focusIso, rows]
   )
-  // The open day is session state. A day span labels and steps that day; a
-  // month span keeps the month label and `stepMonth`. `today` only moves the
-  // focus, so it never leaves the span.
-  const periodLabel = span === 'day' ? dayPeriodLabel(focusIso) : grid.periodLabel
-  const stepFocus = span === 'day' ? stepDay : stepMonth
-  const previousName = span === 'day' ? 'Previous day' : 'Previous month'
-  const nextName = span === 'day' ? 'Next day' : 'Next month'
+  // The open focus is session state. A week span labels `weekRange` of that
+  // focus and steps seven days; a day span labels and steps that day; a month
+  // span keeps the month label and `stepMonth`. `today` only moves the focus,
+  // so it never leaves the span. The week body is a later item: week still
+  // draws the month grid.
+  const openWeek = span === 'week' ? weekRange(focusIso) : null
+  const periodLabel = openWeek
+    ? weekPeriodLabel(openWeek.start, openWeek.end)
+    : span === 'day'
+      ? dayPeriodLabel(focusIso)
+      : grid.periodLabel
+  const stepFocus = openWeek ? stepWeek : span === 'day' ? stepDay : stepMonth
+  const previousName = openWeek
+    ? 'Previous week'
+    : span === 'day'
+      ? 'Previous day'
+      : 'Previous month'
+  const nextName = openWeek ? 'Next week' : span === 'day' ? 'Next day' : 'Next month'
   const handleStepFocus = (direction: -1 | 1) => {
     setFocusIso((current) => stepFocus(current, direction))
   }
