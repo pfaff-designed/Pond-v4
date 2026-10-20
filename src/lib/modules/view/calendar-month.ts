@@ -38,6 +38,9 @@ export interface MonthDayCell {
   isToday: boolean
   items: CollectionRow[]
   moreCount: number
+  /** Mobile dots. Rows whose start–end covers this day, capped at 3. A range
+   *  marks each covered day and stays out of `items`. */
+  marks: CollectionRow[]
 }
 
 export interface MonthWeek {
@@ -195,6 +198,31 @@ function bucketByDate(
   return byDate
 }
 
+/** Rows whose start–end covers `iso`, capped at 3 — the mobile month's dots
+ *  (`occ` where `start <= t && end >= t`, sliced to 3). A range covers each day
+ *  from its start through its end. A row that is not a bar covers only its start
+ *  day, the same day it chips on. */
+function marksForDay(
+  rows: readonly CollectionRow[],
+  dateDef: PropertyDef | undefined,
+  endDef: PropertyDef | undefined,
+  iso: string
+): CollectionRow[] {
+  if (!dateDef) return []
+  const marks: CollectionRow[] = []
+  for (const row of rows) {
+    const start = rowDateIso(row, dateDef)
+    if (!start) continue
+    const end = endDef ? rowDateIso(row, endDef) : null
+    const covers =
+      end !== null && isMonthBar(start, end) ? start <= iso && end >= iso : start === iso
+    if (!covers) continue
+    marks.push(row)
+    if (marks.length === 3) break
+  }
+  return marks
+}
+
 /** All of a day's dated rows, not capped to 3 — the mobile month's focused-day list
  *  (DC's `agDays` for `listDays=[focus]`) reads every row, where a grid cell caps at 3. */
 export function dayItems(
@@ -242,6 +270,7 @@ export function buildMonthGrid(
         isToday: iso === todayIso,
         items: items.slice(0, 3),
         moreCount: Math.max(0, items.length - 3),
+        marks: marksForDay(rows, dateDef, endDef, iso),
       }
     }),
   }))
@@ -285,7 +314,7 @@ export function dateForDrop(value: unknown, dayIso: string): string {
 export function rangeForDrop(
   startValue: unknown,
   endValue: unknown,
-  dropDay: string,
+  dropDay: string
 ): { start: string; end: string } | null {
   const startDay = typeof startValue === 'string' && startValue ? startValue.slice(0, 10) : null
   const endDay = typeof endValue === 'string' && endValue ? endValue.slice(0, 10) : null

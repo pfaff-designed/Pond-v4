@@ -2000,9 +2000,7 @@ describe('agenda peek', () => {
       />
     )
 
-    const item = container.querySelector<HTMLElement>(
-      '[data-part="calendar-agenda-item"]'
-    )
+    const item = container.querySelector<HTMLElement>('[data-part="calendar-agenda-item"]')
     expect(item).not.toBeNull()
     if (!item) return
     expect(item).not.toHaveClass('ring-[1.5px]')
@@ -3027,5 +3025,72 @@ describe('KAN-526 week all-day drag', () => {
     fireEvent.pointerUp(item)
 
     expect(onMoveDate).not.toHaveBeenCalled()
+  })
+})
+
+describe('KAN-458 month bar', () => {
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
+  })
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  const rangeSchema: PropertySchema = [
+    { id: 'p-start', name: 'Start', type: 'date' },
+    { id: 'p-end', name: 'End', type: 'date' },
+  ]
+
+  const trip: CollectionRow = {
+    id: 'trip',
+    title: 'trip',
+    values: { 'p-start': '2026-10-12', 'p-end': '2026-10-14' },
+  }
+
+  const single = (id: string): CollectionRow => ({
+    id,
+    title: id,
+    values: { 'p-start': '2026-10-12' },
+  })
+
+  const bars = (container: HTMLElement) =>
+    container.querySelectorAll<HTMLElement>('[data-part="calendar-bar"]')
+
+  const twelfth = (container: HTMLElement) =>
+    container.querySelector<HTMLElement>('[data-part="calendar-day-cell"][data-iso="2026-10-12"]')
+
+  it('draws trip across Mon–Wed and leaves it out of the 12th cell', () => {
+    const { container } = render(<CollectionCalendar schema={rangeSchema} rows={[trip]} />)
+    const drawn = bars(container)
+    expect(drawn).toHaveLength(1)
+    const bar = drawn[0]
+    expect(bar).toHaveTextContent('trip')
+    expect(bar.style.gridColumn).toBe('1 / 4')
+    expect(bar.style.gridRow).toBe('2')
+    expect(bar.style.height).toBe('20px')
+    expect(bar.className).not.toContain('pointer-events-none')
+    expect(twelfth(container)).not.toHaveTextContent('trip')
+  })
+
+  it('three single-day rows beside the bar do not fold, and a fourth shows ＋1 more', () => {
+    const three = [trip, single('one'), single('two'), single('three')]
+    const { container, rerender } = render(<CollectionCalendar schema={rangeSchema} rows={three} />)
+    expect(container).not.toHaveTextContent('＋1 more')
+    expect(bars(container)).toHaveLength(1)
+
+    rerender(<CollectionCalendar schema={rangeSchema} rows={[...three, single('four')]} />)
+    expect(container).toHaveTextContent('＋1 more')
+    expect(bars(container)).toHaveLength(1)
+    expect(bars(container)[0]).toHaveTextContent('trip')
+  })
+
+  it('a single-date schema draws no calendar-bar', () => {
+    const { container } = render(
+      <CollectionCalendar
+        schema={schemaWithDate}
+        rows={[{ id: 'r1', title: 'Trim the rim', values: { 'p-due': '2026-10-12' } }]}
+      />
+    )
+    expect(bars(container)).toHaveLength(0)
   })
 })
