@@ -7,7 +7,9 @@
  * day's own list, the DC's `showList` for
  * `mob && span === 'month'`) draws while the span is month. A day span unmounts
  * that grid and draws the day body — all-day row, then the hour grid — at the
- * desktop metrics and again at the mobile ones (`PondCalendar.dc.html` `isTime`). The DC's
+ * desktop metrics and again at the mobile ones (`PondCalendar.dc.html` `isTime`).
+ * A blank click on a desktop month cell opens that day (`goDay`). A mobile month
+ * dot only moves the focus and keeps the month span. The DC's
  * `isMonthD`/`isMonthM` don't depend on `isEmpty` (`empty` only zeroes `recs`), so
  * chrome and grid stay drawn under either empty case. No date property on the
  * collection (KAN-292) → `CALENDAR_EMPTY_LINE` draws in `PondBlockEmpty`'s emptyBox
@@ -250,6 +252,7 @@ function MonthDayCellView({
   selectOrOpenOnKey,
   onOpenRow,
   onPlace,
+  onOpenDay,
 }: {
   cell: MonthDayCell
   columnIndex: number
@@ -269,15 +272,22 @@ function MonthDayCellView({
   selectWithPointer: RowSelection['selectWithPointer']
   selectOrOpenOnKey: RowSelection['selectOrOpenOnKey']
   onOpenRow?: (rowId: string) => void
-  /** Armed placement: a click on this day writes that date. Absent, the cell stays clickless. */
+  /** Armed placement (KAN-454): a click on this day writes that date. */
   onPlace?: (iso: string) => void
+  /** Blank space (the day number or the cell padding) opens this day. */
+  onOpenDay: (iso: string) => void
 }) {
   // A stack item's Enter bubbles. Only the cell itself adds; the item's own
-  // Enter still selects (KAN-358). With nothing armed the cell has no click
-  // handler: blank space and a drag's trailing click add nothing.
-  const handlePlaceClick = (event: MouseEvent<HTMLDivElement>) => {
+  // Enter still selects (KAN-358). A blank click opens the day (KAN-455).
+  // A drag's trailing click is suppressed, and an armed click dates the record.
+  const handleCellClick = (event: MouseEvent<HTMLDivElement>) => {
+    if (isClickSuppressed()) return
     event.stopPropagation()
-    onPlace?.(cell.iso)
+    if (onPlace) {
+      onPlace(cell.iso)
+      return
+    }
+    onOpenDay(cell.iso)
   }
   const handleCellKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'Enter' || event.target !== event.currentTarget) return
@@ -293,7 +303,7 @@ function MonthDayCellView({
       data-part="calendar-day-cell"
       data-iso={cell.iso}
       ref={registerBucket(cell.iso)}
-      onClick={onPlace ? handlePlaceClick : undefined}
+      onClick={handleCellClick}
       onKeyDown={canAdd ? handleCellKeyDown : undefined}
       tabIndex={canAdd ? 0 : undefined}
       className={cn(
@@ -769,6 +779,12 @@ export function CollectionCalendar({
   const handleToday = () => {
     setFocusIso(goToday(todayIso))
   }
+  // Desktop `goDay`: blank space opens that day. A mobile month dot only moves
+  // the focus (`mob && span !== 'day'` keeps the span).
+  const handleOpenDay = (iso: string) => {
+    setFocusIso(iso)
+    handleSpanChange('day')
+  }
 
   // Dropping on a day cell writes that day to the date field; a drop back onto the
   // row's own current day is a no-op (no write, no log, no undo step).
@@ -994,6 +1010,7 @@ export function CollectionCalendar({
                     isOver={!!editable && !!drag?.active && overKey === cell.iso}
                     armed={placement !== null}
                     onPlace={placement ? handlePlaceOnDay : undefined}
+                    onOpenDay={handleOpenDay}
                     editable={editable}
                     registerBucket={registerBucket}
                     onCardPointerDown={onCardPointerDown}

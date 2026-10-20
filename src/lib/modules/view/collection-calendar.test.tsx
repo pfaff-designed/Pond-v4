@@ -633,8 +633,8 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
         for (let i = 0; i < 5; i++) await Promise.resolve()
       })
 
+      // Blank space opens the day (KAN-455) and must not add a record.
       fireEvent.click(cell)
-      await user.click(within(cell).getByText('20'))
       expect(onAddRow).toHaveBeenCalledTimes(2)
       expect(onRenameRow).not.toHaveBeenCalled()
       expect(screen.queryByRole('textbox', { name: /Add an item/ })).not.toBeInTheDocument()
@@ -1588,5 +1588,174 @@ describe('day body (KAN-455)', () => {
     expect(screen.getByText('wed 21 oct 2026')).toBeInTheDocument()
     expect(container.querySelector('[data-part="calendar-now"]')).toBeNull()
     expect(container.querySelector('[data-part="calendar-event-time"]')).toHaveTextContent('10:00')
+  })
+})
+
+describe('blank click opens the day (KAN-455)', () => {
+  const openRows: CollectionRow[] = [
+    { id: 'dentist', title: 'dentist', values: { 'p-due': '2026-10-21' } },
+    { id: 'undated', title: 'optician', values: {} },
+  ]
+
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
+  })
+  afterEach(() => {
+    jest.useRealTimers()
+    jest.restoreAllMocks()
+  })
+
+  function cellFor(container: HTMLElement, iso: string) {
+    return container.querySelector<HTMLElement>(
+      `[data-part="calendar-day-cell"][data-iso="${iso}"]`
+    )!
+  }
+
+  it('blank click opens the day from the day number or the cell padding', async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    const onConfigChange = jest.fn()
+    const { container, unmount } = render(
+      <CollectionCalendar
+        schema={schemaWithDate}
+        rows={openRows}
+        onConfigChange={onConfigChange}
+      />
+    )
+
+    expect(screen.getByText('october 2026')).toBeInTheDocument()
+    await user.click(within(cellFor(container, '2026-10-21')).getByText('21'))
+
+    expect(screen.getByText('wed 21 oct 2026')).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'day' })).toBeChecked()
+    expect(screen.queryByText('october 2026')).not.toBeInTheDocument()
+    expect(container.querySelector('[data-part="calendar-day-cell"]')).toBeNull()
+    const allDay = container.querySelector<HTMLElement>('[data-part="calendar-all-day"]')!
+    expect(within(allDay).getByText('dentist')).toBeInTheDocument()
+    expect(onConfigChange).toHaveBeenCalledTimes(1)
+    expect(onConfigChange).toHaveBeenCalledWith({ span: 'day' })
+
+    unmount()
+    onConfigChange.mockClear()
+    const padding = render(
+      <CollectionCalendar
+        schema={schemaWithDate}
+        rows={openRows}
+        onConfigChange={onConfigChange}
+      />
+    )
+    fireEvent.click(cellFor(padding.container, '2026-10-22'))
+
+    expect(screen.getByText('thu 22 oct 2026')).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'day' })).toBeChecked()
+    expect(onConfigChange).toHaveBeenCalledTimes(1)
+    expect(onConfigChange).toHaveBeenCalledWith({ span: 'day' })
+  })
+
+  it('blank click opens nothing from the plus, Enter, a record, a drag, or an armed cell, and a mobile dot only moves the focus', async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    const onAddRow = jest.fn().mockResolvedValue('r-new')
+    const onMoveDate = jest.fn()
+    const onConfigChange = jest.fn()
+    const { container, unmount } = render(
+      <CollectionCalendar
+        schema={schemaWithDate}
+        rows={openRows}
+        editable
+        onAddRow={onAddRow}
+        onRenameRow={jest.fn()}
+        onMoveDate={onMoveDate}
+        onConfigChange={onConfigChange}
+      />
+    )
+
+    await user.click(
+      within(cellFor(container, '2026-10-21')).getByRole('button', { name: 'Add on 21 oct' })
+    )
+    expect(onAddRow).toHaveBeenCalledTimes(1)
+    expect(onAddRow).toHaveBeenCalledWith({ 'p-due': '2026-10-21' })
+    expect(screen.getByRole('radio', { name: 'month' })).toBeChecked()
+    expect(screen.getByText('october 2026')).toBeInTheDocument()
+
+    const empty = cellFor(container, '2026-10-22')
+    empty.focus()
+    await user.keyboard('{Enter}')
+    expect(onAddRow).toHaveBeenCalledTimes(2)
+    expect(onAddRow).toHaveBeenLastCalledWith({ 'p-due': '2026-10-22' })
+    expect(screen.getByRole('radio', { name: 'month' })).toBeChecked()
+
+    await user.click(within(cellFor(container, '2026-10-21')).getByText('dentist'))
+    expect(screen.getByText('october 2026')).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'month' })).toBeChecked()
+    expect(container.querySelector('[data-part="calendar-day-body"]')).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: '22 oct' }))
+    expect(screen.getByText('october 2026')).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'month' })).toBeChecked()
+    expect(screen.queryByText('thu 22 oct 2026')).not.toBeInTheDocument()
+    const focusList = container.querySelector<HTMLElement>('[data-part="calendar-focus-list"]')!
+    expect(within(focusList).getByText('thu oct')).toBeInTheDocument()
+    expect(within(focusList).queryByText('mon oct · today')).not.toBeInTheDocument()
+    expect(container.querySelector('[data-part="calendar-day-body"]')).toBeNull()
+    expect(onConfigChange).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: '1 without a date' }))
+    await user.click(
+      within(screen.getByRole('listbox', { name: 'without a date' })).getByRole('option', {
+        name: /optician/,
+      })
+    )
+    await user.click(cellFor(container, '2026-10-23'))
+    expect(onMoveDate).toHaveBeenCalledTimes(1)
+    expect(onMoveDate).toHaveBeenCalledWith('undated', 'p-due', '2026-10-23')
+    expect(onAddRow).toHaveBeenCalledTimes(2)
+    expect(screen.getByText('october 2026')).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'month' })).toBeChecked()
+    expect(container.querySelector('[data-part="calendar-day-cell"]')).not.toBeNull()
+    expect(onConfigChange).not.toHaveBeenCalled()
+    unmount()
+
+    const DAY_RECTS: Record<string, [number, number, number, number]> = {
+      '2026-10-21': [0, 0, 100, 100],
+    }
+    jest.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: HTMLElement
+    ) {
+      const iso = this.getAttribute('data-iso')
+      const [left, top, right, bottom] = (iso && DAY_RECTS[iso]) || [0, 0, 0, 0]
+      return {
+        left,
+        top,
+        right,
+        bottom,
+        width: right - left,
+        height: bottom - top,
+        x: left,
+        y: top,
+        toJSON() {
+          return this
+        },
+      } as DOMRect
+    })
+    const dragChange = jest.fn()
+    const dragged = render(
+      <CollectionCalendar
+        schema={schemaWithDate}
+        rows={openRows}
+        editable
+        onMoveDate={jest.fn()}
+        onConfigChange={dragChange}
+      />
+    )
+    const dragCell = cellFor(dragged.container, '2026-10-21')
+    const item = within(dragCell).getByText('dentist').closest('div')!
+    fireEvent.pointerDown(item, { clientX: 10, clientY: 10 })
+    fireEvent.pointerMove(item, { clientX: 50, clientY: 50 })
+    fireEvent.pointerUp(item)
+    fireEvent.click(dragCell)
+    expect(within(dragged.container).getByText('october 2026')).toBeInTheDocument()
+    expect(within(dragged.container).getByRole('radio', { name: 'month' })).toBeChecked()
+    expect(within(dragged.container).queryByText('wed 21 oct 2026')).not.toBeInTheDocument()
+    expect(dragged.container.querySelector('[data-part="calendar-day-cell"]')).not.toBeNull()
+    expect(dragChange).not.toHaveBeenCalled()
   })
 })
