@@ -48,6 +48,15 @@ export interface DayRows {
   timed: DayTimedRow[]
 }
 
+/** One column of the phone week strip: Monday-first, one date per row. */
+export interface StripDay {
+  iso: string
+  letter: string
+  day: number
+  isFocus: boolean
+  hasDot: boolean
+}
+
 const HM = /^(\d{2}):(\d{2})/
 
 /** `HH:MM` sliced from the `T` part. No `T`, or no clock there, is untimed. */
@@ -79,6 +88,33 @@ export function dayPeriodLabel(iso: string): string {
 /** `prev`/`next` on the day span: one UTC day, so a month end rolls over. */
 export function stepDay(iso: string, direction: -1 | 1): string {
   return addDays(iso, direction)
+}
+
+/**
+ * The open day's week on a phone: seven Monday-first days from
+ * `addDays(focusIso, -weekdayIndex(focusIso))`. `letter` is the first character
+ * of `mon`…`sun`. `hasDot` is true when some row's `rowDateIso` equals that day
+ * — one date per row, the same bucket as the month span. No date property
+ * dots nothing.
+ */
+export function stripWeek(
+  focusIso: string,
+  rows: readonly CollectionRow[],
+  dateDef: PropertyDef | undefined
+): StripDay[] {
+  const startIso = addDays(focusIso, -weekdayIndex(focusIso))
+  return Array.from({ length: 7 }, (_, offset): StripDay => {
+    const iso = addDays(startIso, offset)
+    const hasDot =
+      dateDef !== undefined && rows.some((row) => rowDateIso(row, dateDef) === iso)
+    return {
+      iso,
+      letter: DW[offset].slice(0, 1),
+      day: Number(iso.slice(8, 10)),
+      isFocus: iso === focusIso,
+      hasDot,
+    }
+  })
 }
 
 /** The eleven hour labels, `08:00` through `18:00`. */

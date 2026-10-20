@@ -11,6 +11,8 @@ import {
   nowLineTop,
   splitDayRows,
   stepDay,
+  stripWeek,
+  type StripDay,
 } from './calendar-day'
 
 const dueDef: PropertyDef = { id: 'p-due', name: 'Due', type: 'date' }
@@ -170,5 +172,79 @@ describe('nowLineTop', () => {
     const top = nowLineTop(dayIso, todayIso, nowHm, size)
     if (expected === null) expect(top).toBeNull()
     else expect(top).toBeCloseTo(expected)
+  })
+})
+
+const stripDay = (
+  iso: string,
+  letter: string,
+  day: number,
+  isFocus: boolean,
+  hasDot: boolean
+): StripDay => ({ iso, letter, day, isFocus, hasDot })
+
+/** Monday 19 Oct 2026 through Sunday 25 Oct 2026. */
+const weekOf19Oct = (focusIso: string, dottedIso: string | null): StripDay[] => [
+  stripDay('2026-10-19', 'm', 19, focusIso === '2026-10-19', dottedIso === '2026-10-19'),
+  stripDay('2026-10-20', 't', 20, focusIso === '2026-10-20', dottedIso === '2026-10-20'),
+  stripDay('2026-10-21', 'w', 21, focusIso === '2026-10-21', dottedIso === '2026-10-21'),
+  stripDay('2026-10-22', 't', 22, focusIso === '2026-10-22', dottedIso === '2026-10-22'),
+  stripDay('2026-10-23', 'f', 23, focusIso === '2026-10-23', dottedIso === '2026-10-23'),
+  stripDay('2026-10-24', 's', 24, focusIso === '2026-10-24', dottedIso === '2026-10-24'),
+  stripDay('2026-10-25', 's', 25, focusIso === '2026-10-25', dottedIso === '2026-10-25'),
+]
+
+const missingDateRow: CollectionRow = { id: 'missing', title: 'missing', values: {} }
+
+describe('stripWeek', () => {
+  it.each([
+    ['Wed 2026-10-21 focuses the 21st with letter w', '2026-10-21', [], dueDef, weekOf19Oct('2026-10-21', null)],
+    ['Sun 2026-10-25 is the same week, Sunday focused', '2026-10-25', [], dueDef, weekOf19Oct('2026-10-25', null)],
+    ['Mon 2026-10-19 focuses Monday', '2026-10-19', [], dueDef, weekOf19Oct('2026-10-19', null)],
+    [
+      'Sun 2026-11-01 starts the week on 2026-10-26',
+      '2026-11-01',
+      [],
+      dueDef,
+      [
+        stripDay('2026-10-26', 'm', 26, false, false),
+        stripDay('2026-10-27', 't', 27, false, false),
+        stripDay('2026-10-28', 'w', 28, false, false),
+        stripDay('2026-10-29', 't', 29, false, false),
+        stripDay('2026-10-30', 'f', 30, false, false),
+        stripDay('2026-10-31', 's', 31, false, false),
+        stripDay('2026-11-01', 's', 1, true, false),
+      ],
+    ],
+    [
+      'a row dated the 21st dots only the 21st',
+      '2026-10-21',
+      [row('optician', '2026-10-21')],
+      dueDef,
+      weekOf19Oct('2026-10-21', '2026-10-21'),
+    ],
+    [
+      'an undated row dots nothing',
+      '2026-10-21',
+      [row('blank', '')],
+      dueDef,
+      weekOf19Oct('2026-10-21', null),
+    ],
+    [
+      'a row missing its date value dots nothing',
+      '2026-10-21',
+      [missingDateRow],
+      dueDef,
+      weekOf19Oct('2026-10-21', null),
+    ],
+    [
+      'a missing date property dots nothing',
+      '2026-10-21',
+      [row('optician', '2026-10-21')],
+      undefined,
+      weekOf19Oct('2026-10-21', null),
+    ],
+  ] as const)('%s', (_label, focusIso, rows, dateDef, expected) => {
+    expect(stripWeek(focusIso, rows, dateDef)).toEqual(expected)
   })
 })
