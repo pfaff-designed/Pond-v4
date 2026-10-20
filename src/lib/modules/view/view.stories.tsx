@@ -1,6 +1,6 @@
 import { useState, type ComponentProps } from 'react'
 import type { Meta, StoryObj } from '@storybook/nextjs-vite'
-import { expect, fireEvent, fn, userEvent, within } from 'storybook/test'
+import { expect, fireEvent, fn, userEvent, waitFor, within } from 'storybook/test'
 import { page, userEvent as realUserEvent } from 'vitest/browser'
 
 import { CollectionView } from './view'
@@ -2113,10 +2113,91 @@ export const CalendarAgendaSpan: Story = {
       await expect(opticianTime).toHaveTextContent('09:00')
 
       await expect(canvas.queryByText('skip hire')).not.toBeInTheDocument()
-      await expect(canvas.queryByText('renew')).not.toBeInTheDocument()
 
       await userEvent.click(dentist)
       await expect(canvas.getByLabelText('Record: dentist')).toBeVisible()
+    } finally {
+      const restoreClock = loaded.restoreClock as (() => void) | undefined
+      restoreClock?.()
+      const { width, height } = loaded.prevViewport as { width: number; height: number }
+      await page.viewport(width, height)
+    }
+  },
+}
+
+/**
+ * KAN-527. Reaching the end of the agenda appends the next dated days.
+ * The sentinel is already in view at 1440×900, so the reach is that end,
+ * not a button. The period stays on this Monday.
+ */
+export const CalendarAgendaReachesTheEnd: Story = {
+  name: 'agenda reaches the end',
+  args: { config: calendarConfig, schema, rows: agendaSpanRows },
+  loaders: CalendarAgendaSpan.loaders,
+  play: async ({ canvasElement, loaded }) => {
+    try {
+      const canvas = within(canvasElement)
+      await expect(canvas.getByText('october 2026')).toBeVisible()
+      await userEvent.click(canvas.getByRole('radio', { name: 'agenda' }))
+
+      await expect(canvas.getByText('from 19 oct')).toBeVisible()
+
+      const list = canvasElement.querySelector<HTMLElement>('[data-part="calendar-agenda"]')
+      if (!list) throw new Error('calendar agenda reach story: agenda list missing')
+
+      const today = list.querySelector<HTMLElement>(
+        '[data-part="calendar-agenda-day"][data-iso="2026-10-19"]'
+      )
+      if (!today) throw new Error('calendar agenda reach story: today missing')
+      const alcove = within(today)
+        .getByText('confirm alcove')
+        .closest<HTMLElement>('[data-part="calendar-agenda-item"]')
+      if (!alcove) throw new Error('calendar agenda reach story: confirm alcove is not an agenda item')
+      await expect(alcove.querySelector('[data-part="calendar-agenda-time"]')).toBeNull()
+
+      const tomorrow = list.querySelector<HTMLElement>(
+        '[data-part="calendar-agenda-day"][data-iso="2026-10-20"]'
+      )
+      if (!tomorrow) throw new Error('calendar agenda reach story: tomorrow missing')
+      const dentist = within(tomorrow)
+        .getByText('dentist')
+        .closest<HTMLElement>('[data-part="calendar-agenda-item"]')
+      if (!dentist) throw new Error('calendar agenda reach story: dentist is not an agenda item')
+      await expect(within(dentist).getByText('10:00')).toBeVisible()
+
+      const wednesday = list.querySelector<HTMLElement>(
+        '[data-part="calendar-agenda-day"][data-iso="2026-10-21"]'
+      )
+      if (!wednesday) throw new Error('calendar agenda reach story: Wednesday missing')
+      const wednesdayItems = [
+        ...wednesday.querySelectorAll<HTMLElement>('[data-part="calendar-agenda-item"]'),
+      ]
+      await expect(wednesdayItems).toHaveLength(2)
+      await expect(wednesdayItems[0]?.textContent).toContain('plaster')
+      await expect(wednesdayItems[0]?.querySelector('[data-part="calendar-agenda-time"]')).toBeNull()
+      await expect(wednesdayItems[1]?.textContent).toContain('optician')
+      const opticianTime = wednesdayItems[1]?.querySelector('[data-part="calendar-agenda-time"]')
+      await expect(opticianTime).toHaveTextContent('09:00')
+
+      await expect(canvas.queryByText('skip hire')).not.toBeInTheDocument()
+
+      const end = list.querySelector<HTMLElement>('[data-part="calendar-agenda-end"]')
+      if (!end) throw new Error('calendar agenda reach story: end sentinel missing')
+      end.scrollIntoView()
+
+      await waitFor(() => {
+        const renewDay = list.querySelector<HTMLElement>(
+          '[data-part="calendar-agenda-day"][data-iso="2026-11-02"]'
+        )
+        if (!renewDay) throw new Error('calendar agenda reach story: renew day missing')
+        expect(within(renewDay).getByText('renew')).toBeInTheDocument()
+      })
+      expect(
+        list.querySelector('[data-part="calendar-agenda-day"][data-iso="2026-10-22"]')
+      ).toBeNull()
+      await expect(canvas.getByText('from 19 oct')).toBeVisible()
+      await expect(canvas.queryByText('skip hire')).not.toBeInTheDocument()
+      await expect(canvas.queryByRole('button', { name: 'load more' })).toBeNull()
     } finally {
       const restoreClock = loaded.restoreClock as (() => void) | undefined
       restoreClock?.()
