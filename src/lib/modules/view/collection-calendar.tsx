@@ -2,7 +2,7 @@
 
 /**
  * Calendar view — the month span (#262 1/3), from `PondCalendar.dc.html`. Chrome is
- * the period label, prev/next stepping, the span pill (month and day), and a
+ * the period label, prev/next stepping, the span pill (month, week, and day), and a
  * `today` button; the month grid (desktop weeks, mobile dots plus the tapped
  * day's own list, the DC's `showList` for
  * `mob && span === 'month'`) draws while the span is month. A day span unmounts
@@ -77,10 +77,10 @@ const NAV_BTN =
   'inline-flex size-11 items-center justify-center rounded-mn-pill text-mn-text hover:bg-mn-hover-fill md:size-7'
 
 /**
- * The header's span pill, month then day. Later tickets extend this one list
- * (`PondCalendar.dc.html` line 133). Week and agenda stay off it.
+ * The header's span pill, month then week then day. Later tickets extend this
+ * one list (`PondCalendar.dc.html` line 133). Agenda stays off it.
  */
-export const CALENDAR_SPANS = ['month', 'day'] as const
+export const CALENDAR_SPANS = ['month', 'week', 'day'] as const
 export type CalendarSpan = (typeof CALENDAR_SPANS)[number]
 
 /** Track, `seg` at line 143: gap 4, padding 3, radius 999, weight 500, 12px mobile / 10.5px desktop. */

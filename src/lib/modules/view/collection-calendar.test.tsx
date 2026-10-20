@@ -1311,7 +1311,7 @@ describe('CollectionView — dragging a calendar event onto another day (KAN-385
 describe('span pill (KAN-455)', () => {
   const calendarConfig: ViewBlock = { id: 'cal', type: 'view', mode: 'calendar' }
 
-  it('month is selected by default, week and agenda are absent, choosing day reports { span: day }', async () => {
+  it('month is selected by default, week is present and unchecked, agenda is absent, choosing week reports { span: week } once', async () => {
     const user = userEvent.setup()
     const onConfigChange = jest.fn()
     render(
@@ -1320,18 +1320,18 @@ describe('span pill (KAN-455)', () => {
 
     const group = screen.getByRole('radiogroup', { name: 'span' })
     expect(within(group).getByRole('radio', { name: 'month' })).toBeChecked()
+    expect(within(group).getByRole('radio', { name: 'week' })).toBeInTheDocument()
+    expect(within(group).getByRole('radio', { name: 'week' })).not.toBeChecked()
     expect(within(group).getByRole('radio', { name: 'day' })).not.toBeChecked()
-    expect(within(group).queryByRole('radio', { name: 'week' })).not.toBeInTheDocument()
     expect(within(group).queryByRole('radio', { name: 'agenda' })).not.toBeInTheDocument()
-    expect(group).not.toHaveTextContent('week')
     expect(group).not.toHaveTextContent('agenda')
 
-    await user.click(within(group).getByRole('radio', { name: 'day' }))
+    await user.click(within(group).getByRole('radio', { name: 'week' }))
 
-    expect(within(group).getByRole('radio', { name: 'day' })).toBeChecked()
+    expect(within(group).getByRole('radio', { name: 'week' })).toBeChecked()
     expect(within(group).getByRole('radio', { name: 'month' })).not.toBeChecked()
     expect(onConfigChange).toHaveBeenCalledTimes(1)
-    expect(onConfigChange).toHaveBeenCalledWith({ span: 'day' })
+    expect(onConfigChange).toHaveBeenCalledWith({ span: 'week' })
   })
 
   it('seeds the selected span from the view field, and an absent field stays month', () => {
@@ -1363,6 +1363,27 @@ describe('span pill (KAN-455)', () => {
     await user.click(within(group).getByRole('radio', { name: 'month' }))
 
     expect(onConfigChange).toHaveBeenCalledWith({ span: 'month' }, undefined)
+  })
+
+  it('CollectionView passes a stored span: week and reports { span: week } through its config handler', async () => {
+    const user = userEvent.setup()
+    const onConfigChange = jest.fn()
+    render(
+      <CollectionView
+        config={{ ...calendarConfig, span: 'week' }}
+        schema={schemaWithDate}
+        rows={rows}
+        onConfigChange={onConfigChange}
+      />
+    )
+
+    const group = screen.getByRole('radiogroup', { name: 'span' })
+    expect(within(group).getByRole('radio', { name: 'week' })).toBeChecked()
+
+    await user.click(within(group).getByRole('radio', { name: 'day' }))
+    await user.click(within(group).getByRole('radio', { name: 'week' }))
+
+    expect(onConfigChange).toHaveBeenCalledWith({ span: 'week' }, undefined)
   })
 })
 

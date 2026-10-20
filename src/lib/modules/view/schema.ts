@@ -164,10 +164,10 @@ export const viewBigNumberConfigSchema = z.object({
 export type ViewBigNumberConfig = z.infer<typeof viewBigNumberConfigSchema>
 
 /**
- * Calendar span (KAN-455). `'month'` or `'day'`. The key stays off the parsed
- * object when the block omits it. A reader uses `span ?? 'month'`.
+ * Calendar span (KAN-455). `'month'`, `'week'`, or `'day'`. The key stays off
+ * the parsed object when the block omits it. A reader uses `span ?? 'month'`.
  */
-const calendarSpanSchema = z.enum(['month', 'day'])
+const calendarSpanSchema = z.enum(['month', 'week', 'day'])
 
 /**
  * A saved view's own config (KAN-32): the same per-mode clauses `viewSchema` has
@@ -188,8 +188,8 @@ export const viewSavedViewConfigSchema = z.object({
    */
   listFlat: z.boolean().optional(),
   /**
-   * Calendar only (KAN-455). `'month'` or `'day'`. The key stays off the parsed
-   * object when the block omits it. A reader uses `span ?? 'month'`.
+   * Calendar only (KAN-455). `'month'`, `'week'`, or `'day'`. The key stays off
+   * the parsed object when the block omits it. A reader uses `span ?? 'month'`.
    */
   span: calendarSpanSchema.optional(),
 })
@@ -238,8 +238,8 @@ export const viewSchema = z
      */
     listFlat: z.boolean().optional(),
     /**
-     * Calendar only (KAN-455). `'month'` or `'day'`. The key stays off the parsed
-     * object when the block omits it. A reader uses `span ?? 'month'`.
+     * Calendar only (KAN-455). `'month'`, `'week'`, or `'day'`. The key stays off
+     * the parsed object when the block omits it. A reader uses `span ?? 'month'`.
      */
     span: calendarSpanSchema.optional(),
     /**
