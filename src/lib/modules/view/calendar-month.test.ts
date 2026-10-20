@@ -4,6 +4,7 @@ import {
   goToday,
   isMonthBar,
   layoutMonthBars,
+  rangeForDrop,
   stepMonth,
 } from './calendar-month'
 import type { CollectionRow } from './apply'
@@ -119,6 +120,32 @@ describe('dateForDrop', () => {
     expect(dateForDrop(undefined, '2026-09-15')).toBe('2026-09-15')
     expect(dateForDrop(null, '2026-09-15')).toBe('2026-09-15')
     expect(dateForDrop(42, '2026-09-15')).toBe('2026-09-15')
+  })
+})
+
+describe('rangeForDrop', () => {
+  it('shifts 2026-10-12–2026-10-14 onto 2026-10-19', () => {
+    expect(rangeForDrop('2026-10-12', '2026-10-14', '2026-10-19')).toEqual({
+      start: '2026-10-19',
+      end: '2026-10-21',
+    })
+  })
+
+  it('writes nothing when the drop day is the start day', () => {
+    expect(rangeForDrop('2026-10-12', '2026-10-14', '2026-10-12')).toBeNull()
+  })
+
+  it('keeps each field time suffix when the range shifts', () => {
+    expect(rangeForDrop('2026-10-12T09:00:00', '2026-10-14T17:00:00', '2026-10-19')).toEqual({
+      start: '2026-10-19T09:00:00',
+      end: '2026-10-21T17:00:00',
+    })
+  })
+
+  it('writes nothing when the end is missing', () => {
+    expect(rangeForDrop('2026-10-12', null, '2026-10-19')).toBeNull()
+    expect(rangeForDrop('2026-10-12', undefined, '2026-10-19')).toBeNull()
+    expect(rangeForDrop('2026-10-12', '', '2026-10-19')).toBeNull()
   })
 })
 

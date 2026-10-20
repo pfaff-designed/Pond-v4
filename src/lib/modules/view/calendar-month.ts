@@ -10,7 +10,7 @@
  * end property present it leaves the day chips.
  */
 import { coerceValue, type PropertyDef } from '@/lib/properties/schema'
-import { addDays, type CollectionRow } from './apply'
+import { addDays, epochDay, type CollectionRow } from './apply'
 
 /** `PondCalendar.dc.html`'s `MON` — lowercase, the board's own form for `periodLabel`. */
 const MONTHS = [
@@ -275,6 +275,27 @@ export function dateForDrop(value: unknown, dayIso: string): string {
   const tIndex = value.indexOf('T')
   if (tIndex === -1) return dayIso
   return dayIso + value.slice(tIndex)
+}
+
+/** The start and end a bar drop onto `dropDay` should write. The drop day
+ *  becomes the new start; the end moves by the same day count, and each field
+ *  keeps its `T…` suffix through `dateForDrop`. A row that is not a bar, or a
+ *  drop on the row's own start day, writes nothing. Days are the leading
+ *  `slice(0, 10)`, the same bucket `rowDateIso` uses. */
+export function rangeForDrop(
+  startValue: unknown,
+  endValue: unknown,
+  dropDay: string,
+): { start: string; end: string } | null {
+  const startDay = typeof startValue === 'string' && startValue ? startValue.slice(0, 10) : null
+  const endDay = typeof endValue === 'string' && endValue ? endValue.slice(0, 10) : null
+  if (!isMonthBar(startDay, endDay) || startDay === null || endDay === null) return null
+  if (dropDay === startDay) return null
+  const delta = epochDay(dropDay) - epochDay(startDay)
+  return {
+    start: dateForDrop(startValue, dropDay),
+    end: dateForDrop(endValue, addDays(endDay, delta)),
+  }
 }
 
 /** `dow` — Monday-first weekday index, for the focused-day list's own head label
