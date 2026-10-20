@@ -18,17 +18,19 @@ import type { Block } from '@/lib/documents/types'
 import type { PondPage } from '@/lib/pages/client'
 import { PondContext, type PondContextValue } from '@/lib/pond/context'
 import type { Pond } from '@/lib/pond/client'
-import { isApplePlatform } from '@/lib/platform'
 import { withSchema, type PropertySchema } from '@/lib/properties/schema'
 import { CALENDAR_EMPTY_LINE } from '@/lib/modules/view/kinds'
 import { findTextBlock, writeInTextBlock } from './helpers/text-block'
 
-// The date write logs through the real `appendOwnEdit` export. Only that
-// boundary is replaced, so `sessionUndo.remember` still runs. `undoStep` is
-// the RPC the shell's session-undo listener calls; the stack itself stays real.
+// `requireActual` here binds `own-edit` to the real `appendOwnEdit` (it loads
+// the store while the mock is still being built), so the date write never
+// reaches `sessionUndo.remember`. Replace the exports this path calls. The
+// session stack and `ShellCommands`' ⌘Z stay real; `undoStep` is the RPC.
 jest.mock('@/lib/change-log/store', () => ({
-  ...jest.requireActual('@/lib/change-log/store'),
   appendOwnEdit: jest.fn(async () => ({ id: 'rec-date' })),
+  markOutdated: jest.fn(async () => undefined),
+  getRecord: jest.fn(async () => null),
+  mapChangeLogRow: jest.fn(),
 }))
 
 const mockUndoStep = jest.fn()
@@ -217,13 +219,61 @@ function renderCanvas(blocks: Block[]) {
   )
 }
 
+const sessionPond: Pond = { id: 'pond-1', name: 'life', glyph: null, theme: 'paper', order: 0 }
+
+const sessionPondContext = (): PondContextValue => ({
+  pond: sessionPond,
+  ponds: [sessionPond],
+  loading: false,
+  reload: () => {},
+  addPond: () => {},
+})
+
+/** The calendar path's `BlockCanvas`, plus the shell listener that owns session undo. */
+function renderCanvasWithSessionUndo(blocks: Block[]) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(
+    <QueryClientProvider client={client}>
+      <PondContext.Provider value={sessionPondContext()}>
+        <DeletionUndoProvider>
+          <ShellCommands />
+          <Harness initial={blocks} />
+        </DeletionUndoProvider>
+      </PondContext.Provider>
+    </QueryClientProvider>
+  )
+}
+
+const undoRecord = {
+  id: 'undo-1',
+  userId: 'user-1',
+  pondId: 'pond-1',
+  status: 'accepted',
+  action: 'undo',
+  actor: 'you',
+  targetPageId: 'db-visits',
+  targetBlockId: null,
+  before: null,
+  after: null,
+  sourceThreadId: null,
+  toolCallId: null,
+  read: null,
+  links: {},
+  transitions: [],
+  createdAt: '2026-09-10T12:00:00.000Z',
+  statusAt: '2026-09-10T12:00:00.000Z',
+} satisfies ChangeLogRecord
+
 beforeEach(() => {
   jest.clearAllMocks()
   mockFetchPages.mockResolvedValue(databaseRows)
+  mockUndoStep.mockReset()
+  sessionUndo.clear()
   jest.useFakeTimers().setSystemTime(new Date('2026-09-10T12:00:00Z'))
 })
 
 afterEach(() => {
+  sessionUndo.clear()
   jest.useRealTimers()
 })
 
@@ -299,8 +349,11 @@ describe('`/calendar` path (KAN-262)', () => {
 })
 
 describe('`/calendar` undated records (KAN-454)', () => {
-  it('dates dentist from the page, and the line drops from 3 without a date to 2', async () => {
-    const { container } = renderCanvas([])
+  it('dates dentist on the 21st, then session undo restores 3 without a date', async () => {
+    jest.spyOn(window.navigator, 'platform', 'get').mockReturnValue('MacIntel')
+    mockUndoStep.mockResolvedValue({ outcome: 'done', records: [undoRecord] })
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    const { container } = renderCanvasWithSessionUndo([])
     fireEvent.click(await screen.findByTestId('trailing-block-gap'))
     const editor = await findTextBlock()
     writeInTextBlock(editor, '/')
@@ -312,20 +365,36 @@ describe('`/calendar` undated records (KAN-454)', () => {
     const picker = await screen.findByRole('listbox', { name: '/calendar' })
     fireEvent.click(await within(picker).findByRole('option', { name: /visits/ }))
 
-    fireEvent.click(await screen.findByRole('button', { name: '3 without a date' }))
+    await user.click(await screen.findByRole('button', { name: '3 without a date' }))
     const list = await screen.findByRole('listbox', { name: 'without a date' })
-    fireEvent.click(within(list).getByRole('option', { name: 'dentist' }))
+    expect(within(list).getByRole('option', { name: 'dentist' })).toBeInTheDocument()
+    expect(within(list).getByRole('option', { name: 'optician' })).toBeInTheDocument()
+    expect(within(list).getByRole('option', { name: 'library' })).toBeInTheDocument()
+    await user.click(within(list).getByRole('option', { name: 'dentist' }))
+    expect(await screen.findByRole('button', { name: 'pick a day for dentist' })).toBeInTheDocument()
 
     const desktopWrap = [...container.querySelectorAll('div')].find((d) =>
       d.classList.contains('md:flex')
     )!
     const dayCell = () =>
-      [...desktopWrap.querySelectorAll<HTMLElement>('[data-part="calendar-day-cell"]')].find((cell) =>
-        cell.dataset.iso?.endsWith('-21')
+      desktopWrap.querySelector<HTMLElement>(
+        '[data-part="calendar-day-cell"][data-iso="2026-09-21"]'
       )!
-    fireEvent.click(dayCell())
+    await user.click(dayCell())
 
     await waitFor(() => expect(within(dayCell()).getByText('dentist')).toBeInTheDocument())
     expect(screen.getByRole('button', { name: '2 without a date' })).toBeInTheDocument()
+    await waitFor(() => expect(sessionUndo.getSnapshot('pond-1').canUndo).toBe(true))
+
+    fireEvent.keyDown(document.body, { key: 'z', metaKey: true })
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '3 without a date' })).toBeInTheDocument()
+    )
+    expect(within(dayCell()).queryByText('dentist')).not.toBeInTheDocument()
+    expect(mockUndoStep).toHaveBeenCalledWith(expect.anything(), {
+      pondId: 'pond-1',
+      recordIds: ['rec-date'],
+    })
   })
 })
