@@ -82,8 +82,9 @@ export type CalendarSpan = (typeof CALENDAR_SPANS)[number]
 /** Track, `seg` at line 143: gap 4, padding 3, radius 999, weight 500, 12px mobile / 10.5px desktop. */
 const SPAN_TRACK =
   'flex items-center gap-[4px] rounded-[999px] bg-[rgba(27,29,20,.055)] p-[3px] text-[12px] leading-[normal] font-medium dark:bg-[rgba(250,249,239,.08)] md:text-[10.5px]'
-/** Each segment, line 133: padding 9px 11px mobile / 4px 10px desktop, radius 999. */
-const SPAN_SEGMENT = `cursor-pointer rounded-[999px] px-[11px] py-[9px] text-mn-text-secondary md:px-[10px] md:py-[4px] data-[checked]:bg-[#1B1D14] data-[checked]:text-[#FAF9EF] dark:data-[checked]:bg-[#FAF9EF] dark:data-[checked]:text-[#1B1D14] ${FOCUS_VISIBLE_RING}`
+/** Each segment, line 133: padding 9px 11px mobile / 4px 10px desktop, radius 999.
+ *  Selected is ink on paper, and the swap on dark — `mn-text` / `mn-surface` (#1B1D14 / #FAF9EF). */
+const SPAN_SEGMENT = `cursor-pointer rounded-[999px] px-[11px] py-[9px] text-mn-text-secondary md:px-[10px] md:py-[4px] data-[checked]:bg-mn-text data-[checked]:text-mn-surface ${FOCUS_VISIBLE_RING}`
 
 /** `DW` — the DC's lowercase weekday short-forms; `textTransform: uppercase` draws them caps. */
 const DOW_LABELS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const
@@ -560,11 +561,12 @@ const ALL_DAY_TITLE = 'min-w-0 flex-1 truncate text-[11.5px] font-medium leading
 /** Hour labels, the DC's `h.style`: 10.5px, weight 500, ink .68, tabular. */
 const HOUR_LABEL = 'absolute left-0 text-[10.5px] font-medium text-mn-text-secondary tabular-nums'
 /**
- * Timed event, `evBg` / `evShadow` / radius 8. Title 12px weight 500; time is
- * `mSt(10.5)` — 10.5px, weight 500, ink .80, tabular.
+ * Timed event, `evBg` / `evShadow` / radius 8. Fill is paper in light and
+ * neutral-600 in dark (#FAF9EF / #4A4940), the `mn-drag-ghost` pair. Title
+ * 12px weight 500; time is `mSt(10.5)` — 10.5px, weight 500, ink .80, tabular.
  */
 const TIMED_EVENT =
-  'absolute right-1 left-1 z-[1] box-border flex overflow-hidden rounded-[8px] bg-[#FAF9EF] shadow-[0_1px_2px_rgba(40,34,24,.08),0_2px_8px_rgba(40,34,24,.07)] dark:bg-[#4A4940] dark:shadow-[0_1px_2px_rgba(0,0,0,.3),0_2px_8px_rgba(0,0,0,.3)]'
+  'absolute right-1 left-1 z-[1] box-border flex overflow-hidden rounded-[8px] bg-mn-drag-ghost shadow-[0_1px_2px_rgba(40,34,24,.08),0_2px_8px_rgba(40,34,24,.07)] dark:shadow-[0_1px_2px_rgba(0,0,0,.3),0_2px_8px_rgba(0,0,0,.3)]'
 const TIMED_TITLE = 'truncate text-[12px] font-medium leading-[1.25] text-mn-text'
 const TIMED_TIME = 'flex-none text-[10.5px] font-medium text-mn-text/80 tabular-nums'
 /** Hair across the day column and the all-day rule: `a(ink ? .14 : .09)`. */

@@ -1531,8 +1531,7 @@ describe('day body (KAN-455)', () => {
       expect(time).toHaveClass('text-[10.5px]', 'font-medium', 'text-mn-text/80', 'tabular-nums')
       expect(event).toHaveClass(
         'rounded-[8px]',
-        'bg-[#FAF9EF]',
-        'dark:bg-[#4A4940]',
+        'bg-mn-drag-ghost',
         'shadow-[0_1px_2px_rgba(40,34,24,.08),0_2px_8px_rgba(40,34,24,.07)]',
         'dark:shadow-[0_1px_2px_rgba(0,0,0,.3),0_2px_8px_rgba(0,0,0,.3)]'
       )

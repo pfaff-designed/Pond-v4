@@ -1797,7 +1797,9 @@ function fixClockAtLocalNoonOn19Oct2026(): () => void {
   const fixed = new RealDate(2026, 9, 19, 12, 0, 0).getTime()
 
   class FixedDate extends RealDate {
-    constructor(...args: ConstructorParameters<typeof RealDate>) {
+    // `ConstructorParameters<typeof Date>` is a 1-tuple, so `length === 0`
+    // does not typecheck. `unknown[]` is the zero-arg `new Date()` this freezes.
+    constructor(...args: unknown[]) {
       if (args.length === 0) {
         super(fixed)
       } else {
