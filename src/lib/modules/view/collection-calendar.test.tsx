@@ -1742,9 +1742,9 @@ describe('agenda list', () => {
       'font-medium',
       'tabular-nums'
     )
-    const alcove = within(today).getByText('confirm alcove').closest<HTMLElement>(
-      '[data-part="calendar-agenda-item"]'
-    )
+    const alcove = within(today)
+      .getByText('confirm alcove')
+      .closest<HTMLElement>('[data-part="calendar-agenda-item"]')
     expect(alcove).not.toBeNull()
     if (!alcove) return
     expect(alcove.querySelector('[data-part="calendar-agenda-time"]')).toBeNull()
@@ -1786,9 +1786,9 @@ describe('agenda list', () => {
       'tabular-nums',
       'text-mn-text'
     )
-    const dentist = within(tuesday).getByText('dentist').closest<HTMLElement>(
-      '[data-part="calendar-agenda-item"]'
-    )
+    const dentist = within(tuesday)
+      .getByText('dentist')
+      .closest<HTMLElement>('[data-part="calendar-agenda-item"]')
     expect(dentist?.querySelector('[data-part="calendar-agenda-time"]')).toHaveTextContent('10:00')
     expect(dentist?.querySelector('[data-part="calendar-agenda-time"]')).toHaveClass(
       'text-[11px]',
@@ -1818,6 +1818,83 @@ describe('agenda list', () => {
     expect(container.querySelector('[data-part="calendar-day-body"]')).toBeNull()
     expect(container.querySelector('[data-part="calendar-week-strip"]')).toBeNull()
     expect(container.querySelector('[data-part="calendar-focus-list"]')).toBeNull()
+  })
+})
+
+describe('agenda empty', () => {
+  const skipHire: CollectionRow = {
+    id: 'skip',
+    title: 'skip hire',
+    values: { 'p-due': '2026-10-18' },
+  }
+
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
+  })
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  it('a dated row outside the window leaves today with nothing dated, and a later empty window shows that line once', async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    const { container } = render(
+      <CollectionCalendar schema={schemaWithDate} rows={[skipHire]} span="agenda" />
+    )
+
+    const today = container.querySelector<HTMLElement>(
+      '[data-part="calendar-agenda-day"][data-iso="2026-10-19"]'
+    )
+    expect(today).not.toBeNull()
+    if (!today) return
+    expect(within(today).getByText('mon 19 oct · today')).toBeInTheDocument()
+    const todayNone = within(today).getByText('nothing dated')
+    expect(todayNone).toHaveClass('py-2.5', 'text-[13px]', 'text-mn-text-secondary')
+    expect(todayNone.compareDocumentPosition(within(today).getByText('mon 19 oct · today'))).toBe(
+      Node.DOCUMENT_POSITION_PRECEDING
+    )
+    expect(screen.queryByText('skip hire')).not.toBeInTheDocument()
+    expect(screen.queryByText(CALENDAR_EMPTY_LINE)).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Next agenda' }))
+    expect(screen.getByText('nothing dated')).toBeInTheDocument()
+    expect(screen.getAllByText('nothing dated')).toHaveLength(1)
+    expect(screen.queryByText('mon 19 oct · today')).not.toBeInTheDocument()
+    expect(container.querySelector('[data-part="calendar-agenda-day"]')).toBeNull()
+    expect(screen.queryByText(CALENDAR_EMPTY_LINE)).not.toBeInTheDocument()
+  })
+
+  it('zero rows still shows the calendar empty line and not nothing dated', () => {
+    const { container } = render(
+      <CollectionCalendar schema={schemaWithDate} rows={[]} span="agenda" />
+    )
+    expect(screen.getByText(CALENDAR_EMPTY_LINE)).toBeInTheDocument()
+    expect(screen.queryByText('nothing dated')).not.toBeInTheDocument()
+    expect(container.querySelector('[data-part="calendar-agenda"]')).toBeNull()
+  })
+
+  it('no date field and every row undated keep the calendar empty and omit the agenda list', () => {
+    const { container, rerender } = render(
+      <CollectionCalendar
+        schema={schemaNoDate}
+        rows={[{ id: 'note', title: 'note', values: {} }]}
+        span="agenda"
+      />
+    )
+    expect(screen.getByText(CALENDAR_EMPTY_LINE)).toBeInTheDocument()
+    expect(screen.queryByText('nothing dated')).not.toBeInTheDocument()
+    expect(container.querySelector('[data-part="calendar-agenda"]')).toBeNull()
+
+    rerender(
+      <CollectionCalendar
+        schema={schemaWithDate}
+        rows={[{ id: 'note', title: 'note', values: {} }]}
+        span="agenda"
+      />
+    )
+    expect(screen.getByText('1 records, none with a date')).toBeInTheDocument()
+    expect(screen.queryByText('nothing dated')).not.toBeInTheDocument()
+    expect(screen.queryByText(CALENDAR_EMPTY_LINE)).not.toBeInTheDocument()
+    expect(container.querySelector('[data-part="calendar-agenda"]')).toBeNull()
   })
 })
 

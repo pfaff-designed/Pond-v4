@@ -158,16 +158,15 @@ const AGENDA_DAY =
 /** Head column: gap 2, padding-top 6. */
 const AGENDA_HEAD = 'flex flex-col gap-0.5 pt-1.5'
 /** `` `${dow} ${day} ${abbr}` ``, uppercase 10.5px tracking .1em, ink .68. */
-const AGENDA_LABEL =
-  'text-[10.5px] font-medium uppercase tracking-[.1em] text-mn-text-secondary'
+const AGENDA_LABEL = 'text-[10.5px] font-medium uppercase tracking-[.1em] text-mn-text-secondary'
 /** Row: flex, center, gap 10, min-height 44 / 38 from `md`, padding 0 8px, radius 10. */
-const AGENDA_ITEM =
-  'flex min-h-11 min-w-0 items-center gap-2.5 rounded-[10px] px-2 md:min-h-[38px]'
+const AGENDA_ITEM = 'flex min-h-11 min-w-0 items-center gap-2.5 rounded-[10px] px-2 md:min-h-[38px]'
 /** Title: 15px, 14px from `md`, leading 1.3. */
-const AGENDA_TITLE =
-  'min-w-0 flex-1 truncate text-[15px] leading-[1.3] text-mn-text md:text-[14px]'
+const AGENDA_TITLE = 'min-w-0 flex-1 truncate text-[15px] leading-[1.3] text-mn-text md:text-[14px]'
 /** Timed meta: sliced `HH:MM`, 11px weight 500, ink .8. */
 const AGENDA_TIME = 'flex-none text-[11px] font-medium text-mn-text/80 tabular-nums'
+/** Board `noneStyle`: 13px, ink .68, padding `10px 0`. The day line `nothing dated`. */
+const AGENDA_NONE = 'py-2.5 text-[13px] text-mn-text-secondary'
 /** The day cell's add mark. Hidden until that cell is hovered or focus-within.
  *  Named `group/day`, not a bare `group`: BlockCanvas's block wrapper is already
  *  `group`, and a bare one would reveal every day's plus as soon as the pointer
@@ -494,7 +493,7 @@ function FocusDayList({
       </div>
       <div className="flex flex-col">
         {items.length === 0 ? (
-          <span className="py-2.5 text-[13px] text-mn-text-secondary">nothing dated</span>
+          <span className={AGENDA_NONE}>nothing dated</span>
         ) : (
           items.map((row) => (
             <div
@@ -537,46 +536,68 @@ function agendaDayLabel(iso: string, todayIso: string): string {
   return iso === todayIso ? `${label} · today` : label
 }
 
+const agendaGroupHasRows = (group: AgendaGroup): boolean =>
+  group.rows.untimed.length > 0 || group.rows.timed.length > 0
+
+/** The board's day line when a shown day, or a whole empty window, has no rows. */
+const AgendaNone = () => <span className={AGENDA_NONE}>nothing dated</span>
+
 /**
  * The agenda span's list (`PondCalendar.dc.html` lines 239–244). Groups are
  * `buildAgenda`: untimed rows, then timed rows. An untimed row has no time node.
+ * Today with no rows keeps its heading and draws `nothing dated` under it. A
+ * window with no groups draws that line once, with no day heading.
  */
 function AgendaList({ groups, todayIso }: { groups: readonly AgendaGroup[]; todayIso: string }) {
   return (
     <div data-part="calendar-agenda" className="flex flex-col">
-      {groups.map((group) => (
-        <div
-          key={group.iso}
-          data-part="calendar-agenda-day"
-          data-iso={group.iso}
-          className={AGENDA_DAY}
-        >
-          <div className={AGENDA_HEAD}>
-            <FocusedDayNumber
-              day={Number(group.iso.slice(8, 10))}
-              isToday={group.iso === todayIso}
-            />
-            <span className={AGENDA_LABEL}>{agendaDayLabel(group.iso, todayIso)}</span>
+      {groups.length === 0 ? (
+        <AgendaNone />
+      ) : (
+        groups.map((group) => (
+          <div
+            key={group.iso}
+            data-part="calendar-agenda-day"
+            data-iso={group.iso}
+            className={AGENDA_DAY}
+          >
+            <div className={AGENDA_HEAD}>
+              <FocusedDayNumber
+                day={Number(group.iso.slice(8, 10))}
+                isToday={group.iso === todayIso}
+              />
+              <span className={AGENDA_LABEL}>{agendaDayLabel(group.iso, todayIso)}</span>
+            </div>
+            <div className="flex flex-col">
+              {agendaGroupHasRows(group) ? (
+                <>
+                  {group.rows.untimed.map((row) => (
+                    <div key={row.id} data-part="calendar-agenda-item" className={AGENDA_ITEM}>
+                      <span className={DAY_ITEM_DOT_LARGE} />
+                      <span className={AGENDA_TITLE}>{row.title}</span>
+                    </div>
+                  ))}
+                  {group.rows.timed.map((timed) => (
+                    <div
+                      key={timed.row.id}
+                      data-part="calendar-agenda-item"
+                      className={AGENDA_ITEM}
+                    >
+                      <span className={DAY_ITEM_DOT_LARGE} />
+                      <span className={AGENDA_TITLE}>{timed.row.title}</span>
+                      <span data-part="calendar-agenda-time" className={AGENDA_TIME}>
+                        {timed.timeLabel}
+                      </span>
+                    </div>
+                  ))}
+                </>
+              ) : (
+                <AgendaNone />
+              )}
+            </div>
           </div>
-          <div className="flex flex-col">
-            {group.rows.untimed.map((row) => (
-              <div key={row.id} data-part="calendar-agenda-item" className={AGENDA_ITEM}>
-                <span className={DAY_ITEM_DOT_LARGE} />
-                <span className={AGENDA_TITLE}>{row.title}</span>
-              </div>
-            ))}
-            {group.rows.timed.map((timed) => (
-              <div key={timed.row.id} data-part="calendar-agenda-item" className={AGENDA_ITEM}>
-                <span className={DAY_ITEM_DOT_LARGE} />
-                <span className={AGENDA_TITLE}>{timed.row.title}</span>
-                <span data-part="calendar-agenda-time" className={AGENDA_TIME}>
-                  {timed.timeLabel}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
+        ))
+      )}
     </div>
   )
 }
@@ -1259,6 +1280,9 @@ export function CollectionCalendar({
   const undatedRows = dateDef ? rows.filter((row) => rowDateIso(row, dateDef) === null) : []
   const undatedCount = undatedRows.length
   const showUndatedLine = !!dateDef && undatedCount > 0
+  // The calendar's own empty (no date field, no rows, or every row undated)
+  // already draws its line. Agenda must not add its list or `nothing dated`.
+  const calendarOwnEmpty = !dateDef || rows.length === 0 || undatedCount === rows.length
   const undatedLabel = placement
     ? `pick a day for ${placement.title.toLowerCase()}`
     : `${undatedCount} without a date`
@@ -1382,7 +1406,9 @@ export function CollectionCalendar({
           />
         </>
       ) : span === 'agenda' ? (
-        <AgendaList groups={agendaGroups} todayIso={todayIso} />
+        calendarOwnEmpty ? null : (
+          <AgendaList groups={agendaGroups} todayIso={todayIso} />
+        )
       ) : (
         <>
           <div
