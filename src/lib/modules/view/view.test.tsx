@@ -43,6 +43,7 @@ const renameRow = jest.fn()
 const updateRows = jest.fn()
 const addRow = jest.fn()
 const setValue = jest.fn()
+const setValueAsStep = jest.fn()
 jest.mock('./use-collection-rows', () => ({
   useCollectionRows: () => {
     const [schema, setSchema] = useState<PropertySchema>(initialSchema)
@@ -77,6 +78,7 @@ jest.mock('./use-collection-rows', () => ({
       isLoading: false,
       isError: false,
       setValue,
+      setValueAsStep,
       addRow,
       removeRow: jest.fn(),
       renameRow,
@@ -150,6 +152,8 @@ beforeEach(() => {
   addRow.mockClear()
   setValue.mockClear()
   setValue.mockImplementation(() => {})
+  setValueAsStep.mockClear()
+  setValueAsStep.mockImplementation(() => {})
   applyRowValue = () => {}
   initialRows = []
   initialSchema = dateless
@@ -744,6 +748,110 @@ describe('KAN-456', () => {
     if (!nextBody) return
     expect(within(nextBody).queryByText('dentist')).not.toBeInTheDocument()
     expect(within(nextBody).queryByText('confirm alcove')).not.toBeInTheDocument()
+  })
+})
+
+describe('KAN-526', () => {
+  const calendarSchema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    { id: 'p-due', name: 'Due', type: 'date' },
+  ]
+  const DAY_RECTS: Record<string, [number, number, number, number]> = {
+    '2026-10-21': [0, 0, 100, 100],
+    '2026-10-22': [200, 0, 300, 100],
+    '2026-10-23': [400, 0, 500, 100],
+  }
+
+  beforeEach(() => {
+    initialSchema = calendarSchema
+    initialRows = [
+      { id: 'dentist', title: 'dentist', values: { 'p-due': '2026-10-21T10:00:00' } },
+      { id: 'alcove', title: 'confirm alcove', values: { 'p-due': '2026-10-21' } },
+    ]
+    setValueAsStep.mockImplementation((rowId: string, key: string, value: PropertyValue) => {
+      applyRowValue(rowId, key, value)
+    })
+  })
+
+  afterEach(() => {
+    jest.useRealTimers()
+    jest.restoreAllMocks()
+  })
+
+  const columnFor = (container: HTMLElement, iso: string) =>
+    container.querySelector<HTMLElement>(`[data-part="calendar-week-column"][data-iso="${iso}"]`)!
+
+  const allDayRow = (container: HTMLElement) =>
+    container.querySelector<HTMLElement>(
+      '[data-part="calendar-week-body"] [data-part="calendar-all-day"]'
+    )!
+
+  it('dragging dentist onto Thursday and confirm alcove onto Friday writes those dates through the page host', async () => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    const { container } = renderView(calendar)
+
+    expect(screen.getByText('october 2026')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('radio', { name: 'week' }))
+
+    jest.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: HTMLElement
+    ) {
+      const iso = this.getAttribute('data-iso')
+      const [left, top, right, bottom] = (iso && DAY_RECTS[iso]) || [0, 0, 0, 0]
+      return {
+        left,
+        top,
+        right,
+        bottom,
+        width: right - left,
+        height: bottom - top,
+        x: left,
+        y: top,
+        toJSON() {
+          return this
+        },
+      } as DOMRect
+    })
+
+    const wednesday = columnFor(container, '2026-10-21')
+    const dentist = within(wednesday)
+      .getByText('dentist')
+      .closest<HTMLElement>('[data-part="calendar-timed-event"]')
+    if (!dentist) throw new Error('timed dentist missing')
+
+    fireEvent.pointerDown(dentist, { clientX: 10, clientY: 10 })
+    fireEvent.pointerMove(dentist, { clientX: 250, clientY: 50 })
+    fireEvent.pointerUp(dentist)
+
+    const moved = within(columnFor(container, '2026-10-22'))
+      .getByText('dentist')
+      .closest<HTMLElement>('[data-part="calendar-timed-event"]')
+    expect(moved).not.toBeNull()
+    if (!moved) return
+    expect(within(moved).getByText('10:00')).toBeInTheDocument()
+    expect(within(columnFor(container, '2026-10-21')).queryByText('dentist')).not.toBeInTheDocument()
+    expect(setValueAsStep).toHaveBeenCalledWith('dentist', 'p-due', '2026-10-22T10:00:00')
+
+    const alcove = within(allDayRow(container))
+      .getByText('confirm alcove')
+      .closest<HTMLElement>('[data-part="calendar-all-day-item"]')
+    if (!alcove) throw new Error('all-day confirm alcove missing')
+
+    fireEvent.pointerDown(alcove, { clientX: 10, clientY: 10 })
+    fireEvent.pointerMove(alcove, { clientX: 450, clientY: 50 })
+    fireEvent.pointerUp(alcove)
+
+    const allDay = allDayRow(container)
+    const title = within(allDay).getByText('confirm alcove')
+    const landed = title.closest<HTMLElement>('[data-part="calendar-all-day-item"]')
+    expect(landed).not.toBeNull()
+    if (!landed) return
+    expect(landed.style.gridColumn).toBe(columnFor(container, '2026-10-23').style.gridColumn)
+    expect(title.closest('[data-part="calendar-timed-event"]')).toBeNull()
+    expect(setValueAsStep).toHaveBeenCalledWith('alcove', 'p-due', '2026-10-23')
+    expect(setValueAsStep.mock.calls.find((call) => call[0] === 'alcove')?.[2]).not.toMatch(/T/)
   })
 })
 
