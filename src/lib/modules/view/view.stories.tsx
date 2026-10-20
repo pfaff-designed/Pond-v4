@@ -2039,6 +2039,164 @@ export const CalendarWeekSpan: Story = {
   },
 }
 
+/**
+ * KAN-526. Dragging a week item onto another day writes that day. A timed
+ * value keeps its time; a date-only value stays in the all-day row.
+ *
+ * The loader matches `CalendarWeekSpan`: 1440×900 and local noon on 19 Oct
+ * 2026, so October is open and Wednesday–Friday are on screen. The harness
+ * applies `onMoveDate` onto the date field, so the column shows the record.
+ * The pointer sequence is `fireEvent` from `storybook/test`.
+ */
+function CalendarWeekDragHarness({
+  config,
+  hostSchema,
+}: {
+  config: ViewBlock
+  hostSchema: PropertySchema
+}) {
+  const [data, setData] = useState<CollectionRow[]>(weekSpanRows)
+  const handleMoveDate = (rowId: string, key: string, value: PropertyValue) => {
+    setData((prev) =>
+      prev.map((row) =>
+        row.id === rowId ? { ...row, values: { ...row.values, [key]: value } } : row
+      )
+    )
+  }
+  return (
+    <CollectionView
+      config={config}
+      schema={hostSchema}
+      rows={data}
+      editable
+      onMoveDate={handleMoveDate}
+    />
+  )
+}
+
+/** A point inside `column`'s real rect, more than 4px (Manhattan) from the press. */
+function dropPointInColumn(
+  column: HTMLElement,
+  down: { clientX: number; clientY: number }
+): { clientX: number; clientY: number } {
+  const rect = column.getBoundingClientRect()
+  const clientX = rect.left + rect.width / 2
+  const clientY = rect.top + rect.height / 2
+  const inside =
+    rect.width > 0 &&
+    rect.height > 0 &&
+    clientX >= rect.left &&
+    clientX <= rect.right &&
+    clientY >= rect.top &&
+    clientY <= rect.bottom
+  const travel = Math.abs(clientX - down.clientX) + Math.abs(clientY - down.clientY)
+  if (!inside || travel <= 4) {
+    throw new Error(
+      `calendar week drag story: move (${clientX}, ${clientY}) travel ${travel} is outside ${column.dataset.iso} or within 4px`
+    )
+  }
+  return { clientX, clientY }
+}
+
+function dragWithFireEvent(source: HTMLElement, column: HTMLElement) {
+  const sourceRect = source.getBoundingClientRect()
+  const down = { clientX: sourceRect.left + 4, clientY: sourceRect.top + 4 }
+  const move = dropPointInColumn(column, down)
+  fireEvent.pointerDown(source, down)
+  fireEvent.pointerMove(column, move)
+  fireEvent.pointerUp(column)
+}
+
+function desktopWeekBody(root: HTMLElement): HTMLElement {
+  const body = root.querySelector<HTMLElement>(
+    '[data-part="calendar-week-body"][data-size="desktop"]'
+  )
+  if (!body) throw new Error('calendar week drag story: desktop week body missing')
+  return body
+}
+
+function weekColumn(body: HTMLElement, iso: string): HTMLElement {
+  const column = body.querySelector<HTMLElement>(
+    `[data-part="calendar-week-column"][data-iso="${iso}"]`
+  )
+  if (!column) throw new Error(`calendar week drag story: ${iso} column missing`)
+  return column
+}
+
+export const CalendarWeekDrag: Story = {
+  name: 'week drag',
+  args: { config: calendarConfig, schema, rows: weekSpanRows, editable: true },
+  render: (args) => (
+    <CalendarWeekDragHarness config={args.config} hostSchema={args.schema ?? schema} />
+  ),
+  loaders: [
+    async () => {
+      const prevViewport = { width: window.innerWidth, height: window.innerHeight }
+      await page.viewport(1440, 900)
+      const restoreClock = fixClockAtLocalNoonOn19Oct2026()
+      return { prevViewport, restoreClock }
+    },
+  ],
+  play: async ({ canvasElement, loaded }) => {
+    try {
+      const canvas = within(canvasElement)
+      await expect(canvas.getByText('october 2026')).toBeVisible()
+      await userEvent.click(canvas.getByRole('radio', { name: 'week' }))
+
+      const body = desktopWeekBody(canvasElement)
+      await expect(body).toBeVisible()
+
+      const wednesday = weekColumn(body, '2026-10-21')
+      const dentist = within(wednesday).getByText('dentist')
+      await expect(dentist).toBeVisible()
+      const timed = dentist.closest<HTMLElement>('[data-part="calendar-timed-event"]')
+      if (!timed) throw new Error('calendar week drag story: dentist is not a timed event')
+      await expect(within(timed).getByText('10:00')).toBeVisible()
+
+      const thursday = weekColumn(body, '2026-10-22')
+      dragWithFireEvent(timed, thursday)
+
+      const thursdayAfter = weekColumn(desktopWeekBody(canvasElement), '2026-10-22')
+      const movedDentist = within(thursdayAfter).getByText('dentist')
+      await expect(movedDentist).toBeVisible()
+      const movedTimed = movedDentist.closest<HTMLElement>('[data-part="calendar-timed-event"]')
+      if (!movedTimed) {
+        throw new Error('calendar week drag story: dentist is not a timed event on Thursday')
+      }
+      await expect(within(movedTimed).getByText('10:00')).toBeVisible()
+      const wednesdayAfter = weekColumn(desktopWeekBody(canvasElement), '2026-10-21')
+      await expect(within(wednesdayAfter).queryByText('dentist')).not.toBeInTheDocument()
+
+      const allDay = desktopWeekBody(canvasElement).querySelector<HTMLElement>(
+        '[data-part="calendar-all-day"]'
+      )
+      if (!allDay) throw new Error('calendar week drag story: all-day row missing')
+      const alcove = within(allDay).getByText('confirm alcove')
+      const alcoveItem = alcove.closest<HTMLElement>('[data-part="calendar-all-day-item"]')
+      if (!alcoveItem) throw new Error('calendar week drag story: confirm alcove is not all-day')
+
+      const friday = weekColumn(desktopWeekBody(canvasElement), '2026-10-23')
+      dragWithFireEvent(alcoveItem, friday)
+
+      const allDayAfter = desktopWeekBody(canvasElement).querySelector<HTMLElement>(
+        '[data-part="calendar-all-day"]'
+      )
+      if (!allDayAfter) throw new Error('calendar week drag story: all-day row missing after drop')
+      const movedAlcove = within(allDayAfter).getByText('confirm alcove')
+      const movedItem = movedAlcove.closest<HTMLElement>('[data-part="calendar-all-day-item"]')
+      if (!movedItem) throw new Error('calendar week drag story: confirm alcove left the all-day row')
+      const fridayAfter = weekColumn(desktopWeekBody(canvasElement), '2026-10-23')
+      await expect(movedItem.style.gridColumn).toBe(fridayAfter.style.gridColumn)
+      await expect(movedAlcove.closest('[data-part="calendar-timed-event"]')).toBeNull()
+    } finally {
+      const restoreClock = loaded.restoreClock as (() => void) | undefined
+      restoreClock?.()
+      const { width, height } = loaded.prevViewport as { width: number; height: number }
+      await page.viewport(width, height)
+    }
+  },
+}
+
 // ── Gallery ─────────────────────────────────────────────────────────────────────
 
 /**
