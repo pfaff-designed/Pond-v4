@@ -257,6 +257,7 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
     isError,
     setValue,
     setValueAsStep,
+    setValuesAsStep,
     addRow,
     renameRow,
     updateSchema,
@@ -380,6 +381,7 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
       linked={!!data.collectionId}
       onEdit={setValue}
       onMoveDate={setValueAsStep}
+      onMoveDates={setValuesAsStep}
       onAddRow={addRow}
       onRenameRow={renameRow}
       onConfigChange={onConfigChange}

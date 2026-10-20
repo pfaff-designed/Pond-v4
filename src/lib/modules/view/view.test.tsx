@@ -44,6 +44,7 @@ const updateRows = jest.fn()
 const addRow = jest.fn()
 const setValue = jest.fn()
 const setValueAsStep = jest.fn()
+const setValuesAsStep = jest.fn()
 jest.mock('./use-collection-rows', () => ({
   useCollectionRows: () => {
     const [schema, setSchema] = useState<PropertySchema>(initialSchema)
@@ -79,6 +80,7 @@ jest.mock('./use-collection-rows', () => ({
       isError: false,
       setValue,
       setValueAsStep,
+      setValuesAsStep,
       addRow,
       removeRow: jest.fn(),
       renameRow,
@@ -154,6 +156,8 @@ beforeEach(() => {
   setValue.mockImplementation(() => {})
   setValueAsStep.mockClear()
   setValueAsStep.mockImplementation(() => {})
+  setValuesAsStep.mockClear()
+  setValuesAsStep.mockImplementation(() => {})
   applyRowValue = () => {}
   initialRows = []
   initialSchema = dateless
