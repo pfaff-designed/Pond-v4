@@ -417,6 +417,9 @@ export interface CollectionViewProps {
   /** A calendar drag-drop's own date write (KAN-385) — logged and undone separately
    *  from `onEdit`'s pause-grouped edits. Only the calendar branch forwards it. */
   onMoveDate?: (rowId: string, key: string, value: PropertyValue) => void
+  /** A calendar bar drag writes both ends in one call (KAN-458): the start field,
+   *  then the end field. Only the calendar branch forwards it. */
+  onMoveDates?: (rowId: string, entries: { key: string; value: PropertyValue }[]) => void
   /** Manual card/row authoring (board-authoring Slice 2). Present only on the live
    *  editable host; Storybook renders static data and omits them. */
   onAddRow?: (values?: Record<string, PropertyValue>) => Promise<string | null>
@@ -460,6 +463,7 @@ export function CollectionView({
   linked,
   onEdit,
   onMoveDate,
+  onMoveDates,
   onAddRow,
   onRenameRow,
   onConfigChange,
@@ -627,6 +631,7 @@ export function CollectionView({
           editable={editable}
           onEdit={onEdit}
           onMoveDate={onMoveDate}
+          onMoveDates={onMoveDates}
           onAddRow={onAddRow}
           onRenameRow={onRenameRow}
           onOpenRow={onOpenRow}

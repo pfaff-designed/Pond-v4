@@ -50,6 +50,7 @@ import {
   isMonthBar,
   layoutMonthBars,
   monthAbbr,
+  rangeForDrop,
   rowDateIso,
   stepMonth,
   weekdayIndex,
@@ -303,7 +304,18 @@ function MonthDayStack({
   )
 }
 
-function MonthBarView({ segment }: { segment: MonthBarSegment }) {
+function MonthBarView({
+  segment,
+  lifted,
+  editable,
+  onCardPointerDown,
+}: {
+  segment: MonthBarSegment
+  /** True while this row is the active drag — every segment of it lifts. */
+  lifted: boolean
+  editable?: boolean
+  onCardPointerDown: PointerBucketDrag['onCardPointerDown']
+}) {
   const left = segment.squareLeft ? 0 : 6
   const right = segment.squareRight ? 0 : 6
   const marginLeft = segment.squareLeft ? 0 : 5
@@ -312,7 +324,8 @@ function MonthBarView({ segment }: { segment: MonthBarSegment }) {
     <div
       data-part="calendar-bar"
       data-row={segment.rowId}
-      className={MONTH_BAR}
+      className={cn(MONTH_BAR, lifted && DRAG_LIFT_CLASS)}
+      onPointerDown={editable ? (event) => onCardPointerDown(event, segment.rowId) : undefined}
       style={{
         gridRow: segment.lane + 2,
         gridColumn: `${segment.columnStart} / ${segment.columnEnd}`,
@@ -1242,6 +1255,7 @@ export function CollectionCalendar({
   onOpenRow,
   onAddDateField,
   onMoveDate,
+  onMoveDates,
   startId,
   endId,
   span: spanProp,
@@ -1261,6 +1275,8 @@ export function CollectionCalendar({
   onOpenRow?: (rowId: string) => void
   onAddDateField?: () => void
   onMoveDate?: (rowId: string, key: string, value: PropertyValue) => void
+  /** A bar drop writes both ends in one call: the start field, then the end field. */
+  onMoveDates?: (rowId: string, entries: { key: string; value: PropertyValue }[]) => void
   /** Named range fields (`pickGanttDefs`). Absent infers the 1st and 2nd date. */
   startId?: string
   endId?: string
@@ -1379,7 +1395,9 @@ export function CollectionCalendar({
   }
 
   // Dropping on a day cell writes that day to the date field; a drop back onto the
-  // row's own current day is a no-op (no write, no log, no undo step).
+  // row's own current day is a no-op (no write, no log, no undo step). A bar writes
+  // both ends through `onMoveDates` and never `onMoveDate`. A drop on the bar's
+  // start day writes nothing. A row that is not a bar keeps the single-field path.
   const {
     drag,
     overKey,
@@ -1391,9 +1409,25 @@ export function CollectionCalendar({
   } = usePointerBucketDrag({
     editable: !!editable,
     onDrop: (rowId, key) => {
+      const row = rows.find((candidate) => candidate.id === rowId)
+      if (!row) return
+      const endDef = rangeDefs?.endDef
+      if (
+        monthDateDef &&
+        endDef &&
+        isMonthBar(rowDateIso(row, monthDateDef), rowDateIso(row, endDef))
+      ) {
+        const shift = rangeForDrop(row.values[monthDateDef.id], row.values[endDef.id], key)
+        if (shift) {
+          onMoveDates?.(rowId, [
+            { key: monthDateDef.id, value: shift.start },
+            { key: endDef.id, value: shift.end },
+          ])
+        }
+        return
+      }
       if (!dateDef || !onMoveDate) return
-      const row = rows.find((r) => r.id === rowId)
-      if (!row || rowDateIso(row, dateDef) === key) return
+      if (rowDateIso(row, dateDef) === key) return
       onMoveDate(rowId, dateDef.id, dateForDrop(row.values[dateDef.id], key))
     },
   })
@@ -1669,7 +1703,13 @@ export function CollectionCalendar({
                     />
                   ))}
                   {segments.map((segment) => (
-                    <MonthBarView key={segment.rowId} segment={segment} />
+                    <MonthBarView
+                      key={segment.rowId}
+                      segment={segment}
+                      lifted={drag !== null && drag.active && drag.rowId === segment.rowId}
+                      editable={editable}
+                      onCardPointerDown={onCardPointerDown}
+                    />
                   ))}
                 </div>
               )
