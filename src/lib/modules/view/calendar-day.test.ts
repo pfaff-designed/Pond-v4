@@ -9,6 +9,7 @@ import {
   dayHourLabels,
   dayPeriodLabel,
   nowLineTop,
+  slicedHm,
   splitDayRows,
   stepDay,
   stripWeek,
@@ -21,6 +22,19 @@ const row = (id: string, due: string): CollectionRow => ({
   id,
   title: id,
   values: { 'p-due': due },
+})
+
+describe('slicedHm', () => {
+  it.each([
+    ['local clock', '2026-10-19T10:00:00', '10:00'],
+    ['millis and Z', '2026-10-19T10:00:00.000Z', '10:00'],
+    ['date only', '2026-10-19', null],
+    ['bare T', '2026-10-19T', null],
+    ['digits without a colon', '2026-10-19T1000', null],
+    ['empty', '', null],
+  ] as const)('%s', (_label, value, expected) => {
+    expect(slicedHm(value)).toBe(expected)
+  })
 })
 
 describe('dayPeriodLabel', () => {
