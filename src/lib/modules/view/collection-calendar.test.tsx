@@ -3094,3 +3094,79 @@ describe('KAN-458 month bar', () => {
     expect(bars(container)).toHaveLength(0)
   })
 })
+
+describe('KAN-458 week edge', () => {
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
+  })
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  const rangeSchema: PropertySchema = [
+    { id: 'p-start', name: 'Start', type: 'date' },
+    { id: 'p-end', name: 'End', type: 'date' },
+  ]
+
+  const bars = (container: HTMLElement) =>
+    container.querySelectorAll<HTMLElement>('[data-part="calendar-bar"]')
+
+  const barInWeek = (container: HTMLElement, iso: string) => {
+    const cell = container.querySelector<HTMLElement>(
+      `[data-part="calendar-day-cell"][data-iso="${iso}"]`
+    )
+    return cell?.parentElement?.querySelector<HTMLElement>('[data-part="calendar-bar"]') ?? null
+  }
+
+  it('squares the end that crosses from Friday into the next week', () => {
+    const trip: CollectionRow = {
+      id: 'trip',
+      title: 'trip',
+      values: { 'p-start': '2026-10-16', 'p-end': '2026-10-20' },
+    }
+    const { container } = render(<CollectionCalendar schema={rangeSchema} rows={[trip]} />)
+    const drawn = bars(container)
+    expect(drawn).toHaveLength(2)
+    expect(drawn[0]).toHaveTextContent('trip')
+    expect(drawn[1]).toHaveTextContent('trip')
+
+    const first = barInWeek(container, '2026-10-12')
+    expect(first).not.toBeNull()
+    if (!first) return
+    expect(first.style.gridColumn).toBe('5 / 8')
+    expect(first.style.borderTopRightRadius).toBe('0')
+    expect(first.style.borderBottomRightRadius).toBe('0')
+    expect(first.style.marginRight).toBe('0px')
+    expect(first.style.borderTopLeftRadius).toBe('6px')
+    expect(first.style.borderBottomLeftRadius).toBe('6px')
+
+    const next = barInWeek(container, '2026-10-19')
+    expect(next).not.toBeNull()
+    if (!next) return
+    expect(next.style.gridColumn).toBe('1 / 3')
+    expect(next.style.borderTopLeftRadius).toBe('0')
+    expect(next.style.borderBottomLeftRadius).toBe('0')
+    expect(next.style.marginLeft).toBe('0px')
+    expect(next.style.borderTopRightRadius).toBe('6px')
+    expect(next.style.borderBottomRightRadius).toBe('6px')
+  })
+
+  it('squares both ends of a bar clipped to the whole week of the 12th', () => {
+    const span: CollectionRow = {
+      id: 'span',
+      title: 'span',
+      values: { 'p-start': '2026-10-11', 'p-end': '2026-10-19' },
+    }
+    const { container } = render(<CollectionCalendar schema={rangeSchema} rows={[span]} />)
+    const bar = barInWeek(container, '2026-10-12')
+    expect(bar).not.toBeNull()
+    if (!bar) return
+    expect(bar.style.gridColumn).toBe('1 / 8')
+    expect(bar.style.borderTopLeftRadius).toBe('0')
+    expect(bar.style.borderBottomLeftRadius).toBe('0')
+    expect(bar.style.borderTopRightRadius).toBe('0')
+    expect(bar.style.borderBottomRightRadius).toBe('0')
+    expect(bar.style.marginLeft).toBe('0px')
+    expect(bar.style.marginRight).toBe('0px')
+  })
+})
