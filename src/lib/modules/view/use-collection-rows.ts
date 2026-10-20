@@ -92,6 +92,16 @@ export interface CollectionData {
    */
   setValueAsStep: (rowId: string, key: string, value: PropertyValue) => void
   /**
+   * Optimistically set several of one row's values, then persist — one gesture,
+   * one pause group, one undo record (KAN-458: a bar drag moves both ends).
+   * Entries already equal to what is stored are skipped. An empty list, or a
+   * list that changes nothing, appends nothing and remembers nothing. The row's
+   * open typed-edit group is closed first, then every changed field joins one
+   * group opened from a single snapshot. Two {@link setValueAsStep} calls stay
+   * two records; this does not close the group between fields.
+   */
+  setValuesAsStep: (rowId: string, entries: { key: string; value: PropertyValue }[]) => void
+  /**
    * Create a new row (a `type='row'` child of the collection) with optional initial
    * property values — e.g. a board's "+ Add card" seeds the group-by status. Resolves
    * to the new row id (for focusing its title), or null off a collection / when logged out.
@@ -154,9 +164,9 @@ const snapshotOf = (row: PondPage, fields: PropertySchema): RowSnapshot => {
 /**
  * Patch a row's value into both caches (the `['rows']` list and its own
  * `['page']`, if it's ever been opened), then persist via `setProperty`,
- * reconciling from server truth on failure. Shared by `setValue` and
- * `setValueAsStep` — what differs between them is how the write is grouped
- * into a change-log record, not the write itself.
+ * reconciling from server truth on failure. Shared by `setValue`,
+ * `setValueAsStep` and `setValuesAsStep` — what differs between them is how
+ * the write is grouped into a change-log record, not the write itself.
  */
 const writeRowValue = (
   queryClient: QueryClient,
@@ -350,6 +360,60 @@ export function useCollectionRows(collectionId: string | undefined): CollectionD
     [collectionId, queryClient, getSupabase]
   )
 
+  // One gesture, several fields, one record. `setValueAsStep` closes on every
+  // call, so two of those are two undos; here the row is closed once up front
+  // (a typed edit still logs ahead), then each changed field joins the group
+  // the first `change` opened from one snapshot. `trackPending` and `remember`
+  // watch that first promise — every waiter in the group resolves to the same
+  // record.
+  const setValuesAsStep = useMemo(
+    () => (rowId: string, entries: { key: string; value: PropertyValue }[]) => {
+      if (!collectionId) return
+      const row = cachedRow(queryClient, collectionId, rowId)
+      const groups = rowEdits.current
+      if (!row || !groups) return
+      const stored = readValues(row.props)
+      const changed = entries.filter((entry) => !jsonEqual(stored[entry.key], entry.value))
+      if (changed.length === 0) return
+      const stepPondId = pondRef.current
+      groups.closeKey(rowId)
+      const fields = cachedFields(queryClient, collectionId)
+      const current = snapshotOf(row, fields)
+      let first: Promise<ChangeLogRecord | null | undefined> | undefined
+      for (const entry of changed) {
+        const field = fields.find((def) => def.id === entry.key)
+        const write = writeRowValue(
+          queryClient,
+          getSupabase(),
+          collectionId,
+          rowId,
+          entry.key,
+          entry.value
+        )
+        const logged = groups.change({
+          key: rowId,
+          current,
+          patch: {
+            kind: 'value',
+            fieldId: entry.key,
+            value: entry.value,
+            shown: field ? displayValue(field, entry.value) : null,
+          },
+          write,
+          origin: stepPondId,
+        })
+        if (!first) first = logged
+      }
+      groups.closeKey(rowId)
+      if (!stepPondId || !first) return
+      sessionUndo.trackPending(stepPondId, first)
+      void first.then((record) => {
+        if (stepPondId && record) sessionUndo.remember({ pondId: stepPondId, recordIds: [record.id] })
+      })
+    },
+    [collectionId, queryClient, getSupabase]
+  )
+
   // Create a row child, seeded with any initial values (e.g. the board column's
   // status). Awaits the insert for the server id, then appends to the ['rows']
   // cache so the card appears. Returns the id so the UI can focus its title.
@@ -500,6 +564,7 @@ export function useCollectionRows(collectionId: string | undefined): CollectionD
     isError: !!collectionId && (pageError || rowsError),
     setValue,
     setValueAsStep,
+    setValuesAsStep,
     addRow,
     removeRow,
     renameRow,

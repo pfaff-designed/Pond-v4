@@ -2000,9 +2000,7 @@ describe('agenda peek', () => {
       />
     )
 
-    const item = container.querySelector<HTMLElement>(
-      '[data-part="calendar-agenda-item"]'
-    )
+    const item = container.querySelector<HTMLElement>('[data-part="calendar-agenda-item"]')
     expect(item).not.toBeNull()
     if (!item) return
     expect(item).not.toHaveClass('ring-[1.5px]')
@@ -3026,6 +3024,393 @@ describe('KAN-526 week all-day drag', () => {
     fireEvent.pointerMove(item, { clientX: 50, clientY: 50 })
     fireEvent.pointerUp(item)
 
+    expect(onMoveDate).not.toHaveBeenCalled()
+  })
+})
+
+describe('KAN-458 month bar', () => {
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
+  })
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  const rangeSchema: PropertySchema = [
+    { id: 'p-start', name: 'Start', type: 'date' },
+    { id: 'p-end', name: 'End', type: 'date' },
+  ]
+
+  const trip: CollectionRow = {
+    id: 'trip',
+    title: 'trip',
+    values: { 'p-start': '2026-10-12', 'p-end': '2026-10-14' },
+  }
+
+  const single = (id: string): CollectionRow => ({
+    id,
+    title: id,
+    values: { 'p-start': '2026-10-12' },
+  })
+
+  const bars = (container: HTMLElement) =>
+    container.querySelectorAll<HTMLElement>('[data-part="calendar-bar"]')
+
+  const twelfth = (container: HTMLElement) =>
+    container.querySelector<HTMLElement>('[data-part="calendar-day-cell"][data-iso="2026-10-12"]')
+
+  it('draws trip across Mon–Wed and leaves it out of the 12th cell', () => {
+    const { container } = render(<CollectionCalendar schema={rangeSchema} rows={[trip]} />)
+    const drawn = bars(container)
+    expect(drawn).toHaveLength(1)
+    const bar = drawn[0]
+    expect(bar).toHaveTextContent('trip')
+    expect(bar.style.gridColumn).toBe('1 / 4')
+    expect(bar.style.gridRow).toBe('2')
+    expect(bar.style.height).toBe('20px')
+    expect(bar.className).not.toContain('pointer-events-none')
+    expect(twelfth(container)).not.toHaveTextContent('trip')
+  })
+
+  it('three single-day rows beside the bar do not fold, and a fourth shows ＋1 more', () => {
+    const three = [trip, single('one'), single('two'), single('three')]
+    const { container, rerender } = render(<CollectionCalendar schema={rangeSchema} rows={three} />)
+    expect(container).not.toHaveTextContent('＋1 more')
+    expect(bars(container)).toHaveLength(1)
+
+    rerender(<CollectionCalendar schema={rangeSchema} rows={[...three, single('four')]} />)
+    expect(container).toHaveTextContent('＋1 more')
+    expect(bars(container)).toHaveLength(1)
+    expect(bars(container)[0]).toHaveTextContent('trip')
+  })
+
+  it('a single-date schema draws no calendar-bar', () => {
+    const { container } = render(
+      <CollectionCalendar
+        schema={schemaWithDate}
+        rows={[{ id: 'r1', title: 'Trim the rim', values: { 'p-due': '2026-10-12' } }]}
+      />
+    )
+    expect(bars(container)).toHaveLength(0)
+  })
+})
+
+describe('KAN-458 week edge', () => {
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
+  })
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  const rangeSchema: PropertySchema = [
+    { id: 'p-start', name: 'Start', type: 'date' },
+    { id: 'p-end', name: 'End', type: 'date' },
+  ]
+
+  const bars = (container: HTMLElement) =>
+    container.querySelectorAll<HTMLElement>('[data-part="calendar-bar"]')
+
+  const barInWeek = (container: HTMLElement, iso: string) => {
+    const cell = container.querySelector<HTMLElement>(
+      `[data-part="calendar-day-cell"][data-iso="${iso}"]`
+    )
+    return cell?.parentElement?.querySelector<HTMLElement>('[data-part="calendar-bar"]') ?? null
+  }
+
+  it('squares the end that crosses from Friday into the next week', () => {
+    const trip: CollectionRow = {
+      id: 'trip',
+      title: 'trip',
+      values: { 'p-start': '2026-10-16', 'p-end': '2026-10-20' },
+    }
+    const { container } = render(<CollectionCalendar schema={rangeSchema} rows={[trip]} />)
+    const drawn = bars(container)
+    expect(drawn).toHaveLength(2)
+    expect(drawn[0]).toHaveTextContent('trip')
+    expect(drawn[1]).toHaveTextContent('trip')
+
+    const first = barInWeek(container, '2026-10-12')
+    expect(first).not.toBeNull()
+    if (!first) return
+    expect(first.style.gridColumn).toBe('5 / 8')
+    expect(first.style.borderTopRightRadius).toBe('0')
+    expect(first.style.borderBottomRightRadius).toBe('0')
+    expect(first.style.marginRight).toBe('0px')
+    expect(first.style.borderTopLeftRadius).toBe('6px')
+    expect(first.style.borderBottomLeftRadius).toBe('6px')
+
+    const next = barInWeek(container, '2026-10-19')
+    expect(next).not.toBeNull()
+    if (!next) return
+    expect(next.style.gridColumn).toBe('1 / 3')
+    expect(next.style.borderTopLeftRadius).toBe('0')
+    expect(next.style.borderBottomLeftRadius).toBe('0')
+    expect(next.style.marginLeft).toBe('0px')
+    expect(next.style.borderTopRightRadius).toBe('6px')
+    expect(next.style.borderBottomRightRadius).toBe('6px')
+  })
+
+  it('squares both ends of a bar clipped to the whole week of the 12th', () => {
+    const span: CollectionRow = {
+      id: 'span',
+      title: 'span',
+      values: { 'p-start': '2026-10-11', 'p-end': '2026-10-19' },
+    }
+    const { container } = render(<CollectionCalendar schema={rangeSchema} rows={[span]} />)
+    const bar = barInWeek(container, '2026-10-12')
+    expect(bar).not.toBeNull()
+    if (!bar) return
+    expect(bar.style.gridColumn).toBe('1 / 8')
+    expect(bar.style.borderTopLeftRadius).toBe('0')
+    expect(bar.style.borderBottomLeftRadius).toBe('0')
+    expect(bar.style.borderTopRightRadius).toBe('0')
+    expect(bar.style.borderBottomRightRadius).toBe('0')
+    expect(bar.style.marginLeft).toBe('0px')
+    expect(bar.style.marginRight).toBe('0px')
+  })
+})
+
+describe('KAN-458 bar drag', () => {
+  const dragConfig: ViewBlock = { id: 'cal', type: 'view', mode: 'calendar' }
+  const rangeSchema: PropertySchema = [
+    { id: 'p-start', name: 'Start', type: 'date' },
+    { id: 'p-end', name: 'End', type: 'date' },
+  ]
+  const trip: CollectionRow = {
+    id: 'trip',
+    title: 'trip',
+    values: { 'p-start': '2026-10-12', 'p-end': '2026-10-14' },
+  }
+  /** The pointer-position rect each day cell resolves to, keyed by its `data-iso`
+   *  (`usePointerBucketDrag` hit-tests the bucket under the pointer by DOM rect).
+   *  Any cell not named here falls back to jsdom's all-zero rect. */
+  const DAY_RECTS: Record<string, [number, number, number, number]> = {
+    '2026-10-12': [0, 0, 100, 100],
+    '2026-10-19': [200, 0, 300, 100],
+  }
+
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
+    jest.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: HTMLElement
+    ) {
+      const iso = this.getAttribute('data-iso')
+      const [left, top, right, bottom] = (iso && DAY_RECTS[iso]) || [0, 0, 0, 0]
+      return {
+        left,
+        top,
+        right,
+        bottom,
+        width: right - left,
+        height: bottom - top,
+        x: left,
+        y: top,
+        toJSON() {
+          return this
+        },
+      } as DOMRect
+    })
+  })
+  afterEach(() => {
+    jest.useRealTimers()
+    jest.restoreAllMocks()
+  })
+
+  const bars = (container: HTMLElement) =>
+    container.querySelectorAll<HTMLElement>('[data-part="calendar-bar"]')
+
+  const barInWeek = (container: HTMLElement, iso: string) => {
+    const cell = container.querySelector<HTMLElement>(
+      `[data-part="calendar-day-cell"][data-iso="${iso}"]`
+    )
+    return cell?.parentElement?.querySelector<HTMLElement>('[data-part="calendar-bar"]') ?? null
+  }
+
+  function CalendarHarness({
+    initialRows,
+    schema = rangeSchema,
+    onMoveDates,
+    onMoveDate,
+  }: {
+    initialRows: CollectionRow[]
+    schema?: PropertySchema
+    onMoveDates: (rowId: string, entries: { key: string; value: PropertyValue }[]) => void
+    onMoveDate: (rowId: string, key: string, value: PropertyValue) => void
+  }) {
+    const [rows, setRows] = useState<CollectionRow[]>(initialRows)
+    return (
+      <CollectionView
+        config={dragConfig}
+        schema={schema}
+        rows={rows}
+        collectionName="tasks"
+        editable
+        onConfigChange={jest.fn()}
+        onEdit={jest.fn()}
+        onMoveDate={(rowId, key, value) => {
+          onMoveDate(rowId, key, value)
+          setRows((prev) =>
+            prev.map((row) =>
+              row.id === rowId ? { ...row, values: { ...row.values, [key]: value } } : row
+            )
+          )
+        }}
+        onMoveDates={(rowId, entries) => {
+          onMoveDates(rowId, entries)
+          setRows((prev) =>
+            prev.map((row) => {
+              if (row.id !== rowId) return row
+              const values = { ...row.values }
+              for (const entry of entries) values[entry.key] = entry.value
+              return { ...row, values }
+            })
+          )
+        }}
+      />
+    )
+  }
+
+  function renderStatic({
+    rows,
+    schema = rangeSchema,
+    editable = true,
+    onMoveDates,
+    onMoveDate,
+  }: {
+    rows: CollectionRow[]
+    schema?: PropertySchema
+    editable?: boolean
+    onMoveDates: (rowId: string, entries: { key: string; value: PropertyValue }[]) => void
+    onMoveDate: (rowId: string, key: string, value: PropertyValue) => void
+  }) {
+    return render(
+      <CollectionView
+        config={dragConfig}
+        schema={schema}
+        rows={rows}
+        collectionName="tasks"
+        editable={editable}
+        onConfigChange={jest.fn()}
+        onEdit={jest.fn()}
+        onMoveDates={onMoveDates}
+        onMoveDate={onMoveDate}
+      />
+    )
+  }
+
+  it('dragging the bar from the 12th onto the 19th moves both ends', () => {
+    const onMoveDates = jest.fn()
+    const onMoveDate = jest.fn()
+    const { container } = render(
+      <CalendarHarness initialRows={[trip]} onMoveDates={onMoveDates} onMoveDate={onMoveDate} />
+    )
+    const bar = bars(container)[0]
+    expect(bar).toBeDefined()
+
+    fireEvent.pointerDown(bar, { clientX: 10, clientY: 10 })
+    fireEvent.pointerMove(bar, { clientX: 250, clientY: 50 })
+    fireEvent.pointerUp(bar)
+
+    expect(onMoveDates).toHaveBeenCalledTimes(1)
+    expect(onMoveDates).toHaveBeenCalledWith('trip', [
+      { key: 'p-start', value: '2026-10-19' },
+      { key: 'p-end', value: '2026-10-21' },
+    ])
+    expect(onMoveDate).not.toHaveBeenCalled()
+
+    const moved = barInWeek(container, '2026-10-19')
+    expect(moved).not.toBeNull()
+    expect(moved?.style.gridColumn).toBe('1 / 4')
+  })
+
+  it('a move that stays inside the 12th calls neither', () => {
+    const onMoveDates = jest.fn()
+    const onMoveDate = jest.fn()
+    const { container } = renderStatic({ rows: [trip], onMoveDates, onMoveDate })
+    const bar = bars(container)[0]
+
+    fireEvent.pointerDown(bar, { clientX: 10, clientY: 10 })
+    fireEvent.pointerMove(bar, { clientX: 50, clientY: 50 })
+    fireEvent.pointerUp(bar)
+
+    expect(onMoveDates).not.toHaveBeenCalled()
+    expect(onMoveDate).not.toHaveBeenCalled()
+  })
+
+  it('editable false calls neither', () => {
+    const onMoveDates = jest.fn()
+    const onMoveDate = jest.fn()
+    const { container } = renderStatic({
+      rows: [trip],
+      editable: false,
+      onMoveDates,
+      onMoveDate,
+    })
+    const bar = bars(container)[0]
+
+    fireEvent.pointerDown(bar, { clientX: 10, clientY: 10 })
+    fireEvent.pointerMove(bar, { clientX: 250, clientY: 50 })
+    fireEvent.pointerUp(bar)
+
+    expect(onMoveDates).not.toHaveBeenCalled()
+    expect(onMoveDate).not.toHaveBeenCalled()
+  })
+
+  it('a single-date row still calls onMoveDate once and never onMoveDates', () => {
+    const onMoveDates = jest.fn()
+    const onMoveDate = jest.fn()
+    const single: CollectionRow = {
+      id: 'r1',
+      title: 'Trim the rim',
+      values: { 'p-due': '2026-10-12' },
+    }
+    const { container } = renderStatic({
+      rows: [single],
+      schema: schemaWithDate,
+      onMoveDates,
+      onMoveDate,
+    })
+    const cell = container.querySelector<HTMLElement>(
+      '[data-part="calendar-day-cell"][data-iso="2026-10-12"]'
+    )
+    expect(cell).not.toBeNull()
+    if (!cell) return
+    const item = within(cell).getByText('Trim the rim').closest('div')
+    expect(item).not.toBeNull()
+    if (!item) return
+
+    fireEvent.pointerDown(item, { clientX: 10, clientY: 10 })
+    fireEvent.pointerMove(item, { clientX: 250, clientY: 50 })
+    fireEvent.pointerUp(item)
+
+    expect(onMoveDate).toHaveBeenCalledTimes(1)
+    expect(onMoveDate).toHaveBeenCalledWith('r1', 'p-due', '2026-10-19')
+    expect(onMoveDates).not.toHaveBeenCalled()
+  })
+
+  it('a timed range keeps each field’s clock on the shifted days', () => {
+    const onMoveDates = jest.fn()
+    const onMoveDate = jest.fn()
+    const timed: CollectionRow = {
+      id: 'trip',
+      title: 'trip',
+      values: { 'p-start': '2026-10-12T09:00:00', 'p-end': '2026-10-14T17:00:00' },
+    }
+    const { container } = render(
+      <CalendarHarness initialRows={[timed]} onMoveDates={onMoveDates} onMoveDate={onMoveDate} />
+    )
+    const bar = bars(container)[0]
+
+    fireEvent.pointerDown(bar, { clientX: 10, clientY: 10 })
+    fireEvent.pointerMove(bar, { clientX: 250, clientY: 50 })
+    fireEvent.pointerUp(bar)
+
+    expect(onMoveDates).toHaveBeenCalledTimes(1)
+    expect(onMoveDates).toHaveBeenCalledWith('trip', [
+      { key: 'p-start', value: '2026-10-19T09:00:00' },
+      { key: 'p-end', value: '2026-10-21T17:00:00' },
+    ])
     expect(onMoveDate).not.toHaveBeenCalled()
   })
 })

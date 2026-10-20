@@ -5,10 +5,12 @@
  * `gantt-shared.ts`'s split of layout from drawing). Dates are UTC throughout —
  * `epochDay`/`addDays` from `apply.ts` for day arithmetic, `Date.UTC` for month
  * arithmetic — never local time, so the grid never shears across a timezone or a
- * DST boundary.
+ * DST boundary. A range is two date properties (`pickGanttDefs`): when the end
+ * day is after the start day the row is a bar (`layoutMonthBars`), and with an
+ * end property present it leaves the day chips.
  */
 import { coerceValue, type PropertyDef } from '@/lib/properties/schema'
-import { addDays, type CollectionRow } from './apply'
+import { addDays, epochDay, type CollectionRow } from './apply'
 
 /** `PondCalendar.dc.html`'s `MON` — lowercase, the board's own form for `periodLabel`. */
 const MONTHS = [
@@ -36,6 +38,9 @@ export interface MonthDayCell {
   isToday: boolean
   items: CollectionRow[]
   moreCount: number
+  /** Mobile dots. Rows whose start–end covers this day, capped at 3. A range
+   *  marks each covered day and stays out of `items`. */
+  marks: CollectionRow[]
 }
 
 export interface MonthWeek {
@@ -77,23 +82,145 @@ export function rowDateIso(row: CollectionRow, dateDef: PropertyDef): string | n
   return typeof value === 'string' && value ? value.slice(0, 10) : null
 }
 
+/** A `YYYY-MM-DD` day from an ISO string, or null when the value does not parse.
+ *  The day is the leading date part; a time suffix stays on the stored value
+ *  and is not part of the comparison. */
+function parseDay(iso: string | null): string | null {
+  if (typeof iso !== 'string') return null
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso)
+  return match ? match[0] : null
+}
+
+/** The board's `multi` (`o.end > o.start`): true only when both days parse and
+ *  the end day is strictly after the start. A missing end, an equal day, or an
+ *  end before the start stays a single-day chip. */
+export function isMonthBar(startIso: string | null, endIso: string | null): boolean {
+  const start = parseDay(startIso)
+  const end = parseDay(endIso)
+  return start !== null && end !== null && end > start
+}
+
+/** One range a month can draw across weeks. Dates stay ISO strings. */
+export interface MonthBar {
+  id: string
+  title: string
+  startIso: string
+  endIso: string
+}
+
+/** One week-clipped piece of a bar. `columnEnd` is exclusive (Mon–Wed is 1 / 4). */
+export interface MonthBarSegment {
+  rowId: string
+  title: string
+  weekStart: string
+  lane: number
+  columnStart: number
+  columnEnd: number
+  squareLeft: boolean
+  squareRight: boolean
+}
+
+/**
+ * Lay range bars onto week rows. `weekStarts` are Mondays (`YYYY-MM-DD`). Each
+ * bar that touches a week (clipped to Monday–Sunday) yields one segment; a week
+ * with no bar yields none. Columns are the clipped day's Monday-index (Monday
+ * is 0): start is `index + 1`, end is `index + 2`. `squareLeft` / `squareRight`
+ * mark a bar that continues past that Monday / Sunday. Lanes follow the board's
+ * `lanesFor`: sort by start, then the first lane whose stored end is strictly
+ * before `max(bar.start, weekStart)`, otherwise a new lane. The stored end is
+ * the bar's own end, not the clipped one.
+ */
+export function layoutMonthBars(
+  weekStarts: readonly string[],
+  bars: readonly MonthBar[]
+): MonthBarSegment[] {
+  const segments: MonthBarSegment[] = []
+  for (const weekStart of weekStarts) {
+    const monday = parseDay(weekStart)
+    if (monday === null) continue
+    const sunday = addDays(monday, 6)
+    const touching: { id: string; title: string; start: string; end: string }[] = []
+    for (const bar of bars) {
+      const start = parseDay(bar.startIso)
+      const end = parseDay(bar.endIso)
+      if (start === null || end === null || !isMonthBar(start, end)) continue
+      if (start <= sunday && end >= monday) {
+        touching.push({ id: bar.id, title: bar.title, start, end })
+      }
+    }
+    touching.sort((a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : 0))
+    const laneEnd: string[] = []
+    for (const bar of touching) {
+      const clipStart = bar.start > monday ? bar.start : monday
+      let lane = laneEnd.findIndex((storedEnd) => storedEnd < clipStart)
+      if (lane < 0) {
+        lane = laneEnd.length
+        laneEnd.push(bar.end)
+      } else {
+        laneEnd[lane] = bar.end
+      }
+      const clipEnd = bar.end < sunday ? bar.end : sunday
+      segments.push({
+        rowId: bar.id,
+        title: bar.title,
+        weekStart: monday,
+        lane,
+        columnStart: mondayDow(clipStart) + 1,
+        columnEnd: mondayDow(clipEnd) + 2,
+        squareLeft: bar.start < monday,
+        squareRight: bar.end > sunday,
+      })
+    }
+  }
+  return segments
+}
+
 /** Rows bucketed by their `YYYY-MM-DD` day, for the grid's per-day lookup. No
  *  `dateDef` (the collection has no date property) buckets nothing — every cell
- *  reads empty, matching the DC's `empty` state (`recs = []`). */
+ *  reads empty, matching the DC's `empty` state (`recs = []`). When `endDef` is
+ *  present, a row `isMonthBar` is omitted: it draws as a bar, not a chip, and
+ *  does not add to `moreCount`. Absent, every dated row buckets as before. */
 function bucketByDate(
   rows: readonly CollectionRow[],
-  dateDef: PropertyDef | undefined
+  dateDef: PropertyDef | undefined,
+  endDef?: PropertyDef
 ): Map<string, CollectionRow[]> {
   const byDate = new Map<string, CollectionRow[]>()
   if (!dateDef) return byDate
   for (const row of rows) {
     const iso = rowDateIso(row, dateDef)
     if (!iso) continue
+    if (endDef && isMonthBar(iso, rowDateIso(row, endDef))) continue
     const bucket = byDate.get(iso)
     if (bucket) bucket.push(row)
     else byDate.set(iso, [row])
   }
   return byDate
+}
+
+/** Rows whose start–end covers `iso`, capped at 3 — the mobile month's dots
+ *  (`occ` where `start <= t && end >= t`, sliced to 3). A range covers each day
+ *  from its start through its end. A row that is not a bar covers only its start
+ *  day, the same day it chips on. */
+function marksForDay(
+  rows: readonly CollectionRow[],
+  dateDef: PropertyDef | undefined,
+  endDef: PropertyDef | undefined,
+  iso: string
+): CollectionRow[] {
+  if (!dateDef) return []
+  const marks: CollectionRow[] = []
+  for (const row of rows) {
+    const start = rowDateIso(row, dateDef)
+    if (!start) continue
+    const end = endDef ? rowDateIso(row, endDef) : null
+    const covers =
+      end !== null && isMonthBar(start, end) ? start <= iso && end >= iso : start === iso
+    if (!covers) continue
+    marks.push(row)
+    if (marks.length === 3) break
+  }
+  return marks
 }
 
 /** All of a day's dated rows, not capped to 3 — the mobile month's focused-day list
@@ -113,12 +240,15 @@ export function dayItems(
  * — so the grid always starts on a Monday and covers whole weeks either side of the
  * month. `focusIso`/`todayIso` need only name a day within their month; only their
  * year/month are read for the grid, matching the DC's own `fm`/`today` use.
+ * `endDef`, when the caller resolved a second date via `pickGanttDefs`, drops
+ * range rows out of the day chips. Omit it and the buckets stay as they are.
  */
 export function buildMonthGrid(
   focusIso: string,
   todayIso: string,
   rows: readonly CollectionRow[],
-  dateDef: PropertyDef | undefined
+  dateDef: PropertyDef | undefined,
+  endDef?: PropertyDef
 ): MonthGrid {
   const { year, month0 } = parseYearMonth(focusIso)
   const m1Iso = isoFromYearMonth(year, month0, 1)
@@ -126,7 +256,7 @@ export function buildMonthGrid(
   const dowM1 = mondayDow(m1Iso)
   const gStartIso = addDays(m1Iso, -dowM1)
   const nWeeks = Math.ceil((dowM1 + mDays) / 7)
-  const byDate = bucketByDate(rows, dateDef)
+  const byDate = bucketByDate(rows, dateDef, endDef)
   const monthKey = m1Iso.slice(0, 7)
 
   const weeks: MonthWeek[] = Array.from({ length: nWeeks }, (_, w) => ({
@@ -140,6 +270,7 @@ export function buildMonthGrid(
         isToday: iso === todayIso,
         items: items.slice(0, 3),
         moreCount: Math.max(0, items.length - 3),
+        marks: marksForDay(rows, dateDef, endDef, iso),
       }
     }),
   }))
@@ -173,6 +304,27 @@ export function dateForDrop(value: unknown, dayIso: string): string {
   const tIndex = value.indexOf('T')
   if (tIndex === -1) return dayIso
   return dayIso + value.slice(tIndex)
+}
+
+/** The start and end a bar drop onto `dropDay` should write. The drop day
+ *  becomes the new start; the end moves by the same day count, and each field
+ *  keeps its `T…` suffix through `dateForDrop`. A row that is not a bar, or a
+ *  drop on the row's own start day, writes nothing. Days are the leading
+ *  `slice(0, 10)`, the same bucket `rowDateIso` uses. */
+export function rangeForDrop(
+  startValue: unknown,
+  endValue: unknown,
+  dropDay: string
+): { start: string; end: string } | null {
+  const startDay = typeof startValue === 'string' && startValue ? startValue.slice(0, 10) : null
+  const endDay = typeof endValue === 'string' && endValue ? endValue.slice(0, 10) : null
+  if (!isMonthBar(startDay, endDay) || startDay === null || endDay === null) return null
+  if (dropDay === startDay) return null
+  const delta = epochDay(dropDay) - epochDay(startDay)
+  return {
+    start: dateForDrop(startValue, dropDay),
+    end: dateForDrop(endValue, addDays(endDay, delta)),
+  }
 }
 
 /** `dow` — Monday-first weekday index, for the focused-day list's own head label

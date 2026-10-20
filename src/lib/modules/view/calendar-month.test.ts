@@ -1,4 +1,12 @@
-import { buildMonthGrid, dateForDrop, goToday, stepMonth } from './calendar-month'
+import {
+  buildMonthGrid,
+  dateForDrop,
+  goToday,
+  isMonthBar,
+  layoutMonthBars,
+  rangeForDrop,
+  stepMonth,
+} from './calendar-month'
 import type { CollectionRow } from './apply'
 import type { PropertyDef } from '@/lib/properties/schema'
 
@@ -112,6 +120,167 @@ describe('dateForDrop', () => {
     expect(dateForDrop(undefined, '2026-09-15')).toBe('2026-09-15')
     expect(dateForDrop(null, '2026-09-15')).toBe('2026-09-15')
     expect(dateForDrop(42, '2026-09-15')).toBe('2026-09-15')
+  })
+})
+
+describe('rangeForDrop', () => {
+  it('shifts 2026-10-12–2026-10-14 onto 2026-10-19', () => {
+    expect(rangeForDrop('2026-10-12', '2026-10-14', '2026-10-19')).toEqual({
+      start: '2026-10-19',
+      end: '2026-10-21',
+    })
+  })
+
+  it('writes nothing when the drop day is the start day', () => {
+    expect(rangeForDrop('2026-10-12', '2026-10-14', '2026-10-12')).toBeNull()
+  })
+
+  it('keeps each field time suffix when the range shifts', () => {
+    expect(rangeForDrop('2026-10-12T09:00:00', '2026-10-14T17:00:00', '2026-10-19')).toEqual({
+      start: '2026-10-19T09:00:00',
+      end: '2026-10-21T17:00:00',
+    })
+  })
+
+  it('writes nothing when the end is missing', () => {
+    expect(rangeForDrop('2026-10-12', null, '2026-10-19')).toBeNull()
+    expect(rangeForDrop('2026-10-12', undefined, '2026-10-19')).toBeNull()
+    expect(rangeForDrop('2026-10-12', '', '2026-10-19')).toBeNull()
+  })
+})
+
+describe('month bar', () => {
+  const startDef: PropertyDef = { id: 'p-start', name: 'Start', type: 'date' }
+  const endDef: PropertyDef = { id: 'p-end', name: 'End', type: 'date' }
+
+  const bar = (id: string, startIso: string, endIso: string) => ({
+    id,
+    title: id,
+    startIso,
+    endIso,
+  })
+
+  const cellOn = (grid: ReturnType<typeof buildMonthGrid>, iso: string) =>
+    grid.weeks.flatMap((week) => week.days).find((day) => day.iso === iso)
+
+  it('lays Mon–Wed in the week of 2026-10-12 as columns 1 and 4, neither square', () => {
+    const segments = layoutMonthBars(
+      ['2026-10-12', '2026-10-19'],
+      [bar('alpha', '2026-10-12', '2026-10-14')]
+    )
+    expect(segments).toEqual([
+      {
+        rowId: 'alpha',
+        title: 'alpha',
+        weekStart: '2026-10-12',
+        lane: 0,
+        columnStart: 1,
+        columnEnd: 4,
+        squareLeft: false,
+        squareRight: false,
+      },
+    ])
+  })
+
+  it('clips 2026-10-16–2026-10-20 across the weeks of the 12th and the 19th', () => {
+    const segments = layoutMonthBars(
+      ['2026-10-12', '2026-10-19'],
+      [bar('span', '2026-10-16', '2026-10-20')]
+    )
+    expect(segments).toEqual([
+      {
+        rowId: 'span',
+        title: 'span',
+        weekStart: '2026-10-12',
+        lane: 0,
+        columnStart: 5,
+        columnEnd: 8,
+        squareLeft: false,
+        squareRight: true,
+      },
+      {
+        rowId: 'span',
+        title: 'span',
+        weekStart: '2026-10-19',
+        lane: 0,
+        columnStart: 1,
+        columnEnd: 3,
+        squareLeft: true,
+        squareRight: false,
+      },
+    ])
+  })
+
+  it('squares both ends when the bar starts before Monday and ends after Sunday', () => {
+    const segments = layoutMonthBars(['2026-10-12'], [bar('full', '2026-10-11', '2026-10-19')])
+    expect(segments).toEqual([
+      {
+        rowId: 'full',
+        title: 'full',
+        weekStart: '2026-10-12',
+        lane: 0,
+        columnStart: 1,
+        columnEnd: 8,
+        squareLeft: true,
+        squareRight: true,
+      },
+    ])
+  })
+
+  it('packs 2026-10-12–14 and 2026-10-13–15 into lanes 0 and 1', () => {
+    const segments = layoutMonthBars(
+      ['2026-10-12'],
+      [bar('early', '2026-10-12', '2026-10-14'), bar('late', '2026-10-13', '2026-10-15')]
+    )
+    expect(segments.map((segment) => [segment.rowId, segment.lane])).toEqual([
+      ['early', 0],
+      ['late', 1],
+    ])
+  })
+
+  it('reuses lane 0 when 2026-10-12–13 ends before 2026-10-14–15 starts', () => {
+    const segments = layoutMonthBars(
+      ['2026-10-12'],
+      [bar('first', '2026-10-12', '2026-10-13'), bar('second', '2026-10-14', '2026-10-15')]
+    )
+    expect(segments.map((segment) => [segment.rowId, segment.lane])).toEqual([
+      ['first', 0],
+      ['second', 0],
+    ])
+  })
+
+  it('is false for a missing end, an equal end, and an end before the start', () => {
+    expect(isMonthBar('2026-10-12', null)).toBe(false)
+    expect(isMonthBar('2026-10-12', '2026-10-12')).toBe(false)
+    expect(isMonthBar('2026-10-14', '2026-10-12')).toBe(false)
+    expect(isMonthBar(null, '2026-10-14')).toBe(false)
+    expect(isMonthBar('not-a-day', '2026-10-14')).toBe(false)
+    expect(isMonthBar('2026-10-12', '2026-10-14')).toBe(true)
+  })
+
+  it('omits a range from the 12th chips and keeps four single-day rows at moreCount 1', () => {
+    const range: CollectionRow = {
+      id: 'range',
+      title: 'range',
+      values: { 'p-start': '2026-10-12', 'p-end': '2026-10-14' },
+    }
+    const singles: CollectionRow[] = ['s1', 's2', 's3', 's4'].map((id) => ({
+      id,
+      title: id,
+      values: { 'p-start': '2026-10-12' },
+    }))
+    const grid = buildMonthGrid('2026-10-01', '2026-10-20', [range, ...singles], startDef, endDef)
+    const cell = cellOn(grid, '2026-10-12')
+    expect(cell?.items.map((item) => item.id)).toEqual(['s1', 's2', 's3'])
+    expect(cell?.moreCount).toBe(1)
+
+    const datedOnly: CollectionRow = {
+      id: 'only',
+      title: 'only',
+      values: { 'p-start': '2026-10-12' },
+    }
+    const withoutEnd = buildMonthGrid('2026-10-01', '2026-10-20', [datedOnly], startDef)
+    expect(cellOn(withoutEnd, '2026-10-12')?.items.map((item) => item.id)).toEqual(['only'])
   })
 })
 

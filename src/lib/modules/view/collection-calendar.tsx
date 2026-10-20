@@ -47,13 +47,18 @@ import {
   dateForDrop,
   dayItems,
   goToday,
+  isMonthBar,
+  layoutMonthBars,
   monthAbbr,
+  rangeForDrop,
   rowDateIso,
   stepMonth,
   weekdayIndex,
+  type MonthBar,
+  type MonthBarSegment,
   type MonthDayCell,
 } from './calendar-month'
-import { addDays, pickDateDef, type CollectionRow } from './apply'
+import { addDays, pickDateDef, pickGanttDefs, type CollectionRow } from './apply'
 import {
   DAY_GUTTER,
   DAY_HOUR_END,
@@ -185,6 +190,10 @@ const DAY_ADD_BUTTON =
 /** Armed placement (KAN-454): the same hover fill as the month nav, so a day reads as a target. */
 const DAY_PLACE_HOVER = 'cursor-pointer hover:bg-mn-hover-fill'
 const UNDATED_LINE = 'px-0.5 text-left text-[13px] font-mono lowercase text-mn-text-secondary'
+/** Desktop month bar (`PondCalendar.dc.html` `bs`): 20px, 11.5px weight 500, ink
+ *  .075 light / .12 dark. Not `pointer-events-none` — the bar is the drag handle. */
+const MONTH_BAR =
+  'z-[1] flex h-5 min-w-0 items-center truncate px-2 text-[11.5px] font-medium text-mn-text bg-mn-text/[0.075] dark:bg-mn-text/[0.12]'
 
 function MonthDayNumber({
   day,
@@ -229,6 +238,7 @@ function handleCalendarRowClick(
 function MonthDayStack({
   items,
   moreCount,
+  lanes,
   selectedId,
   draggingRowId,
   editable,
@@ -242,6 +252,8 @@ function MonthDayStack({
 }: {
   items: MonthDayCell['items']
   moreCount: number
+  /** Lane count for this week. Chips sit under the bars: `n * 22`. */
+  lanes: number
   selectedId?: string
   draggingRowId?: string
   editable?: boolean
@@ -255,7 +267,10 @@ function MonthDayStack({
 }) {
   if (items.length === 0 && moreCount === 0) return null
   return (
-    <div className="flex flex-col gap-px px-1 pt-0.5 pb-2">
+    <div
+      className="flex flex-col gap-px px-1 pt-0.5 pb-2"
+      style={lanes > 0 ? { marginTop: lanes * 22 } : undefined}
+    >
       {items.map((row) => (
         <div
           key={row.id}
@@ -289,9 +304,51 @@ function MonthDayStack({
   )
 }
 
+function MonthBarView({
+  segment,
+  lifted,
+  editable,
+  onCardPointerDown,
+}: {
+  segment: MonthBarSegment
+  /** True while this row is the active drag — every segment of it lifts. */
+  lifted: boolean
+  editable?: boolean
+  onCardPointerDown: PointerBucketDrag['onCardPointerDown']
+}) {
+  const left = segment.squareLeft ? 0 : 6
+  const right = segment.squareRight ? 0 : 6
+  const marginLeft = segment.squareLeft ? 0 : 5
+  const marginRight = segment.squareRight ? 0 : 5
+  return (
+    <div
+      data-part="calendar-bar"
+      data-row={segment.rowId}
+      className={cn(MONTH_BAR, lifted && DRAG_LIFT_CLASS)}
+      onPointerDown={editable ? (event) => onCardPointerDown(event, segment.rowId) : undefined}
+      style={{
+        gridRow: segment.lane + 2,
+        gridColumn: `${segment.columnStart} / ${segment.columnEnd}`,
+        height: 20,
+        marginTop: 1,
+        marginBottom: 1,
+        marginLeft,
+        marginRight,
+        borderTopLeftRadius: left,
+        borderBottomLeftRadius: left,
+        borderTopRightRadius: right,
+        borderBottomRightRadius: right,
+      }}
+    >
+      {segment.title}
+    </div>
+  )
+}
+
 function MonthDayCellView({
   cell,
   columnIndex,
+  lanes,
   canAdd,
   onAdd,
   selectedId,
@@ -312,6 +369,8 @@ function MonthDayCellView({
 }: {
   cell: MonthDayCell
   columnIndex: number
+  /** Weeks with bars span each cell across every row so it stays the drop bucket. */
+  lanes: number
   canAdd: boolean
   onAdd: () => void
   selectedId?: string
@@ -362,6 +421,7 @@ function MonthDayCellView({
       onClick={handleCellClick}
       onKeyDown={canAdd ? handleCellKeyDown : undefined}
       tabIndex={canAdd ? 0 : undefined}
+      style={lanes > 0 ? { gridRow: '1 / -1', gridColumn: columnIndex + 1 } : undefined}
       className={cn(
         'group/day relative min-h-[108px] p-1.5 transition-colors duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none',
         columnIndex !== 0 && 'border-l border-mn-text/[0.09] dark:border-mn-text/[0.14]',
@@ -373,6 +433,7 @@ function MonthDayCellView({
       <MonthDayStack
         items={cell.items}
         moreCount={cell.moreCount}
+        lanes={lanes}
         selectedId={selectedId}
         draggingRowId={draggingRowId}
         editable={editable}
@@ -434,7 +495,7 @@ function MonthDotCellView({
         </span>
       )}
       <span className={DAY_DOT_ROW}>
-        {cell.items.map((row) => (
+        {cell.marks.map((row) => (
           <span key={row.id} className={DAY_DOT} />
         ))}
       </span>
@@ -1194,6 +1255,9 @@ export function CollectionCalendar({
   onOpenRow,
   onAddDateField,
   onMoveDate,
+  onMoveDates,
+  startId,
+  endId,
   span: spanProp,
   onConfigChange,
 }: {
@@ -1211,12 +1275,21 @@ export function CollectionCalendar({
   onOpenRow?: (rowId: string) => void
   onAddDateField?: () => void
   onMoveDate?: (rowId: string, key: string, value: PropertyValue) => void
+  /** A bar drop writes both ends in one call: the start field, then the end field. */
+  onMoveDates?: (rowId: string, entries: { key: string; value: PropertyValue }[]) => void
+  /** Named range fields (`pickGanttDefs`). Absent infers the 1st and 2nd date. */
+  startId?: string
+  endId?: string
   /** The active view's stored span. Absent reads as month. */
   span?: CalendarSpan
   /** Present when the host persists config. A span click sends `{ span }`. */
   onConfigChange?: (patch: { span: CalendarSpan }) => void
 }) {
   const dateDef = useMemo(() => pickDateDef(schema, groupBy), [schema, groupBy])
+  const rangeDefs = useMemo(() => pickGanttDefs(schema, startId, endId), [endId, schema, startId])
+  // A named start is the bar's start. Otherwise the calendar date stays the
+  // field chips and drops already use, and `endDef` is the range's other end.
+  const monthDateDef = startId && rangeDefs ? rangeDefs.startDef : dateDef
   // `today` is read once per mount, as the board reads its own `now` (view.tsx);
   // the local calendar date, matching `due.ts`'s `dueAtom`, not UTC's.
   const [todayIso] = useState(() => localDateIso(new Date()))
@@ -1239,9 +1312,24 @@ export function CollectionCalendar({
     onConfigChange?.({ span: next })
   }
   const grid = useMemo(
-    () => buildMonthGrid(focusIso, todayIso, rows, dateDef),
-    [dateDef, focusIso, todayIso, rows]
+    () => buildMonthGrid(focusIso, todayIso, rows, monthDateDef, rangeDefs?.endDef),
+    [focusIso, monthDateDef, rangeDefs, rows, todayIso]
   )
+  const barSegments = useMemo(() => {
+    const endDef = rangeDefs?.endDef
+    if (!monthDateDef || !endDef) return []
+    const bars: MonthBar[] = []
+    for (const row of rows) {
+      const startIso = rowDateIso(row, monthDateDef)
+      const endIso = rowDateIso(row, endDef)
+      if (!startIso || !endIso || !isMonthBar(startIso, endIso)) continue
+      bars.push({ id: row.id, title: row.title, startIso, endIso })
+    }
+    return layoutMonthBars(
+      grid.weeks.map((week) => week.days[0].iso),
+      bars
+    )
+  }, [grid.weeks, monthDateDef, rangeDefs, rows])
   const dayRows = useMemo(() => splitDayRows(rows, dateDef, focusIso), [dateDef, focusIso, rows])
   const weekStrip = useMemo(() => stripWeek(focusIso, rows, dateDef), [dateDef, focusIso, rows])
   // The open focus is session state. A week span labels `weekRange` of that
@@ -1261,9 +1349,7 @@ export function CollectionCalendar({
     [agendaExtensions, dateDef, focusIso, rows, span, todayIso]
   )
   const handleAgendaReach = useCallback(() => {
-    setAgendaExtensions((current) =>
-      agendaExtensionsAfterReach(focusIso, rows, dateDef, current)
-    )
+    setAgendaExtensions((current) => agendaExtensionsAfterReach(focusIso, rows, dateDef, current))
   }, [dateDef, focusIso, rows])
   const periodLabel = openAgenda
     ? agendaPeriodLabel(openAgenda.start)
@@ -1309,7 +1395,9 @@ export function CollectionCalendar({
   }
 
   // Dropping on a day cell writes that day to the date field; a drop back onto the
-  // row's own current day is a no-op (no write, no log, no undo step).
+  // row's own current day is a no-op (no write, no log, no undo step). A bar writes
+  // both ends through `onMoveDates` and never `onMoveDate`. A drop on the bar's
+  // start day writes nothing. A row that is not a bar keeps the single-field path.
   const {
     drag,
     overKey,
@@ -1321,9 +1409,25 @@ export function CollectionCalendar({
   } = usePointerBucketDrag({
     editable: !!editable,
     onDrop: (rowId, key) => {
+      const row = rows.find((candidate) => candidate.id === rowId)
+      if (!row) return
+      const endDef = rangeDefs?.endDef
+      if (
+        monthDateDef &&
+        endDef &&
+        isMonthBar(rowDateIso(row, monthDateDef), rowDateIso(row, endDef))
+      ) {
+        const shift = rangeForDrop(row.values[monthDateDef.id], row.values[endDef.id], key)
+        if (shift) {
+          onMoveDates?.(rowId, [
+            { key: monthDateDef.id, value: shift.start },
+            { key: endDef.id, value: shift.end },
+          ])
+        }
+        return
+      }
       if (!dateDef || !onMoveDate) return
-      const row = rows.find((r) => r.id === rowId)
-      if (!row || rowDateIso(row, dateDef) === key) return
+      if (rowDateIso(row, dateDef) === key) return
       onMoveDate(rowId, dateDef.id, dateForDrop(row.values[dateDef.id], key))
     },
   })
@@ -1553,37 +1657,63 @@ export function CollectionCalendar({
                 </span>
               ))}
             </div>
-            {grid.weeks.map((week, w) => (
-              <div
-                key={w}
-                className="grid grid-cols-7 border-t border-mn-text/[0.09] dark:border-mn-text/[0.14]"
-              >
-                {week.days.map((cell, i) => (
-                  <MonthDayCellView
-                    key={cell.iso}
-                    cell={cell}
-                    columnIndex={i}
-                    canAdd={canAdd}
-                    onAdd={() => void handleAddDay(cell.iso)}
-                    selectedId={selectedRow?.id}
-                    draggingRowId={drag?.active ? drag.rowId : undefined}
-                    isOver={!!editable && !!drag?.active && overKey === cell.iso}
-                    armed={placement !== null}
-                    onPlace={placement ? handlePlaceOnDay : undefined}
-                    onOpenDay={handleOpenDay}
-                    editable={editable}
-                    registerBucket={registerBucket}
-                    onCardPointerDown={onCardPointerDown}
-                    isClickSuppressed={isClickSuppressed}
-                    rowProps={rowProps}
-                    keyboardProps={keyboardProps}
-                    selectWithPointer={selectWithPointer}
-                    selectOrOpenOnKey={selectOrOpenOnKey}
-                    onOpenRow={onOpenRow}
-                  />
-                ))}
-              </div>
-            ))}
+            {grid.weeks.map((week, w) => {
+              const weekStart = week.days[0]?.iso
+              const segments = barSegments.filter((segment) => segment.weekStart === weekStart)
+              const lanes = segments.reduce(
+                (count, segment) => Math.max(count, segment.lane + 1),
+                0
+              )
+              return (
+                <div
+                  key={w}
+                  className={cn(
+                    'grid grid-cols-7 border-t border-mn-text/[0.09] dark:border-mn-text/[0.14]',
+                    lanes > 0 && 'min-h-[108px]'
+                  )}
+                  style={
+                    lanes > 0
+                      ? { gridTemplateRows: `30px repeat(${lanes}, 22px) minmax(0,1fr)` }
+                      : undefined
+                  }
+                >
+                  {week.days.map((cell, i) => (
+                    <MonthDayCellView
+                      key={cell.iso}
+                      cell={cell}
+                      columnIndex={i}
+                      lanes={lanes}
+                      canAdd={canAdd}
+                      onAdd={() => void handleAddDay(cell.iso)}
+                      selectedId={selectedRow?.id}
+                      draggingRowId={drag?.active ? drag.rowId : undefined}
+                      isOver={!!editable && !!drag?.active && overKey === cell.iso}
+                      armed={placement !== null}
+                      onPlace={placement ? handlePlaceOnDay : undefined}
+                      onOpenDay={handleOpenDay}
+                      editable={editable}
+                      registerBucket={registerBucket}
+                      onCardPointerDown={onCardPointerDown}
+                      isClickSuppressed={isClickSuppressed}
+                      rowProps={rowProps}
+                      keyboardProps={keyboardProps}
+                      selectWithPointer={selectWithPointer}
+                      selectOrOpenOnKey={selectOrOpenOnKey}
+                      onOpenRow={onOpenRow}
+                    />
+                  ))}
+                  {segments.map((segment) => (
+                    <MonthBarView
+                      key={segment.rowId}
+                      segment={segment}
+                      lifted={drag !== null && drag.active && drag.rowId === segment.rowId}
+                      editable={editable}
+                      onCardPointerDown={onCardPointerDown}
+                    />
+                  ))}
+                </div>
+              )
+            })}
           </div>
           <div className="grid grid-cols-7 gap-y-0.5 md:hidden">
             {DOW_LABELS.map((l) => (

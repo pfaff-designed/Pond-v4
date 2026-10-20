@@ -2365,6 +2365,213 @@ export const CalendarWeekDrag: Story = {
   },
 }
 
+/**
+ * KAN-458. A record with a start and an end draws as a bar across those days.
+ * Dragging the bar onto the 19th writes both fields, so the bar covers the
+ * 19th, 20th and 21st.
+ *
+ * The loader matches `CalendarWeekSpan`: 1440×900 and local noon on 19 Oct
+ * 2026, so October is open and both weeks are on screen. The harness applies
+ * `onMoveDates` onto both date fields. The pointer sequence is `fireEvent`
+ * from `storybook/test`.
+ */
+const rangeBarSchema: PropertySchema = [
+  { id: 'p-start', name: 'Start', type: 'date' },
+  { id: 'p-end', name: 'End', type: 'date' },
+]
+
+const rangeBarRows: CollectionRow[] = [
+  { id: 'trip', title: 'trip', values: { 'p-start': '2026-10-12', 'p-end': '2026-10-14' } },
+]
+
+const RANGE_BAR_BEFORE = ['2026-10-12', '2026-10-13', '2026-10-14']
+const RANGE_BAR_AFTER = ['2026-10-19', '2026-10-20', '2026-10-21']
+
+function CalendarRangeBarHarness({
+  config,
+  hostSchema,
+}: {
+  config: ViewBlock
+  hostSchema: PropertySchema
+}) {
+  const [data, setData] = useState<CollectionRow[]>(rangeBarRows)
+  const handleMoveDates = (rowId: string, entries: { key: string; value: PropertyValue }[]) => {
+    setData((prev) =>
+      prev.map((row) => {
+        if (row.id !== rowId) return row
+        const values = { ...row.values }
+        for (const entry of entries) values[entry.key] = entry.value
+        return { ...row, values }
+      })
+    )
+  }
+  return (
+    <CollectionView
+      config={config}
+      schema={hostSchema}
+      rows={data}
+      editable
+      onMoveDates={handleMoveDates}
+    />
+  )
+}
+
+type RangeBarPoint = { clientX: number; clientY: number }
+
+function rangeBar(root: HTMLElement): HTMLElement {
+  const bars = [...root.querySelectorAll<HTMLElement>('[data-part="calendar-bar"]')]
+  if (bars.length !== 1) {
+    throw new Error(`calendar range bar story: expected one calendar-bar, found ${bars.length}`)
+  }
+  const bar = bars[0]
+  if (!bar) throw new Error('calendar range bar story: calendar-bar missing')
+  return bar
+}
+
+function visibleDayCell(root: HTMLElement, iso: string): HTMLElement {
+  const cells = [
+    ...root.querySelectorAll<HTMLElement>(`[data-part="calendar-day-cell"][data-iso="${iso}"]`),
+  ]
+  const cell = cells.find((candidate) => candidate.getBoundingClientRect().width > 0)
+  if (!cell) throw new Error(`calendar range bar story: ${iso} cell missing`)
+  return cell
+}
+
+function assertBarCovers(bar: HTMLElement, days: readonly string[]) {
+  if (!bar.textContent?.includes('trip')) {
+    throw new Error('calendar range bar story: calendar-bar does not read trip')
+  }
+  if (bar.style.gridColumn !== '1 / 4') {
+    throw new Error(`calendar range bar story: gridColumn is "${bar.style.gridColumn}"`)
+  }
+  const week = bar.parentElement
+  if (!week) throw new Error('calendar range bar story: bar has no week')
+  for (const iso of days) {
+    if (!week.querySelector(`[data-part="calendar-day-cell"][data-iso="${iso}"]`)) {
+      throw new Error(`calendar range bar story: ${iso} is not a day the bar covers`)
+    }
+  }
+}
+
+/** A point inside the 19th cell, more than 4px (Manhattan) from the press. */
+function rangeBarDragPoints(bar: HTMLElement, cell: HTMLElement): {
+  down: RangeBarPoint
+  move: RangeBarPoint
+} {
+  const barRect = bar.getBoundingClientRect()
+  const down = {
+    clientX: barRect.left + Math.min(12, Math.max(barRect.width / 2, 1)),
+    clientY: barRect.top + barRect.height / 2,
+  }
+  const rect = cell.getBoundingClientRect()
+  const move = {
+    clientX: rect.left + rect.width / 2,
+    clientY: rect.top + rect.height / 2,
+  }
+  const inside =
+    rect.width > 0 &&
+    rect.height > 0 &&
+    move.clientX >= rect.left &&
+    move.clientX <= rect.right &&
+    move.clientY >= rect.top &&
+    move.clientY <= rect.bottom
+  const travel = Math.abs(move.clientX - down.clientX) + Math.abs(move.clientY - down.clientY)
+  if (!inside || travel <= 4) {
+    throw new Error(
+      `calendar range bar story: move (${move.clientX}, ${move.clientY}) travel ${travel} is outside 2026-10-19 or within 4px`
+    )
+  }
+  return { down, move }
+}
+
+function dragRangeBarWithFireEvent(bar: HTMLElement, cell: HTMLElement) {
+  const { down, move } = rangeBarDragPoints(bar, cell)
+  fireEvent.pointerDown(bar, down)
+  fireEvent.pointerMove(cell, move)
+  fireEvent.pointerUp(cell, move)
+}
+
+function dragRangeBarWithPointerEvent(bar: HTMLElement, cell: HTMLElement) {
+  const { down, move } = rangeBarDragPoints(bar, cell)
+  const dispatch = (target: HTMLElement, type: string, point: RangeBarPoint, buttons: number) => {
+    target.dispatchEvent(
+      new PointerEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        clientX: point.clientX,
+        clientY: point.clientY,
+        pointerId: 1,
+        buttons,
+      })
+    )
+  }
+  dispatch(bar, 'pointerdown', down, 1)
+  dispatch(cell, 'pointermove', move, 1)
+  dispatch(cell, 'pointerup', move, 0)
+}
+
+async function rangeBarCovers(root: HTMLElement, days: readonly string[]): Promise<boolean> {
+  try {
+    await waitFor(() => {
+      assertBarCovers(rangeBar(root), days)
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
+export const CalendarRangeBar: Story = {
+  name: 'range bar',
+  args: {
+    config: calendarConfig,
+    schema: rangeBarSchema,
+    rows: rangeBarRows,
+    editable: true,
+  },
+  render: (args) => (
+    <CalendarRangeBarHarness config={args.config} hostSchema={args.schema ?? rangeBarSchema} />
+  ),
+  loaders: [
+    async () => {
+      const prevViewport = { width: window.innerWidth, height: window.innerHeight }
+      await page.viewport(1440, 900)
+      const restoreClock = fixClockAtLocalNoonOn19Oct2026()
+      return { prevViewport, restoreClock }
+    },
+  ],
+  play: async ({ canvasElement, loaded }) => {
+    try {
+      const canvas = within(canvasElement)
+      await expect(canvas.getByText('october 2026')).toBeVisible()
+
+      const bars = [...canvasElement.querySelectorAll<HTMLElement>('[data-part="calendar-bar"]')]
+      await expect(bars).toHaveLength(1)
+      const bar = bars[0]
+      if (!bar) throw new Error('calendar range bar story: calendar-bar missing')
+      await expect(bar).toHaveTextContent('trip')
+      assertBarCovers(bar, RANGE_BAR_BEFORE)
+
+      const cell = visibleDayCell(canvasElement, '2026-10-19')
+      dragRangeBarWithFireEvent(bar, cell)
+      if (!(await rangeBarCovers(canvasElement, RANGE_BAR_AFTER))) {
+        dragRangeBarWithPointerEvent(
+          rangeBar(canvasElement),
+          visibleDayCell(canvasElement, '2026-10-19')
+        )
+        await waitFor(() => {
+          assertBarCovers(rangeBar(canvasElement), RANGE_BAR_AFTER)
+        })
+      }
+    } finally {
+      const restoreClock = loaded.restoreClock as (() => void) | undefined
+      restoreClock?.()
+      const { width, height } = loaded.prevViewport as { width: number; height: number }
+      await page.viewport(width, height)
+    }
+  },
+}
+
 // ── Gallery ─────────────────────────────────────────────────────────────────────
 
 /**
