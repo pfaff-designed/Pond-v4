@@ -2905,3 +2905,88 @@ describe('KAN-525 path', () => {
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ span: 'day' }))
   })
 })
+
+describe('KAN-457', () => {
+  const calendarSchema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    { id: 'p-due', name: 'Due', type: 'date' },
+  ]
+
+  beforeEach(() => {
+    initialSchema = calendarSchema
+    initialRows = [
+      { id: 'alcove', title: 'confirm alcove', values: { 'p-due': '2026-10-19' } },
+      { id: 'dentist', title: 'dentist', values: { 'p-due': '2026-10-20T10:00:00' } },
+      { id: 'plaster', title: 'plaster', values: { 'p-due': '2026-10-21' } },
+      { id: 'optician', title: 'optician', values: { 'p-due': '2026-10-21T09:00:00' } },
+      { id: 'skip', title: 'skip hire', values: { 'p-due': '2026-10-18' } },
+      { id: 'renew', title: 'renew', values: { 'p-due': '2026-11-02' } },
+    ]
+  })
+
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  function agendaDay(list: HTMLElement, iso: string) {
+    const day = list.querySelector<HTMLElement>(
+      `[data-part="calendar-agenda-day"][data-iso="${iso}"]`
+    )
+    if (!day) throw new Error(`agenda day ${iso} missing`)
+    return day
+  }
+
+  it('opens the agenda on the page host, lists the coming days, and peeks dentist', async () => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    const onChange = jest.fn()
+    const { container } = renderView(calendar, true, onChange)
+
+    expect(screen.getByText('october 2026')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('radio', { name: 'agenda' }))
+
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ span: 'agenda' }))
+    expect(screen.getByText('from 19 oct')).toBeInTheDocument()
+
+    const list = container.querySelector<HTMLElement>('[data-part="calendar-agenda"]')
+    if (!list) throw new Error('agenda list missing')
+
+    const today = agendaDay(list, '2026-10-19')
+    const alcove = within(today)
+      .getByText('confirm alcove')
+      .closest<HTMLElement>('[data-part="calendar-agenda-item"]')
+    if (!alcove) throw new Error('confirm alcove is not an agenda item')
+    expect(alcove.querySelector('[data-part="calendar-agenda-time"]')).toBeNull()
+
+    const tomorrow = agendaDay(list, '2026-10-20')
+    const dentist = within(tomorrow)
+      .getByText('dentist')
+      .closest<HTMLElement>('[data-part="calendar-agenda-item"]')
+    if (!dentist) throw new Error('dentist is not an agenda item')
+    expect(within(dentist).getByText('10:00')).toBeInTheDocument()
+
+    const wednesday = agendaDay(list, '2026-10-21')
+    const wednesdayItems = [
+      ...wednesday.querySelectorAll<HTMLElement>('[data-part="calendar-agenda-item"]'),
+    ]
+    const plaster = wednesdayItems[0]
+    const optician = wednesdayItems[1]
+    if (!plaster || !optician) throw new Error('wednesday agenda items missing')
+    expect(plaster.textContent).toContain('plaster')
+    expect(plaster.compareDocumentPosition(optician) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING
+    )
+    expect(optician.querySelector('[data-part="calendar-agenda-time"]')).toHaveTextContent('09:00')
+
+    expect(screen.queryByText('skip hire')).not.toBeInTheDocument()
+    expect(screen.queryByText('renew')).not.toBeInTheDocument()
+    expect(container.querySelector('[data-part="calendar-week-body"]')).toBeNull()
+    expect(container.querySelector('[data-part="calendar-day-body"]')).toBeNull()
+
+    await user.click(dentist)
+
+    expect(screen.getByLabelText('Record: dentist')).toBeInTheDocument()
+  })
+})
