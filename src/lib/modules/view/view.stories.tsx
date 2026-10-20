@@ -1861,6 +1861,106 @@ export const CalendarBlankDay: Story = {
   },
 }
 
+/**
+ * KAN-525. On a phone the day span draws a week strip. The loader is a
+ * 390×844 viewport (under `md`) and the clock is local noon on 19 Oct 2026,
+ * so the month opens on October and the open day is Monday the 19th.
+ * 22 October 2026 is a Thursday (`thu 22`).
+ */
+const stripRows: CollectionRow[] = [
+  { id: 'r-19', title: 'dentist', values: { 'p-due': '2026-10-19' } },
+  { id: 'r-22', title: 'optician', values: { 'p-due': '2026-10-22' } },
+]
+
+export const CalendarDayStrip: Story = {
+  name: 'CalendarDayStrip',
+  args: { config: calendarConfig, schema, rows: stripRows },
+  loaders: [
+    async () => {
+      const prevViewport = { width: window.innerWidth, height: window.innerHeight }
+      await page.viewport(390, 844)
+      const restoreClock = fixClockAtLocalNoonOn19Oct2026()
+      return { prevViewport, restoreClock }
+    },
+  ],
+  play: async ({ canvasElement, loaded }) => {
+    try {
+      const canvas = within(canvasElement)
+      const mobileToday = canvas.getByRole('button', { name: '19 oct' })
+      await expect(mobileToday).toBeVisible()
+      const desktopCell = canvasElement.querySelector('[data-part="calendar-day-cell"]')
+      await expect(desktopCell).not.toBeVisible()
+
+      await userEvent.click(canvas.getByRole('radio', { name: 'day' }))
+
+      const strip = canvasElement.querySelector<HTMLElement>('[data-part="calendar-week-strip"]')
+      if (!strip) throw new Error('calendar day-strip story: week strip missing')
+      await expect(strip).toBeVisible()
+      const monday = within(strip).getByRole('button', { name: 'mon 19' })
+      await expect(monday).toBeVisible()
+      await expect(monday).toHaveAttribute('aria-current', 'date')
+
+      await userEvent.click(within(strip).getByRole('button', { name: 'thu 22' }))
+
+      await expect(canvas.getByText('thu 22 oct 2026')).toBeVisible()
+      const mobileDay = canvasElement.querySelector<HTMLElement>(
+        '[data-part="calendar-day-body"][data-size="mobile"]'
+      )
+      if (!mobileDay) throw new Error('calendar day-strip story: mobile day body missing')
+      await expect(mobileDay).toBeVisible()
+      await expect(within(mobileDay).getByText('optician')).toBeVisible()
+      await expect(within(mobileDay).queryByText('dentist')).not.toBeInTheDocument()
+
+      const focused = within(strip).getByRole('button', { name: 'thu 22' })
+      await expect(focused).toHaveAttribute('aria-current', 'date')
+
+      const dow = focused.querySelector<HTMLElement>(':scope > span')
+      if (!dow) throw new Error('calendar day-strip story: dow missing')
+      await expect(dow.textContent).toBe('t')
+      const dowStyle = getComputedStyle(dow)
+      await expect(pxOf(dowStyle.fontSize)).toBeCloseTo(10.5, 1)
+      await expect(dowStyle.textTransform).toBe('uppercase')
+      // `tracking-[.1em]` at 10.5px. The used value is pixels.
+      const tracking = dowStyle.letterSpacing
+      if (tracking.endsWith('em')) {
+        await expect(parseFloat(tracking)).toBeCloseTo(0.1, 2)
+      } else {
+        await expect(pxOf(tracking)).toBeCloseTo(1.05, 2)
+      }
+      await expect(dowStyle.color).toBe('rgba(27, 29, 20, 0.68)')
+
+      const chip = within(focused).getByText('22')
+      const chipStyle = getComputedStyle(chip)
+      await expect(pxOf(chipStyle.width)).toBeCloseTo(28, 0)
+      await expect(pxOf(chipStyle.height)).toBeCloseTo(28, 0)
+      await expect(pxOf(chipStyle.fontSize)).toBeCloseTo(14, 0)
+
+      const todayChip = monday.querySelector<HTMLElement>('[data-part="due-today"]')
+      if (!todayChip) throw new Error('calendar day-strip story: today chip missing')
+      const todayStyle = getComputedStyle(todayChip)
+      await expect(pxOf(todayStyle.width)).toBeCloseTo(28, 0)
+      await expect(pxOf(todayStyle.height)).toBeCloseTo(28, 0)
+      await expect(pxOf(todayStyle.fontSize)).toBeCloseTo(14, 0)
+
+      const dot = focused.querySelector<HTMLElement>(':scope > span.size-1')
+      if (!dot) throw new Error('calendar day-strip story: dot missing')
+      const dotStyle = getComputedStyle(dot)
+      await expect(pxOf(dotStyle.width)).toBeCloseTo(4, 0)
+      await expect(pxOf(dotStyle.height)).toBeCloseTo(4, 0)
+
+      const paintsInset = (boxShadow: string) =>
+        shadowLayers(boxShadow).some((layer) => layer.includes('1.4px') && layer.includes('inset'))
+      await expect(paintsInset(getComputedStyle(focused).boxShadow)).toBe(true)
+      await expect(paintsInset(getComputedStyle(monday).boxShadow)).toBe(false)
+    } finally {
+      const restoreClock = loaded.restoreClock as (() => void) | undefined
+      restoreClock?.()
+      const { width, height } = loaded.prevViewport as { width: number; height: number }
+      await page.viewport(width, height)
+    }
+  },
+}
+
 // ── Gallery ─────────────────────────────────────────────────────────────────────
 
 /**
