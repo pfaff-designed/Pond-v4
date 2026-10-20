@@ -1,6 +1,7 @@
 import type { PropertyDef } from '@/lib/properties/schema'
 import type { CollectionRow } from './apply'
 import {
+  agendaExtensionsAfterReach,
   agendaPeriodLabel,
   agendaRange,
   buildAgenda,
@@ -159,5 +160,19 @@ describe('buildAgenda', () => {
     const groups = buildAgenda('2026-10-19', '2026-11-02', [], dueDef, 1)
 
     expect(groups).toEqual([{ iso: '2026-11-02', rows: { untimed: [], timed: [] } }])
+  })
+})
+
+describe('agendaExtensionsAfterReach', () => {
+  it.each([
+    ['coming from 0', coming, dueDef, 0, 1],
+    ['coming from 1', coming, dueDef, 1, 1],
+    ['lone row on 2026-11-15', [row('later', '2026-11-15')], dueDef, 0, 1],
+    ['lone row on 2026-11-16', [row('later', '2026-11-16')], dueDef, 0, 2],
+    ['lone skip hire on 2026-10-18', [row('skip hire', '2026-10-18')], dueDef, 0, 0],
+    ['dateDef undefined', coming, undefined, 0, 0],
+    ['coming plus 2026-11-20 from 0', [...coming, row('after', '2026-11-20')], dueDef, 0, 1],
+  ] as const)('%s', (_label, rows, dateDef, extensions, expected) => {
+    expect(agendaExtensionsAfterReach('2026-10-19', rows, dateDef, extensions)).toBe(expected)
   })
 })

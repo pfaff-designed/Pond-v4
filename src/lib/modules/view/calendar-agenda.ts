@@ -9,7 +9,7 @@
 import type { PropertyDef } from '@/lib/properties/schema'
 import { addDays, type CollectionRow } from './apply'
 import { splitDayRows, type DayRows } from './calendar-day'
-import { monthAbbr, weekdayIndex } from './calendar-month'
+import { monthAbbr, rowDateIso, weekdayIndex } from './calendar-month'
 
 /** Monday through the thirteenth day after it: the board's 14-day agenda window. */
 export interface AgendaRange {
@@ -77,4 +77,38 @@ export function buildAgenda(
   }
 
   return groups
+}
+
+/**
+ * How many 14-day slices include the next dated row after the current end.
+ * `end` is `addDays(agendaRange(focusIso).end, Math.max(0, extensions) * 14)`.
+ * A missing date property, or no date part strictly after `end`, returns that
+ * count. Otherwise the smallest `n` greater than the count such that the
+ * earliest later date part is on or before
+ * `addDays(agendaRange(focusIso).end, n * 14)`. One call stops at that next
+ * row; a later row waits for another reach.
+ */
+export function agendaExtensionsAfterReach(
+  focusIso: string,
+  rows: readonly CollectionRow[],
+  dateDef: PropertyDef | undefined,
+  extensions: number
+): number {
+  const count = Math.max(0, extensions)
+  if (!dateDef) return count
+
+  const windowEnd = agendaRange(focusIso).end
+  const end = addDays(windowEnd, count * 14)
+
+  let earliest: string | null = null
+  for (const item of rows) {
+    const iso = rowDateIso(item, dateDef)
+    if (iso == null || !/^\d{4}-\d{2}-\d{2}$/.test(iso) || iso <= end) continue
+    if (earliest == null || iso < earliest) earliest = iso
+  }
+  if (earliest == null) return count
+
+  let n = count
+  while (earliest > addDays(windowEnd, n * 14)) n += 1
+  return n
 }
