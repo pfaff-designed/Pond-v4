@@ -91,6 +91,8 @@ import {
 import { usePondName } from '@/lib/pond/name'
 import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
 import { TRASH_NODE_ID } from '@/lib/change-log/trash-view'
+import { RailToggle } from '@/components/organisms/RailToggle'
+import { setRailMinimized } from '@/lib/layout/rail-chrome'
 import { RAIL_WIDTH_PX } from '@/lib/layout/rail-width'
 import {
   LIFE_ID,
@@ -679,6 +681,8 @@ export interface RailViewProps {
    *  Optional so the existing `RailView` call sites (stories, unit tests predating this ticket)
    *  keep compiling untouched; omit it and a colour pick no-ops. */
   onPickColour?: (id: string, role: AreaRole | null) => void
+  /** Hides the rail. Omit it and the head draws no minimize button (stories). */
+  onMinimize?: () => void
   onLife: () => void
   onToggleLife: () => void
   /** Open the databases root, creating it first when the pond has none yet. */
@@ -842,6 +846,7 @@ export function RailView({
   onRename,
   onPickGlyph,
   onPickColour = () => {},
+  onMinimize,
   onLife,
   onToggleLife,
   onOpenDatabases,
@@ -1306,7 +1311,12 @@ export function RailView({
         {/* The switcher chevron appears only once there is a pond to list: before
           migration 0018 `listPonds()` returns [] and the head is the plain name,
           rather than an affordance that opens an empty menu. */}
-        <PondSwitcher fallbackName={pondName} />
+        <PondSwitcher
+          fallbackName={pondName}
+          trailing={
+            onMinimize ? <RailToggle minimized={false} onClick={onMinimize} /> : undefined
+          }
+        />
 
         <div
           ref={bodyRef}
@@ -2216,6 +2226,7 @@ export function Rail() {
         onRename={handleRename}
         onPickGlyph={handlePickGlyph}
         onPickColour={handlePickColour}
+        onMinimize={() => setRailMinimized(true)}
         onLife={() => openWorkspaceUrl(workspaceUrl(null), router)}
         onToggleLife={handleToggleLife}
         onOpenDatabases={handleOpenDatabases}
