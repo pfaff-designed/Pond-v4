@@ -8,6 +8,8 @@
  * `mob && span === 'month'`) draws while the span is month. A day span unmounts
  * that grid and draws the day body — all-day row, then the hour grid — at the
  * desktop metrics and again at the mobile ones (`PondCalendar.dc.html` `isTime`).
+ * On a phone the day span draws one Monday-first week strip before both bodies
+ * (`PondCalendar.dc.html` lines 185–192).
  * A blank click on a desktop month cell opens that day (`goDay`). A mobile month
  * dot only moves the focus and keeps the month span. The DC's
  * `isMonthD`/`isMonthM` don't depend on `isEmpty` (`empty` only zeroes `recs`), so
@@ -48,8 +50,10 @@ import {
   nowLineTop,
   splitDayRows,
   stepDay,
+  stripWeek,
   type DayMetricSize,
   type DayTimedRow,
+  type StripDay,
 } from './calendar-day'
 import { localDateIso } from './due'
 import { CALENDAR_EMPTY_LINE } from './kinds'
@@ -115,6 +119,17 @@ const DAY_NUMBER_FOCUS_RING = 'ring-[1.4px] ring-inset ring-mn-text'
 /** `dotSt(o)`: a solid 4px dot per dated row, `height: 4` dot row, up to 3. */
 const DAY_DOT_ROW = 'flex h-1 items-center gap-[3px]'
 const DAY_DOT = 'size-1 flex-none rounded-full bg-mn-text'
+/**
+ * Phone week strip (`PondCalendar.dc.html` lines 185–192). The column carries
+ * the 1.4px inset, including when the open day is today. The number is 14px —
+ * the month grid's mobile chip is 13px and is not reused here.
+ */
+const STRIP_COLUMN = 'flex flex-col items-center gap-1 rounded-[14px] py-[6px]'
+const STRIP_DOW =
+  'text-[10.5px] font-medium uppercase tracking-[.1em] text-mn-text-secondary'
+const STRIP_NUMBER =
+  'inline-flex h-7 min-w-7 items-center justify-center rounded-full px-1 text-[14px] font-medium tabular-nums'
+const STRIP_DOT = 'size-1 flex-none rounded-full'
 /** The focused-day list's own head chip: `todayNum(t,30,20)`, `alignSelf: 'flex-start'`. */
 const DAY_NUMBER_LIST =
   'inline-flex h-[30px] min-w-[30px] self-start text-[20px] font-medium tabular-nums'
@@ -579,6 +594,51 @@ function clockHm(date: Date): string {
 }
 
 /**
+ * Phone week strip on the day span (`PondCalendar.dc.html` lines 185–192).
+ * One `md:hidden` grid, drawn before both day bodies. The buttons do not
+ * change the open day.
+ */
+function CalendarWeekStrip({
+  days,
+  todayIso,
+}: {
+  days: StripDay[]
+  todayIso: string
+}) {
+  return (
+    <div data-part="calendar-week-strip" className="grid grid-cols-7 gap-0.5 md:hidden">
+      {DOW_LABELS.map((word, index) => {
+        const day = days[index]
+        if (!day) return null
+        const isToday = day.iso === todayIso
+        return (
+          <button
+            key={day.iso}
+            type="button"
+            aria-label={`${word} ${day.day}`}
+            aria-current={day.isFocus ? 'date' : undefined}
+            className={cn(STRIP_COLUMN, day.isFocus && DAY_NUMBER_FOCUS_RING)}
+          >
+            <span className={STRIP_DOW}>{day.letter}</span>
+            {isToday ? (
+              <PondAtom
+                kind="date"
+                due="today"
+                value={String(day.day)}
+                className={STRIP_NUMBER}
+              />
+            ) : (
+              <span className={cn(STRIP_NUMBER, 'text-mn-text')}>{day.day}</span>
+            )}
+            <span className={cn(STRIP_DOT, day.hasDot ? 'bg-mn-text' : 'bg-transparent')} />
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+/**
  * The day span's body (`isTime` for `span === 'day'`): the all-day row, then the
  * hour grid. Positions come from `calendar-day.ts` — row height, gutter, the
  * sliced start, and `nowLineTop`. One copy per metric so a phone is the same
@@ -768,6 +828,10 @@ export function CollectionCalendar({
     [dateDef, focusIso, todayIso, rows]
   )
   const dayRows = useMemo(() => splitDayRows(rows, dateDef, focusIso), [dateDef, focusIso, rows])
+  const weekStrip = useMemo(
+    () => stripWeek(focusIso, rows, dateDef),
+    [dateDef, focusIso, rows]
+  )
   // The open day is session state. A day span labels and steps that day; a
   // month span keeps the month label and `stepMonth`. `today` only moves the
   // focus, so it never leaves the span.
@@ -965,6 +1029,7 @@ export function CollectionCalendar({
       ) : null}
       {span === 'day' ? (
         <>
+          <CalendarWeekStrip days={weekStrip} todayIso={todayIso} />
           <DayBody
             size="desktop"
             focusIso={focusIso}
