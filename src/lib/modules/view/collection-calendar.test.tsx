@@ -1537,6 +1537,191 @@ describe('week header', () => {
   })
 })
 
+describe('week body', () => {
+  const weekRows: CollectionRow[] = [
+    { id: 'dentist', title: 'dentist', values: { 'p-due': '2026-10-21T10:00:00' } },
+  ]
+  const heads = ['mon 19', 'tue 20', 'wed 21', 'thu 22', 'fri 23', 'sat 24', 'sun 25']
+  const isos = [
+    '2026-10-19',
+    '2026-10-20',
+    '2026-10-21',
+    '2026-10-22',
+    '2026-10-23',
+    '2026-10-24',
+    '2026-10-25',
+  ]
+
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
+  })
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  it('draws seven day heads and places dentist on Wednesday, and a day head opens that day', async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    const onConfigChange = jest.fn()
+    const { container } = render(
+      <CollectionCalendar
+        schema={schemaWithDate}
+        rows={weekRows}
+        span="week"
+        onConfigChange={onConfigChange}
+      />
+    )
+
+    const body = container.querySelector<HTMLElement>(
+      '[data-part="calendar-week-body"][data-size="desktop"]'
+    )
+    expect(body).not.toBeNull()
+    if (!body) return
+    expect(body).toHaveClass('hidden', 'md:flex', 'md:flex-col')
+    expect(container.querySelector('[data-part="calendar-day-cell"]')).toBeNull()
+    expect(container.querySelector('[data-part="calendar-day-body"]')).toBeNull()
+    expect(body.querySelector('[data-part="calendar-all-day"]')).toBeNull()
+
+    const headButtons = heads.map((name) => within(body).getByRole('button', { name }))
+    expect(headButtons).toHaveLength(7)
+    for (const button of headButtons) {
+      expect(button).toHaveAttribute('type', 'button')
+      expect(button).toHaveClass('flex', 'items-center', 'gap-2', 'px-2', 'pb-2')
+    }
+    const monday = headButtons[0]
+    if (!monday) throw new Error('monday head missing')
+    expect(within(monday).getByText('mon')).toHaveClass(
+      'text-[10.5px]',
+      'font-medium',
+      'uppercase',
+      'tracking-[.1em]',
+      'text-mn-text-secondary'
+    )
+    expect(monday.querySelector('[data-part="due-today"]')).toHaveClass(
+      'inline-flex',
+      'h-[26px]',
+      'min-w-[26px]',
+      'items-center',
+      'justify-center',
+      'rounded-full',
+      'px-1',
+      'text-[15px]',
+      'font-medium',
+      'tabular-nums'
+    )
+    const tuesday = headButtons[1]
+    if (!tuesday) throw new Error('tuesday head missing')
+    expect(tuesday.querySelector('[data-part="due-today"]')).toBeNull()
+    expect(within(tuesday).getByText('20')).toHaveClass(
+      'text-mn-text',
+      'inline-flex',
+      'h-[26px]',
+      'min-w-[26px]',
+      'text-[15px]',
+      'font-medium',
+      'tabular-nums'
+    )
+
+    const columns = [
+      ...body.querySelectorAll<HTMLElement>('[data-part="calendar-week-column"]'),
+    ]
+    expect(columns.map((column) => column.dataset.iso)).toEqual(isos)
+    for (const column of columns) {
+      expect(column).toHaveClass(
+        'border-l',
+        'border-mn-text/[0.09]',
+        'dark:border-mn-text/[0.14]'
+      )
+    }
+    expect(columns[5]).toHaveClass('bg-mn-text/[0.025]')
+    expect(columns[6]).toHaveClass('bg-mn-text/[0.025]')
+    expect(columns[0]).not.toHaveClass('bg-mn-text/[0.025]')
+    expect(columns[2]).not.toHaveClass('bg-mn-text/[0.025]')
+
+    const grid = body.querySelector<HTMLElement>('[data-part="calendar-hour-grid"]')
+    expect(grid).not.toBeNull()
+    if (!grid) return
+    expect(grid.style.height).toBe('484px')
+    expect(grid.style.gridTemplateColumns).toBe('52px repeat(7,minmax(0,1fr))')
+    expect(grid.querySelector('button')).toBeNull()
+    const labels = [...grid.querySelectorAll('[data-part="calendar-hour-label"]')].map(
+      (node) => node.textContent
+    )
+    expect(labels).toEqual([
+      '08:00',
+      '09:00',
+      '10:00',
+      '11:00',
+      '12:00',
+      '13:00',
+      '14:00',
+      '15:00',
+      '16:00',
+      '17:00',
+      '18:00',
+    ])
+    expect(grid.querySelector('[data-part="calendar-hour-label"]')).toHaveClass(
+      'text-[10.5px]',
+      'font-medium',
+      'tabular-nums',
+      'text-mn-text-secondary'
+    )
+    const line = grid.querySelector<HTMLElement>('[data-part="calendar-hour-line"]')
+    expect(line).toHaveClass('h-px', 'bg-mn-text/[0.09]', 'dark:bg-mn-text/[0.14]')
+    expect(line?.style.left).toBe('52px')
+
+    const wednesday = columns[2]
+    if (!wednesday) throw new Error('wednesday column missing')
+    const event = within(wednesday).getByText('dentist').closest<HTMLElement>(
+      '[data-part="calendar-timed-event"]'
+    )
+    expect(event).not.toBeNull()
+    if (!event) return
+    expect(event.style.top).toBe('89px')
+    expect(event.style.height).toBe('22px')
+    expect(within(event).getByText('dentist')).toHaveClass('text-[12px]', 'font-medium')
+    const time = event.querySelector('[data-part="calendar-event-time"]')
+    expect(time).toHaveTextContent('10:00')
+    expect(time).toHaveClass('text-[10.5px]', 'font-medium', 'text-mn-text/80', 'tabular-nums')
+    expect(event).toHaveClass(
+      'rounded-[8px]',
+      'bg-mn-drag-ghost',
+      'shadow-[0_1px_2px_rgba(40,34,24,.08),0_2px_8px_rgba(40,34,24,.07)]',
+      'dark:shadow-[0_1px_2px_rgba(0,0,0,.3),0_2px_8px_rgba(0,0,0,.3)]'
+    )
+
+    const nowLines = [...body.querySelectorAll('[data-part="calendar-now"]')]
+    expect(nowLines).toHaveLength(1)
+    expect(nowLines[0]?.closest('[data-part="calendar-week-column"]')).toHaveAttribute(
+      'data-iso',
+      '2026-10-19'
+    )
+    expect(nowLines[0]).toHaveClass('h-[1.4px]', 'bg-mn-text')
+    expect(nowLines[0]?.querySelector('[data-part="calendar-now-dot"]')).toHaveClass(
+      'size-[7px]',
+      'bg-mn-text'
+    )
+
+    const mondayColumn = columns[0]
+    if (!mondayColumn) throw new Error('monday column missing')
+    await user.click(mondayColumn)
+    expect(screen.getByRole('radio', { name: 'week' })).toBeChecked()
+    expect(onConfigChange).not.toHaveBeenCalled()
+    expect(container.querySelector('[data-part="calendar-week-body"]')).not.toBeNull()
+
+    await user.click(within(body).getByRole('button', { name: 'wed 21' }))
+    expect(screen.getByText('wed 21 oct 2026')).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'day' })).toBeChecked()
+    expect(container.querySelector('[data-part="calendar-week-body"]')).toBeNull()
+    expect(container.querySelector('[data-part="calendar-day-body"]')).not.toBeNull()
+    const dayBody = container.querySelector<HTMLElement>('[data-part="calendar-day-body"]')
+    if (!dayBody) return
+    expect(within(dayBody).getByText('dentist')).toBeInTheDocument()
+    expect(dayBody.querySelector('[data-part="calendar-event-time"]')).toHaveTextContent('10:00')
+    expect(onConfigChange).toHaveBeenCalledTimes(1)
+    expect(onConfigChange).toHaveBeenCalledWith({ span: 'day' })
+  })
+})
+
 describe('day body (KAN-455)', () => {
   const dayRows: CollectionRow[] = [
     { id: 'dentist', title: 'dentist', values: { 'p-due': '2026-10-21' } },
