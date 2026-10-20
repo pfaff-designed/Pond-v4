@@ -1821,6 +1821,92 @@ describe('agenda list', () => {
   })
 })
 
+describe('agenda reach', () => {
+  const agendaRows: CollectionRow[] = [
+    { id: 'alcove', title: 'confirm alcove', values: { 'p-due': '2026-10-19' } },
+    { id: 'dentist', title: 'dentist', values: { 'p-due': '2026-10-20T10:00:00' } },
+    { id: 'optician', title: 'optician', values: { 'p-due': '2026-10-21T09:00:00' } },
+    { id: 'plaster', title: 'plaster', values: { 'p-due': '2026-10-21' } },
+    { id: 'skip', title: 'skip hire', values: { 'p-due': '2026-10-18' } },
+    { id: 'renew', title: 'renew', values: { 'p-due': '2026-11-02' } },
+  ]
+
+  let previousObserver: typeof window.IntersectionObserver | undefined
+  let reachAgendaEnd: () => void
+
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
+    previousObserver = window.IntersectionObserver
+    let observed: IntersectionObserverCallback | null = null
+    reachAgendaEnd = () => {
+      const fire = observed
+      if (!fire) return
+      act(() => {
+        fire([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver)
+      })
+    }
+    class AgendaEndObserver implements IntersectionObserver {
+      readonly root: Element | Document | null = null
+      readonly rootMargin = ''
+      readonly thresholds: readonly number[] = []
+      private readonly callback: IntersectionObserverCallback
+
+      constructor(callback: IntersectionObserverCallback) {
+        this.callback = callback
+      }
+
+      observe(): void {
+        observed = this.callback
+      }
+
+      unobserve(): void {}
+
+      disconnect(): void {}
+
+      takeRecords(): IntersectionObserverEntry[] {
+        return []
+      }
+    }
+    window.IntersectionObserver = AgendaEndObserver as unknown as typeof IntersectionObserver
+  })
+
+  afterEach(() => {
+    window.IntersectionObserver = previousObserver as typeof IntersectionObserver
+    jest.useRealTimers()
+  })
+
+  it('appends the next dated days when the list end is reached', () => {
+    const { container } = render(
+      <CollectionCalendar schema={schemaWithDate} rows={agendaRows} span="agenda" />
+    )
+
+    expect(
+      [...container.querySelectorAll<HTMLElement>('[data-part="calendar-agenda-day"]')].map(
+        (group) => group.dataset.iso
+      )
+    ).toEqual(['2026-10-19', '2026-10-20', '2026-10-21'])
+    expect(screen.queryByText('renew')).not.toBeInTheDocument()
+    expect(screen.queryByText('skip hire')).not.toBeInTheDocument()
+    expect(screen.getByText('from 19 oct')).toBeInTheDocument()
+
+    reachAgendaEnd()
+
+    const renewDay = container.querySelector<HTMLElement>(
+      '[data-part="calendar-agenda-day"][data-iso="2026-11-02"]'
+    )
+    expect(renewDay).not.toBeNull()
+    if (!renewDay) return
+    expect(within(renewDay).getByText('renew')).toBeInTheDocument()
+    expect(
+      container.querySelector('[data-part="calendar-agenda-day"][data-iso="2026-10-22"]')
+    ).toBeNull()
+    expect(screen.queryByText('skip hire')).not.toBeInTheDocument()
+    expect(screen.getByText('from 19 oct')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'load more' })).toBeNull()
+    expect(container.querySelector('[data-part="calendar-agenda-end"]')?.tagName).toBe('DIV')
+  })
+})
+
 describe('agenda peek', () => {
   const dentist: CollectionRow = {
     id: 'dentist',
