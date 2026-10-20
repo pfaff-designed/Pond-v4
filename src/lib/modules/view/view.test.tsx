@@ -669,6 +669,84 @@ describe('ViewView — a blank day click opens that day (KAN-455)', () => {
   })
 })
 
+describe('KAN-456', () => {
+  const calendarSchema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    { id: 'p-due', name: 'Due', type: 'date' },
+  ]
+  const thisWeek = '19 \u2013 25 oct 2026'
+  const nextWeek = '26 oct \u2013 1 nov 2026'
+  const heads = ['mon 19', 'tue 20', 'wed 21', 'thu 22', 'fri 23', 'sat 24', 'sun 25']
+
+  beforeEach(() => {
+    initialSchema = calendarSchema
+    initialRows = [
+      { id: 'dentist', title: 'dentist', values: { 'p-due': '2026-10-21T10:00:00' } },
+      { id: 'alcove', title: 'confirm alcove', values: { 'p-due': '2026-10-21' } },
+    ]
+  })
+
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  it('opens week on the page host, places the timed and date-only rows, and steps to the next week', async () => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    const onChange = jest.fn()
+    const { container } = renderView(calendar, true, onChange)
+
+    expect(screen.getByText('october 2026')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('radio', { name: 'week' }))
+
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ span: 'week' }))
+    const period = screen.getByText(thisWeek)
+    expect([...(period.textContent ?? '')].some((char) => char.charCodeAt(0) === 0x2013)).toBe(true)
+
+    const body = container.querySelector<HTMLElement>('[data-part="calendar-week-body"]')
+    expect(body).not.toBeNull()
+    if (!body) return
+    const headButtons = heads.map((name) => within(body).getByRole('button', { name }))
+    expect(headButtons).toHaveLength(7)
+
+    const wednesday = body.querySelector<HTMLElement>(
+      '[data-part="calendar-week-column"][data-iso="2026-10-21"]'
+    )
+    expect(wednesday).not.toBeNull()
+    if (!wednesday) return
+    const dentist = within(wednesday).getByText('dentist')
+    const timed = dentist.closest<HTMLElement>('[data-part="calendar-timed-event"]')
+    expect(timed).not.toBeNull()
+    if (!timed) return
+    expect(within(timed).getByText('10:00')).toBeInTheDocument()
+
+    const allDay = body.querySelector<HTMLElement>('[data-part="calendar-all-day"]')
+    expect(allDay).not.toBeNull()
+    if (!allDay) return
+    const alcove = within(allDay).getByText('confirm alcove')
+    const alcoveItem = alcove.closest<HTMLElement>('[data-part="calendar-all-day-item"]')
+    expect(alcoveItem).not.toBeNull()
+    expect(alcoveItem?.style.gridColumn).toBe(wednesday.style.gridColumn)
+    expect(alcove.closest('[data-part="calendar-timed-event"]')).toBeNull()
+    expect(within(wednesday).queryByText('confirm alcove')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Next week' }))
+
+    const nextPeriod = screen.getByText(nextWeek)
+    expect([...(nextPeriod.textContent ?? '')].some((char) => char.charCodeAt(0) === 0x2013)).toBe(
+      true
+    )
+    expect(screen.getByRole('radio', { name: 'week' })).toBeChecked()
+    const nextBody = container.querySelector<HTMLElement>('[data-part="calendar-week-body"]')
+    expect(nextBody).not.toBeNull()
+    if (!nextBody) return
+    expect(within(nextBody).queryByText('dentist')).not.toBeInTheDocument()
+    expect(within(nextBody).queryByText('confirm alcove')).not.toBeInTheDocument()
+  })
+})
+
 describe('ViewView — the path test: timeline, through the real host (KAN-352)', () => {
   const ganttSchema: PropertySchema = [
     { id: 'p-title', name: 'Title', type: 'text' },

@@ -2,12 +2,15 @@
 
 /**
  * Calendar view — the month span (#262 1/3), from `PondCalendar.dc.html`. Chrome is
- * the period label, prev/next stepping, the span pill (month and day), and a
+ * the period label, prev/next stepping, the span pill (month, week, and day), and a
  * `today` button; the month grid (desktop weeks, mobile dots plus the tapped
  * day's own list, the DC's `showList` for
- * `mob && span === 'month'`) draws while the span is month. A day span unmounts
- * that grid and draws the day body — all-day row, then the hour grid — at the
- * desktop metrics and again at the mobile ones (`PondCalendar.dc.html` `isTime`).
+ * `mob && span === 'month'`) draws while the span is month. A week span unmounts
+ * that grid and draws the desktop week body (`PondCalendar.dc.html` `isTime` for
+ * `span === 'week'`): seven day heads, the all-day row, then the hour grid.
+ * A day span unmounts the month grid and draws the day body — all-day row, then
+ * the hour grid — at the desktop metrics and again at the mobile ones
+ * (`PondCalendar.dc.html` `isTime`).
  * On a phone the day span draws one Monday-first week strip before both bodies
  * (`PondCalendar.dc.html` lines 185–192).
  * A blank click on a desktop month cell opens that day (`goDay`). A mobile month
@@ -27,7 +30,7 @@ import { FOCUS_VISIBLE_RING } from '@/components/atoms/focus-ring'
 import { cn } from '@/lib/utils'
 import { PondAtom } from '@/components/atoms/PondAtom'
 import { PondBlockEmpty } from '@/components/organisms/PondBlock'
-import type { PropertySchema, PropertyValue } from '@/lib/properties/schema'
+import type { PropertyDef, PropertySchema, PropertyValue } from '@/lib/properties/schema'
 import {
   buildMonthGrid,
   dateForDrop,
@@ -39,7 +42,7 @@ import {
   weekdayIndex,
   type MonthDayCell,
 } from './calendar-month'
-import { pickDateDef, type CollectionRow } from './apply'
+import { addDays, pickDateDef, type CollectionRow } from './apply'
 import {
   DAY_GUTTER,
   DAY_HOUR_END,
@@ -55,6 +58,7 @@ import {
   type DayTimedRow,
   type StripDay,
 } from './calendar-day'
+import { stepWeek, weekPeriodLabel, weekRange } from './calendar-week'
 import { localDateIso } from './due'
 import { CALENDAR_EMPTY_LINE } from './kinds'
 import { RecordPeek } from './record-peek'
@@ -77,10 +81,10 @@ const NAV_BTN =
   'inline-flex size-11 items-center justify-center rounded-mn-pill text-mn-text hover:bg-mn-hover-fill md:size-7'
 
 /**
- * The header's span pill, month then day. Later tickets extend this one list
- * (`PondCalendar.dc.html` line 133). Week and agenda stay off it.
+ * The header's span pill, month then week then day. Later tickets extend this
+ * one list (`PondCalendar.dc.html` line 133). Agenda stays off it.
  */
-export const CALENDAR_SPANS = ['month', 'day'] as const
+export const CALENDAR_SPANS = ['month', 'week', 'day'] as const
 export type CalendarSpan = (typeof CALENDAR_SPANS)[number]
 
 /** Track, `seg` at line 143: gap 4, padding 3, radius 999, weight 500, 12px mobile / 10.5px desktop. */
@@ -593,6 +597,192 @@ function clockHm(date: Date): string {
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
 }
 
+/** Desktop week head, the DC's `tDays` (`todayNum(t, 26, 15)`). */
+const WEEK_HEAD_DOW =
+  'text-[10.5px] font-medium uppercase tracking-[.1em] text-mn-text-secondary'
+const WEEK_NUMBER =
+  'inline-flex h-[26px] min-w-[26px] items-center justify-center rounded-full px-1 text-[15px] font-medium tabular-nums'
+/** `52px repeat(7,minmax(0,1fr))` — gutter plus Monday-first days. */
+const WEEK_COLUMNS = '52px repeat(7,minmax(0,1fr))'
+
+/**
+ * Desktop week body (`isTime` for `span === 'week'`, `PondCalendar.dc.html`
+ * lines 194–228). Day heads, the all-day row (`adRow`, lines 204–216), then the
+ * hour grid. A date with no `T` sits in that day's column; a timed row stays in
+ * the hours. One date per row — no multi-day bars. Positions reuse the day
+ * span's hour geometry. An empty hour is not a control; a day head opens that day.
+ */
+function WeekBody({
+  startIso,
+  todayIso,
+  nowHm,
+  rows,
+  dateDef,
+  onOpenDay,
+}: {
+  startIso: string
+  todayIso: string
+  nowHm: string
+  rows: CollectionRow[]
+  dateDef: PropertyDef | undefined
+  onOpenDay: (iso: string) => void
+}) {
+  const rowHeight = DAY_ROW_HEIGHT.desktop
+  const gutter = DAY_GUTTER.desktop
+  const bodyHeight = (DAY_HOUR_END - DAY_HOUR_START) * rowHeight
+  const hours = dayHourLabels()
+  const days = Array.from({ length: 7 }, (_, offset) => addDays(startIso, offset))
+  const untimedByDay = days.map((iso) => splitDayRows(rows, dateDef, iso).untimed)
+  const allDayTracks = Math.max(1, ...untimedByDay.map((items) => items.length))
+
+  return (
+    <div
+      data-part="calendar-week-body"
+      data-size="desktop"
+      className="hidden md:flex md:flex-col"
+    >
+      <div className="grid" style={{ gridTemplateColumns: WEEK_COLUMNS }}>
+        <span />
+        {DOW_LABELS.map((word, index) => {
+          const iso = days[index]
+          if (!iso) return null
+          const day = Number(iso.slice(8, 10))
+          const isToday = iso === todayIso
+          return (
+            <button
+              key={iso}
+              type="button"
+              aria-label={`${word} ${day}`}
+              onClick={() => onOpenDay(iso)}
+              className="flex items-center gap-2 px-2 pb-2"
+            >
+              <span className={WEEK_HEAD_DOW}>{word}</span>
+              {isToday ? (
+                <PondAtom kind="date" due="today" value={String(day)} className={WEEK_NUMBER} />
+              ) : (
+                <span className={cn(WEEK_NUMBER, 'text-mn-text')}>{day}</span>
+              )}
+            </button>
+          )
+        })}
+      </div>
+      <div
+        data-part="calendar-all-day"
+        className={cn('grid border-y py-[6px]', DAY_HAIR_BORDER)}
+        style={{
+          gridTemplateColumns: WEEK_COLUMNS,
+          gridTemplateRows: `repeat(${allDayTracks}, 24px)`,
+        }}
+      >
+        <span className={ALL_DAY_LABEL} style={{ gridColumn: 1, gridRow: 1 }}>
+          all day
+        </span>
+        {untimedByDay.map((items, index) =>
+          items.map((row, rowIndex) => (
+            <div
+              key={row.id}
+              data-part="calendar-all-day-item"
+              className={ALL_DAY_ITEM}
+              style={{ gridColumn: index + 2, gridRow: rowIndex + 1 }}
+            >
+              <span className={DAY_ITEM_DOT} />
+              <span className={ALL_DAY_TITLE}>{row.title}</span>
+            </div>
+          ))
+        )}
+      </div>
+      <div
+        data-part="calendar-hour-grid"
+        className="relative mt-[6px] grid"
+        style={{
+          height: bodyHeight,
+          gridTemplateColumns: WEEK_COLUMNS,
+          gridTemplateRows: `${bodyHeight}px`,
+        }}
+      >
+        {hours.map((label, index) => (
+          <span
+            key={label}
+            data-part="calendar-hour-line"
+            aria-hidden
+            className={cn('absolute right-0 h-px', DAY_HAIR_LINE)}
+            style={{ left: gutter, top: index * rowHeight }}
+          />
+        ))}
+        {hours.map((label, index) => (
+          <span
+            key={`label-${label}`}
+            data-part="calendar-hour-label"
+            className={HOUR_LABEL}
+            style={{ top: index * rowHeight - 6, width: gutter }}
+          >
+            {label}
+          </span>
+        ))}
+        {days.map((iso, index) => {
+          const weekend = weekdayIndex(iso) > 4
+          const timed = splitDayRows(rows, dateDef, iso).timed
+          const nowTop = nowLineTop(iso, todayIso, nowHm, 'desktop')
+          return (
+            <div
+              key={iso}
+              data-part="calendar-week-column"
+              data-iso={iso}
+              className={cn(
+                'relative border-l',
+                DAY_HAIR_BORDER,
+                weekend && 'bg-mn-text/[0.025]'
+              )}
+              style={{ gridRow: 1, gridColumn: index + 2 }}
+            >
+              {timed.map((event) => {
+                const top = (event.startHours - DAY_HOUR_START) * rowHeight + 1
+                const height = Math.max(
+                  (event.endHours - event.startHours) * rowHeight - 3,
+                  22
+                )
+                const compact = height < 34
+                return (
+                  <div
+                    key={event.row.id}
+                    data-part="calendar-timed-event"
+                    className={cn(
+                      TIMED_EVENT,
+                      compact
+                        ? 'flex-row items-center gap-[6px] px-2 py-[3px]'
+                        : 'flex-col items-stretch gap-[2px] px-2 py-[6px]'
+                    )}
+                    style={{ top, height }}
+                  >
+                    <span className={cn(TIMED_TITLE, compact && 'min-w-0 flex-1')}>
+                      {event.row.title}
+                    </span>
+                    <span data-part="calendar-event-time" className={TIMED_TIME}>
+                      {event.timeLabel}
+                    </span>
+                  </div>
+                )
+              })}
+              {nowTop !== null ? (
+                <span
+                  data-part="calendar-now"
+                  className="absolute right-0 left-0 z-[2] h-[1.4px] bg-mn-text"
+                  style={{ top: nowTop }}
+                >
+                  <span
+                    data-part="calendar-now-dot"
+                    className="absolute top-[-3px] left-[-4px] size-[7px] rounded-full bg-mn-text"
+                  />
+                </span>
+              ) : null}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 /**
  * Phone week strip on the day span (`PondCalendar.dc.html` lines 185–192).
  * One `md:hidden` grid, drawn before both day bodies. A tap sets the open
@@ -835,13 +1025,26 @@ export function CollectionCalendar({
     () => stripWeek(focusIso, rows, dateDef),
     [dateDef, focusIso, rows]
   )
-  // The open day is session state. A day span labels and steps that day; a
-  // month span keeps the month label and `stepMonth`. `today` only moves the
-  // focus, so it never leaves the span.
-  const periodLabel = span === 'day' ? dayPeriodLabel(focusIso) : grid.periodLabel
-  const stepFocus = span === 'day' ? stepDay : stepMonth
-  const previousName = span === 'day' ? 'Previous day' : 'Previous month'
-  const nextName = span === 'day' ? 'Next day' : 'Next month'
+  // The open focus is session state. A week span labels `weekRange` of that
+  // focus and steps seven days; a day span labels and steps that day; a month
+  // span keeps the month label and `stepMonth`. `today` only moves the focus,
+  // so it never leaves the span. A week span draws the desktop week body
+  // (day heads, all-day row, hour grid). On a phone (`mob && span === 'week'`)
+  // that grid stays hidden: the week strip and the focused-day list show
+  // instead, and a strip tap only moves the focus.
+  const openWeek = span === 'week' ? weekRange(focusIso) : null
+  const periodLabel = openWeek
+    ? weekPeriodLabel(openWeek.start, openWeek.end)
+    : span === 'day'
+      ? dayPeriodLabel(focusIso)
+      : grid.periodLabel
+  const stepFocus = openWeek ? stepWeek : span === 'day' ? stepDay : stepMonth
+  const previousName = openWeek
+    ? 'Previous week'
+    : span === 'day'
+      ? 'Previous day'
+      : 'Previous month'
+  const nextName = openWeek ? 'Next week' : span === 'day' ? 'Next day' : 'Next month'
   const handleStepFocus = (direction: -1 | 1) => {
     setFocusIso((current) => stepFocus(current, direction))
   }
@@ -1050,6 +1253,18 @@ export function CollectionCalendar({
             timed={dayRows.timed}
           />
         </>
+      ) : openWeek ? (
+        <>
+          <CalendarWeekStrip days={weekStrip} todayIso={todayIso} onSelect={setFocusIso} />
+          <WeekBody
+            startIso={openWeek.start}
+            todayIso={todayIso}
+            nowHm={nowHm}
+            rows={rows}
+            dateDef={dateDef}
+            onOpenDay={handleOpenDay}
+          />
+        </>
       ) : (
         <>
           <div
@@ -1112,21 +1327,23 @@ export function CollectionCalendar({
               ))
             )}
           </div>
-          <FocusDayList
-            dayOfMonth={focusDayOfMonth}
-            isToday={focusIsToday}
-            label={focusLabel}
-            items={focusItems}
-            selectedId={selectedRow?.id}
-            isClickSuppressed={isClickSuppressed}
-            rowProps={rowProps}
-            keyboardProps={keyboardProps}
-            selectWithPointer={selectWithPointer}
-            selectOrOpenOnKey={selectOrOpenOnKey}
-            onOpenRow={onOpenRow}
-          />
         </>
       )}
+      {span !== 'day' ? (
+        <FocusDayList
+          dayOfMonth={focusDayOfMonth}
+          isToday={focusIsToday}
+          label={focusLabel}
+          items={focusItems}
+          selectedId={selectedRow?.id}
+          isClickSuppressed={isClickSuppressed}
+          rowProps={rowProps}
+          keyboardProps={keyboardProps}
+          selectWithPointer={selectWithPointer}
+          selectOrOpenOnKey={selectOrOpenOnKey}
+          onOpenRow={onOpenRow}
+        />
+      ) : null}
       {selectedRow && (
         <RecordPeek
           key={selectedRow.id}

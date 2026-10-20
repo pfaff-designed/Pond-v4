@@ -1961,6 +1961,84 @@ export const CalendarDayStrip: Story = {
   },
 }
 
+/**
+ * KAN-456. Week places a timed row on the hours and a date-only row in all day.
+ * Next week steps the open range and leaves both titles behind.
+ *
+ * The week body is `hidden md:flex`, so the loader sets a 1440×900 viewport
+ * before render, the same static `CollectionView` mount as `CalendarBlankDay`.
+ * The clock is local noon on 19 Oct 2026, so the month opens on October.
+ */
+const weekSpanRows: CollectionRow[] = [
+  { id: 'dentist', title: 'dentist', values: { 'p-due': '2026-10-21T10:00:00' } },
+  { id: 'alcove', title: 'confirm alcove', values: { 'p-due': '2026-10-21' } },
+]
+
+const WEEK_SPAN_DAYS = ['mon 19', 'tue 20', 'wed 21', 'thu 22', 'fri 23', 'sat 24', 'sun 25']
+
+export const CalendarWeekSpan: Story = {
+  name: 'week span',
+  args: { config: calendarConfig, schema, rows: weekSpanRows },
+  loaders: [
+    async () => {
+      const prevViewport = { width: window.innerWidth, height: window.innerHeight }
+      await page.viewport(1440, 900)
+      const restoreClock = fixClockAtLocalNoonOn19Oct2026()
+      return { prevViewport, restoreClock }
+    },
+  ],
+  play: async ({ canvasElement, loaded }) => {
+    try {
+      const canvas = within(canvasElement)
+      await expect(canvas.getByText('october 2026')).toBeVisible()
+      await userEvent.click(canvas.getByRole('radio', { name: 'week' }))
+
+      const body = canvasElement.querySelector<HTMLElement>(
+        '[data-part="calendar-week-body"][data-size="desktop"]'
+      )
+      if (!body) throw new Error('calendar week span story: desktop week body missing')
+      await expect(body).toBeVisible()
+      const heads = WEEK_SPAN_DAYS.map((name) => within(body).getByRole('button', { name }))
+      await expect(heads).toHaveLength(7)
+      for (const head of heads) await expect(head).toBeVisible()
+
+      const wednesday = body.querySelector<HTMLElement>(
+        '[data-part="calendar-week-column"][data-iso="2026-10-21"]'
+      )
+      if (!wednesday) throw new Error('calendar week span story: 2026-10-21 column missing')
+      const dentist = within(wednesday).getByText('dentist')
+      await expect(dentist).toBeVisible()
+      const timed = dentist.closest<HTMLElement>('[data-part="calendar-timed-event"]')
+      if (!timed) throw new Error('calendar week span story: dentist is not a timed event')
+      await expect(within(timed).getByText('10:00')).toBeVisible()
+
+      const allDay = body.querySelector<HTMLElement>('[data-part="calendar-all-day"]')
+      if (!allDay) throw new Error('calendar week span story: all-day row missing')
+      const alcove = within(allDay).getByText('confirm alcove')
+      await expect(alcove).toBeVisible()
+      await expect(alcove.closest('[data-part="calendar-timed-event"]')).toBeNull()
+
+      await userEvent.click(canvas.getByRole('button', { name: 'Next week' }))
+      const nextLabel = canvas.getByText('26 oct \u2013 1 nov 2026')
+      await expect(nextLabel).toBeVisible()
+      const dash = [...(nextLabel.textContent ?? '')].find((char) => char.charCodeAt(0) === 0x2013)
+      await expect(dash).toBe('\u2013')
+
+      const nextBody = canvasElement.querySelector<HTMLElement>(
+        '[data-part="calendar-week-body"][data-size="desktop"]'
+      )
+      if (!nextBody) throw new Error('calendar week span story: week body missing after next week')
+      await expect(within(nextBody).queryByText('dentist')).not.toBeInTheDocument()
+      await expect(within(nextBody).queryByText('confirm alcove')).not.toBeInTheDocument()
+    } finally {
+      const restoreClock = loaded.restoreClock as (() => void) | undefined
+      restoreClock?.()
+      const { width, height } = loaded.prevViewport as { width: number; height: number }
+      await page.viewport(width, height)
+    }
+  },
+}
+
 // ── Gallery ─────────────────────────────────────────────────────────────────────
 
 /**

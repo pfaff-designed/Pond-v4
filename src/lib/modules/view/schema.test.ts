@@ -498,6 +498,31 @@ describe('span (KAN-455)', () => {
     expect(viewSchema.parse(saved)).toEqual(saved)
   })
 
+  it('round-trips span: week on a legacy block and on a saved view', () => {
+    const weekLegacy: ViewBlock = { ...legacyBlock, mode: 'calendar', span: 'week' }
+    expect(viewSchema.parse(weekLegacy)).toEqual(weekLegacy)
+    expect(viewSchema.parse(weekLegacy).span ?? 'month').toBe('week')
+
+    const saved: ViewBlock = {
+      id: 'b-cal',
+      type: 'view',
+      mode: 'board',
+      views: [
+        { id: 'v-board', label: 'board', kind: 'board', config: { groupBy: 'p-status' } },
+        { id: 'v-week', label: 'week', kind: 'calendar', config: { span: 'week' } },
+      ],
+      activeViewId: 'v-week',
+    }
+    expect(viewSchema.parse(saved)).toEqual(saved)
+    expect(resolveActiveView(viewSchema.parse(saved)).config.span ?? 'month').toBe('week')
+  })
+
+  it('rejects a stored span of agenda', () => {
+    expect(
+      viewSchema.safeParse({ ...legacyBlock, mode: 'calendar', span: 'agenda' }).success
+    ).toBe(false)
+  })
+
   it('resolveActiveView returns span from a views[] config', () => {
     const saved = viewSchema.parse(daySaved())
     expect(resolveActiveView(saved).config.span).toBe('day')

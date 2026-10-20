@@ -1311,7 +1311,7 @@ describe('CollectionView — dragging a calendar event onto another day (KAN-385
 describe('span pill (KAN-455)', () => {
   const calendarConfig: ViewBlock = { id: 'cal', type: 'view', mode: 'calendar' }
 
-  it('month is selected by default, week and agenda are absent, choosing day reports { span: day }', async () => {
+  it('month is selected by default, week is present and unchecked, agenda is absent, choosing week reports { span: week } once', async () => {
     const user = userEvent.setup()
     const onConfigChange = jest.fn()
     render(
@@ -1320,18 +1320,18 @@ describe('span pill (KAN-455)', () => {
 
     const group = screen.getByRole('radiogroup', { name: 'span' })
     expect(within(group).getByRole('radio', { name: 'month' })).toBeChecked()
+    expect(within(group).getByRole('radio', { name: 'week' })).toBeInTheDocument()
+    expect(within(group).getByRole('radio', { name: 'week' })).not.toBeChecked()
     expect(within(group).getByRole('radio', { name: 'day' })).not.toBeChecked()
-    expect(within(group).queryByRole('radio', { name: 'week' })).not.toBeInTheDocument()
     expect(within(group).queryByRole('radio', { name: 'agenda' })).not.toBeInTheDocument()
-    expect(group).not.toHaveTextContent('week')
     expect(group).not.toHaveTextContent('agenda')
 
-    await user.click(within(group).getByRole('radio', { name: 'day' }))
+    await user.click(within(group).getByRole('radio', { name: 'week' }))
 
-    expect(within(group).getByRole('radio', { name: 'day' })).toBeChecked()
+    expect(within(group).getByRole('radio', { name: 'week' })).toBeChecked()
     expect(within(group).getByRole('radio', { name: 'month' })).not.toBeChecked()
     expect(onConfigChange).toHaveBeenCalledTimes(1)
-    expect(onConfigChange).toHaveBeenCalledWith({ span: 'day' })
+    expect(onConfigChange).toHaveBeenCalledWith({ span: 'week' })
   })
 
   it('seeds the selected span from the view field, and an absent field stays month', () => {
@@ -1363,6 +1363,27 @@ describe('span pill (KAN-455)', () => {
     await user.click(within(group).getByRole('radio', { name: 'month' }))
 
     expect(onConfigChange).toHaveBeenCalledWith({ span: 'month' }, undefined)
+  })
+
+  it('CollectionView passes a stored span: week and reports { span: week } through its config handler', async () => {
+    const user = userEvent.setup()
+    const onConfigChange = jest.fn()
+    render(
+      <CollectionView
+        config={{ ...calendarConfig, span: 'week' }}
+        schema={schemaWithDate}
+        rows={rows}
+        onConfigChange={onConfigChange}
+      />
+    )
+
+    const group = screen.getByRole('radiogroup', { name: 'span' })
+    expect(within(group).getByRole('radio', { name: 'week' })).toBeChecked()
+
+    await user.click(within(group).getByRole('radio', { name: 'day' }))
+    await user.click(within(group).getByRole('radio', { name: 'week' }))
+
+    expect(onConfigChange).toHaveBeenCalledWith({ span: 'week' }, undefined)
   })
 })
 
@@ -1441,6 +1462,420 @@ describe('day header (KAN-455)', () => {
     await user.click(screen.getByRole('button', { name: 'today' }))
     expect(screen.getByText('october 2026')).toBeInTheDocument()
     expect(screen.getByRole('radio', { name: 'month' })).toBeChecked()
+  })
+})
+
+describe('week header', () => {
+  const thisWeek = '19 \u2013 25 oct 2026'
+  const nextWeek = '26 oct \u2013 1 nov 2026'
+
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
+  })
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  it('when the span is week, the period is the week, prev and next step a week, and today stays on the week span', async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    const onConfigChange = jest.fn()
+    render(
+      <CollectionCalendar
+        schema={schemaWithDate}
+        rows={rows}
+        span="week"
+        onConfigChange={onConfigChange}
+      />
+    )
+
+    expect(screen.getByText(thisWeek)).toBeInTheDocument()
+    expect(screen.queryByText('october 2026')).not.toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'week' })).toBeChecked()
+    expect(screen.getByRole('button', { name: 'Previous week' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Next week' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Previous month' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Next month' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Previous day' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Next day' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Next week' }))
+    expect(screen.getByText(nextWeek)).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'week' })).toBeChecked()
+
+    await user.click(screen.getByRole('button', { name: 'Previous week' }))
+    expect(screen.getByText(thisWeek)).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'week' })).toBeChecked()
+
+    await user.click(screen.getByRole('button', { name: 'Next week' }))
+    expect(screen.getByText(nextWeek)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'today' }))
+    expect(screen.getByText(thisWeek)).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'week' })).toBeChecked()
+    expect(onConfigChange).not.toHaveBeenCalled()
+  })
+
+  it('the month span keeps Previous month and Next month', () => {
+    render(<CollectionCalendar schema={schemaWithDate} rows={rows} span="month" />)
+
+    expect(screen.getByText('october 2026')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Previous month' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Next month' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Previous week' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Next week' })).not.toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'month' })).toBeChecked()
+  })
+
+  it('the day span keeps Previous day and Next day', () => {
+    render(<CollectionCalendar schema={schemaWithDate} rows={rows} span="day" />)
+
+    expect(screen.getByText('mon 19 oct 2026')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Previous day' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Next day' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Previous week' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Next week' })).not.toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'day' })).toBeChecked()
+  })
+})
+
+describe('week body', () => {
+  const weekRows: CollectionRow[] = [
+    { id: 'dentist', title: 'dentist', values: { 'p-due': '2026-10-21T10:00:00' } },
+  ]
+  const heads = ['mon 19', 'tue 20', 'wed 21', 'thu 22', 'fri 23', 'sat 24', 'sun 25']
+  const isos = [
+    '2026-10-19',
+    '2026-10-20',
+    '2026-10-21',
+    '2026-10-22',
+    '2026-10-23',
+    '2026-10-24',
+    '2026-10-25',
+  ]
+
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
+  })
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  it('draws seven day heads and places dentist on Wednesday, and a day head opens that day', async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    const onConfigChange = jest.fn()
+    const { container } = render(
+      <CollectionCalendar
+        schema={schemaWithDate}
+        rows={weekRows}
+        span="week"
+        onConfigChange={onConfigChange}
+      />
+    )
+
+    const body = container.querySelector<HTMLElement>(
+      '[data-part="calendar-week-body"][data-size="desktop"]'
+    )
+    expect(body).not.toBeNull()
+    if (!body) return
+    expect(body).toHaveClass('hidden', 'md:flex', 'md:flex-col')
+    expect(container.querySelector('[data-part="calendar-day-cell"]')).toBeNull()
+    expect(container.querySelector('[data-part="calendar-day-body"]')).toBeNull()
+
+    const headButtons = heads.map((name) => within(body).getByRole('button', { name }))
+    expect(headButtons).toHaveLength(7)
+    for (const button of headButtons) {
+      expect(button).toHaveAttribute('type', 'button')
+      expect(button).toHaveClass('flex', 'items-center', 'gap-2', 'px-2', 'pb-2')
+    }
+    const monday = headButtons[0]
+    if (!monday) throw new Error('monday head missing')
+    expect(within(monday).getByText('mon')).toHaveClass(
+      'text-[10.5px]',
+      'font-medium',
+      'uppercase',
+      'tracking-[.1em]',
+      'text-mn-text-secondary'
+    )
+    expect(monday.querySelector('[data-part="due-today"]')).toHaveClass(
+      'inline-flex',
+      'h-[26px]',
+      'min-w-[26px]',
+      'items-center',
+      'justify-center',
+      'rounded-full',
+      'px-1',
+      'text-[15px]',
+      'font-medium',
+      'tabular-nums'
+    )
+    const tuesday = headButtons[1]
+    if (!tuesday) throw new Error('tuesday head missing')
+    expect(tuesday.querySelector('[data-part="due-today"]')).toBeNull()
+    expect(within(tuesday).getByText('20')).toHaveClass(
+      'text-mn-text',
+      'inline-flex',
+      'h-[26px]',
+      'min-w-[26px]',
+      'text-[15px]',
+      'font-medium',
+      'tabular-nums'
+    )
+
+    const columns = [
+      ...body.querySelectorAll<HTMLElement>('[data-part="calendar-week-column"]'),
+    ]
+    expect(columns.map((column) => column.dataset.iso)).toEqual(isos)
+    for (const column of columns) {
+      expect(column).toHaveClass(
+        'border-l',
+        'border-mn-text/[0.09]',
+        'dark:border-mn-text/[0.14]'
+      )
+    }
+    expect(columns[5]).toHaveClass('bg-mn-text/[0.025]')
+    expect(columns[6]).toHaveClass('bg-mn-text/[0.025]')
+    expect(columns[0]).not.toHaveClass('bg-mn-text/[0.025]')
+    expect(columns[2]).not.toHaveClass('bg-mn-text/[0.025]')
+
+    const grid = body.querySelector<HTMLElement>('[data-part="calendar-hour-grid"]')
+    expect(grid).not.toBeNull()
+    if (!grid) return
+    expect(grid.style.height).toBe('484px')
+    expect(grid.style.gridTemplateColumns).toBe('52px repeat(7,minmax(0,1fr))')
+    expect(grid.querySelector('button')).toBeNull()
+    const labels = [...grid.querySelectorAll('[data-part="calendar-hour-label"]')].map(
+      (node) => node.textContent
+    )
+    expect(labels).toEqual([
+      '08:00',
+      '09:00',
+      '10:00',
+      '11:00',
+      '12:00',
+      '13:00',
+      '14:00',
+      '15:00',
+      '16:00',
+      '17:00',
+      '18:00',
+    ])
+    expect(grid.querySelector('[data-part="calendar-hour-label"]')).toHaveClass(
+      'text-[10.5px]',
+      'font-medium',
+      'tabular-nums',
+      'text-mn-text-secondary'
+    )
+    const line = grid.querySelector<HTMLElement>('[data-part="calendar-hour-line"]')
+    expect(line).toHaveClass('h-px', 'bg-mn-text/[0.09]', 'dark:bg-mn-text/[0.14]')
+    expect(line?.style.left).toBe('52px')
+
+    const wednesday = columns[2]
+    if (!wednesday) throw new Error('wednesday column missing')
+    const event = within(wednesday).getByText('dentist').closest<HTMLElement>(
+      '[data-part="calendar-timed-event"]'
+    )
+    expect(event).not.toBeNull()
+    if (!event) return
+    expect(event.style.top).toBe('89px')
+    expect(event.style.height).toBe('22px')
+    expect(within(event).getByText('dentist')).toHaveClass('text-[12px]', 'font-medium')
+    const time = event.querySelector('[data-part="calendar-event-time"]')
+    expect(time).toHaveTextContent('10:00')
+    expect(time).toHaveClass('text-[10.5px]', 'font-medium', 'text-mn-text/80', 'tabular-nums')
+    expect(event).toHaveClass(
+      'rounded-[8px]',
+      'bg-mn-drag-ghost',
+      'shadow-[0_1px_2px_rgba(40,34,24,.08),0_2px_8px_rgba(40,34,24,.07)]',
+      'dark:shadow-[0_1px_2px_rgba(0,0,0,.3),0_2px_8px_rgba(0,0,0,.3)]'
+    )
+
+    const nowLines = [...body.querySelectorAll('[data-part="calendar-now"]')]
+    expect(nowLines).toHaveLength(1)
+    expect(nowLines[0]?.closest('[data-part="calendar-week-column"]')).toHaveAttribute(
+      'data-iso',
+      '2026-10-19'
+    )
+    expect(nowLines[0]).toHaveClass('h-[1.4px]', 'bg-mn-text')
+    expect(nowLines[0]?.querySelector('[data-part="calendar-now-dot"]')).toHaveClass(
+      'size-[7px]',
+      'bg-mn-text'
+    )
+
+    const mondayColumn = columns[0]
+    if (!mondayColumn) throw new Error('monday column missing')
+    await user.click(mondayColumn)
+    expect(screen.getByRole('radio', { name: 'week' })).toBeChecked()
+    expect(onConfigChange).not.toHaveBeenCalled()
+    expect(container.querySelector('[data-part="calendar-week-body"]')).not.toBeNull()
+
+    await user.click(within(body).getByRole('button', { name: 'wed 21' }))
+    expect(screen.getByText('wed 21 oct 2026')).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'day' })).toBeChecked()
+    expect(container.querySelector('[data-part="calendar-week-body"]')).toBeNull()
+    expect(container.querySelector('[data-part="calendar-day-body"]')).not.toBeNull()
+    const dayBody = container.querySelector<HTMLElement>('[data-part="calendar-day-body"]')
+    if (!dayBody) return
+    expect(within(dayBody).getByText('dentist')).toBeInTheDocument()
+    expect(dayBody.querySelector('[data-part="calendar-event-time"]')).toHaveTextContent('10:00')
+    expect(onConfigChange).toHaveBeenCalledTimes(1)
+    expect(onConfigChange).toHaveBeenCalledWith({ span: 'day' })
+  })
+})
+
+describe('week all day', () => {
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
+  })
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  it('puts date-only confirm alcove in Wednesday’s all-day column and keeps dentist in the hour grid', () => {
+    const weekRows: CollectionRow[] = [
+      { id: 'dentist', title: 'dentist', values: { 'p-due': '2026-10-21T10:00:00' } },
+      { id: 'alcove', title: 'confirm alcove', values: { 'p-due': '2026-10-21' } },
+    ]
+    const { container } = render(
+      <CollectionCalendar schema={schemaWithDate} rows={weekRows} span="week" />
+    )
+
+    const body = container.querySelector<HTMLElement>('[data-part="calendar-week-body"]')
+    expect(body).not.toBeNull()
+    if (!body) return
+    const allDay = body.querySelector<HTMLElement>('[data-part="calendar-all-day"]')
+    const grid = body.querySelector<HTMLElement>('[data-part="calendar-hour-grid"]')
+    expect(allDay).not.toBeNull()
+    expect(grid).not.toBeNull()
+    if (!allDay || !grid) return
+
+    expect(allDay.compareDocumentPosition(grid) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(allDay.style.gridTemplateColumns).toBe('52px repeat(7,minmax(0,1fr))')
+    expect(allDay).toHaveClass(
+      'py-[6px]',
+      'border-y',
+      'border-mn-text/[0.09]',
+      'dark:border-mn-text/[0.14]'
+    )
+    expect(within(allDay).getByText('all day')).toHaveClass(
+      'text-[10.5px]',
+      'font-medium',
+      'text-mn-text-secondary'
+    )
+
+    const wednesday = body.querySelector<HTMLElement>(
+      '[data-part="calendar-week-column"][data-iso="2026-10-21"]'
+    )
+    expect(wednesday).not.toBeNull()
+    if (!wednesday) return
+    const item = within(allDay)
+      .getByText('confirm alcove')
+      .closest<HTMLElement>('[data-part="calendar-all-day-item"]')
+    expect(item).not.toBeNull()
+    if (!item) return
+    expect(item.style.gridColumn).toBe(wednesday.style.gridColumn)
+    expect(item).toHaveClass('h-[22px]')
+    expect(item.querySelector('span')).toHaveClass('size-[9px]')
+    expect(within(item).getByText('confirm alcove')).toHaveClass('text-[11.5px]', 'font-medium')
+
+    expect(within(allDay).queryByText('dentist')).not.toBeInTheDocument()
+    expect(within(grid).queryByText('confirm alcove')).not.toBeInTheDocument()
+    expect(within(wednesday).getByText('dentist')).toBeInTheDocument()
+    expect(wednesday.querySelector('[data-part="calendar-event-time"]')).toHaveTextContent('10:00')
+  })
+
+  it('keeps the all day label and one track when the week has only a timed row', () => {
+    const weekRows: CollectionRow[] = [
+      { id: 'dentist', title: 'dentist', values: { 'p-due': '2026-10-21T10:00:00' } },
+    ]
+    const { container } = render(
+      <CollectionCalendar schema={schemaWithDate} rows={weekRows} span="week" />
+    )
+
+    const body = container.querySelector<HTMLElement>('[data-part="calendar-week-body"]')
+    expect(body).not.toBeNull()
+    if (!body) return
+    const allDay = body.querySelector<HTMLElement>('[data-part="calendar-all-day"]')
+    expect(allDay).not.toBeNull()
+    if (!allDay) return
+    expect(within(allDay).getByText('all day')).toBeInTheDocument()
+    expect(allDay.style.gridTemplateRows).toBe('repeat(1, 24px)')
+    expect(allDay.querySelector('[data-part="calendar-all-day-item"]')).toBeNull()
+
+    const grid = body.querySelector<HTMLElement>('[data-part="calendar-hour-grid"]')
+    expect(grid).not.toBeNull()
+    if (!grid) return
+    expect(within(grid).getByText('dentist')).toBeInTheDocument()
+  })
+})
+
+describe('week phone', () => {
+  const thisWeek = '19 \u2013 25 oct 2026'
+  const stripDays = ['mon 19', 'tue 20', 'wed 21', 'thu 22', 'fri 23', 'sat 24', 'sun 25']
+  const phoneRows: CollectionRow[] = [
+    { id: 'dentist', title: 'dentist', values: { 'p-due': '2026-10-19' } },
+    { id: 'optician', title: 'optician', values: { 'p-due': '2026-10-22' } },
+  ]
+
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
+  })
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  it('lists the focused day under the week strip and a strip tap leaves the span on week', async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    const onConfigChange = jest.fn()
+    const { container } = render(
+      <CollectionCalendar
+        schema={schemaWithDate}
+        rows={phoneRows}
+        span="week"
+        onConfigChange={onConfigChange}
+      />
+    )
+
+    const strip = container.querySelector<HTMLElement>('[data-part="calendar-week-strip"]')
+    expect(strip).not.toBeNull()
+    if (!strip) return
+    expect(strip).toHaveClass('md:hidden')
+    const stripButtons = stripDays.map((name) => within(strip).getByRole('button', { name }))
+    expect(stripButtons.map((button) => button.getAttribute('aria-label'))).toEqual(stripDays)
+    expect(within(strip).getByRole('button', { name: 'mon 19' })).toHaveAttribute(
+      'aria-current',
+      'date'
+    )
+    expect(within(strip).getByRole('button', { name: 'thu 22' })).not.toHaveAttribute('aria-current')
+
+    const focusList = container.querySelector<HTMLElement>('[data-part="calendar-focus-list"]')
+    expect(focusList).not.toBeNull()
+    if (!focusList) return
+    expect(focusList).toHaveClass('md:hidden')
+    expect(strip.compareDocumentPosition(focusList) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(within(focusList).getByText('dentist')).toBeInTheDocument()
+    expect(within(focusList).queryByText('optician')).not.toBeInTheDocument()
+
+    const body = container.querySelector<HTMLElement>('[data-part="calendar-week-body"]')
+    expect(body).not.toBeNull()
+    if (!body) return
+    expect(body).toHaveClass('hidden', 'md:flex')
+    expect(container.querySelector('[data-part="calendar-day-body"]')).toBeNull()
+    expect(container.querySelector('[data-part="calendar-day-cell"]')).toBeNull()
+    expect(container.querySelector('.gap-y-0\\.5')).toBeNull()
+
+    await user.click(within(strip).getByRole('button', { name: 'thu 22' }))
+
+    expect(screen.getByText(thisWeek)).toBeInTheDocument()
+    expect(within(strip).getByRole('button', { name: 'thu 22' })).toHaveAttribute(
+      'aria-current',
+      'date'
+    )
+    expect(within(strip).getByRole('button', { name: 'mon 19' })).not.toHaveAttribute('aria-current')
+    expect(within(focusList).getByText('optician')).toBeInTheDocument()
+    expect(within(focusList).queryByText('dentist')).not.toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'week' })).toBeChecked()
+    expect(container.querySelector('[data-part="calendar-day-body"]')).toBeNull()
+    expect(container.querySelector('[data-part="calendar-week-body"]')).not.toBeNull()
+    expect(onConfigChange).not.toHaveBeenCalled()
   })
 })
 
