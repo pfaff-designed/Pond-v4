@@ -2,8 +2,9 @@
 
 /**
  * Calendar view — the month span (#262 1/3), from `PondCalendar.dc.html`. Chrome is
- * the period label, prev/next stepping and a `today` button; the grid itself (desktop
- * weeks, mobile dots plus the tapped day's own list, the DC's `showList` for
+ * the period label, prev/next stepping, the span pill (month and day), and a
+ * `today` button; the grid itself (desktop weeks, mobile dots plus the tapped
+ * day's own list, the DC's `showList` for
  * `mob && span === 'month'`) is built in the sibling items of this ticket. The DC's
  * `isMonthD`/`isMonthM` don't depend on `isEmpty` (`empty` only zeroes `recs`), so
  * chrome and grid stay drawn under either empty case. No date property on the
@@ -14,6 +15,9 @@
  */
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
+import { Radio } from '@base-ui/react/radio'
+import { RadioGroup } from '@base-ui/react/radio-group'
+import { FOCUS_VISIBLE_RING } from '@/components/atoms/focus-ring'
 import { cn } from '@/lib/utils'
 import { PondAtom } from '@/components/atoms/PondAtom'
 import { PondBlockEmpty } from '@/components/organisms/PondBlock'
@@ -49,6 +53,19 @@ import { ROW_FOCUS_VISIBLE, useRecordSelection } from './use-record-selection'
 type RowSelection = ReturnType<typeof useRecordSelection<CollectionRow>>
 
 const NAV_BTN = 'inline-flex size-11 items-center justify-center rounded-mn-pill text-mn-text hover:bg-mn-hover-fill md:size-7'
+
+/**
+ * The header's span pill, month then day. Later tickets extend this one list
+ * (`PondCalendar.dc.html` line 133). Week and agenda stay off it.
+ */
+export const CALENDAR_SPANS = ['month', 'day'] as const
+export type CalendarSpan = (typeof CALENDAR_SPANS)[number]
+
+/** Track, `seg` at line 143: gap 4, padding 3, radius 999, weight 500, 12px mobile / 10.5px desktop. */
+const SPAN_TRACK =
+  'flex items-center gap-[4px] rounded-[999px] bg-[rgba(27,29,20,.055)] p-[3px] text-[12px] leading-[normal] font-medium dark:bg-[rgba(250,249,239,.08)] md:text-[10.5px]'
+/** Each segment, line 133: padding 9px 11px mobile / 4px 10px desktop, radius 999. */
+const SPAN_SEGMENT = `cursor-pointer rounded-[999px] px-[11px] py-[9px] text-mn-text-secondary md:px-[10px] md:py-[4px] data-[checked]:bg-[#1B1D14] data-[checked]:text-[#FAF9EF] dark:data-[checked]:bg-[#FAF9EF] dark:data-[checked]:text-[#1B1D14] ${FOCUS_VISIBLE_RING}`
 
 /** `DW` — the DC's lowercase weekday short-forms; `textTransform: uppercase` draws them caps. */
 const DOW_LABELS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const
@@ -427,6 +444,18 @@ function ChevronRight() {
   )
 }
 
+function SpanPill({ value, onChange }: { value: CalendarSpan; onChange: (span: CalendarSpan) => void }) {
+  return (
+    <RadioGroup aria-label="span" value={value} onValueChange={onChange} className={SPAN_TRACK}>
+      {CALENDAR_SPANS.map((option) => (
+        <Radio.Root key={option} value={option} className={SPAN_SEGMENT}>
+          {option}
+        </Radio.Root>
+      ))}
+    </RadioGroup>
+  )
+}
+
 export function CollectionCalendar({
   viewKey,
   schema,
@@ -439,6 +468,8 @@ export function CollectionCalendar({
   onOpenRow,
   onAddDateField,
   onMoveDate,
+  span: spanProp,
+  onConfigChange,
 }: {
   /** The view block's id — what the page canvas keys its one peek and one orange
    *  pill by. Optional: every existing direct render of this component predates
@@ -454,6 +485,10 @@ export function CollectionCalendar({
   onOpenRow?: (rowId: string) => void
   onAddDateField?: () => void
   onMoveDate?: (rowId: string, key: string, value: PropertyValue) => void
+  /** The active view's stored span. Absent reads as month. */
+  span?: CalendarSpan
+  /** Present when the host persists config. A span click sends `{ span }`. */
+  onConfigChange?: (patch: { span: CalendarSpan }) => void
 }) {
   const dateDef = useMemo(() => pickDateDef(schema, groupBy), [schema, groupBy])
   // `today` is read once per mount, as the board reads its own `now` (view.tsx);
@@ -461,6 +496,21 @@ export function CollectionCalendar({
   const [todayIso] = useState(() => localDateIso(new Date()))
   const [now] = useState(() => new Date())
   const [focusIso, setFocusIso] = useState(todayIso)
+  // Local span, seeded from the view field. A later change to that field
+  // (another saved view) drops the override so the pill follows the view again.
+  const seededSpan: CalendarSpan = spanProp ?? 'month'
+  const [spanOverride, setSpanOverride] = useState<CalendarSpan | null>(null)
+  const [spanSeed, setSpanSeed] = useState(seededSpan)
+  if (spanSeed !== seededSpan) {
+    setSpanSeed(seededSpan)
+    setSpanOverride(null)
+  }
+  const span = spanOverride ?? seededSpan
+
+  const handleSpanChange = (next: CalendarSpan) => {
+    setSpanOverride(next)
+    onConfigChange?.({ span: next })
+  }
   const grid = useMemo(
     () => buildMonthGrid(focusIso, todayIso, rows, dateDef),
     [dateDef, focusIso, todayIso, rows]
@@ -595,6 +645,7 @@ export function CollectionCalendar({
           </div>
         </div>
         <div className="flex w-full items-center justify-between gap-2 md:w-auto md:justify-normal">
+          <SpanPill value={span} onChange={handleSpanChange} />
           <button
             type="button"
             onClick={() => setFocusIso(goToday(todayIso))}

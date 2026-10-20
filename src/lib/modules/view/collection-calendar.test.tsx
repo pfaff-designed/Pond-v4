@@ -1210,3 +1210,61 @@ describe('CollectionView — dragging a calendar event onto another day (KAN-385
     expect(screen.queryByRole('textbox', { name: /Add an item/ })).not.toBeInTheDocument()
   })
 })
+
+describe('span pill (KAN-455)', () => {
+  const calendarConfig: ViewBlock = { id: 'cal', type: 'view', mode: 'calendar' }
+
+  it('month is selected by default, week and agenda are absent, choosing day reports { span: day }', async () => {
+    const user = userEvent.setup()
+    const onConfigChange = jest.fn()
+    render(
+      <CollectionCalendar schema={schemaWithDate} rows={rows} onConfigChange={onConfigChange} />
+    )
+
+    const group = screen.getByRole('radiogroup', { name: 'span' })
+    expect(within(group).getByRole('radio', { name: 'month' })).toBeChecked()
+    expect(within(group).getByRole('radio', { name: 'day' })).not.toBeChecked()
+    expect(within(group).queryByRole('radio', { name: 'week' })).not.toBeInTheDocument()
+    expect(within(group).queryByRole('radio', { name: 'agenda' })).not.toBeInTheDocument()
+    expect(group).not.toHaveTextContent('week')
+    expect(group).not.toHaveTextContent('agenda')
+
+    await user.click(within(group).getByRole('radio', { name: 'day' }))
+
+    expect(within(group).getByRole('radio', { name: 'day' })).toBeChecked()
+    expect(within(group).getByRole('radio', { name: 'month' })).not.toBeChecked()
+    expect(onConfigChange).toHaveBeenCalledTimes(1)
+    expect(onConfigChange).toHaveBeenCalledWith({ span: 'day' })
+  })
+
+  it('seeds the selected span from the view field, and an absent field stays month', () => {
+    const { rerender } = render(
+      <CollectionCalendar schema={schemaWithDate} rows={rows} span="day" />
+    )
+    const group = screen.getByRole('radiogroup', { name: 'span' })
+    expect(within(group).getByRole('radio', { name: 'day' })).toBeChecked()
+
+    rerender(<CollectionCalendar schema={schemaWithDate} rows={rows} />)
+    expect(within(group).getByRole('radio', { name: 'month' })).toBeChecked()
+  })
+
+  it('CollectionView passes the active view span and reports { span: day } through its config handler', async () => {
+    const user = userEvent.setup()
+    const onConfigChange = jest.fn()
+    render(
+      <CollectionView
+        config={{ ...calendarConfig, span: 'day' }}
+        schema={schemaWithDate}
+        rows={rows}
+        onConfigChange={onConfigChange}
+      />
+    )
+
+    const group = screen.getByRole('radiogroup', { name: 'span' })
+    expect(within(group).getByRole('radio', { name: 'day' })).toBeChecked()
+
+    await user.click(within(group).getByRole('radio', { name: 'month' }))
+
+    expect(onConfigChange).toHaveBeenCalledWith({ span: 'month' }, undefined)
+  })
+})
