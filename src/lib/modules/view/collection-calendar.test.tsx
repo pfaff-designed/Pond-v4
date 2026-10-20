@@ -3414,3 +3414,44 @@ describe('KAN-458 bar drag', () => {
     expect(onMoveDate).not.toHaveBeenCalled()
   })
 })
+
+describe('KAN-459 time', () => {
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
+  })
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  it('shows the sliced clock on the right of a desktop month chip, and no time node when the date has no T', () => {
+    const monthRows: CollectionRow[] = [
+      { id: 'dentist', title: 'dentist', values: { 'p-due': '2026-10-19T10:00:00.000Z' } },
+      { id: 'alcove', title: 'confirm alcove', values: { 'p-due': '2026-10-19' } },
+    ]
+    const { container } = render(<CollectionCalendar schema={schemaWithDate} rows={monthRows} />)
+    const cell = container.querySelector<HTMLElement>(
+      '[data-part="calendar-day-cell"][data-iso="2026-10-19"]'
+    )
+    expect(cell).not.toBeNull()
+    if (!cell) return
+
+    const dentist = cell.querySelector<HTMLElement>('[data-row-id="dentist"]')
+    expect(dentist).not.toBeNull()
+    const time = dentist?.querySelector<HTMLElement>('[data-part="calendar-item-time"]')
+    expect(time).not.toBeNull()
+    expect(time).toHaveTextContent('10:00')
+    expect(time).toHaveClass(
+      'flex-none',
+      'text-[10.5px]',
+      'font-medium',
+      'text-mn-text/80',
+      'tabular-nums'
+    )
+    expect(time?.previousElementSibling).toHaveTextContent('dentist')
+
+    const alcove = cell.querySelector<HTMLElement>('[data-row-id="alcove"]')
+    expect(alcove).not.toBeNull()
+    expect(alcove?.querySelector('[data-part="calendar-item-time"]')).toBeNull()
+    expect(cell.querySelectorAll('[data-part="calendar-item-time"]')).toHaveLength(1)
+  })
+})
