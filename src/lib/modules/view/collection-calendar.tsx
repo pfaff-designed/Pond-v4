@@ -13,7 +13,7 @@
  * board's bare `emptyLine` span instead; there is no button to offer.
  */
 
-import { useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
 import { cn } from '@/lib/utils'
 import { PondAtom } from '@/components/atoms/PondAtom'
 import { PondBlockEmpty } from '@/components/organisms/PondBlock'
@@ -33,6 +33,7 @@ import { pickDateDef, type CollectionRow } from './apply'
 import { localDateIso } from './due'
 import { CALENDAR_EMPTY_LINE } from './kinds'
 import { RecordPeek } from './record-peek'
+import { UndatedRecords } from './undated-records'
 import { useDoneToggle } from './use-done-toggle'
 import {
   DRAG_LIFT_CLASS,
@@ -85,6 +86,9 @@ const DAY_ITEM_DOT_LARGE = 'size-[13px] flex-none rounded-[4px] box-border ring-
  *  entered the block. */
 const DAY_ADD_BUTTON =
   'absolute right-1 top-1 text-mn-text-secondary opacity-0 group-hover/day:opacity-100 group-focus-within/day:opacity-100'
+/** Armed placement (KAN-454): the same hover fill as the month nav, so a day reads as a target. */
+const DAY_PLACE_HOVER = 'cursor-pointer hover:bg-mn-hover-fill'
+const UNDATED_LINE = 'px-0.5 text-left text-[13px] font-mono lowercase text-mn-text-secondary'
 
 function MonthDayNumber({ day, isToday, inMonth }: { day: number; isToday: boolean; inMonth: boolean }) {
   if (isToday) {
@@ -180,6 +184,7 @@ function MonthDayCellView({
   selectedId,
   draggingRowId,
   isOver,
+  armed,
   editable,
   registerBucket,
   onCardPointerDown,
@@ -189,6 +194,7 @@ function MonthDayCellView({
   selectWithPointer,
   selectOrOpenOnKey,
   onOpenRow,
+  onPlace,
 }: {
   cell: MonthDayCell
   columnIndex: number
@@ -197,6 +203,8 @@ function MonthDayCellView({
   selectedId?: string
   draggingRowId?: string
   isOver: boolean
+  /** While a record is armed, the cell takes the month-nav hover fill. */
+  armed: boolean
   editable?: boolean
   registerBucket: PointerBucketDrag['registerBucket']
   onCardPointerDown: PointerBucketDrag['onCardPointerDown']
@@ -206,10 +214,16 @@ function MonthDayCellView({
   selectWithPointer: RowSelection['selectWithPointer']
   selectOrOpenOnKey: RowSelection['selectOrOpenOnKey']
   onOpenRow?: (rowId: string) => void
+  /** Armed placement: a click on this day writes that date. Absent, the cell stays clickless. */
+  onPlace?: (iso: string) => void
 }) {
   // A stack item's Enter bubbles. Only the cell itself adds; the item's own
-  // Enter still selects (KAN-358). The cell has no click handler: blank space
-  // and a drag's trailing click add nothing.
+  // Enter still selects (KAN-358). With nothing armed the cell has no click
+  // handler: blank space and a drag's trailing click add nothing.
+  const handlePlaceClick = (event: MouseEvent<HTMLDivElement>) => {
+    event.stopPropagation()
+    onPlace?.(cell.iso)
+  }
   const handleCellKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'Enter' || event.target !== event.currentTarget) return
     event.preventDefault()
@@ -224,12 +238,14 @@ function MonthDayCellView({
       data-part="calendar-day-cell"
       data-iso={cell.iso}
       ref={registerBucket(cell.iso)}
+      onClick={onPlace ? handlePlaceClick : undefined}
       onKeyDown={canAdd ? handleCellKeyDown : undefined}
       tabIndex={canAdd ? 0 : undefined}
       className={cn(
         'group/day relative min-h-[108px] p-1.5 transition-colors duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none',
         columnIndex !== 0 && 'border-l border-mn-text/[0.09] dark:border-mn-text/[0.14]',
-        isOver ? DRAG_OVER_CLASS : columnIndex >= 5 ? 'bg-mn-text/[0.025]' : ''
+        isOver ? DRAG_OVER_CLASS : columnIndex >= 5 ? 'bg-mn-text/[0.025]' : '',
+        armed && DAY_PLACE_HOVER
       )}
     >
       <MonthDayNumber day={cell.dayOfMonth} isToday={cell.isToday} inMonth={cell.inMonth} />
@@ -481,6 +497,40 @@ export function CollectionCalendar({
   // The id this click just added. `focusTitle` is that id only — a keyboard
   // select of an existing stack item must not move focus into the peek (KAN-358).
   const [focusTitleId, setFocusTitleId] = useState<string | null>(null)
+  const [undatedOpen, setUndatedOpen] = useState(false)
+  const [placement, setPlacement] = useState<{ id: string; title: string } | null>(null)
+
+  useEffect(() => {
+    if (!placement) return
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      setPlacement(null)
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [placement])
+
+  const handlePickUndated = (row: CollectionRow) => {
+    setPlacement({ id: row.id, title: row.title })
+    setUndatedOpen(false)
+  }
+
+  const handleUndatedLineClick = () => {
+    if (placement) return
+    setUndatedOpen((open) => !open)
+  }
+
+  // The same own edit a drop uses: `onMoveDate` is `setValueAsStep` (KAN-385).
+  // A click on the row's own day writes nothing. Clearing the arm is the gesture ending.
+  const handlePlaceOnDay = (iso: string) => {
+    if (!placement || !dateDef || !onMoveDate) return
+    const row = rows.find((candidate) => candidate.id === placement.id)
+    if (row && rowDateIso(row, dateDef) !== iso) {
+      onMoveDate(placement.id, dateDef.id, dateForDrop(row.values[dateDef.id], iso))
+    }
+    setPlacement(null)
+  }
 
   // The date rides in `addRow`'s own values rather than a follow-up `setValue` —
   // one write, same one-change-log-record pause as `CollectionList`'s add
@@ -504,6 +554,12 @@ export function CollectionCalendar({
   const focusDayOfMonth = Number(focusIso.slice(8, 10))
   const focusLabel = `${DOW_LABELS[weekdayIndex(focusIso)]} ${monthAbbr(focusIso)}${focusIsToday ? ' · today' : ''}`
   const focusItems = dayItems(rows, dateDef, focusIso)
+  const undatedRows = dateDef ? rows.filter((row) => rowDateIso(row, dateDef) === null) : []
+  const undatedCount = undatedRows.length
+  const showUndatedLine = !!dateDef && undatedCount > 0
+  const undatedLabel = placement
+    ? `pick a day for ${placement.title.toLowerCase()}`
+    : `${undatedCount} without a date`
 
   return (
     <div
@@ -548,6 +604,24 @@ export function CollectionCalendar({
           </button>
         </div>
       </div>
+      {showUndatedLine ? (
+        <button
+          type="button"
+          aria-expanded={placement ? undefined : undatedOpen}
+          onClick={handleUndatedLineClick}
+          className={UNDATED_LINE}
+        >
+          {undatedLabel}
+        </button>
+      ) : null}
+      {showUndatedLine && undatedOpen && !placement ? (
+        <UndatedRecords
+          rows={undatedRows}
+          pageMarkClassName={DAY_ITEM_DOT}
+          onClose={() => setUndatedOpen(false)}
+          onPick={handlePickUndated}
+        />
+      ) : null}
       {!dateDef ? (
         onAddDateField ? (
           <PondBlockEmpty
@@ -558,11 +632,13 @@ export function CollectionCalendar({
         ) : (
           <span className="px-0.5 text-[13px] text-mn-text-secondary">{CALENDAR_EMPTY_LINE}</span>
         )
-      ) : (
-        rows.length === 0 && (
-          <span className="px-0.5 text-[13px] text-mn-text-secondary">{CALENDAR_EMPTY_LINE}</span>
-        )
-      )}
+      ) : rows.length === 0 ? (
+        <span className="px-0.5 text-[13px] text-mn-text-secondary">{CALENDAR_EMPTY_LINE}</span>
+      ) : undatedCount === rows.length ? (
+        <span className="px-0.5 text-[13px] font-mono lowercase text-mn-text-secondary">
+          {undatedCount} records, none with a date
+        </span>
+      ) : null}
       <div className={cn('hidden md:flex md:flex-col', containerClassName)} {...containerHandlers}>
         <div className="grid grid-cols-7">
           {DOW_LABELS.map((l) => (
@@ -583,6 +659,8 @@ export function CollectionCalendar({
                 selectedId={selectedRow?.id}
                 draggingRowId={drag?.active ? drag.rowId : undefined}
                 isOver={!!editable && !!drag?.active && overKey === cell.iso}
+                armed={placement !== null}
+                onPlace={placement ? handlePlaceOnDay : undefined}
                 editable={editable}
                 registerBucket={registerBucket}
                 onCardPointerDown={onCardPointerDown}

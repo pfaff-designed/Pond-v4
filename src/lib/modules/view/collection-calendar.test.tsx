@@ -75,6 +75,287 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
     expect(screen.getByText('today')).toBeInTheDocument()
   })
 
+  describe('records without a date (KAN-454)', () => {
+    const dated: CollectionRow = {
+      id: 'r1',
+      title: 'Trim the rim',
+      values: { 'p-due': '2026-09-10' },
+    }
+    const undated = (id: string, title: string): CollectionRow => ({
+      id,
+      title,
+      values: {},
+    })
+
+    it('shows n without a date under the header, in the empty-line style, when some records lack a date', () => {
+      render(
+        <CollectionCalendar
+          schema={schemaWithDate}
+          rows={[dated, undated('r2', 'dentist'), undated('r3', 'optician')]}
+        />
+      )
+      const line = screen.getByText('2 without a date')
+      expect(line.tagName).toBe('BUTTON')
+      expect(line).toHaveClass(
+        'px-0.5',
+        'text-[13px]',
+        'font-mono',
+        'lowercase',
+        'text-mn-text-secondary'
+      )
+      const header = screen.getByRole('button', { name: 'today' }).closest('div.flex-wrap')
+      expect(line.previousElementSibling).toBe(header)
+      expect(line.nextElementSibling).toHaveClass('md:flex')
+      expect(screen.queryByText(CALENDAR_EMPTY_LINE)).not.toBeInTheDocument()
+      expect(screen.getAllByText('mon').length).toBeGreaterThan(0)
+    })
+
+    it('does not show the line when every record has a date', () => {
+      render(<CollectionCalendar schema={schemaWithDate} rows={[dated]} />)
+      expect(screen.queryByText(/without a date/)).not.toBeInTheDocument()
+    })
+
+    it('does not show the line when the collection has no records', () => {
+      render(<CollectionCalendar schema={schemaWithDate} rows={[]} />)
+      expect(screen.queryByText(/without a date/)).not.toBeInTheDocument()
+      expect(screen.getByText(CALENDAR_EMPTY_LINE)).toBeInTheDocument()
+    })
+
+    it('does not show the line when the collection has no date field', () => {
+      render(<CollectionCalendar schema={schemaNoDate} rows={[undated('r2', 'dentist')]} />)
+      expect(screen.queryByText(/without a date/)).not.toBeInTheDocument()
+      expect(screen.getByText(CALENDAR_EMPTY_LINE)).toBeInTheDocument()
+    })
+
+    it('updates the count when a record gains a date', () => {
+      const Harness = () => {
+        const [items, setItems] = useState<CollectionRow[]>([
+          dated,
+          undated('r2', 'dentist'),
+          undated('r3', 'optician'),
+        ])
+        const handleDateDentist = () => {
+          setItems([
+            dated,
+            { id: 'r2', title: 'dentist', values: { 'p-due': '2026-09-21' } },
+            undated('r3', 'optician'),
+          ])
+        }
+        return (
+          <>
+            <button type="button" onClick={handleDateDentist}>
+              date dentist
+            </button>
+            <CollectionCalendar schema={schemaWithDate} rows={items} />
+          </>
+        )
+      }
+      render(<Harness />)
+      expect(screen.getByText('2 without a date')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'date dentist' }))
+      expect(screen.getByText('1 without a date')).toBeInTheDocument()
+      expect(screen.queryByText('2 without a date')).not.toBeInTheDocument()
+    })
+
+    it('clicking 2 without a date lists dentist and optician, not the dated record', async () => {
+      const user = userEvent.setup()
+      const onMoveDate = jest.fn()
+      render(
+        <CollectionCalendar
+          schema={schemaWithDate}
+          rows={[dated, undated('r2', 'dentist'), undated('r3', 'optician')]}
+          onMoveDate={onMoveDate}
+        />
+      )
+
+      await user.click(screen.getByRole('button', { name: '2 without a date' }))
+
+      const list = screen.getByRole('listbox', { name: 'without a date' })
+      expect(list.closest('[data-part="glass"]')).not.toBeNull()
+      const dentist = within(list).getByRole('option', { name: 'dentist' })
+      const optician = within(list).getByRole('option', { name: 'optician' })
+      expect(within(list).queryByRole('option', { name: 'Trim the rim' })).not.toBeInTheDocument()
+      expect(dentist).toHaveAttribute('data-part', 'row')
+      expect(optician).toHaveAttribute('data-part', 'row')
+      expect(dentist.querySelector('[data-part="icon"] span')).toHaveClass('size-[9px]', 'rounded-[2.5px]')
+      expect(optician.querySelector('[data-part="icon"] span')).toHaveClass('size-[9px]', 'rounded-[2.5px]')
+
+      await user.click(screen.getByRole('button', { name: '2 without a date' }))
+      expect(screen.queryByRole('listbox', { name: 'without a date' })).not.toBeInTheDocument()
+
+      await user.click(screen.getByRole('button', { name: '2 without a date' }))
+      expect(screen.getByRole('listbox', { name: 'without a date' })).toBeInTheDocument()
+      await user.keyboard('{Escape}')
+      expect(screen.queryByRole('listbox', { name: 'without a date' })).not.toBeInTheDocument()
+      expect(onMoveDate).not.toHaveBeenCalled()
+    })
+
+    it('draws heart on dentist and ring on optician', async () => {
+      const user = userEvent.setup()
+      const withGlyph = (id: string, title: string, glyph: string): CollectionRow => ({
+        id,
+        title,
+        values: {},
+        glyph,
+      })
+      render(
+        <CollectionCalendar
+          schema={schemaWithDate}
+          rows={[dated, withGlyph('r2', 'dentist', 'heart'), withGlyph('r3', 'optician', 'ring')]}
+        />
+      )
+
+      await user.click(screen.getByRole('button', { name: '2 without a date' }))
+
+      const list = screen.getByRole('listbox', { name: 'without a date' })
+      const dentist = within(list).getByRole('option', { name: 'dentist' })
+      const optician = within(list).getByRole('option', { name: 'optician' })
+      expect(dentist.querySelector('[data-area-mark] [data-icon="heart"]')).not.toBeNull()
+      expect(optician.querySelector('[data-icon="ring"]')).not.toBeNull()
+      expect(within(list).queryByRole('option', { name: dated.title })).not.toBeInTheDocument()
+    })
+
+    it('picking a record arms placement, day cells take a hover state, and Escape writes nothing', async () => {
+      const user = userEvent.setup()
+      const onMoveDate = jest.fn()
+      const { container } = render(
+        <CollectionCalendar
+          schema={schemaWithDate}
+          rows={[dated, undated('r2', 'dentist'), undated('r3', 'optician')]}
+          onMoveDate={onMoveDate}
+        />
+      )
+      const dayCells = () => container.querySelectorAll('[data-part="calendar-day-cell"]')
+      expect(dayCells().length).toBeGreaterThan(0)
+      for (const cell of dayCells()) {
+        expect(cell).not.toHaveClass('hover:bg-mn-hover-fill')
+      }
+
+      await user.click(screen.getByRole('button', { name: '2 without a date' }))
+      await user.click(
+        within(screen.getByRole('listbox', { name: 'without a date' })).getByRole('option', {
+          name: /dentist/,
+        })
+      )
+
+      expect(screen.queryByRole('listbox', { name: 'without a date' })).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'pick a day for dentist' })).toBeInTheDocument()
+      for (const cell of dayCells()) {
+        expect(cell).toHaveClass('hover:bg-mn-hover-fill')
+      }
+
+      await user.keyboard('{Escape}')
+
+      expect(screen.getByRole('button', { name: '2 without a date' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'pick a day for dentist' })).not.toBeInTheDocument()
+      expect(onMoveDate).not.toHaveBeenCalled()
+      for (const cell of dayCells()) {
+        expect(cell).not.toHaveClass('hover:bg-mn-hover-fill')
+      }
+    })
+
+    it('clicking a day writes that date, the record sits on that day, and the line count drops', async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-09-10T12:00:00Z'))
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+      const onMoveDate = jest.fn()
+      const onAddRow = jest.fn()
+      try {
+        const { container, rerender } = render(
+          <CollectionCalendar
+            schema={schemaWithDate}
+            rows={[dated, undated('r2', 'dentist'), undated('r3', 'optician')]}
+            editable
+            onAddRow={onAddRow}
+            onMoveDate={onMoveDate}
+          />
+        )
+        const dayCell = (iso: string) =>
+          container.querySelector<HTMLElement>(`[data-part="calendar-day-cell"][data-iso="${iso}"]`)!
+
+        await user.click(screen.getByRole('button', { name: '2 without a date' }))
+        await user.click(
+          within(screen.getByRole('listbox', { name: 'without a date' })).getByRole('option', {
+            name: /dentist/,
+          })
+        )
+        await user.click(dayCell('2026-09-21'))
+
+        expect(onMoveDate).toHaveBeenCalledTimes(1)
+        expect(onMoveDate).toHaveBeenCalledWith('r2', 'p-due', '2026-09-21')
+        expect(onAddRow).not.toHaveBeenCalled()
+
+        rerender(
+          <CollectionCalendar
+            schema={schemaWithDate}
+            rows={[
+              dated,
+              { id: 'r2', title: 'dentist', values: { 'p-due': '2026-09-21' } },
+              undated('r3', 'optician'),
+            ]}
+            editable
+            onAddRow={onAddRow}
+            onMoveDate={onMoveDate}
+          />
+        )
+
+        expect(screen.getByText('1 without a date')).toBeInTheDocument()
+        expect(within(dayCell('2026-09-21')).getByText('dentist')).toBeInTheDocument()
+      } finally {
+        jest.useRealTimers()
+      }
+    })
+
+    it('shows n without a date when every record is undated, and keeps the grid empty line', () => {
+      render(
+        <CollectionCalendar
+          schema={schemaWithDate}
+          rows={[undated('r1', 'dentist'), undated('r2', 'optician'), undated('r3', 'library')]}
+        />
+      )
+      expect(screen.getByText('3 without a date')).toBeInTheDocument()
+      expect(screen.getByText('3 records, none with a date')).toBeInTheDocument()
+      expect(screen.queryByText(CALENDAR_EMPTY_LINE)).not.toBeInTheDocument()
+    })
+
+    it('opens dentist, checkup, and lab, then Escape closes the list', () => {
+      const onMoveDate = jest.fn()
+      render(
+        <CollectionCalendar
+          schema={schemaWithDate}
+          rows={[undated('d1', 'dentist'), undated('d2', 'checkup'), undated('d3', 'lab')]}
+          onMoveDate={onMoveDate}
+        />
+      )
+      expect(screen.getByRole('button', { name: '3 without a date' })).toBeInTheDocument()
+      expect(screen.getByText('3 records, none with a date')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: '3 without a date' }))
+      const list = screen.getByRole('listbox', { name: 'without a date' })
+      expect(within(list).getByRole('option', { name: 'dentist' })).toBeInTheDocument()
+      expect(within(list).getByRole('option', { name: 'checkup' })).toBeInTheDocument()
+      expect(within(list).getByRole('option', { name: 'lab' })).toBeInTheDocument()
+      fireEvent.keyDown(list, { key: 'Escape' })
+      expect(screen.queryByRole('listbox', { name: 'without a date' })).not.toBeInTheDocument()
+      expect(onMoveDate).not.toHaveBeenCalled()
+    })
+  })
+
+  it('says none with a date when every record is undated', () => {
+    const undated: CollectionRow[] = [
+      { id: 'r1', title: 'Trim the rim', values: {} },
+      { id: 'r2', title: 'Undated', values: {} },
+    ]
+    render(<CollectionCalendar schema={schemaWithDate} rows={undated} />)
+    expect(screen.getByText('2 records, none with a date')).toBeInTheDocument()
+    expect(
+      screen.queryByText('nothing in this view has a date. records show here once they have one.')
+    ).not.toBeInTheDocument()
+  })
+
+  it('still shows the empty line when the dated collection has no records', () => {
+    render(<CollectionCalendar schema={schemaWithDate} rows={[]} />)
+    expect(screen.getByText(CALENDAR_EMPTY_LINE)).toBeInTheDocument()
+  })
+
   describe('the desktop month grid', () => {
     beforeEach(() => {
       jest.useFakeTimers().setSystemTime(new Date('2026-09-10T12:00:00Z'))
