@@ -1311,7 +1311,7 @@ describe('CollectionView — dragging a calendar event onto another day (KAN-385
 describe('span pill (KAN-455)', () => {
   const calendarConfig: ViewBlock = { id: 'cal', type: 'view', mode: 'calendar' }
 
-  it('month is selected by default, week is present and unchecked, agenda is absent, choosing week reports { span: week } once', async () => {
+  it('month is selected by default, week is present and unchecked, agenda is present and unchecked, choosing week reports { span: week } once', async () => {
     const user = userEvent.setup()
     const onConfigChange = jest.fn()
     render(
@@ -1323,8 +1323,8 @@ describe('span pill (KAN-455)', () => {
     expect(within(group).getByRole('radio', { name: 'week' })).toBeInTheDocument()
     expect(within(group).getByRole('radio', { name: 'week' })).not.toBeChecked()
     expect(within(group).getByRole('radio', { name: 'day' })).not.toBeChecked()
-    expect(within(group).queryByRole('radio', { name: 'agenda' })).not.toBeInTheDocument()
-    expect(group).not.toHaveTextContent('agenda')
+    expect(within(group).getByRole('radio', { name: 'agenda' })).toBeInTheDocument()
+    expect(within(group).getByRole('radio', { name: 'agenda' })).not.toBeChecked()
 
     await user.click(within(group).getByRole('radio', { name: 'week' }))
 
@@ -1332,6 +1332,25 @@ describe('span pill (KAN-455)', () => {
     expect(within(group).getByRole('radio', { name: 'month' })).not.toBeChecked()
     expect(onConfigChange).toHaveBeenCalledTimes(1)
     expect(onConfigChange).toHaveBeenCalledWith({ span: 'week' })
+  })
+
+  it('agenda is present and unchecked by default, and choosing agenda reports { span: agenda } once', async () => {
+    const user = userEvent.setup()
+    const onConfigChange = jest.fn()
+    render(
+      <CollectionCalendar schema={schemaWithDate} rows={rows} onConfigChange={onConfigChange} />
+    )
+
+    const group = screen.getByRole('radiogroup', { name: 'span' })
+    expect(within(group).getByRole('radio', { name: 'agenda' })).toBeInTheDocument()
+    expect(within(group).getByRole('radio', { name: 'agenda' })).not.toBeChecked()
+    expect(within(group).getByRole('radio', { name: 'month' })).toBeChecked()
+
+    await user.click(within(group).getByRole('radio', { name: 'agenda' }))
+
+    expect(within(group).getByRole('radio', { name: 'agenda' })).toBeChecked()
+    expect(onConfigChange).toHaveBeenCalledTimes(1)
+    expect(onConfigChange).toHaveBeenCalledWith({ span: 'agenda' })
   })
 
   it('seeds the selected span from the view field, and an absent field stays month', () => {
@@ -1363,6 +1382,27 @@ describe('span pill (KAN-455)', () => {
     await user.click(within(group).getByRole('radio', { name: 'month' }))
 
     expect(onConfigChange).toHaveBeenCalledWith({ span: 'month' }, undefined)
+  })
+
+  it('CollectionView passes a stored span: agenda and reports { span: agenda } through its config handler', async () => {
+    const user = userEvent.setup()
+    const onConfigChange = jest.fn()
+    render(
+      <CollectionView
+        config={{ ...calendarConfig, span: 'agenda' }}
+        schema={schemaWithDate}
+        rows={rows}
+        onConfigChange={onConfigChange}
+      />
+    )
+
+    const group = screen.getByRole('radiogroup', { name: 'span' })
+    expect(within(group).getByRole('radio', { name: 'agenda' })).toBeChecked()
+
+    await user.click(within(group).getByRole('radio', { name: 'day' }))
+    await user.click(within(group).getByRole('radio', { name: 'agenda' }))
+
+    expect(onConfigChange).toHaveBeenCalledWith({ span: 'agenda' }, undefined)
   })
 
   it('CollectionView passes a stored span: week and reports { span: week } through its config handler', async () => {
@@ -1534,6 +1574,371 @@ describe('week header', () => {
     expect(screen.queryByRole('button', { name: 'Previous week' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Next week' })).not.toBeInTheDocument()
     expect(screen.getByRole('radio', { name: 'day' })).toBeChecked()
+  })
+})
+
+describe('agenda header', () => {
+  const thisWindow = 'from 19 oct'
+  const nextWindow = 'from 2 nov'
+
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
+  })
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  it('when the span is agenda, the period is the agenda window, prev and next step fourteen days, and today stays on the agenda span', async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    const onConfigChange = jest.fn()
+    render(
+      <CollectionCalendar
+        schema={schemaWithDate}
+        rows={rows}
+        span="agenda"
+        onConfigChange={onConfigChange}
+      />
+    )
+
+    expect(screen.getByText(thisWindow)).toBeInTheDocument()
+    expect(screen.queryByText('october 2026')).not.toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'agenda' })).toBeChecked()
+    expect(screen.getByRole('button', { name: 'Previous agenda' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Next agenda' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Previous month' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Next month' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Previous week' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Next week' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Previous day' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Next day' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Next agenda' }))
+    expect(screen.getByText(nextWindow)).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'agenda' })).toBeChecked()
+
+    await user.click(screen.getByRole('button', { name: 'Previous agenda' }))
+    expect(screen.getByText(thisWindow)).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'agenda' })).toBeChecked()
+
+    await user.click(screen.getByRole('button', { name: 'Next agenda' }))
+    expect(screen.getByText(nextWindow)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'today' }))
+    expect(screen.getByText(thisWindow)).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'agenda' })).toBeChecked()
+    expect(onConfigChange).not.toHaveBeenCalled()
+  })
+
+  it('the month span keeps Previous month and Next month and the month label', () => {
+    render(<CollectionCalendar schema={schemaWithDate} rows={rows} span="month" />)
+
+    expect(screen.getByText('october 2026')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Previous month' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Next month' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Previous agenda' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Next agenda' })).not.toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'month' })).toBeChecked()
+  })
+
+  it('the week span keeps Previous week and Next week and the week label', () => {
+    render(<CollectionCalendar schema={schemaWithDate} rows={rows} span="week" />)
+
+    expect(screen.getByText('19 \u2013 25 oct 2026')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Previous week' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Next week' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Previous agenda' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Next agenda' })).not.toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'week' })).toBeChecked()
+  })
+
+  it('the day span keeps Previous day and Next day and the day label', () => {
+    render(<CollectionCalendar schema={schemaWithDate} rows={rows} span="day" />)
+
+    expect(screen.getByText('mon 19 oct 2026')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Previous day' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Next day' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Previous agenda' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Next agenda' })).not.toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'day' })).toBeChecked()
+  })
+})
+
+describe('agenda list', () => {
+  const agendaRows: CollectionRow[] = [
+    { id: 'alcove', title: 'confirm alcove', values: { 'p-due': '2026-10-19' } },
+    { id: 'dentist', title: 'dentist', values: { 'p-due': '2026-10-20T10:00:00' } },
+    { id: 'optician', title: 'optician', values: { 'p-due': '2026-10-21T09:00:00' } },
+    { id: 'plaster', title: 'plaster', values: { 'p-due': '2026-10-21' } },
+    { id: 'skip', title: 'skip hire', values: { 'p-due': '2026-10-18' } },
+    { id: 'renew', title: 'renew', values: { 'p-due': '2026-11-02' } },
+  ]
+
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
+  })
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  const day = (container: HTMLElement, iso: string) => {
+    const group = container.querySelector<HTMLElement>(
+      `[data-part="calendar-agenda-day"][data-iso="${iso}"]`
+    )
+    expect(group).not.toBeNull()
+    if (!group) throw new Error(`agenda day ${iso} missing`)
+    return group
+  }
+
+  it('lists coming days from buildAgenda, on both sizes, and draws none of the other bodies', () => {
+    const { container } = render(
+      <CollectionCalendar schema={schemaWithDate} rows={agendaRows} span="agenda" />
+    )
+
+    const list = container.querySelector<HTMLElement>('[data-part="calendar-agenda"]')
+    expect(list).not.toBeNull()
+    if (!list) return
+    expect(container.querySelectorAll('[data-part="calendar-agenda"]')).toHaveLength(1)
+    expect(list).toHaveClass('flex', 'flex-col')
+    expect(list).not.toHaveClass('md:hidden')
+    expect(list).not.toHaveClass('hidden')
+
+    const groups = [...list.querySelectorAll<HTMLElement>('[data-part="calendar-agenda-day"]')]
+    expect(groups.map((group) => group.dataset.iso)).toEqual([
+      '2026-10-19',
+      '2026-10-20',
+      '2026-10-21',
+    ])
+    for (const group of groups) {
+      expect(group).toHaveClass(
+        'grid',
+        'grid-cols-[52px_minmax(0,1fr)]',
+        'gap-2',
+        'py-2.5',
+        'border-t',
+        'border-mn-text/[0.09]',
+        'dark:border-mn-text/[0.14]',
+        'md:grid-cols-[88px_minmax(0,1fr)]',
+        'md:gap-4'
+      )
+      const head = group.firstElementChild
+      expect(head).toHaveClass('flex', 'flex-col', 'gap-0.5', 'pt-1.5')
+    }
+
+    const today = day(container, '2026-10-19')
+    const todayLabel = within(today).getByText('mon 19 oct · today')
+    expect(todayLabel).toHaveClass(
+      'text-[10.5px]',
+      'font-medium',
+      'uppercase',
+      'tracking-[.1em]',
+      'text-mn-text-secondary'
+    )
+    const todayNumber = today.querySelector('[data-part="due-today"]')
+    expect(todayNumber).toHaveAttribute('data-kind', 'date')
+    expect(todayNumber).toHaveClass(
+      'inline-flex',
+      'h-[30px]',
+      'min-w-[30px]',
+      'text-[20px]',
+      'font-medium',
+      'tabular-nums'
+    )
+    const alcove = within(today)
+      .getByText('confirm alcove')
+      .closest<HTMLElement>('[data-part="calendar-agenda-item"]')
+    expect(alcove).not.toBeNull()
+    if (!alcove) return
+    expect(alcove.querySelector('[data-part="calendar-agenda-time"]')).toBeNull()
+    expect(alcove.querySelector('span')).toHaveClass(
+      'size-[13px]',
+      'flex-none',
+      'rounded-[4px]',
+      'ring-[1.4px]',
+      'ring-inset',
+      'ring-mn-text/[0.32]'
+    )
+    expect(within(alcove).getByText('confirm alcove')).toHaveClass(
+      'min-w-0',
+      'flex-1',
+      'truncate',
+      'text-[15px]',
+      'leading-[1.3]',
+      'text-mn-text',
+      'md:text-[14px]'
+    )
+    expect(alcove).toHaveClass(
+      'flex',
+      'items-center',
+      'gap-2.5',
+      'min-h-11',
+      'rounded-[10px]',
+      'px-2',
+      'md:min-h-[38px]'
+    )
+
+    const tuesday = day(container, '2026-10-20')
+    expect(within(tuesday).getByText('tue 20 oct')).toBeInTheDocument()
+    expect(tuesday.querySelector('[data-part="due-today"]')).toBeNull()
+    expect(within(tuesday).getByText('20')).toHaveClass(
+      'h-[30px]',
+      'min-w-[30px]',
+      'text-[20px]',
+      'font-medium',
+      'tabular-nums',
+      'text-mn-text'
+    )
+    const dentist = within(tuesday)
+      .getByText('dentist')
+      .closest<HTMLElement>('[data-part="calendar-agenda-item"]')
+    expect(dentist?.querySelector('[data-part="calendar-agenda-time"]')).toHaveTextContent('10:00')
+    expect(dentist?.querySelector('[data-part="calendar-agenda-time"]')).toHaveClass(
+      'text-[11px]',
+      'font-medium',
+      'text-mn-text/80',
+      'tabular-nums'
+    )
+
+    const wednesday = day(container, '2026-10-21')
+    expect(within(wednesday).getByText('wed 21 oct')).toBeInTheDocument()
+    const wednesdayItems = [
+      ...wednesday.querySelectorAll<HTMLElement>('[data-part="calendar-agenda-item"]'),
+    ]
+    expect(wednesdayItems.map((item) => (item.textContent ?? '').replace(/\s+/g, ''))).toEqual([
+      'plaster',
+      'optician09:00',
+    ])
+    const opticianTime = wednesdayItems[1]?.querySelector('[data-part="calendar-agenda-time"]')
+    expect(opticianTime).toHaveTextContent('09:00')
+    expect(wednesdayItems[0]?.querySelector('[data-part="calendar-agenda-time"]')).toBeNull()
+
+    expect(screen.queryByText('skip hire')).not.toBeInTheDocument()
+    expect(screen.queryByText('renew')).not.toBeInTheDocument()
+    expect(screen.queryByText('thu 22 oct')).not.toBeInTheDocument()
+    expect(container.querySelector('[data-part="calendar-day-cell"]')).toBeNull()
+    expect(container.querySelector('[data-part="calendar-week-body"]')).toBeNull()
+    expect(container.querySelector('[data-part="calendar-day-body"]')).toBeNull()
+    expect(container.querySelector('[data-part="calendar-week-strip"]')).toBeNull()
+    expect(container.querySelector('[data-part="calendar-focus-list"]')).toBeNull()
+  })
+})
+
+describe('agenda peek', () => {
+  const dentist: CollectionRow = {
+    id: 'dentist',
+    title: 'dentist',
+    values: { 'p-due': '2026-10-20T10:00:00' },
+  }
+
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
+  })
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  it('clicking an agenda item selects it and opens the existing peek, and does not open the record', async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    const onOpenRow = jest.fn()
+    const { container } = render(
+      <CollectionCalendar
+        schema={schemaWithDate}
+        rows={[dentist]}
+        span="agenda"
+        onOpenRow={onOpenRow}
+      />
+    )
+
+    const item = container.querySelector<HTMLElement>(
+      '[data-part="calendar-agenda-item"]'
+    )
+    expect(item).not.toBeNull()
+    if (!item) return
+    expect(item).not.toHaveClass('ring-[1.5px]')
+    expect(screen.queryByLabelText('Record: dentist')).not.toBeInTheDocument()
+    expect(container.querySelectorAll('[data-part="record-peek"]')).toHaveLength(0)
+
+    await user.click(item)
+
+    expect(item).toHaveClass('ring-[1.5px]', 'ring-inset', 'ring-mn-text')
+    expect(screen.getByLabelText('Record: dentist')).toBeInTheDocument()
+    expect(container.querySelectorAll('[data-part="record-peek"]')).toHaveLength(1)
+    expect(onOpenRow).not.toHaveBeenCalled()
+  })
+})
+
+describe('agenda empty', () => {
+  const skipHire: CollectionRow = {
+    id: 'skip',
+    title: 'skip hire',
+    values: { 'p-due': '2026-10-18' },
+  }
+
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
+  })
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  it('a dated row outside the window leaves today with nothing dated, and a later empty window shows that line once', async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    const { container } = render(
+      <CollectionCalendar schema={schemaWithDate} rows={[skipHire]} span="agenda" />
+    )
+
+    const today = container.querySelector<HTMLElement>(
+      '[data-part="calendar-agenda-day"][data-iso="2026-10-19"]'
+    )
+    expect(today).not.toBeNull()
+    if (!today) return
+    expect(within(today).getByText('mon 19 oct · today')).toBeInTheDocument()
+    const todayNone = within(today).getByText('nothing dated')
+    expect(todayNone).toHaveClass('py-2.5', 'text-[13px]', 'text-mn-text-secondary')
+    expect(todayNone.compareDocumentPosition(within(today).getByText('mon 19 oct · today'))).toBe(
+      Node.DOCUMENT_POSITION_PRECEDING
+    )
+    expect(screen.queryByText('skip hire')).not.toBeInTheDocument()
+    expect(screen.queryByText(CALENDAR_EMPTY_LINE)).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Next agenda' }))
+    expect(screen.getByText('nothing dated')).toBeInTheDocument()
+    expect(screen.getAllByText('nothing dated')).toHaveLength(1)
+    expect(screen.queryByText('mon 19 oct · today')).not.toBeInTheDocument()
+    expect(container.querySelector('[data-part="calendar-agenda-day"]')).toBeNull()
+    expect(screen.queryByText(CALENDAR_EMPTY_LINE)).not.toBeInTheDocument()
+  })
+
+  it('zero rows still shows the calendar empty line and not nothing dated', () => {
+    const { container } = render(
+      <CollectionCalendar schema={schemaWithDate} rows={[]} span="agenda" />
+    )
+    expect(screen.getByText(CALENDAR_EMPTY_LINE)).toBeInTheDocument()
+    expect(screen.queryByText('nothing dated')).not.toBeInTheDocument()
+    expect(container.querySelector('[data-part="calendar-agenda"]')).toBeNull()
+  })
+
+  it('no date field and every row undated keep the calendar empty and omit the agenda list', () => {
+    const { container, rerender } = render(
+      <CollectionCalendar
+        schema={schemaNoDate}
+        rows={[{ id: 'note', title: 'note', values: {} }]}
+        span="agenda"
+      />
+    )
+    expect(screen.getByText(CALENDAR_EMPTY_LINE)).toBeInTheDocument()
+    expect(screen.queryByText('nothing dated')).not.toBeInTheDocument()
+    expect(container.querySelector('[data-part="calendar-agenda"]')).toBeNull()
+
+    rerender(
+      <CollectionCalendar
+        schema={schemaWithDate}
+        rows={[{ id: 'note', title: 'note', values: {} }]}
+        span="agenda"
+      />
+    )
+    expect(screen.getByText('1 records, none with a date')).toBeInTheDocument()
+    expect(screen.queryByText('nothing dated')).not.toBeInTheDocument()
+    expect(screen.queryByText(CALENDAR_EMPTY_LINE)).not.toBeInTheDocument()
+    expect(container.querySelector('[data-part="calendar-agenda"]')).toBeNull()
   })
 })
 
@@ -2391,9 +2796,7 @@ describe('KAN-526 week all-day drag', () => {
       .getByText('confirm alcove')
       .closest<HTMLElement>('[data-part="calendar-all-day-item"]')!
 
-  const renderStatic = (
-    onMoveDate: (rowId: string, key: string, value: PropertyValue) => void
-  ) =>
+  const renderStatic = (onMoveDate: (rowId: string, key: string, value: PropertyValue) => void) =>
     render(
       <CollectionView
         config={weekConfig}
