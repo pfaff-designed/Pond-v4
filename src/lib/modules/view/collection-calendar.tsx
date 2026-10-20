@@ -695,8 +695,12 @@ function WeekBody({
             <div
               key={row.id}
               data-part="calendar-all-day-item"
-              className={ALL_DAY_ITEM}
+              className={cn(
+                ALL_DAY_ITEM,
+                drag?.active && drag.rowId === row.id && DRAG_LIFT_CLASS
+              )}
               style={{ gridColumn: index + 2, gridRow: rowIndex + 1 }}
+              onPointerDown={editable ? (e) => onCardPointerDown(e, row.id) : undefined}
             >
               <span className={DAY_ITEM_DOT} />
               <span className={ALL_DAY_TITLE}>{row.title}</span>
