@@ -2583,3 +2583,42 @@ describe('KAN-525 strip marks', () => {
     expect(screen.queryByRole('button', { name: 'mon 19' })).not.toBeInTheDocument()
   })
 })
+
+describe('KAN-525 strip week', () => {
+  const calendarSchema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    { id: 'p-due', name: 'Due', type: 'date' },
+  ]
+  const dayCalendar: ViewBlock = { id: 'v-cal', type: 'view', mode: 'calendar', span: 'day' }
+  const previousWeek = ['mon 12', 'tue 13', 'wed 14', 'thu 15', 'fri 16', 'sat 17', 'sun 18'] as const
+
+  beforeEach(() => {
+    initialSchema = calendarSchema
+    initialRows = []
+  })
+
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  it('Previous day across a Monday retargets the week to the open day', async () => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    const { container } = renderView(dayCalendar)
+
+    expect(screen.getByRole('button', { name: 'mon 19' })).toHaveAttribute('aria-current', 'date')
+
+    await user.click(screen.getByRole('button', { name: 'Previous day' }))
+
+    expect(screen.getByText('sun 18 oct 2026')).toBeInTheDocument()
+    const strip = container.querySelector<HTMLElement>('[data-part="calendar-week-strip"]')
+    if (!strip) throw new Error('week strip missing')
+    const buttons = previousWeek.map((name) => within(strip).getByRole('button', { name }))
+    expect(buttons).toHaveLength(7)
+    expect(buttons[6]).toHaveAttribute('aria-current', 'date')
+    for (const button of buttons.slice(0, 6)) {
+      expect(button).not.toHaveAttribute('aria-current')
+    }
+    expect(within(strip).queryByRole('button', { name: 'mon 19' })).not.toBeInTheDocument()
+  })
+})
