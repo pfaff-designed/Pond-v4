@@ -26,7 +26,15 @@
  * board's bare `emptyLine` span instead; there is no button to offer.
  */
 
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type MouseEvent,
+} from 'react'
 import { Radio } from '@base-ui/react/radio'
 import { RadioGroup } from '@base-ui/react/radio-group'
 import { FOCUS_VISIBLE_RING } from '@/components/atoms/focus-ring'
@@ -62,6 +70,7 @@ import {
   type StripDay,
 } from './calendar-day'
 import {
+  agendaExtensionsAfterReach,
   agendaPeriodLabel,
   agendaRange,
   buildAgenda,
@@ -605,7 +614,9 @@ function AgendaItem({
  * The agenda span's list (`PondCalendar.dc.html` lines 239–244). Groups are
  * `buildAgenda`: untimed rows, then timed rows. An untimed row has no time node.
  * Today with no rows keeps its heading and draws `nothing dated` under it. A
- * window with no groups draws that line once, with no day heading.
+ * window with no groups draws that line once, with no day heading. An empty
+ * sentinel after those groups is observed against the viewport; reaching it
+ * asks the calendar to extend the list. No observer means the list stays put.
  */
 function AgendaList({
   groups,
@@ -617,6 +628,7 @@ function AgendaList({
   selectWithPointer,
   selectOrOpenOnKey,
   onOpenRow,
+  onReach,
 }: {
   groups: readonly AgendaGroup[]
   todayIso: string
@@ -627,7 +639,25 @@ function AgendaList({
   selectWithPointer: RowSelection['selectWithPointer']
   selectOrOpenOnKey: RowSelection['selectOrOpenOnKey']
   onOpenRow?: (rowId: string) => void
+  onReach: () => void
 }) {
+  const endRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (typeof IntersectionObserver === 'undefined') return
+    const node = endRef.current
+    if (!node) return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return
+        onReach()
+      },
+      { root: null }
+    )
+    observer.observe(node)
+    return () => {
+      observer.disconnect()
+    }
+  }, [onReach])
   const itemProps = {
     selectedId,
     isClickSuppressed,
@@ -678,6 +708,7 @@ function AgendaList({
           </div>
         ))
       )}
+      <div ref={endRef} data-part="calendar-agenda-end" aria-hidden="true" />
     </div>
   )
 }
@@ -1191,6 +1222,7 @@ export function CollectionCalendar({
   const [todayIso] = useState(() => localDateIso(new Date()))
   const [now] = useState(() => new Date())
   const [focusIso, setFocusIso] = useState(todayIso)
+  const [agendaExtensions, setAgendaExtensions] = useState(0)
   // Local span, seeded from the view field. A later change to that field
   // (another saved view) drops the override so the pill follows the view again.
   const seededSpan: CalendarSpan = spanProp ?? 'month'
@@ -1224,9 +1256,15 @@ export function CollectionCalendar({
   const openWeek = span === 'week' ? weekRange(focusIso) : null
   const openAgenda = span === 'agenda' ? agendaRange(focusIso) : null
   const agendaGroups = useMemo(
-    () => (span === 'agenda' ? buildAgenda(focusIso, todayIso, rows, dateDef) : []),
-    [dateDef, focusIso, rows, span, todayIso]
+    () =>
+      span === 'agenda' ? buildAgenda(focusIso, todayIso, rows, dateDef, agendaExtensions) : [],
+    [agendaExtensions, dateDef, focusIso, rows, span, todayIso]
   )
+  const handleAgendaReach = useCallback(() => {
+    setAgendaExtensions((current) =>
+      agendaExtensionsAfterReach(focusIso, rows, dateDef, current)
+    )
+  }, [dateDef, focusIso, rows])
   const periodLabel = openAgenda
     ? agendaPeriodLabel(openAgenda.start)
     : openWeek
@@ -1256,9 +1294,11 @@ export function CollectionCalendar({
         ? 'Next day'
         : 'Next month'
   const handleStepFocus = (direction: -1 | 1) => {
+    setAgendaExtensions(0)
     setFocusIso((current) => stepFocus(current, direction))
   }
   const handleToday = () => {
+    setAgendaExtensions(0)
     setFocusIso(goToday(todayIso))
   }
   // Desktop `goDay`: blank space opens that day. A mobile month dot only moves
@@ -1497,6 +1537,7 @@ export function CollectionCalendar({
             selectWithPointer={selectWithPointer}
             selectOrOpenOnKey={selectOrOpenOnKey}
             onOpenRow={onOpenRow}
+            onReach={handleAgendaReach}
           />
         )
       ) : (

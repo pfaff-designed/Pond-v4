@@ -1,6 +1,7 @@
 import type { PropertyDef } from '@/lib/properties/schema'
 import type { CollectionRow } from './apply'
 import {
+  agendaExtensionsAfterReach,
   agendaPeriodLabel,
   agendaRange,
   buildAgenda,
@@ -119,5 +120,59 @@ describe('buildAgenda', () => {
 
     expect(groups.map((group) => group.iso)).toEqual(['2026-11-01'])
     expect(listed(groups[0] as AgendaGroup)).toEqual(['last'])
+  })
+
+  it('extensions 0 equals the four-argument call', () => {
+    const four = buildAgenda('2026-10-19', '2026-10-19', coming, dueDef)
+    const zero = buildAgenda('2026-10-19', '2026-10-19', coming, dueDef, 0)
+
+    expect(zero).toEqual(four)
+    expect(zero.map((group) => group.iso)).toEqual(['2026-10-19', '2026-10-20', '2026-10-21'])
+    expect(zero.flatMap(listed).join(' ')).not.toMatch(/skip hire|renew/)
+  })
+
+  it('extensions 1 lists renew on 2 nov and omits empty days and skip hire', () => {
+    const groups = buildAgenda('2026-10-19', '2026-10-19', coming, dueDef, 1)
+
+    expect(groups.map((group) => group.iso)).toEqual([
+      '2026-10-19',
+      '2026-10-20',
+      '2026-10-21',
+      '2026-11-02',
+    ])
+    expect(listed(groups[3] as AgendaGroup)).toEqual(['renew'])
+    expect(groups.map((group) => group.iso)).not.toContain('2026-10-22')
+    expect(groups.map((group) => group.iso)).not.toContain('2026-11-03')
+    expect(groups.flatMap(listed).join(' ')).not.toMatch(/skip hire/)
+  })
+
+  it('includes a row on 16 nov only once extensions reaches 2', () => {
+    const rows = [...coming, row('later', '2026-11-16')]
+    const one = buildAgenda('2026-10-19', '2026-10-19', rows, dueDef, 1)
+    const two = buildAgenda('2026-10-19', '2026-10-19', rows, dueDef, 2)
+
+    expect(one.map((group) => group.iso)).not.toContain('2026-11-16')
+    expect(two.map((group) => group.iso)).toContain('2026-11-16')
+    expect(listed(two.find((group) => group.iso === '2026-11-16') as AgendaGroup)).toEqual(['later'])
+  })
+
+  it('keeps today inside an extended empty window', () => {
+    const groups = buildAgenda('2026-10-19', '2026-11-02', [], dueDef, 1)
+
+    expect(groups).toEqual([{ iso: '2026-11-02', rows: { untimed: [], timed: [] } }])
+  })
+})
+
+describe('agendaExtensionsAfterReach', () => {
+  it.each([
+    ['coming from 0', coming, dueDef, 0, 1],
+    ['coming from 1', coming, dueDef, 1, 1],
+    ['lone row on 2026-11-15', [row('later', '2026-11-15')], dueDef, 0, 1],
+    ['lone row on 2026-11-16', [row('later', '2026-11-16')], dueDef, 0, 2],
+    ['lone skip hire on 2026-10-18', [row('skip hire', '2026-10-18')], dueDef, 0, 0],
+    ['dateDef undefined', coming, undefined, 0, 0],
+    ['coming plus 2026-11-20 from 0', [...coming, row('after', '2026-11-20')], dueDef, 0, 1],
+  ] as const)('%s', (_label, rows, dateDef, extensions, expected) => {
+    expect(agendaExtensionsAfterReach('2026-10-19', rows, dateDef, extensions)).toBe(expected)
   })
 })
