@@ -3454,6 +3454,27 @@ describe('KAN-459 time', () => {
     expect(alcove?.querySelector('[data-part="calendar-item-time"]')).toBeNull()
     expect(cell.querySelectorAll('[data-part="calendar-item-time"]')).toHaveLength(1)
   })
+
+  it('keeps a short title whole, bound to the cell', () => {
+    const monthRows: CollectionRow[] = [
+      { id: 'dentist', title: 'dentist', values: { 'p-due': '2026-10-19T10:00:00' } },
+    ]
+    const { container } = render(<CollectionCalendar schema={schemaWithDate} rows={monthRows} />)
+    const cell = container.querySelector<HTMLElement>(
+      '[data-part="calendar-day-cell"][data-iso="2026-10-19"]'
+    )
+    expect(cell).not.toBeNull()
+    if (!cell) return
+
+    const dentist = cell.querySelector<HTMLElement>('[data-row-id="dentist"]')
+    expect(dentist).not.toBeNull()
+    expect(dentist).toHaveClass('min-w-0')
+    expect(dentist?.parentElement).toHaveClass('min-w-0')
+    const title = dentist && within(dentist).getByText('dentist')
+    expect(title).toHaveTextContent(/^dentist$/)
+    expect(title).toHaveClass('min-w-0', 'flex-1', 'truncate', 'text-[11.5px]', 'leading-[1.3]')
+    expect(title?.textContent).not.toContain('denti…')
+  })
 })
 
 describe('KAN-459 done', () => {

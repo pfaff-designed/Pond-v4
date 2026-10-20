@@ -135,7 +135,7 @@ const DOW_HEAD_MOBILE =
 const DAY_NUMBER =
   'inline-flex h-[22px] min-w-[22px] items-center justify-center rounded-full px-1 text-[12px] font-medium tabular-nums'
 /** The DC's stack item row: `gap 6 · height 20 · padding 0 4 · radius 6`. */
-const DAY_ITEM_ROW = 'flex h-5 items-center gap-1.5 rounded-[6px] px-1'
+const DAY_ITEM_ROW = 'flex h-5 min-w-0 items-center gap-1.5 rounded-[6px] px-1'
 /** `PondCalendar.dc.html`'s `ring(o)`: a selected item's own 1.5px inset ink ring. */
 const DAY_ITEM_SELECTED_RING = 'ring-[1.5px] ring-inset ring-mn-text'
 /** `boxSt(o,9)` size. A live row keeps the inset ring; a done row fills ink .68. */
@@ -293,7 +293,7 @@ function MonthDayStack({
   if (items.length === 0 && moreCount === 0) return null
   return (
     <div
-      className="flex flex-col gap-px px-1 pt-0.5 pb-2"
+      className="flex min-w-0 flex-col gap-px px-1 pt-0.5 pb-2"
       style={lanes > 0 ? { marginTop: lanes * 22 } : undefined}
     >
       {items.map((row) => {
