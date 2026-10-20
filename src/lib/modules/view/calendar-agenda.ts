@@ -48,25 +48,28 @@ export function agendaPeriodLabel(startIso: string): string {
 }
 
 /**
- * The fourteen days from `agendaRange(focusIso)`, as groups. A day with no rows
- * is left out unless it is `todayIso`. A row before the Monday or after the end
- * day never lands in a group. A value with a `T` stays timed even outside
- * 08:00–19:00, because `splitDayRows` slices `HH:MM` and does not clip to the
- * day grid. No date property → no groups, including when today falls inside.
+ * Days from the Monday of `agendaRange(focusIso)` through the inclusive last
+ * day `addDays(agendaRange(focusIso).end, Math.max(0, extensions) * 14)`.
+ * `extensions` 0 is that fourteen-day window. A day with no rows is left out
+ * unless it is `todayIso`. A row before the Monday or after the last day never
+ * lands in a group. A value with a `T` stays timed even outside 08:00–19:00,
+ * because `splitDayRows` slices `HH:MM` and does not clip to the day grid. No
+ * date property → no groups, including when today falls inside.
  */
 export function buildAgenda(
   focusIso: string,
   todayIso: string,
   rows: readonly CollectionRow[],
-  dateDef: PropertyDef | undefined
+  dateDef: PropertyDef | undefined,
+  extensions = 0
 ): AgendaGroup[] {
   if (!dateDef) return []
 
-  const { start } = agendaRange(focusIso)
+  const range = agendaRange(focusIso)
+  const last = addDays(range.end, Math.max(0, extensions) * 14)
   const groups: AgendaGroup[] = []
 
-  for (let offset = 0; offset < 14; offset += 1) {
-    const iso = addDays(start, offset)
+  for (let iso = range.start; iso <= last; iso = addDays(iso, 1)) {
     const dayRows = splitDayRows(rows, dateDef, iso)
     const hasRows = dayRows.untimed.length > 0 || dayRows.timed.length > 0
     if (!hasRows && iso !== todayIso) continue
