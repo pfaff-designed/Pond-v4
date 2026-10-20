@@ -1807,6 +1807,78 @@ describe('week all day', () => {
   })
 })
 
+describe('week phone', () => {
+  const thisWeek = '19 \u2013 25 oct 2026'
+  const stripDays = ['mon 19', 'tue 20', 'wed 21', 'thu 22', 'fri 23', 'sat 24', 'sun 25']
+  const phoneRows: CollectionRow[] = [
+    { id: 'dentist', title: 'dentist', values: { 'p-due': '2026-10-19' } },
+    { id: 'optician', title: 'optician', values: { 'p-due': '2026-10-22' } },
+  ]
+
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
+  })
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  it('lists the focused day under the week strip and a strip tap leaves the span on week', async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    const onConfigChange = jest.fn()
+    const { container } = render(
+      <CollectionCalendar
+        schema={schemaWithDate}
+        rows={phoneRows}
+        span="week"
+        onConfigChange={onConfigChange}
+      />
+    )
+
+    const strip = container.querySelector<HTMLElement>('[data-part="calendar-week-strip"]')
+    expect(strip).not.toBeNull()
+    if (!strip) return
+    expect(strip).toHaveClass('md:hidden')
+    const stripButtons = stripDays.map((name) => within(strip).getByRole('button', { name }))
+    expect(stripButtons.map((button) => button.getAttribute('aria-label'))).toEqual(stripDays)
+    expect(within(strip).getByRole('button', { name: 'mon 19' })).toHaveAttribute(
+      'aria-current',
+      'date'
+    )
+    expect(within(strip).getByRole('button', { name: 'thu 22' })).not.toHaveAttribute('aria-current')
+
+    const focusList = container.querySelector<HTMLElement>('[data-part="calendar-focus-list"]')
+    expect(focusList).not.toBeNull()
+    if (!focusList) return
+    expect(focusList).toHaveClass('md:hidden')
+    expect(strip.compareDocumentPosition(focusList) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(within(focusList).getByText('dentist')).toBeInTheDocument()
+    expect(within(focusList).queryByText('optician')).not.toBeInTheDocument()
+
+    const body = container.querySelector<HTMLElement>('[data-part="calendar-week-body"]')
+    expect(body).not.toBeNull()
+    if (!body) return
+    expect(body).toHaveClass('hidden', 'md:flex')
+    expect(container.querySelector('[data-part="calendar-day-body"]')).toBeNull()
+    expect(container.querySelector('[data-part="calendar-day-cell"]')).toBeNull()
+    expect(container.querySelector('.gap-y-0\\.5')).toBeNull()
+
+    await user.click(within(strip).getByRole('button', { name: 'thu 22' }))
+
+    expect(screen.getByText(thisWeek)).toBeInTheDocument()
+    expect(within(strip).getByRole('button', { name: 'thu 22' })).toHaveAttribute(
+      'aria-current',
+      'date'
+    )
+    expect(within(strip).getByRole('button', { name: 'mon 19' })).not.toHaveAttribute('aria-current')
+    expect(within(focusList).getByText('optician')).toBeInTheDocument()
+    expect(within(focusList).queryByText('dentist')).not.toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'week' })).toBeChecked()
+    expect(container.querySelector('[data-part="calendar-day-body"]')).toBeNull()
+    expect(container.querySelector('[data-part="calendar-week-body"]')).not.toBeNull()
+    expect(onConfigChange).not.toHaveBeenCalled()
+  })
+})
+
 describe('day body (KAN-455)', () => {
   const dayRows: CollectionRow[] = [
     { id: 'dentist', title: 'dentist', values: { 'p-due': '2026-10-21' } },

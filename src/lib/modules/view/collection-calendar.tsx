@@ -1029,7 +1029,9 @@ export function CollectionCalendar({
   // focus and steps seven days; a day span labels and steps that day; a month
   // span keeps the month label and `stepMonth`. `today` only moves the focus,
   // so it never leaves the span. A week span draws the desktop week body
-  // (day heads, all-day row, hour grid) instead of the month grid.
+  // (day heads, all-day row, hour grid). On a phone (`mob && span === 'week'`)
+  // that grid stays hidden: the week strip and the focused-day list show
+  // instead, and a strip tap only moves the focus.
   const openWeek = span === 'week' ? weekRange(focusIso) : null
   const periodLabel = openWeek
     ? weekPeriodLabel(openWeek.start, openWeek.end)
@@ -1252,14 +1254,17 @@ export function CollectionCalendar({
           />
         </>
       ) : openWeek ? (
-        <WeekBody
-          startIso={openWeek.start}
-          todayIso={todayIso}
-          nowHm={nowHm}
-          rows={rows}
-          dateDef={dateDef}
-          onOpenDay={handleOpenDay}
-        />
+        <>
+          <CalendarWeekStrip days={weekStrip} todayIso={todayIso} onSelect={setFocusIso} />
+          <WeekBody
+            startIso={openWeek.start}
+            todayIso={todayIso}
+            nowHm={nowHm}
+            rows={rows}
+            dateDef={dateDef}
+            onOpenDay={handleOpenDay}
+          />
+        </>
       ) : (
         <>
           <div
@@ -1322,21 +1327,23 @@ export function CollectionCalendar({
               ))
             )}
           </div>
-          <FocusDayList
-            dayOfMonth={focusDayOfMonth}
-            isToday={focusIsToday}
-            label={focusLabel}
-            items={focusItems}
-            selectedId={selectedRow?.id}
-            isClickSuppressed={isClickSuppressed}
-            rowProps={rowProps}
-            keyboardProps={keyboardProps}
-            selectWithPointer={selectWithPointer}
-            selectOrOpenOnKey={selectOrOpenOnKey}
-            onOpenRow={onOpenRow}
-          />
         </>
       )}
+      {span !== 'day' ? (
+        <FocusDayList
+          dayOfMonth={focusDayOfMonth}
+          isToday={focusIsToday}
+          label={focusLabel}
+          items={focusItems}
+          selectedId={selectedRow?.id}
+          isClickSuppressed={isClickSuppressed}
+          rowProps={rowProps}
+          keyboardProps={keyboardProps}
+          selectWithPointer={selectWithPointer}
+          selectOrOpenOnKey={selectOrOpenOnKey}
+          onOpenRow={onOpenRow}
+        />
+      ) : null}
       {selectedRow && (
         <RecordPeek
           key={selectedRow.id}
