@@ -1905,6 +1905,42 @@ describe('agenda reach', () => {
     expect(screen.queryByRole('button', { name: 'load more' })).toBeNull()
     expect(container.querySelector('[data-part="calendar-agenda-end"]')?.tagName).toBe('DIV')
   })
+
+  it('adds nothing when nothing is dated past the current end', () => {
+    const rows: CollectionRow[] = [
+      { id: 'alcove', title: 'confirm alcove', values: { 'p-due': '2026-10-19' } },
+      { id: 'dentist', title: 'dentist', values: { 'p-due': '2026-10-20T10:00:00' } },
+      { id: 'plaster', title: 'plaster', values: { 'p-due': '2026-10-21' } },
+      { id: 'optician', title: 'optician', values: { 'p-due': '2026-10-21T09:00:00' } },
+      { id: 'skip', title: 'skip hire', values: { 'p-due': '2026-10-18' } },
+    ]
+    const { container } = render(
+      <CollectionCalendar schema={schemaWithDate} rows={rows} span="agenda" />
+    )
+    const dayIsos = () =>
+      [...container.querySelectorAll<HTMLElement>('[data-part="calendar-agenda-day"]')].map(
+        (group) => group.dataset.iso
+      )
+
+    reachAgendaEnd()
+
+    expect(dayIsos()).toEqual(['2026-10-19', '2026-10-20', '2026-10-21'])
+    expect(
+      container.querySelector('[data-part="calendar-agenda-day"][data-iso="2026-11-02"]')
+    ).toBeNull()
+    expect(screen.queryByText('skip hire')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'load more' })).toBeNull()
+    expect(container.querySelector('[data-part="calendar-agenda-end"]')?.tagName).toBe('DIV')
+
+    reachAgendaEnd()
+
+    expect(dayIsos()).toEqual(['2026-10-19', '2026-10-20', '2026-10-21'])
+    expect(
+      container.querySelector('[data-part="calendar-agenda-day"][data-iso="2026-11-02"]')
+    ).toBeNull()
+    expect(screen.queryByText('skip hire')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'load more' })).toBeNull()
+  })
 })
 
 describe('agenda peek', () => {
