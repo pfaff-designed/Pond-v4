@@ -899,6 +899,35 @@ describe('⌘⌫ deletes the focused block (`Pond 08 Edges` 8e)', () => {
     expect(onChange).not.toHaveBeenCalled()
   })
 
+  it('Delete on the selected row removes the block', async () => {
+    const { onChange } = renderCanvas([heading, table])
+    const root = document.getElementById('block-b-table')!
+    root.focus()
+    fireEvent.keyDown(root, { key: 'Delete' })
+
+    expect(lastBlocks(onChange).map((b) => b.id)).toEqual(['b-heading'])
+    expect(await screen.findByText('Deleted table block')).toBeInTheDocument()
+  })
+
+  it('Backspace on the selected row removes the block — that key is Delete on a Mac', async () => {
+    const { onChange } = renderCanvas([heading, table])
+    const root = document.getElementById('block-b-table')!
+    root.focus()
+    fireEvent.keyDown(root, { key: 'Backspace' })
+
+    expect(lastBlocks(onChange).map((b) => b.id)).toEqual(['b-heading'])
+  })
+
+  it('Delete inside a table cell leaves the block', async () => {
+    const { onChange } = renderCanvas([heading, table])
+    const cell = within(document.getElementById('block-b-table')!).getByRole('textbox', {
+      name: 'Tool, row 1',
+    })
+    fireEvent.keyDown(cell, { key: 'Delete' })
+
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
   it('fired from a todo item input leaves the block count unchanged', async () => {
     setPlatform('MacIntel')
     const { onChange } = renderCanvas([heading, shopping])

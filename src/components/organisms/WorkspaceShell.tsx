@@ -3,6 +3,7 @@
 import { Suspense, useRef, type ReactNode } from 'react'
 import { PondProvider } from '@/lib/pond/context'
 import { Rail } from '@/components/organisms/Rail'
+import { RailFrame } from '@/components/organisms/RailFrame'
 import { ShellCommands } from '@/components/organisms/ShellCommands'
 import { DocumentPanel } from '@/components/organisms/DocumentPanel'
 import { AITerminal } from '@/components/organisms/AITerminal'
@@ -55,15 +56,17 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
               <DeletionUndoProvider>
                 <CommandPathProvider>
                   <ZenChrome className="flex flex-shrink-0">
-                    {/* The fallback reserves the rail's footprint (the card + its 20px
-                      inset) so the content column doesn't jump when it lands. */}
-                    <Suspense
-                      fallback={
-                        <div className="my-5 ml-5 flex-shrink-0" style={{ width: RAIL_WIDTH_PX }} />
-                      }
-                    >
-                      <Rail />
-                    </Suspense>
+                    <RailFrame>
+                      {/* The fallback reserves the rail's footprint (the card + its 20px
+                        inset) so the content column doesn't jump when it lands. */}
+                      <Suspense
+                        fallback={
+                          <div className="my-5 ml-5 flex-shrink-0" style={{ width: RAIL_WIDTH_PX }} />
+                        }
+                      >
+                        <Rail />
+                      </Suspense>
+                    </RailFrame>
                   </ZenChrome>
                   <div className="relative flex flex-col flex-1 min-h-0">
                     {/* Content owns the full column height; the surfaces inside pad
