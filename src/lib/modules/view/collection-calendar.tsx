@@ -13,6 +13,9 @@
  * (`PondCalendar.dc.html` `isTime`).
  * On a phone the day span draws one Monday-first week strip before both bodies
  * (`PondCalendar.dc.html` lines 185–192).
+ * An agenda span unmounts the month grid, both time bodies, the week strip and
+ * the focus list, and draws the list (`showList` for `span === 'agenda'`,
+ * lines 230–246) from `buildAgenda`.
  * A blank click on a desktop month cell opens that day (`goDay`). A mobile month
  * dot only moves the focus and keeps the month span. The DC's
  * `isMonthD`/`isMonthM` don't depend on `isEmpty` (`empty` only zeroes `recs`), so
@@ -58,7 +61,13 @@ import {
   type DayTimedRow,
   type StripDay,
 } from './calendar-day'
-import { agendaPeriodLabel, agendaRange, stepAgenda } from './calendar-agenda'
+import {
+  agendaPeriodLabel,
+  agendaRange,
+  buildAgenda,
+  stepAgenda,
+  type AgendaGroup,
+} from './calendar-agenda'
 import { stepWeek, weekPeriodLabel, weekRange } from './calendar-week'
 import { localDateIso } from './due'
 import { CALENDAR_EMPTY_LINE } from './kinds'
@@ -140,6 +149,25 @@ const DAY_NUMBER_LIST =
 /** `boxSt(o,13)`: the focused-day list's larger dot, `radius 4` (`sz > 11`). */
 const DAY_ITEM_DOT_LARGE =
   'size-[13px] flex-none rounded-[4px] box-border ring-[1.4px] ring-inset ring-mn-text/[0.32]'
+/**
+ * Agenda day group (`PondCalendar.dc.html` lines 239–244). One list at both
+ * sizes: 52px / gap 8, and from `md` 88px / gap 16. Hair is the top border.
+ */
+const AGENDA_DAY =
+  'grid grid-cols-[52px_minmax(0,1fr)] gap-2 border-t border-mn-text/[0.09] py-2.5 dark:border-mn-text/[0.14] md:grid-cols-[88px_minmax(0,1fr)] md:gap-4'
+/** Head column: gap 2, padding-top 6. */
+const AGENDA_HEAD = 'flex flex-col gap-0.5 pt-1.5'
+/** `` `${dow} ${day} ${abbr}` ``, uppercase 10.5px tracking .1em, ink .68. */
+const AGENDA_LABEL =
+  'text-[10.5px] font-medium uppercase tracking-[.1em] text-mn-text-secondary'
+/** Row: flex, center, gap 10, min-height 44 / 38 from `md`, padding 0 8px, radius 10. */
+const AGENDA_ITEM =
+  'flex min-h-11 min-w-0 items-center gap-2.5 rounded-[10px] px-2 md:min-h-[38px]'
+/** Title: 15px, 14px from `md`, leading 1.3. */
+const AGENDA_TITLE =
+  'min-w-0 flex-1 truncate text-[15px] leading-[1.3] text-mn-text md:text-[14px]'
+/** Timed meta: sliced `HH:MM`, 11px weight 500, ink .8. */
+const AGENDA_TIME = 'flex-none text-[11px] font-medium text-mn-text/80 tabular-nums'
 /** The day cell's add mark. Hidden until that cell is hovered or focus-within.
  *  Named `group/day`, not a bare `group`: BlockCanvas's block wrapper is already
  *  `group`, and a bare one would reveal every day's plus as soon as the pointer
@@ -498,6 +526,57 @@ function FocusDayList({
           ))
         )}
       </div>
+    </div>
+  )
+}
+
+/** `` `${dow} ${day} ${month}` ``, plus ` · today` when the group is today. */
+function agendaDayLabel(iso: string, todayIso: string): string {
+  const day = Number(iso.slice(8, 10))
+  const label = `${DOW_LABELS[weekdayIndex(iso)]} ${day} ${monthAbbr(iso)}`
+  return iso === todayIso ? `${label} · today` : label
+}
+
+/**
+ * The agenda span's list (`PondCalendar.dc.html` lines 239–244). Groups are
+ * `buildAgenda`: untimed rows, then timed rows. An untimed row has no time node.
+ */
+function AgendaList({ groups, todayIso }: { groups: readonly AgendaGroup[]; todayIso: string }) {
+  return (
+    <div data-part="calendar-agenda" className="flex flex-col">
+      {groups.map((group) => (
+        <div
+          key={group.iso}
+          data-part="calendar-agenda-day"
+          data-iso={group.iso}
+          className={AGENDA_DAY}
+        >
+          <div className={AGENDA_HEAD}>
+            <FocusedDayNumber
+              day={Number(group.iso.slice(8, 10))}
+              isToday={group.iso === todayIso}
+            />
+            <span className={AGENDA_LABEL}>{agendaDayLabel(group.iso, todayIso)}</span>
+          </div>
+          <div className="flex flex-col">
+            {group.rows.untimed.map((row) => (
+              <div key={row.id} data-part="calendar-agenda-item" className={AGENDA_ITEM}>
+                <span className={DAY_ITEM_DOT_LARGE} />
+                <span className={AGENDA_TITLE}>{row.title}</span>
+              </div>
+            ))}
+            {group.rows.timed.map((timed) => (
+              <div key={timed.row.id} data-part="calendar-agenda-item" className={AGENDA_ITEM}>
+                <span className={DAY_ITEM_DOT_LARGE} />
+                <span className={AGENDA_TITLE}>{timed.row.title}</span>
+                <span data-part="calendar-agenda-time" className={AGENDA_TIME}>
+                  {timed.timeLabel}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   )
 }
@@ -1040,9 +1119,13 @@ export function CollectionCalendar({
   // A week span draws the desktop week body (day heads, all-day row, hour
   // grid). On a phone (`mob && span === 'week'`) that grid stays hidden: the
   // week strip and the focused-day list show instead, and a strip tap only
-  // moves the focus. Agenda still draws the month grid until the list lands.
+  // moves the focus. An agenda span draws `buildAgenda` and none of those.
   const openWeek = span === 'week' ? weekRange(focusIso) : null
   const openAgenda = span === 'agenda' ? agendaRange(focusIso) : null
+  const agendaGroups = useMemo(
+    () => (span === 'agenda' ? buildAgenda(focusIso, todayIso, rows, dateDef) : []),
+    [dateDef, focusIso, rows, span, todayIso]
+  )
   const periodLabel = openAgenda
     ? agendaPeriodLabel(openAgenda.start)
     : openWeek
@@ -1298,6 +1381,8 @@ export function CollectionCalendar({
             containerClassName={containerClassName}
           />
         </>
+      ) : span === 'agenda' ? (
+        <AgendaList groups={agendaGroups} todayIso={todayIso} />
       ) : (
         <>
           <div
@@ -1362,7 +1447,7 @@ export function CollectionCalendar({
           </div>
         </>
       )}
-      {span !== 'day' ? (
+      {span !== 'day' && span !== 'agenda' ? (
         <FocusDayList
           dayOfMonth={focusDayOfMonth}
           isToday={focusIsToday}

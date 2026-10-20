@@ -1662,6 +1662,165 @@ describe('agenda header', () => {
   })
 })
 
+describe('agenda list', () => {
+  const agendaRows: CollectionRow[] = [
+    { id: 'alcove', title: 'confirm alcove', values: { 'p-due': '2026-10-19' } },
+    { id: 'dentist', title: 'dentist', values: { 'p-due': '2026-10-20T10:00:00' } },
+    { id: 'optician', title: 'optician', values: { 'p-due': '2026-10-21T09:00:00' } },
+    { id: 'plaster', title: 'plaster', values: { 'p-due': '2026-10-21' } },
+    { id: 'skip', title: 'skip hire', values: { 'p-due': '2026-10-18' } },
+    { id: 'renew', title: 'renew', values: { 'p-due': '2026-11-02' } },
+  ]
+
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
+  })
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  const day = (container: HTMLElement, iso: string) => {
+    const group = container.querySelector<HTMLElement>(
+      `[data-part="calendar-agenda-day"][data-iso="${iso}"]`
+    )
+    expect(group).not.toBeNull()
+    if (!group) throw new Error(`agenda day ${iso} missing`)
+    return group
+  }
+
+  it('lists coming days from buildAgenda, on both sizes, and draws none of the other bodies', () => {
+    const { container } = render(
+      <CollectionCalendar schema={schemaWithDate} rows={agendaRows} span="agenda" />
+    )
+
+    const list = container.querySelector<HTMLElement>('[data-part="calendar-agenda"]')
+    expect(list).not.toBeNull()
+    if (!list) return
+    expect(container.querySelectorAll('[data-part="calendar-agenda"]')).toHaveLength(1)
+    expect(list).toHaveClass('flex', 'flex-col')
+    expect(list).not.toHaveClass('md:hidden')
+    expect(list).not.toHaveClass('hidden')
+
+    const groups = [...list.querySelectorAll<HTMLElement>('[data-part="calendar-agenda-day"]')]
+    expect(groups.map((group) => group.dataset.iso)).toEqual([
+      '2026-10-19',
+      '2026-10-20',
+      '2026-10-21',
+    ])
+    for (const group of groups) {
+      expect(group).toHaveClass(
+        'grid',
+        'grid-cols-[52px_minmax(0,1fr)]',
+        'gap-2',
+        'py-2.5',
+        'border-t',
+        'border-mn-text/[0.09]',
+        'dark:border-mn-text/[0.14]',
+        'md:grid-cols-[88px_minmax(0,1fr)]',
+        'md:gap-4'
+      )
+      const head = group.firstElementChild
+      expect(head).toHaveClass('flex', 'flex-col', 'gap-0.5', 'pt-1.5')
+    }
+
+    const today = day(container, '2026-10-19')
+    const todayLabel = within(today).getByText('mon 19 oct · today')
+    expect(todayLabel).toHaveClass(
+      'text-[10.5px]',
+      'font-medium',
+      'uppercase',
+      'tracking-[.1em]',
+      'text-mn-text-secondary'
+    )
+    const todayNumber = today.querySelector('[data-part="due-today"]')
+    expect(todayNumber).toHaveAttribute('data-kind', 'date')
+    expect(todayNumber).toHaveClass(
+      'inline-flex',
+      'h-[30px]',
+      'min-w-[30px]',
+      'text-[20px]',
+      'font-medium',
+      'tabular-nums'
+    )
+    const alcove = within(today).getByText('confirm alcove').closest<HTMLElement>(
+      '[data-part="calendar-agenda-item"]'
+    )
+    expect(alcove).not.toBeNull()
+    if (!alcove) return
+    expect(alcove.querySelector('[data-part="calendar-agenda-time"]')).toBeNull()
+    expect(alcove.querySelector('span')).toHaveClass(
+      'size-[13px]',
+      'flex-none',
+      'rounded-[4px]',
+      'ring-[1.4px]',
+      'ring-inset',
+      'ring-mn-text/[0.32]'
+    )
+    expect(within(alcove).getByText('confirm alcove')).toHaveClass(
+      'min-w-0',
+      'flex-1',
+      'truncate',
+      'text-[15px]',
+      'leading-[1.3]',
+      'text-mn-text',
+      'md:text-[14px]'
+    )
+    expect(alcove).toHaveClass(
+      'flex',
+      'items-center',
+      'gap-2.5',
+      'min-h-11',
+      'rounded-[10px]',
+      'px-2',
+      'md:min-h-[38px]'
+    )
+
+    const tuesday = day(container, '2026-10-20')
+    expect(within(tuesday).getByText('tue 20 oct')).toBeInTheDocument()
+    expect(tuesday.querySelector('[data-part="due-today"]')).toBeNull()
+    expect(within(tuesday).getByText('20')).toHaveClass(
+      'h-[30px]',
+      'min-w-[30px]',
+      'text-[20px]',
+      'font-medium',
+      'tabular-nums',
+      'text-mn-text'
+    )
+    const dentist = within(tuesday).getByText('dentist').closest<HTMLElement>(
+      '[data-part="calendar-agenda-item"]'
+    )
+    expect(dentist?.querySelector('[data-part="calendar-agenda-time"]')).toHaveTextContent('10:00')
+    expect(dentist?.querySelector('[data-part="calendar-agenda-time"]')).toHaveClass(
+      'text-[11px]',
+      'font-medium',
+      'text-mn-text/80',
+      'tabular-nums'
+    )
+
+    const wednesday = day(container, '2026-10-21')
+    expect(within(wednesday).getByText('wed 21 oct')).toBeInTheDocument()
+    const wednesdayItems = [
+      ...wednesday.querySelectorAll<HTMLElement>('[data-part="calendar-agenda-item"]'),
+    ]
+    expect(wednesdayItems.map((item) => (item.textContent ?? '').replace(/\s+/g, ''))).toEqual([
+      'plaster',
+      'optician09:00',
+    ])
+    const opticianTime = wednesdayItems[1]?.querySelector('[data-part="calendar-agenda-time"]')
+    expect(opticianTime).toHaveTextContent('09:00')
+    expect(wednesdayItems[0]?.querySelector('[data-part="calendar-agenda-time"]')).toBeNull()
+
+    expect(screen.queryByText('skip hire')).not.toBeInTheDocument()
+    expect(screen.queryByText('renew')).not.toBeInTheDocument()
+    expect(screen.queryByText('thu 22 oct')).not.toBeInTheDocument()
+    expect(container.querySelector('[data-part="calendar-day-cell"]')).toBeNull()
+    expect(container.querySelector('[data-part="calendar-week-body"]')).toBeNull()
+    expect(container.querySelector('[data-part="calendar-day-body"]')).toBeNull()
+    expect(container.querySelector('[data-part="calendar-week-strip"]')).toBeNull()
+    expect(container.querySelector('[data-part="calendar-focus-list"]')).toBeNull()
+  })
+})
+
 describe('week body', () => {
   const weekRows: CollectionRow[] = [
     { id: 'dentist', title: 'dentist', values: { 'p-due': '2026-10-21T10:00:00' } },
