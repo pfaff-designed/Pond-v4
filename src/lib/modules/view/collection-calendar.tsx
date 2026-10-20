@@ -138,11 +138,12 @@ const DAY_NUMBER =
 const DAY_ITEM_ROW = 'flex h-5 items-center gap-1.5 rounded-[6px] px-1'
 /** `PondCalendar.dc.html`'s `ring(o)`: a selected item's own 1.5px inset ink ring. */
 const DAY_ITEM_SELECTED_RING = 'ring-[1.5px] ring-inset ring-mn-text'
-/** `boxSt(o,9)`: a 9px dot, `boxShadow: inset 0 0 0 1.4px a(.32)` for a live (non-done) row. */
-const DAY_ITEM_DOT =
-  'size-[9px] flex-none rounded-[2.5px] box-border ring-[1.4px] ring-inset ring-mn-text/[0.32]'
-/** `tSt(o,11.5)`: flex-1, one line, ellipsis. */
-const DAY_ITEM_TITLE = 'min-w-0 flex-1 truncate text-[11.5px] leading-[1.3] text-mn-text'
+/** `boxSt(o,9)` size. A live row keeps the inset ring; a done row fills ink .68. */
+const DAY_ITEM_DOT_BOX = 'size-[9px] flex-none rounded-[2.5px] box-border'
+const DAY_ITEM_DOT_RING = 'ring-[1.4px] ring-inset ring-mn-text/[0.32]'
+const DAY_ITEM_DOT = `${DAY_ITEM_DOT_BOX} ${DAY_ITEM_DOT_RING}`
+/** `tSt(o,11.5)`: flex-1, one line, ellipsis. Ink is applied per chip: full when open, .68 and struck when done. */
+const DAY_ITEM_TITLE = 'min-w-0 flex-1 truncate text-[11.5px] leading-[1.3]'
 /**
  * `mSt(10.5)`: 10.5px, weight 500, ink .80, tabular. The month chip and the
  * week/day timed event share this one class.
@@ -268,6 +269,7 @@ function MonthDayStack({
   selectWithPointer,
   selectOrOpenOnKey,
   onOpenRow,
+  isDone,
 }: {
   items: MonthDayCell['items']
   /** The date property that placed these chips. Its `T` suffix is the clock. */
@@ -285,6 +287,8 @@ function MonthDayStack({
   selectWithPointer: RowSelection['selectWithPointer']
   selectOrOpenOnKey: RowSelection['selectOrOpenOnKey']
   onOpenRow?: (rowId: string) => void
+  /** `done.isDone` from the calendar's `useDoneToggle`. */
+  isDone: (row: CollectionRow) => boolean
 }) {
   if (items.length === 0 && moreCount === 0) return null
   return (
@@ -294,6 +298,7 @@ function MonthDayStack({
     >
       {items.map((row) => {
         const time = monthChipTime(row, dateDef)
+        const rowDone = isDone(row)
         return (
           <div
             key={row.id}
@@ -318,8 +323,20 @@ function MonthDayStack({
             }
             onPointerDown={editable ? (e) => onCardPointerDown(e, row.id) : undefined}
           >
-            <span className={DAY_ITEM_DOT} />
-            <span className={DAY_ITEM_TITLE}>{row.title}</span>
+            <span
+              className={cn(
+                DAY_ITEM_DOT_BOX,
+                rowDone ? 'bg-mn-text-secondary' : DAY_ITEM_DOT_RING
+              )}
+            />
+            <span
+              className={cn(
+                DAY_ITEM_TITLE,
+                rowDone ? 'text-mn-text-secondary line-through' : 'text-mn-text'
+              )}
+            >
+              {row.title}
+            </span>
             {time ? (
               <span data-part="calendar-item-time" className={TIMED_TIME}>
                 {time}
@@ -396,6 +413,7 @@ function MonthDayCellView({
   onOpenRow,
   onPlace,
   onOpenDay,
+  isDone,
 }: {
   cell: MonthDayCell
   columnIndex: number
@@ -423,6 +441,8 @@ function MonthDayCellView({
   onPlace?: (iso: string) => void
   /** Blank space (the day number or the cell padding) opens this day. */
   onOpenDay: (iso: string) => void
+  /** `done.isDone` from the calendar's `useDoneToggle`. */
+  isDone: (row: CollectionRow) => boolean
 }) {
   // A stack item's Enter bubbles. Only the cell itself adds; the item's own
   // Enter still selects (KAN-358). A blank click opens the day (KAN-455).
@@ -477,6 +497,7 @@ function MonthDayCellView({
         selectWithPointer={selectWithPointer}
         selectOrOpenOnKey={selectOrOpenOnKey}
         onOpenRow={onOpenRow}
+        isDone={isDone}
       />
       {canAdd && (
         <button
@@ -1733,6 +1754,7 @@ export function CollectionCalendar({
                       selectWithPointer={selectWithPointer}
                       selectOrOpenOnKey={selectOrOpenOnKey}
                       onOpenRow={onOpenRow}
+                      isDone={done.isDone}
                     />
                   ))}
                   {segments.map((segment) => (

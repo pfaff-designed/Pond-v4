@@ -3455,3 +3455,61 @@ describe('KAN-459 time', () => {
     expect(cell.querySelectorAll('[data-part="calendar-item-time"]')).toHaveLength(1)
   })
 })
+
+describe('KAN-459 done', () => {
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
+  })
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  it('strikes a desktop month chip whose status option is labelled done, and leaves an open chip at ink with the ring', () => {
+    const schema: PropertySchema = [
+      { id: 'p-due', name: 'Due', type: 'date' },
+      {
+        id: 'p-status',
+        name: 'status',
+        type: 'status',
+        options: [
+          { id: 'opt-open', label: 'to do' },
+          { id: 'opt-done', label: 'done' },
+        ],
+      },
+    ]
+    const monthRows: CollectionRow[] = [
+      {
+        id: 'dentist',
+        title: 'dentist',
+        values: { 'p-due': '2026-10-19T10:00:00', 'p-status': 'opt-done' },
+      },
+      {
+        id: 'alcove',
+        title: 'confirm alcove',
+        values: { 'p-due': '2026-10-19T11:00:00', 'p-status': 'opt-open' },
+      },
+    ]
+    const { container } = render(<CollectionCalendar schema={schema} rows={monthRows} />)
+    const cell = container.querySelector<HTMLElement>(
+      '[data-part="calendar-day-cell"][data-iso="2026-10-19"]'
+    )
+    expect(cell).not.toBeNull()
+    if (!cell) return
+
+    const dentist = cell.querySelector<HTMLElement>('[data-row-id="dentist"]')
+    const dentistTitle = dentist && within(dentist).getByText('dentist')
+    const dentistDot = dentistTitle?.previousElementSibling
+    expect(dentistTitle).toHaveClass('text-mn-text-secondary', 'line-through')
+    expect(dentistTitle).not.toHaveClass('text-mn-text')
+    expect(dentistDot).toHaveClass('size-[9px]', 'bg-mn-text-secondary')
+    expect(dentistDot).not.toHaveClass('ring-[1.4px]', 'ring-inset', 'ring-mn-text/[0.32]')
+
+    const alcove = cell.querySelector<HTMLElement>('[data-row-id="alcove"]')
+    const alcoveTitle = alcove && within(alcove).getByText('confirm alcove')
+    const alcoveDot = alcoveTitle?.previousElementSibling
+    expect(alcoveTitle).toHaveClass('text-mn-text')
+    expect(alcoveTitle).not.toHaveClass('text-mn-text-secondary', 'line-through')
+    expect(alcoveDot).toHaveClass('ring-[1.4px]', 'ring-inset', 'ring-mn-text/[0.32]')
+    expect(alcoveDot).not.toHaveClass('bg-mn-text-secondary')
+  })
+})
