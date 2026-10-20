@@ -2622,3 +2622,42 @@ describe('KAN-525 strip week', () => {
     expect(within(strip).queryByRole('button', { name: 'mon 19' })).not.toBeInTheDocument()
   })
 })
+
+describe('KAN-525 strip tap', () => {
+  const calendarSchema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    { id: 'p-due', name: 'Due', type: 'date' },
+  ]
+  const dayCalendar: ViewBlock = { id: 'v-cal', type: 'view', mode: 'calendar', span: 'day' }
+
+  beforeEach(() => {
+    initialSchema = calendarSchema
+    initialRows = [{ id: 'r-22', title: 'optician', values: { 'p-due': '2026-10-22' } }]
+  })
+
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  it('sets the open day and leaves the span on day', async () => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    const onChange = jest.fn()
+    const { container } = renderView(dayCalendar, true, onChange)
+
+    expect(screen.getByRole('button', { name: 'mon 19' })).toHaveAttribute('aria-current', 'date')
+
+    await user.click(screen.getByRole('button', { name: 'thu 22' }))
+
+    expect(screen.getByText('thu 22 oct 2026')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'thu 22' })).toHaveAttribute('aria-current', 'date')
+    expect(screen.getByRole('button', { name: 'mon 19' })).not.toHaveAttribute('aria-current')
+    const mobile = container.querySelector<HTMLElement>(
+      '[data-part="calendar-day-body"][data-size="mobile"]'
+    )
+    if (!mobile) throw new Error('mobile day body missing')
+    expect(within(mobile).getByText('optician')).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'day' })).toBeChecked()
+    expect(onChange).not.toHaveBeenCalled()
+  })
+})

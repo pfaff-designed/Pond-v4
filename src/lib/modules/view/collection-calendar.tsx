@@ -595,15 +595,17 @@ function clockHm(date: Date): string {
 
 /**
  * Phone week strip on the day span (`PondCalendar.dc.html` lines 185–192).
- * One `md:hidden` grid, drawn before both day bodies. The buttons do not
- * change the open day.
+ * One `md:hidden` grid, drawn before both day bodies. A tap sets the open
+ * day (`pick`, `off: 0`) and does not change the span.
  */
 function CalendarWeekStrip({
   days,
   todayIso,
+  onSelect,
 }: {
   days: StripDay[]
   todayIso: string
+  onSelect: (iso: string) => void
 }) {
   return (
     <div data-part="calendar-week-strip" className="grid grid-cols-7 gap-0.5 md:hidden">
@@ -617,6 +619,7 @@ function CalendarWeekStrip({
             type="button"
             aria-label={`${word} ${day.day}`}
             aria-current={day.isFocus ? 'date' : undefined}
+            onClick={() => onSelect(day.iso)}
             className={cn(STRIP_COLUMN, day.isFocus && DAY_NUMBER_FOCUS_RING)}
           >
             <span className={STRIP_DOW}>{day.letter}</span>
@@ -1029,7 +1032,7 @@ export function CollectionCalendar({
       ) : null}
       {span === 'day' ? (
         <>
-          <CalendarWeekStrip days={weekStrip} todayIso={todayIso} />
+          <CalendarWeekStrip days={weekStrip} todayIso={todayIso} onSelect={setFocusIso} />
           <DayBody
             size="desktop"
             focusIso={focusIso}
