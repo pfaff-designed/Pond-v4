@@ -2853,3 +2853,58 @@ export const FilteredAndSorted: Story = {
     await expect(canvas.getByText('Wedge stoneware')).toBeInTheDocument()
   },
 }
+
+/**
+ * KAN-459. A desktop month chip shows its clock, a date with no time shows
+ * none, and a chip already on Done is struck at ink .68. The short title
+ * stays the whole word.
+ */
+const calendarItemRows: CollectionRow[] = [
+  {
+    id: 'dentist',
+    title: 'dentist',
+    values: { 'p-due': '2026-10-19T10:00:00', 'p-status': 'o-todo' },
+  },
+  { id: 'alcove', title: 'confirm alcove', values: { 'p-due': '2026-10-19' } },
+  {
+    id: 'optician',
+    title: 'optician',
+    values: { 'p-due': '2026-10-19T11:00:00', 'p-status': 'o-done' },
+  },
+]
+
+export const CalendarItemTimeAndDone: Story = {
+  name: 'calendar item time and done',
+  args: { config: calendarConfig, schema, rows: calendarItemRows },
+  loaders: [
+    async () => {
+      const prevViewport = { width: window.innerWidth, height: window.innerHeight }
+      await page.viewport(1440, 900)
+      const restoreClock = fixClockAtLocalNoonOn19Oct2026()
+      return { prevViewport, restoreClock }
+    },
+  ],
+  play: async ({ canvasElement, loaded }) => {
+    try {
+      const cell = canvasElement.querySelector<HTMLElement>(
+        '[data-part="calendar-day-cell"][data-iso="2026-10-19"]'
+      )
+      if (!cell) throw new Error('calendar item story: day cell 2026-10-19 not found')
+      const dentist = within(cell).getByText('dentist')
+      await expect(dentist).toHaveTextContent(/^dentist$/)
+      await expect(within(cell).getByText('10:00')).toBeInTheDocument()
+
+      const alcove = cell.querySelector<HTMLElement>('[data-row-id="alcove"]')
+      if (!alcove) throw new Error('calendar item story: untimed chip missing')
+      await expect(alcove.querySelector('[data-part="calendar-item-time"]')).toBeNull()
+
+      const optician = within(cell).getByText('optician')
+      await expect(optician).toHaveClass('text-mn-text-secondary', 'line-through')
+    } finally {
+      const restoreClock = loaded.restoreClock as (() => void) | undefined
+      restoreClock?.()
+      const { width, height } = loaded.prevViewport as { width: number; height: number }
+      await page.viewport(width, height)
+    }
+  },
+}
