@@ -55,7 +55,7 @@ function passageOf(canvasElement: HTMLElement) {
 
 /** The board's serif register, common to filled and empty. */
 async function assertRegister(cs: CSSStyleDeclaration) {
-  await expect(cs.fontFamily).toContain('PP Editorial New')
+  await expect(cs.fontFamily).toContain('Georgia')
   await expect(cs.fontWeight).toBe('200')
   await expect(cs.fontSize).toBe('16px')
 }

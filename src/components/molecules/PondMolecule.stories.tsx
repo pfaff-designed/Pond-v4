@@ -490,7 +490,7 @@ export const TypeRegisters: Story = {
     // entry — prose on a page: Editorial serif, weight 200, 16.5/1.6.
     const entry = moleculeRoot(canvasElement, 'entry')
     const prose = getComputedStyle(part(entry, 'title'))
-    await expect(prose.fontFamily).toMatch(/PP Editorial New/)
+    await expect(prose.fontFamily).toMatch(/Georgia/)
     await expect(prose.fontWeight).toBe('200')
     await expect(prose.fontSize).toBe('16.5px')
     await expect(prose.lineHeight).toBe('26.4px') // 16.5 × 1.6

@@ -4,10 +4,9 @@ import { Providers } from '@/components/providers'
 import { MODE_BOOT_SCRIPT } from '@/lib/theme/mode-boot'
 import './globals.css'
 
-// The Make Noise type set: three licensed PP faces, self-hosted via
-// next/font/local (issue #88). Serif ships ONLY 200/800 (+italics) so the
-// browser can never synthesize a 400 weight — "serif-never-400" is enforced
-// structurally by never loading the face at that weight.
+// Sans and mono are the licensed PP faces, self-hosted via next/font/local
+// (issue #88). The serif is Georgia, a system face: page prose and display
+// use it instead of PP Editorial New.
 //
 // PP Neue Montreal — sans: titles, labels, rail, tables, numbers, answers.
 const sans = localFont({
@@ -18,19 +17,6 @@ const sans = localFont({
     { path: './fonts/PPNeueMontreal-Medium.otf', weight: '500', style: 'normal' },
     { path: './fonts/PPNeueMontreal-Bold.otf', weight: '700', style: 'normal' },
     { path: './fonts/PPNeueMontreal-BoldItalic.otf', weight: '700', style: 'italic' },
-  ],
-})
-
-// PP Editorial New — serif: prose + display. ONLY 200 (Ultralight) and 800
-// (Ultrabold), each with an italic. No 400 face exists to fall back on.
-const serif = localFont({
-  variable: '--font-mn-serif',
-  display: 'swap',
-  src: [
-    { path: './fonts/PPEditorialNew-Ultralight.otf', weight: '200', style: 'normal' },
-    { path: './fonts/PPEditorialNew-UltralightItalic.otf', weight: '200', style: 'italic' },
-    { path: './fonts/PPEditorialNew-Ultrabold.otf', weight: '800', style: 'normal' },
-    { path: './fonts/PPEditorialNew-UltraboldItalic.otf', weight: '800', style: 'italic' },
   ],
 })
 
@@ -45,9 +31,6 @@ const mono = localFont({
   ],
 })
 
-// Display voice reuses the Editorial serif face (the "punch" register).
-const display = serif
-
 export const metadata: Metadata = {
   title: 'Pond',
   description: 'A thinking partner',
@@ -57,7 +40,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html
       lang="en"
-      className={`${sans.variable} ${serif.variable} ${mono.variable} ${display.variable} h-full antialiased`}
+      className={`${sans.variable} ${mono.variable} h-full antialiased`}
       suppressHydrationWarning
     >
       <head>
