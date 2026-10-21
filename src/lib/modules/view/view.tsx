@@ -20,12 +20,12 @@
 
 import { useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { ModuleViewProps } from '../types'
-import type { ViewBlock, ViewSavedView } from './schema'
+import type { ViewBlock, ViewMode, ViewSavedView } from './schema'
 import { useSiblingBlocks } from '../sibling-context'
 import { viewCollectionId } from '../block-frame'
 import { useCollectionRows } from './use-collection-rows'
 import { useStruckRows } from '@/lib/change-log/undo-strike'
-import { DIFF_REMOVAL_TEXT_CLASSNAME } from '@/components/molecules/PondMolecule'
+import { DIFF_REMOVAL_TEXT_CLASSNAME, PondMolecule } from '@/components/molecules/PondMolecule'
 import { activeSavedView, applyConfigPatch } from './schema'
 import { ActiveViewSelectionContext } from './active-view-context'
 import {
@@ -34,6 +34,7 @@ import {
   displayValue,
   epochDay,
   galleryCardMeta,
+  galleryCardTag,
   groupRows,
   layoutGanttBars,
   pickDateDef,
@@ -50,7 +51,13 @@ import { isChartCard } from './chart-compact'
 import { useChartProvenance } from './use-chart-provenance'
 import type { ChartProvenance } from '../chart/chrome'
 import { ViewNotice } from './notice'
-import { usePointerBucketDrag } from './use-pointer-bucket-drag'
+import {
+  DRAG_ACTIVE_CLASS,
+  DRAG_LIFT_CLASS,
+  DRAG_OVER_CLASS,
+  usePointerBucketDrag,
+} from './use-pointer-bucket-drag'
+import { isStepOutKey } from './step-out-key'
 import { usePointerGanttDrag } from './use-gantt-bar-drag'
 import {
   formatTick,
@@ -73,11 +80,18 @@ import {
   addDateField,
   addStatusField,
   coerceValue,
+  fieldNameClash,
+  freeFieldName,
+  isFieldNameTaken,
   removeField,
+  renameField,
+  restoreFieldAt,
   ROW_TYPE,
+  type PropertyDef,
   type PropertySchema,
   type PropertyValue,
 } from '@/lib/properties/schema'
+import { FieldHeaderMenu } from './field-header-menu'
 import { useOptionalDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import { usePageLinks } from '../page-link/context'
 import { dueOfRow, firstOrangeToday, localDateIso } from './due'
@@ -90,18 +104,49 @@ import { DraftInput } from '@/components/atoms/draft-input'
 import { RecordPeek } from './record-peek'
 import { CollectionList } from './list'
 import { CollectionCalendar } from './collection-calendar'
-import { useRecordSelection } from './use-record-selection'
-import { shouldSelectRowFromClick } from './card-click'
-import { ViewBar, type ViewBarView } from '@/components/molecules/ViewBar'
+import {
+  ROW_FOCUS_VISIBLE,
+  ROW_FOCUS_VISIBLE_BASE,
+  useRecordSelection,
+} from './use-record-selection'
+import { shouldSelectCardFromClick, shouldSelectRowFromClick } from './card-click'
+import {
+  ViewBar,
+  ViewGroupMenu,
+  ViewLayoutMenu,
+  type ViewBarView,
+} from '@/components/molecules/ViewBar'
 import { useBlockRow } from '../block-row-context'
 
 /**
- * One field-add remedy (KAN-292's date field, KAN-351's status field): builds off
- * `schemaRef.current`, not the `schema` state closure, which two clicks fired
- * before React re-renders would both still see as stale — writes `schemaRef.current`
- * itself, synchronously, before `updateSchema`, so a second same-tick click reads
- * the field already there via `alreadyApplies` and no-ops instead of adding a
- * duplicate field and staging a second undo toast.
+ * Applies one schema edit against `schemaRef.current`, writing the ref
+ * SYNCHRONOUSLY before `updateSchema` (KAN-380) — the shape every commit and
+ * every undo below shares, so a second same-tick call (a double click, or an
+ * undo fired while another edit is still landing) reads its own prior write
+ * through the ref rather than a stale closure. `transform` returns `null` to
+ * no-op, writing and logging nothing. `logSchemaEdit` is `null` for the
+ * date/status remedies, which never touch the change log.
+ */
+function applySchemaEdit(
+  schemaRef: { current: PropertySchema | null },
+  updateSchema: (next: PropertySchema) => void,
+  logSchemaEdit: ((before: PropertySchema, after: PropertySchema) => void) | null,
+  transform: (schema: PropertySchema) => PropertySchema | null
+): void {
+  const schema = schemaRef.current
+  if (!schema) return
+  const next = transform(schema)
+  if (!next) return
+  schemaRef.current = next
+  updateSchema(next)
+  logSchemaEdit?.(schema, next)
+}
+
+/**
+ * One field-add remedy (KAN-292's date field, KAN-351's status field): the
+ * outer `alreadyApplies` check guards a second same-tick click (the field it
+ * would add is already there, read through `schemaRef.current`), so no
+ * further no-op check is needed inside {@link applySchemaEdit}'s transform.
  */
 function runFieldRemedy(
   schemaRef: { current: PropertySchema | null },
@@ -115,12 +160,82 @@ function runFieldRemedy(
   if (!schema || alreadyApplies(schema)) return
   const next = addField(schema)
   const addedId = next[next.length - 1].id
-  schemaRef.current = next
-  updateSchema(next)
+  applySchemaEdit(schemaRef, updateSchema, null, () => next)
   deletionUndo.stageUndo({
     message,
     scope: 'block',
-    undo: () => updateSchema(removeField(schemaRef.current ?? next, addedId)),
+    undo: () => applySchemaEdit(schemaRef, updateSchema, null, (s) => removeField(s, addedId)),
+  })
+}
+
+/**
+ * The table header's rename commit (KAN-380), and its undo. The outer
+ * `field.name === name` check guards a same-tick double commit of the SAME
+ * rename. The undo no-ops via `isFieldNameTaken` instead: between the
+ * commit and the undo firing, a later rename can give another field the old
+ * name (rename `field 2`→`due`, then `field 1`→`field 2`, then undo the
+ * first toast) — restoring `due`→`field 2` there would collide, so the
+ * undo is refused rather than overwriting it.
+ */
+function runFieldRename(
+  schemaRef: { current: PropertySchema | null },
+  updateSchema: (next: PropertySchema) => void,
+  logSchemaEdit: (before: PropertySchema, after: PropertySchema) => void,
+  deletionUndo: NonNullable<ReturnType<typeof useOptionalDeletionUndo>>,
+  id: string,
+  name: string
+): void {
+  const schema = schemaRef.current
+  const field = schema?.find((d) => d.id === id)
+  if (!schema || !field || field.name === name) return
+  const oldName = field.name
+  applySchemaEdit(schemaRef, updateSchema, logSchemaEdit, (s) => renameField(s, id, name))
+  deletionUndo.stageUndo({
+    message: `renamed field ${oldName} to ${name}`,
+    scope: 'block',
+    undo: () =>
+      applySchemaEdit(schemaRef, updateSchema, logSchemaEdit, (s) =>
+        isFieldNameTaken(s, oldName, id) ? null : renameField(s, id, oldName)
+      ),
+  })
+}
+
+/**
+ * The table header's `delete field` commit (KAN-380), and its undo. The
+ * outer `index === -1` check guards a same-tick double commit (the second
+ * call's `schemaRef.current` no longer has the id). The removed def and its
+ * original index are captured in this closure, not re-read at undo time —
+ * `removeField` never strips row values, so undo's `restoreFieldAt` hands
+ * the column its values straight back. The undo's own no-op guard is
+ * `field.id` already present (a same-tick double undo): unlike rename's
+ * undo, a name collision is NEVER a reason to no-op here — `restoreFieldAt`
+ * is the only thing that gives a deleted field's row values back, so a name
+ * someone else has claimed since (e.g. the board's add-status remedy, or a
+ * later rename) is resolved with {@link freeFieldName} (`status 2`, `status
+ * 3`, …) rather than dropping the restore.
+ */
+function runFieldDelete(
+  schemaRef: { current: PropertySchema | null },
+  updateSchema: (next: PropertySchema) => void,
+  logSchemaEdit: (before: PropertySchema, after: PropertySchema) => void,
+  deletionUndo: NonNullable<ReturnType<typeof useOptionalDeletionUndo>>,
+  id: string
+): void {
+  const schema = schemaRef.current
+  const index = schema?.findIndex((d) => d.id === id) ?? -1
+  if (!schema || index === -1) return
+  const field = schema[index]
+  applySchemaEdit(schemaRef, updateSchema, logSchemaEdit, (s) => removeField(s, id))
+  deletionUndo.stageUndo({
+    message: `deleted field ${field.name}`,
+    scope: 'block',
+    undo: () =>
+      applySchemaEdit(schemaRef, updateSchema, logSchemaEdit, (s) => {
+        if (s.some((d) => d.id === field.id)) return null
+        const clash = fieldNameClash(s, field.name, field.id)
+        const restored = clash ? { ...field, name: freeFieldName(s, field.name, field.id) } : field
+        return restoreFieldAt(s, index, restored)
+      }),
   })
 }
 
@@ -141,9 +256,12 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
     isLoading,
     isError,
     setValue,
+    setValueAsStep,
+    setValuesAsStep,
     addRow,
     renameRow,
     updateSchema,
+    logSchemaEdit,
   } = useCollectionRows(collectionId)
   // The chart card's `on` / `reads` (#227), off the caches the shell already holds.
   const chartProvenance = useChartProvenance(pageId, collectionId)
@@ -192,6 +310,21 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
           )
       : undefined
 
+  // KAN-380: the table header's rename commit — same `schemaRef` + `stageUndo`
+  // seam as the remedies above, gated the same way.
+  const handleRenameField =
+    editable && schema && deletionUndo
+      ? (id: string, name: string) =>
+          runFieldRename(schemaRef, updateSchema, logSchemaEdit, deletionUndo, id, name)
+      : undefined
+
+  // KAN-380: the menu's `delete field` row — same `schemaRef` + `stageUndo`
+  // seam as the rename commit above, gated the same way.
+  const handleDeleteField =
+    editable && schema && deletionUndo
+      ? (id: string) => runFieldDelete(schemaRef, updateSchema, logSchemaEdit, deletionUndo, id)
+      : undefined
+
   // Config edits (chart/big-number setup) rewrite the persisted view block through the
   // module's own onChange — the same whole-block save path every editable module uses.
   // `applyConfigPatch` (KAN-32) lands the patch on the ACTIVE saved view's config on a
@@ -199,9 +332,27 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
   // active view is whichever one `CollectionView`'s bar has LOCALLY selected, not the
   // persisted `activeViewId` — a person can switch the bar without that being an edit,
   // so `activeId` arrives from `CollectionView` on every call.
+  // A write that changes the resolved kind (KAN-519) is structural. A list group
+  // choice is the same kind and is structural too (KAN-521): the patch carries
+  // `listFlat` or `groupBy`. `commitStep` is the host's flush (BlockCanvas), so
+  // the shell undo chord restores that one block. No host — Storybook, a bare
+  // `ViewView` — has nothing to flush, and the same next block falls back to
+  // `onChange` (todo/entries). An empty patch (the current group row) writes
+  // nothing, the same early return as `ViewLayoutMenu`.
+  const { commitStep } = useBlockRow()
+  const commit = (next: ViewBlock) => (commitStep ?? onChange)?.(next)
   const onConfigChange = onChange
-    ? (patch: ViewConfigPatch, activeId?: string) =>
-        onChange(applyConfigPatch(data, patch, activeId))
+    ? (patch: ViewConfigPatch, activeId?: string) => {
+        if (Object.keys(patch).length === 0) return
+        const next = applyConfigPatch(data, patch, activeId)
+        const kindOf = (block: ViewBlock) => activeSavedView(block, activeId).mode
+        const groups = 'listFlat' in patch || 'groupBy' in patch
+        if (groups || kindOf(data) !== kindOf(next)) {
+          commit(next)
+          return
+        }
+        onChange(next)
+      }
     : undefined
 
   // A row IS a page: `open ›` on the record peek navigates to it through the page-link
@@ -229,6 +380,8 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
       editable={editable}
       linked={!!data.collectionId}
       onEdit={setValue}
+      onMoveDate={setValueAsStep}
+      onMoveDates={setValuesAsStep}
       onAddRow={addRow}
       onRenameRow={renameRow}
       onConfigChange={onConfigChange}
@@ -236,6 +389,8 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
       chartProvenance={chartProvenance}
       onAddDateField={handleAddDateField}
       onAddStatusField={handleAddStatusField}
+      onRenameField={handleRenameField}
+      onDeleteField={handleDeleteField}
     />
   )
 }
@@ -261,12 +416,18 @@ export interface CollectionViewProps {
    *  "target unavailable" notice when a linked target is deleted or isn't a collection. */
   linked?: boolean
   onEdit?: (rowId: string, key: string, value: PropertyValue) => void
+  /** A calendar drag-drop's own date write (KAN-385) — logged and undone separately
+   *  from `onEdit`'s pause-grouped edits. Only the calendar branch forwards it. */
+  onMoveDate?: (rowId: string, key: string, value: PropertyValue) => void
+  /** A calendar bar drag writes both ends in one call (KAN-458): the start field,
+   *  then the end field. Only the calendar branch forwards it. */
+  onMoveDates?: (rowId: string, entries: { key: string; value: PropertyValue }[]) => void
   /** Manual card/row authoring (board-authoring Slice 2). Present only on the live
    *  editable host; Storybook renders static data and omits them. */
   onAddRow?: (values?: Record<string, PropertyValue>) => Promise<string | null>
   onRenameRow?: (rowId: string, title: string) => void
-  /** Rewrite the view block's own config — chart and big-number setup. Never its
-   *  kind (fixed once made, KAN-44). Absent on read-only / Storybook hosts. The
+  /** Rewrite the view block's own config — chart and big-number setup, and a
+   *  layout choice (`mode`, KAN-519). Absent on read-only / Storybook hosts. The
    *  optional second arg is which saved view's config to land the patch on (KAN-32
    *  fix) — `CollectionView` passes its own LOCAL active view, never the
    *  persisted `activeViewId`. */
@@ -284,6 +445,12 @@ export interface CollectionViewProps {
    *  board whose schema has no status/select property to group by. Absent when
    *  not `editable` (Storybook, a diff/proposal render) — no undrawn affordance there. */
   onAddStatusField?: () => void
+  /** KAN-380: commit a rename from the table's field-header menu. Absent when
+   *  not `editable` — the header renders as plain text instead of a button. */
+  onRenameField?: (id: string, name: string) => void
+  /** KAN-380: commit a `delete field` from the table's field-header menu.
+   *  Absent when not `editable` — the menu never draws the delete row. */
+  onDeleteField?: (id: string) => void
 }
 
 export function CollectionView({
@@ -297,6 +464,8 @@ export function CollectionView({
   editable,
   linked,
   onEdit,
+  onMoveDate,
+  onMoveDates,
   onAddRow,
   onRenameRow,
   onConfigChange,
@@ -304,6 +473,8 @@ export function CollectionView({
   chartProvenance,
   onAddDateField,
   onAddStatusField,
+  onRenameField,
+  onDeleteField,
 }: CollectionViewProps) {
   // What the page canvas keys this view's peek and orange pill by.
   const instanceKey = useId()
@@ -445,6 +616,7 @@ export function CollectionView({
           schema={schema}
           rows={processed}
           groupBy={activeConfig.groupBy}
+          listFlat={activeConfig.listFlat}
           editable={editable}
           onEdit={onEdit}
           onAddRow={onAddRow}
@@ -454,16 +626,34 @@ export function CollectionView({
         />
       ) : activeConfig.mode === 'calendar' ? (
         <CollectionCalendar
+          viewKey={viewKey}
           schema={schema}
           rows={processed}
           groupBy={activeConfig.groupBy}
           editable={editable}
+          onEdit={onEdit}
+          onMoveDate={onMoveDate}
+          onMoveDates={onMoveDates}
           onAddRow={onAddRow}
           onRenameRow={onRenameRow}
+          onOpenRow={onOpenRow}
           onAddDateField={onAddDateField}
+          span={activeConfig.span}
+          startId={activeConfig.startDate}
+          endId={activeConfig.endDate}
+          onConfigChange={onConfigChange ? handleConfigChange : undefined}
         />
       ) : activeConfig.mode === 'gallery' ? (
-        <CollectionGallery schema={schema} rows={processed} />
+        <CollectionGallery
+          viewKey={viewKey}
+          schema={schema}
+          rows={processed}
+          editable={editable}
+          onEdit={onEdit}
+          onAddRow={onAddRow}
+          onRenameRow={onRenameRow}
+          onOpenRow={onOpenRow}
+        />
       ) : activeConfig.mode === 'gantt' ? (
         <CollectionGantt
           schema={schema}
@@ -510,6 +700,8 @@ export function CollectionView({
           onAddRow={onAddRow}
           onRenameRow={onRenameRow}
           onOpenRow={onOpenRow}
+          onRenameField={onRenameField}
+          onDeleteField={onDeleteField}
         />
       )}
     </div>
@@ -525,8 +717,11 @@ export function CollectionView({
  * gate"). The saved-view bar is reading too (switching is not editing), so it
  * renders whenever the block has `views`; only "＋ view" and the chart/big-
  * number setup below it are affordances, gated on `editable && onConfigChange`.
- * A view's kind is fixed once made (ADR 0009), so there is no in-place switch
- * between kinds here.
+ * The layout chip sits before those tabs on every view, including a legacy
+ * block with no `views[]` (KAN-519). Choosing a layout writes that view's kind
+ * in place through the same gate. A reader sees the word and gets no button.
+ * A list's fact is that same gate (KAN-521): a button when editable, the
+ * sentence alone for a reader. A board's fact stays the span.
  */
 function ViewControls({
   config,
@@ -551,14 +746,13 @@ function ViewControls({
   editable?: boolean
   onConfigChange?: (patch: ViewConfigPatch) => void
 }) {
-  // The head's fact: a board reads its lanes' property, a list the date it groups by.
-  const groupDef =
-    config.mode === 'board'
-      ? pickGroupDef(schema, config.groupBy)
-      : config.mode === 'list'
-        ? pickDateDef(schema, config.groupBy)
-        : undefined
+  // A board's fact names its lanes. A list's fact is `ViewGroupMenu`.
+  const groupDef = config.mode === 'board' ? pickGroupDef(schema, config.groupBy) : undefined
   const groupName = groupDef?.name.toLowerCase()
+  const layoutEditable = Boolean(editable && onConfigChange)
+  const handleLayout = (mode: ViewMode) => {
+    onConfigChange?.({ mode })
+  }
 
   return (
     <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -575,6 +769,15 @@ function ViewControls({
           <span data-part="db-count" className="text-[10.5px] font-medium text-mn-text-meta">
             {recordCount} record{recordCount === 1 ? '' : 's'}
           </span>
+          {config.mode === 'list' && (
+            <ViewGroupMenu
+              schema={schema}
+              groupBy={config.groupBy}
+              listFlat={config.listFlat}
+              editable={layoutEditable}
+              onGroup={(patch) => onConfigChange?.(patch)}
+            />
+          )}
           {groupName && (
             <>
               <span aria-hidden="true" className="text-[10.5px] font-medium text-mn-text-meta">
@@ -586,17 +789,20 @@ function ViewControls({
             </>
           )}
         </div>
-        {savedViews && savedViews.length > 0 && activeViewId && onSelectView && (
-          <ViewBar
-            views={savedViews.map((view): ViewBarView => ({
-              id: view.id,
-              label: view.label ?? view.kind,
-            }))}
-            activeId={activeViewId}
-            onSelect={onSelectView}
-            showAddView={showAddView}
-          />
-        )}
+        <div className="flex items-center gap-[4px]">
+          <ViewLayoutMenu mode={config.mode} editable={layoutEditable} onLayout={handleLayout} />
+          {savedViews && savedViews.length > 0 && activeViewId && onSelectView && (
+            <ViewBar
+              views={savedViews.map((view): ViewBarView => ({
+                id: view.id,
+                label: view.label ?? view.kind,
+              }))}
+              activeId={activeViewId}
+              onSelect={onSelectView}
+              showAddView={showAddView}
+            />
+          )}
+        </div>
       </div>
 
       {editable && onConfigChange && config.mode === 'chart' && (
@@ -622,6 +828,8 @@ function CollectionTable({
   onAddRow,
   onRenameRow,
   onOpenRow,
+  onRenameField,
+  onDeleteField,
 }: {
   /** The view block's id — what the page canvas keys its one peek and one orange pill by. */
   viewKey: string
@@ -635,10 +843,16 @@ function CollectionTable({
   onAddRow?: (values?: Record<string, PropertyValue>) => Promise<string | null>
   onRenameRow?: (rowId: string, title: string) => void
   onOpenRow?: (rowId: string) => void
+  /** KAN-380: commit a rename from the field-header menu. Absent when not
+   *  `editable` — the schema-field headers below fall back to plain text. */
+  onRenameField?: (id: string, name: string) => void
+  /** KAN-380: commit a `delete field` from the field-header menu. Absent when
+   *  not `editable` — same fallback as `onRenameField`. */
+  onDeleteField?: (id: string) => void
 }) {
   const { stepOut } = useBlockRow()
   const [now] = useState(() => new Date())
-  const { selectedRow, select, selectWithPointer, keyboardProps } = useRecordSelection(
+  const { selectedRow, selectWithPointer, keyboardProps, selectOrOpenOnKey } = useRecordSelection(
     rows,
     viewKey
   )
@@ -662,27 +876,18 @@ function CollectionTable({
   // the peek from here (no `focusOnOpen`), so the second ↵ still lands on the
   // row.
   function handleRowKeyDown(rowId: string, e: React.KeyboardEvent<HTMLTableRowElement>) {
-    if (e.target !== e.currentTarget) return
-    if (e.key === 'Enter' && rowId === selectedRow?.id) {
-      e.preventDefault()
-      onOpenRow?.(rowId)
-      return
-    }
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault()
-      select({ id: rowId, via: 'keyboard' })
-    }
+    selectOrOpenOnKey(rowId, e, onOpenRow)
   }
 
-  // Return/↓ in the last row's last cell step out of the table (KAN-344) — the
-  // "last cell" is the Row title input when there's no schema, else the last
-  // field's Cell. Every other cell keeps reading those keys itself (multi-line
-  // entry, moving down a column). `ci === -1` is the Row title sentinel, so an
-  // empty schema's last cell (schema.length - 1 === -1) still matches it.
+  // isStepOutKey's two keys in the last row's last cell step out of the table
+  // (KAN-344) — the "last cell" is the Row title input when there's no schema,
+  // else the last field's Cell. Every other cell keeps reading those keys
+  // itself (multi-line entry, moving down a column). `ci === -1` is the Row
+  // title sentinel, so an empty schema's last cell (schema.length - 1 === -1)
+  // still matches it.
   function handleCellKeyDown(ri: number, ci: number, e: React.KeyboardEvent) {
     if (ri !== rows.length - 1 || ci !== schema.length - 1) return
-    if (e.key !== 'Enter' && e.key !== 'ArrowDown') return
-    if (e.shiftKey || e.altKey || e.metaKey || e.ctrlKey) return
+    if (!isStepOutKey(e)) return
     const target = e.target as HTMLElement
     if (target.closest('textarea, [role="listbox"], [role="menu"]')) return
     e.preventDefault()
@@ -697,14 +902,24 @@ function CollectionTable({
             <th className="border-b border-mn-hair py-1 pr-3 text-xs font-medium text-mn-text-secondary">
               Name
             </th>
-            {schema.map((def) => (
-              <th
-                key={def.id}
-                className="border-b border-mn-hair py-1 pr-3 text-xs font-medium text-mn-text-secondary"
-              >
-                {def.name}
-              </th>
-            ))}
+            {schema.map((def) =>
+              editable && onRenameField ? (
+                <FieldHeaderCell
+                  key={def.id}
+                  field={def}
+                  schema={schema}
+                  onRenameField={onRenameField}
+                  onDeleteField={onDeleteField}
+                />
+              ) : (
+                <th
+                  key={def.id}
+                  className="border-b border-mn-hair py-1 pr-3 text-xs font-medium text-mn-text-secondary"
+                >
+                  {def.name}
+                </th>
+              )
+            )}
           </tr>
         </thead>
         <tbody>
@@ -729,7 +944,7 @@ function CollectionTable({
                   // `border-collapse` keeps a <tr>'s own radius from ever painting, so
                   // the selected background and its outer rounding live on the end
                   // tds instead (first/last below).
-                  'outline-[1.5px] outline-offset-1 outline-mn-text/50 outline-none focus-visible:outline-solid',
+                  ROW_FOCUS_VISIBLE,
                 ].join(' ')}
               >
                 <td
@@ -807,6 +1022,57 @@ function CollectionTable({
   )
 }
 
+/**
+ * One schema-field `<th>`, editable only (KAN-380): the header itself is the
+ * `FieldHeaderMenu` trigger, anchored off the cell. `canDelete` is always
+ * true here — every looped field is a real `PropertyDef`; the fixed `Name`
+ * title `<th>` above never routes through this component at all, so the
+ * title-can't-be-deleted rule holds structurally, with no flag to check.
+ */
+function FieldHeaderCell({
+  field,
+  schema,
+  onRenameField,
+  onDeleteField,
+}: {
+  field: PropertyDef
+  schema: PropertySchema
+  onRenameField: (id: string, name: string) => void
+  onDeleteField?: (id: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const anchorRef = useRef<HTMLTableCellElement>(null)
+
+  return (
+    <th
+      ref={anchorRef}
+      className="border-b border-mn-hair py-1 pr-3 text-xs font-medium text-mn-text-secondary"
+    >
+      <FieldHeaderMenu
+        field={field}
+        schema={schema}
+        canDelete={!!onDeleteField}
+        onRename={(name) => onRenameField(field.id, name)}
+        onDelete={() => onDeleteField?.(field.id)}
+        open={open}
+        onOpenChange={setOpen}
+        trigger={
+          // Same focus-visible ring as the row-level trigger buttons already in
+          // this module (CollectionList's title button, list.tsx:168) — a
+          // plain `<button>` draws no ring of its own otherwise.
+          <button
+            type="button"
+            className="block w-full truncate rounded-[4px] text-left outline-offset-2 focus-visible:outline-[1.5px] focus-visible:outline-mn-text/50 focus-visible:outline-solid"
+          >
+            {field.name}
+          </button>
+        }
+        placement={{ anchor: anchorRef, align: 'start', top: 26, alignOffset: -10 }}
+      />
+    </th>
+  )
+}
+
 // ── Board ──────────────────────────────────────────────────────────────────────
 
 // The DOM key for a null (unset) bucket — a stable sentinel shared by board columns
@@ -853,15 +1119,22 @@ function CollectionBoard({
 
   // Dropping into a lane writes that option id onto the group-by property; the
   // "No <name>" lane clears it (null). A drop into the same lane is idempotent.
-  const { drag, overKey, registerBucket, onCardPointerDown, isClickSuppressed, containerHandlers } =
-    usePointerBucketDrag({
-      editable: !!editable,
-      onDrop: (rowId, key) => {
-        if (!grouped) return
-        const target = grouped.groups.find((g) => groupKey(g.id) === key)
-        if (target) onEdit?.(rowId, grouped.def.id, target.id)
-      },
-    })
+  const {
+    drag,
+    overKey,
+    registerBucket,
+    onCardPointerDown,
+    isClickSuppressed,
+    containerHandlers,
+    containerClassName,
+  } = usePointerBucketDrag({
+    editable: !!editable,
+    onDrop: (rowId, key) => {
+      if (!grouped) return
+      const target = grouped.groups.find((g) => groupKey(g.id) === key)
+      if (target) onEdit?.(rowId, grouped.def.id, target.id)
+    },
+  })
 
   const {
     rootRef: boardRef,
@@ -931,7 +1204,7 @@ function CollectionBoard({
   const repeatDef = pickRepeatDef(schema)
 
   return (
-    <div ref={boardRef} {...containerHandlers}>
+    <div ref={boardRef} className={containerClassName} {...containerHandlers}>
       {/*
         The board is a GRID of equal lanes, not a horizontally scrolling row:
         `repeat(N, minmax(0,1fr))` at gap 10, N the lane count. A lane is an option of
@@ -957,7 +1230,7 @@ function CollectionBoard({
               className={[
                 'flex min-h-[380px] flex-col gap-[7px] rounded-[16px] p-[7px]',
                 'transition-colors duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none',
-                isOver ? 'bg-mn-text/[0.08]' : 'bg-mn-text/[0.04]',
+                isOver ? DRAG_OVER_CLASS : 'bg-mn-text/[0.04]',
               ].join(' ')}
             >
               <header
@@ -985,15 +1258,7 @@ function CollectionBoard({
                     {...keyboardProps(row.id)}
                     // The card is the drag target: a press anywhere on it starts a
                     // candidate drag, and below the hook's threshold it stays a click.
-                    onPointerDown={
-                      editable
-                        ? (e) => {
-                            if (!(e.target instanceof Element) || !e.target.closest('button, a')) {
-                              onCardPointerDown(e, row.id)
-                            }
-                          }
-                        : undefined
-                    }
+                    onPointerDown={editable ? (e) => onCardPointerDown(e, row.id) : undefined}
                     // The shadow matches no token (`--mn-shadow-card`'s second layer is
                     // 0 8px 24px), so it is written out.
                     className={[
@@ -1002,9 +1267,9 @@ function CollectionBoard({
                       'dark:shadow-[0_1px_2px_rgba(0,0,0,.34),0_2px_8px_rgba(0,0,0,.4)]',
                       'transition-shadow duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none',
                       // `mn-text` flips to paper in dark, so the outline does too.
-                      'outline-[1.5px] outline-offset-1 outline-mn-text/50',
+                      ROW_FOCUS_VISIBLE_BASE,
                       isSelected ? 'outline-solid' : 'outline-none focus-visible:outline-solid',
-                      isDragging ? 'opacity-30' : '',
+                      isDragging ? DRAG_LIFT_CLASS : '',
                       editable ? 'cursor-grab' : 'cursor-pointer',
                     ].join(' ')}
                   >
@@ -1098,51 +1363,143 @@ function CollectionBoard({
 // ── Gallery ─────────────────────────────────────────────────────────────────────
 
 /**
- * Gallery view — a read-only card grid, drawn to `PondTemplate.dc.html` (#260):
+ * Gallery view — a card grid of `PondMolecule kind="record-card"`, the molecule
+ * `PondBlock.dc.html`'s own gallery frame composes (`gallery: { display: 'flex',
+ * gap: 12, flexWrap: 'wrap' }`). EVERY record is a card; the board's
+ * `list.slice(0, mob ? 2 : 3)` is the template preview's truncation, not a product
+ * rule. `untitled` and `—` are the molecule's own fallbacks; which field the one
+ * meta line shows is `galleryCardMeta`, the one tag chip shows `galleryCardTag`.
  *
- *   gallery { display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 10 }
- *   gcard   { display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }
- *   img     { display: 'block', height: 64, borderRadius: 12, background: a(.07) }  // filled
- *   tStyle  { fontSize: 13.5, fontWeight: 500, color: fg }
- *   mStyle  { fontFamily: mono, fontSize: 10.5, color: a(.68) }
- *
- * EVERY record is a card: the board's `list.slice(0, mob ? 2 : 3)` is the template
- * preview's truncation, not a product rule. The tile is the board's filled ground —
- * there is no image property type, so it is a slot, not a picture. The board's
- * ring-on-transparent tile belongs to its EMPTY cards, which the product never draws:
- * an empty gallery is the frame's `no records yet` (#239). `untitled` and `—` are the
- * board's own fallbacks; which field the one meta line shows is `galleryCardMeta`.
- *
- * Why not `PondMolecule kind="record-card"`, which `PondBlock.dc.html`'s gallery
- * frame composes: ADR 0004's ladder sends a block to the molecule only where the
- * molecule can express every case the templates need, and the record-card ALWAYS
- * draws a tag chip (`tagText: p.tag ?? 'recipe'`) that no template gallery has
- * (`collection › records` is a title and one line). As `entries` (ADR 0004 §8), the
- * template's inline card is therefore the specification; the molecule stays for the
- * block board's demo. Mobile (2 columns, 70-high tile) is the frame's later slice —
- * `PondBlock` has no size axis yet. Class strings are literals, never `cn` (#252).
+ * `useRecordSelection` drives hover/selected the same way the board does, but the
+ * molecule owns no DOM props of its own (unlike the board's `<article>`, which IS
+ * the card) — so each row gets a wrapper sized to the card, carrying
+ * `rowProps`/`keyboardProps`, its own pointer-hover tracking, and the shared
+ * focus-visible outline (the table row's and board card's, since this box — not the
+ * molecule inside it — is the tab stop).
  */
-const GALLERY = 'grid grid-cols-[repeat(3,minmax(0,1fr))] gap-[10px]'
-const GALLERY_CARD = 'flex min-w-0 flex-col gap-[6px]'
-const GALLERY_IMAGE = 'block h-[64px] rounded-[12px] bg-mn-text/[0.07]'
-const GALLERY_TITLE = 'text-[13.5px] font-medium text-mn-text'
-const GALLERY_META = 'font-mono text-[10.5px] text-mn-text-secondary'
+function CollectionGallery({
+  viewKey,
+  schema,
+  rows,
+  editable,
+  onEdit,
+  onAddRow,
+  onRenameRow,
+  onOpenRow,
+}: {
+  /** The view block's id — what the page canvas keys its one peek and one orange pill by. */
+  viewKey: string
+  schema: PropertySchema
+  rows: CollectionRow[]
+  editable?: boolean
+  onEdit?: (rowId: string, key: string, value: PropertyValue) => void
+  onAddRow?: (values?: Record<string, PropertyValue>) => Promise<string | null>
+  onRenameRow?: (rowId: string, title: string) => void
+  onOpenRow?: (rowId: string) => void
+}) {
+  const [now] = useState(() => new Date())
+  const [hoveredId, setHoveredId] = useState<string | null>(null)
+  const { selectedRow, select, selectWithPointer, rowProps, keyboardProps, selectOrOpenOnKey } =
+    useRecordSelection(rows, viewKey)
+  const done = useDoneToggle({ schema, editable, onEdit })
+  // Guards handleAddRecord against a second click while its write is in flight
+  // (AUDIT G9), same shape as CollectionBoard's handleAddCard.
+  const addingRef = useRef(false)
 
-function CollectionGallery({ schema, rows }: { schema: PropertySchema; rows: CollectionRow[] }) {
-  // No empty line of its own: the frame owns the empty state (#239).
+  const handleAddRecord = async () => {
+    if (!onAddRow || addingRef.current) return
+    addingRef.current = true
+    try {
+      const id = await onAddRow()
+      if (!id) return
+      select({ id, via: 'keyboard' })
+    } finally {
+      addingRef.current = false
+    }
+  }
+
+  // ↵ on the card's own tab stop (not an inner control's) selects it; ↵ again on the
+  // already-selected card opens its page — `useRecordSelection`'s own
+  // `selectOrOpenOnKey`, shared with `CollectionTable`'s row and the calendar.
+  function handleCardKeyDown(rowId: string, e: React.KeyboardEvent<HTMLElement>) {
+    selectOrOpenOnKey(rowId, e, onOpenRow)
+  }
+
+  // A card's own click must never bubble to the block row underneath it: that
+  // row's `handleClick` (BlockCanvas) focuses ITSELF on any click that isn't an
+  // inner control's, which would steal focus off the card and make the block's
+  // own ↵ fire instead of the card's — the calendar's own row click
+  // (`handleCalendarRowClick`) stops propagation for the same reason. A real
+  // browser moves focus to a clicked `tabIndex=0` element on its own; jsdom does
+  // not, so the explicit `.focus()` also keeps this testable with `userEvent.click`.
+  function handleCardClick(rowId: string, e: React.MouseEvent<HTMLElement>) {
+    e.stopPropagation()
+    if (!shouldSelectCardFromClick(e.target)) return
+    selectWithPointer(rowId)
+    e.currentTarget.focus()
+  }
+
   return (
-    <div data-part="gallery" className={GALLERY}>
-      {rows.map((row) => (
-        <article key={row.id} data-part="gallery-card" className={GALLERY_CARD}>
-          <span aria-hidden data-part="gallery-image" className={GALLERY_IMAGE} />
-          <span data-part="gallery-title" className={GALLERY_TITLE}>
-            {row.title || 'untitled'}
-          </span>
-          <span data-part="gallery-meta" className={GALLERY_META}>
-            {galleryCardMeta(schema, row) || '—'}
-          </span>
-        </article>
-      ))}
+    <div>
+      {/* No empty line of its own: the frame owns the empty state (#239). */}
+      <div data-part="gallery" className="flex flex-wrap gap-[12px]">
+        {rows.map((row) => {
+          const selected = row.id === selectedRow?.id
+          const state = selected ? 'selected' : hoveredId === row.id ? 'hover' : 'rest'
+          return (
+            <article
+              key={row.id}
+              aria-label={row.title || 'untitled'}
+              className={`w-[170px] rounded-[20px] ${ROW_FOCUS_VISIBLE}`}
+              {...rowProps(row.id)}
+              {...keyboardProps(row.id)}
+              onClick={(e) => handleCardClick(row.id, e)}
+              onKeyDown={(e) => handleCardKeyDown(row.id, e)}
+              onMouseEnter={() => setHoveredId(row.id)}
+              onMouseLeave={() => setHoveredId((h) => (h === row.id ? null : h))}
+            >
+              <PondMolecule
+                kind="record-card"
+                state={state}
+                title={row.title || 'untitled'}
+                meta={galleryCardMeta(schema, row) || '—'}
+                tag={galleryCardTag(schema, row)}
+              />
+            </article>
+          )
+        })}
+
+        {editable && onAddRow && (
+          <button
+            type="button"
+            data-part="gallery-add"
+            onClick={handleAddRecord}
+            className={[
+              'w-[170px] rounded-[20px] bg-transparent p-[10px] text-[13px] font-medium text-mn-text-secondary',
+              'ring-[1.4px] ring-inset ring-mn-text/20 transition-colors hover:bg-mn-text/[0.04] hover:text-mn-text',
+              ROW_FOCUS_VISIBLE,
+              'motion-reduce:transition-none',
+            ].join(' ')}
+          >
+            ＋ add a record
+          </button>
+        )}
+      </div>
+
+      {selectedRow && (
+        <RecordPeek
+          key={selectedRow.id}
+          row={selectedRow}
+          schema={schema}
+          done={done.isDone(selectedRow)}
+          onToggleDone={done.toggle && (() => done.toggle?.(selectedRow))}
+          now={now}
+          editable={editable}
+          onEdit={onEdit}
+          onRenameRow={onRenameRow}
+          onOpenRow={onOpenRow}
+        />
+      )}
     </div>
   )
 }
@@ -1313,7 +1670,7 @@ function CollectionGantt({
 
   return (
     <div {...containerHandlers}>
-      <div className={drag?.active ? 'cursor-grabbing select-none' : undefined}>
+      <div className={drag?.active ? `cursor-grabbing ${DRAG_ACTIVE_CLASS}` : undefined}>
         {noBars ? (
           <PondBlockEmpty box="void" line={GANTT_EMPTY_LINE} />
         ) : (

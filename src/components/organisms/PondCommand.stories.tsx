@@ -3,7 +3,7 @@ import type { Meta, StoryObj } from '@storybook/nextjs-vite'
 import { expect, fn, userEvent, waitFor } from 'storybook/test'
 
 import { PondCommand, type PondCommandProps } from './PondCommand'
-import { isPaletteChord } from '@/lib/shell-commands'
+import { formatChord, isPaletteChord } from '@/lib/shell-commands'
 import { PALETTE_FOOT, PALETTE_FOOT_MOBILE } from '@/components/molecules/palette-entries'
 import {
   PALETTE_ITEMS,
@@ -248,7 +248,7 @@ async function assertResting(root: HTMLElement, p: Palette) {
   await expect([rule.offsetWidth, rule.offsetHeight]).toEqual([1, 14])
   await expect(alphaOf(getComputedStyle(rule).backgroundColor)).toBeCloseTo(0.09, 2)
 
-  await expect(part(root, 'chip')!.textContent).toBe('⌘K')
+  await expect(part(root, 'chip')!.textContent).toBe(formatChord('mod+k'))
   await expect(box.querySelector('input')).toBeNull()
   await expect(box.querySelector('[role="listbox"]')).toBeNull()
   await expect(part(root, 'opener')!.getAttribute('aria-expanded')).toBe('false')

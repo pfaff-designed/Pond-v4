@@ -61,9 +61,7 @@ jest.mock('@/lib/pages/home', () => ({
   HOME_TYPE: 'home',
   getOrCreateHomePage: jest.fn().mockResolvedValue({ id: 'home-1', title: 'Life', blocks: [] }),
 }))
-jest.mock('@/lib/pages/commit', () => ({
-  commitBlocks: jest.fn().mockResolvedValue(undefined),
-}))
+jest.mock('@/lib/pages/commit', () => jest.requireActual('./helpers/page-commit-mock').pageCommitMock())
 jest.mock('@/lib/pages/client', () => ({
   updateTitle: jest.fn().mockResolvedValue(undefined),
   createPage: jest.fn(),
@@ -297,20 +295,16 @@ describe('RailView — the pond name header (AC3)', () => {
     expect(name.closest('[role="tree"]')).toBeNull()
   })
 
-  it('has no switcher button and no chevron without ponds; the bell is a decorative mark', () => {
+  it('has no switcher button, no chevron and no bell without ponds', () => {
     const { container } = renderRail()
     const head = container.querySelector<HTMLElement>('[data-part="rail-head"]')!
     expect(head.querySelector('button')).toBeNull()
-    // The only svg is the bell's — a chevron would be a second one.
-    const bell = head.querySelector<HTMLElement>('[data-part="reminders-bell"]')!
-    expect(head.querySelectorAll('svg')).toHaveLength(1)
-    expect(bell.tagName.toLowerCase()).toBe('svg')
-    expect(bell).toHaveAttribute('aria-hidden', 'true')
-    expect(bell.closest('[role="tree"]')).toBeNull()
+    expect(head.querySelector('[data-part="reminders-bell"]')).toBeNull()
+    expect(head.querySelectorAll('svg')).toHaveLength(0)
     expect(head).not.toHaveTextContent('Pond')
   })
 
-  it('the head is padded 0 16px 12px, name left and bell right, centred, gap 8', () => {
+  it('the head is padded 0 16px 12px, centred, gap 8', () => {
     const { container } = renderRail()
     const head = container.querySelector<HTMLElement>('[data-part="rail-head"]')!
     expect(head.className).toMatch(/\bpx-4\b/)
@@ -522,6 +516,7 @@ describe('TerminalDrawer — the PondComposer card: floating glass, 560, 24 off 
   })
 
   it('collapsed is the tab: 30 high on the bottom edge, a pill with ⌘J, and it brings the card back', () => {
+    const platform = jest.spyOn(window.navigator, 'platform', 'get').mockReturnValue('MacIntel')
     const onExpand = jest.fn()
     const { container } = renderDrawer({ collapsed: true, onExpand })
     const tab = container.querySelector('[data-part="composer-tab"]')!
@@ -541,6 +536,7 @@ describe('TerminalDrawer — the PondComposer card: floating glass, 560, 24 off 
     expect(screen.queryByText('pond answered')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Open composer' }))
     expect(onExpand).toHaveBeenCalledTimes(1)
+    platform.mockRestore()
   })
 
   it('the collapsed tab is its own standalone, always-mounted element, distinct from the card', () => {
@@ -919,6 +915,7 @@ describe('WorkspaceShell — the chrome floats over one canvas', () => {
   }
 
   it('rail = paper card with the pond name; ⌘K lives in the command pill, settings in the rail foot', async () => {
+    const platform = jest.spyOn(window.navigator, 'platform', 'get').mockReturnValue('MacIntel')
     const { container } = renderShell()
     const aside = await screen.findByRole('complementary')
     expect(aside.className).toMatch(/\bbg-mn-card\b/)
@@ -934,6 +931,7 @@ describe('WorkspaceShell — the chrome floats over one canvas', () => {
     // The rail foot is databases and settings; no "New page" button anywhere.
     expect(screen.queryByRole('button', { name: 'New page' })).toBeNull()
     expect(aside.contains(screen.getByText('settings'))).toBe(true)
+    platform.mockRestore()
   })
 
   it('the command pill and the composer are SHELL-level absolutes, not column children (measured)', async () => {

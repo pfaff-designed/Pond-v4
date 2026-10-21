@@ -644,6 +644,13 @@ describe('resolveStampTarget', () => {
     })
   })
 
+  it('a targetPageId equal to the open page resolves to it even when absent from pages (KAN-341: the home page is stripped from `pages`)', () => {
+    expect(resolveStampTarget({ ...base, targetPageId: 'open-id' })).toEqual({
+      nodeId: 'open-id',
+      nodeName: 'Open Page',
+    })
+  })
+
   it('no targetPageId → the open page (id + name)', () => {
     expect(resolveStampTarget({ ...base })).toEqual({ nodeId: 'open-id', nodeName: 'Open Page' })
   })

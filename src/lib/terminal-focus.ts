@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react'
 
 import { isApplePlatform } from '@/lib/platform'
+import { formatChord } from '@/lib/shell-commands'
 
 /**
  * Decoupled "focus the terminal input" signal. The top bar (⌘K icon and the
@@ -238,18 +239,27 @@ export interface UndoNoticeLines {
 }
 
 /** The notice panel's four strings, computed from the data alone — so the
- *  "no opened clause" rule is testable without rendering the panel. */
-export function toNoticeLines(notice: UndoNotice): UndoNoticeLines {
+ *  "no opened clause" rule is testable without rendering the panel. `apple`
+ *  defaults to a live read; a render-time caller should pass `useApplePlatform()`'s
+ *  value instead, for the same hydration reason as `formatChord`. */
+export function toNoticeLines(
+  notice: UndoNotice,
+  apple: boolean = isApplePlatform()
+): UndoNoticeLines {
   const undoing = notice.direction === 'undo'
   const navigated = Boolean(notice.openedPageTitle)
+  const undo = formatChord('mod+z', apple)
+  const redo = formatChord('mod+shift+z', apple)
   return {
-    headLeft: undoing ? 'undo · ⌘Z' : 'redo · ⇧⌘Z',
+    headLeft: undoing ? `undo · ${undo}` : `redo · ${redo}`,
     headRight: navigated ? `opened ${notice.openedPageTitle}` : null,
     body: navigated
       ? `${notice.pastTense}. you were on ${notice.previousPageTitle}.`
       : `${notice.pastTense}.`,
-    footLeft: undoing ? 'redo ⇧⌘Z' : 'undo ⌘Z',
-    footRight: navigated ? `back to ${notice.previousPageTitle} ⌘[` : null,
+    footLeft: undoing ? `redo ${redo}` : `undo ${undo}`,
+    footRight: navigated
+      ? `back to ${notice.previousPageTitle} ${formatChord('mod+[', apple)}`
+      : null,
   }
 }
 

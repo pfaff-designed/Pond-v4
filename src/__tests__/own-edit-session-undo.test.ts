@@ -74,6 +74,37 @@ describe('commitBlocks — own edits reach sessionUndo', () => {
     expect(sessionUndo.getSnapshot('pond-1').canUndo).toBe(false)
   })
 
+  it("`remembered` settles only after sessionUndo.remember has been called (KAN-355)", async () => {
+    let landRecord: (record: ChangeLogRecord) => void = () => {}
+    mockedAppend.mockReturnValueOnce(
+      new Promise<ChangeLogRecord>((resolve) => {
+        landRecord = resolve
+      })
+    )
+    const remember = jest.spyOn(sessionUndo, 'remember')
+
+    const committed = await commitBlocks(supabaseWithUser('user-1'), queryClient, 'page-1', BLOCKS, {
+      pondId: 'pond-1',
+      ownEdit: true,
+      before: [],
+    })
+
+    let settled = false
+    void committed.remembered.then(() => {
+      settled = true
+    })
+    await Promise.resolve()
+    // The append is still in flight: nothing remembered yet, `remembered` unsettled.
+    expect(remember).not.toHaveBeenCalled()
+    expect(settled).toBe(false)
+
+    landRecord({ id: 'rec-3' } as ChangeLogRecord)
+    await committed.remembered
+
+    expect(remember).toHaveBeenCalledWith({ pondId: 'pond-1', recordIds: ['rec-3'] })
+    expect(settled).toBe(true)
+  })
+
   it('without a pond, nothing is remembered even when the record lands', async () => {
     mockedAppend.mockResolvedValue({ id: 'rec-2' } as ChangeLogRecord)
     const remember = jest.spyOn(sessionUndo, 'remember')

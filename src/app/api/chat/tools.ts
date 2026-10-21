@@ -9,7 +9,11 @@
  * influence routing — description and inputSchema.
  */
 import { z } from 'zod'
-import { proposeChangesSchema, createPageBlockSchema } from '@/lib/modules/ai-composition'
+import {
+  proposeChangesSchema,
+  createPageBlockSchema,
+  assumptionField,
+} from '@/lib/modules/ai-composition'
 import { isTitleEchoHeading, TITLE_ECHO_MESSAGE } from '@/lib/modules/authoring-lint'
 import { askQuestionSchema, suggestFollowupsSchema } from '@/lib/conversation/parts'
 import { aiPropertyDefSchema } from '@/lib/properties/schema'
@@ -107,6 +111,7 @@ export const createPageTool = {
  * ids in create_page).
  */
 const defineSchemaInput = z.object({
+  assumption: assumptionField,
   pageId: z
     .string()
     .min(1)
@@ -149,6 +154,7 @@ export const defineSchemaTool = {
  * create_page, which mints an ordinary rail-visible sub-page: add_row mints a row.
  */
 const addRowInput = z.object({
+  assumption: assumptionField,
   collectionId: z
     .string()
     .min(1)
@@ -196,6 +202,7 @@ export const addRowTool = {
  * page with a single table can be promoted without the model echoing the id.
  */
 const promoteTableInput = z.object({
+  assumption: assumptionField,
   pageId: z
     .string()
     .min(1)
@@ -247,6 +254,7 @@ export const promoteTableTool = {
  */
 const configureViewInput = z
   .object({
+    assumption: assumptionField,
     pageId: z
       .string()
       .min(1)
@@ -435,6 +443,7 @@ export const configureViewTool = {
  * title surfaces on the card rather than writing a dangling id).
  */
 const linkRecordsInput = z.object({
+  assumption: assumptionField,
   fromRow: z
     .string()
     .min(1)

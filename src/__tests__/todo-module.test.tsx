@@ -28,7 +28,7 @@
  */
 
 import React, { useState } from 'react'
-import { render, screen, fireEvent, act } from '@testing-library/react'
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react'
 
 import {
   todoSchema,
@@ -42,6 +42,7 @@ import { blockSchema } from '@/lib/modules/content'
 import { resolveDescriptor } from '@/lib/modules/registry'
 import { moduleDataSchema, moduleCatalog } from '@/lib/modules/ai-composition'
 import { blockFrame, blockIsEmpty, POND_BLOCK_EMPTY_ACTION_WIRED } from '@/lib/modules/block-frame'
+import { BlockRowProvider } from '@/lib/modules/block-row-context'
 
 /** A persisted checklist from before #219: no `marker`, no `meta` anywhere. */
 const legacy: TodoBlock = {
@@ -323,10 +324,11 @@ describe('TodoView — read-only', () => {
     expect(boxes[1].tagName).toBe('SPAN')
   })
 
-  it('the stack is the board’s row gap (2px), not the old space-y-1; the listener wrapper is `display: contents`', () => {
+  it('the stack is the board’s row gap (2px), not the old space-y-1; the per-item wrapper is a real box, not `display: contents` (KAN-355 fix)', () => {
     const { container } = render(<TodoView data={legacy} editable={false} />)
     const wrapper = rowsOf(container)[0].parentElement!
-    has(wrapper, 'contents')
+    has(wrapper, 'self-start')
+    lacks(wrapper, 'contents')
     const stack = wrapper.parentElement!
     has(stack, 'flex', 'flex-col', 'gap-[2px]')
     lacks(stack, 'space-y-1')
@@ -429,18 +431,22 @@ describe('TodoView — read-only', () => {
   })
 })
 
-/** Stateful host so editable tests exercise a real onChange round-trip. */
+/**
+ * Stateful host so editable tests exercise a real onChange round-trip. Bare
+ * `TodoView` has no `BlockCanvas` above it to provide a working `commitStep`
+ * (KAN-355) — the context's own default is a no-op — so this harness supplies
+ * one that behaves exactly like `onChange` (no flush: there is no page here).
+ */
 function Stateful({ data, onChange }: { data: TodoBlock; onChange?: (next: TodoBlock) => void }) {
   const [state, setState] = useState(data)
+  function apply(next: TodoBlock) {
+    setState(next)
+    onChange?.(next)
+  }
   return (
-    <TodoView
-      data={state}
-      editable
-      onChange={(next) => {
-        setState(next)
-        onChange?.(next)
-      }}
-    />
+    <BlockRowProvider value={{ selected: false, stepOut: () => {}, commitStep: (patch) => apply(patch as TodoBlock) }}>
+      <TodoView data={state} editable onChange={apply} />
+    </BlockRowProvider>
   )
 }
 
@@ -528,5 +534,791 @@ describe('TodoView — editable (the molecule’s rows, made live by the host)',
     const { container } = render(<Stateful data={legacy} />)
     const field = rowsOf(container)[1].querySelector<HTMLInputElement>('input[type="text"]')!
     has(field, 'line-through', 'decoration-mn-text/40', 'text-mn-text-secondary')
+  })
+
+  it('Enter on a MIDDLE item inserts a new empty item directly after it, focused (KAN-355)', async () => {
+    const three: TodoBlock = {
+      id: 'e3',
+      type: 'todo',
+      items: [
+        { id: 'x1', label: 'eggs', checked: false },
+        { id: 'x2', label: 'milk', checked: false },
+        { id: 'x3', label: 'bread', checked: false },
+      ],
+    }
+    const { container } = render(<Stateful data={three} />)
+    const middle = rowsOf(container)[1].querySelector<HTMLInputElement>('input[type="text"]')!
+    fireEvent.keyDown(middle, { key: 'Enter' })
+
+    const fields = container.querySelectorAll<HTMLInputElement>('input[type="text"]')
+    expect(fields).toHaveLength(4)
+    expect(Array.from(fields).map((f) => f.value)).toEqual(['eggs', 'milk', '', 'bread'])
+    await waitFor(() => expect(fields[2]).toHaveFocus())
+  })
+
+  it('Enter on a non-empty LAST item still appends and focuses (regression)', async () => {
+    const { container } = render(<Stateful data={legacy} />)
+    const last = rowsOf(container)[1].querySelector<HTMLInputElement>('input[type="text"]')!
+    fireEvent.keyDown(last, { key: 'Enter' })
+
+    const fields = container.querySelectorAll<HTMLInputElement>('input[type="text"]')
+    expect(fields).toHaveLength(3)
+    expect(fields[2].value).toBe('')
+    await waitFor(() => expect(fields[2]).toHaveFocus())
+  })
+
+  it('Enter mid-label splits the item at the caret, not just below it (KAN-355)', async () => {
+    const one: TodoBlock = {
+      id: 'e1',
+      type: 'todo',
+      items: [{ id: 'x1', label: 'eggsmilk', checked: false }],
+    }
+    const { container } = render(<Stateful data={one} />)
+    const field = rowsOf(container)[0].querySelector<HTMLInputElement>('input[type="text"]')!
+    field.setSelectionRange(4, 4)
+    fireEvent.keyDown(field, { key: 'Enter' })
+
+    const fields = container.querySelectorAll<HTMLInputElement>('input[type="text"]')
+    expect(fields).toHaveLength(2)
+    expect(Array.from(fields).map((f) => f.value)).toEqual(['eggs', 'milk'])
+    await waitFor(() => expect(fields[1]).toHaveFocus())
+    expect(fields[1].selectionStart).toBe(0)
+  })
+
+  it('Backspace on an empty MIDDLE item removes it, caret at the end of the previous item (KAN-355)', async () => {
+    const three: TodoBlock = {
+      id: 'e3',
+      type: 'todo',
+      items: [
+        { id: 'x1', label: 'eggs', checked: false },
+        { id: 'x2', label: '', checked: false },
+        { id: 'x3', label: 'milk', checked: false },
+      ],
+    }
+    const { container } = render(<Stateful data={three} />)
+    const middle = rowsOf(container)[1].querySelector<HTMLInputElement>('input[type="text"]')!
+    fireEvent.keyDown(middle, { key: 'Backspace' })
+
+    const fields = container.querySelectorAll<HTMLInputElement>('input[type="text"]')
+    expect(fields).toHaveLength(2)
+    expect(Array.from(fields).map((f) => f.value)).toEqual(['eggs', 'milk'])
+    await waitFor(() => expect(fields[0]).toHaveFocus())
+    expect(fields[0].selectionStart).toBe(4)
+    expect(fields[0].selectionEnd).toBe(4)
+  })
+
+  it('Backspace on an empty FIRST item removes it, focus lands on the new first item at offset 0 (KAN-355)', async () => {
+    const two: TodoBlock = {
+      id: 'e2',
+      type: 'todo',
+      items: [
+        { id: 'x1', label: '', checked: false },
+        { id: 'x2', label: 'milk', checked: false },
+      ],
+    }
+    const { container } = render(<Stateful data={two} />)
+    const first = rowsOf(container)[0].querySelector<HTMLInputElement>('input[type="text"]')!
+    fireEvent.keyDown(first, { key: 'Backspace' })
+
+    const fields = container.querySelectorAll<HTMLInputElement>('input[type="text"]')
+    expect(fields).toHaveLength(1)
+    expect(fields[0].value).toBe('milk')
+    await waitFor(() => expect(fields[0]).toHaveFocus())
+    expect(fields[0].selectionStart).toBe(0)
+    expect(fields[0].selectionEnd).toBe(0)
+  })
+
+  it('Backspace on the only (empty) item empties the block, in one `onChange`', () => {
+    const onChange = jest.fn()
+    const one: TodoBlock = {
+      id: 'e1',
+      type: 'todo',
+      items: [{ id: 'x1', label: '', checked: false }],
+    }
+    const { container } = render(<Stateful data={one} onChange={onChange} />)
+    const field = rowsOf(container)[0].querySelector<HTMLInputElement>('input[type="text"]')!
+    fireEvent.keyDown(field, { key: 'Backspace' })
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect((onChange.mock.calls[0][0] as TodoBlock).items).toEqual([])
+  })
+
+  it('Backspace on a NON-empty item is a no-op — no `onChange`', () => {
+    const onChange = jest.fn()
+    const { container } = render(<Stateful data={legacy} onChange={onChange} />)
+    const field = rowsOf(container)[0].querySelector<HTMLInputElement>('input[type="text"]')!
+    fireEvent.keyDown(field, { key: 'Backspace' })
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('Backspace at offset 0 of a NON-empty item joins it onto the previous item, caret at the join (KAN-355)', async () => {
+    const two: TodoBlock = {
+      id: 'e2',
+      type: 'todo',
+      items: [
+        { id: 'x1', label: 'eggs', checked: false },
+        { id: 'x2', label: 'milk', checked: false },
+      ],
+    }
+    const { container } = render(<Stateful data={two} />)
+    const second = rowsOf(container)[1].querySelector<HTMLInputElement>('input[type="text"]')!
+    second.setSelectionRange(0, 0)
+    fireEvent.keyDown(second, { key: 'Backspace' })
+
+    const fields = container.querySelectorAll<HTMLInputElement>('input[type="text"]')
+    expect(fields).toHaveLength(1)
+    expect(fields[0].value).toBe('eggsmilk')
+    await waitFor(() => expect(fields[0]).toHaveFocus())
+    expect(fields[0].selectionStart).toBe(4)
+    expect(fields[0].selectionEnd).toBe(4)
+  })
+
+  it('Backspace at offset 0 of the FIRST item is a no-op — no `onChange`', () => {
+    const onChange = jest.fn()
+    const two: TodoBlock = {
+      id: 'e2',
+      type: 'todo',
+      items: [
+        { id: 'x1', label: 'eggs', checked: false },
+        { id: 'x2', label: 'milk', checked: false },
+      ],
+    }
+    const { container } = render(<Stateful data={two} onChange={onChange} />)
+    const first = rowsOf(container)[0].querySelector<HTMLInputElement>('input[type="text"]')!
+    first.setSelectionRange(0, 0)
+    fireEvent.keyDown(first, { key: 'Backspace' })
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('a quiet mouse add-item row reads the frame’s own empty-state copy, per marker (KAN-355)', () => {
+    render(<Stateful data={legacy} />)
+    expect(screen.getByRole('button', { name: '＋ add a step' })).toBeInTheDocument()
+    render(<Stateful data={groceries} />)
+    expect(screen.getByRole('button', { name: '＋ add an item' })).toBeInTheDocument()
+  })
+
+  it('clicking the quiet add-item row appends one item and focuses it (KAN-355)', async () => {
+    const { container } = render(<Stateful data={legacy} />)
+    fireEvent.click(screen.getByRole('button', { name: '＋ add a step' }))
+
+    const fields = container.querySelectorAll<HTMLInputElement>('input[type="text"]')
+    expect(fields).toHaveLength(3)
+    expect(fields[2].value).toBe('')
+    await waitFor(() => expect(fields[2]).toHaveFocus())
+  })
+
+  it('with zero items the quiet add-item row does not render (KAN-355)', () => {
+    const empty: TodoBlock = { id: 'e0', type: 'todo', items: [] }
+    render(<Stateful data={empty} />)
+    expect(screen.queryByRole('button', { name: /add/ })).not.toBeInTheDocument()
+  })
+
+  it('⌥↓ / ⌥↑ swaps an item with its neighbour, caret and focus stay put (KAN-355)', () => {
+    const three: TodoBlock = {
+      id: 'e3',
+      type: 'todo',
+      items: [
+        { id: 'x1', label: 'a', checked: false },
+        { id: 'x2', label: 'b', checked: false },
+        { id: 'x3', label: 'c', checked: false },
+      ],
+    }
+    const { container } = render(<Stateful data={three} />)
+    const fields = () => container.querySelectorAll<HTMLInputElement>('input[type="text"]')
+    act(() => fields()[0].focus())
+    fireEvent.keyDown(fields()[0], { key: 'ArrowDown', altKey: true })
+    expect(Array.from(fields()).map((f) => f.value)).toEqual(['b', 'a', 'c'])
+    expect(document.activeElement).toBe(fields()[1])
+    expect((document.activeElement as HTMLInputElement).value).toBe('a')
+  })
+
+  it('⌥↑ on the first item and ⌥↓ on the last item are no-ops (KAN-355)', () => {
+    const onChange = jest.fn()
+    const { container } = render(<Stateful data={legacy} onChange={onChange} />)
+    const fields = container.querySelectorAll<HTMLInputElement>('input[type="text"]')
+    fireEvent.keyDown(fields[0], { key: 'ArrowUp', altKey: true })
+    fireEvent.keyDown(fields[1], { key: 'ArrowDown', altKey: true })
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('⌥↑ / ⌥↓ stop propagation, so the block-level reorder on the same chord never fires (KAN-355)', () => {
+    const spy = jest.fn()
+    const three: TodoBlock = {
+      id: 'e3',
+      type: 'todo',
+      items: [
+        { id: 'x1', label: 'a', checked: false },
+        { id: 'x2', label: 'b', checked: false },
+      ],
+    }
+    const { container } = render(
+      <div onKeyDown={spy}>
+        <Stateful data={three} />
+      </div>
+    )
+    const field = container.querySelector<HTMLInputElement>('input[type="text"]')!
+    fireEvent.keyDown(field, { key: 'ArrowDown', altKey: true })
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  /**
+   * jsdom's `DragEvent` drops `clientY` from its init dict (unlike a real
+   * browser's), so the point is defined directly on a plain `MouseEvent`
+   * instead — the same workaround `block-canvas-drop-line.test.tsx`'s own
+   * `dragOver` helper uses, extended here with the item drag's `dataTransfer`
+   * (also attached via `defineProperty`, since the base `Event` fallback
+   * `fireEvent.dragOver`/`.drop` builds in this jsdom has no such property).
+   */
+  function fireItemDrag(
+    el: HTMLElement,
+    type: 'dragover' | 'drop',
+    dataTransfer: unknown,
+    clientY: number
+  ) {
+    const event = new MouseEvent(type, { bubbles: true, cancelable: true })
+    Object.defineProperty(event, 'clientY', { value: clientY })
+    Object.defineProperty(event, 'dataTransfer', { value: dataTransfer })
+    fireEvent(el, event)
+  }
+
+  /** The item drag's own `dataTransfer` stub (KAN-355 fix) — one shared
+   * object across a test's `pointerdown`/`dragstart`/`dragover`/`drop`,
+   * since a real drag's `dataTransfer` is the same instance throughout. */
+  function makeItemDataTransfer() {
+    return {
+      store: {} as Record<string, string>,
+      setData(k: string, v: string) {
+        this.store[k] = v
+      },
+      getData(k: string) {
+        return this.store[k]
+      },
+      get types() {
+        return Object.keys(this.store)
+      },
+    }
+  }
+
+  it('drag a BELOW c lands it below, matching the drawn bar (KAN-355 fix)', () => {
+    const onChange = jest.fn()
+    const three: TodoBlock = {
+      id: 'e3',
+      type: 'todo',
+      items: [
+        { id: 'x1', label: 'a', checked: false },
+        { id: 'x2', label: 'b', checked: false },
+        { id: 'x3', label: 'c', checked: false },
+      ],
+    }
+    const { container } = render(<Stateful data={three} onChange={onChange} />)
+    const wrappers = container.querySelectorAll<HTMLElement>('[data-item-id]')
+    const handle = wrappers[0].querySelector<HTMLElement>('[data-part="handle"]')!
+    jest
+      .spyOn(wrappers[2], 'getBoundingClientRect')
+      .mockReturnValue({ top: 100, bottom: 136, height: 36 } as DOMRect)
+
+    const dataTransfer = makeItemDataTransfer()
+    fireEvent.pointerDown(handle)
+    fireEvent.dragStart(wrappers[0], { dataTransfer })
+    // 130 is past c's midpoint (118) — the lower half, the 'below' bar.
+    fireItemDrag(wrappers[2], 'dragover', dataTransfer, 130)
+    const bar = wrappers[2].querySelector<HTMLElement>('[data-part="drop-bar"]')!
+    expect(bar).not.toBeNull()
+    expect(bar.style.bottom).toBe('-9px')
+
+    fireItemDrag(wrappers[2], 'drop', dataTransfer, 130)
+
+    expect(onChange).toHaveBeenCalledTimes(1)
+    const next = onChange.mock.calls[0][0] as TodoBlock
+    expect(next.items.map((it) => it.label)).toEqual(['b', 'c', 'a'])
+  })
+
+  it('drag a ABOVE c lands it above, matching the drawn bar (KAN-355 fix)', () => {
+    const onChange = jest.fn()
+    const three: TodoBlock = {
+      id: 'e3',
+      type: 'todo',
+      items: [
+        { id: 'x1', label: 'a', checked: false },
+        { id: 'x2', label: 'b', checked: false },
+        { id: 'x3', label: 'c', checked: false },
+      ],
+    }
+    const { container } = render(<Stateful data={three} onChange={onChange} />)
+    const wrappers = container.querySelectorAll<HTMLElement>('[data-item-id]')
+    const handle = wrappers[0].querySelector<HTMLElement>('[data-part="handle"]')!
+    jest
+      .spyOn(wrappers[2], 'getBoundingClientRect')
+      .mockReturnValue({ top: 100, bottom: 136, height: 36 } as DOMRect)
+
+    const dataTransfer = makeItemDataTransfer()
+    fireEvent.pointerDown(handle)
+    fireEvent.dragStart(wrappers[0], { dataTransfer })
+    // 105 is before c's midpoint (118) — the upper half, the 'above' bar.
+    fireItemDrag(wrappers[2], 'dragover', dataTransfer, 105)
+    const bar = wrappers[2].querySelector<HTMLElement>('[data-part="drop-bar"]')!
+    expect(bar).not.toBeNull()
+    expect(bar.style.top).toBe('-9px')
+
+    fireItemDrag(wrappers[2], 'drop', dataTransfer, 105)
+
+    expect(onChange).toHaveBeenCalledTimes(1)
+    const next = onChange.mock.calls[0][0] as TodoBlock
+    expect(next.items.map((it) => it.label)).toEqual(['b', 'a', 'c'])
+  })
+
+  it('the upper half of the NEXT row is a no-op — the drop recomputes its own zone, never the stale dragOver state (KAN-355 fix)', () => {
+    const onChange = jest.fn()
+    const three: TodoBlock = {
+      id: 'e3',
+      type: 'todo',
+      items: [
+        { id: 'x1', label: 'a', checked: false },
+        { id: 'x2', label: 'b', checked: false },
+        { id: 'x3', label: 'c', checked: false },
+      ],
+    }
+    const { container } = render(<Stateful data={three} onChange={onChange} />)
+    const wrappers = container.querySelectorAll<HTMLElement>('[data-item-id]')
+    const handle = wrappers[0].querySelector<HTMLElement>('[data-part="handle"]')!
+    jest
+      .spyOn(wrappers[1], 'getBoundingClientRect')
+      .mockReturnValue({ top: 100, bottom: 136, height: 36 } as DOMRect)
+
+    const dataTransfer = makeItemDataTransfer()
+    fireEvent.pointerDown(handle)
+    fireEvent.dragStart(wrappers[0], { dataTransfer })
+    // 105 is before b's midpoint (118) — the upper half, which resolves
+    // back to a's own position: a no-op, so no bar is drawn.
+    fireItemDrag(wrappers[1], 'dragover', dataTransfer, 105)
+    expect(wrappers[1].querySelector('[data-part="drop-bar"]')).toBeNull()
+
+    // Before the fix, `onDrop` read the (null) `dropTarget` state and fell
+    // back to `'below'`, committing a move anyway. The fix recomputes the
+    // zone from this drop's own `clientY`, which is still the upper half.
+    fireItemDrag(wrappers[1], 'drop', dataTransfer, 105)
+
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('an upward drag onto the first row’s above-zone lands at the very start (KAN-355 fix)', () => {
+    const onChange = jest.fn()
+    const three: TodoBlock = {
+      id: 'e3',
+      type: 'todo',
+      items: [
+        { id: 'x1', label: 'a', checked: false },
+        { id: 'x2', label: 'b', checked: false },
+        { id: 'x3', label: 'c', checked: false },
+      ],
+    }
+    const { container } = render(<Stateful data={three} onChange={onChange} />)
+    const wrappers = container.querySelectorAll<HTMLElement>('[data-item-id]')
+    const handle = wrappers[2].querySelector<HTMLElement>('[data-part="handle"]')!
+    jest
+      .spyOn(wrappers[0], 'getBoundingClientRect')
+      .mockReturnValue({ top: 0, bottom: 36, height: 36 } as DOMRect)
+
+    const dataTransfer = makeItemDataTransfer()
+    fireEvent.pointerDown(handle)
+    fireEvent.dragStart(wrappers[2], { dataTransfer })
+    // 5 is before a's midpoint (18) — the upper half, the 'above' bar.
+    fireItemDrag(wrappers[0], 'dragover', dataTransfer, 5)
+    const bar = wrappers[0].querySelector<HTMLElement>('[data-part="drop-bar"]')!
+    expect(bar).not.toBeNull()
+    expect(bar.style.top).toBe('-9px')
+
+    fireItemDrag(wrappers[0], 'drop', dataTransfer, 5)
+
+    expect(onChange).toHaveBeenCalledTimes(1)
+    const next = onChange.mock.calls[0][0] as TodoBlock
+    expect(next.items.map((it) => it.label)).toEqual(['c', 'a', 'b'])
+  })
+
+  it('a downward drag from the MIDDLE item onto the last row’s below-zone lands at the very end (KAN-355 fix)', () => {
+    const onChange = jest.fn()
+    const three: TodoBlock = {
+      id: 'e3',
+      type: 'todo',
+      items: [
+        { id: 'x1', label: 'a', checked: false },
+        { id: 'x2', label: 'b', checked: false },
+        { id: 'x3', label: 'c', checked: false },
+      ],
+    }
+    const { container } = render(<Stateful data={three} onChange={onChange} />)
+    const wrappers = container.querySelectorAll<HTMLElement>('[data-item-id]')
+    const handle = wrappers[1].querySelector<HTMLElement>('[data-part="handle"]')!
+    jest
+      .spyOn(wrappers[2], 'getBoundingClientRect')
+      .mockReturnValue({ top: 100, bottom: 136, height: 36 } as DOMRect)
+
+    const dataTransfer = makeItemDataTransfer()
+    fireEvent.pointerDown(handle)
+    fireEvent.dragStart(wrappers[1], { dataTransfer })
+    // 130 is past c's midpoint (118) — the lower half, the 'below' bar.
+    fireItemDrag(wrappers[2], 'dragover', dataTransfer, 130)
+    const bar = wrappers[2].querySelector<HTMLElement>('[data-part="drop-bar"]')!
+    expect(bar).not.toBeNull()
+    expect(bar.style.bottom).toBe('-9px')
+
+    fireItemDrag(wrappers[2], 'drop', dataTransfer, 130)
+
+    expect(onChange).toHaveBeenCalledTimes(1)
+    const next = onChange.mock.calls[0][0] as TodoBlock
+    expect(next.items.map((it) => it.label)).toEqual(['a', 'c', 'b'])
+  })
+
+  it('a drag from a DIFFERENT block draws no bar, even though the MIME type matches (KAN-355 fix)', () => {
+    const blockA: TodoBlock = {
+      id: 'blockA',
+      type: 'todo',
+      items: [
+        { id: 'a1', label: 'a', checked: false },
+        { id: 'a2', label: 'b', checked: false },
+      ],
+    }
+    const blockB: TodoBlock = {
+      id: 'blockB',
+      type: 'todo',
+      items: [
+        { id: 'b1', label: 'x', checked: false },
+        { id: 'b2', label: 'y', checked: false },
+      ],
+    }
+    const { container } = render(
+      <div>
+        <Stateful data={blockA} />
+        <Stateful data={blockB} />
+      </div>
+    )
+    const wrappers = container.querySelectorAll<HTMLElement>('[data-item-id]')
+    const handle = wrappers[0].querySelector<HTMLElement>('[data-part="handle"]')!
+    const dataTransfer = makeItemDataTransfer()
+
+    fireEvent.pointerDown(handle)
+    fireEvent.dragStart(wrappers[0], { dataTransfer })
+    // `wrappers[2]` is blockB's first row — a different block's list.
+    fireEvent.dragOver(wrappers[2], { dataTransfer })
+    expect(wrappers[2].querySelector('[data-part="drop-bar"]')).toBeNull()
+
+    fireEvent.dragEnd(wrappers[0], { dataTransfer })
+  })
+
+  it('pointerleave/pointercancel on the armed row do NOT disarm it — only pointerup/dragend do (KAN-355 fix)', () => {
+    // Chrome fires `pointercancel` on the drag's source right after
+    // `dragstart`, and `pointerleave` just before it — disarming on either
+    // left `armedIndex` null for the whole real drag, so the no-op guard
+    // (which used to read it) never fired.
+    const three: TodoBlock = {
+      id: 'e3',
+      type: 'todo',
+      items: [
+        { id: 'x1', label: 'a', checked: false },
+        { id: 'x2', label: 'b', checked: false },
+        { id: 'x3', label: 'c', checked: false },
+      ],
+    }
+    const { container } = render(<Stateful data={three} />)
+    const wrappers = container.querySelectorAll<HTMLElement>('[data-item-id]')
+    const handle = wrappers[0].querySelector<HTMLElement>('[data-part="handle"]')!
+
+    fireEvent.pointerDown(handle)
+    expect(wrappers[0]).toHaveAttribute('draggable', 'true')
+    fireEvent.pointerLeave(wrappers[0])
+    fireEvent.pointerCancel(wrappers[0])
+    expect(wrappers[0]).toHaveAttribute('draggable', 'true')
+
+    fireEvent.pointerUp(window)
+    expect(wrappers[0]).toHaveAttribute('draggable', 'false')
+  })
+
+  it('dragstart then pointercancel/pointerleave on the source still resolves drops from the real origin, not a cleared armedIndex (KAN-355 fix)', () => {
+    const three: TodoBlock = {
+      id: 'e3',
+      type: 'todo',
+      items: [
+        { id: 'x1', label: 'a', checked: false },
+        { id: 'x2', label: 'b', checked: false },
+        { id: 'x3', label: 'c', checked: false },
+      ],
+    }
+    const { container } = render(<Stateful data={three} />)
+    const wrappers = container.querySelectorAll<HTMLElement>('[data-item-id]')
+    const handle = wrappers[0].querySelector<HTMLElement>('[data-part="handle"]')!
+    jest
+      .spyOn(wrappers[1], 'getBoundingClientRect')
+      .mockReturnValue({ top: 100, bottom: 136, height: 36 } as DOMRect)
+
+    const dataTransfer = makeItemDataTransfer()
+    fireEvent.pointerDown(handle)
+    fireEvent.dragStart(wrappers[0], { dataTransfer })
+    fireEvent.pointerCancel(wrappers[0])
+    fireEvent.pointerLeave(wrappers[0])
+
+    // a's own row, either half: always a no-op.
+    fireItemDrag(wrappers[0], 'dragover', dataTransfer, 0)
+    expect(wrappers[0].querySelector('[data-part="drop-bar"]')).toBeNull()
+
+    // 105 is before b's midpoint (118) — the upper half, which resolves
+    // back to a's own position: a no-op, so no bar is drawn.
+    fireItemDrag(wrappers[1], 'dragover', dataTransfer, 105)
+    expect(wrappers[1].querySelector('[data-part="drop-bar"]')).toBeNull()
+
+    // 130 is past b's midpoint — the lower half, a real reorder target.
+    fireItemDrag(wrappers[1], 'dragover', dataTransfer, 130)
+    const bar = wrappers[1].querySelector<HTMLElement>('[data-part="drop-bar"]')!
+    expect(bar).not.toBeNull()
+    expect(bar.style.bottom).toBe('-9px')
+  })
+
+  it('dropping an item on its own row is a no-op — no bar, no `onChange`, no undo step (KAN-355 fix)', () => {
+    const onChange = jest.fn()
+    const three: TodoBlock = {
+      id: 'e3',
+      type: 'todo',
+      items: [
+        { id: 'x1', label: 'a', checked: false },
+        { id: 'x2', label: 'b', checked: false },
+        { id: 'x3', label: 'c', checked: false },
+      ],
+    }
+    const { container } = render(<Stateful data={three} onChange={onChange} />)
+    const wrappers = container.querySelectorAll<HTMLElement>('[data-item-id]')
+    const handle = wrappers[0].querySelector<HTMLElement>('[data-part="handle"]')!
+
+    const dataTransfer = makeItemDataTransfer()
+    fireEvent.pointerDown(handle)
+    fireEvent.dragStart(wrappers[0], { dataTransfer })
+    fireEvent.dragOver(wrappers[0], { dataTransfer, clientY: 10 })
+    expect(wrappers[0].querySelector('[data-part="drop-bar"]')).toBeNull()
+
+    fireEvent.drop(wrappers[0], { dataTransfer, clientY: 10 })
+
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('dragOver draws the drop-bar at the hovered row; drop clears it (KAN-355)', () => {
+    const onChange = jest.fn()
+    const three: TodoBlock = {
+      id: 'e3',
+      type: 'todo',
+      items: [
+        { id: 'x1', label: 'a', checked: false },
+        { id: 'x2', label: 'b', checked: false },
+        { id: 'x3', label: 'c', checked: false },
+      ],
+    }
+    const { container } = render(<Stateful data={three} onChange={onChange} />)
+    const wrappers = container.querySelectorAll<HTMLElement>('[data-item-id]')
+    const handle = wrappers[0].querySelector<HTMLElement>('[data-part="handle"]')!
+
+    const dataTransfer = makeItemDataTransfer()
+    fireEvent.pointerDown(handle)
+    fireEvent.dragStart(wrappers[0], { dataTransfer })
+
+    fireEvent.dragOver(wrappers[1], { dataTransfer })
+    expect(wrappers[1].querySelector('[data-part="drop-bar"]')).not.toBeNull()
+    expect(wrappers[0].querySelector('[data-part="drop-bar"]')).toBeNull()
+
+    fireEvent.drop(wrappers[1], { dataTransfer })
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(container.querySelector('[data-part="drop-bar"]')).toBeNull()
+  })
+
+  it('a drop without the private item MIME is ignored — a block drag or a foreign drop leaves items unchanged (KAN-355 fix)', () => {
+    const onChange = jest.fn()
+    const three: TodoBlock = {
+      id: 'e3',
+      type: 'todo',
+      items: [
+        { id: 'x1', label: 'a', checked: false },
+        { id: 'x2', label: 'b', checked: false },
+        { id: 'x3', label: 'c', checked: false },
+      ],
+    }
+    const { container } = render(<Stateful data={three} onChange={onChange} />)
+    const wrappers = container.querySelectorAll<HTMLElement>('[data-item-id]')
+
+    // A whole-block drag (or a dropped text node) carries `text/plain` and
+    // nothing under the item MIME — `Number(getData('text/plain'))` used to
+    // read this as "move item 0" regardless.
+    const foreignDataTransfer = {
+      store: { 'text/plain': '0' } as Record<string, string>,
+      getData(k: string) {
+        return this.store[k] ?? ''
+      },
+      setData(k: string, v: string) {
+        this.store[k] = v
+      },
+    }
+    fireEvent.drop(wrappers[2], { dataTransfer: foreignDataTransfer })
+    expect(onChange).not.toHaveBeenCalled()
+
+    // The item MIME present, but naming a DIFFERENT block.
+    const otherBlockDataTransfer = {
+      store: {
+        'application/x-pond-item': JSON.stringify({ blockId: 'other', index: 0 }),
+      } as Record<string, string>,
+      getData(k: string) {
+        return this.store[k] ?? ''
+      },
+      setData(k: string, v: string) {
+        this.store[k] = v
+      },
+    }
+    fireEvent.drop(wrappers[2], { dataTransfer: otherBlockDataTransfer })
+    expect(onChange).not.toHaveBeenCalled()
+
+    // The item MIME present, this block's own id, but an out-of-range index.
+    const badIndexDataTransfer = {
+      store: {
+        'application/x-pond-item': JSON.stringify({ blockId: 'e3', index: 9 }),
+      } as Record<string, string>,
+      getData(k: string) {
+        return this.store[k] ?? ''
+      },
+      setData(k: string, v: string) {
+        this.store[k] = v
+      },
+    }
+    fireEvent.drop(wrappers[2], { dataTransfer: badIndexDataTransfer })
+    expect(onChange).not.toHaveBeenCalled()
+
+    const fields = container.querySelectorAll<HTMLInputElement>('input[type="text"]')
+    expect(Array.from(fields).map((f) => f.value)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('Tab and ⇧Tab in an item hold the caret — lists stay flat (KAN-355)', () => {
+    const three: TodoBlock = {
+      id: 'e3',
+      type: 'todo',
+      items: [
+        { id: 'x1', label: 'eggs', checked: false },
+        { id: 'x2', label: 'milk', checked: false },
+        { id: 'x3', label: 'bread', checked: false },
+      ],
+    }
+    const onChange = jest.fn()
+    const { container } = render(<Stateful data={three} onChange={onChange} />)
+    const field = rowsOf(container)[1].querySelector<HTMLInputElement>('input[type="text"]')!
+    act(() => field.focus())
+    field.setSelectionRange(2, 2)
+
+    fireEvent.keyDown(field, { key: 'Tab' })
+    expect(document.activeElement).toBe(field)
+    expect(field.selectionStart).toBe(2)
+    expect(field.selectionEnd).toBe(2)
+
+    fireEvent.keyDown(field, { key: 'Tab', shiftKey: true })
+    expect(document.activeElement).toBe(field)
+    expect(field.selectionStart).toBe(2)
+    expect(field.selectionEnd).toBe(2)
+
+    expect(onChange).not.toHaveBeenCalled()
+    expect(
+      Array.from(container.querySelectorAll<HTMLInputElement>('input[type="text"]')).map(
+        (f) => f.value
+      )
+    ).toEqual(['eggs', 'milk', 'bread'])
+  })
+
+  it('↑ moves the caret to the same offset in the previous item (KAN-355)', () => {
+    const three: TodoBlock = {
+      id: 'e3',
+      type: 'todo',
+      items: [
+        { id: 'x1', label: 'eggs', checked: false },
+        { id: 'x2', label: 'milk', checked: false },
+        { id: 'x3', label: 'bread', checked: false },
+      ],
+    }
+    const onChange = jest.fn()
+    const { container } = render(<Stateful data={three} onChange={onChange} />)
+    const fields = () => container.querySelectorAll<HTMLInputElement>('input[type="text"]')
+    act(() => fields()[1].focus())
+    fields()[1].setSelectionRange(2, 2)
+
+    fireEvent.keyDown(fields()[1], { key: 'ArrowUp' })
+
+    expect(document.activeElement).toBe(fields()[0])
+    expect(fields()[0].selectionStart).toBe(2)
+    expect(fields()[0].selectionEnd).toBe(2)
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('↓ moves the caret to the same offset, clamped, in the next item (KAN-355)', () => {
+    const three: TodoBlock = {
+      id: 'e3',
+      type: 'todo',
+      items: [
+        { id: 'x1', label: 'eggs', checked: false },
+        { id: 'x2', label: 'hi', checked: false },
+        { id: 'x3', label: 'bread', checked: false },
+      ],
+    }
+    const { container } = render(<Stateful data={three} />)
+    const fields = () => container.querySelectorAll<HTMLInputElement>('input[type="text"]')
+    act(() => fields()[0].focus())
+    fields()[0].setSelectionRange(4, 4)
+
+    fireEvent.keyDown(fields()[0], { key: 'ArrowDown' })
+
+    expect(document.activeElement).toBe(fields()[1])
+    expect(fields()[1].selectionStart).toBe(2)
+    expect(fields()[1].selectionEnd).toBe(2)
+  })
+
+  it('↑ on the first item and ↓ on the last item leave existing behaviour alone (no focus change, no `onChange`)', () => {
+    const onChange = jest.fn()
+    const { container } = render(<Stateful data={legacy} onChange={onChange} />)
+    const fields = container.querySelectorAll<HTMLInputElement>('input[type="text"]')
+    act(() => fields[0].focus())
+    fireEvent.keyDown(fields[0], { key: 'ArrowUp' })
+    expect(document.activeElement).toBe(fields[0])
+
+    act(() => fields[1].focus())
+    fireEvent.keyDown(fields[1], { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(fields[1])
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('a row is not draggable until a press starts on its handle (KAN-355)', () => {
+    const three: TodoBlock = {
+      id: 'e3',
+      type: 'todo',
+      items: [
+        { id: 'x1', label: 'a', checked: false },
+        { id: 'x2', label: 'b', checked: false },
+        { id: 'x3', label: 'c', checked: false },
+      ],
+    }
+    const { container } = render(<Stateful data={three} />)
+    const wrappers = container.querySelectorAll<HTMLElement>('[data-item-id]')
+    expect(wrappers[0]).toHaveAttribute('draggable', 'false')
+  })
+})
+
+describe('TodoView — structural edits without a BlockRowProvider (KAN-355)', () => {
+  it('falls back to onChange when no host provides commitStep', () => {
+    const onChange = jest.fn()
+    const two: TodoBlock = {
+      id: 'e2',
+      type: 'todo',
+      items: [
+        { id: 'x1', label: 'eggs', checked: false },
+        { id: 'x2', label: '', checked: false },
+      ],
+    }
+    const { container } = render(<TodoView data={two} editable onChange={onChange} />)
+    const first = rowsOf(container)[0].querySelector<HTMLInputElement>('input[type="text"]')!
+    fireEvent.keyDown(first, { key: 'Enter' })
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(onChange.mock.calls[0][0].items).toHaveLength(3)
+
+    onChange.mockClear()
+    const empty = rowsOf(container)[1].querySelector<HTMLInputElement>('input[type="text"]')!
+    fireEvent.keyDown(empty, { key: 'Backspace' })
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(onChange.mock.calls[0][0].items).toHaveLength(1)
   })
 })

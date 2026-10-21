@@ -19,6 +19,7 @@ import {
   summarizeBlockEdit,
   summarizeRemovedRow,
   summarizeRowEdit,
+  summarizeSchemaEdit,
   summarizeTrash,
 } from './summary'
 import type { ChangeLogRecord } from './types'
@@ -115,6 +116,8 @@ export function describeChange(
       return 'created this page'
     case 'define_schema':
       return 'set up the fields'
+    case 'edit_schema':
+      return summarizeSchemaEdit(record.before, record.after)
     case 'add_row':
       return summarizeAddedRow(record.after)
     case 'edit_row':

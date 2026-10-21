@@ -65,15 +65,14 @@ import { setPageGlyph, setAreaRole } from '@/lib/pages/mark-client'
 import { appendOwnEdit } from '@/lib/change-log/store'
 import { changeLogKey } from '@/lib/change-log/keys'
 import { sessionUndo } from '@/lib/change-log/session-undo'
-import { trashPage } from '@/lib/change-log/trash'
 import { TrashRefusedError } from '@/lib/change-log/errors'
 import { jsonEqual } from '@/lib/json-equal'
 import { pagesKey } from '@/lib/pages/keys'
-import { appendChildLinkUnder } from '@/lib/pages/child-links'
+import { appendChildLinkUnder, trashPageUnlinked } from '@/lib/pages/child-links'
 import { usePondId, usePond } from '@/lib/pond/context'
 import { pushRecentGlyphToPond } from '@/lib/pond/client'
 import { PondSwitcher } from './PondSwitcher'
-import { workspaceUrl } from '@/lib/pages/nav'
+import { openWorkspaceUrl, workspaceUrl } from '@/lib/pages/nav'
 import { withTemplatesParam } from '@/lib/pages/templates-param'
 import { markIndex, resolveMark, type MarkSource, type PageMark } from '@/lib/pages/mark'
 import { isNewNestedPage } from '@/lib/pages/nested-page'
@@ -93,6 +92,9 @@ import {
 } from '@/lib/pages/databases-root'
 import { usePondName } from '@/lib/pond/name'
 import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
+import { TRASH_NODE_ID } from '@/lib/change-log/trash-view'
+import { RailToggle } from '@/components/organisms/RailToggle'
+import { setRailMinimized } from '@/lib/layout/rail-chrome'
 import { RAIL_WIDTH_PX } from '@/lib/layout/rail-width'
 import {
   LIFE_ID,
@@ -128,6 +130,7 @@ import { RailRenameField } from './RailRenameField'
 import { instantiateTemplate } from '@/lib/templates/instantiate'
 import { PREMADE_TEMPLATES } from '@/lib/templates/premade'
 import { NewPageMenu, type NewPageMenuAction } from '@/components/molecules/NewPageMenu'
+import { readExpandedIds, writeExpandedIds, pruneExpandedIds } from '@/lib/rail/expanded-store'
 
 // Re-exported so stories and consumers keep one import site for the tree types.
 export { LIFE_ID, buildTree, flattenVisible, isFolderNode, isAreaRow } from '@/lib/rail/tree'
@@ -186,6 +189,27 @@ const changeLogRow = (rootId: string): FlatRow => ({
   setSize: 1,
 })
 
+/** The rail foot's own top-level row (KAN-504), between the databases tree
+ *  and `settings` — not a databases child, so it needs no root to exist
+ *  under and no expand to show: a plain module-level constant, same
+ *  reserved-virtual shape as `DATABASES_PLACEHOLDER_ROW`, same reasons as
+ *  `changeLogRow` (no row, no migration). */
+const TRASH_ROW: FlatRow = {
+  id: TRASH_NODE_ID,
+  node: {
+    id: TRASH_NODE_ID,
+    parentId: null,
+    type: 'page',
+    title: 'trash',
+    order: 0,
+    children: [],
+  },
+  depth: 0,
+  isFolder: false,
+  posInSet: 1,
+  setSize: 1,
+}
+
 /** Px of extra left-pad per depth level — the guides land on these gridlines. */
 /** What the rail lets a row do, derived once per row so no site re-derives it. */
 interface RowCapabilities {
@@ -217,7 +241,8 @@ const NO_CAPABILITIES: RowCapabilities = {
  */
 const rowCapabilities = (id: string, node: RailNode): RowCapabilities => {
   if (id === LIFE_ID) return { ...NO_CAPABILITIES, droppable: true, addable: true }
-  if (id === DATABASES_PLACEHOLDER_ID || id === CHANGE_LOG_NODE_ID) return NO_CAPABILITIES
+  if (id === DATABASES_PLACEHOLDER_ID || id === CHANGE_LOG_NODE_ID || id === TRASH_NODE_ID)
+    return NO_CAPABILITIES
   if (isDatabasesRoot(node)) return { ...NO_CAPABILITIES, draggable: true, droppable: true }
   return { draggable: true, droppable: true, addable: true, deletable: true, renameable: true }
 }
@@ -250,7 +275,8 @@ interface RailRowProps {
   /** An area row — the raised label voice + its accent dot. The caller decides
    *  with `isAreaRow` (a top-level page). */
   isArea?: boolean
-  /** The databases root: the foot band's first row, drawn without a caret. */
+  /** The databases root: the foot band's LAST row (KAN-486: it never moves —
+   *  its own rows render above it), caret up when open, right when closed. */
   isDbRoot?: boolean
   posInSet?: number
   setSize?: number
@@ -467,7 +493,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
 
       {/* caret — toggles the folder without navigating and without taking
           focus (the row keeps the roving tab stop); leaf gets a spacer */}
-      {isDbRoot ? null : isFolder ? (
+      {isFolder ? (
         <button
           type="button"
           tabIndex={-1}
@@ -479,7 +505,9 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
             onToggle(id)
           }}
         >
-          <Caret className={isExpanded ? 'rotate-90' : undefined} />
+          {/* KAN-486: the databases root's rows render above it, never below —
+              so its caret points UP when open rather than down. */}
+          <Caret className={isExpanded ? (isDbRoot ? '-rotate-90' : 'rotate-90') : undefined} />
         </button>
       ) : (
         <span className="w-[9px] flex-shrink-0" aria-hidden />
@@ -670,6 +698,8 @@ export interface RailViewProps {
    *  Optional so the existing `RailView` call sites (stories, unit tests predating this ticket)
    *  keep compiling untouched; omit it and a colour pick no-ops. */
   onPickColour?: (id: string, role: AreaRole | null) => void
+  /** Hides the rail. Omit it and the head draws no minimize button (stories). */
+  onMinimize?: () => void
   onLife: () => void
   onToggleLife: () => void
   /** Open the databases root, creating it first when the pond has none yet. */
@@ -702,30 +732,6 @@ const DATABASES_MARK = (
       <path d="M2.4 3.4v7.2c0 .9 2 1.6 4.6 1.6s4.6-.7 4.6-1.6V3.4M2.4 7c0 .9 2 1.6 4.6 1.6s4.6-.7 4.6-1.6" />
     </svg>
   </span>
-)
-
-/**
- * The head's reminders bell: 12×12, stroke 1.4, round caps, the .8 ink tier. A
- * decorative mark — opening `coming up` is #198, and a dead button is worse than
- * none, so it is neither focusable nor a button.
- */
-const REMINDERS_BELL = (
-  <svg
-    data-part="reminders-bell"
-    aria-hidden
-    width="12"
-    height="12"
-    viewBox="0 0 14 14"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.4"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    className="flex-none text-mn-text-meta"
-  >
-    <path d="M3.5 10V6.5a3.5 3.5 0 0 1 7 0V10l1 1H2.5z" />
-    <path d="M5.8 12.4h2.4" />
-  </svg>
 )
 
 const TRANSPARENT_GIF =
@@ -857,6 +863,7 @@ export function RailView({
   onRename,
   onPickGlyph,
   onPickColour = () => {},
+  onMinimize,
   onLife,
   onToggleLife,
   onOpenDatabases,
@@ -927,22 +934,39 @@ export function RailView({
   )
   const databasesFlat = useMemo(() => {
     if (!databasesRoot) return [DATABASES_PLACEHOLDER_ROW]
-    const [root, ...rest] = flattenVisible([databasesRoot], expanded, true)
+    const [rawRoot, ...rest] = flattenVisible([databasesRoot], expanded, true)
       .slice(1) // drop the synthetic Life row flattenVisible always leads with
       .map((f) => ({ ...f, depth: f.depth - 1 }))
+    // KAN-486: change log is always the root's first child once it exists, so
+    // the root always carries a caret even with zero database pages.
+    const root = { ...rawRoot, isFolder: true }
     // KAN-94: the change log is the root's first child — shown only once the
     // root itself is expanded, like any other child.
+    //
+    // KAN-486: the heading renders LAST, after its own rows, not first — the
+    // foot is bottom-anchored, so a heading drawn first would be pushed up
+    // by every row that expands below it. Rendering it last keeps it outside
+    // the scroller entirely, so it never moves. `rest` is always empty while
+    // collapsed (its children are gated by `expanded` inside `flattenVisible`),
+    // so collapsed stays `[root]` alone.
     const rows = expanded.has(databasesRoot.id)
-      ? [root, changeLogRow(databasesRoot.id), ...rest]
-      : [root, ...rest]
+      ? [changeLogRow(databasesRoot.id), ...rest, root]
+      : [root]
     return rows.filter((f) => !isStaged(f.id)) // KAN-300: a refetch mid-undo-toast can't resurrect a staged row
   }, [databasesRoot, expanded])
   const databasesIds = useMemo(() => new Set(databasesFlat.map((f) => f.id)), [databasesFlat])
+  // KAN-486: the heading is found by id, not by array position — a staged
+  // delete (the mount-time leftover sweep) can filter the root itself out of
+  // `databasesFlat` while its children briefly survive, and the last
+  // surviving row must not be mistaken for the heading when that happens.
+  const databasesHeadingId = databasesRoot?.id ?? DATABASES_PLACEHOLDER_ID
+  const databasesHeadingRow = databasesFlat.find((f) => f.id === databasesHeadingId)
+  const databasesScrollRows = databasesFlat.filter((f) => f.id !== databasesHeadingId)
 
-  // The ONE flattened list — Life first, the databases root last — driving
+  // The ONE flattened list — Life, then databases, then trash last — driving
   // render, ARIA coordinates, and keyboard order alike (they can't drift; see
-  // lib/rail/tree.ts). Rendered as two trees below but ONE keyboard order, so
-  // ↑/↓ walk from the last Life row into databases.
+  // lib/rail/tree.ts). Rendered as three trees below but ONE keyboard order, so
+  // ↑/↓ walk from the last Life row into databases, then into trash.
   const flat = useMemo(
     () =>
       [
@@ -950,6 +974,7 @@ export function RailView({
         // 'life' that `LIFE_NODE` carries.
         ...flattenVisible(lifeTree, expanded, lifeExpanded, pondName),
         ...databasesFlat,
+        TRASH_ROW,
       ].filter((f) => !isStaged(f.id)), // KAN-300: a refetch mid-undo-toast can't resurrect a staged row
     [lifeTree, expanded, lifeExpanded, databasesFlat, pondName]
   )
@@ -1217,7 +1242,10 @@ export function RailView({
         isSelected={id === selectedId}
         isFocused={rovingId === id}
         isBusy={id === busyId}
-        isArea={isAreaRow(node)}
+        // KAN-504: trash's own node carries `parentId: null` for the keyboard
+        // tree/ArrowLeft only — it never reads as an area's bigger label and
+        // full ink the way a real top-level page does.
+        isArea={isAreaRow(node) && id !== TRASH_NODE_ID}
         isDbRoot={isDatabasesRoot(node)}
         posInSet={posInSet}
         setSize={setSize}
@@ -1227,11 +1255,13 @@ export function RailView({
         leading={
           isDatabasesRoot(node) ? (
             DATABASES_MARK
-          ) : id === CHANGE_LOG_NODE_ID ? (
+          ) : id === CHANGE_LOG_NODE_ID || id === TRASH_NODE_ID ? (
             // Reserved virtual row: no page behind it to write a mark to, so the
-            // glyph picker never opens here (KAN-94).
+            // glyph picker never opens here (KAN-94/KAN-451). KAN-504: trash's
+            // `parentId: null` would otherwise read as an area to `resolveMark`
+            // and derive a hashed glyph for it — forced back to its plain dot.
             <span className="inline-flex flex-none items-center" aria-hidden>
-              {markGlyph(mark, markAccent(mark.role), id === selectedId)}
+              {markGlyph({ ...mark, glyph: null }, markAccent(mark.role), id === selectedId)}
             </span>
           ) : (
             markButton(
@@ -1298,7 +1328,12 @@ export function RailView({
         {/* The switcher chevron appears only once there is a pond to list: before
           migration 0018 `listPonds()` returns [] and the head is the plain name,
           rather than an affordance that opens an empty menu. */}
-        <PondSwitcher fallbackName={pondName} trailing={REMINDERS_BELL} />
+        <PondSwitcher
+          fallbackName={pondName}
+          trailing={
+            onMinimize ? <RailToggle minimized={false} onClick={onMinimize} /> : undefined
+          }
+        />
 
         <div
           ref={bodyRef}
@@ -1307,7 +1342,10 @@ export function RailView({
         >
           <div className="min-h-0 flex-1 overflow-y-auto px-2">
             <div role="tree" aria-label="Workspace" aria-multiselectable={false}>
-              {!isLoading && flat.filter((f) => !databasesIds.has(f.id)).map(renderRow)}
+              {!isLoading &&
+                flat
+                  .filter((f) => !databasesIds.has(f.id) && f.id !== TRASH_NODE_ID)
+                  .map(renderRow)}
             </div>
 
             {/* Status lives OUTSIDE the tree — role="tree" only allows treeitem
@@ -1354,24 +1392,33 @@ export function RailView({
 
         {/* The foot: a full-width hairline, then the databases root (3c: the
           pond's SECOND root, its own ARIA tree so the structure says what the rail
-          says) and `settings`. The databases tree is capped at 40vh so an expanded
-          root scrolls inside the foot instead of swallowing the rail. The scroller
-          clips at its padding box, so it carries 2px of padding (cancelled by a -2px
-          margin) to keep the rows' 2px focus ring visible. */}
+          says), trash (KAN-504: its own top-level row, its own tree, always
+          visible — not a databases child) and `settings`. KAN-486: the heading
+          is the LAST row, after its own rows, and sits outside the scroller —
+          the scroller is capped at 40vh so an expanded root scrolls inside the
+          foot instead of swallowing the rail or pushing the heading out from
+          under the pointer. The scroller clips at its padding box, so it
+          carries 2px of padding (cancelled by a -2px margin) to keep the rows'
+          2px focus ring visible. */}
         <div
           data-part="rail-foot"
           className="flex flex-col gap-0.5 border-t border-mn-text/[0.09] px-2 pt-2.5"
         >
-          <div
-            role="tree"
-            aria-label="Databases"
-            aria-multiselectable={false}
-            className="-m-0.5 max-h-[40vh] overflow-y-auto p-0.5"
-          >
-            {databasesFlat.map(renderRow)}
+          <div role="tree" aria-label="Databases" aria-multiselectable={false}>
+            <div
+              role="group"
+              data-part="databases-scroller"
+              className="-m-0.5 max-h-[40vh] overflow-y-auto p-0.5"
+            >
+              {databasesScrollRows.map(renderRow)}
+            </div>
+            {databasesHeadingRow && renderRow(databasesHeadingRow)}
           </div>
-          {/* Not interactive until a settings surface exists: like the bell, a dead
-            button is worse than none. */}
+          <div role="tree" aria-label="Trash" aria-multiselectable={false}>
+            {renderRow(TRASH_ROW)}
+          </div>
+          {/* Not interactive until a settings surface exists: a dead button is worse
+            than none. */}
           <div
             data-part="settings"
             className="px-2 py-[6px] text-[12.5px] leading-[normal] text-mn-text-secondary"
@@ -1424,6 +1471,18 @@ export function RailView({
   )
 }
 
+/** The node for `id` within `roots`, by id — the leftover sweep's own way to
+ *  find a stale id's LIVE subtree (KAN-448) before trashing it, since it has
+ *  no `RailNode` for that id handed to it the way `handleDelete` does. */
+function findRailNode(roots: RailNode[], id: string): RailNode | undefined {
+  for (const node of roots) {
+    if (node.id === id) return node
+    const found = findRailNode(node.children, id)
+    if (found) return found
+  }
+  return undefined
+}
+
 // ── Container ────────────────────────────────────────────────────────────────
 
 export function Rail() {
@@ -1447,8 +1506,9 @@ export function Rail() {
     () => pushedGlyphs.reduce(pushRecentGlyph, pond?.recentGlyphs ?? []),
     [pond, pushedGlyphs]
   )
-  // Area folders start collapsed and open per session; Life starts expanded so
-  // the tree is visible on load (collapsing Life is the "collapse everything").
+  // Area folders persist their open/collapsed state per pond across reloads
+  // (see the persistence effect below); Life starts expanded so the tree is
+  // visible on load (collapsing Life is the "collapse everything").
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [lifeExpanded, setLifeExpanded] = useState(true)
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -1456,7 +1516,7 @@ export function Rail() {
   const [confirmTarget, setConfirmTarget] = useState<RailNode | null>(null)
   const { stageDeletion, notify } = useDeletionUndo()
 
-  const { data: pages = [], isLoading } = useQuery({
+  const { data: pages = [], isLoading, isSuccess } = useQuery({
     queryKey: pagesKey(pondId),
     queryFn: () => fetchPages(pondId),
   })
@@ -1475,15 +1535,103 @@ export function Rail() {
     walk(tree)
     return map
   }, [tree])
+  const databasesRootId = useMemo(() => tree.find(isDatabasesRoot)?.id ?? null, [tree])
   const selectedNodeId = searchParams.get('nodeId')
+
+  // ── Rail remembers what was open (KAN-393) ──────────────────────────────────
+  // A pond switch must drop the previous pond's rows before the merge effect
+  // below runs, or a toggle on the new pond writes the old pond's lingering
+  // ids into its store too — `writeExpandedIds` persists the whole set, not a
+  // diff, and `expanded` is one Set shared across ponds since `Rail` itself
+  // never remounts on a switch. Declared ahead of the merge effect so it runs
+  // first on the same pondId change (React runs passive effects in source
+  // order); the merge effect then repopulates from the new pond's store.
+  //
+  // Only a REAL pond→pond switch clears — `prevPondIdRef.current` starting
+  // `null` (usePondId() before PondProvider's listPonds resolves, on a cold
+  // reload) and then landing on the first real id is not a switch, it's the
+  // same pond arriving late. Treating it as one wiped the ticket-25 reveal
+  // below, which had already run against the `pagesKey(null)` fallback fetch
+  // (resolves to the same pond's pages, #312): with `revealedForRef` already
+  // set, the reveal effect's once-per-selection guard then refused to run
+  // again, leaving a cold-reload deep link's ancestors collapsed for good. A
+  // real switch also drops `revealedForRef` so the new pond's open page
+  // re-reveals instead of being read as already-revealed.
+  const prevPondIdRef = useRef(pondId)
+  const revealedForRef = useRef<string | null>(null)
+  // Declared here, ahead of the reset effect below, so that effect's own
+  // real-switch branch can clear it (react-hooks/immutability wants a ref
+  // mutated before it's read by an earlier-registered effect). Also read by
+  // the write effect and set by the restore effect further down — gated by
+  // this ref so it fires exactly once per pond.
+  const loadedForRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (prevPondIdRef.current === pondId) return
+    const isPondSwitch = prevPondIdRef.current !== null
+    prevPondIdRef.current = pondId
+    if (!isPondSwitch) return
+    setExpanded(new Set())
+    revealedForRef.current = null
+    // On a real switch, A's `loadedForRef` pin must not survive onto B and
+    // then back onto A — otherwise switching back to A before B ever loads
+    // reads as "A already loaded", skipping the restore-on-mount re-read and
+    // letting the write effect persist this clear's empty `expanded` over
+    // A's real store.
+    loadedForRef.current = null
+  }, [pondId])
+
+  // Read this pond's stored expansion once per `pondId`, prune it against the
+  // loaded `pages` (a stored id may have been deleted elsewhere), and merge
+  // the result into `expanded` via a union — never a replace — so this can't
+  // fight the ancestor-reveal or KAN-122 child-reveal effects below regardless
+  // of effect order. Gated on `isSuccess`, not `!isLoading`: a failed fetch
+  // also leaves `isLoading` false with `pages` still `[]`, and pruning
+  // against that would mark the pond loaded and wipe the real stored ids
+  // before a retry ever lands them.
+
+  // Write `expanded` to the current pond's store whenever it (or the pond)
+  // changes — the only place this runs, now that `setExpanded` itself is
+  // pure, so it always writes under the `pondId` of the render it's in, not
+  // whatever pond a stale async closure remembers. Gated on `loadedForRef`
+  // (set by the restore effect below, once per pond) rather than "did pondId
+  // just change": the switch's own clear-to-`new Set()` is itself a render of
+  // `expanded`, and a guard that only tracks "did pondId change" still treats
+  // that render as the pond's second pass and writes `[]` before the restore
+  // effect has read the new pond's store — reproduces on every switch to an
+  // uncached pond, and under `React.StrictMode` even on a plain mount (effects
+  // run twice, and the second pass wrote `[]` before the first pass's restore
+  // landed). Gating on the same ref the restore effect sets means the write
+  // can never land before that pond's store has actually been read.
+  useEffect(() => {
+    if (!pondId || loadedForRef.current !== pondId) return
+    writeExpandedIds(pondId, Array.from(expanded))
+  }, [pondId, expanded])
+
+  useEffect(() => {
+    if (!pondId) return
+    if (!isSuccess) return
+    if (loadedForRef.current === pondId) return
+    loadedForRef.current = pondId
+    const validIds = new Set(pages.map((r) => r.id))
+    const stored = pruneExpandedIds(readExpandedIds(pondId), validIds)
+    if (stored.length === 0) return
+    /* eslint-disable react-hooks/set-state-in-effect */
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      for (const id of stored) next.add(id)
+      return next
+    })
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [pondId, isSuccess, pages, setExpanded])
 
   // ── Rail follows you (ticket-25) ────────────────────────────────────────────
   // When the selection changes — via a rail click, a children-grid card, the
   // breadcrumb, or a page created through chat / ＋ — auto-expand every folder on
   // the path to the current node (and Life itself) so it's revealed and its
   // ancestors highlight. We reveal a given selection exactly once (tracked by
-  // ref) so a manual re-collapse afterward isn't fought.
-  const revealedForRef = useRef<string | null>(null)
+  // ref) so a manual re-collapse afterward isn't fought. `revealedForRef`
+  // itself is declared above, alongside the pond-switch clear (KAN-393) that
+  // also resets it on a real pond switch.
   useEffect(() => {
     if (!selectedNodeId) {
       revealedForRef.current = null
@@ -1492,7 +1640,11 @@ export function Rail() {
     if (selectedNodeId === revealedForRef.current) return
     // Wait until the node itself is present so its ancestor chain is resolvable.
     if (!pages.some((r) => r.id === selectedNodeId)) return
-    const ancestors = ancestorPath(pages, selectedNodeId).map((c) => c.id)
+    // The databases root is excluded: it is a disclosure the person toggles
+    // themselves (KAN-486), not a folder navigation should force open.
+    const ancestors = ancestorPath(pages, selectedNodeId)
+      .map((c) => c.id)
+      .filter((id) => id !== databasesRootId)
     revealedForRef.current = selectedNodeId
     // The two reveals below respond to an external navigation (URL ?nodeId, incl.
     // chat/＋ creation) — open Life and every ancestor folder so the current node
@@ -1506,7 +1658,7 @@ export function Rail() {
       return next
     })
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [selectedNodeId, pages])
+  }, [selectedNodeId, pages, databasesRootId])
 
   // ── Rail reveals a new child without leaving the parent (KAN-122) ──────────
   // The `/ nested page` swap stays on the parent, so selection never changes
@@ -1572,7 +1724,7 @@ export function Rail() {
     opts?: { openTemplates?: boolean }
   ) {
     const url = workspaceUrl(node)
-    router.push(opts?.openTemplates ? withTemplatesParam(url) : url)
+    openWorkspaceUrl(opts?.openTemplates ? withTemplatesParam(url) : url, router)
   }
 
   /** Run a mutation with a fresh client + user, refresh the tree, return its result. */
@@ -1633,10 +1785,32 @@ export function Rail() {
             data: { user },
           } = await supabase.auth.getUser()
           if (!user) continue // no signed-in user — leave staged, retry on a later mount
-          await trashPage(supabase, id)
+          // `trash_page` trashes this id's whole LIVE subtree, not just
+          // itself — read it fresh off the cache rather than reuse a stale
+          // render's `nodeById` (this effect's own deps are `[]`), so a
+          // leftover id with a since-cached child unlinks that child's
+          // parents too, not only the root's own. This effect runs on mount,
+          // ahead of the rail's own `pages` query settling on a cold reload,
+          // so a bare cache read sees nothing yet — `fetchQuery` (same
+          // key/fn as that query) waits for the real rows instead of
+          // falling back to the leftover id alone.
+          const cachedRows = await queryClient.fetchQuery<PageRow[]>({
+            queryKey: pagesKey(pondId),
+            queryFn: () => fetchPages(pondId),
+          })
+          const node = findRailNode(buildTree(cachedRows), id)
+          await trashPageUnlinked(supabase, queryClient, {
+            pondId,
+            rootPageId: id,
+            subtreeIds: node ? subtreeIds(node) : new Set([id]),
+          })
           unstageId(id)
           queryClient.setQueryData<PageRow[]>(pagesKey(pondId), (rows) => removeRow(rows ?? [], id))
           queryClient.invalidateQueries({ queryKey: pagesKey() })
+          // Same reason as `commitDelete`'s own invalidate (KAN-451): the
+          // trash page/change log read the `delete` record this sweep's
+          // `trashPageUnlinked` just wrote, nested under `changeLogKey()`.
+          queryClient.invalidateQueries({ queryKey: changeLogKey() })
         } catch (err) {
           // 'not-found' also covers an already-trashed page (trash_page's own
           // refusal) — a pagehide flush that landed before this sweep ran, or a
@@ -1745,9 +1919,12 @@ export function Rail() {
   ) {
     try {
       await withUser(
-        async (sb) => {
-          await trashPage(sb, node.id)
-        },
+        (sb) =>
+          trashPageUnlinked(sb, queryClient, {
+            pondId,
+            rootPageId: node.id,
+            subtreeIds: subtreeIds(node),
+          }),
         reason,
         onWriteSettled
       )
@@ -1761,10 +1938,19 @@ export function Rail() {
         queryClient.invalidateQueries({ queryKey: ['rows'] })
         queryClient.invalidateQueries({ queryKey: ['page'] })
       }
+      // The trash page/change log (KAN-451) read the `delete` record
+      // `trashPageUnlinked` just wrote, via `trashKey`/`changeLogDeletedKey`,
+      // both nested under `changeLogKey()` — never `pagesKey()`. Unlike the
+      // `rows`/`page` invalidates above, this is NOT skipped on a
+      // flush-driven commit: that skip exists because an outer write races
+      // its OWN optimistic update to the SAME key (`pagesKey`); no outer
+      // write here ever touches `changeLogKey()` optimistically, so there is
+      // nothing to race and nothing else ever invalidates it on this path.
+      await queryClient.invalidateQueries({ queryKey: changeLogKey() })
       // if the open page was in the deleted subtree, clear the workspace
       const selected = selectedNodeIdRef.current
       if (selected && subtreeIds(node).has(selected)) {
-        router.push(workspaceUrl(null))
+        openWorkspaceUrl(workspaceUrl(null), router)
       }
     } catch {
       restoreDeletedRow(removedRow)
@@ -1785,7 +1971,7 @@ export function Rail() {
 
     const removedRow = pages.find((r) => r.id === node.id)
     queryClient.setQueryData<PageRow[]>(pagesKey(pondId), (rows) => removeRow(rows ?? [], node.id))
-    if (selectedNodeId === node.id) router.push(workspaceUrl(null))
+    if (selectedNodeId === node.id) openWorkspaceUrl(workspaceUrl(null), router)
 
     stageDeletion({
       message: `Deleted "${node.title || 'Untitled'}"`,
@@ -1948,20 +2134,31 @@ export function Rail() {
     })
   }
 
-  /** Open a page — strictly navigation; expansion belongs to the caret alone.
-   *  The databases root is the one row with no caret (PondRail draws none for
-   *  it), so clicking it must also expand it here or its children are never
-   *  reachable by mouse. */
+  /** Open a page — navigation, except for the databases root: it is a
+   *  disclosure, not a page, so clicking it toggles expansion instead
+   *  (KAN-486 — it no longer has a destination page reachable from here;
+   *  ⌘K / the breadcrumb still reach it). */
   function handleSelect(id: string) {
-    // The change log is a reserved virtual page — no `pages` row, so its own
-    // URL is built by hand rather than through `nodeById`/`navigateTo`.
+    // The change log and trash are reserved virtual pages — no `pages` row,
+    // so their own URLs are built by hand rather than through
+    // `nodeById`/`navigateTo`.
     if (id === CHANGE_LOG_NODE_ID) {
-      router.push(workspaceUrl({ id: CHANGE_LOG_NODE_ID, type: 'page', title: 'change log' }))
+      openWorkspaceUrl(
+        workspaceUrl({ id: CHANGE_LOG_NODE_ID, type: 'page', title: 'change log' }),
+        router
+      )
+      return
+    }
+    if (id === TRASH_NODE_ID) {
+      openWorkspaceUrl(workspaceUrl({ id: TRASH_NODE_ID, type: 'page', title: 'trash' }), router)
       return
     }
     const node = nodeById.get(id)
     if (!node) return
-    if (isDatabasesRoot(node)) setExpanded((prev) => new Set(prev).add(id))
+    if (isDatabasesRoot(node)) {
+      handleToggle(id)
+      return
+    }
     navigateTo(node)
   }
 
@@ -2046,7 +2243,8 @@ export function Rail() {
         onRename={handleRename}
         onPickGlyph={handlePickGlyph}
         onPickColour={handlePickColour}
-        onLife={() => router.push(workspaceUrl(null))}
+        onMinimize={() => setRailMinimized(true)}
+        onLife={() => openWorkspaceUrl(workspaceUrl(null), router)}
         onToggleLife={handleToggleLife}
         onOpenDatabases={handleOpenDatabases}
         canDrop={canDrop}

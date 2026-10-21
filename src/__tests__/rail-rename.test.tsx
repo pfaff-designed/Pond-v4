@@ -262,8 +262,8 @@ describe('rail — roving focus follows keys only, never a data refetch', () => 
     fireEvent.keyDown(row('recipes'), { key: 'ArrowUp' })
     expect(row('books')).toHaveFocus()
     fireEvent.keyDown(row('books'), { key: 'End' })
-    expect(row('databases')).toHaveFocus()
-    fireEvent.keyDown(row('databases'), { key: 'Home' })
+    expect(row('trash')).toHaveFocus()
+    fireEvent.keyDown(row('trash'), { key: 'Home' })
     expect(row('life')).toHaveFocus()
   })
 

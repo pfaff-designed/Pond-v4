@@ -26,6 +26,7 @@ import { platformShortcutLabel } from '@/lib/change-log/page-changes'
 import { isApplePlatform } from '@/lib/platform'
 import { changeLogKey } from '@/lib/change-log/keys'
 import { changeLogPageFilterUrl, changeLogRecordUrl } from '@/lib/change-log/record-page'
+import { openWorkspaceUrl } from '@/lib/pages/nav'
 import { PageChangesSection } from '@/components/molecules/PageChangesSection'
 import type { ChangeLogRecord } from '@/lib/change-log/types'
 
@@ -78,9 +79,9 @@ export function PageChangesPanel({ pageId, className }: PageChangesPanelProps) {
     <PageChangesSection
       rows={rows}
       loading={isLoading}
-      onOpenRecord={(recordId) => router.push(changeLogRecordUrl(recordId))}
+      onOpenRecord={(recordId) => openWorkspaceUrl(changeLogRecordUrl(recordId), router)}
       onOpenChangeLog={() => {
-        if (pageId !== undefined) router.push(changeLogPageFilterUrl(pageId))
+        if (pageId !== undefined) openWorkspaceUrl(changeLogPageFilterUrl(pageId), router)
       }}
       shortcutLabel={platformShortcutLabel(isApplePlatform())}
       className={className}

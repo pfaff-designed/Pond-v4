@@ -35,7 +35,7 @@ describe('a text block renders on the server, with no window and no editor', () 
     const html = renderToString(
       <TextView data={{ id: 't', type: 'text', content: '' }} editable onChange={() => {}} />
     )
-    expect(html).toContain('data-placeholder="write something"')
+    expect(html).toContain('data-placeholder="type, or / for blocks"')
   })
 
   it('an empty heading arrives reading the heading atom’s `untitled`', () => {

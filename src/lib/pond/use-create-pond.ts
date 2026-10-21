@@ -4,7 +4,7 @@ import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 import { pondHref } from './active'
-import { createPond } from './client'
+import { createPond, type CreatePondOptions } from './client'
 import { usePond } from './context'
 
 /**
@@ -23,13 +23,13 @@ export function useCreatePond() {
   const [pending, setPending] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
 
-  const create = async (name: string): Promise<boolean> => {
+  const create = async (name: string, options?: CreatePondOptions): Promise<boolean> => {
     if (inFlight.current) return false
     inFlight.current = true
     setPending(true)
     setFailure(null)
     try {
-      const pond = await createPond(name)
+      const pond = await createPond(name, options)
       // Into the list BEFORE the navigation, so the shell can resolve the pond the
       // URL is about to name.
       addPond(pond)

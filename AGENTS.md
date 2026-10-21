@@ -73,6 +73,27 @@ So: read the board, list its states, delete the old component, write the new one
 
 What survives a gut is **engine logic the boards assume but do not draw**: the field engine, the diff path, persistence, ARIA trees, data derivation. Lift that out first, then gut the surface around it.
 
+# Build like a pragmatic programmer.
+
+These rules come from _The Pragmatic Programmer_ (Hunt and Thomas; the user asked for them on 2026-10-17). Each one below is tied to a failure this repo has actually had. This section is their home: the role files in `ship-epics/` turn them into checks for each role and point back here.
+
+- **DRY means one home for each piece of knowledge, not just no repeated lines.** A rule, a value, a chord or a path lives in exactly one place, and everything else reads it. On 2026-10-17 the ⌘K/⌘J/⌘. hints were spelled out separately across components and drifted (KAN-396). The same day, the run monitor read a session folder written into its source and went silently stale. Text that only looks the same but means different things stays separate. **A board value is not a duplicate:** `13.5px` stays `13.5px` even if a token is close (see above).
+- **Make state explicit. Never encode two facts in one field.** Rows were inferred from widths alone, so a block left at ½ silently re-packed every row below it, and side-by-side stopped working (Jira KAN-440). If behaviour depends on a fact, store that fact.
+- **Orthogonality.** One change touches one concern. A ticket that has to edit several unrelated modules points to coupling: say so in the PR rather than threading through it. Tests are orthogonal to their environment too. Storybook stories that asserted `⌘K` failed on CI's Linux runner (KAN-396).
+- **Program deliberately, not by coincidence.** Know why the code works before you call it done, and know why it fails before you change it. A comment that claims behaviour is a claim, so test it: "a drag closes the menu its press opened" sat in `BlockCanvas.tsx` while the menu stayed open through every drag. A fix you cannot explain is not a fix.
+- **Crash early. Use assertions for the impossible.** In development, an impossible state throws (`if (process.env.NODE_ENV !== 'production') throw …`) rather than defaulting quietly. In production, it logs and falls back to the safest state. Catch an error only where you handle it: a swallowed error turns a bug into a mystery.
+- **Design by contract at the engine's seams.** The field engine, coercion, rollups, layout and the diff path state what they accept and what they promise, in their types and in a zod parse at the boundary. Callers don't pass what the contract refuses.
+- **Finish what you start.** Whoever acquires a listener, timer, subscription, lock or server releases it, in the same scope. Leftover dev servers and browser locks have stalled whole runs.
+- **Reversibility.** Prefer decisions you can undo. A new persisted field is optional, and absent means today's behaviour, so old pages read unchanged and the change can be rolled back. Persisted data is engine, not surface: an optional field is not the shim that "Stale goes" forbids, though a code path kept only for a superseded surface is. Production migrations and data deletes are one-way doors, so they go to the user.
+- **Tracer bullets, not prototypes.** Every slice is a thin, working path from a control a person can see down to the data ("Split vertically", above). Code nobody can reach is not a tracer; it is a guess.
+- **Don't outrun your headlights.** Take small steps, each proven by a command, before taking the next. That is why build items are sized at about six minutes.
+- **Find bugs once.** Every behaviour bug a review, a verifier or the user finds gets a test that fails without the fix. A visual-value finding (a colour, a size) is proven by the verifier re-measuring it, not by a jest assertion on a class name. Test the states, not the coverage number. Pure engine code (layout, rollups, date math) gets a table of cases or property-style tests over its whole input space: three scenarios in a table would have shown the KAN-440 re-pack bug at once.
+- **"select" isn't broken. Debug with a hypothesis.** When something fails, suspect our own code first, then the test, then the tool. Say out loud (rubber-duck it) what you assumed, what happened instead, and the smallest check that would disprove the assumption, then run that check. That is the same procedure as "If you stall", above.
+- **Take responsibility: give options, not excuses.** A stopped ticket, a failed check or a refusal names its cause and offers at least one way forward (a smaller slice, a different route, the decision the user needs to make). "It didn't work" is not a report.
+- **Fix broken windows.** Rot you see in lines you touch, you fix in the same change. Rot you only see nearby is written down for the conductor to ticket, so it doesn't spread. Never leave a window you broke.
+- **Least privilege.** A policy, role check or key grants the least that works. A migration that widens access (RLS, a grant, a `security definer`) says who can now read or write what, and why. Private means private, admins included.
+- **Good-enough software, with the user setting "enough".** Ship the slice the ticket describes, at the board's quality, and stop. Polish beyond the spec is scope; anything short of the spec is not done.
+
 # There are exactly two kinds of component. Everything else is deleted.
 
 1. **The component library** — what Pond itself is built from. `Pond 02 Component library` and its child DCs define it: `PondAtom`, `PondControl`, `PondMolecule`, `PondPicker`, `PondRail`, `PondComposer`, `PondChart`, `PondTemplate`. This is the chrome.
@@ -111,6 +132,17 @@ The one thing that must survive is **engine logic the boards assume but do not d
 
 **A value written in a board is final.** Do not round it to a scale, snap it to a token, or reconcile it with prose elsewhere. `13.5px` means 13.5px.
 
+## Flows are benchmarked against Notion, Linear and Asana (decided 2026-10-17)
+
+The boards look right, but they under-cover flows and details. The user has decided: **the boards govern how Pond looks; Notion, Linear and Asana govern how its flows work.**
+
+- **Visual values stay with the board:** type, colour, spacing, radii, components (`Pond 02` still wins among boards).
+- **A flow follows the reference apps:** how you create, open, move, edit, undo, and find your way, and what each click and key does.
+  - Where a board is silent on a flow, do what the reference apps do.
+  - Where a board and the reference apps conflict on a flow, **the app wins**. Do not ask; say in the PR which app you followed, with a Mobbin/Refero screen or flow id.
+- An explicit user ruling on a ticket beats both. Example: the calendar day click opens the day view, KAN-453/455.
+- Flow work is done journey by journey. A journey review maps the reference app stage by stage, ranks the gaps that hurt intuitiveness, and tickets them as vertical S/M slices. The calendar review (KAN-453–460) is the template.
+
 # The design handoff is the spec. Build from it; do not re-litigate it.
 
 **Sync before you build.** `wayfinder/design_handoff_pond/` is a mirror of the design export. Run
@@ -133,7 +165,7 @@ A clear, small, fully-specified request needs neither — act on it directly.
 
 A slice is finished when the built surface **matches the mockup it came from** — layout, colour, type, spacing, radii, shadow, copy — and the features that storyboard commits to actually work. Rendering without errors is not done. Passing tests is not done. **Code nobody can reach is not done**: write the person's path (the clicks and keys from an open page to the feature) before building, and walk it with real input before the PR. A path that only works through the console, the editor API or a dispatched event does not work.
 
-How to check, every time, before opening a PR:
+How to check, every time, before opening a PR. The one exception is a `light` ticket (`ship-epics/orchestrator.md`, step 2c): tests, docs, copy, or a small fix with a known cause and no visual, persistence or control change. Its proof is CI plus its regression test, and it has no live walk.
 
 1. Serve the handoff: `npx serve wayfinder/design_handoff_pond` (the fonts, glyphs and child components need a static server; `support.js` is the mockup runtime — never port it).
 2. Open the mockup board and the built surface side by side at the same viewport, and screenshot both.

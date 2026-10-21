@@ -10,6 +10,8 @@
  *     cleared by a new one, a stale or refused step dropped, a blocked step and
  *     a failed call put back, and a result that arrives after the history moved
  *     on does not land on it;
+ *   - undo/redo wait out any `remember` still in flight for the pond before
+ *     reading the stack, so a step being logged is never raced;
  *   - it is emptied on pagehide.
  */
 
@@ -376,6 +378,24 @@ describe('createSessionUndo', () => {
     expect(run.undo).toHaveBeenLastCalledWith({ pondId: POND, recordIds: ['r'] })
   })
 
+  it('a remember that resolves after undo() is called is still the step undo takes', async () => {
+    const { store, run } = makeStore()
+    store.remember({ pondId: POND, recordIds: ['older'] })
+    let resolvePending: () => void = () => {}
+    const pendingRemember = new Promise<void>((resolve) => {
+      resolvePending = resolve
+    })
+    store.trackPending(POND, pendingRemember)
+
+    const outcome = store.undo(POND)
+    await flush()
+    store.remember(STEP)
+    resolvePending()
+    await outcome
+
+    expect(run.undo).toHaveBeenCalledWith(STEP)
+  })
+
   it('lands nothing on a history cleared while a call was in flight', async () => {
     const { store, run } = makeStore()
     const call = held(done(['u']))
@@ -544,6 +564,18 @@ describe('createSessionUndo', () => {
 
       await expect(first).rejects.toThrow(SessionUndoTimeoutError)
       await expect(second).resolves.toMatchObject({ outcome: 'done', step: STEP })
+    })
+
+    it('does not let a trackPending promise that never settles block undo past the timeout', async () => {
+      const { store, run } = makeStore({ timeoutMs: 1000 })
+      store.remember(STEP)
+      store.trackPending(POND, new Promise<void>(() => {}))
+
+      const pending = store.undo(POND)
+      await jest.advanceTimersByTimeAsync(1000)
+
+      await expect(pending).resolves.toMatchObject({ outcome: 'done', step: STEP })
+      expect(run.undo).toHaveBeenCalledWith(STEP)
     })
   })
 

@@ -18,15 +18,17 @@
  *
  * Manual block authoring (ticket-37, ticket-44): the user is an equal author to
  * the AI. The editor body — the `/` palette, Return after a block, reorder, and the
- * always-visible "+ Add a block" foot affordance — is the shared <BlockCanvas>,
- * so every page authors identically. This panel owns the title header and the
- * debounced save; BlockCanvas owns the blocks, page-link blocks included.
+ * hover-only trailing hit area that opens a new line (KAN-345) — is the shared
+ * <BlockCanvas>, so every page authors identically. This panel owns the title
+ * header and the debounced save; BlockCanvas owns the blocks, page-link blocks
+ * included.
  */
 
 import React, { useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
+import { defineSchema, getPage, saveProps, type PondPage } from '@/lib/pages/client'
 import { pageQueryOptions } from '@/lib/pages/page-query'
 import { usePageDraft } from '@/lib/pages/use-page-draft'
 import { getOrCreateHomePage } from '@/lib/pages/home'
@@ -35,7 +37,14 @@ import { PondBlock } from '@/components/organisms/PondBlock'
 import { propertiesFrame } from '@/lib/modules/block-frame'
 import { BacklinksPanel } from '@/components/organisms/BacklinksPanel'
 import { usePageChangesPanel } from '@/components/organisms/PageChangesPanel'
-import { readSchema, readValues, ROW_TYPE } from '@/lib/properties/schema'
+import {
+  addOption,
+  readSchema,
+  readValues,
+  ROW_TYPE,
+  withSchema,
+  withValue,
+} from '@/lib/properties/schema'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
 import { ContentWidthHandle } from '@/components/molecules/ContentWidthHandle'
 import { useContentWidth } from '@/lib/layout/content-width'
@@ -52,8 +61,10 @@ import { usePublishCommandPath } from '@/lib/layout/command-path'
 import { commandPath } from '@/lib/pages/command-path'
 import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
 import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
+import { isVirtualNodeId, TRASH_NODE_ID } from '@/lib/change-log/trash-view'
 import { ChangeLogPage } from '@/components/organisms/ChangeLogPage'
 import { ChangeLogRecordPage } from '@/components/organisms/ChangeLogRecordPage'
+import { TrashPage } from '@/components/organisms/TrashPage'
 import { RECORD_PARAM, recordBreadcrumbTitle } from '@/lib/change-log/record-page'
 import { recordKey } from '@/lib/change-log/keys'
 import { getRecord } from '@/lib/change-log/store'
@@ -141,6 +152,9 @@ export function DocumentPanel() {
   // it takes none of the getPage/rows-driven path below — rendered by
   // `ChangeLogPage` instead, further down.
   const isChangeLogNode = nodeId === CHANGE_LOG_NODE_ID
+  // The reserved trash page (KAN-451): same shape as the change log — a
+  // virtual node with no `pages` row, rendered by `TrashPage` instead.
+  const isTrashNode = nodeId === TRASH_NODE_ID
   // A record route under the virtual change-log node (`?record=`, KAN-152):
   // read here (not inside `ChangeLogRecordPage`) because the breadcrumb below
   // needs the record's title before that component ever mounts.
@@ -149,6 +163,7 @@ export function DocumentPanel() {
   // CI) never constructs a real client and throws (#38); the page query and the
   // save/property paths below construct it only when they actually run.
   const getSupabase = useLazySupabase()
+  const queryClient = useQueryClient()
   const { flushScope } = useDeletionUndo()
   // #58: the editor column's user-set width — persisted, clamped, adjusted by
   // the ContentWidthHandle on the column's right edge. Hook lives above the
@@ -252,7 +267,7 @@ export function DocumentPanel() {
     isError: pageIsError,
   } = useQuery({
     ...pageQueryOptions(getSupabase, pageId),
-    enabled: !!pageId && !isChangeLogNode,
+    enabled: !!pageId && !isVirtualNodeId(pageId),
   })
 
   // KAN-122: a page made by `/ nested page` carries `new` (the chip on its
@@ -261,7 +276,6 @@ export function DocumentPanel() {
   // page surface. Guarded by `openedMarked` (not just `page.props`) so the
   // write fires once per page, not on every re-render while the server write
   // is still in flight.
-  const queryClient = useQueryClient()
   const openedMarked = useRef<string | null>(null)
   useEffect(() => {
     if (!page || !isNewNestedPage(page.props) || openedMarked.current === page.id) return
@@ -279,6 +293,17 @@ export function DocumentPanel() {
       queryClient.invalidateQueries({ queryKey: pagesKey(pondId) })
     })
   }, [page, pondId, queryClient, getSupabase])
+  // KAN-350: a row page's `_schema` lives on its PARENT collection — the row's own
+  // `props` holds only its values. The parent is read through the SAME `['page', id]`
+  // cache every other page read shares (no bespoke key), keyed off `page.parentId`
+  // so it tracks if the row moves.
+  const isRowPage = page?.type === ROW_TYPE
+  const parentId = isRowPage ? page.parentId : null
+  const { data: parentPage } = useQuery({
+    queryKey: ['page', parentId],
+    queryFn: () => (parentId ? getPage(getSupabase(), parentId) : Promise.resolve(null)),
+    enabled: !!parentId,
+  })
 
   // The flat page tree — the same cache the rail reads — so this page's own
   // children (now ordinary page-link blocks, KAN-415) resolve against current
@@ -321,7 +346,7 @@ export function DocumentPanel() {
     onProperty,
     commitLocalEdit,
     undoRemove,
-    adoptSavedBlocks,
+    writeStructural,
   } = usePageDraft({ page, pageId, pondId, getSupabase })
 
   // KAN-415: child pages are ordinary page-link blocks on their parent now, not
@@ -363,13 +388,76 @@ export function DocumentPanel() {
     })
   }, [page, rows, rowsPending, nodeId, viewBlocks, commitLocalEdit, getSupabase, queryClient])
 
+  // KAN-350 "+ new tag": adds the label as a new option on the field's owning
+  // schema, then sets THIS page's value to the minted option id. When the
+  // schema and the value live on the SAME page (this page is itself the
+  // database), that's one combined props write — `defineSchema` and
+  // `setProperty` each read-modify-write the WHOLE `props` object
+  // independently, so firing both at the same page would race and the last
+  // one in would drop the other's change. When the schema lives on a
+  // different page (a row's parent), the writes target different rows and
+  // can't collide, but still chain: the value is only set once the schema
+  // write it depends on has actually landed. Either way, a failure rolls the
+  // optimistic schema-cache write back rather than leaving the cache ahead of
+  // what's stored.
+  async function onAddOption(fieldId: string, label: string) {
+    if (!schemaOwnerId || !propSchema) return
+    const { schema: nextSchema, optionId } = addOption(propSchema, fieldId, label)
+    if (optionId === null) return
+
+    if (schemaOwnerId === pageId) {
+      const previousProps = page?.props ?? {}
+      const nextProps = withValue(withSchema(previousProps, nextSchema), fieldId, optionId)
+      queryClient.setQueryData(['page', pageId], (prev: PondPage | null | undefined) =>
+        prev ? { ...prev, props: nextProps } : prev
+      )
+      try {
+        await saveProps(getSupabase(), pageId, nextProps)
+      } catch (err) {
+        queryClient.setQueryData(['page', pageId], (prev: PondPage | null | undefined) =>
+          prev ? { ...prev, props: previousProps } : prev
+        )
+        console.error('[document] add option failed', pageId, err)
+      }
+      return
+    }
+
+    const previousParentProps = parentPage?.props ?? {}
+    queryClient.setQueryData(['page', schemaOwnerId], (prev: PondPage | null | undefined) =>
+      prev ? { ...prev, props: withSchema(prev.props, nextSchema) } : prev
+    )
+    try {
+      await defineSchema(getSupabase(), schemaOwnerId, nextSchema)
+      onProperty(fieldId, optionId)
+    } catch (err) {
+      queryClient.setQueryData(['page', schemaOwnerId], (prev: PondPage | null | undefined) =>
+        prev ? { ...prev, props: previousParentProps } : prev
+      )
+      console.error('[document] add option failed', schemaOwnerId, err)
+    }
+  }
+
   // "Changes to this page" (#103, storyboard frame 8): the log filtered to this
   // page, floating, ⌥⌘H. State, shortcut and surface all live with the panel; the
   // title row draws no button for it.
   const { overlay: changesOverlay } = usePageChangesPanel(pageId)
   // Typed properties (#17): present only when the page carries a schema (it is
-  // a collection). Read here, above the early returns, so the JSX below stays flat.
-  const propSchema = page ? readSchema(page.props) : null
+  // a collection), OR — KAN-350 — is a row whose parent carries one. Read here,
+  // above the early returns, so the JSX below stays flat.
+  const propSchema = isRowPage
+    ? parentPage
+      ? readSchema(parentPage.props)
+      : null
+    : page
+      ? readSchema(page.props)
+      : null
+  // The id of the page that actually carries `_schema` — a row's parent, or the
+  // page itself when it IS the database (KAN-350: "+ new tag" writes here, never
+  // to a row's own `props`, which holds only its values).
+  const schemaOwnerId = isRowPage ? parentId : pageId
+  // The properties card's note: a row names its parent database; a collection
+  // (or any other page) names itself (KAN-350).
+  const propertiesNote = isRowPage ? parentPage?.title || 'Untitled' : viewTitle || 'Untitled'
   // Board 6f frame 1: a fresh, untouched page reads `new — in {parent}` instead
   // of the usual kind/save-state eyebrow, until the person types anything.
   const untouched = isUntouchedPage(viewTitle, viewBlocks)
@@ -423,11 +511,20 @@ export function DocumentPanel() {
             : 'change log',
           role: null,
         }
-      : commandPath(rows, nodeId, {
-          rootTitle: home?.title || pondName || 'life',
-          current: viewTitle || rows.find((r) => r.id === nodeId)?.title || 'Untitled',
-          pondGlyph: pond?.glyph ?? LIFE_GLYPH,
-        })
+      : isTrashNode
+        ? {
+            glyph: pond?.glyph ?? LIFE_GLYPH,
+            // Trash is its own top-level rail row (KAN-504), not a databases
+            // child — unlike change log above, its trail carries no databases crumb.
+            trail: [home?.title || pondName || 'life'],
+            current: 'trash',
+            role: null,
+          }
+        : commandPath(rows, nodeId, {
+            rootTitle: home?.title || pondName || 'life',
+            current: viewTitle || rows.find((r) => r.id === nodeId)?.title || 'Untitled',
+            pondGlyph: pond?.glyph ?? LIFE_GLYPH,
+          })
   )
 
   // The virtual change-log page: the breadcrumb above has already taken effect;
@@ -435,6 +532,13 @@ export function DocumentPanel() {
   // surface takes none of the `getPage`/rows path below.
   if (isChangeLogNode) {
     return recordId ? <ChangeLogRecordPage recordId={recordId} /> : <ChangeLogPage />
+  }
+
+  // The virtual trash page: same shape as the change log above — the
+  // breadcrumb has already taken effect, and `TrashPage` owns its own data
+  // fetching, so this surface takes none of the `getPage`/rows path below.
+  if (isTrashNode) {
+    return <TrashPage />
   }
 
   // KAN-388: while `['page', pageId]` is still in flight, the row this id
@@ -499,14 +603,14 @@ export function DocumentPanel() {
   // `pageIsError` only counts when there's no page data to fall back on — a
   // background refetch (e.g. another observer on the same `['page', id]` key,
   // like `PageChangesPanel`) erroring must not blank a page already on screen.
-  if (pageId && !isChangeLogNode && !isLoading && page === null) {
+  if (pageId && !isVirtualNodeId(pageId) && !isLoading && page === null) {
     return (
       <div className="flex h-full items-center justify-center text-mn-13 text-mn-text-secondary">
         this page is gone — it may be in the trash
       </div>
     )
   }
-  if (pageId && !isChangeLogNode && !isLoading && pageIsError && !page) {
+  if (pageId && !isVirtualNodeId(pageId) && !isLoading && pageIsError && !page) {
     return (
       <div className="flex h-full items-center justify-center text-mn-13 text-mn-text-secondary">
         this page didn&apos;t load — reload to try again
@@ -575,31 +679,34 @@ export function DocumentPanel() {
           {/* Provenance (#97, 6a frame 5): the thread moment this page was made
               from, when it was. Hide keeps the stamp; nothing removes it. */}
           <PageProvenance pageId={page.id} props={page.props} className="mb-5" />
-          {/* Typed properties (#17): shown only when the page carries a schema (it
-              is a collection). Edits write optimistically, bypassing the AI gate.
-              #260: framed in the board's `properties` card (ADR 0007 — the inspector
-              IS that kind), empty when the schema has no fields. */}
+          {/* Typed properties (#17): shown when the page carries a schema (it is a
+              collection) OR is a ROW of one (its parent carries the schema; KAN-350).
+              Edits write optimistically, bypassing the AI gate. #260: framed in the
+              board's `properties` card (ADR 0007 — the inspector IS that kind), empty
+              when the schema has no fields. The note (KAN-350) names the parent
+              database for a row, or the page's own title when it IS the database. */}
           {propSchema && (
-            <PondBlock {...propertiesFrame(propSchema)} className="mb-6">
+            <PondBlock {...propertiesFrame(propSchema, propertiesNote)} className="mb-6">
               <PropertyInspector
                 schema={propSchema}
                 values={readValues(page.props)}
                 onChange={onProperty}
+                onAddOption={onAddOption}
               />
             </PondBlock>
           )}
         </div>
 
         {/* The shared authoring surface (ticket-44): the `/` palette, Return after
-            a block, reorder, bound metrics, and the always-visible "+ Add a block"
-            foot affordance. Controlled — it emits the full next array and this
-            panel schedules the debounced whole-array save. */}
+            a block, reorder, bound metrics, and the hover-only trailing hit area
+            that opens a new line (KAN-345). Controlled — it emits the full next
+            array and this panel schedules the debounced whole-array save. */}
         <BlockCanvas
           blocks={viewBlocks}
           pageId={page.id}
           pageTitle={viewTitle}
           onChange={commitLocalEdit}
-          onBlocksPersisted={adoptSavedBlocks}
+          onStructuralWrite={writeStructural}
           onUndoRemove={undoRemove}
           insertedIds={insertedIds}
           chrome={!zen}

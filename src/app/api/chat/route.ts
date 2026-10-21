@@ -42,6 +42,7 @@ import { referencesContextNote, wholePageReferenceNote } from './references'
 import { parseChatBody } from './body'
 import { isWholePageReference } from '@/lib/references/reference'
 import { mentionPillRuns } from '@/lib/references/mention-pill'
+import { resolvePond } from '@/lib/pond/scope'
 
 /**
  * Remove each `@<title>` run matching a whole-page reference's title (the same
@@ -116,7 +117,13 @@ export async function POST(req: Request) {
   // KAN-309: fetched once here (not inside buildChatContext) so the route can
   // also hand it to withOpenPageNow below — one read, two uses.
   let openPageData: NodeContextData | null = null
+  // KAN-341: resolved once, then handed to buildChatContext below (which
+  // otherwise resolves it again) — every fetchNodeContext call below also
+  // threads it through, so a cross-pond or trashed id reads as unavailable
+  // instead of another pond's page.
+  let pond: string | null = null
   if (user) {
+    pond = await resolvePond(supabase, user.id, pondId)
     const linkContext = await fetchLinkContext(userText)
     if (linkContext) contextBlocks.push(linkContext)
 
@@ -131,7 +138,7 @@ export async function POST(req: Request) {
     const wholePageData = new Map<string, Awaited<ReturnType<typeof fetchNodeContext>>>()
     await Promise.all(
       [...new Set(wholePageRefs.map((r) => r.pageId))].map(async (pageId) => {
-        wholePageData.set(pageId, await fetchNodeContext(supabase, user.id, pageId))
+        wholePageData.set(pageId, await fetchNodeContext(supabase, user.id, pageId, pond))
       })
     )
     const wholePageTitles = [...wholePageData.values()].flatMap((data) => (data ? [data.title] : []))
@@ -141,7 +148,7 @@ export async function POST(req: Request) {
     // KAN-99: a dismissed current-page chip withholds the open page from the
     // model entirely — neither its context block nor KAN-309's "open page now"
     // part may carry it.
-    openPageData = nodeId && openPageContext ? await fetchNodeContext(supabase, user.id, nodeId) : null
+    openPageData = nodeId && openPageContext ? await fetchNodeContext(supabase, user.id, nodeId, pond) : null
 
     const context = await buildChatContext(supabase, user.id, {
       nodeId,
@@ -149,6 +156,8 @@ export async function POST(req: Request) {
       latestUserText: userTextForMentions,
       // #312: the composer reads only this pond (`s6m5`).
       pondId,
+      // KAN-341: already resolved above — skip a second `resolvePond` call.
+      pond,
       // KAN-99: `nodeId` still rides every other use (propose_changes targets
       // it) — only its content block is withheld once its chip is dismissed.
       skipNodeContext: !openPageContext,
@@ -171,7 +180,7 @@ export async function POST(req: Request) {
         const titles = new Map<string, string>()
         await Promise.all(
           [...new Set(passageRefs.map((r) => r.pageId))].map(async (pageId) => {
-            const data = await fetchNodeContext(supabase, user.id, pageId)
+            const data = await fetchNodeContext(supabase, user.id, pageId, pond)
             if (data) titles.set(pageId, data.title)
           })
         )
@@ -230,7 +239,7 @@ export async function POST(req: Request) {
           const rejectedTitles = new Map<string, string>()
           await Promise.all(
             rejectedPageIds.map(async (pageId) => {
-              const data = await fetchNodeContext(supabase, user.id, pageId)
+              const data = await fetchNodeContext(supabase, user.id, pageId, pond)
               if (data) rejectedTitles.set(pageId, data.title)
             })
           )
@@ -331,7 +340,7 @@ export async function POST(req: Request) {
       ...readPageTool,
       execute: async ({ pageId }) => {
         if (!user) return 'No user session; cannot read that page.'
-        const data = await fetchNodeContext(supabase, user.id, pageId)
+        const data = await fetchNodeContext(supabase, user.id, pageId, pond)
         if (!data) return `No page found with id ${pageId} (it may not exist or is not yours).`
         return formatNodeContext(data, { label: `Read: ${data.title}`, includeBlockIds: true })
       },

@@ -33,6 +33,7 @@ jest.mock('@/lib/supabase/client', () => ({
 
 jest.mock('@/lib/pond/context', () => ({
   ...jest.requireActual('@/lib/pond/context'),
+  usePond: () => ({ pond: { id: 'pond-1', name: 'Test Pond' }, ponds: [], loading: false }),
   usePondId: () => 'pond-1',
 }))
 
@@ -62,8 +63,15 @@ jest.mock('@/lib/pages/client', () => ({
 }))
 
 // `@/lib/pages/commit` (`commitBlocks`) is deliberately left REAL: its own-edit
-// logging is what proves the fix. Only its leaves are mocked.
-const mockAppendOwnEdit = jest.fn().mockResolvedValue({ id: 'record-x' })
+// logging is what proves the fix. Only its leaves are mocked. Each call gets
+// its OWN record id (KAN-495: the flushed slash keystroke and the apply are
+// now two separate queue ops, each its own record) so the assertions below
+// can tell which `remember` call belongs to the apply, not just count them.
+let appendOwnEditCallCount = 0
+const mockAppendOwnEdit = jest.fn((...args: unknown[]) => {
+  void args
+  return Promise.resolve({ id: `record-${++appendOwnEditCallCount}` })
+})
 const mockMarkOutdated = jest.fn().mockResolvedValue([])
 jest.mock('@/lib/change-log/store', () => ({
   appendOwnEdit: (...args: unknown[]) => mockAppendOwnEdit(...args),
@@ -71,11 +79,15 @@ jest.mock('@/lib/change-log/store', () => ({
 }))
 const mockRemember = jest.fn()
 jest.mock('@/lib/change-log/session-undo', () => ({
-  sessionUndo: { remember: (...args: unknown[]) => mockRemember(...args) },
+  sessionUndo: {
+    remember: (...args: unknown[]) => mockRemember(...args),
+    trackPending: jest.fn(),
+  },
 }))
 
 beforeEach(() => {
   jest.clearAllMocks()
+  appendOwnEditCallCount = 0
   mockListTemplates.mockResolvedValue([
     {
       id: 't1',
@@ -87,7 +99,6 @@ beforeEach(() => {
       blocks: [{ id: 'old-1', type: 'text', content: 'chickpeas, harissa' }],
     },
   ])
-  mockAppendOwnEdit.mockResolvedValue({ id: 'record-x' })
   mockMarkOutdated.mockResolvedValue([])
   mockSaveBlocks.mockResolvedValue(undefined)
   mockSaveProps.mockResolvedValue(undefined)
@@ -142,12 +153,63 @@ it('a fast `/` then a template pick (within the draft debounce) logs the apply o
   // Exactly one call logged the applied blocks as its own-edit `after` — the
   // apply's direct record. A second one (the bug) would mean the draft's own
   // debounced save fired with a stale `before`, double-logging the same apply.
-  const callsLoggingTheApply = mockAppendOwnEdit.mock.calls.filter(([, input]) =>
-    JSON.stringify((input as { after: unknown }).after) === JSON.stringify(appliedBlocks)
-  )
+  // (The flushed slash keystroke is a SEPARATE, correctly-own-edit-logged
+  // write — KAN-495 made it one too — so this counts only calls whose
+  // content matches the apply, not every `appendOwnEdit` call in the test.)
+  const callsLoggingTheApply = mockAppendOwnEdit.mock.calls
+    .map((call, i) => ({ call, id: `record-${i + 1}` }))
+    .filter(({ call: [, input] }) =>
+      JSON.stringify((input as { after: unknown }).after) === JSON.stringify(appliedBlocks)
+    )
   expect(callsLoggingTheApply).toHaveLength(1)
 
-  // Apply is one undo step: exactly one record remembered for it.
-  expect(mockRemember).toHaveBeenCalledTimes(1)
-  expect(mockRemember.mock.calls[0][0].recordIds).toHaveLength(1)
+  // Apply is one undo step: exactly one record remembered for it, with one id.
+  const applyRecordId = callsLoggingTheApply[0].id
+  const rememberCallsForApply = mockRemember.mock.calls.filter(([{ recordIds }]) =>
+    recordIds.includes(applyRecordId)
+  )
+  expect(rememberCallsForApply).toHaveLength(1)
+  expect(rememberCallsForApply[0][0].recordIds).toHaveLength(1)
+})
+
+it('a template apply whose write fails reverts the local blocks, and a later keystroke never stores the discarded template', async () => {
+  renderBlankPage()
+  const editor = await findTextBlock()
+  writeInTextBlock(editor, '/')
+
+  const firstBlockContent = (call: unknown[]): string | undefined =>
+    (call[2] as Block[])[0] && 'content' in (call[2] as Block[])[0]
+      ? ((call[2] as Block[])[0] as { content: string }).content
+      : undefined
+
+  // The apply's own write fails; the slash keystroke's flushed write (content
+  // still `/`) must still succeed — only the template's own save is bad.
+  mockSaveBlocks.mockImplementation((...args: unknown[]) =>
+    firstBlockContent(args) === 'chickpeas, harissa'
+      ? Promise.reject(new Error('network'))
+      : Promise.resolve(undefined)
+  )
+
+  fireEvent.click(await screen.findByText('weeknight recipe'))
+
+  // The optimistic apply paints the template, then its write rejects and
+  // local state reverts to what's actually stored (the flushed slash save).
+  await waitFor(() => {
+    const field = screen.queryByRole('textbox', { name: 'text block' })
+    expect(field?.textContent ?? '').not.toContain('chickpeas, harissa')
+  })
+
+  // The failed op is discarded, not left for the next write to auto-retry —
+  // a later keystroke's own save must not carry the reverted template.
+  mockSaveBlocks.mockReset()
+  mockSaveBlocks.mockResolvedValue(undefined)
+  const revertedEditor = await findTextBlock()
+  writeInTextBlock(revertedEditor, 'hello')
+
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, EDIT_PAUSE_MS + 150))
+  })
+
+  expect(mockSaveBlocks).toHaveBeenCalled()
+  expect(mockSaveBlocks.mock.calls.some((call) => firstBlockContent(call) === 'chickpeas, harissa')).toBe(false)
 })

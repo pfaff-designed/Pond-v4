@@ -23,6 +23,7 @@ export type Row = {
   blocks: unknown
   props: Record<string, unknown>
   order: number
+  deleted_at?: string | null
 }
 
 type AnyRow = Record<string, unknown>

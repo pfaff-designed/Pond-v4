@@ -98,14 +98,28 @@ Every call is `mcp__plugin_atlassian_atlassian__<name>` and every call takes `cl
 
 ## The browser
 
-One Playwright browser is shared by this whole session, orchestrators and verifiers alike, which is why `/tmp/pond-browser.lock` is taken before any of it. Tools are `mcp__playwright__<name>`.
+**Each orchestrator slot has its own browser.** Three headless Playwright servers, `pw1`–`pw3`, are registered at user scope (`claude mcp list`). Each has its own persistent profile under `~/.pond-browsers/slot-N`, signed in to Pond once. Live checks no longer queue behind each other.
 
-| Name     | Tools                                                                                                                                                                                                                                                          |
-| -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ACT`    | `browser_click`, `browser_type`, `browser_press_key`, `browser_select_option`, `browser_drag`, `browser_hover`, `browser_fill_form`, `browser_file_upload`, `browser_handle_dialog`. Real input, delivered to the page.                                        |
-| `READ`   | `browser_snapshot`, `browser_take_screenshot`, `browser_find`, `browser_console_messages`, `browser_network_requests`, and `browser_evaluate` **for reading only** — `getComputedStyle`, `getBoundingClientRect`, attributes.                                  |
-| `BANNED` | `browser_run_code_unsafe`, at all. `browser_evaluate` used to click, focus, dispatch an event, call an editor API or write storage. `browser_emulate_media` to change theme — the mode toggle in the breadcrumb pill is the thing under test.                  |
-| `TAB`    | There is no tab lock. `browser_navigate` after taking `/tmp/pond-browser.lock`, work in that one tab, and `browser_tabs` only to return to it. Do not `browser_close` the browser — the next orchestrator needs it; close just your own tab if you opened one. |
+| `PORT` | `BROWSER` (tool prefix) |
+| ------ | ----------------------- |
+| 3101   | `mcp__pw1__browser_<x>` |
+| 3102   | `mcp__pw2__browser_<x>` |
+| 3103   | `mcp__pw3__browser_<x>` |
+
+- **No lock** with a slot browser: nobody else uses it. The lock belongs to the orchestrator in every case. A verifier never takes or waits on it.
+- **Load the slot's tools first.** They are deferred: a verifier loads them with `ToolSearch` (`select:mcp__pwN__browser_navigate,…`) before its first call. If the search returns none, the slot isn't in this session. Then use the shared `mcp__playwright__<name>` (the orchestrator holds the lock for you) and say so in `RESULT`.
+- **No `BROWSER` input** (an orchestrator started before per-slot browsers) means the shared `mcp__playwright__<name>`, under the orchestrator's lock.
+- **Signed out?** If `APP_URL` shows the sign-in screen, the verifier returns `result: fail` with first line `signed out: browser slot N`, and the orchestrator returns `stopped: browser slot N signed out`. Only the conductor signs a slot in, with the person's emailed code. A slot is never signed in through script.
+- **Fallback.** If the slot's tools aren't in this session (they load when Claude Code starts, so a session started before they were added lacks them), use the shared `mcp__playwright__<name>`. That browser is still shared, so take `/tmp/pond-browser.lock` first, as `orchestrator.md` step 7 says.
+
+The tool names below are the suffix `<x>` after `BROWSER`'s prefix.
+
+| Name     | Tools                                                                                                                                                                                                                                         |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ACT`    | `browser_click`, `browser_type`, `browser_press_key`, `browser_select_option`, `browser_drag`, `browser_hover`, `browser_fill_form`, `browser_file_upload`, `browser_handle_dialog`. Real input, delivered to the page.                       |
+| `READ`   | `browser_snapshot`, `browser_take_screenshot`, `browser_find`, `browser_console_messages`, `browser_network_requests`, and `browser_evaluate` **for reading only** — `getComputedStyle`, `getBoundingClientRect`, attributes.                 |
+| `BANNED` | `browser_run_code_unsafe`, at all. `browser_evaluate` used to click, focus, dispatch an event, call an editor API or write storage. `browser_emulate_media` to change theme — the mode toggle in the breadcrumb pill is the thing under test. |
+| `TAB`    | Work in one tab: `browser_navigate` (on the shared fallback, only after taking the lock), and `browser_tabs` only to return to it. Never `browser_close` the browser; the slot's profile and sign-in live in it. Close only a tab you opened. |
 
 **Screenshots must be written inside the repo.** `browser_take_screenshot` does take a `filename`, but it
 refuses any absolute path outside the repo: _"File access denied: … is outside allowed roots. Allowed roots:

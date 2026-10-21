@@ -15,6 +15,9 @@ import {
   groupRows,
   layoutBars,
   layoutGanttBars,
+  listGroupFact,
+  listGroupFields,
+  listGroupPatch,
   pickDateDef,
   pickGanttDefs,
   pickGroupDef,
@@ -230,6 +233,172 @@ describe('pickDateDef', () => {
   it('returns undefined when the collection has no date property', () => {
     const noDates: PropertySchema = schema.filter((d) => d.type !== 'date')
     expect(pickDateDef(noDates, undefined)).toBeUndefined()
+  })
+})
+
+/**
+ * List group choice (KAN-521). Select and status stay in schema order. A field
+ * choice clears `listFlat` by setting the key to `undefined`; `none` sets
+ * `listFlat: true` and clears a select/status `groupBy` only. A date id is left
+ * out of that patch so it stays for the calendar.
+ */
+const choiceSchema: PropertySchema = [
+  {
+    id: 'p-stage',
+    name: 'Stage',
+    type: 'select',
+    options: [{ id: 'o-a', label: 'A' }],
+  },
+  { id: 'p-notes', name: 'Notes', type: 'text' },
+  {
+    id: 'p-status',
+    name: 'Status',
+    type: 'status',
+    options: [{ id: 'o-todo', label: 'To do' }],
+  },
+  { id: 'p-due', name: 'Due', type: 'date' },
+  { id: 'p-when', name: 'When', type: 'date' },
+]
+
+const statusFirstSchema: PropertySchema = [choiceSchema[2]!, choiceSchema[0]!, choiceSchema[3]!]
+
+const noDateSchema: PropertySchema = choiceSchema.filter((def) => def.type !== 'date')
+
+type GroupConfig = { groupBy?: string; listFlat?: boolean }
+
+const expectPatch = (actual: GroupConfig, expected: GroupConfig) => {
+  expect(Object.keys(actual).sort()).toEqual(Object.keys(expected).sort())
+  expect(actual.groupBy).toBe(expected.groupBy)
+  expect(actual.listFlat).toBe(expected.listFlat)
+}
+
+describe('listGroupFields', () => {
+  it.each<[string, PropertySchema, string[]]>([
+    ['select then status, date skipped', choiceSchema, ['p-stage', 'p-status']],
+    ['status then select stays schema order', statusFirstSchema, ['p-status', 'p-stage']],
+    ['no select or status', choiceSchema.filter((def) => def.type === 'date'), []],
+  ])('%s', (_label, fieldsSchema, ids) => {
+    expect(listGroupFields(fieldsSchema).map((def) => def.id)).toEqual(ids)
+    expect(
+      listGroupFields(fieldsSchema).every((def) => def.type === 'select' || def.type === 'status')
+    ).toBe(true)
+  })
+})
+
+describe('listGroupPatch', () => {
+  it.each<[string, GroupConfig, string, GroupConfig]>([
+    ['select from an absent groupBy', {}, 'p-stage', { groupBy: 'p-stage', listFlat: undefined }],
+    [
+      'status replaces a select',
+      { groupBy: 'p-stage' },
+      'p-status',
+      { groupBy: 'p-status', listFlat: undefined },
+    ],
+    ['the same select again', { groupBy: 'p-stage' }, 'p-stage', {}],
+    ['the same status again', { groupBy: 'p-status' }, 'p-status', {}],
+    [
+      'the same select while listFlat is false still clears the key',
+      { groupBy: 'p-stage', listFlat: false },
+      'p-stage',
+      { groupBy: 'p-stage', listFlat: undefined },
+    ],
+    [
+      'a select while listFlat is set',
+      { listFlat: true, groupBy: 'p-due' },
+      'p-stage',
+      { groupBy: 'p-stage', listFlat: undefined },
+    ],
+    [
+      'both listFlat and the same select still clears listFlat',
+      { listFlat: true, groupBy: 'p-stage' },
+      'p-stage',
+      { groupBy: 'p-stage', listFlat: undefined },
+    ],
+    [
+      'none clears a select groupBy',
+      { groupBy: 'p-stage' },
+      'none',
+      { listFlat: true, groupBy: undefined },
+    ],
+    [
+      'none clears a status groupBy',
+      { groupBy: 'p-status' },
+      'none',
+      { listFlat: true, groupBy: undefined },
+    ],
+    [
+      'none leaves a date groupBy out of the patch',
+      { groupBy: 'p-due' },
+      'none',
+      { listFlat: true },
+    ],
+    [
+      'none leaves a later date id out of the patch',
+      { groupBy: 'p-when' },
+      'none',
+      { listFlat: true },
+    ],
+    ['none with no groupBy', {}, 'none', { listFlat: true }],
+    [
+      'none again while already flat and a date stays',
+      { listFlat: true, groupBy: 'p-due' },
+      'none',
+      {},
+    ],
+    ['none again while already flat with no groupBy', { listFlat: true }, 'none', {}],
+    [
+      'none while flat still clears a stored select',
+      { listFlat: true, groupBy: 'p-stage' },
+      'none',
+      { listFlat: true, groupBy: undefined },
+    ],
+    ['a date id is not a group choice', { groupBy: 'p-status' }, 'p-due', {}],
+    ['an unknown id is not a group choice', {}, 'p-nope', {}],
+  ])('%s', (_label, config, choice, expected) => {
+    expectPatch(listGroupPatch(choiceSchema, config, choice), expected)
+  })
+})
+
+describe('listGroupFact', () => {
+  it.each<[string, PropertySchema, GroupConfig, string, boolean]>([
+    ['a select', choiceSchema, { groupBy: 'p-stage' }, 'grouped by stage', true],
+    ['a status', choiceSchema, { groupBy: 'p-status' }, 'grouped by status', true],
+    ['a date groupBy', choiceSchema, { groupBy: 'p-due' }, 'grouped by due', true],
+    ['a later date groupBy', choiceSchema, { groupBy: 'p-when' }, 'grouped by when', true],
+    ['an absent groupBy', choiceSchema, {}, 'grouped by due', true],
+    [
+      'listFlat hides a date left in groupBy',
+      choiceSchema,
+      { listFlat: true, groupBy: 'p-due' },
+      'grouped by none',
+      false,
+    ],
+    ['listFlat with no groupBy', choiceSchema, { listFlat: true }, 'grouped by none', false],
+    [
+      'listFlat false still names the date',
+      choiceSchema,
+      { listFlat: false },
+      'grouped by due',
+      true,
+    ],
+    [
+      'both listFlat and a select groupBy names the select',
+      choiceSchema,
+      { listFlat: true, groupBy: 'p-stage' },
+      'grouped by stage',
+      true,
+    ],
+    [
+      'both listFlat false and a status still names the status',
+      choiceSchema,
+      { listFlat: false, groupBy: 'p-status' },
+      'grouped by status',
+      true,
+    ],
+    ['no date and no groupBy', noDateSchema, {}, 'grouped by none', false],
+    ['a select with no date', noDateSchema, { groupBy: 'p-stage' }, 'grouped by stage', true],
+  ])('%s', (_label, factSchema, config, label, shownToReader) => {
+    expect(listGroupFact(factSchema, config)).toEqual({ label, shownToReader })
   })
 })
 

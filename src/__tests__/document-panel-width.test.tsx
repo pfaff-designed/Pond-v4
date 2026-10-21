@@ -41,9 +41,7 @@ jest.mock('@/lib/pages/client', () => ({
   updateTitle: (...args: unknown[]) => mockUpdateTitle(...args),
 }))
 
-jest.mock('@/lib/pages/commit', () => ({
-  commitBlocks: jest.fn().mockResolvedValue(undefined),
-}))
+jest.mock('@/lib/pages/commit', () => jest.requireActual('./helpers/page-commit-mock').pageCommitMock())
 
 const blocks: Block[] = [{ id: 'b-text', type: 'text', content: 'Notes on the workbench build' }]
 

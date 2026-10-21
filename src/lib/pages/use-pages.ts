@@ -18,8 +18,10 @@ import { useCallback, useRef, useSyncExternalStore } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
 import { fetchPages, type PageRow } from './tree'
+import { listPages, type PondPage } from './client'
 import { pagesKey } from './keys'
 import { isStaged, subscribeStaged, stagedVersionNow } from '@/lib/deletion/staged-ids'
+import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 
 const EMPTY_ROWS: PageRow[] = []
 
@@ -53,4 +55,25 @@ export function usePagesRows(
   const liveRows = useSyncExternalStore(subscribeStaged, getSnapshot, getSnapshot)
 
   return { data: liveRows, isPending: query.isPending, isSuccess: query.isSuccess }
+}
+
+/**
+ * The shared `[...pagesKey(pondId), 'full']` read `ChangeLogPage` and
+ * `TrashPage` both need — the same page/title lookup off `listPages`
+ * (no staged-delete filtering; `usePagesRows` above is for the rail/live
+ * tree, this is for a table reading titles and area chains).
+ */
+export function useFullPages(pondId: string | null) {
+  const getSupabase = useLazySupabase()
+  return useQuery({
+    queryKey: [...pagesKey(pondId), 'full'] as const,
+    queryFn: async (): Promise<PondPage[]> => {
+      const supabase = getSupabase()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) return []
+      return listPages(supabase, user.id, pondId)
+    },
+  })
 }

@@ -6,11 +6,15 @@
  * jsdom has no selection geometry (`jest.setup.ts`).
  */
 
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
+import { EditorContent, useEditor } from '@tiptap/react'
 import { SelectionBar, type SelectionContext } from '@/components/molecules/SelectionBar'
+import { registerTextEditor } from '@/lib/modules/text/active-editor'
+import { proseExtensions } from '@/lib/modules/text/extensions'
 import { clearSelection, selectText } from './helpers/selection'
 
+/** "inside the block" is a registered, editable editor; "outside the block" stays plain text — a real non-editor negative case under the new rule. */
 function Host({
   onAsk,
   disabled,
@@ -19,10 +23,21 @@ function Host({
   disabled?: boolean
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const editor = useEditor({
+    extensions: proseExtensions,
+    content: '<p>inside the block</p>',
+    immediatelyRender: false,
+  })
+
+  useEffect(() => {
+    if (!editor) return
+    return registerTextEditor(editor)
+  }, [editor])
+
   return (
     <div>
       <div ref={containerRef} data-block-id="block-1">
-        <p>inside the block</p>
+        {editor && <EditorContent editor={editor} />}
       </div>
       <p>outside the block</p>
       <SelectionBar onAsk={onAsk} disabled={disabled} containerRef={containerRef} />
@@ -43,7 +58,7 @@ describe('SelectionBar selection watching', () => {
     expect(getBar()).not.toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: 'ask pond' }))
-    expect(onAsk).toHaveBeenCalledWith({ text: 'inside the block', blockId: 'block-1' })
+    expect(onAsk).toHaveBeenCalledWith({ text: 'inside the block', blockId: 'block-1', from: 1, to: 17 })
 
     selectText(screen.getByText('inside the block'))
     expect(getBar()).not.toBeNull()

@@ -86,7 +86,10 @@ export interface MatchedPage extends PondPage {
   similarity: number
 }
 
-type PageRow = {
+/** Exported so a thin read elsewhere (KAN-448's `findPagesLinkingTo`) can map
+ *  its own rows through the same `PAGE_COLUMNS`/{@link mapRow} pair rather than
+ *  growing a second one. */
+export type PageRow = {
   id: string
   parent_id: string | null
   type: NodeType
@@ -100,7 +103,7 @@ type PageRow = {
 // #17 makes status a select-typed *property* in `props`, not a first-class
 // column — so it's deliberately absent here. The DB column is left in place but
 // unread.
-const PAGE_COLUMNS = 'id, parent_id, type, title, blocks, props, "order"'
+export const PAGE_COLUMNS = 'id, parent_id, type, title, blocks, props, "order"'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -116,7 +119,7 @@ function toProps(value: unknown): Record<string, unknown> {
     : {}
 }
 
-function mapRow(row: PageRow): PondPage {
+export function mapRow(row: PageRow): PondPage {
   return {
     id: row.id,
     parentId: row.parent_id ?? null,

@@ -19,4 +19,14 @@ describe('isApplePlatform', () => {
     platform('Win32')
     expect(isApplePlatform()).toBe(false)
   })
+
+  it('prefers userAgentData over navigator.platform when present', () => {
+    platform('Win32')
+    Object.defineProperty(window.navigator, 'userAgentData', {
+      value: { platform: 'macOS' },
+      configurable: true,
+    })
+    expect(isApplePlatform()).toBe(true)
+    delete (window.navigator as { userAgentData?: unknown }).userAgentData
+  })
 })

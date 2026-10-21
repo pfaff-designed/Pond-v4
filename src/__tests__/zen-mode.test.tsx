@@ -57,9 +57,7 @@ jest.mock('@/lib/pages/home', () => ({
   HOME_TYPE: 'home',
   getOrCreateHomePage: jest.fn().mockResolvedValue({ id: 'home-1', title: 'life', blocks: [] }),
 }))
-jest.mock('@/lib/pages/commit', () => ({
-  commitBlocks: jest.fn().mockResolvedValue(undefined),
-}))
+jest.mock('@/lib/pages/commit', () => jest.requireActual('./helpers/page-commit-mock').pageCommitMock())
 jest.mock('@/lib/pages/client', () => ({
   updateTitle: jest.fn().mockResolvedValue(undefined),
   createPage: jest.fn(),
@@ -107,6 +105,7 @@ import { TEXT_PROSE_CLASS } from '@/lib/modules/text/prose'
 import { useRecordSelection } from '@/lib/modules/view/use-record-selection'
 import { TerminalDrawer } from '@/components/molecules/TerminalDrawer'
 import { COMPOSER_CLEARANCE_VAR, composerFootprintPx } from '@/lib/layout/composer-clearance'
+import { getPage } from '@/lib/pages/client'
 
 const onPlatform = (platform: string) =>
   jest.spyOn(window.navigator, 'platform', 'get').mockReturnValue(platform)
@@ -123,6 +122,7 @@ describe('the palette’s mode group (6q frame 1)', () => {
     paletteEntries([...paletteItems([], [], 'journal'), ...modeItems(inZen)], query)
 
   it('typing zen lists `mode`: zen and zen, on ink, as the board writes them', () => {
+    onPlatform('MacIntel')
     const entries = rows(false, 'zen')
     expect(entries[0]).toEqual({ kind: 'group', label: 'mode' })
     const mode = entries.slice(1, 3)
@@ -550,6 +550,20 @@ describe('WorkspaceShell — zen from ⌘K, and back with esc', () => {
   })
 
   it('what is left is the page’s own text: no properties, no handles, 22 between blocks', async () => {
+    // A second block, so the gap between rows is actually observable: KAN-440
+    // moved it off the list's own `rowGap` (now fixed at 0, so two rows don't
+    // double it) onto each row's own `marginTop`.
+    ;(getPage as jest.Mock).mockResolvedValueOnce({
+      id: 'journal',
+      parentId: null,
+      type: 'page',
+      title: 'sunday, 21 sep',
+      blocks: [
+        { id: 'b1', type: 'text', content: 'the morning was grey' },
+        { id: 'b2', type: 'text', content: 'then it cleared' },
+      ],
+      props: { _schema: [] },
+    })
     const { container } = renderShell()
     await ready()
     const properties = container.querySelector('[data-block-kind="properties"]')!
@@ -564,18 +578,20 @@ describe('WorkspaceShell — zen from ⌘K, and back with esc', () => {
     expect(properties.isConnected).toBe(true)
     expect(properties.closest('.hidden')).not.toBeNull()
     expect(handles.every((h) => h.hidden)).toBe(true)
-    const add = screen.getByRole('button', { name: 'Add a block', hidden: true })
-    expect(add.parentElement!.hidden).toBe(true)
+    // KAN-345: the trailing gap only mounts while `chrome` is true, same as
+    // the foot add it replaced — zen's `chrome={false}` unmounts it outright.
+    expect(screen.queryByTestId('trailing-block-gap')).not.toBeInTheDocument()
     // handle -> BlockEditor root -> per-block sizing div -> list (no row div).
-    const list = handles[0].parentElement!.parentElement!.parentElement!
+    const sizingDivs = handles.map((h) => h.parentElement!.parentElement!)
+    const list = sizingDivs[0].parentElement!
     expect(getComputedStyle(list).display).toBe('flex')
-    expect(getComputedStyle(list).rowGap).toBe('22px')
+    expect(sizingDivs[1].style.marginTop).toBe('22px')
 
     await esc()
     expect(properties.closest('.hidden')).toBeNull()
     expect(handles.some((h) => h.hidden)).toBe(false)
-    expect(add.parentElement!.hidden).toBe(false)
-    expect(list.style.rowGap).toBe('16px')
+    expect(screen.getByTestId('trailing-block-gap')).toBeInTheDocument()
+    expect(sizingDivs[1].style.marginTop).toBe('16px')
   })
 
   it('esc leaves, and puts everything back — the rail, the breadcrumb, the composer and the scroll', async () => {

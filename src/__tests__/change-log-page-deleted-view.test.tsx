@@ -42,6 +42,7 @@ jest.mock('@/lib/pages/client', () => ({
 }))
 
 jest.mock('@/lib/change-log/trash', () => ({
+  ...jest.requireActual('@/lib/change-log/trash'),
   existingPageIds: (...args: unknown[]) => mockExistingPageIds(...args),
   restorePage: (...args: unknown[]) => mockRestorePage(...args),
 }))

@@ -48,7 +48,14 @@ import {
   requestUndoNotice,
   useUndoNotice,
 } from '@/lib/terminal-focus'
-import { isPaletteChord, isRedoChord, isUndoChord, onApplePlatform } from '@/lib/shell-commands'
+import {
+  isPaletteChord,
+  isMinimizeRailChord,
+  isRedoChord,
+  isUndoChord,
+  onApplePlatform,
+  SESSION_UNDO_SCOPE_ATTR,
+} from '@/lib/shell-commands'
 import { sessionUndo } from '@/lib/change-log/session-undo'
 import { editorHistoryEmptyFor } from '@/lib/modules/text/active-editor'
 import { applyUndoOutcome } from '@/lib/change-log/undo-outcome'
@@ -56,10 +63,12 @@ import { describeChange, describeUndoneEffect } from '@/lib/change-log/page-chan
 import { getRecord } from '@/lib/change-log/store'
 import { rememberStruckRow } from '@/lib/change-log/undo-strike'
 import { useCommandPath } from '@/lib/layout/command-path'
+import { setRailMinimized, toggleRail, useRailMinimized } from '@/lib/layout/rail-chrome'
 import { PLACEMENT } from '@/lib/layout/shell-placement'
 import { useZenCommands } from '@/lib/layout/use-zen-commands'
-import { workspaceUrl } from '@/lib/pages/nav'
-import { newPageParent, paletteItems, paletteScope, pondItems } from '@/lib/pages/palette-items'
+import { openWorkspaceUrl, workspaceUrl } from '@/lib/pages/nav'
+import { flushPendingPageSave } from '@/lib/pages/page-flush'
+import { newPageParent, paletteItems, paletteScope, pondItems, railItems } from '@/lib/pages/palette-items'
 import { prefetchPageIfAbsent } from '@/lib/pages/use-page-prefetch'
 import { readRecentPageIds, writeRecent } from '@/lib/pages/recent-pages'
 import { usePaletteRecords } from '@/lib/pages/use-palette-records'
@@ -80,11 +89,14 @@ import { ROW_TYPE } from '@/lib/properties/schema'
 
 /** Where ⌘Z/⇧⌘Z belongs to the field itself (Tiptap's own undo, an input, a select) —
  * except an empty page-title input (`data-pond-page-title`), which has nothing of
- * its own to undo, so the chord falls through to the session step instead. */
+ * its own to undo, and a field inside a `SESSION_UNDO_SCOPE_ATTR` container (a list
+ * or entry-log row), whose undo is the session's step, not the browser's field undo —
+ * so the chord falls through to the session step instead. */
 const isEditable = (el: Element | null): boolean =>
   el !== null &&
   el.matches('input, textarea, select, [contenteditable]') &&
-  !isEmptyPageTitleInput(el)
+  !isEmptyPageTitleInput(el) &&
+  !el.closest(`[${SESSION_UNDO_SCOPE_ATTR}]`)
 
 const isEmptyPageTitleInput = (el: Element): boolean =>
   el.hasAttribute('data-pond-page-title') && (el as HTMLInputElement).value === ''
@@ -139,7 +151,14 @@ export function ShellCommands() {
     (direction: 'undo' | 'redo') => {
       if (pondId === null) return
       const stepId = ++stepCounterRef.current
-      const step = direction === 'undo' ? sessionUndo.undo(pondId) : sessionUndo.redo(pondId)
+      // The open page's own edit may still be sitting in its save debounce (same
+      // KAN-302 hazard AITerminal's send guards against) — a step read before it
+      // lands would undo the wrong thing, then have the stale save land on top.
+      // `undefined` means nothing was pending, so the step stays in this tick —
+      // existing callers assert `sessionUndo.undo`/`redo` synchronously after a chord.
+      const pendingFlush = flushPendingPageSave(currentNodeId)
+      const runStep = () => (direction === 'undo' ? sessionUndo.undo(pondId) : sessionUndo.redo(pondId))
+      const step = pendingFlush ? pendingFlush.then(runStep) : runStep()
       step
         .then((result) => {
           applyUndoOutcome(direction, result, queryClient)
@@ -156,7 +175,7 @@ export function ShellCommands() {
             const target = pages?.find((p) => p.id === targetPageId)
             if (target) {
               openedPageTitle = target.title
-              router.push(workspaceUrl({ id: target.id, type: target.type, title: target.title }))
+              openWorkspaceUrl(workspaceUrl({ id: target.id, type: target.type, title: target.title }), router)
             }
           }
           const originalId = direction === 'undo' ? record?.links?.undoOf : record?.links?.redoOf
@@ -243,6 +262,7 @@ export function ShellCommands() {
     onEnter: closePalette,
   })
   const { inZen, handleModeSelect } = zenCommands
+  const railMinimized = useRailMinimized()
 
   // Recents are read as the palette opens, so a page opened from it lists next time.
   const items = useMemo(
@@ -251,11 +271,12 @@ export function ShellCommands() {
         ? [
             ...paletteItems(pages, readRecentPageIds(), currentNodeId),
             ...zenCommands.items,
+            ...railItems(railMinimized),
             ...pondItems(ponds, pond?.id ?? null),
             ...records,
           ]
         : [],
-    [pages, paletteOpen, currentNodeId, zenCommands.items, ponds, pond, records]
+    [pages, paletteOpen, currentNodeId, zenCommands.items, railMinimized, ponds, pond, records]
   )
   const scope = useMemo(() => paletteScope(pages, currentNodeId), [pages, currentNodeId])
 
@@ -281,6 +302,12 @@ export function ShellCommands() {
         e.stopPropagation()
         // A held key repeats keydown; it must not flap the card open and shut.
         if (!e.repeat) requestComposerToggle()
+        return
+      }
+      if (isMinimizeRailChord(e)) {
+        e.preventDefault()
+        e.stopPropagation()
+        if (!e.repeat) toggleRail()
         return
       }
       // Undo/redo belongs to an editable field first — Tiptap's own undo, an
@@ -374,7 +401,7 @@ export function ShellCommands() {
           pondId
         )
         writeRecent({ id: created.id, type: 'page', title: created.title })
-        router.push(workspaceUrl({ id: created.id, type: 'page', title: created.title }))
+        openWorkspaceUrl(workspaceUrl({ id: created.id, type: 'page', title: created.title }), router)
         void queryClient.invalidateQueries({ queryKey: pagesKey(pondId) })
         // KAN-415: a failed link append is not a failed page creation — the
         // page above has already landed and been navigated to.
@@ -398,6 +425,14 @@ export function ShellCommands() {
         return
       }
       setPaletteOpen(false)
+      if (item.action === 'minimize-rail') {
+        setRailMinimized(true)
+        return
+      }
+      if (item.action === 'show-rail') {
+        setRailMinimized(false)
+        return
+      }
       if (handleModeSelect(item.action)) return
       if (item.action === 'new-page') {
         void handleCreatePage(item.query)
@@ -431,13 +466,13 @@ export function ShellCommands() {
         return
       }
       if (item.kind === 'record') {
-        router.push(workspaceUrl({ id: item.id, type: ROW_TYPE, title: item.label }))
+        openWorkspaceUrl(workspaceUrl({ id: item.id, type: ROW_TYPE, title: item.label }), router)
         return
       }
       const page = pages.find((p) => p.id === item.id)
       if (page) {
         writeRecent({ id: page.id, type: page.type, title: page.title })
-        router.push(workspaceUrl({ id: page.id, type: page.type, title: page.title }))
+        openWorkspaceUrl(workspaceUrl({ id: page.id, type: page.type, title: page.title }), router)
       }
     },
     [pages, ponds, router, currentNodeId, handleModeSelect, startTemplateSheet, handleCreatePage]

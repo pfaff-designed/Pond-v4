@@ -23,6 +23,31 @@ import type { PointerEvent as ReactPointerEvent } from 'react'
 /** Below this pointer travel (px, Manhattan) a press is a click, not a drag. */
 const DRAG_THRESHOLD = 4
 
+/** The dragged card's own dim, shared by every bucketed drag surface (board, calendar). */
+export const DRAG_LIFT_CLASS = 'opacity-30'
+/** The bucket under the pointer during an active drag, shared the same way. */
+export const DRAG_OVER_CLASS = 'bg-mn-text/[0.08]'
+/**
+ * Applied to the container while a drag is active, so the browser's native text
+ * selection never runs alongside the drag (which `BlockCanvas` would otherwise read
+ * as a text selection and pop its formatting toolbar over the cards). The gantt's
+ * own hook draws this inline per-consumer; here it's the hook's own job so neither
+ * bucketed consumer (board, calendar) can forget it.
+ */
+export const DRAG_ACTIVE_CLASS = 'select-none'
+
+/**
+ * Chrome anchors a native text selection at mousedown, before any drag
+ * threshold is reached, so the press itself must cancel it. A cancelled
+ * press also skips the browser's own focus and selection-collapse, so both
+ * are done by hand.
+ */
+function preventNativeSelection(e: ReactPointerEvent) {
+  e.preventDefault()
+  window.getSelection()?.removeAllRanges()
+  ;(e.currentTarget as HTMLElement).focus({ preventScroll: true })
+}
+
 export interface BucketDragState {
   rowId: string
   /** Current pointer position (for the floating clone). */
@@ -44,6 +69,9 @@ export interface PointerBucketDrag {
   registerBucket: (key: string) => (el: HTMLElement | null) => void
   /** Attach to each card's drag handle `onPointerDown`. */
   onCardPointerDown: (e: ReactPointerEvent, rowId: string) => void
+  /** `DRAG_ACTIVE_CLASS` while a drag is active, else `undefined` — spread onto the
+   *  same container as `containerHandlers`. */
+  containerClassName: string | undefined
   /**
    * True from the end of a drag until the click the browser fires after it has been
    * delivered. A drag that ends over its own card still clicks it; that click is the
@@ -85,6 +113,16 @@ export function usePointerBucketDrag({
 
   function onCardPointerDown(e: ReactPointerEvent, rowId: string) {
     if (!editable) return
+    // A press on a button or link inside the card (the open-add button, a title
+    // link) is that control's own gesture, never the card's drag handle.
+    if (e.target instanceof Element && e.target.closest('button, a')) return
+    // A press on an editable field (the card-title input) still arms a candidate
+    // drag like the rest of the card — but skips the selection guard, which would
+    // otherwise preventDefault and steal the field's native focus/caret.
+    const isEditableField =
+      e.target instanceof Element &&
+      !!e.target.closest('input, textarea, select, [contenteditable="true"]')
+    if (!isEditableField) preventNativeSelection(e)
     clickSuppressedRef.current = false
     const li = (e.currentTarget as HTMLElement).closest('li') as HTMLElement | null
     const rect = (li ?? (e.currentTarget as HTMLElement)).getBoundingClientRect()
@@ -107,6 +145,9 @@ export function usePointerBucketDrag({
     const moved =
       Math.abs(e.clientX - startRef.current.x) + Math.abs(e.clientY - startRef.current.y)
     const active = d.active || moved > DRAG_THRESHOLD
+    // Belt-and-suspenders for a gesture the press-time guard didn't cancel
+    // (a touch, a browser that ignored preventDefault).
+    if (active && !d.active) window.getSelection()?.removeAllRanges()
     const next: BucketDragState = { ...d, x: e.clientX, y: e.clientY, active }
     dragRef.current = next
     setDrag(next)
@@ -137,6 +178,10 @@ export function usePointerBucketDrag({
 
   const handlePointerUp = () => endDrag(true)
   const handlePointerCancel = () => endDrag(false)
+  // The pointer leaving the container (off a grid/board edge) gets no further
+  // pointermove, so the stale `overKey` from the last move inside would otherwise
+  // still read as a drop target. Leaving always cancels, never drops.
+  const handlePointerLeave = () => endDrag(false)
 
   const registerBucket = (key: string) => (el: HTMLElement | null) => {
     if (el) bucketRefs.current.set(key, el)
@@ -148,13 +193,14 @@ export function usePointerBucketDrag({
     overKey,
     registerBucket,
     onCardPointerDown,
+    containerClassName: drag?.active ? DRAG_ACTIVE_CLASS : undefined,
     isClickSuppressed: () => clickSuppressedRef.current,
     containerHandlers: editable
       ? {
           onPointerMove,
           onPointerUp: handlePointerUp,
           onPointerCancel: handlePointerCancel,
-          onPointerLeave: drag ? handlePointerUp : undefined,
+          onPointerLeave: drag ? handlePointerLeave : undefined,
         }
       : {},
   }

@@ -1,6 +1,6 @@
 /**
- * `ComposerWindowControls` draws minimize · maximize · close, right-aligned
- * in that order (user ruling, 2026-10-14, KAN-323).
+ * `ComposerWindowControls` draws close · minimize · maximize, left to right.
+ * The set is pinned to the top left of the composer card.
  */
 
 import { render, screen } from '@testing-library/react'
@@ -8,7 +8,7 @@ import userEvent from '@testing-library/user-event'
 import { ComposerWindowControls } from '@/components/molecules/ComposerWindowControls'
 
 describe('ComposerWindowControls', () => {
-  it('renders minimize, maximize, close in order with the right names', () => {
+  it('renders close, minimize, maximize left to right', () => {
     render(
       <ComposerWindowControls
         maximized={false}
@@ -20,9 +20,9 @@ describe('ComposerWindowControls', () => {
 
     const buttons = screen.getAllByRole('button')
     expect(buttons.map((button) => button.getAttribute('aria-label'))).toEqual([
+      'close',
       'minimize',
       'maximize',
-      'close',
     ])
   })
 
