@@ -25,7 +25,7 @@ const inkTheme: Decorator = (Story) => (
 const INK = 'rgb(27, 29, 20)'
 const TIER80 = 'rgba(27, 29, 20, 0.8)' // --mn-text-meta
 const TIER68 = 'rgba(27, 29, 20, 0.68)' // --mn-text-secondary
-const SERIF = /PP Editorial New/
+const SERIF = /Georgia/
 const MONO = /PP Neue Montreal Mono/
 const WHEAT = 'rgb(255, 239, 174)' // --raw-wheat, the highlight signal
 const BURNT = 'rgb(217, 102, 41)' // --raw-burnt-orange, the ONE dated thing

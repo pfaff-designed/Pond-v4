@@ -452,7 +452,7 @@ async function assertChrome(
   const t = root.querySelector<HTMLElement>('[data-part="template-title"]')!
   const ts = getComputedStyle(t)
   await expect(t.textContent).toBe(title)
-  await expect(ts.fontFamily).toContain('PP Editorial New')
+  await expect(ts.fontFamily).toContain('Georgia')
   await expect(ts.fontWeight).toBe('200')
   await expect(ts.fontSize).toBe('36px')
   await expect(parseFloat(ts.lineHeight)).toBeCloseTo(36 * 1.05, 1)

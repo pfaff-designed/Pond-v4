@@ -139,7 +139,7 @@ async function assertDates(canvasElement: HTMLElement, ink68: string) {
 
 /** The serif branch: PP Editorial New 200 / 16.5 / 1.6, `text-wrap: pretty`, full ink. */
 async function assertSerif(cs: CSSStyleDeclaration, ink: string) {
-  await expect(cs.fontFamily).toContain('PP Editorial New')
+  await expect(cs.fontFamily).toContain('Georgia')
   await expect(cs.fontWeight).toBe('200')
   await expect(cs.fontSize).toBe('16.5px')
   await expect(cs.lineHeight).toBe('26.4px') // 1.6 × 16.5

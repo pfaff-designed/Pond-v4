@@ -7,30 +7,31 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  /* Make Noise type set — three licensed PP faces, self-hosted (issue #88).
+  /* Sans and mono are the licensed PP faces, self-hosted (issue #88).
      The --font-mn-* vars are set by next/font/local in the root layout; the
-     fallbacks cover contexts that don't render the root layout (e.g. Storybook)
-     and are kept per #88 so those surfaces still resolve a sensible face. */
+     fallbacks cover contexts that don't render the root layout (e.g. Storybook).
+     The serif is Georgia. A requested weight of 200 resolves to Georgia's
+     regular face, and 800 resolves to its bold. */
   --font-sans: var(--font-mn-sans, 'PP Neue Montreal', ui-sans-serif, system-ui, sans-serif);
-  --font-serif: var(--font-mn-serif, 'PP Editorial New', Georgia, serif);
+  --font-serif: Georgia, serif;
   --font-mono: var(--font-mn-mono, 'PP Neue Montreal Mono', ui-monospace, monospace);
-  --font-display: var(--font-mn-serif, 'PP Editorial New', Georgia, serif);
+  --font-display: Georgia, serif;
   --font-heading: var(--font-sans);
 
   /* ── Make Noise VOICES (issue #87) — 8 named registers ────────────────────
      Components reference a voice, never raw font values. Each voice is a
      (family, weight, style, transform, tracking) tuple exposed as tokens.
-     The serif voices (whisper/punch) only ever resolve 200/800 — the 400 face
-     is never loaded (#88), so "serif-never-400" holds structurally.
+     The serif voices (whisper/punch) still ask for 200/800. Georgia has no
+     ultralight, so 200 draws its regular face and 800 draws its bold.
        body        reading sans, the default
        label       500 uppercase, .06em — the workhorse UI label
        label-bold  700 uppercase, .1em — section eyebrows
        mono        machine surface (composer, palette, @-picker, diff, chips)
                    — lowercase, NO added letterspacing (README § Type: tight; #220)
-       whisper     Editorial 200 — a quiet statement
-       whisper-i   Editorial 200 italic
-       punch       Editorial 800 — THE signature move, hero scale only
-       punch-i     Editorial 800 italic */
+       whisper     Georgia at the light weight — a quiet statement
+       whisper-i   Georgia italic
+       punch       Georgia bold — THE signature move, hero scale only
+       punch-i     Georgia bold italic */
   --voice-body-family: var(--font-sans);
   --voice-body-weight: 400;
   --voice-body-style: normal;

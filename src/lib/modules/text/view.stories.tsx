@@ -61,7 +61,7 @@ async function assertProseType(canvasElement: HTMLElement, ink: string) {
   const paragraph = await within(canvasElement).findByText(/^Start with/, { selector: 'p' })
   const ps = getComputedStyle(paragraph)
   const size = window.matchMedia('(width < 48rem)').matches ? 17 : 17.5
-  await expect(ps.fontFamily).toContain('PP Editorial New')
+  await expect(ps.fontFamily).toContain('Georgia')
   await expect(ps.fontWeight).toBe('200')
   await expect(ps.fontSize).toBe(`${size}px`)
   await expect(parseFloat(ps.lineHeight)).toBeCloseTo(size * 1.6, 1)
