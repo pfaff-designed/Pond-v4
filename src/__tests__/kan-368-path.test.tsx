@@ -275,7 +275,9 @@ jest.mock('@/lib/pages/commit', () => {
     }
   )
   return {
-    ...pageCommitMock({ commitBlocks }),
+    ...pageCommitMock({
+      commitBlocks: commitBlocks as (...args: unknown[]) => unknown,
+    }),
     propagateBlockWrite: jest.fn().mockResolvedValue(undefined),
   }
 })

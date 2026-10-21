@@ -98,7 +98,7 @@ import {
 } from '@/components/organisms/use-slash-pick'
 import { sessionUndo, type UndoHandle } from '@/lib/change-log/session-undo'
 import { applyUndoOutcome } from '@/lib/change-log/undo-outcome'
-import { blockName } from '@/lib/change-log/summary'
+import { blockName as changeBlockName } from '@/lib/change-log/summary'
 import { listRecords } from '@/lib/change-log/store'
 import { restorePage, trashPage } from '@/lib/change-log/trash'
 import {
@@ -394,8 +394,9 @@ export interface BlockCanvasProps {
    * structural write queue — NOT through `onChange`, which would re-base on
    * the stale `blocks` snapshot captured when the toast was staged. This
    * preserves DocumentPanel's original correctness: an edit between remove
-   * and Undo must not be clobbered by the re-insert. Required whenever
-   * removal is possible.
+   * and Undo must not be clobbered by the re-insert. Optional: a removal's
+   * undo is the structural write's own step. A host that still re-inserts
+   * itself may pass this; a host that does not leaves it unset.
    *
    * `handedRowStartTo` (KAN-440): the id of the row-mate `detachKeepingRows`
    * handed the removed block's `rowStart` to, if any — omit when there was no
@@ -403,7 +404,7 @@ export interface BlockCanvasProps {
    * blocks in the same functional update, so a removal that moved the row's
    * start doesn't leave it moved after the removal itself is undone.
    */
-  onUndoRemove: (index: number, block: Block, handedRowStartTo?: string | null) => void
+  onUndoRemove?: (index: number, block: Block, handedRowStartTo?: string | null) => void
   /**
    * Block ids inserted this session, so a freshly-inserted block SETTLES in
    * (motion-settle-in) while blocks present on load do not (ticket-41). The Set is
@@ -960,7 +961,7 @@ export function BlockCanvas({
     })
     focusBlockNeighbour(blocks, index)
     stageUndo({
-      message: `deleted ${blockName(removed)} ·`,
+      message: `deleted ${changeBlockName(removed)} ·`,
       undoLabel: 'undo',
       scope: 'block',
       undo: () => {
