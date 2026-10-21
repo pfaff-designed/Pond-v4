@@ -825,8 +825,8 @@ const isShown = (el: HTMLElement) =>
 
 /**
  * A hovered row shows ＋ and × (`PondRail.dc.html` `hasTools`). Neither is a tab
- * stop — the tree has the one roving stop — so both carry tabindex=-1. The root
- * takes ＋ and never ×.
+ * stop — the tree has the one roving stop — so both carry tabindex=-1. The home
+ * root takes ＋ and ×, and × stays hidden until that row is the one hovered.
  */
 export const HoverCrud: Story = {
   name: 'hover',
@@ -849,7 +849,8 @@ export const HoverCrud: Story = {
     await userEvent.click(del)
     await expect(args.onDelete).toHaveBeenCalledWith('scratch')
 
-    await expect(canvas.queryByRole('button', { name: /Delete life/ })).not.toBeInTheDocument()
+    const lifeDel = canvas.getByRole('button', { name: 'Delete life' })
+    await expect(isShown(lifeDel.parentElement!)).toBe(false)
   },
 }
 
@@ -891,7 +892,7 @@ export const SelectedRowShowsPlus: Story = {
   },
 }
 
-/** The root row: ＋ when selected or hovered, × never (a pond's root can't be deleted). */
+/** The home root: ＋ and × when selected or hovered. Deleting it is the container's confirm. */
 export const RootRowTools: Story = {
   tags: ['!dev'],
   play: async ({ canvas, args }) => {
@@ -901,7 +902,12 @@ export const RootRowTools: Story = {
     // fix round 2) — it can't fail `isShown` by itself, so assert on the ＋'s own
     // visibility wrapper instead.
     await expect(isShown(add.parentElement!)).toBe(true)
-    await expect(within(life).queryByRole('button', { name: /Delete/ })).not.toBeInTheDocument()
+    const del = within(life).getByRole('button', { name: 'Delete life' })
+    await expect(isShown(del.parentElement!)).toBe(false)
+    await userEvent.hover(life)
+    await waitFor(() => expect(isShown(del.parentElement!)).toBe(true))
+    await userEvent.click(del)
+    await expect(args.onDelete).toHaveBeenCalledWith('__life__')
     await userEvent.click(add)
     await userEvent.click(await within(document.body).findByRole('menuitem', { name: /^page/ }))
     await expect(args.onAddChild).toHaveBeenCalledWith('__life__', 'page')
@@ -1082,8 +1088,8 @@ export const Loading: Story = {
 }
 
 /**
- * `PondRail` `empty`: the root row alone — not selected, no resting ＋, its ＋ on
- * hover like any row (`hasTools: hov`) — and the hint, verbatim, at
+ * `PondRail` `empty`: the root row alone — not selected, no resting ＋, its ＋ and
+ * × on hover like any row (`hasTools: hov`) — and the hint, verbatim, at
  * `margin 8px 16px 0 34px` measured from the CARD edge, 12.5 / 1.5.
  */
 export const Empty: Story = {
@@ -1099,6 +1105,18 @@ export const Empty: Story = {
       within(canvas.getByRole('tree', { name: 'Workspace' })).getAllByRole('treeitem')
     ).toHaveLength(1)
     await expect(root).toHaveAttribute('aria-selected', 'false')
+    const card = cardOf(canvasElement)
+    const box = hint.getBoundingClientRect()
+    await expect(Math.round(box.left - card.left)).toBe(34)
+    await expect(Math.round(card.right - box.right)).toBe(16)
+    // The new-root control (KAN-490) sits between the home row and the hint,
+    // so the hint's 8px margin is measured from that control, not the row.
+    const newRoot = canvas.getByRole('button', { name: 'new root folder' })
+    await expect(Math.round(box.top - newRoot.getBoundingClientRect().bottom)).toBe(8)
+    const css = getComputedStyle(hint)
+    await expect(css.fontSize).toBe('12.5px')
+    await expect(css.lineHeight).toBe('18.75px')
+
     const tools = root.querySelector<HTMLElement>('[data-part="row-tools"]')
     await expect(tools).not.toBeNull()
     const add = within(root).getByRole('button', { name: /^Add sub-page to/ })
@@ -1106,17 +1124,7 @@ export const Empty: Story = {
     await userEvent.hover(root)
     await waitFor(() => expect(getComputedStyle(add.parentElement!).opacity).toBe('1'))
     await expect(add).toBeVisible()
-    await expect(within(root).queryByRole('button', { name: /^Delete/ })).not.toBeInTheDocument()
-    await userEvent.unhover(root)
-
-    const card = cardOf(canvasElement)
-    const box = hint.getBoundingClientRect()
-    await expect(Math.round(box.left - card.left)).toBe(34)
-    await expect(Math.round(card.right - box.right)).toBe(16)
-    await expect(Math.round(box.top - root.getBoundingClientRect().bottom)).toBe(8)
-    const css = getComputedStyle(hint)
-    await expect(css.fontSize).toBe('12.5px')
-    await expect(css.lineHeight).toBe('18.75px')
+    await expect(within(root).getByRole('button', { name: /^Delete/ })).toBeVisible()
   },
 }
 
@@ -2310,18 +2318,23 @@ export const RenameBlurKeeps: Story = {
   },
 }
 
-/** The pond root and the databases foot row are system roots: F2 and double-click do nothing. */
+/** The home root renames from F2. The databases foot row does not. */
 export const RenameSystemRoots: Story = {
   tags: ['!dev'],
   args: { tree: renameArgs.tree, expanded: renameArgs.expanded },
   play: async ({ canvasElement }) => {
     const scope = within(canvasElement)
-    for (const id of ['__life__', '__databases__']) {
-      const target = canvasElement.querySelector<HTMLElement>(`[data-tree-row="${id}"]`)!
-      await expect(target).toBeInTheDocument()
-      await fireEvent.keyDown(target, { key: 'F2' })
-      await userEvent.dblClick(target)
-    }
+    const life = canvasElement.querySelector<HTMLElement>('[data-tree-row="__life__"]')!
+    await expect(life).toBeInTheDocument()
+    await fireEvent.keyDown(life, { key: 'F2' })
+    const field = scope.getByRole('textbox', { name: 'rename life' })
+    await expect(field).toBeInTheDocument()
+    await userEvent.keyboard('{Escape}')
+    await expect(scope.queryByRole('textbox')).toBeNull()
+    const databases = canvasElement.querySelector<HTMLElement>('[data-tree-row="__databases__"]')!
+    await expect(databases).toBeInTheDocument()
+    await fireEvent.keyDown(databases, { key: 'F2' })
+    await userEvent.dblClick(databases)
     await expect(scope.queryByRole('textbox')).toBeNull()
   },
 }

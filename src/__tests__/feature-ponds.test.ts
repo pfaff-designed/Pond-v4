@@ -5,8 +5,8 @@
  *
  *   1. `s6m5` frame 5 — "the shell opens on the new pond's root page", and that
  *      pond is EMPTY. Not a copy of the pond you made it from, and not `life`:
- *      #320 says "a pond is born with one row, its root, titled with the pond's
- *      own name."
+ *      KAN-490 makes the root the rail's first ROOT, titled "Untitled" like any
+ *      other root (#320's "titled with the pond's own name" is superseded).
  *   2. `s6m5` again — "pages, databases, memory, threads and the change log are
  *      per pond. **Nothing crosses over.**" Four scopes, one table.
  *
@@ -281,25 +281,24 @@ const SCOPES: Array<{
 // ── 1. A new pond is a new, empty pond ───────────────────────────────────────
 
 describe('creating a pond', () => {
-  it('opens on its OWN root, named after itself, with all four scopes empty', async () => {
+  it('opens on its OWN root, titled "Untitled", with all four scopes empty', async () => {
     const pond = await createPond('red door guys')
 
     // Its own row, in switcher order after the two that existed (`s6m2`).
     expect(pond.name).toBe('red door guys')
     expect(pond.order).toBe(2)
 
-    // `#320`: born with ONE row — its root, titled with the pond's own name.
-    // Titling it `life` is the regression this pins: it is what every pond's
-    // root read before the pond name was threaded through, and it looks like a
-    // working app right up to the moment you notice two ponds called life.
+    // KAN-490: born with ONE row — its root, the rail's first root, titled
+    // "Untitled" like any other root (never the pond's own name — #320 is
+    // superseded).
     const root = await getOrCreateHomePage(db as never, pond.id, pond.name)
-    expect(root?.title).toBe('red door guys')
+    expect(root?.title).toBe('Untitled')
     expect(root?.blocks).toEqual([])
     expect(root?.id).not.toBe('life-root')
 
     // And it is a NEW row, not life's root handed back under a new name.
     const roots = (db._tables.pages as Row[]).filter((r) => r.type === HOME_TYPE)
-    expect(roots.map((r) => r.title).sort()).toEqual(['life', 'make noise', 'red door guys'])
+    expect(roots.map((r) => r.title).sort()).toEqual(['Untitled', 'life', 'make noise'])
 
     // Everything a person would see on opening it: nothing. The root is stripped
     // from the tree, so the rail is empty too — not the pond they made it from.

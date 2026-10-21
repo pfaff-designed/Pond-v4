@@ -50,10 +50,12 @@ export async function getOrCreateHomePage(
   supabase: SupabaseClient<Database>,
   pondId: string | null,
   /**
-   * #320: "a pond is born with one row, its root, titled with the pond's own
-   * name." Omitted, the root falls back to `life` — which is right for the first
-   * pond and wrong for every other, so a pond surface passes its name.
+   * KAN-490: the home row is the rail's first ROOT, so it is titled the same
+   * way any other root is — "Untitled" — not with the pond's own name (#320's
+   * rule is superseded). Kept in the signature so callers that still pass it
+   * (e.g. `appendChildLinkUnder`'s own fallback argument) need no change.
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   pondName?: string | null
 ): Promise<HomePage | null> {
   const {
@@ -66,7 +68,11 @@ export async function getOrCreateHomePage(
   const pond = await resolvePond(supabase, user.id, pondId)
 
   const existing = await readHomeRow(supabase, user.id, pond)
-  if (existing) return existing
+  // KAN-491: a home the person deleted stays gone. `deleted_at` is the trash
+  // stamp, so a missing live row is not the same as a pond that never had one
+  // — recreating here would put the root back the moment the rail refetched.
+  if (existing?.deletedAt) return null
+  if (existing) return toHome(existing)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
@@ -77,12 +83,10 @@ export async function getOrCreateHomePage(
       ...(pond ? { pond_id: pond } : {}),
       parent_id: null,
       type: HOME_TYPE,
-      // #320: titled with the POND's name. Lowercase, like every other page name
-      // Pond writes (#101 review): the rail and the breadcrumb render a title raw,
-      // and the AI reads this one in the workspace outline. A pond created before
-      // this keeps 'Life' until the one-off row correction lands (gated, batched
-      // with migration 0017).
-      title: pondName?.trim() || 'life',
+      // KAN-490: a NEW home row is the first root, titled "Untitled" like any
+      // other root — never the pond's name. A pond created before this keeps
+      // its existing title; existing rows are never rewritten.
+      title: 'Untitled',
       blocks: [],
       props: {},
     })
@@ -93,22 +97,34 @@ export async function getOrCreateHomePage(
     // Lost the create race (unique index) or a transient failure — re-read the
     // winning row. If that also comes back empty, surface null rather than throw
     // so the caller can show a loading state rather than crash.
-    return readHomeRow(supabase, user.id, pond)
+    const raced = await readHomeRow(supabase, user.id, pond)
+    if (!raced || raced.deletedAt) return null
+    return toHome(raced)
   }
 
   return {
     id: data.id as string,
-    title: (data.title as string) ?? pondName ?? 'life',
+    title: (data.title as string) ?? 'Untitled',
     blocks: toBlocks(data.blocks),
   }
 }
 
-/** Read the user's existing home row, or null if none exists yet. */
+type HomeRow = HomePage & { deletedAt: string | null }
+
+const toHome = (row: HomeRow): HomePage => ({
+  id: row.id,
+  title: row.title,
+  blocks: row.blocks,
+})
+
+/** Read the user's existing home row, or null if none exists yet. A trashed
+ *  row still comes back, with `deletedAt` set, so the caller can tell "never
+ *  created" from "the person deleted the root". */
 async function readHomeRow(
   supabase: SupabaseClient<Database>,
   userId: string,
   pond: string | null
-): Promise<HomePage | null> {
+): Promise<HomeRow | null> {
   // #312: scoped by POND, not just by person. Without the pond clause a second
   // pond's get-or-create reads the FIRST pond's root and hands it back — the
   // blocker 0018 refused to create a second root around, closed by 0019 dropping
@@ -116,7 +132,7 @@ async function readHomeRow(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const q: any = (supabase as any)
     .from('pages')
-    .select('id, title, blocks')
+    .select('id, title, blocks, deleted_at')
     .eq('user_id', userId)
     .eq('type', HOME_TYPE)
     .is('parent_id', null)
@@ -130,5 +146,6 @@ async function readHomeRow(
     id: row.id as string,
     title: (row.title as string) ?? 'life',
     blocks: toBlocks(row.blocks),
+    deletedAt: (row.deleted_at as string | null) ?? null,
   }
 }

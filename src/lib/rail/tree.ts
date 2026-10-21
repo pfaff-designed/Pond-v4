@@ -98,6 +98,38 @@ export function isAreaRow(node: RailNode): boolean {
   return node.parentId === null
 }
 
+// ── Extra roots (KAN-490/491) ────────────────────────────────────────────────
+
+/**
+ * Is this node an "extra root" — a further top-level folder beyond the first
+ * (Life's own), added through the rail's ＋-root row? Marked by `props.root`,
+ * but the flag alone never qualifies a node that has a parent: a page can only
+ * be an extra root at depth 0, so a non-null `parentId` always wins over the
+ * flag (defensive — a reparented page must lose its root status, not carry it
+ * on by mistake).
+ */
+export function isExtraRootNode(node: RailNode): boolean {
+  return node.parentId === null && node.props?.root === true
+}
+
+/**
+ * Split a built tree's top-level nodes into the ordinary top-level children
+ * (today's behaviour — Life's own) and the extra roots, in their given order.
+ * Pure partition: every input node lands in exactly one of the two arrays.
+ */
+export function splitExtraRoots(roots: RailNode[]): {
+  children: RailNode[]
+  extraRoots: RailNode[]
+} {
+  const children: RailNode[] = []
+  const extraRoots: RailNode[] = []
+  for (const node of roots) {
+    if (isExtraRootNode(node)) extraRoots.push(node)
+    else children.push(node)
+  }
+  return { children, extraRoots }
+}
+
 // ── Move (drag-to-reparent / reorder, F25) ───────────────────────────────────
 
 /** Where a dropped node lands relative to the hovered target row. */
@@ -282,7 +314,7 @@ export type TreeKeyCommand =
  *   ←          collapse an open folder; step out to the parent otherwise
  *   Enter/␣    open the row's page
  *   +          add a child page
- *   F2         rename the row in place (never the Life root)
+ *   F2         rename the row in place (the databases foot is not renameable)
  *
  * A stale `id` (row no longer visible — e.g. a deferred update) returns null
  * rather than jumping focus anywhere.
@@ -333,7 +365,7 @@ export function treeKeyCommand(
     case '+':
       return { kind: 'addChild', id }
     case 'F2':
-      return isRoot ? null : { kind: 'rename', id }
+      return { kind: 'rename', id }
     default:
       return null
   }

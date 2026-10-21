@@ -15,9 +15,10 @@
  * split, kept strict: the caret toggles expand, the label opens, and the label
  * never toggles.
  *
- * Life is the workspace root, NOT a row in `pages`: it can't be renamed or
- * deleted, and its caret is a collapse-all (collapsing closes every folder, so
- * re-opening shows the resting top level). The data source is unchanged — the
+ * Life is the workspace root, NOT a row in `pages`: its label, rename and
+ * delete go through the home row (KAN-490/491), and its caret is a collapse-all
+ * (collapsing closes every folder, so re-opening shows the resting top level).
+ * The data source is unchanged — the
  * `['pages']` query + parent_id tree — this is a view-layer restructure.
  *
  * Split for Storybook: <RailView> is presentational (all data and mutations
@@ -51,7 +52,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { usePagePrefetchHandlers } from '@/lib/pages/use-page-prefetch'
 import { createPage, movePage, updateTitle } from '@/lib/pages/client'
-import { DuplicateTitleError } from '@/lib/pages/dedupe-title'
+import { DuplicateTitleError, nextAvailableTitle } from '@/lib/pages/dedupe-title'
 import {
   fetchPages,
   insertPageOptimistic,
@@ -67,9 +68,10 @@ import { changeLogKey } from '@/lib/change-log/keys'
 import { sessionUndo } from '@/lib/change-log/session-undo'
 import { TrashRefusedError } from '@/lib/change-log/errors'
 import { jsonEqual } from '@/lib/json-equal'
-import { pagesKey } from '@/lib/pages/keys'
+import { homeQueryKey, pagesKey } from '@/lib/pages/keys'
 import { appendChildLinkUnder, trashPageUnlinked } from '@/lib/pages/child-links'
 import { usePondId, usePond } from '@/lib/pond/context'
+import { useHomePage } from '@/lib/pages/use-home-page'
 import { pushRecentGlyphToPond } from '@/lib/pond/client'
 import { PondSwitcher } from './PondSwitcher'
 import { openWorkspaceUrl, workspaceUrl } from '@/lib/pages/nav'
@@ -101,6 +103,8 @@ import {
   buildTree,
   flattenVisible,
   isAreaRow,
+  isExtraRootNode,
+  splitExtraRoots,
   treeKeyCommand,
   focusFallback,
   canMove,
@@ -240,10 +244,18 @@ const NO_CAPABILITIES: RowCapabilities = {
  * and dropped on, never added to, deleted or renamed.
  */
 const rowCapabilities = (id: string, node: RailNode): RowCapabilities => {
-  if (id === LIFE_ID) return { ...NO_CAPABILITIES, droppable: true, addable: true }
+  // KAN-491: the home root renames and deletes like any other row. It still
+  // does not drag — it is the workspace root, not a page you reparent.
+  if (id === LIFE_ID)
+    return { ...NO_CAPABILITIES, droppable: true, addable: true, deletable: true, renameable: true }
   if (id === DATABASES_PLACEHOLDER_ID || id === CHANGE_LOG_NODE_ID || id === TRASH_NODE_ID)
     return NO_CAPABILITIES
   if (isDatabasesRoot(node)) return { ...NO_CAPABILITIES, draggable: true, droppable: true }
+  // KAN-490/491: an extra root never drags — a drop must not leave `props.root`
+  // on a page with a parent, so dragging is disallowed outright rather than
+  // special-cased at drop time.
+  if (isExtraRootNode(node))
+    return { draggable: false, droppable: true, addable: true, deletable: true, renameable: true }
   return { draggable: true, droppable: true, addable: true, deletable: true, renameable: true }
 }
 
@@ -270,7 +282,8 @@ interface RailRowProps {
   /** The single roving tab stop lands here; arrow keys move it (APG tree). */
   isFocused: boolean
   isBusy: boolean
-  /** The root (Life) can't be renamed or deleted and shows no ＋/×. */
+  /** The home root. It renames and deletes (KAN-491); the flag is the row's
+   *  own voice (area label, full ink), not a capability gate. */
   isRoot?: boolean
   /** An area row — the raised label voice + its accent dot. The caller decides
    *  with `isAreaRow` (a top-level page). */
@@ -563,17 +576,22 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
                 there is pointing at the row itself (the row owns the hover state), so
                 × is reachable with one click and no row click first. ＋ is the one
                 thing that moves — alone at that same edge when selected-and-unhovered,
-                one slot left of × (gap 8) once × also draws. The root takes ＋ and
-                never ×. ＋'s margin-right move is NOT animated (KAN-320) — a pointer
+                one slot left of × (gap 8) once × also draws. The home root takes ＋
+                and × (KAN-491). ＋'s margin-right move is NOT animated (KAN-320) — a pointer
                 aimed at ×'s point during the slide must never catch ＋ mid-move — and
                 × stacks above ＋ (z-[1]) so ×'s point always resolves to × even if the
                 two ever overlap. */}
-              {(onNewPageMenuOpenChange || (!isRoot && onDelete)) && (
-                <span data-part="row-tools" className="absolute inset-y-0 right-2 flex items-center">
+              {(onNewPageMenuOpenChange || onDelete) && (
+                <span
+                  data-part="row-tools"
+                  className="absolute inset-y-0 right-2 flex items-center"
+                >
                   {onNewPageMenuOpenChange && (
                     <span
                       className={`flex flex-none items-center transition-opacity motion-reduce:transition-none group-focus-within:mr-5 group-focus-within:opacity-100 group-focus-within:pointer-events-auto ${
-                        showPlus ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+                        showPlus
+                          ? 'opacity-100 pointer-events-auto'
+                          : 'opacity-0 pointer-events-none'
                       } ${hovered ? 'mr-5' : ''}`}
                     >
                       <NewPageMenu
@@ -606,10 +624,12 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
                       />
                     </span>
                   )}
-                  {!isRoot && onDelete && (
+                  {onDelete && (
                     <span
                       className={`absolute inset-y-0 right-0 z-[1] flex items-center transition-opacity group-focus-within:opacity-100 group-focus-within:pointer-events-auto ${
-                        hovered ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+                        hovered
+                          ? 'opacity-100 pointer-events-auto'
+                          : 'opacity-0 pointer-events-none'
                       }`}
                     >
                       <button
@@ -667,6 +687,19 @@ export interface RailViewProps {
    * appears once the pond list is non-empty. Resolved by `usePondName`.
    */
   pondName: string
+  /**
+   * KAN-490: the first root row (the synthetic Life row) is labelled with the
+   * HOME ROW's own title, not the pond's name — the data model point that the
+   * home row IS the first root. Omitted, or while `useHomePage` is still
+   * loading, the row falls back to `pondName`.
+   */
+  rootTitle?: string | null
+  /**
+   * KAN-491: false once the home root has been deleted (or was never there
+   * after a trash). The row hides and the empty hint stays. Defaults to shown
+   * so Storybook and older call sites keep the root.
+   */
+  showHomeRoot?: boolean
   /** The pond's own glyph — the root row's mark, the same one the head draws.
    *  Omit in Storybook and the root falls back to `LIFE_GLYPH`. */
   pondGlyph?: string
@@ -704,6 +737,14 @@ export interface RailViewProps {
   onToggleLife: () => void
   /** Open the databases root, creating it first when the pond has none yet. */
   onOpenDatabases: () => void
+  /** The ＋ "new root folder" row (KAN-490). Creates a new root and hands back
+   *  its id so the rail can open inline rename on it — a real `<button>`'s own
+   *  Enter/Space already reach it as a click, no extra key handling needed. */
+  onAddRoot?: () => void
+  /** The id of a root just created by `onAddRoot`, so the rail opens inline
+   *  rename on it with its name selected — once per id (KAN-490: the row is
+   *  never navigated into, unlike an ordinary child add). */
+  autoRenameId?: string | null
   /** Would a drop offer a landing? (valid, non-cyclic target — F25.) A false
    *  return paints the not-allowed affordance instead of a drop-line. */
   canDrop: (draggedId: string, targetId: string, zone: DropZone) => boolean
@@ -847,6 +888,8 @@ interface OpenGlyphPicker {
 export function RailView({
   tree,
   pondName,
+  rootTitle,
+  showHomeRoot = true,
   pondGlyph = LIFE_GLYPH,
   recentGlyphs = [],
   marks,
@@ -867,9 +910,16 @@ export function RailView({
   onLife,
   onToggleLife,
   onOpenDatabases,
+  onAddRoot,
+  autoRenameId = null,
   canDrop,
   onMove,
 }: RailViewProps) {
+  // KAN-490: the home row's own title, falling back to the pond's name only
+  // while `useHomePage` is still loading (or for callers, like Storybook, that
+  // never pass one at all).
+  const rootLabel = rootTitle ?? pondName
+
   // Empty when the caller supplies none (Storybook): every row then resolves to
   // its derived mark, which is what the rail showed before marks were choosable.
   const markMap = useMemo(() => marks ?? new Map<string, MarkSource>(), [marks])
@@ -932,6 +982,23 @@ export function RailView({
     () => (databasesRoot ? tree.filter((n) => n !== databasesRoot) : tree),
     [tree, databasesRoot]
   )
+
+  // KAN-490/491: extra roots (`props.root === true`) are lifted out of Life's
+  // own children and flattened each on their own, the same trick as
+  // `databasesFlat` below — depth 0, their own caret/expansion, never gated by
+  // Life's collapse. Unlike the databases root, an extra root's `isFolder`
+  // reflects its real children (no synthetic rows to force it true).
+  const { children: lifeChildren, extraRoots } = useMemo(() => splitExtraRoots(lifeTree), [lifeTree])
+  const extraRootsFlat = useMemo(
+    () =>
+      extraRoots.flatMap((root) =>
+        flattenVisible([root], expanded, true)
+          .slice(1) // drop the synthetic leading Life row flattenVisible always leads with
+          .map((f) => ({ ...f, depth: f.depth - 1 }))
+      ),
+    [extraRoots, expanded]
+  )
+
   const databasesFlat = useMemo(() => {
     if (!databasesRoot) return [DATABASES_PLACEHOLDER_ROW]
     const [rawRoot, ...rest] = flattenVisible([databasesRoot], expanded, true)
@@ -970,22 +1037,27 @@ export function RailView({
   const flat = useMemo(
     () =>
       [
-        // #312/#320: the root row is named for the pond you are in, not the literal
-        // 'life' that `LIFE_NODE` carries.
-        ...flattenVisible(lifeTree, expanded, lifeExpanded, pondName),
+        // KAN-490: the root row is the home row, named for ITS title — the
+        // pond's name is only the fallback while that title is loading.
+        ...(showHomeRoot
+          ? flattenVisible(lifeChildren, expanded, lifeExpanded, rootLabel)
+          : []),
+        // KAN-490/491: extra roots render after Life's own rows, before the
+        // databases foot, regardless of whether Life itself is expanded.
+        ...extraRootsFlat,
         ...databasesFlat,
         TRASH_ROW,
       ].filter((f) => !isStaged(f.id)), // KAN-300: a refetch mid-undo-toast can't resurrect a staged row
-    [lifeTree, expanded, lifeExpanded, databasesFlat, pondName]
+    [lifeChildren, expanded, lifeExpanded, extraRootsFlat, databasesFlat, rootLabel, showHomeRoot]
   )
   const visibleIds = useMemo(() => new Set(flat.map((f) => f.id)), [flat])
 
   const openAddChildMenu = useCallback(
     (id: string) => {
-      const title = id === LIFE_ID ? pondName : flat.find((f) => f.id === id)?.node.title ?? ''
+      const title = id === LIFE_ID ? rootLabel : (flat.find((f) => f.id === id)?.node.title ?? '')
       setNewPageMenu({ id, title })
     },
-    [flat, pondName]
+    [flat, rootLabel]
   )
   const closeAddChildMenu = useCallback(() => {
     const id = newPageMenu?.id
@@ -1042,6 +1114,17 @@ export function RailView({
   // ── Inline rename (F2 / double-click) ───────────────────────────────────────
   const [renamingId, setRenamingId] = useState<string | null>(null)
 
+  // KAN-490: a root just made by the ＋ row opens rename itself — unlike an
+  // ordinary child add, which navigates into the new page instead. Guarded by
+  // a ref (not a bare id comparison) so a second root made with the SAME
+  // literal id would still open — defensive, since real ids never repeat.
+  const autoRenamedRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!autoRenameId || autoRenamedRef.current === autoRenameId) return
+    autoRenamedRef.current = autoRenameId
+    setRenamingId(autoRenameId)
+  }, [autoRenameId])
+
   const capabilitiesOf = (id: string): RowCapabilities => {
     const node = flat.find((f) => f.id === id)?.node
     return node ? rowCapabilities(id, node) : NO_CAPABILITIES
@@ -1062,7 +1145,9 @@ export function RailView({
   const handleRenameKeep = (id: string, value: string, refocus: boolean) => {
     // Empty or unchanged keeps the old title: nothing to write.
     const next = value.trim()
-    const current = flat.find((f) => f.id === id)?.node.title
+    // The home root's visible label is `rootLabel`, not `LIFE_NODE.title`
+    // ('life'). Comparing against the node would write a no-op confirm.
+    const current = id === LIFE_ID ? rootLabel : flat.find((f) => f.id === id)?.node.title
     endRename(id, refocus)
     if (next !== '' && next !== current) onRename(id, next)
   }
@@ -1196,15 +1281,13 @@ export function RailView({
         ref={setRowRef(id)}
         key={id}
         id={id}
-        // #312/#320: the root row is the POND you are in, not the word "life".
-        // This was a hard-coded literal, which is why a new pond's root row read
-        // `life` while its header read the pond's real name — and why overriding
+        // KAN-490: the root row is the home page, so its label is the home
+        // row's OWN title, not the word "life" or the pond's name — the data
+        // model point that the home row IS the first root. This was a
+        // hard-coded literal, which is why a new pond's root row read `life`
+        // while its header read the pond's real name — and why overriding
         // `LIFE_NODE.title` alone changed nothing.
-        //
-        // Lowercase, like every other line of the rail's source copy in `Pond 05
-        // Shell` — the capitals in the boards are the eyebrow's own text-transform.
-        // `usePondName()` supplies it, also lowercase.
-        title={pondName}
+        title={rootLabel}
         depth={0}
         isFolder={isFolder}
         isExpanded={lifeExpanded}
@@ -1229,6 +1312,11 @@ export function RailView({
         onDragOver={cap.droppable ? handleDragOver : undefined}
         onDragLeave={cap.droppable ? handleDragLeave : undefined}
         onDrop={cap.droppable ? handleDrop : undefined}
+        onDelete={cap.deletable ? onDelete : undefined}
+        onRenameStart={cap.renameable ? handleRenameStart : undefined}
+        isRenaming={renamingId === id}
+        onRenameKeep={handleRenameKeep}
+        onRenameCancel={handleRenameCancel}
       />
     ) : (
       <RailRow
@@ -1347,6 +1435,37 @@ export function RailView({
                   .filter((f) => !databasesIds.has(f.id) && f.id !== TRASH_NODE_ID)
                   .map(renderRow)}
             </div>
+
+            {/* KAN-490: a real `<button>`, not a treeitem — `role="tree"` only
+              allows treeitem children (WAI-ARIA), and this row is reached by
+              Tab, not the tree's roving arrow-key focus. Always at rest (no
+              hover/focus gating, unlike every other row's tools): the board
+              draws the foot's analogous rest-state row (`newRow`/`settings`,
+              `PondRail.dc.html`) at the .68 ink tier, full ink only on
+              hover/focus — reused here. Bare ＋, no label (the deviations
+              note: Notion's "+ Add new" text isn't drawn; the ticket's row is
+              bare). Sits directly after the last root, above the databases
+              foot — still inside the scroller, so it scrolls with the tree. */}
+            {!isLoading && (
+              <button
+                type="button"
+                data-part="new-root-row"
+                aria-label="new root folder"
+                onClick={onAddRoot}
+                className="group relative flex w-full flex-shrink-0 items-center gap-[7px] rounded-mn-row py-[5px] pr-2 text-left text-mn-text-secondary outline-none transition-colors hover:text-mn-text focus-visible:ring-2 focus-visible:ring-mn-text/50 focus-visible:ring-offset-0"
+                style={{ paddingLeft: INDENT_BASE }}
+              >
+                <span className="w-[9px] flex-shrink-0" aria-hidden />
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+                  <path
+                    d="M6 2.4v7.2M2.4 6h7.2"
+                    stroke="currentColor"
+                    strokeWidth="1.4"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </button>
+            )}
 
             {/* Status lives OUTSIDE the tree — role="tree" only allows treeitem
               children (WAI-ARIA); a <p> inside it would be an illegal child.
@@ -1492,7 +1611,25 @@ export function Rail() {
   const pondId = usePondId()
   const pondName = usePondName()
   const pondGlyph = usePondGlyph()
-  const { pond } = usePond()
+  const { pond, loading: pondLoading } = usePond()
+  // KAN-490: the root row reads the home row's OWN title (the data model point
+  // that the home row IS the first root), not the pond's name — `rootLabel`
+  // (in RailView) falls back to `pondName` only while this is still loading.
+  const { data: home } = useHomePage(pondId, pondName, !pondLoading)
+  // KAN-491: set while the home root is in the undo window, before trash
+  // stamps `deleted_at`. A refetch in that window still finds the live row;
+  // hiding by id keeps the empty rail until undo or a failed commit.
+  const [hiddenHomeId, setHiddenHomeId] = useState<string | null>(null)
+  const homeHidden = hiddenHomeId != null && home?.id === hiddenHomeId
+  // Once trash has stamped the row, the query itself is null and the id
+  // guard is no longer what hides the root. Clearing it lets a later restore
+  // of that same page show the row again.
+  useEffect(() => {
+    if (!hiddenHomeId || home !== null) return
+    /* eslint-disable react-hooks/set-state-in-effect */
+    setHiddenHomeId(null)
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [hiddenHomeId, home])
   // The pond's own recent list, overridden optimistically the instant a pick
   // lands (KAN-248 7/8) — mirrors `applyGlyphOptimistic`'s "redraw before the
   // write settles", but as a session-only overlay rather than mirrored local
@@ -1516,7 +1653,11 @@ export function Rail() {
   const [confirmTarget, setConfirmTarget] = useState<RailNode | null>(null)
   const { stageDeletion, notify } = useDeletionUndo()
 
-  const { data: pages = [], isLoading, isSuccess } = useQuery({
+  const {
+    data: pages = [],
+    isLoading,
+    isSuccess,
+  } = useQuery({
     queryKey: pagesKey(pondId),
     queryFn: () => fetchPages(pondId),
   })
@@ -1888,10 +2029,68 @@ export function Rail() {
         )
         // KAN-415: a failed link append is not a failed page creation — the
         // page above has already landed and been navigated to.
-        void appendChildLinkUnder(createClient(), queryClient, parentId, created.id, pondId, pondName)
+        void appendChildLinkUnder(
+          createClient(),
+          queryClient,
+          parentId,
+          created.id,
+          pondId,
+          pondName
+        )
       }
     } finally {
       setBusyId(null)
+    }
+  }
+
+  const addingRootRef = useRef(false)
+  // KAN-490: the id the ＋-root row just made, so `RailView` opens inline
+  // rename on it. Sticky on purpose — once consumed it never needs clearing,
+  // since a fresh create always hands back a new, different id.
+  const [pendingRootRenameId, setPendingRootRenameId] = useState<string | null>(null)
+
+  /**
+   * The ＋ "new root folder" row: a top-level page with `props.root`, not a
+   * child of the home row — `appendChildLinkUnder` is for the home page's own
+   * children and must not run here, or a link block would land on the home
+   * page for a page that isn't one of its children. Opens inline rename on
+   * the new row instead of navigating into it, unlike `handleAddChild`.
+   */
+  async function handleAddRoot() {
+    if (addingRootRef.current) return
+    addingRootRef.current = true
+    try {
+      // Top-level siblings: every `parent_id: null` page already in the tree
+      // (`fetchPages` strips the home row on purpose, so its title is added
+      // separately) plus the home row's own title.
+      const topLevelTitles = pages.filter((p) => p.parent_id === null).map((p) => p.title)
+      if (home?.title) topLevelTitles.push(home.title)
+      const title = nextAvailableTitle('Untitled', topLevelTitles)
+
+      const created = await withUser((sb, uid) =>
+        createPage(sb, uid, {
+          parentId: null,
+          title,
+          props: { root: true },
+          pondId,
+        })
+      )
+      if (created) {
+        insertPageOptimistic(
+          queryClient,
+          {
+            id: created.id,
+            parentId: null,
+            type: created.type,
+            title: created.title,
+            props: created.props,
+          },
+          pondId
+        )
+        setPendingRootRenameId(created.id)
+      }
+    } finally {
+      addingRootRef.current = false
     }
   }
 
@@ -1958,9 +2157,108 @@ export function Rail() {
     }
   }
 
+  /** The home root as a tree node. Pages drawn inside it are parent-less rows
+   *  that are not extra roots — not SQL children of the home id — so a delete
+   *  has to trash each of them as well as the home row. */
+  function homeAsNode(): RailNode | null {
+    if (!home) return null
+    const { children } = splitExtraRoots(tree.filter((n) => !isDatabasesRoot(n)))
+    return {
+      id: home.id,
+      parentId: null,
+      type: 'home',
+      title: home.title,
+      order: 0,
+      children,
+    }
+  }
+
+  async function commitHomeDelete(
+    node: RailNode,
+    reason?: CommitReason,
+    onWriteSettled?: () => void
+  ) {
+    const targets = [...node.children, node]
+    try {
+      await withUser(
+        async (sb) => {
+          for (const target of targets) {
+            await trashPageUnlinked(sb, queryClient, {
+              pondId,
+              rootPageId: target.id,
+              subtreeIds: subtreeIds(target),
+            })
+          }
+        },
+        reason,
+        onWriteSettled
+      )
+      if (reason !== 'flush-driven') {
+        queryClient.invalidateQueries({ queryKey: ['rows'] })
+        queryClient.invalidateQueries({ queryKey: ['page'] })
+        await queryClient.invalidateQueries({ queryKey: homeQueryKey(pondId) })
+        await queryClient.invalidateQueries({ queryKey: changeLogKey() })
+      }
+    } catch {
+      setHiddenHomeId(null)
+      queryClient.invalidateQueries({ queryKey: pagesKey() })
+      notify(`Couldn't delete "${node.title || 'Untitled'}"`)
+    }
+  }
+
+  function deleteHomeRoot() {
+    const node = homeAsNode()
+    if (!node) return
+    // KAN-491: every root delete confirms first ("deletes N pages inside"),
+    // including the last root, whose count is 0. Undo comes after confirm.
+    setConfirmTarget(node)
+  }
+
+  /** Confirm, then the same optimistic remove + undo toast a leaf delete uses.
+   *  The commit stays deferred so Undo puts the root back before trash runs. */
+  function stageRootDelete(node: RailNode) {
+    const key = pagesKey(pondId)
+    const snapshot = queryClient.getQueryData<PageRow[]>(key)
+    if (node.type === 'home') setHiddenHomeId(node.id)
+    queryClient.setQueryData<PageRow[]>(key, (rows) => {
+      let next = rows ?? []
+      for (const id of subtreeIds(node)) {
+        if (node.type === 'home' && id === node.id) continue
+        next = removeRow(next, id)
+      }
+      return next
+    })
+    const selected = selectedNodeId
+    if (selected && (selected === LIFE_ID || subtreeIds(node).has(selected))) {
+      openWorkspaceUrl(workspaceUrl(null), router)
+    }
+    const removedRow = snapshot?.find((row) => row.id === node.id)
+    stageDeletion({
+      message: `Deleted "${node.title || 'Untitled'}"`,
+      scope: 'rail',
+      id: node.id,
+      commit: (reason, onWriteSettled) =>
+        node.type === 'home'
+          ? commitHomeDelete(node, reason, onWriteSettled)
+          : commitDelete(node, removedRow, reason, onWriteSettled),
+      undo: () => {
+        if (node.type === 'home') setHiddenHomeId(null)
+        if (snapshot) queryClient.setQueryData(key, snapshot)
+      },
+    })
+  }
+
   function handleDelete(id: string) {
+    if (id === LIFE_ID) {
+      deleteHomeRoot()
+      return
+    }
     const node = nodeById.get(id)
     if (!node) return
+    if (isExtraRootNode(node)) {
+      setConfirmTarget(node)
+      return
+    }
     // A subtree delete is irreversible and heavy — gate it behind the styled
     // blast-radius confirm. A leaf goes straight to an optimistic-remove + undo
     // toast (deferred commit), no modal.
@@ -1988,6 +2286,10 @@ export function Rail() {
     if (!node) return
     setBusyId(node.id)
     try {
+      if (node.type === 'home' || isExtraRootNode(node)) {
+        stageRootDelete(node)
+        return
+      }
       await commitDelete(node)
     } finally {
       setBusyId(null)
@@ -2001,6 +2303,26 @@ export function Rail() {
    * or add that landed in between is untouched, and the clash is surfaced.
    */
   const handleRename = async (id: string, title: string) => {
+    // The home root is not in the pages cache. Its label is the home query.
+    if (id === LIFE_ID) {
+      if (!home) return
+      const previous = home.title
+      const key = homeQueryKey(pondId)
+      queryClient.setQueryData(key, { ...home, title })
+      try {
+        await withUser((sb) => updateTitle(sb, home.id, title))
+      } catch (error) {
+        queryClient.setQueryData(key, { ...home, title: previous })
+        notify(
+          error instanceof DuplicateTitleError
+            ? `"${title}" already exists here`
+            : `Couldn't rename "${previous || 'Untitled'}"`
+        )
+      }
+      void queryClient.invalidateQueries({ queryKey: ['page', home.id] })
+      void queryClient.invalidateQueries({ queryKey: key })
+      return
+    }
     const previous = nodeById.get(id)?.title ?? ''
     applyRenameOptimistic(queryClient, { id, title }, pondId)
     try {
@@ -2202,7 +2524,14 @@ export function Rail() {
 
     // KAN-415: a failed link append is not a failed move — fired alongside it.
     if (isReparent) {
-      void appendChildLinkUnder(createClient(), queryClient, move.newParentId, draggedId, pondId, pondName)
+      void appendChildLinkUnder(
+        createClient(),
+        queryClient,
+        move.newParentId,
+        draggedId,
+        pondId,
+        pondName
+      )
     }
 
     try {
@@ -2227,6 +2556,8 @@ export function Rail() {
       <RailView
         tree={tree}
         pondName={pondName}
+        rootTitle={home?.title ?? null}
+        showHomeRoot={home !== null && !homeHidden}
         pondGlyph={pondGlyph}
         recentGlyphs={recentGlyphs}
         marks={marks}
@@ -2247,6 +2578,8 @@ export function Rail() {
         onLife={() => openWorkspaceUrl(workspaceUrl(null), router)}
         onToggleLife={handleToggleLife}
         onOpenDatabases={handleOpenDatabases}
+        onAddRoot={handleAddRoot}
+        autoRenameId={pendingRootRenameId}
         canDrop={canDrop}
         onMove={handleMove}
       />
