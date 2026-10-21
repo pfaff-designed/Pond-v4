@@ -1392,13 +1392,15 @@ describe('CollectionView — every mode/groupBy/sort/filter/chart/bigNumber read
 const layoutNames = LAYOUT_MENU_MODES.map((mode) => VIEW_KINDS[mode].label)
 
 describe('ViewView — the layout menu sits in the head (KAN-519)', () => {
-  it('a legacy table shows a button named table and no saved-view tab; opening it lists the seven layouts, and Esc does not call onChange', async () => {
+  it('a legacy table shows a button named table and its synthesized tab; opening the button lists the seven layouts, and Esc does not call onChange', async () => {
     const user = userEvent.setup()
     const onChange = jest.fn()
     renderView(table, true, onChange)
 
     expect(screen.getByRole('button', { name: 'table' })).toBeInTheDocument()
-    expect(screen.queryByRole('tab')).not.toBeInTheDocument()
+    // KAN-243: an editable legacy block synthesizes its one segment so ＋ view is reachable.
+    expect(screen.getByRole('tab', { name: 'table' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'add a view' })).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'table' }))
     const menu = await screen.findByRole('menu', { name: 'layout' })
@@ -2459,6 +2461,107 @@ describe('CollectionView — the saved-view bar switches views as reading, not e
   })
 })
 
+describe('CollectionView — the ＋ view picker carries each kind\'s remedy line (KAN-243)', () => {
+  const onePickerView: ViewBlock = {
+    id: 'v-picker',
+    type: 'view',
+    mode: 'table',
+    views: [{ id: 'view-table', label: 'table', kind: 'table', config: {} }],
+    activeViewId: 'view-table',
+  }
+
+  beforeEach(() => {
+    initialSchema = dateless
+    initialRows = []
+  })
+
+  it('offers calendar, board and timeline with their remedy hint against a dateless, status-less schema', async () => {
+    const user = userEvent.setup()
+    renderView(onePickerView)
+
+    await user.click(screen.getByRole('button', { name: 'add a view' }))
+
+    expect(screen.getByRole('option', { name: /calendar/ })).toHaveTextContent(
+      'add a date field to use calendar'
+    )
+    expect(screen.getByRole('option', { name: /board/ })).toHaveTextContent(
+      'add a status field to use board'
+    )
+    expect(screen.getByRole('option', { name: /timeline/ })).toHaveTextContent(
+      'add a date field to use timeline'
+    )
+    expect(screen.getByRole('option', { name: /^table/ })).not.toHaveTextContent('add a')
+  })
+})
+
+describe('ViewView — picking a ＋ view row adds the view, minting its remedy field first when needed (KAN-243)', () => {
+  const onePickerView: ViewBlock = {
+    id: 'v-picker',
+    type: 'view',
+    mode: 'table',
+    views: [{ id: 'view-table', label: 'table', kind: 'table', config: {} }],
+    activeViewId: 'view-table',
+  }
+
+  beforeEach(() => {
+    initialSchema = dateless
+    initialRows = []
+  })
+
+  it('adding calendar to a dateless schema mints a date field, then adds the view active, with no field reference of its own', async () => {
+    const user = userEvent.setup()
+    const onChange = jest.fn()
+    renderView(onePickerView, true, onChange)
+
+    await user.click(screen.getByRole('button', { name: 'add a view' }))
+    await user.click(screen.getByRole('option', { name: /calendar/ }))
+
+    expect(updateSchema).toHaveBeenCalledWith([
+      ...dateless,
+      expect.objectContaining({ name: 'date', type: 'date' }),
+    ])
+    expect(onChange).toHaveBeenCalledTimes(1)
+    const next = onChange.mock.calls[0][0] as ViewBlock
+    expect(next.views).toHaveLength(2)
+    const newView = next.views!.find((v) => v.kind === 'calendar')
+    expect(newView).toEqual({ id: expect.any(String), label: 'calendar', kind: 'calendar', config: {} })
+    expect(next.activeViewId).toBe(newView!.id)
+  })
+
+  it('undo removes the view AND the field it minted, in one step', async () => {
+    const user = userEvent.setup()
+    const onChange = jest.fn()
+    renderView(onePickerView, true, onChange)
+
+    await user.click(screen.getByRole('button', { name: 'add a view' }))
+    await user.click(screen.getByRole('option', { name: /calendar/ }))
+
+    const afterAdd = updateSchema.mock.calls.at(-1)![0] as PropertySchema
+    const addedField = afterAdd[afterAdd.length - 1]
+
+    await user.click(screen.getByRole('button', { name: 'Undo' }))
+
+    expect(onChange).toHaveBeenLastCalledWith(onePickerView)
+    const afterUndo = updateSchema.mock.calls.at(-1)![0] as PropertySchema
+    expect(afterUndo).toEqual(dateless)
+    expect(afterUndo.find((d) => d.id === addedField.id)).toBeUndefined()
+  })
+
+  it('adding table (no required field) never calls updateSchema', async () => {
+    const user = userEvent.setup()
+    const onChange = jest.fn()
+    renderView(onePickerView, true, onChange)
+
+    await user.click(screen.getByRole('button', { name: 'add a view' }))
+    await user.click(screen.getByRole('option', { name: /^table/ }))
+
+    expect(updateSchema).not.toHaveBeenCalled()
+    expect(onChange).toHaveBeenCalledTimes(1)
+    const next = onChange.mock.calls[0][0] as ViewBlock
+    expect(next.views).toHaveLength(2)
+  })
+})
+
 describe('CollectionView — a config edit lands on the LOCALLY active view, not the persisted activeViewId (KAN-32)', () => {
   const chartSchema: PropertySchema = [
     { id: 'p-title', name: 'Title', type: 'text' },
@@ -2592,6 +2695,253 @@ describe('ViewView — the path test: a premade-shaped tasks block, end to end (
     expect(screen.getByRole('tab', { name: 'board' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'timeline' })).toBeInTheDocument()
     expect(screen.queryByText('＋ view')).not.toBeInTheDocument()
+  })
+})
+
+describe('ViewView — the ＋ view path test: calendar from a dateless table, end to end (KAN-243, PATH_STEPS 1–4)', () => {
+  const onePickerView: ViewBlock = {
+    id: 'v-picker',
+    type: 'view',
+    mode: 'table',
+    views: [{ id: 'view-table', label: 'table', kind: 'table', config: {} }],
+    activeViewId: 'view-table',
+  }
+
+  beforeEach(() => {
+    initialSchema = dateless
+    initialRows = []
+  })
+
+  // `onChange` must actually feed back into `data` here (unlike every other
+  // describe block's `jest.fn()`), or the new "calendar" segment and its live
+  // grid would never appear — `renderView`'s static `data` prop is right for
+  // every other test, which only asserts on the call, not the re-render.
+  function LiveHarness({ editable = true }: { editable?: boolean }) {
+    const [data, setData] = useState<ViewBlock>(onePickerView)
+    return <ViewView data={data} editable={editable} onChange={setData} />
+  }
+
+  function renderLiveView(editable = true) {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    return render(
+      <QueryClientProvider client={client}>
+        <DeletionUndoProvider>
+          <SiblingBlocksProvider value={{ blocks: [], pageId: 'page-1' }}>
+            <LiveHarness editable={editable} />
+          </SiblingBlocksProvider>
+        </DeletionUndoProvider>
+      </QueryClientProvider>
+    )
+  }
+
+  it('adding calendar to a dateless table mints the field, switches to a live calendar grid, and undoes both in one step', async () => {
+    const user = userEvent.setup()
+    renderLiveView()
+
+    await user.click(screen.getByRole('button', { name: 'add a view' }))
+    await user.click(screen.getByRole('option', { name: /calendar/ }))
+
+    // (a) the schema gained one date property.
+    expect(updateSchema).toHaveBeenCalledWith([
+      ...dateless,
+      expect.objectContaining({ name: 'date', type: 'date' }),
+    ])
+
+    // (b) a new active "calendar" segment appeared.
+    expect(screen.getByRole('tab', { name: 'calendar' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'table' })).toHaveAttribute('aria-selected', 'false')
+
+    // (c) the calendar mode renders its grid, never the "no collection"/dateless notices.
+    expect(document.querySelectorAll('[data-part="calendar-day-cell"]').length).toBeGreaterThan(0)
+    expect(screen.queryByRole('button', { name: 'add a date field' })).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('This view needs a collection with properties.')
+    ).not.toBeInTheDocument()
+
+    // (d) undo removes both the segment and the field it minted, in one step.
+    await user.click(screen.getByRole('button', { name: 'Undo' }))
+
+    expect(screen.queryByRole('tab', { name: 'calendar' })).not.toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'table' })).toHaveAttribute('aria-selected', 'true')
+    const afterUndo = updateSchema.mock.calls.at(-1)![0] as PropertySchema
+    expect(afterUndo).toEqual(dateless)
+  })
+})
+
+describe('ViewView — undoing an OLDER ＋ view add leaves a later add intact (KAN-243)', () => {
+  const onePickerView: ViewBlock = {
+    id: 'v-picker',
+    type: 'view',
+    mode: 'table',
+    views: [{ id: 'view-table', label: 'table', kind: 'table', config: {} }],
+    activeViewId: 'view-table',
+  }
+
+  beforeEach(() => {
+    initialSchema = dateless
+    initialRows = []
+  })
+
+  // Same live-feedback shape as the path test above — two adds must build on
+  // each other's result, which `renderView`'s static `data` prop can't show.
+  function LiveHarness() {
+    const [data, setData] = useState<ViewBlock>(onePickerView)
+    return <ViewView data={data} editable onChange={setData} />
+  }
+
+  function renderLiveView() {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    return render(
+      <QueryClientProvider client={client}>
+        <DeletionUndoProvider>
+          <SiblingBlocksProvider value={{ blocks: [], pageId: 'page-1' }}>
+            <LiveHarness />
+          </SiblingBlocksProvider>
+        </DeletionUndoProvider>
+      </QueryClientProvider>
+    )
+  }
+
+  it('undoing the older of two adds removes only that view and its minted field — the newer view and field remain', async () => {
+    const user = userEvent.setup()
+    renderLiveView()
+
+    await user.click(screen.getByRole('button', { name: 'add a view' }))
+    await user.click(screen.getByRole('option', { name: /calendar/ }))
+    await user.click(screen.getByRole('button', { name: 'add a view' }))
+    await user.click(screen.getByRole('option', { name: /^board/ }))
+
+    expect(screen.getByRole('tab', { name: 'board' })).toHaveAttribute('aria-selected', 'true')
+
+    // Toasts stack oldest-first — undoing the first button undoes calendar's add.
+    const undoButtons = screen.getAllByRole('button', { name: 'Undo' })
+    await user.click(undoButtons[0])
+
+    expect(screen.queryByRole('tab', { name: 'calendar' })).not.toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'board' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'board' })).toHaveAttribute('aria-selected', 'true')
+    const afterUndo = updateSchema.mock.calls.at(-1)![0] as PropertySchema
+    expect(afterUndo.some((d) => d.type === 'date')).toBe(false)
+    expect(afterUndo.some((d) => d.type === 'status')).toBe(true)
+  })
+})
+
+describe('ViewView — a legacy block (no views[] yet) still shows ＋ view, editable only (KAN-243, PATH_STEPS 1 gap)', () => {
+  const legacyTable: ViewBlock = { id: 'v-legacy', type: 'view', mode: 'table' }
+
+  beforeEach(() => {
+    initialSchema = dateless
+    initialRows = []
+  })
+
+  function LegacyHarness({ editable = true }: { editable?: boolean }) {
+    const [data, setData] = useState<ViewBlock>(legacyTable)
+    return <ViewView data={data} editable={editable} onChange={setData} />
+  }
+
+  function renderLegacy(editable = true) {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    return render(
+      <QueryClientProvider client={client}>
+        <DeletionUndoProvider>
+          <SiblingBlocksProvider value={{ blocks: [], pageId: 'page-1' }}>
+            <LegacyHarness editable={editable} />
+          </SiblingBlocksProvider>
+        </DeletionUndoProvider>
+      </QueryClientProvider>
+    )
+  }
+
+  it('editable: one segment synthesized from the legacy mode, plus ＋ view; picking a kind adds a second segment, active', async () => {
+    const user = userEvent.setup()
+    renderLegacy()
+
+    expect(screen.getAllByRole('tab')).toHaveLength(1)
+    expect(screen.getByRole('tab', { name: 'table' })).toHaveAttribute('aria-selected', 'true')
+
+    await user.click(screen.getByRole('button', { name: 'add a view' }))
+    await user.click(screen.getByRole('option', { name: /board/ }))
+
+    expect(screen.getAllByRole('tab')).toHaveLength(2)
+    expect(screen.getByRole('tab', { name: 'board' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'table' })).toHaveAttribute('aria-selected', 'false')
+  })
+
+  it('reader: draws no bar at all — no segments, no ＋ view', () => {
+    renderLegacy(false)
+
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'add a view' })).not.toBeInTheDocument()
+  })
+})
+
+describe('ViewView — a picked view still becomes active through BlockCanvas-style activeViewId stripping (KAN-243)', () => {
+  const legacyTable: ViewBlock = { id: 'v-legacy-strip', type: 'view', mode: 'table' }
+  const viewsShapedTable: ViewBlock = {
+    id: 'v-shaped-strip',
+    type: 'view',
+    mode: 'table',
+    views: [{ id: 'view-table-strip', label: 'table', kind: 'table', config: {} }],
+    activeViewId: 'view-table-strip',
+  }
+
+  beforeEach(() => {
+    initialSchema = dateless
+    initialRows = []
+  })
+
+  // Mirrors BlockCanvas.tsx's own shape (#421, KAN-321): a locally-held
+  // `activeViewId` overrides what's rendered, but `onChange` strips it back to
+  // the block's own PERSISTED `activeViewId` before committing — switching is
+  // reading, never an edit. Only `ActiveViewSelectionContext` carries a bar's
+  // (or, here, a ＋ view pick's) selection past that strip.
+  function StrippingHarness({ initial }: { initial: ViewBlock }) {
+    const [block, setBlock] = useState<ViewBlock>(initial)
+    const [activeViewId, setActiveViewId] = useState<string | undefined>(undefined)
+    const moduleData = activeViewId ? { ...block, activeViewId } : block
+    return (
+      <ActiveViewSelectionContext.Provider value={setActiveViewId}>
+        <ViewView
+          data={moduleData}
+          editable
+          onChange={(next) => setBlock({ ...(next as ViewBlock), activeViewId: block.activeViewId })}
+        />
+      </ActiveViewSelectionContext.Provider>
+    )
+  }
+
+  function renderStripping(initial: ViewBlock) {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    return render(
+      <QueryClientProvider client={client}>
+        <DeletionUndoProvider>
+          <SiblingBlocksProvider value={{ blocks: [], pageId: 'page-1' }}>
+            <StrippingHarness initial={initial} />
+          </SiblingBlocksProvider>
+        </DeletionUndoProvider>
+      </QueryClientProvider>
+    )
+  }
+
+  it.each([
+    ['a legacy table', legacyTable],
+    ['a views-shaped table', viewsShapedTable],
+  ])('%s: picking calendar activates its segment, and undo re-selects the original', async (_label, initial) => {
+    const user = userEvent.setup()
+    renderStripping(initial)
+
+    expect(screen.getByRole('tab', { name: 'table' })).toHaveAttribute('aria-selected', 'true')
+
+    await user.click(screen.getByRole('button', { name: 'add a view' }))
+    await user.click(screen.getByRole('option', { name: /calendar/ }))
+
+    expect(screen.getByRole('tab', { name: 'calendar' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('button', { name: 'add a view' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Undo' }))
+
+    expect(screen.queryByRole('tab', { name: 'calendar' })).not.toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'table' })).toHaveAttribute('aria-selected', 'true')
   })
 })
 
