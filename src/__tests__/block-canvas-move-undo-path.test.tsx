@@ -16,6 +16,7 @@ import { DocumentPanel } from '@/components/organisms/DocumentPanel'
 import { ShellCommands } from '@/components/organisms/ShellCommands'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { sessionUndo } from '@/lib/change-log/session-undo'
+import { resetPageWriteRegistry } from '@/lib/pages/page-flush'
 import { undoStep } from '@/lib/change-log/undo'
 import type { Block } from '@/lib/documents/types'
 
@@ -31,6 +32,7 @@ jest.mock('@/lib/supabase/client', () => ({
 
 jest.mock('@/lib/pond/context', () => ({
   ...jest.requireActual('@/lib/pond/context'),
+  usePond: () => ({ pond: { id: 'pond-1', name: 'Workshop' }, ponds: [], loading: false }),
   usePondId: () => 'pond-1',
 }))
 
@@ -56,10 +58,6 @@ jest.mock('@/lib/pages/client', () => ({
   deletePage: jest.fn().mockResolvedValue(undefined),
 }))
 
-jest.mock('@/lib/pages/commit', () => ({
-  commitBlocks: jest.fn().mockResolvedValue(undefined),
-}))
-
 const mockAppendOwnEdit = jest.fn()
 jest.mock('@/lib/change-log/store', () => ({
   appendOwnEdit: (...args: unknown[]) => mockAppendOwnEdit(...args),
@@ -80,6 +78,7 @@ const onPlatform = (platform: string) =>
 let recordSeq = 0
 
 beforeEach(() => {
+  resetPageWriteRegistry()
   jest.clearAllMocks()
   recordSeq = 0
   mockSaveBlocks.mockResolvedValue(undefined)
@@ -175,7 +174,7 @@ describe('⌥↓ moves a block through persistBlocksAsOwnEdit, one press one ste
 })
 
 describe('offline saveBlocks failure never merges with the next write (KAN-368)', () => {
-  it('two quick ⌥↓ presses roll back to the original order with no step remembered', async () => {
+  it('two quick ⌥↓ presses do not log a step when the save fails, and the one queued behind it is not stored', async () => {
     const [a, b, c] = [tool('b-a', 'Saw'), tool('b-b', 'Plane'), tool('b-c', 'Chisel')]
     renderPath([a, b, c])
     await screen.findByLabelText('Page title')
@@ -185,21 +184,19 @@ describe('offline saveBlocks failure never merges with the next write (KAN-368)'
     fireEvent.keyDown(blockRoot('b-a'), { key: 'ArrowDown', altKey: true })
     fireEvent.keyDown(blockRoot('b-a'), { key: 'ArrowDown', altKey: true })
 
-    await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalled())
-    // The second write is cancelled, not raced: at most the first write's
-    // own `saveBlocks` call, never one for a stale `before` the second write
-    // computed on top of it.
-    await waitFor(() => expect(blockOrder()).toEqual(['b-a', 'b-b', 'b-c']))
+    // The queue halts on the first save (KAN-495) and does not run the one
+    // queued behind it, so the store sees a single failed write. The page
+    // keeps the optimistic order; the next successful write retries.
+    await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalledTimes(1))
+    expect(blockOrder()).toEqual(['b-b', 'b-c', 'b-a'])
     expect(mockAppendOwnEdit).not.toHaveBeenCalled()
 
     const user = userEvent.setup()
     await user.click(document.body)
     await user.keyboard('{Meta>}z{/Meta}')
 
-    // Neither write left a real step: one ⌘Z drains both pending (empty)
-    // entries off the stack without ever reaching the RPC.
-    await waitFor(() => expect(sessionUndo.getSnapshot('pond-1').canUndo).toBe(false))
-    expect(undoStep).not.toHaveBeenCalled()
+    // Nothing was stored, so ⌘Z does not reach the RPC.
+    await waitFor(() => expect(undoStep).not.toHaveBeenCalled())
   })
 })
 

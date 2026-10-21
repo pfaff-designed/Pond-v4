@@ -1,11 +1,9 @@
 /**
- * Live-verified (KAN-300): the databases root draws no caret (PondRail.dc.html),
- * so a mouse user's only way to open it is the row itself — but the row's click
- * only navigated to the databases page, never expanded it in the rail, so a
- * database's rows (and their hover ×) were reachable by mouse only after the
- * ancestor-reveal effect expanded the root some other way (opening a database
- * from elsewhere). Exercised on the full `Rail`, not `RailView` alone, since
- * the navigate-vs-expand split lives in `Rail`'s own `handleSelect`.
+ * KAN-486: the databases heading is a disclosure, not a page link — clicking
+ * it toggles expansion both ways and never navigates (superseding KAN-300's
+ * expand-and-navigate contract). Exercised on the full `Rail`, not `RailView`
+ * alone, since the toggle-instead-of-navigate split lives in `Rail`'s own
+ * `handleSelect`.
  */
 import React from 'react'
 import { render, screen, within, fireEvent, waitFor } from '@testing-library/react'
@@ -90,21 +88,30 @@ function mount() {
   )
 }
 
-describe('Rail — clicking the databases root expands it for a mouse user (KAN-300)', () => {
+describe('Rail — clicking the databases heading toggles it, never navigates (KAN-486)', () => {
   beforeEach(() => jest.clearAllMocks())
 
-  it('clicking the root row reveals its database rows, whose hover delete is then reachable', async () => {
+  it('opens on click, closes on a second click, reopens on a third — and never navigates', async () => {
     mount()
     const foot = screen.getByRole('tree', { name: 'Databases' })
+    const heading = within(foot).getByRole('treeitem', { name: 'databases' })
+    expect(heading).toHaveAttribute('aria-expanded', 'false')
     expect(within(foot).queryByRole('treeitem', { name: 'ingredients' })).not.toBeInTheDocument()
 
-    fireEvent.click(within(foot).getByRole('treeitem', { name: 'databases' }))
+    fireEvent.click(heading)
+    await waitFor(() => expect(heading).toHaveAttribute('aria-expanded', 'true'))
+    const row = within(foot).getByRole('treeitem', { name: 'ingredients' })
+    expect(row).toBeInTheDocument()
 
-    // Still opens the databases page — the fix adds expansion, it doesn't drop it.
-    expect(push).toHaveBeenCalledTimes(1)
+    fireEvent.click(heading)
+    expect(heading).toHaveAttribute('aria-expanded', 'false')
+    expect(within(foot).queryByRole('treeitem', { name: 'ingredients' })).not.toBeInTheDocument()
 
-    const row = await waitFor(() => within(foot).getByRole('treeitem', { name: 'ingredients' }))
-    fireEvent.mouseEnter(row)
-    expect(within(row).getByRole('button', { name: 'Delete ingredients' })).toBeInTheDocument()
+    fireEvent.click(heading)
+    await waitFor(() => expect(heading).toHaveAttribute('aria-expanded', 'true'))
+    expect(within(foot).getByRole('treeitem', { name: 'ingredients' })).toBeInTheDocument()
+
+    // The heading never has a destination of its own — ⌘K / the breadcrumb reach it instead.
+    expect(push).not.toHaveBeenCalled()
   })
 })

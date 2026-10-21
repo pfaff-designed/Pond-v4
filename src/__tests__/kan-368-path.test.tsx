@@ -228,8 +228,13 @@ jest.mock('@/lib/pages/client', () => ({
 // focus lands back on this field (part 2's own path) would hit the field's
 // still-nonempty ProseMirror history instead of falling through to the shell's
 // session undo.
-jest.mock('@/lib/pages/commit', () => ({
-  commitBlocks: jest.fn(
+jest.mock('@/lib/pages/commit', () => {
+  const { pageCommitMock } = jest.requireActual('./helpers/page-commit-mock') as {
+    pageCommitMock: (overrides: {
+      commitBlocks?: (...args: unknown[]) => unknown
+    }) => Record<string, unknown>
+  }
+  const commitBlocks = jest.fn(
     async (
       _supabase: unknown,
       _queryClient: unknown,
@@ -268,9 +273,12 @@ jest.mock('@/lib/pages/commit', () => ({
       }
       return done
     }
-  ),
-  propagateBlockWrite: jest.fn().mockResolvedValue(undefined),
-}))
+  )
+  return {
+    ...pageCommitMock({ commitBlocks }),
+    propagateBlockWrite: jest.fn().mockResolvedValue(undefined),
+  }
+})
 
 // ── Change log: store's appendOwnEdit backed by fakeChangeLog, the rest real ─
 
@@ -509,7 +517,7 @@ describe('KAN-368 path test', () => {
     expect(screen.getByText('B text')).toBeInTheDocument()
   })
 
-  it('a chained save whose predecessor FAILS logs its own before as what the page actually held, not the failed save\'s after', async () => {
+  it('a chained save whose predecessor FAILS stays halted until the next write retries it, and then logs its before as what that retry stored', async () => {
     const a: Block = { id: 'b-a', type: 'text', content: 'A text' }
     renderPath([a])
     await screen.findByLabelText('Page title')
@@ -552,21 +560,37 @@ describe('KAN-368 path test', () => {
     })
 
     rejectSave1(new Error('network error'))
-    await waitFor(() => expect(fakeChangeLog.length).toBe(1))
+    // The queue halts on the failed save and does not apply the one queued
+    // behind it (KAN-495). Nothing is remembered until a later write retries.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    })
+    expect(fakeChangeLog.length).toBe(0)
 
-    // Save 1 never stored anything, so it logs nothing — only save 2's
-    // record exists. The regression: its `before` must be what the page
-    // actually held before EITHER save (not save 1's `after`, which it never
-    // stored, and not a value frozen at save 2's own schedule time).
-    const [save2Record] = fakeChangeLog
-    expect(save2Record.before).toEqual([a])
+    await userEvent.type(fieldA, ' three', { skipClick: true })
+    await waitFor(() => expect(fieldA.textContent).toBe('A text one two three'))
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, EDIT_PAUSE_MS + 50))
+    })
+    await waitFor(() => expect(fakeChangeLog.length).toBe(3))
+
+    const [retriedSave1, save2Record, save3Record] = fakeChangeLog
+    expect(retriedSave1.before).toEqual([a])
+    expect(retriedSave1.after).toEqual([{ ...a, content: 'A text one' }])
+    // The successor's `before` is what the retried save actually stored —
+    // not a `before` frozen from the failed attempt, and not the original
+    // page once that retry has landed.
+    expect(save2Record.before).toEqual([{ ...a, content: 'A text one' }])
     expect(save2Record.after).toEqual([{ ...a, content: 'A text one two' }])
+    expect(save3Record.before).toEqual([{ ...a, content: 'A text one two' }])
+    expect(save3Record.after).toEqual([{ ...a, content: 'A text one two three' }])
 
-    // One ⌘Z removes both words at once — the whole unsaved chain reverts to
-    // what the page last actually held.
+    act(() => {
+      fieldA.blur()
+    })
     fireEvent.keyDown(document.body, { key: 'z', metaKey: true })
-    await waitFor(() => expect(screen.getByText('A text')).toBeInTheDocument())
-    expect(screen.queryByText('A text one two')).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByText('A text one two three')).not.toBeInTheDocument())
+    expect(screen.getByText('A text one two')).toBeInTheDocument()
 
     consoleError.mockRestore()
   })

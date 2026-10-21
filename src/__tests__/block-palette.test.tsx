@@ -39,8 +39,29 @@ jest.mock('@/lib/pages/client', () => ({
 }))
 
 const mockCommitBlocks = jest.fn().mockResolvedValue(undefined)
+// KAN-495: BlockCanvas's structural writes go through `createPageWriter`'s
+// returned writer, not `commitBlocks` directly — the writer forwards to the
+// same mocked `commitBlocks` above, so the calls[N][3]/[4] assertions below
+// (written against `commitBlocks`'s own signature) still hold.
 jest.mock('@/lib/pages/commit', () => ({
   commitBlocks: (...args: unknown[]) => mockCommitBlocks(...args),
+  createPageWriter:
+    (_supabase: unknown, queryClient: unknown, pageId: string, pondId: string | null) =>
+    async (op: {
+      kind: 'typed' | 'structural'
+      before: { title: string; blocks: unknown }
+      after: { title: string; blocks: unknown }
+      onPending?: (recordIds: readonly string[] | null) => void
+    }) => {
+      if (op.kind === 'typed') await mockUpdateTitle(_supabase, pageId, op.after.title)
+      await mockSaveBlocks(_supabase, pageId, op.after.blocks)
+      await mockCommitBlocks(_supabase, queryClient, pageId, op.after.blocks, {
+        ownEdit: true,
+        before: op.before.blocks,
+        pondId,
+        ...(op.onPending ? { onPending: op.onPending } : {}),
+      })
+    },
 }))
 
 // ⌥↑/⌥↓ (KAN-368) writes directly through `saveBlocks`/`appendOwnEdit`, not

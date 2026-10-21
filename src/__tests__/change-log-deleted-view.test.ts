@@ -10,7 +10,8 @@
  * string — so these pass under any machine's local timezone.
  */
 
-import { buildDeletedCards } from '@/lib/change-log/deleted-view'
+import { buildDeletedCards, TRASH_RETENTION_MS, TRASH_RETENTION_DAYS } from '@/lib/change-log/deleted-view'
+import { DAY_MS } from '@/lib/change-log/log-page'
 import type { ChangeLogRecord, TrashSnapshot } from '@/lib/change-log/types'
 
 const NOW = new Date('2026-09-26T12:00:00.000Z')
@@ -198,4 +199,8 @@ describe('buildDeletedCards', () => {
 
     expect(cards).toEqual([])
   })
+})
+
+it('derives TRASH_RETENTION_MS from TRASH_RETENTION_DAYS', () => {
+  expect(TRASH_RETENTION_MS).toBe(TRASH_RETENTION_DAYS * DAY_MS)
 })

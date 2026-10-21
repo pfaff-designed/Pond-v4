@@ -326,8 +326,8 @@ describe('AITerminal — propose_changes card (#98)', () => {
   // KAN-334 fix — a proposing turn's assumption line made `AnswerActions`'s
   // `assistantProse || isStreaming` gate true, so it drew its own window
   // controls alongside the KAN-317 fallback row's: two clusters. Exactly one
-  // belongs, after the card.
-  it('a proposing turn with an assumption renders exactly one minimize/close control set, after the card', async () => {
+  // belongs, on the composer card.
+  it('a proposing turn with an assumption renders exactly one minimize/close control set, on the card', async () => {
     mockMessages = [
       { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'push the electrician out by a week' }] },
       {
@@ -341,9 +341,12 @@ describe('AITerminal — propose_changes card (#98)', () => {
 
     const controls = document.querySelectorAll('[data-part="composer-window-controls"]')
     expect(controls).toHaveLength(1)
+    expect(
+      document.querySelector('[data-part="composer-window-bar"]')!.contains(controls[0])
+    ).toBe(true)
 
     const card = screen.getByRole('group', { name: 'proposed edit' })
-    expect(card.compareDocumentPosition(controls[0])).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(controls[0].compareDocumentPosition(card)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
   })
 
   // KAN-334 fix — `AnswerActions`'s own "ask again" chip sat between the
@@ -377,7 +380,7 @@ describe('AITerminal — propose_changes card (#98)', () => {
   // (no propose_changes batch) had its read chips land ABOVE the card and no
   // reachable window controls at all (the fallback row required
   // `diffCards.length > 0`).
-  it('a single-turn define_schema proposal with an assumption shows exactly one window-controls set, in order: assumption, card, read chips, controls', async () => {
+  it('a single-turn define_schema proposal with an assumption shows exactly one window-controls set on the card, and the turn stays assumption, card, read chips', async () => {
     mockMessages = [
       { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'track who wrote each book' }] },
       {
@@ -395,12 +398,15 @@ describe('AITerminal — propose_changes card (#98)', () => {
     const controls = document.querySelectorAll('[data-part="composer-window-controls"]')
 
     expect(controls).toHaveLength(1)
+    expect(
+      document.querySelector('[data-part="composer-window-bar"]')!.contains(controls[0])
+    ).toBe(true)
     expect(assumption.compareDocumentPosition(card)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
     expect(card.compareDocumentPosition(readChips)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
-    expect(readChips.compareDocumentPosition(controls[0])).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(controls[0].compareDocumentPosition(assumption)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
   })
 
-  it('a mixed turn (propose_changes + define_schema) puts the read chips and controls after the last card', async () => {
+  it('a mixed turn (propose_changes + define_schema) puts the read chips after the last card, and the one control set on the card', async () => {
     mockMessages = [
       { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'push the date and track authors' }] },
       {
@@ -421,9 +427,12 @@ describe('AITerminal — propose_changes card (#98)', () => {
     const controls = document.querySelectorAll('[data-part="composer-window-controls"]')
 
     expect(controls).toHaveLength(1)
+    expect(
+      document.querySelector('[data-part="composer-window-bar"]')!.contains(controls[0])
+    ).toBe(true)
     expect(diffCard.compareDocumentPosition(schemaCard)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
     expect(schemaCard.compareDocumentPosition(readChips)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
-    expect(readChips.compareDocumentPosition(controls[0])).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(controls[0].compareDocumentPosition(diffCard)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
   })
 
   // KAN-334 fix — a qualifying part with no VISIBLE card (the stream stopped

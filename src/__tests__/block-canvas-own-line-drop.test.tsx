@@ -12,6 +12,10 @@ import { fireEvent, render, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
+import { getPageWriteQueue } from '@/lib/pages/page-flush'
+import { createPageWriteQueue } from '@/lib/pages/page-write-queue'
+import { createPageWriter } from '@/lib/pages/commit'
+import { createClient } from '@/lib/supabase/client'
 import type { Block } from '@/lib/documents/types'
 
 jest.mock('next/navigation', () => ({
@@ -37,22 +41,47 @@ jest.mock('@/lib/pages/client', () => ({
 }))
 
 const mockAppendOwnEdit = jest.fn().mockResolvedValue({ id: 'record-1' })
+const mockMarkOutdated = jest.fn().mockResolvedValue([])
 jest.mock('@/lib/change-log/store', () => ({
   appendOwnEdit: (...args: unknown[]) => mockAppendOwnEdit(...args),
+  markOutdated: (...args: unknown[]) => mockMarkOutdated(...args),
 }))
-const mockRememberPending = jest.fn()
+const mockRemember = jest.fn()
 jest.mock('@/lib/change-log/session-undo', () => ({
-  sessionUndo: { rememberPending: (...args: unknown[]) => mockRememberPending(...args) },
+  sessionUndo: {
+    remember: (...args: unknown[]) => mockRemember(...args),
+    trackPending: jest.fn(),
+  },
 }))
 
 beforeEach(() => {
   jest.clearAllMocks()
   mockSaveBlocks.mockResolvedValue(undefined)
   mockAppendOwnEdit.mockResolvedValue({ id: 'record-1' })
+  global.fetch = jest.fn().mockResolvedValue({ ok: true } as Response)
 })
 
+// `onStructuralWrite` — the caller's ONE structural entry point (KAN-495
+// moved its queue construction out of `BlockCanvas` into the caller,
+// `use-page-draft.ts`'s `writeStructural`: update local state, THEN enqueue).
+// Rebuilt here with the same real queue modules so this test's
+// `saveBlocks`/`appendOwnEdit`/`sessionUndo.remember` mocks (one layer
+// deeper) still see the drop's commit; `onChange` stands in for the "update
+// local state" half, same as `writeStructural`'s own `setBlocks`.
 function renderCanvas(blocks: Block[], onChange: (next: Block[]) => void) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const onStructuralWrite = (next: Block[]): Promise<boolean> => {
+    onChange(next)
+    return getPageWriteQueue('page-1', () =>
+      createPageWriteQueue(createPageWriter(createClient(), client, 'page-1', 'pond-1'), {
+        title: 'sourdough, 78%',
+        blocks,
+      })
+    )
+      .enqueue({ kind: 'structural', after: { title: 'sourdough, 78%', blocks: next } })
+      .then(() => true)
+      .catch(() => false)
+  }
   return render(
     <QueryClientProvider client={client}>
       <DeletionUndoProvider>
@@ -61,6 +90,8 @@ function renderCanvas(blocks: Block[], onChange: (next: Block[]) => void) {
           pageId="page-1"
           pageTitle="sourdough, 78%"
           onChange={onChange}
+          onStructuralWrite={onStructuralWrite}
+          onUndoRemove={() => {}}
         />
       </DeletionUndoProvider>
     </QueryClientProvider>
@@ -78,11 +109,14 @@ function rect(left: number, width: number, top = 0, height = 100): DOMRect {
  * at `(x, y)` within `targetRect`. jsdom's `DragEvent` drops `clientX`/
  * `clientY` from its init dict, so the point is defined directly on a plain
  * `MouseEvent` instead — see `block-canvas-drop-line.test.tsx`'s own `dragOver`.
+ * The target's rect is mocked BEFORE `dragstart` fires: dragstart snapshots
+ * every block's rect (KAN-440), so a mock set afterward is invisible to the
+ * classification it drives.
  */
 function dragAndDrop(sourceId: string, targetId: string, targetRect: DOMRect, x: number, y: number) {
-  fireEvent.dragStart(blockRoot(sourceId))
   const target = blockRoot(targetId)
   jest.spyOn(target, 'getBoundingClientRect').mockReturnValue(targetRect)
+  fireEvent.dragStart(blockRoot(sourceId))
   const over = new MouseEvent('dragover', { bubbles: true, cancelable: true })
   Object.defineProperty(over, 'clientX', { value: x })
   Object.defineProperty(over, 'clientY', { value: y })
@@ -107,13 +141,13 @@ describe('committing an own-line drop', () => {
     // y=90 of a 100-tall rect is the bottom 25%: own-line below `right`.
     dragAndDrop('b-dropped', 'b-right', rect(0, 400, 0, 100), 200, 90)
 
-    const expected = [left, right, { ...dropped, width: 'full' }]
+    const expected = [left, right, { ...dropped, width: 'full', rowStart: true }]
     await waitFor(() => expect(result).toEqual(expected))
     expect(mockAppendOwnEdit).toHaveBeenCalledTimes(1)
     expect(mockAppendOwnEdit.mock.calls[0][1]).toEqual(
       expect.objectContaining({ before: [left, right, dropped], after: expected })
     )
-    expect(mockRememberPending).toHaveBeenCalledTimes(1)
+    expect(mockRemember).toHaveBeenCalledTimes(1)
   })
 
   it('drops under the FIRST block of a 1/2+1/2 row: lands after the whole row, not between the two halves', async () => {
@@ -128,7 +162,7 @@ describe('committing an own-line drop', () => {
     dragAndDrop('b-dropped', 'b-left', rect(0, 400, 0, 100), 200, 90)
 
     await waitFor(() =>
-      expect(result).toEqual([left, right, { ...dropped, width: 'full' }])
+      expect(result).toEqual([left, right, { ...dropped, width: 'full', rowStart: true }])
     )
   })
 
@@ -143,6 +177,42 @@ describe('committing an own-line drop', () => {
     // y=10 of a 100-tall rect is the top 25%: own-line above `a`.
     dragAndDrop('b-b', 'b-a', rect(0, 400, 0, 100), 200, 10)
 
-    await waitFor(() => expect(result).toEqual([{ ...b, width: 'full' }, a]))
+    await waitFor(() =>
+      expect(result).toEqual([{ ...b, width: 'full', rowStart: true }, a])
+    )
+  })
+
+  it('sets rowStart even when the dragged block already had a width of its own (KAN-440)', async () => {
+    const a: Block = { id: 'b-a', type: 'text', content: 'a' }
+    const quarter: Block = { id: 'b-quarter', type: 'text', content: 'quarter', width: '1/4' }
+    let result: Block[] | null = null
+    renderCanvas([a, quarter], (next) => {
+      result = next
+    })
+
+    // y=10 of a 100-tall rect is the top 25%: own-line above `a`.
+    dragAndDrop('b-quarter', 'b-a', rect(0, 400, 0, 100), 200, 10)
+
+    await waitFor(() =>
+      expect(result).toEqual([{ ...quarter, width: 'full', rowStart: true }, a])
+    )
+  })
+
+  it('dragging a row\'s rowStart holder away onto its own line hands rowStart to the row-mate left behind (KAN-440)', async () => {
+    const a: Block = { id: 'b-a', type: 'text', content: 'a', width: '1/2', rowStart: true }
+    const x: Block = { id: 'b-x', type: 'text', content: 'x', width: '1/2', rowStart: true }
+    const y: Block = { id: 'b-y', type: 'text', content: 'y', width: '1/2' }
+    const z: Block = { id: 'b-z', type: 'text', content: 'z' }
+    let result: Block[] | null = null
+    renderCanvas([a, x, y, z], (next) => {
+      result = next
+    })
+
+    // y=10 of a 100-tall rect is the top 25%: own-line above `z`.
+    dragAndDrop('b-x', 'b-z', rect(0, 400, 0, 100), 200, 10)
+
+    await waitFor(() =>
+      expect(result).toEqual([a, { ...y, rowStart: true }, { ...x, width: 'full', rowStart: true }, z])
+    )
   })
 })

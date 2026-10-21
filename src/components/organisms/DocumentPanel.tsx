@@ -18,9 +18,10 @@
  *
  * Manual block authoring (ticket-37, ticket-44): the user is an equal author to
  * the AI. The editor body — the `/` palette, Return after a block, reorder, and the
- * always-visible "+ Add a block" foot affordance — is the shared <BlockCanvas>,
- * so every page authors identically. This panel owns the title header and the
- * debounced save; BlockCanvas owns the blocks, page-link blocks included.
+ * hover-only trailing hit area that opens a new line (KAN-345) — is the shared
+ * <BlockCanvas>, so every page authors identically. This panel owns the title
+ * header and the debounced save; BlockCanvas owns the blocks, page-link blocks
+ * included.
  */
 
 import React, { useEffect, useRef, useState } from 'react'
@@ -58,8 +59,10 @@ import { usePublishCommandPath } from '@/lib/layout/command-path'
 import { commandPath } from '@/lib/pages/command-path'
 import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
 import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
+import { isVirtualNodeId, TRASH_NODE_ID } from '@/lib/change-log/trash-view'
 import { ChangeLogPage } from '@/components/organisms/ChangeLogPage'
 import { ChangeLogRecordPage } from '@/components/organisms/ChangeLogRecordPage'
+import { TrashPage } from '@/components/organisms/TrashPage'
 import { RECORD_PARAM, recordBreadcrumbTitle } from '@/lib/change-log/record-page'
 import { recordKey } from '@/lib/change-log/keys'
 import { getRecord } from '@/lib/change-log/store'
@@ -100,6 +103,9 @@ export function DocumentPanel() {
   // it takes none of the getPage/rows-driven path below — rendered by
   // `ChangeLogPage` instead, further down.
   const isChangeLogNode = nodeId === CHANGE_LOG_NODE_ID
+  // The reserved trash page (KAN-451): same shape as the change log — a
+  // virtual node with no `pages` row, rendered by `TrashPage` instead.
+  const isTrashNode = nodeId === TRASH_NODE_ID
   // A record route under the virtual change-log node (`?record=`, KAN-152):
   // read here (not inside `ChangeLogRecordPage`) because the breadcrumb below
   // needs the record's title before that component ever mounts.
@@ -209,7 +215,7 @@ export function DocumentPanel() {
   const { data: page, isLoading } = useQuery({
     queryKey: ['page', pageId],
     queryFn: () => (pageId ? getPage(getSupabase(), pageId) : Promise.resolve(null)),
-    enabled: !!pageId && !isChangeLogNode,
+    enabled: !!pageId && !isVirtualNodeId(pageId),
   })
 
   // KAN-122: a page made by `/ nested page` carries `new` (the chip on its
@@ -287,7 +293,8 @@ export function DocumentPanel() {
     onTitle,
     onProperty,
     commitLocalEdit,
-    adoptSavedBlocks,
+    undoRemove,
+    writeStructural,
   } = usePageDraft({ page, pageId, pondId, getSupabase })
 
   // KAN-415: child pages are ordinary page-link blocks on their parent now, not
@@ -452,11 +459,20 @@ export function DocumentPanel() {
             : 'change log',
           role: null,
         }
-      : commandPath(rows, nodeId, {
-          rootTitle: home?.title || pondName || 'life',
-          current: viewTitle || rows.find((r) => r.id === nodeId)?.title || 'Untitled',
-          pondGlyph: pond?.glyph ?? LIFE_GLYPH,
-        })
+      : isTrashNode
+        ? {
+            glyph: pond?.glyph ?? LIFE_GLYPH,
+            // Trash is its own top-level rail row (KAN-504), not a databases
+            // child — unlike change log above, its trail carries no databases crumb.
+            trail: [home?.title || pondName || 'life'],
+            current: 'trash',
+            role: null,
+          }
+        : commandPath(rows, nodeId, {
+            rootTitle: home?.title || pondName || 'life',
+            current: viewTitle || rows.find((r) => r.id === nodeId)?.title || 'Untitled',
+            pondGlyph: pond?.glyph ?? LIFE_GLYPH,
+          })
   )
 
   // The virtual change-log page: the breadcrumb above has already taken effect;
@@ -464,6 +480,13 @@ export function DocumentPanel() {
   // surface takes none of the `getPage`/rows path below.
   if (isChangeLogNode) {
     return recordId ? <ChangeLogRecordPage recordId={recordId} /> : <ChangeLogPage />
+  }
+
+  // The virtual trash page: same shape as the change log above — the
+  // breadcrumb has already taken effect, and `TrashPage` owns its own data
+  // fetching, so this surface takes none of the `getPage`/rows path below.
+  if (isTrashNode) {
+    return <TrashPage />
   }
 
   if ((!nodeId && homePending) || isLoading || rowsPending || !page) {
@@ -560,15 +583,16 @@ export function DocumentPanel() {
         </div>
 
         {/* The shared authoring surface (ticket-44): the `/` palette, Return after
-            a block, reorder, bound metrics, and the always-visible "+ Add a block"
-            foot affordance. Controlled — it emits the full next array and this
-            panel schedules the debounced whole-array save. */}
+            a block, reorder, bound metrics, and the hover-only trailing hit area
+            that opens a new line (KAN-345). Controlled — it emits the full next
+            array and this panel schedules the debounced whole-array save. */}
         <BlockCanvas
           blocks={viewBlocks}
           pageId={page.id}
           pageTitle={viewTitle}
           onChange={commitLocalEdit}
-          onBlocksPersisted={adoptSavedBlocks}
+          onStructuralWrite={writeStructural}
+          onUndoRemove={undoRemove}
           insertedIds={insertedIds}
           chrome={!zen}
           untouched={untouched}

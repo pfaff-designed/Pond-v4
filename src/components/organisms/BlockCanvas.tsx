@@ -8,8 +8,8 @@
  * It renders a `SiblingBlocksProvider`-wrapped list of blocks with the `/` palette
  * on an empty text block or an empty line inside one, Return on a focused block
  * opening a line after it, drag/⌥↑/⌥↓ reorder, per-block delete with undo — and,
- * at the foot, an always-visible "+ Add a block". The handle is the only block chrome: nothing is drawn between
- * blocks.
+ * below the last block, a hover-only hit area that opens a new line (KAN-345). The
+ * handle is the only block chrome: nothing is drawn between blocks at rest.
  *
  * Persistence is the CALLER's concern: BlockCanvas is controlled (it takes
  * `blocks` and emits the full next array via `onChange`), so DocumentPanel keeps
@@ -52,7 +52,7 @@ import { CHART_EMPTY_LINE } from '@/lib/modules/chart/card'
 import { addTodoItem } from '@/lib/modules/todo/view'
 import { addTableRow } from '@/lib/modules/table/view'
 import { addEntryFocused } from '@/lib/modules/entries/view'
-import { PondBlock } from '@/components/organisms/PondBlock'
+import { PondBlock, POND_BLOCK_SELECTED_RING } from '@/components/organisms/PondBlock'
 import {
   SlashMenu,
   type SlashRow,
@@ -71,27 +71,36 @@ import {
   type PondMenuPlacement,
   type PondMenuSize,
 } from '@/components/molecules/PondMenu'
-import { AddBlockButton } from '@/components/molecules/AddBlockButton'
 import { BlockWidthRow } from '@/components/molecules/BlockWidthRow'
+import { TrailingBlockGap } from '@/components/molecules/TrailingBlockGap'
+import { BlockGapLine } from '@/components/molecules/BlockGapLine'
 import {
   BLOCK_ROW_GAP_PX,
   blockWidthStyle,
   classifyDropZone,
+  detachKeepingRows,
+  isWithinPaddedZone,
   layoutRows,
   planBesideDrop,
   rowHolds,
   type DropZone,
+  type Rect,
 } from '@/lib/modules/layout-rows'
 import { SlashLineContext, type SlashLineAt } from '@/lib/modules/text/slash-line'
 import { useSlashLine } from '@/components/organisms/use-slash-line'
 import { focusTextBlock, hasTextBeforeCaret } from '@/lib/modules/text/focus'
-import { UNTOUCHED_HINT_CLASS } from '@/lib/modules/text/prose'
+import { HOVER_GHOST_CLASS, UNTOUCHED_HINT_CLASS } from '@/lib/modules/text/prose'
 import {
   landAtSlash,
   useSlashPick,
   type Landing,
   type SlashTarget,
 } from '@/components/organisms/use-slash-pick'
+import { sessionUndo, type UndoHandle } from '@/lib/change-log/session-undo'
+import { applyUndoOutcome } from '@/lib/change-log/undo-outcome'
+import { blockName } from '@/lib/change-log/summary'
+import { listRecords } from '@/lib/change-log/store'
+import { restorePage, trashPage } from '@/lib/change-log/trash'
 import {
   blockMenuGroups,
   runBlockMenuAction,
@@ -104,7 +113,7 @@ import { descriptorFor } from '@/lib/modules/registry'
 import { useBelowMd } from '@/lib/layout/use-below-md'
 import { pageEyebrowClass } from '@/components/atoms/kicker'
 import { formatThreadTime } from '@/lib/conversation/page-proposals'
-import { TEXT_BLOCK_INSET_PX } from '@/lib/layout/surface-column'
+import { TEXT_BLOCK_INSET_PX, TEXT_BLOCK_TOP_INSET_PX } from '@/lib/layout/surface-column'
 import { PREMADE_TEMPLATES } from '@/lib/templates/premade'
 import { instantiateTemplate, type InstantiatedTemplate } from '@/lib/templates/instantiate'
 import { getTemplate, listTemplates } from '@/lib/templates/client'
@@ -121,7 +130,6 @@ import {
   defineSchema,
   deletePage,
   getPage,
-  saveBlocks,
   saveProps,
   type PondPage,
 } from '@/lib/pages/client'
@@ -131,12 +139,6 @@ import { insertPageOptimistic } from '@/lib/pages/tree'
 import { pagesKey } from '@/lib/pages/keys'
 import { usePagesRows } from '@/lib/pages/use-pages'
 import { flushPendingPageSave } from '@/lib/pages/page-flush'
-import { appendOwnEdit, listRecords } from '@/lib/change-log/store'
-import { changeLogKey } from '@/lib/change-log/keys'
-import { sessionUndo, type UndoHandle } from '@/lib/change-log/session-undo'
-import { GRACE_WINDOW_MS } from '@/lib/deletion/deferred-commit'
-import { applyUndoOutcome } from '@/lib/change-log/undo-outcome'
-import { restorePage, trashPage } from '@/lib/change-log/trash'
 import { readSchema } from '@/lib/properties/schema'
 import type { ViewBlock } from '@/lib/modules/view/schema'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
@@ -148,30 +150,12 @@ import { PageLinkProvider } from '@/lib/modules/page-link/context'
 import { usePageLinkCapabilities } from '@/lib/modules/page-link/use-capabilities'
 import { stampNestedPage } from '@/lib/pages/nested-page'
 import { cn } from '@/lib/utils'
-import type { Block } from '@/lib/documents/types'
+import type { Block, TextBlock } from '@/lib/documents/types'
 import type { BlockWidth } from '@/lib/modules/content'
-import { blockName as changeLogBlockName } from '@/lib/change-log/summary'
 
 /** What a block is called to assistive tech: its heading, else its kind. */
 const blockName = (block: Block, frame: BlockFrame | null): string =>
   frame?.heading ?? descriptorFor(block.type)?.label ?? block.type
-
-/**
- * One `persistBlocksAsOwnEdit` write's settled outcome, chained through
- * `writeChainRef` (KAN-368) so concurrent structural writes serialize their
- * `saveBlocks` calls and a failure cancels every write still queued behind
- * it. `rollbackTo` set means "this write failed or was cancelled" — the
- * blocks it rolled (or will roll) local state back to, forwarded verbatim to
- * whatever write is chained after it so the cascade lands on one target: the
- * FIRST write in the run that actually failed, not each write's own, stale
- * `before`.
- */
-interface WriteOutcome {
-  recordIds: readonly string[] | null
-  rollbackTo: Block[] | null
-}
-
-const NEUTRAL_WRITE_OUTCOME: WriteOutcome = { recordIds: null, rollbackTo: null }
 
 const TURNED_INTO: Record<Exclude<ConversionTarget, 'table'>, string> = {
   list: 'Turned into a list',
@@ -193,9 +177,13 @@ type NewPage = InstantiatedTemplate & { props?: Record<string, unknown> }
  * `flexWrap` so a 100%-wide sizing div (a stacked block) takes its own line,
  * which IS the stack. No row-level element exists to carry a regrouping key, so
  * a block changing rows can never remount — structurally impossible, not merely
- * untested. A host's `listStyle` (zen's 22px) only overrides `rowGap`; `display`,
- * `flexWrap` and `flexDirection` are reasserted here so a host passing
- * `flexDirection:'column'` (zen's own shape) can't turn off wrapping.
+ * untested. `rowGap` stays 0 here: a flex line's cross size clamps at zero
+ * (CSS Flexbox §9.4 step 8), so the forced row-break line below would double
+ * it. The vertical gap is carried on the blocks themselves instead (each
+ * sizing div's own `marginTop`, below) — `rowGapValue` is still the one home
+ * for a host's override (zen's 22px). `display`, `flexWrap` and
+ * `flexDirection` are reasserted here so a host passing `flexDirection:'column'`
+ * (zen's own shape) can't turn off wrapping.
  */
 function canvasListStyle(listStyle: CSSProperties | undefined): CSSProperties {
   return {
@@ -205,8 +193,29 @@ function canvasListStyle(listStyle: CSSProperties | undefined): CSSProperties {
     flexDirection: 'row',
     alignItems: 'flex-start',
     columnGap: BLOCK_ROW_GAP_PX,
-    rowGap: listStyle?.rowGap ?? BLOCK_ROW_GAP_PX,
+    rowGap: 0,
+    // Rule 4's row-boundary line (KAN-345) is an absolutely positioned child
+    // of this list — out of the flex flow, so it adds no vertical spacing of
+    // its own — positioned against THIS box, not a further-out ancestor.
+    position: 'relative',
   }
+}
+
+/** The one home for the list's effective row gap — every sizing div that
+ * carries it (below) reads it from here, so a host's `rowGap` override stays
+ * in sync at every read site by construction. */
+function rowGapValue(listStyle: CSSProperties | undefined): NonNullable<CSSProperties['rowGap']> {
+  return listStyle?.rowGap ?? BLOCK_ROW_GAP_PX
+}
+
+/** Sets `rowStart` on a copy of `block`, omitting the key rather than writing
+ * `false` (KAN-440) — matches `rowStart`'s own "absent means today's packing"
+ * convention everywhere else it's set. */
+function withRowStart<T extends { rowStart?: boolean }>(block: T, rowStart: boolean | undefined): T {
+  if (rowStart === true) return { ...block, rowStart: true }
+  const next = { ...block }
+  delete (next as { rowStart?: boolean }).rowStart
+  return next
 }
 
 /**
@@ -314,6 +323,35 @@ function restoreHostFocus(blocks: Block[], hostIndex: number | null) {
   if (host.type === 'text') focusTextBlock(element, 'end')
 }
 
+/** Rule 2/3/4's one home (KAN-345): the empty text line a trailing/row-gap click
+ * focuses instead of inserting a second one (G9). */
+function isEmptyTextLine(block: Block | undefined): block is TextBlock {
+  return block?.type === 'text' && block.content.trim() === ''
+}
+
+/**
+ * Rule 3/4's shared G9 guard (KAN-345): a second click that would otherwise
+ * land on an already-empty text line focuses that line instead of minting a
+ * second one. `insert` only runs when `candidate` isn't an empty line to
+ * focus — an empty line never gets a second insert, even when its editor
+ * isn't mounted yet: `focusTextBlock` returning `false` there is a documented
+ * expected state (`focus.ts`, `immediatelyRender: false`), not a bug, so this
+ * retries once on the next frame and otherwise leaves it: a line that arrived
+ * with the page never autofocuses on mount by itself (rule 1), so a retry that
+ * still can't find a mounted editor simply gives up rather than claiming a
+ * guarantee that no longer holds.
+ */
+function focusEmptyLineOrInsert(candidate: Block | undefined, insert: () => void) {
+  if (!isEmptyTextLine(candidate)) {
+    insert()
+    return
+  }
+  if (focusTextBlock(document.getElementById(blockDomId(candidate.id)), 'end')) return
+  requestAnimationFrame(() => {
+    focusTextBlock(document.getElementById(blockDomId(candidate.id)), 'end')
+  })
+}
+
 export interface BlockCanvasProps {
   /** The blocks to render — controlled by the caller. */
   blocks: Block[]
@@ -328,14 +366,44 @@ export interface BlockCanvasProps {
   /** Emit the full next block array; the caller owns persistence (debounced save). */
   onChange: (next: Block[]) => void
   /**
-   * A write that already persisted directly (KAN-124's template apply: its own
-   * `saveBlocks` + `appendOwnEdit`, bypassing the debounced save). Call this
-   * BEFORE `onChange` so the caller's save baseline already matches what was
-   * just written — otherwise the save `onChange` triggers next fires with a
-   * stale `before` and double-logs the same change. Optional: a caller with no
-   * debounce to protect (the blank-page test harness) can leave it unset.
+   * The ONE structural entry point into the page's write queue (KAN-495): a
+   * direct write (⌘⌫, drag-drop, template apply, width change) calls this
+   * INSTEAD of `onChange` — the caller owns both the local state update and
+   * the queue enqueue, so no second (typed) write of the same blocks queues
+   * up behind it. Optional: a caller with no queue (Storybook, the blank-page
+   * test harness) falls back to plain `onChange`.
+   *
+   * `discardOnFailure` (template apply only, KAN-495): a failed write is
+   * dropped outright and local state repainted back to what's actually
+   * stored, instead of the default retry semantics (⌘⌫, drag-drop) where a
+   * halted op stays for the next write to auto-retry.
    */
-  onBlocksPersisted?: (next: Block[]) => void
+  onStructuralWrite?: (
+    next: Block[],
+    opts?: {
+      discardOnFailure?: boolean
+      onUndone?: () => Promise<void> | void
+      onRedone?: () => Promise<void> | void
+      onUndoHandle?: (handle: UndoHandle) => void
+    }
+  ) => Promise<boolean>
+  /**
+   * Undo a block removal (ticket-44 review). The caller re-inserts `block` at
+   * `index` against its LATEST blocks (read from a ref, not the `blocks` prop
+   * closed over at stage-time) and writes the result through its own
+   * structural write queue — NOT through `onChange`, which would re-base on
+   * the stale `blocks` snapshot captured when the toast was staged. This
+   * preserves DocumentPanel's original correctness: an edit between remove
+   * and Undo must not be clobbered by the re-insert. Required whenever
+   * removal is possible.
+   *
+   * `handedRowStartTo` (KAN-440): the id of the row-mate `detachKeepingRows`
+   * handed the removed block's `rowStart` to, if any — omit when there was no
+   * handoff. The undo must omit `rowStart` from that block, against the LATEST
+   * blocks in the same functional update, so a removal that moved the row's
+   * start doesn't leave it moved after the removal itself is undone.
+   */
+  onUndoRemove: (index: number, block: Block, handedRowStartTo?: string | null) => void
   /**
    * Block ids inserted this session, so a freshly-inserted block SETTLES in
    * (motion-settle-in) while blocks present on load do not (ticket-41). The Set is
@@ -346,12 +414,13 @@ export interface BlockCanvasProps {
   insertedIds?: Set<string>
   /** Move a block into a page of its own. Without it the block menu does not offer the move. */
   onMoveIntoNewPage?: (block: Block) => void
-  /** False hides the editing chrome — every block's handle and the foot add — mounted (zen: the page and nothing else). */
+  /** False hides the editing chrome — every block's handle and the trailing gap — mounted (zen: the page and nothing else). */
   chrome?: boolean
   /**
-   * The page is untouched (6f): no title, one empty text block. Hides the foot
-   * "+ Add a block" on top of the `chrome` check — the blank body draws no
-   * add-block affordance, only its one hint line.
+   * The page is untouched (6f): no title, one empty text block. Passed to
+   * block 0 only (`untouched && i === 0`) so its placeholder paints in the
+   * mono hint style (`UNTOUCHED_HINT_CLASS`); the trailing gap's own
+   * visibility is unaffected by this prop.
    */
   untouched?: boolean
   /**
@@ -384,7 +453,7 @@ export function BlockCanvas({
   pageId,
   pageTitle = '',
   onChange,
-  onBlocksPersisted,
+  onStructuralWrite,
   insertedIds,
   onMoveIntoNewPage,
   chrome = true,
@@ -393,29 +462,18 @@ export function BlockCanvas({
   listStyle,
   onPreviewNameChange,
 }: BlockCanvasProps) {
-  const { stageUndo, notify, dismiss } = useDeletionUndo()
+  const { stageUndo, notify } = useDeletionUndo()
   const getSupabase = useLazySupabase()
   const queryClient = useQueryClient()
   const pondId = usePondId()
   // The LATEST blocks, for the async paths below (the list→table write and its
   // undo). They run after awaits / from a toast, when the `blocks` their closure
   // captured may be stale — re-basing an edit on that snapshot would drop
-  // whatever the person typed in between.
+  // whatever the person typed in between (the hazard onUndoRemove documents).
   const blocksRef = useRef(blocks)
   useEffect(() => {
     blocksRef.current = blocks
   }, [blocks])
-  // Serializes `persistBlocksAsOwnEdit`'s actual writes (KAN-368): two quick
-  // structural edits (two fast ⌥↓) each apply locally at once, but their
-  // `saveBlocks` calls must run in order, not race each other, so a failure
-  // rolls back to the write that actually failed — never a later write's
-  // stale, never-saved `before`. Holds the LATEST write's outcome; a write
-  // that finds the chain already failed cancels itself (no `saveBlocks`
-  // call) and forwards the same `rollbackTo`, so the failure cascades to
-  // every write still queued behind it. Reset to the neutral sentinel once a
-  // write settles as the chain's own tail, so a failure doesn't poison
-  // writes made later, once the queue it actually raced has drained.
-  const writeChainRef = useRef<Promise<WriteOutcome>>(Promise.resolve(NEUTRAL_WRITE_OUTCOME))
   // G9: guards `applyTemplateInPlace` itself against a double ↵ — a ref, not
   // state, since the second pick can land mid-await, before a state update
   // guarding on a render would have committed.
@@ -425,6 +483,15 @@ export function BlockCanvas({
   // once is fine, only the same one twice (before `createPage` resolves) is
   // the double-submit.
   const makePageInFlightRef = useRef<Set<string>>(new Set())
+  // Rule 2's fix (KAN-345): ids `markInserted` has minted THIS session, so a
+  // fresh empty line autofocuses on mount while one that merely arrived with
+  // the page never does — BlockCanvas is the one place that knows which ids
+  // it inserted, so it keeps its own record rather than the (optional,
+  // parent-owned) `insertedIds` prop, which a host may not pass at all. State,
+  // not a ref: this file's own lint bans reading `.current` during render
+  // (react-hooks/refs), and `renderBlockEditor` reads this set every render
+  // to compute each block's `autofocus` prop.
+  const [autofocusIds, setAutofocusIds] = useState<Set<string>>(() => new Set())
   // F27: link capabilities for card→page links, parented at THIS page. Provided to
   // every module view below via context — modules that don't link (all but kanban
   // today) simply never read it.
@@ -462,6 +529,42 @@ export function BlockCanvas({
   }, [openTemplatesFor, pageId, openSlashMenuAt])
   // Which block index is mid-drag (null = no drag).
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null)
+  // Rule 3's fix (KAN-345): the pointer is over the trailing gap. Only read
+  // when the last block is already an empty text line (`trailingLineIsEmptyText`
+  // below) — that's the one case where the ghost text must paint on the real
+  // line's own position instead of a second row drawn below it. `TrailingBlockGap`
+  // clears this on `onMouseLeave`, which never fires if the gap unmounts or
+  // hides while the pointer is over it — `trailingGapVisible` below gates the
+  // paint and resets this flag for that case.
+  const [trailingGapHovered, setTrailingGapHovered] = useState(false)
+  // Every block's rect, by id, as of the last snapshot (KAN-440): `onDragOver`
+  // classifies the hovered block's zone against THIS, never the live
+  // `getBoundingClientRect()` — the live rect moves under the pointer as soon
+  // as a beside preview resizes the row, which is the flicker this ticket
+  // fixes. Snapshotted fresh on dragstart, and on scroll while a drag is live
+  // (the listener below removes itself the moment it isn't).
+  const dragRectsRef = useRef<Map<string, Rect>>(new Map())
+  function snapshotDragRects() {
+    const next = new Map<string, Rect>()
+    for (const block of blocks) {
+      const rect = document.getElementById(blockDomId(block.id))?.getBoundingClientRect()
+      if (rect) next.set(block.id, rect)
+    }
+    dragRectsRef.current = next
+  }
+  // The zone currently shown for a live drag (KAN-440 hysteresis): held while the
+  // pointer stays within that zone's own padded sub-rect of the snapshot (above),
+  // so a preview-induced shift or a few px of jitter never reclassifies it. `null`
+  // whenever no zone is shown (drag not started, or hovering the dragged block's
+  // own origin). Reset alongside `dragRectsRef`'s re-snapshots, since a fresh
+  // snapshot means the next dragover starts from nothing sticky.
+  const stickyZoneRef = useRef<{ index: number; zone: DropZone } | null>(null)
+  useEffect(() => {
+    if (draggingIndex === null) return
+    window.addEventListener('scroll', snapshotDragRects, true)
+    return () => window.removeEventListener('scroll', snapshotDragRects, true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `snapshotDragRects` reads `blocks` fresh on every call; it doesn't need to be a dep for the listener to stay current.
+  }, [draggingIndex])
   // The drop line hovered during a drag: which block it's over, which edge
   // (classifyDropZone), and — for an own-line (above/below) drop only — the
   // span to stretch it across the FULL content column rather than just this
@@ -523,7 +626,7 @@ export function BlockCanvas({
   // `enabled` needs it: a non-blank `/` has no sibling ranking to look up, so
   // it must not fetch `pageRows` at all.
   const isBlankBesides = (index: number) =>
-    blocks.every((b, bi) => bi === index || (b.type === 'text' && b.content.trim() === ''))
+    blocks.every((b, bi) => bi === index || isEmptyTextLine(b))
   const blankMenuOpen = slashMenuOpenAt !== null && isBlankBesides(slashMenuOpenAt)
   // The shared ['pages'] cache: the source picker's databases root AND (KAN-138)
   // the blank list's parent/sibling lookup, so it's read while either is open —
@@ -669,6 +772,11 @@ export function BlockCanvas({
     if (previewing) {
       setPreviewing(null)
     }
+    // Rule 2's autofocus fact (KAN-345): `autofocusIds` otherwise outlives the
+    // page it was minted on — `BlockCanvas` isn't keyed by page (see above), so
+    // navigating away and back would re-autofocus (and re-show the hint on) a
+    // line this session inserted on a DIFFERENT page.
+    if (autofocusIds.size > 0) setAutofocusIds(new Set())
   }
 
   // The token itself is a ref (read inside an already-in-flight async
@@ -682,9 +790,14 @@ export function BlockCanvas({
   }, [pageId])
 
   // Mark a freshly-inserted block on the PARENT-owned insertedIds Set (see the
-  // prop doc): BlockCanvas doesn't own it, it just records into it.
+  // prop doc): BlockCanvas doesn't own it, it just records into it. Also marks
+  // `autofocusIds`, BlockCanvas's own record, for rule 2's autofocus fact —
+  // every insert path (trailing gap, between-row gap, `/` picks, Return)
+  // already calls this one function, so it stays the one place a session
+  // insert is recorded.
   function markInserted(id: string) {
     insertedIds?.add(id)
+    setAutofocusIds((prev) => (prev.has(id) ? prev : new Set(prev).add(id)))
   }
 
   /**
@@ -743,18 +856,28 @@ export function BlockCanvas({
     })
   }
 
-  // The width row's keep (6x): one ⌘Z step (KAN-368), same write path as
-  // drag-drop/move — picking a width hands focus back to the handle (not an
-  // editor), so the shell's own ⌘Z already reaches `sessionUndo` without a
-  // toast of its own. Reads and advances `blocksRef.current`, not the
-  // `blocks` closure (KAN-368): a structural action fired before an earlier
-  // one's round trip returns must act on the array that one already
-  // produced, not recompute against stale, pre-write blocks.
-  const setBlockWidth = (id: string, width: BlockWidth) => {
-    const current = blocksRef.current
-    const next = current.map((b) => (b.id === id ? ({ ...b, width } as Block) : b))
-    blocksRef.current = next
-    void persistBlocksAsOwnEdit(current, next)
+  /**
+   * The width row's keep (6x): the same in-place-swap-by-id route as
+   * `convertBlock`, so the undo toast restores the block's previous width
+   * (absent means `full`). Pond binds no ⌘Z anywhere — inside a focused text
+   * block that key reaches the editor instead — so the toast is the undo the
+   * board's "click to keep, with undo" has here.
+   */
+  const setBlockWidth = (before: Block, width: BlockWidth) => {
+    const after = { ...before, width } as Block
+    const next = blocks.map((b) => (b.id === before.id ? after : b))
+    // On the page's queue this is its own ⌘Z step (KAN-368). A host with no
+    // queue (the block menu's canvas harness) keeps the board's toast.
+    if (onStructuralWrite) {
+      commitStructuralBlocks(next)
+      return
+    }
+    onChange(next)
+    stageUndo({
+      message: 'Set the block width',
+      scope: 'block',
+      undo: () => onChange(blocksRef.current.map((b) => (b.id === before.id ? before : b))),
+    })
   }
 
   /** The page's own URL, anchored at the block — arriving there lands on it. */
@@ -791,8 +914,8 @@ export function BlockCanvas({
       },
       'move-into-new-page': () => onMoveIntoNewPage?.(block),
       'copy-link': () => void copyBlockLink(block.id),
-      delete: () => removeBlockAt(block.id),
-      'set-width': ({ width }) => setBlockWidth(block.id, width),
+      delete: () => removeBlockAt(index),
+      'set-width': ({ width }) => setBlockWidth(block, width),
     })
   }
 
@@ -800,84 +923,74 @@ export function BlockCanvas({
     onChange(blocks.map((b, i) => (i === index ? next : b)))
   }
 
-  // One ⌘Z step (KAN-368), same write path as drag-drop/move — the write lands
-  // at once, so there's nothing left to defer. The toast's own "undo" is the
-  // mouse path onto that same step: it runs `sessionUndo.undo`, the exact call
-  // the shell's ⌘Z makes, so a mouse user isn't left with inert "· undo" copy.
-  // Reads and advances `blocksRef.current`, not the `blocks` closure
-  // (KAN-368): a second structural action fired before an earlier one's round
-  // trip returns must act on the array that one already produced (and find
-  // its block by id, since an earlier removal has already shifted indices),
-  // not recompute against stale, pre-write blocks.
-  //
-  // The toast outlives this delete's own step — a later ⌥↓/⌘⌫/⌘Z can leave it
-  // sitting beneath the top of the undo stack, or move it to redo, and a
-  // failed/cancelled write never reaches the stack at all. `undoHandle`
-  // (KAN-368) checks `handle` at the moment the queue actually runs the
-  // click, not when it was clicked — a check made any earlier (e.g.
-  // `isTopUndo` here) can go stale behind queued ⌘Z's. The toast itself is
-  // also dismissed in both cases, rather than left showing a dead control.
-  function removeBlockAt(id: string) {
-    const current = blocksRef.current
-    const index = current.findIndex((b) => b.id === id)
-    const removed = current[index]
-    if (!removed) return
-    const next = current.filter((_, i) => i !== index)
+  // Deleting, moving, or inserting is its own undo step the instant it
+  // happens (KAN-368), on the page's write queue (KAN-495). `rowStart` is
+  // already decided by the caller — this only chooses the write path. A host
+  // with no queue (Storybook) falls back to the debounced save.
+  function commitStructuralBlocks(
+    next: Block[],
+    opts?: {
+      onUndone?: () => Promise<void> | void
+      onRedone?: () => Promise<void> | void
+      onUndoHandle?: (handle: UndoHandle) => void
+    }
+  ) {
     blocksRef.current = next
+    if (onStructuralWrite) {
+      void onStructuralWrite(next, opts)
+      return
+    }
+    onChange(next)
+  }
+
+  function removeBlockAt(index: number) {
+    const removed = blocks[index]
+    if (!removed) return
+    const { blocks: after } = detachKeepingRows(blocks, index)
+    // The ONE structural entry point (KAN-495): `onStructuralWrite` updates
+    // the caller's local state AND enqueues this delete as its own structural
+    // op, so no second (typed) write of `after` ever queues up behind it.
+    // The toast's undo is that same step (KAN-368): `undoHandle` refuses to
+    // act once a later ⌘Z has moved it off the top.
     let handle: UndoHandle | undefined
-    const written = persistBlocksAsOwnEdit(current, next, { onPending: (h) => (handle = h) })
-    focusBlockNeighbour(current, index)
-    const toastId = stageUndo({
-      message: `deleted ${changeLogBlockName(removed)} ·`,
+    commitStructuralBlocks(after, {
+      onUndoHandle: (next) => {
+        handle = next
+      },
+    })
+    focusBlockNeighbour(blocks, index)
+    stageUndo({
+      message: `deleted ${blockName(removed)} ·`,
       undoLabel: 'undo',
       scope: 'block',
       undo: () => {
         if (!pondId || !handle) return
-        return sessionUndo.undoHandle(pondId, handle).then((result) => applyUndoOutcome('undo', result, queryClient))
+        return sessionUndo
+          .undoHandle(pondId, handle)
+          .then((result) => applyUndoOutcome('undo', result, queryClient))
       },
     })
-    // A FAILED or cancelled write drops its step without ever reaching the
-    // undo stack — nothing left for the toast's own undo to act on.
-    void written.then((ok) => {
-      if (!ok) dismiss(toastId)
-    })
-    // A later structural action can sink this step beneath the stack's top —
-    // once that happens the toast's own undo can no longer reach it. Bounded
-    // by the toast's own lifetime: nothing left to watch once it's gone.
-    if (pondId) {
-      const stopWatching = sessionUndo.subscribe(() => {
-        if (!handle || sessionUndo.isTopUndo(pondId, handle)) return
-        stopWatching()
-        dismiss(toastId)
-      })
-      setTimeout(stopWatching, GRACE_WINDOW_MS)
-    }
   }
 
   /**
    * Backspace in an empty text block takes the line away and leaves focus on the
    * block before it, at the end of its text — or on the block after it when it
    * was the first. An unlabelled empty line holds nothing to undo, so removing it
-   * is not a deletion; the page's only block stays. Reads and advances
-   * `blocksRef.current`, not the `blocks` closure (KAN-368), same reason as
-   * `removeBlockAt` above.
+   * is not a deletion; the page's only block stays.
    */
-  function removeEmptyLineAt(id: string) {
-    const current = blocksRef.current
-    const index = current.findIndex((b) => b.id === id)
-    const line = current[index]
-    const neighbour = current[index - 1] ?? current[index + 1]
+  function removeEmptyLineAt(index: number) {
+    const line = blocks[index]
+    const neighbour = blocks[index - 1] ?? blocks[index + 1]
     if (!line || !neighbour) return
     if (line.type === 'text' && !line.label) {
-      // One ⌘Z step (KAN-368), same write path as drag-drop/move — there's
-      // nothing to name in a toast, but it must still be remembered the
-      // instant the keystroke happens, not once the round trip returns.
-      const next = current.filter((_, i) => i !== index)
-      blocksRef.current = next
-      void persistBlocksAsOwnEdit(current, next)
-      focusBlockNeighbour(current, index)
+      // Via `detachKeepingRows` (KAN-440): an empty line can carry `rowStart`
+      // the same as any other block, so taking it out must hand that off to
+      // its row-mate the same way a real delete does, or the row-mate silently
+      // re-packs beside whatever came before.
+      commitStructuralBlocks(detachKeepingRows(blocks, index).blocks)
+      focusBlockNeighbour(blocks, index)
     } else {
-      removeBlockAt(id)
+      removeBlockAt(index)
     }
   }
 
@@ -885,21 +998,13 @@ export function BlockCanvas({
   // opens with the caret in it, ready for `/`. An optional `patch` replaces the
   // block at `index` in the SAME call (KAN-344's checklist: the empty item that
   // triggered this must be gone in the array this inserts into, not left for a
-  // second write that would rebuild from the pre-patch `blocks` and drop it).
-  // One ⌘Z step (KAN-368), same write path as drag-drop/move. Reads and
-  // advances `blocksRef.current`, not the `blocks` closure, same reason as
-  // `removeBlockAt`/`removeEmptyLineAt` above.
-  function insertLineAfter(id: string, patch?: Block) {
-    const current = blocksRef.current
-    const index = current.findIndex((b) => b.id === id)
-    if (index === -1) return
+  // second `onChange` that would rebuild from the pre-patch `blocks` and drop it).
+  function insertLineAfter(index: number, patch?: Block) {
     const nb = emptyBlockForType('text')
     if (!nb) return
     markInserted(nb.id)
-    const base = patch ? current.map((b, i) => (i === index ? patch : b)) : current
-    const next = [...base.slice(0, index + 1), nb, ...base.slice(index + 1)]
-    blocksRef.current = next
-    void persistBlocksAsOwnEdit(current, next)
+    const base = patch ? blocks.map((b, i) => (i === index ? patch : b)) : blocks
+    commitStructuralBlocks([...base.slice(0, index + 1), nb, ...base.slice(index + 1)])
   }
 
   /**
@@ -960,11 +1065,10 @@ export function BlockCanvas({
   )
 
   /**
-   * Where the picked view block lands, read against the blocks as they are now:
-   * making a database is an await, and the page can change under it. A `/…`
-   * block that went away while the glass was open gets the view appended rather
-   * than dropped. Writing `landing.next` is the caller's job, through
-   * `persistBlocksAsOwnEdit` (KAN-368) — one ⌘Z step, not a manual `onChange`.
+   * Put the picked view block where the `/` was, read against the blocks as they
+   * are now: making a database is an await, and the page can change under it. A
+   * `/…` block that went away while the glass was open gets the view appended
+   * rather than dropped. Returns what the undo needs to put the `/` back.
    */
   function placeView(view: ViewBlock, target: SlashTarget): Landing {
     const current = blocksRef.current
@@ -979,11 +1083,8 @@ export function BlockCanvas({
    * the caller's ordinary save — no proposal card; only Pond's changes arrive as
    * diffs (the same reading as `turnIntoTable`, #101). An existing database is a
    * linked view of it. A new one is written through `createDatabase` (filed under
-   * the databases root, named after this page). Both branches write through
-   * `persistBlocksAsOwnEdit` (KAN-368) — one ⌘Z step, same path as drag-drop. The
-   * new-database branch's step also carries `onUndone`/`onRedone` side effects
-   * that trash/restore the database it made, since undoing the view insert must
-   * take the database back too (an existing database is left alone either way).
+   * the databases root, named after this page), with an undo that puts the `/…`
+   * block back and removes the database it made.
    */
   async function onSourcePick(pick: SourcePick) {
     const open = sourcePicker
@@ -1011,9 +1112,8 @@ export function BlockCanvas({
         collectionId: pick.database.id,
         ...(chart ? { chart } : {}),
       }
-      const before = blocksRef.current
       const landing = placeView(view, open.target)
-      void persistBlocksAsOwnEdit(before, landing.next)
+      void persistBlocksAsOwnEdit(landing.next)
       return
     }
     try {
@@ -1038,11 +1138,10 @@ export function BlockCanvas({
         },
         () => crypto.randomUUID()
       )
-      const before = blocksRef.current
       const landing = placeView(made.view, open.target)
       queryClient.invalidateQueries({ queryKey: pagesKey() })
       queryClient.invalidateQueries({ queryKey: ['record-counts', pondId] })
-      void persistBlocksAsOwnEdit(before, landing.next, {
+      void persistBlocksAsOwnEdit(landing.next, {
         onUndone: async () => {
           try {
             await trashPage(getSupabase(), made.databaseId)
@@ -1057,7 +1156,7 @@ export function BlockCanvas({
             const {
               data: { user },
             } = await supabase.auth.getUser()
-            if (!user) return
+            if (!user || !pondId) return
             const [deleted] = await listRecords(supabase, {
               userId: user.id,
               pondId,
@@ -1193,210 +1292,46 @@ export function BlockCanvas({
   // 6f: a blank page's own templates pick lands IN PLACE — this page's blocks
   // become the instantiated stack, no nested page, no navigate.
   //
-  // Apply is one undo step (KAN-93): the blocks write is logged directly as a
-  // single own-edit record and remembered with `sessionUndo`, the same way
-  // Rail's glyph/colour picks are — NOT the ordinary debounced save, which
-  // would log its own second record for the same change. The `['page', id]`
-  // cache carries the new blocks first, so `use-page-draft.ts`'s same-page
-  // "adopt" branch folds them into the open draft's own baseline (while it is
-  // still `saved`, before `onChange` below schedules anything) — by the time
-  // that debounced save fires, its before/after are both these blocks, so it
-  // logs nothing.
-  const applyTemplateInPlace = async (pick: TemplatePick, target: SlashTarget) => {
+  // Apply is one undo step (KAN-93): the blocks write goes through
+  // `onStructuralWrite` (the page's one write queue, KAN-495), so it lands as
+  // a single structural op — NOT the ordinary debounced save, which would
+  // enqueue its own second op for the same change.
+  const applyTemplateInPlace = async (pick: TemplatePick) => {
     // G9: a second ↵ before this one finishes must not re-run the write — guard
     // the function itself (not menu-close timing, which races the same awaits).
     if (applyInFlightRef.current) return
     applyInFlightRef.current = true
     try {
-      await applyTemplateInPlaceUnguarded(pick, target)
+      await applyTemplateInPlaceUnguarded(pick)
     } finally {
       applyInFlightRef.current = false
     }
   }
 
   /**
-   * Writes `after` directly — bypassing the debounced save — and logs it as
-   * one own-edit record, remembered with `sessionUndo`, so the write is ONE
-   * ⌘Z-undoable change (KAN-93's template-apply pattern, shared here with
-   * drag-drop's commits, KAN-247, so neither grows a second write path).
-   *
-   * `blocksRef.current`, the `['page', pageId]` cache and the caller
-   * (`onBlocksPersisted` then `onChange`, in that order — `onBlocksPersisted`
-   * must land first so the caller's own debounced save sees `after` as its
-   * baseline and never reschedules it, see its own comment) all move to
-   * `after` at once, before any `await` — not once the round trip lands.
-   * Without this, a block inserted or removed stays on screen (or absent)
-   * until the write resolves, and whatever the person typed into it in that
-   * window is stale `after`, computed before they touched it (KAN-368).
-   * `flushPendingPageSave` is still called first, but only invoked here, not
-   * yet awaited: invoking it runs its own synchronous bookkeeping (advancing
-   * its `lastSaved` ref for whatever typing edit was already pending) before
-   * the `onBlocksPersisted` call below overwrites that same ref for our own
-   * write, so the two writes' bookkeeping can't race each other. Its actual
-   * network round trip is awaited further down, still ahead of `saveBlocks`,
-   * so a flushed save can't land after ours and clobber it.
-   *
-   * Rolls `blocksRef.current`, the cache and the caller back to `before` only
-   * if `saveBlocks` itself fails, and only then returns `false`; a failed
-   * `appendOwnEdit` does not roll back — the write already landed, only its
-   * own-edit log didn't, same as `applyTemplateInPlaceUnguarded` always
-   * treated it.
-   *
-   * `sessionUndo.rememberPending` runs the instant the write starts — before
-   * `flushPendingPageSave`'s own round trip resolves, not just before
-   * `saveBlocks` does — so a ⌘Z pressed mid-flight still waits for and undoes
-   * THIS write, rather than reaching for whatever step is still on top of the
-   * stack underneath it (KAN-368). This is also why `flushPendingPageSave` is
-   * called first, synchronously, before this function registers its own
-   * step: a flushed typing edit still pending has its own slot reserved, by
-   * `use-page-draft.ts`'s `startSave`, the instant ITS write starts — so its
-   * step always lands BENEATH this one, never racing it for the same slot. A
-   * write that lands nothing (a failed save, no user, a failed own-edit log)
-   * resolves the pending promise to `null`, which `sessionUndo` drops without
-   * remembering.
-   *
-   * `sideEffects` rides onto the step unchanged (view-insert's new-database
-   * branch, KAN-368): `onUndone`/`onRedone` run once the ⌘Z/⇧⌘Z RPC itself
-   * lands `done`, for a write that did more than log change-log records.
-   *
-   * `onPending`, if given, fires synchronously with this write's `UndoHandle`
-   * the instant `rememberPending` runs — before any `await` in this function,
-   * so a caller that fires this with `void` (every call site does) already
-   * has the handle by the time its own next line runs. A toast-button undo
-   * (`removeBlockAt`, KAN-368) uses it to check `isTopUndo` before acting,
-   * so clicking a toast that has sunk beneath a later ⌘Z step doesn't undo
-   * that later step instead of its own.
-   *
-   * The actual `saveBlocks` call (not the local-apply-at-once above) runs
-   * through `writeChainRef`, one write after another: a write that starts
-   * while an earlier one is still in flight waits for it to settle first,
-   * so two concurrent writes' network calls can never race each other or
-   * land out of order. If a write in the chain fails, every write still
-   * queued behind it is cancelled outright — no `saveBlocks` call, its
-   * `recordIds` resolves `null` so `sessionUndo` drops its step — and local
-   * state (`blocksRef`, the `['page', pageId]` cache, `onChange`) rolls back
-   * to the FAILED write's own `before`, forwarded through the cancelled
-   * writes rather than each falling back to its own, never-saved `before`.
+   * Writes `after` directly — bypassing the debounced save — through the
+   * caller's ONE structural entry point (KAN-93's template-apply pattern,
+   * shared here with drag-drop's commits, KAN-247, so neither grows a second
+   * write path). `onStructuralWrite`'s queue reads its own `before` from
+   * `head()` at apply time. A host with no queue (Storybook) falls back to
+   * plain `onChange`.
    */
   const persistBlocksAsOwnEdit = async (
-    before: Block[],
     after: Block[],
-    sideEffects?: {
+    opts?: {
+      discardOnFailure?: boolean
       onUndone?: () => Promise<void> | void
       onRedone?: () => Promise<void> | void
-      onPending?: (handle: UndoHandle) => void
+      onUndoHandle?: (handle: UndoHandle) => void
     }
   ): Promise<boolean> => {
-    const flushed = flushPendingPageSave(pageId)
-    const supabase = getSupabase()
     blocksRef.current = after
-    queryClient.setQueryData<PondPage | null>(['page', pageId], (prev) =>
-      prev ? { ...prev, blocks: after } : prev
-    )
-    onBlocksPersisted?.(after)
+    if (onStructuralWrite) return onStructuralWrite(after, opts)
     onChange(after)
-
-    const applyRollback = (rollbackTo: Block[]) => {
-      blocksRef.current = rollbackTo
-      queryClient.setQueryData<PondPage | null>(['page', pageId], (prev) =>
-        prev ? { ...prev, blocks: rollbackTo } : prev
-      )
-      onBlocksPersisted?.(rollbackTo)
-      onChange(rollbackTo)
-    }
-
-    const priorWrite = writeChainRef.current
-    const outcome: Promise<WriteOutcome> = priorWrite.then(async (prior) => {
-      // Everything below is wrapped so nothing thrown here can leave `outcome`
-      // (and so `writeChainRef`) permanently rejected — a rejected link in the
-      // chain never settles the `.finally` reset below it, so every later
-      // structural write would see a rejected `priorWrite` and cancel forever.
-      try {
-        if (prior.rollbackTo) {
-          // A write already queued ahead of us failed — cancel: no `saveBlocks`
-          // call, and forward its rollback target rather than our own `before`,
-          // so every write in the run lands on the ONE write that actually failed.
-          applyRollback(prior.rollbackTo)
-          return { recordIds: null, rollbackTo: prior.rollbackTo }
-        }
-
-        if (flushed) {
-          await flushed
-          // The flushed save's own `runSave` sets `serverSig`/`lastSaved`, the
-          // `['page', pageId]` cache, and `blocks` state to ITS stale `nextBlocks`
-          // only after its await above resolves — after our own cache write,
-          // `onBlocksPersisted` and `onChange` calls already ran. Re-apply all
-          // three now that the flush has fully landed, so its later bookkeeping
-          // can't leave `after` (the actually-latest write) looking stale to the
-          // next page refetch, or get adopted back over the rendered blocks.
-          // Only when there WAS a flush to wait for — otherwise `onChange`
-          // fires twice for the same `after` on every structural edit.
-          queryClient.setQueryData<PondPage | null>(['page', pageId], (prev) =>
-            prev ? { ...prev, blocks: after } : prev
-          )
-          onBlocksPersisted?.(after)
-          onChange(after)
-        }
-
-        try {
-          await saveBlocks(supabase, pageId, after)
-        } catch (err) {
-          console.error('Failed to save the blocks', pageId, err)
-          applyRollback(before)
-          return { recordIds: null, rollbackTo: before }
-        }
-        try {
-          const {
-            data: { user },
-          } = await supabase.auth.getUser()
-          if (!user) return { recordIds: null, rollbackTo: null }
-          const record = await appendOwnEdit(supabase, {
-            userId: user.id,
-            pondId,
-            action: 'edit',
-            targetPageId: pageId,
-            before,
-            after,
-          })
-          await queryClient.invalidateQueries({ queryKey: changeLogKey() })
-          return { recordIds: [record.id], rollbackTo: null }
-        } catch (err) {
-          console.error('[change-log] edit not logged', pageId, err)
-          return { recordIds: null, rollbackTo: null }
-        }
-      } catch (err) {
-        // The save itself already landed by the time anything out here could
-        // throw (getUser, the cache re-apply, the flush await) — same as a
-        // failed own-edit log, there is nothing to roll back to.
-        console.error('Unexpected error in a structural write', pageId, err)
-        return { recordIds: null, rollbackTo: null }
-      }
-    })
-    writeChainRef.current = outcome
-    // Once this write settles, if nothing has queued behind it since, reset
-    // the chain to neutral — a failure must cancel the writes racing it, not
-    // poison writes made later, after the queue it actually raced has drained.
-    // `finally` (not `then`) so the reset still runs if `outcome` ever rejects.
-    void outcome.finally(() => {
-      if (writeChainRef.current === outcome) writeChainRef.current = Promise.resolve(NEUTRAL_WRITE_OUTCOME)
-    })
-
-    const recordIds = outcome.then((result) => result.recordIds)
-    if (pondId) {
-      const handle = sessionUndo.rememberPending({
-        pondId,
-        recordIds,
-        onUndone: sideEffects?.onUndone,
-        onRedone: sideEffects?.onRedone,
-      })
-      sideEffects?.onPending?.(handle)
-    }
-
-    const result = await outcome
-    return result.rollbackTo === null
+    return true
   }
 
-  const applyTemplateInPlaceUnguarded = async (pick: TemplatePick, target: SlashTarget) => {
+  const applyTemplateInPlaceUnguarded = async (pick: TemplatePick) => {
     previewTokenRef.current++
     const applyPick = await applyPickFor(pick)
     // Clear whether this resolves (a normal apply) or not (AUDIT G2: the
@@ -1406,35 +1341,22 @@ export function BlockCanvas({
     onPreviewNameChange?.(null)
     if (!applyPick) return
     const applied = applyTemplate(applyPick)
-    // `before` is the page as it read before the `/` was typed — not
-    // `blocksRef.current`, which still holds it. `landAtSlash(…, null)` isn't
-    // this: it strips the host outright, modeling content moving to a new page
-    // (`makePage`'s use), not reverting one still in place. The host stays here,
-    // just without its slash line — or, if it was edited since the pick began,
-    // `blocksRef.current` as it is now.
-    const host = blocksRef.current.find((b) => b.id === target.hostId)
-    const before =
-      host?.type === 'text' && host.content === target.content
-        ? blocksRef.current.map((b) =>
-            b.id !== target.hostId
-              ? b
-              : {
-                  ...b,
-                  content: target.line
-                    ? [target.line.before, target.line.after]
-                        .filter((s) => s.trim() !== '')
-                        .join('\n\n')
-                    : '',
-                }
-          )
-        : blocksRef.current
     // A fast `/` + pick can still have the slash keystroke's own debounced save
     // pending in `use-page-draft.ts` — `persistBlocksAsOwnEdit` flushes it
     // before writing, so the slash save can't land after us with a stale
     // baseline and double-log this same apply. Shared with drag-drop's
     // commits (KAN-247), so this is the only direct-write path.
     const supabase = getSupabase()
-    if (!(await persistBlocksAsOwnEdit(before, applied.blocks))) return
+    // Rule 2's autofocus fact (KAN-345): these blocks are session inserts too —
+    // without this, none of the applied template's unwritten lines would ever
+    // take the caret, since `markInserted` is the only thing that puts an id in
+    // `autofocusIds`. Marked BEFORE the write below, not after: the structural
+    // write sets these blocks locally ahead of its queued save, so marking them
+    // after would let the real editors mount — and read `autofocus` once, at
+    // mount — before this ever ran. A failed write discards the blocks, so
+    // stale ids left in the set are harmless.
+    for (const block of applied.blocks) markInserted(block.id)
+    if (!(await persistBlocksAsOwnEdit(applied.blocks, { discardOnFailure: true }))) return
     // KAN-138: applying a `yours` template retires its "just saved" lead — but
     // only once the blocks write above actually landed; a failed apply keeps
     // the lead so the person's retry still sees it first.
@@ -1459,7 +1381,7 @@ export function BlockCanvas({
     } catch (err) {
       console.error('Failed to write the template props', err)
     }
-    // `onBlocksPersisted`/`onChange` already ran inside `persistBlocksAsOwnEdit`,
+    // `onStructuralWrite`/`onChange` already ran inside `persistBlocksAsOwnEdit`,
     // ahead of the schema/props writes above — this apply's own blocks are
     // already the caller's baseline by the time those (independent) writes land.
     focusPageTitle()
@@ -1469,7 +1391,7 @@ export function BlockCanvas({
     // A `/` line has text around it, so the page is not blank — same guard
     // the menu's own `leadWithTemplates` uses (`slash.line ? false : blank`).
     if (isBlankBesides(index) && !target.line) {
-      await applyTemplateInPlace(pick, target)
+      await applyTemplateInPlace(pick)
       return
     }
     const made = await makePage(await newPageFromPick(pick), 'child', target)
@@ -1478,8 +1400,10 @@ export function BlockCanvas({
     if (made && pick.origin === 'yours' && pondId) justSaved.clear(pondId, pick.id)
   }
 
-  // The foot add (UI-audit Slice 2a): drop an empty text block at the end, ready
-  // to type. Typing `/` in it summons the palette to swap to another block type.
+  // The trailing gap's add (UI-audit Slice 2a): drop an empty text block at
+  // the end, ready to type. The new block's own editor auto-focuses on mount
+  // (its content is "unwritten", `editor.tsx`'s `autofocus` rule) — nothing
+  // here focuses it.
   function addTextBlock() {
     const nb = emptyBlockForType('text')
     if (!nb) return
@@ -1487,23 +1411,32 @@ export function BlockCanvas({
     onChange([...blocks, nb])
   }
 
-  // ⌥↑/⌥↓ is its own ⌘Z step, written at once like drag-drop (KAN-368) — not the
-  // debounced `onChange`. Reads and advances `blocksRef.current`, not the
-  // `blocks` closure: two quick presses, fired before the first write's round
-  // trip returns, must move the SAME block by its id against the move the first
-  // press already queued, not recompute the same swap on stale blocks (which
-  // would silently drop the second press). `persistBlocksAsOwnEdit` is not
-  // awaited here — the keydown handler itself stays synchronous, same as every
-  // other chord in `handleKeyDown`.
-  function moveBlockAt(id: string, dir: 'up' | 'down') {
-    const current = blocksRef.current
-    const index = current.findIndex((b) => b.id === id)
+  // Rule 3's trailing gap (KAN-345): `focusEmptyLineOrInsert`'s shared G9 guard
+  // — a fresh block's autofocus (above) covers the add branch; only the
+  // already-empty branch needs a manual focus.
+  function handleTrailingGapClick() {
+    focusEmptyLineOrInsert(blocks[blocks.length - 1], addTextBlock)
+  }
+
+  // ⌥↑/⌥↓ swaps the two adjacent SLOTS, not the two blocks (KAN-440):
+  // `detachKeepingRows` hands `rowStart` to the row-mate a block leaves
+  // behind, which is right for a drop or a delete, but a swap never leaves
+  // either slot — each one is immediately refilled by the other block. Using
+  // `detachKeepingRows` here let the moved block arrive still carrying its
+  // OWN `rowStart`, splitting a row in two it used to swap within. Instead,
+  // `rowStart` stays with the position: whichever block now sits at `index`
+  // gets the flag `index` held before the swap, and likewise for `target` —
+  // so an in-row swap stays in its row, and a swap across a row boundary
+  // keeps both rows' boundaries, just with the two blocks at the seam traded.
+  function moveBlockAt(index: number, dir: 'up' | 'down') {
     const target = dir === 'up' ? index - 1 : index + 1
-    if (index === -1 || target < 0 || target >= current.length) return
-    const next = [...current]
-    ;[next[index], next[target]] = [next[target], next[index]]
-    blocksRef.current = next
-    void persistBlocksAsOwnEdit(current, next)
+    if (target < 0 || target >= blocks.length) return
+    const atIndex = blocks[index]
+    const atTarget = blocks[target]
+    const next = [...blocks]
+    next[index] = withRowStart(atTarget, atIndex.rowStart)
+    next[target] = withRowStart(atIndex, atTarget.rowStart)
+    commitStructuralBlocks(next)
   }
 
   // Rows are derived, never stored (6x): consecutive blocks whose widths add up
@@ -1552,17 +1485,25 @@ export function BlockCanvas({
   // goes after the row's last member instead, so the planned row always
   // renders as one unbroken run. Off a drag, or off anything but a beside
   // hover, this is just `blocksForLayout`, one entry per block.
-  const renderList = useMemo<{ id: string; width: BlockWidth; ghost: boolean }[]>(() => {
+  const renderList = useMemo<
+    { id: string; width: BlockWidth; ghost: boolean; rowStart?: boolean }[]
+  >(() => {
     if (!besidePlan || draggingIndex === null) {
-      return blocksForLayout.map((b) => ({ id: b.id, width: b.width ?? 'full', ghost: false }))
+      return blocksForLayout.map((b) => ({
+        id: b.id,
+        width: b.width ?? 'full',
+        ghost: false,
+        rowStart: b.rowStart,
+      }))
     }
     const dragged = blocks[draggingIndex]
     const ghostId = `${dragged.id}::ghost`
-    const plannedWidth = besidePlan.find((b) => b.id === dragged.id)?.width ?? 'full'
+    const plannedDragged = besidePlan.find((b) => b.id === dragged.id)
+    const plannedWidth = plannedDragged?.width ?? 'full'
     const withGhost = besidePlan.map((b) =>
       b.id === dragged.id
-        ? { id: ghostId, width: plannedWidth, ghost: true }
-        : { id: b.id, width: b.width ?? 'full', ghost: false }
+        ? { id: ghostId, width: plannedWidth, ghost: true, rowStart: plannedDragged?.rowStart }
+        : { id: b.id, width: b.width ?? 'full', ghost: false, rowStart: b.rowStart }
     )
     const neighborId = draggingIndex < blocks.length - 1 ? blocks[draggingIndex + 1].id : null
     const neighborAt = neighborId ? withGhost.findIndex((item) => item.id === neighborId) : -1
@@ -1582,7 +1523,17 @@ export function BlockCanvas({
       if (insertAt > rowStart && insertAt <= rowEnd) insertAt = rowEnd + 1
     }
 
-    const origin = { id: dragged.id, width: dragged.width ?? 'full', ghost: false }
+    // The origin is a placeholder at the dragged block's OLD slot, not a row
+    // owner: carrying `dragged.rowStart` here forces it onto its own line even
+    // when the row before it has room, needlessly pushing every row after it
+    // down by one (KAN-440) — the row-mate `besidePlan` already handed
+    // `rowStart` to (`detachKeepingRows`) gets its own break regardless.
+    const origin = {
+      id: dragged.id,
+      width: dragged.width ?? 'full',
+      ghost: false,
+      rowStart: undefined,
+    }
     const withOrigin = [...withGhost]
     withOrigin.splice(insertAt, 0, origin)
 
@@ -1611,6 +1562,40 @@ export function BlockCanvas({
 
   const blockRows = useMemo(() => layoutRows(renderList), [renderList])
 
+  // Rule 3's fix (KAN-345): feeds the hover-ghost placement, which needs this
+  // read before `handleTrailingGapClick` is defined.
+  const trailingLine = blocks[blocks.length - 1]
+  const trailingLineIsEmptyText = isEmptyTextLine(trailingLine)
+
+  // Fix (KAN-345 rule 2): whether the trailing gap is actually visible —
+  // matches the conditions under which `TrailingBlockGap` below mounts
+  // (`chrome`) and is unhidden (`draggingIndex`, `previewing`). Gates
+  // `hoverGhost` directly (so a hide/unmount can't leave the stale flag
+  // painting the unfocused last line) and resets the flag itself, so
+  // becoming visible again later (e.g. leaving zen) starts un-hovered
+  // rather than resurrecting a ghost the pointer never re-entered — a
+  // guarded one-shot reset, not a cascade (same idiom as
+  // `use-animated-series-path.ts`).
+  const trailingGapVisible = chrome && draggingIndex === null && !previewing
+  useEffect(() => {
+    if (trailingGapVisible) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- guarded one-shot reset, not a cascade
+    setTrailingGapHovered(false)
+  }, [trailingGapVisible])
+
+  // Rule 4's between-row gap (KAN-345): a click anywhere along the boundary
+  // line below row `rowIndex` inserts after that ROW's last block, not the
+  // one item the clicked segment happens to render under — a side-by-side
+  // row has one boundary below it, not one per block. Same
+  // `focusEmptyLineOrInsert` G9 guard as `handleTrailingGapClick`.
+  function insertAfterRow(rowIndex: number) {
+    const row = blockRows[rowIndex]
+    const last = row[row.length - 1]
+    const index = blocks.findIndex((b) => b.id === last.id)
+    if (index === -1) return
+    focusEmptyLineOrInsert(blocks[index + 1], () => insertLineAfter(index))
+  }
+
   /**
    * Commits a beside drop (6x): `planBesideDrop` (the same planner the hover
    * line and preview read) splices the dragged block into the target's row
@@ -1624,22 +1609,26 @@ export function BlockCanvas({
   async function commitBesideDrop(fromIndex: number, targetIndex: number, zone: 'left' | 'right') {
     const next = planBesideDrop(blocks, fromIndex, blocks[targetIndex].id, zone)
     if (!next) return
-    await persistBlocksAsOwnEdit(blocks, next)
+    await persistBlocksAsOwnEdit(next)
   }
 
   /**
    * Commits an own-line drop (6x): splices the dragged block before/after the
    * TARGET'S ROW as a whole, not before/after the target block itself — so
    * dropping below the second block of a ½+½ row lands after both, not
-   * between them. Only the dragged block's width changes, to `full`; every
-   * other block is the same object reference, untouched (AGENTS.md: Pond
-   * doesn't widen what's left behind). One `persistBlocksAsOwnEdit` write, same
-   * as `commitBesideDrop` (KAN-247, KAN-124's direct-write pattern).
+   * between them. The dragged block's width changes to `full` and it carries
+   * `rowStart: true` (KAN-440), so a block left behind at a partial width
+   * never re-packs into this block's row; every other block is the same
+   * object reference, untouched (AGENTS.md: Pond doesn't widen what's left
+   * behind). One `persistBlocksAsOwnEdit` write, same as `commitBesideDrop`
+   * (KAN-247, KAN-124's direct-write pattern). Removes the dragged block via
+   * `detachKeepingRows`, so a row-mate it leaves behind inherits its
+   * `rowStart` instead of re-packing into the row before it.
    */
   async function commitOwnLineDrop(fromIndex: number, targetIndex: number, zone: 'above' | 'below') {
-    const dragged = { ...blocks[fromIndex], width: 'full' as BlockWidth }
+    const dragged = { ...blocks[fromIndex], width: 'full' as BlockWidth, rowStart: true as const }
     const target = blocks[targetIndex]
-    const withoutDragged = blocks.filter((_, i) => i !== fromIndex)
+    const { blocks: withoutDragged } = detachKeepingRows(blocks, fromIndex)
     const row = layoutRows(withoutDragged).find((r) => r.some((b) => b.id === target.id))
     if (!row) return
     const rowIds = new Set(row.map((b) => b.id))
@@ -1650,7 +1639,23 @@ export function BlockCanvas({
     const insertAt = zone === 'above' ? rowAt[0] : rowAt[rowAt.length - 1] + 1
     const spliced = [...withoutDragged]
     spliced.splice(insertAt, 0, dragged)
-    await persistBlocksAsOwnEdit(blocks, spliced)
+    await persistBlocksAsOwnEdit(spliced)
+  }
+
+  /**
+   * The zone currently shown lives in two places — `dropIndicator`/
+   * `previewWidth` state and `stickyZoneRef` — so every site that stops
+   * showing a zone clears both through this one function. Missing either
+   * leaves the other stale: `onDragOver`'s hysteresis check reads
+   * `stickyZoneRef` to decide whether a dragover is "unchanged" and, if so,
+   * returns before touching the state at all, so a ref left behind an
+   * already-cleared indicator makes the next dragover into that same zone a
+   * no-op forever.
+   */
+  function clearDropPreview() {
+    setDropIndicator(null)
+    setPreviewWidth(null)
+    stickyZoneRef.current = null
   }
 
   /**
@@ -1665,8 +1670,7 @@ export function BlockCanvas({
   function commitDropIndicator() {
     const fromIndex = draggingIndex
     const indicator = dropIndicator
-    setDropIndicator(null)
-    setPreviewWidth(null)
+    clearDropPreview()
     setDraggingIndex(null)
     if (fromIndex === null || !indicator || indicator.index === fromIndex) return
     if (indicator.zone === 'left' || indicator.zone === 'right') {
@@ -1685,15 +1689,53 @@ export function BlockCanvas({
   // measures and (if narrow) flips to stacked before the browser paints, so a
   // genuinely narrow window never paints the un-stacked share for one frame first.
   const [columnWidth, setColumnWidth] = useState(0)
+  // Rule 4's row-boundary line (KAN-345) anchors to the ROW's bottom, not any
+  // one item's — a side-by-side row's items can render at different heights
+  // (`alignItems: flex-start`), so the boundary is the tallest of them, read
+  // off their own rendered boxes (nothing in `layoutRows` carries height,
+  // only width). `itemSizingRefs` is keyed by block id, filled by each item's
+  // own sizing div below; a row's boundary is `max(item.bottom) - container.top`.
+  const itemSizingRefs = useRef(new Map<string, HTMLDivElement>())
+  const [rowBoundaryTops, setRowBoundaryTops] = useState<number[]>([])
+  // The last measurement `read` (below) stored. `blockRows` is a new array on
+  // every render that changes a drag's preview, re-running the effect; a set
+  // state from a layout effect re-renders and commits even when the value is
+  // unchanged (React only bails out eagerly with no work pending), and
+  // KAN-440's hysteresis promises one commit per zone change. So `read` sets
+  // state only when the measurement actually moved.
+  const lastMeasureRef = useRef<{ width: number; tops: number[] } | null>(null)
   useLayoutEffect(() => {
     const el = canvasRef.current
     if (!el || typeof ResizeObserver === 'undefined') return
-    const read = () => setColumnWidth(el.getBoundingClientRect().width)
+    const read = () => {
+      const containerRect = el.getBoundingClientRect()
+      const tops = blockRows.slice(0, -1).map(
+        (row) =>
+          Math.max(
+            ...row.map(
+              (item) => itemSizingRefs.current.get(item.id)?.getBoundingClientRect().bottom ?? 0
+            )
+          ) - containerRect.top
+      )
+      const last = lastMeasureRef.current
+      if (
+        last &&
+        last.width === containerRect.width &&
+        last.tops.length === tops.length &&
+        last.tops.every((top, i) => top === tops[i])
+      ) {
+        return
+      }
+      lastMeasureRef.current = { width: containerRect.width, tops }
+      setColumnWidth(containerRect.width)
+      setRowBoundaryTops(tops)
+    }
     read()
     const ro = new ResizeObserver(read)
     ro.observe(el)
+    for (const node of itemSizingRefs.current.values()) ro.observe(node)
     return () => ro.disconnect()
-  }, [])
+  }, [blockRows])
 
   /**
    * The lifted copy shown at the planned slot while a beside drop is hovered
@@ -1718,7 +1760,7 @@ export function BlockCanvas({
             {view}
           </PondBlock>
         ) : block.type === 'text' ? (
-          <div className="py-0.5" style={{ paddingInline: TEXT_BLOCK_INSET_PX }}>
+          <div style={{ paddingBlock: TEXT_BLOCK_TOP_INSET_PX, paddingInline: TEXT_BLOCK_INSET_PX }}>
             {view}
           </div>
         ) : (
@@ -1736,14 +1778,21 @@ export function BlockCanvas({
         block={block}
         pageId={pageId}
         settleOnMount={insertedIds?.has(block.id) ?? false}
+        autofocus={autofocusIds.has(block.id)}
         chrome={chrome}
         untouched={untouched && i === 0}
+        hoverGhost={
+          i === blocks.length - 1 &&
+          trailingLineIsEmptyText &&
+          trailingGapVisible &&
+          trailingGapHovered
+        }
         onChange={(next) => setBlockAt(i, next)}
-        onRemoveEmpty={() => removeEmptyLineAt(block.id)}
-        onDeleteBlock={() => removeBlockAt(block.id)}
-        onReturn={(patch) => insertLineAfter(block.id, patch)}
-        onMoveUp={() => moveBlockAt(block.id, 'up')}
-        onMoveDown={() => moveBlockAt(block.id, 'down')}
+        onRemoveEmpty={() => removeEmptyLineAt(i)}
+        onDeleteBlock={() => removeBlockAt(i)}
+        onReturn={(patch) => insertLineAfter(i, patch)}
+        onMoveUp={() => moveBlockAt(i, 'up')}
+        onMoveDown={() => moveBlockAt(i, 'down')}
         onSlashKey={() => openSlashMenuAt(i)}
         slashMenuOpen={slashMenuOpenAt === i}
         blank={blank}
@@ -1789,13 +1838,13 @@ export function BlockCanvas({
         onDragStart={(e) => {
           if (dragImageRef.current) e.dataTransfer?.setDragImage(dragImageRef.current, 0, 0)
           setMenuOpenAt(null)
-          setPreviewWidth(null)
+          clearDropPreview()
           setDraggingIndex(i)
+          snapshotDragRects()
         }}
         onDragEnd={() => {
           setDraggingIndex(null)
-          setDropIndicator(null)
-          setPreviewWidth(null)
+          clearDropPreview()
         }}
         onDragOver={(e) => {
           e.preventDefault()
@@ -1806,12 +1855,35 @@ export function BlockCanvas({
             // must clear too — otherwise a release here would still commit
             // that earlier target's plan (the drop just below commits
             // whatever indicator is shown, not what's under the pointer now).
-            setDropIndicator(null)
-            setPreviewWidth(null)
+            clearDropPreview()
             return
           }
-          const rect = e.currentTarget.getBoundingClientRect()
-          const zone = classifyDropZone(rect, { x: e.clientX, y: e.clientY })
+          // The snapshot taken at dragstart (re-taken on scroll while this
+          // drag is live), never the live rect: a beside preview resizes
+          // this very block mid-drag, and classifying against that moving
+          // target is the flicker this ticket fixes. Falls back to the live
+          // rect only if the snapshot never saw this block (it wasn't on the
+          // page at dragstart — a realtime insert mid-drag).
+          const rect = dragRectsRef.current.get(block.id) ?? e.currentTarget.getBoundingClientRect()
+          const point = { x: e.clientX, y: e.clientY }
+          // Hysteresis (KAN-440): once this block has a zone shown, keep it while
+          // the pointer stays within THAT zone's own padded sub-rect — never
+          // reclassify just because the preview itself moved. Only a point that
+          // actually clears the padding re-runs `classifyDropZone` from scratch.
+          const sticky = stickyZoneRef.current
+          const zone =
+            sticky && sticky.index === i && isWithinPaddedZone(rect, point, sticky.zone)
+              ? sticky.zone
+              : classifyDropZone(rect, point)
+          // Nothing classified differently from what's already shown for this
+          // block: `planned`/`changed` below are pure functions of
+          // (blocks, draggingIndex, target id, zone), none of which moved, so
+          // skip the state updates outright rather than recompute and reapply
+          // an identical plan on every one of the ~20 dragovers/s a still
+          // pointer fires.
+          const unchanged = sticky !== null && sticky.index === i && sticky.zone === zone
+          stickyZoneRef.current = { index: i, zone }
+          if (unchanged) return
           if (zone === 'left' || zone === 'right') {
             const planned = planBesideDrop(blocks, draggingIndex, blocks[i].id, zone)
             // `null`: the row already holds 4, or the widths this drop would
@@ -1821,8 +1893,7 @@ export function BlockCanvas({
             // above: a stale indicator from an earlier target must not survive
             // into a zone that offers no plan of its own.
             if (planned === null) {
-              setDropIndicator(null)
-              setPreviewWidth(null)
+              clearDropPreview()
               return
             }
             setDropIndicator({ index: i, zone })
@@ -1949,8 +2020,11 @@ export function BlockCanvas({
             onDragLeave={(e) => {
               const related = e.relatedTarget as Node | null
               if (related && canvasRef.current?.contains(related)) return
-              setDropIndicator(null)
-              setPreviewWidth(null)
+              // Clears `stickyZoneRef` too (`clearDropPreview`), not just the
+              // indicator: otherwise a dragover back into the SAME zone right
+              // after re-entering reads the ref as unchanged and returns
+              // before ever reshowing what this just cleared.
+              clearDropPreview()
             }}
           >
             {/*
@@ -1959,9 +2033,18 @@ export function BlockCanvas({
              * their outer array index, so a block moving from row 0 to row 1
              * would still remount even though its own `key` is unchanged — the
              * exact bug a flat array (one key namespace, block.id only) removes.
+             *
+             * `blockRows`' boundaries are not always where CSS would wrap on its
+             * own: a row left short of full by a `rowStart` block (KAN-440) has
+             * room for the next row's first block to pack in beside it, which is
+             * exactly the bug `rowStart` exists to stop. So every row after the
+             * first gets a forced break — a sibling, not a wrapper, so no block's
+             * own key or parent ever changes. The list's own `rowGap` is 0 (its
+             * doc comment above), so the break carries no margin of its own —
+             * the gap lives entirely on each row's sizing divs, below.
              */}
             {blockRows
-              .flatMap((row) => {
+              .flatMap((row, rowIndex) => {
                 const widths = row.map((item) => item.width)
                 // Widths and rows are kept, not shown: a row that stacks renders
                 // each of its blocks' sizing divs at 100% width, which — because
@@ -1969,11 +2052,34 @@ export function BlockCanvas({
                 // order. That IS the stack; no row-level wrapper is rendered at
                 // all, so a block shifting from one row to another regroups
                 // `blockRows` without touching any ancestor element, and a
-                // remount is impossible rather than merely untested.
+                // remount is impossible rather than untested.
                 const stacks = columnWidth > 0 && !rowHolds(columnWidth, widths)
-                return row.map((item) => ({ item, stacks }))
+                // Every sizing div starts its own flex line EXCEPT the page's
+                // very first block, and (within row 0, non-stacking) the rest of
+                // that one shared line: those stay at the top with no gap above
+                // them, every other sizing div gets one `rowGapValue` of
+                // `marginTop`. A stacking row puts each of its own members on
+                // their own line too, so only its first member (if that's also
+                // the page's first block) is spared.
+                const entries = row.map((item, itemIndex) => ({
+                  item,
+                  stacks,
+                  marginTop:
+                    rowIndex === 0 && (!stacks || itemIndex === 0) ? 0 : rowGapValue(listStyle),
+                }))
+                return rowIndex === 0 ? entries : [{ rowBreakBeforeId: row[0].id }, ...entries]
               })
-              .map(({ item, stacks }) => {
+              .map((entry) => {
+                if ('rowBreakBeforeId' in entry) {
+                  return (
+                    <div
+                      key={`row-break-${entry.rowBreakBeforeId}`}
+                      aria-hidden
+                      style={{ flexBasis: '100%', height: 0, margin: 0 }}
+                    />
+                  )
+                }
+                const { item, stacks, marginTop } = entry
                 const sizingWidth =
                   stacks || item.width === 'full' ? '100%' : blockWidthStyle(item.width)
                 // The ghost's id has no entry in `blocks` — it renders the
@@ -1981,7 +2087,7 @@ export function BlockCanvas({
                 // not through `renderBlockEditor`, which only real slots use.
                 if (item.ghost) {
                   return draggingIndex === null ? null : (
-                    <div key={item.id} style={{ width: sizingWidth }}>
+                    <div key={item.id} style={{ width: sizingWidth, marginTop }}>
                       {renderGhostBlock(blocks[draggingIndex])}
                     </div>
                   )
@@ -1991,13 +2097,47 @@ export function BlockCanvas({
                 // planned, so a flattened position no longer lines up with
                 // `blocks`' own index.
                 const i = blocks.findIndex((b) => b.id === item.id)
+                // Measured by `itemSizingRefs` (above) so the row-boundary
+                // line below — rendered once per ROW, not here — can anchor
+                // to this row's tallest item rather than this one's own box.
                 return (
                   <div
                     key={item.id}
-                    className="min-w-0 transition-[width] duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none"
-                    style={{ width: sizingWidth }}
+                    ref={(node) => {
+                      if (node) itemSizingRefs.current.set(item.id, node)
+                      else itemSizingRefs.current.delete(item.id)
+                    }}
+                    className="relative min-w-0 transition-[width] duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none"
+                    style={{ width: sizingWidth, marginTop }}
                   >
                     {renderBlockEditor(blocks[i], i)}
+                  </div>
+                )
+              })}
+            {/* Rule 4's boundary line (KAN-345): one per ROW boundary, full
+                content width — a side-by-side row's items can render at
+                different heights, so this is a sibling of the row's own
+                sizing divs, not nested in any one of them (nesting it in a
+                single item only spans that item's own width). `position:
+                absolute` takes it out of the flex flow entirely, so it adds
+                no `rowGap` edge of its own ("the gap stays 16px: no layout
+                shift" stays true). Skipped above the first row and below the
+                last (no boundary there). `top` is `rowBoundaryTops[rowIndex]`
+                — the row's own measured bottom — falling back to nothing
+                rendered until the first measurement lands (avoids a
+                mis-placed line at `top: 0` for one frame). */}
+            {chrome &&
+              draggingIndex === null &&
+              blockRows.slice(0, -1).map((_row, rowIndex) => {
+                const top = rowBoundaryTops[rowIndex]
+                if (top === undefined) return null
+                return (
+                  <div
+                    key={`gap-${rowIndex}`}
+                    className="absolute inset-x-0"
+                    style={{ top, height: BLOCK_ROW_GAP_PX }}
+                  >
+                    <BlockGapLine onClick={() => insertAfterRow(rowIndex)} />
                   </div>
                 )
               })}
@@ -2005,12 +2145,24 @@ export function BlockCanvas({
         </div>
       </SiblingBlocksProvider>
 
-      {/* The always-visible foot add (UI-audit Slice 2a): drops a text block; `/`
-          in it summons the palette to swap type. Hidden on an untouched page
-          (6f) and while a template is previewing (6f frame 3's outline stack
-          replaces the whole body) too — the blank body's only help is its one
-          hint line. */}
-      <AddBlockButton onAdd={addTextBlock} hidden={!chrome || untouched || !!previewing} />
+      {/* Rule 3's trailing gap (KAN-345): same spot the old always-visible add
+          foot used to occupy. `chrome` gates mounting — false renders no DOM
+          node at all, matching `BlockGapLine`'s own absence above. Once
+          mounted, `hidden` fades it (not unmount) during a drag or while a
+          template preview has replaced the body. */}
+      {chrome && (
+        <TrailingBlockGap
+          onClick={handleTrailingGapClick}
+          hidden={draggingIndex !== null || !!previewing}
+          // Rule 3's fix (KAN-345): when the last block is already an empty
+          // text line, that line's own placeholder paints in place (via
+          // `hoverGhost` above) — drawing a second ghost row here too would
+          // put the text in two places at once.
+          showGhostText={!trailingLineIsEmptyText}
+          onHoverChange={setTrailingGapHovered}
+        />
+      )}
+
       {/* The source picker, hung off the `/` line that summoned it. */}
       {sourcePicker && (
         <SourcePicker
@@ -2170,16 +2322,24 @@ function useBlockEmptyState(
  * Return on the block itself — not on anything inside it — opens a line after a
  * block that is not text. A text block's Return is its editor's.
  *
- * A press on the handle, or ⌘/ (Ctrl+/ off Apple) anywhere in the block, opens
- * the block menu (`PondMenu` kind `block`), and the block wears the open ring
- * while it is open. A drag from the handle closes the menu its press opened.
+ * A click on the handle — a press that ends in pointerup within
+ * `HANDLE_PRESS_MOVE_THRESHOLD_PX` of where it started — or ⌘/ (Ctrl+/ off
+ * Apple) anywhere in the block, opens the block menu (`PondMenu` kind
+ * `block`), and the block wears the open ring while it is open. Base UI's own
+ * trigger opens on pointerdown; `handlePointerOpenChange` below drops that and
+ * any open that arrives after the press has moved past the threshold, so a
+ * press that becomes a drag never opens it (KAN-440 comment 1) — ⌘/ is never
+ * gated by this, so a stuck press state from an earlier drag can't block it.
  */
+const HANDLE_PRESS_MOVE_THRESHOLD_PX = 4
 function BlockEditor({
   block,
   pageId,
   settleOnMount = false,
+  autofocus = false,
   chrome = true,
   untouched = false,
+  hoverGhost = false,
   onChange,
   onRemoveEmpty,
   onDeleteBlock,
@@ -2216,9 +2376,17 @@ function BlockEditor({
   block: Block
   pageId: string
   settleOnMount?: boolean
+  /** This id was minted by one of BlockCanvas's own insert paths this session
+   *  (rule 2, KAN-345) — the text module's empty line autofocuses on mount
+   *  only then, never for a line that merely arrived with the page. */
+  autofocus?: boolean
   chrome?: boolean
   /** This block is the untouched page's one hint line (6f): its placeholder draws in the mono override. */
   untouched?: boolean
+  /** This block is the last, already-empty text line, and the trailing gap below it
+   *  is hovered (rule 3's fix, KAN-345): its own placeholder paints in place of a
+   *  second ghost row, so a click never moves which element shows the text. */
+  hoverGhost?: boolean
   onChange: (next: Block) => void
   /** Backspace in an empty text block. */
   onRemoveEmpty: () => void
@@ -2267,6 +2435,30 @@ function BlockEditor({
   onDrop?: (e: React.DragEvent) => void
 }) {
   const [dragArmed, setDragArmed] = useState(false)
+  // Gate for the handle's menu (KAN-440 comment 1): Base UI's `Menu.Trigger`
+  // opens on native `mousedown`, before a press is known to be a click or the
+  // start of a drag. `pressRef` tracks whether the handle's press is still
+  // down, whether it has moved past the drag threshold since `onPointerDown`,
+  // and (for the toggle-click fix below) whether the menu was already open
+  // when this press started. `handlePointerOpenChange` drops any
+  // `open === true` while `down` or `moved` is true, so only a genuine click
+  // (pointerup with no movement past the threshold) opens the menu from the
+  // handle — a drag never does. An HTML5 drag ends in `pointercancel`/the
+  // row's `dragend`, never `pointerup`, so both reset `pressRef` too —
+  // otherwise `down` stays true forever and blocks every later open from
+  // this handle, ⌘/ and Enter included.
+  const pressRef = useRef({ down: false, moved: false, startX: 0, startY: 0, openAtDown: false })
+  // A press that drifts off the handle before releasing never fires the
+  // handle's own `pointerup` — without `setPointerCapture`, the browser
+  // delivers `pointerup` to whatever element is under the pointer at release,
+  // not the one that started the press (KAN-440). `down` then stays stuck
+  // true forever, which blocks a later Enter/Space open the same way a stuck
+  // drag does. A document-level listener, armed on this handle's own
+  // `pointerdown`, catches the release wherever it lands. Torn down on the
+  // next `pointerdown` (so only one is ever live) and on unmount (AGENTS.md
+  // "finish what you start").
+  const pressEndCleanupRef = useRef<(() => void) | null>(null)
+  useEffect(() => () => pressEndCleanupRef.current?.(), [])
   const rootRef = useRef<HTMLDivElement>(null)
   // KAN-321: the empty-state fetch must read whichever saved view the bar has
   // switched to, not the block's top-level mode/filter.
@@ -2373,7 +2565,13 @@ function BlockEditor({
     <BlockRowProvider value={{ selected: state === 'selected', stepOut: onReturn, commitStep }}>
       <SlashLineContext.Provider value={slash.handleSlashLine}>
         <ActiveViewSelectionContext.Provider value={setActiveViewId}>
-          <ModuleView type={block.type} data={moduleData} editable onChange={handleModuleChange} />
+          <ModuleView
+            type={block.type}
+            data={moduleData}
+            editable
+            autofocus={autofocus}
+            onChange={handleModuleChange}
+          />
         </ActiveViewSelectionContext.Provider>
       </SlashLineContext.Provider>
     </BlockRowProvider>
@@ -2406,7 +2604,7 @@ function BlockEditor({
   function handleKeyDown(e: React.KeyboardEvent) {
     if (isBlockMenuChord(e.nativeEvent)) {
       e.preventDefault()
-      onMenuOpenChange?.(true)
+      handleMenuOpenChange(true)
       return
     }
     if (
@@ -2456,6 +2654,22 @@ function BlockEditor({
     if (e.key === 'Escape' && e.target === e.currentTarget) {
       rootRef.current?.blur()
     }
+    // Delete on the selected row removes the block. The key a Mac labels
+    // Delete is Backspace; a forward-delete key is Delete. A field inside the
+    // block is the event target then, so this never takes that field's own
+    // delete — and ⌘⌫ stays the chord for a text caret (`handleKeyDownCapture`).
+    if (
+      (e.key === 'Delete' || e.key === 'Backspace') &&
+      e.target === e.currentTarget &&
+      !e.shiftKey &&
+      !e.altKey &&
+      !e.metaKey &&
+      !e.ctrlKey
+    ) {
+      e.preventDefault()
+      onDeleteBlock()
+      return
+    }
     // Backspace in an EMPTY text block removes it (Notion-style). Guarded so it
     // never fires while the `/` palette is open (that Backspace closes the menu,
     // which stops propagation) — only a bare empty block deletes. Any of
@@ -2476,6 +2690,97 @@ function BlockEditor({
       e.preventDefault()
       onRemoveEmpty()
     }
+  }
+
+  // The ungated setter — ⌘/ (`handleKeyDown` above) calls this directly, never
+  // `handlePointerOpenChange` below: a stuck pointer state from an earlier
+  // drag must never block the keyboard. A close always passes through here
+  // regardless of caller.
+  function handleMenuOpenChange(open: boolean) {
+    onMenuOpenChange?.(open)
+  }
+
+  // The gate (see `pressRef` above): a POINTER-originated open — Base UI's own
+  // pointerdown-driven request (routed here via `PondMenu`'s `onOpenChange`)
+  // and the handle's own click below — is dropped while the press is still
+  // down or has moved past the drag threshold, so only a genuine click opens
+  // the menu from the handle and a drag never does.
+  function handlePointerOpenChange(open: boolean) {
+    if (open && (pressRef.current.down || pressRef.current.moved)) return
+    handleMenuOpenChange(open)
+  }
+
+  function handleTriggerPointerDown(e: React.PointerEvent) {
+    pressRef.current = {
+      down: true,
+      moved: false,
+      startX: e.clientX,
+      startY: e.clientY,
+      openAtDown: menuOpen ?? false,
+    }
+    setDragArmed(true)
+
+    pressEndCleanupRef.current?.()
+    const handleNode = e.currentTarget
+    const handleDocumentPressEnd = (ev: PointerEvent) => {
+      pressEndCleanupRef.current = null
+      document.removeEventListener('pointerup', handleDocumentPressEnd)
+      document.removeEventListener('pointercancel', handleDocumentPressEnd)
+      // A `pointerup` ON the handle itself is followed by this same press's
+      // own `click` (see `handleTriggerClick`), which still needs `moved`/
+      // `openAtDown` exactly as this press left them — its own `onPointerUp`
+      // below already resets `down` for that case. Only a release that lands
+      // elsewhere, where no click is ever coming, is safe to reset here. A
+      // `pointercancel` never leads to a click either way, wherever it lands.
+      const onHandleRelease =
+        ev.type === 'pointerup' &&
+        (ev.target === handleNode || (ev.target instanceof Node && handleNode.contains(ev.target)))
+      if (onHandleRelease) return
+      pressRef.current.down = false
+      pressRef.current.moved = false
+      pressRef.current.openAtDown = false
+      setDragArmed(false)
+    }
+    document.addEventListener('pointerup', handleDocumentPressEnd)
+    document.addEventListener('pointercancel', handleDocumentPressEnd)
+    pressEndCleanupRef.current = () => {
+      document.removeEventListener('pointerup', handleDocumentPressEnd)
+      document.removeEventListener('pointercancel', handleDocumentPressEnd)
+    }
+  }
+  // Moved only past `HANDLE_PRESS_MOVE_THRESHOLD_PX` from the pointerdown
+  // point — the spec is silent on a threshold (Notion uses one); a 1px jitter
+  // on a shaky click must not suppress the click that follows (KAN-440).
+  function handleTriggerPointerMove(e: React.PointerEvent) {
+    if (!pressRef.current.down) return
+    const dx = e.clientX - pressRef.current.startX
+    const dy = e.clientY - pressRef.current.startY
+    if (dx * dx + dy * dy > HANDLE_PRESS_MOVE_THRESHOLD_PX * HANDLE_PRESS_MOVE_THRESHOLD_PX) {
+      pressRef.current.moved = true
+    }
+  }
+  function handleTriggerPointerUp() {
+    pressRef.current.down = false
+    setDragArmed(false)
+  }
+  // An HTML5 drag never fires `pointerup` on the handle — it ends in
+  // `pointercancel` (here) or the row's `dragend` below — so without this,
+  // `down` stays true forever and every later open from this handle (the
+  // click, ⌘/'s own gate-free path never minds, but the trigger's click does)
+  // stays blocked.
+  function handleTriggerPointerCancel() {
+    pressRef.current.down = false
+    pressRef.current.moved = false
+    setDragArmed(false)
+  }
+  // The click that ends an unmoved press. Toggle against the open state the
+  // PRESS saw at pointerdown, not the live prop: Base UI's own trigger closes
+  // an already-open menu on this same press's mousedown (before this click
+  // fires), so a click that started on an open menu is that close's trailing
+  // click, not a new open request, and must not reopen it.
+  function handleTriggerClick() {
+    if (pressRef.current.openAtDown) return
+    handlePointerOpenChange(true)
   }
 
   // ⌥↑/⌥↓ on the handle reorder the block: the menu's trigger would otherwise
@@ -2514,6 +2819,10 @@ function BlockEditor({
       className={cn(
         'group relative',
         'outline-none',
+        // A calendar sits in a card, so selecting it draws the card's ring.
+        // A board draws its own lanes and has no card, so the same ring goes
+        // on the row itself — otherwise a click selects it and nothing shows.
+        state === 'selected' && !frame && block.type !== 'text' && cn(POND_BLOCK_SELECTED_RING, 'rounded-[20px]'),
         settleOnMount && 'motion-settle-in',
         // `origin` (old place) from `PondBlock.dc.html` is opacity .4 ONLY — the
         // tilt and stepped-up shadow belong to the separate `lifted` copy, built
@@ -2534,6 +2843,11 @@ function BlockEditor({
       onDragStart={onDragStart}
       onDragEnd={() => {
         setDragArmed(false)
+        // The row's own dragend, not the handle's pointerup, is how an HTML5
+        // drag from this handle ends (KAN-440) — reset here too, or `down`
+        // stays true and blocks every later open from this handle.
+        pressRef.current.down = false
+        pressRef.current.moved = false
         onDragEnd?.()
       }}
       onDragOver={onDragOver}
@@ -2599,7 +2913,7 @@ function BlockEditor({
           size={menuSize}
           groups={menuGroups}
           open={menuOpen ?? false}
-          onOpenChange={onMenuOpenChange ?? (() => {})}
+          onOpenChange={handlePointerOpenChange}
           onSelect={onMenuSelect ?? (() => {})}
           placement={{ anchor: rootRef, ...MENU_PLACEMENT[menuSize] }}
           trigger={
@@ -2612,8 +2926,11 @@ function BlockEditor({
               )}
               title="Block menu · drag to reorder"
               aria-label="Block menu"
-              onPointerDown={() => setDragArmed(true)}
-              onPointerUp={() => setDragArmed(false)}
+              onPointerDown={handleTriggerPointerDown}
+              onPointerMove={handleTriggerPointerMove}
+              onPointerUp={handleTriggerPointerUp}
+              onPointerCancel={handleTriggerPointerCancel}
+              onClick={handleTriggerClick}
               onKeyDown={handleTriggerKeyDown}
             >
               <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor" aria-hidden>
@@ -2676,8 +2993,9 @@ function BlockEditor({
       ) : block.type === 'text' ? (
         // Bare prose: `padding 2px 4px`, no card.
         <div
-          className={cn('py-0.5', untouched && UNTOUCHED_HINT_CLASS)}
-          style={{ paddingInline: TEXT_BLOCK_INSET_PX }}
+          className={cn(untouched && UNTOUCHED_HINT_CLASS, hoverGhost && HOVER_GHOST_CLASS)}
+          data-hover-ghost={hoverGhost || undefined}
+          style={{ paddingBlock: TEXT_BLOCK_TOP_INSET_PX, paddingInline: TEXT_BLOCK_INSET_PX }}
         >
           {block.pondStampAt && (
             <div className="flex items-baseline gap-[10px] pb-[10px]">

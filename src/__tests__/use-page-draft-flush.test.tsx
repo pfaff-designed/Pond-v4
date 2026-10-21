@@ -27,9 +27,11 @@ jest.mock('@/lib/pages/client', () => ({
 }))
 
 const mockCommitBlocks = jest.fn()
-jest.mock('@/lib/pages/commit', () => ({
-  commitBlocks: (...args: unknown[]) => mockCommitBlocks(...args),
-}))
+jest.mock('@/lib/pages/commit', () =>
+  jest.requireActual('./helpers/page-commit-mock').pageCommitMock({
+    commitBlocks: (...args: unknown[]) => mockCommitBlocks(...args),
+  })
+)
 
 const textBlock = (content: string): Block => ({ id: 'b1', type: 'text', content }) as Block
 
@@ -49,12 +51,16 @@ function wrapper(client: QueryClient) {
   }
 }
 
-function mountDraft() {
+// Each caller's own page id: `page-flush.ts`'s write-queue registry is a
+// module-level map no `beforeEach` clears, so two `it()`s sharing one id
+// would hand the second mount the first's still-live (or halted) queue.
+function mountDraft(pageId: string) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const page: PondPage = { ...PAGE, id: pageId }
   const { result } = renderHook(
     () => {
       const getSupabase = useLazySupabase()
-      return usePageDraft({ page: PAGE, pageId: PAGE.id, pondId: 'pond-1', getSupabase })
+      return usePageDraft({ page, pageId, pondId: 'pond-1', getSupabase })
     },
     { wrapper: wrapper(client) }
   )
@@ -88,13 +94,14 @@ afterEach(() => {
 
 describe('usePageDraft flushNow (KAN-302)', () => {
   it('an edit pending in the debounce: flush runs the save and resolves after it', async () => {
-    const { result } = mountDraft()
+    const pageId = 'page-pending'
+    const { result } = mountDraft(pageId)
 
     act(() => {
       result.current.commitLocalEdit([textBlock('Hello moon')])
     })
 
-    const flush = flushPendingPageSave(PAGE.id)
+    const flush = flushPendingPageSave(pageId)
     expect(flush).toBeDefined()
     // The save hasn't landed yet at the instant flush was called.
     expect(mockCommitBlocks).not.toHaveBeenCalled()
@@ -109,9 +116,10 @@ describe('usePageDraft flushNow (KAN-302)', () => {
   })
 
   it('a save already in flight: flush returns that SAME promise, not a second save', async () => {
+    const pageId = 'page-inflight'
     const inFlight = deferred()
     mockUpdateTitle.mockReturnValueOnce(inFlight.promise)
-    const { result } = mountDraft()
+    const { result } = mountDraft(pageId)
 
     act(() => {
       result.current.commitLocalEdit([textBlock('Hello moon')])
@@ -122,8 +130,8 @@ describe('usePageDraft flushNow (KAN-302)', () => {
     // The debounce fired on its own: the save is now awaiting updateTitle.
     expect(mockUpdateTitle).toHaveBeenCalledTimes(1)
 
-    const first = flushPendingPageSave(PAGE.id)
-    const second = flushPendingPageSave(PAGE.id)
+    const first = flushPendingPageSave(pageId)
+    const second = flushPendingPageSave(pageId)
     expect(first).toBeDefined()
     expect(first).toBe(second)
     expect(mockUpdateTitle).toHaveBeenCalledTimes(1) // flush started no second save
@@ -136,22 +144,24 @@ describe('usePageDraft flushNow (KAN-302)', () => {
   })
 
   it('nothing pending or in flight: flush resolves at once', () => {
-    mountDraft()
+    const pageId = 'page-idle'
+    mountDraft(pageId)
 
-    expect(flushPendingPageSave(PAGE.id)).toBeUndefined()
+    expect(flushPendingPageSave(pageId)).toBeUndefined()
     expect(mockUpdateTitle).not.toHaveBeenCalled()
   })
 
   it('a second save flushed while the first is still in flight waits for it, and lands last (KAN-355)', async () => {
+    const pageId = 'page-second-in-flight'
     const first = deferred<{ remembered: Promise<void> }>()
     const second = deferred<{ remembered: Promise<void> }>()
     mockCommitBlocks.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
-    const { result } = mountDraft()
+    const { result } = mountDraft(pageId)
 
     act(() => {
       result.current.commitLocalEdit([textBlock('A')])
     })
-    const flushA = flushPendingPageSave(PAGE.id)
+    const flushA = flushPendingPageSave(pageId)
     // Let A's `updateTitle` await settle so its `commitBlocks` call has happened.
     await act(async () => {
       await Promise.resolve()
@@ -161,7 +171,7 @@ describe('usePageDraft flushNow (KAN-302)', () => {
     act(() => {
       result.current.commitLocalEdit([textBlock('B')])
     })
-    const flushB = flushPendingPageSave(PAGE.id)
+    const flushB = flushPendingPageSave(pageId)
     // Give B's own `updateTitle` await a chance to settle too, if it started.
     await act(async () => {
       await Promise.resolve()
@@ -186,14 +196,15 @@ describe('usePageDraft flushNow (KAN-302)', () => {
   })
 
   it("a flush waits for the save's record to be remembered, not just for the write to land (KAN-355)", async () => {
+    const pageId = 'page-remembered'
     const remember = deferred<void>()
     mockCommitBlocks.mockResolvedValueOnce({ remembered: remember.promise })
-    const { result } = mountDraft()
+    const { result } = mountDraft(pageId)
 
     act(() => {
       result.current.commitLocalEdit([textBlock('Hello moon')])
     })
-    const flush = flushPendingPageSave(PAGE.id)
+    const flush = flushPendingPageSave(pageId)
     expect(flush).toBeDefined()
 
     let settled = false

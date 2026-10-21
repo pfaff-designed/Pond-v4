@@ -8,18 +8,20 @@
  * ['pages'] query.
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 
 import { EDIT_PAUSE_MS } from '@/lib/change-log/pause'
-import { sessionUndo } from '@/lib/change-log/session-undo'
+import { sessionUndo, type PendingHistoryStep, type UndoHandle } from '@/lib/change-log/session-undo'
 import type { Block } from '@/lib/documents/types'
-import { setProperty, updateTitle, type PondPage } from '@/lib/pages/client'
 import { closeBlockHistory } from '@/lib/modules/text/active-editor'
-import { commitBlocks } from '@/lib/pages/commit'
+import { withoutRowStart } from '@/lib/modules/layout-rows'
+import { setProperty, type PondPage } from '@/lib/pages/client'
+import { createPageWriter, type PageWriteState } from '@/lib/pages/commit'
 import type { HomePage } from '@/lib/pages/home'
 import { homeQueryKey } from '@/lib/pages/keys'
-import { registerPageFlush } from '@/lib/pages/page-flush'
+import { getPageWriteQueue, registerPageFlush } from '@/lib/pages/page-flush'
+import { createPageWriteQueue, type PageWriteQueue } from '@/lib/pages/page-write-queue'
 import { withValue, type PropertyValue } from '@/lib/properties/schema'
 import type { createClient } from '@/lib/supabase/client'
 
@@ -32,11 +34,38 @@ interface PageDraftInput {
   getSupabase: () => ReturnType<typeof createClient>
 }
 
+/**
+ * Pure (KAN-440): re-inserts `block` at `index` into `current`, having first
+ * reversed any `detachKeepingRows` handoff the removal made — `handedRowStartTo`
+ * is the id `removeBlockAt` recorded at stage-time, so undo omits `rowStart`
+ * from exactly that block, against `current` (the LATEST blocks, not the
+ * stage-time snapshot). Exported so `undoRemove`'s own contract is directly
+ * testable without rendering the hook.
+ */
+export function withUndoneRemove(
+  current: Block[],
+  index: number,
+  block: Block,
+  handedRowStartTo?: string | null
+): Block[] {
+  const restored = handedRowStartTo
+    ? current.map((b) => (b.id === handedRowStartTo ? withoutRowStart(b) : b))
+    : current
+  const at = Math.min(index, restored.length)
+  return [...restored.slice(0, at), block, ...restored.slice(at)]
+}
+
 export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInput) {
   const queryClient = useQueryClient()
   const [title, setTitle] = useState('')
   const [blocks, setBlocks] = useState<Block[]>([])
-  const [saved, setSaved] = useState(true)
+  // `saved` has nothing of its own to track (KAN-495: the queue is the only
+  // record of what's stored) — it's true exactly when there's no debounced
+  // save still waiting on its pause AND the page's write queue is idle
+  // (nothing queued, mid-apply, or halted). The queue half is read straight
+  // off the queue itself via `useSyncExternalStore` (below), not mirrored
+  // into its own `useState` — the queue is the one place that fact lives.
+  const [pendingDebounce, setPendingDebounce] = useState(false)
   // When the last autosave of this session landed; null until one has.
   const [savedAt, setSavedAt] = useState<Date | null>(null)
   // Which page the local title/blocks state was seeded from. State (not the ref)
@@ -45,35 +74,81 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
   // came from that same page, so a stale value is harmless (re-seeded on return).
   const [seededId, setSeededId] = useState<string | null>(null)
   const loadedId = useRef<string | null>(null)
-  const serverSig = useRef<string>('') // signature of the server blocks we've reconciled
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // What the open page held before its next pause: the blocks last saved, seeded
-  // or adopted. Only the open page's — a save still pending from the page just
-  // left carries its own, captured when it was scheduled.
-  const lastSaved = useRef<{ pageId: string; blocks: Block[] } | null>(null)
-  const lastSavedOf = (id: string): Block[] | null =>
-    lastSaved.current?.pageId === id ? lastSaved.current.blocks : null
   // The save a debounce timer is currently waiting to fire, if any — held so
   // `flushNow` (KAN-302) can run it immediately instead of waiting out the pause.
-  const pendingSave = useRef<{
-    pageId: string
-    title: string
-    blocks: Block[]
-    beforeAtSchedule: Block[]
-  } | null>(null)
-  // The save currently awaiting its network round-trip, if any — set the
-  // instant it starts (before any await) so a `flushNow` that lands once the
-  // debounce timer has already fired (pendingSave is null, runSave in flight)
-  // returns THIS promise instead of racing ahead of it.
-  const inFlightSave = useRef<Promise<void> | null>(null)
-  // The newest STARTED save's own before/after for this page, settled once
-  // that save's outcome is known: resolves to its own `nextBlocks` once it
-  // saves, or to the `before` it used if it fails. A save chained behind it
-  // (KAN-355) reads ITS `before` from here, not from `lastSaved` at run time —
-  // `lastSaved` is advanced synchronously by every started save (below), so a
-  // save ahead of this one that later fails can no longer correct a `before`
-  // already frozen from `lastSaved`'s post-failure value (KAN-368).
-  const lastStarted = useRef<{ pageId: string; stored: Promise<Block[]> } | null>(null)
+  const pendingSave = useRef<{ pageId: string; title: string; blocks: Block[] } | null>(null)
+  // The latest `pondId` prop, read by the queue's writer AT WRITE TIME, never
+  // at queue-creation time: `queueFor`'s `createQueue` callback only ever runs
+  // ONCE per page id (the registry below is lazy), so closing over `pondId`
+  // directly would freeze whichever value was in scope on that first call —
+  // `null`, while ponds are still loading, on a reload landing straight on
+  // `?nodeId` — for the rest of the session, silently dropping every write's
+  // record from `sessionUndo` (its `trackPending`/`remember` both no-op on a
+  // null pond).
+  const pondIdRef = useRef(pondId)
+  useEffect(() => {
+    pondIdRef.current = pondId
+  })
+  // The latest `blocks`, read by `undoRemove` instead of a `setBlocks`
+  // functional updater: StrictMode double-invokes an updater function, and
+  // `undoRemove`'s updater enqueued a structural write as a side effect of
+  // computing its return value, so one toast Undo produced two writes (two
+  // change-log records) in development. A ref updated after every render
+  // gives the same "latest, not stale" guarantee without running inside React's
+  // updater machinery.
+  const blocksRef = useRef(blocks)
+  useEffect(() => {
+    blocksRef.current = blocks
+  })
+
+  // The page's write queue (KAN-495) — created lazily on first use and kept
+  // alive across remounts by the page-write registry, so a save still in
+  // flight from a page just left finishes in its own queue. `fallback` only
+  // matters the first time any caller reaches this page id; later calls find
+  // the existing queue and ignore it. The writer itself is a thin wrapper, not
+  // `createPageWriter(...)` called directly: `queueFor` runs during render
+  // (see `pageQueue` below), and calling `getSupabase()` there would construct
+  // the Supabase client at render time, which `useLazySupabase`'s contract
+  // forbids — wrapping it defers that call (and the `pondIdRef` read) to when
+  // the writer is actually invoked, from inside the queue's own apply loop.
+  function queueFor(id: string, fallback: PageWriteState): PageWriteQueue<PageWriteState> {
+    return getPageWriteQueue<PageWriteQueue<PageWriteState>>(id, () =>
+      createPageWriteQueue(
+        (op, settle) => createPageWriter(getSupabase(), queryClient, id, pondIdRef.current)(op, settle),
+        fallback
+      )
+    )
+  }
+
+  // The current page's write queue (KAN-495), or null before it's loaded —
+  // read here (not only inside effects/handlers) so `queueIdle` below can
+  // subscribe to it. `undefined`/`null` page is the loading state; `saved`
+  // defaults to true then, matching today's behaviour before a page exists
+  // to be unsaved against.
+  // `queueFor`'s writer only REFERENCES `pondIdRef.current` inside a closure
+  // it hands to `createPageWriteQueue`, which stores it without calling it;
+  // the ref is actually read later, from the queue's own apply loop, never
+  // synchronously during this render.
+  const pageQueue =
+    page && page.id === pageId
+      ? // eslint-disable-next-line react-hooks/refs -- see comment above
+        queueFor(page.id, { title: page.title, blocks: page.blocks })
+      : null
+  // Stable per queue (keyed on `pageQueue`'s identity, not recreated every
+  // render) — `useSyncExternalStore` resubscribes whenever `subscribe` itself
+  // changes identity, and a fresh closure every render would otherwise
+  // unsubscribe and resubscribe on every single render of this hook.
+  const subscribeToQueue = useCallback(
+    (listener: () => void) => (pageQueue ? pageQueue.subscribe(() => listener()) : () => {}),
+    [pageQueue]
+  )
+  const queueIdle = useSyncExternalStore(
+    subscribeToQueue,
+    () => pageQueue?.idle() ?? true,
+    () => true
+  )
+  const saved = !pendingDebounce && queueIdle
 
   // Seed local editable state when a different page loads. On a *same-page*
   // refetch we normally leave local edits alone — but when there are no unsaved
@@ -91,26 +166,54 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
   useEffect(() => {
     if (page && page.id !== loadedId.current) {
       loadedId.current = page.id
-      serverSig.current = JSON.stringify(page.blocks)
-      lastSaved.current = { pageId: page.id, blocks: page.blocks }
+      // Touch the page's queue so it exists with this baseline as `head()` if
+      // this is the first visit; a queue from an earlier visit keeps its own
+      // head (a save still pending from the page just left finishes there).
+      const queue = queueFor(page.id, { title: page.title, blocks: page.blocks })
+      // That surviving queue's head can also be STALE: the page may have
+      // changed elsewhere while we were away (an accepted diff, a
+      // child-links page-link insert, an undo from another page) — none of
+      // those route through this page's queue, so its head never moved. Left
+      // alone, the next write's `before` would be a state the store no
+      // longer holds, and ⌘Z on it would revert that other change instead.
+      // Only rebase while idle: a queue halted on navigate-away keeps its
+      // pending op and shows unsaved rather than dropping typed work — the
+      // next retry/edit resolves it, same as returning to any other unsaved
+      // page.
+      if (queue.idle() && JSON.stringify(queue.head().blocks) !== JSON.stringify(page.blocks)) {
+        queue.rebase({ title: page.title, blocks: page.blocks })
+      }
       setSeededId(page.id)
       setTitle(page.title)
       setBlocks(page.blocks)
-      setSaved(true)
+      setPendingDebounce(false)
       setSavedAt(null)
     } else if (page && page.id === loadedId.current && saved) {
-      // Same page, no unsaved edits: adopt server blocks only when they changed
-      // vs. what we last reconciled — i.e. an external write (accepted proposal).
-      const sig = JSON.stringify(page.blocks)
-      if (sig !== serverSig.current) {
-        serverSig.current = sig
-        // The write already has its own record; the next own edit starts after it.
-        lastSaved.current = { pageId: page.id, blocks: page.blocks }
+      // Same page, no unsaved edits: adopt server blocks only when they
+      // differ from what the queue holds — i.e. an external write (accepted
+      // proposal, undo/redo landing) — via `rebase`, which also moves the
+      // queue's own `head()` so it never sees a later op's `before` as the
+      // pre-adopt value.
+      const queue = queueFor(page.id, { title: page.title, blocks: page.blocks })
+      const next = { title: page.title, blocks: page.blocks }
+      if (JSON.stringify(next) !== JSON.stringify(queue.head())) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- guarded one-shot adopt of an external write (accepted diff, undo/redo landing), not a cascade: the `if` above only ever lets this fire once per external write, since `rebase` moves `queue.head()` to match.
         setBlocks(page.blocks)
+        queue.rebase(next)
       }
     }
     if (!pageId) loadedId.current = null
-  }, [page, pageId, saved])
+    // `saved` is read above but deliberately NOT a dependency: our own write
+    // flips it true via the queue's `notify()` (synchronous) a render BEFORE
+    // `enqueueTyped`/`enqueueStructural`'s `.then()` reconciles the
+    // `['page', id]` cache (a microtask later) — keying this effect off
+    // `saved` reran it on that earlier render, comparing against page.blocks
+    // while it was still stale, and wrongly adopted (reverted) the save that
+    // had just landed (KAN-495). Running only on `page`/`pageId` means this
+    // branch next runs once the cache actually reflects the write, at which
+    // point `next` already equals `queue.head()` and nothing is adopted.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `queueFor` is recreated every render (closes over `getSupabase`/`queryClient`/`pondId`) but only touches the module-level registry; keying off it would re-run this seeding effect on every render instead of only on page/pageId changes. `saved` is read, not a dep, per the comment above.
+  }, [page, pageId])
 
   // Until the seeding effect above has run for THIS page, the local title/blocks
   // state still holds the previous node's values (effects run after paint). Every
@@ -122,176 +225,101 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
   const viewBlocks: Block[] = seeded ? blocks : (page?.blocks ?? [])
   const viewTitle = seeded ? title : (page?.title ?? '')
 
-  // The save itself, pulled out of `scheduleSave` so `flushNow` can run it
-  // immediately instead of waiting for the debounce timer to fire (KAN-302).
-  async function runSave(
-    id: string,
-    nextTitle: string,
-    nextBlocks: Block[],
-    before: Block[],
-    resolveRecordIds: (recordIds: readonly string[] | null) => void,
-    resolveStored: (blocks: Block[]) => void
-  ) {
-    // Title first, then blocks + sidebar-refresh + re-embed via the shared
-    // commitBlocks (same tail the accepted-AI-edit path uses). Sequential so
-    // the ['pages'] invalidation inside commitBlocks lands after the rename,
-    // keeping the sidebar rename immediate.
-    const supabase = getSupabase()
-    // Settles once the save's change-log record is on `sessionUndo`'s stack
-    // (commitBlocks's `remembered`) — awaited below, AFTER `setSaved`, so a
-    // ⌘Z that races in right after this save finds its own record already
-    // remembered instead of falling through to the previous step (KAN-355).
-    let remembered: Promise<void> = Promise.resolve()
-    try {
-      await updateTitle(supabase, id, nextTitle)
-      // `ownEdit`: the page moved on under the person's own hand, so every
-      // pending block diff aimed at it goes outdated — its card greys out,
-      // drops accept and offers revise — and the save is logged as accepted.
-      ;({ remembered } = await commitBlocks(supabase, queryClient, id, nextBlocks, {
-        ownEdit: true,
-        before,
-        pondId,
-        onPending: resolveRecordIds,
-      }))
-    } catch (err) {
-      resolveRecordIds(null)
-      // A save chained behind this one (KAN-355) reads THIS save's `before`,
-      // not what it never managed to store.
-      resolveStored(before)
-      if (lastSaved.current?.pageId === id && lastSaved.current.blocks === nextBlocks) {
-        lastSaved.current = { pageId: id, blocks: before }
+  // KAN-368: the undo slot exists the instant the write is enqueued — before
+  // it waits behind anything already in the queue and before its round trip —
+  // so ⌘Z takes this step, not whatever settled underneath it. The queue still
+  // owns `before` (`head()` at apply time). `onPending` fills the slot once
+  // the record ids are known; a second `remember` would stack a duplicate.
+  function reserveUndoSlot(opts?: {
+    onUndone?: () => Promise<void> | void
+    onRedone?: () => Promise<void> | void
+  }):
+    | {
+        resolve: (recordIds: readonly string[] | null) => void
+        handle: UndoHandle
       }
-      console.error('[document] save failed', id, err)
-      return
+    | undefined {
+    const id = pondIdRef.current
+    if (!id) return undefined
+    let resolveRecordIds: (recordIds: readonly string[] | null) => void = () => {}
+    let settled = false
+    const recordIds = new Promise<readonly string[] | null>((resolve) => {
+      resolveRecordIds = (ids) => {
+        if (settled) return
+        settled = true
+        resolve(ids)
+      }
+    })
+    const handle = sessionUndo.rememberPending({
+      pondId: id,
+      recordIds,
+      onUndone: opts?.onUndone,
+      onRedone: opts?.onRedone,
+    })
+    const pending = handle as PendingHistoryStep
+    const resolve = resolveRecordIds
+    resolveRecordIds = (ids) => {
+      pending.attemptFailed = false
+      resolve(ids)
     }
-    // keep the ['page'] cache — and the signature the adopt compares against —
-    // in step with what we just saved, so the same-page adopt above only fires
-    // for genuinely external writes.
-    if (loadedId.current === id) serverSig.current = JSON.stringify(nextBlocks)
-    queryClient.setQueryData(['page', id], (prev: PondPage | null | undefined) =>
-      prev ? { ...prev, title: nextTitle, blocks: nextBlocks } : prev
-    )
-    // The root page's title is also the breadcrumb's root crumb on every page.
-    queryClient.setQueryData(homeQueryKey(pondId), (prev: HomePage | null | undefined) =>
-      prev && prev.id === id ? { ...prev, title: nextTitle } : prev
-    )
-    setSaved(true)
-    setSavedAt(new Date())
-    // A save chained behind this one (KAN-355) reads this as ITS `before`.
-    resolveStored(nextBlocks)
-    // Resolve `runSave` (and so `startSave`'s chain/`inFlightSave`/`flushNow`)
-    // only once the record above is remembered — never before "saved", and
-    // never rejects (commitBlocks's `remembered` already swallows its own
-    // failures).
-    await remembered
+    return { resolve: resolveRecordIds, handle }
   }
 
-  // Runs `runSave` and tracks it in `inFlightSave` for the window it is
-  // actually awaiting its network round-trip — set synchronously, before
-  // `runSave`'s first `await`, so nothing can observe the save as "started"
-  // without also finding it here. Chained on the previous save (if any) so two
-  // saves of the same page never run at once and land out of order (KAN-355).
-  // With no previous save, `runSave` is called directly rather than through a
-  // `Promise.resolve().then(...)` hop — existing callers (`flushNow` in
-  // particular) rely on the first save's `updateTitle` having already been
-  // called by the time `startSave` returns, not one microtask later.
-  function startSave(
-    id: string,
-    nextTitle: string,
-    nextBlocks: Block[],
-    beforeAtSchedule: Block[]
-  ): Promise<void> {
-    const prev = inFlightSave.current
-    // A save chained behind another started save of the SAME page (KAN-355)
-    // takes its `before` from what that save ACTUALLY stored — resolved once
-    // it settles, below — rather than from `lastSavedOf` here: that read would
-    // be this call's own synchronous advance below if a chain of several saves
-    // is already mid-flight, which a later failure in one of them can no
-    // longer correct (KAN-368). With no such save in flight, `before` is
-    // computed synchronously exactly as before: the unchained first save must
-    // still call `updateTitle` synchronously, before any await — `flushNow`
-    // relies on it.
-    const priorStored = prev && lastStarted.current?.pageId === id ? lastStarted.current.stored : null
-    // This save is one pause: the change log records it as one edit, from what
-    // the page last saved to what it saves now. Captured and advanced HERE,
-    // synchronously, the instant the save is started (not inside `runSave`,
-    // which may not actually run until a chained previous save settles) — the
-    // same moment the undo slot below is reserved. A structural edit that
-    // flushes this save (`persistBlocksAsOwnEdit`) overwrites `lastSaved` to
-    // its OWN `after` right after kicking this off, before this save's chained
-    // turn comes up; reading `lastSavedOf` again at that later point would
-    // wrongly pick up that overwrite as this save's `before`.
-    const before = lastSavedOf(id) ?? beforeAtSchedule
-    if (lastSavedOf(id) !== null) lastSaved.current = { pageId: id, blocks: nextBlocks }
-    let resolveStored: (blocks: Block[]) => void = () => {}
-    lastStarted.current = {
-      pageId: id,
-      stored: new Promise<Block[]>((resolve) => {
-        resolveStored = resolve
-      }),
-    }
-    // KAN-368: reserve this save's slot on the undo stack synchronously, the
-    // instant the save is started — before it waits behind a previous save
-    // (the KAN-355 chain) and before its own round trip — so a structural
-    // edit that flushes it (`persistBlocksAsOwnEdit`, which registers its own
-    // pending step right after kicking this one off) ends up ABOVE this one,
-    // not racing it for the same slot. `runSave` hands the slot its record
-    // ids through `commitBlocks`'s `onPending`, or null if the save fails.
-    let resolveRecordIds: (recordIds: readonly string[] | null) => void = () => {}
-    if (pondId) {
-      sessionUndo.rememberPending({
-        pondId,
-        recordIds: new Promise((resolve) => {
-          resolveRecordIds = resolve
-        }),
+  // Enqueue a typed (debounced) write — what `scheduleSave`'s timer fires and
+  // what `flushNow` runs immediately. The queue reads `before` from its own
+  // `head()` at apply time, never from here.
+  function enqueueTyped(id: string, nextTitle: string, nextBlocks: Block[]): Promise<void> {
+    const onPending = reserveUndoSlot()?.resolve
+    const queue = queueFor(id, { title: nextTitle, blocks: nextBlocks })
+    return queue
+      .enqueue({ kind: 'typed', after: { title: nextTitle, blocks: nextBlocks }, onPending })
+      .then(() => {
+        queryClient.setQueryData(['page', id], (prev: PondPage | null | undefined) =>
+          prev ? { ...prev, title: nextTitle, blocks: nextBlocks } : prev
+        )
+        // The root page's title is also the breadcrumb's root crumb on every page.
+        queryClient.setQueryData(homeQueryKey(pondId), (prev: HomePage | null | undefined) =>
+          prev && prev.id === id ? { ...prev, title: nextTitle } : prev
+        )
+        setSavedAt(new Date())
       })
-    }
-    const run = (resolvedBefore: Block[]) =>
-      runSave(id, nextTitle, nextBlocks, resolvedBefore, resolveRecordIds, resolveStored)
-    // `priorStored` has already settled by the time `prev` (the save ahead of
-    // it) itself settles — `runSave`'s own success/failure tail resolves it
-    // before `prev`'s promise does — so chaining off it here adds no delay
-    // beyond the KAN-355 ordering `prev` already imposes. A `prev` for a
-    // DIFFERENT page (no `priorStored`) still gates ordering, just with
-    // `before` computed synchronously as above.
-    const promise = (
-      prev ? prev.catch(() => {}).then(() => (priorStored ?? Promise.resolve(before)).then(run)) : run(before)
-    ).finally(() => {
-      // Nothing may leave either slot unsettled: a throw before `commitBlocks`
-      // resolves them would hold every later ⌘Z, and every later chained
-      // save's `before`, for the timeout.
-      resolveRecordIds(null)
-      resolveStored(before)
-      if (inFlightSave.current === promise) inFlightSave.current = null
-    })
-    inFlightSave.current = promise
-    return promise
+      .catch((err) => {
+        // The queue keeps this op halted and retries it on the next write
+        // (KAN-495). The slot stays open so that retry fills it; resolving
+        // it now would drop the step the retry is about to log. Flag it so
+        // a ⌘Z pressed while it is halted resolves empty instead of waiting
+        // out the retry.
+        const pond = pondIdRef.current
+        if (pond) sessionUndo.markPendingFailed(pond)
+        console.error('[document] save failed', id, err)
+      })
   }
 
   function scheduleSave(nextTitle: string, nextBlocks: Block[]) {
     const id = loadedId.current
     if (!id) return
-    setSaved(false)
-    const beforeAtSchedule = lastSavedOf(id) ?? []
-    pendingSave.current = { pageId: id, title: nextTitle, blocks: nextBlocks, beforeAtSchedule }
+    setPendingDebounce(true)
+    pendingSave.current = { pageId: id, title: nextTitle, blocks: nextBlocks }
     if (saveTimer.current) clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(() => {
       saveTimer.current = null
       const p = pendingSave.current
       pendingSave.current = null
-      if (p) void startSave(p.pageId, p.title, p.blocks, p.beforeAtSchedule)
+      setPendingDebounce(false)
+      if (p) void enqueueTyped(p.pageId, p.title, p.blocks)
     }, EDIT_PAUSE_MS)
   }
 
   // Run a still-pending debounced save right now instead of waiting out the
   // pause — the composer calls this (via the page-flush registry) before
   // sending a message, so Pond's next read of the page never lands inside
-  // the debounce window (KAN-302). If the debounce timer has ALREADY fired and
-  // its save is in flight (nothing pending, but `runSave` is awaiting its
-  // network round-trip), return that same promise rather than undefined —
-  // otherwise the composer would send while the save it's meant to wait on is
-  // still in the air.
+  // the debounce window (KAN-302). Hands the pending save to the queue
+  // (synchronously — nothing else can slip in ahead of it), then returns
+  // the queue's own drain promise, which already covers that write plus
+  // anything else still outstanding (KAN-495: the queue is the only record
+  // of what's in flight).
   function flushNow(): Promise<void> | undefined {
+    const id = loadedId.current
     if (saveTimer.current) {
       clearTimeout(saveTimer.current)
       saveTimer.current = null
@@ -299,21 +327,18 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
     const p = pendingSave.current
     pendingSave.current = null
     if (p) {
-      const promise = startSave(p.pageId, p.title, p.blocks, p.beforeAtSchedule)
-      // KAN-368: a flush fires because something ELSE (a structural edit) is
-      // about to move focus off this save's own fields and onto another block
-      // — so close these fields' Tiptap history now, synchronously, rather
-      // than waiting for commit.ts's own close, which only runs once the save
-      // is durable (a full round trip later). Without this, the shell's ⌘Z
-      // pressed right after the flush still finds undo depth in the field
-      // focus just left and undoes that typing instead of falling through to
-      // the structural edit's own session step.
+      setPendingDebounce(false)
+      void enqueueTyped(p.pageId, p.title, p.blocks)
+      // KAN-368: close these fields' history now, not when the record is
+      // durable. A structural edit flushes this save and moves focus; ⌘Z
+      // right after must fall through to the session step. The slot above
+      // was reserved in the same turn, so the shell has something to take.
       for (const block of p.blocks) {
         if ('content' in block) closeBlockHistory(block.id, block.content)
       }
-      return promise
     }
-    return inFlightSave.current ?? undefined
+    if (!id) return undefined
+    return queueFor(id, { title: viewTitle, blocks: viewBlocks }).drained()
   }
 
   // `flushNow` is recreated every render; the registry entry stays stable per
@@ -348,33 +373,138 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
 
   // Apply an in-editor block change (from BlockCanvas): update local state and
   // schedule the debounced persist. (Named to avoid colliding with the DB-level
-  // commitBlocks.) KAN-368: `persistBlocksAsOwnEdit`'s own callers (delete,
-  // move, …) call `onBlocksPersisted` (adoptSavedBlocks) with the SAME array
-  // reference right before this, so the write these chords already made at
-  // once is never rescheduled behind the 600ms pause — a ⌘Z landing inside
-  // that window would otherwise have nothing to race against ending the undo
-  // 600ms later with this chord's own stale, pre-undo snapshot.
+  // commitBlocks.)
   function commitLocalEdit(next: Block[]) {
     setBlocks(next)
-    const id = loadedId.current
-    if (id && lastSavedOf(id) === next) return
     scheduleSave(viewTitle, next)
   }
 
-  // A caller that just wrote blocks directly (KAN-124's template apply: its own
-  // `appendOwnEdit` + `sessionUndo.remember`, bypassing `scheduleSave` entirely)
-  // still goes on to call `commitLocalEdit` so the editor's local state reflects
-  // the write. Without this, `lastSaved` would still hold the baseline from
-  // BEFORE that write, so `commitLocalEdit`'s own debounced save would fire with
-  // a stale `before` and log a second own-edit record for the same change. Call
-  // this FIRST (synchronously, before `commitLocalEdit`) so that save's `before`
-  // is already the blocks just written — byte-equal to its `after`, so
-  // `recordOwnEdit` logs nothing for it.
-  function adoptSavedBlocks(blocks: Block[]) {
+  type StructuralWriteOpts = {
+    /**
+     * A failed op normally stays halted for the next write to auto-retry
+     * (⌘⌫, drag-drop: a transient failure behaves like today). A template
+     * apply's `before`/`after` are only ever attempted once — a half-applied
+     * template (blocks with no matching schema/props) must never be what a
+     * later keystroke's write builds on — so that caller opts into
+     * discarding the halted op outright and repainting local state back to
+     * `head()` instead of leaving it to retry.
+     */
+    discardOnFailure?: boolean
+    /** View-insert's new database (KAN-368): run once the ⌘Z/⇧⌘Z RPC lands. */
+    onUndone?: () => Promise<void> | void
+    onRedone?: () => Promise<void> | void
+    /** Fires synchronously with the reserved handle, before the write awaits. */
+    onUndoHandle?: (handle: UndoHandle) => void
+  }
+
+  // Enqueues `next` as this page's own structural op (flushing whatever typed
+  // save the debounce is still waiting on first, synchronously, so the two
+  // can never land as one record) and marks the draft saved once it lands —
+  // the queue's `head()` IS what's stored, so there's nothing else to adopt.
+  // Called only from `writeStructural` (BlockCanvas's one structural entry
+  // point, which `undoRemove` also goes through) — never from inside a
+  // `setBlocks` updater, which StrictMode double-invokes.
+  function enqueueStructural(id: string, next: Block[], opts?: StructuralWriteOpts): Promise<boolean> {
+    // Flush first so the typed save's slot is reserved UNDER this one.
+    flushNow()
+    const reserved = reserveUndoSlot(opts)
+    const onPending = reserved?.resolve
+    if (reserved) opts?.onUndoHandle?.(reserved.handle)
+    // The slot is already on the stack. Close these fields now so a ⌘Z in
+    // the same turn falls through to it instead of the editor's own history
+    // (KAN-368). The record still fills the slot when the write lands.
+    for (const block of next) {
+      if ('content' in block) closeBlockHistory(block.id, block.content)
+    }
+    const queue = queueFor(id, { title: viewTitle, blocks: next })
+    // The cache is what a return trip reads. Write the in-flight blocks now,
+    // not when the save resolves: leaving and coming back before it settles
+    // would otherwise paint the pre-write page, and a word typed on that
+    // stale screen is then thrown away with the failed apply — or, if the
+    // apply lands, stored over the blocks the person never saw.
+    queryClient.setQueryData(['page', id], (prev: PondPage | null | undefined) =>
+      prev ? { ...prev, blocks: next } : prev
+    )
+    return queue
+      .enqueue({ kind: 'structural', after: { title: viewTitle, blocks: next }, onPending })
+      .then(() => {
+        queryClient.setQueryData(['page', id], (prev: PondPage | null | undefined) =>
+          prev ? { ...prev, blocks: next } : prev
+        )
+        setSavedAt(new Date())
+        return true
+      })
+      .catch((err) => {
+        console.error('[document] structural save failed', id, err)
+        const discarded = err instanceof Error && err.message.includes('discarded')
+        if (discarded) {
+          // Already dropped with the halted op. Settle the slot; don't
+          // discard again or repaint from this op's own `before`.
+          onPending?.(null)
+          return false
+        }
+        if (opts?.discardOnFailure) {
+          // Not retried — the reserved slot must settle or ⌘Z waits it out.
+          onPending?.(null)
+          // Any op already queued behind the halt (a debounce that fired
+          // before the failure resolved) was built on this discarded
+          // `after` too — discard it with the halted op, not just the
+          // halted op itself, or it silently re-stores the failed apply.
+          // This is that page's queue, so it is safe after the person has
+          // moved on: page B has its own queue.
+          queue.discardHalted({ andQueued: true })
+          const stored = queue.head()
+          // Roll the optimistic cache back even when another page is open.
+          // A later visit reads this cache; leaving the discarded blocks
+          // here would rebase the queue onto a template the store never held.
+          queryClient.setQueryData(['page', id], (prev: PondPage | null | undefined) =>
+            prev ? { ...prev, title: stored.title, blocks: stored.blocks } : prev
+          )
+          // The debounce timer and the on-screen blocks are the OPEN page's,
+          // not this write's. A template apply on A that fails after the
+          // person has opened B must not cancel B's pending save or repaint
+          // B with A's stored blocks — B's next keystroke would then save
+          // A's blocks over B. Only a pending save that still belongs to
+          // this page, and a screen that is still this page, get rewound.
+          const pending = pendingSave.current
+          if (pending?.pageId === id) {
+            if (saveTimer.current) {
+              clearTimeout(saveTimer.current)
+              saveTimer.current = null
+            }
+            pendingSave.current = null
+            setPendingDebounce(false)
+          }
+          if (loadedId.current === id) setBlocks(stored.blocks)
+        } else {
+          const pond = pondIdRef.current
+          if (pond) sessionUndo.markPendingFailed(pond)
+        }
+        return false
+      })
+  }
+
+  // BlockCanvas's ONE structural entry point (KAN-495): a direct write
+  // (⌘⌫, drag-drop, template apply, width change) updates local state and
+  // enqueues its own structural op, replacing the old enqueue-then-`onChange`
+  // pair that queued a second (typed) write of the same blocks behind it.
+  function writeStructural(next: Block[], opts?: StructuralWriteOpts): Promise<boolean> {
     const id = loadedId.current
-    if (!id) return
-    lastSaved.current = { pageId: id, blocks }
-    serverSig.current = JSON.stringify(blocks)
+    if (!id) return Promise.resolve(false)
+    setBlocks(next)
+    return enqueueStructural(id, next, opts)
+  }
+
+  // Undo a block removal (ticket-44 review): re-insert against the LATEST blocks
+  // (read from `blocksRef`, not `blocks` itself), so an edit made between the
+  // delete and the Undo isn't clobbered by a re-base on the stale stage-time
+  // snapshot (the original DocumentPanel behaviour, preserved through
+  // BlockCanvas.onUndoRemove). `writeStructural` runs outside any `setBlocks`
+  // updater — a functional updater here would run its enqueue as a side
+  // effect of computing its return value, which StrictMode double-invokes.
+  function undoRemove(index: number, block: Block, handedRowStartTo?: string | null) {
+    const next = withUndoneRemove(blocksRef.current, index, block, handedRowStartTo)
+    void writeStructural(next)
   }
 
   return {
@@ -385,6 +515,7 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
     onTitle,
     onProperty,
     commitLocalEdit,
-    adoptSavedBlocks,
+    undoRemove,
+    writeStructural,
   }
 }

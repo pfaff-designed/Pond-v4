@@ -67,9 +67,7 @@ jest.mock('@/lib/pages/home', () => ({
   HOME_TYPE: 'home',
   getOrCreateHomePage: jest.fn().mockResolvedValue({ id: 'home-1', title: 'Life', blocks: [] }),
 }))
-jest.mock('@/lib/pages/commit', () => ({
-  commitBlocks: jest.fn().mockResolvedValue(undefined),
-}))
+jest.mock('@/lib/pages/commit', () => jest.requireActual('./helpers/page-commit-mock').pageCommitMock())
 const mockCreatePage = jest.fn()
 jest.mock('@/lib/pages/client', () => ({
   updateTitle: jest.fn().mockResolvedValue(undefined),

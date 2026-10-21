@@ -49,6 +49,8 @@ jest.mock('@/lib/pages/tree', () => ({
   insertPageOptimistic: jest.fn(),
 }))
 
+jest.mock('@/lib/pages/commit', () => jest.requireActual('./helpers/page-commit-mock').pageCommitMock())
+
 jest.mock('@/lib/pages/client', () => ({
   getPage: jest.fn().mockResolvedValue(null),
   listPages: jest.fn().mockResolvedValue([]),

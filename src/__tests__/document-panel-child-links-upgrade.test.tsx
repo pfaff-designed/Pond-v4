@@ -57,9 +57,11 @@ jest.mock('@/lib/pages/client', () => ({
 }))
 
 const mockCommitBlocks = jest.fn()
-jest.mock('@/lib/pages/commit', () => ({
-  commitBlocks: (...args: unknown[]) => mockCommitBlocks(...args),
-}))
+jest.mock('@/lib/pages/commit', () =>
+  jest.requireActual('./helpers/page-commit-mock').pageCommitMock({
+    commitBlocks: (...args: unknown[]) => mockCommitBlocks(...args),
+  })
+)
 
 const mockMarkChildLinksMigrated = jest.fn()
 jest.mock('@/lib/pages/child-links', () => ({
@@ -83,6 +85,7 @@ jest.mock('@/lib/change-log/session-undo', () => ({
     undoHandle: (...args: unknown[]) => mockSessionUndo(...args),
     remember: () => {},
     rememberPending: () => ({}),
+    markPendingFailed: () => {},
     // BlockCanvas's delete toast (KAN-368) watches the stack via `subscribe`
     // and checks `isTopUndo` — this test never pushes a second step, so
     // there's nothing for either to ever report.

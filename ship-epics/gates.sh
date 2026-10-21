@@ -20,6 +20,8 @@ base=${2:-origin/main}
 scope=${3:-all}
 case $scope in all | related | everything) ;; *) echo "gates.sh: SCOPE must be all, related or everything, got '$scope'" >&2; exit 2 ;; esac
 cd "$worktree"
+# CI runs in UTC; run local gates in UTC too, so a timezone-dependent test can't go red here and green there.
+export TZ=UTC
 
 changed=$(git diff --name-only "$base"...HEAD; git diff --name-only HEAD; git ls-files --others --exclude-standard)
 changed=$(printf '%s\n' "$changed" | sort -u)

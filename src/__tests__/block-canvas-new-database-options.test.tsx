@@ -76,7 +76,7 @@ describe('`/board` → `new database —` writes a status field with minted opti
     mockCreateClient.mockReturnValue(sb)
 
     renderCanvas([])
-    fireEvent.click(await screen.findByRole('button', { name: 'Add a block' }))
+    fireEvent.click(await screen.findByTestId('trailing-block-gap'))
     const editor = await findTextBlock()
     writeInTextBlock(editor, '/')
     await screen.findByRole('listbox', { name: 'blocks' })

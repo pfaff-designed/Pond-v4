@@ -24,7 +24,7 @@ import {
   type PageRow as PondPageRow,
 } from './client'
 import { commitBlocks } from './commit'
-import { trashPage } from '@/lib/change-log/trash'
+import { restorePage, trashPage } from '@/lib/change-log/trash'
 import type { PageRow } from './tree'
 import { withoutDatabasesRoot } from './databases-root'
 import { flushPendingPageSave } from './page-flush'
@@ -448,6 +448,27 @@ export async function trashPageUnlinked(
   } catch (err) {
     await relinkRestoredSubtree(supabase, queryClient, { pondId, rootPageId })
     throw err
+  }
+}
+
+/**
+ * The one home for restore-then-relink (KAN-451): `restorePage` writes the
+ * `restore` record, then `relinkRestoredSubtree` puts back whatever
+ * `trashPageUnlinked` unlinked from the subtree's root on its way into trash.
+ * Both `TrashPage.tsx` and `ChangeLogPage.tsx` call this rather than each
+ * calling `restorePage` and `relinkRestoredSubtree` separately — the two
+ * had drifted once already (TrashPage shipped without the relink step).
+ * `rootPageId` is `null` when the restored record never had a target page;
+ * relink is then a no-op rather than a call with nothing to relink.
+ */
+export async function restorePageRelinked(
+  supabase: SupabaseClient<Database>,
+  queryClient: QueryClient,
+  { pondId, recordId, rootPageId }: { pondId: string | null; recordId: string; rootPageId: string | null }
+): Promise<void> {
+  await restorePage(supabase, recordId)
+  if (rootPageId) {
+    await relinkRestoredSubtree(supabase, queryClient, { pondId, rootPageId })
   }
 }
 

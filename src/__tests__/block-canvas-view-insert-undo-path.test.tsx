@@ -16,13 +16,15 @@
 
 import React from 'react'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { sessionUndo } from '@/lib/change-log/session-undo'
 import { undoStep } from '@/lib/change-log/undo'
 import { trashPage, restorePage } from '@/lib/change-log/trash'
 import type { Block } from '@/lib/documents/types'
+import { createPageWriter, type PageWriteState } from '@/lib/pages/commit'
+import { createPageWriteQueue } from '@/lib/pages/page-write-queue'
 import type { PageRow } from '@/lib/pages/tree'
 import { findTextBlock, writeInTextBlock } from './helpers/text-block'
 import { makeFakeSupabase } from './helpers/fake-supabase'
@@ -87,8 +89,50 @@ jest.mock('@/lib/change-log/undo', () => ({
 
 function Harness({ initial }: { initial: Block[] }) {
   const [blocks, setBlocks] = React.useState(initial)
+  const queryClient = useQueryClient()
+  const queueRef = React.useRef<ReturnType<typeof createPageWriteQueue<PageWriteState>> | null>(null)
+
+  const onStructuralWrite = async (
+    next: Block[],
+    opts?: {
+      onUndone?: () => Promise<void> | void
+      onRedone?: () => Promise<void> | void
+    }
+  ) => {
+    setBlocks(next)
+    if (!queueRef.current) {
+      queueRef.current = createPageWriteQueue(createPageWriter(mockCreateClient(), queryClient, 'page-1', 'pond-1'), {
+        title: 'trip planning',
+        blocks: initial,
+      })
+    }
+    let resolveIds: (ids: readonly string[] | null) => void = () => {}
+    const recordIds = new Promise<readonly string[] | null>((resolve) => {
+      resolveIds = resolve
+    })
+    sessionUndo.rememberPending({
+      pondId: 'pond-1',
+      recordIds,
+      onUndone: opts?.onUndone,
+      onRedone: opts?.onRedone,
+    })
+    await queueRef.current.enqueue({
+      kind: 'structural',
+      after: { title: 'trip planning', blocks: next },
+      onPending: resolveIds,
+    })
+    return true
+  }
+
   return (
-    <BlockCanvas blocks={blocks} pageId="page-1" pageTitle="trip planning" onChange={setBlocks} />
+    <BlockCanvas
+      blocks={blocks}
+      pageId="page-1"
+      pageTitle="trip planning"
+      onChange={setBlocks}
+      onStructuralWrite={onStructuralWrite}
+      onUndoRemove={() => {}}
+    />
   )
 }
 
@@ -117,7 +161,7 @@ beforeEach(() => {
  *  which lands on `new database — trip planning` (preselected when no databases
  *  exist) or the clicked existing row — the caller does the picking. */
 async function openBoardSource(): Promise<HTMLElement> {
-  fireEvent.click(await screen.findByRole('button', { name: 'Add a block' }))
+  fireEvent.click(screen.getByTestId('trailing-block-gap'))
   const editor = await findTextBlock()
   writeInTextBlock(editor, '/')
   await screen.findByRole('listbox', { name: 'blocks' })

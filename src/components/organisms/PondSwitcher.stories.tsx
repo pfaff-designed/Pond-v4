@@ -11,10 +11,11 @@ import { RAIL_WIDTH_PX } from '@/lib/layout/rail-width'
 
 /**
  * The pond switcher in the rail head, and the sheet it opens — `Pond 06.13`
- * `s6m1`–`s6m4`, `PondRail` state `switcher` (#312 / #316 / #319).
+ * `s6m1`–`s6m3`, `PondRail` state `switcher` (#312 / #316 / #319).
  *
  * TWO surfaces, one file, because they are one affordance: the head opens a menu,
- * and the menu's `new pond` row opens the board's three-step sheet.
+ * and the menu's `new pond` row opens the board's two-step sheet (sources is a
+ * separate ticket's ask and is left out — KAN-488).
  *
  * **What is NOT here, and why.** The open menu (the list of ponds, the ✓ on the
  * current one, each row's `?pond=<id>` href) cannot be a story today:
@@ -333,9 +334,10 @@ function SheetHarness({ pending, failure = null }: SheetHarnessProps) {
 
 /**
  * `s6m2`: a SHEET over a paper scrim, not a field in the menu — and the board's
- * rows are PRESENT, not omitted. #316 ships glyph, theme and the later steps in
- * `PondControl`'s own `disabled` state, so nothing is missing from the board and
- * nothing pretends to be live.
+ * rows are PRESENT, not omitted. #316 ships the glyph row and the paper/ink
+ * pills live; the areas step and the other six theme pills stay in
+ * `PondControl`'s own `disabled` state, so nothing is missing from the board
+ * and nothing pretends to be live beyond what's built.
  */
 export const TheSheet: Story = {
   name: 'new',
@@ -345,9 +347,10 @@ export const TheSheet: Story = {
     const canvas = within(canvasElement)
     const sheet = canvas.getByRole('dialog', { name: 'New pond' })
 
-    await expect(sheet).toHaveTextContent('new pond')
-    await expect(sheet).toHaveTextContent('1 of 3')
-    await expect(sheet).toHaveTextContent('Name it')
+    // One "New pond": the title, and only the `N of 2` counter beside it.
+    await expect(canvas.getAllByText('New pond')).toHaveLength(1)
+    await expect(sheet).toHaveTextContent('1 of 2')
+    await expect(canvas.getByPlaceholderText('Name your pond')).toBeInTheDocument()
     // The disabled rows are rendered, not dropped.
     await expect(sheet).toHaveTextContent('glyph')
     await expect(sheet).toHaveTextContent('theme')
@@ -381,11 +384,11 @@ export const TheSheetDark: Story = {
 }
 
 /**
- * `s6m2` → `s6m3` → `s6m4`, then the pond is made. The last step's primary names
- * what it does (`make pond`, not `continue`), per W6: "an accept may be named for
- * what it does".
+ * `s6m2` → `s6m3`, then the pond is made. The last step's primary names what it
+ * does (`make pond`, not `continue`), per W6: "an accept may be named for what it
+ * does". No `skip`, anywhere: a blank name cannot reach `onCreate` (KAN-487).
  */
-export const WalkingTheThreeSteps: Story = {
+export const WalkingTheSteps: Story = {
   tags: ['!dev'],
   decorators: [paper],
   render: () => <SheetHarness />,
@@ -393,35 +396,36 @@ export const WalkingTheThreeSteps: Story = {
     const canvas = within(canvasElement)
     const sheet = canvas.getByRole('dialog', { name: 'New pond' })
 
-    await userEvent.type(canvas.getByPlaceholderText('make noise'), 'red door guys')
+    await expect(canvas.queryByRole('button', { name: 'skip' })).not.toBeInTheDocument()
+    await userEvent.type(canvas.getByPlaceholderText('Name your pond'), 'red door guys')
 
     await userEvent.click(canvas.getByRole('button', { name: 'continue' }))
-    await expect(sheet).toHaveTextContent('2 of 3')
+    await expect(sheet).toHaveTextContent('2 of 2')
     await expect(sheet).toHaveTextContent('Areas')
     await expect(sheet).toHaveTextContent('Areas are pages with pages inside')
-
-    await userEvent.click(canvas.getByRole('button', { name: 'continue' }))
-    await expect(sheet).toHaveTextContent('3 of 3')
-    await expect(sheet).toHaveTextContent('Sources')
-    await expect(sheet).toHaveTextContent('google sheet')
+    await expect(canvas.queryByRole('button', { name: 'skip' })).not.toBeInTheDocument()
 
     await userEvent.click(canvas.getByRole('button', { name: 'make pond' }))
-    await expect(onCreate).toHaveBeenCalledWith('red door guys')
+    await expect(onCreate).toHaveBeenCalledWith('red door guys', { glyph: 'lightning-03' })
   },
 }
 
-/**
- * `s6m2`: "skip gives 'untitled pond'" — so skip CREATES, straight away, and the
- * empty name is legal: the column default supplies the name.
- */
-export const SkipMakesItStraightAway: Story = {
+/** KAN-487: no default name — `continue` stays disabled until the name is non-blank. */
+export const BlankNameKeepsContinueDisabled: Story = {
   tags: ['!dev'],
   decorators: [paper],
   render: () => <SheetHarness />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await userEvent.click(canvas.getByRole('button', { name: 'skip' }))
-    await expect(onCreate).toHaveBeenCalledWith('')
+    const field = canvas.getByPlaceholderText('Name your pond')
+    const continueButton = canvas.getByRole('button', { name: 'continue' })
+    await expect(continueButton).toBeDisabled()
+
+    await userEvent.type(field, '   ')
+    await expect(continueButton).toBeDisabled()
+
+    await userEvent.type(field, 'Studio')
+    await expect(continueButton).toBeEnabled()
   },
 }
 
@@ -443,9 +447,9 @@ export const MakingItFailed: Story = {
 
 /**
  * While the write is in flight every control is inert — the sheet's answer to
- * double-submit (AUDIT G9), and a state no board frame draws. All three controls
- * go `disabled`, which in `PondControl` also means `pointer-events: none`, so
- * there is no second `make pond` to click.
+ * double-submit (AUDIT G9), and a state no board frame draws. Both controls go
+ * `disabled`, which in `PondControl` also means `pointer-events: none`, so there
+ * is no second `make pond` to click.
  */
 export const Pending: Story = {
   tags: ['!dev'],
@@ -453,8 +457,7 @@ export const Pending: Story = {
   render: () => <SheetHarness pending />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getByRole('button', { name: 'skip' })).toBeDisabled()
     await expect(canvas.getByRole('button', { name: 'continue' })).toBeDisabled()
-    await expect(canvas.getByPlaceholderText('make noise')).toBeDisabled()
+    await expect(canvas.getByPlaceholderText('Name your pond')).toBeDisabled()
   },
 }

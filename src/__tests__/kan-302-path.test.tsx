@@ -242,31 +242,52 @@ jest.mock('@/lib/pages/client', () => ({
   defineSchema: jest.fn().mockResolvedValue(undefined),
 }))
 
-jest.mock('@/lib/pages/commit', () => ({
-  commitBlocks: jest.fn(
-    async (
-      _supabase: unknown,
-      _queryClient: unknown,
-      pageId: string,
-      blocks: Block[],
-      opts?: { ownEdit?: true; before?: Block[]; pondId?: string | null }
-    ) => {
-      if (pageId !== fakePage.id) return
-      fakePage.blocks = blocks
-      if (opts?.ownEdit) {
-        fakeChangeLog.push(
-          makeRecord({
-            status: 'accepted',
-            action: 'edit',
-            before: opts.before ?? null,
-            after: blocks,
-            targetPageId: pageId,
-          })
-        )
-      }
+const mockCommitBlocks = jest.fn(
+  async (
+    _supabase: unknown,
+    _queryClient: unknown,
+    pageId: string,
+    blocks: Block[],
+    opts?: { ownEdit?: true; before?: Block[]; pondId?: string | null }
+  ) => {
+    if (pageId !== fakePage.id) return
+    fakePage.blocks = blocks
+    if (opts?.ownEdit) {
+      fakeChangeLog.push(
+        makeRecord({
+          status: 'accepted',
+          action: 'edit',
+          before: opts.before ?? null,
+          after: blocks,
+          targetPageId: pageId,
+        })
+      )
     }
-  ),
+  }
+)
+jest.mock('@/lib/pages/commit', () => ({
+  commitBlocks: (...args: unknown[]) => mockCommitBlocks(...(args as Parameters<typeof mockCommitBlocks>)),
   propagateBlockWrite: jest.fn().mockResolvedValue(undefined),
+  // KAN-495: the page-write queue's writer. Not a path this file's tests
+  // drive (no typed/structural edit here goes through BlockCanvas/the
+  // debounce — only AITerminal propose/accept and ⌘Z/⇧⌘Z), but
+  // `use-page-draft.ts`'s seeding effect calls `createPageWriter` on every
+  // mount to build the queue, so the mock still needs the export. Forwards
+  // to the same `commitBlocks` mock above, matching the real writer's shape.
+  createPageWriter:
+    (supabase: unknown, queryClient: unknown, pageId: string, pondId: string | null) =>
+    async (op: {
+      kind: 'typed' | 'structural'
+      before: { title: string; blocks: Block[] }
+      after: { title: string; blocks: Block[] }
+    }) => {
+      if (op.kind === 'typed') await updateTitle(supabase as never, pageId, op.after.title)
+      await mockCommitBlocks(supabase, queryClient, pageId, op.after.blocks, {
+        ownEdit: true,
+        before: op.before.blocks,
+        pondId,
+      })
+    },
 }))
 
 jest.mock('@/lib/pages/tree', () => ({

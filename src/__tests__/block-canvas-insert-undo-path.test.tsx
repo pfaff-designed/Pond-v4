@@ -30,6 +30,7 @@ jest.mock('@/lib/supabase/client', () => ({
 
 jest.mock('@/lib/pond/context', () => ({
   ...jest.requireActual('@/lib/pond/context'),
+  usePond: () => ({ pond: { id: 'pond-1', name: 'Workshop' }, ponds: [], loading: false }),
   usePondId: () => 'pond-1',
 }))
 
@@ -53,10 +54,6 @@ jest.mock('@/lib/pages/client', () => ({
   saveProps: jest.fn().mockResolvedValue(undefined),
   defineSchema: jest.fn().mockResolvedValue(undefined),
   deletePage: jest.fn().mockResolvedValue(undefined),
-}))
-
-jest.mock('@/lib/pages/commit', () => ({
-  commitBlocks: jest.fn().mockResolvedValue(undefined),
 }))
 
 const mockAppendOwnEdit = jest.fn()

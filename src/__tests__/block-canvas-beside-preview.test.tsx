@@ -60,9 +60,13 @@ function asInlineStyle(width: string): string {
   return el.style.width
 }
 
+// The target's rect is mocked BEFORE `dragstart` fires: dragstart snapshots
+// every block's rect (KAN-440), so a mock set afterward is invisible to the
+// classification it drives.
 function dragOver(sourceId: string, targetId: string, targetRect: DOMRect, x: number, y: number) {
   const target = blockRoot(targetId)
   jest.spyOn(target, 'getBoundingClientRect').mockReturnValue(targetRect)
+  fireEvent.dragStart(blockRoot(sourceId))
   const event = new MouseEvent('dragover', { bubbles: true, cancelable: true })
   Object.defineProperty(event, 'clientX', { value: x })
   Object.defineProperty(event, 'clientY', { value: y })
@@ -75,7 +79,6 @@ describe("the held block's live width preview over a beside target", () => {
     const b: Block = { id: 'b-b', type: 'text', content: 'b' }
     renderCanvas([a, b])
 
-    fireEvent.dragStart(blockRoot('b-a'))
     // x=360 of a 400-wide rect is 90% across: the outer-right 25%, a beside zone.
     dragOver('b-a', 'b-b', rect(0, 400), 360, 50)
 
@@ -90,7 +93,6 @@ describe("the held block's live width preview over a beside target", () => {
     const b: Block = { id: 'b-b', type: 'text', content: 'b' }
     renderCanvas([a, b])
 
-    fireEvent.dragStart(blockRoot('b-a'))
     dragOver('b-a', 'b-b', rect(0, 400), 360, 50)
     expect(ghostRoot('b-a')).not.toBeNull()
 
@@ -104,7 +106,6 @@ describe("the held block's live width preview over a beside target", () => {
     const b: Block = { id: 'b-b', type: 'text', content: 'b' }
     renderCanvas([a, b])
 
-    fireEvent.dragStart(blockRoot('b-a'))
     dragOver('b-a', 'b-b', rect(0, 400), 360, 50)
     expect(ghostRoot('b-a')).not.toBeNull()
 
@@ -117,7 +118,6 @@ describe("the held block's live width preview over a beside target", () => {
     const b: Block = { id: 'b-b', type: 'text', content: 'b' }
     renderCanvas([a, b])
 
-    fireEvent.dragStart(blockRoot('b-a'))
     dragOver('b-a', 'b-b', rect(0, 400), 360, 50)
     expect(ghostRoot('b-a')).not.toBeNull()
 
@@ -130,7 +130,6 @@ describe("the held block's live width preview over a beside target", () => {
     const b: Block = { id: 'b-b', type: 'text', content: 'b' }
     renderCanvas([a, b])
 
-    fireEvent.dragStart(blockRoot('b-a'))
     // Full + full, room < 1/4: equal share for two is 1/2 each — before drop,
     // the target (b-b) should already show its own planned 1/2, not full.
     dragOver('b-a', 'b-b', rect(0, 400), 360, 50)
@@ -147,7 +146,6 @@ describe("the held block's live width preview over a beside target", () => {
     const fifth: Block = { id: 'b-5', type: 'text', content: '5' }
     renderCanvas([q1, q2, q3, q4, fifth])
 
-    fireEvent.dragStart(blockRoot('b-5'))
     dragOver('b-5', 'b-q1', rect(0, 400), 40, 50)
 
     expect(sizingWidth('b-5')).toBe('100%')

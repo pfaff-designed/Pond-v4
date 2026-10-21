@@ -52,6 +52,13 @@ export interface PendingHistoryStep {
   /** Same as `HistoryStep`'s — carried over onto the settled step once `recordIds` resolves. */
   onUndone?: () => Promise<void> | void
   onRedone?: () => Promise<void> | void
+  /**
+   * The write that reserved this slot failed and is waiting to be retried
+   * (KAN-495). ⌘Z puts the step back and resolves empty instead of waiting
+   * out a promise the retry will fill — the slot stays in its original
+   * place so that retry does not land a second step on top.
+   */
+  attemptFailed?: boolean
 }
 
 type StackStep = HistoryStep | PendingHistoryStep
@@ -90,6 +97,9 @@ export interface SessionUndo {
   trackPending: (pondId: string, pending: Promise<unknown>) => void
   /** Same as `remember`, for a step whose record ids are still in flight. Returns a handle for `isTopUndo`. */
   rememberPending: (step: PendingHistoryStep) => UndoHandle
+  /** Every still-open pending step in `pondId` failed with its write and is
+   *  waiting to be retried in place. ⌘Z resolves empty until one is filled. */
+  markPendingFailed: (pondId: string) => void
   /** Whether `handle` (from `rememberPending`) is still the step undo would take next in `pondId`. */
   isTopUndo: (pondId: string, handle: UndoHandle) => boolean
   /** Like `undo`, but only acts on `handle`'s own step, re-checked at its own
@@ -239,6 +249,13 @@ export const createSessionUndo = (
         // not stall every later ⌘Z/⇧⌘Z behind it in the queue.
         let step: HistoryStep
         if (isPending(taken)) {
+          // A halted write has no record yet and will be retried in this
+          // same slot. Waiting here parks ⌘Z until the timeout; putting the
+          // step back leaves the retry able to fill it in place.
+          if (taken.attemptFailed && pendingSettled.get(taken) !== true) {
+            putTakenBack(taken)
+            return { outcome: 'empty' }
+          }
           const settledBeforePress = pendingSettled.get(taken) === true
           let recordIds: readonly string[] | null
           try {
@@ -338,6 +355,13 @@ export const createSessionUndo = (
       )
       rememberStep(step)
       return step
+    },
+    markPendingFailed: (pondId) => {
+      const history = histories.get(pondId)
+      if (!history) return
+      for (const step of history.undo) {
+        if (isPending(step) && pendingSettled.get(step) !== true) step.attemptFailed = true
+      }
     },
     isTopUndo: (pondId, handle) => histories.get(pondId)?.undo.at(-1) === handle,
     undoHandle: (pondId, handle) => runQueued(pondId, 'undo', handle),

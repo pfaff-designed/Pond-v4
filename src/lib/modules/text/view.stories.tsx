@@ -225,8 +225,9 @@ export const LinkInEditableBlock: Story = {
 
 /**
  * An empty editable block opens focused so a freshly-added block is typeable, and
- * shows the prose atom's placeholder — which stays when focus leaves, so the line
- * is never a zero-height dead zone.
+ * shows `type, or / for blocks` only while its own editor carries focus (KAN-345
+ * rule 2) — the placeholder disappears on blur and returns once the line is
+ * refocused, so an abandoned empty line draws nothing at rest.
  */
 export const EmptyStartsEditing: Story = {
   args: { data: { id: 'txt-2', type: 'text', content: '' } as TextBlock },
@@ -236,15 +237,17 @@ export const EmptyStartsEditing: Story = {
     const field = await findEditor(canvas)
     await waitFor(() => expect(field).toHaveFocus())
     const line = field.querySelector<HTMLElement>('p')!
-    await expect(line).toHaveAttribute('data-placeholder', 'write something')
-    await expect(getComputedStyle(line, '::before').content).toBe('"write something"')
+    await expect(line).toHaveAttribute('data-placeholder', 'type, or / for blocks')
+    await expect(getComputedStyle(line, '::before').content).toBe('"type, or / for blocks"')
     await userEvent.tab()
     await expect(field).not.toHaveFocus()
     await expect(line).toHaveClass('is-editor-empty')
+    await expect(getComputedStyle(line, '::before').content).toBe('none')
     await expect(field.getBoundingClientRect().height).toBeGreaterThan(0)
-    // Clicking the empty line puts the caret back in it.
+    // Clicking the empty line puts the caret — and the placeholder — back in it.
     await userEvent.click(line)
     await expect(field).toHaveFocus()
+    await expect(getComputedStyle(line, '::before').content).toBe('"type, or / for blocks"')
   },
 }
 

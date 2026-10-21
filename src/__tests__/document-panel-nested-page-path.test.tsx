@@ -71,6 +71,7 @@ jest.mock('@/lib/pages/client', () => ({
 
 jest.mock('@/lib/pages/commit', () => ({
   commitBlocks: jest.fn().mockResolvedValue(undefined),
+  createPageWriter: jest.fn(() => jest.fn().mockResolvedValue(undefined)),
 }))
 jest.mock('@/lib/change-log/store', () => ({
   appendOwnEdit: jest.fn().mockResolvedValue({ id: 'record-1' }),

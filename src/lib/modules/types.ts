@@ -172,6 +172,16 @@ export interface ModuleViewProps<T = unknown> {
   data: T
   editable?: boolean
   onChange?: (next: T) => void
+  /**
+   * May this block take focus the moment its editor mounts? Only the text
+   * block's empty-line rule reads it (KAN-345): an unwritten line autofocuses
+   * only when it arrived by a person's own action this session, never a line
+   * that merely arrived with the page. Defaults true — every host but
+   * `BlockCanvas` leaves it unset, which keeps a module's own content-driven
+   * default; `BlockCanvas` sets the explicit fact per block instead of
+   * leaving it inferred.
+   */
+  autofocus?: boolean
 }
 
 /**

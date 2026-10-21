@@ -40,6 +40,15 @@ const blockWidthFields = {
   width: blockWidthSchema
     .optional()
     .describe('Never set by the AI. Reserved for the person\'s own layout choice.'),
+  /**
+   * Forces `layoutRows` to start a new row at this block, even with room left in
+   * the current row (KAN-440). Absent means today's greedy packing by width alone,
+   * so an existing page lays out unchanged. Set by a drop plan, never by the AI.
+   */
+  rowStart: z
+    .boolean()
+    .optional()
+    .describe('Never set by the AI. Reserved for the person\'s own layout choice.'),
 }
 
 export const blockSchema = z.discriminatedUnion('type', [

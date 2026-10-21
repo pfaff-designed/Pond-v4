@@ -2,14 +2,15 @@
  * KAN-448 — restoring a deleted page's change-log record relinks its
  * subtree's page-link blocks. `change-log-page-deleted-view.test.tsx` covers
  * the rest of the restore flow (`restorePage`, cache invalidation, parent
- * fallback copy); this file only asserts the `relinkRestoredSubtree` wiring.
+ * fallback copy); this file only asserts the `restorePageRelinked` wiring
+ * (KAN-451: restore-then-relink's one home, shared with `TrashPage.tsx`).
  */
 
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ChangeLogPage } from '@/components/organisms/ChangeLogPage'
-import { relinkRestoredSubtree } from '@/lib/pages/child-links'
+import { restorePageRelinked } from '@/lib/pages/child-links'
 import type { ChangeLogRecord } from '@/lib/change-log/types'
 
 jest.mock('@/lib/pond/context', () => ({
@@ -44,16 +45,14 @@ jest.mock('@/lib/pages/client', () => ({
 
 jest.mock('@/lib/change-log/trash', () => ({
   existingPageIds: (...args: unknown[]) => mockExistingPageIds(...args),
-  restorePage: (...args: unknown[]) => mockRestorePage(...args),
 }))
 
 jest.mock('@/lib/pages/child-links', () => ({
-  relinkRestoredSubtree: jest.fn().mockResolvedValue(undefined),
+  restorePageRelinked: jest.fn().mockResolvedValue(undefined),
 }))
 
 const mockListRecords = jest.fn()
 const mockExistingPageIds = jest.fn()
-const mockRestorePage = jest.fn()
 
 function record(over: Partial<ChangeLogRecord> = {}): ChangeLogRecord {
   return {
@@ -106,7 +105,6 @@ function renderPage() {
 beforeEach(() => {
   jest.clearAllMocks()
   mockExistingPageIds.mockResolvedValue(new Set(['page-1']))
-  mockRestorePage.mockResolvedValue(undefined)
 })
 
 describe('ChangeLogPage — restore relinks the subtree (KAN-448)', () => {
@@ -122,8 +120,9 @@ describe('ChangeLogPage — restore relinks the subtree (KAN-448)', () => {
     const restoreButton = await screen.findByRole('button', { name: 'restore' })
     await user.click(restoreButton)
 
-    expect(relinkRestoredSubtree).toHaveBeenCalledWith(expect.anything(), expect.anything(), {
+    expect(restorePageRelinked).toHaveBeenCalledWith(expect.anything(), expect.anything(), {
       pondId: 'pond-1',
+      recordId: 'del-1',
       rootPageId: 'page-1',
     })
   })

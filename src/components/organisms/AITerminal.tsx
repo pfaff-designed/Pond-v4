@@ -78,6 +78,7 @@ import { MadePageActions } from '@/components/molecules/MadePageActions'
 import { toParentOptions, ancestorPathLabel } from '@/lib/pages/parent-options'
 import { openWorkspaceUrl, workspaceHref, workspaceUrl } from '@/lib/pages/nav'
 import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
+import { isVirtualNodeId } from '@/lib/change-log/trash-view'
 import { insertPageOptimistic, type PageRow } from '@/lib/pages/tree'
 import { appendChildLinkUnder } from '@/lib/pages/child-links'
 import { linkedPageIds, orderMentionPages } from '@/lib/pages/mention-pages'
@@ -668,12 +669,12 @@ export function AITerminal() {
 
   // Current page blocks — the source of the "before" text in a diff card, and
   // the array we rewrite when a proposal is accepted. Shares the ['page', pageId]
-  // cache with DocumentPanel. The virtual change-log node has no `pages` row
-  // (DocumentPanel's own `isChangeLogNode` guard), so it takes none of this path.
+  // cache with DocumentPanel. A reserved virtual node (change log, trash) has no
+  // `pages` row (DocumentPanel's own guard), so it takes none of this path.
   const { data: currentPage } = useQuery({
     queryKey: ['page', pageId],
     queryFn: () => (pageId ? getPage(getSupabase(), pageId) : Promise.resolve(null)),
-    enabled: !!pageId && pageId !== CHANGE_LOG_NODE_ID,
+    enabled: !!pageId && !isVirtualNodeId(pageId),
   })
 
   // The user's pages, used to populate the create_page destination picker, to
@@ -714,7 +715,7 @@ export function AITerminal() {
   const crossPageTargetIds = useMemo(() => {
     const ids = new Set<string>()
     for (const t of Object.values(changeTargets ?? {})) {
-      if (t.nodeId && !t.missing && t.nodeId !== pageId && t.nodeId !== CHANGE_LOG_NODE_ID) {
+      if (t.nodeId && !t.missing && t.nodeId !== pageId && !isVirtualNodeId(t.nodeId)) {
         ids.add(t.nodeId)
       }
     }
@@ -2315,7 +2316,7 @@ export function AITerminal() {
   // composer out from under the card the person is filling in. A second Esc, with
   // focus back on the body, takes the next rung.
   const handleBodyKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLDivElement>) => {
+    (e: React.KeyboardEvent<HTMLElement>) => {
       if (e.key !== 'Escape' || e.defaultPrevented) return
       if (isMaximized) {
         e.preventDefault()
@@ -3851,16 +3852,6 @@ export function AITerminal() {
               }}
               onAskAgain={canAskAgain ? () => handleAskAgain(messageIndex) : undefined}
               onStop={stop}
-              // `ThreadHead` already draws the one close mark once there's a head to
-              // hold it; the trailing error/blank row (KAN-324) draws the other one
-              // it can collide with, once this same restored answer also clears its
-              // own `assistantProse || isStreaming` gate.
-              onClose={
-                turns.length <= 1 && !trailingErrorRowShows ? closeComposerByClick : undefined
-              }
-              maximized={isMaximized}
-              onMaximize={toggleMaximize}
-              onMinimize={handleMinimize}
             />
           )}
         {diffCards.length > 0 && (
@@ -4165,33 +4156,6 @@ export function AITerminal() {
         {message.role === 'assistant' && hasVisibleProposalCard && assistantProse.trim() && (
           <ReadChips read={read} className="mn-arrive" />
         )}
-        {/* A text-less proposing answer (KAN-317: just diff cards, nothing for
-            `AnswerActions`'s `assistantProse || isStreaming` gate to hold) still
-            needs a reachable close in every state — the same far-end mark, with
-            no chip beside it since there's no "make this a page"/"ask again" to
-            make. A qualifying proposal also draws it here, after the card(s),
-            even when it left assistantProse non-empty (its assumption sentence):
-            AnswerActions withholds its own `onClose` then, so this is the one.
-            Gated on hasVisibleProposalCard alone: AnswerActions already covers
-            every turn where no card is visible yet (raw text, or `isStreaming`),
-            so this row only has to fire once a card of any qualifying kind is
-            actually up. */}
-        {message.role === 'assistant' &&
-          isLastAssistant &&
-          hasVisibleProposalCard &&
-          !isStreaming &&
-          turns.length <= 1 &&
-          !trailingErrorRowShows && (
-            <div className="flex items-center gap-[7px] font-mono text-[11px] lowercase tracking-[0.02em]">
-              <div className="flex-1" />
-              <ComposerWindowControls
-                maximized={isMaximized}
-                onMaximize={toggleMaximize}
-                onMinimize={handleMinimize}
-                onClose={closeComposerByClick}
-              />
-            </div>
-          )}
         {/* Answering rides the resolutions envelope; an answered card renders inert. */}
         {questionParts.map((part) => {
           if (part.state === 'input-streaming') return null
@@ -4408,15 +4372,10 @@ export function AITerminal() {
           area={threadArea}
           turns={turns.length}
           onNewThread={() => void handleClear()}
-          onClose={closeComposerByClick}
-          maximized={isMaximized}
-          onMaximize={toggleMaximize}
-          onMinimize={handleMinimize}
         />
       )}
       <div
         className="max-h-[calc(100dvh-14rem)] min-h-0 flex-1 overflow-y-auto group-data-[sized]/composer:max-h-none"
-        onKeyDown={handleBodyKeyDown}
       >
         <div className="flex w-full flex-col gap-[14px]">
           {foldedCount > 0 && (
@@ -4446,11 +4405,6 @@ export function AITerminal() {
                         onAskAgain={
                           lastQuestion.text ? () => handleAskAgain(messages.length - 1) : undefined
                         }
-                        // `ThreadHead` already draws the one close mark once there's a head to hold it.
-                        onClose={turns.length <= 1 ? closeComposerByClick : undefined}
-                        maximized={isMaximized}
-                        onMaximize={toggleMaximize}
-                        onMinimize={handleMinimize}
                       />
                     )}
                   </>
@@ -4698,6 +4652,15 @@ export function AITerminal() {
         minimized={isMinimized}
         unsized={threadFoldedForMadePage}
         cardRef={composerCardRef}
+        onKeyDown={handleBodyKeyDown}
+        windowControls={
+          <ComposerWindowControls
+            maximized={isMaximized}
+            onMinimize={handleMinimize}
+            onMaximize={toggleMaximize}
+            onClose={closeComposerByClick}
+          />
+        }
       >
         {/* A single expression child, not two siblings — JSX wraps multiple
             expression children in an array, and TerminalDrawer's own

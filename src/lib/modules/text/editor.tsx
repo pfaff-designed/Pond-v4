@@ -150,7 +150,8 @@ const TextEditor = ({
   onChange,
   standIn,
   pressRef,
-}: Pick<ModuleViewProps<TextBlock>, 'data' | 'onChange'> & {
+  autofocus = true,
+}: Pick<ModuleViewProps<TextBlock>, 'data' | 'onChange' | 'autofocus'> & {
   standIn: ReactNode
   pressRef: RefObject<Press | null>
 }) => {
@@ -158,7 +159,7 @@ const TextEditor = ({
   // re-apply them, which redraws the document over keystrokes not yet read.
   const [opening] = useState(() => ({
     content: parseMarkdown(data.content).toJSON(),
-    autofocus: isUnwritten(data.content) ? ('end' as const) : false,
+    autofocus: autofocus && isUnwritten(data.content) ? ('end' as const) : false,
     extensions: buildExtensions(data.placeholder, data.id),
   }))
   const written = useRef(data.content)

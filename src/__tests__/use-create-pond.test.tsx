@@ -69,4 +69,15 @@ describe('useCreatePond', () => {
     })
     expect(result.current.failure).toBe('Could not create the pond')
   })
+
+  it('forwards glyph and theme options to createPond', async () => {
+    create.mockResolvedValueOnce(NOISE)
+    const { result } = renderHook(() => useCreatePond())
+
+    await act(async () => {
+      await result.current.create('noise', { glyph: 'lightning-03', theme: 'ink' })
+    })
+
+    expect(create).toHaveBeenCalledWith('noise', { glyph: 'lightning-03', theme: 'ink' })
+  })
 })
