@@ -3244,3 +3244,61 @@ describe('KAN-527', () => {
     expect(container.querySelectorAll('[data-part="calendar-agenda"]')).toHaveLength(1)
   })
 })
+
+describe('KAN-459 path', () => {
+  const calendarSchema: PropertySchema = [
+    { id: 'p-due', name: 'Due', type: 'date' },
+    {
+      id: 'p-status',
+      name: 'status',
+      type: 'status',
+      options: [
+        { id: 'opt-open', label: 'to do' },
+        { id: 'opt-done', label: 'done' },
+      ],
+    },
+  ]
+  const monthCalendar: ViewBlock = { id: 'v-cal', type: 'view', mode: 'calendar' }
+
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
+    initialSchema = calendarSchema
+    initialRows = [
+      {
+        id: 'dentist',
+        title: 'dentist',
+        values: { 'p-due': '2026-10-19T10:00:00', 'p-status': 'opt-open' },
+      },
+    ]
+    setValue.mockImplementation((rowId: string, key: string, value: PropertyValue) => {
+      applyRowValue(rowId, key, value)
+    })
+  })
+
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  it('ticks dentist done from the peek and the month chip stays timed and struck', async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    const { container } = renderView(monthCalendar)
+    const cell = container.querySelector<HTMLElement>(
+      '[data-part="calendar-day-cell"][data-iso="2026-10-19"]'
+    )
+    expect(cell).not.toBeNull()
+    if (!cell) return
+
+    expect(within(cell).getByText('dentist')).toBeInTheDocument()
+    expect(within(cell).getByText('10:00')).toBeInTheDocument()
+
+    await user.click(within(cell).getByText('dentist'))
+
+    const tick = screen.getByRole('checkbox', { name: 'dentist done' })
+    expect(tick).toBeEnabled()
+    await user.click(tick)
+
+    const title = within(cell).getByText('dentist')
+    expect(title).toHaveClass('line-through', 'text-mn-text-secondary')
+    expect(within(cell).getByText('10:00')).toBeInTheDocument()
+  })
+})

@@ -41,7 +41,12 @@ import { FOCUS_VISIBLE_RING } from '@/components/atoms/focus-ring'
 import { cn } from '@/lib/utils'
 import { PondAtom } from '@/components/atoms/PondAtom'
 import { PondBlockEmpty } from '@/components/organisms/PondBlock'
-import type { PropertyDef, PropertySchema, PropertyValue } from '@/lib/properties/schema'
+import {
+  coerceValue,
+  type PropertyDef,
+  type PropertySchema,
+  type PropertyValue,
+} from '@/lib/properties/schema'
 import {
   buildMonthGrid,
   dateForDrop,
@@ -67,6 +72,7 @@ import {
   dayHourLabels,
   dayPeriodLabel,
   nowLineTop,
+  slicedHm,
   splitDayRows,
   stepDay,
   stripWeek,
@@ -129,14 +135,20 @@ const DOW_HEAD_MOBILE =
 const DAY_NUMBER =
   'inline-flex h-[22px] min-w-[22px] items-center justify-center rounded-full px-1 text-[12px] font-medium tabular-nums'
 /** The DC's stack item row: `gap 6 · height 20 · padding 0 4 · radius 6`. */
-const DAY_ITEM_ROW = 'flex h-5 items-center gap-1.5 rounded-[6px] px-1'
+const DAY_ITEM_ROW = 'flex h-5 min-w-0 items-center gap-1.5 rounded-[6px] px-1'
 /** `PondCalendar.dc.html`'s `ring(o)`: a selected item's own 1.5px inset ink ring. */
 const DAY_ITEM_SELECTED_RING = 'ring-[1.5px] ring-inset ring-mn-text'
-/** `boxSt(o,9)`: a 9px dot, `boxShadow: inset 0 0 0 1.4px a(.32)` for a live (non-done) row. */
-const DAY_ITEM_DOT =
-  'size-[9px] flex-none rounded-[2.5px] box-border ring-[1.4px] ring-inset ring-mn-text/[0.32]'
-/** `tSt(o,11.5)`: flex-1, one line, ellipsis. */
-const DAY_ITEM_TITLE = 'min-w-0 flex-1 truncate text-[11.5px] leading-[1.3] text-mn-text'
+/** `boxSt(o,9)` size. A live row keeps the inset ring; a done row fills ink .68. */
+const DAY_ITEM_DOT_BOX = 'size-[9px] flex-none rounded-[2.5px] box-border'
+const DAY_ITEM_DOT_RING = 'ring-[1.4px] ring-inset ring-mn-text/[0.32]'
+const DAY_ITEM_DOT = `${DAY_ITEM_DOT_BOX} ${DAY_ITEM_DOT_RING}`
+/** `tSt(o,11.5)`: flex-1, one line, ellipsis. Ink is applied per chip: full when open, .68 and struck when done. */
+const DAY_ITEM_TITLE = 'min-w-0 flex-1 truncate text-[11.5px] leading-[1.3]'
+/**
+ * `mSt(10.5)`: 10.5px, weight 500, ink .80, tabular. The month chip and the
+ * week/day timed event share this one class.
+ */
+const TIMED_TIME = 'flex-none text-[10.5px] font-medium text-mn-text/80 tabular-nums'
 /** `moreLabel` / `moreStyle`: `＋{n} more`, 10.5px ink/.68. */
 const DAY_MORE = 'px-1 py-px text-[10.5px] font-medium text-mn-text-secondary'
 /** `todayNum(t,28,13,inM)`: the mobile dot grid's own, larger day-number chip. */
@@ -214,6 +226,13 @@ function MonthDayNumber({
   )
 }
 
+/** `HH:MM` sliced from the date property's `T`. No `T`, or no clock there, is untimed. */
+const monthChipTime = (row: CollectionRow, dateDef: PropertyDef | undefined): string | null => {
+  if (!dateDef) return null
+  const value = coerceValue(dateDef, row.values[dateDef.id])
+  return typeof value === 'string' ? slicedHm(value) : null
+}
+
 function handleCalendarRowClick(
   rowId: string,
   selectedId: string | undefined,
@@ -237,6 +256,7 @@ function handleCalendarRowClick(
 
 function MonthDayStack({
   items,
+  dateDef,
   moreCount,
   lanes,
   selectedId,
@@ -249,8 +269,11 @@ function MonthDayStack({
   selectWithPointer,
   selectOrOpenOnKey,
   onOpenRow,
+  isDone,
 }: {
   items: MonthDayCell['items']
+  /** The date property that placed these chips. Its `T` suffix is the clock. */
+  dateDef: PropertyDef | undefined
   moreCount: number
   /** Lane count for this week. Chips sit under the bars: `n * 22`. */
   lanes: number
@@ -264,41 +287,64 @@ function MonthDayStack({
   selectWithPointer: RowSelection['selectWithPointer']
   selectOrOpenOnKey: RowSelection['selectOrOpenOnKey']
   onOpenRow?: (rowId: string) => void
+  /** `done.isDone` from the calendar's `useDoneToggle`. */
+  isDone: (row: CollectionRow) => boolean
 }) {
   if (items.length === 0 && moreCount === 0) return null
   return (
     <div
-      className="flex flex-col gap-px px-1 pt-0.5 pb-2"
+      className="flex min-w-0 flex-col gap-px px-1 pt-0.5 pb-2"
       style={lanes > 0 ? { marginTop: lanes * 22 } : undefined}
     >
-      {items.map((row) => (
-        <div
-          key={row.id}
-          className={cn(
-            DAY_ITEM_ROW,
-            ROW_FOCUS_VISIBLE,
-            row.id === selectedId && DAY_ITEM_SELECTED_RING,
-            row.id === draggingRowId && DRAG_LIFT_CLASS
-          )}
-          {...rowProps(row.id)}
-          {...keyboardProps(row.id)}
-          onKeyDown={(e) => selectOrOpenOnKey(row.id, e, onOpenRow)}
-          onClick={(e) =>
-            handleCalendarRowClick(
-              row.id,
-              selectedId,
-              selectWithPointer,
-              onOpenRow,
-              isClickSuppressed,
-              e
-            )
-          }
-          onPointerDown={editable ? (e) => onCardPointerDown(e, row.id) : undefined}
-        >
-          <span className={DAY_ITEM_DOT} />
-          <span className={DAY_ITEM_TITLE}>{row.title}</span>
-        </div>
-      ))}
+      {items.map((row) => {
+        const time = monthChipTime(row, dateDef)
+        const rowDone = isDone(row)
+        return (
+          <div
+            key={row.id}
+            className={cn(
+              DAY_ITEM_ROW,
+              ROW_FOCUS_VISIBLE,
+              row.id === selectedId && DAY_ITEM_SELECTED_RING,
+              row.id === draggingRowId && DRAG_LIFT_CLASS
+            )}
+            {...rowProps(row.id)}
+            {...keyboardProps(row.id)}
+            onKeyDown={(e) => selectOrOpenOnKey(row.id, e, onOpenRow)}
+            onClick={(e) =>
+              handleCalendarRowClick(
+                row.id,
+                selectedId,
+                selectWithPointer,
+                onOpenRow,
+                isClickSuppressed,
+                e
+              )
+            }
+            onPointerDown={editable ? (e) => onCardPointerDown(e, row.id) : undefined}
+          >
+            <span
+              className={cn(
+                DAY_ITEM_DOT_BOX,
+                rowDone ? 'bg-mn-text-secondary' : DAY_ITEM_DOT_RING
+              )}
+            />
+            <span
+              className={cn(
+                DAY_ITEM_TITLE,
+                rowDone ? 'text-mn-text-secondary line-through' : 'text-mn-text'
+              )}
+            >
+              {row.title}
+            </span>
+            {time ? (
+              <span data-part="calendar-item-time" className={TIMED_TIME}>
+                {time}
+              </span>
+            ) : null}
+          </div>
+        )
+      })}
       {moreCount > 0 && <span className={DAY_MORE}>{`＋${moreCount} more`}</span>}
     </div>
   )
@@ -349,6 +395,7 @@ function MonthDayCellView({
   cell,
   columnIndex,
   lanes,
+  dateDef,
   canAdd,
   onAdd,
   selectedId,
@@ -366,11 +413,14 @@ function MonthDayCellView({
   onOpenRow,
   onPlace,
   onOpenDay,
+  isDone,
 }: {
   cell: MonthDayCell
   columnIndex: number
   /** Weeks with bars span each cell across every row so it stays the drop bucket. */
   lanes: number
+  /** The date property that placed this cell's chips. */
+  dateDef: PropertyDef | undefined
   canAdd: boolean
   onAdd: () => void
   selectedId?: string
@@ -391,6 +441,8 @@ function MonthDayCellView({
   onPlace?: (iso: string) => void
   /** Blank space (the day number or the cell padding) opens this day. */
   onOpenDay: (iso: string) => void
+  /** `done.isDone` from the calendar's `useDoneToggle`. */
+  isDone: (row: CollectionRow) => boolean
 }) {
   // A stack item's Enter bubbles. Only the cell itself adds; the item's own
   // Enter still selects (KAN-358). A blank click opens the day (KAN-455).
@@ -432,6 +484,7 @@ function MonthDayCellView({
       <MonthDayNumber day={cell.dayOfMonth} isToday={cell.isToday} inMonth={cell.inMonth} />
       <MonthDayStack
         items={cell.items}
+        dateDef={dateDef}
         moreCount={cell.moreCount}
         lanes={lanes}
         selectedId={selectedId}
@@ -444,6 +497,7 @@ function MonthDayCellView({
         selectWithPointer={selectWithPointer}
         selectOrOpenOnKey={selectOrOpenOnKey}
         onOpenRow={onOpenRow}
+        isDone={isDone}
       />
       {canAdd && (
         <button
@@ -859,7 +913,6 @@ const HOUR_LABEL = 'absolute left-0 text-[10.5px] font-medium text-mn-text-secon
 const TIMED_EVENT =
   'absolute right-1 left-1 z-[1] box-border flex overflow-hidden rounded-[8px] bg-mn-drag-ghost shadow-[0_1px_2px_rgba(40,34,24,.08),0_2px_8px_rgba(40,34,24,.07)] dark:shadow-[0_1px_2px_rgba(0,0,0,.3),0_2px_8px_rgba(0,0,0,.3)]'
 const TIMED_TITLE = 'truncate text-[12px] font-medium leading-[1.25] text-mn-text'
-const TIMED_TIME = 'flex-none text-[10.5px] font-medium text-mn-text/80 tabular-nums'
 /** Hair across the day column and the all-day rule: `a(ink ? .14 : .09)`. */
 const DAY_HAIR_BORDER = 'border-mn-text/[0.09] dark:border-mn-text/[0.14]'
 const DAY_HAIR_LINE = 'bg-mn-text/[0.09] dark:bg-mn-text/[0.14]'
@@ -1683,6 +1736,7 @@ export function CollectionCalendar({
                       cell={cell}
                       columnIndex={i}
                       lanes={lanes}
+                      dateDef={monthDateDef}
                       canAdd={canAdd}
                       onAdd={() => void handleAddDay(cell.iso)}
                       selectedId={selectedRow?.id}
@@ -1700,6 +1754,7 @@ export function CollectionCalendar({
                       selectWithPointer={selectWithPointer}
                       selectOrOpenOnKey={selectOrOpenOnKey}
                       onOpenRow={onOpenRow}
+                      isDone={done.isDone}
                     />
                   ))}
                   {segments.map((segment) => (
