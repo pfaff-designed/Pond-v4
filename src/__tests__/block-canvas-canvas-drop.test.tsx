@@ -83,7 +83,6 @@ function renderCanvas(blocks: Block[], onChange: (next: Block[]) => void) {
 }
 
 const blockRoot = (blockId: string) => document.getElementById(`block-${blockId}`)!
-const ghostRoot = (blockId: string) => document.getElementById(`block-${blockId}::ghost`)!
 // Every block's sizing wrapper shares the same parent: the canvas root itself.
 const canvasRoot = (anyBlockId: string) => blockRoot(anyBlockId).parentElement!.parentElement!
 
@@ -118,8 +117,8 @@ function dropAt(el: Element, x: number, y: number) {
   fireEvent(el, event)
 }
 
-describe('the canvas root keeps and commits the indicator the ghost would otherwise lose', () => {
-  it('a dragleave from the target into the ghost keeps the drop line up', () => {
+describe('the canvas root keeps and commits the drop bar', () => {
+  it('a dragleave from the target onto another block inside the canvas keeps the drop bar up', () => {
     const log: Block = { id: 'b-log', type: 'text', content: 'log' }
     const table: Block = { id: 'b-table', type: 'text', content: 'table' }
     renderCanvas([log, table], () => {})
@@ -130,10 +129,10 @@ describe('the canvas root keeps and commits the indicator the ghost would otherw
     dragOver('b-log', rect(0, 400), 360, 50)
     expect(blockRoot('b-log').querySelector('[data-part="drop-bar"]')).not.toBeNull()
 
-    // The log shrinking to 1/2 moves the ghost under the pointer: its
-    // dragleave carries the ghost as `relatedTarget`, still inside the canvas.
+    // Moving from the target onto the held block is still inside the canvas,
+    // so the bar stays up.
     const leave = new MouseEvent('dragleave', { bubbles: true, cancelable: true })
-    Object.defineProperty(leave, 'relatedTarget', { value: ghostRoot('b-table') })
+    Object.defineProperty(leave, 'relatedTarget', { value: blockRoot('b-table') })
     fireEvent(blockRoot('b-log'), leave)
 
     expect(blockRoot('b-log').querySelector('[data-part="drop-bar"]')).not.toBeNull()

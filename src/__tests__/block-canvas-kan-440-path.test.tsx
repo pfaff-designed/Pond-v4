@@ -97,7 +97,6 @@ const handleOf = (blockId: string) =>
   })
 
 const blockRoot = (blockId: string) => document.getElementById(`block-${blockId}`)!
-const ghostRoot = (blockId: string) => document.getElementById(`block-${blockId}::ghost`)
 const dropBar = (blockId: string) => blockRoot(blockId).querySelector('[data-part="drop-bar"]')
 // The sizing div (`style={{ width: sizingWidth }}`) is the block root's direct
 // DOM parent — see `block-canvas-beside-preview.test.tsx`'s own use of this.
@@ -177,10 +176,9 @@ describe('PATH_STEPS 3-5: dragging block 1 over block 2 previews, holds still, a
     // x=360 of a 400-wide rect is 90% across: block 2's right zone.
     fireDragOver('b-2', 360, 50)
 
-    // The preview appears: block 1's ghost shows the planned 1/2, block 2's
-    // own row previews its planned 1/2 too, block 1's origin stays at 100%.
-    expect(ghostRoot('b-1')).not.toBeNull()
-    expect(sizingWidth('b-2')).toBe(asInlineStyle(blockWidthStyle('1/2')))
+    // The bar is the preview. Neither block changes width until the drop.
+    expect(document.getElementById('block-b-1::ghost')).toBeNull()
+    expect(sizingWidth('b-2')).toBe('100%')
     expect(sizingWidth('b-1')).toBe('100%')
     expect(dropBar('b-2')!.getAttribute('data-zone')).toBe('right')
 
@@ -216,7 +214,7 @@ describe('PATH_STEPS 3-5: dragging block 1 over block 2 previews, holds still, a
 })
 
 describe('PATH_STEPS 6-8: own-line unstacks A, a beside drop re-stacks B beside C, then repeats onto the row below', () => {
-  it('drops B onto its own line (A stays alone at ½), drops C beside B, then repeats a left-beside drop onto D', async () => {
+  it('drops B onto its own line (A, left alone, returns to full), drops C beside B, then repeats a left-beside drop onto D', async () => {
     const half = asInlineStyle(blockWidthStyle('1/2'))
     const a: Block = { id: 'b-a', type: 'text', content: 'a', width: '1/2', rowStart: true }
     const b: Block = { id: 'b-b', type: 'text', content: 'b', width: '1/2' }
@@ -227,34 +225,40 @@ describe('PATH_STEPS 6-8: own-line unstacks A, a beside drop re-stacks B beside 
 
     // Step 6: drag B onto its own line, dropped above C — the row directly
     // below A+B. y=10 of a 100-tall rect is the top 25%: own-line above.
+    // A is the one mate left behind, so it returns to full.
     jest.spyOn(blockRoot('b-c'), 'getBoundingClientRect').mockReturnValue(rect(0, 400, 0, 100))
     fireEvent.dragStart(blockRoot('b-b'))
     fireDragOver('b-c', 200, 10)
     fireDrop('b-c', 200, 10)
 
     await waitFor(() => {
-      expect(lastBlocks()).toEqual([a, { ...b, width: 'full', rowStart: true }, c, d])
+      expect(lastBlocks()).toEqual([
+        { ...a, width: 'full' },
+        { ...b, width: 'full', rowStart: true },
+        c,
+        d,
+      ])
     })
-    expect(sizingWidth('b-a')).toBe(half)
+    expect(sizingWidth('b-a')).toBe('100%')
 
     // Step 7: drag C onto B's right zone — a preview appears, then the drop
-    // puts B and C side by side; A is still alone at ½.
+    // puts B and C side by side. A stays full; it was not in that row.
     jest.spyOn(blockRoot('b-b'), 'getBoundingClientRect').mockReturnValue(rect(0, 400))
     fireEvent.dragStart(blockRoot('b-c'))
     fireDragOver('b-b', 360, 50)
-    expect(ghostRoot('b-c')).not.toBeNull()
+    expect(document.getElementById('block-b-c::ghost')).toBeNull()
     expect(dropBar('b-b')!.getAttribute('data-zone')).toBe('right')
     fireDrop('b-b', 360, 50)
 
     await waitFor(() => {
       expect(lastBlocks()).toEqual([
-        a,
+        { ...a, width: 'full' },
         { ...b, width: '1/2', rowStart: true },
         { ...c, width: '1/2' },
         d,
       ])
     })
-    expect(sizingWidth('b-a')).toBe(half)
+    expect(sizingWidth('b-a')).toBe('100%')
 
     // Step 8: repeat a beside drop, now onto the LEFT zone of the row
     // directly below the dragged block (D) — it still commits.
@@ -266,14 +270,14 @@ describe('PATH_STEPS 6-8: own-line unstacks A, a beside drop re-stacks B beside 
 
     await waitFor(() => {
       expect(lastBlocks()).toEqual([
-        a,
+        { ...a, width: 'full' },
         { ...b, width: '1/2', rowStart: true },
         { ...c, width: '1/2', rowStart: true },
         { ...d, width: '1/2' },
       ])
     })
     expect([sizingWidth('b-a'), sizingWidth('b-b'), sizingWidth('b-c'), sizingWidth('b-d')]).toEqual([
-      half,
+      '100%',
       half,
       half,
       half,

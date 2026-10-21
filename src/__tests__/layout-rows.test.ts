@@ -11,11 +11,13 @@ import {
   isWithinPaddedZone,
   layoutRows,
   planBesideDrop,
+  planOwnLineDrop,
   rowHolds,
   rowStacks,
   widthPercent,
   widthsForDropBeside,
   withoutRowStart,
+  zoneWhenDrawnStacked,
 } from '@/lib/modules/layout-rows'
 import type { BlockWidth } from '@/lib/modules/content'
 import type { DropZone, Point, Rect } from '@/lib/modules/layout-rows'
@@ -523,6 +525,12 @@ describe('classifyDropZone', () => {
     expect(classifyDropZone(rect, { x: 50, y: 150 })).toBe('below')
   })
 
+  it('classifies the bottom-left of a tall block as below, including a point in the gap under it', () => {
+    const tall: Rect = { left: 0, right: 400, top: 0, bottom: 743 }
+    expect(classifyDropZone(tall, { x: 40, y: 700 })).toBe('below')
+    expect(classifyDropZone(tall, { x: 40, y: 760 })).toBe('below')
+  })
+
   it('offsets by the rect\'s own position, not just its size', () => {
     const offsetRect: Rect = { left: 50, right: 150, top: 20, bottom: 220 }
     expect(classifyDropZone(offsetRect, { x: 62.5, y: 120 })).toBe('left')
@@ -535,10 +543,10 @@ describe('classifyDropZone', () => {
       ['below the rect in the middle width', { x: 50, y: 260 }, 'below'],
       ['above the rect in the middle width', { x: 50, y: -60 }, 'above'],
       ['right of the rect at mid-height', { x: 150, y: 100 }, 'right'],
-      ['outside the top-left corner', { x: -20, y: -60 }, 'left'],
-      ['outside the top-right corner', { x: 150, y: -60 }, 'right'],
-      ['outside the bottom-left corner', { x: -20, y: 260 }, 'left'],
-      ['outside the bottom-right corner', { x: 150, y: 260 }, 'right'],
+      ['outside the top-left corner', { x: -20, y: -60 }, 'above'],
+      ['outside the top-right corner', { x: 150, y: -60 }, 'above'],
+      ['outside the bottom-left corner', { x: -20, y: 260 }, 'below'],
+      ['outside the bottom-right corner', { x: 150, y: 260 }, 'below'],
     ])('%s classifies as %s', (_label, point, expected) => {
       expect(classifyDropZone(rect, point)).toBe(expected)
     })
@@ -551,12 +559,12 @@ describe('isWithinPaddedZone', () => {
   const rect: Rect = { left: 0, right: 100, top: 0, bottom: 200 }
 
   it.each<[Parameters<typeof isWithinPaddedZone>[2], number, number, boolean]>([
-    // left zone's own sub-rect is {left: 0, right: 50, top: 0, bottom: 200}.
+    // left zone is the left half of the middle band (y 50–150), not the full height.
     ['left', 57, 100, true], // 7px past the right edge — inside the 8px pad.
     ['left', 59, 100, false], // 9px past it — outside.
-    ['left', 25, -8, true], // 8px above the top edge — inside the pad.
-    ['left', 25, -9, false], // 9px above it — outside.
-    // right zone's own sub-rect is {left: 50, right: 100, top: 0, bottom: 200}.
+    ['above', 25, -8, true], // 8px above the top edge — the top band is above, full width.
+    ['above', 25, -9, false], // 9px above it — outside.
+    // right zone is the right half of the middle band.
     ['right', 43, 100, true], // 7px short of the left edge — inside the pad.
     ['right', 41, 100, false], // 9px short of it — outside.
     // above zone's own sub-rect is {left: 0, right: 100, top: 0, bottom: 50}.
@@ -571,9 +579,8 @@ describe('isWithinPaddedZone', () => {
 })
 
 describe("isWithinPaddedZone matches classifyDropZone's real regions (KAN-440)", () => {
-  // Same 100x200 rect as the describes above: outer strips at x<=25/x>=75 (full
-  // height), middle-height quarters reaching to x=50 within y in [50,150], above/below
-  // bands at x in [25,75] with y<=50/y>=150.
+  // Same 100x200 rect: above/below are the full-width top and bottom bands
+  // (y<=50 / y>=150). Beside is only the middle band.
   const rect: Rect = { left: 0, right: 100, top: 0, bottom: 200 }
 
   it.each<[Parameters<typeof isWithinPaddedZone>[2], number, number, boolean]>([
@@ -595,21 +602,57 @@ describe("isWithinPaddedZone matches classifyDropZone's real regions (KAN-440)",
     expect(isWithinPaddedZone(rect, { x, y }, zone)).toBe(expected)
   })
 
-  // Every corner of the rect sits in an outer strip (left at x=0, right at x=100),
-  // full height. A diagonal offset of (5, 5) from a corner is ~7.07px away by
-  // Euclidean distance — within the 8px pad — but (6, 6) is ~8.49px away — outside
-  // it, even though neither axis alone clears 8px. That distinguishes true distance
-  // from the old independent-per-axis padding, which would have held both.
+  // The corners belong to above/below, full width. A diagonal offset of (5, 5)
+  // from a corner is ~7.07px away — within the 8px pad — but (6, 6) is ~8.49px
+  // away, outside it.
   it.each<[Parameters<typeof isWithinPaddedZone>[2], number, number, boolean]>([
-    ['left', -5, -5, true], // top-left corner (0, 0), 5px out on each axis.
-    ['left', -6, -6, false], // 6px out on each axis — ~8.49px away.
-    ['right', 105, -5, true], // top-right corner (100, 0).
-    ['right', 106, -6, false],
-    ['left', -5, 205, true], // bottom-left corner (0, 200).
-    ['left', -6, 206, false],
-    ['right', 105, 205, true], // bottom-right corner (100, 200).
-    ['right', 106, 206, false],
+    ['above', -5, -5, true], // top-left corner (0, 0), 5px out on each axis.
+    ['above', -6, -6, false], // 6px out on each axis — ~8.49px away.
+    ['above', 105, -5, true], // top-right corner (100, 0).
+    ['above', 106, -6, false],
+    ['below', -5, 205, true], // bottom-left corner (0, 200).
+    ['below', -6, 206, false],
+    ['below', 105, 205, true], // bottom-right corner (100, 200).
+    ['below', 106, 206, false],
   ])('%s zone near a corner at (%d, %d): %s', (zone, x, y, expected) => {
     expect(isWithinPaddedZone(rect, { x, y }, zone)).toBe(expected)
+  })
+})
+
+describe('zoneWhenDrawnStacked', () => {
+  const rect: Rect = { left: 0, right: 400, top: 0, bottom: 42 }
+
+  it('turns a beside point on a drawn stack into the half the pointer is in', () => {
+    expect(zoneWhenDrawnStacked('left', rect, { x: 20, y: 10 }, true)).toBe('above')
+    expect(zoneWhenDrawnStacked('right', rect, { x: 360, y: 30 }, true)).toBe('below')
+  })
+
+  it('leaves a beside point alone when the row is actually side by side', () => {
+    expect(zoneWhenDrawnStacked('right', rect, { x: 360, y: 30 }, false)).toBe('right')
+  })
+})
+
+describe('planOwnLineDrop on a row that is drawn stacked', () => {
+  const creative = { id: 'creative', width: '1/4' as BlockWidth, rowStart: true }
+  const professional = { id: 'professional', width: '3/4' as BlockWidth }
+  const calendar = { id: 'calendar', width: 'full' as BlockWidth, rowStart: true }
+
+  it('inserts between the two drawn lines and stores each as its own full line', () => {
+    // A quarter of a 992px column is under 240px, so the row draws stacked.
+    expect(rowStacks(992, ['1/4', '3/4'])).toBe(true)
+    expect(planOwnLineDrop([creative, professional, calendar], 2, 'creative', 'below', 992)).toEqual([
+      { ...creative, width: 'full' },
+      { ...calendar, width: 'full', rowStart: true },
+      { ...professional, width: 'full', rowStart: true },
+    ])
+  })
+
+  it('still inserts after the whole row when that row actually fits side by side', () => {
+    expect(rowStacks(2000, ['1/4', '3/4'])).toBe(false)
+    expect(planOwnLineDrop([creative, professional, calendar], 2, 'creative', 'below', 2000)).toEqual([
+      creative,
+      professional,
+      { ...calendar, width: 'full', rowStart: true },
+    ])
   })
 })

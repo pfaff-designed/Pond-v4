@@ -266,6 +266,73 @@ export function detachKeepingRows<
   }
 }
 
+/**
+ * An own-line drop. The dragged block becomes `full` with `rowStart`. A single
+ * former row-mate left alone is widened to `full`. A target row that is drawn
+ * stacked — several stored widths, each rendered on its own line because one
+ * of them is under `MIN_BLOCK_WIDTH_PX` — inserts beside the target block
+ * itself, and each of those blocks is stored `full` with `rowStart`, so the
+ * lines the person already sees stay lines. A row that actually holds inserts
+ * before or after the whole row and keeps the widths already there.
+ * `columnWidthPx` 0 never counts as stacked (the column isn't measured yet).
+ */
+export function planOwnLineDrop<
+  T extends { id: string; width?: BlockWidth | number; rowStart?: boolean },
+>(
+  blocks: readonly T[],
+  fromIndex: number,
+  targetId: string,
+  zone: 'above' | 'below',
+  columnWidthPx: number
+): T[] | null {
+  const draggedId = blocks[fromIndex].id
+  const originalRow = layoutRows(blocks).find((row) => row.some((block) => block.id === draggedId))
+  const dragged = { ...blocks[fromIndex], width: 'full' as BlockWidth, rowStart: true as const }
+  const { blocks: detached } = detachKeepingRows(blocks, fromIndex)
+  const mateIds = new Set(
+    (originalRow ?? []).map((block) => block.id).filter((id) => id !== draggedId)
+  )
+  const mateRow =
+    mateIds.size > 0
+      ? layoutRows(detached).find((row) => row.some((block) => mateIds.has(block.id)))
+      : undefined
+  const matesLeft = mateRow?.filter((block) => mateIds.has(block.id)) ?? []
+  const withoutDragged =
+    matesLeft.length === 1 && mateRow?.length === 1
+      ? detached.map((block) =>
+          block.id === matesLeft[0].id ? { ...block, width: 'full' as BlockWidth } : block
+        )
+      : detached
+  const row = layoutRows(withoutDragged).find((r) => r.some((b) => b.id === targetId))
+  if (!row) return null
+
+  const drawnStacked =
+    row.length > 1 && rowStacks(columnWidthPx, row.map((block) => block.width ?? 'full'))
+  if (drawnStacked) {
+    const memberIds = new Set(row.map((block) => block.id))
+    const promoted = withoutDragged.map((block) =>
+      memberIds.has(block.id)
+        ? { ...block, width: 'full' as BlockWidth, rowStart: true as const }
+        : block
+    )
+    const targetAt = promoted.findIndex((block) => block.id === targetId)
+    const insertAt = zone === 'above' ? targetAt : targetAt + 1
+    const spliced = [...promoted]
+    spliced.splice(insertAt, 0, dragged)
+    return spliced
+  }
+
+  const rowIds = new Set(row.map((block) => block.id))
+  const rowAt = withoutDragged.reduce<number[]>(
+    (acc, block, index) => (rowIds.has(block.id) ? [...acc, index] : acc),
+    []
+  )
+  const insertAt = zone === 'above' ? rowAt[0] : rowAt[rowAt.length - 1] + 1
+  const spliced = [...withoutDragged]
+  spliced.splice(insertAt, 0, dragged)
+  return spliced
+}
+
 /** Omits `rowStart` from a block — the field's own "absent means today's packing"
  *  convention (KAN-440), used to reverse a `detachKeepingRows` handoff on undo. */
 export function withoutRowStart<T extends { rowStart?: boolean }>(block: T): T {
@@ -317,38 +384,30 @@ const EDGE_FRACTION = 0.25
  * The rects that make up `zone`'s own region of `rect` — the single home for drop-zone
  * geometry (KAN-440): both `classifyDropZone` (which zone a point falls in) and
  * `isWithinPaddedZone` (whether a point is still close enough to one) read these same
- * rects, so they can't disagree on what a zone covers the way the hand-simplified
- * halves/bands `isWithinPaddedZone` used to. `left`/`right` are each a union of two
- * rects — the outer 25% strip at full height, plus a middle-height quarter reaching to
- * the rect's midline — because the outer strip stays beside-left/right at any height,
- * but the inner quarter only does within the middle 50% of height (outside that band,
- * `above`/`below` claim it instead). `above`/`below` are each one rect: the middle 50%
- * of width, outer 25% of height.
+ * rects, so they can't disagree on what a zone covers.
+ *
+ * The top and bottom bands run the full width. A tall block (a calendar) otherwise
+ * keeps beside-zones down its whole side, and a drop in the gap under it — the
+ * place a person puts a block between two stacked ones — clamps onto that side
+ * and squeezes the stack into one row. Beside is only the middle band: the left
+ * or right half of the width, between 25% and 75% of the height.
  */
 function dropZoneRects(rect: Rect, zone: DropZone): Rect[] {
   const width = rect.right - rect.left
   const height = rect.bottom - rect.top
   const midX = rect.left + width / 2
-  const leftOuterEdge = rect.left + width * EDGE_FRACTION
-  const rightOuterEdge = rect.right - width * EDGE_FRACTION
   const topEdge = rect.top + height * EDGE_FRACTION
   const bottomEdge = rect.bottom - height * EDGE_FRACTION
 
   switch (zone) {
     case 'left':
-      return [
-        { left: rect.left, right: leftOuterEdge, top: rect.top, bottom: rect.bottom },
-        { left: leftOuterEdge, right: midX, top: topEdge, bottom: bottomEdge },
-      ]
+      return [{ left: rect.left, right: midX, top: topEdge, bottom: bottomEdge }]
     case 'right':
-      return [
-        { left: rightOuterEdge, right: rect.right, top: rect.top, bottom: rect.bottom },
-        { left: midX, right: rightOuterEdge, top: topEdge, bottom: bottomEdge },
-      ]
+      return [{ left: midX, right: rect.right, top: topEdge, bottom: bottomEdge }]
     case 'above':
-      return [{ left: leftOuterEdge, right: rightOuterEdge, top: rect.top, bottom: topEdge }]
+      return [{ left: rect.left, right: rect.right, top: rect.top, bottom: topEdge }]
     case 'below':
-      return [{ left: leftOuterEdge, right: rightOuterEdge, top: bottomEdge, bottom: rect.bottom }]
+      return [{ left: rect.left, right: rect.right, top: bottomEdge, bottom: rect.bottom }]
   }
 }
 
@@ -357,39 +416,52 @@ function pointInRect(rect: Rect, point: Point): boolean {
 }
 
 /**
- * Which drop zone a pointer point falls into over a block's rect, by checking
- * `dropZoneRects`' rects in the order that resolves their shared boundaries: the
- * outer left/right strips first (full height, so they win over `above`/`below` at the
- * shared 25%/75%-width edges), then `above`/`below` (so they win over the middle-height
- * quarters at the shared 25%/75%-height edges), then the right quarter before the left
- * one, so a point exactly on the rect's midline — equidistant from both — resolves to
- * `right`, matching the "nearer to, ties go right" rule.
+ * Which drop zone a pointer point falls into over a block's rect. Above and
+ * below are checked first, so the shared edge of the top and bottom bands is
+ * an own-line drop — a point in the gap under a block, clamped onto its bottom
+ * edge, stays `below` even at the corners. Right is checked before left, so a
+ * point exactly on the midline resolves to `right`.
  *
  * `onDragOver` fires for points outside the dragstart snapshot rect too (a block's
  * handle sits outside its own root; a beside preview can push a row below its
  * snapshotted position) — a point outside `rect` is clamped onto it first, so it
  * classifies as whichever zone its nearest in-rect point would.
  */
+/**
+ * A row drawn as separate full-width lines has no beside. `left` and `right`
+ * on that drawing are the own-line drop for whichever half of the block the
+ * pointer is in — otherwise a drop on the middle of a line the person sees as
+ * stacked writes a side-by-side row, and the next width that fits the column
+ * snaps the lines horizontal.
+ */
+export function zoneWhenDrawnStacked(
+  zone: DropZone,
+  rect: Rect,
+  point: Point,
+  drawnStacked: boolean
+): DropZone {
+  if (!drawnStacked || zone === 'above' || zone === 'below') return zone
+  const midY = rect.top + (rect.bottom - rect.top) / 2
+  return point.y < midY ? 'above' : 'below'
+}
+
 export function classifyDropZone(rect: Rect, point: Point): DropZone {
   const clamped: Point = {
     x: Math.min(Math.max(point.x, rect.left), rect.right),
     y: Math.min(Math.max(point.y, rect.top), rect.bottom),
   }
 
-  const [leftOuter, leftQuarter] = dropZoneRects(rect, 'left')
-  const [rightOuter, rightQuarter] = dropZoneRects(rect, 'right')
   const [above] = dropZoneRects(rect, 'above')
   const [below] = dropZoneRects(rect, 'below')
+  const [right] = dropZoneRects(rect, 'right')
+  const [left] = dropZoneRects(rect, 'left')
 
-  if (pointInRect(leftOuter, clamped)) return 'left'
-  if (pointInRect(rightOuter, clamped)) return 'right'
   if (pointInRect(above, clamped)) return 'above'
   if (pointInRect(below, clamped)) return 'below'
-  if (pointInRect(rightQuarter, clamped)) return 'right'
-  if (pointInRect(leftQuarter, clamped)) return 'left'
+  if (pointInRect(right, clamped)) return 'right'
+  if (pointInRect(left, clamped)) return 'left'
 
-  // Unreachable: the outer strips, above/below and the two quarters together already
-  // cover every point in the rect, so one of the checks above always returns first.
+  // Unreachable: the four bands cover every point in the rect.
   // Crash early in dev; fall back to 'left' in production rather than silently
   // misclassifying a point none of the checks was supposed to miss.
   if (process.env.NODE_ENV !== 'production') {
