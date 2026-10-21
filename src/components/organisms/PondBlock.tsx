@@ -409,16 +409,19 @@ export function PondBlock({
           {headBar}
         </div>
       )}
-      <div
-        data-part="block-body"
-        className={cn(
-          !constrained && 'contents',
-          constrained && bodyScroll === 'self' && 'flex min-h-0 flex-1 flex-col overflow-hidden',
-          constrained && bodyScroll === 'pane' && 'min-h-0 flex-1 overflow-y-auto'
-        )}
-      >
-        {body}
-      </div>
+      {constrained ? (
+        <div
+          data-part="block-body"
+          className={cn(
+            bodyScroll === 'self' && 'flex min-h-0 flex-1 flex-col overflow-hidden',
+            bodyScroll === 'pane' && 'min-h-0 flex-1 overflow-y-auto'
+          )}
+        >
+          {body}
+        </div>
+      ) : (
+        body
+      )}
     </div>
   )
 }

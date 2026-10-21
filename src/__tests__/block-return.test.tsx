@@ -429,7 +429,11 @@ describe('the handle is the only block chrome (07.05)', () => {
   it('draws no `+` separator between blocks', () => {
     renderCanvas([table, note, prose])
     expect(screen.queryByRole('button', { name: 'Insert block' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('separator')).not.toBeInTheDocument()
+    expect(
+      screen
+        .queryAllByRole('separator')
+        .filter((el) => el.getAttribute('data-part') !== 'height-handle')
+    ).toHaveLength(0)
   })
 
   it('sits at the block’s left edge as PondBlock draws it: 12×24 at left −14, top 12, ink 68', () => {
