@@ -69,6 +69,7 @@ import { useZenCommands } from '@/lib/layout/use-zen-commands'
 import { openWorkspaceUrl, workspaceUrl } from '@/lib/pages/nav'
 import { flushPendingPageSave } from '@/lib/pages/page-flush'
 import { newPageParent, paletteItems, paletteScope, pondItems, railItems } from '@/lib/pages/palette-items'
+import { prefetchPageIfAbsent } from '@/lib/pages/use-page-prefetch'
 import { readRecentPageIds, writeRecent } from '@/lib/pages/recent-pages'
 import { usePaletteRecords } from '@/lib/pages/use-palette-records'
 import { createPage } from '@/lib/pages/client'
@@ -204,6 +205,14 @@ export function ShellCommands() {
     current: pondName,
     role: null,
   }
+
+  // KAN-388: the active row arrowed/typed to in ⌘K warms its page before ↵.
+  const handleActiveItemChange = useCallback(
+    (item: PaletteItem) => {
+      prefetchPageIfAbsent(queryClient, createClient, item.id)
+    },
+    [queryClient]
+  )
 
   const closePalette = useCallback(() => setPaletteOpen(false), [])
   const templateSheet = useSaveAsTemplateSheet({ pondId, onOpen: closePalette })
@@ -511,6 +520,7 @@ export function ShellCommands() {
         pondName={pondName}
         parentTitle={parent.title}
         onSelect={handlePaletteSelect}
+        onActiveItemChange={handleActiveItemChange}
         ask={!inZen}
         visits={recentPageIds}
         onQueryChange={setQuery}

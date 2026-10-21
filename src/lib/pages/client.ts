@@ -133,12 +133,33 @@ export function mapRow(row: PageRow): PondPage {
 
 // ── Reads ────────────────────────────────────────────────────────────────────
 
-/** A single page by id, or null if it doesn't exist. */
+/**
+ * A single page by id, or null if it doesn't exist. Throws on a Supabase
+ * error (network/RLS) instead of swallowing it as a false "doesn't exist" —
+ * `['page', id]`'s own queryFn (`page-query.ts`) depends on this so
+ * react-query's `isError` can tell "the row is gone" (null) apart from "the
+ * fetch failed" (thrown). Every other caller already treats a null return as
+ * "not found" and reacts accordingly (throws its own error, or no-ops) — a
+ * thrown fetch error reaches the same catch/propagation path unchanged.
+ *
+ * Exception: Postgres `22P02` (invalid_text_representation) means `id` isn't
+ * a well-formed uuid — a hand-typed `?node=` value, never a transient
+ * failure — so it reads as "not found" rather than an error react-query
+ * would keep retrying forever.
+ */
 export async function getPage(
   supabase: SupabaseClient<Database>,
   id: string
 ): Promise<PondPage | null> {
-  const { data } = await supabase.from('pages').select(PAGE_COLUMNS).eq('id', id).maybeSingle()
+  const { data, error } = await supabase
+    .from('pages')
+    .select(PAGE_COLUMNS)
+    .eq('id', id)
+    .maybeSingle()
+  if (error) {
+    if (error.code === '22P02') return null
+    throw error
+  }
 
   return data ? mapRow(data as PageRow) : null
 }

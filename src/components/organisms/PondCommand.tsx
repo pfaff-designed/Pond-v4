@@ -108,6 +108,8 @@ export interface PondCommandProps {
   at?: number
   /** Placement. The shell centres it at its top; a story sets it in the flow. */
   className?: string
+  /** Fires when arrowing/typing lands on a new page row (KAN-388) — the host prefetches it. */
+  onActiveItemChange?: (item: PaletteItem) => void
 }
 
 const ramp = (from: number, span: number) => `clamp(0, calc((var(--e, 0) - ${from}) / ${span}), 1)`
@@ -175,6 +177,7 @@ export function PondCommand({
   sheet = null,
   at,
   className = 'relative w-max',
+  onActiveItemChange,
 }: PondCommandProps) {
   const listId = useId()
   const boxRef = useRef<HTMLDivElement>(null)
@@ -226,6 +229,16 @@ export function PondCommand({
   )
   const select = (index: number) => setSel({ query, scope, index })
   const rowId = (i: number) => `${listId}-${i}`
+
+  // KAN-388: the host warms whatever page row the keyboard/typing lands on next —
+  // keyed on the id alone so a re-render that leaves the active row unchanged
+  // (a keystroke that doesn't move the selection) never re-fires the prefetch.
+  const activeItem = rows[active]?.item
+  useEffect(() => {
+    if (activeItem?.kind === 'page' || activeItem?.kind === 'database')
+      onActiveItemChange?.(activeItem)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the id alone, see note above
+  }, [activeItem?.id])
 
   const pathRef = useRef<HTMLSpanElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)

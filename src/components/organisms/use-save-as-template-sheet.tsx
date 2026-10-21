@@ -57,7 +57,11 @@ export const useSaveAsTemplateSheet = ({
       // The list stays open until the sheet replaces it, so the box never
       // collapses between the two.
       void (async () => {
-        const page = await getPage(createClient(), id)
+        // KAN-388: `getPage` now throws on a fetch error rather than
+        // swallowing it as null — this sheet has no error state of its own,
+        // so a fetch failure still opens with an empty summary rather than
+        // leaving the sheet stuck unopened.
+        const page = await getPage(createClient(), id).catch(() => null)
         setSaveTemplateFor({ id, title, blocks: page?.blocks ?? [] })
         onOpen()
       })()

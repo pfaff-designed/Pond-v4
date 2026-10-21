@@ -168,6 +168,56 @@ describe('PageLinkView — selected', () => {
   })
 })
 
+describe('PageLinkView — hover prefetch (KAN-388)', () => {
+  beforeEach(() => {
+    jest.useFakeTimers()
+  })
+
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  it('prefetches the linked page after the row holds the pointer for 60ms', () => {
+    const caps = capabilities(ref)
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const prefetchSpy = jest.spyOn(queryClient, 'prefetchQuery').mockResolvedValue(undefined)
+    render(
+      <QueryClientProvider client={queryClient}>
+        <PageLinkProvider value={caps}>
+          <PageLinkView data={block} />
+        </PageLinkProvider>
+      </QueryClientProvider>
+    )
+
+    fireEvent.pointerEnter(screen.getByRole('button', { name: 'Open cabinets' }))
+    jest.advanceTimersByTime(60)
+
+    expect(prefetchSpy).toHaveBeenCalledTimes(1)
+    expect(prefetchSpy.mock.calls[0][0].queryKey).toEqual(['page', 'page-1'])
+  })
+
+  it('never fires if the pointer leaves before 60ms', () => {
+    const caps = capabilities(ref)
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const prefetchSpy = jest.spyOn(queryClient, 'prefetchQuery').mockResolvedValue(undefined)
+    render(
+      <QueryClientProvider client={queryClient}>
+        <PageLinkProvider value={caps}>
+          <PageLinkView data={block} />
+        </PageLinkProvider>
+      </QueryClientProvider>
+    )
+
+    const row = screen.getByRole('button', { name: 'Open cabinets' })
+    fireEvent.pointerEnter(row)
+    jest.advanceTimersByTime(20)
+    fireEvent.pointerLeave(row)
+    jest.advanceTimersByTime(1000)
+
+    expect(prefetchSpy).not.toHaveBeenCalled()
+  })
+})
+
 describe('PageLinkView — unresolved', () => {
   it('reads "page in trash", not clickable, no chevron, when the page is gone', () => {
     const caps = capabilities(null)

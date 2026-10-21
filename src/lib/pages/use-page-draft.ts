@@ -311,7 +311,9 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
     queryClient.setQueryData(['page', id], (prev: PondPage | null | undefined) =>
       prev ? { ...prev, props: withValue(prev.props, key, value) } : prev
     )
-    void setProperty(getSupabase(), id, key, value)
+    setProperty(getSupabase(), id, key, value).catch((err) =>
+      console.error('Failed to save property', key, err)
+    )
   }
 
   // Apply an in-editor block change (from BlockCanvas): update local state and

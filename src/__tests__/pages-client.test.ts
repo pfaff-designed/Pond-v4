@@ -133,6 +133,28 @@ describe('getPage', () => {
     })
     expect((await getPage(makeSupabase(badProps) as never, 'page-1'))!.props).toEqual({})
   })
+
+  it('returns null for a 22P02 error (a hand-typed id that is not a valid uuid)', async () => {
+    const chain = makeChain({
+      maybeSingle: jest
+        .fn()
+        .mockResolvedValue({ data: null, error: { code: '22P02', message: 'invalid input syntax for type uuid' } }),
+    })
+    const sb = makeSupabase(chain)
+    expect(await getPage(sb as never, 'not-a-uuid')).toBeNull()
+  })
+
+  it('throws on any other Supabase error', async () => {
+    const chain = makeChain({
+      maybeSingle: jest
+        .fn()
+        .mockResolvedValue({ data: null, error: { code: 'PGRST500', message: 'network error' } }),
+    })
+    const sb = makeSupabase(chain)
+    await expect(getPage(sb as never, 'page-1')).rejects.toEqual(
+      expect.objectContaining({ code: 'PGRST500' })
+    )
+  })
 })
 
 // ── getChildPages ────────────────────────────────────────────────────────────
