@@ -118,6 +118,7 @@ describe('runBlockMenuAction', () => {
     'copy-link': jest.fn(),
     delete: jest.fn(),
     'set-width': jest.fn(),
+    'fit-height': jest.fn(),
   })
 
   it('hands each item’s action to its own handler, and to no other', () => {

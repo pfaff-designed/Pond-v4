@@ -19,6 +19,8 @@
  */
 
 import { useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useBlockHeightConstrained } from '@/components/organisms/block-height-context'
+import { cn } from '@/lib/utils'
 import type { ModuleViewProps } from '../types'
 import type { ViewBlock, ViewMode } from './schema'
 import { useSiblingBlocks } from '../sibling-context'
@@ -554,6 +556,7 @@ export function CollectionView({
     return extra.length === 0 ? processed : [...processed, ...extra]
   }, [processed, struckRows])
   const struckIds = useMemo(() => new Set(struckRows.map((row) => row.id)), [struckRows])
+  const constrained = useBlockHeightConstrained()
 
   // A config edit (chart/big-number setup) must land on whichever view the bar has
   // LOCALLY selected, never the persisted `activeViewId` — a bar click never calls
@@ -609,23 +612,26 @@ export function CollectionView({
   }
 
   return (
-    <div className="text-sm text-mn-text">
-      <ViewControls
-        config={activeConfig}
-        rawBlock={config}
-        schema={schema}
-        collectionName={collectionName}
-        recordCount={rows.length}
-        activeViewId={localActiveViewId}
-        onSelectView={handleSelectView}
-        updateSchema={updateSchema}
-        onChange={onChange}
-        editable={editable}
-        onConfigChange={onConfigChange ? handleConfigChange : undefined}
-        latestBlock={savedViewHost?.latestBlock}
-        getLatestSchema={savedViewHost?.getLatestSchema}
-        writeBlock={savedViewHost?.writeBlock}
-      />
+    <div className={cn('text-sm text-mn-text', constrained && 'flex h-full min-h-0 flex-col')}>
+      <div data-part="view-chrome" className={cn(constrained && 'shrink-0')}>
+        <ViewControls
+          config={activeConfig}
+          rawBlock={config}
+          schema={schema}
+          collectionName={collectionName}
+          recordCount={rows.length}
+          activeViewId={localActiveViewId}
+          onSelectView={handleSelectView}
+          updateSchema={updateSchema}
+          onChange={onChange}
+          editable={editable}
+          onConfigChange={onConfigChange ? handleConfigChange : undefined}
+          latestBlock={savedViewHost?.latestBlock}
+          getLatestSchema={savedViewHost?.getLatestSchema}
+          writeBlock={savedViewHost?.writeBlock}
+        />
+      </div>
+      <div data-part="view-body" className={cn(constrained && 'min-h-0 flex-1 overflow-y-auto')}>
       {activeConfig.mode === 'board' ? (
         <CollectionBoard
           schema={schema}
@@ -733,6 +739,7 @@ export function CollectionView({
           onDeleteField={onDeleteField}
         />
       )}
+      </div>
     </div>
   )
 }
