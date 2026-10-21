@@ -77,7 +77,7 @@ export const PALETTE_ITEMS: readonly PaletteItem[] = [
     sub: 'pond · switch',
     glyph: 'lightning-03',
   },
-  { id: 'chase', label: 'chase the cabinet quote', kind: 'action' },
+  { id: 'chase', label: 'chase the cable quote', kind: 'action' },
   { id: 'log-workout', label: 'log a workout', kind: 'action' },
   { id: 'log-meal', label: 'log a meal', kind: 'action' },
   { id: 'log-sleep', label: 'log sleep', kind: 'action' },

@@ -21,7 +21,8 @@
  *   sub      INLINE after the name · 12.5 (mobile 13) · ink .68 · nowrap · ellipsis
  *   hint     0 1 auto · max 45% · mono 10.5 · ink .68 — hidden on the selected row
  *   ↵        mono 10.5 · ink .8 — on the selected row
- *   match    underline · offset 3 · thickness 1, over #278's `pre` / `hit` / `post`
+ *   match    underline · offset 3 · thickness 1, over `slash-entries.ts`'s `matchRuns`
+ *            (KAN-390: every matched character, not only the first contiguous span)
  *
  * `hint`, `enter` and `match` are not kind-specific — the board emits them once,
  * outside its per-kind branch — so they are `slash-row.tsx`'s `HINT`, `ENTER` and
@@ -92,11 +93,11 @@ export function PaletteRow({
         data-part="label"
         className={`min-w-0 truncate ${glyph ? 'font-medium' : 'font-normal'}`}
       >
-        <span data-part="pre">{entry.pre}</span>
-        <span data-part="hit" className={MATCH}>
-          {entry.hit}
-        </span>
-        <span data-part="post">{entry.post}</span>
+        {entry.runs.map((run, i) => (
+          <span key={i} data-part={run.hit ? 'hit' : 'pre'} className={run.hit ? MATCH : undefined}>
+            {run.text}
+          </span>
+        ))}
       </span>
       {entry.sub && (
         <span data-part="sub" className={SUB}>
