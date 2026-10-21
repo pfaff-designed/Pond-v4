@@ -29,6 +29,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { defineSchema, getPage, saveProps, type PondPage } from '@/lib/pages/client'
+import { pageQueryOptions } from '@/lib/pages/page-query'
 import { usePageDraft } from '@/lib/pages/use-page-draft'
 import { getOrCreateHomePage } from '@/lib/pages/home'
 import { PropertyInspector } from '@/components/molecules/PropertyInspector'
@@ -54,10 +55,12 @@ import {
   ZEN_BLOCK_LIST_STYLE,
   ZEN_COLUMN_PX,
   ZEN_TITLE_CLASS,
+  type Zen,
 } from '@/lib/layout/zen'
 import { usePublishCommandPath } from '@/lib/layout/command-path'
 import { commandPath } from '@/lib/pages/command-path'
 import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
+import { consumeOnOpen, registerPageOpen } from '@/lib/change-log/accept-marks'
 import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
 import { isVirtualNodeId, TRASH_NODE_ID } from '@/lib/change-log/trash-view'
 import { ChangeLogPage } from '@/components/organisms/ChangeLogPage'
@@ -89,8 +92,56 @@ import { PageMentioned, PageProvenance } from '@/components/organisms/PageProven
 import { readAskParam, urlWithoutAsk } from '@/lib/pages/ask-param'
 import { readTemplatesParam, urlWithoutTemplates } from '@/lib/pages/templates-param'
 import { requestTerminalFocus } from '@/lib/terminal-focus'
+import { writeRecent } from '@/lib/pages/recent-pages'
 import { FirstRunHints } from '@/components/organisms/FirstRunHints'
 import { useFirstRunPending } from '@/lib/first-run/use-first-run-pending'
+
+/**
+ * The title row (`Pond 06.21` 6u.1): the page's name at left, one eyebrow at
+ * right. Shared by the real page and the KAN-388 pending shell, so the frame
+ * cannot drift between them — only `readOnly`/`onChange` and the computed
+ * placeholder/eyebrow text tell the two apart.
+ */
+function PageTitleRow({
+  zen,
+  value,
+  placeholder,
+  eyebrow,
+  readOnly,
+  onChange,
+}: {
+  zen: Zen | null
+  value: string
+  placeholder: string
+  eyebrow: string
+  readOnly?: boolean
+  onChange?: (value: string) => void
+}) {
+  return (
+    <div
+      className={`${zen ? 'mb-[var(--zen-gap)]' : 'mt-2 mb-4'} flex items-end justify-between gap-3`}
+      style={{ paddingInline: TEXT_BLOCK_INSET_PX }}
+    >
+      <input
+        className={`min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-mn-text-secondary ${zen ? ZEN_TITLE_CLASS : 'font-sans text-[38px] leading-[1.15] font-bold tracking-[-0.01em] uppercase'}`}
+        value={value}
+        onChange={onChange ? (e) => onChange(e.target.value) : undefined}
+        readOnly={readOnly}
+        placeholder={placeholder}
+        aria-label="Page title"
+        data-pond-page-title
+      />
+      <span
+        data-part="title-eyebrow"
+        className="flex-none text-[10.5px] font-medium tracking-[.1em] text-mn-text-secondary uppercase"
+        hidden={zen !== null}
+        aria-live="polite"
+      >
+        {eyebrow}
+      </span>
+    </div>
+  )
+}
 
 export function DocumentPanel() {
   const router = useRouter()
@@ -212,9 +263,12 @@ export function DocumentPanel() {
     wasAtPage.current = !!nodeId
   }, [nodeId, refetchFirstRunPending])
 
-  const { data: page, isLoading } = useQuery({
-    queryKey: ['page', pageId],
-    queryFn: () => (pageId ? getPage(getSupabase(), pageId) : Promise.resolve(null)),
+  const {
+    data: page,
+    isLoading,
+    isError: pageIsError,
+  } = useQuery({
+    ...pageQueryOptions(getSupabase, pageId),
     enabled: !!pageId && !isVirtualNodeId(pageId),
   })
 
@@ -241,6 +295,27 @@ export function DocumentPanel() {
       queryClient.invalidateQueries({ queryKey: pagesKey(pondId) })
     })
   }, [page, pondId, queryClient, getSupabase])
+  // KAN-143: a mark set elsewhere (the composer, a record page) shows on this
+  // page's first open and clears on the following one — `consumeOnOpen` is
+  // the one place that reads+clears that bookkeeping, keyed by pageId, the
+  // same mount point `openedMarked` above owns. Guarded by `marksConsumedFor`
+  // rather than the effect's own mount/cleanup: the App Router enables
+  // `reactStrictMode` by default, so it double-invokes this effect (mount →
+  // cleanup → mount) on initial mount with the SAME pageId — consuming on
+  // every run would read that phantom remount as a second open and clear
+  // marks nobody has seen yet. The ref only matches a genuinely new pageId,
+  // never reset on cleanup, so a real navigation away and back still consumes
+  // again.
+  const marksConsumedFor = useRef<string | null>(null)
+  useEffect(() => {
+    if (!pageId) return
+    const unregister = registerPageOpen(pageId)
+    if (marksConsumedFor.current !== pageId) {
+      marksConsumedFor.current = pageId
+      consumeOnOpen(pageId)
+    }
+    return unregister
+  }, [pageId])
   // KAN-350: a row page's `_schema` lives on its PARENT collection — the row's own
   // `props` holds only its values. The parent is read through the SAME `['page', id]`
   // cache every other page read shares (no bespoke key), keyed off `page.parentId`
@@ -252,6 +327,21 @@ export function DocumentPanel() {
     queryFn: () => (parentId ? getPage(getSupabase(), parentId) : Promise.resolve(null)),
     enabled: !!parentId,
   })
+
+  // KAN-390: the one owner of the ⌘K/@ recent-visits list. Every route that
+  // lands a page — rail, card, link, breadcrumb, undo, composer, ⌘K — resolves
+  // through the `page` query above, so recording the visit here (instead of at
+  // each caller) covers all of them. Guarded by `recentRecordedRef` so a
+  // re-render with the same page/pond pair (a refetch, a prop-driven re-render)
+  // doesn't re-write the already-front entry.
+  const recentRecordedRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!page) return
+    const key = `${pondId ?? ''}:${page.id}`
+    if (recentRecordedRef.current === key) return
+    recentRecordedRef.current = key
+    writeRecent({ id: page.id, type: page.type, title: page.title }, pondId)
+  }, [page, pondId])
 
   // The flat page tree — the same cache the rail reads — so this page's own
   // children (now ordinary page-link blocks, KAN-415) resolve against current
@@ -290,6 +380,8 @@ export function DocumentPanel() {
     viewBlocks,
     saved,
     savedAt,
+    offline,
+    retrying,
     onTitle,
     onProperty,
     commitLocalEdit,
@@ -421,6 +513,8 @@ export function DocumentPanel() {
     untouched && !page?.props?.kind,
     parentTitle,
     madeAt,
+    offline,
+    retrying,
   )
   // Board 6f frame 4: an empty title after an apply names the kind, e.g. `recipe name`.
   const titlePlaceholder = page?.props?.kind ? `${page.props.kind} name` : 'Untitled'
@@ -489,6 +583,83 @@ export function DocumentPanel() {
     return <TrashPage />
   }
 
+  // KAN-388: while `['page', pageId]` is still in flight, the row this id
+  // already has in `['pages']` (the rail's own cache) is enough to paint the
+  // title and eyebrow at once — the canvas never has to blank to "Loading…"
+  // for a page the person just clicked from a row they could already see.
+  // Falls through to "Loading…" below when the row itself isn't known yet
+  // (a deep link on a cold load, PATH_STEPS step 7) or rows/home are pending.
+  const pendingKnownRow = isLoading && !rowsPending ? rows.find((r) => r.id === pageId) : undefined
+  if (pendingKnownRow) {
+    // Same shape as the landed row's own `titlePlaceholder`/`eyebrow` below,
+    // fed by the rail row rather than the (not yet loaded) page: no draft
+    // state to read `saving…` from, so `saved` is always the state, but
+    // `untouched`/parent/made-from still read off the row so a fresh or
+    // answer-made page's shell matches what the landed row shows next.
+    const shellPlaceholder = pendingKnownRow.props?.kind
+      ? `${pendingKnownRow.props.kind} name`
+      : 'Untitled'
+    const shellUntouched = pendingKnownRow.title.trim() === '' && !pendingKnownRow.props?.kind
+    const shellParentTitle =
+      rows.find((r) => r.id === pendingKnownRow.parent_id)?.title ?? null
+    const shellMadeAtStamp = readMadeFrom(pendingKnownRow.props)?.madeAt
+    const shellMadeAt = shellMadeAtStamp ? new Date(shellMadeAtStamp) : null
+    const shellEyebrow = titleEyebrow(
+      pendingKnownRow.props?.kind,
+      true,
+      null,
+      shellUntouched,
+      shellParentTitle,
+      shellMadeAt,
+    )
+    return (
+      <PageCanvas className="h-full overflow-y-auto">
+        <div {...(zen ? zenColumn(column) : column)} data-testid="page-column">
+          {!zen && (
+            <ContentWidthHandle
+              {...handle}
+              width={contentWidth}
+              onWidthChange={setContentWidth}
+              onWidthCommit={commitWidth}
+            />
+          )}
+          <PageTitleRow
+            zen={zen}
+            value={pendingKnownRow.title}
+            placeholder={shellPlaceholder}
+            eyebrow={shellEyebrow}
+            readOnly
+          />
+        </div>
+      </PageCanvas>
+    )
+  }
+
+  // KAN-388: `getPage` settling with nothing (deleted elsewhere) or erroring
+  // must not leave the pending shell above (or "Loading…" below) up forever —
+  // the rail's row for the id can still be stale (it hasn't refetched yet),
+  // so this checks the page query's own outcome, not whether a row exists.
+  // The two outcomes read differently: a settled `null` means the row itself
+  // is gone (deleted), while an error with no page data to fall back on means
+  // the fetch itself failed (network/RLS) — the page may still exist.
+  // `pageIsError` only counts when there's no page data to fall back on — a
+  // background refetch (e.g. another observer on the same `['page', id]` key,
+  // like `PageChangesPanel`) erroring must not blank a page already on screen.
+  if (pageId && !isVirtualNodeId(pageId) && !isLoading && page === null) {
+    return (
+      <div className="flex h-full items-center justify-center text-mn-13 text-mn-text-secondary">
+        this page is gone — it may be in the trash
+      </div>
+    )
+  }
+  if (pageId && !isVirtualNodeId(pageId) && !isLoading && pageIsError && !page) {
+    return (
+      <div className="flex h-full items-center justify-center text-mn-13 text-mn-text-secondary">
+        this page didn&apos;t load — reload to try again
+      </div>
+    )
+  }
+
   if ((!nodeId && homePending) || isLoading || rowsPending || !page) {
     return (
       <div className="h-full flex items-center justify-center text-mn-13 text-mn-text-secondary">
@@ -538,27 +709,13 @@ export function DocumentPanel() {
         {/* The title row (`Pond 06.21` 6u.1): the page's name at left, and at right
             one eyebrow — `{kind} — {save state}`. The save state lives here and
             nowhere else; no kind set, and the eyebrow is the state alone. */}
-        <div
-          className={`${zen ? 'mb-[var(--zen-gap)]' : 'mt-2 mb-4'} flex items-end justify-between gap-3`}
-          style={{ paddingInline: TEXT_BLOCK_INSET_PX }}
-        >
-          <input
-            className={`min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-mn-text-secondary ${zen ? ZEN_TITLE_CLASS : 'font-sans text-[38px] leading-[1.15] font-bold tracking-[-0.01em] uppercase'}`}
-            value={viewTitle}
-            onChange={(e) => onTitle(e.target.value)}
-            placeholder={titlePlaceholder}
-            aria-label="Page title"
-            data-pond-page-title
-          />
-          <span
-            data-part="title-eyebrow"
-            className="flex-none text-[10.5px] font-medium tracking-[.1em] text-mn-text-secondary uppercase"
-            hidden={zen !== null}
-            aria-live="polite"
-          >
-            {previewName ? `preview — ${previewName}` : eyebrow}
-          </span>
-        </div>
+        <PageTitleRow
+          zen={zen}
+          value={viewTitle}
+          onChange={onTitle}
+          placeholder={titlePlaceholder}
+          eyebrow={previewName ? `preview — ${previewName}` : eyebrow}
+        />
 
         <div className={hiddenInZen}>
           {/* Provenance (#97, 6a frame 5): the thread moment this page was made

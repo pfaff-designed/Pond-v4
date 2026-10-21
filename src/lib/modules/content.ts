@@ -30,6 +30,14 @@ const blockWidthSchema = z.enum(['1/4', '1/3', '1/2', '2/3', '3/4', 'full'])
 export type BlockWidth = z.infer<typeof blockWidthSchema>
 
 /**
+ * A free width (KAN-441), set by dragging a block's edge: a percent of the
+ * content column, 1–100, kept to one decimal place at the write boundary
+ * (drag release, keyboard step) — not a `multipleOf` step here, since float
+ * `%` isn't reliable through one.
+ */
+const blockWidthPercentSchema = z.number().min(1).max(100)
+
+/**
  * The shared `width` mixin (KAN-43), extended onto every union member HERE rather
  * than inside each per-module schema file, the way `labelledBlockFields` is. That
  * keeps the per-module files untouched and, since `ai-composition.ts` imports those
@@ -38,6 +46,7 @@ export type BlockWidth = z.infer<typeof blockWidthSchema>
  */
 const blockWidthFields = {
   width: blockWidthSchema
+    .or(blockWidthPercentSchema)
     .optional()
     .describe("Never set by the AI. Reserved for the person's own layout choice."),
   /**

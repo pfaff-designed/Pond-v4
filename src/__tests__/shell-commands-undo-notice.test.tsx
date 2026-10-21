@@ -85,6 +85,7 @@ describe('ShellCommands — the undo notice (KAN-139)', () => {
     jest.mocked(sessionUndo.undo).mockResolvedValueOnce({
       outcome: 'done',
       records: [{ targetPageId: 'page-a', links: { undoOf: 'orig-1' } }],
+      step: { pondId: 'pond-1', recordIds: ['orig-1'] },
     } as never)
     jest.mocked(getRecord).mockResolvedValueOnce(ADD_ROW_RECORD as never)
     renderShell()
@@ -99,6 +100,7 @@ describe('ShellCommands — the undo notice (KAN-139)', () => {
     jest.mocked(sessionUndo.undo).mockResolvedValueOnce({
       outcome: 'done',
       records: [{ targetPageId: 'page-a', links: { undoOf: 'orig-1' } }],
+      step: { pondId: 'pond-1', recordIds: ['orig-1'] },
     } as never)
     jest.mocked(getRecord).mockResolvedValueOnce(ADD_ROW_RECORD as never)
     jest.mocked(sessionUndo.undo).mockResolvedValueOnce({ outcome: 'empty' } as never)
@@ -115,6 +117,7 @@ describe('ShellCommands — the undo notice (KAN-139)', () => {
     jest.mocked(sessionUndo.undo).mockResolvedValueOnce({
       outcome: 'done',
       records: [{ targetPageId: 'page-a', links: { undoOf: 'orig-1' } }],
+      step: { pondId: 'pond-1', recordIds: ['orig-1'] },
     } as never)
     let resolveRecord: (value: typeof ADD_ROW_RECORD) => void = () => {}
     jest.mocked(getRecord).mockImplementationOnce(
@@ -139,6 +142,7 @@ describe('ShellCommands — the undo notice (KAN-139)', () => {
     jest.mocked(sessionUndo.undo).mockResolvedValueOnce({
       outcome: 'done',
       records: [{ targetPageId: 'page-a', links: { undoOf: 'orig-1' } }],
+      step: { pondId: 'pond-1', recordIds: ['orig-1'] },
     } as never)
     jest.mocked(getRecord).mockResolvedValueOnce(ADD_ROW_RECORD as never)
     renderShell()

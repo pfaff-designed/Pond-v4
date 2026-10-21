@@ -30,6 +30,7 @@ import React, {
   type CSSProperties,
   type RefObject,
 } from 'react'
+import { createPortal } from 'react-dom'
 import { SiblingBlocksProvider } from '@/lib/modules/sibling-context'
 import { BlockRowProvider } from '@/lib/modules/block-row-context'
 import { blockDomId, focusPageTitle, scrollToBlock } from '@/lib/modules/block-dom'
@@ -44,12 +45,17 @@ import {
   type BlockFrame,
   type PondBlockState,
 } from '@/lib/modules/block-frame'
-import { useCollectionRows } from '@/lib/modules/view/use-collection-rows'
+import { readCachedSchema, useCollectionRows } from '@/lib/modules/view/use-collection-rows'
 import { shouldSelectCardFromClick } from '@/lib/modules/view/card-click'
 import { applyView } from '@/lib/modules/view/apply'
 import { activeSavedView } from '@/lib/modules/view/schema'
-import { ActiveViewSelectionContext } from '@/lib/modules/view/active-view-context'
-import { ViewBar, type ViewBarView } from '@/components/molecules/ViewBar'
+import {
+  ActiveViewSelectionContext,
+  SavedViewHostContext,
+} from '@/lib/modules/view/active-view-context'
+import { SavedViewBar } from '@/lib/modules/view/saved-view-bar'
+import { compactChartMark } from '@/lib/modules/view/chart-compact'
+import type { PropertySchema } from '@/lib/properties/schema'
 import { CHART_EMPTY_LINE } from '@/lib/modules/chart/card'
 import { addTodoItem } from '@/lib/modules/todo/view'
 import { addTableRow } from '@/lib/modules/table/view'
@@ -76,6 +82,7 @@ import {
 import { BlockWidthRow } from '@/components/molecules/BlockWidthRow'
 import { TrailingBlockGap } from '@/components/molecules/TrailingBlockGap'
 import { BlockGapLine } from '@/components/molecules/BlockGapLine'
+import { BlockEdgeHandle } from '@/components/molecules/BlockEdgeHandle'
 import {
   BLOCK_ROW_GAP_PX,
   blockWidthStyle,
@@ -83,15 +90,24 @@ import {
   detachKeepingRows,
   isWithinPaddedZone,
   layoutRows,
+  drawnWidthPercent,
   planBesideDrop,
-  rowHolds,
+  planOwnLineDrop,
+  zoneWhenDrawnStacked,
+  rowStacks,
+  widthTenths,
+  withoutRowStart,
   type DropZone,
   type Rect,
 } from '@/lib/modules/layout-rows'
+import { KEY_WIDTHS, handOffRowStartOnResize, resizeAlone, roundFreePercent } from '@/lib/modules/block-resize'
 import { SlashLineContext, type SlashLineAt } from '@/lib/modules/text/slash-line'
 import { useSlashLine } from '@/components/organisms/use-slash-line'
 import { focusTextBlock, hasTextBeforeCaret } from '@/lib/modules/text/focus'
 import { HOVER_GHOST_CLASS, UNTOUCHED_HINT_CLASS } from '@/lib/modules/text/prose'
+import { useAcceptMarks } from '@/lib/change-log/accept-marks'
+import { markTarget } from '@/lib/change-log/accept-marks-diff'
+import { ChangedMark, formatChangedLabel } from '@/lib/change-log/changed-mark'
 import {
   landAtSlash,
   undoLanding,
@@ -556,6 +572,25 @@ export function BlockCanvas({
   // own origin). Reset alongside `dragRectsRef`'s re-snapshots, since a fresh
   // snapshot means the next dragover starts from nothing sticky.
   const stickyZoneRef = useRef<{ index: number; zone: DropZone } | null>(null)
+  // The small copy that follows the pointer. Position is written on the node
+  // itself so a dragover does not re-render the page.
+  const dragFloatRef = useRef<HTMLDivElement>(null)
+  const dragFloatPointRef = useRef<{ x: number; y: number } | null>(null)
+  function placeDragFloat(x: number, y: number) {
+    dragFloatPointRef.current = { x, y }
+    const el = dragFloatRef.current
+    if (!el) return
+    el.style.left = `${x + 14}px`
+    el.style.top = `${y + 16}px`
+  }
+  useLayoutEffect(() => {
+    if (draggingIndex === null) return
+    const point = dragFloatPointRef.current
+    const el = dragFloatRef.current
+    if (!point || !el) return
+    el.style.left = `${point.x + 14}px`
+    el.style.top = `${point.y + 16}px`
+  }, [draggingIndex])
   useEffect(() => {
     if (draggingIndex === null) return
     window.addEventListener('scroll', snapshotDragRects, true)
@@ -708,9 +743,9 @@ export function BlockCanvas({
   // moves `menuOpenAt` (Esc and any other menu-close path all route through
   // `onOpenChange` to `handleMenuOpenChange` below) and at every drag exit, so
   // a stale preview can never survive the menu or drag it came from.
-  const [previewWidth, setPreviewWidth] = useState<{ blockId: string; width: BlockWidth }[] | null>(
-    null
-  )
+  const [previewWidth, setPreviewWidth] = useState<
+    { blockId: string; width: BlockWidth | number }[] | null
+  >(null)
 
   // 6f frame 3: the template under preview, as flat outlines over the blank
   // page — transient, never in `blocks`, the store or the change log.
@@ -854,19 +889,36 @@ export function BlockCanvas({
   }
 
   /**
-   * The width row's keep (6x): the same in-place-swap-by-id route as
-   * `convertBlock`, so the undo toast restores the block's previous width
-   * (absent means `full`). Pond binds no ⌘Z anywhere — inside a focused text
-   * block that key reaches the editor instead — so the toast is the undo the
-   * board's "click to keep, with undo" has here.
+   * The width row's keep (6x) and an edge-drag release (KAN-441): the same
+   * in-place-swap-by-id route, extended to take a free numeric width and to
+   * run it through `handOffRowStartOnResize` — a shrink that just opened room
+   * for the next block hands it `rowStart` so the row stays as it was (the
+   * rowStart contract, SPEC.md). The undo toast restores the block's previous
+   * width (absent means `full`) AND, when this write handed off `rowStart`,
+   * clears it from whichever block inherited it — one undo step for both.
+   * Pond binds no ⌘Z anywhere — inside a focused text block that key reaches
+   * the editor instead — so the toast is the undo the board's "click to keep,
+   * with undo" has here.
    */
-  const setBlockWidth = (before: Block, width: BlockWidth) => {
-    const after = { ...before, width } as Block
-    onChange(blocks.map((b) => (b.id === before.id ? after : b)))
+  const setBlockWidth = (before: Block, width: BlockWidth | number) => {
+    const index = blocks.findIndex((b) => b.id === before.id)
+    if (index === -1) return
+    const after = handOffRowStartOnResize(blocks, index, width)
+    const next = blocks[index + 1]
+    const handedRowStartToId =
+      next && next.rowStart !== true && after[index + 1]?.rowStart === true ? next.id : null
+    onChange(after)
     stageUndo({
       message: 'Set the block width',
       scope: 'block',
-      undo: () => onChange(blocksRef.current.map((b) => (b.id === before.id ? before : b))),
+      undo: () =>
+        onChange(
+          blocksRef.current.map((b) => {
+            if (b.id === before.id) return before
+            if (handedRowStartToId && b.id === handedRowStartToId) return withoutRowStart(b)
+            return b
+          })
+        ),
     })
   }
 
@@ -883,6 +935,129 @@ export function BlockCanvas({
       scope: 'block',
       undo: () => onChange(blocksRef.current.map((b) => (b.id === before.id ? before : b))),
     })
+  }
+
+  /**
+   * An alone-on-line edge drag (KAN-441): a ref, not state, for the live
+   * pointer math — `resizeAlone`'s own hysteresis (`lockedPercent`) threads
+   * call to call, and a drag fires many moves per gesture that only need to
+   * update the rendered preview, not re-run an effect. `edgePreview` is that
+   * preview: the live percent and lock state for whichever block (`index`) is
+   * mid-drag, read by the sizing div below to override its width and by the
+   * handle's readout chip. `null` off a drag.
+   */
+  const edgeDragRef = useRef<{
+    pointerId: number
+    index: number
+    side: 'left' | 'right'
+    startClientX: number
+    startPercent: number
+    lockedPercent: number | null
+    livePercent: number
+  } | null>(null)
+  const [edgePreview, setEdgePreview] = useState<{
+    index: number
+    percent: number
+    locked: boolean
+  } | null>(null)
+  const [edgeDragActive, setEdgeDragActive] = useState(false)
+
+  // Esc cancels with no write, and the whole gesture shows the resize cursor
+  // even where the pointer leaves the 8px strip (pointer capture keeps the
+  // move/up events, not the OS cursor) — both acquired and released in this
+  // one effect, which also covers an unmount mid-drag for free.
+  useEffect(() => {
+    if (!edgeDragActive) return
+    function handleEdgeResizeKeyDown(e: KeyboardEvent) {
+      if (e.key !== 'Escape') return
+      edgeDragRef.current = null
+      setEdgePreview(null)
+      setEdgeDragActive(false)
+    }
+    document.body.style.userSelect = 'none'
+    document.body.style.cursor = 'ew-resize'
+    document.addEventListener('keydown', handleEdgeResizeKeyDown)
+    return () => {
+      document.removeEventListener('keydown', handleEdgeResizeKeyDown)
+      document.body.style.removeProperty('cursor')
+      document.body.style.removeProperty('user-select')
+    }
+  }, [edgeDragActive])
+
+  function handleEdgeResizePointerDown(
+    e: React.PointerEvent<HTMLDivElement>,
+    index: number,
+    side: 'left' | 'right'
+  ) {
+    if (edgeDragRef.current) return
+    e.preventDefault()
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId)
+    } catch {
+      /* capture can fail for an already-released pointer; the drag still works while over the strip */
+    }
+    // The drawn width, not the stored one: a width that stacks is drawn full,
+    // and the drag must begin from what the person sees.
+    const startPercent = drawnWidthPercent(columnWidth, blocks[index]?.width)
+    edgeDragRef.current = {
+      pointerId: e.pointerId,
+      index,
+      side,
+      startClientX: e.clientX,
+      startPercent,
+      lockedPercent: null,
+      livePercent: startPercent,
+    }
+    setEdgePreview({ index, percent: startPercent, locked: false })
+    setEdgeDragActive(true)
+  }
+
+  function handleEdgeResizePointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    const st = edgeDragRef.current
+    if (!st || e.pointerId !== st.pointerId) return
+    const deltaPx = st.side === 'right' ? e.clientX - st.startClientX : st.startClientX - e.clientX
+    const { percent, locked } = resizeAlone(columnWidth, st.startPercent, deltaPx, st.lockedPercent)
+    st.lockedPercent = locked ? percent : null
+    st.livePercent = percent
+    setEdgePreview({ index: st.index, percent, locked })
+  }
+
+  function handleEdgeResizePointerUp(e: React.PointerEvent<HTMLDivElement>) {
+    const st = edgeDragRef.current
+    if (!st || e.pointerId !== st.pointerId) return
+    edgeDragRef.current = null
+    setEdgePreview(null)
+    setEdgeDragActive(false)
+    const before = blocks[st.index]
+    if (!before) return
+    // Locked commits the named width (KEY_WIDTHS is the one home for the
+    // glyph→named mapping), not the number its position happens to round to —
+    // snapping to ½ must keep reading as '1/2' in the width row, not "custom".
+    const lockedKey = st.lockedPercent !== null ? KEY_WIDTHS.find((k) => k.percent === st.lockedPercent) : undefined
+    const committed: BlockWidth | number = lockedKey
+      ? lockedKey.width
+      : roundFreePercent(st.livePercent, columnWidth)
+    // Unchanged from the stored width, or from the drawn start (a stacked
+    // block's press-and-release commits 'full' against a stored '1/3'): no write.
+    const unchanged =
+      widthTenths(committed) === widthTenths(before.width) ||
+      widthTenths(committed) === widthTenths(st.startPercent)
+    if (unchanged) return
+    setBlockWidth(before, committed)
+  }
+
+  function handleEdgeResizePointerCancel(e: React.PointerEvent<HTMLDivElement>) {
+    const st = edgeDragRef.current
+    if (!st || e.pointerId !== st.pointerId) return
+    edgeDragRef.current = null
+    setEdgePreview(null)
+    setEdgeDragActive(false)
+  }
+
+  /** The handle's readout chip (KAN-441): the key glyph while snapped, a free percent otherwise. */
+  function edgeResizeReadout(percent: number, locked: boolean): string {
+    const key = locked ? KEY_WIDTHS.find((k) => k.percent === percent) : undefined
+    return key ? key.label : `${Math.round(percent)}%`
   }
 
   /** The page's own URL, anchored at the block — arriving there lands on it. */
@@ -928,6 +1103,26 @@ export function BlockCanvas({
   function setBlockAt(index: number, next: Block) {
     onChange(blocks.map((b, i) => (i === index ? next : b)))
   }
+
+  /**
+   * KAN-243 fix: `SavedViewBar`'s undo writes through THIS, never a plain
+   * `onChange(blocks.map(...))` closed over an index — that closure (as
+   * `renderBlockEditor`'s `(next) => setBlockAt(i, next)` is, below) spreads
+   * `next` over whatever `blocks` THAT RENDER saw, so a toast staged earlier and
+   * fired later would silently drop an edit made to another block in between
+   * (and, after a reorder, could even land on the wrong block by index).
+   * `blocksRef.current` is always the latest list, and matching by id rather
+   * than index survives a reorder too.
+   */
+  const writeBlock = useCallback(
+    (next: ViewBlock) =>
+      onChange(
+        blocksRef.current.map((b) =>
+          b.id === next.id ? { ...next, activeViewId: (b as ViewBlock).activeViewId } : b
+        )
+      ),
+    [onChange]
+  )
 
   function removeBlockAt(index: number) {
     const removed = blocks[index]
@@ -1428,106 +1623,22 @@ export function BlockCanvas({
     [blocks, previewWidth]
   )
 
-  // The row a beside hover would actually land in, from the SAME planner the
-  // commit uses (`planBesideDrop`) — not `blocksForLayout`'s per-block preview,
-  // which carries widths only, never a reorder. `null` off a drag, off an
-  // own-line hover, or wherever the planner itself returns `null` (a full row,
-  // or a repack that would split the planned row apart).
-  const besidePlan = useMemo(() => {
-    if (draggingIndex === null || !dropIndicator) return null
-    if (dropIndicator.zone !== 'left' && dropIndicator.zone !== 'right') return null
-    const target = blocks[dropIndicator.index]
-    if (!target) return null
-    return planBesideDrop(blocks, draggingIndex, target.id, dropIndicator.zone)
-  }, [blocks, draggingIndex, dropIndicator])
-
-  // The render order while a beside drop is planned (6x frame 3): the dragged
-  // block renders TWICE — a `::ghost`-suffixed id at the planned slot, at the
-  // planned width (the lifted copy), and the real id reinserted at its OLD
-  // slot, at its OLD width (the origin — opacity-40 only, never the preview
-  // width; applying the preview to the real block was the "shrinks the old
-  // place" bug). `besidePlan` already preserves every other block's relative
-  // order, so the ghost lands exactly where `besidePlan` already has it just
-  // by tagging its id. The origin's old slot is found by locating its old
-  // RIGHT neighbour's id in that same array and inserting right before it (or
-  // at the end with no neighbour) — but that slot can fall inside the row the
-  // ghost just joined (the neighbour is itself a row-mate), which would split
-  // the planned row apart in `layoutRows`' packing; when it does, the origin
-  // goes after the row's last member instead, so the planned row always
-  // renders as one unbroken run. Off a drag, or off anything but a beside
-  // hover, this is just `blocksForLayout`, one entry per block.
+  // One entry per block, in page order, at the width it already has. A drag
+  // does not preview the landing by rearranging or cloning the block: the
+  // drop bar is the only mark of where it will land, and the widths apply
+  // on release.
   const renderList = useMemo<
-    { id: string; width: BlockWidth; ghost: boolean; rowStart?: boolean }[]
-  >(() => {
-    if (!besidePlan || draggingIndex === null) {
-      return blocksForLayout.map((b) => ({
+    { id: string; width: BlockWidth | number; ghost: boolean; rowStart?: boolean }[]
+  >(
+    () =>
+      blocksForLayout.map((b) => ({
         id: b.id,
         width: b.width ?? 'full',
         ghost: false,
         rowStart: b.rowStart,
-      }))
-    }
-    const dragged = blocks[draggingIndex]
-    const ghostId = `${dragged.id}::ghost`
-    const plannedDragged = besidePlan.find((b) => b.id === dragged.id)
-    const plannedWidth = plannedDragged?.width ?? 'full'
-    const withGhost = besidePlan.map((b) =>
-      b.id === dragged.id
-        ? { id: ghostId, width: plannedWidth, ghost: true, rowStart: plannedDragged?.rowStart }
-        : { id: b.id, width: b.width ?? 'full', ghost: false, rowStart: b.rowStart }
-    )
-    const neighborId = draggingIndex < blocks.length - 1 ? blocks[draggingIndex + 1].id : null
-    const neighborAt = neighborId ? withGhost.findIndex((item) => item.id === neighborId) : -1
-    let insertAt = neighborId ? neighborAt : withGhost.length
-
-    const plannedRow = layoutRows(withGhost).find((row) => row.some((item) => item.id === ghostId))
-    let rowEnd = -1
-    if (plannedRow) {
-      const rowIndices = withGhost.reduce<number[]>((acc, item, i) => {
-        const inRow = plannedRow.some((rowItem) => rowItem.id === item.id)
-        return inRow ? [...acc, i] : acc
-      }, [])
-      const rowStart = rowIndices[0]
-      rowEnd = rowIndices[rowIndices.length - 1]
-      if (insertAt > rowStart && insertAt <= rowEnd) insertAt = rowEnd + 1
-    }
-
-    // The origin is a placeholder at the dragged block's OLD slot, not a row
-    // owner: carrying `dragged.rowStart` here forces it onto its own line even
-    // when the row before it has room, needlessly pushing every row after it
-    // down by one (KAN-440) — the row-mate `besidePlan` already handed
-    // `rowStart` to (`detachKeepingRows`) gets its own break regardless.
-    const origin = {
-      id: dragged.id,
-      width: dragged.width ?? 'full',
-      ghost: false,
-      rowStart: undefined,
-    }
-    const withOrigin = [...withGhost]
-    withOrigin.splice(insertAt, 0, origin)
-
-    // The index guard above only catches an insertAt that falls strictly
-    // between the planned row's ends; it misses a narrow origin landing
-    // AT the row's own start, which can still pack into the row's first
-    // member (D 1/3 next to T 1/2 both fit in 12 twelfths) and push the
-    // ghost onto its own line. So re-pack the real render list and check
-    // the planned row's members (ghost included) are still one whole row
-    // — if not, the origin goes after the row's last member instead.
-    if (plannedRow) {
-      const keepsRowTogether = layoutRows(withOrigin).some(
-        (row) =>
-          row.length === plannedRow.length &&
-          plannedRow.every((item) => row.some((r) => r.id === item.id))
-      )
-      if (!keepsRowTogether) {
-        const fallback = [...withGhost]
-        fallback.splice(rowEnd + 1, 0, origin)
-        return fallback
-      }
-    }
-
-    return withOrigin
-  }, [besidePlan, draggingIndex, blocks, blocksForLayout])
+      })),
+    [blocksForLayout]
+  )
 
   const blockRows = useMemo(() => layoutRows(renderList), [renderList])
 
@@ -1582,37 +1693,20 @@ export function BlockCanvas({
   }
 
   /**
-   * Commits an own-line drop (6x): splices the dragged block before/after the
-   * TARGET'S ROW as a whole, not before/after the target block itself — so
-   * dropping below the second block of a ½+½ row lands after both, not
-   * between them. The dragged block's width changes to `full` and it carries
-   * `rowStart: true` (KAN-440), so a block left behind at a partial width
-   * never re-packs into this block's row; every other block is the same
-   * object reference, untouched (AGENTS.md: Pond doesn't widen what's left
-   * behind). One `persistBlocksAsOwnEdit` write, same as `commitBesideDrop`
-   * (KAN-247, KAN-124's direct-write pattern). Removes the dragged block via
-   * `detachKeepingRows`, so a row-mate it leaves behind inherits its
-   * `rowStart` instead of re-packing into the row before it.
+   * Commits an own-line drop (6x) through `planOwnLineDrop`: before or after
+   * the target's row when that row is actually side by side, and between the
+   * drawn lines when the row is only stored as one row and drawn stacked.
    */
-  async function commitOwnLineDrop(
-    fromIndex: number,
-    targetIndex: number,
-    zone: 'above' | 'below'
-  ) {
-    const dragged = { ...blocks[fromIndex], width: 'full' as BlockWidth, rowStart: true as const }
-    const target = blocks[targetIndex]
-    const { blocks: withoutDragged } = detachKeepingRows(blocks, fromIndex)
-    const row = layoutRows(withoutDragged).find((r) => r.some((b) => b.id === target.id))
-    if (!row) return
-    const rowIds = new Set(row.map((b) => b.id))
-    const rowAt = withoutDragged.reduce<number[]>(
-      (acc, b, i) => (rowIds.has(b.id) ? [...acc, i] : acc),
-      []
-    )
-    const insertAt = zone === 'above' ? rowAt[0] : rowAt[rowAt.length - 1] + 1
-    const spliced = [...withoutDragged]
-    spliced.splice(insertAt, 0, dragged)
-    await persistBlocksAsOwnEdit(spliced)
+  function drawsStacked(blockId: string): boolean {
+    const row = layoutRows(blocks).find((member) => member.some((block) => block.id === blockId))
+    if (!row || row.length < 2) return false
+    return rowStacks(columnWidth, row.map((block) => block.width ?? 'full'))
+  }
+
+  async function commitOwnLineDrop(fromIndex: number, targetIndex: number, zone: 'above' | 'below') {
+    const next = planOwnLineDrop(blocks, fromIndex, blocks[targetIndex].id, zone, columnWidth)
+    if (!next) return
+    await persistBlocksAsOwnEdit(next)
   }
 
   /**
@@ -1712,46 +1806,6 @@ export function BlockCanvas({
     return () => ro.disconnect()
   }, [blockRows])
 
-  /**
-   * The lifted copy shown at the planned slot while a beside drop is hovered
-   * (6x frame 3, `PondBlock.dc.html`'s `lifted` state): a read-only render of
-   * the dragged block's own content — no handle, no drag wiring, no keyboard
-   * handling, since the origin node (the real, still-draggable block) is what
-   * the pointer and keyboard actually act on. `aria-hidden`/`inert` keep it
-   * out of the accessibility tree and the tab order entirely.
-   */
-  function renderGhostBlock(block: Block) {
-    const frame = blockFrame(block)
-    const view = <ModuleView type={block.type} data={block} editable={false} onChange={() => {}} />
-    return (
-      <div
-        id={blockDomId(`${block.id}::ghost`)}
-        aria-hidden
-        inert
-        className="pointer-events-none shadow-mn-lifted rotate-[-.6deg] translate-x-[12px] translate-y-[18px] z-[4]"
-      >
-        {frame ? (
-          <PondBlock
-            kind={frame.kind}
-            heading={frame.heading}
-            headNote={frame.headNote}
-            state="rest"
-          >
-            {view}
-          </PondBlock>
-        ) : block.type === 'text' ? (
-          <div
-            style={{ paddingBlock: TEXT_BLOCK_TOP_INSET_PX, paddingInline: TEXT_BLOCK_INSET_PX }}
-          >
-            {view}
-          </div>
-        ) : (
-          view
-        )}
-      </div>
-    )
-  }
-
   /** The other blocks in this block's row, named the way the height readout reads them. */
   function heightNeighbours(blockId: string): { id: string; label: string }[] {
     const row = blockRows.find((items) => items.some((item) => item.id === blockId && !item.ghost))
@@ -1782,6 +1836,7 @@ export function BlockCanvas({
           trailingGapHovered
         }
         onChange={(next) => setBlockAt(i, next)}
+        writeBlock={writeBlock}
         onRemoveEmpty={() => removeEmptyLineAt(i)}
         onDeleteBlock={() => removeBlockAt(i)}
         onReturn={(patch) => insertLineAfter(i, patch)}
@@ -1836,15 +1891,18 @@ export function BlockCanvas({
           if (dragImageRef.current) e.dataTransfer?.setDragImage(dragImageRef.current, 0, 0)
           setMenuOpenAt(null)
           clearDropPreview()
+          placeDragFloat(e.clientX, e.clientY)
           setDraggingIndex(i)
           snapshotDragRects()
         }}
         onDragEnd={() => {
+          dragFloatPointRef.current = null
           setDraggingIndex(null)
           clearDropPreview()
         }}
         onDragOver={(e) => {
           e.preventDefault()
+          placeDragFloat(e.clientX, e.clientY)
           if (draggingIndex === null) return
           if (draggingIndex === i) {
             // Hovering the held block's own origin: no drop is offered here,
@@ -1867,11 +1925,21 @@ export function BlockCanvas({
           // the pointer stays within THAT zone's own padded sub-rect — never
           // reclassify just because the preview itself moved. Only a point that
           // actually clears the padding re-runs `classifyDropZone` from scratch.
+          // A row drawn stacked has no beside, so a sticky left/right from the
+          // frame before the column was measured must not keep that zone.
+          const drawnStacked = drawsStacked(block.id)
           const sticky = stickyZoneRef.current
-          const zone =
-            sticky && sticky.index === i && isWithinPaddedZone(rect, point, sticky.zone)
-              ? sticky.zone
-              : classifyDropZone(rect, point)
+          const stickyHolds =
+            sticky !== null &&
+            sticky.index === i &&
+            isWithinPaddedZone(rect, point, sticky.zone) &&
+            !(drawnStacked && (sticky.zone === 'left' || sticky.zone === 'right'))
+          const zone = zoneWhenDrawnStacked(
+            stickyHolds && sticky ? sticky.zone : classifyDropZone(rect, point),
+            rect,
+            point,
+            drawnStacked
+          )
           // Nothing classified differently from what's already shown for this
           // block: `planned`/`changed` below are pure functions of
           // (blocks, draggingIndex, target id, zone), none of which moved, so
@@ -1894,21 +1962,10 @@ export function BlockCanvas({
               return
             }
             setDropIndicator({ index: i, zone })
-            // Every block `planned` sets a new width for previews live, not
-            // just the dragged block — so the target row already shows the
-            // width it will take while hovering, before the drop lands.
-            const changed = planned.reduce<{ blockId: string; width: BlockWidth }[]>(
-              (acc, next) => {
-                const current = blocks.find((b) => b.id === next.id)
-                const nextWidth = next.width ?? 'full'
-                if ((current?.width ?? 'full') !== nextWidth) {
-                  acc.push({ blockId: next.id, width: nextWidth })
-                }
-                return acc
-              },
-              []
-            )
-            setPreviewWidth(changed)
+            // The bar is the whole preview. Widths in `planned` apply on
+            // release (`commitDropIndicator`), not while the pointer is still
+            // moving — a live reflow of the row is what made the drag jump.
+            setPreviewWidth(null)
             return
           }
           setPreviewWidth(null)
@@ -1937,6 +1994,55 @@ export function BlockCanvas({
 
   return (
     <PageLinkProvider value={pageLinks}>
+      {draggingIndex !== null &&
+        blocks[draggingIndex] &&
+        createPortal(
+          <div
+            ref={dragFloatRef}
+            data-part="drag-float"
+            aria-hidden
+            className="pointer-events-none fixed z-50 w-[220px] max-h-[148px] -rotate-[0.6deg] overflow-hidden bg-mn-card shadow-mn-lifted motion-reduce:rotate-0"
+          >
+            {/* `zoom` shrinks layout, so the frame hugs the block and the
+                max height crops the bottom square. `scale` would leave the
+                unscaled box in place and the frame would round off empty space. */}
+            <div className="w-[524px]" style={{ zoom: 0.42 }}>
+              {(() => {
+                const block = blocks[draggingIndex]
+                const frame = blockFrame(block)
+                const view = (
+                  <ModuleView type={block.type} data={block} editable={false} onChange={() => {}} />
+                )
+                if (frame) {
+                  return (
+                    <PondBlock
+                      kind={frame.kind}
+                      heading={frame.heading}
+                      headNote={frame.headNote}
+                      state="rest"
+                    >
+                      {view}
+                    </PondBlock>
+                  )
+                }
+                if (block.type === 'text') {
+                  return (
+                    <div
+                      style={{
+                        paddingBlock: TEXT_BLOCK_TOP_INSET_PX,
+                        paddingInline: TEXT_BLOCK_INSET_PX,
+                      }}
+                    >
+                      {view}
+                    </div>
+                  )
+                }
+                return view
+              })()}
+            </div>
+          </div>,
+          document.body
+        )}
       {/* Provide sibling-block state so bound metrics derive live and their `→`
           can scroll to source (ticket-23). Keyed off the live `blocks`, so a
           checklist toggle re-derives every metric in the same render. `pageId`
@@ -2007,7 +2113,10 @@ export function BlockCanvas({
             // (`relatedTarget` outside it) — moving from a block into the
             // ghost or a gap is still inside the canvas, so the indicator
             // stays up rather than flickering off and on.
-            onDragOver={(e) => e.preventDefault()}
+            onDragOver={(e) => {
+              e.preventDefault()
+              placeDragFloat(e.clientX, e.clientY)
+            }}
             onDrop={(e) => {
               e.preventDefault()
               commitDropIndicator()
@@ -2048,7 +2157,7 @@ export function BlockCanvas({
                 // all, so a block shifting from one row to another regroups
                 // `blockRows` without touching any ancestor element, and a
                 // remount is impossible rather than untested.
-                const stacks = columnWidth > 0 && !rowHolds(columnWidth, widths)
+                const stacks = rowStacks(columnWidth, widths)
                 // Every sizing div starts its own flex line EXCEPT the page's
                 // very first block, and (within row 0, non-stacking) the rest of
                 // that one shared line: those stay at the top with no gap above
@@ -2059,6 +2168,10 @@ export function BlockCanvas({
                 const entries = row.map((item, itemIndex) => ({
                   item,
                   stacks,
+                  // Alone on its line (no row-mate): both edges render a resize
+                  // handle (KAN-441). A row-sharing block renders none in this
+                  // slice — the shared divider is the split-off child ticket.
+                  aloneOnLine: row.length === 1,
                   marginTop:
                     rowIndex === 0 && (!stacks || itemIndex === 0) ? 0 : rowGapValue(listStyle),
                 }))
@@ -2074,23 +2187,19 @@ export function BlockCanvas({
                     />
                   )
                 }
-                const { item, stacks, marginTop } = entry
-                const sizingWidth =
-                  stacks || item.width === 'full' ? '100%' : blockWidthStyle(item.width)
-                // The ghost's id has no entry in `blocks` — it renders the
-                // dragged block's own content read-only (`renderGhostBlock`),
-                // not through `renderBlockEditor`, which only real slots use.
-                if (item.ghost) {
-                  return draggingIndex === null ? null : (
-                    <div key={item.id} style={{ width: sizingWidth, marginTop }}>
-                      {renderGhostBlock(blocks[draggingIndex])}
-                    </div>
-                  )
-                }
-                // Looked up by id, not position: `renderList` can hold one more
-                // entry than `blocks` (the ghost) while a beside drop is
-                // planned, so a flattened position no longer lines up with
-                // `blocks`' own index.
+                const { item, stacks, aloneOnLine, marginTop } = entry
+                // A live edge drag previews this block's width locally — never
+                // written to `blocks` until release — so it overrides the
+                // committed width here rather than going through `stacks`.
+                const resizing =
+                  !item.ghost && edgePreview && blocks[edgePreview.index]?.id === item.id
+                    ? edgePreview
+                    : null
+                const sizingWidth = resizing
+                  ? blockWidthStyle(resizing.percent)
+                  : stacks || item.width === 'full'
+                    ? '100%'
+                    : blockWidthStyle(item.width)
                 const i = blocks.findIndex((b) => b.id === item.id)
                 // Measured by `itemSizingRefs` (above) so the row-boundary
                 // line below — rendered once per ROW, not here — can anchor
@@ -2106,6 +2215,32 @@ export function BlockCanvas({
                     style={{ width: sizingWidth, marginTop }}
                   >
                     {renderBlockEditor(blocks[i], i)}
+                    {aloneOnLine && (
+                      <>
+                        <BlockEdgeHandle
+                          side="left"
+                          hidden={!chrome || draggingIndex !== null}
+                          dragging={resizing !== null}
+                          readout={resizing ? edgeResizeReadout(resizing.percent, resizing.locked) : undefined}
+                          valueNow={resizing ? resizing.percent : drawnWidthPercent(columnWidth, item.width)}
+                          onPointerDown={(e) => handleEdgeResizePointerDown(e, i, 'left')}
+                          onPointerMove={handleEdgeResizePointerMove}
+                          onPointerUp={handleEdgeResizePointerUp}
+                          onPointerCancel={handleEdgeResizePointerCancel}
+                        />
+                        <BlockEdgeHandle
+                          side="right"
+                          hidden={!chrome || draggingIndex !== null}
+                          dragging={resizing !== null}
+                          readout={resizing ? edgeResizeReadout(resizing.percent, resizing.locked) : undefined}
+                          valueNow={resizing ? resizing.percent : drawnWidthPercent(columnWidth, item.width)}
+                          onPointerDown={(e) => handleEdgeResizePointerDown(e, i, 'right')}
+                          onPointerMove={handleEdgeResizePointerMove}
+                          onPointerUp={handleEdgeResizePointerUp}
+                          onPointerCancel={handleEdgeResizePointerCancel}
+                        />
+                      </>
+                    )}
                   </div>
                 )
               })}
@@ -2246,58 +2381,81 @@ function useBlockEmptyState(
   frame: BlockFrame | null,
   pageId: string,
   onChange: (next: Block) => void
-): { state: PondBlockState; onEmptyAction?: () => void; emptyLine?: string } {
+): {
+  state: PondBlockState
+  onEmptyAction?: () => void
+  emptyLine?: string
+  schema: PropertySchema | null
+  updateSchema: (next: PropertySchema) => void
+  /** KAN-243 fix: reads the collection's schema straight off react-query's cache
+   *  (`SavedViewHost`) — the host-owned getter `SavedViewBar`'s undo needs, since
+   *  `schema` above is a snapshot from render time, not "right now". */
+  getLatestSchema: () => PropertySchema | null
+} {
   const collectionId = block.type === 'view' ? viewCollectionId(block, pageId) : undefined
-  const { schema, rows, isLoading, addRow } = useCollectionRows(collectionId)
+  const queryClient = useQueryClient()
+  const { schema, rows, isLoading, addRow, updateSchema } = useCollectionRows(collectionId)
+  const getLatestSchema = useCallback(
+    () => readCachedSchema(queryClient, collectionId),
+    [queryClient, collectionId]
+  )
   // The rows the view will actually draw — its filter (and sort) applied.
   const processed = useMemo(
     () => (block.type === 'view' && schema ? applyView(rows, schema, block) : rows),
     [block, rows, schema]
   )
 
-  switch (block.type) {
-    case 'todo':
-      return blockIsEmpty(block)
-        ? {
-            state: 'empty',
-            onEmptyAction: () => {
-              commitStructural(pageId, () => {
-                const next = addTodoItem(block)
-                onChange(next)
-                focusTodoItem(block.id, next.items[next.items.length - 1].id)
-              })
-            },
-          }
-        : { state: 'rest' }
-    case 'table':
-      return blockIsEmpty(block)
-        ? { state: 'empty', onEmptyAction: () => onChange(addTableRow(block)) }
-        : { state: 'rest' }
-    case 'entries':
-      // `write one` fires while the log is still `empty`, so `EntriesView` isn't
-      // mounted yet to hold a pending-focus ref — the id has to be registered
-      // before `onChange` swaps the frame to `rest` and mounts it (KAN-444).
-      return blockIsEmpty(block)
-        ? {
-            state: 'empty',
-            onEmptyAction: () => onChange(addEntryFocused(block)),
-          }
-        : { state: 'rest' }
-    case 'view': {
-      if (isLoading || schema === null) return { state: 'rest' }
-      // The rule itself is `viewFrameState` in `block-frame.ts`, shared with the
-      // template story so the story asserts what the product runs (#261 review).
-      // This host adds the two things a pure rule cannot carry: the chart mark's
-      // copy, which lives in a React module, and the write action.
-      const verdict = viewFrameState(block, rows, processed, frame, schema)
-      if (verdict.state === 'rest') return { state: 'rest' }
-      if (verdict.chartLine) return { state: 'empty', emptyLine: CHART_EMPTY_LINE }
-      if (verdict.addRow) return { state: 'empty', onEmptyAction: () => void addRow() }
-      return { state: 'empty', emptyLine: verdict.line }
+  const result = ((): {
+    state: PondBlockState
+    onEmptyAction?: () => void
+    emptyLine?: string
+  } => {
+    switch (block.type) {
+      case 'todo':
+        return blockIsEmpty(block)
+          ? {
+              state: 'empty',
+              onEmptyAction: () => {
+                commitStructural(pageId, () => {
+                  const next = addTodoItem(block)
+                  onChange(next)
+                  focusTodoItem(block.id, next.items[next.items.length - 1].id)
+                })
+              },
+            }
+          : { state: 'rest' }
+      case 'table':
+        return blockIsEmpty(block)
+          ? { state: 'empty', onEmptyAction: () => onChange(addTableRow(block)) }
+          : { state: 'rest' }
+      case 'entries':
+        // `write one` fires while the log is still `empty`, so `EntriesView` isn't
+        // mounted yet to hold a pending-focus ref — the id has to be registered
+        // before `onChange` swaps the frame to `rest` and mounts it (KAN-444).
+        return blockIsEmpty(block)
+          ? {
+              state: 'empty',
+              onEmptyAction: () => onChange(addEntryFocused(block)),
+            }
+          : { state: 'rest' }
+      case 'view': {
+        if (isLoading || schema === null) return { state: 'rest' }
+        // The rule itself is `viewFrameState` in `block-frame.ts`, shared with the
+        // template story so the story asserts what the product runs (#261 review).
+        // This host adds the two things a pure rule cannot carry: the chart mark's
+        // copy, which lives in a React module, and the write action.
+        const verdict = viewFrameState(block, rows, processed, frame, schema)
+        if (verdict.state === 'rest') return { state: 'rest' }
+        if (verdict.chartLine) return { state: 'empty', emptyLine: CHART_EMPTY_LINE }
+        if (verdict.addRow) return { state: 'empty', onEmptyAction: () => void addRow() }
+        return { state: 'empty', emptyLine: verdict.line }
+      }
+      default:
+        return { state: 'rest' }
     }
-    default:
-      return { state: 'rest' }
-  }
+  })()
+
+  return { ...result, schema, updateSchema, getLatestSchema }
 }
 
 /**
@@ -2336,6 +2494,7 @@ function BlockEditor({
   untouched = false,
   hoverGhost = false,
   onChange,
+  writeBlock,
   onRemoveEmpty,
   onDeleteBlock,
   onReturn,
@@ -2386,6 +2545,10 @@ function BlockEditor({
    *  second ghost row, so a click never moves which element shows the text. */
   hoverGhost?: boolean
   onChange: (next: Block) => void
+  /** `BlockCanvas`'s own by-id write (KAN-243 fix) — see `SavedViewHost.writeBlock`.
+   *  Threaded to `savedViewHost` and the empty-state `SavedViewBar` directly,
+   *  since it's rendered outside the context provider below. */
+  writeBlock: (next: ViewBlock) => void
   /** Backspace in an empty text block. */
   onRemoveEmpty: () => void
   /** ⌘⌫ / Ctrl+⌫ on the focused block. */
@@ -2476,6 +2639,17 @@ function BlockEditor({
   // views-shaped block; it only matters here because it used to read
   // `resolvedBlock` instead, whose mode DOES track the active view.
   const frame = blockFrame(block)
+  // KAN-143: the block-level accept-mark cue, kind-agnostic — a touched `todo`
+  // with rows draws its mark per row instead (`todo/view.tsx`'s own fallback),
+  // so this steps aside only there, and only while it has a row to carry it;
+  // a zero-item todo has no row renderer to fall back to, so it still lands
+  // here, same as a table, a labelled text block or any other row-less kind.
+  const acceptMarks = useAcceptMarks(pageId)
+  const blockMark =
+    block.type === 'todo' && block.items.length > 0
+      ? undefined
+      : acceptMarks.find((mark) => mark.target === markTarget(block.id))
+  const changedMark = <ChangedMark label={blockMark && formatChangedLabel(blockMark.acceptedAt)} />
   const slash = useSlashLine({
     block,
     rootRef,
@@ -2510,6 +2684,9 @@ function BlockEditor({
     state: baseState,
     onEmptyAction,
     emptyLine,
+    schema: collectionSchema,
+    updateSchema: updateCollectionSchema,
+    getLatestSchema,
   } = useBlockEmptyState(resolvedBlock, frame, pageId, onChange)
   // Pointer-selected (07.05): a click on the row's own chrome — never a nested
   // cell/input/button, which keeps its own focus — focuses the row and this
@@ -2542,26 +2719,63 @@ function BlockEditor({
   }, [constrained])
   const state = rowSelected && baseState === 'rest' ? 'selected' : baseState
 
-  // The PondBlock-card and no-card branches below sit at different tree depths, so
-  // flipping `frame` (e.g. board → timeline) remounts the module view underneath —
-  // CollectionView's own `localActiveViewId` would then reseed from the block's
-  // PERSISTED `activeViewId` and silently revert the bar to its stored tab. Carrying
-  // the bar's live selection through `activeViewId` here lets the remount reseed to
-  // the same tab instead.
-  const moduleData = block.type === 'view' && activeViewId ? { ...block, activeViewId } : block
+  // `frame`'s CARD kind never flips for an existing block (it reads the persisted,
+  // never-changing `block.mode`, not the active saved view's — the ruling above).
+  // What DOES remount the module view underneath is `PondBlock` swapping `children`
+  // for `PondBlockEmpty` on the empty↔rest `state` flip (e.g. picking a view whose
+  // own kind isn't empty, or its remedy field landing a row) — CollectionView's own
+  // `localActiveViewId` would then reseed from the block's PERSISTED `activeViewId`
+  // and silently revert the bar to its stored tab. Carrying the bar's live selection
+  // through `activeViewId` here lets the remount reseed to the same tab instead.
+  const moduleData = useMemo(
+    () => (block.type === 'view' && activeViewId ? { ...block, activeViewId } : block),
+    [block, activeViewId]
+  )
+
+  // KAN-243 fix: `runAddView`'s undo must read "what is current right now" off
+  // something that outlives EITHER `SavedViewBar` instance below (the
+  // empty-state bar and `ViewControls`' own live bar swap in and out of this
+  // very render as `state` flips empty/rest) — this per-block `BlockEditor`
+  // instance never unmounts across that flip, so a ref owned here does.
+  // Typed to `ViewBlock` since the two readers (below, and `SavedViewHostContext`'s
+  // consumer) only ever exist for a `view`-type block.
+  const latestViewBlockRef = useRef<ViewBlock>(moduleData as ViewBlock)
+  useEffect(() => {
+    if (block.type === 'view') latestViewBlockRef.current = moduleData as ViewBlock
+  }, [block.type, moduleData])
+  const savedViewHost = useMemo(
+    () => ({ latestBlock: latestViewBlockRef, getLatestSchema, writeBlock }),
+    [getLatestSchema, writeBlock]
+  )
 
   // KAN-321 fix: `state === 'empty'` swaps `children` (the module view, bar
   // included) for `PondBlockEmpty` below — a views-shaped block's active saved
   // view with an emptying filter would otherwise strand the person with no tab
   // back to one that isn't. Rendered through `PondBlock`'s `headBar` slot,
   // which sits above whichever body (bar-and-rows or the empty box) draws.
+  // KAN-243: adding a view is a real edit, but the PERSISTED `activeViewId`
+  // stays whatever it already was — switching is reading, #421, same as the
+  // ModuleView path's `committed` write below. The add's own activation
+  // reaches this block only through `setActiveViewId` (the context below),
+  // the same path a bar click already uses.
+  const commitViewChange = (next: ViewBlock) =>
+    onChange({ ...next, activeViewId: block.type === 'view' ? block.activeViewId : undefined })
+
+  // A compact chart mark's voidBox draws its own line alone — no tabs, no
+  // ＋ view — so it's excluded here whether or not it's wrapped in views[].
   const emptyStateViewBar =
-    state === 'empty' && block.type === 'view' && block.views && block.views.length > 0 ? (
-      <ViewBar
-        views={block.views.map((v): ViewBarView => ({ id: v.id, label: v.label ?? v.kind }))}
-        activeId={activeViewId ?? block.activeViewId ?? block.views[0].id}
+    state === 'empty' && block.type === 'view' && compactChartMark(block) === null ? (
+      <SavedViewBar
+        block={activeViewId ? { ...block, activeViewId } : block}
+        schema={collectionSchema}
+        updateSchema={updateCollectionSchema}
+        activeId={activeViewId}
         onSelect={setActiveViewId}
-        showAddView={false}
+        editable
+        onChange={commitViewChange}
+        latestBlock={latestViewBlockRef}
+        getLatestSchema={getLatestSchema}
+        writeBlock={writeBlock}
       />
     ) : undefined
 
@@ -2591,13 +2805,15 @@ function BlockEditor({
     <BlockRowProvider value={{ selected: state === 'selected', stepOut: onReturn, commitStep }}>
       <SlashLineContext.Provider value={slash.handleSlashLine}>
         <ActiveViewSelectionContext.Provider value={setActiveViewId}>
-          <ModuleView
-            type={block.type}
-            data={moduleData}
-            editable
-            autofocus={autofocus}
-            onChange={handleModuleChange}
-          />
+          <SavedViewHostContext.Provider value={savedViewHost}>
+            <ModuleView
+              type={block.type}
+              data={moduleData}
+              editable
+              autofocus={autofocus}
+              onChange={handleModuleChange}
+            />
+          </SavedViewHostContext.Provider>
         </ActiveViewSelectionContext.Provider>
       </SlashLineContext.Provider>
     </BlockRowProvider>
@@ -2873,6 +3089,7 @@ function BlockEditor({
       bodyScroll={viewScrollsItself ? 'self' : 'pane'}
     >
       {view}
+      {changedMark}
     </PondBlock>
   ) : block.type === 'text' ? (
     // Bare prose: `padding 2px 4px`, no card.
@@ -2890,10 +3107,14 @@ function BlockEditor({
         </div>
       )}
       {view}
+      {changedMark}
     </div>
   ) : (
     // #227: a block that is its OWN card — the chart card — sits on the page as it is.
-    view
+    <>
+      {view}
+      {changedMark}
+    </>
   )
 
   return (
@@ -3056,9 +3277,9 @@ function BlockEditor({
         />
       )}
 
-      {/* #237: the board's card around the module view. A view, image or table
-          (KAN-442) is sized here when it has a height; the strips sit on that
-          box. Prose stays bare. */}
+      {/* A view, image or table (KAN-442) is sized here when it has a height;
+          the strips sit on that box. The card itself — frame, prose, or a
+          block that is its own card — is `card`, and carries the accept mark. */}
       {sizable ? (
         <div
           ref={sizeRef}

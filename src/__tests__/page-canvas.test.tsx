@@ -7,6 +7,7 @@
 import { render, screen, fireEvent } from '@testing-library/react'
 import { CollectionView } from '@/lib/modules/view/view'
 import { PageCanvas } from '@/lib/modules/page-canvas'
+import { composerScrollPadding } from '@/lib/layout/composer-clearance'
 import type { ViewBlock } from '@/lib/modules/view/schema'
 import type { CollectionRow } from '@/lib/modules/view/apply'
 import type { PropertySchema } from '@/lib/properties/schema'
@@ -142,5 +143,21 @@ describe('dismissing the peek', () => {
     fireEvent.keyDown(document, { key: 'Escape' })
     document.removeEventListener('keydown', handled, { capture: true })
     expect(peeks()).toHaveLength(1)
+  })
+})
+
+describe('the page scroller clears the composer (KAN-400)', () => {
+  it('carries the same scroll-padding as the shell’s own scroller', () => {
+    render(
+      <PageCanvas className="h-full overflow-y-auto">
+        <div>content</div>
+      </PageCanvas>
+    )
+    const el = document.querySelector<HTMLElement>('[data-part="page-canvas"]')!
+    const padding = composerScrollPadding()
+
+    expect(el.style.scrollPaddingTop).toBe('72px')
+    expect(el.style.scrollPaddingBottom).toBe(padding.scrollPaddingBottom)
+    expect(el.style.scrollPaddingBottom).toContain('--pond-composer-clearance')
   })
 })

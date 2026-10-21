@@ -329,6 +329,9 @@ describe('DocumentPanel — the inspector sits in the properties card', () => {
     const dueInput = screen.getByRole('textbox', { name: 'Due value' })
     await user.clear(dueInput)
     await user.type(dueInput, 'tomorrow')
+    // The cell resolves "today" via `localToday()`, which anchors to the local
+    // calendar day — not `new Date()`, which names the UTC day and can already
+    // be a day ahead of the local one in the evening west of UTC.
     const resolvedTomorrow = parseDateInput('tomorrow', localToday()) as string
     expect(within(card).getByText(formatAtomDate(resolvedTomorrow))).toBeInTheDocument()
     await user.keyboard('{Enter}')

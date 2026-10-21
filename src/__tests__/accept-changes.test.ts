@@ -39,6 +39,7 @@ import type { Block } from '@/lib/documents/types'
 import { applyProposedChanges } from '@/lib/pages/edits'
 import { createDeterministicMintId } from '@/lib/change-log/mint-id'
 import { changeLogKey } from '@/lib/change-log/keys'
+import { clear as clearAcceptMarks, getSnapshot as getAcceptMarks } from '@/lib/change-log/accept-marks'
 
 const mockedGetPage = getPage as jest.MockedFunction<typeof getPage>
 const mockedCommitBlocks = commitBlocks as jest.MockedFunction<typeof commitBlocks>
@@ -91,6 +92,11 @@ function stamped(toolCallId: string, nodeId: string): ConversationResolutions {
 
 beforeEach(() => {
   jest.clearAllMocks()
+  // `accept-marks` is left real (not mocked) so the two tests below can assert
+  // against it directly — every OTHER test in this file writes real applied
+  // accepts too, so its module-level store has to be reset per test or marks
+  // from an earlier test leak into a later one keyed on the same page id.
+  clearAcceptMarks()
   // Default: this tool call has no change-log record, so the accept degrades to
   // the plain commit path — which is what every test written before the log
   // existed is asserting.
@@ -1109,5 +1115,66 @@ describe('concurrent accepts on the same page', () => {
     ])
 
     expect(peak).toBe(2)
+  })
+})
+
+// ── KAN-143: accept leaves a session mark on every block/row it touched ──
+
+describe('writeAcceptedChanges — accept marks', () => {
+  it('a two-block diff through writeToTarget records two marks', async () => {
+    mockedGetPage.mockResolvedValue({
+      id: 'stamped-id',
+      blocks: [
+        { id: 'blk-1', type: 'text', content: 'old one' },
+        { id: 'blk-2', type: 'text', content: 'old two' },
+      ],
+    } as unknown as Awaited<ReturnType<typeof getPage>>)
+
+    const twoEdits: ModuleChange[] = [
+      { op: 'edit', blockId: 'blk-1', data: { type: 'text', content: 'new one' } },
+      { op: 'edit', blockId: 'blk-2', data: { type: 'text', content: 'new two' } },
+    ] as ModuleChange[]
+
+    const result = await writeAcceptedChanges({
+      pondId: 'pond-1',
+      supabase,
+      queryClient,
+      userId: USER,
+      resolutions: stamped('pc1', 'stamped-id'),
+      toolCallId: 'pc1',
+      openNodeId: null,
+      changes: twoEdits,
+    })
+
+    expect(result.applied).toBe(2)
+    const marks = getAcceptMarks('stamped-id')
+    expect(marks.map((mark) => mark.target).sort()).toEqual(['block:blk-1', 'block:blk-2'])
+    for (const mark of marks) {
+      expect(typeof mark.acceptedAt).toBe('string')
+      expect(new Date(mark.acceptedAt).toString()).not.toBe('Invalid Date')
+    }
+  })
+
+  it('an all-skipped accept records no marks', async () => {
+    mockedGetPage.mockResolvedValue({
+      id: 'stamped-id',
+      blocks: [{ id: 'blk-target', type: 'text', content: 'plan' }],
+    } as unknown as Awaited<ReturnType<typeof getPage>>)
+
+    const result = await writeAcceptedChanges({
+      pondId: 'pond-1',
+      supabase,
+      queryClient,
+      userId: USER,
+      resolutions: stamped('pc1', 'stamped-id'),
+      toolCallId: 'pc1',
+      openNodeId: null,
+      changes: [
+        { op: 'edit', blockId: 'blk-missing', data: { type: 'text', content: 'x' } },
+      ] as ModuleChange[],
+    })
+
+    expect(result.applied).toBe(0)
+    expect(getAcceptMarks('stamped-id')).toEqual([])
   })
 })

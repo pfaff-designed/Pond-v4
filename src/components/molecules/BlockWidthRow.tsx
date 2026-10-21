@@ -16,12 +16,13 @@
 
 import { useRef, useState, type FocusEvent, type KeyboardEvent } from 'react'
 import { Menu } from '@base-ui/react/menu'
+import { KEY_WIDTHS } from '@/lib/modules/block-resize'
 import type { BlockWidth } from '@/lib/modules/content'
 import type { PondMenuSize } from './PondMenu'
 
 export interface BlockWidthRowProps {
-  /** Absent reads as `full` — a block with no width. */
-  width: BlockWidth | undefined
+  /** Absent reads as `full` — a block with no width. A number (KAN-441) is a free percent: no cell fills. */
+  width: BlockWidth | number | undefined
   onSelect: (width: BlockWidth) => void
   /** Hovering a non-kept cell previews it; leaving the row clears the preview with `null`. */
   onPreview?: (width: BlockWidth | null) => void
@@ -29,14 +30,11 @@ export interface BlockWidthRowProps {
   size?: PondMenuSize
 }
 
-const WIDTHS: { label: string; value: BlockWidth }[] = [
-  { label: '¼', value: '1/4' },
-  { label: '⅓', value: '1/3' },
-  { label: '½', value: '1/2' },
-  { label: '⅔', value: '2/3' },
-  { label: '¾', value: '3/4' },
-  { label: 'full', value: 'full' },
-]
+/** `block-resize.ts`'s `KEY_WIDTHS` is the one home for the glyph→named mapping. */
+const WIDTHS: { label: string; value: BlockWidth }[] = KEY_WIDTHS.map(({ label, width }) => ({
+  label,
+  value: width,
+}))
 
 const ROW = 'flex gap-[2px] px-[4px] pt-[2px] pb-[4px]'
 
@@ -61,10 +59,19 @@ const NOTE = 'px-[10px] pt-[8px] pb-[4px] font-mono text-[11px] leading-[1.5] te
 const PHONE_NOTE = 'widths show on wider screens. on a phone every block is full.'
 
 export const BlockWidthRow = ({ width, onSelect, onPreview, size = 'desktop' }: BlockWidthRowProps) => {
-  const current = width ?? 'full'
+  // A free percent (KAN-441) fills none of the six named cells — `current`
+  // stays `null` rather than the number itself, so `value === current` below
+  // can never match a cell by coincidence.
+  const isCustom = typeof width === 'number'
+  const current = isCustom ? null : width ?? 'full'
   const [hovered, setHovered] = useState<BlockWidth | null>(null)
   const hoveredLabel = WIDTHS.find(({ value }) => value === hovered)?.label
-  const noteText = size === 'mobile' ? PHONE_NOTE : hoveredLabel && `showing ${hoveredLabel} on the page · click to keep, esc to go back`
+  const noteText =
+    size === 'mobile'
+      ? PHONE_NOTE
+      : hoveredLabel
+      ? `showing ${hoveredLabel} on the page · click to keep, esc to go back`
+      : isCustom && `custom · ${Math.round(width)}%`
   const cellRefs = useRef<(HTMLElement | null)[]>([])
   const rowRef = useRef<HTMLDivElement>(null)
 

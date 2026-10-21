@@ -13,6 +13,7 @@ import { rowsKey } from '@/lib/modules/view/rows-key'
 import type { BlockedReason, RefusedReason, StaleReason } from './undo'
 import type { SessionUndoOutcome } from './session-undo'
 import { changeLogKey } from './keys'
+import { removeByRecordId } from './accept-marks'
 
 /** One line for a stale/blocked/refused ⌘Z or ⇧⌘Z, in the direction it was pressed. */
 export function noticeForReason(
@@ -79,6 +80,12 @@ export function applyUndoOutcome(
       void queryClient.invalidateQueries({ queryKey: ['page', id] })
       void queryClient.invalidateQueries({ queryKey: rowsKey(id) })
     }
+    // `result.records` are the NEW undo/redo records the RPC just logged, never
+    // the original accept's record id `recordAccept` stored a mark under
+    // (`undo.ts`: "each gains an `undo`/`redo` record" — a different id). The
+    // original ids are `result.step.recordIds`. Only an undo clears marks: the
+    // redone change is not re-marked (spec is silent; chosen in KAN-143 PLAN.md).
+    if (direction === 'undo') for (const id of result.step.recordIds) removeByRecordId(id)
     return
   }
   requestComposerNotice(noticeForReason(direction, result.reason))
