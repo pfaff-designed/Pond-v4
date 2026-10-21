@@ -2156,22 +2156,6 @@ export function Rail() {
     }
   }
 
-  function hideHomeRoot(node: RailNode) {
-    setHiddenHomeId(node.id)
-    queryClient.setQueryData<PageRow[]>(pagesKey(pondId), (rows) => {
-      let next = rows ?? []
-      for (const id of subtreeIds(node)) {
-        if (id === node.id) continue
-        next = removeRow(next, id)
-      }
-      return next
-    })
-    const selected = selectedNodeId
-    if (selected && (selected === LIFE_ID || subtreeIds(node).has(selected))) {
-      openWorkspaceUrl(workspaceUrl(null), router)
-    }
-  }
-
   async function commitHomeDelete(
     node: RailNode,
     reason?: CommitReason,
@@ -2208,19 +2192,41 @@ export function Rail() {
   function deleteHomeRoot() {
     const node = homeAsNode()
     if (!node) return
-    if (needsConfirm(countDescendants(node))) {
-      setConfirmTarget(node)
-      return
+    // KAN-491: every root delete confirms first ("deletes N pages inside"),
+    // including the last root, whose count is 0. Undo comes after confirm.
+    setConfirmTarget(node)
+  }
+
+  /** Confirm, then the same optimistic remove + undo toast a leaf delete uses.
+   *  The commit stays deferred so Undo puts the root back before trash runs. */
+  function stageRootDelete(node: RailNode) {
+    const key = pagesKey(pondId)
+    const snapshot = queryClient.getQueryData<PageRow[]>(key)
+    if (node.type === 'home') setHiddenHomeId(node.id)
+    queryClient.setQueryData<PageRow[]>(key, (rows) => {
+      let next = rows ?? []
+      for (const id of subtreeIds(node)) {
+        if (node.type === 'home' && id === node.id) continue
+        next = removeRow(next, id)
+      }
+      return next
+    })
+    const selected = selectedNodeId
+    if (selected && (selected === LIFE_ID || subtreeIds(node).has(selected))) {
+      openWorkspaceUrl(workspaceUrl(null), router)
     }
-    hideHomeRoot(node)
+    const removedRow = snapshot?.find((row) => row.id === node.id)
     stageDeletion({
       message: `Deleted "${node.title || 'Untitled'}"`,
       scope: 'rail',
       id: node.id,
-      commit: (reason, onWriteSettled) => commitHomeDelete(node, reason, onWriteSettled),
+      commit: (reason, onWriteSettled) =>
+        node.type === 'home'
+          ? commitHomeDelete(node, reason, onWriteSettled)
+          : commitDelete(node, removedRow, reason, onWriteSettled),
       undo: () => {
-        setHiddenHomeId(null)
-        queryClient.invalidateQueries({ queryKey: pagesKey() })
+        if (node.type === 'home') setHiddenHomeId(null)
+        if (snapshot) queryClient.setQueryData(key, snapshot)
       },
     })
   }
@@ -2232,6 +2238,10 @@ export function Rail() {
     }
     const node = nodeById.get(id)
     if (!node) return
+    if (isExtraRootNode(node)) {
+      setConfirmTarget(node)
+      return
+    }
     // A subtree delete is irreversible and heavy — gate it behind the styled
     // blast-radius confirm. A leaf goes straight to an optimistic-remove + undo
     // toast (deferred commit), no modal.
@@ -2259,9 +2269,8 @@ export function Rail() {
     if (!node) return
     setBusyId(node.id)
     try {
-      if (node.type === 'home') {
-        hideHomeRoot(node)
-        await commitHomeDelete(node)
+      if (node.type === 'home' || isExtraRootNode(node)) {
+        stageRootDelete(node)
         return
       }
       await commitDelete(node)

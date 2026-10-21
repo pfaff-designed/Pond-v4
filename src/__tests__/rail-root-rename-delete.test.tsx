@@ -4,7 +4,7 @@
  * other row uses; hiding the row is what leaves the empty hint and the ＋.
  */
 import React from 'react'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Rail, RailView, type RailNode } from '@/components/organisms/Rail'
 import { PondContext, type PondContextValue } from '@/lib/pond/context'
@@ -27,6 +27,11 @@ jest.mock('@/lib/supabase/client', () => ({
 jest.mock('@/lib/pages/home', () => ({
   HOME_TYPE: 'home',
   getOrCreateHomePage: jest.fn().mockResolvedValue({ id: 'home-1', title: 'Untitled', blocks: [] }),
+}))
+
+jest.mock('@/lib/pages/child-links', () => ({
+  appendChildLinkUnder: jest.fn().mockResolvedValue(undefined),
+  trashPageUnlinked: jest.fn().mockResolvedValue(undefined),
 }))
 
 const POND: Pond = {
@@ -110,9 +115,51 @@ describe('KAN-491 home root', () => {
     const root = await screen.findByRole('treeitem', { name: /Untitled/ })
     fireEvent.click(screen.getByRole('button', { name: 'Delete Untitled' }))
 
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('Deletes 0 pages inside.')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }))
+
     expect(root).not.toBeInTheDocument()
     expect(screen.getByText(/no pages yet/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'new root folder' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Undo' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    expect(await screen.findByRole('treeitem', { name: /Untitled/ })).toBeInTheDocument()
+  })
+
+  it('confirms a root that has pages inside, then undo puts them back', async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    })
+    const rows: PageRow[] = [
+      {
+        id: 'notes',
+        parent_id: null,
+        type: 'page',
+        title: 'Notes',
+        order: 0,
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+    ]
+    client.setQueryData(pagesKey('pond-1'), rows)
+    render(
+      <QueryClientProvider client={client}>
+        <PondContext.Provider value={PROVIDER_VALUE}>
+          <DeletionUndoProvider>
+            <Rail />
+          </DeletionUndoProvider>
+        </PondContext.Provider>
+      </QueryClientProvider>
+    )
+
+    await screen.findByRole('treeitem', { name: /Untitled/ })
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Untitled' }))
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('Deletes 1 page inside.')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }))
+
+    expect(screen.queryByRole('treeitem', { name: /Notes/ })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    expect(await screen.findByRole('treeitem', { name: /Notes/ })).toBeInTheDocument()
+    expect(screen.getByRole('treeitem', { name: /Untitled/ })).toBeInTheDocument()
   })
 })
