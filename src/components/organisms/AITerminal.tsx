@@ -82,7 +82,7 @@ import { isVirtualNodeId } from '@/lib/change-log/trash-view'
 import { insertPageOptimistic, type PageRow } from '@/lib/pages/tree'
 import { appendChildLinkUnder } from '@/lib/pages/child-links'
 import { linkedPageIds, orderMentionPages } from '@/lib/pages/mention-pages'
-import { readRecentPageIds } from '@/lib/pages/recent-pages'
+import { readRecentPageIds, RECENT_SHOWN } from '@/lib/pages/recent-pages'
 import { writeAcceptedChanges } from '@/lib/pages/accept'
 import { sessionUndo, useSessionUndo } from '@/lib/change-log/session-undo'
 import { applyUndoOutcome } from '@/lib/change-log/undo-outcome'
@@ -1075,7 +1075,7 @@ export function AITerminal() {
     const ordered = orderMentionPages(
       mentionPageRows,
       {
-        recentIds: readRecentPageIds(),
+        recentIds: readRecentPageIds(pondId).slice(0, RECENT_SHOWN),
         linkedIds: linkedPageIds(
           mentionPageRows,
           references.map((ref) => ref.pageId)
@@ -1094,7 +1094,7 @@ export function AITerminal() {
         sub: areaOf(allPages, p.id) ?? '',
       }
     })
-  }, [mentionQuery, mentionPageRows, pageMarks, allPages, references])
+  }, [mentionQuery, mentionPageRows, pageMarks, allPages, references, pondId])
 
   const handleMentionClose = useCallback(() => {
     suppressMentionReopenRef.current = true

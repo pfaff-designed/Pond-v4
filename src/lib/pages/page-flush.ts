@@ -45,7 +45,8 @@ export function getPageWriteQueue<T>(pageId: string, createQueue: () => T): T {
   return queue
 }
 
-/** Test isolation. A halted queue is module-level and would retry inside the next test. */
+/** Tests share page ids. The registry outlives a hook, so a halted queue from
+ *  one case would be the next case's queue unless it is dropped first. */
 export function resetPageWriteRegistry(): void {
   writeQueues.clear()
   flushes.clear()

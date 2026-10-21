@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { EditorView } from '@tiptap/pm/view'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { HEADING_PREFIX } from '@/lib/modules/palette'
+import { COMPOSER_CLEARANCE_VAR } from '@/lib/layout/composer-clearance'
 import {
   findTextBlock as findField,
   textEditorOf as editorOf,
@@ -390,6 +391,47 @@ describe('TextView — the text block edits in place as rendered prose', () => {
     expect(editorOf(field).state.selection.from).toBe(5)
     expect(pressRef.current).toBeNull()
     posAtCoords.mockRestore()
+  })
+
+  describe("the editor's scrollMargin (KAN-400)", () => {
+    let shell: HTMLElement | null = null
+
+    afterEach(() => {
+      shell?.remove()
+      shell = null
+    })
+
+    it("keeps reading the composer's live published footprint, not the one at mount", async () => {
+      shell = document.createElement('div')
+      shell.setAttribute('data-part', 'shell')
+      // jsdom does no layout, so a real height would read 0, driving the
+      // clamp's floor (Math.max(0, …)) and reading 0 instead of the
+      // published footprint — mock an 800px scroller, as composer-clearance's
+      // own tests do.
+      shell.getBoundingClientRect = () => ({ height: 800 } as DOMRect)
+      shell.style.setProperty(COMPOSER_CLEARANCE_VAR, '125px')
+      document.body.appendChild(shell)
+      render(<TextEditor data={sample} standIn={null} pressRef={{ current: null }} />)
+      const { view } = editorOf(await findField())
+
+      shell.style.setProperty(COMPOSER_CLEARANCE_VAR, '416px')
+
+      expect(view.someProp('scrollMargin')).toEqual({ top: 72, bottom: 440, left: 0, right: 0 })
+    })
+
+    it('gives scrollThreshold the same live clearance, so the caret never clears the margin without also clearing the rect it scrolls within', async () => {
+      shell = document.createElement('div')
+      shell.setAttribute('data-part', 'shell')
+      shell.getBoundingClientRect = () => ({ height: 800 } as DOMRect)
+      shell.style.setProperty(COMPOSER_CLEARANCE_VAR, '125px')
+      document.body.appendChild(shell)
+      render(<TextEditor data={sample} standIn={null} pressRef={{ current: null }} />)
+      const { view } = editorOf(await findField())
+
+      shell.style.setProperty(COMPOSER_CLEARANCE_VAR, '416px')
+
+      expect(view.someProp('scrollThreshold')).toEqual({ top: 72, bottom: 440, left: 0, right: 0 })
+    })
   })
 
   it('the stand-in records where it was pressed', () => {

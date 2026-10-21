@@ -9,6 +9,8 @@ import { useBlockRow } from '../block-row-context'
 import type { PageLinkBlock } from './schema'
 import type { PageRow } from '@/lib/pages/tree'
 import { pagesKey } from '@/lib/pages/keys'
+import { usePagePrefetchHandlers } from '@/lib/pages/use-page-prefetch'
+import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { cn } from '@/lib/utils'
 import { POND_BLOCK_SELECTED_RING } from '@/components/organisms/PondBlock'
 
@@ -68,6 +70,8 @@ export function PageLinkView({ data }: ModuleViewProps<PageLinkBlock>) {
   // draws no card around a page-link, same bridge KAN-344's chart card uses.
   const { selected } = useBlockRow()
   const selectedRing = selected && POND_BLOCK_SELECTED_RING
+  const getSupabase = useLazySupabase()
+  const pagePrefetch = usePagePrefetchHandlers(data.pageId, getSupabase)
 
   if (!ref && !cachedRow) {
     return (
@@ -112,6 +116,8 @@ export function PageLinkView({ data }: ModuleViewProps<PageLinkBlock>) {
         e.preventDefault()
         pageLinks!.navigateToPage(ref)
       }}
+      onPointerEnter={pagePrefetch.onPointerEnter}
+      onPointerLeave={pagePrefetch.onPointerLeave}
     >
       <PageIcon />
       <span className="flex-1 font-medium text-mn-text">{ref.title}</span>

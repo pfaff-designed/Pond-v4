@@ -48,6 +48,8 @@ import {
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
+import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
+import { usePagePrefetchHandlers } from '@/lib/pages/use-page-prefetch'
 import { createPage, movePage, updateTitle } from '@/lib/pages/client'
 import { DuplicateTitleError } from '@/lib/pages/dedupe-title'
 import {
@@ -377,6 +379,11 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
   // The new-page menu's own anchor — local to this row now that the row's ＋
   // is the menu's real trigger, rather than a map the host read by id.
   const addChildRef = useRef<HTMLButtonElement>(null)
+  // KAN-388: hovering or focusing an unopened row warms its page's cache so
+  // the click that follows never blanks the canvas. No-ops where there's no
+  // `QueryClientProvider` above (Storybook, several `rail-*` unit tests).
+  const getSupabase = useLazySupabase()
+  const pagePrefetch = usePagePrefetchHandlers(id, getSupabase)
   const label = title || 'Untitled'
   const padLeft = INDENT_BASE + depth * INDENT_STEP
   /** The board's own split (`PondRail.dc.html`: `areaRow = d <= 1`): the root and
@@ -424,6 +431,8 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
       onDragEnd={onDragEnd ? (e) => onDragEnd(id, e) : undefined}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      onPointerEnter={pagePrefetch.onPointerEnter}
+      onPointerLeave={pagePrefetch.onPointerLeave}
       // The whole row opens the page (the caret and ＋/× stop propagation) —
       // strictly navigation; expansion belongs to the caret alone.
       onClick={() => onSelect(id)}
@@ -431,7 +440,15 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
       onFocus={(e) => {
         // Only the row itself — focusing an inner control (＋/×) must not yank
         // the roving focus back to the row.
-        if (e.target === e.currentTarget) onFocus(id)
+        if (e.target === e.currentTarget) {
+          onFocus(id)
+          pagePrefetch.onFocus()
+        }
+      }}
+      onBlur={(e) => {
+        // Same guard as onFocus — losing focus to an inner control must not
+        // cancel a hold the row itself still owns.
+        if (e.target === e.currentTarget) pagePrefetch.onBlur()
       }}
       onKeyDown={(e) => {
         // Only keys pressed on the row itself — Enter on an inner ＋/× button

@@ -6,7 +6,11 @@ import { blockEmptyCopy, blockFrame, POND_BLOCK_ROW_GAP, TODO_KIND, TODO_ROW } f
 import { todoMarker, type TodoBlock, type TodoItem } from './schema'
 import { PondMolecule, type PondMoleculeState } from '@/components/molecules/PondMolecule'
 import { useBlockRow } from '../block-row-context'
+import { useSiblingBlocks } from '../sibling-context'
 import { SESSION_UNDO_SCOPE_ATTR } from '@/lib/shell-commands'
+import { useAcceptMarks } from '@/lib/change-log/accept-marks'
+import { markTarget } from '@/lib/change-log/accept-marks-diff'
+import { formatChangedLabel } from '@/lib/change-log/changed-mark'
 
 /**
  * Todo view (#219) — the check row and the board's `list` block, COMPOSED from
@@ -167,6 +171,37 @@ export function TodoView({ data, editable, onChange }: ModuleViewProps<TodoBlock
   // KAN-355's save-flush has nothing to flush, so a structural edit falls
   // back to the view's own `onChange` rather than the context's absent default.
   const commit = (patch: TodoBlock) => (commitStep ?? onChange)?.(patch)
+
+  // KAN-143's accept marks, read by target string (`block-frame.ts`'s own
+  // `useSiblingBlocks().pageId` — absent outside a page host, e.g. Storybook;
+  // the empty-string pageId then simply has no marks). A row's own mark wins;
+  // a block-level mark (no row touched its own fields) shows once, on the
+  // first row, never per item — the mark names the WHOLE row's value, not
+  // every item's. `hasRenderedRowMark` only counts a row mark against an id
+  // IN `data.items` right now — a removed row's own mark is still in
+  // `acceptMarks` (the store never drops it) but has no row left to carry
+  // it, so it must not suppress the block-level fallback (a delete-only
+  // accept would otherwise show nothing at all). That orphaned row mark is
+  // also the fallback's own SOURCE when there is no `block:<id>` entry
+  // (`touchedMarks` emits only row targets for a pure item delete) — it
+  // still names "this block changed", just at the row's own id.
+  const { pageId } = useSiblingBlocks()
+  const acceptMarks = useAcceptMarks(pageId ?? '')
+  const blockTarget = markTarget(data.id)
+  const rowMarkPrefix = `${blockTarget}:row:`
+  const hasRenderedRowMark = data.items.some((item) =>
+    acceptMarks.some((mark) => mark.target === markTarget(data.id, item.id))
+  )
+  const blockMark =
+    acceptMarks.find((mark) => mark.target === blockTarget) ??
+    (hasRenderedRowMark
+      ? undefined
+      : acceptMarks.find((mark) => mark.target.startsWith(rowMarkPrefix)))
+  function changedLabelFor(item: TodoItem, index: number): string | undefined {
+    const rowMark = acceptMarks.find((mark) => mark.target === markTarget(data.id, item.id))
+    const mark = rowMark ?? (!hasRenderedRowMark && index === 0 ? blockMark : undefined)
+    return mark && formatChangedLabel(mark.acceptedAt)
+  }
 
   function patchItem(index: number, patch: Partial<TodoItem>) {
     onChange?.({
@@ -411,6 +446,7 @@ export function TodoView({ data, editable, onChange }: ModuleViewProps<TodoBlock
           title: item.label,
           placeholder: item.placeholder,
           meta: item.meta ?? '',
+          changedLabel: changedLabelFor(item, j),
           className: 'max-w-full',
           onTitleChange: editable ? (label: string) => patchItem(j, { label }) : undefined,
           onTitleKeyDown: editable

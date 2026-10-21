@@ -339,12 +339,17 @@ describe('an esc taken by something open in zen leaves zen be', () => {
 })
 
 describe('the composer’s clearance while zen hides it', () => {
-  let observed: (() => void) | null = null
+  // TerminalDrawer watches the card with two ResizeObservers (one per
+  // effect, KAN-400's scroll-clearance var alongside the content-padding
+  // one) — a real resize fires both, so the mock must track every instance
+  // rather than the single latest one.
+  let observed: Array<() => void> = []
+  const observe = () => observed.forEach((fn) => fn())
   const setupObserver = window.ResizeObserver
   beforeEach(() => {
     window.ResizeObserver = class {
       constructor(callback: () => void) {
-        observed = callback
+        observed.push(callback)
       }
       observe() {}
       unobserve() {}
@@ -352,7 +357,7 @@ describe('the composer’s clearance while zen hides it', () => {
     } as unknown as typeof ResizeObserver
   })
   afterEach(() => {
-    observed = null
+    observed = []
     window.ResizeObserver = setupObserver
   })
 
@@ -376,11 +381,11 @@ describe('the composer’s clearance while zen hides it', () => {
     const clearance = () => shell.style.getPropertyValue(COMPOSER_CLEARANCE_VAR)
 
     sized(card, 240)
-    act(() => observed!())
+    act(observe)
     expect(clearance()).toBe(`${composerFootprintPx(240)}px`)
 
     sized(card, 0)
-    act(() => observed!())
+    act(observe)
     expect(clearance()).toBe(`${composerFootprintPx(240)}px`)
   })
 })

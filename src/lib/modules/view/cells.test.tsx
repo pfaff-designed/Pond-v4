@@ -89,6 +89,9 @@ describe('Cell — date editor', () => {
     expect(input).not.toHaveAttribute('type', 'date')
 
     await user.type(input, 'tomorrow')
+    // The cell resolves "today" via `localToday()`, which anchors to the local
+    // calendar day — not `new Date()`, which names the UTC day and can already
+    // be a day ahead of the local one in the evening west of UTC.
     const resolved = parseDateInput('tomorrow', localToday()) as string
     expect(screen.getByText(formatAtomDate(resolved))).toBeInTheDocument()
 

@@ -143,6 +143,7 @@ describe('ShellCommands — shallow nav on /workspace (KAN-449)', () => {
     jest.mocked(sessionUndo.undo).mockResolvedValueOnce({
       outcome: 'done',
       records: [{ targetPageId: 'health' }],
+      step: { pondId: 'pond-1', recordIds: [] },
     } as never)
     jest.spyOn(window.navigator, 'platform', 'get').mockReturnValue('MacIntel')
     const pushStateSpy = jest.spyOn(window.history, 'pushState')

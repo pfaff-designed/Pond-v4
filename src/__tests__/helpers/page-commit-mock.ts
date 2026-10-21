@@ -26,23 +26,21 @@ export function pageCommitMock(overrides: { commitBlocks?: (...args: unknown[]) 
       },
       settle?: (promise: Promise<void>) => void
     ) => {
-      let client: {
-        updateTitle?: (...a: unknown[]) => Promise<unknown>
-        saveBlocks?: (...a: unknown[]) => Promise<unknown>
-      } | undefined
-      try {
-        client = jest.requireMock('@/lib/pages/client') as {
-          updateTitle?: (...a: unknown[]) => Promise<unknown>
-          saveBlocks?: (...a: unknown[]) => Promise<unknown>
+      if (op.kind === 'typed') {
+        // A missing client mock is "this file doesn't stub titles". A present
+        // `updateTitle` that rejects is a failed save — it must reject the
+        // writer, the same way the real `createPageWriter` does, so the queue
+        // halts instead of continuing on to `commitBlocks`.
+        let updateTitle: ((...args: unknown[]) => Promise<unknown>) | undefined
+        try {
+          const client = jest.requireMock('@/lib/pages/client') as {
+            updateTitle?: (...args: unknown[]) => Promise<unknown>
+          }
+          updateTitle = client.updateTitle
+        } catch {
+          updateTitle = undefined
         }
-      } catch {
-        // `@/lib/pages/client` isn't mocked in this file.
-      }
-      if (op.kind === 'typed' && client?.updateTitle) {
-        await client.updateTitle(writerArgs[0], writerArgs[2], op.after.title)
-      }
-      if (client?.saveBlocks) {
-        await client.saveBlocks(writerArgs[0], writerArgs[2], op.after.blocks)
+        if (updateTitle) await updateTitle(writerArgs[0], writerArgs[2], op.after.title)
       }
       const result = await (commitBlocks as (...a: unknown[]) => Promise<unknown>)(
         writerArgs[0],

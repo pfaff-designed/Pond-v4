@@ -5,6 +5,7 @@ import { EditorContent, useEditor, type Editor } from '@tiptap/react'
 import { Placeholder } from '@tiptap/extensions'
 import { redo, undo } from '@tiptap/pm/history'
 import type { EditorView } from '@tiptap/pm/view'
+import { COMPOSER_TOP_CLEARANCE, composerClearanceMarginPx } from '@/lib/layout/composer-clearance'
 import { isRedoChord, isUndoChord } from '@/lib/shell-commands'
 import type { ModuleViewProps } from '../types'
 import { registerTextEditor } from './active-editor'
@@ -116,6 +117,18 @@ const slashLineUnder = (editor: Editor): SlashLineAt | null => {
   return { line, element: element instanceof Element ? element : null }
 }
 
+/** The clearance ProseMirror's own scroll-follow reads live, shared by `scrollMargin` and `scrollThreshold`. */
+const COMPOSER_CLEARANCE_SIDES = {
+  get top() {
+    return COMPOSER_TOP_CLEARANCE
+  },
+  get bottom() {
+    return composerClearanceMarginPx()
+  },
+  left: 0,
+  right: 0,
+}
+
 const editorProps = {
   attributes: {
     class: TEXT_PROSE_CLASS,
@@ -128,6 +141,14 @@ const editorProps = {
   // The one markdown-paste path, text/plain-only or html-wrapper-only; see its
   // own comment for why `clipboardTextParser` can't own this instead.
   handlePaste: markdownHandlePaste,
+  // The spread of `editorProps` into the `EditorView` copies only the
+  // *reference* to this object, so its getters stay live across every later
+  // `tr.scrollIntoView()`. `scrollThreshold` must match `scrollMargin`
+  // exactly: `<main>` runs the full column height under the floating card,
+  // so the rect ProseMirror won't scroll past is the same composer footprint
+  // the margin scrolls up to (KAN-400).
+  scrollMargin: COMPOSER_CLEARANCE_SIDES,
+  scrollThreshold: COMPOSER_CLEARANCE_SIDES,
 }
 
 /**
