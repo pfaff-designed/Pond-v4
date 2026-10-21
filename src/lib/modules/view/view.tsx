@@ -661,7 +661,7 @@ export function CollectionView({
           startId={activeConfig.startDate}
           endId={activeConfig.endDate}
           editable={editable}
-          onEdit={onEdit}
+          onMoveDates={onMoveDates}
           onAddRow={onAddRow}
           onRenameRow={onRenameRow}
           onAddDateField={onAddDateField}
@@ -1529,10 +1529,11 @@ const NARROW_BAR_PX = 18
  * When `editable`, bars reschedule by drag (`usePointerGanttDrag`): the body MOVES the
  * bar (start+end together), the right edge resizes the End (and CREATES one on a tick,
  * turning a milestone into a span), and the left edge resizes the Start (real spans
- * only — a single-day tick offers move + extend, not shrink). Writes go straight to the
- * optimistic `onEdit`, bypassing the AI (decision 17), exactly like the calendar. With
- * no End property the collection is move-only (nowhere to store an end). Drag previews
- * locally and commits on drop, so the axis holds steady mid-gesture and reflows after.
+ * only — a single-day tick offers move + extend, not shrink). A drop calls `onMoveDates`
+ * once with every date the gesture changed, start then end, so both fields are one
+ * undo step and the later field cannot put the earlier one back. With no End property
+ * the collection is move-only (nowhere to store an end). Drag previews locally and
+ * commits on drop, so the axis holds steady mid-gesture and reflows after.
  */
 function CollectionGantt({
   schema,
@@ -1540,7 +1541,7 @@ function CollectionGantt({
   startId,
   endId,
   editable,
-  onEdit,
+  onMoveDates,
   onAddRow,
   onRenameRow,
   onAddDateField,
@@ -1550,7 +1551,7 @@ function CollectionGantt({
   startId?: string
   endId?: string
   editable?: boolean
-  onEdit?: (rowId: string, key: string, value: PropertyValue) => void
+  onMoveDates?: (rowId: string, entries: { key: string; value: PropertyValue }[]) => void
   onAddRow?: (values?: Record<string, PropertyValue>) => Promise<string | null>
   onRenameRow?: (rowId: string, title: string) => void
   onAddDateField?: () => void
@@ -1572,9 +1573,16 @@ function CollectionGantt({
     editable: !!editable,
     totalDays,
     onCommit: (rowId, shift) => {
-      if (!defs) return
-      if (shift.startIso !== undefined) onEdit?.(rowId, defs.startDef.id, shift.startIso)
-      if (shift.endIso !== undefined && defs.endDef) onEdit?.(rowId, defs.endDef.id, shift.endIso)
+      if (!defs || !onMoveDates) return
+      const entries: { key: string; value: PropertyValue }[] = []
+      if (shift.startIso !== undefined) {
+        entries.push({ key: defs.startDef.id, value: shift.startIso })
+      }
+      if (shift.endIso !== undefined && defs.endDef) {
+        entries.push({ key: defs.endDef.id, value: shift.endIso })
+      }
+      if (entries.length === 0) return
+      onMoveDates(rowId, entries)
     },
   })
 
