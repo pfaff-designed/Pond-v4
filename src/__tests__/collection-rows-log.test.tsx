@@ -11,6 +11,7 @@ import React from 'react'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useCollectionRows } from '@/lib/modules/view/use-collection-rows'
+import { getPage } from '@/lib/pages/client'
 import { PondContext, type PondContextValue } from '@/lib/pond/context'
 import { sessionUndo } from '@/lib/change-log/session-undo'
 import type { ChangeLogRecord } from '@/lib/change-log/types'
@@ -527,5 +528,96 @@ describe('useCollectionRows — setValueAsStep wires session-undo', () => {
       expect.anything(),
       { pondId: 'pond-1', recordIds: ['rec-drop'] }
     )
+  })
+})
+
+describe('useCollectionRows — setValuesAsStep logs both ends as one edit_row', () => {
+  const dateSchema: PropertySchema = [
+    { id: 'p-start', name: 'start', type: 'date' },
+    { id: 'p-end', name: 'end', type: 'date' },
+  ]
+
+  async function mountedTrip() {
+    const restore = jest.mocked(getPage).getMockImplementation()
+    jest.mocked(getPage).mockResolvedValue({
+      id: 'col-1',
+      parentId: null,
+      type: 'page',
+      title: 'trips',
+      blocks: [],
+      order: 0,
+      props: { _schema: dateSchema },
+    })
+    mockGetCollectionRows.mockResolvedValue([
+      {
+        id: 'row-1',
+        title: 'trip',
+        type: 'row',
+        props: { 'p-start': '2026-10-12', 'p-end': '2026-10-14' },
+      },
+    ])
+    try {
+      return await mounted()
+    } finally {
+      if (restore) jest.mocked(getPage).mockImplementation(restore)
+    }
+  }
+
+  it('one call with two fields appends one edit_row and remembers that one record', async () => {
+    activePond = pondNamed('pond-1')
+    mockAppendOwnEdit.mockResolvedValue({ id: 'rec-1' } as ChangeLogRecord)
+    const remember = jest.spyOn(sessionUndo, 'remember')
+    const { result } = await mountedTrip()
+
+    act(() => {
+      result.current.setValuesAsStep('row-1', [
+        { key: 'p-start', value: '2026-10-19' },
+        { key: 'p-end', value: '2026-10-21' },
+      ])
+    })
+
+    await waitFor(() => expect(mockAppendOwnEdit).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(remember).toHaveBeenCalledTimes(1))
+    expect(mockAppendOwnEdit.mock.calls[0][1]).toMatchObject({
+      action: 'edit_row',
+      before: { values: { 'p-start': '2026-10-12', 'p-end': '2026-10-14' } },
+      after: { values: { 'p-start': '2026-10-19', 'p-end': '2026-10-21' } },
+    })
+    expect(remember.mock.calls[0][0]).toMatchObject({
+      pondId: 'pond-1',
+      recordIds: ['rec-1'],
+    })
+    expect(mockSetProperty).toHaveBeenCalledTimes(2)
+  })
+
+  it('an empty list appends nothing and remembers nothing', async () => {
+    activePond = pondNamed('pond-1')
+    const remember = jest.spyOn(sessionUndo, 'remember')
+    const { result } = await mounted()
+
+    await act(async () => {
+      result.current.setValuesAsStep('row-1', [])
+    })
+    await waitOutThePause()
+
+    expect(mockAppendOwnEdit).not.toHaveBeenCalled()
+    expect(remember).not.toHaveBeenCalled()
+  })
+
+  it('every value already stored appends nothing and remembers nothing', async () => {
+    activePond = pondNamed('pond-1')
+    const remember = jest.spyOn(sessionUndo, 'remember')
+    const { result } = await mountedTrip()
+
+    await act(async () => {
+      result.current.setValuesAsStep('row-1', [
+        { key: 'p-start', value: '2026-10-12' },
+        { key: 'p-end', value: '2026-10-14' },
+      ])
+    })
+    await waitOutThePause()
+
+    expect(mockAppendOwnEdit).not.toHaveBeenCalled()
+    expect(remember).not.toHaveBeenCalled()
   })
 })

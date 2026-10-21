@@ -52,7 +52,7 @@ import { CHART_EMPTY_LINE } from '@/lib/modules/chart/card'
 import { addTodoItem } from '@/lib/modules/todo/view'
 import { addTableRow } from '@/lib/modules/table/view'
 import { addEntryFocused } from '@/lib/modules/entries/view'
-import { PondBlock } from '@/components/organisms/PondBlock'
+import { PondBlock, POND_BLOCK_SELECTED_RING } from '@/components/organisms/PondBlock'
 import {
   SlashMenu,
   type SlashRow,
@@ -2785,6 +2785,22 @@ function BlockEditor({
     if (e.key === 'Escape' && e.target === e.currentTarget) {
       rootRef.current?.blur()
     }
+    // Delete on the selected row removes the block. The key a Mac labels
+    // Delete is Backspace; a forward-delete key is Delete. A field inside the
+    // block is the event target then, so this never takes that field's own
+    // delete — and ⌘⌫ stays the chord for a text caret (`handleKeyDownCapture`).
+    if (
+      (e.key === 'Delete' || e.key === 'Backspace') &&
+      e.target === e.currentTarget &&
+      !e.shiftKey &&
+      !e.altKey &&
+      !e.metaKey &&
+      !e.ctrlKey
+    ) {
+      e.preventDefault()
+      onDeleteBlock()
+      return
+    }
     // Backspace in an EMPTY text block removes it (Notion-style). Guarded so it
     // never fires while the `/` palette is open (that Backspace closes the menu,
     // which stops propagation) — only a bare empty block deletes. Any of
@@ -2934,6 +2950,10 @@ function BlockEditor({
       className={cn(
         'group relative',
         'outline-none',
+        // A calendar sits in a card, so selecting it draws the card's ring.
+        // A board draws its own lanes and has no card, so the same ring goes
+        // on the row itself — otherwise a click selects it and nothing shows.
+        state === 'selected' && !frame && block.type !== 'text' && cn(POND_BLOCK_SELECTED_RING, 'rounded-[20px]'),
         settleOnMount && 'motion-settle-in',
         // `origin` (old place) from `PondBlock.dc.html` is opacity .4 ONLY — the
         // tilt and stepped-up shadow belong to the separate `lifted` copy, built

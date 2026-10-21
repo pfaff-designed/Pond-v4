@@ -17,7 +17,7 @@
  * that kept `import from notes` out of #177.
  */
 
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { usePond } from '@/lib/pond/context'
 import { Caret } from '@/components/atoms/Caret'
 import { PondMark } from '@/components/atoms/PondMark'
@@ -46,9 +46,11 @@ function Plus() {
 
 interface PondSwitcherProps {
   fallbackName: string
+  /** Sits at the right of the pond name — the rail's minimize button. */
+  trailing?: ReactNode
 }
 
-export function PondSwitcher({ fallbackName }: PondSwitcherProps) {
+export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
   const [open, setOpen] = useState(false)
   const [naming, setNaming] = useState(false)
   const { pond: active, ponds } = usePond()
@@ -95,6 +97,7 @@ export function PondSwitcher({ fallbackName }: PondSwitcherProps) {
       ) : (
         <span className={switcherClass}>{label}</span>
       )}
+      {trailing}
 
       {open && hasPonds && (
         <>
