@@ -314,7 +314,7 @@ export type TreeKeyCommand =
  *   ←          collapse an open folder; step out to the parent otherwise
  *   Enter/␣    open the row's page
  *   +          add a child page
- *   F2         rename the row in place (never the Life root)
+ *   F2         rename the row in place (the databases foot is not renameable)
  *
  * A stale `id` (row no longer visible — e.g. a deferred update) returns null
  * rather than jumping focus anywhere.
@@ -365,7 +365,7 @@ export function treeKeyCommand(
     case '+':
       return { kind: 'addChild', id }
     case 'F2':
-      return isRoot ? null : { kind: 'rename', id }
+      return { kind: 'rename', id }
     default:
       return null
   }

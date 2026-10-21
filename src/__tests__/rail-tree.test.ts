@@ -282,10 +282,10 @@ describe('treeKeyCommand', () => {
     expect(key('+', LIFE_ID)).toEqual({ kind: 'addChild', id: LIFE_ID })
   })
 
-  it('F2 renames the row in place — but never the Life root', () => {
+  it('F2 renames the row in place, including the Life root', () => {
     expect(key('F2', 'trips')).toEqual({ kind: 'rename', id: 'trips' })
     expect(key('F2', 'health')).toEqual({ kind: 'rename', id: 'health' })
-    expect(key('F2', LIFE_ID)).toBeNull()
+    expect(key('F2', LIFE_ID)).toEqual({ kind: 'rename', id: LIFE_ID })
   })
 
   it('unknown keys and stale ids return null (no focus jump)', () => {

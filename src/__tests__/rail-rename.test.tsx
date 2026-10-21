@@ -1,8 +1,8 @@
 /**
  * The rail's inline rename (`PondRail` `renaming`): F2 / double-click turns
  * a row's label into a field in place; ↵ keeps, esc cancels, blur keeps; empty or
- * unchanged keeps the old title. The pond root and the databases foot row are
- * system roots and never rename from here.
+ * unchanged keeps the old title. The home root renames. The databases foot
+ * row never does.
  */
 
 import React from 'react'
@@ -197,13 +197,15 @@ describe('rail — inline rename', () => {
     expect(screen.getAllByRole('textbox')).toHaveLength(1)
   })
 
-  it('the pond root and the databases foot row never rename', () => {
+  it('the home root renames; the databases foot row does not', () => {
     setup()
-    for (const name of ['life', 'databases']) {
-      fireEvent.keyDown(row(name), { key: 'F2' })
-      fireEvent.doubleClick(row(name))
-    }
-    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    fireEvent.keyDown(row('life'), { key: 'F2' })
+    const field = screen.getByRole('textbox', { name: 'rename life' })
+    expect(field).toBeInTheDocument()
+    fireEvent.keyDown(field, { key: 'Escape' })
+    fireEvent.keyDown(row('databases'), { key: 'F2' })
+    fireEvent.doubleClick(row('databases'))
+    expect(screen.queryByRole('textbox', { name: 'rename databases' })).not.toBeInTheDocument()
   })
 
   it('the databases placeholder row (no root yet) never renames', () => {

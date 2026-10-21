@@ -391,10 +391,10 @@ describe('RailView — loading and empty states (G6 / 7f)', () => {
     expect(onAddChild).toHaveBeenCalledWith('__life__', 'page')
   })
 
-  it('empty: the root has no × — a pond is not deleted from the rail', () => {
+  it('empty: the home root can be deleted', () => {
     renderRail({ tree: [], isEmpty: true })
     fireEvent.mouseEnter(screen.getByRole('treeitem', { name: /Life/ }))
-    expect(screen.queryByRole('button', { name: /^Delete/ })).toBeNull()
+    expect(screen.getByRole('button', { name: /^Delete/ })).toBeInTheDocument()
   })
 })
 
