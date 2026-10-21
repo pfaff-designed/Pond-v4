@@ -17,7 +17,8 @@ import { DAY_MS, daysBetween } from './log-page'
 import { readTrashSnapshot } from './summary'
 import type { ChangeLogRecord } from './types'
 
-const THIRTY_DAYS_MS = 30 * DAY_MS
+export const TRASH_RETENTION_DAYS = 30
+export const TRASH_RETENTION_MS = TRASH_RETENTION_DAYS * DAY_MS
 
 /** `12 aug` — s6o6's own register: day first, lowercase short month, no year. */
 const shortDate = (d: Date): string =>
@@ -37,13 +38,13 @@ const whenLabel = (iso: string, now: Date): string => {
 const pluralCount = (n: number, singular: string, plural: string = `${singular}s`): string =>
   `${n} ${n === 1 ? singular : plural}`
 
-const purgeDate = (createdAt: string): string => shortDate(new Date(Date.parse(createdAt) + THIRTY_DAYS_MS))
+const purgeDate = (createdAt: string): string => shortDate(new Date(Date.parse(createdAt) + TRASH_RETENTION_MS))
 
 /** `restore_page` (0027) stamps this DB-side-only onto the `restore` record's
  *  `after` when the original parent was trashed or gone — not part of the
  *  `TrashSnapshot` TS shape (`readTrashSnapshot` ignores it), just this one
  *  flag the deleted view needs to say so. */
-const fellBackToPondRoot = (after: unknown): boolean =>
+export const fellBackToPondRoot = (after: unknown): boolean =>
   typeof after === 'object' &&
   after !== null &&
   (after as { parentFallback?: unknown }).parentFallback === true
@@ -77,7 +78,7 @@ export interface DeletedCard {
  * other would produce. So the next entry after a `delete`, if any, is always
  * that `restore`.
  */
-const groupByTarget = (records: ChangeLogRecord[]): Map<string, ChangeLogRecord[]> => {
+export const groupByTarget = (records: ChangeLogRecord[]): Map<string, ChangeLogRecord[]> => {
   const byTarget = new Map<string, ChangeLogRecord[]>()
   for (const record of records) {
     if (record.targetPageId === null) continue

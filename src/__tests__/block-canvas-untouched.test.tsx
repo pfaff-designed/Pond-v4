@@ -54,11 +54,12 @@ beforeEach(() => {
   jest.clearAllMocks()
 })
 
-describe('the foot "+ Add a block" on an untouched page (KAN-119)', () => {
+describe('the trailing gap on an untouched page (KAN-119, KAN-345)', () => {
   it('renders for an ordinary page', async () => {
     const note: Block = { id: 'b-note', type: 'text', content: 'Cabinets are the only open cost.' }
     renderCanvas([note])
-    expect(await screen.findByRole('button', { name: 'Add a block' })).toBeInTheDocument()
+    expect(await screen.findByTestId('trailing-block-gap')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add a block' })).not.toBeInTheDocument()
   })
 
   it('is omitted for one passed `untouched`', async () => {
@@ -68,7 +69,7 @@ describe('the foot "+ Add a block" on an untouched page (KAN-119)', () => {
   })
 })
 
-describe("the hint line draws in the machine surface's mono, scoped to that one block (6f, KAN-119)", () => {
+describe("the hint line draws in the machine surface's mono, scoped to focus not to that one block (6f, KAN-119, KAN-345)", () => {
   it('the sole block carries the override class on an untouched page', async () => {
     const emptyLine: Block = {
       id: 'b-empty',
@@ -82,11 +83,11 @@ describe("the hint line draws in the machine surface's mono, scoped to that one 
     expect(field.closest('[class*="before:ml-[6px]"]')).not.toBeNull()
   })
 
-  it('every OTHER block keeps its ordinary serif placeholder untouched', async () => {
+  it('every OTHER block stays unfocused, so its serif placeholder paints (mono is focus-scoped)', async () => {
     const note: Block = { id: 'b-note', type: 'text', content: '' }
     renderCanvas([note], false)
     const field = await findTextBlock()
-    expect(field.closest('[class*="before:font-mono"]')).toBeNull()
+    expect(field.classList.contains('ProseMirror-focused')).toBe(false)
     expect(field.className).toContain('font-serif')
   })
 })

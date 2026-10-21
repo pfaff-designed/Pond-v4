@@ -1,6 +1,7 @@
 import type { Block } from '@/lib/documents/types'
 import type { ModuleChange } from '@/lib/modules/ai-composition'
 import { hydrateBlock } from '@/lib/modules/hydrate'
+import { detachKeepingRows } from '@/lib/modules/layout-rows'
 import { collectBatchRefIds, resolveSourceRef } from '@/lib/modules/same-batch-refs'
 
 export interface ApplyChangesResult {
@@ -98,11 +99,15 @@ export function applyProposedChanges(
 
   for (const change of changes) {
     if (change.op === 'remove') {
-      if (!next.some((b) => b.id === change.blockId)) {
+      const at = next.findIndex((b) => b.id === change.blockId)
+      if (at === -1) {
         skip('the block to remove no longer exists on the page')
         continue
       }
-      next = next.filter((b) => b.id !== change.blockId)
+      // Via `detachKeepingRows` (KAN-440): an accepted Pond remove is a diff
+      // like any other block removal, so a row-mate the removed block leaves
+      // behind inherits its `rowStart` rather than silently re-packing.
+      next = detachKeepingRows(next, at).blocks
       applied++
       continue
     }
@@ -135,13 +140,15 @@ export function applyProposedChanges(
       skip(`the edited ${change.data?.type ?? 'block'} failed validation`)
       continue
     }
-    // The AI's `data` never carries a `width` (KAN-43: Pond never authors layout),
-    // so an edit must keep the block's own width across the swap, or accepting a
-    // Pond diff would silently reset the person's layout choice to full. `hydrated`
+    // The AI's `data` never carries a `width` or `rowStart` (KAN-43: Pond never
+    // authors layout), so an edit must keep the block's own layout across the
+    // swap, or accepting a Pond diff would silently reset the person's width
+    // choice to full and repack the rows below it (KAN-440 comment 2). `hydrated`
     // can still carry a width of its own (blockSchema permits one; only
-    // moduleDataSchema strips it) — override it unconditionally with `target.width`
-    // (including `undefined`), or a hydrated replacement's width would win.
-    const block = { ...hydrated, width: target.width }
+    // moduleDataSchema strips it) — override both unconditionally with the
+    // target's (including `undefined`, which drops the key on save, same as an
+    // absent `rowStart` always has), or a hydrated replacement's values would win.
+    const block = { ...hydrated, width: target.width, rowStart: target.rowStart }
     if (change.after) {
       next = insertAfter(
         next.filter((b) => b.id !== change.blockId),

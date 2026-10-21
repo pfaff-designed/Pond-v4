@@ -3,15 +3,36 @@
  * `new page from this` are drawn in the board's order and stay inert.
  */
 
+import { useEffect } from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
+import { EditorContent, useEditor } from '@tiptap/react'
 import { SelectionBar } from '@/components/molecules/SelectionBar'
-import { selectText } from './helpers/selection'
+import { registerTextEditor } from '@/lib/modules/text/active-editor'
+import { proseExtensions } from '@/lib/modules/text/extensions'
+import { clearSelection, selectText } from './helpers/selection'
+
+/** A registered, editable text-block editor — the bar only opens when both ends of the selection sit inside one. */
+function Host() {
+  const editor = useEditor({
+    extensions: proseExtensions,
+    content: '<p>select me</p>',
+    immediatelyRender: false,
+  })
+
+  useEffect(() => {
+    if (!editor) return
+    return registerTextEditor(editor)
+  }, [editor])
+
+  if (!editor) return null
+  return <EditorContent editor={editor} />
+}
 
 const renderWithSelection = (onAsk = jest.fn()) => {
   render(
     <>
       <SelectionBar onAsk={onAsk} />
-      <p>select me</p>
+      <Host />
     </>
   )
   selectText(screen.getByText('select me'))
@@ -21,6 +42,8 @@ const renderWithSelection = (onAsk = jest.fn()) => {
 const DEFERRED = ['highlight', 'comment', 'new page from this']
 
 describe('SelectionBar ask pond', () => {
+  afterEach(() => clearSelection())
+
   it('calls onAsk with the selected text', () => {
     const onAsk = renderWithSelection()
     fireEvent.click(screen.getByRole('button', { name: 'ask pond' }))
@@ -28,13 +51,15 @@ describe('SelectionBar ask pond', () => {
     expect(onAsk).toHaveBeenCalledWith({
       text: 'select me',
       blockId: undefined,
-      from: undefined,
-      to: undefined,
+      from: 1,
+      to: 10,
     })
   })
 })
 
 describe('SelectionBar copy', () => {
+  afterEach(() => clearSelection())
+
   const writeText = jest.fn().mockResolvedValue(undefined)
 
   beforeEach(() => {
@@ -68,6 +93,8 @@ describe('SelectionBar copy', () => {
 })
 
 describe('SelectionBar deferred items', () => {
+  afterEach(() => clearSelection())
+
   it('draws highlight, comment and new page from this in the board’s order', () => {
     renderWithSelection()
     const names = screen.getAllByRole('button').map((button) => button.textContent)

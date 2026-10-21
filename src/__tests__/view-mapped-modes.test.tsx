@@ -373,7 +373,8 @@ describe('BlockCanvas — a gantt’s empty state is the board’s voidBox, not 
     expect(box.dataset.emptyBox).toBe('void')
     expect(box.textContent).toBe(GANTT_EMPTY_LINE)
     expect(c.textContent).not.toContain('no rows yet')
-    expect(c.querySelector('button')).toHaveTextContent('add a task')
+    // The layout chip is the first button in the view (timeline). The empty action is named.
+    expect(within(c).getByRole('button', { name: 'add a task' })).toBeInTheDocument()
   })
 
   it('whose filter hides every row: the filter line, in the void box', () => {

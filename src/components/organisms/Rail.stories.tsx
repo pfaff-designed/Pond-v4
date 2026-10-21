@@ -147,10 +147,10 @@ export const Expanded: Story = {
     await expect(canvas.queryByText('Recipes')).not.toBeInTheDocument()
 
     // life + 4 top-level + Health's 2 + Personal's 2 = 9 visible rows, plus the
-    // foot's databases row.
+    // foot's databases row and its own trash row (KAN-504).
     const items = canvas.getAllByRole('treeitem')
     const rows = [...canvasElement.querySelectorAll<HTMLElement>('[data-kind="list-row"]')]
-    await expect(items).toHaveLength(10)
+    await expect(items).toHaveLength(11)
     await expect(rows).toHaveLength(items.length)
     for (const [i, row] of rows.entries()) {
       await expect(row.closest('[role="treeitem"]')).toBe(items[i])
@@ -1003,9 +1003,8 @@ export const KeyboardNav: Story = {
 /**
  * #96: the rail is a PAPER card (`PondRail`, measured: the card paper, the card
  * shadow, radius 20, 206 wide, no backdrop blur) headed by the pond's glyph and
- * name (13.5 / 500, full ink) with the reminders bell at
- * the right. With no pond provider there are no ponds, so no switcher button and
- * no chevron — and the bell is decorative, never a button.
+ * name (13.5 / 500, full ink). With no pond provider there are no ponds, so no
+ * switcher button and no chevron.
  */
 export const PaperCardHead: Story = {
   tags: ['!dev'],
@@ -1022,7 +1021,7 @@ export const PaperCardHead: Story = {
     await expect(name).not.toHaveClass('uppercase')
     await expect(head.querySelector('[data-pond-mark]')).not.toBeNull()
     await expect(head.querySelector('button')).toBeNull()
-    await expect(head.querySelector('[data-part="reminders-bell"]')).not.toBeNull()
+    await expect(head.querySelector('[data-part="reminders-bell"]')).toBeNull()
   },
 }
 
@@ -1311,7 +1310,7 @@ export const PaperCardComputed: Story = {
       await expect(mark.style.width).toBe('13px')
       await expect(head.querySelector('[data-area-mark]')).toBeNull()
 
-      // `head`: padding 0 16px 12px, name left / bell right, centred, gap 8.
+      // `head`: padding 0 16px 12px, centred, gap 8.
       const headCss = getComputedStyle(head)
       await expect(headCss.padding).toBe('0px 16px 12px')
       await expect(headCss.justifyContent).toBe('space-between')
@@ -1323,26 +1322,9 @@ export const PaperCardComputed: Story = {
       await expect(switcherCss.padding).toBe('4px 6px')
       await expect(switcherCss.margin).toBe('-4px -6px')
       await expect(switcherCss.borderTopLeftRadius).toBe('8px')
-      // With no pond provider there are no ponds: no switcher button, and the bell
-      // is not one.
+      // With no pond provider there are no ponds: no switcher button, and no bell.
       await expect(head.querySelector('button')).toBeNull()
-
-      // The reminders bell: 12×12, stroke 1.4, the .8 ink tier, a decorative mark
-      // outside the ARIA tree that is neither a button nor a tab stop (#198 owns
-      // its behaviour).
-      const bell = head.querySelector<HTMLElement>('[data-part="reminders-bell"]')!
-      await expect(bell).not.toBeNull()
-      await expect(bell.closest('[role="tree"]')).toBeNull()
-      await expect(bell.getAttribute('aria-hidden')).toBe('true')
-      await expect(bell.hasAttribute('tabindex')).toBe(false)
-      const bellBox = bell.getBoundingClientRect()
-      await expect(bellBox.width).toBe(12)
-      await expect(bellBox.height).toBe(12)
-      await expect(bell.getAttribute('viewBox')).toBe('0 0 14 14')
-      await expect(getComputedStyle(bell).strokeWidth).toBe('1.4px')
-      await expect(getComputedStyle(bell).color).toBe(
-        theme === 'light' ? 'rgba(27, 29, 20, 0.8)' : 'rgba(250, 249, 239, 0.8)'
-      )
+      await expect(head.querySelector('[data-part="reminders-bell"]')).toBeNull()
     }
   },
 }
@@ -1549,9 +1531,11 @@ export const ChosenMarks: Story = {
  *
  * Geometry: `padding 6px 8px`
  * (the foot supplies the 10px under the hairline), `gap 9`, `font-size 13.5` /
- * `font-weight 500`, radius 10, and no chevron. Its mark is a hand-drawn
- * cylinder in `currentColor` — a FUNCTIONAL mark (stroke 1.4, round caps and
- * joins), not an area glyph, because the root is not one of Life's areas.
+ * `font-weight 500`, radius 10, and — KAN-486 — the rail's existing folder
+ * chevron, since change log and trash are always its first two children once
+ * the root exists. Its mark is a hand-drawn cylinder in `currentColor` — a
+ * FUNCTIONAL mark (stroke 1.4, round caps and joins), not an area glyph,
+ * because the root is not one of Life's areas.
  */
 const DATABASES: RailNode = node(
   'root-db',
@@ -1580,8 +1564,10 @@ export const DatabasesRoot: Story = {
     await expect(life.parentElement!.contains(foot)).toBe(false)
 
     // A functional mark, not an area one — and so no area hue to disagree with.
+    // `svg[width="13"]` is the mark itself — the caret (KAN-486) is its own 9×9
+    // svg and also carries `stroke="currentColor"`, so a bare selector would hit it instead.
     const rootRow = canvas.getByRole('treeitem', { name: /databases/ })
-    const svg = rootRow.querySelector<SVGSVGElement>('svg[stroke="currentColor"]')!
+    const svg = rootRow.querySelector<SVGSVGElement>('svg[width="13"][stroke="currentColor"]')!
     await expect(svg).toBeInTheDocument()
     await expect(svg.getAttribute('stroke-width')).toBe('1.4')
     await expect(svg.getAttribute('stroke-linecap')).toBe('round')
@@ -1600,42 +1586,146 @@ export const DatabasesRoot: Story = {
     const title = body.querySelector<HTMLElement>('[data-part="title"]')!
     await expect(getComputedStyle(title).fontWeight).toBe('500')
 
-    // The row box: padding 6px 8px, the mark and label 9px apart, and no caret
-    // slot — the mark is the first thing in the row.
+    // The row box: padding 6px 8px, the mark and label 9px apart, and the
+    // caret — KAN-486 — now leads the row, the same slot a folder row draws.
     const rowCss = getComputedStyle(rootRow)
     await expect(rowCss.padding).toBe('6px 8px')
     await expect(rowCss.columnGap).toBe('9px')
     await expect(css.columnGap).toBe('9px')
     await expect(rootRow).toHaveAttribute('aria-expanded', 'true')
+    const caret = rootRow.querySelector<HTMLButtonElement>('button[aria-hidden="true"]')!
+    await expect(caret).not.toBeNull()
+    // KAN-486: its rows sit above it, never below, so the caret points UP
+    // when open — unlike an ordinary folder row's down caret.
+    await expect(caret.querySelector('svg')).toHaveClass('-rotate-90') // expanded
     const inFlow = [...rootRow.children].filter((c) => getComputedStyle(c).position !== 'absolute')
-    await expect(inFlow).toEqual([body])
-    await expect(rootRow.querySelector('button[aria-hidden="true"]')).toBeNull()
-    // 8px foot padding + 8px row padding = the mark at x 16 from the rail's edge.
+    await expect(inFlow).toEqual([caret, body])
+    // 8px foot padding + 8px row padding + the 9px caret + the 9px gap to it
+    // = the mark at x 34 from the rail's edge.
     const aside = canvasElement.querySelector('aside')!
     const markLeft = svg.getBoundingClientRect().left - aside.getBoundingClientRect().left
-    await expect(Math.abs(markLeft - 16)).toBeLessThan(0.01)
+    await expect(Math.abs(markLeft - 34)).toBeLessThan(0.01)
   },
 }
 
-/** One keyboard order across both trees: ↓ from Life's last row lands on databases, ↑ returns. */
+/** Toggles `expanded` for real on click — the plain `RailView` is a controlled
+ *  component, so a story that needs expanding to actually move pixels (not
+ *  just call `onToggle`) wraps it the way `GlyphPickHarness` wraps marks. */
+function ExpandHarness(args: ComponentProps<typeof RailView>) {
+  const [expanded, setExpanded] = useState<Set<string>>(args.expanded ?? new Set())
+  const toggle = (id: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+  return (
+    <RailView
+      {...args}
+      expanded={expanded}
+      onToggle={(id) => {
+        args.onToggle(id)
+        toggle(id)
+      }}
+      // The databases root click->toggle branch (KAN-486) lives in the real
+      // `Rail` container's `handleSelect`, which `RailView` alone has no
+      // equivalent of — the harness stands in for it, same as the real
+      // container does, so a click toggles here too.
+      onSelect={(id) => {
+        args.onSelect(id)
+        if (id === DATABASES.id) toggle(id)
+      }}
+    />
+  )
+}
+
+/**
+ * Conductor decision A: the databases heading is bottom-anchored and never
+ * moves — expanding draws change log/trash/the databases ABOVE it, inside the
+ * scroller, not below it. A click that opens the section must not leave a
+ * second click, at the same screen position, landing on a database row
+ * instead of the heading.
+ */
+export const HeadingStaysPutWhenExpanded: Story = {
+  tags: ['!dev'],
+  args: { tree: [...TREE, DATABASES], expanded: new Set() },
+  render: (args) => <ExpandHarness {...args} />,
+  // The meta decorator's `h-screen` div is a block box, so `aside`'s
+  // `self-stretch` (which only does anything inside a flex container) is a
+  // no-op there — the real shell wraps the rail in a flex row instead
+  // (`WorkspaceShell.tsx`'s `data-part="shell"`). Without that, the foot
+  // grows the whole aside rather than staying bottom-anchored, and this
+  // story's whole premise goes untested.
+  decorators: [
+    (Story) => (
+      <div className="flex h-full">
+        <Story />
+      </div>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const heading = canvas.getByRole('treeitem', { name: /^databases/ })
+    await expect(heading).toHaveAttribute('aria-expanded', 'false')
+    const before = heading.getBoundingClientRect()
+
+    await userEvent.click(heading)
+    await waitFor(() => expect(heading).toHaveAttribute('aria-expanded', 'true'))
+
+    const after = heading.getBoundingClientRect()
+    await expect(after.top).toBe(before.top)
+    await expect(after.left).toBe(before.left)
+    await expect(after.height).toBe(before.height)
+
+    const changeLog = canvas.getByRole('treeitem', { name: 'change log' })
+    await expect(changeLog.getBoundingClientRect().bottom).toBeLessThanOrEqual(after.top)
+
+    // A real pointer click at the SAME coordinates recorded before expansion —
+    // not a re-query by role — must still land on the heading and collapse
+    // it, the way a bottom-anchored-and-growing-upward foot would NOT: there,
+    // the same screen position would have landed on the last database row.
+    const atRecordedSpot = document.elementFromPoint(before.left + 4, before.top + 4)
+    await expect(heading.contains(atRecordedSpot)).toBe(true)
+    await userEvent.click(atRecordedSpot as HTMLElement)
+    await waitFor(() => expect(heading).toHaveAttribute('aria-expanded', 'false'))
+    await expect(canvas.queryByRole('treeitem', { name: 'change log' })).not.toBeInTheDocument()
+  },
+}
+
+/**
+ * One keyboard order across both trees: ↓ from Life's last row lands on the
+ * first db row, not the heading — KAN-486 renders the heading LAST (its own
+ * rows sit above it, never below), so the heading is reached last, not first.
+ */
 export const KeyboardIntoDatabases: Story = {
   tags: ['!dev'],
   args: { tree: [...TREE, DATABASES], expanded: new Set(['root-db']) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     const lastLifeRow = canvas.getByRole('treeitem', { name: /Scratchpad/ })
-    const databases = canvas.getByRole('treeitem', { name: /databases/ })
+    const changeLog = canvas.getByRole('treeitem', { name: 'change log' })
+    const databases = canvas.getByRole('treeitem', { name: /^databases/ })
 
     lastLifeRow.focus()
     await userEvent.keyboard('{ArrowDown}')
-    await expect(databases).toHaveFocus()
-    await expect(databases).toHaveAttribute('tabindex', '0')
+    await expect(changeLog).toHaveFocus()
+    await expect(changeLog).toHaveAttribute('tabindex', '0')
     await expect(lastLifeRow).toHaveAttribute('tabindex', '-1')
 
     await userEvent.keyboard('{ArrowUp}')
     await expect(lastLifeRow).toHaveFocus()
     await expect(lastLifeRow).toHaveAttribute('tabindex', '0')
-    await expect(databases).toHaveAttribute('tabindex', '-1')
+    await expect(changeLog).toHaveAttribute('tabindex', '-1')
+
+    // The heading is the last databases row in the flat order: change log,
+    // ingredients, then the heading. Trash is its own row after it (KAN-504).
+    changeLog.focus()
+    await userEvent.keyboard('{ArrowDown}{ArrowDown}')
+    await expect(databases).toHaveFocus()
+    await userEvent.keyboard('{ArrowDown}')
+    await expect(canvas.getByRole('treeitem', { name: /^trash/ })).toHaveFocus()
   },
 }
 
@@ -1878,22 +1968,27 @@ export const FootBand: Story = {
       await expect(css.rowGap).toBe('2px')
       await expect(css.padding).toBe('10px 8px 0px')
 
-      // databases tree first, then settings — in ONE element
+      // databases tree, then trash's own tree (KAN-504), then settings — in ONE element
       const tree = canvas.getByRole('tree', { name: 'Databases' })
+      const trash = scope.querySelector<HTMLElement>('[role="tree"][aria-label="Trash"]')!
       const settings = scope.querySelector<HTMLElement>('[data-part="settings"]')!
-      await expect([...foot.children]).toEqual([tree, settings])
-      await expect(getComputedStyle(tree).maxHeight).not.toBe('none')
+      await expect([...foot.children]).toEqual([tree, trash, settings])
+      // KAN-486: the max-height / scroll clipping lives on the inner scroller
+      // now, not the outer tree — the heading sits after it, outside the clip,
+      // so it never moves when the scroller's content grows.
+      const scroller = tree.querySelector<HTMLElement>('[data-part="databases-scroller"]')!
+      await expect(getComputedStyle(scroller).maxHeight).not.toBe('none')
       // the foot's hairline is the only one: the tree draws none of its own
       await expect(getComputedStyle(tree).borderTopWidth).toBe('0px')
       await expect(scope.querySelectorAll('aside [class*="border-t"]')).toHaveLength(1)
       // measured once the nested row's settle-in entrance has finished moving it
       await Promise.all(tree.getAnimations({ subtree: true }).map((a) => a.finished))
-      const dbRows = within(tree).getAllByRole('treeitem')
+      const dbRows = within(scroller).getAllByRole('treeitem')
       const lastDbRow = dbRows[dbRows.length - 1].getBoundingClientRect()
 
       // The scroller clips at its padding box: every row's 2px focus ring must
       // fit inside it on all four sides, or a keyboard user loses the indicator.
-      const box = tree.getBoundingClientRect()
+      const box = scroller.getBoundingClientRect()
       for (const row of dbRows) {
         const r = row.getBoundingClientRect()
         await expect(r.left - box.left).toBeGreaterThanOrEqual(2)
@@ -1937,8 +2032,9 @@ export const FootWithoutDatabasesRoot: Story = {
   tags: ['!dev'],
   play: async ({ canvasElement }) => {
     const foot = canvasElement.querySelector<HTMLElement>('[data-part="rail-foot"]')!
-    await expect(foot.children).toHaveLength(2)
+    await expect(foot.children).toHaveLength(3)
     await expect(foot.firstElementChild).toHaveAttribute('aria-label', 'Databases')
+    await expect(foot.children[1]).toHaveAttribute('aria-label', 'Trash')
     await expect(foot.firstElementChild).toHaveTextContent('databases')
     await expect(foot.lastElementChild).toHaveTextContent('settings')
   },

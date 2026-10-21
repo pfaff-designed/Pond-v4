@@ -13,6 +13,10 @@ import { fireEvent, render, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
+import { getPageWriteQueue } from '@/lib/pages/page-flush'
+import { createPageWriteQueue } from '@/lib/pages/page-write-queue'
+import { createPageWriter } from '@/lib/pages/commit'
+import { createClient } from '@/lib/supabase/client'
 import type { Block } from '@/lib/documents/types'
 
 jest.mock('next/navigation', () => ({
@@ -38,30 +42,64 @@ jest.mock('@/lib/pages/client', () => ({
 }))
 
 const mockAppendOwnEdit = jest.fn().mockResolvedValue({ id: 'record-1' })
+const mockMarkOutdated = jest.fn().mockResolvedValue([])
 jest.mock('@/lib/change-log/store', () => ({
   appendOwnEdit: (...args: unknown[]) => mockAppendOwnEdit(...args),
+  markOutdated: (...args: unknown[]) => mockMarkOutdated(...args),
 }))
 const mockRemember = jest.fn()
 jest.mock('@/lib/change-log/session-undo', () => ({
-  sessionUndo: { remember: (...args: unknown[]) => mockRemember(...args) },
+  sessionUndo: {
+    remember: (...args: unknown[]) => mockRemember(...args),
+    trackPending: jest.fn(),
+  },
 }))
+
+// The page-write queue (KAN-495) is a module-level registry keyed by page id
+// that outlives a test's unmount, so sharing one page id across `it()`s hands
+// a later test the earlier one's queue head as its own `before` — see
+// `block-canvas-side-by-side-path.test.tsx`'s own note on the same registry.
+let mockPageIdCounter = 0
+let mockPageId = 'page-1'
 
 beforeEach(() => {
   jest.clearAllMocks()
   mockSaveBlocks.mockResolvedValue(undefined)
   mockAppendOwnEdit.mockResolvedValue({ id: 'record-1' })
+  global.fetch = jest.fn().mockResolvedValue({ ok: true } as Response)
+  mockPageId = `page-${++mockPageIdCounter}`
 })
 
+// `onStructuralWrite` — the caller's ONE structural entry point (KAN-495
+// moved its queue construction out of `BlockCanvas` into the caller,
+// `use-page-draft.ts`'s `writeStructural`: update local state, THEN enqueue).
+// Rebuilt here with the same real queue modules so this test's
+// `saveBlocks`/`appendOwnEdit`/`sessionUndo.remember` mocks (one layer
+// deeper) still see the drop's commit; `onChange` stands in for the "update
+// local state" half, same as `writeStructural`'s own `setBlocks`.
 function renderCanvas(blocks: Block[], onChange: (next: Block[]) => void) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const onStructuralWrite = (next: Block[]): Promise<boolean> => {
+    onChange(next)
+    return getPageWriteQueue(mockPageId, () =>
+      createPageWriteQueue(createPageWriter(createClient(), client, mockPageId, 'pond-1'), {
+        title: 'sourdough, 78%',
+        blocks,
+      })
+    )
+      .enqueue({ kind: 'structural', after: { title: 'sourdough, 78%', blocks: next } })
+      .then(() => true)
+      .catch(() => false)
+  }
   return render(
     <QueryClientProvider client={client}>
       <DeletionUndoProvider>
         <BlockCanvas
           blocks={blocks}
-          pageId="page-1"
+          pageId={mockPageId}
           pageTitle="sourdough, 78%"
           onChange={onChange}
+          onStructuralWrite={onStructuralWrite}
           onUndoRemove={() => {}}
         />
       </DeletionUndoProvider>
@@ -80,11 +118,14 @@ function rect(left: number, width: number, top = 0, height = 100): DOMRect {
  * at `(x, y)` within `targetRect`. jsdom's `DragEvent` drops `clientX`/
  * `clientY` from its init dict, so the point is defined directly on a plain
  * `MouseEvent` instead — see `block-canvas-drop-line.test.tsx`'s own `dragOver`.
+ * The target's rect is mocked BEFORE `dragstart` fires: dragstart snapshots
+ * every block's rect (KAN-440), so a mock set afterward is invisible to the
+ * classification it drives.
  */
 function dragAndDrop(sourceId: string, targetId: string, targetRect: DOMRect, x: number, y: number) {
-  fireEvent.dragStart(blockRoot(sourceId))
   const target = blockRoot(targetId)
   jest.spyOn(target, 'getBoundingClientRect').mockReturnValue(targetRect)
+  fireEvent.dragStart(blockRoot(sourceId))
   const over = new MouseEvent('dragover', { bubbles: true, cancelable: true })
   Object.defineProperty(over, 'clientX', { value: x })
   Object.defineProperty(over, 'clientY', { value: y })
@@ -109,7 +150,7 @@ describe('committing a beside drop', () => {
     dragAndDrop('b-a', 'b-b', rect(0, 400), 360, 50)
 
     const expected = [
-      { ...b, width: '1/2' },
+      { ...b, width: '1/2', rowStart: true },
       { ...a, width: '1/2' },
     ]
     await waitFor(() => expect(result).toEqual(expected))
@@ -137,7 +178,7 @@ describe('committing a beside drop', () => {
     // Room = 12 - 4 = 8 twelfths → widest fit is 2/3.
     await waitFor(() =>
       expect(result).toEqual([
-        { ...third, width: '1/3' },
+        { ...third, width: '1/3', rowStart: true },
         { ...dropped, width: '2/3' },
       ])
     )
@@ -157,11 +198,49 @@ describe('committing a beside drop', () => {
 
     await waitFor(() =>
       expect(result).toEqual([
-        { ...left, width: '1/3' },
+        { ...left, width: '1/3', rowStart: true },
         { ...right, width: '1/3' },
         { ...dropped, width: '1/3' },
       ])
     )
+  })
+
+  it('undo restores the flag: the own-edit record keeps each block\'s exact pre-drop rowStart (KAN-440)', async () => {
+    // A already holds `rowStart` from an earlier drop; C (full, no flag) is
+    // dragged beside A's left edge, so C becomes the new row start and A's
+    // flag is cleared. `sessionUndo`'s undo step (proved generically in
+    // change-log-undo.test.ts / .pglite.test.ts) swaps the page back to this
+    // very `before` array — so a `before` that is reference-equal to the
+    // pre-drop blocks is what makes that swap restore A's `rowStart: true`
+    // and C's absent `rowStart` exactly, with no separate undo path to test.
+    const a: Block = { id: 'b-a', type: 'text', content: 'a', width: '1/2', rowStart: true }
+    const b: Block = { id: 'b-b', type: 'text', content: 'b', width: '1/2' }
+    const c: Block = { id: 'b-c', type: 'text', content: 'c' }
+    const before = [a, b, c]
+    let result: Block[] | null = null
+    renderCanvas(before, (next) => {
+      result = next
+    })
+
+    // x=40 of a 400-wide rect is 10% across: the outer-left 25%, beside-left of a.
+    dragAndDrop('b-c', 'b-a', rect(0, 400), 40, 50)
+
+    const expected = [
+      { ...c, width: '1/3', rowStart: true },
+      { ...a, width: '1/3', rowStart: undefined },
+      { ...b, width: '1/3' },
+    ]
+    await waitFor(() => expect(result).toEqual(expected))
+    expect(result![1]).not.toHaveProperty('rowStart')
+
+    expect(mockAppendOwnEdit.mock.calls[0][1]).toEqual(
+      expect.objectContaining({ before, after: expected })
+    )
+    // `before` is the exact pre-drop array (same objects, same `rowStart`
+    // values) — the undo RPC swaps the page back to this, so a is `rowStart:
+    // true` again and c's key is simply gone, byte-identical to before the drop.
+    expect(mockAppendOwnEdit.mock.calls[0][1].before).toBe(before)
+    expect(mockAppendOwnEdit.mock.calls[0][1].before[0]).toEqual({ ...a, rowStart: true })
   })
 
   it('splices before the target on a left-beside drop', async () => {
@@ -178,7 +257,7 @@ describe('committing a beside drop', () => {
     dragAndDrop('b-c', 'b-b', rect(0, 400), 40, 50)
 
     await waitFor(() =>
-      expect(result).toEqual([a, { ...c, width: '1/2' }, { ...b, width: '1/2' }])
+      expect(result).toEqual([a, { ...c, width: '1/2', rowStart: true }, { ...b, width: '1/2' }])
     )
   })
 })

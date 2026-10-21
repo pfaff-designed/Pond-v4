@@ -76,8 +76,9 @@ import { AnswerActions } from '@/components/molecules/AnswerActions'
 import { PageProposalCard } from '@/components/molecules/PageProposalCard'
 import { MadePageActions } from '@/components/molecules/MadePageActions'
 import { toParentOptions, ancestorPathLabel } from '@/lib/pages/parent-options'
-import { workspaceHref, workspaceUrl } from '@/lib/pages/nav'
+import { openWorkspaceUrl, workspaceHref, workspaceUrl } from '@/lib/pages/nav'
 import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
+import { isVirtualNodeId } from '@/lib/change-log/trash-view'
 import { insertPageOptimistic, type PageRow } from '@/lib/pages/tree'
 import { appendChildLinkUnder } from '@/lib/pages/child-links'
 import { linkedPageIds, orderMentionPages } from '@/lib/pages/mention-pages'
@@ -668,12 +669,12 @@ export function AITerminal() {
 
   // Current page blocks — the source of the "before" text in a diff card, and
   // the array we rewrite when a proposal is accepted. Shares the ['page', pageId]
-  // cache with DocumentPanel. The virtual change-log node has no `pages` row
-  // (DocumentPanel's own `isChangeLogNode` guard), so it takes none of this path.
+  // cache with DocumentPanel. A reserved virtual node (change log, trash) has no
+  // `pages` row (DocumentPanel's own guard), so it takes none of this path.
   const { data: currentPage } = useQuery({
     queryKey: ['page', pageId],
     queryFn: () => (pageId ? getPage(getSupabase(), pageId) : Promise.resolve(null)),
-    enabled: !!pageId && pageId !== CHANGE_LOG_NODE_ID,
+    enabled: !!pageId && !isVirtualNodeId(pageId),
   })
 
   // The user's pages, used to populate the create_page destination picker, to
@@ -714,7 +715,7 @@ export function AITerminal() {
   const crossPageTargetIds = useMemo(() => {
     const ids = new Set<string>()
     for (const t of Object.values(changeTargets ?? {})) {
-      if (t.nodeId && !t.missing && t.nodeId !== pageId && t.nodeId !== CHANGE_LOG_NODE_ID) {
+      if (t.nodeId && !t.missing && t.nodeId !== pageId && !isVirtualNodeId(t.nodeId)) {
         ids.add(t.nodeId)
       }
     }
@@ -1726,7 +1727,10 @@ export function AITerminal() {
         if (call.state !== 'input-available' || openedChangeLogRef.current.has(call.toolCallId))
           continue
         openedChangeLogRef.current.add(call.toolCallId)
-        router.push(workspaceHref({ id: CHANGE_LOG_NODE_ID, type: 'page', title: 'change log' }))
+        openWorkspaceUrl(
+          workspaceHref({ id: CHANGE_LOG_NODE_ID, type: 'page', title: 'change log' }),
+          router
+        )
       }
     }
   }, [messages, router, initialMessageIds])
@@ -2312,7 +2316,7 @@ export function AITerminal() {
   // composer out from under the card the person is filling in. A second Esc, with
   // focus back on the body, takes the next rung.
   const handleBodyKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLDivElement>) => {
+    (e: React.KeyboardEvent<HTMLElement>) => {
       if (e.key !== 'Escape' || e.defaultPrevented) return
       if (isMaximized) {
         e.preventDefault()
@@ -2447,12 +2451,13 @@ export function AITerminal() {
           message: `Added ${blockNoun(result.applied)} to ${targetName}${suffix}`,
           action: openTarget
             ? () =>
-                router.push(
+                openWorkspaceUrl(
                   workspaceHref({
                     id: openTarget,
                     type: allPages.find((p) => p.id === openTarget)?.type ?? 'page',
                     title: targetName,
-                  })
+                  }),
+                  router
                 )
             : undefined,
           actionLabel: 'Open',
@@ -2743,7 +2748,7 @@ export function AITerminal() {
           },
           pondId
         )
-        router.push(workspaceHref({ id: created.id, type: part.type, title: part.title }))
+        openWorkspaceUrl(workspaceHref({ id: created.id, type: part.type, title: part.title }), router)
         void queryClient.invalidateQueries({ queryKey: pagesKey() })
         // KAN-415: a failed link append is not a failed page creation — the page
         // above has already landed and been navigated to. A database/record made
@@ -3182,7 +3187,7 @@ export function AITerminal() {
           pondId
         )
         void queryClient.invalidateQueries({ queryKey: pagesKey() })
-        router.push(workspaceHref({ id: made.id, type: 'page', title: made.title }))
+        openWorkspaceUrl(workspaceHref({ id: made.id, type: 'page', title: made.title }), router)
         // KAN-415: a failed link append is not a failed page creation — the
         // page above has already landed and been navigated to.
         void appendChildLinkUnder(getSupabase(), queryClient, proposal.parentId, made.id, pondId, pondName)
@@ -3847,16 +3852,6 @@ export function AITerminal() {
               }}
               onAskAgain={canAskAgain ? () => handleAskAgain(messageIndex) : undefined}
               onStop={stop}
-              // `ThreadHead` already draws the one close mark once there's a head to
-              // hold it; the trailing error/blank row (KAN-324) draws the other one
-              // it can collide with, once this same restored answer also clears its
-              // own `assistantProse || isStreaming` gate.
-              onClose={
-                turns.length <= 1 && !trailingErrorRowShows ? closeComposerByClick : undefined
-              }
-              maximized={isMaximized}
-              onMaximize={toggleMaximize}
-              onMinimize={handleMinimize}
             />
           )}
         {diffCards.length > 0 && (
@@ -4161,33 +4156,6 @@ export function AITerminal() {
         {message.role === 'assistant' && hasVisibleProposalCard && assistantProse.trim() && (
           <ReadChips read={read} className="mn-arrive" />
         )}
-        {/* A text-less proposing answer (KAN-317: just diff cards, nothing for
-            `AnswerActions`'s `assistantProse || isStreaming` gate to hold) still
-            needs a reachable close in every state — the same far-end mark, with
-            no chip beside it since there's no "make this a page"/"ask again" to
-            make. A qualifying proposal also draws it here, after the card(s),
-            even when it left assistantProse non-empty (its assumption sentence):
-            AnswerActions withholds its own `onClose` then, so this is the one.
-            Gated on hasVisibleProposalCard alone: AnswerActions already covers
-            every turn where no card is visible yet (raw text, or `isStreaming`),
-            so this row only has to fire once a card of any qualifying kind is
-            actually up. */}
-        {message.role === 'assistant' &&
-          isLastAssistant &&
-          hasVisibleProposalCard &&
-          !isStreaming &&
-          turns.length <= 1 &&
-          !trailingErrorRowShows && (
-            <div className="flex items-center gap-[7px] font-mono text-[11px] lowercase tracking-[0.02em]">
-              <div className="flex-1" />
-              <ComposerWindowControls
-                maximized={isMaximized}
-                onMaximize={toggleMaximize}
-                onMinimize={handleMinimize}
-                onClose={closeComposerByClick}
-              />
-            </div>
-          )}
         {/* Answering rides the resolutions envelope; an answered card renders inert. */}
         {questionParts.map((part) => {
           if (part.state === 'input-streaming') return null
@@ -4277,7 +4245,7 @@ export function AITerminal() {
     if (!madeProposal || !madeProposalRecordId) return
     if (redoRecordIds.includes(madeProposalRecordId)) {
       dispatch({ kind: 'undoMadePage', id: madeProposal.id })
-      router.push(resolveAskedFromHref(madeProposal))
+      openWorkspaceUrl(resolveAskedFromHref(madeProposal), router)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- this must fire exactly once when the record lands on redo, never again just because resolveAskedFromHref/router/allPages changed (e.g. the listPages refetch the undo itself kicks off) — keying off them would retrigger the dispatch/navigate on every such change instead of gating it on redoRecordIds.
   }, [madeProposal, madeProposalRecordId, redoRecordIds, dispatch])
@@ -4320,7 +4288,7 @@ export function AITerminal() {
     if (!proposal?.parentId) return
     const parent = allPages.find((p) => p.id === proposal.parentId)
     if (!parent) return
-    router.push(workspaceHref({ id: parent.id, type: 'page', title: parent.title }))
+    openWorkspaceUrl(workspaceHref({ id: parent.id, type: 'page', title: parent.title }), router)
   }
   const madePageActionsNode = showMadePageActions && (
     <MadePageActions
@@ -4404,15 +4372,10 @@ export function AITerminal() {
           area={threadArea}
           turns={turns.length}
           onNewThread={() => void handleClear()}
-          onClose={closeComposerByClick}
-          maximized={isMaximized}
-          onMaximize={toggleMaximize}
-          onMinimize={handleMinimize}
         />
       )}
       <div
         className="max-h-[calc(100dvh-14rem)] min-h-0 flex-1 overflow-y-auto group-data-[sized]/composer:max-h-none"
-        onKeyDown={handleBodyKeyDown}
       >
         <div className="flex w-full flex-col gap-[14px]">
           {foldedCount > 0 && (
@@ -4442,11 +4405,6 @@ export function AITerminal() {
                         onAskAgain={
                           lastQuestion.text ? () => handleAskAgain(messages.length - 1) : undefined
                         }
-                        // `ThreadHead` already draws the one close mark once there's a head to hold it.
-                        onClose={turns.length <= 1 ? closeComposerByClick : undefined}
-                        maximized={isMaximized}
-                        onMaximize={toggleMaximize}
-                        onMinimize={handleMinimize}
                       />
                     )}
                   </>
@@ -4694,6 +4652,15 @@ export function AITerminal() {
         minimized={isMinimized}
         unsized={threadFoldedForMadePage}
         cardRef={composerCardRef}
+        onKeyDown={handleBodyKeyDown}
+        windowControls={
+          <ComposerWindowControls
+            maximized={isMaximized}
+            onMinimize={handleMinimize}
+            onMaximize={toggleMaximize}
+            onClose={closeComposerByClick}
+          />
+        }
       >
         {/* A single expression child, not two siblings — JSX wraps multiple
             expression children in an array, and TerminalDrawer's own

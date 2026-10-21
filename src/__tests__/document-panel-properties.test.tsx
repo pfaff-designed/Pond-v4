@@ -37,9 +37,7 @@ jest.mock('@/lib/pages/client', () => ({
   defineSchema: (...args: unknown[]) => mockDefineSchema(...args),
   saveProps: (...args: unknown[]) => mockSaveProps(...args),
 }))
-jest.mock('@/lib/pages/commit', () => ({
-  commitBlocks: jest.fn().mockResolvedValue(undefined),
-}))
+jest.mock('@/lib/pages/commit', () => jest.requireActual('./helpers/page-commit-mock').pageCommitMock())
 
 function renderWith(props: Record<string, unknown>) {
   mockGetPage.mockResolvedValue({ id: 'page-1', title: 'Recipe', blocks: [], props })

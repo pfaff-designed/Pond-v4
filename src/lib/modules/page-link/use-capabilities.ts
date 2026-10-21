@@ -20,7 +20,7 @@ import { createPage, updateTitle } from '@/lib/pages/client'
 import { insertPageOptimistic } from '@/lib/pages/tree'
 import { pagesKey } from '@/lib/pages/keys'
 import { usePagesRows } from '@/lib/pages/use-pages'
-import { workspaceHref } from '@/lib/pages/nav'
+import { workspaceHref, openWorkspaceUrl } from '@/lib/pages/nav'
 import { usePondId } from '@/lib/pond/context'
 import { resolvePageFromRows, searchPagesInRows } from './resolve'
 import type { PageLinkCapabilities } from './context'
@@ -41,7 +41,7 @@ export function usePageLinkCapabilities(containingPageId: string): PageLinkCapab
     () => ({
       resolvePage: (pageId) => resolvePageFromRows(rows, pageId),
       searchPages: (query) => searchPagesInRows(rows, query),
-      navigateToPage: (ref) => router.push(workspaceHref(ref)),
+      navigateToPage: (ref) => openWorkspaceUrl(workspaceHref(ref), router),
       createLinkedPage: async (title) => {
         const supabase = getSupabase()
         const {

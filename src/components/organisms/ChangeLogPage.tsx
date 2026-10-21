@@ -19,18 +19,20 @@ import { countWaiting, listRecords } from '@/lib/change-log/store'
 import { changeLogKey } from '@/lib/change-log/keys'
 import { buildLogPageGroups, buildLogRows, type LogGroup } from '@/lib/change-log/log-page'
 import { changeLogRecordUrl, changeLogUrl, PAGE_FILTER_PARAM } from '@/lib/change-log/record-page'
+import { openWorkspaceUrl } from '@/lib/pages/nav'
 import { clockTime } from '@/lib/change-log/page-changes'
 import { labelForStatus, WAITING_STATUSES } from '@/lib/change-log/status'
 import { buildDeletedCards, type DeletedCard } from '@/lib/change-log/deleted-view'
 import { buildProposedCards } from '@/lib/change-log/proposed-view'
 import { ChangeLogAnswerActions } from '@/components/molecules/ChangeLogAnswerActions'
 import { ChangeRows } from '@/components/molecules/diff-card-parts'
-import { existingPageIds, restorePage } from '@/lib/change-log/trash'
+import { existingPageIds, PARENT_FALLBACK_LINE } from '@/lib/change-log/trash'
+import { restorePageRelinked } from '@/lib/pages/child-links'
 import { personFacingMessage } from '@/lib/change-log/errors'
 import { PondControl } from '@/components/atoms/PondControl'
 import { FOCUS_VISIBLE_RING } from '@/components/atoms/focus-ring'
 import { ViewTabsList, ViewTabsRoot, ViewTabsTab } from '@/components/molecules/view-tabs'
-import { listPages } from '@/lib/pages/client'
+import { useFullPages } from '@/lib/pages/use-pages'
 import { pagesKey } from '@/lib/pages/keys'
 
 /** s6o1's table: the five-column grid every header, day-group and record row shares. */
@@ -97,10 +99,6 @@ type ChangeLogView = 'all' | 'proposed' | 'by-page' | 'deleted'
  *  pill, ink .8, no fill (distinct from the filled `chipBaseClass` family). */
 const PROPOSED_CHIP_CLASS =
   'rounded-full px-2 py-0.5 font-mono text-[10.5px] text-mn-text-meta ring-1 ring-inset ring-mn-text/20'
-
-/** `restore_page` (0027) falls back to the pond root when the original parent
- *  is itself trashed or gone — PATH_STEPS 6's "say so". */
-const PARENT_FALLBACK_LINE = 'put back at the top of the pond — its old place is gone'
 
 /** s6o6's row label/value pair: `130px minmax(0,1fr)`, the label at ink .68
  *  uppercase, the value at 13.5px. */
@@ -372,18 +370,8 @@ export function ChangeLogPage() {
   })
 
   // The same `['pages', pondId, 'full']` cache AITerminal's destination picker
-  // reads — one page-title fetch, not a second one just for this table.
-  const { data: pages = [] } = useQuery({
-    queryKey: [...pagesKey(pondId), 'full'],
-    queryFn: async () => {
-      const supabase = getSupabase()
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) return []
-      return listPages(supabase, user.id, pondId)
-    },
-  })
+  // (and `TrashPage`) reads — one shared hook, not a second fetch per table.
+  const { data: pages = [] } = useFullPages(pondId)
 
   const pageTitleById = useMemo(() => new Map(pages.map((p) => [p.id, p.title])), [pages])
   const activeRecords = useMemo(
@@ -485,7 +473,14 @@ export function ChangeLogPage() {
   }, [deletedCards])
 
   const restoreMutation = useMutation({
-    mutationFn: (recordId: string) => restorePage(getSupabase(), recordId),
+    mutationFn: (recordId: string) => {
+      const restoredCard = deletedCards.find((card) => card.record.id === recordId)
+      return restorePageRelinked(getSupabase(), queryClient, {
+        pondId,
+        recordId,
+        rootPageId: restoredCard?.record.targetPageId ?? null,
+      })
+    },
     onMutate: () => {
       setRestoreError(null)
       setRestoreNotice(null)
@@ -593,7 +588,7 @@ export function ChangeLogPage() {
             ) : (
               <LogGroupsTable
                 groups={groups}
-                onOpen={(id) => router.push(changeLogRecordUrl(id))}
+                onOpen={(id) => openWorkspaceUrl(changeLogRecordUrl(id), router)}
                 loadMore={
                   pageFilterId === null && hasNextPage
                     ? { onFetch: fetchNextPage, isFetching: isFetchingNextPage }
@@ -625,7 +620,7 @@ export function ChangeLogPage() {
               ) : (
                 <LogGroupsTable
                   groups={pageGroups}
-                  onOpen={(id) => router.push(changeLogRecordUrl(id))}
+                  onOpen={(id) => openWorkspaceUrl(changeLogRecordUrl(id), router)}
                   loadMore={
                     pageFilterId === null && hasNextPage
                       ? { onFetch: fetchNextPage, isFetching: isFetchingNextPage }
@@ -671,11 +666,11 @@ export function ChangeLogPage() {
                       <div
                         role="button"
                         tabIndex={0}
-                        onClick={() => router.push(changeLogRecordUrl(card.record.id))}
+                        onClick={() => openWorkspaceUrl(changeLogRecordUrl(card.record.id), router)}
                         onKeyDown={(e) => {
                           if (e.key !== 'Enter' && e.key !== ' ') return
                           e.preventDefault()
-                          router.push(changeLogRecordUrl(card.record.id))
+                          openWorkspaceUrl(changeLogRecordUrl(card.record.id), router)
                         }}
                         className="flex cursor-pointer flex-col gap-[10px]"
                       >

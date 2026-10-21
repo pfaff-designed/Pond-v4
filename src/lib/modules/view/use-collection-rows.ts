@@ -31,6 +31,8 @@
  */
 import { useEffect, useMemo, useRef } from 'react'
 import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Database } from '@/lib/supabase/types'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import {
   createPage,
@@ -54,11 +56,13 @@ import {
 } from '@/lib/properties/schema'
 import { recordOwnRowEdit } from '@/lib/change-log/own-edit'
 import { groupByPause, type PauseGroups } from '@/lib/change-log/pause'
+import { sessionUndo } from '@/lib/change-log/session-undo'
 import { changeLogKey } from '@/lib/change-log/keys'
 import { appendOwnEdit } from '@/lib/change-log/store'
-import type { RowSnapshot } from '@/lib/change-log/types'
+import type { ChangeLogRecord, RowSnapshot } from '@/lib/change-log/types'
 import { jsonEqual } from '@/lib/json-equal'
 import { displayValue, type CollectionRow } from './apply'
+import { rowsKey } from './rows-key'
 
 export interface CollectionData {
   /** The collection's property schema, or null when the page isn't a collection. */
@@ -78,6 +82,25 @@ export interface CollectionData {
   isError: boolean
   /** Optimistically set one row's property value, then persist (bypasses the AI). */
   setValue: (rowId: string, key: string, value: PropertyValue) => void
+  /**
+   * Optimistically set one row's property value, then persist — same write as
+   * {@link setValue}, but for a gesture (a calendar drag) that is already its
+   * own complete edit, not a keystroke in a run. Closes that row's open
+   * typed-edit group first (so its record logs ahead, in order), then runs as
+   * its own one-change pause group, closed at once rather than on a timer — so
+   * two of these calls back to back are still two groups, two records.
+   */
+  setValueAsStep: (rowId: string, key: string, value: PropertyValue) => void
+  /**
+   * Optimistically set several of one row's values, then persist — one gesture,
+   * one pause group, one undo record (KAN-458: a bar drag moves both ends).
+   * Entries already equal to what is stored are skipped. An empty list, or a
+   * list that changes nothing, appends nothing and remembers nothing. The row's
+   * open typed-edit group is closed first, then every changed field joins one
+   * group opened from a single snapshot. Two {@link setValueAsStep} calls stay
+   * two records; this does not close the group between fields.
+   */
+  setValuesAsStep: (rowId: string, entries: { key: string; value: PropertyValue }[]) => void
   /**
    * Create a new row (a `type='row'` child of the collection) with optional initial
    * property values — e.g. a board's "+ Add card" seeds the group-by status. Resolves
@@ -115,8 +138,6 @@ export interface CollectionData {
   logSchemaEdit: (before: PropertySchema, after: PropertySchema) => void
 }
 
-const ROWS_KEY = (collectionId: string) => ['rows', collectionId] as const
-
 /** One change to a record, as the change log folds it into a {@link RowSnapshot}. */
 type RowChange =
   | { kind: 'create'; record: RowSnapshot }
@@ -128,7 +149,7 @@ const cachedRow = (
   collectionId: string,
   rowId: string
 ): PondPage | undefined =>
-  queryClient.getQueryData<PondPage[]>(ROWS_KEY(collectionId))?.find((p) => p.id === rowId)
+  queryClient.getQueryData<PondPage[]>(rowsKey(collectionId))?.find((p) => p.id === rowId)
 
 const cachedFields = (queryClient: QueryClient, collectionId: string): PropertySchema =>
   readSchema(queryClient.getQueryData<PondPage | null>(['page', collectionId])?.props) ?? []
@@ -138,6 +159,37 @@ const snapshotOf = (row: PondPage, fields: PropertySchema): RowSnapshot => {
   const values = readValues(row.props)
   const shown = Object.fromEntries(fields.map((def) => [def.id, displayValue(def, values[def.id])]))
   return { id: row.id, title: row.title, values, shown }
+}
+
+/**
+ * Patch a row's value into both caches (the `['rows']` list and its own
+ * `['page']`, if it's ever been opened), then persist via `setProperty`,
+ * reconciling from server truth on failure. Shared by `setValue`,
+ * `setValueAsStep` and `setValuesAsStep` — what differs between them is how
+ * the write is grouped into a change-log record, not the write itself.
+ */
+const writeRowValue = (
+  queryClient: QueryClient,
+  supabase: SupabaseClient<Database>,
+  collectionId: string,
+  rowId: string,
+  key: string,
+  value: PropertyValue
+): Promise<void> => {
+  queryClient.setQueryData<PondPage[]>(rowsKey(collectionId), (prev) =>
+    prev
+      ? prev.map((p) => (p.id === rowId ? { ...p, props: withValue(p.props, key, value) } : p))
+      : prev
+  )
+  queryClient.setQueryData<PondPage | null>(['page', rowId], (prev) =>
+    prev ? { ...prev, props: withValue(prev.props, key, value) } : prev
+  )
+  const write = setProperty(supabase, rowId, key, value)
+  write.catch(() => {
+    void queryClient.invalidateQueries({ queryKey: rowsKey(collectionId) })
+    void queryClient.invalidateQueries({ queryKey: ['page', rowId] })
+  })
+  return write
 }
 
 const applyRowChange = (record: RowSnapshot | null, change: RowChange): RowSnapshot | null => {
@@ -181,7 +233,7 @@ export function useCollectionRows(collectionId: string | undefined): CollectionD
     isPending: rowsPending,
     isError: rowsError,
   } = useQuery({
-    queryKey: collectionId ? ROWS_KEY(collectionId) : ['rows', 'none'],
+    queryKey: collectionId ? rowsKey(collectionId) : ['rows', 'none'],
     queryFn: async () => {
       if (!collectionId) return [] as PondPage[]
       const supabase = getSupabase()
@@ -215,20 +267,25 @@ export function useCollectionRows(collectionId: string | undefined): CollectionD
 
   // One record per record per pause, of what the database kept (`groupByPause`).
   // Made in an effect so leaving — or switching collection — closes the open
-  // groups: leaving mid-pause still logs what was done.
-  const rowEdits = useRef<PauseGroups<RowSnapshot, RowChange, string> | null>(null)
+  // groups: leaving mid-pause still logs what was done. `onPause` hands back the
+  // appended record so `setValueAsStep` can learn it once its own group closes.
+  const rowEdits = useRef<PauseGroups<RowSnapshot, RowChange, string, ChangeLogRecord | null> | null>(
+    null
+  )
   useEffect(() => {
     if (!collectionId) return
-    const groups = groupByPause<RowSnapshot, RowChange, string>({
+    const groups = groupByPause<RowSnapshot, RowChange, string, ChangeLogRecord | null>({
       apply: applyRowChange,
-      onPause: (before, after, origin) => {
-        void recordOwnRowEdit(getSupabase(), {
+      onPause: (before, after, origin) =>
+        recordOwnRowEdit(getSupabase(), {
           pondId: origin ?? pondRef.current,
           collectionId,
           before,
           after,
-        }).then(() => queryClient.invalidateQueries({ queryKey: changeLogKey() }))
-      },
+        }).then((record) => {
+          void queryClient.invalidateQueries({ queryKey: changeLogKey() })
+          return record
+        }),
     })
     rowEdits.current = groups
     return () => {
@@ -241,29 +298,11 @@ export function useCollectionRows(collectionId: string | undefined): CollectionD
     () => (rowId: string, key: string, value: PropertyValue) => {
       if (!collectionId) return
       const row = cachedRow(queryClient, collectionId, rowId)
-      // Optimistic: patch the row's props in the ['rows'] cache so the cell/card
-      // reflects the edit before the write lands.
-      queryClient.setQueryData<PondPage[]>(ROWS_KEY(collectionId), (prev) =>
-        prev
-          ? prev.map((p) => (p.id === rowId ? { ...p, props: withValue(p.props, key, value) } : p))
-          : prev
-      )
-      // Keep the row's own ['page'] cache coherent if it's ever been opened.
-      queryClient.setQueryData<PondPage | null>(['page', rowId], (prev) =>
-        prev ? { ...prev, props: withValue(prev.props, key, value) } : prev
-      )
-      // Persist. On failure, reconcile from server truth (invalidate rather than
-      // hand-roll a rollback) so a rejected write can't leave the optimistic cache
-      // permanently diverged from the DB.
-      const write = setProperty(getSupabase(), rowId, key, value)
-      write.catch(() => {
-        void queryClient.invalidateQueries({ queryKey: ROWS_KEY(collectionId) })
-        void queryClient.invalidateQueries({ queryKey: ['page', rowId] })
-      })
+      const write = writeRowValue(queryClient, getSupabase(), collectionId, rowId, key, value)
       if (!row) return
       const fields = cachedFields(queryClient, collectionId)
       const field = fields.find((def) => def.id === key)
-      rowEdits.current?.change({
+      void rowEdits.current?.change({
         key: rowId,
         current: snapshotOf(row, fields),
         patch: {
@@ -277,6 +316,102 @@ export function useCollectionRows(collectionId: string | undefined): CollectionD
       })
     },
     [collectionId, queryClient, getSupabase, pondId]
+  )
+
+  // A drag's drop is already its own complete edit — not a keystroke in an
+  // open pause — so it never waits out a pause: it closes this row's open
+  // typed-edit group first (its record logs ahead, in order), then runs
+  // through `rowEdits.current.change` as its own group, closed at once rather
+  // than on a timer, so it still waits for ITS write to settle before logging
+  // (a refused write is never logged, never remembered) and two of these calls
+  // back to back are still two groups, two records.
+  const setValueAsStep = useMemo(
+    () => (rowId: string, key: string, value: PropertyValue) => {
+      if (!collectionId) return
+      const row = cachedRow(queryClient, collectionId, rowId)
+      const write = writeRowValue(queryClient, getSupabase(), collectionId, rowId, key, value)
+      const groups = rowEdits.current
+      if (!row || !groups) return
+      const fields = cachedFields(queryClient, collectionId)
+      const field = fields.find((def) => def.id === key)
+      const stepPondId = pondRef.current
+      groups.closeKey(rowId)
+      const logged = groups.change({
+        key: rowId,
+        current: snapshotOf(row, fields),
+        patch: {
+          kind: 'value',
+          fieldId: key,
+          value,
+          shown: field ? displayValue(field, value) : null,
+        },
+        write,
+        origin: stepPondId,
+      })
+      groups.closeKey(rowId)
+      // Handed to session-undo BEFORE anything else awaits it — same ordering
+      // as `commit.ts` — so a ⌘Z pressed mid-flight waits for THIS remember
+      // rather than taking the previous step.
+      if (stepPondId) sessionUndo.trackPending(stepPondId, logged)
+      void logged.then((record) => {
+        if (stepPondId && record) sessionUndo.remember({ pondId: stepPondId, recordIds: [record.id] })
+      })
+    },
+    [collectionId, queryClient, getSupabase]
+  )
+
+  // One gesture, several fields, one record. `setValueAsStep` closes on every
+  // call, so two of those are two undos; here the row is closed once up front
+  // (a typed edit still logs ahead), then each changed field joins the group
+  // the first `change` opened from one snapshot. `trackPending` and `remember`
+  // watch that first promise — every waiter in the group resolves to the same
+  // record.
+  const setValuesAsStep = useMemo(
+    () => (rowId: string, entries: { key: string; value: PropertyValue }[]) => {
+      if (!collectionId) return
+      const row = cachedRow(queryClient, collectionId, rowId)
+      const groups = rowEdits.current
+      if (!row || !groups) return
+      const stored = readValues(row.props)
+      const changed = entries.filter((entry) => !jsonEqual(stored[entry.key], entry.value))
+      if (changed.length === 0) return
+      const stepPondId = pondRef.current
+      groups.closeKey(rowId)
+      const fields = cachedFields(queryClient, collectionId)
+      const current = snapshotOf(row, fields)
+      let first: Promise<ChangeLogRecord | null | undefined> | undefined
+      for (const entry of changed) {
+        const field = fields.find((def) => def.id === entry.key)
+        const write = writeRowValue(
+          queryClient,
+          getSupabase(),
+          collectionId,
+          rowId,
+          entry.key,
+          entry.value
+        )
+        const logged = groups.change({
+          key: rowId,
+          current,
+          patch: {
+            kind: 'value',
+            fieldId: entry.key,
+            value: entry.value,
+            shown: field ? displayValue(field, entry.value) : null,
+          },
+          write,
+          origin: stepPondId,
+        })
+        if (!first) first = logged
+      }
+      groups.closeKey(rowId)
+      if (!stepPondId || !first) return
+      sessionUndo.trackPending(stepPondId, first)
+      void first.then((record) => {
+        if (stepPondId && record) sessionUndo.remember({ pondId: stepPondId, recordIds: [record.id] })
+      })
+    },
+    [collectionId, queryClient, getSupabase]
   )
 
   // Create a row child, seeded with any initial values (e.g. the board column's
@@ -298,12 +433,12 @@ export function useCollectionRows(collectionId: string | undefined): CollectionD
           props: values,
           pondId,
         })
-        queryClient.setQueryData<PondPage[]>(ROWS_KEY(collectionId), (prev) =>
+        queryClient.setQueryData<PondPage[]>(rowsKey(collectionId), (prev) =>
           prev ? [...prev, created] : [created]
         )
         // Opens the record's group with no `before`: naming it in the same pause
         // folds into one "added …" record.
-        rowEdits.current?.change({
+        void rowEdits.current?.change({
           key: created.id,
           current: null,
           patch: {
@@ -325,11 +460,11 @@ export function useCollectionRows(collectionId: string | undefined): CollectionD
       if (!collectionId) return
       // An edit to a record that is gone has nothing left to name.
       rowEdits.current?.drop(rowId)
-      queryClient.setQueryData<PondPage[]>(ROWS_KEY(collectionId), (prev) =>
+      queryClient.setQueryData<PondPage[]>(rowsKey(collectionId), (prev) =>
         prev ? prev.filter((p) => p.id !== rowId) : prev
       )
       deletePage(getSupabase(), rowId).catch(() => {
-        void queryClient.invalidateQueries({ queryKey: ROWS_KEY(collectionId) })
+        void queryClient.invalidateQueries({ queryKey: rowsKey(collectionId) })
       })
     },
     [collectionId, queryClient, getSupabase]
@@ -341,7 +476,7 @@ export function useCollectionRows(collectionId: string | undefined): CollectionD
     () => (rowId: string, title: string) => {
       if (!collectionId) return
       const row = cachedRow(queryClient, collectionId, rowId)
-      queryClient.setQueryData<PondPage[]>(ROWS_KEY(collectionId), (prev) =>
+      queryClient.setQueryData<PondPage[]>(rowsKey(collectionId), (prev) =>
         prev ? prev.map((p) => (p.id === rowId ? { ...p, title } : p)) : prev
       )
       queryClient.setQueryData<PondPage | null>(['page', rowId], (prev) =>
@@ -349,10 +484,10 @@ export function useCollectionRows(collectionId: string | undefined): CollectionD
       )
       const write = updateTitle(getSupabase(), rowId, title)
       write.catch(() => {
-        void queryClient.invalidateQueries({ queryKey: ROWS_KEY(collectionId) })
+        void queryClient.invalidateQueries({ queryKey: rowsKey(collectionId) })
       })
       if (!row) return
-      rowEdits.current?.change({
+      void rowEdits.current?.change({
         key: rowId,
         current: snapshotOf(row, cachedFields(queryClient, collectionId)),
         patch: { kind: 'title', title },
@@ -428,6 +563,8 @@ export function useCollectionRows(collectionId: string | undefined): CollectionD
     isLoading: !!collectionId && (pagePending || rowsPending),
     isError: !!collectionId && (pageError || rowsError),
     setValue,
+    setValueAsStep,
+    setValuesAsStep,
     addRow,
     removeRow,
     renameRow,

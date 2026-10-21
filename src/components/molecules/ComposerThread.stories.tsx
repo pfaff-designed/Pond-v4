@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { pageEyebrowClass } from '@/components/atoms/kicker'
 import { AnswerActions } from './AnswerActions'
 import { AnswerError, EarlierTurns, ThreadHead, Turn, YouRow } from './ComposerThread'
+import { ComposerWindowControls } from './ComposerWindowControls'
 import { Markdown } from './Markdown'
 import { ModuleDiffCard } from './ModuleDiffCard'
 import { ReadChips } from './ReadChips'
@@ -95,9 +96,6 @@ const Answer = ({ text, actions }: { text: string; actions: boolean }) => (
         onMakePage={fn()}
         onAskAgain={fn()}
         onStop={fn()}
-        onClose={fn()}
-        onMaximize={fn()}
-        onMinimize={fn()}
       />
     )}
   </div>
@@ -105,7 +103,7 @@ const Answer = ({ text, actions }: { text: string; actions: boolean }) => (
 
 const LatestTurnBody = ({ latest }: { latest: LatestTurn }) => {
   if (latest === 'error')
-    return <AnswerError onAskAgain={fn()} onMaximize={fn()} onMinimize={fn()} />
+    return <AnswerError onAskAgain={fn()} />
   if (latest === 'proposing')
     return (
       <ModuleDiffCard
@@ -128,17 +126,21 @@ const ThreadFrame = ({ theme, turns, latest = 'thread' }: ThreadProps) => {
       data-theme-probe={theme}
       className={`relative h-[40rem] w-[1180px] bg-mn-surface ${theme === 'ink' ? 'dark' : ''}`}
     >
-      <TerminalDrawer collapsed={false} onExpand={fn()} footer={<div>line</div>}>
-        {turns > 1 && (
-          <ThreadHead
-            area="life"
-            turns={turns}
-            onNewThread={fn()}
-            onClose={fn()}
+      <TerminalDrawer
+        collapsed={false}
+        onExpand={fn()}
+        footer={<div>line</div>}
+        windowControls={
+          <ComposerWindowControls
             maximized={false}
-            onMaximize={fn()}
             onMinimize={fn()}
+            onMaximize={fn()}
+            onClose={fn()}
           />
+        }
+      >
+        {turns > 1 && (
+          <ThreadHead area="life" turns={turns} onNewThread={fn()} />
         )}
         <div className="flex flex-col gap-[14px]">
           {folded > 0 && <EarlierTurns count={folded} onExpand={() => setOpen(true)} />}
@@ -195,7 +197,10 @@ async function assertThreadValues(root: HTMLElement, theme: Theme) {
     1
   )
   await expectInk(getComputedStyle(within(head).getByText('3 turns')).color, theme, 0.68)
-  const close = within(head).getByRole('button', { name: 'close' })
+  const close = within(root.querySelector<HTMLElement>('[data-part="composer-window-bar"]')!).getByRole(
+    'button',
+    { name: 'close' }
+  )
   await expect(px(getComputedStyle(close).width)).toBe(18)
   await expect(px(getComputedStyle(close).height)).toBe(18)
   const cross = close.querySelector('svg')!
