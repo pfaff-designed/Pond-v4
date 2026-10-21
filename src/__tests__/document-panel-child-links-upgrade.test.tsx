@@ -241,11 +241,10 @@ describe('removing, undoing and reordering a migrated page-link row (KAN-415 pat
     expect(mockDeletePage).not.toHaveBeenCalled()
     expect(mockMovePage).not.toHaveBeenCalled()
 
-    // Let the direct `persistBlocksAsOwnEdit` write of the 2-block page land
-    // before the test ends (KAN-368: a structural delete writes at once, not
-    // via the debounced save) — an unawaited pending write would otherwise
-    // resolve during a LATER test and corrupt that test's own mock call counts.
-    await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalledTimes(1))
+    // The structural delete writes at once through the page queue's
+    // `commitBlocks` (KAN-368), not the debounced save. Await it so a pending
+    // write cannot resolve inside a later test and corrupt that test's counts.
+    await waitFor(() => expect(mockCommitBlocks).toHaveBeenCalledTimes(1))
   })
 
   it('⌘Z brings the removed row back', async () => {
@@ -256,9 +255,9 @@ describe('removing, undoing and reordering a migrated page-link row (KAN-415 pat
     root.focus()
     fireEvent.keyDown(root, { key: 'Backspace', metaKey: true })
     await waitFor(() => expect(linkRows()).toHaveLength(2))
-    // The direct write of the 2-block page (KAN-368) must land before an
-    // external write — the undo, invalidating `['page', 'page-1']` — is adopted.
-    await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalledTimes(1), { timeout: 3000 })
+    // The structural delete (KAN-368) must land before an external write — the
+    // undo, invalidating `['page', 'page-1']` — is adopted.
+    await waitFor(() => expect(mockCommitBlocks).toHaveBeenCalledTimes(1), { timeout: 3000 })
 
     // sessionUndo is stubbed directly (`undo-redraw-within-1s.test.tsx`'s pattern):
     // simulate its server-side restore by putting the pre-delete blocks back on
