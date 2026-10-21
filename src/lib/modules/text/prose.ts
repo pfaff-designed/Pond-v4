@@ -1,11 +1,39 @@
 import { POND_ATOM_EMPTY } from '@/components/atoms/PondAtom'
 
 /**
+ * Rule 2 (KAN-345): the caret's own empty text line, not the generic atom copy —
+ * it reads in the machine register so it can't be mistaken for serif page prose.
+ * Exported: rule 3's trailing-gap ghost row (`TrailingBlockGap`) reads the SAME
+ * copy the line it opens will show, never a second hardcoded string.
+ */
+export const PROSE_LINE_PLACEHOLDER = 'type, or / for blocks'
+
+/**
+ * The machine register's own type (6f, `PROJECT_RULES.md`): mono, 13px, tracking
+ * .02em, lowercase, ink .68. One home for every surface that must read as machine
+ * type rather than page prose — the untouched-page hint (`UNTOUCHED_HINT_CLASS`),
+ * the focused empty line's own placeholder (`TEXT_PROSE_CLASS`), and the
+ * trailing-gap ghost row (`TrailingBlockGap`) — so a click from the ghost row to
+ * the real line changes nothing about the type, only which element is real.
+ * Carries its own line-height (rule 3 fix, KAN-345): without it, the ghost row's
+ * ::before-less real element has nothing to match the ::before rules' inherited
+ * `leading-[1.6]` against, and the two line boxes disagree by a few px.
+ * `TrailingBlockGap` imports this directly (a real element takes bare utility
+ * classes); the three `::before` rules below restate its six values against their
+ * own selectors by hand — Tailwind's content scanner needs each variant+utility
+ * pair to exist as complete literal text, so composing them from this string at
+ * runtime would silently generate no CSS at all.
+ */
+export const MACHINE_HINT_FRAGMENT =
+  'font-mono text-[13px] tracking-[0.02em] lowercase leading-[1.6] text-mn-text-secondary'
+
+/**
  * What a blank text block's line reads: the block's own `placeholder`, or — when
- * it carries none — the empty copy of the atom that line is.
+ * it carries none — `PROSE_LINE_PLACEHOLDER`, except a heading, which keeps the
+ * atom's own empty copy.
  */
 export const textPlaceholderFor = (lineType: string, placeholder?: string | null): string =>
-  placeholder ?? (lineType === 'heading' ? POND_ATOM_EMPTY.heading : POND_ATOM_EMPTY.prose)
+  placeholder ?? (lineType === 'heading' ? POND_ATOM_EMPTY.heading : PROSE_LINE_PLACEHOLDER)
 
 /**
  * Structure every reading of a text block shares, whatever type it is set in.
@@ -44,7 +72,11 @@ const TEXT_STRUCTURE = [
  *               3 → 18/500, 4 → 16/500, 5 → 13.5/500, 6 → 11/500 upper .1em
  *   quote     — serif 200 italic 19 (18), −.01em
  *   code      — 12 (13)
- *   empty     — the line's own atom's empty copy (`untitled`, `write something`), at ink .68
+ *   empty     — the line's own empty copy (`untitled`, `type, or / for blocks`), at ink .68.
+ *               A heading's `untitled` draws whether or not its editor has focus;
+ *               every other empty line (KAN-345 rule 2) draws only while its own
+ *               editor carries ProseMirror's `.ProseMirror-focused` class — never
+ *               at rest, so an abandoned empty line shows nothing until re-focused.
  * Blocks inside one text block sit on the page's own 16px rhythm (`Pond 06.07`).
  */
 export const TEXT_PROSE_CLASS = [
@@ -59,7 +91,31 @@ export const TEXT_PROSE_CLASS = [
   '[&_h6]:font-sans [&_h6]:font-medium [&_h6]:uppercase [&_h6]:tracking-[0.1em] [&_h6]:leading-[1.4] [&_h6]:text-[11px]',
   '[&_blockquote]:tracking-[-0.01em] [&_blockquote]:text-[19px] max-md:[&_blockquote]:text-[18px]',
   '[&_code]:text-[12px] max-md:[&_code]:text-[13px]',
-  '[&_.is-editor-empty]:before:pointer-events-none [&_.is-editor-empty]:before:float-left [&_.is-editor-empty]:before:h-0 [&_.is-editor-empty]:before:text-mn-text-secondary [&_.is-editor-empty]:before:content-[attr(data-placeholder)]',
+  '[&_:is(.is-editor-empty,.is-empty)]:before:pointer-events-none [&_:is(.is-editor-empty,.is-empty)]:before:float-left [&_:is(.is-editor-empty,.is-empty)]:before:h-0 [&_:is(.is-editor-empty,.is-empty)]:before:text-mn-text-secondary',
+  // Tailwind's `before:` variant always injects `content: var(--tw-content)`
+  // (default `''`), so the line above alone paints an empty `::before` box at
+  // rest. Pin it to `none` unconditionally; the two higher-specificity rules
+  // below (two classes each) override it back to the placeholder text.
+  '[&_:is(.is-editor-empty,.is-empty)]:before:content-none',
+  // A heading's placeholder draws regardless of focus (left as-is, KAN-345's scope
+  // is the prose copy only). Every other empty line only draws its `::before`
+  // once this editor's own DOM root — the element `.ProseMirror-focused` lands on
+  // — carries that class; `showOnlyCurrent`'s decoration otherwise survives a blur.
+  // Tiptap's Placeholder only adds `is-editor-empty` when the WHOLE doc is empty
+  // (`buildPlaceholderDecorations`'s `isEmptyDoc`); Return inside non-empty content
+  // opens a second paragraph that is merely `is-empty` (the current, anchor-holding
+  // node under `showOnlyCurrent`) — matched here too, so that line's placeholder
+  // paints while focused, never at rest.
+  '[&_:is(h1,h2,h3,h4,h5,h6).is-editor-empty]:before:content-[attr(data-placeholder)]',
+  '[&.ProseMirror-focused_:is(.is-editor-empty,.is-empty)]:before:content-[attr(data-placeholder)]',
+  // Rule 2's machine register (`MACHINE_HINT_FRAGMENT`), scoped off headings —
+  // a heading's "untitled" stays in the heading's own sans/bold/uppercase type.
+  '[&.ProseMirror-focused_:is(.is-editor-empty,.is-empty):not(:is(h1,h2,h3,h4,h5,h6))]:before:font-mono',
+  '[&.ProseMirror-focused_:is(.is-editor-empty,.is-empty):not(:is(h1,h2,h3,h4,h5,h6))]:before:text-[13px]',
+  '[&.ProseMirror-focused_:is(.is-editor-empty,.is-empty):not(:is(h1,h2,h3,h4,h5,h6))]:before:tracking-[0.02em]',
+  '[&.ProseMirror-focused_:is(.is-editor-empty,.is-empty):not(:is(h1,h2,h3,h4,h5,h6))]:before:lowercase',
+  '[&.ProseMirror-focused_:is(.is-editor-empty,.is-empty):not(:is(h1,h2,h3,h4,h5,h6))]:before:leading-[1.6]',
+  '[&.ProseMirror-focused_:is(.is-editor-empty,.is-empty):not(:is(h1,h2,h3,h4,h5,h6))]:before:text-mn-text-secondary',
   TEXT_STRUCTURE,
 ].join(' ')
 
@@ -77,12 +133,42 @@ export const TEXT_PROSE_CLASS = [
  * 6px left margin so it doesn't sit flush against the caret. The caret itself
  * is the browser's native caret, not part of this rule — it isn't offset, so
  * typing still starts at the line's own left edge, not at the hint's inset.
+ *
+ * Carries `MACHINE_HINT_FRAGMENT`'s six values against its own selector (see
+ * that constant's comment for why they can't be composed from it at runtime),
+ * plus the 6px margin above, which belongs to this one hint, not the fragment.
  */
 export const UNTOUCHED_HINT_CLASS = [
   '[&_:is([data-text-prose],.ProseMirror)_.is-editor-empty]:before:font-mono',
   '[&_:is([data-text-prose],.ProseMirror)_.is-editor-empty]:before:text-[13px]',
   '[&_:is([data-text-prose],.ProseMirror)_.is-editor-empty]:before:tracking-[0.02em]',
+  '[&_:is([data-text-prose],.ProseMirror)_.is-editor-empty]:before:lowercase',
+  '[&_:is([data-text-prose],.ProseMirror)_.is-editor-empty]:before:leading-[1.6]',
+  '[&_:is([data-text-prose],.ProseMirror)_.is-editor-empty]:before:text-mn-text-secondary',
   '[&_:is([data-text-prose],.ProseMirror)_.is-editor-empty]:before:ml-[6px]',
+].join(' ')
+
+/**
+ * Rule 3's fix (KAN-345): when the last block is already an empty text line,
+ * hovering the trailing gap below it must paint THIS line's own placeholder,
+ * not a second ghost row drawn below it — the drawn text and the line a
+ * click focuses are never two different elements. Scoped to the wrapper
+ * `BlockCanvas` renders around that one block (`data-hover-ghost`'s own
+ * element), reaching into its `.ProseMirror` to beat `TEXT_PROSE_CLASS`'s
+ * unconditional `content-none` rule on specificity (three classes to two) —
+ * independent of focus, which is the one thing `.ProseMirror-focused`-gated
+ * rule can't give a merely-hovered, unfocused line. Restates
+ * `MACHINE_HINT_FRAGMENT`'s six values for the same reason `TEXT_PROSE_CLASS`
+ * and `UNTOUCHED_HINT_CLASS` already do (see that constant's comment).
+ */
+export const HOVER_GHOST_CLASS = [
+  '[&_.ProseMirror_.is-editor-empty]:before:content-[attr(data-placeholder)]',
+  '[&_.ProseMirror_.is-editor-empty]:before:font-mono',
+  '[&_.ProseMirror_.is-editor-empty]:before:text-[13px]',
+  '[&_.ProseMirror_.is-editor-empty]:before:tracking-[0.02em]',
+  '[&_.ProseMirror_.is-editor-empty]:before:lowercase',
+  '[&_.ProseMirror_.is-editor-empty]:before:leading-[1.6]',
+  '[&_.ProseMirror_.is-editor-empty]:before:text-mn-text-secondary',
 ].join(' ')
 
 /**

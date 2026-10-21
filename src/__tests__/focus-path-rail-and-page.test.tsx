@@ -42,9 +42,11 @@ jest.mock('@/lib/pages/client', () => ({
 }))
 
 const mockCommitBlocks = jest.fn().mockResolvedValue(undefined)
-jest.mock('@/lib/pages/commit', () => ({
-  commitBlocks: (...args: unknown[]) => mockCommitBlocks(...args),
-}))
+jest.mock('@/lib/pages/commit', () =>
+  jest.requireActual('./helpers/page-commit-mock').pageCommitMock({
+    commitBlocks: (...args: unknown[]) => mockCommitBlocks(...args),
+  })
+)
 
 beforeEach(() => {
   jest.clearAllMocks()
@@ -149,8 +151,8 @@ describe('PATH_STEPS D — rail keys move focus; Delete/Backspace never touch th
     fireEvent.keyDown(row('recipes'), { key: 'ArrowUp' })
     expect(row('books')).toHaveFocus()
     fireEvent.keyDown(row('books'), { key: 'End' })
-    expect(row('databases')).toHaveFocus()
-    fireEvent.keyDown(row('databases'), { key: 'Home' })
+    expect(row('trash')).toHaveFocus()
+    fireEvent.keyDown(row('trash'), { key: 'Home' })
     expect(row('life')).toHaveFocus()
 
     fireEvent.keyDown(row('books'), { key: 'Enter' })

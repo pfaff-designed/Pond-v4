@@ -7,9 +7,10 @@
  * and the `/` row read from it, so every stored `{ type: 'view', mode }` reads as its
  * kind with no migration.
  *
- * A person cannot change a view's kind: there is no in-place switch, and the config
- * patch a view writes (`ViewConfigPatch`) has no `mode`. Pond's `configure_view` still
- * rewrites the page's first view block wholesale when a person accepts it.
+ * KAN-519 is the exception: the layout menu may write a view's kind
+ * (`LAYOUT_MENU_MODES`). No new persisted field — the kind is the mode the block
+ * already stores. Pond's `configure_view` still rewrites the page's first view
+ * block wholesale when a person accepts it.
  *
  * Server-safe, no React: `block-frame.ts`, the `/` rows, the template summary and the
  * proposal card all read it.
@@ -81,6 +82,21 @@ export interface ViewKind {
   empty: { box: BlockEmptyBox | 'per-mark'; line?: string; own?: true }
 }
 
+/**
+ * The layouts the view-bar menu offers, in menu order (KAN-519). Not `VIEW_MODES`:
+ * `gantt` sits where a person reads timeline, and `big-number` is absent. The word
+ * on each row is `VIEW_KINDS[mode].label`, so this list stores modes only.
+ */
+export const LAYOUT_MENU_MODES = [
+  'table',
+  'board',
+  'calendar',
+  'gantt',
+  'gallery',
+  'list',
+  'chart',
+] as const satisfies readonly ViewMode[]
+
 export const VIEW_KINDS: Record<ViewMode, ViewKind> = {
   table: { label: 'table', icon: ICON.table, frame: 'table', empty: { box: 'box' } },
   // KAN-351/KAN-377: the board draws its own empty state — its lanes, or, with no
@@ -118,8 +134,8 @@ export function viewKind(block: { mode: ViewMode }): ViewKind {
   return VIEW_KINDS[block.mode] ?? VIEW_KINDS.table
 }
 
-/** What a view may rewrite of its own config: anything but which block it is, or its kind. */
-export type ViewConfigPatch = Partial<Omit<ViewBlock, 'id' | 'type' | 'mode'>>
+/** What a view may rewrite of its own config: anything but which block it is. `mode` writes the kind (KAN-519). */
+export type ViewConfigPatch = Partial<Omit<ViewBlock, 'id' | 'type'>>
 
 /**
  * Which property type a kind needs to draw anything but its own remedy notice

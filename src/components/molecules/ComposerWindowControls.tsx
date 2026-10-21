@@ -1,7 +1,7 @@
 /**
- * The composer's three window controls (user ruling, 2026-10-14, KAN-323) —
- * minimize · maximize · close, right-aligned in that order, replacing
- * `ComposerCloseButton`'s lone ×. One set per composer, in every thread state.
+ * The composer's three window controls — close · minimize · maximize, left to
+ * right, at the top left of the card (`TerminalDrawer`'s window bar). One set
+ * per composer. They replace `ComposerCloseButton`'s lone ×.
  *
  * The board (`PondComposer.dc.html`) draws only the grip and the single close
  * ×; it has no minimize/maximize marks, so these two are hand-drawn to match
@@ -15,7 +15,7 @@ import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 
 export interface ComposerWindowControlsProps {
-  /** Swaps the middle control's label/icon between maximize and restore. */
+  /** Swaps the last control's label/icon between maximize and restore. */
   maximized: boolean
   onMinimize: () => void
   onMaximize: () => void
@@ -55,6 +55,17 @@ export function ComposerWindowControls({
     <div data-part="composer-window-controls" className={cn('flex items-center', className)}>
       <button
         type="button"
+        onClick={onClose}
+        aria-label="close"
+        title="close"
+        className={buttonClass}
+      >
+        <WindowControlIcon>
+          <path d="M3 3l6 6M9 3l-6 6" />
+        </WindowControlIcon>
+      </button>
+      <button
+        type="button"
         onClick={onMinimize}
         aria-label="minimize"
         title="minimize"
@@ -80,17 +91,6 @@ export function ComposerWindowControls({
           ) : (
             <rect x="3" y="3" width="8" height="8" rx="0.6" />
           )}
-        </WindowControlIcon>
-      </button>
-      <button
-        type="button"
-        onClick={onClose}
-        aria-label="close"
-        title="close"
-        className={buttonClass}
-      >
-        <WindowControlIcon>
-          <path d="M3 3l6 6M9 3l-6 6" />
         </WindowControlIcon>
       </button>
     </div>

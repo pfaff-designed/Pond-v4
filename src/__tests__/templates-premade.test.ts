@@ -134,10 +134,8 @@ describe("each template's block list matches the board's `T` table, in order", (
 describe('placeholder copy (KAN-103) lives in the `placeholder` field, never in content/label/text', () => {
   const blocksOf = (kind: TemplateKind) => PREMADE_TEMPLATES[kind].blocks
 
-  it('bare text — `page` and `notes` carry no label, empty content, and the board line as `placeholder`', () => {
-    expect(blocksOf('page')).toEqual([
-      { type: 'text', content: '', placeholder: 'type, or / for blocks and templates' },
-    ])
+  it('bare text — `notes` carries no label, empty content, and the board line as `placeholder`; `page` authors no placeholder of its own (KAN-345 supersedes it)', () => {
+    expect(blocksOf('page')).toEqual([{ type: 'text', content: '' }])
     expect(blocksOf('notes')).toEqual([
       { type: 'text', content: '', placeholder: 'anything, in any order' },
     ])
@@ -218,7 +216,6 @@ describe('placeholder copy (KAN-103) lives in the `placeholder` field, never in 
     expect(blocksOf('journal')[0]).toEqual({
       type: 'entries',
       label: 'entries',
-      serif: true,
       entries: [{ date: 'today', text: '' }],
     })
     expect(ENTRIES_EMPTY_LINE).toBe('write the first entry')

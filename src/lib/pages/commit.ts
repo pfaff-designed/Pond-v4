@@ -2,12 +2,13 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { QueryClient } from '@tanstack/react-query'
 import type { Database } from '@/lib/supabase/types'
 import type { Block } from '@/lib/documents/types'
-import { saveBlocks } from './client'
+import { saveBlocks, updateTitle } from './client'
 import { recordOwnEdit } from '@/lib/change-log/own-edit'
 import { changeLogKey } from '@/lib/change-log/keys'
 import { pagesKey } from '@/lib/pages/keys'
 import { closeBlockHistory } from '@/lib/modules/text/active-editor'
 import { sessionUndo } from '@/lib/change-log/session-undo'
+import type { PageWriteOp, PageWriter } from './page-write-queue'
 
 /**
  * Persist a page's blocks and propagate the write everywhere downstream: refresh
@@ -26,28 +27,42 @@ import { sessionUndo } from '@/lib/change-log/session-undo'
  * keys by prefix, so one call refreshes every pond's tree. Narrowing it to the
  * pond would leave another pond's cached tree stale behind a switch.
  */
+type OwnEditOpts = {
+  /** The person's OWN typed edit: sweep the page's pending block diffs to
+   *  `outdated` once the blocks land, and log the save as one
+   *  accepted record by you. The accept path leaves this off — it runs its
+   *  own sweep with the accepted record excepted and writes its record
+   *  inside `accept_change_log_record`, and an all-skipped accept re-saves
+   *  unchanged blocks, which is no edit at all. */
+  ownEdit: true
+  /** What the page held before this pause — the blocks last saved, or last
+   *  adopted from another write. The record's `before`. */
+  before: Block[]
+  /** The pond the sweep and the record are scoped to. */
+  pondId: string | null
+}
+
 export async function commitBlocks(
   supabase: SupabaseClient<Database>,
   queryClient: QueryClient,
   pageId: string,
   blocks: Block[],
-  opts:
-    | {
-        /** The person's OWN typed edit: sweep the page's pending block diffs to
-         *  `outdated` once the blocks land, and log the save as one
-         *  accepted record by you. The accept path leaves this off — it runs its
-         *  own sweep with the accepted record excepted and writes its record
-         *  inside `accept_change_log_record`, and an all-skipped accept re-saves
-         *  unchanged blocks, which is no edit at all. */
-        ownEdit: true
-        /** What the page held before this pause — the blocks last saved, or last
-         *  adopted from another write. The record's `before`. */
-        before: Block[]
-        /** The pond the sweep and the record are scoped to. */
-        pondId: string | null
-      }
-    | { ownEdit?: false } = {}
-): Promise<void> {
+  opts: OwnEditOpts
+): Promise<{ remembered: Promise<void> }>
+export async function commitBlocks(
+  supabase: SupabaseClient<Database>,
+  queryClient: QueryClient,
+  pageId: string,
+  blocks: Block[],
+  opts?: { ownEdit?: false }
+): Promise<void>
+export async function commitBlocks(
+  supabase: SupabaseClient<Database>,
+  queryClient: QueryClient,
+  pageId: string,
+  blocks: Block[],
+  opts: OwnEditOpts | { ownEdit?: false } = {}
+): Promise<{ remembered: Promise<void> } | void> {
   await saveBlocks(supabase, pageId, blocks)
   // The sweep is a side-record of the save (it never throws) — but it is
   // AWAITED, and it runs BEFORE anything downstream is told the page moved.
@@ -60,9 +75,12 @@ export async function commitBlocks(
   // written to it, finds the record still `proposed`, and keeps its accept
   // button. That is exactly the state `outdated` exists to prevent.
   //
-  // The record itself is not awaited: nothing reads it to decide what the page
-  // is, so the save reports saved without it, and the log views re-read once it
-  // is in.
+  // The record itself is not awaited HERE: nothing reads it to decide what the
+  // page is, so the save reports saved without it, and the log views re-read
+  // once it is in. It IS exposed below as `remembered`, for the one caller
+  // that does need to wait on it — `use-page-draft.ts`'s `runSave`, so a ⌘Z
+  // pressed right after this save finds the record already on the session
+  // undo stack (KAN-355) rather than falling through to the previous one.
   if (opts.ownEdit) {
     const { logged } = await recordOwnEdit(supabase, {
       pondId: opts.pondId,
@@ -77,20 +95,29 @@ export async function commitBlocks(
     // `remember` rather than taking the previous step.
     const pondId = opts.pondId
     if (pondId) sessionUndo.trackPending(pondId, logged)
-    void logged.then((record) => {
-      if (pondId && record) sessionUndo.remember({ pondId, recordIds: [record.id] })
-      // Only now is the record durable enough to hand ⌘Z to the shell's undo
-      // (KAN-139, comment 10064) — closing history any earlier (right after
-      // `saveBlocks`) leaves a window, until `sessionUndo` hears about the
-      // record, where the block reports no undo depth but the shell has
-      // nothing to fall through to either, so ⌘Z silently undoes nothing.
-      if (record) {
-        for (const block of blocks) {
-          if ('content' in block) closeBlockHistory(block.id, block.content)
+    // Never rejects — a side-record failure must not surface as this save's
+    // failure to a caller that awaits `remembered` (use-page-draft's save
+    // chain, so a chained save's record is remembered after this one's).
+    const remembered: Promise<void> = logged
+      .then((record) => {
+        if (pondId && record) sessionUndo.remember({ pondId, recordIds: [record.id] })
+        // Only now is the record durable enough to hand ⌘Z to the shell's undo
+        // (KAN-139, comment 10064) — closing history any earlier (right after
+        // `saveBlocks`) leaves a window, until `sessionUndo` hears about the
+        // record, where the block reports no undo depth but the shell has
+        // nothing to fall through to either, so ⌘Z silently undoes nothing.
+        if (record) {
+          for (const block of blocks) {
+            if ('content' in block) closeBlockHistory(block.id, block.content)
+          }
         }
-      }
-      return queryClient.invalidateQueries({ queryKey: changeLogKey() })
-    })
+        return queryClient.invalidateQueries({ queryKey: changeLogKey() })
+      })
+      .catch((err) => {
+        console.error('[change-log] own-edit remember failed', pageId, err)
+      })
+    await propagateBlockWrite(queryClient, pageId)
+    return { remembered }
   }
   await propagateBlockWrite(queryClient, pageId)
 }
@@ -122,4 +149,40 @@ export function reembedPage(pageId: string): void {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ pageId }),
   }).catch(() => {})
+}
+
+/** A page's title and blocks together — the write queue's stored `T` (KAN-495),
+ *  since a 'typed' op's write can carry a rename alongside the block save. */
+export type PageWriteState = { title: string; blocks: Block[] }
+
+/**
+ * The `page-write-queue`'s writer for a page: one path from an applied op to
+ * the database, the change-log record and `sessionUndo`. Delegates the
+ * change-log append to `commitBlocks`'s own-edit branch above rather than
+ * re-implementing it against `appendOwnEdit` — one home for that logic, not
+ * two. A rejected `updateTitle` or `saveBlocks` propagates before either is
+ * reached, so a failed write never calls `sessionUndo.trackPending`.
+ *
+ * Hands `commitBlocks`'s `remembered` to the queue's `settle` side channel
+ * rather than awaiting it directly: the write itself (DB + sidebar refresh)
+ * is what `head()`/`idle()` should advance on, so `saved` flips the moment
+ * the save lands, not once the change-log record is additionally remembered
+ * by `sessionUndo` — that stricter wait is `drained()`'s job (KAN-302's
+ * `flushNow`), not the queue's own idle/applied notion.
+ */
+export function createPageWriter(
+  supabase: SupabaseClient<Database>,
+  queryClient: QueryClient,
+  pageId: string,
+  pondId: string | null
+): PageWriter<PageWriteState> {
+  return async (op: PageWriteOp<PageWriteState>, settle?: (promise: Promise<void>) => void) => {
+    if (op.kind === 'typed') await updateTitle(supabase, pageId, op.after.title)
+    const { remembered } = await commitBlocks(supabase, queryClient, pageId, op.after.blocks, {
+      ownEdit: true,
+      before: op.before.blocks,
+      pondId,
+    })
+    settle?.(remembered)
+  }
 }

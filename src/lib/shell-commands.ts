@@ -10,6 +10,10 @@ import { isApplePlatform } from '@/lib/platform'
  *  an alias here so this module's existing callers don't change. */
 export const onApplePlatform = isApplePlatform
 
+/** Marks a container whose fields own no undo of their own — a removed row is the
+ *  session's to restore, not the focused field's (KAN-445, KAN-355). */
+export const SESSION_UNDO_SCOPE_ATTR = 'data-pond-session-undo'
+
 /** The platform's command key alone: ⌘ on a Mac, Ctrl everywhere else — never both. */
 const isCommandOnly = (e: KeyboardEvent) =>
   onApplePlatform() ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey
@@ -32,6 +36,16 @@ export const isBlockMenuChord = (e: KeyboardEvent) => {
  */
 export const isZenChord = (e: KeyboardEvent) => {
   if (e.altKey || e.shiftKey || e.isComposing || e.key !== '.') return false
+  return isCommandOnly(e)
+}
+
+/**
+ * ⌘\ on a Mac, Ctrl+\ everywhere else: minimize or show the rail. The same
+ * chord Notion and Linear use for the side panel. It is global, including
+ * inside a text field — the field has no meaning for this chord.
+ */
+export const isMinimizeRailChord = (e: KeyboardEvent) => {
+  if (e.altKey || e.shiftKey || e.key !== '\\') return false
   return isCommandOnly(e)
 }
 

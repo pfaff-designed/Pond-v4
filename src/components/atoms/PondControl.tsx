@@ -329,7 +329,7 @@ export function PondControl({
         </span>
       )}
       {(s.on || on) && (
-        <span data-part="enter" className="text-[10px] text-mn-text-meta">
+        <span data-part="enter" aria-hidden className="text-[10px] text-mn-text-meta">
           ↵
         </span>
       )}

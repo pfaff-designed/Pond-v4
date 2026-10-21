@@ -438,18 +438,20 @@ export function viewCollectionId(block: ViewBlock, pageId: string | undefined): 
 }
 
 /**
- * The card the page's typed properties sit in (#260). ADR 0007: `PropertyInspector`
- * (#17) IS `PondBlock.dc.html`'s `properties` kind — it renders a page's `_schema`
- * as field-rows and holds no copy — so it is FRAMED, not rebuilt. It is not a block
- * and carries no label, so the eyebrow is the kind's name (the same fallback every
- * unlabelled block takes) and the note is the field count. Unlike `blockFrame()`
- * this also answers the frame's STATE: a schema's emptiness is read off the schema
- * alone, with no rows to fetch, so there is nothing for a host hook to decide.
+ * The card the page's typed properties sit in (#260, KAN-350). ADR 0007:
+ * `PropertyInspector` (#17) IS `PondBlock.dc.html`'s `properties` kind — it renders
+ * a page's `_schema` as field-rows and holds no copy — so it is FRAMED, not
+ * rebuilt. `PondBlock.dc.html`'s own `properties` card reads eyebrow `record` ·
+ * note the collection's name (`['record', 'recipes']`, line ~50) — not the kind's
+ * name and field count — so `name` is the collection the schema belongs to: the
+ * host's own title when the host IS the database (no parent collection), or the
+ * parent collection's title when the host is one of its records. Unlike
+ * `blockFrame()` this also answers the frame's STATE: a schema's emptiness is read
+ * off the schema alone, with no rows to fetch, so there is nothing for a host hook
+ * to decide.
  */
-export function propertiesFrame(schema: PropertySchema): BlockFrame & { state: PondBlockState } {
-  const n = schema.length
-  const headNote = plural(n, 'field')
-  return { kind: 'properties', heading: 'properties', headNote, state: n ? 'rest' : 'empty' }
+export function propertiesFrame(schema: PropertySchema, name: string): BlockFrame & { state: PondBlockState } {
+  return { kind: 'properties', heading: 'record', headNote: name, state: schema.length ? 'rest' : 'empty' }
 }
 
 export function blockFrame(block: Block): BlockFrame | null {

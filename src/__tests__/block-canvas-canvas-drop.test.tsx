@@ -39,16 +39,30 @@ jest.mock('@/lib/pages/client', () => ({
 const mockAppendOwnEdit = jest.fn().mockResolvedValue({ id: 'record-1' })
 jest.mock('@/lib/change-log/store', () => ({
   appendOwnEdit: (...args: unknown[]) => mockAppendOwnEdit(...args),
+  markOutdated: jest.fn().mockResolvedValue(undefined),
 }))
 const mockRemember = jest.fn()
 jest.mock('@/lib/change-log/session-undo', () => ({
-  sessionUndo: { remember: (...args: unknown[]) => mockRemember(...args) },
+  sessionUndo: {
+    remember: (...args: unknown[]) => mockRemember(...args),
+    trackPending: jest.fn(),
+  },
 }))
+
+// Each test gets its own page id: the page-write queue (KAN-495) is a
+// module-level registry keyed by page id that deliberately outlives a
+// `BlockCanvas` unmount, so two `it()`s sharing "page-1" would otherwise
+// hand the second one the first's leftover `head()` as `before` — masking
+// a real own-edit record behind a before===after no-op.
+let testPageIdCounter = 0
+let testPageId = 'page-1'
 
 beforeEach(() => {
   jest.clearAllMocks()
   mockSaveBlocks.mockResolvedValue(undefined)
   mockAppendOwnEdit.mockResolvedValue({ id: 'record-1' })
+  global.fetch = jest.fn().mockResolvedValue({ ok: true } as Response)
+  testPageId = `page-${++testPageIdCounter}`
 })
 
 function renderCanvas(blocks: Block[], onChange: (next: Block[]) => void) {
@@ -58,7 +72,7 @@ function renderCanvas(blocks: Block[], onChange: (next: Block[]) => void) {
       <DeletionUndoProvider>
         <BlockCanvas
           blocks={blocks}
-          pageId="page-1"
+          pageId={testPageId}
           pageTitle="sourdough, 78%"
           onChange={onChange}
           onUndoRemove={() => {}}
@@ -86,6 +100,17 @@ function dragOver(targetId: string, targetRect: DOMRect, x: number, y: number) {
   fireEvent(target, event)
 }
 
+/**
+ * Mocks `blockId`'s rect BEFORE a caller's `fireEvent.dragStart`: dragstart
+ * snapshots every block's rect (KAN-440), so a mock set afterward (as `dragOver`
+ * does, for the live rect a real drag would re-read) is invisible to the
+ * classification that snapshot drives — see `block-canvas-beside-drop.test.tsx`'s
+ * own `dragAndDrop` helper, which mocks before dragstart for the same reason.
+ */
+function mockRect(blockId: string, targetRect: DOMRect) {
+  jest.spyOn(blockRoot(blockId), 'getBoundingClientRect').mockReturnValue(targetRect)
+}
+
 function dropAt(el: Element, x: number, y: number) {
   const event = new MouseEvent('drop', { bubbles: true, cancelable: true })
   Object.defineProperty(event, 'clientX', { value: x })
@@ -99,6 +124,7 @@ describe('the canvas root keeps and commits the indicator the ghost would otherw
     const table: Block = { id: 'b-table', type: 'text', content: 'table' }
     renderCanvas([log, table], () => {})
 
+    mockRect('b-log', rect(0, 400))
     fireEvent.dragStart(blockRoot('b-table'))
     // x=360 of a 400-wide rect is 90% across: the outer-right 25%, beside-right of the log.
     dragOver('b-log', rect(0, 400), 360, 50)
@@ -116,34 +142,35 @@ describe('the canvas root keeps and commits the indicator the ghost would otherw
   it('a drop landing on the canvas itself (not a block) commits the shown indicator once', async () => {
     const log: Block = { id: 'b-log', type: 'text', content: 'log' }
     const table: Block = { id: 'b-table', type: 'text', content: 'table' }
-    let result: Block[] | null = null
-    renderCanvas([log, table], (next) => {
-      result = next
-    })
+    // No `onStructuralWrite` prop is passed (this test renders `BlockCanvas`
+    // standalone, not via `DocumentPanel`): `persistBlocksAsOwnEdit` (KAN-495)
+    // falls back to a plain `onChange` call, the Storybook/no-queue path —
+    // `appendOwnEdit`/`sessionUndo.remember` are no longer called directly
+    // from here, so "commits once" is now proven by `onChange`'s call count.
+    const onChange = jest.fn()
+    renderCanvas([log, table], onChange)
 
+    mockRect('b-log', rect(0, 400))
     fireEvent.dragStart(blockRoot('b-table'))
     dragOver('b-log', rect(0, 400), 360, 50)
 
     // Released over the canvas root's own node, never a block's.
     dropAt(canvasRoot('b-log'), 360, 50)
 
-    await waitFor(() =>
-      expect(result).toEqual([
-        { ...log, width: '1/2' },
-        { ...table, width: '1/2' },
-      ])
-    )
-    expect(mockAppendOwnEdit).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1))
+    expect(onChange).toHaveBeenCalledWith([
+      { ...log, width: '1/2', rowStart: true },
+      { ...table, width: '1/2' },
+    ])
   })
 
   it('does not double-commit when the drop reaches both the target block and the canvas', async () => {
     const log: Block = { id: 'b-log', type: 'text', content: 'log' }
     const table: Block = { id: 'b-table', type: 'text', content: 'table' }
-    let result: Block[] | null = null
-    renderCanvas([log, table], (next) => {
-      result = next
-    })
+    const onChange = jest.fn()
+    renderCanvas([log, table], onChange)
 
+    mockRect('b-log', rect(0, 400))
     fireEvent.dragStart(blockRoot('b-table'))
     dragOver('b-log', rect(0, 400), 360, 50)
 
@@ -151,9 +178,7 @@ describe('the canvas root keeps and commits the indicator the ghost would otherw
     // root too; only the block's own commit should land.
     dropAt(blockRoot('b-log'), 360, 50)
 
-    await waitFor(() => expect(result).not.toBeNull())
-    expect(mockAppendOwnEdit).toHaveBeenCalledTimes(1)
-    expect(mockRemember).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1))
   })
 })
 
@@ -164,6 +189,7 @@ describe('a zone that offers no plan clears the previous target\'s indicator', (
     const onChange = jest.fn()
     renderCanvas([a, b], onChange)
 
+    mockRect('b-b', rect(0, 400))
     fireEvent.dragStart(blockRoot('b-a'))
     // x=360 of a 400-wide rect is 90% across: the outer-right 25%, beside-right of b.
     dragOver('b-b', rect(0, 400), 360, 50)
@@ -189,6 +215,8 @@ describe('a zone that offers no plan clears the previous target\'s indicator', (
     const onChange = jest.fn()
     renderCanvas([a, b, c, d, e, f], onChange)
 
+    mockRect('b-b', rect(0, 400))
+    mockRect('b-c', rect(0, 400))
     fireEvent.dragStart(blockRoot('b-a'))
     dragOver('b-b', rect(0, 400), 360, 50)
     expect(blockRoot('b-b').querySelector('[data-part="drop-bar"]')).not.toBeNull()

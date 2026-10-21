@@ -34,10 +34,13 @@ jest.mock('@/lib/terminal-focus', () => ({
   ...jest.requireActual('@/lib/terminal-focus'),
   requestComposerNotice: jest.fn(),
 }))
+jest.mock('@/lib/pages/page-flush', () => ({ flushPendingPageSave: jest.fn() }))
 
 import { ShellCommands } from '@/components/organisms/ShellCommands'
+import { SESSION_UNDO_SCOPE_ATTR } from '@/lib/shell-commands'
 import { sessionUndo } from '@/lib/change-log/session-undo'
 import { requestComposerNotice } from '@/lib/terminal-focus'
+import { flushPendingPageSave } from '@/lib/pages/page-flush'
 import { changeLogKey } from '@/lib/change-log/keys'
 import { pagesKey } from '@/lib/pages/keys'
 
@@ -132,6 +135,37 @@ describe('ShellCommands — an editable keeps its own ⌘Z', () => {
   })
 })
 
+describe('ShellCommands — a session-undo-scoped field hands ⌘Z to the session, not the browser', () => {
+  it('leaves the key alone in a plain textarea', () => {
+    onPlatform('MacIntel')
+    const { container } = renderShell()
+    const field = document.createElement('textarea')
+    container.appendChild(field)
+    field.focus()
+
+    const prevented = fireEvent.keyDown(field, { key: 'z', metaKey: true })
+
+    expect(sessionUndo.undo).not.toHaveBeenCalled()
+    expect(prevented).toBe(true)
+  })
+
+  it('runs the session undo in a textarea under a SESSION_UNDO_SCOPE_ATTR ancestor', () => {
+    onPlatform('MacIntel')
+    const { container } = renderShell()
+    const scope = document.createElement('div')
+    scope.setAttribute(SESSION_UNDO_SCOPE_ATTR, '')
+    const field = document.createElement('textarea')
+    scope.appendChild(field)
+    container.appendChild(scope)
+    field.focus()
+
+    const prevented = fireEvent.keyDown(field, { key: 'z', metaKey: true })
+
+    expect(sessionUndo.undo).toHaveBeenCalledWith('pond-1')
+    expect(prevented).toBe(false)
+  })
+})
+
 describe('ShellCommands — an empty page-title input has nothing of its own to undo', () => {
   it('⌘Z runs the session undo when the marked title input is focused and empty', () => {
     onPlatform('MacIntel')
@@ -161,6 +195,55 @@ describe('ShellCommands — an empty page-title input has nothing of its own to 
 
     expect(sessionUndo.undo).not.toHaveBeenCalled()
     expect(prevented).toBe(true)
+  })
+})
+
+describe('ShellCommands — a session-undo-scoped container has nothing of its own to undo (KAN-355)', () => {
+  it('⌘Z runs the session undo when the focused input sits inside the scope marker', () => {
+    onPlatform('MacIntel')
+    const { container } = renderShell()
+    const scope = document.createElement('div')
+    scope.setAttribute(SESSION_UNDO_SCOPE_ATTR, '')
+    const item = document.createElement('input')
+    scope.appendChild(item)
+    container.appendChild(scope)
+    item.focus()
+
+    const prevented = fireEvent.keyDown(item, { key: 'z', metaKey: true })
+
+    expect(sessionUndo.undo).toHaveBeenCalledWith('pond-1')
+    expect(prevented).toBe(false)
+  })
+
+  it('leaves the key alone for a plain input outside the scope marker', () => {
+    onPlatform('MacIntel')
+    renderShell()
+    const field = screen.getByLabelText('a text field')
+    field.focus()
+
+    const prevented = fireEvent.keyDown(field, { key: 'z', metaKey: true })
+
+    expect(sessionUndo.undo).not.toHaveBeenCalled()
+    expect(prevented).toBe(true)
+  })
+})
+
+describe('ShellCommands — ⌘Z waits out a pending save before taking the step (KAN-355)', () => {
+  it('does not call sessionUndo.undo until the pending save flush resolves', async () => {
+    onPlatform('MacIntel')
+    let resolveFlush: () => void = () => {}
+    jest.mocked(flushPendingPageSave).mockReturnValue(
+      new Promise<void>((resolve) => {
+        resolveFlush = resolve
+      })
+    )
+    renderShell()
+
+    fireEvent.keyDown(document.body, { key: 'z', metaKey: true })
+
+    expect(sessionUndo.undo).not.toHaveBeenCalled()
+    resolveFlush()
+    await waitFor(() => expect(sessionUndo.undo).toHaveBeenCalledWith('pond-1'))
   })
 })
 

@@ -14,7 +14,6 @@
 import { useId, useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { pageEyebrowClass } from '@/components/atoms/kicker'
-import { ComposerWindowControls } from '@/components/molecules/ComposerWindowControls'
 
 const RULE_CLASS = 'border-b border-mn-text/[0.09]'
 
@@ -24,22 +23,12 @@ export interface ThreadHeadProps {
   turns: number
   /** Start over: clears the thread. */
   onNewThread: () => void
-  /** Slides the composer off screen, keeping the thread (KAN-323). */
-  onClose: () => void
-  /** Fills the canvas, or restores — paired with `onClose` (KAN-323). */
-  maximized: boolean
-  onMaximize: () => void
-  onMinimize: () => void
 }
 
 export const ThreadHead = ({
   area,
   turns,
   onNewThread,
-  onClose,
-  maximized,
-  onMaximize,
-  onMinimize,
 }: ThreadHeadProps) => (
   <div
     data-part="thread-head"
@@ -58,12 +47,6 @@ export const ThreadHead = ({
     <button type="button" onClick={onNewThread} className="cursor-pointer hover:text-mn-text">
       new thread
     </button>
-    <ComposerWindowControls
-      maximized={maximized}
-      onMinimize={onMinimize}
-      onMaximize={onMaximize}
-      onClose={onClose}
-    />
   </div>
 )
 
@@ -171,26 +154,13 @@ export const EarlierAnswerFold = ({ time, children }: EarlierAnswerFoldProps) =>
 export interface AnswerErrorProps {
   /** Sends the question again — absent when there is no question to resend. */
   onAskAgain?: () => void
-  /** Draws the window controls. Omitted when a `ThreadHead` above this row
-   *  already draws them (turns > 1). */
-  onClose?: () => void
-  /** Fills the canvas, or restores — paired with `onClose` (KAN-323). Required
-   *  alongside `onClose` so there is nothing for a stub fallback to cover. */
-  maximized?: boolean
-  onMaximize: () => void
-  onMinimize: () => void
 }
 
 /** `error` (`errRow`): the answer failed and the partial text was dropped, so the row
- *  says nothing was kept. 12px at ink .8, gap 10, `ask again` as the quiet chip, with
- *  the same far-end window controls as `AnswerActions` when there's no `ThreadHead`
- *  for it. */
+ *  says nothing was kept. 12px at ink .8, gap 10, `ask again` as the quiet chip.
+ *  Window controls sit on the composer card, not in this row. */
 export const AnswerError = ({
   onAskAgain,
-  onClose,
-  maximized = false,
-  onMaximize,
-  onMinimize,
 }: AnswerErrorProps) => (
   <div
     role="alert"
@@ -206,17 +176,6 @@ export const AnswerError = ({
       >
         ask again
       </button>
-    )}
-    {onClose && (
-      <>
-        <div className="flex-1" />
-        <ComposerWindowControls
-          maximized={maximized}
-          onMinimize={onMinimize}
-          onMaximize={onMaximize}
-          onClose={onClose}
-        />
-      </>
     )}
   </div>
 )

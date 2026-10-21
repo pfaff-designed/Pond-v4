@@ -8,6 +8,7 @@ import type { Block } from '@/lib/documents/types'
 import type { ChangePreview } from '@/lib/modules/preview'
 import { blockLabel } from '@/lib/modules/types'
 import { descriptorFor, resolveDescriptor } from '@/lib/modules/registry'
+import { currentPondId } from '@/lib/pages/nav'
 import { CHANGE_LOG_NODE_ID, pageLabel } from './log-page'
 import { clockTime, describeChange, formatClockTime } from './page-changes'
 import { buildDiffRows } from './proposed-view'
@@ -19,9 +20,14 @@ import { BLOCK_ACTIONS, type ChangeLogRecord } from './types'
 export const RECORD_PARAM = 'record'
 
 /** The workspace URL for one record's page — one more param on the existing
- *  `?nodeId=__change_log__` change log route, not a new router concept. */
+ *  `?nodeId=__change_log__` change log route, not a new router concept.
+ *  Carries `?pond=` the same way `workspaceUrl` does — this is a relative,
+ *  query-only URL, so a shallow open replaces the whole search string and
+ *  would otherwise drop the pond you're in. */
 export function changeLogRecordUrl(recordId: string): string {
   const params = new URLSearchParams({ nodeId: CHANGE_LOG_NODE_ID, [RECORD_PARAM]: recordId })
+  const pond = currentPondId()
+  if (pond) params.set('pond', pond)
   return `?${params.toString()}`
 }
 
@@ -29,9 +35,12 @@ export function changeLogRecordUrl(recordId: string): string {
 export const PAGE_FILTER_PARAM = 'page'
 
 /** The workspace URL for the change log filtered to one page's own records —
- *  the panel's "open in change log" link. */
+ *  the panel's "open in change log" link. Carries `?pond=` for the same
+ *  reason {@link changeLogRecordUrl} does. */
 export function changeLogPageFilterUrl(pageId: string): string {
   const params = new URLSearchParams({ nodeId: CHANGE_LOG_NODE_ID, [PAGE_FILTER_PARAM]: pageId })
+  const pond = currentPondId()
+  if (pond) params.set('pond', pond)
   return `?${params.toString()}`
 }
 
@@ -47,6 +56,19 @@ export function changeLogUrl(): string {
  * snapshots — `null` when neither side is a block array (a collection-tool
  * record) or nothing differs.
  *
+ * `edit_schema` is excluded up front rather than left to `readBlockSnapshot`'s
+ * own shape check: its before/after are each a whole `PropertySchema` — an
+ * array of `{id: string, ...}` property defs — which satisfies that check by
+ * coincidence (a `PropertyDef` carries a string `id` just like a `Block`
+ * does) and was being read as the page's own blocks, producing a bogus
+ * "before → after" off two property defs instead of falling through to
+ * {@link describeChange}'s `edit_schema` case. Every OTHER non-block action
+ * (`add_row`/`edit_row`'s `RowSnapshot`, `edit_glyph`/`edit_area_role`'s bare
+ * id) already fails the shape check on its own shape, so this is the one
+ * action that needs an explicit guard; `undo`/`redo` of a real block edit
+ * must still reach the structural check below, which is why this is not a
+ * blanket {@link BLOCK_ACTIONS} gate.
+ *
  * `targetBlockId` is tried FIRST but is not load-bearing: `propose.ts` never
  * sets it for a `propose_changes` call (the only tool that snapshots real
  * blocks), so every composer-made edit's `targetBlockId` is `null` in
@@ -57,6 +79,7 @@ export function changeLogUrl(): string {
  * `before` order.
  */
 function resolvedBlockChange(record: ChangeLogRecord): ChangePreview | null {
+  if (record.action === 'edit_schema') return null
   const beforeBlocks = readBlockSnapshot(record.before)
   const afterBlocks = readBlockSnapshot(record.after)
   if (beforeBlocks === null && afterBlocks === null) return null

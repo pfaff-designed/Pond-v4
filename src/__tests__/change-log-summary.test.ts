@@ -278,6 +278,34 @@ describe('the undo notice reads the undone record backwards', () => {
   })
 })
 
+describe('a schema edit reads as the field that changed (KAN-380)', () => {
+  const field = (id: string, name: string) => ({ id, name, type: 'text' as const })
+
+  it('reads a rename as old field to new', () => {
+    const before = [field('f1', 'field 2')]
+    const after = [field('f1', 'due')]
+    expect(describeChange(record('edit_schema', before, after), null)).toBe(
+      'renamed field field 2 to due'
+    )
+  })
+
+  it('reads a delete, naming the field that was removed', () => {
+    const before = [field('f1', 'due'), field('f2', 'priority')]
+    const after = [field('f2', 'priority')]
+    expect(describeChange(record('edit_schema', before, after), null)).toBe('deleted field due')
+  })
+
+  it('reads an add, naming the field that was appended', () => {
+    const before = [field('f1', 'priority')]
+    const after = [field('f1', 'priority'), field('f2', 'due')]
+    expect(describeChange(record('edit_schema', before, after), null)).toBe('added field due')
+  })
+
+  it('says "edited the fields" when it cannot read the snapshots', () => {
+    expect(describeChange(record('edit_schema', null, null), null)).toBe('edited the fields')
+  })
+})
+
 describe('a revert reads as the change it sets back', () => {
   it('names the original by its time', () => {
     const original = record('edit', null, null)

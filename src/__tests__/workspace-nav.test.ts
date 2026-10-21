@@ -11,7 +11,7 @@
  * dropped you back into `life`.
  */
 
-import { workspaceUrl, workspaceHref, WORKSPACE_PATH } from '@/lib/pages/nav'
+import { workspaceUrl, workspaceHref, openWorkspaceUrl, WORKSPACE_PATH } from '@/lib/pages/nav'
 
 const node = { id: 'n1', type: 'page', title: 'Notes' }
 
@@ -61,5 +61,57 @@ describe('workspaceHref', () => {
     addressIs('?pond=p-second')
     expect(workspaceHref(node)).toBe(workspaceUrl(node))
     expect(workspaceHref(node, 'p-third')).toBe(workspaceUrl(node, 'p-third'))
+  })
+})
+
+describe('openWorkspaceUrl', () => {
+  it('on /workspace, pushes history shallowly and never calls router.push', () => {
+    addressIs('')
+    const push = jest.fn()
+    const pushStateSpy = jest.spyOn(window.history, 'pushState')
+
+    openWorkspaceUrl(workspaceUrl(node), { push })
+
+    expect(pushStateSpy).toHaveBeenCalledWith(null, '', workspaceUrl(node))
+    expect(push).not.toHaveBeenCalled()
+    pushStateSpy.mockRestore()
+  })
+
+  it('off /workspace (e.g. Cover.tsx at /), falls back to router.push', () => {
+    window.history.replaceState({}, '', '/')
+    const push = jest.fn()
+    const pushStateSpy = jest.spyOn(window.history, 'pushState')
+
+    openWorkspaceUrl(workspaceUrl(node), { push })
+
+    expect(push).toHaveBeenCalledWith(workspaceUrl(node))
+    expect(pushStateSpy).not.toHaveBeenCalled()
+    pushStateSpy.mockRestore()
+  })
+
+  it('re-opening the page already open on /workspace is a no-op: no push, no pushState, history unchanged', () => {
+    addressIs('?nodeId=b')
+    const push = jest.fn()
+    const pushStateSpy = jest.spyOn(window.history, 'pushState')
+    const lengthBefore = window.history.length
+
+    openWorkspaceUrl(`${WORKSPACE_PATH}?nodeId=b`, { push })
+
+    expect(pushStateSpy).not.toHaveBeenCalled()
+    expect(push).not.toHaveBeenCalled()
+    expect(window.history.length).toBe(lengthBefore)
+    pushStateSpy.mockRestore()
+  })
+
+  it('a different url on /workspace still pushes once', () => {
+    addressIs('?nodeId=b')
+    const push = jest.fn()
+    const pushStateSpy = jest.spyOn(window.history, 'pushState')
+
+    openWorkspaceUrl(`${WORKSPACE_PATH}?nodeId=c`, { push })
+
+    expect(pushStateSpy).toHaveBeenCalledTimes(1)
+    expect(push).not.toHaveBeenCalled()
+    pushStateSpy.mockRestore()
   })
 })

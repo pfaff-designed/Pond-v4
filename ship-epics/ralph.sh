@@ -200,7 +200,7 @@ while :; do
   item=$(next_item)
   if [ -z "$item" ] && [ "$(count '^- \[x\] ')" -gt 0 ]; then
     if [ -x "$loop/GATES" ]; then
-      "$H" beat "$hb" "ralph: gates" 1500
+      "$H" beat "$hb" "ralph: gates" 420
       if (cd "$worktree" && "$loop/GATES") >"$loop/passes/gates.log" 2>&1; then
         finish green ""
       fi

@@ -313,4 +313,104 @@ describe('rows in BlockCanvas', () => {
       expect(blockRoot('b-b')).toBe(beforeB)
     })
   })
+
+  // KAN-440: `blockRows` (layoutRows) can split a row even with room left over
+  // (a block carrying `rowStart`), but the canvas is one flex-wrap list — CSS
+  // packs by width alone, so without an explicit break it repacks a leftover
+  // ½ beside the ½ before it, undoing the split `layoutRows` made.
+  describe('an explicit break follows every blockRows boundary', () => {
+    it('a rowStart boundary gets a break; the non-boundary row-mate after it does not', () => {
+      const a: Block = { id: 'b-a', type: 'text', content: 'a', width: '1/2' }
+      const b: Block = { id: 'b-b', type: 'text', content: 'b', width: '1/2', rowStart: true }
+      const c: Block = { id: 'b-c', type: 'text', content: 'c', width: '1/2' }
+      renderCanvas([a, b, c])
+
+      const sizingB = blockRoot('b-b').parentElement!
+      const sizingC = blockRoot('b-c').parentElement!
+
+      const breakBeforeB = sizingB.previousElementSibling
+      expect(breakBeforeB).not.toBeNull()
+      expect(breakBeforeB!.getAttribute('aria-hidden')).toBe('true')
+
+      expect(sizingC.previousElementSibling).toBe(sizingB)
+    })
+
+    it('a page with no rowStart only breaks at layoutRows\' own (width) boundaries', () => {
+      const x: Block = { id: 'b-x', type: 'text', content: 'x', width: '1/2' }
+      const y: Block = { id: 'b-y', type: 'text', content: 'y', width: '1/2' }
+      const z: Block = { id: 'b-z', type: 'text', content: 'z' }
+      renderCanvas([x, y, z])
+
+      const sizingY = blockRoot('b-y').parentElement!
+      const sizingZ = blockRoot('b-z').parentElement!
+
+      // x+y pack into one row (6+6=12 twelfths): no break between them.
+      expect(sizingY.previousElementSibling).toBe(blockRoot('b-x').parentElement)
+      // z starts a new row on width alone: a break precedes it.
+      const breakBeforeZ = sizingZ.previousElementSibling
+      expect(breakBeforeZ).not.toBeNull()
+      expect(breakBeforeZ!.getAttribute('aria-hidden')).toBe('true')
+    })
+  })
+
+  // KAN-440: a flex line's cross size clamps at zero (CSS Flexbox §9.4 step 8),
+  // so a `rowGap` on the list would count twice around every forced break (one
+  // before its own zero-height line, one after). The list's `rowGap` is 0; the
+  // gap is carried as `marginTop` on each row's own sizing divs instead.
+  describe('the row gap is carried on the blocks, not the list', () => {
+    it("the list's own rowGap is 0; a 3-row page puts the gap only on marginTop, only after the first row", () => {
+      const a: Block = { id: 'b-a', type: 'text', content: 'a', rowStart: true }
+      const b: Block = { id: 'b-b', type: 'text', content: 'b', rowStart: true }
+      const c: Block = { id: 'b-c', type: 'text', content: 'c', rowStart: true }
+      renderCanvas([a, b, c])
+
+      const list = blockRoot('b-a').parentElement!.parentElement!
+      expect(list.style.rowGap).toBe('0')
+      expect(blockRoot('b-a').parentElement!.style.marginTop).toBe('0px')
+      expect(blockRoot('b-b').parentElement!.style.marginTop).toBe('16px')
+      expect(blockRoot('b-c').parentElement!.style.marginTop).toBe('16px')
+    })
+
+    it('a zen host\'s listStyle rowGap 22 gives every later row 22, not 16', () => {
+      const a: Block = { id: 'b-a', type: 'text', content: 'a', rowStart: true }
+      const b: Block = { id: 'b-b', type: 'text', content: 'b', rowStart: true }
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      render(
+        <QueryClientProvider client={client}>
+          <DeletionUndoProvider>
+            <BlockCanvas
+              blocks={[a, b]}
+              pageId="page-1"
+              pageTitle="sourdough, 78%"
+              onChange={() => {}}
+              onUndoRemove={() => {}}
+              listStyle={{ rowGap: 22 }}
+            />
+          </DeletionUndoProvider>
+        </QueryClientProvider>
+      )
+
+      expect(blockRoot('b-a').parentElement!.style.marginTop).toBe('0px')
+      expect(blockRoot('b-b').parentElement!.style.marginTop).toBe('22px')
+    })
+
+    it('a stacked row other than the very first block also gets the gap as marginTop', () => {
+      const ro = mockResizeObserver()
+      try {
+        const a: Block = { id: 'b-a', type: 'text', content: 'a', width: '1/2' }
+        const b: Block = { id: 'b-b', type: 'text', content: 'b', width: '1/2' }
+        renderCanvas([a, b])
+        const canvas = blockRoot('b-a').parentElement!.parentElement! as HTMLElement
+        jest.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ width: 300 } as DOMRect)
+        ro.fire()
+
+        // Narrow column: the row stacks, so a and b each take their own line —
+        // only a (the page's very first block) is spared the marginTop.
+        expect(blockRoot('b-a').parentElement!.style.marginTop).toBe('0px')
+        expect(blockRoot('b-b').parentElement!.style.marginTop).toBe('16px')
+      } finally {
+        ro.restore()
+      }
+    })
+  })
 })

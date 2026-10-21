@@ -1,26 +1,23 @@
 /**
- * The `entries` block (#250, child 228b) — dated prose, serif only for the journal.
- * Row geometry and serif size follow `PondMolecule.dc.html`'s `entry` kind
- * (conductor's ruling, KAN-356: the library wins over the superseded
- * `PondTemplate.dc.html` reading):
+ * The `entries` block (#250, child 228b) — dated prose, always serif (KAN-444). Row
+ * geometry and serif size follow `PondMolecule.dc.html`'s `entry` kind (conductor's
+ * ruling, KAN-356: the library wins over the superseded `PondTemplate.dc.html`
+ * reading):
  *
  *   stack  flex column · gap 2
  *   entry  grid `56px minmax(0,1fr)` · gap 14 · padding 10px 8px · radius 10 ·
  *          align-items baseline · hover bg ink .05 (`hoveredId` state, ink-alpha token)
  *   edate  mono 10.5 · ink .68
- *   text   d.serif && filled ? serif 200 / 16.5 / 1.6 · full ink
- *                            : sans 13.5 / 1.5 · full ink when filled, ink .68 when not
- *          both `text-wrap: pretty`
+ *   text   serif 200 / 16.5 / 1.6 · full ink when filled, ink .68 when not ·
+ *          `text-wrap: pretty`
  *
- * The serif is CONDITIONAL on the block's own `serif` flag (ruling 4 in the issue:
- * a field on the schema, set by the journal template at instantiation — never
- * looked up from an ancestor template at render time, ADR 0005). The board exercises
- * both media itself: `project` → `updates` (sans), `journal` → `entries` (serif).
+ * The serif register is UNCONDITIONAL (KAN-444 deleted the schema's `serif` flag):
+ * both the board's templates — `project` → `updates`, `journal` → `entries` — render
+ * identically now.
  *
  * Registry facets, the emit union (nested ids stripped at `nestedIdPaths`), the
- * palette, the `log` frame mapping and the view's two media. Computed values are
- * asserted in `view.stories.tsx`; jsdom has no layout, so here the class recipe is
- * the contract.
+ * palette, the `log` frame mapping and the view. Computed values are asserted in
+ * `view.stories.tsx`; jsdom has no layout, so here the class recipe is the contract.
  */
 
 import React, { useState } from 'react'
@@ -33,6 +30,7 @@ import {
   type EntriesBlock,
 } from '@/lib/modules/entries/schema'
 import { EntriesView, addEntry, entryDateLabel } from '@/lib/modules/entries/view'
+import { BlockRowProvider } from '@/lib/modules/block-row-context'
 import { blockSchema } from '@/lib/modules/content'
 import { moduleDescriptors } from '@/lib/modules/registry'
 import { moduleRenderers } from '@/lib/modules/renderers'
@@ -43,8 +41,9 @@ import {
 } from '@/lib/modules/ai-composition'
 import { emptyBlockForType, slashRows } from '@/lib/modules/palette'
 import { blockFrame, blockIsEmpty, POND_BLOCK_EMPTY_ACTION_WIRED } from '@/lib/modules/block-frame'
+import { SESSION_UNDO_SCOPE_ATTR } from '@/lib/shell-commands'
 
-/** The board's `project` → `updates` fixture: sans. */
+/** The board's `project` → `updates` fixture. */
 const updates: EntriesBlock = {
   id: 'e1',
   type: 'entries',
@@ -54,11 +53,10 @@ const updates: EntriesBlock = {
   ],
 }
 
-/** The board's `journal` → `entries` fixture: `serif: 1`. */
+/** The board's `journal` → `entries` fixture. */
 const journal: EntriesBlock = {
   id: 'e2',
   type: 'entries',
-  serif: true,
   entries: [
     {
       id: 'j1',
@@ -96,9 +94,9 @@ describe('entries schema + registry facets', () => {
     expect(blockSchema.parse(journal)).toEqual(journal)
   })
 
-  it('the serif flag is OPTIONAL and defaults to sans: an entries block without it is valid', () => {
-    const parsed = entriesSchema.parse(updates)
-    expect(parsed.serif).toBeUndefined()
+  it('an old block still carrying the removed `serif` flag still parses — the key is stripped, not rejected (KAN-444)', () => {
+    const parsed = entriesSchema.parse({ ...updates, serif: true })
+    expect('serif' in parsed).toBe(false)
   })
 
   it('every entry carries its own id (targeted edits), a date label and its text', () => {
@@ -137,10 +135,6 @@ describe('entries schema + registry facets', () => {
     )
   })
 
-  it('serializes the serif flag so a wholesale re-emit keeps a journal a journal', () => {
-    expect(entriesDescriptor.serialize(journal).split('\n')[0]).toBe('Entries (serif):')
-  })
-
   it('previews as the dates alone, comma-joined', () => {
     expect(entriesDescriptor.preview!(updates)).toBe('28 oct, 24 oct')
   })
@@ -167,11 +161,6 @@ describe('entries in moduleDataSchema (the AI emit union)', () => {
     expect(stripped.type === 'entries' && 'id' in stripped.entries[0]).toBe(false)
   })
 
-  it('carries the serif flag through the emit union (a journal Pond composes stays serif)', () => {
-    const r = moduleDataSchema.parse({ type: 'entries', serif: true, entries: [] })
-    expect(r.type === 'entries' && r.serif).toBe(true)
-  })
-
   it('carries the block-level placeholder through the emit union untouched', () => {
     const r = moduleDataSchema.parse({ type: 'entries', placeholder: 'first update', entries: [] })
     expect(r.type === 'entries' && r.placeholder).toBe('first update')
@@ -194,7 +183,6 @@ describe('entries in moduleDataSchema (the AI emit union)', () => {
     expect(line).toMatch(/journal/i)
     expect(line).toMatch(/table/i)
     expect(line).toMatch(/text/i)
-    expect(line).toMatch(/serif/i)
   })
 })
 
@@ -235,12 +223,6 @@ describe('addEntry / entryDateLabel — the engine-shaped insert, newest first',
     expect(next.entries[1]).toBe(updates.entries[0])
     expect(next.entries[2]).toBe(updates.entries[1])
     expect(updates.entries).toHaveLength(2) // pure
-    expect(next.serif).toBeUndefined()
-  })
-
-  it('keeps the serif flag on a journal', () => {
-    expect(addEntry(journal, new Date(2026, 0, 14)).serif).toBe(true)
-    expect(addEntry(journal, new Date(2026, 0, 14)).entries[0].date).toBe('14 jan')
   })
 
   it('entryDateLabel is the board’s copy: lowercase English month, no leading zero', () => {
@@ -249,7 +231,7 @@ describe('addEntry / entryDateLabel — the engine-shaped insert, newest first',
   })
 })
 
-// ── The view: two media, one flag ───────────────────────────────────────────────
+// ── The view: one serif register, unconditional ─────────────────────────────────
 
 const ROW = [
   'grid',
@@ -261,7 +243,6 @@ const ROW = [
   '[grid-template-columns:56px_minmax(0,1fr)]',
 ]
 const DATE = ['font-mono', 'text-[10.5px]', 'text-mn-text-secondary']
-const SANS = ['font-sans', 'text-[13.5px]', 'leading-normal', '[text-wrap:pretty]']
 const SERIF = [
   'font-serif',
   'font-extralight', // 200 — never 400
@@ -287,15 +268,15 @@ describe('EntriesView — read-only', () => {
     for (const d of dates) has(d, ...DATE)
   })
 
-  it('without the flag the text is SANS 13.5 / 1.5 at full ink (project → updates)', () => {
+  it('renders SERIF 200 / 16.5 / 1.6 at full ink with no flag at all (project → updates)', () => {
     const { container } = render(<EntriesView data={updates} />)
     for (const t of textsOf(container)) {
-      has(t, ...SANS, 'text-mn-text')
-      lacks(t, 'font-serif', 'font-extralight', 'text-[16.5px]', 'leading-[1.6]')
+      has(t, ...SERIF, 'text-mn-text')
+      lacks(t, 'font-sans', 'text-[13.5px]', 'leading-normal', 'font-normal')
     }
   })
 
-  it('with `serif: true` the text is SERIF 200 / 16.5 / 1.6 at full ink (journal → entries)', () => {
+  it('renders the same SERIF 200 / 16.5 / 1.6 at full ink (journal → entries)', () => {
     const { container } = render(<EntriesView data={journal} />)
     const texts = textsOf(container)
     expect(texts).toHaveLength(3)
@@ -307,14 +288,12 @@ describe('EntriesView — read-only', () => {
     for (const d of datesOf(container)) has(d, ...DATE)
   })
 
-  // `renderVals()`'s literal is `d.serif && filled`, which reads as "a blank row is
-  // sans even on a journal" — but `serif: 1` sits only on the journal's FILLED
-  // descriptor, so the two flip together and the board never renders a serif-flagged
-  // block through the non-filled branch. The board's idiom for an empty
-  // authored-prose block is KEEP THE MEDIUM, DROP THE INK (`text`, `highlight`), and
-  // the editable path wears the medium unconditionally — so a sans blank row would
-  // flip serif on focus and sans on blur. Rationale in full in `entries/view.tsx`.
-  it('a blank entry reads the board’s empty line at .68 in the BLOCK’S medium — serif on a journal', () => {
+  // The board's idiom for an empty authored-prose block is KEEP THE MEDIUM, DROP
+  // THE INK (`text`, `highlight`) — a blank row stays serif, just at ink .68 instead
+  // of full ink. There is no flag left to flip between focus and blur, or between
+  // fixtures: both `project` and `journal` land here. Rationale in full in
+  // `entries/view.tsx`.
+  it('a blank entry reads the board’s empty line at .68 in the SERIF register', () => {
     const blank: EntriesBlock = {
       ...journal,
       entries: [{ id: 'b', date: 'today', text: '' }],
@@ -345,15 +324,15 @@ describe('EntriesView — read-only', () => {
     expect(textsOf(container)[0].textContent).toBe(ENTRIES_EMPTY_LINE)
   })
 
-  it('a blank entry on a SANS block stays sans at .68', () => {
+  it('a blank entry on the project’s block is SERIF at .68 too — no flag needed', () => {
     const blank: EntriesBlock = {
       ...updates,
       entries: [{ id: 'b', date: 'today', text: '' }],
     }
     const { container } = render(<EntriesView data={blank} />)
     const [t] = textsOf(container)
-    has(t, ...SANS, 'text-mn-text-secondary')
-    lacks(t, 'font-serif', 'text-mn-text')
+    has(t, ...SERIF, 'text-mn-text-secondary')
+    lacks(t, 'font-sans', 'text-mn-text')
   })
 
   it('whitespace-only text is blank too', () => {
@@ -363,19 +342,73 @@ describe('EntriesView — read-only', () => {
     expect(textsOf(container)[0].textContent).toBe(ENTRIES_EMPTY_LINE)
   })
 
+  it('"write the first entry" means the first entry written — the oldest, at the last index, not index 0', () => {
+    const three: EntriesBlock = {
+      ...updates,
+      entries: [
+        { id: 'a', date: '3 jan', text: '' },
+        { id: 'b', date: '2 jan', text: 'Filled.' },
+        { id: 'c', date: '1 jan', text: '' },
+      ],
+    }
+    const { container } = render(<EntriesView data={three} />)
+    const texts = textsOf(container)
+    expect(texts[0].textContent).toBe('')
+    expect(texts[1].textContent).toBe('Filled.')
+    expect(texts[2].textContent).toBe(ENTRIES_EMPTY_LINE)
+  })
+
   it('composes the size and colour tokens as plain strings, never through cn (#252)', () => {
     // tailwind-merge drops one of `text-[16.5px]` / `text-mn-text` as both match `text-*`.
-    // The recipe must carry BOTH on the same element in both media.
+    // The recipe must carry BOTH on the same element, on either fixture.
     const { container } = render(<EntriesView data={journal} />)
     has(textsOf(container)[0], 'text-[16.5px]', 'text-mn-text')
     const { container: c2 } = render(<EntriesView data={updates} />)
-    has(textsOf(c2)[0], 'text-[13.5px]', 'text-mn-text')
+    has(textsOf(c2)[0], 'text-[16.5px]', 'text-mn-text')
+  })
+
+  it('carries no session-undo scope attribute — a read-only stack has no fields to exempt', () => {
+    const { container } = render(<EntriesView data={updates} />)
+    const stack = container.firstElementChild!
+    expect(stack.hasAttribute(SESSION_UNDO_SCOPE_ATTR)).toBe(false)
   })
 })
 
 function Stateful({ data }: { data: EntriesBlock }) {
   const [state, setState] = useState(data)
   return <EntriesView data={state} editable onChange={setState} />
+}
+
+/**
+ * Mirrors `todo-module.test.tsx`'s `Stateful`, but keeps `commitStep` as its
+ * own jest mock, distinct from `onChange` (KAN-447) — `removeEntry` must
+ * reach `commitStep` under a `BlockRowProvider` host, never fall back to
+ * `onChange`, so the two have to stay tellable apart in the harness too.
+ */
+function StatefulWithCommit({
+  data,
+  commitStep,
+  onChange,
+}: {
+  data: EntriesBlock
+  commitStep: jest.Mock
+  onChange?: jest.Mock
+}) {
+  const [state, setState] = useState(data)
+  return (
+    <BlockRowProvider
+      value={{
+        selected: false,
+        stepOut: () => {},
+        commitStep: (patch) => {
+          commitStep(patch)
+          setState(patch as EntriesBlock)
+        },
+      }}
+    >
+      <EntriesView data={state} editable onChange={onChange} />
+    </BlockRowProvider>
+  )
 }
 
 describe('EntriesView — editable (a read-only date label + a prose field, per row)', () => {
@@ -391,7 +424,17 @@ describe('EntriesView — editable (a read-only date label + a prose field, per 
     for (const d of dates) has(d, ...DATE)
     // The add line is the stack's first child now (KAN-356); only the entry
     // rows — found through the text fields, not raw children — keep ROW's geometry.
-    for (const t of texts) has(t.parentElement!, ...ROW, 'group')
+    for (const t of texts) has(t.parentElement!, ...ROW, 'group/row')
+  })
+
+  it('stamps the rows wrapper with the session-undo scope attribute, so ⌘Z in a row’s field reaches the session — but not the add line, whose value is local state, never a page save (KAN-445)', () => {
+    const { container } = render(<Stateful data={updates} />)
+    const addInput = screen.getByRole('textbox', { name: 'Add entry' })
+    const rowsWrapper = container.querySelector(`[${SESSION_UNDO_SCOPE_ATTR}]`)
+    expect(rowsWrapper).not.toBeNull()
+    expect(rowsWrapper!.contains(addInput)).toBe(false)
+    const texts = screen.getAllByRole('textbox', { name: 'Entry text' })
+    for (const t of texts) expect(rowsWrapper!.contains(t)).toBe(true)
   })
 
   it('a focused row wears the molecule’s `editing` ring; blurring drops it', () => {
@@ -418,28 +461,46 @@ describe('EntriesView — editable (a read-only date label + a prose field, per 
     lacks(rows[0], 'bg-mn-text/5')
   })
 
-  it('the textarea wears the block’s medium: sans by default, serif 200 / 16.5 / 1.6 on a journal', () => {
+  it('the textarea wears SERIF 200 / 16.5 / 1.6 with no flag at all (project → updates)', () => {
     render(<Stateful data={updates} />)
-    for (const t of screen.getAllByRole('textbox', { name: 'Entry text' })) {
-      has(t, ...SANS, 'text-mn-text')
-      lacks(t, 'font-serif')
-    }
-  })
-
-  it('the editable textarea prefers the block’s `placeholder` over ENTRIES_EMPTY_LINE', () => {
-    render(<Stateful data={{ ...updates, placeholder: 'first update' }} />)
-    for (const t of screen.getAllByRole('textbox', { name: 'Entry text' })) {
-      expect((t as HTMLTextAreaElement).placeholder).toBe('first update')
-    }
-  })
-
-  it('the journal textarea is serif', () => {
-    render(<Stateful data={journal} />)
     for (const t of screen.getAllByRole('textbox', { name: 'Entry text' })) {
       has(t, ...SERIF, 'text-mn-text')
       lacks(t, 'font-sans', 'text-[13.5px]')
-      expect((t as HTMLTextAreaElement).placeholder).toBe(ENTRIES_EMPTY_LINE)
     }
+  })
+
+  it('the editable textarea prefers the block’s `placeholder` over ENTRIES_EMPTY_LINE, on the oldest row only', () => {
+    render(<Stateful data={{ ...updates, placeholder: 'first update' }} />)
+    const texts = screen.getAllByRole('textbox', { name: 'Entry text' }) as HTMLTextAreaElement[]
+    expect(texts[0].placeholder).toBe('')
+    expect(texts[1].placeholder).toBe('first update')
+  })
+
+  it('the journal textarea is serif; only the oldest row carries the placeholder', () => {
+    render(<Stateful data={journal} />)
+    const texts = screen.getAllByRole('textbox', { name: 'Entry text' }) as HTMLTextAreaElement[]
+    for (const t of texts) {
+      has(t, ...SERIF, 'text-mn-text')
+      lacks(t, 'font-sans', 'text-[13.5px]')
+    }
+    for (const t of texts.slice(0, -1)) expect(t.placeholder).toBe('')
+    expect(texts[texts.length - 1].placeholder).toBe(ENTRIES_EMPTY_LINE)
+  })
+
+  it('"write the first entry" means the first entry written — the oldest, at the last index, not index 0', () => {
+    const three: EntriesBlock = {
+      ...updates,
+      entries: [
+        { id: 'a', date: '3 jan', text: '' },
+        { id: 'b', date: '2 jan', text: '' },
+        { id: 'c', date: '1 jan', text: 'Filled.' },
+      ],
+    }
+    render(<EntriesView data={three} editable />)
+    const texts = screen.getAllByRole('textbox', { name: 'Entry text' }) as HTMLTextAreaElement[]
+    expect(texts[0].placeholder).toBe('')
+    expect(texts[1].placeholder).toBe('')
+    expect(texts[2].placeholder).toBe(ENTRIES_EMPTY_LINE)
   })
 
   it('onChange emits the whole next block (full-state contract), ids and flag intact', () => {
@@ -464,6 +525,26 @@ describe('EntriesView — editable (a read-only date label + a prose field, per 
   })
 })
 
+describe('EntriesView — textarea height follows `scrollHeight`, not `field-sizing` alone (KAN-444)', () => {
+  it('sets style.height from scrollHeight after a text change', () => {
+    // jsdom never lays out text, so `scrollHeight` is a fixed stub here — the
+    // fix under test is that something writes it to `style.height` at all.
+    const original = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'scrollHeight')
+    Object.defineProperty(HTMLTextAreaElement.prototype, 'scrollHeight', {
+      configurable: true,
+      get: () => 77,
+    })
+    try {
+      render(<Stateful data={journal} />)
+      const texts = screen.getAllByRole('textbox', { name: 'Entry text' }) as HTMLTextAreaElement[]
+      fireEvent.change(texts[0], { target: { value: 'a much longer entry than before, wrapping' } })
+      expect(texts[0].style.height).toBe('77px')
+    } finally {
+      if (original) Object.defineProperty(HTMLTextAreaElement.prototype, 'scrollHeight', original)
+    }
+  })
+})
+
 describe('EntriesView — the add line (KAN-356)', () => {
   it('sits above the stack, editable mode only', () => {
     render(<EntriesView data={journal} />)
@@ -484,6 +565,30 @@ describe('EntriesView — the add line (KAN-356)', () => {
     expect(texts).toHaveLength(3)
     expect((texts[0] as HTMLTextAreaElement).value).toBe('booked the van')
     expect(document.activeElement).toBe(texts[0])
+  })
+
+  it('↵ leaves the caret at the end of the new row’s text, not the start — continuing to type appends', () => {
+    render(<Stateful data={updates} />)
+    const add = screen.getByRole('textbox', { name: 'Add entry' })
+    fireEvent.change(add, { target: { value: 'Cooked' } })
+    fireEvent.keyDown(add, { key: 'Enter' })
+
+    const texts = screen.getAllByRole('textbox', { name: 'Entry text' }) as HTMLTextAreaElement[]
+    expect(texts[0].selectionStart).toBe(6)
+    expect(texts[0].selectionEnd).toBe(6)
+  })
+
+  it('an insert never moves the placeholder onto the new top row — it stays on the oldest entry', () => {
+    const one: EntriesBlock = { ...updates, entries: [updates.entries[0]] }
+    render(<Stateful data={one} />)
+    const add = screen.getByRole('textbox', { name: 'Add entry' })
+    fireEvent.change(add, { target: { value: 'booked the van' } })
+    fireEvent.keyDown(add, { key: 'Enter' })
+
+    const texts = screen.getAllByRole('textbox', { name: 'Entry text' }) as HTMLTextAreaElement[]
+    expect(texts).toHaveLength(2)
+    expect(texts[0].placeholder).toBe('')
+    expect(texts[1].placeholder).toBe(ENTRIES_EMPTY_LINE)
   })
 
   it('empty ↵ does nothing — no onChange, no new row', () => {
@@ -511,6 +616,33 @@ describe('EntriesView — the add line (KAN-356)', () => {
     fireEvent.keyDown(add, { key: 'Enter', isComposing: true })
     expect(onChange).not.toHaveBeenCalled()
     expect((add as HTMLInputElement).value).toBe('予測')
+  })
+})
+
+describe('EntriesView — the pending-focus registry is scoped to the editable instance (KAN-444)', () => {
+  // A read-only `EntriesView` of the same block id must not be able to consume
+  // a focus request meant for the editable one: it never populates `textRefs`,
+  // so if its own copy of the focus effect ran too it could delete the request
+  // from the shared registry on a miss before the editable instance's render
+  // got a turn to claim it.
+  function SharedViews({ data: initial }: { data: EntriesBlock }) {
+    const [data, setData] = useState(initial)
+    return (
+      <>
+        <EntriesView data={data} />
+        <EntriesView data={data} editable onChange={setData} />
+      </>
+    )
+  }
+
+  it('still focuses the editable textarea for an entry the read-only sibling received first', () => {
+    render(<SharedViews data={updates} />)
+    const add = screen.getByRole('textbox', { name: 'Add entry' })
+    fireEvent.change(add, { target: { value: 'booked the van' } })
+    fireEvent.keyDown(add, { key: 'Enter' })
+
+    const texts = screen.getAllByRole('textbox', { name: 'Entry text' })
+    expect(document.activeElement).toBe(texts[0])
   })
 })
 
@@ -559,8 +691,11 @@ describe('EntriesView — the hover `remove` (KAN-356)', () => {
     expect(removes).toHaveLength(2)
     for (const r of removes) {
       expect(r.textContent).toBe('remove')
-      has(r, 'font-mono', 'text-mn-text-secondary', 'opacity-0', 'group-hover:opacity-100')
+      has(r, 'font-mono', 'text-mn-text-secondary', 'opacity-0', 'group-hover/row:opacity-100')
     }
+    // Named, not bare — a bare `group` on the row would also match BlockCanvas's
+    // own outer hover-handle chrome, revealing every row's button at once.
+    for (const r of removes) lacks(r.parentElement!, 'group')
   })
 
   it('clicking it removes that entry via onChange, leaving the others', () => {
@@ -583,8 +718,8 @@ describe('EntriesView — the hover `remove` (KAN-356)', () => {
   })
 })
 
-describe('EntriesView — ⌫ in an empty entry’s own field (KAN-356)', () => {
-  it('removes that entry via onChange, and blurs rather than focusing a neighbour (so ⌘Z reaches the session undo step, not a focused field’s own undo — KAN-356 fix)', () => {
+describe('EntriesView — ⌫ in an empty entry’s own field (KAN-445)', () => {
+  it('removes that entry via onChange, and focuses the row above with the caret at its end (KAN-445)', () => {
     render(<Stateful data={{ ...updates, entries: [...updates.entries, { id: 'u3', date: '1 nov', text: '' }] }} />)
     const texts = screen.getAllByRole('textbox', { name: 'Entry text' })
     expect(texts).toHaveLength(3)
@@ -592,17 +727,23 @@ describe('EntriesView — ⌫ in an empty entry’s own field (KAN-356)', () => 
 
     const next = screen.getAllByRole('textbox', { name: 'Entry text' })
     expect(next).toHaveLength(2)
-    expect(document.activeElement).toBe(document.body)
+    const above = next[1] as HTMLTextAreaElement
+    expect(document.activeElement).toBe(above)
+    expect(above.selectionStart).toBe(above.value.length)
+    expect(above.selectionEnd).toBe(above.value.length)
   })
 
-  it('with no previous entry, still blurs rather than focusing the next one', () => {
+  it('with no previous entry (the top row), focuses the row below instead, caret at its end', () => {
     render(<Stateful data={{ ...updates, entries: [{ id: 'u0', date: '1 nov', text: '' }, ...updates.entries] }} />)
     const texts = screen.getAllByRole('textbox', { name: 'Entry text' })
     fireEvent.keyDown(texts[0], { key: 'Backspace' })
 
     const next = screen.getAllByRole('textbox', { name: 'Entry text' })
     expect(next).toHaveLength(2)
-    expect(document.activeElement).toBe(document.body)
+    const below = next[0] as HTMLTextAreaElement
+    expect(document.activeElement).toBe(below)
+    expect(below.selectionStart).toBe(below.value.length)
+    expect(below.selectionEnd).toBe(below.value.length)
   })
 
   it('as the only entry, removes it and leaves focus nowhere', () => {
@@ -633,5 +774,69 @@ describe('EntriesView — ⌫ in an empty entry’s own field (KAN-356)', () => 
     const texts = screen.getAllByRole('textbox', { name: 'Entry text' })
     fireEvent.keyDown(texts[2], { key: 'Backspace', isComposing: true })
     expect(onChange).not.toHaveBeenCalled()
+  })
+})
+
+describe('EntriesView — removeEntry commits through commitStep under a BlockRowProvider host (KAN-447)', () => {
+  it('⌫ on an empty entry commits through commitStep, not onChange', () => {
+    const commitStep = jest.fn()
+    const onChange = jest.fn()
+    render(
+      <StatefulWithCommit
+        data={{ ...updates, entries: [...updates.entries, { id: 'u3', date: '1 nov', text: '' }] }}
+        commitStep={commitStep}
+        onChange={onChange}
+      />
+    )
+    const texts = screen.getAllByRole('textbox', { name: 'Entry text' })
+    fireEvent.keyDown(texts[2], { key: 'Backspace' })
+
+    expect(commitStep).toHaveBeenCalledTimes(1)
+    expect((commitStep.mock.calls[0][0] as EntriesBlock).entries.map((e) => e.id)).toEqual([
+      'u1',
+      'u2',
+    ])
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('the remove button does the same', () => {
+    const commitStep = jest.fn()
+    const onChange = jest.fn()
+    render(<StatefulWithCommit data={updates} commitStep={commitStep} onChange={onChange} />)
+    fireEvent.click(screen.getAllByRole('button', { name: 'Remove entry' })[0])
+
+    expect(commitStep).toHaveBeenCalledTimes(1)
+    expect((commitStep.mock.calls[0][0] as EntriesBlock).entries.map((e) => e.id)).toEqual(['u2'])
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('two fast Backspaces over two empty rows give two separate commitStep calls', () => {
+    const commitStep = jest.fn()
+    const twoEmpty: EntriesBlock = {
+      ...updates,
+      entries: [
+        { id: 'u3', date: '2 nov', text: '' },
+        { id: 'u4', date: '1 nov', text: '' },
+        ...updates.entries,
+      ],
+    }
+    render(<StatefulWithCommit data={twoEmpty} commitStep={commitStep} />)
+    let texts = screen.getAllByRole('textbox', { name: 'Entry text' })
+    expect(texts).toHaveLength(4)
+    fireEvent.keyDown(texts[0], { key: 'Backspace' })
+
+    texts = screen.getAllByRole('textbox', { name: 'Entry text' })
+    fireEvent.keyDown(texts[0], { key: 'Backspace' })
+
+    expect(commitStep).toHaveBeenCalledTimes(2)
+    expect((commitStep.mock.calls[0][0] as EntriesBlock).entries.map((e) => e.id)).toEqual([
+      'u4',
+      'u1',
+      'u2',
+    ])
+    expect((commitStep.mock.calls[1][0] as EntriesBlock).entries.map((e) => e.id)).toEqual([
+      'u1',
+      'u2',
+    ])
   })
 })

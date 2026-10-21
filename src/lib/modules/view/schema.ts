@@ -164,6 +164,13 @@ export const viewBigNumberConfigSchema = z.object({
 export type ViewBigNumberConfig = z.infer<typeof viewBigNumberConfigSchema>
 
 /**
+ * Calendar span (KAN-455, KAN-457). `'month'`, `'week'`, `'day'`, or `'agenda'`.
+ * The key stays off the parsed object when the block omits it. A reader uses
+ * `span ?? 'month'`.
+ */
+const calendarSpanSchema = z.enum(['month', 'week', 'day', 'agenda'])
+
+/**
  * A saved view's own config (KAN-32): the same per-mode clauses `viewSchema` has
  * always carried at the top level, scoped to one view instead of the whole block.
  */
@@ -176,12 +183,24 @@ export const viewSavedViewConfigSchema = z.object({
   chart: viewChartConfigSchema.optional(),
   bigNumber: viewBigNumberConfigSchema.optional(),
   collectionId: z.string().optional(),
+  /**
+   * List only (KAN-521). `true` is one flat run of rows. Absent and `false` keep
+   * today's due buckets. Board and calendar do not read it.
+   */
+  listFlat: z.boolean().optional(),
+  /**
+   * Calendar only (KAN-455, KAN-457). `'month'`, `'week'`, `'day'`, or `'agenda'`.
+   * The key stays off the parsed object when the block omits it. A reader uses
+   * `span ?? 'month'`.
+   */
+  span: calendarSpanSchema.optional(),
 })
 export type ViewSavedViewConfig = z.infer<typeof viewSavedViewConfigSchema>
 
 /**
- * One saved view in a block's `views[]` (KAN-32): a fixed `kind` (never flips)
- * plus its own config.
+ * One saved view in a block's `views[]` (KAN-32): its `kind` plus its own config.
+ * KAN-519 may write `kind` in place through `applyConfigPatch` (same id; `label`
+ * stays). `configure_view` still does not flip one saved view onto another kind.
  */
 export const viewSavedViewSchema = z.object({
   id: z.string(),
@@ -215,6 +234,17 @@ export const viewSchema = z
     bigNumber: viewBigNumberConfigSchema.optional(),
     /** A linked view over ANOTHER collection (#41) — draws that collection's rows instead of the host page's. */
     collectionId: z.string().optional(),
+    /**
+     * List only (KAN-521). `true` is one flat run of rows. Absent and `false` keep
+     * today's due buckets. Board and calendar do not read it.
+     */
+    listFlat: z.boolean().optional(),
+    /**
+     * Calendar only (KAN-455, KAN-457). `'month'`, `'week'`, `'day'`, or `'agenda'`.
+     * The key stays off the parsed object when the block omits it. A reader uses
+     * `span ?? 'month'`.
+     */
+    span: calendarSpanSchema.optional(),
     /**
      * Several saved views of the same database (KAN-32). Optional: a block with no
      * `views` is the back-compat shape above (one view, built from `mode`+config)
@@ -251,6 +281,8 @@ export const resolveActiveView = (
         chart: block.chart,
         bigNumber: block.bigNumber,
         collectionId: block.collectionId,
+        listFlat: block.listFlat,
+        span: block.span,
       },
     }
   }
@@ -283,6 +315,8 @@ export const activeSavedView = (block: ViewBlock, selectedId?: string): ViewBloc
     chart: resolved.config.chart,
     bigNumber: resolved.config.bigNumber,
     collectionId: resolved.config.collectionId,
+    listFlat: resolved.config.listFlat,
+    span: resolved.config.span,
   }
 }
 
@@ -294,24 +328,78 @@ export const activeSavedView = (block: ViewBlock, selectedId?: string): ViewBloc
  * is what replaces the retired "flipping mode back and forth never loses a
  * setup" tolerance: each view now keeps its own config permanently, instead of
  * the block hoarding every mode's leftover fields.
+ *
+ * An optional `mode` (KAN-519) writes the kind in place: top-level `mode` on a
+ * legacy block (`views` stays absent), or `kind` on the active saved view (local
+ * `activeId`, else `activeViewId`, else `views[0]` — same id, `label` and sibling
+ * views stay, top-level `mode` stays). Other fields in that patch still follow the
+ * write above. The same mode, with no other fields, returns the same block. A
+ * patch with no `mode` is the write above.
+ *
+ * A patch key set to `undefined` is deleted after the spread (`Object.keys`
+ * includes it), so a later pass can clear `listFlat` or a select/status
+ * `groupBy`. A key the patch omits stays. `mode` is written only when the
+ * patch sets one: the no-mode branch never spreads it.
  */
+const dropUndefinedPatchKeys = <T extends Partial<ViewSavedViewConfig>>(
+  merged: T,
+  patch: Partial<ViewSavedViewConfig>
+): T => {
+  const next = { ...merged }
+  for (const key of Object.keys(patch) as (keyof ViewSavedViewConfig)[]) {
+    if (patch[key] === undefined) delete next[key]
+  }
+  return next
+}
+
 export const applyConfigPatch = (
   block: ViewBlock,
-  patch: Partial<ViewSavedViewConfig>,
+  patch: Partial<ViewSavedViewConfig> & { mode?: ViewMode },
   /** The view actually showing (KAN-32 fix): the LOCAL selection a person's bar
    *  click lands on, which can diverge from the persisted `activeViewId` — a
    *  caller with no local selection (or a legacy block) omits it. */
   activeId?: string
 ): ViewBlock => {
-  if (!block.views || block.views.length === 0) {
-    return { ...block, ...patch }
+  if (patch.mode === undefined) {
+    const config: Partial<ViewSavedViewConfig> & { mode?: ViewMode } = { ...patch }
+    delete config.mode
+    if (!block.views || block.views.length === 0) {
+      return dropUndefinedPatchKeys({ ...block, ...config }, config)
+    }
+    const target = activeId ?? block.activeViewId ?? block.views[0].id
+    return {
+      ...block,
+      views: block.views.map((view) =>
+        view.id === target
+          ? { ...view, config: dropUndefinedPatchKeys({ ...view.config, ...config }, config) }
+          : view
+      ),
+    }
   }
+
+  const { mode, ...config } = patch
+  const writesConfig = Object.keys(config).length > 0
+
+  if (!block.views || block.views.length === 0) {
+    if (mode === block.mode && !writesConfig) return block
+    return dropUndefinedPatchKeys({ ...block, ...config, mode }, config)
+  }
+
   const target = activeId ?? block.activeViewId ?? block.views[0].id
+  const active = block.views.find((view) => view.id === target)
+  if (active && mode === active.kind && !writesConfig) return block
+
   return {
     ...block,
-    views: block.views.map((view) =>
-      view.id === target ? { ...view, config: { ...view.config, ...patch } } : view
-    ),
+    views: block.views.map((view) => {
+      if (view.id !== target) return view
+      if (!writesConfig) return { ...view, kind: mode }
+      return {
+        ...view,
+        kind: mode,
+        config: dropUndefinedPatchKeys({ ...view.config, ...config }, config),
+      }
+    }),
   }
 }
 

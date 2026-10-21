@@ -146,6 +146,7 @@ describe('proposeChangesSchema (the tool input)', () => {
   it('accepts a create with data and no blockId', () => {
     const r = proposeChangesSchema.safeParse({
       changes: [{ op: 'create', data: { type: 'text', content: 'new' } }],
+      assumption: 'Taking the open page as the target.',
     })
     expect(r.success).toBe(true)
   })
@@ -153,6 +154,7 @@ describe('proposeChangesSchema (the tool input)', () => {
   it('accepts an anchored create', () => {
     const r = proposeChangesSchema.safeParse({
       changes: [{ op: 'create', after: 'blk-1', data: { type: 'text', content: 'x' } }],
+      assumption: 'Taking the open page as the target.',
     })
     expect(r.success).toBe(true)
   })
@@ -170,6 +172,7 @@ describe('proposeChangesSchema (the tool input)', () => {
         },
         { op: 'create', data: { type: 'text', content: 'Two of three done.' } },
       ],
+      assumption: 'Taking the open page as the target.',
     })
     expect(r.success).toBe(true)
   })
@@ -178,9 +181,15 @@ describe('proposeChangesSchema (the tool input)', () => {
     expect(
       proposeChangesSchema.safeParse({
         changes: [{ op: 'edit', data: { type: 'text', content: 'x' } }],
+        assumption: 'Taking the open page as the target.',
       }).success
     ).toBe(false)
-    expect(proposeChangesSchema.safeParse({ changes: [{ op: 'remove' }] }).success).toBe(false)
+    expect(
+      proposeChangesSchema.safeParse({
+        changes: [{ op: 'remove' }],
+        assumption: 'Taking the open page as the target.',
+      }).success
+    ).toBe(false)
   })
 
   it('accepts a multi-op batch (create + edit + remove)', () => {
@@ -194,15 +203,36 @@ describe('proposeChangesSchema (the tool input)', () => {
         },
         { op: 'remove', blockId: 'c' },
       ],
+      assumption: 'Taking the open page as the target.',
     })
     expect(r.success).toBe(true)
   })
 
   it('rejects an empty batch and an unknown op', () => {
-    expect(proposeChangesSchema.safeParse({ changes: [] }).success).toBe(false)
     expect(
-      proposeChangesSchema.safeParse({ changes: [{ op: 'move', blockId: 'a' }] }).success
+      proposeChangesSchema.safeParse({
+        changes: [],
+        assumption: 'Taking the open page as the target.',
+      }).success
     ).toBe(false)
+    expect(
+      proposeChangesSchema.safeParse({
+        changes: [{ op: 'move', blockId: 'a' }],
+        assumption: 'Taking the open page as the target.',
+      }).success
+    ).toBe(false)
+  })
+
+  it('rejects a batch with no assumption', () => {
+    expect(
+      proposeChangesSchema.safeParse({
+        changes: [{ op: 'create', data: { type: 'text', content: 'x' } }],
+      }).success
+    ).toBe(false)
+  })
+
+  it('writes assumption before changes, so the model fills it first', () => {
+    expect(Object.keys(proposeChangesSchema.shape)[0]).toBe('assumption')
   })
 
   // ── ticket-30: cross-page targeting + inferred split ──────────────────────
@@ -210,6 +240,7 @@ describe('proposeChangesSchema (the tool input)', () => {
     const r = proposeChangesSchema.safeParse({
       targetPageId: 'page-abc',
       changes: [{ op: 'edit', blockId: 'b1', data: { type: 'text', content: 'x' } }],
+      assumption: 'Taking the open page as the target.',
     })
     expect(r.success).toBe(true)
     if (r.success) expect(r.data.targetPageId).toBe('page-abc')
@@ -218,6 +249,7 @@ describe('proposeChangesSchema (the tool input)', () => {
   it('omitting targetPageId is valid (edits the open page)', () => {
     const r = proposeChangesSchema.safeParse({
       changes: [{ op: 'create', data: { type: 'text', content: 'x' } }],
+      assumption: 'Taking the open page as the target.',
     })
     expect(r.success).toBe(true)
     if (r.success) expect(r.data.targetPageId).toBeUndefined()
@@ -235,6 +267,7 @@ describe('proposeChangesSchema (the tool input)', () => {
         },
         { op: 'remove', blockId: 'c', inferred: true },
       ],
+      assumption: 'Taking the open page as the target.',
     })
     expect(r.success).toBe(true)
     if (r.success) {
@@ -248,6 +281,7 @@ describe('proposeChangesSchema (the tool input)', () => {
     expect(
       proposeChangesSchema.safeParse({
         changes: [{ op: 'create', inferred: 'yes', data: { type: 'text', content: 'x' } }],
+        assumption: 'Taking the open page as the target.',
       }).success
     ).toBe(false)
   })

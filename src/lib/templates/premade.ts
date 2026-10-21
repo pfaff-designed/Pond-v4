@@ -23,17 +23,22 @@
  * Placeholder copy (KAN-103) lives in the block's OWN `placeholder` field — text's,
  * entries' (block-level) and a todo item's — never in `content` / `label` / `text`,
  * which stay empty so the block draws the invitation at ink .68 until a person types
- * (`type, or / for blocks and templates`, `anything, in any order`, `first item`,
- * `what done looks like`, `first update`, `link a page`, `what was said`, `first
- * action`, `done today`). `first record` (database) is a table row fixture, not a placeholder —
- * `table` has no placeholder field, so it stays as content. Where a block already
- * draws the board's exact line for an empty value with no authored copy of its own
- * (`highlight` → `a line worth keeping`, an `entries` row → `write the first entry`)
- * the value stays empty and no `placeholder` is set, so the block's own generic
- * fallback does the work. Seven placeholders the board draws cannot be expressed by a
- * `view` block, which holds no data (#111) — those blocks render their current empty
- * state and are filed as #274, marked `TODO(#274)` below. No head note is persisted
- * anywhere: notes are derived in `blockFrame()`.
+ * (`anything, in any order`, `first item`, `what done looks like`, `first update`,
+ * `link a page`, `what was said`, `first action`, `done today`). `first record`
+ * (database) is a table row fixture, not a placeholder — `table` has no placeholder
+ * field, so it stays as content. Where a block already draws the board's exact line
+ * for an empty value with no authored copy of its own (`highlight` → `a line worth
+ * keeping`, an `entries` row → `write the first entry`) the value stays empty and no
+ * `placeholder` is set, so the block's own generic fallback does the work. `page`'s
+ * bare text block is the same: KAN-345 rule 1/2 supersedes the board's own line for
+ * this one kind (templates and block picker, read out at the caret) — a fresh page
+ * shows no hint at rest, so this one block authors no `placeholder` either, and
+ * falls to `prose.ts`'s `PROSE_LINE_PLACEHOLDER`, painted only while that line
+ * holds the caret. Seven
+ * placeholders the board draws cannot be expressed by a `view` block, which holds no
+ * data (#111) — those blocks render their current empty state and are filed as #274,
+ * marked `TODO(#274)` below. No head note is persisted anywhere: notes are derived in
+ * `blockFrame()`.
  *
  * Code constants, never rows (migration 0016's own comment). `PondTemplate` in
  * `types.ts` is the ROW interface; this is a different type on purpose.
@@ -109,7 +114,7 @@ export const PREMADE_TEMPLATES: Record<TemplateKind, PremadeTemplate> = {
   page: {
     kind: 'page',
     title: 'untitled',
-    blocks: [{ type: 'text', content: '', placeholder: 'type, or / for blocks and templates' }],
+    blocks: [{ type: 'text', content: '' }],
   },
 
   notes: {
@@ -192,9 +197,10 @@ export const PREMADE_TEMPLATES: Record<TemplateKind, PremadeTemplate> = {
     kind: 'journal',
     title: 'journal',
     blocks: [
-      // `serif: true` is the journal's (#250 ruling 4). The first entry is left blank so
-      // the row draws its own `write the first entry` at placeholder ink.
-      { type: 'entries', label: 'entries', serif: true, entries: [{ date: 'today', text: '' }] },
+      // The first entry is left blank so the row draws its own `write the first
+      // entry` at placeholder ink. The text renders serif unconditionally now
+      // (KAN-444) — no flag to set.
+      { type: 'entries', label: 'entries', entries: [{ date: 'today', text: '' }] },
     ],
   },
 

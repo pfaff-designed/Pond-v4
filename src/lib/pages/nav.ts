@@ -31,7 +31,7 @@ export interface WorkspaceNodeRef {
  * URL is then pond-less and the shell resolves the person's first pond, which is
  * the behaviour before ponds existed.
  */
-function currentPondId(): string | null {
+export function currentPondId(): string | null {
   if (typeof window === 'undefined') return null
   return new URLSearchParams(window.location.search).get('pond')
 }
@@ -64,3 +64,34 @@ export function workspaceUrl(node: WorkspaceNodeRef | null, pondId?: string | nu
 /** Ticket-26 alias for the same URL; new call sites should use workspaceUrl. */
 export const workspaceHref = (node: WorkspaceNodeRef, pondId?: string | null): string =>
   workspaceUrl(node, pondId)
+
+/** The subset of `useRouter()` a page open needs — just enough to mock in tests. */
+export interface WorkspaceNavRouter {
+  push: (url: string) => void
+}
+
+/**
+ * The one way to open a workspace URL (KAN-449).
+ *
+ * On `/workspace`, every surface reads `?nodeId=`/`?nodeType=`/`?nodeName=`
+ * client-side (DocumentPanel, Rail, ShellCommands, AITerminal), so a shallow
+ * `pushState` switches the open page with no RSC round trip. Off `/workspace`
+ * (Cover.tsx at `/`), pushState cannot change the route, so the caller still
+ * needs a real navigation.
+ *
+ * Re-opening the page already open is a no-op: raw `pushState` has no
+ * same-URL check of its own (unlike `router.push`, which Next's app router
+ * resolves against the current href and replaces instead of pushing), so
+ * without this guard clicking the open page again pushed a duplicate entry
+ * and the first browser-back press did nothing.
+ */
+export function openWorkspaceUrl(url: string, router: WorkspaceNavRouter): void {
+  if (window.location.pathname === WORKSPACE_PATH) {
+    const target = new URL(url, window.location.href)
+    const current = `${window.location.pathname}${window.location.search}`
+    if (`${target.pathname}${target.search}` === current) return
+    window.history.pushState(null, '', url)
+    return
+  }
+  router.push(url)
+}

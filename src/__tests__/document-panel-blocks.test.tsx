@@ -70,15 +70,22 @@ jest.mock('@/lib/pages/client', () => ({
 }))
 
 const mockCommitBlocks = jest.fn().mockResolvedValue(undefined)
-jest.mock('@/lib/pages/commit', () => ({
-  commitBlocks: (...args: unknown[]) => mockCommitBlocks(...args),
-}))
+jest.mock('@/lib/pages/commit', () =>
+  jest.requireActual('./helpers/page-commit-mock').pageCommitMock({
+    commitBlocks: (...args: unknown[]) => mockCommitBlocks(...args),
+  })
+)
 jest.mock('@/lib/change-log/store', () => ({
   appendOwnEdit: jest.fn().mockResolvedValue({ id: 'record-1' }),
 }))
 jest.mock('@/lib/change-log/session-undo', () => ({
   sessionUndo: { remember: jest.fn() },
 }))
+
+// KAN-495: the apply's own commit mock call carries a `Block[]` union — narrow
+// to the text block's `content` rather than casting, since a template's first
+// block isn't always a text block.
+const contentOf = (b?: Block) => (b?.type === 'text' ? b.content : undefined)
 
 const blocks: Block[] = [
   { id: 'b-text', type: 'text', content: 'Notes on the workbench build' },
@@ -201,7 +208,7 @@ const tools = blocks[1]
 
 describe('the / menu on an empty page makes pages', () => {
   async function openSlash(typed: string) {
-    fireEvent.click(await screen.findByRole('button', { name: 'Add a block' }))
+    fireEvent.click(await screen.findByTestId('trailing-block-gap'))
     const editor = await findTextBlock()
     writeInTextBlock(editor, '/')
     return { editor, typed }
@@ -310,10 +317,23 @@ describe('the / menu on an empty page makes pages', () => {
     fireEvent.click(await screen.findByText('weeknight recipe'))
 
     // A blank page's pick applies in place (KAN-124): this page's own blocks
-    // become the template's stack, never a nested page.
-    await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalled())
+    // become the template's stack, never a nested page. KAN-495: the apply
+    // lands through the page-write queue's own writer (`commitBlocks`), not a
+    // direct `saveBlocks` call — and `writeStructural`'s own flush lands the
+    // pending typed save of the stale `/` content first, so the apply itself
+    // is the LAST commit for this page, not necessarily the first.
+    await waitFor(() =>
+      expect(
+        mockCommitBlocks.mock.calls.some(
+          (c) => c[2] === 'page-1' && contentOf((c[3] as Block[])[0]) !== '/'
+        )
+      ).toBe(true)
+    )
     expect(mockCreatePage).not.toHaveBeenCalled()
-    const appliedBlocks = mockSaveBlocks.mock.calls[0][2]
+    const appliedBlocks = mockCommitBlocks.mock.calls
+      .filter((c) => c[2] === 'page-1')
+      .map((c) => c[3] as Block[])
+      .at(-1)!
     expect(appliedBlocks).toEqual([
       { id: expect.not.stringMatching(/^old-1$/), type: 'text', content: 'chickpeas, harissa' },
     ])
@@ -345,13 +365,24 @@ describe('the / menu on an empty page makes pages', () => {
     })
     mockUsePondId.mockReturnValue('pond-1')
     justSaved.set('pond-1', 't1')
-    mockSaveBlocks.mockRejectedValueOnce(new Error('offline'))
+    // KAN-495: the apply's write lands through `commitBlocks` (the queue's
+    // writer), not a direct `saveBlocks` call — reject only the template's
+    // own content, not the stale `/` flush `writeStructural` sends first.
+    mockCommitBlocks.mockImplementation(async (...args: unknown[]) => {
+      const applied = args[3] as Block[]
+      if (contentOf(applied[0]) === 'chickpeas, harissa') throw new Error('offline')
+      return undefined
+    })
     renderWith({ id: 'page-1', parentId: null, type: 'page', title: 'Health', blocks: [] })
     const { editor } = await openSlash('')
     expect(editor).toBeInTheDocument()
     fireEvent.click(await screen.findByText('weeknight recipe'))
 
-    await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalled())
+    await waitFor(() =>
+      expect(
+        mockCommitBlocks.mock.calls.some((c) => contentOf((c[3] as Block[])[0]) === 'chickpeas, harissa')
+      ).toBe(true)
+    )
     expect(justSaved.get('pond-1')).toBe('t1')
   })
 })

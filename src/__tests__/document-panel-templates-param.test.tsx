@@ -38,7 +38,7 @@ jest.mock('@/lib/pages/client', () => ({
   updateTitle: jest.fn().mockResolvedValue(undefined),
   setProperty: jest.fn().mockResolvedValue(undefined),
 }))
-jest.mock('@/lib/pages/commit', () => ({ commitBlocks: jest.fn().mockResolvedValue(undefined) }))
+jest.mock('@/lib/pages/commit', () => jest.requireActual('./helpers/page-commit-mock').pageCommitMock())
 
 const groupsOf = (menu: HTMLElement) =>
   [...menu.parentElement!.querySelectorAll('[data-part="group"]')].map((g) => g.textContent)

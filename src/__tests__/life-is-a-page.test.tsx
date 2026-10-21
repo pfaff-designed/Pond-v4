@@ -3,9 +3,9 @@
  * blocks, and pages nest inside pages… Life is the page at the top.").
  *
  * The root (no ?nodeId) renders through the SAME DocumentPanel path as every
- * other page: the reserved home row's title and blocks, the always-visible
- * "+ Add a block". No bespoke surface, no focal numeral, no closing line. An
- * area is the same page with pages inside it (#108). Nested pages themselves
+ * other page: the reserved home row's title and blocks, and the trailing gap
+ * below them (KAN-345). No bespoke surface, no focal numeral, no closing
+ * line. An area is the same page with pages inside it (#108). Nested pages themselves
  * render as page-link blocks (KAN-415) — no longer anything DocumentPanel
  * draws from `rows`, so this file keeps `rows` only for what still reads it:
  * the breadcrumb path.
@@ -78,10 +78,13 @@ jest.mock('@/lib/pages/client', () => ({
   setProperty: jest.fn().mockResolvedValue(undefined),
 }))
 
-const mockCommitBlocks = jest.fn().mockResolvedValue(undefined)
-jest.mock('@/lib/pages/commit', () => ({
-  commitBlocks: (...args: unknown[]) => mockCommitBlocks(...args),
-}))
+// The real `commitBlocks` resolves `{ remembered }` for an own-edit save (KAN-355).
+const mockCommitBlocks = jest.fn().mockResolvedValue({ remembered: Promise.resolve() })
+jest.mock('@/lib/pages/commit', () =>
+  jest.requireActual('./helpers/page-commit-mock').pageCommitMock({
+    commitBlocks: (...args: unknown[]) => mockCommitBlocks(...args),
+  })
+)
 
 const PAGES: Record<string, Record<string, unknown>> = {
   health: { id: 'health', parentId: null, type: 'page', title: 'Health', blocks: [], props: {} },
@@ -126,8 +129,9 @@ describe('Life is a page (#234)', () => {
     renderPanel()
     // The ordinary page header — the home row's own title, editable like any page.
     expect(await screen.findByLabelText('Page title')).toHaveValue('life')
-    // Empty Life shows the always-visible foot add, like every page.
-    expect(await screen.findByRole('button', { name: 'Add a block' })).toBeInTheDocument()
+    // Empty Life shows the trailing gap, like every page — no button survives.
+    expect(await screen.findByTestId('trailing-block-gap')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add a block' })).not.toBeInTheDocument()
     // No bespoke surface survives: no closing line, no section label.
     expect(screen.queryByText(/That’s the whole of it/)).not.toBeInTheDocument()
     expect(screen.queryByText('Everything within')).not.toBeInTheDocument()
@@ -154,7 +158,7 @@ describe('Life is a page (#234)', () => {
 
   it('the add drops an empty text block ready to type — no palette (UI-audit Slice 2a)', async () => {
     renderPanel()
-    fireEvent.click(await screen.findByRole('button', { name: 'Add a block' }))
+    fireEvent.click(await screen.findByTestId('trailing-block-gap'))
     const field = await findTextBlock()
     expect(field).toHaveTextContent('')
     await waitFor(() => expect(field).toHaveFocus())
@@ -173,7 +177,7 @@ describe('Life is a page (#234)', () => {
       HOME_BLOCKS = []
       mockCommitBlocks.mockClear()
       const { unmount } = renderPanel()
-      fireEvent.click(await screen.findByRole('button', { name: 'Add a block' }))
+      fireEvent.click(await screen.findByTestId('trailing-block-gap'))
       const editor = await findTextBlock()
       writeInTextBlock(editor, '/')
       // An empty page leads with its templates; typing a block's name returns to the blocks.
@@ -211,7 +215,7 @@ describe('Life is a page (#234)', () => {
       HOME_BLOCKS = []
       mockCommitBlocks.mockClear()
       renderPanel()
-      fireEvent.click(await screen.findByRole('button', { name: 'Add a block' }))
+      fireEvent.click(await screen.findByTestId('trailing-block-gap'))
       const editor = await findTextBlock()
       writeInTextBlock(editor, '/')
       // An empty page leads with its templates; typing a block's name returns to the blocks.
@@ -241,7 +245,8 @@ describe('an area is the same page (#108, #234)', () => {
     currentNodeId = 'health'
     renderPanel()
     expect(await screen.findByLabelText('Page title')).toHaveValue('Health')
-    expect(await screen.findByRole('button', { name: 'Add a block' })).toBeInTheDocument()
+    expect(await screen.findByTestId('trailing-block-gap')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add a block' })).not.toBeInTheDocument()
     // Nothing treats it as a distinct kind of thing.
     expect(screen.queryByText(/at a glance/)).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '+ Add content' })).not.toBeInTheDocument()
@@ -259,8 +264,7 @@ describe('an area is the same page (#108, #234)', () => {
   it('“/chart” beside a view the picker cannot offer stays on the source step', async () => {
     HOME_BLOCKS = [{ id: 'v1', type: 'view', mode: 'table', collectionId: 'not-a-database' }]
     renderPanel()
-    await screen.findByRole('button', { name: 'Add a block' })
-    fireEvent.click(screen.getByRole('button', { name: 'Add a block' }))
+    fireEvent.click(await screen.findByTestId('trailing-block-gap'))
     const editor = await findTextBlock()
     writeInTextBlock(editor, '/')
     const menu = await screen.findByRole('listbox', { name: 'blocks' })

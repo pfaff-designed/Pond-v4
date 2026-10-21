@@ -48,12 +48,14 @@ function rect(left: number, width: number, top = 0, height = 100): DOMRect {
  * within `targetRect`. jsdom's `DragEvent` drops `clientX`/`clientY` from its
  * init dict (unlike a real browser's), so the point is defined directly on a
  * plain `MouseEvent` instead — React reads `.clientX` off whatever native
- * event fired, regardless of its constructor.
+ * event fired, regardless of its constructor. The target's rect is mocked
+ * BEFORE `dragstart` fires: dragstart snapshots every block's rect (KAN-440),
+ * so a mock set afterward is invisible to the classification it drives.
  */
 function dragOver(sourceId: string, targetId: string, targetRect: DOMRect, x: number, y: number) {
-  fireEvent.dragStart(blockRoot(sourceId))
   const target = blockRoot(targetId)
   jest.spyOn(target, 'getBoundingClientRect').mockReturnValue(targetRect)
+  fireEvent.dragStart(blockRoot(sourceId))
   const event = new MouseEvent('dragover', { bubbles: true, cancelable: true })
   Object.defineProperty(event, 'clientX', { value: x })
   Object.defineProperty(event, 'clientY', { value: y })

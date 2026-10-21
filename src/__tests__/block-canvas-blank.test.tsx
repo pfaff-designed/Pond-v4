@@ -5,14 +5,19 @@
  * ordinary, non-leading list.
  */
 
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { insertPageOptimistic } from '@/lib/pages/tree'
+import { createClient } from '@/lib/supabase/client'
+import { createPageWriter } from '@/lib/pages/commit'
+import { getPageWriteQueue } from '@/lib/pages/page-flush'
+import { createPageWriteQueue } from '@/lib/pages/page-write-queue'
 import type { Block } from '@/lib/documents/types'
+import type { PondPage } from '@/lib/pages/client'
 import type { PondTemplate } from '@/lib/templates/types'
 import { findTextBlock, writeInTextBlock } from './helpers/text-block'
 import { TEMPLATE_KINDS } from '@/lib/templates/types'
@@ -64,10 +69,14 @@ jest.mock('@/lib/pages/client', () => ({
 const mockAppendOwnEdit = jest.fn()
 jest.mock('@/lib/change-log/store', () => ({
   appendOwnEdit: (...args: unknown[]) => mockAppendOwnEdit(...args),
+  markOutdated: jest.fn().mockResolvedValue(undefined),
 }))
 const mockRemember = jest.fn()
 jest.mock('@/lib/change-log/session-undo', () => ({
-  sessionUndo: { remember: (...args: unknown[]) => mockRemember(...args) },
+  sessionUndo: {
+    remember: (...args: unknown[]) => mockRemember(...args),
+    trackPending: jest.fn(),
+  },
 }))
 // Captures whatever `anchor`/width the glass is given, each render — jsdom
 // never lays anything out (every element's own rect is zeroed, `hidden` or
@@ -118,6 +127,14 @@ function renderCanvas(blocks: Block[]) {
   )
 }
 
+// The page-write queue (KAN-495) is a module-level registry keyed by page
+// id that deliberately outlives a `BlockCanvas` unmount — so every KAN-124/
+// KAN-131 test sharing a literal `'page-1'` would hand the next test the
+// previous one's leftover `head()` as `before`, masking a real own-edit
+// record or stale block content. Each test gets its own id instead.
+let blankPageIdCounter = 0
+let blankPageId = 'page-1'
+
 beforeEach(() => {
   jest.clearAllMocks()
   mockFetchPages.mockResolvedValue(pageRows)
@@ -128,6 +145,8 @@ beforeEach(() => {
   mockListTemplates.mockResolvedValue([])
   mockSiblingTemplateRanking.mockResolvedValue([])
   justSaved.reset()
+  global.fetch = jest.fn().mockResolvedValue({ ok: true } as Response)
+  blankPageId = `blank-page-${++blankPageIdCounter}`
 })
 
 describe('the `/` menu on an empty page leads with templates (KAN-276)', () => {
@@ -341,16 +360,55 @@ function BlankPageHarness({
   onPreviewNameChange?: (name: string | null) => void
 } = {}) {
   const [blocks, setBlocks] = useState<Block[]>([{ id: 'b-empty', type: 'text', content: '' }])
+  const queryClient = useQueryClient()
+  // Real `DocumentPanel` pages seed the page's write queue on mount, via
+  // `use-page-draft.ts`'s own effect — so by the time a person can type, the
+  // queue's `head()` is already the loaded baseline, never whatever's typed
+  // first. This harness has no `usePageDraft`, so it does the same seed
+  // itself; without it, `BlockCanvas`'s own lazy `pageWriteQueue()` getter
+  // would be the queue's first creator instead, seeded off this render's
+  // `blocks` — which, by the time a template pick first reaches it, already
+  // holds the typed `/`.
+  const queueFor = () =>
+    getPageWriteQueue(blankPageId, () =>
+      createPageWriteQueue(createPageWriter(createClient(), queryClient, blankPageId, 'pond-1'), {
+        title: 'sourdough, 78%',
+        blocks,
+      })
+    )
+  useEffect(() => {
+    queueFor()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- seed once at mount, mirroring `use-page-draft.ts`'s own mount effect; `getPageWriteQueue` is a no-op for an id it already holds, so re-running this on `blocks` changes would do nothing but is also not what a re-seed should do.
+  }, [])
+  // `BlockCanvas` no longer touches the page's write queue itself (KAN-495:
+  // it is created only in `use-page-draft.ts`) — every structural write
+  // reaches it through this ONE prop, same as `writeStructural` there.
+  // Without it, `persistBlocksAsOwnEdit` falls back to plain `onChange`,
+  // and this harness's template-apply writes would never reach the queue
+  // (or `mockSaveBlocks`/`mockAppendOwnEdit`) at all.
+  const onStructuralWrite = (next: Block[]): Promise<boolean> => {
+    setBlocks(next)
+    return queueFor()
+      .enqueue({ kind: 'structural', after: { title: 'sourdough, 78%', blocks: next } })
+      .then(() => {
+        queryClient.setQueryData(['page', blankPageId], (prev: PondPage | null | undefined) =>
+          prev ? { ...prev, blocks: next } : prev
+        )
+        return true
+      })
+      .catch(() => false)
+  }
   return (
     <>
       <input aria-label="title" data-pond-page-title />
       <BlockCanvas
         blocks={blocks}
-        pageId="page-1"
+        pageId={blankPageId}
         pageTitle="sourdough, 78%"
         onChange={setBlocks}
         onUndoRemove={() => {}}
         onPreviewNameChange={onPreviewNameChange}
+        onStructuralWrite={onStructuralWrite}
       />
     </>
   )
@@ -427,10 +485,53 @@ describe('a template pick on a blank page applies in place (KAN-124)', () => {
     expect(insertPageOptimistic).not.toHaveBeenCalled()
   })
 
+  it("rule 2 (KAN-345): the applied template's own unwritten line ends up with the caret, same as any other session insert — `focusPageTitle` lands first, then the new line's own mount-time autofocus takes over, since the apply marked its ids inserted", async () => {
+    const user = userEvent.setup()
+    renderBlankPageHarness()
+
+    writeInTextBlock(await findTextBlock(), '/')
+    await screen.findByRole('listbox', { name: 'blocks' })
+    // The first template row is `page`; one ↓ reaches `notes`.
+    await user.keyboard('{ArrowDown}')
+    await user.keyboard('{Enter}')
+
+    const field = await findTextBlock()
+    await waitFor(() => expect(field).toHaveFocus())
+    expect(field).toHaveClass('ProseMirror-focused')
+  })
+
+  it("rule 2 (KAN-345) regression: the applied template's own unwritten line is marked a session insert BEFORE the save round-trip lands, so it still autofocuses on mount even while the write is still in flight — the queue's own write is still pending when the applied line mounts", async () => {
+    const user = userEvent.setup()
+    let resolveSave: (() => void) | undefined
+    mockSaveBlocks.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSave = resolve
+        })
+    )
+    renderBlankPageHarness()
+
+    writeInTextBlock(await findTextBlock(), '/')
+    await screen.findByRole('listbox', { name: 'blocks' })
+    // The first template row is `page`; one ↓ reaches `notes`.
+    await user.keyboard('{ArrowDown}')
+    await user.keyboard('{Enter}')
+
+    // The applied template's blocks already mounted and took focus — the
+    // queue's own write (`saveBlocks`, held pending above) hasn't resolved yet.
+    await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalledTimes(1))
+    const field = await findTextBlock()
+    await waitFor(() => expect(field).toHaveFocus())
+    expect(mockAppendOwnEdit).not.toHaveBeenCalled()
+
+    resolveSave?.()
+    await waitFor(() => expect(mockAppendOwnEdit).toHaveBeenCalledTimes(1))
+  })
+
   it("writes the kind label and provenance stamp onto the page, preserving its existing props, and reflects them in the ['page', id] cache", async () => {
     const user = userEvent.setup()
     const existing = {
-      id: 'page-1',
+      id: blankPageId,
       parentId: null,
       type: 'page' as const,
       title: 'sourdough, 78%',
@@ -440,7 +541,7 @@ describe('a template pick on a blank page applies in place (KAN-124)', () => {
     }
     mockGetPage.mockResolvedValue(existing)
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    client.setQueryData(['page', 'page-1'], existing)
+    client.setQueryData(['page', blankPageId], existing)
     renderBlankPageHarness(client)
 
     writeInTextBlock(await findTextBlock(), '/')
@@ -462,7 +563,7 @@ describe('a template pick on a blank page applies in place (KAN-124)', () => {
     // stale `existing.blocks`.
     const appliedBlocks = mockSaveBlocks.mock.calls[0][2]
     await waitFor(() =>
-      expect(client.getQueryData(['page', 'page-1'])).toEqual({
+      expect(client.getQueryData(['page', blankPageId])).toEqual({
         ...existing,
         blocks: appliedBlocks,
         props: writtenProps,
@@ -473,7 +574,7 @@ describe('a template pick on a blank page applies in place (KAN-124)', () => {
   it('persists the applied blocks as one own-edit record, remembered as one undo step', async () => {
     const user = userEvent.setup()
     const existing = {
-      id: 'page-1',
+      id: blankPageId,
       parentId: null,
       type: 'page' as const,
       title: 'sourdough, 78%',
@@ -483,7 +584,7 @@ describe('a template pick on a blank page applies in place (KAN-124)', () => {
     }
     mockGetPage.mockResolvedValue(existing)
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    client.setQueryData(['page', 'page-1'], existing)
+    client.setQueryData(['page', blankPageId], existing)
     renderBlankPageHarness(client)
 
     writeInTextBlock(await findTextBlock(), '/')
@@ -496,7 +597,7 @@ describe('a template pick on a blank page applies in place (KAN-124)', () => {
     const input = mockAppendOwnEdit.mock.calls[0][1]
     expect(input.before).toEqual(existing.blocks)
     expect(input.after).toEqual(mockSaveBlocks.mock.calls[0][2])
-    expect(input.targetPageId).toBe('page-1')
+    expect(input.targetPageId).toBe(blankPageId)
 
     expect(mockRemember).toHaveBeenCalledTimes(1)
     expect(mockRemember).toHaveBeenCalledWith({ pondId: 'pond-1', recordIds: ['record-1'] })
@@ -508,7 +609,7 @@ describe('a template pick on a blank page applies in place (KAN-124)', () => {
   it('G9: two quick picks/returns on the same template run the write once', async () => {
     const user = userEvent.setup()
     const existing = {
-      id: 'page-1',
+      id: blankPageId,
       parentId: null,
       type: 'page' as const,
       title: 'sourdough, 78%',
@@ -518,7 +619,7 @@ describe('a template pick on a blank page applies in place (KAN-124)', () => {
     }
     mockGetPage.mockResolvedValue(existing)
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    client.setQueryData(['page', 'page-1'], existing)
+    client.setQueryData(['page', blankPageId], existing)
     renderBlankPageHarness(client)
 
     writeInTextBlock(await findTextBlock(), '/')
@@ -646,7 +747,7 @@ describe('→ on a template row previews it, writing nothing (KAN-131)', () => {
     expect(mockSaveBlocks).not.toHaveBeenCalled()
     expect(mockSaveProps).not.toHaveBeenCalled()
     expect(mockAppendOwnEdit).not.toHaveBeenCalled()
-    expect(client.getQueryData(['page', 'page-1'])).toBeUndefined()
+    expect(client.getQueryData(['page', blankPageId])).toBeUndefined()
   })
 
   it("draws the template's blocks as flat outline rows, beside the still-open templates menu, not in place of it (6f frame 3's s3.1.3)", async () => {

@@ -126,7 +126,6 @@ export const POND_ATOM_EMPTY = {
   relation: 'link a record',
   person: 'assign someone',
   heading: 'untitled',
-  prose: 'write something',
   link: 'add a link',
   file: 'attach a file',
 } as const satisfies Partial<Record<PondAtomKind, string>>

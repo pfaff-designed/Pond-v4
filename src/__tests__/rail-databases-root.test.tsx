@@ -105,6 +105,17 @@ describe('rail — the databases root', () => {
     expect(within(foot).getByText('ingredients')).toBeInTheDocument()
   })
 
+  // KAN-486: change log + trash are always the root's first two children once
+  // it exists, so the root is a disclosure — and carries a caret — even for a
+  // pond with a root but zero database pages yet.
+  it('the databases root always carries the rail’s folder caret', () => {
+    renderRail([health, databases])
+    const foot = screen.getByRole('tree', { name: 'Databases' })
+    const root = within(foot).getByRole('treeitem', { name: /databases/ })
+    expect(root).toHaveAttribute('aria-expanded', 'false')
+    expect(root.querySelector('button[aria-hidden="true"]')).not.toBeNull()
+  })
+
   it('draws the databases row before the pond has a root, and opening it asks for one', () => {
     const onOpenDatabases = jest.fn()
     renderRail([health], new Set<string>(), onOpenDatabases)

@@ -23,6 +23,19 @@ export interface BlockRowValue {
    * `blocks` array and silently drop the edit).
    */
   stepOut: (patch?: Block) => void
+  /**
+   * One structural edit, as its own change-log record (KAN-355): the host
+   * flushes whatever save is already pending (the typing before this edit),
+   * applies `patch`, then flushes again so THIS edit's own debounced save
+   * lands now rather than merging with whatever comes next inside the same
+   * pause. A view calls this for add/remove/move/reorder — never for label
+   * typing or ticking, which stay the ordinary debounced `onChange`.
+   * Optional, and absent from the default below: a host that doesn't provide
+   * one (no `BlockRowProvider` above it — Storybook, a bare `ModuleView`
+   * host like `page/view.tsx`) has no save to flush twice, so a view falls
+   * back to its own `onChange` rather than silently dropping the edit.
+   */
+  commitStep?: (patch: Block) => void
 }
 
 const BlockRowContext = createContext<BlockRowValue>({
