@@ -75,6 +75,8 @@ import {
   GANTT_TRACK_STYLE,
 } from './gantt-shared'
 import { PondBlockEmpty } from '@/components/organisms/PondBlock'
+import { useBlockHeightConstrained } from '@/components/organisms/block-height-context'
+import { cn } from '@/lib/utils'
 import { BOARD_EMPTY_LINE, GANTT_EMPTY_LINE, type ViewConfigPatch } from './kinds'
 import {
   addDateField,
@@ -529,6 +531,7 @@ export function CollectionView({
     return extra.length === 0 ? processed : [...processed, ...extra]
   }, [processed, struckRows])
   const struckIds = useMemo(() => new Set(struckRows.map((row) => row.id)), [struckRows])
+  const constrained = useBlockHeightConstrained()
 
   // A config edit (chart/big-number setup) must land on whichever view the bar has
   // LOCALLY selected, never the persisted `activeViewId` — a bar click never calls
@@ -584,126 +587,134 @@ export function CollectionView({
   }
 
   return (
-    <div className="text-sm text-mn-text">
-      <ViewControls
-        config={activeConfig}
-        schema={schema}
-        collectionName={collectionName}
-        recordCount={rows.length}
-        savedViews={config.views}
-        activeViewId={localActiveViewId}
-        onSelectView={config.views ? handleSelectView : undefined}
-        showAddView={!!editable}
-        editable={editable}
-        onConfigChange={onConfigChange ? handleConfigChange : undefined}
-      />
-      {activeConfig.mode === 'board' ? (
-        <CollectionBoard
+    <div className={cn('text-sm text-mn-text', constrained && 'flex h-full min-h-0 flex-col')}>
+      <div data-part="view-chrome" className={cn(constrained && 'shrink-0')}>
+        <ViewControls
+          config={activeConfig}
           schema={schema}
-          rows={processed}
-          viewKey={viewKey}
-          groupBy={activeConfig.groupBy}
+          collectionName={collectionName}
+          recordCount={rows.length}
+          savedViews={config.views}
+          activeViewId={localActiveViewId}
+          onSelectView={config.views ? handleSelectView : undefined}
+          showAddView={!!editable}
           editable={editable}
-          onEdit={onEdit}
-          onAddRow={onAddRow}
-          onRenameRow={onRenameRow}
-          onOpenRow={onOpenRow}
-          onAddStatusField={onAddStatusField}
-        />
-      ) : activeConfig.mode === 'list' ? (
-        <CollectionList
-          viewKey={viewKey}
-          schema={schema}
-          rows={processed}
-          groupBy={activeConfig.groupBy}
-          listFlat={activeConfig.listFlat}
-          editable={editable}
-          onEdit={onEdit}
-          onAddRow={onAddRow}
-          onRenameRow={onRenameRow}
-          onOpenRow={onOpenRow}
-          onAddDateField={onAddDateField}
-        />
-      ) : activeConfig.mode === 'calendar' ? (
-        <CollectionCalendar
-          viewKey={viewKey}
-          schema={schema}
-          rows={processed}
-          groupBy={activeConfig.groupBy}
-          editable={editable}
-          onEdit={onEdit}
-          onMoveDate={onMoveDate}
-          onMoveDates={onMoveDates}
-          onAddRow={onAddRow}
-          onRenameRow={onRenameRow}
-          onOpenRow={onOpenRow}
-          onAddDateField={onAddDateField}
-          span={activeConfig.span}
-          startId={activeConfig.startDate}
-          endId={activeConfig.endDate}
           onConfigChange={onConfigChange ? handleConfigChange : undefined}
         />
-      ) : activeConfig.mode === 'gallery' ? (
-        <CollectionGallery
-          viewKey={viewKey}
-          schema={schema}
-          rows={processed}
-          editable={editable}
-          onEdit={onEdit}
-          onAddRow={onAddRow}
-          onRenameRow={onRenameRow}
-          onOpenRow={onOpenRow}
-        />
-      ) : activeConfig.mode === 'gantt' ? (
-        <CollectionGantt
-          schema={schema}
-          rows={processed}
-          startId={activeConfig.startDate}
-          endId={activeConfig.endDate}
-          editable={editable}
-          onMoveDates={onMoveDates}
-          onAddRow={onAddRow}
-          onRenameRow={onRenameRow}
-          onAddDateField={onAddDateField}
-        />
-      ) : activeConfig.mode === 'chart' ? (
-        // #259: the chart's PRESENTATION — the compact inline mark (the board's
-        // `bars` strip / `heat` grid) or the chart card. Same rows, same aggregation.
-        !chartCard && activeConfig.chart ? (
-          <CompactChart schema={schema} rows={processed} chart={activeConfig.chart} />
-        ) : (
-          <CollectionChart
-            config={activeConfig}
+      </div>
+      <div data-part="view-body" className={cn(constrained && 'min-h-0 flex-1 overflow-y-auto')}>
+        {activeConfig.mode === 'board' ? (
+          <CollectionBoard
             schema={schema}
             rows={processed}
-            totalRows={rows.length}
-            provenance={chartProvenance}
-            /* `editable` gates it, as every other mode's insert is gated: a diff
+            viewKey={viewKey}
+            groupBy={activeConfig.groupBy}
+            editable={editable}
+            onEdit={onEdit}
+            onAddRow={onAddRow}
+            onRenameRow={onRenameRow}
+            onOpenRow={onOpenRow}
+            onAddStatusField={onAddStatusField}
+          />
+        ) : activeConfig.mode === 'list' ? (
+          <CollectionList
+            viewKey={viewKey}
+            schema={schema}
+            rows={processed}
+            groupBy={activeConfig.groupBy}
+            listFlat={activeConfig.listFlat}
+            editable={editable}
+            onEdit={onEdit}
+            onAddRow={onAddRow}
+            onRenameRow={onRenameRow}
+            onOpenRow={onOpenRow}
+            onAddDateField={onAddDateField}
+          />
+        ) : activeConfig.mode === 'calendar' ? (
+          <CollectionCalendar
+            viewKey={viewKey}
+            schema={schema}
+            rows={processed}
+            groupBy={activeConfig.groupBy}
+            editable={editable}
+            onEdit={onEdit}
+            onMoveDate={onMoveDate}
+            onMoveDates={onMoveDates}
+            onAddRow={onAddRow}
+            onRenameRow={onRenameRow}
+            onOpenRow={onOpenRow}
+            onAddDateField={onAddDateField}
+            span={activeConfig.span}
+            startId={activeConfig.startDate}
+            endId={activeConfig.endDate}
+            onConfigChange={onConfigChange ? handleConfigChange : undefined}
+          />
+        ) : activeConfig.mode === 'gallery' ? (
+          <CollectionGallery
+            viewKey={viewKey}
+            schema={schema}
+            rows={processed}
+            editable={editable}
+            onEdit={onEdit}
+            onAddRow={onAddRow}
+            onRenameRow={onRenameRow}
+            onOpenRow={onOpenRow}
+          />
+        ) : activeConfig.mode === 'gantt' ? (
+          <CollectionGantt
+            schema={schema}
+            rows={processed}
+            startId={activeConfig.startDate}
+            endId={activeConfig.endDate}
+            editable={editable}
+            onMoveDates={onMoveDates}
+            onAddRow={onAddRow}
+            onRenameRow={onRenameRow}
+            onAddDateField={onAddDateField}
+          />
+        ) : activeConfig.mode === 'chart' ? (
+          // #259: the chart's PRESENTATION — the compact inline mark (the board's
+          // `bars` strip / `heat` grid) or the chart card. Same rows, same aggregation.
+          !chartCard && activeConfig.chart ? (
+            <CompactChart schema={schema} rows={processed} chart={activeConfig.chart} />
+          ) : (
+            <CollectionChart
+              config={activeConfig}
+              schema={schema}
+              rows={processed}
+              totalRows={rows.length}
+              provenance={chartProvenance}
+              /* `editable` gates it, as every other mode's insert is gated: a diff
                card and a create-page proposal both render this view with no
                `editable`, and an `add a row` there would write to the
                collection from a surface whose whole job is to be reviewed —
                "pages change only through the person's own edits or an accepted
                diff" (`PROJECT_RULES.md`). */
-            onAddRow={editable && onAddRow ? () => void onAddRow() : undefined}
+              onAddRow={editable && onAddRow ? () => void onAddRow() : undefined}
+            />
+          )
+        ) : activeConfig.mode === 'big-number' ? (
+          <CollectionBigNumber
+            schema={schema}
+            rows={processed}
+            bigNumber={activeConfig.bigNumber}
           />
-        )
-      ) : activeConfig.mode === 'big-number' ? (
-        <CollectionBigNumber schema={schema} rows={processed} bigNumber={activeConfig.bigNumber} />
-      ) : (
-        <CollectionTable
-          viewKey={viewKey}
-          schema={schema}
-          rows={tableRows}
-          struckIds={struckIds}
-          editable={editable}
-          onEdit={onEdit}
-          onAddRow={onAddRow}
-          onRenameRow={onRenameRow}
-          onOpenRow={onOpenRow}
-          onRenameField={onRenameField}
-          onDeleteField={onDeleteField}
-        />
-      )}
+        ) : (
+          <CollectionTable
+            viewKey={viewKey}
+            schema={schema}
+            rows={tableRows}
+            struckIds={struckIds}
+            editable={editable}
+            onEdit={onEdit}
+            onAddRow={onAddRow}
+            onRenameRow={onRenameRow}
+            onOpenRow={onOpenRow}
+            onRenameField={onRenameField}
+            onDeleteField={onDeleteField}
+          />
+        )}
+      </div>
     </div>
   )
 }

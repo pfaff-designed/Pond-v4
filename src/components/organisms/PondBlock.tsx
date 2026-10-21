@@ -273,6 +273,13 @@ export interface PondBlockProps {
    * since that handle sits outside the card at `left -14`.
    */
   size?: PondMenuSize
+  /**
+   * KAN-442: the card is a set pixel height. The head stays put. `pane` scrolls
+   * this card's body (an image, a table). `self` lets the body — a view — scroll
+   * its own contents and keep its bar fixed.
+   */
+  constrained?: boolean
+  bodyScroll?: 'pane' | 'self'
   children: ReactNode
   className?: string
 }
@@ -292,6 +299,8 @@ export function PondBlock({
   onRestore,
   onRemoveBlock,
   size = 'desktop',
+  constrained = false,
+  bodyScroll = 'pane',
   children,
   className,
 }: PondBlockProps) {
@@ -378,17 +387,38 @@ export function PondBlock({
         // --tw-ring-shadow before --tw-shadow), so both paint — as the board draws.
         selected && POND_BLOCK_SELECTED_RING,
         disabled && POND_BLOCK_DISABLED,
+        constrained && 'h-full min-h-0 overflow-hidden',
         className
       )}
     >
-      <div className={cn('flex items-baseline justify-between gap-mn-3', size === 'mobile' && 'pr-10')}>
+      <div
+        data-part="block-head"
+        className={cn(
+          'flex items-baseline justify-between gap-mn-3',
+          size === 'mobile' && 'pr-10',
+          constrained && 'shrink-0'
+        )}
+      >
         <span className={pageEyebrowClass}>{heading}</span>
         <span className={blockHeadNoteClass}>
           {loading ? BLOCK_LOADING_NOTE : tombed ? POND_BLOCK_TOMB_NOTE : headNote}
         </span>
       </div>
-      {headBar}
-      {body}
+      {headBar && (
+        <div data-part="block-bar" className={cn(constrained && 'shrink-0')}>
+          {headBar}
+        </div>
+      )}
+      <div
+        data-part="block-body"
+        className={cn(
+          !constrained && 'contents',
+          constrained && bodyScroll === 'self' && 'flex min-h-0 flex-1 flex-col overflow-hidden',
+          constrained && bodyScroll === 'pane' && 'min-h-0 flex-1 overflow-y-auto'
+        )}
+      >
+        {body}
+      </div>
     </div>
   )
 }

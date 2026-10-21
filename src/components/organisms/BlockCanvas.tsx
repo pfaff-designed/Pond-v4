@@ -9,7 +9,9 @@
  * on an empty text block or an empty line inside one, Return on a focused block
  * opening a line after it, drag/⌥↑/⌥↓ reorder, per-block delete with undo — and,
  * below the last block, a hover-only hit area that opens a new line (KAN-345). The
- * handle is the only block chrome: nothing is drawn between blocks at rest.
+ * handle is the block menu. A view, image or table also has height strips on its
+ * top and bottom edges (KAN-442) — an extension of 07.05, which draws the handle
+ * as the only chrome. Nothing is drawn between blocks at rest.
  *
  * Persistence is the CALLER's concern: BlockCanvas is controlled (it takes
  * `blocks` and emits the full next array via `onChange`), so DocumentPanel keeps
@@ -102,6 +104,9 @@ import {
   runBlockMenuAction,
   type BlockMenuAction,
 } from '@/components/organisms/block-menu'
+import { BlockHeightHandles } from '@/components/organisms/BlockHeightHandles'
+import { BlockHeightProvider } from '@/components/organisms/block-height-context'
+import { blockAcceptsHeight, blockWithoutHeight } from '@/lib/modules/block-height'
 import type { ConversionTarget, LineConversion, TableConversion } from '@/lib/modules/conversions'
 import { isBlockMenuChord, isDeleteBlockChord } from '@/lib/shell-commands'
 import { slashRows, emptyBlockForType } from '@/lib/modules/palette'
@@ -207,7 +212,10 @@ function rowGapValue(listStyle: CSSProperties | undefined): NonNullable<CSSPrope
 /** Sets `rowStart` on a copy of `block`, omitting the key rather than writing
  * `false` (KAN-440) — matches `rowStart`'s own "absent means today's packing"
  * convention everywhere else it's set. */
-function withRowStart<T extends { rowStart?: boolean }>(block: T, rowStart: boolean | undefined): T {
+function withRowStart<T extends { rowStart?: boolean }>(
+  block: T,
+  rowStart: boolean | undefined
+): T {
   if (rowStart === true) return { ...block, rowStart: true }
   const next = { ...block }
   delete (next as { rowStart?: boolean }).rowStart
@@ -700,9 +708,9 @@ export function BlockCanvas({
   // moves `menuOpenAt` (Esc and any other menu-close path all route through
   // `onOpenChange` to `handleMenuOpenChange` below) and at every drag exit, so
   // a stale preview can never survive the menu or drag it came from.
-  const [previewWidth, setPreviewWidth] = useState<
-    { blockId: string; width: BlockWidth }[] | null
-  >(null)
+  const [previewWidth, setPreviewWidth] = useState<{ blockId: string; width: BlockWidth }[] | null>(
+    null
+  )
 
   // 6f frame 3: the template under preview, as flat outlines over the blank
   // page — transient, never in `blocks`, the store or the change log.
@@ -862,6 +870,21 @@ export function BlockCanvas({
     })
   }
 
+  /**
+   * One edge-drag, or one "fit height": the same in-place swap as
+   * `setBlockWidth`, so the undo toast restores the block's previous height
+   * (absent means fit). A drag previews locally and calls this once, on release.
+   */
+  const setBlockHeight = (before: Block, after: Block) => {
+    if ((before.height ?? null) === (after.height ?? null)) return
+    onChange(blocks.map((b) => (b.id === before.id ? after : b)))
+    stageUndo({
+      message: after.height == null ? 'Fit the block height' : 'Set the block height',
+      scope: 'block',
+      undo: () => onChange(blocksRef.current.map((b) => (b.id === before.id ? before : b))),
+    })
+  }
+
   /** The page's own URL, anchored at the block — arriving there lands on it. */
   const copyBlockLink = async (blockId: string) => {
     try {
@@ -898,6 +921,7 @@ export function BlockCanvas({
       'copy-link': () => void copyBlockLink(block.id),
       delete: () => removeBlockAt(index),
       'set-width': ({ width }) => setBlockWidth(block, width),
+      'fit-height': () => setBlockHeight(block, blockWithoutHeight(block)),
     })
   }
 
@@ -990,7 +1014,11 @@ export function BlockCanvas({
     const anchor = line ?? document.getElementById(blockDomId(target.hostId)) ?? canvasRef.current
     const caret = anchor ? caretRect(anchor) : { top: 0, bottom: 0 }
     const bound = composerBottomBound(window.innerHeight)
-    const side = sideTowardFreeSpace(caret, bound, sourcePickerHeight(databases, window.innerHeight))
+    const side = sideTowardFreeSpace(
+      caret,
+      bound,
+      sourcePickerHeight(databases, window.innerHeight)
+    )
     const maxHeight = Math.max(0, roomTowardSide(caret, bound, side))
     setSourcePicker({ block, target, at, anchor, side, maxHeight })
   }
@@ -1452,9 +1480,7 @@ export function BlockCanvas({
     const neighborAt = neighborId ? withGhost.findIndex((item) => item.id === neighborId) : -1
     let insertAt = neighborId ? neighborAt : withGhost.length
 
-    const plannedRow = layoutRows(withGhost).find((row) =>
-      row.some((item) => item.id === ghostId)
-    )
+    const plannedRow = layoutRows(withGhost).find((row) => row.some((item) => item.id === ghostId))
     let rowEnd = -1
     if (plannedRow) {
       const rowIndices = withGhost.reduce<number[]>((acc, item, i) => {
@@ -1568,7 +1594,11 @@ export function BlockCanvas({
    * `detachKeepingRows`, so a row-mate it leaves behind inherits its
    * `rowStart` instead of re-packing into the row before it.
    */
-  async function commitOwnLineDrop(fromIndex: number, targetIndex: number, zone: 'above' | 'below') {
+  async function commitOwnLineDrop(
+    fromIndex: number,
+    targetIndex: number,
+    zone: 'above' | 'below'
+  ) {
     const dragged = { ...blocks[fromIndex], width: 'full' as BlockWidth, rowStart: true as const }
     const target = blocks[targetIndex]
     const { blocks: withoutDragged } = detachKeepingRows(blocks, fromIndex)
@@ -1652,14 +1682,16 @@ export function BlockCanvas({
     if (!el || typeof ResizeObserver === 'undefined') return
     const read = () => {
       const containerRect = el.getBoundingClientRect()
-      const tops = blockRows.slice(0, -1).map(
-        (row) =>
-          Math.max(
-            ...row.map(
-              (item) => itemSizingRefs.current.get(item.id)?.getBoundingClientRect().bottom ?? 0
-            )
-          ) - containerRect.top
-      )
+      const tops = blockRows
+        .slice(0, -1)
+        .map(
+          (row) =>
+            Math.max(
+              ...row.map(
+                (item) => itemSizingRefs.current.get(item.id)?.getBoundingClientRect().bottom ?? 0
+              )
+            ) - containerRect.top
+        )
       const last = lastMeasureRef.current
       if (
         last &&
@@ -1699,11 +1731,18 @@ export function BlockCanvas({
         className="pointer-events-none shadow-mn-lifted rotate-[-.6deg] translate-x-[12px] translate-y-[18px] z-[4]"
       >
         {frame ? (
-          <PondBlock kind={frame.kind} heading={frame.heading} headNote={frame.headNote} state="rest">
+          <PondBlock
+            kind={frame.kind}
+            heading={frame.heading}
+            headNote={frame.headNote}
+            state="rest"
+          >
             {view}
           </PondBlock>
         ) : block.type === 'text' ? (
-          <div style={{ paddingBlock: TEXT_BLOCK_TOP_INSET_PX, paddingInline: TEXT_BLOCK_INSET_PX }}>
+          <div
+            style={{ paddingBlock: TEXT_BLOCK_TOP_INSET_PX, paddingInline: TEXT_BLOCK_INSET_PX }}
+          >
             {view}
           </div>
         ) : (
@@ -1711,6 +1750,18 @@ export function BlockCanvas({
         )}
       </div>
     )
+  }
+
+  /** The other blocks in this block's row, named the way the height readout reads them. */
+  function heightNeighbours(blockId: string): { id: string; label: string }[] {
+    const row = blockRows.find((items) => items.some((item) => item.id === blockId && !item.ghost))
+    if (!row) return []
+    return row.flatMap((item) => {
+      if (item.ghost || item.id === blockId) return []
+      const mate = blocks.find((candidate) => candidate.id === item.id)
+      if (!mate) return []
+      return [{ id: mate.id, label: blockName(mate, blockFrame(mate)) }]
+    })
   }
 
   function renderBlockEditor(block: Block, i: number) {
@@ -1776,6 +1827,9 @@ export function BlockCanvas({
         menuSize={slashSize}
         onMenuOpenChange={(open) => handleMenuOpenChange(i, open)}
         onMenuSelect={(action) => handleMenuSelect(i, action)}
+        onHeightCommit={(next) => setBlockHeight(block, next)}
+        heightNeighbours={heightNeighbours(block.id)}
+        reorderDrag={draggingIndex !== null}
         isDragging={draggingIndex === i}
         dropZone={dropIndicator?.index === i ? dropIndicator : undefined}
         onDragStart={(e) => {
@@ -1922,9 +1976,7 @@ export function BlockCanvas({
               // any other anchor.
               ref={slashSize === 'desktop' ? undefined : previewAnchorRef}
               style={
-                slashSize === 'desktop'
-                  ? { flex: 1, minWidth: 0 }
-                  : { width: '100%', minWidth: 0 }
+                slashSize === 'desktop' ? { flex: 1, minWidth: 0 } : { width: '100%', minWidth: 0 }
               }
             >
               <TemplatePreviewOutline rows={templateOutlineRows(previewing.blocks)} />
@@ -2309,6 +2361,9 @@ function BlockEditor({
   menuSize = 'desktop',
   onMenuOpenChange,
   onMenuSelect,
+  onHeightCommit,
+  heightNeighbours = [],
+  reorderDrag = false,
   isDragging,
   dropZone,
   onDragStart,
@@ -2369,6 +2424,12 @@ function BlockEditor({
   menuSize?: PondMenuSize
   onMenuOpenChange?: (open: boolean) => void
   onMenuSelect?: (action: BlockMenuAction) => void
+  /** One finished height gesture — the stored block, with `height` set or cleared. */
+  onHeightCommit?: (next: Block) => void
+  /** The other blocks in this block's row, for the height snap. */
+  heightNeighbours?: { id: string; label: string }[]
+  /** A reorder drag is in progress — the height strips stay off the page. */
+  reorderDrag?: boolean
   isDragging?: boolean
   /** The drop line to draw on THIS block, if the drag is hovering it — `BlockCanvas` decides which block that is. */
   dropZone?: { zone: DropZone; span?: { left: number; width: number } }
@@ -2432,7 +2493,8 @@ function BlockEditor({
     () => ({
       getBoundingClientRect: () => {
         const r =
-          previewAnchorRef?.current?.getBoundingClientRect() ?? document.body.getBoundingClientRect()
+          previewAnchorRef?.current?.getBoundingClientRect() ??
+          document.body.getBoundingClientRect()
         // Desktop: the slot is the zero-height stand-in beside the outline (board
         // 6f frame 3 s3.1.3 top-aligns the glass with its row, not `bottom + 4`
         // below it) — shift the rect up 4px so `useAnchoredBox`'s own, untouched
@@ -2457,6 +2519,27 @@ function BlockEditor({
   // state, never a second ring, so it only applies on top of `rest` — never
   // overrides empty/loading/error.
   const [rowSelected, setRowSelected] = useState(false)
+  const sizable = blockAcceptsHeight(block)
+  const [previewHeight, setPreviewHeight] = useState<number | null>(null)
+  const shownHeight = previewHeight ?? (sizable ? block.height : undefined)
+  const constrained = shownHeight != null
+  const sizeRef = useRef<HTMLDivElement>(null)
+  const naturalFitRef = useRef<number | null>(null)
+  // Keep the unsized height current. A board's rows arrive after the first
+  // paint, and `block` does not change when they do — without an observer the
+  // memory stays at the loading height and a later drag snaps to it.
+  useLayoutEffect(() => {
+    const node = sizeRef.current
+    if (!node || constrained) return
+    const remember = () => {
+      const measured = node.offsetHeight
+      if (measured > 0) naturalFitRef.current = measured
+    }
+    remember()
+    const observer = new ResizeObserver(remember)
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [constrained])
   const state = rowSelected && baseState === 'rest' ? 'selected' : baseState
 
   // The PondBlock-card and no-card branches below sit at different tree depths, so
@@ -2756,6 +2839,63 @@ function BlockEditor({
     rootRef.current?.focus()
   }
 
+  function handleHeightPreview(next: number) {
+    setPreviewHeight(next)
+  }
+  function handleHeightCancel() {
+    setPreviewHeight(null)
+  }
+  function handleHeightCommit(result: { clear: true } | { height: number }) {
+    setPreviewHeight(null)
+    if (!onHeightCommit) return
+    if ('clear' in result) {
+      if (block.height == null) return
+      onHeightCommit(blockWithoutHeight(block))
+      return
+    }
+    if (block.height === result.height) return
+    onHeightCommit({ ...block, height: result.height })
+  }
+
+  const viewScrollsItself = block.type === 'view' && (state === 'rest' || state === 'selected')
+  const card = frame ? (
+    <PondBlock
+      kind={frame.kind}
+      heading={frame.heading}
+      headNote={frame.headNote}
+      state={state}
+      onEmptyAction={onEmptyAction}
+      emptyLine={emptyLine}
+      emptyBox={blockEmptyBox(resolvedBlock)}
+      headBar={emptyStateViewBar}
+      size={menuSize}
+      constrained={constrained}
+      bodyScroll={viewScrollsItself ? 'self' : 'pane'}
+    >
+      {view}
+    </PondBlock>
+  ) : block.type === 'text' ? (
+    // Bare prose: `padding 2px 4px`, no card.
+    <div
+      className={cn(untouched && UNTOUCHED_HINT_CLASS, hoverGhost && HOVER_GHOST_CLASS)}
+      data-hover-ghost={hoverGhost || undefined}
+      style={{ paddingBlock: TEXT_BLOCK_TOP_INSET_PX, paddingInline: TEXT_BLOCK_INSET_PX }}
+    >
+      {block.pondStampAt && (
+        <div className="flex items-baseline gap-[10px] pb-[10px]">
+          <span className={pageEyebrowClass}>pond</span>
+          <span className="text-[10.5px] font-medium text-mn-text-meta">
+            {formatThreadTime(block.pondStampAt)}
+          </span>
+        </div>
+      )}
+      {view}
+    </div>
+  ) : (
+    // #227: a block that is its OWN card — the chart card — sits on the page as it is.
+    view
+  )
+
   return (
     <div
       ref={rootRef}
@@ -2765,7 +2905,10 @@ function BlockEditor({
         // A calendar sits in a card, so selecting it draws the card's ring.
         // A board draws its own lanes and has no card, so the same ring goes
         // on the row itself — otherwise a click selects it and nothing shows.
-        state === 'selected' && !frame && block.type !== 'text' && cn(POND_BLOCK_SELECTED_RING, 'rounded-[20px]'),
+        state === 'selected' &&
+          !frame &&
+          block.type !== 'text' &&
+          cn(POND_BLOCK_SELECTED_RING, 'rounded-[20px]'),
         settleOnMount && 'motion-settle-in',
         // `origin` (old place) from `PondBlock.dc.html` is opacity .4 ONLY — the
         // tilt and stepped-up shadow belong to the separate `lifted` copy, built
@@ -2913,46 +3056,31 @@ function BlockEditor({
         />
       )}
 
-      {/* #237: the board's card around the module view — PondBlock.dc.html's
-          frame + head row, by kind (blockFrame). Prose is bare: PondTemplate draws
-          a text block with no label at `padding 2px 4px` and no card. The view
-          itself renders exactly as before — the frame is chrome, not a rewrite.
-          #239: an EMPTY block hands the frame its state and the module's own
-          insert path; the frame suppresses the view and offers that one action. */}
-      {frame ? (
-        <PondBlock
-          kind={frame.kind}
-          heading={frame.heading}
-          headNote={frame.headNote}
-          state={state}
-          onEmptyAction={onEmptyAction}
-          emptyLine={emptyLine}
-          emptyBox={blockEmptyBox(resolvedBlock)}
-          headBar={emptyStateViewBar}
-          size={menuSize}
-        >
-          {view}
-        </PondBlock>
-      ) : block.type === 'text' ? (
-        // Bare prose: `padding 2px 4px`, no card.
+      {/* #237: the board's card around the module view. A view, image or table
+          (KAN-442) is sized here when it has a height; the strips sit on that
+          box. Prose stays bare. */}
+      {sizable ? (
         <div
-          className={cn(untouched && UNTOUCHED_HINT_CLASS, hoverGhost && HOVER_GHOST_CLASS)}
-          data-hover-ghost={hoverGhost || undefined}
-          style={{ paddingBlock: TEXT_BLOCK_TOP_INSET_PX, paddingInline: TEXT_BLOCK_INSET_PX }}
+          ref={sizeRef}
+          data-part="block-size"
+          className={cn('relative', constrained && 'flex min-h-0 flex-col')}
+          style={constrained ? { height: shownHeight } : undefined}
         >
-          {block.pondStampAt && (
-            <div className="flex items-baseline gap-[10px] pb-[10px]">
-              <span className={pageEyebrowClass}>pond</span>
-              <span className="text-[10.5px] font-medium text-mn-text-meta">
-                {formatThreadTime(block.pondStampAt)}
-              </span>
-            </div>
+          <BlockHeightProvider constrained={constrained}>{card}</BlockHeightProvider>
+          {chrome && !reorderDrag && (
+            <BlockHeightHandles
+              sizeRef={sizeRef}
+              height={block.height ?? null}
+              rememberedFitRef={naturalFitRef}
+              neighbours={heightNeighbours}
+              onPreview={handleHeightPreview}
+              onCommit={handleHeightCommit}
+              onCancel={handleHeightCancel}
+            />
           )}
-          {view}
         </div>
       ) : (
-        // #227: a block that is its OWN card — the chart card — sits on the page as it is.
-        view
+        card
       )}
     </div>
   )

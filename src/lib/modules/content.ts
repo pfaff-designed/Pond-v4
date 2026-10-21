@@ -39,7 +39,7 @@ export type BlockWidth = z.infer<typeof blockWidthSchema>
 const blockWidthFields = {
   width: blockWidthSchema
     .optional()
-    .describe('Never set by the AI. Reserved for the person\'s own layout choice.'),
+    .describe("Never set by the AI. Reserved for the person's own layout choice."),
   /**
    * Forces `layoutRows` to start a new row at this block, even with room left in
    * the current row (KAN-440). Absent means today's greedy packing by width alone,
@@ -48,7 +48,18 @@ const blockWidthFields = {
   rowStart: z
     .boolean()
     .optional()
-    .describe('Never set by the AI. Reserved for the person\'s own layout choice.'),
+    .describe("Never set by the AI. Reserved for the person's own layout choice."),
+  /**
+   * A view, image or table's pixel height (KAN-442). Absent means the block's
+   * content height, so an existing page lays out unchanged. Set by an edge
+   * drag, never by the AI. Prose blocks ignore it.
+   */
+  height: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe("Never set by the AI. Reserved for the person's own layout choice."),
 }
 
 export const blockSchema = z.discriminatedUnion('type', [

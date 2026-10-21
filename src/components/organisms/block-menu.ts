@@ -16,6 +16,7 @@ export type BlockMenuAction =
   | { type: 'copy-link' }
   | { type: 'delete' }
   | { type: 'set-width'; width: BlockWidth }
+  | { type: 'fit-height' }
 
 export interface BlockMenuSlots {
   /** The width row, drawn under a `width` head. */
@@ -32,6 +33,12 @@ const MOVE_INTO_NEW_PAGE: PondMenuItem<BlockMenuAction> = {
   id: 'move-into-new-page',
   label: 'move into a new page',
   action: { type: 'move-into-new-page' },
+}
+
+const FIT_HEIGHT: PondMenuItem<BlockMenuAction> = {
+  id: 'fit-height',
+  label: 'fit height',
+  action: { type: 'fit-height' },
 }
 
 /**
@@ -58,6 +65,7 @@ export const blockMenuGroups = (
     id: 'block',
     label: 'block',
     items: [
+      ...(block.height != null ? [FIT_HEIGHT] : []),
       ...(slots.moveIntoNewPage ? [MOVE_INTO_NEW_PAGE] : []),
       { id: 'copy-link', label: 'copy link to block', action: { type: 'copy-link' } },
       {
