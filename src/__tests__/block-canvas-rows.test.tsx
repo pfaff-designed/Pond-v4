@@ -9,7 +9,7 @@
  */
 
 import React from 'react'
-import { act, render } from '@testing-library/react'
+import { act, render, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
@@ -20,7 +20,31 @@ jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
   useSearchParams: () => ({ get: () => null }),
 }))
-jest.mock('@/lib/supabase/client', () => ({ createClient: () => ({}) }))
+jest.mock('@/lib/supabase/client', () => ({
+  createClient: () => ({ auth: { getUser: async () => ({ data: { user: { id: 'user-1' } } }) } }),
+}))
+// ⌥↓ (KAN-368) writes directly through `saveBlocks`/`appendOwnEdit`, like
+// drag-drop's own `persistBlocksAsOwnEdit` tests — these two are the only
+// calls that path makes beyond the mocked supabase client above.
+const mockSaveBlocks = jest.fn().mockResolvedValue(undefined)
+jest.mock('@/lib/pages/client', () => ({
+  getPage: jest.fn(),
+  createPage: jest.fn(),
+  saveBlocks: (...args: unknown[]) => mockSaveBlocks(...args),
+  saveProps: jest.fn(),
+  defineSchema: jest.fn(),
+  deletePage: jest.fn(),
+}))
+const mockAppendOwnEdit = jest.fn().mockResolvedValue({ id: 'record-1' })
+jest.mock('@/lib/change-log/store', () => ({
+  appendOwnEdit: (...args: unknown[]) => mockAppendOwnEdit(...args),
+}))
+
+beforeEach(() => {
+  jest.clearAllMocks()
+  mockSaveBlocks.mockResolvedValue(undefined)
+  mockAppendOwnEdit.mockResolvedValue({ id: 'record-1' })
+})
 
 function renderCanvas(blocks: Block[]) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -32,7 +56,6 @@ function renderCanvas(blocks: Block[]) {
           pageId="page-1"
           pageTitle="sourdough, 78%"
           onChange={() => {}}
-          onUndoRemove={() => {}}
         />
       </DeletionUndoProvider>
     </QueryClientProvider>
@@ -172,7 +195,6 @@ describe('rows in BlockCanvas', () => {
               pageId="page-1"
               pageTitle="sourdough, 78%"
               onChange={() => {}}
-              onUndoRemove={() => {}}
             />
           </DeletionUndoProvider>
         </QueryClientProvider>
@@ -254,7 +276,6 @@ describe('rows in BlockCanvas', () => {
               pageId="page-1"
               pageTitle="sourdough, 78%"
               onChange={() => {}}
-              onUndoRemove={() => {}}
             />
           </DeletionUndoProvider>
         </QueryClientProvider>
@@ -263,7 +284,7 @@ describe('rows in BlockCanvas', () => {
       expect(blockRoot('b-2')).toBe(before)
     })
 
-    it('⌥↓ moving a block from one row to another keeps that block\'s DOM node identical', () => {
+    it('⌥↓ moving a block from one row to another keeps that block\'s DOM node identical', async () => {
       const a: Block = { id: 'b-a', type: 'text', content: 'a', width: '1/2' }
       const b: Block = { id: 'b-b', type: 'text', content: 'b', width: '1/2' }
       const c: Block = { id: 'b-c', type: 'text', content: 'c', width: '1/2' }
@@ -279,7 +300,6 @@ describe('rows in BlockCanvas', () => {
               pageId="page-1"
               pageTitle="sourdough, 78%"
               onChange={onChange}
-              onUndoRemove={() => {}}
             />
           </DeletionUndoProvider>
         </QueryClientProvider>
@@ -287,12 +307,15 @@ describe('rows in BlockCanvas', () => {
 
       // b-b, in blockRows[0] = [a, b], moves down into blockRows[1] = [c, d]'s
       // place (a swap with b-c) — exercising a block regrouping to a new row.
+      // The move writes through `persistBlocksAsOwnEdit` (KAN-368), so `onChange`
+      // only fires once that direct write's round trip resolves.
       const beforeB = blockRoot('b-b')
       act(() => {
         beforeB.dispatchEvent(
           new KeyboardEvent('keydown', { key: 'ArrowDown', altKey: true, bubbles: true })
         )
       })
+      await waitFor(() => expect(onChange).toHaveBeenCalled())
       const next = onChange.mock.calls.at(-1)![0] as Block[]
       expect(next.map((block) => block.id)).toEqual(['b-a', 'b-c', 'b-b', 'b-d'])
 
@@ -304,7 +327,6 @@ describe('rows in BlockCanvas', () => {
               pageId="page-1"
               pageTitle="sourdough, 78%"
               onChange={onChange}
-              onUndoRemove={() => {}}
             />
           </DeletionUndoProvider>
         </QueryClientProvider>

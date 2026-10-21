@@ -17,7 +17,9 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
 import { useQueryClient } from '@tanstack/react-query'
 
 import { EDIT_PAUSE_MS } from '@/lib/change-log/pause'
+import { sessionUndo, type PendingHistoryStep, type UndoHandle } from '@/lib/change-log/session-undo'
 import type { Block } from '@/lib/documents/types'
+import { closeBlockHistory } from '@/lib/modules/text/active-editor'
 import { withoutRowStart } from '@/lib/modules/layout-rows'
 import { setProperty, type PondPage } from '@/lib/pages/client'
 import { createPageWriter, type PageWriteState } from '@/lib/pages/commit'
@@ -286,8 +288,9 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
       if (timer) clearTimeout(timer)
       retryTimer.current.delete(id)
     }
+    const onPending = reserveUndoSlot()?.resolve
     return queue
-      .enqueue({ kind: 'typed', after: { title: nextTitle, blocks: nextBlocks } })
+      .enqueue({ kind: 'typed', after: { title: nextTitle, blocks: nextBlocks }, onPending })
       .then(() => {
         land(id, nextTitle, nextBlocks)
       })
@@ -297,6 +300,8 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
           if (stored && stored.title === nextTitle && stored.blocks === nextBlocks) drafts.current.delete(id)
           return
         }
+        const pond = pondIdRef.current
+        if (pond) sessionUndo.markPendingFailed(pond)
         console.error('[document] save failed', id, err)
         scheduleRetry(id, nextTitle, nextBlocks)
       })
@@ -430,6 +435,46 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
   const viewBlocks: Block[] = seeded ? blocks : (page?.blocks ?? [])
   const viewTitle = seeded ? title : (page?.title ?? '')
 
+  // KAN-368: the undo slot exists the instant the write is enqueued — before
+  // it waits behind anything already in the queue and before its round trip —
+  // so ⌘Z takes this step, not whatever settled underneath it. The queue still
+  // owns `before` (`head()` at apply time). `onPending` fills the slot once
+  // the record ids are known; a second `remember` would stack a duplicate.
+  function reserveUndoSlot(opts?: {
+    onUndone?: () => Promise<void> | void
+    onRedone?: () => Promise<void> | void
+  }):
+    | {
+        resolve: (recordIds: readonly string[] | null) => void
+        handle: UndoHandle
+      }
+    | undefined {
+    const id = pondIdRef.current
+    if (!id) return undefined
+    let resolveRecordIds: (recordIds: readonly string[] | null) => void = () => {}
+    let settled = false
+    const recordIds = new Promise<readonly string[] | null>((resolve) => {
+      resolveRecordIds = (ids) => {
+        if (settled) return
+        settled = true
+        resolve(ids)
+      }
+    })
+    const handle = sessionUndo.rememberPending({
+      pondId: id,
+      recordIds,
+      onUndone: opts?.onUndone,
+      onRedone: opts?.onRedone,
+    })
+    const pending = handle as PendingHistoryStep
+    const resolve = resolveRecordIds
+    resolveRecordIds = (ids) => {
+      pending.attemptFailed = false
+      resolve(ids)
+    }
+    return { resolve: resolveRecordIds, handle }
+  }
+
   function scheduleSave(nextTitle: string, nextBlocks: Block[]) {
     const id = loadedId.current
     if (!id) return
@@ -474,6 +519,13 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
     if (p) {
       setPendingDebounce(false)
       void enqueueTyped(p.pageId, p.title, p.blocks)
+      // KAN-368: close these fields' history now, not when the record is
+      // durable. A structural edit flushes this save and moves focus; ⌘Z
+      // right after must fall through to the session step. The slot above
+      // was reserved in the same turn, so the shell has something to take.
+      for (const block of p.blocks) {
+        if ('content' in block) closeBlockHistory(block.id, block.content)
+      }
     }
     if (!id) return undefined
     return queueFor(id, { title: viewTitle, blocks: viewBlocks }).drained()
@@ -597,6 +649,11 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
      * `head()` instead of leaving it to retry.
      */
     discardOnFailure?: boolean
+    /** View-insert's new database (KAN-368): run once the ⌘Z/⇧⌘Z RPC lands. */
+    onUndone?: () => Promise<void> | void
+    onRedone?: () => Promise<void> | void
+    /** Fires synchronously with the reserved handle, before the write awaits. */
+    onUndoHandle?: (handle: UndoHandle) => void
   }
 
   // Enqueues `next` as this page's own structural op (flushing whatever typed
@@ -607,7 +664,17 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
   // point, which `undoRemove` also goes through) — never from inside a
   // `setBlocks` updater, which StrictMode double-invokes.
   function enqueueStructural(id: string, next: Block[], opts?: StructuralWriteOpts): Promise<boolean> {
+    // Flush first so the typed save's slot is reserved UNDER this one.
     flushNow()
+    const reserved = reserveUndoSlot(opts)
+    const onPending = reserved?.resolve
+    if (reserved) opts?.onUndoHandle?.(reserved.handle)
+    // The slot is already on the stack. Close these fields now so a ⌘Z in
+    // the same turn falls through to it instead of the editor's own history
+    // (KAN-368). The record still fills the slot when the write lands.
+    for (const block of next) {
+      if ('content' in block) closeBlockHistory(block.id, block.content)
+    }
     const queue = queueFor(id, { title: viewTitle, blocks: next })
     // The cache is what a return trip reads. Write the in-flight blocks now,
     // not when the save resolves: leaving and coming back before it settles
@@ -618,7 +685,7 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
       prev ? { ...prev, blocks: next } : prev
     )
     return queue
-      .enqueue({ kind: 'structural', after: { title: viewTitle, blocks: next } })
+      .enqueue({ kind: 'structural', after: { title: viewTitle, blocks: next }, onPending })
       .then(() => {
         queryClient.setQueryData(['page', id], (prev: PondPage | null | undefined) =>
           prev ? { ...prev, blocks: next } : prev
@@ -628,7 +695,16 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
       })
       .catch((err: unknown) => {
         console.error('[document] structural save failed', id, err)
+        const discarded = err instanceof Error && err.message.includes('discarded')
+        if (discarded) {
+          // Already dropped with the halted op. Settle the slot; don't
+          // discard again or repaint from this op's own `before`.
+          onPending?.(null)
+          return false
+        }
         if (opts?.discardOnFailure) {
+          // Not retried — the reserved slot must settle or ⌘Z waits it out.
+          onPending?.(null)
           // Any op already queued behind the halt (a debounce that fired
           // before the failure resolved) was built on this discarded
           // `after` too — discard it with the halted op, not just the
@@ -659,6 +735,9 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
             setPendingDebounce(false)
           }
           if (loadedId.current === id) setBlocks(stored.blocks)
+        } else {
+          const pond = pondIdRef.current
+          if (pond) sessionUndo.markPendingFailed(pond)
         }
         return false
       })

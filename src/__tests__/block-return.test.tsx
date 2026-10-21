@@ -57,11 +57,20 @@ jest.mock('@/lib/modules/view/use-collection-rows', () => ({
   }),
 }))
 const mockCreatePage = jest.fn()
+const mockSaveBlocks = jest.fn().mockResolvedValue(undefined)
 jest.mock('@/lib/pages/client', () => ({
   ...jest.requireActual('@/lib/pages/client'),
   getPage: jest.fn().mockResolvedValue({ id: 'page-1', parentId: null, blocks: [] }),
   createPage: (...args: unknown[]) => mockCreatePage(...args),
   defineSchema: jest.fn().mockResolvedValue(undefined),
+  // The bare-line Backspace remove (KAN-368) now writes through
+  // `persistBlocksAsOwnEdit`, which calls these directly rather than the
+  // debounced save this file otherwise exercises.
+  saveBlocks: (...args: unknown[]) => mockSaveBlocks(...args),
+}))
+const mockAppendOwnEdit = jest.fn().mockResolvedValue({ id: 'record-1' })
+jest.mock('@/lib/change-log/store', () => ({
+  appendOwnEdit: (...args: unknown[]) => mockAppendOwnEdit(...args),
 }))
 
 const table: Block = {
@@ -118,7 +127,6 @@ function Harness({ initial, onChange }: { initial: Block[]; onChange: jest.Mock 
         onChange(next)
         setBlocks(next)
       }}
-      onUndoRemove={() => {}}
     />
   )
 }
@@ -150,6 +158,8 @@ const rowNamed = (menu: HTMLElement, name: string) =>
 beforeEach(() => {
   jest.clearAllMocks()
   mockFetchPages.mockResolvedValue([])
+  mockSaveBlocks.mockResolvedValue(undefined)
+  mockAppendOwnEdit.mockResolvedValue({ id: 'record-1' })
 })
 
 describe('Return after a block opens a line for `/`', () => {
@@ -205,7 +215,7 @@ describe('Return after a block opens a line for `/`', () => {
     await waitFor(() => expect(line).toHaveFocus())
 
     await user.keyboard('{Backspace}')
-    expect(lastBlocks(onChange)).toEqual([table, note])
+    await waitFor(() => expect(lastBlocks(onChange)).toEqual([table, note]))
     await waitFor(() => expect(blockRoot('b-table')).toHaveFocus())
     expect(screen.queryByText(/deleted/i)).not.toBeInTheDocument()
   })
@@ -223,7 +233,7 @@ describe('Return after a block opens a line for `/`', () => {
     await waitFor(() => expect(line).toHaveFocus())
 
     await user.keyboard('{Backspace}')
-    expect(lastBlocks(onChange)).toEqual([note])
+    await waitFor(() => expect(lastBlocks(onChange)).toEqual([note]))
     const above = await textBlockIn('b-note')
     await waitFor(() => expect(above).toHaveFocus())
     const { state } = textEditorOf(above)
@@ -243,7 +253,7 @@ describe('Return after a block opens a line for `/`', () => {
     await waitFor(() => expect(line).toHaveFocus())
 
     await user.keyboard('{Backspace}')
-    expect(lastBlocks(onChange)).toEqual([table])
+    await waitFor(() => expect(lastBlocks(onChange)).toEqual([table]))
     await waitFor(() => expect(blockRoot('b-table')).toHaveFocus())
   })
 
@@ -365,6 +375,7 @@ describe('the table’s last cell steps out, same as Return (KAN-344)', () => {
     const { onChange } = renderCanvas([table, note])
     fireEvent.keyDown(screen.getByDisplayValue('Wall'), { key: 'Enter' })
 
+    await waitFor(() => expect(onChange).toHaveBeenCalled())
     const opened = lastBlocks(onChange)
     expect(opened.map((b) => b.id)).toEqual(['b-table', expect.any(String), 'b-note'])
     expect(opened[1]).toMatchObject({ type: 'text', content: '' })
@@ -374,6 +385,7 @@ describe('the table’s last cell steps out, same as Return (KAN-344)', () => {
     const { onChange } = renderCanvas([table, note])
     fireEvent.keyDown(screen.getByDisplayValue('Wall'), { key: 'ArrowDown' })
 
+    await waitFor(() => expect(onChange).toHaveBeenCalled())
     const opened = lastBlocks(onChange)
     expect(opened.map((b) => b.id)).toEqual(['b-table', expect.any(String), 'b-note'])
     expect(opened[1]).toMatchObject({ type: 'text', content: '' })
@@ -392,6 +404,7 @@ describe('the checklist’s empty last item steps out, same as Return (KAN-344)'
     const items = screen.getAllByRole('textbox', { name: 'Step' })
     fireEvent.keyDown(items[1], { key: 'Enter' })
 
+    await waitFor(() => expect(onChange).toHaveBeenCalled())
     const opened = lastBlocks(onChange)
     expect(opened.map((b) => b.id)).toEqual(['b-checklist', expect.any(String), 'b-note'])
     expect(opened[0]).toMatchObject({ items: [{ label: 'sand the top' }] })

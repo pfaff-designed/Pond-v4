@@ -99,7 +99,6 @@ function Harness({ initial, onChange }: { initial: Block[]; onChange: jest.Mock 
         onChange(next)
         setBlocks(next)
       }}
-      onUndoRemove={() => {}}
     />
   )
 }

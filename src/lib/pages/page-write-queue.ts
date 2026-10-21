@@ -17,11 +17,19 @@ export type PageWriteOp<T> = {
   kind: PageWriteKind
   before: T
   after: T
+  /**
+   * KAN-368: the draft reserved this op's undo slot when it was enqueued.
+   * The writer hands the change-log ids here once they're known (null if the
+   * write stored nothing) instead of pushing a second step later.
+   */
+  onPending?: (recordIds: readonly string[] | null) => void
 }
 
 export type PageWrite<T> = {
   kind: PageWriteKind
   after: T
+  /** See `PageWriteOp.onPending`. Carried onto the op the writer actually runs. */
+  onPending?: (recordIds: readonly string[] | null) => void
 }
 
 /**
@@ -86,6 +94,7 @@ export type PageWriteQueue<T> = {
 type QueuedEntry<T> = {
   kind: PageWriteKind
   after: T
+  onPending?: (recordIds: readonly string[] | null) => void
   resolve: () => void
   reject: (reason: unknown) => void
 }
@@ -181,6 +190,7 @@ export function createPageWriteQueue<T>(writer: PageWriter<T>, initial: T): Page
         if (!entry) return
 
         const op: PageWriteOp<T> = { kind: entry.kind, before: head, after: entry.after }
+        if (entry.onPending) op.onPending = entry.onPending
         try {
           await writer(op, registerSettle)
         } catch (err) {
@@ -207,7 +217,13 @@ export function createPageWriteQueue<T>(writer: PageWriter<T>, initial: T): Page
 
   function enqueue(write: PageWrite<T>): Promise<void> {
     return new Promise<void>((resolve, reject) => {
-      queued.push({ kind: write.kind, after: write.after, resolve, reject })
+      queued.push({
+        kind: write.kind,
+        after: write.after,
+        onPending: write.onPending,
+        resolve,
+        reject,
+      })
       void pump()
     })
   }

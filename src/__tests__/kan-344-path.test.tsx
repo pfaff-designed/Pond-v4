@@ -59,11 +59,20 @@ jest.mock('@/lib/pages/source-databases', () => ({
   ...jest.requireActual('@/lib/pages/source-databases'),
   fetchRecordCounts: jest.fn().mockResolvedValue(new Map()),
 }))
+const mockSaveBlocks = jest.fn().mockResolvedValue(undefined)
 jest.mock('@/lib/pages/client', () => ({
   ...jest.requireActual('@/lib/pages/client'),
   getPage: jest.fn().mockResolvedValue({ id: 'page-1', parentId: null, blocks: [] }),
   createPage: jest.fn(),
   defineSchema: jest.fn().mockResolvedValue(undefined),
+  // Return (`insertLineAfter`) now writes through `persistBlocksAsOwnEdit`
+  // (KAN-368), which calls these directly rather than the debounced save
+  // this file otherwise exercises.
+  saveBlocks: (...args: unknown[]) => mockSaveBlocks(...args),
+}))
+const mockAppendOwnEdit = jest.fn().mockResolvedValue({ id: 'record-1' })
+jest.mock('@/lib/change-log/store', () => ({
+  appendOwnEdit: (...args: unknown[]) => mockAppendOwnEdit(...args),
 }))
 
 const table: Block = {
@@ -94,7 +103,6 @@ function Harness({ initial, onChange }: { initial: Block[]; onChange: jest.Mock 
         onChange(next)
         setBlocks(next)
       }}
-      onUndoRemove={() => {}}
     />
   )
 }
@@ -123,6 +131,8 @@ beforeEach(() => {
   jest.clearAllMocks()
   initialSchema = []
   initialRows = []
+  mockSaveBlocks.mockResolvedValue(undefined)
+  mockAppendOwnEdit.mockResolvedValue({ id: 'record-1' })
 })
 
 describe('KAN-344 — the person’s path, keys only', () => {
@@ -159,6 +169,7 @@ describe('KAN-344 — the person’s path, keys only', () => {
     const { onChange } = renderCanvas([table, chart])
     fireEvent.keyDown(screen.getByDisplayValue('Wall'), { key: 'ArrowDown' })
 
+    await waitFor(() => expect(onChange).toHaveBeenCalled())
     const opened = lastBlocks(onChange)
     expect(opened.map((b) => b.id)).toEqual(['b-table', expect.any(String), 'b-chart'])
     expect(opened[1]).toMatchObject({ type: 'text', content: '' })
@@ -169,6 +180,7 @@ describe('KAN-344 — the person’s path, keys only', () => {
     const items = screen.getAllByRole('textbox', { name: 'Step' })
     fireEvent.keyDown(items[1], { key: 'Enter' })
 
+    await waitFor(() => expect(onChange).toHaveBeenCalled())
     const opened = lastBlocks(onChange)
     expect(opened.map((b) => b.id)).toEqual(['b-checklist', expect.any(String), 'b-chart'])
     expect(opened[0]).toMatchObject({ items: [{ label: 'sand the top' }] })
@@ -194,6 +206,7 @@ describe('KAN-344 — the person’s path, keys only', () => {
 
     await user.keyboard('{Enter}')
 
+    await waitFor(() => expect(onChange).toHaveBeenCalled())
     const opened = lastBlocks(onChange)
     expect(opened.map((b) => b.id)).toEqual(['b-checklist-1', expect.any(String), 'b-chart'])
     expect(opened[0]).toMatchObject({ items: [{ label: 'sand the top' }] })
@@ -215,12 +228,13 @@ describe('KAN-344 — the person’s path, keys only', () => {
     await user.keyboard('{Enter}')
 
     expect(renameRow).toHaveBeenCalledWith('row-2', 'Wall sanded')
+    await waitFor(() => expect(onChange).toHaveBeenCalled())
     const opened = lastBlocks(onChange)
     expect(opened.map((b) => b.id)).toEqual(['b-view-table', expect.any(String), 'b-chart'])
     expect(opened[1]).toMatchObject({ type: 'text', content: '' })
   })
 
-  it('a database-backed table view: ↓ in the last row’s title opens a line; ↓ in the first row’s title does nothing', () => {
+  it('a database-backed table view: ↓ in the last row’s title opens a line; ↓ in the first row’s title does nothing', async () => {
     initialSchema = []
     initialRows = [
       { id: 'row-1', title: 'Saw', values: {} },
@@ -233,6 +247,7 @@ describe('KAN-344 — the person’s path, keys only', () => {
     expect(onChange).not.toHaveBeenCalled()
 
     fireEvent.keyDown(titles[1], { key: 'ArrowDown' })
+    await waitFor(() => expect(onChange).toHaveBeenCalled())
     const opened = lastBlocks(onChange)
     expect(opened.map((b) => b.id)).toEqual(['b-view-table', expect.any(String), 'b-chart'])
     expect(opened[1]).toMatchObject({ type: 'text', content: '' })

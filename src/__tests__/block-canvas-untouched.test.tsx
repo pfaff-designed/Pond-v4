@@ -42,7 +42,6 @@ function renderCanvas(blocks: Block[], untouched?: boolean) {
           pageId="page-1"
           pageTitle="sourdough, 78%"
           onChange={() => {}}
-          onUndoRemove={() => {}}
           untouched={untouched}
         />
       </DeletionUndoProvider>

@@ -82,6 +82,16 @@ jest.mock('@/lib/change-log/session-undo', () => ({
   sessionUndo: {
     remember: (...args: unknown[]) => mockRemember(...args),
     trackPending: jest.fn(),
+    // The draft reserves the step at enqueue (`rememberPending`) and fills it
+    // from `onPending`. Forward the resolved ids so the apply is still one
+    // remembered step — `commitBlocks` does not also call `remember`.
+    rememberPending: (step: { pondId: string; recordIds: Promise<readonly string[] | null> }) => {
+      void step.recordIds.then((ids) => {
+        if (ids && ids.length > 0) mockRemember({ pondId: step.pondId, recordIds: ids })
+      })
+      return step
+    },
+    markPendingFailed: () => {},
   },
 }))
 

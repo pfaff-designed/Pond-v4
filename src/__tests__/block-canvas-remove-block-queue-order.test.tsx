@@ -67,7 +67,10 @@ describe('⌘⌫ writes through onStructuralWrite, the one structural entry poin
 
     fireEvent.keyDown(root, { key: 'Backspace', metaKey: true })
 
-    expect(onStructuralWrite).toHaveBeenCalledWith([heading])
+    expect(onStructuralWrite).toHaveBeenCalledWith(
+      [heading],
+      expect.objectContaining({ onUndoHandle: expect.any(Function) })
+    )
     expect(onChange).not.toHaveBeenCalled()
   })
 
@@ -79,6 +82,6 @@ describe('⌘⌫ writes through onStructuralWrite, the one structural entry poin
     fireEvent.keyDown(root, { key: 'Backspace', metaKey: true })
 
     expect(onChange.mock.calls.at(-1)![0].map((b: Block) => b.id)).toEqual(['b-heading'])
-    expect(await screen.findByText('Deleted table block')).toBeInTheDocument()
+    expect(await screen.findByText('deleted table ·')).toBeInTheDocument()
   })
 })

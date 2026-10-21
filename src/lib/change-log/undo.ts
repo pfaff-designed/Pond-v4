@@ -25,6 +25,14 @@ import { ACTOR_YOU, type ChangeLogActor, type ChangeLogRecord } from './types'
 export interface HistoryStep {
   pondId: string
   recordIds: readonly string[]
+  /**
+   * Runs once the undo RPC lands `done` — never on `blocked`/`refused`/`stale`.
+   * For a step whose action did more than write change-log records (minting a
+   * database alongside a view block), e.g. trashing that database.
+   */
+  onUndone?: () => Promise<void> | void
+  /** Same as `onUndone`, once the redo RPC lands `done` — e.g. restoring it. */
+  onRedone?: () => Promise<void> | void
 }
 
 /**

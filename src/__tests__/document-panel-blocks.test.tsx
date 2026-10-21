@@ -79,7 +79,7 @@ jest.mock('@/lib/change-log/store', () => ({
   appendOwnEdit: jest.fn().mockResolvedValue({ id: 'record-1' }),
 }))
 jest.mock('@/lib/change-log/session-undo', () => ({
-  sessionUndo: { remember: jest.fn() },
+  sessionUndo: { remember: jest.fn(), rememberPending: jest.fn(), markPendingFailed: jest.fn() },
 }))
 
 // KAN-495: the apply's own commit mock call carries a `Block[]` union — narrow

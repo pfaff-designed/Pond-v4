@@ -230,6 +230,7 @@ jest.mock('@/lib/pages/commit', () => {
         ownEdit?: true
         before?: Block[]
         pondId?: string | null
+        onPending?: (recordIds: readonly string[] | null) => void
       }
     ) => {
       // KAN-355: `runSave` destructures commitBlocks' `{ remembered }`.
@@ -245,7 +246,10 @@ jest.mock('@/lib/pages/commit', () => {
           targetPageId: pageId,
         })
         fakeChangeLog.push(record)
-        if (opts.pondId) sessionUndo.remember({ pondId: opts.pondId, recordIds: [record.id] })
+        // A slot reserved at enqueue (KAN-368) is filled here. Remembering
+        // again would stack a second step on top of the one the retry fills.
+        if (opts.onPending) opts.onPending([record.id])
+        else if (opts.pondId) sessionUndo.remember({ pondId: opts.pondId, recordIds: [record.id] })
         for (const block of blocks) {
           if ('content' in block) closeBlockHistory(block.id, block.content)
         }
@@ -266,6 +270,7 @@ jest.mock('@/lib/pages/commit', () => {
         kind: 'typed' | 'structural'
         before: { title: string; blocks: Block[] }
         after: { title: string; blocks: Block[] }
+        onPending?: (recordIds: readonly string[] | null) => void
       }) => {
         if (op.kind === 'typed') {
           await (
@@ -278,6 +283,7 @@ jest.mock('@/lib/pages/commit', () => {
           ownEdit: true,
           before: op.before.blocks,
           pondId,
+          ...(op.onPending ? { onPending: op.onPending } : {}),
         })
       },
   }

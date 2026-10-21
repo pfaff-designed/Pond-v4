@@ -14,10 +14,12 @@
  */
 
 export interface UndoToastProps {
-  /** The removed thing, e.g. `Deleted "Scratchpad"` or `Deleted text block`. */
+  /** The removed thing, e.g. `Deleted "Scratchpad"` or `deleted text ·` (paired with `undoLabel: 'undo'`). */
   message: string
   /** Omit for a plain (non-undoable) notice — the Undo button is hidden. */
   onUndo?: () => void
+  /** Undo button copy (default "Undo") — lowercase `undo` when the message is itself Pond's lowercase build words, e.g. `deleted text ·`. */
+  undoLabel?: string
   onDismiss: () => void
   /**
    * Grace window in ms — drives the countdown progress bar. Omit for a static
@@ -37,6 +39,7 @@ export interface UndoToastProps {
 export function UndoToast({
   message,
   onUndo,
+  undoLabel = 'Undo',
   onDismiss,
   durationMs,
   onAction,
@@ -55,7 +58,7 @@ export function UndoToast({
           onClick={onUndo}
           className="ml-1 flex-shrink-0 rounded-mn-chrome px-2 py-0.5 font-medium text-mn-surface underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-mn-surface/60"
         >
-          Undo
+          {undoLabel}
         </button>
       )}
       {onAction && (

@@ -53,7 +53,7 @@ const leftOver = (from: string[], minus: string[]): string[] => {
 }
 
 /** `schedule table`, or the kind alone when the block has no label. */
-const blockName = (block: Block): string => {
+export const blockName = (block: Block): string => {
   const kind = descriptorFor(block.type)?.label ?? block.type
   const label = blockLabel(block)
   return label ? `${label} ${kind}` : kind

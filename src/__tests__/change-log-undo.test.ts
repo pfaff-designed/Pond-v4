@@ -579,6 +579,293 @@ describe('createSessionUndo', () => {
     })
   })
 
+  describe('rememberPending', () => {
+    it('awaits a still-pending step before calling the RPC, then undoes it once it resolves', async () => {
+      const { store, run } = makeStore()
+      let resolvePending: (ids: readonly string[] | null) => void = () => {}
+      const pending = new Promise<readonly string[] | null>((resolve) => {
+        resolvePending = resolve
+      })
+      store.rememberPending({ pondId: POND, recordIds: pending })
+      expect(store.getSnapshot(POND).canUndo).toBe(true)
+
+      const outcome = store.undo(POND)
+      await flush()
+      expect(run.undo).not.toHaveBeenCalled()
+
+      resolvePending(['edit-1'])
+      await expect(outcome).resolves.toMatchObject({
+        outcome: 'done',
+        step: { pondId: POND, recordIds: ['edit-1'] },
+      })
+      expect(run.undo).toHaveBeenCalledWith({ pondId: POND, recordIds: ['edit-1'] })
+    })
+
+    it('drops a pending step that resolves to nothing written, remembering nothing', async () => {
+      const { store, run } = makeStore()
+      store.rememberPending({ pondId: POND, recordIds: Promise.resolve(null) })
+
+      const outcome = await store.undo(POND)
+
+      expect(outcome).toEqual({ outcome: 'empty' })
+      expect(run.undo).not.toHaveBeenCalled()
+      expect(store.getSnapshot(POND).canUndo).toBe(false)
+    })
+
+    it('falls through to the real step beneath a pending one that resolves to nothing written, if it had already settled before the press', async () => {
+      const { store, run } = makeStore()
+      store.remember({ pondId: POND, recordIds: ['older'] })
+      const resolved = Promise.resolve(null)
+      store.rememberPending({ pondId: POND, recordIds: resolved })
+      // Let the pending step's own `.then` land before pressing undo, so this
+      // press finds it already settled — the scenario the fall-through covers.
+      await resolved
+
+      const outcome = await store.undo(POND)
+
+      expect(outcome).toMatchObject({ outcome: 'done', step: { pondId: POND, recordIds: ['older'] } })
+      expect(run.undo).toHaveBeenCalledTimes(1)
+      expect(run.undo).toHaveBeenCalledWith({ pondId: POND, recordIds: ['older'] })
+      expect(store.getSnapshot(POND).canUndo).toBe(false)
+    })
+
+    it('does not fall through to an older step when the press itself finds the step still pending and it resolves to nothing written', async () => {
+      const { store, run } = makeStore()
+      store.remember({ pondId: POND, recordIds: ['typing-a'] })
+      let resolveMove: (ids: readonly string[] | null) => void = () => {}
+      const movePending = new Promise<readonly string[] | null>((resolve) => {
+        resolveMove = resolve
+      })
+      store.rememberPending({ pondId: POND, recordIds: movePending })
+
+      // ⌘Z at once: this press reaches the move's step while it is still in
+      // flight — its save is then refused, resolving to nothing written.
+      const outcome = store.undo(POND)
+      await flush()
+      expect(run.undo).not.toHaveBeenCalled()
+      resolveMove(null)
+
+      await expect(outcome).resolves.toEqual({ outcome: 'empty' })
+      expect(run.undo).not.toHaveBeenCalled()
+      // The typing step beneath it is untouched by this press.
+      expect(store.getSnapshot(POND).canUndo).toBe(true)
+      expect(store.getSnapshot(POND).topUndoRecordIds).toEqual(['typing-a'])
+
+      const second = await store.undo(POND)
+      expect(second).toMatchObject({ outcome: 'done', step: { pondId: POND, recordIds: ['typing-a'] } })
+      expect(run.undo).toHaveBeenCalledWith({ pondId: POND, recordIds: ['typing-a'] })
+    })
+
+    describe('a hung pending step', () => {
+      beforeEach(() => jest.useFakeTimers())
+      afterEach(() => jest.useRealTimers())
+
+      it('times out waiting on recordIds rather than stalling the queue, and puts it back', async () => {
+        const { store, run } = makeStore({ timeoutMs: 1000 })
+        store.rememberPending({ pondId: POND, recordIds: new Promise<readonly string[] | null>(() => {}) })
+
+        const first = store.undo(POND)
+        await Promise.resolve()
+        store.remember({ pondId: POND, recordIds: ['edit-1'] })
+        const second = store.undo(POND)
+        await jest.advanceTimersByTimeAsync(1000)
+
+        await expect(first).rejects.toThrow(SessionUndoTimeoutError)
+        await expect(second).resolves.toMatchObject({ outcome: 'done' })
+        expect(run.undo).toHaveBeenCalledTimes(1)
+        expect(run.undo).toHaveBeenCalledWith({ pondId: POND, recordIds: ['edit-1'] })
+      })
+    })
+
+    describe('isTopUndo', () => {
+      it('is true for the handle a pending step was just remembered with, false once another step lands on top', () => {
+        const { store } = makeStore()
+        const handle = store.rememberPending({ pondId: POND, recordIds: Promise.resolve(['edit-1']) })
+
+        expect(store.isTopUndo(POND, handle)).toBe(true)
+
+        store.remember({ pondId: POND, recordIds: ['edit-2'] })
+
+        expect(store.isTopUndo(POND, handle)).toBe(false)
+      })
+
+      it('is false once the handle’s own step has been undone', async () => {
+        const { store } = makeStore()
+        const handle = store.rememberPending({ pondId: POND, recordIds: Promise.resolve(['edit-1']) })
+
+        await store.undo(POND)
+
+        expect(store.isTopUndo(POND, handle)).toBe(false)
+      })
+
+      it('is false for an unrelated object, and false in a pond with no history', () => {
+        const { store } = makeStore()
+        store.rememberPending({ pondId: POND, recordIds: Promise.resolve(['edit-1']) })
+
+        expect(store.isTopUndo(POND, {})).toBe(false)
+        expect(store.isTopUndo(OTHER_POND, {})).toBe(false)
+      })
+    })
+
+    describe('undoHandle', () => {
+      it('undoes the handle’s own step when it is on top, same as undo', async () => {
+        const { store, run } = makeStore()
+        const handle = store.rememberPending({ pondId: POND, recordIds: Promise.resolve(['delete-1']) })
+
+        const outcome = await store.undoHandle(POND, handle)
+
+        expect(outcome).toMatchObject({ outcome: 'done', step: { pondId: POND, recordIds: ['delete-1'] } })
+        expect(run.undo).toHaveBeenCalledWith({ pondId: POND, recordIds: ['delete-1'] })
+        expect(store.getSnapshot(POND).canUndo).toBe(false)
+        expect(store.getSnapshot(POND).redoRecordIds).toEqual(['delete-1'])
+      })
+
+      it('returns empty without touching the stack when a FAILED or cancelled write leaves its step resolving to nothing, even while that step still sits on top', async () => {
+        const { store, run } = makeStore()
+        store.remember({ pondId: POND, recordIds: ['older'] })
+        const handle = store.rememberPending({ pondId: POND, recordIds: Promise.resolve(null) })
+
+        const outcome = await store.undoHandle(POND, handle)
+
+        expect(outcome).toEqual({ outcome: 'empty' })
+        expect(run.undo).not.toHaveBeenCalled()
+        // The real step beneath the dead one is untouched — a handle-targeted
+        // call never falls through, unlike a plain ⌘Z would.
+        expect(store.getSnapshot(POND).canUndo).toBe(true)
+        expect(store.getSnapshot(POND).topUndoRecordIds).toEqual(['older'])
+      })
+
+      it('returns empty without acting when the handle has sunk beneath later ⌘Z presses already queued ahead of it', async () => {
+        const { store, run } = makeStore()
+        store.remember({ pondId: POND, recordIds: ['x'] })
+        const handle = store.rememberPending({ pondId: POND, recordIds: Promise.resolve(['delete-1']) })
+        store.remember({ pondId: POND, recordIds: ['y'] })
+
+        // ⌘Z, ⌘Z, click — all three queued back to back, before any of them
+        // has actually run: the click's own `isTopUndo` read (at click time,
+        // before this call) saw the handle still on top, but by the time ITS
+        // turn in the queue comes up, the two ⌘Zs ahead of it have already
+        // taken 'y' then the handle's own step.
+        const first = store.undo(POND)
+        const second = store.undo(POND)
+        const third = store.undoHandle(POND, handle)
+
+        await expect(third).resolves.toEqual({ outcome: 'empty' })
+        await Promise.all([first, second])
+        expect(run.undo).toHaveBeenCalledTimes(2)
+        expect(run.undo).not.toHaveBeenCalledWith({ pondId: POND, recordIds: ['x'] })
+        // 'x' is still there for a real ⌘Z to take — the click never reached it.
+        expect(store.getSnapshot(POND).canUndo).toBe(true)
+        expect(store.getSnapshot(POND).topUndoRecordIds).toEqual(['x'])
+      })
+    })
+  })
+
+  describe('onUndone / onRedone', () => {
+    it('runs onUndone exactly once after undo lands done, and not at all on blocked/refused/stale', async () => {
+      const outcomes: StepResult[] = [
+        { outcome: 'blocked', reason: 'linked-elsewhere' },
+        { outcome: 'refused', reason: 'already-undone' },
+        { outcome: 'stale', reason: 'page-changed' },
+      ]
+      for (const outcome of outcomes) {
+        const { store, run } = makeStore()
+        run.undo.mockResolvedValue(outcome)
+        const onUndone = jest.fn()
+        store.remember({ pondId: POND, recordIds: ['edit-1'], onUndone })
+
+        await store.undo(POND)
+
+        expect(onUndone).not.toHaveBeenCalled()
+      }
+
+      const { store, run: doneRun } = makeStore()
+      doneRun.undo.mockResolvedValue(done(['u']))
+      const onUndone = jest.fn()
+      store.remember({ pondId: POND, recordIds: ['edit-1'], onUndone })
+
+      await store.undo(POND)
+
+      expect(onUndone).toHaveBeenCalledTimes(1)
+    })
+
+    it('runs onRedone exactly once after redo lands done', async () => {
+      const { store } = makeStore()
+      const onUndone = jest.fn()
+      const onRedone = jest.fn()
+      store.remember({ pondId: POND, recordIds: ['edit-1'], onUndone, onRedone })
+      await store.undo(POND)
+      expect(onUndone).toHaveBeenCalledTimes(1)
+
+      await store.redo(POND)
+
+      expect(onRedone).toHaveBeenCalledTimes(1)
+      expect(onUndone).toHaveBeenCalledTimes(1)
+    })
+
+    it('awaits an async onUndone before the undo call resolves', async () => {
+      const { store, run } = makeStore()
+      run.undo.mockResolvedValue(done(['u']))
+      let resolveEffect: () => void = () => {}
+      const onUndone = jest.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveEffect = resolve
+          })
+      )
+      store.remember({ pondId: POND, recordIds: ['edit-1'], onUndone })
+
+      const pending = store.undo(POND)
+      await flush()
+      expect(onUndone).toHaveBeenCalledTimes(1)
+      resolveEffect()
+
+      await expect(pending).resolves.toMatchObject({ outcome: 'done' })
+    })
+
+    it('moves the step to redo and logs the error when onUndone throws, rather than losing it', async () => {
+      const { store, run } = makeStore()
+      run.undo.mockResolvedValue(done(['u']))
+      const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
+      const onUndone = jest.fn().mockRejectedValue(new Error('side effect failed'))
+      store.remember({ pondId: POND, recordIds: ['edit-1'], onUndone })
+
+      const outcome = await store.undo(POND)
+
+      expect(outcome).toMatchObject({ outcome: 'done' })
+      expect(consoleError).toHaveBeenCalledWith(expect.objectContaining({ message: 'side effect failed' }))
+      expect(store.getSnapshot(POND)).toEqual({
+        canUndo: false,
+        canRedo: true,
+        topUndoRecordIds: [],
+        redoRecordIds: ['edit-1'],
+      })
+      consoleError.mockRestore()
+    })
+
+    it('moves the step back to undo and logs the error when onRedone throws, rather than losing it', async () => {
+      const { store } = makeStore()
+      const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
+      const onRedone = jest.fn().mockRejectedValue(new Error('side effect failed'))
+      store.remember({ pondId: POND, recordIds: ['edit-1'], onRedone })
+      await store.undo(POND)
+
+      const outcome = await store.redo(POND)
+
+      expect(outcome).toMatchObject({ outcome: 'done' })
+      expect(consoleError).toHaveBeenCalledWith(expect.objectContaining({ message: 'side effect failed' }))
+      // The redo RPC's own result records become the next undo step — same as
+      // any other redo (see "redoes the step it undid…" above).
+      expect(store.getSnapshot(POND)).toEqual({
+        canUndo: true,
+        canRedo: false,
+        topUndoRecordIds: ['r'],
+        redoRecordIds: [],
+      })
+      consoleError.mockRestore()
+    })
+  })
+
   it('clears every pond', () => {
     const { store } = makeStore()
     store.remember(STEP)

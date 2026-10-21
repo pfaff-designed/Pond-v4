@@ -24,12 +24,22 @@ jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
   useSearchParams: () => ({ get: () => null }),
 }))
-jest.mock('@/lib/supabase/client', () => ({ createClient: () => ({}) }))
+jest.mock('@/lib/supabase/client', () => ({
+  createClient: () => ({ auth: { getUser: async () => ({ data: { user: { id: 'user-1' } } }) } }),
+}))
 
 const mockDeletePage = jest.fn().mockResolvedValue(undefined)
+const mockSaveBlocks = jest.fn().mockResolvedValue(undefined)
 jest.mock('@/lib/pages/client', () => ({
   ...jest.requireActual('@/lib/pages/client'),
   deletePage: (...args: unknown[]) => mockDeletePage(...args),
+  saveBlocks: (...args: unknown[]) => mockSaveBlocks(...args),
+}))
+
+// The width row's keep (KAN-368) writes directly through `saveBlocks`/`appendOwnEdit`.
+const mockAppendOwnEdit = jest.fn().mockResolvedValue({ id: 'record-1' })
+jest.mock('@/lib/change-log/store', () => ({
+  appendOwnEdit: (...args: unknown[]) => mockAppendOwnEdit(...args),
 }))
 
 const view = { id: 'v-1', type: 'view', mode: 'table', collectionId: 'db-1' }
@@ -89,7 +99,6 @@ function Harness({ initial, onChange, onMoveIntoNewPage }: HarnessProps) {
         onChange(next)
         setBlocks(next)
       }}
-      onUndoRemove={() => {}}
       onMoveIntoNewPage={onMoveIntoNewPage}
     />
   )
@@ -127,6 +136,8 @@ const scrollIntoView = jest.mocked(HTMLElement.prototype.scrollIntoView)
 beforeEach(() => {
   jest.clearAllMocks()
   window.history.replaceState(null, '', '/')
+  mockSaveBlocks.mockResolvedValue(undefined)
+  mockAppendOwnEdit.mockResolvedValue({ id: 'record-1' })
 })
 
 describe('the block menu opens from the handle', () => {
@@ -340,7 +351,7 @@ describe('the block menu opens from the handle', () => {
     const { onChange } = renderCanvas([heading, list])
     await user.click(handleOf('b-heading'))
     await user.click(await screen.findByRole('menuitem', { name: 'delete' }))
-    expect(lastBlocks(onChange).map((b) => b.id)).toEqual(['b-list'])
+    await waitFor(() => expect(lastBlocks(onChange).map((b) => b.id)).toEqual(['b-list']))
   })
 
   it('⌥↓ on a row\'s rowStart holder swaps it within the row, not into a split (KAN-440)', async () => {
@@ -600,17 +611,15 @@ describe('turn into — table', () => {
 })
 
 describe('the width row — the block menu’s `width` group', () => {
-  it('keeps the picked width in place and closes the menu; undo restores the absent width', async () => {
+  it('keeps the picked width in place, closes the menu, and logs one change-log record (KAN-368: ⌘Z restores it, proved in block-canvas-width-undo-path.test.tsx)', async () => {
     const user = userEvent.setup()
     const { onChange } = renderCanvas([heading, list])
     await user.click(handleOf('b-list'))
     await user.click(await screen.findByRole('menuitem', { name: '½' }))
 
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
-    expect(lastBlocks(onChange)).toEqual([heading, { ...list, width: '1/2' }])
-
-    await user.click(await screen.findByRole('button', { name: /undo/i }))
-    await waitFor(() => expect(lastBlocks(onChange)).toEqual([heading, list]))
+    await waitFor(() => expect(lastBlocks(onChange)).toEqual([heading, { ...list, width: '1/2' }]))
+    expect(await screen.findByText('Set the block width')).toBeInTheDocument()
   })
 
   it('leaves rowStart as it was: picking a width never sets or clears it (KAN-440)', async () => {
@@ -633,14 +642,14 @@ describe('the width row — the block menu’s `width` group', () => {
 
     const rootA = document.getElementById('block-b-heading')!
     const halfWidth = normalizedWidth(blockWidthStyle('1/2'))
-    expect(rootA.parentElement!.style.width).toBe(halfWidth)
+    await waitFor(() => expect(rootA.parentElement!.style.width).toBe(halfWidth))
 
     await user.click(handleOf('b-list'))
     await user.click(await screen.findByRole('menuitem', { name: '½' }))
     await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
 
     const rootB = document.getElementById('block-b-list')!
-    expect(rootB.parentElement!.style.width).toBe(halfWidth)
+    await waitFor(() => expect(rootB.parentElement!.style.width).toBe(halfWidth))
 
     // Both sizing divs are flat siblings of the one canvas list — sharing a
     // row is the canvas's own flex-wrap putting two half-width divs on one
@@ -660,7 +669,8 @@ describe('the width row — the block menu’s `width` group', () => {
 
     const rootA = document.getElementById('block-b-heading')!
     const halfWidth = normalizedWidth(blockWidthStyle('1/2'))
-    expect(rootA.parentElement!.style.width).toBe(halfWidth)
+    await waitFor(() => expect(rootA.parentElement!.style.width).toBe(halfWidth))
+    await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1))
 
     await user.click(handleOf('b-list'))
     await user.hover(await screen.findByRole('menuitem', { name: '½' }))
@@ -694,7 +704,7 @@ describe('the width row — the block menu’s `width` group', () => {
 describe('PATH_STEPS: the full walk — handle to kept width, then the phone variant', () => {
   const originalMatchMedia = window.matchMedia
 
-  it('handle opens the menu with the width row between turn into and block; hover previews and reflows with a note; Esc discards; a click keeps it with an undo toast; and the same menu, sized for a phone, opens from a tap', async () => {
+  it('handle opens the menu with the width row between turn into and block; hover previews and reflows with a note; Esc discards; a click keeps it; and the same menu, sized for a phone, opens from a tap', async () => {
     const user = userEvent.setup()
     const { onChange } = renderCanvas([heading, list])
 
@@ -713,7 +723,7 @@ describe('PATH_STEPS: the full walk — handle to kept width, then the phone var
     await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
     const rootHeading = document.getElementById('block-b-heading')!
     const halfWidth = normalizedWidth(blockWidthStyle('1/2'))
-    expect(rootHeading.parentElement!.style.width).toBe(halfWidth)
+    await waitFor(() => expect(rootHeading.parentElement!.style.width).toBe(halfWidth))
 
     await user.click(handleOf('b-list'))
     menu = await screen.findByRole('menu', { name: /block menu/i })
@@ -735,15 +745,15 @@ describe('PATH_STEPS: the full walk — handle to kept width, then the phone var
     expect(rootList.parentElement!.style.width).toBe('100%')
     expect(onChange).toHaveBeenCalledTimes(1)
 
-    // Step 5: reopen, click ½ — kept, with the undo toast.
+    // Step 5: reopen, click ½ — kept, one change-log record (KAN-368: ⌘Z
+    // restores it, proved in block-canvas-width-undo-path.test.tsx).
     await user.click(handleOf('b-list'))
     menu = await screen.findByRole('menu', { name: /block menu/i })
     await user.click(within(menu).getByRole('menuitem', { name: '½' }))
     await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
-    expect(rootList.parentElement!.style.width).toBe(halfWidth)
+    await waitFor(() => expect(rootList.parentElement!.style.width).toBe(halfWidth))
     expect(onChange).toHaveBeenCalledTimes(2)
-    expect((await screen.findAllByText(/set the block width/i)).length).toBeGreaterThan(0)
-    expect(screen.getAllByRole('button', { name: /undo/i }).length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Set the block width')).toHaveLength(2)
 
     // Step 6: the phone variant — tap a block, its handle shows, the same
     // menu opens 350px wide with 44px cells and the phone note.
@@ -833,8 +843,9 @@ describe('⌘⌫ deletes the focused block (`Pond 08 Edges` 8e)', () => {
     root.focus()
     fireEvent.keyDown(root, { key: 'Backspace', metaKey: true })
 
-    expect(lastBlocks(onChange).map((b) => b.id)).toEqual(['b-heading'])
-    expect(await screen.findByText('Deleted table block')).toBeInTheDocument()
+    await waitFor(() => expect(lastBlocks(onChange).map((b) => b.id)).toEqual(['b-heading']))
+    expect(await screen.findByText('deleted table ·')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'undo' })).toBeInTheDocument()
   })
 
   it('Ctrl+⌫ off a Mac does the same', async () => {
@@ -844,7 +855,7 @@ describe('⌘⌫ deletes the focused block (`Pond 08 Edges` 8e)', () => {
     root.focus()
     fireEvent.keyDown(root, { key: 'Backspace', ctrlKey: true })
 
-    expect(lastBlocks(onChange).map((b) => b.id)).toEqual(['b-heading'])
+    await waitFor(() => expect(lastBlocks(onChange).map((b) => b.id)).toEqual(['b-heading']))
   })
 
   it('with the caret at the start of a text block, deletes it too', async () => {
@@ -854,7 +865,7 @@ describe('⌘⌫ deletes the focused block (`Pond 08 Edges` 8e)', () => {
     act(() => textEditorOf(field).commands.focus('start'))
     fireEvent.keyDown(field, { key: 'Backspace', metaKey: true })
 
-    expect(lastBlocks(onChange).map((b) => b.id)).toEqual(['b-heading'])
+    await waitFor(() => expect(lastBlocks(onChange).map((b) => b.id)).toEqual(['b-heading']))
   })
 
   it('fired on the ProseMirror node itself — ahead of tiptap’s own Mod-Backspace keymap, which listens on that same node — still deletes the block and shows the undo toast', async () => {
@@ -864,8 +875,9 @@ describe('⌘⌫ deletes the focused block (`Pond 08 Edges` 8e)', () => {
     act(() => textEditorOf(field).commands.focus('start'))
     fireEvent.keyDown(field, { key: 'Backspace', metaKey: true })
 
-    expect(lastBlocks(onChange).map((b) => b.id)).toEqual(['b-heading'])
-    expect(await screen.findByText('Deleted text block')).toBeInTheDocument()
+    await waitFor(() => expect(lastBlocks(onChange).map((b) => b.id)).toEqual(['b-heading']))
+    expect(await screen.findByText('deleted text ·')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'undo' })).toBeInTheDocument()
   })
 
   it('with text before the caret in a text block, leaves the block for the editor’s own delete-to-line-start', async () => {
@@ -906,7 +918,7 @@ describe('⌘⌫ deletes the focused block (`Pond 08 Edges` 8e)', () => {
     fireEvent.keyDown(root, { key: 'Delete' })
 
     expect(lastBlocks(onChange).map((b) => b.id)).toEqual(['b-heading'])
-    expect(await screen.findByText('Deleted table block')).toBeInTheDocument()
+    expect(await screen.findByText('deleted table ·')).toBeInTheDocument()
   })
 
   it('Backspace on the selected row removes the block — that key is Delete on a Mac', async () => {

@@ -23,7 +23,9 @@ jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
   useSearchParams: () => ({ get: (key: string) => (key === 'nodeId' ? 'page-1' : null) }),
 }))
-jest.mock('@/lib/supabase/client', () => ({ createClient: () => ({}) }))
+jest.mock('@/lib/supabase/client', () => ({
+  createClient: () => ({ auth: { getUser: async () => ({ data: { user: { id: 'user-1' } } }) } }),
+}))
 
 const mockFetchPages = jest.fn().mockResolvedValue([])
 jest.mock('@/lib/pages/tree', () => ({
@@ -34,11 +36,13 @@ jest.mock('@/lib/pages/tree', () => ({
 const mockGetPage = jest.fn()
 const mockUpdateTitle = jest.fn().mockResolvedValue(undefined)
 const mockDeletePage = jest.fn().mockResolvedValue(undefined)
+const mockSaveBlocks = jest.fn().mockResolvedValue(undefined)
 jest.mock('@/lib/pages/client', () => ({
   ...jest.requireActual('@/lib/pages/client'),
   getPage: (...args: unknown[]) => mockGetPage(...args),
   updateTitle: (...args: unknown[]) => mockUpdateTitle(...args),
   deletePage: (...args: unknown[]) => mockDeletePage(...args),
+  saveBlocks: (...args: unknown[]) => mockSaveBlocks(...args),
 }))
 
 const mockCommitBlocks = jest.fn().mockResolvedValue(undefined)
@@ -47,6 +51,13 @@ jest.mock('@/lib/pages/commit', () =>
     commitBlocks: (...args: unknown[]) => mockCommitBlocks(...args),
   })
 )
+
+// `removeBlockAt` (KAN-368) writes directly through `saveBlocks`/`appendOwnEdit`,
+// not the debounced `commitBlocks` path above.
+const mockAppendOwnEdit = jest.fn().mockResolvedValue({ id: 'record-1' })
+jest.mock('@/lib/change-log/store', () => ({
+  appendOwnEdit: (...args: unknown[]) => mockAppendOwnEdit(...args),
+}))
 
 beforeEach(() => {
   jest.clearAllMocks()
@@ -84,7 +95,8 @@ describe('PATH_STEPS A — delete a block from its handle menu', () => {
     await user.click(handles[1])
     await user.click(await screen.findByRole('menuitem', { name: 'delete' }))
 
-    expect(await screen.findByText('Deleted text block')).toBeInTheDocument()
+    expect(await screen.findByText('deleted text ·')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'undo' })).toBeInTheDocument()
     await waitFor(() => expect(queryAllTextBlocks()).toHaveLength(2))
     expect(queryAllTextBlocks().map((f) => f.textContent)).toEqual(['first', 'third'])
 

@@ -63,6 +63,8 @@ export interface StageDeletionInput {
   commit: (reason?: CommitReason, onWriteSettled?: () => void) => void | Promise<void>
   /** Restore the optimistically-removed item — run on Undo. Omit for a notice. */
   undo?: () => void | Promise<void>
+  /** Undo button copy (default "Undo") — lowercase `undo` for Pond's own build words (e.g. `deleted text ·`). */
+  undoLabel?: string
   /** Optional secondary action shown alongside dismiss (e.g. navigate to the page). */
   action?: () => void
   /** Button label for the secondary action (default: "Open"). */
@@ -82,6 +84,8 @@ export interface StageUndoInput {
   message: string
   /** Put the change back — run on Undo. */
   undo: () => void | Promise<void>
+  /** Undo button copy (default "Undo") — lowercase `undo` for Pond's own build words (e.g. `deleted text ·`). */
+  undoLabel?: string
   /** Group tag for {@link DeletionUndoContextValue.flushScope}. */
   scope?: string
 }
@@ -93,6 +97,7 @@ interface ActiveToast {
   message: string
   controller: DeferredCommit
   restore?: () => void | Promise<void>
+  undoLabel?: string
   /** Optional secondary action (e.g. "Open" navigation for accept receipts). */
   action?: () => void
   actionLabel?: string
@@ -103,7 +108,8 @@ interface ActiveToast {
 
 interface DeletionUndoContextValue {
   stageDeletion: (input: StageDeletionInput) => void
-  stageUndo: (input: StageUndoInput) => void
+  /** Returns the toast's id, for a caller that may need to `dismiss` it later. */
+  stageUndo: (input: StageUndoInput) => string
   /**
    * Show a plain auto-expiring notice toast. When `action` is provided, a
    * secondary button appears alongside the dismiss control — useful for
@@ -113,6 +119,14 @@ interface DeletionUndoContextValue {
   notify: (message: string, action?: () => void, actionLabel?: string) => void
   /** Commit-and-clear every pending toast staged with this scope. */
   flushScope: (scope: string) => void
+  /**
+   * Remove a toast by the id `stageDeletion`/`stageUndo` returned, without
+   * waiting for its grace window — for a caller whose own toast has gone
+   * stale for a reason the toast itself can't see (KAN-368: a toast's undo
+   * button is tied to one session-undo step, which can sink beneath a later
+   * one, or evaporate on a failed write, while the toast is still showing).
+   */
+  dismiss: (id: string) => void
 }
 
 const DeletionUndoContext = createContext<DeletionUndoContextValue | null>(null)
@@ -132,7 +146,7 @@ export function DeletionUndoProvider({ children }: { children: React.ReactNode }
   }, [])
 
   const stage = useCallback(
-    (input: StageInput) => {
+    (input: StageInput): string => {
       const id =
         typeof crypto !== 'undefined' && 'randomUUID' in crypto
           ? crypto.randomUUID()
@@ -181,20 +195,28 @@ export function DeletionUndoProvider({ children }: { children: React.ReactNode }
           message: input.message,
           controller,
           restore: input.undo,
+          undoLabel: input.undoLabel,
           scope: input.scope,
           action: input.action,
           actionLabel: input.actionLabel,
           backstopId: input.id,
         },
       ])
+      return id
     },
     [remove]
   )
 
-  const stageDeletion = useCallback((input: StageDeletionInput) => stage(input), [stage])
+  const stageDeletion = useCallback(
+    (input: StageDeletionInput) => {
+      stage(input)
+    },
+    [stage]
+  )
 
   const stageUndo = useCallback(
-    ({ message, undo, scope }: StageUndoInput) => stage({ message, undo, scope }),
+    ({ message, undo, undoLabel, scope }: StageUndoInput): string =>
+      stage({ message, undo, undoLabel, scope }),
     [stage]
   )
 
@@ -283,8 +305,8 @@ export function DeletionUndoProvider({ children }: { children: React.ReactNode }
   }, [flushAll])
 
   const value = useMemo(
-    () => ({ stageDeletion, stageUndo, notify, flushScope }),
-    [stageDeletion, stageUndo, notify, flushScope]
+    () => ({ stageDeletion, stageUndo, notify, flushScope, dismiss: handleDismiss }),
+    [stageDeletion, stageUndo, notify, flushScope, handleDismiss]
   )
 
   return (
@@ -297,6 +319,7 @@ export function DeletionUndoProvider({ children }: { children: React.ReactNode }
             message={toast.message}
             durationMs={GRACE_WINDOW_MS}
             onUndo={toast.restore ? () => handleUndo(toast.id) : undefined}
+            undoLabel={toast.undoLabel}
             onAction={toast.action}
             actionLabel={toast.actionLabel}
             onDismiss={() => handleDismiss(toast.id)}

@@ -274,7 +274,10 @@ describe('PATH_STEPS 1–5 — the rail deletes a page, trash shows it, restore 
     const rows = await within(panel).findAllByTestId('trash-row')
     expect(rows).toHaveLength(1)
     expect(within(rows[0]).getByText('Marathon')).toBeInTheDocument()
-    expect(within(rows[0]).getByText('in 30 days')).toBeInTheDocument()
+    // 30×24h across the autumn clock change lands on the previous local
+    // calendar day, so the label is `in 29 days` for that window and
+    // `in 30 days` otherwise. The column is the retention countdown.
+    expect(within(rows[0]).getByText(/^in (29|30) days$/)).toBeInTheDocument()
 
     // 5. Restore it: the row leaves the trash table, and the page is back
     // under its old parent ("Health", still expanded) in the rail.
@@ -330,7 +333,10 @@ describe('KAN-451 regression — trash mounted BEFORE a delete still shows it on
     const rows = await within(panel).findAllByTestId('trash-row')
     expect(rows).toHaveLength(1)
     expect(within(rows[0]).getByText('Marathon')).toBeInTheDocument()
-    expect(within(rows[0]).getByText('in 30 days')).toBeInTheDocument()
+    // 30×24h across the autumn clock change lands on the previous local
+    // calendar day, so the label is `in 29 days` for that window and
+    // `in 30 days` otherwise. The column is the retention countdown.
+    expect(within(rows[0]).getByText(/^in (29|30) days$/)).toBeInTheDocument()
   })
 })
 

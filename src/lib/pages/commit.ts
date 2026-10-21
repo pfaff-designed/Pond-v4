@@ -40,6 +40,13 @@ type OwnEditOpts = {
   before: Block[]
   /** The pond the sweep and the record are scoped to. */
   pondId: string | null
+  /** KAN-368: a caller whose write can race a faster one (the debounced
+   *  save, flushed mid-flight by a structural edit) has already reserved
+   *  its OWN session-undo slot with `sessionUndo.rememberPending` before
+   *  calling this — passing this hands it the record ids once they're
+   *  known (null when nothing was logged), instead of `commitBlocks`
+   *  remembering a fresh (and, by then, wrongly-ordered) step itself. */
+  onPending?: (recordIds: readonly string[] | null) => void
 }
 
 export async function commitBlocks(
@@ -100,7 +107,8 @@ export async function commitBlocks(
     // chain, so a chained save's record is remembered after this one's).
     const remembered: Promise<void> = logged
       .then((record) => {
-        if (pondId && record) sessionUndo.remember({ pondId, recordIds: [record.id] })
+        if (opts.onPending) opts.onPending(record ? [record.id] : null)
+        else if (pondId && record) sessionUndo.remember({ pondId, recordIds: [record.id] })
         // Only now is the record durable enough to hand ⌘Z to the shell's undo
         // (KAN-139, comment 10064) — closing history any earlier (right after
         // `saveBlocks`) leaves a window, until `sessionUndo` hears about the
@@ -114,6 +122,8 @@ export async function commitBlocks(
         return queryClient.invalidateQueries({ queryKey: changeLogKey() })
       })
       .catch((err) => {
+        // A reserved slot must still settle, or its ⌘Z waits out the timeout.
+        opts.onPending?.(null)
         console.error('[change-log] own-edit remember failed', pageId, err)
       })
     await propagateBlockWrite(queryClient, pageId)
@@ -144,11 +154,17 @@ export async function propagateBlockWrite(queryClient: QueryClient, pageId: stri
  * `QueryClient` to invalidate with) shares this call rather than restating it.
  */
 export function reembedPage(pageId: string): void {
-  void fetch('/api/pages/embed', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pageId }),
-  }).catch(() => {})
+  // Best-effort. A missing `fetch` (the test runtime) must not reject the
+  // save that already landed — the embed is not what the write promised.
+  try {
+    void fetch('/api/pages/embed', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pageId }),
+    }).catch(() => {})
+  } catch {
+    // no fetch in this runtime
+  }
 }
 
 /** A page's title and blocks together — the write queue's stored `T` (KAN-495),
@@ -182,6 +198,9 @@ export function createPageWriter(
       ownEdit: true,
       before: op.before.blocks,
       pondId,
+      // KAN-368: a slot reserved at enqueue time. Absent, `commitBlocks`
+      // remembers a step itself once the record exists.
+      onPending: op.onPending,
     })
     settle?.(remembered)
   }

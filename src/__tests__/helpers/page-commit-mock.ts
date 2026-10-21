@@ -22,6 +22,7 @@ export function pageCommitMock(overrides: { commitBlocks?: (...args: unknown[]) 
         kind: 'typed' | 'structural'
         after: { title: string; blocks: unknown }
         before: { blocks: unknown }
+        onPending?: (recordIds: readonly string[] | null) => void
       },
       settle?: (promise: Promise<void>) => void
     ) => {
@@ -46,7 +47,15 @@ export function pageCommitMock(overrides: { commitBlocks?: (...args: unknown[]) 
         writerArgs[1],
         writerArgs[2],
         op.after.blocks,
-        { ownEdit: true, before: op.before.blocks, pondId: writerArgs[3] }
+        {
+          ownEdit: true,
+          before: op.before.blocks,
+          pondId: writerArgs[3],
+          // Only when the draft reserved a slot. Passing `undefined` would
+          // still be truthy-checked by callers, but omit it so a mock that
+          // remembers unless `onPending` is present keeps doing that.
+          ...(op.onPending ? { onPending: op.onPending } : {}),
+        }
       )
       const remembered = (result as { remembered?: Promise<void> } | undefined)?.remembered
       if (remembered) settle?.(remembered)

@@ -110,11 +110,15 @@ import { markTarget } from '@/lib/change-log/accept-marks-diff'
 import { ChangedMark, formatChangedLabel } from '@/lib/change-log/changed-mark'
 import {
   landAtSlash,
-  undoLanding,
   useSlashPick,
   type Landing,
   type SlashTarget,
 } from '@/components/organisms/use-slash-pick'
+import { sessionUndo, type UndoHandle } from '@/lib/change-log/session-undo'
+import { applyUndoOutcome } from '@/lib/change-log/undo-outcome'
+import { blockName as changeBlockName } from '@/lib/change-log/summary'
+import { listRecords } from '@/lib/change-log/store'
+import { restorePage, trashPage } from '@/lib/change-log/trash'
 import {
   blockMenuGroups,
   runBlockMenuAction,
@@ -398,7 +402,15 @@ export interface BlockCanvasProps {
    * stored, instead of the default retry semantics (⌘⌫, drag-drop) where a
    * halted op stays for the next write to auto-retry.
    */
-  onStructuralWrite?: (next: Block[], opts?: { discardOnFailure?: boolean }) => Promise<boolean>
+  onStructuralWrite?: (
+    next: Block[],
+    opts?: {
+      discardOnFailure?: boolean
+      onUndone?: () => Promise<void> | void
+      onRedone?: () => Promise<void> | void
+      onUndoHandle?: (handle: UndoHandle) => void
+    }
+  ) => Promise<boolean>
   /**
    * Undo a block removal (ticket-44 review). The caller re-inserts `block` at
    * `index` against its LATEST blocks (read from a ref, not the `blocks` prop
@@ -406,8 +418,9 @@ export interface BlockCanvasProps {
    * structural write queue — NOT through `onChange`, which would re-base on
    * the stale `blocks` snapshot captured when the toast was staged. This
    * preserves DocumentPanel's original correctness: an edit between remove
-   * and Undo must not be clobbered by the re-insert. Required whenever
-   * removal is possible.
+   * and Undo must not be clobbered by the re-insert. Optional: a removal's
+   * undo is the structural write's own step. A host that still re-inserts
+   * itself may pass this; a host that does not leaves it unset.
    *
    * `handedRowStartTo` (KAN-440): the id of the row-mate `detachKeepingRows`
    * handed the removed block's `rowStart` to, if any — omit when there was no
@@ -415,7 +428,7 @@ export interface BlockCanvasProps {
    * blocks in the same functional update, so a removal that moved the row's
    * start doesn't leave it moved after the removal itself is undone.
    */
-  onUndoRemove: (index: number, block: Block, handedRowStartTo?: string | null) => void
+  onUndoRemove?: (index: number, block: Block, handedRowStartTo?: string | null) => void
   /**
    * Block ids inserted this session, so a freshly-inserted block SETTLES in
    * (motion-settle-in) while blocks present on load do not (ticket-41). The Set is
@@ -466,7 +479,6 @@ export function BlockCanvas({
   pageTitle = '',
   onChange,
   onStructuralWrite,
-  onUndoRemove,
   insertedIds,
   onMoveIntoNewPage,
   chrome = true,
@@ -475,7 +487,7 @@ export function BlockCanvas({
   listStyle,
   onPreviewNameChange,
 }: BlockCanvasProps) {
-  const { stageDeletion, stageUndo, notify } = useDeletionUndo()
+  const { stageUndo, notify } = useDeletionUndo()
   const getSupabase = useLazySupabase()
   const queryClient = useQueryClient()
   const pondId = usePondId()
@@ -904,9 +916,17 @@ export function BlockCanvas({
     const index = blocks.findIndex((b) => b.id === before.id)
     if (index === -1) return
     const after = handOffRowStartOnResize(blocks, index, width)
-    const next = blocks[index + 1]
+    const nextBlock = blocks[index + 1]
     const handedRowStartToId =
-      next && next.rowStart !== true && after[index + 1]?.rowStart === true ? next.id : null
+      nextBlock && nextBlock.rowStart !== true && after[index + 1]?.rowStart === true
+        ? nextBlock.id
+        : null
+    // On the page's queue this is its own undo step (KAN-368). A host with no
+    // queue keeps the width toast.
+    if (onStructuralWrite) {
+      commitStructuralBlocks(after)
+      return
+    }
     onChange(after)
     stageUndo({
       message: 'Set the block width',
@@ -1104,6 +1124,26 @@ export function BlockCanvas({
     onChange(blocks.map((b, i) => (i === index ? next : b)))
   }
 
+  // Deleting, moving, or inserting is its own undo step the instant it
+  // happens (KAN-368), on the page's write queue (KAN-495). `rowStart` is
+  // already decided by the caller — this only chooses the write path. A host
+  // with no queue (Storybook) falls back to the debounced save.
+  function commitStructuralBlocks(
+    next: Block[],
+    opts?: {
+      onUndone?: () => Promise<void> | void
+      onRedone?: () => Promise<void> | void
+      onUndoHandle?: (handle: UndoHandle) => void
+    }
+  ) {
+    blocksRef.current = next
+    if (onStructuralWrite) {
+      void onStructuralWrite(next, opts)
+      return
+    }
+    onChange(next)
+  }
+
   /**
    * KAN-243 fix: `SavedViewBar`'s undo writes through THIS, never a plain
    * `onChange(blocks.map(...))` closed over an index — that closure (as
@@ -1127,33 +1167,29 @@ export function BlockCanvas({
   function removeBlockAt(index: number) {
     const removed = blocks[index]
     if (!removed) return
-    const { blocks: after, handedRowStartTo } = detachKeepingRows(blocks, index)
+    const { blocks: after } = detachKeepingRows(blocks, index)
     // The ONE structural entry point (KAN-495): `onStructuralWrite` updates
     // the caller's local state AND enqueues this delete as its own structural
-    // op, so no second (typed) write of `after` ever queues up behind it. A
-    // host with no queue (Storybook) falls back to plain `onChange`.
-    if (onStructuralWrite) {
-      void onStructuralWrite(after)
-    } else {
-      onChange(after)
-    }
+    // op, so no second (typed) write of `after` ever queues up behind it.
+    // The toast's undo is that same step (KAN-368): `undoHandle` refuses to
+    // act once a later ⌘Z has moved it off the top.
+    let handle: UndoHandle | undefined
+    commitStructuralBlocks(after, {
+      onUndoHandle: (next) => {
+        handle = next
+      },
+    })
     focusBlockNeighbour(blocks, index)
-    stageDeletion({
-      message: `Deleted ${removed.type} block`,
-      // The removal persists via its own structural write (above); undo
-      // re-inserts via the caller's own structural write too (its own
-      // `onUndoRemove`/`undoRemove`), not the debounced save.
-      //
-      // Route the re-insert through the caller's `onUndoRemove`, NOT
-      // onChange: `blocks` here is the snapshot at stage-time, so an edit
-      // before Undo would otherwise re-base the insert on stale state and
-      // drop that edit (ticket-44 review; `onUndoRemove` itself re-inserts
-      // against its own latest blocks, read from a ref). `handedRowStartTo`
-      // (KAN-440) is the id `detachKeepingRows` just handed `removed`'s
-      // `rowStart` to, if any — undo gives it back by omitting it there.
+    stageUndo({
+      message: `deleted ${changeBlockName(removed)} ·`,
+      undoLabel: 'undo',
       scope: 'block',
-      commit: () => {},
-      undo: () => onUndoRemove(index, removed, handedRowStartTo),
+      undo: () => {
+        if (!pondId || !handle) return
+        return sessionUndo
+          .undoHandle(pondId, handle)
+          .then((result) => applyUndoOutcome('undo', result, queryClient))
+      },
     })
   }
 
@@ -1172,7 +1208,7 @@ export function BlockCanvas({
       // the same as any other block, so taking it out must hand that off to
       // its row-mate the same way a real delete does, or the row-mate silently
       // re-packs beside whatever came before.
-      onChange(detachKeepingRows(blocks, index).blocks)
+      commitStructuralBlocks(detachKeepingRows(blocks, index).blocks)
       focusBlockNeighbour(blocks, index)
     } else {
       removeBlockAt(index)
@@ -1189,7 +1225,7 @@ export function BlockCanvas({
     if (!nb) return
     markInserted(nb.id)
     const base = patch ? blocks.map((b, i) => (i === index ? patch : b)) : blocks
-    onChange([...base.slice(0, index + 1), nb, ...base.slice(index + 1)])
+    commitStructuralBlocks([...base.slice(0, index + 1), nb, ...base.slice(index + 1)])
   }
 
   /**
@@ -1264,7 +1300,6 @@ export function BlockCanvas({
     const appended = { next: [...current, view], landed: view, split: null, slash: null }
     const landing = landAtSlash(current, target, view) ?? appended
     if (landing.landed) markInserted(landing.landed.id)
-    onChange(landing.next)
     return landing
   }
 
@@ -1302,7 +1337,8 @@ export function BlockCanvas({
         collectionId: pick.database.id,
         ...(chart ? { chart } : {}),
       }
-      placeView(view, open.target)
+      const landing = placeView(view, open.target)
+      void persistBlocksAsOwnEdit(landing.next)
       return
     }
     try {
@@ -1330,15 +1366,32 @@ export function BlockCanvas({
       const landing = placeView(made.view, open.target)
       queryClient.invalidateQueries({ queryKey: pagesKey() })
       queryClient.invalidateQueries({ queryKey: ['record-counts', pondId] })
-      stageUndo({
-        message: 'Made a database',
-        scope: 'block',
-        undo: async () => {
-          onChange(undoLanding(blocksRef.current, landing))
+      void persistBlocksAsOwnEdit(landing.next, {
+        onUndone: async () => {
           try {
-            await deletePage(getSupabase(), made.databaseId)
+            await trashPage(getSupabase(), made.databaseId)
           } catch (err) {
-            console.error('Failed to remove the database after undo', err)
+            console.error('Failed to trash the database this view made', made.databaseId, err)
+          }
+          queryClient.invalidateQueries({ queryKey: pagesKey() })
+        },
+        onRedone: async () => {
+          try {
+            const supabase = getSupabase()
+            const {
+              data: { user },
+            } = await supabase.auth.getUser()
+            if (!user || !pondId) return
+            const [deleted] = await listRecords(supabase, {
+              userId: user.id,
+              pondId,
+              targetPageId: made.databaseId,
+              action: 'delete',
+              limit: 1,
+            })
+            if (deleted) await restorePage(supabase, deleted.id)
+          } catch (err) {
+            console.error('Failed to restore the database this view made', made.databaseId, err)
           }
           queryClient.invalidateQueries({ queryKey: pagesKey() })
         },
@@ -1490,8 +1543,14 @@ export function BlockCanvas({
    */
   const persistBlocksAsOwnEdit = async (
     after: Block[],
-    opts?: { discardOnFailure?: boolean }
+    opts?: {
+      discardOnFailure?: boolean
+      onUndone?: () => Promise<void> | void
+      onRedone?: () => Promise<void> | void
+      onUndoHandle?: (handle: UndoHandle) => void
+    }
   ): Promise<boolean> => {
+    blocksRef.current = after
     if (onStructuralWrite) return onStructuralWrite(after, opts)
     onChange(after)
     return true
@@ -1602,7 +1661,7 @@ export function BlockCanvas({
     const next = [...blocks]
     next[index] = withRowStart(atTarget, atIndex.rowStart)
     next[target] = withRowStart(atIndex, atTarget.rowStart)
-    onChange(next)
+    commitStructuralBlocks(next)
   }
 
   // Rows are derived, never stored (6x): consecutive blocks whose widths add up
