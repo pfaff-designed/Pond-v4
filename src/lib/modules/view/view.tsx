@@ -20,14 +20,15 @@
 
 import { useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { ModuleViewProps } from '../types'
-import type { ViewBlock, ViewMode, ViewSavedView } from './schema'
+import type { ViewBlock, ViewMode } from './schema'
 import { useSiblingBlocks } from '../sibling-context'
 import { viewCollectionId } from '../block-frame'
 import { useCollectionRows } from './use-collection-rows'
 import { useStruckRows } from '@/lib/change-log/undo-strike'
 import { DIFF_REMOVAL_TEXT_CLASSNAME, PondMolecule } from '@/components/molecules/PondMolecule'
 import { activeSavedView, applyConfigPatch } from './schema'
-import { ActiveViewSelectionContext } from './active-view-context'
+import { ActiveViewSelectionContext, SavedViewHostContext } from './active-view-context'
+import { SavedViewBar } from './saved-view-bar'
 import {
   addDays,
   applyView,
@@ -110,12 +111,7 @@ import {
   useRecordSelection,
 } from './use-record-selection'
 import { shouldSelectCardFromClick, shouldSelectRowFromClick } from './card-click'
-import {
-  ViewBar,
-  ViewGroupMenu,
-  ViewLayoutMenu,
-  type ViewBarView,
-} from '@/components/molecules/ViewBar'
+import { ViewGroupMenu, ViewLayoutMenu } from '@/components/molecules/ViewBar'
 import { useBlockRow } from '../block-row-context'
 
 /**
@@ -389,6 +385,8 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
       chartProvenance={chartProvenance}
       onAddDateField={handleAddDateField}
       onAddStatusField={handleAddStatusField}
+      updateSchema={updateSchema}
+      onChange={onChange}
       onRenameField={handleRenameField}
       onDeleteField={handleDeleteField}
     />
@@ -445,6 +443,14 @@ export interface CollectionViewProps {
    *  board whose schema has no status/select property to group by. Absent when
    *  not `editable` (Storybook, a diff/proposal render) — no undrawn affordance there. */
   onAddStatusField?: () => void
+  /** KAN-243: writes the collection's schema — `SavedViewBar`'s own add-a-view
+   *  remedy mints a field onto it the same way `onAddDateField`/`onAddStatusField`
+   *  do. Absent when not `editable` (Storybook, a diff/proposal render). */
+  updateSchema?: (next: PropertySchema) => void
+  /** KAN-243: the whole-block write `SavedViewBar` lands an add through. Absent
+   *  when not `editable` (Storybook, a diff/proposal render) — no undrawn
+   *  affordance there. */
+  onChange?: (next: ViewBlock) => void
   /** KAN-380: commit a rename from the table's field-header menu. Absent when
    *  not `editable` — the header renders as plain text instead of a button. */
   onRenameField?: (id: string, name: string) => void
@@ -473,6 +479,8 @@ export function CollectionView({
   chartProvenance,
   onAddDateField,
   onAddStatusField,
+  updateSchema,
+  onChange,
   onRenameField,
   onDeleteField,
 }: CollectionViewProps) {
@@ -493,6 +501,10 @@ export function CollectionView({
   // frame — but only when it has mounted a provider (BlockCanvas, not a bare
   // story/test render of CollectionView).
   const notifyActiveViewSelected = useContext(ActiveViewSelectionContext)
+  // KAN-243 fix: BlockCanvas's own getters, which outlive both `SavedViewBar`
+  // instances it draws for one block — absent off a bare story/test render of
+  // `CollectionView`, where `SavedViewBar` falls back to its own local ref.
+  const savedViewHost = useContext(SavedViewHostContext)
   const handleSelectView = useCallback(
     (id: string) => {
       setLocalActiveViewId(id)
@@ -500,6 +512,19 @@ export function CollectionView({
     },
     [notifyActiveViewSelected]
   )
+
+  // KAN-243: picking a kind from the ＋ view picker "makes it active" (the
+  // spec's own words), and its undo restores the segment that was active
+  // before — adjusted during render (React's own "you might not need an
+  // effect" pattern), not in a `useEffect`, since the effect form would
+  // commit the stale tab for one frame before correcting itself. A bar
+  // CLICK never touches `config.activeViewId` (KAN-36 keeps it local-only),
+  // so this only ever fires off the host's OWN edits.
+  const [seenActiveViewId, setSeenActiveViewId] = useState(config.activeViewId)
+  if (config.activeViewId !== seenActiveViewId) {
+    setSeenActiveViewId(config.activeViewId)
+    if (config.activeViewId) setLocalActiveViewId(config.activeViewId)
+  }
 
   // KAN-32: every mode/groupBy/sort/filter/chart/bigNumber read below runs off the
   // ACTIVE saved view, never the raw block — a `views`-shaped block's other saved
@@ -587,15 +612,19 @@ export function CollectionView({
     <div className="text-sm text-mn-text">
       <ViewControls
         config={activeConfig}
+        rawBlock={config}
         schema={schema}
         collectionName={collectionName}
         recordCount={rows.length}
-        savedViews={config.views}
         activeViewId={localActiveViewId}
-        onSelectView={config.views ? handleSelectView : undefined}
-        showAddView={!!editable}
+        onSelectView={handleSelectView}
+        updateSchema={updateSchema}
+        onChange={onChange}
         editable={editable}
         onConfigChange={onConfigChange ? handleConfigChange : undefined}
+        latestBlock={savedViewHost?.latestBlock}
+        getLatestSchema={savedViewHost?.getLatestSchema}
+        writeBlock={savedViewHost?.writeBlock}
       />
       {activeConfig.mode === 'board' ? (
         <CollectionBoard
@@ -725,26 +754,39 @@ export function CollectionView({
  */
 function ViewControls({
   config,
+  rawBlock,
   schema,
   collectionName,
   recordCount,
-  savedViews,
   activeViewId,
   onSelectView,
-  showAddView,
+  updateSchema,
+  onChange,
   editable,
   onConfigChange,
+  latestBlock,
+  getLatestSchema,
+  writeBlock,
 }: {
   config: ViewBlock
+  /** The raw, unresolved persisted block — `SavedViewBar`'s segments and its
+   *  `addSavedView` write both need `.views[]` (or the legacy top-level
+   *  mode+config) directly, never `config`'s per-saved-view resolved mirror. */
+  rawBlock: ViewBlock
   schema: PropertySchema
   collectionName?: string
   recordCount: number
-  savedViews?: readonly ViewSavedView[]
   activeViewId?: string
   onSelectView?: (id: string) => void
-  showAddView: boolean
+  updateSchema?: (next: PropertySchema) => void
+  onChange?: (next: ViewBlock) => void
   editable?: boolean
   onConfigChange?: (patch: ViewConfigPatch) => void
+  /** KAN-243 fix: `BlockCanvas`'s own host getters, forwarded to `SavedViewBar`
+   *  — see `SavedViewHostContext`. Absent off a bare story/test render. */
+  latestBlock?: { readonly current: ViewBlock }
+  getLatestSchema?: () => PropertySchema | null
+  writeBlock?: (next: ViewBlock) => void
 }) {
   // A board's fact names its lanes. A list's fact is `ViewGroupMenu`.
   const groupDef = config.mode === 'board' ? pickGroupDef(schema, config.groupBy) : undefined
@@ -791,17 +833,32 @@ function ViewControls({
         </div>
         <div className="flex items-center gap-[4px]">
           <ViewLayoutMenu mode={config.mode} editable={layoutEditable} onLayout={handleLayout} />
-          {savedViews && savedViews.length > 0 && activeViewId && onSelectView && (
-            <ViewBar
-              views={savedViews.map((view): ViewBarView => ({
-                id: view.id,
-                label: view.label ?? view.kind,
-              }))}
-              activeId={activeViewId}
-              onSelect={onSelectView}
-              showAddView={showAddView}
-            />
-          )}
+          {onSelectView &&
+            (() => {
+              const savedViewBarProps = {
+                block: rawBlock,
+                schema,
+                activeId: activeViewId,
+                onSelect: onSelectView,
+                editable: !!editable,
+                latestBlock,
+                getLatestSchema,
+                writeBlock,
+              }
+              // `SavedViewBarProps` requires `updateSchema` together with `onChange`
+              // (AGENTS.md "crash early") — a host with one but not the other gets
+              // neither, rather than a no-op `updateSchema` that would let a pick
+              // silently add a remedy view with no remedy field.
+              return onChange && updateSchema ? (
+                <SavedViewBar
+                  {...savedViewBarProps}
+                  onChange={onChange}
+                  updateSchema={updateSchema}
+                />
+              ) : (
+                <SavedViewBar {...savedViewBarProps} />
+              )
+            })()}
         </div>
       </div>
 

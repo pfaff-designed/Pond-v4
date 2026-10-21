@@ -43,12 +43,17 @@ import {
   type BlockFrame,
   type PondBlockState,
 } from '@/lib/modules/block-frame'
-import { useCollectionRows } from '@/lib/modules/view/use-collection-rows'
+import { readCachedSchema, useCollectionRows } from '@/lib/modules/view/use-collection-rows'
 import { shouldSelectCardFromClick } from '@/lib/modules/view/card-click'
 import { applyView } from '@/lib/modules/view/apply'
 import { activeSavedView } from '@/lib/modules/view/schema'
-import { ActiveViewSelectionContext } from '@/lib/modules/view/active-view-context'
-import { ViewBar, type ViewBarView } from '@/components/molecules/ViewBar'
+import {
+  ActiveViewSelectionContext,
+  SavedViewHostContext,
+} from '@/lib/modules/view/active-view-context'
+import { SavedViewBar } from '@/lib/modules/view/saved-view-bar'
+import { compactChartMark } from '@/lib/modules/view/chart-compact'
+import type { PropertySchema } from '@/lib/properties/schema'
 import { CHART_EMPTY_LINE } from '@/lib/modules/chart/card'
 import { addTodoItem } from '@/lib/modules/todo/view'
 import { addTableRow } from '@/lib/modules/table/view'
@@ -1075,6 +1080,26 @@ export function BlockCanvas({
     onChange(blocks.map((b, i) => (i === index ? next : b)))
   }
 
+  /**
+   * KAN-243 fix: `SavedViewBar`'s undo writes through THIS, never a plain
+   * `onChange(blocks.map(...))` closed over an index — that closure (as
+   * `renderBlockEditor`'s `(next) => setBlockAt(i, next)` is, below) spreads
+   * `next` over whatever `blocks` THAT RENDER saw, so a toast staged earlier and
+   * fired later would silently drop an edit made to another block in between
+   * (and, after a reorder, could even land on the wrong block by index).
+   * `blocksRef.current` is always the latest list, and matching by id rather
+   * than index survives a reorder too.
+   */
+  const writeBlock = useCallback(
+    (next: ViewBlock) =>
+      onChange(
+        blocksRef.current.map((b) =>
+          b.id === next.id ? { ...next, activeViewId: (b as ViewBlock).activeViewId } : b
+        )
+      ),
+    [onChange]
+  )
+
   function removeBlockAt(index: number) {
     const removed = blocks[index]
     if (!removed) return
@@ -1769,6 +1794,7 @@ export function BlockCanvas({
           trailingGapHovered
         }
         onChange={(next) => setBlockAt(i, next)}
+        writeBlock={writeBlock}
         onRemoveEmpty={() => removeEmptyLineAt(i)}
         onDeleteBlock={() => removeBlockAt(i)}
         onReturn={(patch) => insertLineAfter(i, patch)}
@@ -2312,58 +2338,81 @@ function useBlockEmptyState(
   frame: BlockFrame | null,
   pageId: string,
   onChange: (next: Block) => void
-): { state: PondBlockState; onEmptyAction?: () => void; emptyLine?: string } {
+): {
+  state: PondBlockState
+  onEmptyAction?: () => void
+  emptyLine?: string
+  schema: PropertySchema | null
+  updateSchema: (next: PropertySchema) => void
+  /** KAN-243 fix: reads the collection's schema straight off react-query's cache
+   *  (`SavedViewHost`) — the host-owned getter `SavedViewBar`'s undo needs, since
+   *  `schema` above is a snapshot from render time, not "right now". */
+  getLatestSchema: () => PropertySchema | null
+} {
   const collectionId = block.type === 'view' ? viewCollectionId(block, pageId) : undefined
-  const { schema, rows, isLoading, addRow } = useCollectionRows(collectionId)
+  const queryClient = useQueryClient()
+  const { schema, rows, isLoading, addRow, updateSchema } = useCollectionRows(collectionId)
+  const getLatestSchema = useCallback(
+    () => readCachedSchema(queryClient, collectionId),
+    [queryClient, collectionId]
+  )
   // The rows the view will actually draw — its filter (and sort) applied.
   const processed = useMemo(
     () => (block.type === 'view' && schema ? applyView(rows, schema, block) : rows),
     [block, rows, schema]
   )
 
-  switch (block.type) {
-    case 'todo':
-      return blockIsEmpty(block)
-        ? {
-            state: 'empty',
-            onEmptyAction: () => {
-              commitStructural(pageId, () => {
-                const next = addTodoItem(block)
-                onChange(next)
-                focusTodoItem(block.id, next.items[next.items.length - 1].id)
-              })
-            },
-          }
-        : { state: 'rest' }
-    case 'table':
-      return blockIsEmpty(block)
-        ? { state: 'empty', onEmptyAction: () => onChange(addTableRow(block)) }
-        : { state: 'rest' }
-    case 'entries':
-      // `write one` fires while the log is still `empty`, so `EntriesView` isn't
-      // mounted yet to hold a pending-focus ref — the id has to be registered
-      // before `onChange` swaps the frame to `rest` and mounts it (KAN-444).
-      return blockIsEmpty(block)
-        ? {
-            state: 'empty',
-            onEmptyAction: () => onChange(addEntryFocused(block)),
-          }
-        : { state: 'rest' }
-    case 'view': {
-      if (isLoading || schema === null) return { state: 'rest' }
-      // The rule itself is `viewFrameState` in `block-frame.ts`, shared with the
-      // template story so the story asserts what the product runs (#261 review).
-      // This host adds the two things a pure rule cannot carry: the chart mark's
-      // copy, which lives in a React module, and the write action.
-      const verdict = viewFrameState(block, rows, processed, frame, schema)
-      if (verdict.state === 'rest') return { state: 'rest' }
-      if (verdict.chartLine) return { state: 'empty', emptyLine: CHART_EMPTY_LINE }
-      if (verdict.addRow) return { state: 'empty', onEmptyAction: () => void addRow() }
-      return { state: 'empty', emptyLine: verdict.line }
+  const result = ((): {
+    state: PondBlockState
+    onEmptyAction?: () => void
+    emptyLine?: string
+  } => {
+    switch (block.type) {
+      case 'todo':
+        return blockIsEmpty(block)
+          ? {
+              state: 'empty',
+              onEmptyAction: () => {
+                commitStructural(pageId, () => {
+                  const next = addTodoItem(block)
+                  onChange(next)
+                  focusTodoItem(block.id, next.items[next.items.length - 1].id)
+                })
+              },
+            }
+          : { state: 'rest' }
+      case 'table':
+        return blockIsEmpty(block)
+          ? { state: 'empty', onEmptyAction: () => onChange(addTableRow(block)) }
+          : { state: 'rest' }
+      case 'entries':
+        // `write one` fires while the log is still `empty`, so `EntriesView` isn't
+        // mounted yet to hold a pending-focus ref — the id has to be registered
+        // before `onChange` swaps the frame to `rest` and mounts it (KAN-444).
+        return blockIsEmpty(block)
+          ? {
+              state: 'empty',
+              onEmptyAction: () => onChange(addEntryFocused(block)),
+            }
+          : { state: 'rest' }
+      case 'view': {
+        if (isLoading || schema === null) return { state: 'rest' }
+        // The rule itself is `viewFrameState` in `block-frame.ts`, shared with the
+        // template story so the story asserts what the product runs (#261 review).
+        // This host adds the two things a pure rule cannot carry: the chart mark's
+        // copy, which lives in a React module, and the write action.
+        const verdict = viewFrameState(block, rows, processed, frame, schema)
+        if (verdict.state === 'rest') return { state: 'rest' }
+        if (verdict.chartLine) return { state: 'empty', emptyLine: CHART_EMPTY_LINE }
+        if (verdict.addRow) return { state: 'empty', onEmptyAction: () => void addRow() }
+        return { state: 'empty', emptyLine: verdict.line }
+      }
+      default:
+        return { state: 'rest' }
     }
-    default:
-      return { state: 'rest' }
-  }
+  })()
+
+  return { ...result, schema, updateSchema, getLatestSchema }
 }
 
 /**
@@ -2402,6 +2451,7 @@ function BlockEditor({
   untouched = false,
   hoverGhost = false,
   onChange,
+  writeBlock,
   onRemoveEmpty,
   onDeleteBlock,
   onReturn,
@@ -2449,6 +2499,10 @@ function BlockEditor({
    *  second ghost row, so a click never moves which element shows the text. */
   hoverGhost?: boolean
   onChange: (next: Block) => void
+  /** `BlockCanvas`'s own by-id write (KAN-243 fix) — see `SavedViewHost.writeBlock`.
+   *  Threaded to `savedViewHost` and the empty-state `SavedViewBar` directly,
+   *  since it's rendered outside the context provider below. */
+  writeBlock: (next: ViewBlock) => void
   /** Backspace in an empty text block. */
   onRemoveEmpty: () => void
   /** ⌘⌫ / Ctrl+⌫ on the focused block. */
@@ -2577,6 +2631,9 @@ function BlockEditor({
     state: baseState,
     onEmptyAction,
     emptyLine,
+    schema: collectionSchema,
+    updateSchema: updateCollectionSchema,
+    getLatestSchema,
   } = useBlockEmptyState(resolvedBlock, frame, pageId, onChange)
   // Pointer-selected (07.05): a click on the row's own chrome — never a nested
   // cell/input/button, which keeps its own focus — focuses the row and this
@@ -2588,26 +2645,63 @@ function BlockEditor({
   const [rowSelected, setRowSelected] = useState(false)
   const state = rowSelected && baseState === 'rest' ? 'selected' : baseState
 
-  // The PondBlock-card and no-card branches below sit at different tree depths, so
-  // flipping `frame` (e.g. board → timeline) remounts the module view underneath —
-  // CollectionView's own `localActiveViewId` would then reseed from the block's
-  // PERSISTED `activeViewId` and silently revert the bar to its stored tab. Carrying
-  // the bar's live selection through `activeViewId` here lets the remount reseed to
-  // the same tab instead.
-  const moduleData = block.type === 'view' && activeViewId ? { ...block, activeViewId } : block
+  // `frame`'s CARD kind never flips for an existing block (it reads the persisted,
+  // never-changing `block.mode`, not the active saved view's — the ruling above).
+  // What DOES remount the module view underneath is `PondBlock` swapping `children`
+  // for `PondBlockEmpty` on the empty↔rest `state` flip (e.g. picking a view whose
+  // own kind isn't empty, or its remedy field landing a row) — CollectionView's own
+  // `localActiveViewId` would then reseed from the block's PERSISTED `activeViewId`
+  // and silently revert the bar to its stored tab. Carrying the bar's live selection
+  // through `activeViewId` here lets the remount reseed to the same tab instead.
+  const moduleData = useMemo(
+    () => (block.type === 'view' && activeViewId ? { ...block, activeViewId } : block),
+    [block, activeViewId]
+  )
+
+  // KAN-243 fix: `runAddView`'s undo must read "what is current right now" off
+  // something that outlives EITHER `SavedViewBar` instance below (the
+  // empty-state bar and `ViewControls`' own live bar swap in and out of this
+  // very render as `state` flips empty/rest) — this per-block `BlockEditor`
+  // instance never unmounts across that flip, so a ref owned here does.
+  // Typed to `ViewBlock` since the two readers (below, and `SavedViewHostContext`'s
+  // consumer) only ever exist for a `view`-type block.
+  const latestViewBlockRef = useRef<ViewBlock>(moduleData as ViewBlock)
+  useEffect(() => {
+    if (block.type === 'view') latestViewBlockRef.current = moduleData as ViewBlock
+  }, [block.type, moduleData])
+  const savedViewHost = useMemo(
+    () => ({ latestBlock: latestViewBlockRef, getLatestSchema, writeBlock }),
+    [getLatestSchema, writeBlock]
+  )
 
   // KAN-321 fix: `state === 'empty'` swaps `children` (the module view, bar
   // included) for `PondBlockEmpty` below — a views-shaped block's active saved
   // view with an emptying filter would otherwise strand the person with no tab
   // back to one that isn't. Rendered through `PondBlock`'s `headBar` slot,
   // which sits above whichever body (bar-and-rows or the empty box) draws.
+  // KAN-243: adding a view is a real edit, but the PERSISTED `activeViewId`
+  // stays whatever it already was — switching is reading, #421, same as the
+  // ModuleView path's `committed` write below. The add's own activation
+  // reaches this block only through `setActiveViewId` (the context below),
+  // the same path a bar click already uses.
+  const commitViewChange = (next: ViewBlock) =>
+    onChange({ ...next, activeViewId: block.type === 'view' ? block.activeViewId : undefined })
+
+  // A compact chart mark's voidBox draws its own line alone — no tabs, no
+  // ＋ view — so it's excluded here whether or not it's wrapped in views[].
   const emptyStateViewBar =
-    state === 'empty' && block.type === 'view' && block.views && block.views.length > 0 ? (
-      <ViewBar
-        views={block.views.map((v): ViewBarView => ({ id: v.id, label: v.label ?? v.kind }))}
-        activeId={activeViewId ?? block.activeViewId ?? block.views[0].id}
+    state === 'empty' && block.type === 'view' && compactChartMark(block) === null ? (
+      <SavedViewBar
+        block={activeViewId ? { ...block, activeViewId } : block}
+        schema={collectionSchema}
+        updateSchema={updateCollectionSchema}
+        activeId={activeViewId}
         onSelect={setActiveViewId}
-        showAddView={false}
+        editable
+        onChange={commitViewChange}
+        latestBlock={latestViewBlockRef}
+        getLatestSchema={getLatestSchema}
+        writeBlock={writeBlock}
       />
     ) : undefined
 
@@ -2637,13 +2731,15 @@ function BlockEditor({
     <BlockRowProvider value={{ selected: state === 'selected', stepOut: onReturn, commitStep }}>
       <SlashLineContext.Provider value={slash.handleSlashLine}>
         <ActiveViewSelectionContext.Provider value={setActiveViewId}>
-          <ModuleView
-            type={block.type}
-            data={moduleData}
-            editable
-            autofocus={autofocus}
-            onChange={handleModuleChange}
-          />
+          <SavedViewHostContext.Provider value={savedViewHost}>
+            <ModuleView
+              type={block.type}
+              data={moduleData}
+              editable
+              autofocus={autofocus}
+              onChange={handleModuleChange}
+            />
+          </SavedViewHostContext.Provider>
         </ActiveViewSelectionContext.Provider>
       </SlashLineContext.Provider>
     </BlockRowProvider>
