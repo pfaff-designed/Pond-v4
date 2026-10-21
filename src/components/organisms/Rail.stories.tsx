@@ -903,7 +903,9 @@ export const RootRowTools: Story = {
     // visibility wrapper instead.
     await expect(isShown(add.parentElement!)).toBe(true)
     const del = within(life).getByRole('button', { name: 'Delete life' })
-    await expect(isShown(del.parentElement!)).toBe(true)
+    await expect(isShown(del.parentElement!)).toBe(false)
+    await userEvent.hover(life)
+    await waitFor(() => expect(isShown(del.parentElement!)).toBe(true))
     await userEvent.click(del)
     await expect(args.onDelete).toHaveBeenCalledWith('__life__')
     await userEvent.click(add)
@@ -1103,16 +1105,6 @@ export const Empty: Story = {
       within(canvas.getByRole('tree', { name: 'Workspace' })).getAllByRole('treeitem')
     ).toHaveLength(1)
     await expect(root).toHaveAttribute('aria-selected', 'false')
-    const tools = root.querySelector<HTMLElement>('[data-part="row-tools"]')
-    await expect(tools).not.toBeNull()
-    const add = within(root).getByRole('button', { name: /^Add sub-page to/ })
-    await expect(getComputedStyle(add.parentElement!).opacity).toBe('0')
-    await userEvent.hover(root)
-    await waitFor(() => expect(getComputedStyle(add.parentElement!).opacity).toBe('1'))
-    await expect(add).toBeVisible()
-    await expect(within(root).getByRole('button', { name: /^Delete/ })).toBeVisible()
-    await userEvent.unhover(root)
-
     const card = cardOf(canvasElement)
     const box = hint.getBoundingClientRect()
     await expect(Math.round(box.left - card.left)).toBe(34)
@@ -1121,6 +1113,15 @@ export const Empty: Story = {
     const css = getComputedStyle(hint)
     await expect(css.fontSize).toBe('12.5px')
     await expect(css.lineHeight).toBe('18.75px')
+
+    const tools = root.querySelector<HTMLElement>('[data-part="row-tools"]')
+    await expect(tools).not.toBeNull()
+    const add = within(root).getByRole('button', { name: /^Add sub-page to/ })
+    await expect(getComputedStyle(add.parentElement!).opacity).toBe('0')
+    await userEvent.hover(root)
+    await waitFor(() => expect(getComputedStyle(add.parentElement!).opacity).toBe('1'))
+    await expect(add).toBeVisible()
+    await expect(within(root).getByRole('button', { name: /^Delete/ })).toBeVisible()
   },
 }
 
