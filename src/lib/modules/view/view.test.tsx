@@ -1022,13 +1022,142 @@ describe('ViewView — the path test: timeline, through the real host (KAN-352)'
     fireEvent.pointerUp(bar)
 
     const dayAfterIso = addDays(tomorrowIso, 1)
-    expect(setValue).toHaveBeenCalledWith('r-new-0', 'p-start', tomorrowIso)
-    expect(setValue).toHaveBeenCalledWith('r-new-0', 'p-due', dayAfterIso)
+    expect(setValuesAsStep).toHaveBeenCalledTimes(1)
+    expect(setValuesAsStep).toHaveBeenCalledWith('r-new-0', [
+      { key: 'p-start', value: tomorrowIso },
+      { key: 'p-due', value: dayAfterIso },
+    ])
+    expect(setValue).not.toHaveBeenCalled()
   })
 
   it('a non-editable render shows no "add a task" row', () => {
     renderView(gantt, false)
     expect(screen.queryByRole('button', { name: 'add a task' })).not.toBeInTheDocument()
+  })
+})
+
+describe('ViewView — dragging a timeline bar writes both dates as one step (KAN-520)', () => {
+  const ganttSchema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    { id: 'p-start', name: 'Start', type: 'date' },
+    { id: 'p-due', name: 'Due', type: 'date' },
+  ]
+  type DateStep = { key: string; value: PropertyValue }
+  const trackRect = {
+    x: 0,
+    y: 0,
+    top: 0,
+    left: 0,
+    right: 280,
+    bottom: 18,
+    width: 280,
+    height: 18,
+    toJSON() {
+      return {}
+    },
+  }
+  let undoStack: { rowId: string; entries: DateStep[] }[] = []
+  let storedValues: Record<string, PropertyValue> = {}
+
+  const stepBack = () => {
+    const snapshot = undoStack.pop()
+    if (!snapshot) return
+    act(() => {
+      for (const entry of snapshot.entries) {
+        storedValues[entry.key] = entry.value
+        applyRowValue(snapshot.rowId, entry.key, entry.value)
+      }
+    })
+  }
+
+  beforeEach(() => {
+    initialSchema = ganttSchema
+    initialRows = [
+      {
+        id: 'r1',
+        title: 'Trip',
+        values: { 'p-start': '2026-09-01', 'p-due': '2026-09-28' },
+      },
+    ]
+    trackRect.width = 280
+    trackRect.right = 280
+    storedValues = { 'p-start': '2026-09-01', 'p-due': '2026-09-28' }
+    undoStack = []
+    setValuesAsStep.mockImplementation((rowId: string, entries: DateStep[]) => {
+      const previous = entries.map((entry) => ({
+        key: entry.key,
+        value: storedValues[entry.key] ?? null,
+      }))
+      undoStack.push({ rowId, entries: previous })
+      for (const entry of entries) {
+        storedValues[entry.key] = entry.value
+        applyRowValue(rowId, entry.key, entry.value)
+      }
+    })
+  })
+
+  afterEach(() => {
+    jest.restoreAllMocks()
+  })
+
+  it('moves both dates, each end, steps the last drag back, then a second move keeps both', async () => {
+    const user = userEvent.setup()
+    // 280px over the inclusive 28-day span is 10px per day. jsdom's own rect is zero.
+    jest.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(trackRect as DOMRect)
+    renderView(gantt)
+
+    const bar = screen.getByRole('button', { name: /Reschedule Trip: 2026-09-01 – 2026-09-28/ })
+    await user.pointer({ keys: '[MouseLeft]', target: bar, coords: { clientX: 0, clientY: 0 } })
+    expect(setValuesAsStep).not.toHaveBeenCalled()
+
+    await user.pointer([
+      { keys: '[MouseLeft>]', target: bar, coords: { clientX: 0, clientY: 0 } },
+      { coords: { clientX: 70, clientY: 0 } },
+      { keys: '[/MouseLeft]' },
+    ])
+    expect(setValuesAsStep).toHaveBeenLastCalledWith('r1', [
+      { key: 'p-start', value: '2026-09-08' },
+      { key: 'p-due', value: '2026-10-05' },
+    ])
+    expect(
+      screen.getByRole('button', { name: /Reschedule Trip: 2026-09-08 – 2026-10-05/ })
+    ).toBeInTheDocument()
+
+    const end = screen.getByRole('button', { name: 'Move end of Trip' })
+    await user.pointer([
+      { keys: '[MouseLeft>]', target: end, coords: { clientX: 0, clientY: 0 } },
+      { coords: { clientX: 20, clientY: 0 } },
+      { keys: '[/MouseLeft]' },
+    ])
+    expect(setValuesAsStep).toHaveBeenLastCalledWith('r1', [{ key: 'p-due', value: '2026-10-07' }])
+
+    const start = screen.getByRole('button', { name: 'Move start of Trip' })
+    await user.pointer([
+      { keys: '[MouseLeft>]', target: start, coords: { clientX: 0, clientY: 0 } },
+      { coords: { clientX: 10, clientY: 0 } },
+      { keys: '[/MouseLeft]' },
+    ])
+    expect(setValuesAsStep).toHaveBeenLastCalledWith('r1', [{ key: 'p-start', value: '2026-09-09' }])
+    expect(setValuesAsStep).toHaveBeenCalledTimes(3)
+    expect(setValue).not.toHaveBeenCalled()
+
+    stepBack()
+    expect(
+      screen.getByRole('button', { name: /Reschedule Trip: 2026-09-08 – 2026-10-07/ })
+    ).toBeInTheDocument()
+
+    const moved = screen.getByRole('button', { name: /Reschedule Trip: 2026-09-08 – 2026-10-07/ })
+    await user.pointer([
+      { keys: '[MouseLeft>]', target: moved, coords: { clientX: 0, clientY: 0 } },
+      { coords: { clientX: 70, clientY: 0 } },
+      { keys: '[/MouseLeft]' },
+    ])
+    // The end resize lengthened the span from 28 days to 30, so the same 70px
+    // is eight days on the reflowed axis. Both dates move, and neither is dropped.
+    expect(setValuesAsStep).toHaveBeenLastCalledWith('r1', [
+      { key: 'p-start', value: '2026-09-16' },
+      { key: 'p-due', value: '2026-10-15' },
+    ])
   })
 })
 
@@ -3592,5 +3721,63 @@ describe('KAN-527', () => {
     expect(screen.getByText('from 19 oct')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'load more' })).toBeNull()
     expect(container.querySelectorAll('[data-part="calendar-agenda"]')).toHaveLength(1)
+  })
+})
+
+describe('KAN-459 path', () => {
+  const calendarSchema: PropertySchema = [
+    { id: 'p-due', name: 'Due', type: 'date' },
+    {
+      id: 'p-status',
+      name: 'status',
+      type: 'status',
+      options: [
+        { id: 'opt-open', label: 'to do' },
+        { id: 'opt-done', label: 'done' },
+      ],
+    },
+  ]
+  const monthCalendar: ViewBlock = { id: 'v-cal', type: 'view', mode: 'calendar' }
+
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
+    initialSchema = calendarSchema
+    initialRows = [
+      {
+        id: 'dentist',
+        title: 'dentist',
+        values: { 'p-due': '2026-10-19T10:00:00', 'p-status': 'opt-open' },
+      },
+    ]
+    setValue.mockImplementation((rowId: string, key: string, value: PropertyValue) => {
+      applyRowValue(rowId, key, value)
+    })
+  })
+
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  it('ticks dentist done from the peek and the month chip stays timed and struck', async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    const { container } = renderView(monthCalendar)
+    const cell = container.querySelector<HTMLElement>(
+      '[data-part="calendar-day-cell"][data-iso="2026-10-19"]'
+    )
+    expect(cell).not.toBeNull()
+    if (!cell) return
+
+    expect(within(cell).getByText('dentist')).toBeInTheDocument()
+    expect(within(cell).getByText('10:00')).toBeInTheDocument()
+
+    await user.click(within(cell).getByText('dentist'))
+
+    const tick = screen.getByRole('checkbox', { name: 'dentist done' })
+    expect(tick).toBeEnabled()
+    await user.click(tick)
+
+    const title = within(cell).getByText('dentist')
+    expect(title).toHaveClass('line-through', 'text-mn-text-secondary')
+    expect(within(cell).getByText('10:00')).toBeInTheDocument()
   })
 })

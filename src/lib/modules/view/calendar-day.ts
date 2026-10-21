@@ -60,7 +60,7 @@ export interface StripDay {
 const HM = /^(\d{2}):(\d{2})/
 
 /** `HH:MM` sliced from the `T` part. No `T`, or no clock there, is untimed. */
-function slicedHm(value: string): string | null {
+export function slicedHm(value: string): string | null {
   const tIndex = value.indexOf('T')
   if (tIndex === -1) return null
   const match = HM.exec(value.slice(tIndex + 1))
