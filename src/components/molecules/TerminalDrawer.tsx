@@ -25,7 +25,7 @@
  */
 
 import { useCallback, useLayoutEffect, useRef } from 'react'
-import type { ReactNode, RefObject } from 'react'
+import type { KeyboardEvent, ReactNode, RefObject } from 'react'
 import { ComposerHandle } from '@/components/molecules/ComposerHandle'
 import {
   COMPOSER_BOTTOM_INSET,
@@ -39,6 +39,7 @@ import {
   COMPOSER_MAX_HEIGHT_CSS,
   COMPOSER_TOP_CLEARANCE,
 } from '@/lib/layout/composer-height'
+import { useRailMinimized } from '@/lib/layout/rail-chrome'
 import { RAIL_WIDTH_PX } from '@/lib/layout/rail-width'
 import { ariaKeyshortcuts, formatChord, useApplePlatform } from '@/lib/shell-commands'
 import type { CSSVars } from '@/lib/css-vars'
@@ -77,19 +78,22 @@ export interface TerminalDrawerProps {
    *  first, so this has no effect while maximized is also true — callers fold
    *  (AITerminal clears `maximized` the moment the fold for a made page begins). */
   unsized?: boolean
+  /** Close, minimize and maximize, left to right. Drawn at the top left of the
+   *  card whenever it holds a thread, including while minimized. On a sized
+   *  card they sit in the corner, over the thread, so they don't push the
+   *  line's buttons out of the glass at the minimum height. */
+  windowControls?: ReactNode
   /** The card itself (`data-part="composer-card"`, the one element carrying the
    *  glass in both states) — exposed so a sibling (the `@` picker, KAN-99) can
    *  anchor to the visible glass rather than a transparent child of it. */
   cardRef?: RefObject<HTMLElement | null>
+  /** Window keys (Esc steps back) — on the card so they reach the corner
+   *  controls as well as the thread. */
+  onKeyDown?: (event: KeyboardEvent<HTMLElement>) => void
 }
 
 const PLACEMENT =
   'absolute left-1/2 z-30 w-[360px] max-w-full -translate-x-1/2 md:left-[calc(50%_+_113px)] md:w-[560px]'
-/** The card's own `bottom` comes from `--composer-card-bottom` (the style object
- *  below), not a class, so a surface that wraps it (zen) can override the one
- *  custom property rather than fighting a `bottom-6` utility with `!important`. */
-const CARD_PLACEMENT = PLACEMENT
-const TAB_PLACEMENT = cn(PLACEMENT, 'bottom-0')
 /** Maximized drops the centred placement for an absolute inset — position comes
  *  from style, not these classes. */
 const MAXIMIZED_PLACEMENT = 'absolute z-30'
@@ -118,12 +122,18 @@ export const TerminalDrawer = ({
   zen = false,
   minimized = false,
   unsized = false,
+  windowControls,
   cardRef: externalCardRef,
+  onKeyDown,
 }: TerminalDrawerProps) => {
   // The server has no navigator, so this starts Apple-biased and corrects on mount —
   // formatChord/ariaKeyshortcuts take it as a param rather than reading navigator live,
   // so the tab's SSR and first client render always agree (no hydration mismatch).
   const apple = useApplePlatform()
+  const railMinimized = useRailMinimized()
+  const restingPlacement = railMinimized
+    ? 'absolute left-1/2 z-30 w-[360px] max-w-full -translate-x-1/2 md:w-[560px]'
+    : PLACEMENT
   const innerCardRef = useRef<HTMLElement>(null)
   const tabRef = useRef<HTMLElement>(null)
   const setCardRef = useCallback(
@@ -184,7 +194,7 @@ export const TerminalDrawer = ({
       // the tab sits on screen but out of it, and vice versa when collapsed below.
       inert={collapsed ? undefined : true}
       className={cn(
-        TAB_PLACEMENT,
+        cn(restingPlacement, 'bottom-0'),
         TAB_SHADOW,
         'mn-glass box-border flex h-[30px] justify-center rounded-[14px_16px_0_0] border-b-0 font-mono text-mn-text',
         collapsed ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
@@ -256,7 +266,7 @@ export const TerminalDrawer = ({
     ...(maximized
       ? {
           top: COMPOSER_TOP_CLEARANCE,
-          left: zen ? COMPOSER_MAXIMIZED_RIGHT_PX : COMPOSER_MAXIMIZED_LEFT_PX,
+          left: zen || railMinimized ? COMPOSER_MAXIMIZED_RIGHT_PX : COMPOSER_MAXIMIZED_LEFT_PX,
           right: COMPOSER_MAXIMIZED_RIGHT_PX,
         }
       : showThread
@@ -290,8 +300,9 @@ export const TerminalDrawer = ({
         // not just the hand-set tabIndex this used to need on each control.
         inert={collapsed || undefined}
         style={cardStyle}
+        onKeyDown={onKeyDown}
         className={cn(
-          maximized ? MAXIMIZED_PLACEMENT : CARD_PLACEMENT,
+          maximized ? MAXIMIZED_PLACEMENT : restingPlacement,
           'motion-resolve group/composer mn-glass box-border flex flex-col gap-[14px] rounded-mn-card p-[14px] font-mono text-mn-text',
           collapsed
             ? 'pointer-events-none invisible [transform:translateY(calc(100%+var(--composer-card-bottom)))] opacity-0'
@@ -306,11 +317,28 @@ export const TerminalDrawer = ({
             onHeightCommit={onHeightCommit}
           />
         )}
+        {hasThread && windowControls && (
+          <div
+            data-part="composer-window-bar"
+            className={cn(
+              'flex items-center',
+              // On a sized card the bar is chrome in the corner. A flex row
+              // here costs a line the 160px floor does not have, and the
+              // footer (the line and its buttons) spills out of the glass.
+              showThread && 'absolute top-[8px] left-[14px] z-10'
+            )}
+          >
+            {windowControls}
+          </div>
+        )}
         {hasThread && (
           <div
             data-part="composer-thread"
             hidden={minimized}
-            className="flex min-h-0 flex-1 flex-col gap-[14px]"
+            className={cn(
+              'flex min-h-0 flex-1 flex-col gap-[14px]',
+              showThread && windowControls && 'pt-[14px]'
+            )}
           >
             {children}
           </div>

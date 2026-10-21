@@ -8,7 +8,7 @@
  * rail header. Nothing else in the rail changes until you pick."
  *
  * The head is the pond's 13px glyph, its name at 13.5 / 500 in full ink and a 9px
- * chevron, padded `0 16px 12px`, with `trailing` (the reminders bell) at the far end.
+ * chevron, padded `0 16px 12px`.
  *
  * ⌘1–⌘3 and their hints bind only in a desktop app: the browser keeps them for tab
  * switching (AUDIT K1, decided 8 oct). Deliberately not here yet, each recorded as
@@ -46,7 +46,7 @@ function Plus() {
 
 interface PondSwitcherProps {
   fallbackName: string
-  /** The head's right-hand end (the rail's reminders bell). */
+  /** Sits at the right of the pond name — the rail's minimize button. */
   trailing?: ReactNode
 }
 
@@ -97,7 +97,6 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
       ) : (
         <span className={switcherClass}>{label}</span>
       )}
-
       {trailing}
 
       {open && hasPonds && (

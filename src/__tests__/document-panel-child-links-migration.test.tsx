@@ -46,9 +46,11 @@ jest.mock('@/lib/pages/client', () => ({
 }))
 
 const mockCommitBlocks = jest.fn()
-jest.mock('@/lib/pages/commit', () => ({
-  commitBlocks: (...args: unknown[]) => mockCommitBlocks(...args),
-}))
+jest.mock('@/lib/pages/commit', () =>
+  jest.requireActual('./helpers/page-commit-mock').pageCommitMock({
+    commitBlocks: (...args: unknown[]) => mockCommitBlocks(...args),
+  })
+)
 
 const mockMarkChildLinksMigrated = jest.fn()
 jest.mock('@/lib/pages/child-links', () => ({

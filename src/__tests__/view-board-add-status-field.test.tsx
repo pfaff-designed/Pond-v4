@@ -248,7 +248,7 @@ describe('CollectionBoard — the full ＋ task path, on the real `CollectionVie
 
     const peek = container.querySelector<HTMLElement>('[data-part="record-peek"]')
     expect(peek).not.toBeNull()
-    expect(within(peek!).getByLabelText('status value')).toHaveValue('o-doing')
+    expect(within(peek!).getByLabelText('status value')).toHaveTextContent('doing')
 
     rows = []
     draw()

@@ -26,12 +26,23 @@ import { PondCommand } from '@/components/organisms/PondCommand'
 import { ShellCommands } from '@/components/organisms/ShellCommands'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { sessionUndo } from '@/lib/change-log/session-undo'
+import { appendOwnEdit } from '@/lib/change-log/store'
 import { undoStep } from '@/lib/change-log/undo'
 import { blockWidthStyle } from '@/lib/modules/layout-rows'
 import type { Block } from '@/lib/documents/types'
+import type { ChangeLogRecord } from '@/lib/change-log/types'
 
+// The page-write queue (KAN-495) is a module-level registry keyed by page
+// id that deliberately outlives a `DocumentPanel` unmount, so sharing one
+// page id across `it()`s hands a later test the earlier one's writer —
+// closed over whatever `pondId` was in scope when that queue was first
+// created — instead of its own. Each test gets a fresh id (`mockPageId`,
+// the `mock`-prefixed name babel-plugin-jest-hoist requires to reference it
+// from this hoisted factory).
+let mockPageIdCounter = 0
+let mockPageId = 'page-1'
 jest.mock('next/navigation', () => ({
-  useSearchParams: () => ({ get: (key: string) => (key === 'nodeId' ? 'page-1' : null) }),
+  useSearchParams: () => ({ get: (key: string) => (key === 'nodeId' ? mockPageId : null) }),
   useRouter: () => ({ push: jest.fn() }),
 }))
 
@@ -41,10 +52,27 @@ jest.mock('@/lib/supabase/client', () => ({
 
 // Part 2 (⌘Z) overrides this to the pond `sessionUndo.remember`'s guard needs;
 // every other test here keeps the part-1 default (null skips `remember`).
+// `usePond()` is overridden alongside `usePondId()`, from the SAME value: in
+// production both read one `PondContext`, so `DocumentPanel` (which reads
+// `usePond().pond?.id`, not `usePondId()`) and `ShellCommands` (which reads
+// `usePondId()` directly) always agree. Leaving only `usePondId` mocked made
+// `DocumentPanel` fall through to the real `PondContext`'s no-provider
+// default (`pond: null`) regardless of what this mock returned — the write
+// landed with `pondId: null` even while `usePondId()` reported `'pond-1'`.
 const mockUsePondId = jest.fn<string | null, []>(() => null)
 jest.mock('@/lib/pond/context', () => ({
   ...jest.requireActual('@/lib/pond/context'),
   usePondId: () => mockUsePondId(),
+  usePond: () => {
+    const id = mockUsePondId()
+    return {
+      pond: id ? { id, name: null, glyph: null } : null,
+      ponds: [],
+      loading: false,
+      reload: jest.fn(),
+      addPond: jest.fn(),
+    }
+  },
 }))
 
 const mockFetchPages = jest.fn().mockResolvedValue([])
@@ -70,12 +98,16 @@ jest.mock('@/lib/pages/client', () => ({
   deletePage: jest.fn().mockResolvedValue(undefined),
 }))
 
-const mockCommitBlocks = jest.fn().mockResolvedValue(undefined)
-jest.mock('@/lib/pages/commit', () => ({
-  commitBlocks: (...args: unknown[]) => mockCommitBlocks(...args),
-}))
+// `@/lib/pages/commit` is left REAL here (unlike the old direct-write tests):
+// the queue's writer (KAN-495) is `createPageWriter`, which calls `commitBlocks`
+// internally — mocking `commitBlocks` at this level would also have to stand in
+// for `createPageWriter`, duplicating what `commitBlocks` already does. Only the
+// boundary it writes through (`saveBlocks` above, `appendOwnEdit`/`markOutdated`
+// below, and `fetch` for `reembedPage`) is mocked — same pattern as
+// `block-canvas-beside-drop.test.tsx`.
 jest.mock('@/lib/change-log/store', () => ({
   appendOwnEdit: jest.fn().mockResolvedValue({ id: 'record-1' }),
+  markOutdated: jest.fn().mockResolvedValue(undefined),
 }))
 // `session-undo.ts` stays real here (unlike part 1, and like `undo-accept-path.test.tsx`):
 // part 2 proves the drop's `remember` and ⌘Z's `undo` share one real stack, not two
@@ -93,10 +125,12 @@ beforeEach(() => {
   mockUsePondId.mockReturnValue(null)
   jest.mocked(undoStep).mockResolvedValue({ outcome: 'done', records: [] })
   sessionUndo.clear()
+  global.fetch = jest.fn().mockResolvedValue({ ok: true } as Response)
+  mockPageId = `page-${++mockPageIdCounter}`
 })
 
 function renderPath(blocks: Block[]) {
-  mockGetPage.mockResolvedValue({ id: 'page-1', title: 'Workshop', blocks })
+  mockGetPage.mockResolvedValue({ id: mockPageId, title: 'Workshop', blocks })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
@@ -125,6 +159,27 @@ const blockOrder = () =>
     (el) => el.getAttribute('data-block-id')
   )
 
+/**
+ * Row membership as a person would see it: every `block-*` node in DOM
+ * order, split wherever an explicit row-break sibling (KAN-440) sits right
+ * before its sizing div — not re-packed by width, since `rowStart` can
+ * split a row with room left over (`block-canvas-drag-ghost.test.tsx`'s own
+ * `renderedRows`; no ghost is ever on screen here, so no ghost/row-break
+ * disambiguation is needed).
+ */
+function renderedRows(): string[][] {
+  const elements = Array.from(document.querySelectorAll<HTMLElement>('[id^="block-"]'))
+  const rows: string[][] = []
+  for (const el of elements) {
+    const sizingDiv = el.parentElement as HTMLElement
+    const breakBefore = sizingDiv.previousElementSibling
+    const isRowBreak = breakBefore?.getAttribute('aria-hidden') === 'true' && breakBefore.childElementCount === 0
+    if (rows.length === 0 || isRowBreak) rows.push([])
+    rows[rows.length - 1].push(el.id.replace(/^block-/, ''))
+  }
+  return rows
+}
+
 // jsdom's CSSOM re-serializes a `calc()` expression rather than keeping
 // `blockWidthStyle`'s own string — round-trip through an element's
 // `style.width`, same as `block-canvas-beside-preview.test.tsx`.
@@ -136,6 +191,16 @@ function asInlineStyle(width: string): string {
 
 function rect(left: number, width: number, top = 0, height = 100): DOMRect {
   return { left, right: left + width, width, top, bottom: top + height, height } as DOMRect
+}
+
+/**
+ * Mocks `targetId`'s rect: dragstart snapshots every block's rect (KAN-440), so
+ * this must run BEFORE a caller's `fireEvent.dragStart` — mocking afterward (as
+ * `dragOverAt` also does, for a real drag's live re-read) is invisible to the
+ * classification the snapshot drives.
+ */
+function mockRect(targetId: string, targetRect: DOMRect) {
+  jest.spyOn(blockRoot(targetId), 'getBoundingClientRect').mockReturnValue(targetRect)
 }
 
 function dragOverAt(targetId: string, targetRect: DOMRect, x: number, y: number) {
@@ -181,6 +246,7 @@ describe('the side-by-side path (6x), minus ⌘Z', () => {
 
     // 1. Press the table's handle, drag it over the list's right edge.
     await armHandle(user, 'b-table')
+    mockRect('b-list', rect(0, 400))
     fireEvent.dragStart(blockRoot('b-table'))
     // x=360 of a 400-wide rect is 90% across: the outer-right 25%, beside-right.
     dragOverAt('b-list', rect(0, 400), 360, 50)
@@ -204,12 +270,17 @@ describe('the side-by-side path (6x), minus ⌘Z', () => {
     // dragged block can't be its own drop target, so the hover lands on the
     // row's OTHER member (list) — same as a person's pointer would, since it
     // never fires a `dragover` the browser routes back onto the dragged node.
+    mockRect('b-list', rect(0, 400, 0, 100))
     fireEvent.dragStart(blockRoot('b-table'))
     dragOverAt('b-list', rect(0, 400, 0, 100), 200, 90)
     expect(dropBar('b-list')!.getAttribute('data-zone')).toBe('below')
 
     dropAt('b-list', rect(0, 400, 0, 100), 200, 90)
 
+    // 2 calls, one per drop: both drops now write through the ONE structural
+    // entry point (KAN-495's `writeStructural`), not the old enqueue-then-
+    // `onChange` pair — so drop 1 never leaves a debounced typed save behind
+    // for drop 2's `flushNow()` to find and re-enqueue.
     await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(sizingWidth('b-table')).toBe('100%'))
     // The row's other block keeps the width it already had — Pond doesn't
@@ -224,6 +295,7 @@ describe('the side-by-side path (6x), minus ⌘Z', () => {
     await user.click(screen.getByRole('button', { name: 'dark mode' }))
     expect(document.documentElement).toHaveClass('dark')
 
+    mockRect('b-list', rect(0, 400))
     fireEvent.dragStart(blockRoot('b-table'))
     dragOverAt('b-list', rect(0, 400), 360, 50)
     const bar = dropBar('b-list')!
@@ -251,6 +323,7 @@ describe('the side-by-side path (6x), minus ⌘Z', () => {
     const user = userEvent.setup()
 
     await armHandle(user, 'b-third')
+    mockRect('b-right', rect(0, 400))
     fireEvent.dragStart(blockRoot('b-third'))
     // x=360 of a 400-wide rect is 90% across: beside-right of `right`.
     dragOverAt('b-right', rect(0, 400), 360, 50)
@@ -267,7 +340,7 @@ describe('the side-by-side path (6x), minus ⌘Z', () => {
 })
 
 function renderPathWithShell(blocks: Block[]) {
-  mockGetPage.mockResolvedValue({ id: 'page-1', title: 'Workshop', blocks })
+  mockGetPage.mockResolvedValue({ id: mockPageId, title: 'Workshop', blocks })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
@@ -304,12 +377,14 @@ describe('the side-by-side path (6x), part 2: ⌘Z after a beside drop', () => {
     const user = userEvent.setup()
 
     await armHandle(user, 'b-table')
+    mockRect('b-list', rect(0, 400))
     fireEvent.dragStart(blockRoot('b-table'))
     // x=360 of a 400-wide rect is 90% across: the outer-right 25%, beside-right.
     dragOverAt('b-list', rect(0, 400), 360, 50)
     dropAt('b-list', rect(0, 400), 360, 50)
 
     await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalledTimes(1))
+    await new Promise((r) => setTimeout(r, 50))
     // The revert's own block restore is `undo.ts`'s already-tested path; this
     // proves only that the shell's ⌘Z reaches the real session stack the drop
     // remembered, for this pond, with exactly the drop's one record.
@@ -321,5 +396,77 @@ describe('the side-by-side path (6x), part 2: ⌘Z after a beside drop', () => {
       pondId: 'pond-1',
       recordIds: ['record-1'],
     })
+  })
+
+  it('undo restores the flag (KAN-440): a landed ⌘Z redraws the exact pre-drop rows and widths', async () => {
+    onPlatform('MacIntel')
+    mockUsePondId.mockReturnValue('pond-1')
+    // `d`(1/4) leaves room `a`(1/4) would otherwise pack into — only `a`'s own
+    // `rowStart` keeps it on its own row, so a restore that dropped the flag
+    // would show up here as `d` and `a` sharing a row.
+    const d: Block = { id: 'b-d', type: 'text', content: 'd', width: '1/4' }
+    const a: Block = { id: 'b-a', type: 'text', content: 'a', width: '1/4', rowStart: true }
+    const b: Block = { id: 'b-b', type: 'text', content: 'b' }
+    renderPathWithShell([d, a, b])
+    await screen.findByLabelText('Page title')
+    const user = userEvent.setup()
+
+    expect(renderedRows()).toEqual([['b-d'], ['b-a'], ['b-b']])
+
+    // Drag b onto a's LEFT edge: b splices before a and becomes the row's new
+    // `rowStart`; a's own flag is cleared (`planBesideDrop`'s reading-order rule).
+    await armHandle(user, 'b-b')
+    mockRect('b-a', rect(0, 400))
+    fireEvent.dragStart(blockRoot('b-b'))
+    // x=40 of a 400-wide rect is 10% across: the outer-left 25%, beside-left of a.
+    dragOverAt('b-a', rect(0, 400), 40, 50)
+    expect(dropBar('b-a')!.getAttribute('data-zone')).toBe('left')
+    dropAt('b-a', rect(0, 400), 40, 50)
+
+    await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(blockOrder()).toEqual(['b-d', 'b-b', 'b-a']))
+    // The drop is one structural op on the page's write queue (KAN-495): its
+    // record must be appended (the queue idle, so `saved` is back to `true`)
+    // before the undo's refetch can be adopted.
+    await waitFor(() => expect(jest.mocked(appendOwnEdit)).toHaveBeenCalledTimes(1))
+
+    const undoRecord: ChangeLogRecord = {
+      id: 'undo-rec-1',
+      userId: 'user-1',
+      pondId: 'pond-1',
+      status: 'accepted',
+      action: 'undo',
+      actor: 'you',
+      targetPageId: mockPageId,
+      targetBlockId: null,
+      before: null,
+      after: null,
+      sourceThreadId: null,
+      toolCallId: null,
+      read: null,
+      links: {},
+      transitions: [],
+      createdAt: '2026-10-18T00:00:00.000Z',
+      statusAt: '2026-10-18T00:00:00.000Z',
+    }
+    jest.mocked(undoStep).mockResolvedValueOnce({ outcome: 'done', records: [undoRecord] })
+
+    await user.click(document.body)
+    await user.keyboard('{Meta>}z{/Meta}')
+    await waitFor(() => expect(undoStep).toHaveBeenCalledTimes(1))
+
+    // The RPC boundary is mocked, but the redraw is real: `undoStep`'s `done`
+    // invalidates `['page', mockPageId]`, the panel refetches `getPage` (still
+    // resolving its original `[d, a, b]`, since nothing ever told the mock the
+    // server changed — exactly what a real undo RPC restoring the row would
+    // leave it holding), and the draft adopts it because the queue's head is
+    // the POST-drop blocks, so the pre-drop blocks read back as changed.
+    await waitFor(() => expect(blockOrder()).toEqual(['b-d', 'b-a', 'b-b']))
+    expect(sizingWidth('b-d')).toBe(asInlineStyle(blockWidthStyle('1/4')))
+    expect(sizingWidth('b-a')).toBe(asInlineStyle(blockWidthStyle('1/4')))
+    expect(sizingWidth('b-b')).toBe('100%')
+    // `a`'s `rowStart` is back — this is the part a plain widths-only restore
+    // would get wrong: without it, `a` (1/4) would pack into `d`'s (1/4) room.
+    expect(renderedRows()).toEqual([['b-d'], ['b-a'], ['b-b']])
   })
 })

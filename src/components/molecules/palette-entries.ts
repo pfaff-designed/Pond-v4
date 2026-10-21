@@ -43,6 +43,8 @@ export type PaletteAction =
   | 'save-as-template'
   | 'import-a-page'
   | 'report-a-problem'
+  | 'minimize-rail'
+  | 'show-rail'
   | ZenAction
 
 export interface PaletteItem {

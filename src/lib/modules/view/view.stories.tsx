@@ -1,10 +1,13 @@
 import { useState, type ComponentProps } from 'react'
 import type { Meta, StoryObj } from '@storybook/nextjs-vite'
-import { expect, fireEvent, fn, userEvent, within } from 'storybook/test'
+import { expect, fireEvent, fn, userEvent, waitFor, within } from 'storybook/test'
+import { page, userEvent as realUserEvent } from 'vitest/browser'
 
 import { CollectionView } from './view'
 import { CollectionList } from './list'
 import { BOARD_EMPTY_LINE, CALENDAR_EMPTY_LINE } from './kinds'
+import { localDateIso } from './due'
+import { formatAtomDate } from '@/lib/properties/date-input'
 import { PondBlock } from '@/components/organisms/PondBlock'
 import { PageCanvas } from '@/lib/modules/page-canvas'
 import type { CollectionRow } from './apply'
@@ -154,11 +157,13 @@ export const TableEditCell: Story = {
   render: (args) => <StatefulView config={args.config} />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    // Each row exposes a "Status value" select; change r1 (Trim the rim) To do → Done.
-    const statusSelects = canvas.getAllByLabelText('Status value')
-    await expect(statusSelects[0]).toHaveValue('o-doing')
-    await userEvent.selectOptions(statusSelects[0], 'o-done')
-    await expect(statusSelects[0]).toHaveValue('o-done')
+    // Each row exposes a "Status value" tag trigger; change r1 (Trim the rim) To do → Done.
+    const statusTriggers = canvas.getAllByRole('button', { name: 'Status value' })
+    await expect(within(statusTriggers[0]).getByText('Doing')).toBeInTheDocument()
+    await userEvent.click(statusTriggers[0])
+    // The popover portals to document.body, outside canvasElement.
+    await userEvent.click(await within(document.body).findByRole('option', { name: 'Done' }))
+    await expect(within(statusTriggers[0]).getByText('Done')).toBeInTheDocument()
     // A text/number cell edit persists to the row.
     const priority = canvas.getAllByLabelText('Priority value')[2]
     await userEvent.clear(priority)
@@ -186,9 +191,10 @@ export const TableLegacyLabelValue: Story = {
   ),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    // The select resolves the stored label to the "Doing" option id, so it is the
-    // selected value (not the empty "—").
-    await expect(canvas.getByLabelText('Status value')).toHaveValue('o-doing')
+    // The chip resolves the stored label to the "Doing" option, so it reads
+    // "Doing" (not the empty "—").
+    const statusTrigger = canvas.getByRole('button', { name: 'Status value' })
+    await expect(within(statusTrigger).getByText('Doing')).toBeInTheDocument()
   },
 }
 
@@ -228,8 +234,8 @@ export const TableEmptyBare: Story = {
 
 /**
  * `Pond 06.21 Tasks` 6u.1's head row (KAN-59): the database's name and how the view
- * reads it. A view's kind is fixed once made (ADR 0009, KAN-44), so the head carries
- * no switch between kinds; the bar over a block's saved views is KAN-32's.
+ * reads it. An editable head carries the layout chip named with the current layout
+ * (KAN-519). The bar over a block's saved views is KAN-32's.
  *
  * Values read inline from 6u.1:
  *
@@ -261,12 +267,12 @@ export const ViewHeadGeometry: Story = {
     await expect(facts).toHaveTextContent(/^grouped by status$/)
     // …as text. There is no group-by select.
     await expect(within(head).queryByRole('combobox')).toBeNull()
-    // A kind is fixed once made: nothing in the head switches it.
-    await expect(within(head).queryAllByRole('button')).toHaveLength(0)
+    // The layout chip is the button named with the current layout (KAN-519).
+    await expect(within(head).getByRole('button', { name: 'board' })).toBeInTheDocument()
   },
 }
 
-/** Every kind is its own block (ADR 0009): none draws a switch to another kind. */
+/** An editable gantt head carries the layout chip named timeline (KAN-519). */
 export const ViewHeadSwitchesNoKind: Story = {
   args: {
     config: ganttConfig,
@@ -279,10 +285,41 @@ export const ViewHeadSwitchesNoKind: Story = {
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement)
     await expect(canvasElement.querySelector('[data-part="db-name"]')).toBeInTheDocument()
-    for (const kind of ['board', 'timeline', 'table', 'calendar', 'list']) {
-      await expect(canvas.queryByRole('button', { name: kind })).toBeNull()
-    }
+    await expect(canvas.getByRole('button', { name: 'timeline' })).toBeInTheDocument()
     await expect(args.onConfigChange).not.toHaveBeenCalled()
+  },
+}
+
+/**
+ * The layout chip is named with the current layout, and the body behind it is
+ * that layout (KAN-524). Gallery is one of list, timeline, gallery, and chart.
+ * Opening the chip lists those four by their kind labels. The gallery stays
+ * the body while the menu is open.
+ */
+export const LayoutChipOffersListTimelineGalleryAndChart: Story = {
+  args: {
+    config: galleryConfig,
+    schema,
+    rows,
+    editable: true,
+    onConfigChange: fn(),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByRole('button', { name: 'gallery' })).toBeInTheDocument()
+    const gallery = canvasElement.querySelector('[data-part="gallery"]')
+    await expect(gallery).toHaveTextContent('Trim the rim')
+
+    await userEvent.click(canvas.getByRole('button', { name: 'gallery' }))
+    const menu = await within(document.body).findByRole('menu', { name: 'layout' })
+    const items = within(menu)
+    await expect(items.getByRole('menuitem', { name: 'list' })).toBeInTheDocument()
+    await expect(items.getByRole('menuitem', { name: 'timeline' })).toBeInTheDocument()
+    await expect(items.getByRole('menuitem', { name: 'gallery' })).toBeInTheDocument()
+    await expect(items.getByRole('menuitem', { name: 'chart' })).toBeInTheDocument()
+    await expect(canvasElement.querySelector('[data-part="gallery"]')).toHaveTextContent(
+      'Trim the rim'
+    )
   },
 }
 
@@ -1069,7 +1106,9 @@ export const RecordPeekEditsTheRecord: Story = {
     const canvas = within(canvasElement)
     await userEvent.click(cardByTitle(canvasElement, 'choose oak veneer finish'))
     const peek = within(canvasElement.querySelector<HTMLElement>('[data-part="record-peek"]')!)
-    await userEvent.selectOptions(peek.getByLabelText('status value'), 't-done')
+    await userEvent.click(peek.getByRole('button', { name: 'status value' }))
+    // The popover portals to document.body, outside canvasElement.
+    await userEvent.click(await within(document.body).findByRole('option', { name: 'done' }))
     // The card moved to the done lane, and the peek's checkbox draws filled.
     const doneLane = canvas.getByText('done', { selector: 'header span' }).closest('section')!
     await expect(within(doneLane).getByText('choose oak veneer finish')).toBeInTheDocument()
@@ -1412,7 +1451,7 @@ export const PageHoldsOneOrangeAndOnePeek: Story = {
 
 /**
  * 6v's head: the database's name and `grouped by due`, drawn above the card, not
- * inside it. No switch to another kind (ADR 0009, KAN-44).
+ * inside it. An editable head carries the layout chip named list (KAN-519).
  */
 export const ListHead: Story = {
   args: { ...listArgs, collectionName: 'tasks', editable: true, onConfigChange: fn() },
@@ -1420,7 +1459,7 @@ export const ListHead: Story = {
     const head = canvasElement.querySelector<HTMLElement>('[data-part="view-head"]')!
     await expect(head).toHaveTextContent('tasks')
     await expect(head).toHaveTextContent('grouped by due')
-    await expect(within(head).queryAllByRole('button')).toHaveLength(0)
+    await expect(within(head).getByRole('button', { name: 'list' })).toBeInTheDocument()
     await expect(canvasElement.querySelector('[data-part="list-card"]')!.contains(head)).toBe(false)
   },
 }
@@ -1434,6 +1473,65 @@ export const ListNeedsADate: Story = {
         'nothing in this view has a date. records show here once they have one.'
       )
     ).toBeInTheDocument()
+  },
+}
+
+const statusGroupRows: CollectionRow[] = [
+  { id: 'cabinet', title: 'cabinet quote', values: { 'l-status': 'l-todo' } },
+  { id: 'skip', title: 'skip hire returned', values: { 'l-status': 'l-done' } },
+  { id: 'samples', title: 'order samples', values: {} },
+]
+
+/**
+ * A list grouped by status, and the same rows flat when grouping is none
+ * (KAN-524). `listSchema`'s field is already named `status`, so the unset
+ * bucket reads `No status`. Each group has a heading and a count. A record
+ * with no value for that field sits in the unset group. The second view sets
+ * `listFlat` and omits `groupBy`, so those rows draw with no group headings.
+ */
+export const ListGroupedByStatusAndFlatWhenNone: Story = {
+  args: {
+    config: { id: 'v-list-status', type: 'view', mode: 'list', groupBy: 'l-status' },
+    schema: listSchema,
+    rows: statusGroupRows,
+  },
+  render: (args) => (
+    <>
+      <CollectionView {...args} />
+      <CollectionView
+        config={{ id: 'v-list-flat', type: 'view', mode: 'list', listFlat: true }}
+        schema={args.schema}
+        rows={args.rows}
+      />
+    </>
+  ),
+  play: async ({ canvasElement }) => {
+    const groups = [...canvasElement.querySelectorAll<HTMLElement>('[data-part="list-group"]')]
+    const headingOf = (group: HTMLElement) => {
+      const heading = group.querySelector('[data-part="list-group-label"]')
+      const label = heading?.querySelector('span')
+      return (label ?? heading)?.textContent ?? ''
+    }
+    for (const group of groups) {
+      await expect(group.querySelector('[data-part="list-group-label"]')).not.toBeNull()
+      await expect(group.querySelector('[data-part="list-group-count"]')).not.toBeNull()
+    }
+    await expect(groups.map(headingOf)).toEqual(['to do', 'done', 'No status'])
+    const unset = groups.find((group) => headingOf(group) === 'No status')!
+    const unsetTitle = within(unset).getByRole('button', { name: 'order samples' })
+    await userEvent.click(unsetTitle)
+    await expect(within(unset).getByRole('button', { name: 'order samples' })).toBeInTheDocument()
+
+    const flat = [...canvasElement.querySelectorAll<HTMLElement>('[data-part="list-card"]')].find(
+      (card) => card.querySelector('[data-part="list-group"]') === null
+    )
+    await expect(flat).toBeTruthy()
+    const flatView = within(flat!)
+    for (const name of ['cabinet quote', 'skip hire returned', 'order samples']) {
+      await expect(flatView.getByRole('button', { name })).toBeInTheDocument()
+    }
+    await expect(flat!.querySelector('[data-part="list-group"]')).toBeNull()
+    await expect(flat!.querySelector('[data-part="list-group-label"]')).toBeNull()
   },
 }
 
@@ -1460,6 +1558,1017 @@ export const CalendarNeedsDate: Story = {
     await expect(canvas.getByLabelText('Previous month')).toBeInTheDocument()
     await expect(canvas.getByLabelText('Next month')).toBeInTheDocument()
     await expect(canvas.getByText('today')).toBeInTheDocument()
+  },
+}
+
+/**
+ * KAN-385, live verifier round 3: 5 of 7 REAL calendar drags left a native text
+ * selection over the day cells (one opened `BlockCanvas`'s formatting toolbar).
+ * `fireEvent`'s synthetic pointer sequence (used by every other drag test in this
+ * file/suite) never anchors a selection the way Chromium's own mousedown does —
+ * only a REAL mouse catches this, so this story drives one with `vitest/browser`'s
+ * own `userEvent` (real Playwright input), never `storybook/test`'s synthetic one.
+ *
+ * Dates are relative to the real system clock (no mocking in browser mode): day 5
+ * and day 15 of the current month exist in every month, and the grid's initial
+ * `focusIso` is always the current month, so both are always on screen.
+ */
+const dragMonthPrefix = localDateIso(new Date()).slice(0, 8)
+const dragSourceIso = `${dragMonthPrefix}05`
+const dragTargetIso = `${dragMonthPrefix}15`
+const dragRows: CollectionRow[] = [
+  { id: 'r-drag', title: 'Glaze firing', values: { 'p-due': dragSourceIso } },
+]
+
+export const CalendarDragLeavesNoNativeSelection: Story = {
+  name: 'a real mouse drag moves the date and leaves no native selection',
+  args: { config: calendarConfig, schema, rows: dragRows, editable: true, onMoveDate: fn() },
+  // The month grid is `hidden md:flex` — a desktop viewport, not just a wide
+  // container, is what unhides it (same pattern as `GlyphPicker.stories.tsx`'s
+  // `OnScreenBelowAnchor`).
+  loaders: [
+    async () => {
+      const prevViewport = { width: window.innerWidth, height: window.innerHeight }
+      await page.viewport(1440, 900)
+      return { prevViewport }
+    },
+  ],
+  play: async ({ canvasElement, args, loaded }) => {
+    try {
+      const card = canvasElement.querySelector<HTMLElement>('[data-row-id="r-drag"]')
+      const target = canvasElement.querySelector<HTMLElement>(`[data-iso="${dragTargetIso}"]`)
+      if (!card || !target) {
+        throw new Error('calendar drag story: source card or target day cell not found')
+      }
+      await realUserEvent.dragAndDrop(card, target)
+
+      const selection = window.getSelection()
+      await expect(selection === null || selection.isCollapsed).toBe(true)
+      await expect(selection?.toString() ?? '').toBe('')
+      await expect(args.onMoveDate).toHaveBeenCalledWith('r-drag', 'p-due', dragTargetIso)
+    } finally {
+      const { width, height } = loaded.prevViewport as { width: number; height: number }
+      await page.viewport(width, height)
+    }
+  },
+}
+
+/**
+ * KAN-453. Hovering a day of the current month shows the plus, and clicking it
+ * opens the new record's peek with the title focused and that day already set.
+ *
+ * `StatefulView` does not implement `onAddRow`, so this harness appends the
+ * minted row with the date values the calendar passed. The month grid is
+ * `hidden md:flex`, and `storybook/test` hover does not apply `:hover` — the
+ * same real-input constraint as `CalendarDragLeavesNoNativeSelection`. The day
+ * is `localDateIso(new Date())`, so it stays on the current month without a
+ * clock mock. The date reads `formatAtomDate` (`en-US`, UTC noon).
+ */
+const hoverAddIso = localDateIso(new Date())
+
+function CalendarHoverAddHarness({
+  config,
+  hostSchema,
+}: {
+  config: ViewBlock
+  hostSchema: PropertySchema
+}) {
+  const [data, setData] = useState<CollectionRow[]>([])
+  const handleAddRow = async (values?: Record<string, PropertyValue>) => {
+    const id = 'r-new'
+    setData((prev) => [...prev, { id, title: '', values: values ?? {} }])
+    return id
+  }
+  // The peek draws a title input only when a rename handler is present.
+  const handleRenameRow = (rowId: string, title: string) => {
+    setData((prev) => prev.map((row) => (row.id === rowId ? { ...row, title } : row)))
+  }
+  return (
+    <CollectionView
+      config={config}
+      schema={hostSchema}
+      rows={data}
+      editable
+      onAddRow={handleAddRow}
+      onRenameRow={handleRenameRow}
+    />
+  )
+}
+
+export const CalendarHoverAdd: Story = {
+  args: { config: calendarConfig, schema, rows: [] },
+  render: (args) => (
+    <CalendarHoverAddHarness config={args.config} hostSchema={args.schema ?? schema} />
+  ),
+  loaders: [
+    async () => {
+      const prevViewport = { width: window.innerWidth, height: window.innerHeight }
+      await page.viewport(1440, 900)
+      return { prevViewport }
+    },
+  ],
+  play: async ({ canvasElement, loaded }) => {
+    try {
+      const cell = canvasElement.querySelector<HTMLElement>(`[data-iso="${hoverAddIso}"]`)
+      if (!cell) throw new Error('calendar hover-add story: day cell not found')
+      const plus = within(cell).getByRole('button', { name: /^Add on / })
+      await realUserEvent.hover(cell)
+      await expect(getComputedStyle(plus).opacity).toBe('1')
+      await realUserEvent.click(plus)
+
+      const body = within(document.body)
+      const peek = await body.findByRole('complementary', { name: 'Record: Untitled' })
+      await expect(peek).toBeInTheDocument()
+      const title = await body.findByRole('textbox', { name: 'Record title' })
+      await expect(title).toHaveFocus()
+      await expect(body.getByRole('button', { name: 'Due value' })).toHaveTextContent(
+        formatAtomDate(hoverAddIso)
+      )
+    } finally {
+      const { width, height } = loaded.prevViewport as { width: number; height: number }
+      await page.viewport(width, height)
+    }
+  },
+}
+
+/**
+ * KAN-454. The quiet line `n without a date` opens the undated records.
+ * Picking one arms placement (`pick a day for <title>`). Clicking a day of
+ * the current month writes that date through `onMoveDate`, the record sits
+ * on the day, and the line count drops.
+ *
+ * The month grid is `hidden md:flex`, so this story sets a desktop viewport
+ * the same way `CalendarHoverAdd` does. The day is the 21st of the current
+ * month, which every month contains, and the grid opens on the current month.
+ */
+const placeDayIso = `${localDateIso(new Date()).slice(0, 8)}21`
+
+const undatedCalendarRows: CollectionRow[] = [
+  { id: 'r-dentist', title: 'dentist', values: {} },
+  { id: 'r-optician', title: 'optician', values: {} },
+]
+
+function CalendarWithoutADateHarness({
+  config,
+  hostSchema,
+}: {
+  config: ViewBlock
+  hostSchema: PropertySchema
+}) {
+  const [data, setData] = useState<CollectionRow[]>(undatedCalendarRows)
+  const handleMoveDate = (rowId: string, key: string, value: PropertyValue) => {
+    setData((prev) =>
+      prev.map((row) =>
+        row.id === rowId ? { ...row, values: { ...row.values, [key]: value } } : row
+      )
+    )
+  }
+  return (
+    <CollectionView
+      config={config}
+      schema={hostSchema}
+      rows={data}
+      editable
+      onMoveDate={handleMoveDate}
+    />
+  )
+}
+
+export const CalendarWithoutADate: Story = {
+  args: { config: calendarConfig, schema, rows: undatedCalendarRows, editable: true },
+  render: (args) => (
+    <CalendarWithoutADateHarness config={args.config} hostSchema={args.schema ?? schema} />
+  ),
+  loaders: [
+    async () => {
+      const prevViewport = { width: window.innerWidth, height: window.innerHeight }
+      await page.viewport(1440, 900)
+      return { prevViewport }
+    },
+  ],
+  play: async ({ canvasElement, loaded }) => {
+    try {
+      const canvas = within(canvasElement)
+      await expect(canvas.getByRole('button', { name: '2 without a date' })).toBeInTheDocument()
+      await userEvent.click(canvas.getByRole('button', { name: '2 without a date' }))
+
+      const list = await canvas.findByRole('listbox', { name: 'without a date' })
+      await expect(within(list).getByRole('option', { name: 'dentist' })).toBeInTheDocument()
+      await expect(within(list).getByRole('option', { name: 'optician' })).toBeInTheDocument()
+      await userEvent.click(within(list).getByRole('option', { name: 'dentist' }))
+
+      await expect(canvas.queryByRole('listbox', { name: 'without a date' })).not.toBeInTheDocument()
+      await expect(canvas.getByRole('button', { name: 'pick a day for dentist' })).toBeInTheDocument()
+
+      const cell = canvasElement.querySelector<HTMLElement>(`[data-iso="${placeDayIso}"]`)
+      if (!cell) throw new Error('calendar without-a-date story: day cell not found')
+      await expect(cell).toHaveClass('hover:bg-mn-hover-fill')
+      await userEvent.click(cell)
+
+      await expect(within(cell).getByText('dentist')).toBeInTheDocument()
+      await expect(within(cell).queryByText('optician')).not.toBeInTheDocument()
+      await expect(canvas.getByRole('button', { name: '1 without a date' })).toBeInTheDocument()
+      await expect(
+        canvas.queryByRole('button', { name: 'pick a day for dentist' })
+      ).not.toBeInTheDocument()
+    } finally {
+      const { width, height } = loaded.prevViewport as { width: number; height: number }
+      await page.viewport(width, height)
+    }
+  },
+}
+
+/**
+ * KAN-455. A blank click on the 21st — the day number, not the dentist row —
+ * opens that day. Previous day steps back one. Month returns the month label.
+ *
+ * The month grid is `hidden md:flex`, so the loader sets a 1440×900 viewport
+ * before render. It also fixes `new Date()` at local noon on 19 Oct 2026, so
+ * the grid opens on October and the 21st is on screen.
+ */
+const blankDayRows: CollectionRow[] = [
+  { id: 'dentist', title: 'dentist', values: { 'p-due': '2026-10-21' } },
+]
+
+/** `new Date()` and `Date.now()` stay at local noon on 19 Oct 2026. Dated
+ *  constructions (`new Date(y, m, d)`, an ISO string) keep the real clock. */
+function fixClockAtLocalNoonOn19Oct2026(): () => void {
+  const RealDate = globalThis.Date
+  const fixed = new RealDate(2026, 9, 19, 12, 0, 0).getTime()
+
+  class FixedDate extends RealDate {
+    // `ConstructorParameters<typeof Date>` is a 1-tuple, so `length === 0`
+    // does not typecheck. `unknown[]` is the zero-arg `new Date()` this freezes.
+    constructor(...args: unknown[]) {
+      if (args.length === 0) {
+        super(fixed)
+      } else {
+        super(...(args as unknown as [number]))
+      }
+    }
+
+    static override now(): number {
+      return fixed
+    }
+  }
+
+  globalThis.Date = FixedDate as DateConstructor
+  return () => {
+    globalThis.Date = RealDate
+  }
+}
+
+export const CalendarBlankDay: Story = {
+  name: 'blank day opens that day',
+  args: { config: calendarConfig, schema, rows: blankDayRows },
+  loaders: [
+    async () => {
+      const prevViewport = { width: window.innerWidth, height: window.innerHeight }
+      await page.viewport(1440, 900)
+      const restoreClock = fixClockAtLocalNoonOn19Oct2026()
+      return { prevViewport, restoreClock }
+    },
+  ],
+  play: async ({ canvasElement, loaded }) => {
+    try {
+      const canvas = within(canvasElement)
+      const cell = canvasElement.querySelector<HTMLElement>(
+        '[data-part="calendar-day-cell"][data-iso="2026-10-21"]'
+      )
+      if (!cell) throw new Error('calendar blank-day story: day cell 2026-10-21 not found')
+      await userEvent.click(within(cell).getByText('21'))
+
+      // The day body is drawn twice (desktop and mobile). The visible one is
+      // the desktop copy; the phone copy is `md:hidden` at this viewport.
+      const desktopDay = canvasElement.querySelector<HTMLElement>(
+        '[data-part="calendar-day-body"][data-size="desktop"]'
+      )
+      if (!desktopDay) throw new Error('calendar blank-day story: desktop day body missing')
+      await expect(within(desktopDay).getByText('dentist')).toBeVisible()
+      await expect(canvas.getByText('wed 21 oct 2026')).toBeInTheDocument()
+
+      await userEvent.click(canvas.getByRole('button', { name: 'Previous day' }))
+      await expect(canvas.getByText('tue 20 oct 2026')).toBeInTheDocument()
+
+      await userEvent.click(canvas.getByRole('radio', { name: 'month' }))
+      await expect(canvas.getByText('october 2026')).toBeInTheDocument()
+    } finally {
+      const restoreClock = loaded.restoreClock as (() => void) | undefined
+      restoreClock?.()
+      const { width, height } = loaded.prevViewport as { width: number; height: number }
+      await page.viewport(width, height)
+    }
+  },
+}
+
+/**
+ * KAN-525. On a phone the day span draws a week strip. The loader is a
+ * 390×844 viewport (under `md`) and the clock is local noon on 19 Oct 2026,
+ * so the month opens on October and the open day is Monday the 19th.
+ * 22 October 2026 is a Thursday (`thu 22`).
+ */
+const stripRows: CollectionRow[] = [
+  { id: 'r-19', title: 'dentist', values: { 'p-due': '2026-10-19' } },
+  { id: 'r-22', title: 'optician', values: { 'p-due': '2026-10-22' } },
+]
+
+export const CalendarDayStrip: Story = {
+  name: 'CalendarDayStrip',
+  args: { config: calendarConfig, schema, rows: stripRows },
+  loaders: [
+    async () => {
+      const prevViewport = { width: window.innerWidth, height: window.innerHeight }
+      await page.viewport(390, 844)
+      const restoreClock = fixClockAtLocalNoonOn19Oct2026()
+      return { prevViewport, restoreClock }
+    },
+  ],
+  play: async ({ canvasElement, loaded }) => {
+    try {
+      const canvas = within(canvasElement)
+      const mobileToday = canvas.getByRole('button', { name: '19 oct' })
+      await expect(mobileToday).toBeVisible()
+      const desktopCell = canvasElement.querySelector('[data-part="calendar-day-cell"]')
+      await expect(desktopCell).not.toBeVisible()
+
+      await userEvent.click(canvas.getByRole('radio', { name: 'day' }))
+
+      const strip = canvasElement.querySelector<HTMLElement>('[data-part="calendar-week-strip"]')
+      if (!strip) throw new Error('calendar day-strip story: week strip missing')
+      await expect(strip).toBeVisible()
+      const monday = within(strip).getByRole('button', { name: 'mon 19' })
+      await expect(monday).toBeVisible()
+      await expect(monday).toHaveAttribute('aria-current', 'date')
+
+      await userEvent.click(within(strip).getByRole('button', { name: 'thu 22' }))
+
+      await expect(canvas.getByText('thu 22 oct 2026')).toBeVisible()
+      const mobileDay = canvasElement.querySelector<HTMLElement>(
+        '[data-part="calendar-day-body"][data-size="mobile"]'
+      )
+      if (!mobileDay) throw new Error('calendar day-strip story: mobile day body missing')
+      await expect(mobileDay).toBeVisible()
+      await expect(within(mobileDay).getByText('optician')).toBeVisible()
+      await expect(within(mobileDay).queryByText('dentist')).not.toBeInTheDocument()
+
+      const focused = within(strip).getByRole('button', { name: 'thu 22' })
+      await expect(focused).toHaveAttribute('aria-current', 'date')
+
+      const dow = focused.querySelector<HTMLElement>(':scope > span')
+      if (!dow) throw new Error('calendar day-strip story: dow missing')
+      await expect(dow.textContent).toBe('t')
+      const dowStyle = getComputedStyle(dow)
+      await expect(pxOf(dowStyle.fontSize)).toBeCloseTo(10.5, 1)
+      await expect(dowStyle.textTransform).toBe('uppercase')
+      // `tracking-[.1em]` at 10.5px. The used value is pixels.
+      const tracking = dowStyle.letterSpacing
+      if (tracking.endsWith('em')) {
+        await expect(parseFloat(tracking)).toBeCloseTo(0.1, 2)
+      } else {
+        await expect(pxOf(tracking)).toBeCloseTo(1.05, 2)
+      }
+      await expect(dowStyle.color).toBe('rgba(27, 29, 20, 0.68)')
+
+      const chip = within(focused).getByText('22')
+      const chipStyle = getComputedStyle(chip)
+      await expect(pxOf(chipStyle.width)).toBeCloseTo(28, 0)
+      await expect(pxOf(chipStyle.height)).toBeCloseTo(28, 0)
+      await expect(pxOf(chipStyle.fontSize)).toBeCloseTo(14, 0)
+
+      const todayChip = monday.querySelector<HTMLElement>('[data-part="due-today"]')
+      if (!todayChip) throw new Error('calendar day-strip story: today chip missing')
+      const todayStyle = getComputedStyle(todayChip)
+      await expect(pxOf(todayStyle.width)).toBeCloseTo(28, 0)
+      await expect(pxOf(todayStyle.height)).toBeCloseTo(28, 0)
+      await expect(pxOf(todayStyle.fontSize)).toBeCloseTo(14, 0)
+
+      const dot = focused.querySelector<HTMLElement>(':scope > span.size-1')
+      if (!dot) throw new Error('calendar day-strip story: dot missing')
+      const dotStyle = getComputedStyle(dot)
+      await expect(pxOf(dotStyle.width)).toBeCloseTo(4, 0)
+      await expect(pxOf(dotStyle.height)).toBeCloseTo(4, 0)
+
+      const paintsInset = (boxShadow: string) =>
+        shadowLayers(boxShadow).some((layer) => layer.includes('1.4px') && layer.includes('inset'))
+      await expect(paintsInset(getComputedStyle(focused).boxShadow)).toBe(true)
+      await expect(paintsInset(getComputedStyle(monday).boxShadow)).toBe(false)
+    } finally {
+      const restoreClock = loaded.restoreClock as (() => void) | undefined
+      restoreClock?.()
+      const { width, height } = loaded.prevViewport as { width: number; height: number }
+      await page.viewport(width, height)
+    }
+  },
+}
+
+/**
+ * KAN-456. Week places a timed row on the hours and a date-only row in all day.
+ * Next week steps the open range and leaves both titles behind.
+ *
+ * The week body is `hidden md:flex`, so the loader sets a 1440×900 viewport
+ * before render, the same static `CollectionView` mount as `CalendarBlankDay`.
+ * The clock is local noon on 19 Oct 2026, so the month opens on October.
+ */
+const weekSpanRows: CollectionRow[] = [
+  { id: 'dentist', title: 'dentist', values: { 'p-due': '2026-10-21T10:00:00' } },
+  { id: 'alcove', title: 'confirm alcove', values: { 'p-due': '2026-10-21' } },
+]
+
+const WEEK_SPAN_DAYS = ['mon 19', 'tue 20', 'wed 21', 'thu 22', 'fri 23', 'sat 24', 'sun 25']
+
+export const CalendarWeekSpan: Story = {
+  name: 'week span',
+  args: { config: calendarConfig, schema, rows: weekSpanRows },
+  loaders: [
+    async () => {
+      const prevViewport = { width: window.innerWidth, height: window.innerHeight }
+      await page.viewport(1440, 900)
+      const restoreClock = fixClockAtLocalNoonOn19Oct2026()
+      return { prevViewport, restoreClock }
+    },
+  ],
+  play: async ({ canvasElement, loaded }) => {
+    try {
+      const canvas = within(canvasElement)
+      await expect(canvas.getByText('october 2026')).toBeVisible()
+      await userEvent.click(canvas.getByRole('radio', { name: 'week' }))
+
+      const body = canvasElement.querySelector<HTMLElement>(
+        '[data-part="calendar-week-body"][data-size="desktop"]'
+      )
+      if (!body) throw new Error('calendar week span story: desktop week body missing')
+      await expect(body).toBeVisible()
+      const heads = WEEK_SPAN_DAYS.map((name) => within(body).getByRole('button', { name }))
+      await expect(heads).toHaveLength(7)
+      for (const head of heads) await expect(head).toBeVisible()
+
+      const wednesday = body.querySelector<HTMLElement>(
+        '[data-part="calendar-week-column"][data-iso="2026-10-21"]'
+      )
+      if (!wednesday) throw new Error('calendar week span story: 2026-10-21 column missing')
+      const dentist = within(wednesday).getByText('dentist')
+      await expect(dentist).toBeVisible()
+      const timed = dentist.closest<HTMLElement>('[data-part="calendar-timed-event"]')
+      if (!timed) throw new Error('calendar week span story: dentist is not a timed event')
+      await expect(within(timed).getByText('10:00')).toBeVisible()
+
+      const allDay = body.querySelector<HTMLElement>('[data-part="calendar-all-day"]')
+      if (!allDay) throw new Error('calendar week span story: all-day row missing')
+      const alcove = within(allDay).getByText('confirm alcove')
+      await expect(alcove).toBeVisible()
+      await expect(alcove.closest('[data-part="calendar-timed-event"]')).toBeNull()
+
+      await userEvent.click(canvas.getByRole('button', { name: 'Next week' }))
+      const nextLabel = canvas.getByText('26 oct \u2013 1 nov 2026')
+      await expect(nextLabel).toBeVisible()
+      const dash = [...(nextLabel.textContent ?? '')].find((char) => char.charCodeAt(0) === 0x2013)
+      await expect(dash).toBe('\u2013')
+
+      const nextBody = canvasElement.querySelector<HTMLElement>(
+        '[data-part="calendar-week-body"][data-size="desktop"]'
+      )
+      if (!nextBody) throw new Error('calendar week span story: week body missing after next week')
+      await expect(within(nextBody).queryByText('dentist')).not.toBeInTheDocument()
+      await expect(within(nextBody).queryByText('confirm alcove')).not.toBeInTheDocument()
+    } finally {
+      const restoreClock = loaded.restoreClock as (() => void) | undefined
+      restoreClock?.()
+      const { width, height } = loaded.prevViewport as { width: number; height: number }
+      await page.viewport(width, height)
+    }
+  },
+}
+
+/**
+ * KAN-457. Agenda lists what's coming, grouped by day. The month opens first;
+ * choosing agenda shows the two-week window from this Monday.
+ *
+ * Same static `CollectionView` mount as `CalendarWeekSpan`. The loader sets
+ * 1440×900 and fixes the clock at local noon on 19 Oct 2026, so October is
+ * open and the agenda period is `from 19 oct`.
+ */
+const agendaSpanRows: CollectionRow[] = [
+  { id: 'alcove', title: 'confirm alcove', values: { 'p-due': '2026-10-19' } },
+  { id: 'dentist', title: 'dentist', values: { 'p-due': '2026-10-20T10:00:00' } },
+  { id: 'plaster', title: 'plaster', values: { 'p-due': '2026-10-21' } },
+  { id: 'optician', title: 'optician', values: { 'p-due': '2026-10-21T09:00:00' } },
+  { id: 'skip', title: 'skip hire', values: { 'p-due': '2026-10-18' } },
+  { id: 'renew', title: 'renew', values: { 'p-due': '2026-11-02' } },
+]
+
+export const CalendarAgendaSpan: Story = {
+  name: 'agenda span',
+  args: { config: calendarConfig, schema, rows: agendaSpanRows },
+  loaders: [
+    async () => {
+      const prevViewport = { width: window.innerWidth, height: window.innerHeight }
+      await page.viewport(1440, 900)
+      const restoreClock = fixClockAtLocalNoonOn19Oct2026()
+      return { prevViewport, restoreClock }
+    },
+  ],
+  play: async ({ canvasElement, loaded }) => {
+    try {
+      const canvas = within(canvasElement)
+      await expect(canvas.getByText('october 2026')).toBeVisible()
+      await userEvent.click(canvas.getByRole('radio', { name: 'agenda' }))
+
+      await expect(canvas.getByText('from 19 oct')).toBeVisible()
+
+      const list = canvasElement.querySelector<HTMLElement>('[data-part="calendar-agenda"]')
+      if (!list) throw new Error('calendar agenda span story: agenda list missing')
+
+      const today = list.querySelector<HTMLElement>(
+        '[data-part="calendar-agenda-day"][data-iso="2026-10-19"]'
+      )
+      if (!today) throw new Error('calendar agenda span story: today missing')
+      const alcove = within(today)
+        .getByText('confirm alcove')
+        .closest<HTMLElement>('[data-part="calendar-agenda-item"]')
+      if (!alcove) throw new Error('calendar agenda span story: confirm alcove is not an agenda item')
+      await expect(alcove.querySelector('[data-part="calendar-agenda-time"]')).toBeNull()
+
+      const tomorrow = list.querySelector<HTMLElement>(
+        '[data-part="calendar-agenda-day"][data-iso="2026-10-20"]'
+      )
+      if (!tomorrow) throw new Error('calendar agenda span story: tomorrow missing')
+      const dentist = within(tomorrow)
+        .getByText('dentist')
+        .closest<HTMLElement>('[data-part="calendar-agenda-item"]')
+      if (!dentist) throw new Error('calendar agenda span story: dentist is not an agenda item')
+      await expect(within(dentist).getByText('10:00')).toBeVisible()
+
+      const wednesday = list.querySelector<HTMLElement>(
+        '[data-part="calendar-agenda-day"][data-iso="2026-10-21"]'
+      )
+      if (!wednesday) throw new Error('calendar agenda span story: Wednesday missing')
+      const wednesdayItems = [
+        ...wednesday.querySelectorAll<HTMLElement>('[data-part="calendar-agenda-item"]'),
+      ]
+      await expect(wednesdayItems).toHaveLength(2)
+      await expect(wednesdayItems[0]?.textContent).toContain('plaster')
+      await expect(wednesdayItems[0]?.querySelector('[data-part="calendar-agenda-time"]')).toBeNull()
+      await expect(wednesdayItems[1]?.textContent).toContain('optician')
+      const opticianTime = wednesdayItems[1]?.querySelector('[data-part="calendar-agenda-time"]')
+      await expect(opticianTime).toHaveTextContent('09:00')
+
+      await expect(canvas.queryByText('skip hire')).not.toBeInTheDocument()
+
+      await userEvent.click(dentist)
+      await expect(canvas.getByLabelText('Record: dentist')).toBeVisible()
+    } finally {
+      const restoreClock = loaded.restoreClock as (() => void) | undefined
+      restoreClock?.()
+      const { width, height } = loaded.prevViewport as { width: number; height: number }
+      await page.viewport(width, height)
+    }
+  },
+}
+
+/**
+ * KAN-527. Reaching the end of the agenda appends the next dated days.
+ * The sentinel is already in view at 1440×900, so the reach is that end,
+ * not a button. The period stays on this Monday.
+ */
+export const CalendarAgendaReachesTheEnd: Story = {
+  name: 'agenda reaches the end',
+  args: { config: calendarConfig, schema, rows: agendaSpanRows },
+  loaders: CalendarAgendaSpan.loaders,
+  play: async ({ canvasElement, loaded }) => {
+    try {
+      const canvas = within(canvasElement)
+      await expect(canvas.getByText('october 2026')).toBeVisible()
+      await userEvent.click(canvas.getByRole('radio', { name: 'agenda' }))
+
+      await expect(canvas.getByText('from 19 oct')).toBeVisible()
+
+      const list = canvasElement.querySelector<HTMLElement>('[data-part="calendar-agenda"]')
+      if (!list) throw new Error('calendar agenda reach story: agenda list missing')
+
+      const today = list.querySelector<HTMLElement>(
+        '[data-part="calendar-agenda-day"][data-iso="2026-10-19"]'
+      )
+      if (!today) throw new Error('calendar agenda reach story: today missing')
+      const alcove = within(today)
+        .getByText('confirm alcove')
+        .closest<HTMLElement>('[data-part="calendar-agenda-item"]')
+      if (!alcove) throw new Error('calendar agenda reach story: confirm alcove is not an agenda item')
+      await expect(alcove.querySelector('[data-part="calendar-agenda-time"]')).toBeNull()
+
+      const tomorrow = list.querySelector<HTMLElement>(
+        '[data-part="calendar-agenda-day"][data-iso="2026-10-20"]'
+      )
+      if (!tomorrow) throw new Error('calendar agenda reach story: tomorrow missing')
+      const dentist = within(tomorrow)
+        .getByText('dentist')
+        .closest<HTMLElement>('[data-part="calendar-agenda-item"]')
+      if (!dentist) throw new Error('calendar agenda reach story: dentist is not an agenda item')
+      await expect(within(dentist).getByText('10:00')).toBeVisible()
+
+      const wednesday = list.querySelector<HTMLElement>(
+        '[data-part="calendar-agenda-day"][data-iso="2026-10-21"]'
+      )
+      if (!wednesday) throw new Error('calendar agenda reach story: Wednesday missing')
+      const wednesdayItems = [
+        ...wednesday.querySelectorAll<HTMLElement>('[data-part="calendar-agenda-item"]'),
+      ]
+      await expect(wednesdayItems).toHaveLength(2)
+      await expect(wednesdayItems[0]?.textContent).toContain('plaster')
+      await expect(wednesdayItems[0]?.querySelector('[data-part="calendar-agenda-time"]')).toBeNull()
+      await expect(wednesdayItems[1]?.textContent).toContain('optician')
+      const opticianTime = wednesdayItems[1]?.querySelector('[data-part="calendar-agenda-time"]')
+      await expect(opticianTime).toHaveTextContent('09:00')
+
+      await expect(canvas.queryByText('skip hire')).not.toBeInTheDocument()
+
+      const end = list.querySelector<HTMLElement>('[data-part="calendar-agenda-end"]')
+      if (!end) throw new Error('calendar agenda reach story: end sentinel missing')
+      end.scrollIntoView()
+
+      await waitFor(() => {
+        const renewDay = list.querySelector<HTMLElement>(
+          '[data-part="calendar-agenda-day"][data-iso="2026-11-02"]'
+        )
+        if (!renewDay) throw new Error('calendar agenda reach story: renew day missing')
+        expect(within(renewDay).getByText('renew')).toBeInTheDocument()
+      })
+      expect(
+        list.querySelector('[data-part="calendar-agenda-day"][data-iso="2026-10-22"]')
+      ).toBeNull()
+      await expect(canvas.getByText('from 19 oct')).toBeVisible()
+      await expect(canvas.queryByText('skip hire')).not.toBeInTheDocument()
+      await expect(canvas.queryByRole('button', { name: 'load more' })).toBeNull()
+    } finally {
+      const restoreClock = loaded.restoreClock as (() => void) | undefined
+      restoreClock?.()
+      const { width, height } = loaded.prevViewport as { width: number; height: number }
+      await page.viewport(width, height)
+    }
+  },
+}
+
+/**
+ * KAN-526. Dragging a week item onto another day writes that day. A timed
+ * value keeps its time; a date-only value stays in the all-day row.
+ *
+ * The loader matches `CalendarWeekSpan`: 1440×900 and local noon on 19 Oct
+ * 2026, so October is open and Wednesday–Friday are on screen. The harness
+ * applies `onMoveDate` onto the date field, so the column shows the record.
+ * The pointer sequence is `fireEvent` from `storybook/test`.
+ */
+function CalendarWeekDragHarness({
+  config,
+  hostSchema,
+}: {
+  config: ViewBlock
+  hostSchema: PropertySchema
+}) {
+  const [data, setData] = useState<CollectionRow[]>(weekSpanRows)
+  const handleMoveDate = (rowId: string, key: string, value: PropertyValue) => {
+    setData((prev) =>
+      prev.map((row) =>
+        row.id === rowId ? { ...row, values: { ...row.values, [key]: value } } : row
+      )
+    )
+  }
+  return (
+    <CollectionView
+      config={config}
+      schema={hostSchema}
+      rows={data}
+      editable
+      onMoveDate={handleMoveDate}
+    />
+  )
+}
+
+/** A point inside `column`'s real rect, more than 4px (Manhattan) from the press. */
+function dropPointInColumn(
+  column: HTMLElement,
+  down: { clientX: number; clientY: number }
+): { clientX: number; clientY: number } {
+  const rect = column.getBoundingClientRect()
+  const clientX = rect.left + rect.width / 2
+  const clientY = rect.top + rect.height / 2
+  const inside =
+    rect.width > 0 &&
+    rect.height > 0 &&
+    clientX >= rect.left &&
+    clientX <= rect.right &&
+    clientY >= rect.top &&
+    clientY <= rect.bottom
+  const travel = Math.abs(clientX - down.clientX) + Math.abs(clientY - down.clientY)
+  if (!inside || travel <= 4) {
+    throw new Error(
+      `calendar week drag story: move (${clientX}, ${clientY}) travel ${travel} is outside ${column.dataset.iso} or within 4px`
+    )
+  }
+  return { clientX, clientY }
+}
+
+function dragWithFireEvent(source: HTMLElement, column: HTMLElement) {
+  const sourceRect = source.getBoundingClientRect()
+  const down = { clientX: sourceRect.left + 4, clientY: sourceRect.top + 4 }
+  const move = dropPointInColumn(column, down)
+  fireEvent.pointerDown(source, down)
+  fireEvent.pointerMove(column, move)
+  fireEvent.pointerUp(column)
+}
+
+function desktopWeekBody(root: HTMLElement): HTMLElement {
+  const body = root.querySelector<HTMLElement>(
+    '[data-part="calendar-week-body"][data-size="desktop"]'
+  )
+  if (!body) throw new Error('calendar week drag story: desktop week body missing')
+  return body
+}
+
+function weekColumn(body: HTMLElement, iso: string): HTMLElement {
+  const column = body.querySelector<HTMLElement>(
+    `[data-part="calendar-week-column"][data-iso="${iso}"]`
+  )
+  if (!column) throw new Error(`calendar week drag story: ${iso} column missing`)
+  return column
+}
+
+export const CalendarWeekDrag: Story = {
+  name: 'week drag',
+  args: { config: calendarConfig, schema, rows: weekSpanRows, editable: true },
+  render: (args) => (
+    <CalendarWeekDragHarness config={args.config} hostSchema={args.schema ?? schema} />
+  ),
+  loaders: [
+    async () => {
+      const prevViewport = { width: window.innerWidth, height: window.innerHeight }
+      await page.viewport(1440, 900)
+      const restoreClock = fixClockAtLocalNoonOn19Oct2026()
+      return { prevViewport, restoreClock }
+    },
+  ],
+  play: async ({ canvasElement, loaded }) => {
+    try {
+      const canvas = within(canvasElement)
+      await expect(canvas.getByText('october 2026')).toBeVisible()
+      await userEvent.click(canvas.getByRole('radio', { name: 'week' }))
+
+      const body = desktopWeekBody(canvasElement)
+      await expect(body).toBeVisible()
+
+      const wednesday = weekColumn(body, '2026-10-21')
+      const dentist = within(wednesday).getByText('dentist')
+      await expect(dentist).toBeVisible()
+      const timed = dentist.closest<HTMLElement>('[data-part="calendar-timed-event"]')
+      if (!timed) throw new Error('calendar week drag story: dentist is not a timed event')
+      await expect(within(timed).getByText('10:00')).toBeVisible()
+
+      const thursday = weekColumn(body, '2026-10-22')
+      dragWithFireEvent(timed, thursday)
+
+      const thursdayAfter = weekColumn(desktopWeekBody(canvasElement), '2026-10-22')
+      const movedDentist = within(thursdayAfter).getByText('dentist')
+      await expect(movedDentist).toBeVisible()
+      const movedTimed = movedDentist.closest<HTMLElement>('[data-part="calendar-timed-event"]')
+      if (!movedTimed) {
+        throw new Error('calendar week drag story: dentist is not a timed event on Thursday')
+      }
+      await expect(within(movedTimed).getByText('10:00')).toBeVisible()
+      const wednesdayAfter = weekColumn(desktopWeekBody(canvasElement), '2026-10-21')
+      await expect(within(wednesdayAfter).queryByText('dentist')).not.toBeInTheDocument()
+
+      const allDay = desktopWeekBody(canvasElement).querySelector<HTMLElement>(
+        '[data-part="calendar-all-day"]'
+      )
+      if (!allDay) throw new Error('calendar week drag story: all-day row missing')
+      const alcove = within(allDay).getByText('confirm alcove')
+      const alcoveItem = alcove.closest<HTMLElement>('[data-part="calendar-all-day-item"]')
+      if (!alcoveItem) throw new Error('calendar week drag story: confirm alcove is not all-day')
+
+      const friday = weekColumn(desktopWeekBody(canvasElement), '2026-10-23')
+      dragWithFireEvent(alcoveItem, friday)
+
+      const allDayAfter = desktopWeekBody(canvasElement).querySelector<HTMLElement>(
+        '[data-part="calendar-all-day"]'
+      )
+      if (!allDayAfter) throw new Error('calendar week drag story: all-day row missing after drop')
+      const movedAlcove = within(allDayAfter).getByText('confirm alcove')
+      const movedItem = movedAlcove.closest<HTMLElement>('[data-part="calendar-all-day-item"]')
+      if (!movedItem) throw new Error('calendar week drag story: confirm alcove left the all-day row')
+      const fridayAfter = weekColumn(desktopWeekBody(canvasElement), '2026-10-23')
+      await expect(movedItem.style.gridColumn).toBe(fridayAfter.style.gridColumn)
+      await expect(movedAlcove.closest('[data-part="calendar-timed-event"]')).toBeNull()
+    } finally {
+      const restoreClock = loaded.restoreClock as (() => void) | undefined
+      restoreClock?.()
+      const { width, height } = loaded.prevViewport as { width: number; height: number }
+      await page.viewport(width, height)
+    }
+  },
+}
+
+/**
+ * KAN-458. A record with a start and an end draws as a bar across those days.
+ * Dragging the bar onto the 19th writes both fields, so the bar covers the
+ * 19th, 20th and 21st.
+ *
+ * The loader matches `CalendarWeekSpan`: 1440×900 and local noon on 19 Oct
+ * 2026, so October is open and both weeks are on screen. The harness applies
+ * `onMoveDates` onto both date fields. The pointer sequence is `fireEvent`
+ * from `storybook/test`.
+ */
+const rangeBarSchema: PropertySchema = [
+  { id: 'p-start', name: 'Start', type: 'date' },
+  { id: 'p-end', name: 'End', type: 'date' },
+]
+
+const rangeBarRows: CollectionRow[] = [
+  { id: 'trip', title: 'trip', values: { 'p-start': '2026-10-12', 'p-end': '2026-10-14' } },
+]
+
+const RANGE_BAR_BEFORE = ['2026-10-12', '2026-10-13', '2026-10-14']
+const RANGE_BAR_AFTER = ['2026-10-19', '2026-10-20', '2026-10-21']
+
+function CalendarRangeBarHarness({
+  config,
+  hostSchema,
+}: {
+  config: ViewBlock
+  hostSchema: PropertySchema
+}) {
+  const [data, setData] = useState<CollectionRow[]>(rangeBarRows)
+  const handleMoveDates = (rowId: string, entries: { key: string; value: PropertyValue }[]) => {
+    setData((prev) =>
+      prev.map((row) => {
+        if (row.id !== rowId) return row
+        const values = { ...row.values }
+        for (const entry of entries) values[entry.key] = entry.value
+        return { ...row, values }
+      })
+    )
+  }
+  return (
+    <CollectionView
+      config={config}
+      schema={hostSchema}
+      rows={data}
+      editable
+      onMoveDates={handleMoveDates}
+    />
+  )
+}
+
+type RangeBarPoint = { clientX: number; clientY: number }
+
+function rangeBar(root: HTMLElement): HTMLElement {
+  const bars = [...root.querySelectorAll<HTMLElement>('[data-part="calendar-bar"]')]
+  if (bars.length !== 1) {
+    throw new Error(`calendar range bar story: expected one calendar-bar, found ${bars.length}`)
+  }
+  const bar = bars[0]
+  if (!bar) throw new Error('calendar range bar story: calendar-bar missing')
+  return bar
+}
+
+function visibleDayCell(root: HTMLElement, iso: string): HTMLElement {
+  const cells = [
+    ...root.querySelectorAll<HTMLElement>(`[data-part="calendar-day-cell"][data-iso="${iso}"]`),
+  ]
+  const cell = cells.find((candidate) => candidate.getBoundingClientRect().width > 0)
+  if (!cell) throw new Error(`calendar range bar story: ${iso} cell missing`)
+  return cell
+}
+
+function assertBarCovers(bar: HTMLElement, days: readonly string[]) {
+  if (!bar.textContent?.includes('trip')) {
+    throw new Error('calendar range bar story: calendar-bar does not read trip')
+  }
+  if (bar.style.gridColumn !== '1 / 4') {
+    throw new Error(`calendar range bar story: gridColumn is "${bar.style.gridColumn}"`)
+  }
+  const week = bar.parentElement
+  if (!week) throw new Error('calendar range bar story: bar has no week')
+  for (const iso of days) {
+    if (!week.querySelector(`[data-part="calendar-day-cell"][data-iso="${iso}"]`)) {
+      throw new Error(`calendar range bar story: ${iso} is not a day the bar covers`)
+    }
+  }
+}
+
+/** A point inside the 19th cell, more than 4px (Manhattan) from the press. */
+function rangeBarDragPoints(bar: HTMLElement, cell: HTMLElement): {
+  down: RangeBarPoint
+  move: RangeBarPoint
+} {
+  const barRect = bar.getBoundingClientRect()
+  const down = {
+    clientX: barRect.left + Math.min(12, Math.max(barRect.width / 2, 1)),
+    clientY: barRect.top + barRect.height / 2,
+  }
+  const rect = cell.getBoundingClientRect()
+  const move = {
+    clientX: rect.left + rect.width / 2,
+    clientY: rect.top + rect.height / 2,
+  }
+  const inside =
+    rect.width > 0 &&
+    rect.height > 0 &&
+    move.clientX >= rect.left &&
+    move.clientX <= rect.right &&
+    move.clientY >= rect.top &&
+    move.clientY <= rect.bottom
+  const travel = Math.abs(move.clientX - down.clientX) + Math.abs(move.clientY - down.clientY)
+  if (!inside || travel <= 4) {
+    throw new Error(
+      `calendar range bar story: move (${move.clientX}, ${move.clientY}) travel ${travel} is outside 2026-10-19 or within 4px`
+    )
+  }
+  return { down, move }
+}
+
+function dragRangeBarWithFireEvent(bar: HTMLElement, cell: HTMLElement) {
+  const { down, move } = rangeBarDragPoints(bar, cell)
+  fireEvent.pointerDown(bar, down)
+  fireEvent.pointerMove(cell, move)
+  fireEvent.pointerUp(cell, move)
+}
+
+function dragRangeBarWithPointerEvent(bar: HTMLElement, cell: HTMLElement) {
+  const { down, move } = rangeBarDragPoints(bar, cell)
+  const dispatch = (target: HTMLElement, type: string, point: RangeBarPoint, buttons: number) => {
+    target.dispatchEvent(
+      new PointerEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        clientX: point.clientX,
+        clientY: point.clientY,
+        pointerId: 1,
+        buttons,
+      })
+    )
+  }
+  dispatch(bar, 'pointerdown', down, 1)
+  dispatch(cell, 'pointermove', move, 1)
+  dispatch(cell, 'pointerup', move, 0)
+}
+
+async function rangeBarCovers(root: HTMLElement, days: readonly string[]): Promise<boolean> {
+  try {
+    await waitFor(() => {
+      assertBarCovers(rangeBar(root), days)
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
+export const CalendarRangeBar: Story = {
+  name: 'range bar',
+  args: {
+    config: calendarConfig,
+    schema: rangeBarSchema,
+    rows: rangeBarRows,
+    editable: true,
+  },
+  render: (args) => (
+    <CalendarRangeBarHarness config={args.config} hostSchema={args.schema ?? rangeBarSchema} />
+  ),
+  loaders: [
+    async () => {
+      const prevViewport = { width: window.innerWidth, height: window.innerHeight }
+      await page.viewport(1440, 900)
+      const restoreClock = fixClockAtLocalNoonOn19Oct2026()
+      return { prevViewport, restoreClock }
+    },
+  ],
+  play: async ({ canvasElement, loaded }) => {
+    try {
+      const canvas = within(canvasElement)
+      await expect(canvas.getByText('october 2026')).toBeVisible()
+
+      const bars = [...canvasElement.querySelectorAll<HTMLElement>('[data-part="calendar-bar"]')]
+      await expect(bars).toHaveLength(1)
+      const bar = bars[0]
+      if (!bar) throw new Error('calendar range bar story: calendar-bar missing')
+      await expect(bar).toHaveTextContent('trip')
+      assertBarCovers(bar, RANGE_BAR_BEFORE)
+
+      const cell = visibleDayCell(canvasElement, '2026-10-19')
+      dragRangeBarWithFireEvent(bar, cell)
+      if (!(await rangeBarCovers(canvasElement, RANGE_BAR_AFTER))) {
+        dragRangeBarWithPointerEvent(
+          rangeBar(canvasElement),
+          visibleDayCell(canvasElement, '2026-10-19')
+        )
+        await waitFor(() => {
+          assertBarCovers(rangeBar(canvasElement), RANGE_BAR_AFTER)
+        })
+      }
+    } finally {
+      const restoreClock = loaded.restoreClock as (() => void) | undefined
+      restoreClock?.()
+      const { width, height } = loaded.prevViewport as { width: number; height: number }
+      await page.viewport(width, height)
+    }
   },
 }
 

@@ -21,7 +21,9 @@
  */
 
 import type { UIMessage } from 'ai'
+import { parseReferences } from '@/app/api/chat/references'
 import type { Block } from '@/lib/documents/types'
+import type { PageReference } from '@/lib/references/reference'
 
 // ── The record ───────────────────────────────────────────────────────────────
 
@@ -499,6 +501,68 @@ export function turnReadContext(message: { metadata?: unknown } | undefined): {
       ? meta.wholePageRefPageIds.filter((id): id is string => typeof id === 'string')
       : [],
   }
+}
+
+/**
+ * What a turn's resend ("ask again") should carry to the model: the SAME
+ * node, chip visibility and references the original send carried (KAN-341,
+ * PROJECT_RULES "sources are always shown") — never recomputed from live
+ * navigation/reference state, which can have moved on since the original
+ * send (a hidden chip reset by visiting another page and back; a passage
+ * ×'d after the question was asked). Read off the question message's own
+ * metadata, stamped by `sendText` at send time, same reasoning as {@link
+ * turnReadContext}. The stamp is all-or-nothing: `nodeId` only exists on a
+ * message written by this fix, so its presence (not `openPageContext`'s,
+ * which main has stamped since KAN-99) is the canary — a question sent
+ * before this fix carries `openPageContext` alone and must fall back to
+ * `fallback` (the caller's live values) for all three fields, not just the
+ * two this stamp doesn't have, or a resend mixes a stamped chip-visibility
+ * flag with a live node/references the person has since navigated past.
+ */
+export function turnSendStamp(
+  message: { metadata?: unknown } | undefined,
+  fallback: { nodeId: string | null; openPageContext: boolean; references: PageReference[] }
+): { nodeId: string | null; openPageContext: boolean; references: PageReference[] } {
+  const meta = message?.metadata as
+    | { nodeId?: unknown; openPageContext?: unknown; references?: unknown }
+    | undefined
+  if (meta === undefined || meta === null || !('nodeId' in meta)) return fallback
+  return {
+    nodeId:
+      meta.nodeId === null || typeof meta.nodeId === 'string' ? meta.nodeId : fallback.nodeId,
+    openPageContext: typeof meta.openPageContext === 'boolean' ? meta.openPageContext : fallback.openPageContext,
+    references: parseReferences(meta.references),
+  }
+}
+
+/**
+ * The title {@link readChips}' lead chip shows for a turn — the page the turn
+ * actually read ({@link turnSendStamp}'s own `nodeId`), not wherever the
+ * person has since navigated to (KAN-341: an `ask again` on page A, issued
+ * after opening page B, reads A, so the lead chip must name A). The open
+ * page's own live label is used when the stamp names the open page itself
+ * (the common case — nothing has moved on); home is named by its live title
+ * since it is stripped from the `pages` list `resolvePageName` reads; any
+ * other page resolves through `resolvePageName`. No stamp at all (a message
+ * sent before this fix, or reseeded) falls back to the live label — the only
+ * case the turn's own page can't be known.
+ */
+export function turnPageLabel(
+  message: { metadata?: unknown } | undefined,
+  opts: {
+    pageId: string | null
+    contextLabel: string
+    homeId: string | null
+    homeTitle: string | null
+    resolvePageName: (id: string) => string | undefined
+  }
+): string {
+  const meta = message?.metadata as { nodeId?: unknown; openPageContext?: unknown } | undefined
+  if (typeof meta?.openPageContext !== 'boolean') return opts.contextLabel
+  const stampedId = meta.nodeId === null || typeof meta.nodeId === 'string' ? meta.nodeId : null
+  if (stampedId === opts.pageId) return opts.contextLabel
+  if (stampedId !== null && stampedId === opts.homeId) return opts.homeTitle ?? opts.contextLabel
+  return (stampedId && opts.resolvePageName(stampedId)) ?? opts.contextLabel
 }
 
 // ── Earlier answers (6a frame 3: ask again replaces in place, the old one folds) ──

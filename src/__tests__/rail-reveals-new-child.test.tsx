@@ -94,6 +94,12 @@ function mountRailCold() {
 }
 
 describe('Rail reveals a new child without leaving the parent (KAN-122)', () => {
+  // KAN-393's persisted-expansion store now reads/writes real `localStorage`
+  // under the pond's own key, so a prior test's expansion must not leak in.
+  beforeEach(() => {
+    window.localStorage.clear()
+  })
+
   it('expands the selected node once its child set gains an id', async () => {
     const client = mountRail([KITCHEN])
 

@@ -40,6 +40,16 @@ export const isZenChord = (e: KeyboardEvent) => {
 }
 
 /**
+ * ⌘\ on a Mac, Ctrl+\ everywhere else: minimize or show the rail. The same
+ * chord Notion and Linear use for the side panel. It is global, including
+ * inside a text field — the field has no meaning for this chord.
+ */
+export const isMinimizeRailChord = (e: KeyboardEvent) => {
+  if (e.altKey || e.shiftKey || e.key !== '\\') return false
+  return isCommandOnly(e)
+}
+
+/**
  * ⌘⌫ on a Mac, Ctrl+⌫ everywhere else: delete the focused block (`Pond 08 Edges` 8e).
  * Inside a text block with text before the caret, the editor's own delete-to-line-start
  * wins instead (AUDIT K1–K4) — that collision is decided at the call site, not here.

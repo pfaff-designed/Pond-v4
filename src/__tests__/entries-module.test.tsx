@@ -30,6 +30,7 @@ import {
   type EntriesBlock,
 } from '@/lib/modules/entries/schema'
 import { EntriesView, addEntry, entryDateLabel } from '@/lib/modules/entries/view'
+import { BlockRowProvider } from '@/lib/modules/block-row-context'
 import { blockSchema } from '@/lib/modules/content'
 import { moduleDescriptors } from '@/lib/modules/registry'
 import { moduleRenderers } from '@/lib/modules/renderers'
@@ -378,6 +379,38 @@ function Stateful({ data }: { data: EntriesBlock }) {
   return <EntriesView data={state} editable onChange={setState} />
 }
 
+/**
+ * Mirrors `todo-module.test.tsx`'s `Stateful`, but keeps `commitStep` as its
+ * own jest mock, distinct from `onChange` (KAN-447) — `removeEntry` must
+ * reach `commitStep` under a `BlockRowProvider` host, never fall back to
+ * `onChange`, so the two have to stay tellable apart in the harness too.
+ */
+function StatefulWithCommit({
+  data,
+  commitStep,
+  onChange,
+}: {
+  data: EntriesBlock
+  commitStep: jest.Mock
+  onChange?: jest.Mock
+}) {
+  const [state, setState] = useState(data)
+  return (
+    <BlockRowProvider
+      value={{
+        selected: false,
+        stepOut: () => {},
+        commitStep: (patch) => {
+          commitStep(patch)
+          setState(patch as EntriesBlock)
+        },
+      }}
+    >
+      <EntriesView data={state} editable onChange={onChange} />
+    </BlockRowProvider>
+  )
+}
+
 describe('EntriesView — editable (a read-only date label + a prose field, per row)', () => {
   it('keeps the date a read-only mono LABEL — no board draws a live date field for `entry` — and renders a textarea per entry, in the row grid', () => {
     const { container } = render(<Stateful data={updates} />)
@@ -713,52 +746,6 @@ describe('EntriesView — ⌫ in an empty entry’s own field (KAN-445)', () => 
     expect(below.selectionEnd).toBe(below.value.length)
   })
 
-  it('two fast Backspaces over two empty rows removes both, as two separate onChange removals', () => {
-    // Step granularity (whether each is its own session-undo step) is the
-    // page draft's 600ms save pause (use-page-draft.ts EDIT_PAUSE_MS), not
-    // this view — this only proves two distinct onChange calls.
-    const onChange = jest.fn()
-    function StatefulSpy({ data }: { data: EntriesBlock }) {
-      const [state, setState] = useState(data)
-      return (
-        <EntriesView
-          data={state}
-          editable
-          onChange={(next) => {
-            onChange(next)
-            setState(next)
-          }}
-        />
-      )
-    }
-    const twoEmpty: EntriesBlock = {
-      ...updates,
-      entries: [
-        { id: 'u3', date: '2 nov', text: '' },
-        { id: 'u4', date: '1 nov', text: '' },
-        ...updates.entries,
-      ],
-    }
-    render(<StatefulSpy data={twoEmpty} />)
-    let texts = screen.getAllByRole('textbox', { name: 'Entry text' })
-    expect(texts).toHaveLength(4)
-    fireEvent.keyDown(texts[0], { key: 'Backspace' })
-
-    texts = screen.getAllByRole('textbox', { name: 'Entry text' })
-    fireEvent.keyDown(texts[0], { key: 'Backspace' })
-
-    expect(onChange).toHaveBeenCalledTimes(2)
-    expect((onChange.mock.calls[0][0] as EntriesBlock).entries.map((e) => e.id)).toEqual([
-      'u4',
-      'u1',
-      'u2',
-    ])
-    expect((onChange.mock.calls[1][0] as EntriesBlock).entries.map((e) => e.id)).toEqual([
-      'u1',
-      'u2',
-    ])
-  })
-
   it('as the only entry, removes it and leaves focus nowhere', () => {
     const onlyEmpty: EntriesBlock = { ...updates, entries: [{ id: 'u0', date: '1 nov', text: '' }] }
     render(<Stateful data={onlyEmpty} />)
@@ -787,5 +774,69 @@ describe('EntriesView — ⌫ in an empty entry’s own field (KAN-445)', () => 
     const texts = screen.getAllByRole('textbox', { name: 'Entry text' })
     fireEvent.keyDown(texts[2], { key: 'Backspace', isComposing: true })
     expect(onChange).not.toHaveBeenCalled()
+  })
+})
+
+describe('EntriesView — removeEntry commits through commitStep under a BlockRowProvider host (KAN-447)', () => {
+  it('⌫ on an empty entry commits through commitStep, not onChange', () => {
+    const commitStep = jest.fn()
+    const onChange = jest.fn()
+    render(
+      <StatefulWithCommit
+        data={{ ...updates, entries: [...updates.entries, { id: 'u3', date: '1 nov', text: '' }] }}
+        commitStep={commitStep}
+        onChange={onChange}
+      />
+    )
+    const texts = screen.getAllByRole('textbox', { name: 'Entry text' })
+    fireEvent.keyDown(texts[2], { key: 'Backspace' })
+
+    expect(commitStep).toHaveBeenCalledTimes(1)
+    expect((commitStep.mock.calls[0][0] as EntriesBlock).entries.map((e) => e.id)).toEqual([
+      'u1',
+      'u2',
+    ])
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('the remove button does the same', () => {
+    const commitStep = jest.fn()
+    const onChange = jest.fn()
+    render(<StatefulWithCommit data={updates} commitStep={commitStep} onChange={onChange} />)
+    fireEvent.click(screen.getAllByRole('button', { name: 'Remove entry' })[0])
+
+    expect(commitStep).toHaveBeenCalledTimes(1)
+    expect((commitStep.mock.calls[0][0] as EntriesBlock).entries.map((e) => e.id)).toEqual(['u2'])
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('two fast Backspaces over two empty rows give two separate commitStep calls', () => {
+    const commitStep = jest.fn()
+    const twoEmpty: EntriesBlock = {
+      ...updates,
+      entries: [
+        { id: 'u3', date: '2 nov', text: '' },
+        { id: 'u4', date: '1 nov', text: '' },
+        ...updates.entries,
+      ],
+    }
+    render(<StatefulWithCommit data={twoEmpty} commitStep={commitStep} />)
+    let texts = screen.getAllByRole('textbox', { name: 'Entry text' })
+    expect(texts).toHaveLength(4)
+    fireEvent.keyDown(texts[0], { key: 'Backspace' })
+
+    texts = screen.getAllByRole('textbox', { name: 'Entry text' })
+    fireEvent.keyDown(texts[0], { key: 'Backspace' })
+
+    expect(commitStep).toHaveBeenCalledTimes(2)
+    expect((commitStep.mock.calls[0][0] as EntriesBlock).entries.map((e) => e.id)).toEqual([
+      'u4',
+      'u1',
+      'u2',
+    ])
+    expect((commitStep.mock.calls[1][0] as EntriesBlock).entries.map((e) => e.id)).toEqual([
+      'u1',
+      'u2',
+    ])
   })
 })

@@ -40,6 +40,11 @@ jest.mock('@/lib/templates/client', () => ({
   listTemplates: jest.fn().mockResolvedValue([]),
   getTemplate: jest.fn().mockResolvedValue(null),
 }))
+// KAN-495: the apply's own commit mock call carries a `Block[]` union — narrow
+// to the text block's `content` rather than casting, since a page's first
+// block isn't always a text block.
+const contentOf = (b?: Block) => (b?.type === 'text' ? b.content : undefined)
+
 const mockGetPage = jest.fn()
 const mockCreatePage = jest.fn()
 const mockSaveBlocks = jest.fn().mockResolvedValue(undefined)
@@ -54,9 +59,11 @@ jest.mock('@/lib/pages/client', () => ({
   deletePage: jest.fn().mockResolvedValue(undefined),
 }))
 const mockCommitBlocks = jest.fn().mockResolvedValue(undefined)
-jest.mock('@/lib/pages/commit', () => ({
-  commitBlocks: (...args: unknown[]) => mockCommitBlocks(...args),
-}))
+jest.mock('@/lib/pages/commit', () =>
+  jest.requireActual('./helpers/page-commit-mock').pageCommitMock({
+    commitBlocks: (...args: unknown[]) => mockCommitBlocks(...args),
+  })
+)
 jest.mock('@/lib/change-log/store', () => ({
   appendOwnEdit: jest.fn().mockResolvedValue({ id: 'record-1' }),
 }))
@@ -90,7 +97,7 @@ describe('applying `notes` through the real `/` menu leaves a placeholder, never
     renderPanel({ id: 'page-1', parentId: 'root-1', type: 'page', title: 'Health', blocks: [] })
 
     // PATH_STEPS 1–2: an empty page's `/` leads with templates.
-    await user.click(await screen.findByRole('button', { name: 'Add a block' }))
+    await user.click(await screen.findByTestId('trailing-block-gap'))
     const editor = await findTextBlock()
     writeInTextBlock(editor, '/')
     const menu = await screen.findByRole('listbox', { name: 'blocks' })
@@ -100,10 +107,23 @@ describe('applying `notes` through the real `/` menu leaves a placeholder, never
 
     // PATH_STEPS 3: pick `notes` — a blank page's pick applies in place (KAN-124):
     // this page's own blocks become the instantiated stack, never a nested page.
+    // KAN-495: the apply lands through the page-write queue's own writer
+    // (`commitBlocks`), not a direct `saveBlocks` call — and `writeStructural`'s
+    // own flush lands the pending typed save of the stale `/` content first, so
+    // the apply itself is the LAST commit for this page, not necessarily the first.
     await user.click(notesRow)
-    await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalled())
+    await waitFor(() =>
+      expect(
+        mockCommitBlocks.mock.calls.some(
+          (c) => c[2] === 'page-1' && contentOf((c[3] as Block[])[0]) !== '/'
+        )
+      ).toBe(true)
+    )
     expect(mockCreatePage).not.toHaveBeenCalled()
-    const madeBlocks = mockSaveBlocks.mock.calls[0][2] as Block[]
+    const madeBlocks = mockCommitBlocks.mock.calls
+      .filter((c) => c[2] === 'page-1')
+      .map((c) => c[3] as Block[])
+      .at(-1)!
     expect(madeBlocks).toHaveLength(1)
     const textBlock = madeBlocks[0]
     // The persisted block never carries the placeholder copy in `content`.

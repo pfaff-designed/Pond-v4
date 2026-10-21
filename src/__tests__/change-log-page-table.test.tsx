@@ -127,8 +127,7 @@ describe('ChangeLogPage — table chrome', () => {
     expect(screen.getAllByText('pond')).toHaveLength(2)
 
     expect(screen.getByText('recorded a memory note')).toBeInTheDocument()
-    // "memory" also names an inert view-bar pill (s6o1), so two matches is right.
-    expect(screen.getAllByText('memory')).toHaveLength(2)
+    expect(screen.getByText('memory')).toBeInTheDocument()
 
     expect(screen.getByText('set up the fields')).toBeInTheDocument()
     expect(screen.getByText('deleted page')).toBeInTheDocument()
