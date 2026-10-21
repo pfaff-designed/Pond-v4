@@ -92,17 +92,20 @@ function readoutText(blockId: string, side: 'left' | 'right'): string | null {
 /** Swaps in a fake ResizeObserver and hands back its captured callback (`block-canvas-edge-resize.test.tsx`'s own helper). */
 function mockResizeObserver() {
   const setup = window.ResizeObserver
-  let observed: (() => void) | null = null
+  const observed: Array<() => void> = []
   window.ResizeObserver = class {
     constructor(callback: () => void) {
-      observed = callback
+      observed.push(callback)
     }
     observe() {}
     unobserve() {}
     disconnect() {}
   } as unknown as typeof ResizeObserver
   return {
-    fire: () => act(() => observed?.()),
+    fire: () =>
+      act(() => {
+        for (const callback of [...observed]) callback()
+      }),
     restore: () => {
       window.ResizeObserver = setup
     },
@@ -116,7 +119,19 @@ function setColumnWidth(
   ro: ReturnType<typeof mockResizeObserver>
 ) {
   const canvas = sizingDiv(anchorBlockId).parentElement as HTMLElement
-  jest.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ width: widthPx } as DOMRect)
+  jest.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({
+    width: widthPx,
+    height: 0,
+    top: 0,
+    left: 0,
+    bottom: 0,
+    right: widthPx,
+    x: 0,
+    y: 0,
+    toJSON() {
+      return {}
+    },
+  } as DOMRect)
   ro.fire()
 }
 
