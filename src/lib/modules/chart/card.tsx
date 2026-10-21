@@ -48,6 +48,7 @@ import {
   POND_BLOCK_DISABLED,
   POND_BLOCK_SELECTED_RING,
 } from '@/components/organisms/PondBlock'
+import { useBlockHeightConstrained } from '@/components/organisms/block-height-context'
 import {
   CHART_EMPTY_ACTION,
   CHART_ERROR_ACTION,
@@ -182,6 +183,7 @@ export function ChartCard({
   const error = state === 'error'
   const disabled = state === 'disabled'
   const showPlot = !loading && !empty
+  const constrained = useBlockHeightConstrained()
 
   return (
     <div
@@ -190,9 +192,12 @@ export function ChartCard({
       aria-busy={loading || undefined}
       // A real boolean attribute (React 19): present when disabled, absent otherwise.
       inert={disabled || undefined}
-      className={`relative flex w-[350px] max-w-full flex-col gap-mn-3 rounded-mn-card bg-mn-card px-mn-4 pt-mn-4 pb-[14px] font-sans text-mn-text ${CARD_STATE[state]} ${className ?? ''}`}
+      className={`relative flex w-[350px] max-w-full flex-col gap-mn-3 rounded-mn-card bg-mn-card px-mn-4 pt-mn-4 pb-[14px] font-sans text-mn-text ${CARD_STATE[state]} ${constrained ? 'h-full min-h-0' : ''} ${className ?? ''}`}
     >
-      <div data-part="head" className="flex items-baseline justify-between gap-[10px]">
+      <div
+        data-part="head"
+        className={`flex items-baseline justify-between gap-[10px] ${constrained ? 'shrink-0' : ''}`}
+      >
         {title !== undefined && (
           <span data-part="title" className="text-[15px] font-medium">
             {title}
@@ -206,12 +211,22 @@ export function ChartCard({
         </span>
       </div>
       {sub !== undefined && (
-        <div data-part="sub" className="-mt-[6px] text-[12.5px] text-mn-text-secondary">
+        <div
+          data-part="sub"
+          className={`-mt-[6px] text-[12.5px] text-mn-text-secondary ${constrained ? 'shrink-0' : ''}`}
+        >
           {sub}
         </div>
       )}
 
-      <div data-part="plot" className="relative min-h-[150px] overflow-visible pt-[6px] pb-[2px]">
+      <div
+        data-part="plot"
+        className={
+          constrained
+            ? 'relative min-h-0 flex-1 overflow-y-auto pt-[6px] pb-[2px]'
+            : 'relative min-h-[150px] overflow-visible pt-[6px] pb-[2px]'
+        }
+      >
         {showPlot && <div className={error ? 'opacity-[0.45]' : undefined}>{children}</div>}
         {tip && (
           <div data-part="tip" className={TIP}>
@@ -254,7 +269,7 @@ export function ChartCard({
       {(on !== undefined || reads !== undefined) && (
         <div
           data-part="foot"
-          className="flex flex-col gap-[4px] border-t border-mn-text/[0.055] pt-[10px] text-[11px]"
+          className={`flex flex-col gap-[4px] border-t border-mn-text/[0.055] pt-[10px] text-[11px] ${constrained ? 'shrink-0' : ''}`}
         >
           {on !== undefined && (
             <div data-part="on" className="flex gap-[10px]">

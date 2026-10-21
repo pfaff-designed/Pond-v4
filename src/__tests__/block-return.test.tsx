@@ -442,11 +442,15 @@ describe('the handle is the only block chrome (07.05)', () => {
   it('draws no `+` separator between blocks', () => {
     renderCanvas([table, note, prose])
     expect(screen.queryByRole('button', { name: 'Insert block' })).not.toBeInTheDocument()
-    // `role="separator"` elements are each block's own edge-resize handle
-    // (KAN-441), not an inserter between blocks — none of them is one.
+    // Separators are a block's own edge handle (KAN-441) or height handle
+    // (KAN-442), never an inserter between blocks.
     const separators = screen.queryAllByRole('separator')
     expect(separators.length).toBeGreaterThan(0)
-    separators.forEach((el) => expect(el).toHaveAttribute('data-testid', 'block-edge-handle'))
+    separators.forEach((el) => {
+      const isEdge = el.getAttribute('data-testid') === 'block-edge-handle'
+      const isHeight = el.getAttribute('data-part') === 'height-handle'
+      expect(isEdge || isHeight).toBe(true)
+    })
   })
 
   it('sits at the block’s left edge as PondBlock draws it: 12×24 at left −14, top 12, ink 68', () => {
