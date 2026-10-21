@@ -1109,7 +1109,10 @@ export const Empty: Story = {
     const box = hint.getBoundingClientRect()
     await expect(Math.round(box.left - card.left)).toBe(34)
     await expect(Math.round(card.right - box.right)).toBe(16)
-    await expect(Math.round(box.top - root.getBoundingClientRect().bottom)).toBe(8)
+    // The new-root control (KAN-490) sits between the home row and the hint,
+    // so the hint's 8px margin is measured from that control, not the row.
+    const newRoot = canvas.getByRole('button', { name: 'new root folder' })
+    await expect(Math.round(box.top - newRoot.getBoundingClientRect().bottom)).toBe(8)
     const css = getComputedStyle(hint)
     await expect(css.fontSize).toBe('12.5px')
     await expect(css.lineHeight).toBe('18.75px')
