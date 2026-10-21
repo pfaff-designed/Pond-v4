@@ -98,6 +98,9 @@ import { SlashLineContext, type SlashLineAt } from '@/lib/modules/text/slash-lin
 import { useSlashLine } from '@/components/organisms/use-slash-line'
 import { focusTextBlock, hasTextBeforeCaret } from '@/lib/modules/text/focus'
 import { HOVER_GHOST_CLASS, UNTOUCHED_HINT_CLASS } from '@/lib/modules/text/prose'
+import { useAcceptMarks } from '@/lib/change-log/accept-marks'
+import { markTarget } from '@/lib/change-log/accept-marks-diff'
+import { ChangedMark, formatChangedLabel } from '@/lib/change-log/changed-mark'
 import {
   landAtSlash,
   undoLanding,
@@ -2530,6 +2533,17 @@ function BlockEditor({
   // views-shaped block; it only matters here because it used to read
   // `resolvedBlock` instead, whose mode DOES track the active view.
   const frame = blockFrame(block)
+  // KAN-143: the block-level accept-mark cue, kind-agnostic — a touched `todo`
+  // with rows draws its mark per row instead (`todo/view.tsx`'s own fallback),
+  // so this steps aside only there, and only while it has a row to carry it;
+  // a zero-item todo has no row renderer to fall back to, so it still lands
+  // here, same as a table, a labelled text block or any other row-less kind.
+  const acceptMarks = useAcceptMarks(pageId)
+  const blockMark =
+    block.type === 'todo' && block.items.length > 0
+      ? undefined
+      : acceptMarks.find((mark) => mark.target === markTarget(block.id))
+  const changedMark = <ChangedMark label={blockMark && formatChangedLabel(blockMark.acceptedAt)} />
   const slash = useSlashLine({
     block,
     rootRef,
@@ -3047,6 +3061,7 @@ function BlockEditor({
           size={menuSize}
         >
           {view}
+          {changedMark}
         </PondBlock>
       ) : block.type === 'text' ? (
         // Bare prose: `padding 2px 4px`, no card.
@@ -3064,10 +3079,14 @@ function BlockEditor({
             </div>
           )}
           {view}
+          {changedMark}
         </div>
       ) : (
         // #227: a block that is its OWN card — the chart card — sits on the page as it is.
-        view
+        <>
+          {view}
+          {changedMark}
+        </>
       )}
     </div>
   )

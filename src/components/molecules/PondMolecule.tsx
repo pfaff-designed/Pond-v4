@@ -50,6 +50,7 @@ import { KindDot } from '@/components/atoms/PondAtom'
 import { pageEyebrowClass } from '@/components/atoms/kicker'
 import { cn } from '@/lib/utils'
 import { FOCUS_RING, FOCUS_VISIBLE_RING } from '@/components/atoms/focus-ring'
+import { ChangedMark } from '@/lib/change-log/changed-mark'
 
 export const POND_MOLECULE_KINDS = [
   'list-row',
@@ -172,6 +173,14 @@ export interface PondMoleculeProps {
    */
   onToggle?: () => void
   /**
+   * list-row / check-row — the accept-mark session cue (KAN-143): "changed HH:MM",
+   * after the row's own value, when this row (or its block, with no row-level mark
+   * of its own) was just accepted into. `undefined` renders nothing — most rows
+   * carry no mark. `Pond 06.03` frame 4's exact values: mono 10.5, ink .8,
+   * margin-left 10px; `text-mn-text-meta` already IS ink .8 and flips in dark.
+   */
+  changedLabel?: string
+  /**
    * field-row — a LIVE control in place of the value atom (issue 260). The row keeps its
    * own geometry (the 140px label column, 34 min-height, gap 12) and the host's
    * input sits in the value cell, so `PropertyInspector` renders the molecule
@@ -250,6 +259,7 @@ export function PondMolecule({
   onTitleKeyDown,
   titleField,
   onToggle,
+  changedLabel,
   children,
   className,
 }: PondMoleculeProps) {
@@ -326,6 +336,11 @@ export function PondMolecule({
    * generic empty copy (`add a step` / `add an item`); the colour and
    * `placeholder:` classes are colour tokens only, so `cn` cannot drop a size here.
    */
+  // Once a row carries a mark, its title stops stretching to the row's full
+  // width (see the input's own field-sizing, below) — this flag is read by
+  // both the title's flex class and the input's sizing.
+  const hugTitle = changedLabel !== undefined
+
   const rowTitle = (rowClass: string) => {
     if (!onTitleChange) {
       return (
@@ -339,7 +354,14 @@ export function PondMolecule({
         data-part="title"
         type="text"
         aria-label={kind === 'check-row' ? 'Step' : 'Item'}
-        className={cn(rowClass, 'bg-transparent outline-none placeholder:text-mn-text-secondary')}
+        className={cn(
+          rowClass,
+          'bg-transparent outline-none placeholder:text-mn-text-secondary',
+          // The mark sits 10px after the row's TEXT (board 6c f4), not 10px
+          // after a flex-1 input stretched to the row's width — so once a mark
+          // is present the input hugs its typed value instead of the row.
+          hugTitle && '[field-sizing:content] min-w-[3ch]'
+        )}
         value={title ?? ''}
         placeholder={emptyCopy}
         onChange={(e) => onTitleChange(e.target.value)}
@@ -376,6 +398,18 @@ export function PondMolecule({
     <PondAtom kind="date" value={displayMeta} due={dueResolved} state={atomState} size={size} />
   )
 
+  // The row's own `gap-2.5` (10px) already sits between the title and
+  // whatever follows it; the mark's own `ml-[10px]` (`ChangedMark`) would
+  // stack on top of that and land it 20px past the preceding element instead
+  // of the board's 10px. `-ml-2.5` cancels the row's gap so the mark's own
+  // margin is the only space — rendered only when there is a mark, so an
+  // unmarked row adds no extra node to the flex layout.
+  const changedMark = changedLabel !== undefined && (
+    <span className="-ml-2.5">
+      <ChangedMark label={changedLabel} />
+    </span>
+  )
+
   /* ── list-row: handle · dot · title · date atom ── */
   if (kind === 'list-row') {
     return (
@@ -397,12 +431,14 @@ export function PondMolecule({
         {titleField ??
           rowTitle(
             cn(
-              'min-w-0 flex-1 truncate',
+              hugTitle ? 'min-w-0' : 'min-w-0 flex-1',
+              'truncate',
               emphasis && 'font-medium',
               empty && 'text-mn-text-secondary'
             )
           )}
         {metaAtom}
+        {changedMark}
         {trailing}
       </div>
     )
@@ -464,12 +500,13 @@ export function PondMolecule({
         )}
         {rowTitle(
           cn(
-            'min-w-0 flex-1',
+            hugTitle ? 'min-w-0' : 'min-w-0 flex-1',
             (done || empty) && 'text-mn-text-secondary',
             done && 'line-through decoration-mn-text/40'
           )
         )}
         {metaAtom}
+        {changedMark}
         {trailing}
       </div>
     )
@@ -765,10 +802,7 @@ export function PondMolecule({
         </span>
         <div
           data-part="title"
-          className={cn(
-            'min-w-0 flex-1',
-            removal ? DIFF_REMOVAL_TEXT_CLASSNAME : 'text-mn-text'
-          )}
+          className={cn('min-w-0 flex-1', removal ? DIFF_REMOVAL_TEXT_CLASSNAME : 'text-mn-text')}
         >
           {children ?? displayTitle}
         </div>
