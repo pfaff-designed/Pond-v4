@@ -97,6 +97,8 @@ export interface PondCommandProps {
   suggested?: readonly PaletteItem[]
   /** False while the composer is out of sight: no `ask pond about “q”` row. @default true */
   ask?: boolean
+  /** Newest-first visited page ids (KAN-390) — `rankPages`'s recency boost for `pages` and `actions`. */
+  visits?: readonly string[]
   /** The query as it changes — how the host learns what to search records for. */
   onQueryChange?: (query: string) => void
   /** The query it first opens with — stories draw the board's frames. */
@@ -169,6 +171,7 @@ export function PondCommand({
   parentTitle,
   suggested,
   ask = true,
+  visits,
   onQueryChange,
   defaultQuery = '',
   sheet = null,
@@ -217,6 +220,7 @@ export function PondCommand({
     parentTitle,
     suggested,
     ask,
+    visits,
   })
   const rows = entries.filter((e): e is PaletteRowEntry => e.kind === 'row')
   const active = Math.min(

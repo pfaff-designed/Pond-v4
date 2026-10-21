@@ -94,7 +94,7 @@ describe('paletteEntries — the board’s states', () => {
       'page:budget',
       'page:journal',
       'G:suggested',
-      'action:chase the cabinet quote',
+      'action:chase the cable quote',
       'action:log a workout',
     ])
   })
@@ -127,11 +127,17 @@ describe('paletteEntries — the board’s states', () => {
       'G:records',
       'record:cabinet quote',
       'G:actions',
-      'action:chase the cabinet quote',
+      'action:chase the cable quote',
       'action:ask pond about “cab”',
     ])
     const row = entries.find((e) => e.kind === 'row' && e.item.id === 'chase')
-    expect(row).toMatchObject({ pre: 'chase the ', hit: 'cab', post: 'inet quote' })
+    expect(row).toMatchObject({
+      runs: [
+        { text: 'chase the ', hit: false },
+        { text: 'cab', hit: true },
+        { text: 'le quote', hit: false },
+      ],
+    })
     const ask = entries.find((e) => e.kind === 'row' && e.item.id === ASK_POND_ID)
     expect(ask).toMatchObject({ item: { kind: 'action', query: 'cab' } })
   })
@@ -150,7 +156,10 @@ describe('paletteEntries — the board’s states', () => {
       'G:actions',
       'action:ask pond about “acme”',
     ])
-    expect(entries[1]).toMatchObject({ sub: 'tasks · vendor acme cabinets', hit: '' })
+    expect(entries[1]).toMatchObject({
+      sub: 'tasks · vendor acme cabinets',
+      runs: [{ text: 'quote', hit: false }],
+    })
     // Records never sit under a scope or a `>`.
     expect(
       shape(paletteEntries([...PALETTE_ITEMS, byField], 'acme', { scope: MONEY_SCOPE }))
@@ -196,7 +205,13 @@ describe('paletteEntries — the board’s states', () => {
       'G:actions',
       'action:ask pond about “adobe”',
     ])
-    expect(entries[1]).toMatchObject({ sub: 'subscriptions · renews 28 sep', hit: 'adobe' })
+    expect(entries[1]).toMatchObject({
+      sub: 'subscriptions · renews 28 sep',
+      runs: [
+        { text: 'adobe', hit: true },
+        { text: ' creative cloud', hit: false },
+      ],
+    })
   })
 
   it('a query that matches only an action is the typing state, not empty — the action lists', () => {
@@ -222,6 +237,10 @@ describe('paletteEntries — the board’s states', () => {
   })
 
   it('empty: a note, ask pond, make the page under the pond, then a close spelling — no dead end', () => {
+    // "cabnet" (the board's own query): close enough to "cabinet plan" for `didYouMean`'s
+    // edit distance that KAN-390's subsequence tier excludes it as a near-miss spelling
+    // rather than list it as a hit; "chase the cable quote" has no "n" at all, so
+    // "cabnet" is not even a subsequence of it — it still misses every tier.
     const entries = paletteEntries(PALETTE_ITEMS, 'cabnet', { pondName: 'life' })
     expect(shape(entries)).toEqual([
       'N:no page or record called “cabnet”',
@@ -364,6 +383,18 @@ describe('paletteItems — every value from the owner that already derives it', 
     expect(items.filter((i) => i.id === 'journal')).toHaveLength(1)
   })
 
+  it('the 3-row cap applies after a trashed recent is dropped, not before (#390)', () => {
+    // The newest id ('gone') no longer resolves to a page — trashed since it was
+    // recorded — so the cap must land on the next 3 that still exist, not shrink
+    // the visible group to 2.
+    const items = paletteItems(ROWS, ['gone', 'personal', 'journal', 'entry'])
+    expect(items.slice(0, 3).map((i) => [i.id, i.recent])).toEqual([
+      ['personal', true],
+      ['journal', true],
+      ['entry', true],
+    ])
+  })
+
   it('a page with children scopes; a leaf, the root, or nothing selected does not', () => {
     expect(paletteScope(ROWS, 'journal')).toEqual({ id: 'journal', label: 'journal' })
     expect(paletteScope(ROWS, 'entry')).toBeNull()
@@ -500,7 +531,7 @@ describe('open, it is a combobox in the same box — not a dialog, not a portal'
     const chase = screen
       .getAllByRole('option')
       .find(
-        (o) => o.querySelector('[data-part="label"]')!.textContent === 'chase the cabinet quote'
+        (o) => o.querySelector('[data-part="label"]')!.textContent === 'chase the cable quote'
       )!
     expect(chase.querySelector('[data-part="hit"]')!.textContent).toBe('cab')
     fireEvent.change(input(), { target: { value: 'cabnet' } })
@@ -622,9 +653,11 @@ describe('the gut: one morphing element — nothing of the dialog, the wash or t
   it('the group label is the page eyebrow and the split is #278’s — one owner each, no second copy', () => {
     expect(command).toMatch(/pageEyebrowClass/)
     expect(read('src/components/molecules/palette-entries.ts')).toMatch(
-      /import \{ normalizeQuery, splitMatch \} from '\.\/slash-entries'/
+      /import \{ fold, type MatchRun, matchRuns, normalizeQuery, subsequenceMatch \} from '\.\/slash-entries'/
     )
-    expect(read('src/components/molecules/palette-entries.ts')).not.toMatch(/function splitMatch/)
+    expect(read('src/components/molecules/palette-entries.ts')).not.toMatch(
+      /function matchRuns|function fold\(|function subsequenceMatch\(/
+    )
     expect(paletteRow).toMatch(/import \{ ENTER, HINT, MATCH, Mark \} from '\.\/slash-row'/)
     expect(paletteRow).not.toMatch(
       /underline-offset|decoration-\[|max-w-\[45%\]|const (HINT|ENTER|MATCH)\b/

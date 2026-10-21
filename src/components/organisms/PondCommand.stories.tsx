@@ -477,7 +477,7 @@ async function assertOpened(root: HTMLElement, p: Palette, suggested: boolean, m
     'kitchen renovation',
     'budget',
     'journal',
-    ...(suggested ? ['chase the cabinet quote', 'log a workout'] : []),
+    ...(suggested ? ['chase the cable quote', 'log a workout'] : []),
   ])
 }
 
@@ -508,10 +508,10 @@ async function assertTyping(root: HTMLElement, p: Palette, m: Metrics = DESKTOP)
   await expect(labels(root)).toEqual([
     'cabinet plan',
     'cabinet quote',
-    'chase the cabinet quote',
+    'chase the cable quote',
     'ask pond about “cab”',
   ])
-  await assertHit(root, 'chase the cabinet quote', 'cab')
+  await assertHit(root, 'chase the cable quote', 'cab')
 }
 
 /** `cab`: pages, then records, then actions; the hit underlined, never washed. */
@@ -594,7 +594,9 @@ async function assertEmpty(root: HTMLElement, p: Palette, m: Metrics = DESKTOP) 
   )
 }
 
-/** `cabnet`: no dead end — the note, ask pond, make the page, a close spelling. */
+/** `cabnet` (the board's own query): no dead end — the note, ask pond, make the page, a
+ * close spelling. KAN-390's fuzzy subsequence tier excludes "cabinet plan" as a near-miss
+ * spelling; "chase the cable quote" has no "n" at all, so it still misses every tier. */
 export const Empty: Story = {
   name: 'empty',
   args: { open: true, defaultQuery: 'cabnet' },
@@ -842,7 +844,7 @@ export const Pointer: Story = {
 
     await userEvent.type(input, 'cab')
     await expect(groups(canvasElement)).toEqual(['pages', 'records', 'actions'])
-    await assertHit(canvasElement, 'chase the cabinet quote', 'cab')
+    await assertHit(canvasElement, 'chase the cable quote', 'cab')
 
     const quote = [...box.querySelectorAll<HTMLElement>('[role="option"]')].find(
       (r) => r.querySelector('[data-part="label"]')!.textContent === 'cabinet quote'
