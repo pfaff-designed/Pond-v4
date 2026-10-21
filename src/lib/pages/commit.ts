@@ -2,12 +2,13 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { QueryClient } from '@tanstack/react-query'
 import type { Database } from '@/lib/supabase/types'
 import type { Block } from '@/lib/documents/types'
-import { saveBlocks } from './client'
+import { saveBlocks, updateTitle } from './client'
 import { recordOwnEdit } from '@/lib/change-log/own-edit'
 import { changeLogKey } from '@/lib/change-log/keys'
 import { pagesKey } from '@/lib/pages/keys'
 import { closeBlockHistory } from '@/lib/modules/text/active-editor'
 import { sessionUndo } from '@/lib/change-log/session-undo'
+import type { PageWriteOp, PageWriter } from './page-write-queue'
 
 /**
  * Persist a page's blocks and propagate the write everywhere downstream: refresh
@@ -148,4 +149,40 @@ export function reembedPage(pageId: string): void {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ pageId }),
   }).catch(() => {})
+}
+
+/** A page's title and blocks together — the write queue's stored `T` (KAN-495),
+ *  since a 'typed' op's write can carry a rename alongside the block save. */
+export type PageWriteState = { title: string; blocks: Block[] }
+
+/**
+ * The `page-write-queue`'s writer for a page: one path from an applied op to
+ * the database, the change-log record and `sessionUndo`. Delegates the
+ * change-log append to `commitBlocks`'s own-edit branch above rather than
+ * re-implementing it against `appendOwnEdit` — one home for that logic, not
+ * two. A rejected `updateTitle` or `saveBlocks` propagates before either is
+ * reached, so a failed write never calls `sessionUndo.trackPending`.
+ *
+ * Hands `commitBlocks`'s `remembered` to the queue's `settle` side channel
+ * rather than awaiting it directly: the write itself (DB + sidebar refresh)
+ * is what `head()`/`idle()` should advance on, so `saved` flips the moment
+ * the save lands, not once the change-log record is additionally remembered
+ * by `sessionUndo` — that stricter wait is `drained()`'s job (KAN-302's
+ * `flushNow`), not the queue's own idle/applied notion.
+ */
+export function createPageWriter(
+  supabase: SupabaseClient<Database>,
+  queryClient: QueryClient,
+  pageId: string,
+  pondId: string | null
+): PageWriter<PageWriteState> {
+  return async (op: PageWriteOp<PageWriteState>, settle?: (promise: Promise<void>) => void) => {
+    if (op.kind === 'typed') await updateTitle(supabase, pageId, op.after.title)
+    const { remembered } = await commitBlocks(supabase, queryClient, pageId, op.after.blocks, {
+      ownEdit: true,
+      before: op.before.blocks,
+      pondId,
+    })
+    settle?.(remembered)
+  }
 }

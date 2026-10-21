@@ -10,6 +10,7 @@
  */
 import React from 'react'
 import { render, screen, within, fireEvent, waitFor, act } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Rail } from '@/components/organisms/Rail'
 import { PondContext, type PondContextValue } from '@/lib/pond/context'
@@ -17,6 +18,7 @@ import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { isStaged, stageId, unstageId } from '@/lib/deletion/staged-ids'
 import { pagesKey } from '@/lib/pages/keys'
 import { deletePage } from '@/lib/pages/client'
+import { trashPageUnlinked } from '@/lib/pages/child-links'
 import type { PageRow } from '@/lib/pages/tree'
 import type { Pond } from '@/lib/pond/client'
 
@@ -49,6 +51,11 @@ jest.mock('@/lib/pond/client', () => ({
 
 jest.mock('@/lib/change-log/store', () => ({
   appendOwnEdit: jest.fn().mockResolvedValue({}),
+}))
+
+jest.mock('@/lib/pages/child-links', () => ({
+  appendChildLinkUnder: jest.fn().mockResolvedValue(undefined),
+  trashPageUnlinked: jest.fn().mockResolvedValue(undefined),
 }))
 
 const AT = '2026-01-01T00:00:00Z'
@@ -108,7 +115,9 @@ describe('Rail — staged-ids wiring (KAN-300)', () => {
     fireEvent.mouseEnter(sleepRow)
     fireEvent.click(within(sleepRow).getByRole('button', { name: 'Delete Sleep' }))
 
-    await waitFor(() => expect(screen.queryByRole('treeitem', { name: /Sleep/ })).not.toBeInTheDocument())
+    await waitFor(() =>
+      expect(screen.queryByRole('treeitem', { name: /Sleep/ })).not.toBeInTheDocument()
+    )
     expect(isStaged('sleep')).toBe(true)
 
     // A refetch mid-toast resolving with the still-undeleted row (the server
@@ -130,5 +139,45 @@ describe('Rail — staged-ids wiring (KAN-300)', () => {
     await screen.findByRole('tree', { name: 'Workspace' })
     expect(deletePage).not.toHaveBeenCalled()
     expect(isStaged('leftover')).toBe(true)
+  })
+
+  // KAN-448: the staged delete's own commit (not the optimistic stage) is
+  // the only moment `trashPageUnlinked` may run — undoing from the toast
+  // must leave a trashed page's links untouched. The unlink-before-trash
+  // ordering itself, and the relink-on-throw path, are `trashPageUnlinked`'s
+  // own contract — covered in `child-links.test.ts`, not re-asserted here.
+  it('a committed delete calls the one unlink-trash seam with the node\'s subtree', async () => {
+    const client = newClient(ROWS)
+    mount(client)
+    const user = userEvent.setup()
+
+    const sleepRow = screen.getByRole('treeitem', { name: /Sleep/ })
+    fireEvent.mouseEnter(sleepRow)
+    fireEvent.click(within(sleepRow).getByRole('button', { name: 'Delete Sleep' }))
+
+    // Dismiss flushes the deferred commit ahead of the grace window.
+    await user.click(await screen.findByRole('button', { name: 'Dismiss' }))
+
+    await waitFor(() => expect(trashPageUnlinked).toHaveBeenCalled())
+    expect(trashPageUnlinked).toHaveBeenCalledWith(expect.anything(), expect.anything(), {
+      pondId: 'pond-1',
+      rootPageId: 'sleep',
+      subtreeIds: new Set(['sleep']),
+    })
+  })
+
+  it('clicking undo on the toast never calls the unlink-trash seam — the commit never ran', async () => {
+    const client = newClient(ROWS)
+    mount(client)
+    const user = userEvent.setup()
+
+    const sleepRow = screen.getByRole('treeitem', { name: /Sleep/ })
+    fireEvent.mouseEnter(sleepRow)
+    fireEvent.click(within(sleepRow).getByRole('button', { name: 'Delete Sleep' }))
+
+    await user.click(await screen.findByRole('button', { name: 'Undo' }))
+
+    await screen.findByRole('treeitem', { name: /Sleep/ })
+    expect(trashPageUnlinked).not.toHaveBeenCalled()
   })
 })

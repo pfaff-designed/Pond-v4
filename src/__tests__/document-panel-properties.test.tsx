@@ -15,7 +15,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DocumentPanel } from '@/components/organisms/DocumentPanel'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { pageEyebrowClass } from '@/components/atoms/kicker'
-import { formatAtomDate, parseDateInput } from '@/lib/properties/date-input'
+import { formatAtomDate, localToday, parseDateInput } from '@/lib/properties/date-input'
 
 jest.mock('next/navigation', () => ({
   useSearchParams: () => ({ get: (key: string) => (key === 'nodeId' ? 'page-1' : null) }),
@@ -37,9 +37,7 @@ jest.mock('@/lib/pages/client', () => ({
   defineSchema: (...args: unknown[]) => mockDefineSchema(...args),
   saveProps: (...args: unknown[]) => mockSaveProps(...args),
 }))
-jest.mock('@/lib/pages/commit', () => ({
-  commitBlocks: jest.fn().mockResolvedValue(undefined),
-}))
+jest.mock('@/lib/pages/commit', () => jest.requireActual('./helpers/page-commit-mock').pageCommitMock())
 
 function renderWith(props: Record<string, unknown>) {
   mockGetPage.mockResolvedValue({ id: 'page-1', title: 'Recipe', blocks: [], props })
@@ -331,7 +329,7 @@ describe('DocumentPanel — the inspector sits in the properties card', () => {
     const dueInput = screen.getByRole('textbox', { name: 'Due value' })
     await user.clear(dueInput)
     await user.type(dueInput, 'tomorrow')
-    const resolvedTomorrow = parseDateInput('tomorrow', new Date()) as string
+    const resolvedTomorrow = parseDateInput('tomorrow', localToday()) as string
     expect(within(card).getByText(formatAtomDate(resolvedTomorrow))).toBeInTheDocument()
     await user.keyboard('{Enter}')
     expect(mockSetProperty).toHaveBeenCalledWith(

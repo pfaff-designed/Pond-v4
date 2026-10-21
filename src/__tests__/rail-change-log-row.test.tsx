@@ -88,8 +88,11 @@ describe('rail — the change log row (KAN-94)', () => {
       />
     )
     const foot = screen.getByRole('tree', { name: 'Databases' })
+    // KAN-486: the heading is the LAST row now (its own rows sit above it,
+    // never below), so `change log` leads the list rather than following the
+    // heading at index 0.
     const rows = within(foot).getAllByRole('treeitem')
-    expect(rows[1]).toHaveAccessibleName('change log')
+    expect(rows[0]).toHaveAccessibleName('change log')
   })
 
   it('offers no mark/icon picker — there is no page behind it to write a mark to', () => {

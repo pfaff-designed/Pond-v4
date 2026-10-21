@@ -59,7 +59,7 @@ The orchestrator supervises its build loop, reviewers and verifier; the conducto
 A build loop (`ralph.sh`) keeps its own clock, so you do not interrupt it. Every pass runs under `timeout` at 10 minutes; the script beats `HB` before each pass, writes the `reapproach` line itself when a pass misses, tells the next pass what failed, and stops on the second miss. Poll it exactly as above. Only two readings need you:
 
 - `done` — read `RESULT`.
-- `stalled` — the script itself has hung: its beats carry the pass limit plus two minutes (25 minutes for the gates), so a stall means no pass ran. `pkill -f "ralph.sh <LOOP>"` (the running pass's process group goes with it), and treat the task as **stopped**.
+- `stalled` — the script itself has hung: its beats carry the pass limit plus two minutes (7 minutes for the gates, which should finish in under one), so a stall means no pass ran. `pkill -f "ralph.sh <LOOP>"` (the running pass's process group goes with it), and treat the task as **stopped**.
 
 The conductor, polling every orchestrator at once, run as `POLL` runs: it returns as soon as any orchestrator's state, reapproach count or step changes, or after about nine minutes, then prints every orchestrator's `check` line. Compare those three fields, never the line: its age column changes every tick.
 

@@ -47,9 +47,7 @@ jest.mock('@/lib/templates/client', () => ({
   getTemplate: jest.fn().mockResolvedValue(null),
 }))
 
-jest.mock('@/lib/pages/commit', () => ({
-  commitBlocks: jest.fn().mockResolvedValue(undefined),
-}))
+jest.mock('@/lib/pages/commit', () => jest.requireActual('./helpers/page-commit-mock').pageCommitMock())
 
 const mockGetPage = jest.fn()
 jest.mock('@/lib/pages/client', () => ({

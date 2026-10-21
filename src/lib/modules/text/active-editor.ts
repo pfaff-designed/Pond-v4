@@ -42,6 +42,22 @@ export const editorForSelection = (at: Selection | Node): Editor | null => {
   return null
 }
 
+/**
+ * The registered, editable text-block editor that owns a whole selection —
+ * both its anchor and its focus — or null if no single registered editor
+ * contains both, or the editor that does can't be written to.
+ */
+export const editableEditorForSelection = (sel: Selection): Editor | null => {
+  const { anchorNode, focusNode } = sel
+  if (!anchorNode || !focusNode) return null
+  for (const editor of editors.keys()) {
+    if (editor.view.dom.contains(anchorNode) && editor.view.dom.contains(focusNode)) {
+      return editor.isEditable ? editor : null
+    }
+  }
+  return null
+}
+
 /** The registered editor for a given block id, or null if that block isn't mounted. */
 export const editorForBlock = (blockId: string): Editor | null => {
   for (const [editor, id] of editors) {

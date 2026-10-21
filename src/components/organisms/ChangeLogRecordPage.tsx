@@ -14,7 +14,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { usePondId } from '@/lib/pond/context'
-import { workspaceUrl } from '@/lib/pages/nav'
+import { openWorkspaceUrl, workspaceUrl } from '@/lib/pages/nav'
 import { PAGE_COLUMN_PAD_PX, useSurfaceColumn } from '@/lib/layout/surface-column'
 import { getRecord, listRevertsOf, listRevisionsOf } from '@/lib/change-log/store'
 import type { ChangeLogRecord } from '@/lib/change-log/types'
@@ -222,7 +222,10 @@ export function ChangeLogRecordPage({ recordId }: { recordId: string }) {
 
   const handleOpenPage = useCallback(() => {
     if (!targetPage) return
-    router.push(workspaceUrl({ id: targetPage.id, type: targetPage.type, title: targetPage.title }))
+    openWorkspaceUrl(
+      workspaceUrl({ id: targetPage.id, type: targetPage.type, title: targetPage.title }),
+      router
+    )
   }, [router, targetPage])
 
   // Raises ONE new `proposed` revert record (`proposeRevert`), re-reading the
@@ -368,7 +371,7 @@ export function ChangeLogRecordPage({ recordId }: { recordId: string }) {
                 <Field label="reverted by">
                   <button
                     type="button"
-                    onClick={() => router.push(changeLogRecordUrl(revertedBy.recordId))}
+                    onClick={() => openWorkspaceUrl(changeLogRecordUrl(revertedBy.recordId), router)}
                     className="underline decoration-mn-mark-faint underline-offset-[3px]"
                   >
                     {revertedBy.clockLabel}

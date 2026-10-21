@@ -39,6 +39,10 @@ import { scopingContextNote } from '../src/app/api/chat/scoping.ts'
 // The SAME deterministic [Rejected] note the chat route injects — imported, not
 // re-implemented, so the eval reproduces production's no-retry floor (KAN-132).
 import { rejectedContextNote } from '../src/app/api/chat/rejected.ts'
+// The SAME one-sentence-naming-an-assumption check `proposal-answer.ts` ports
+// from this file's own KAN-132 heuristic — imported, not re-implemented, so
+// the eval and the module can't drift (KAN-334).
+import { isOneAssumptionSentence } from '../src/lib/conversation/proposal-answer.ts'
 
 const MODEL = AI_MODELS.standard // the app default (claude-sonnet-4-6)
 
@@ -114,6 +118,11 @@ type Scenario = {
    *  `primaryCall` — so this is checked against the turn's pooled chips,
    *  never against `actual`. */
   expectChipNaming?: RegExp
+  /** For propose_changes cases (KAN-334 assumption rule): assert the primary
+   *  call's `input.assumption` is exactly one sentence stating the assumption
+   *  (not merely describing the action) — checked via the same helper the
+   *  composer uses to render it, so this is what a person actually sees. */
+  expectOneAssumptionSentence?: boolean
 }
 
 /** A decisive turn-2/3 answer the harness sends if the model grills a SECOND
@@ -427,7 +436,7 @@ const ALL_SCENARIOS: Scenario[] = [
     note: '#63 + grill: after the grill, the brand-new log page is born with its table (date/exercise/sets/weight as columns) on turn 2.',
   },
 
-  // ── KAN-132: unclear → chip (never a card), clear edit → card ──
+  // ── KAN-132: unclear → chip (never a card), clear edit → one assumption sentence ──
   {
     name: 'unclear instruction → chip, no card',
     expect: null,
@@ -437,11 +446,12 @@ const ALL_SCENARIOS: Scenario[] = [
     note: 'STEWARD: a passing remark that merely mentions a possible change is not a request — no clarifying question, no propose_changes; answer in prose, then offer the edit as ONE suggest_followups chip naming it.',
   },
   {
-    name: 'clear edit → card',
+    name: 'clear edit → card plus one assumption sentence',
     expect: 'propose_changes',
+    expectOneAssumptionSentence: true,
     ctx: 'Current page "Kitchen Renovation". Blocks: [text id=b1 "Electrician visit: w/c 29 Sep. Cabinet measurement: w/c 22 Sep."], [todo id=b2 reno tasks].',
     text: 'push the electrician out by a week',
-    note: 'ROUTING: a clear, explicit edit still proposes at once (the request IS the confirmation).',
+    note: 'ROUTING ASSUMPTION: an explicit edit still proposes at once, but its `assumption` input is exactly ONE sentence stating what the edit assumes (here, which date "a week later" is measured from).',
   },
   {
     name: 'rejected edit → not re-proposed',
@@ -460,6 +470,7 @@ const ALL_SCENARIOS: Scenario[] = [
   {
     name: 'ask again → re-proposed',
     expect: 'propose_changes',
+    expectOneAssumptionSentence: true,
     ctx: [
       'Current page "Kitchen Renovation". Blocks: [text id=b1 "Electrician visit: w/c 29 Sep. Cabinet measurement: w/c 22 Sep."], [todo id=b2 reno tasks].',
       // regenerate() drops the rejected card's message before resending (handleAskAgain),
@@ -470,11 +481,12 @@ const ALL_SCENARIOS: Scenario[] = [
       .filter(Boolean)
       .join('\n\n'),
     text: 'push the electrician out by a week',
-    note: 'ROUTING NO RETRY: with the [Rejected] note for this tool call absent, the same edit the user asked for before is free to propose again.',
+    note: 'ROUTING NO RETRY + ASSUMPTION: with the [Rejected] note for this tool call absent, the same edit is free to propose again — and the live miss showed a re-proposal can drop the assumption sentence, so this re-proposal is checked for it too.',
   },
   {
-    name: 'ask again in own words → re-proposed',
+    name: 'ask again in own words → re-proposed with one assumption sentence',
     expect: 'propose_changes',
+    expectOneAssumptionSentence: true,
     ctx: [
       'Current page "Kitchen Renovation". Blocks: [text id=b1 "Electrician visit: w/c 29 Sep. Cabinet measurement: w/c 22 Sep."], [todo id=b2 reno tasks].',
       rejectedContextNote([
@@ -484,7 +496,7 @@ const ALL_SCENARIOS: Scenario[] = [
       .filter(Boolean)
       .join('\n\n'),
     text: 'ask again: move the electrician to w/c 6 oct',
-    note: 'ROUTING NO RETRY: "ask again: <edit>" in the user\'s own words, with the [Rejected] note for THIS edit still present, must still propose — an explicit "ask again" overrides no-retry.',
+    note: 'ROUTING NO RETRY + ASSUMPTION: the live miss — "ask again: <edit>" in the user\'s own words, with the [Rejected] note for THIS edit still present — must still propose (an explicit "ask again" overrides no-retry) and still carry exactly one assumption sentence.',
   },
 ]
 
@@ -502,6 +514,7 @@ type CreateInput = {
   parentTitle?: string
   blocks?: Array<{ type?: string; content?: string }>
   suggestions?: string[]
+  assumption?: string
 }
 
 /** The first tool call that is a routing decision. KAN-132: production lets the
@@ -546,6 +559,9 @@ function checkShape(call: ToolCall | undefined, s: Scenario, chips: string[]): b
   }
   if (pass && s.expectChipNaming) {
     pass = chips.some((sugg) => s.expectChipNaming!.test(sugg))
+  }
+  if (pass && s.expectOneAssumptionSentence) {
+    pass = isOneAssumptionSentence(input.assumption ?? '')
   }
   return pass
 }

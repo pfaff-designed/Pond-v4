@@ -284,13 +284,13 @@ describe('TextView — the text block edits in place as rendered prose', () => {
     expect(handleChange).toHaveBeenLastCalledWith(sample)
   })
 
-  it('an empty block opens focused, with the prose atom’s placeholder', async () => {
+  it('an empty block opens focused, with the caret line’s placeholder', async () => {
     render(<TextView data={{ id: 't', type: 'text', content: '' }} editable onChange={() => {}} />)
     const field = await findField()
     await waitFor(() => expect(field).toHaveFocus())
     const line = field.querySelector('p')!
     expect(line).toHaveClass('is-editor-empty')
-    expect(line).toHaveAttribute('data-placeholder', 'write something')
+    expect(line).toHaveAttribute('data-placeholder', 'type, or / for blocks')
   })
 
   it('an empty block with its own placeholder draws that, not the generic line', async () => {
@@ -311,6 +311,60 @@ describe('TextView — the text block edits in place as rendered prose', () => {
     const { id, ...withoutId } = data
     void id
     expect(moduleDataSchema.parse(withoutId)).toEqual(withoutId)
+  })
+
+  it('the placeholder-visible class leaves an empty line on blur, and returns once it is focused again', async () => {
+    render(<TextView data={{ id: 't', type: 'text', content: '' }} editable onChange={() => {}} />)
+    const field = await findField()
+    await waitFor(() => expect(field).toHaveFocus())
+    expect(field).toHaveClass('ProseMirror-focused')
+    expect(field.querySelector('p')).toHaveClass('is-editor-empty')
+    field.blur()
+    expect(field).not.toHaveFocus()
+    expect(field).not.toHaveClass('ProseMirror-focused')
+    expect(field.querySelector('p')).toHaveClass('is-editor-empty')
+    field.focus()
+    await waitFor(() => expect(field).toHaveFocus())
+    expect(field).toHaveClass('ProseMirror-focused')
+  })
+
+  it('an empty line that was never focused carries no placeholder-visible class', async () => {
+    render(<TextView data={sample} editable onChange={() => {}} />)
+    const field = await findField()
+    expect(field).not.toHaveFocus()
+    act(() => {
+      editorOf(field).commands.clearContent()
+    })
+    expect(field.querySelector('p')).toHaveClass('is-editor-empty')
+    expect(field).not.toHaveClass('ProseMirror-focused')
+  })
+
+  it('a Return after text opens an empty paragraph carrying `is-empty`, not `is-editor-empty` — its placeholder is gated on focus the same way', async () => {
+    render(<TextView data={{ id: 't', type: 'text', content: 'hello' }} editable onChange={() => {}} />)
+    const field = await findField()
+    const editor = editorOf(field)
+    act(() => {
+      editor.commands.setContent({
+        type: 'doc',
+        content: [
+          { type: 'paragraph', content: [{ type: 'text', text: 'hello' }] },
+          { type: 'paragraph' },
+        ],
+      })
+      editor.commands.focus('end')
+    })
+    const lines = field.querySelectorAll('p')
+    const openedLine = lines[lines.length - 1]
+    expect(openedLine).toHaveClass('is-empty')
+    expect(openedLine).not.toHaveClass('is-editor-empty')
+    expect(openedLine).toHaveAttribute('data-placeholder', 'type, or / for blocks')
+    await waitFor(() => expect(field).toHaveClass('ProseMirror-focused'))
+    field.blur()
+    expect(field).not.toHaveClass('ProseMirror-focused')
+    expect(openedLine).toHaveClass('is-empty')
+    expect(TEXT_PROSE_CLASS).toContain(
+      '[&.ProseMirror-focused_:is(.is-editor-empty,.is-empty)]:before:content-[attr(data-placeholder)]'
+    )
   })
 
   it('an empty heading reads `untitled`, the same before the editor loads and after', async () => {

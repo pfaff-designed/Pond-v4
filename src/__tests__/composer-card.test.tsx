@@ -342,6 +342,27 @@ describe('the composer card — the thread: head, fold, turns', () => {
     expect(document.querySelectorAll('[data-part="turn"]')).toHaveLength(1)
   })
 
+  it('pins close, minimize, maximize to the top left of the card, above the thread', async () => {
+    mockMessages = thread(1)
+    renderTerminal()
+    await waitReady()
+
+    const card = document.querySelector('[data-part="composer-card"]')!
+    const bar = card.querySelector(':scope > [data-part="composer-window-bar"]')!
+    const threadBody = card.querySelector(':scope > [data-part="composer-thread"]')!
+    expect(bar.compareDocumentPosition(threadBody)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(bar.querySelector('[data-part="composer-window-controls"]')).not.toBeNull()
+    expect(
+      document.querySelector('[data-part="answer-actions"]')!.querySelector(
+        '[data-part="composer-window-controls"]'
+      )
+    ).toBeNull()
+    expect(screen.getAllByRole('button', { name: 'close' })).toHaveLength(1)
+    expect(
+      [...bar.querySelectorAll('button')].map((button) => button.getAttribute('aria-label'))
+    ).toEqual(['close', 'minimize', 'maximize'])
+  })
+
   it('names the thread and counts its turns; ✕ closes it and new thread clears it', async () => {
     mockMessages = thread(2)
     renderTerminal()
@@ -358,7 +379,7 @@ describe('the composer card — the thread: head, fold, turns', () => {
     expect(await screen.findByRole('button', { name: 'Open composer' })).toBeInTheDocument()
   })
 
-  it('a multi-turn thread draws exactly one close — the head’s, not the chips row’s too', async () => {
+  it('a multi-turn thread draws exactly one close — the card’s, not the chips row’s too', async () => {
     mockMessages = thread(2)
     renderTerminal()
     await waitReady()
@@ -521,6 +542,7 @@ describe('the composer card — minimize keeps the thread (KAN-323)', () => {
     expect(card().getAttribute('data-minimized')).toBe('true')
     expect(card().style.height).toBe('')
     expect(document.querySelector('[data-part="composer-thread"]')).toHaveAttribute('hidden')
+    expect(document.querySelector('[data-part="composer-window-bar"]')).not.toBeNull()
 
     await user.type(line(), 'still here?')
     expect(card().getAttribute('data-minimized')).toBeNull()

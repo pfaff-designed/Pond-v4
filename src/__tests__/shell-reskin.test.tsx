@@ -61,9 +61,7 @@ jest.mock('@/lib/pages/home', () => ({
   HOME_TYPE: 'home',
   getOrCreateHomePage: jest.fn().mockResolvedValue({ id: 'home-1', title: 'Life', blocks: [] }),
 }))
-jest.mock('@/lib/pages/commit', () => ({
-  commitBlocks: jest.fn().mockResolvedValue(undefined),
-}))
+jest.mock('@/lib/pages/commit', () => jest.requireActual('./helpers/page-commit-mock').pageCommitMock())
 jest.mock('@/lib/pages/client', () => ({
   updateTitle: jest.fn().mockResolvedValue(undefined),
   createPage: jest.fn(),
@@ -302,20 +300,16 @@ describe('RailView — the pond name header (AC3)', () => {
     expect(name.closest('[role="tree"]')).toBeNull()
   })
 
-  it('has no switcher button and no chevron without ponds; the bell is a decorative mark', () => {
+  it('has no switcher button, no chevron and no bell without ponds', () => {
     const { container } = renderRail()
     const head = container.querySelector<HTMLElement>('[data-part="rail-head"]')!
     expect(head.querySelector('button')).toBeNull()
-    // The only svg is the bell's — a chevron would be a second one.
-    const bell = head.querySelector<HTMLElement>('[data-part="reminders-bell"]')!
-    expect(head.querySelectorAll('svg')).toHaveLength(1)
-    expect(bell.tagName.toLowerCase()).toBe('svg')
-    expect(bell).toHaveAttribute('aria-hidden', 'true')
-    expect(bell.closest('[role="tree"]')).toBeNull()
+    expect(head.querySelector('[data-part="reminders-bell"]')).toBeNull()
+    expect(head.querySelectorAll('svg')).toHaveLength(0)
     expect(head).not.toHaveTextContent('Pond')
   })
 
-  it('the head is padded 0 16px 12px, name left and bell right, centred, gap 8', () => {
+  it('the head is padded 0 16px 12px, centred, gap 8', () => {
     const { container } = renderRail()
     const head = container.querySelector<HTMLElement>('[data-part="rail-head"]')!
     expect(head.className).toMatch(/\bpx-4\b/)

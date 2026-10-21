@@ -394,3 +394,60 @@ describe('buildChatContext skipNodeContext', () => {
     expect(context).toContain('the wild places')
   })
 })
+
+// ── buildChatContext: an unreadable current node says so (KAN-341 item 6) ──
+
+describe('buildChatContext current-node unavailable note', () => {
+  const page = (id: string, overrides: Partial<Row> = {}): Row => ({
+    id,
+    user_id: 'user-1',
+    pond_id: 'pond-1',
+    parent_id: null,
+    type: 'page',
+    title: 'the wild places',
+    blocks: [],
+    props: {},
+    order: 0,
+    ...overrides,
+  })
+
+  it('pushes "[Current node] unavailable" rather than silence for a node in another pond', async () => {
+    const db = makeFakeSupabase([page('page-1')], undefined, {
+      ponds: [{ id: 'pond-2', user_id: 'user-1', order: 0 }],
+    }) as never
+    const context = await buildChatContext(db, 'user-1', {
+      nodeId: 'page-1',
+      pondId: 'pond-2',
+      skipNodeContext: false,
+    })
+    expect(context).toContain('[Current node] unavailable')
+    expect(context).not.toContain('the wild places')
+  })
+
+  it('pushes "[Current node] unavailable" rather than silence for a trashed node', async () => {
+    const db = makeFakeSupabase([page('page-1', { deleted_at: '2026-10-16T00:00:00Z' })], undefined, {
+      ponds: [{ id: 'pond-1', user_id: 'user-1', order: 0 }],
+    }) as never
+    const context = await buildChatContext(db, 'user-1', {
+      nodeId: 'page-1',
+      pondId: 'pond-1',
+      skipNodeContext: false,
+    })
+    expect(context).toContain('[Current node] unavailable')
+    // the trashed page is excluded from the current-node block, not from the
+    // (untouched, item-6-out-of-scope) workspace outline below it.
+    expect(context.split('\n\n')[0]).toBe('[Current node] unavailable')
+  })
+
+  it('withholds both the page and the note when the chip is hidden (skipNodeContext)', async () => {
+    const db = makeFakeSupabase([page('page-1')], undefined, {
+      ponds: [{ id: 'pond-2', user_id: 'user-1', order: 0 }],
+    }) as never
+    const context = await buildChatContext(db, 'user-1', {
+      nodeId: 'page-1',
+      pondId: 'pond-2',
+      skipNodeContext: true,
+    })
+    expect(context).not.toContain('[Current node]')
+  })
+})

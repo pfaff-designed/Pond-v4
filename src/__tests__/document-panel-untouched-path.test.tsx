@@ -14,12 +14,13 @@
  */
 
 import React from 'react'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DocumentPanel } from '@/components/organisms/DocumentPanel'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { PREMADE_TEMPLATES } from '@/lib/templates/premade'
 import { instantiateTemplate } from '@/lib/templates/instantiate'
+import { PROSE_LINE_PLACEHOLDER } from '@/lib/modules/text/prose'
 import { BLANK_TEXT_GROUP } from '@/components/molecules/slash-entries'
 import { findTextBlock, findAllTextBlocks, writeInTextBlock } from './helpers/text-block'
 
@@ -45,7 +46,7 @@ jest.mock('@/lib/pages/client', () => ({
   updateTitle: jest.fn().mockResolvedValue(undefined),
   setProperty: jest.fn().mockResolvedValue(undefined),
 }))
-jest.mock('@/lib/pages/commit', () => ({ commitBlocks: jest.fn().mockResolvedValue(undefined) }))
+jest.mock('@/lib/pages/commit', () => jest.requireActual('./helpers/page-commit-mock').pageCommitMock())
 
 beforeEach(() => {
   jest.clearAllMocks()
@@ -99,13 +100,42 @@ describe('an untouched page, walked end to end on its real surface (KAN-119)', (
     const menu = await screen.findByRole('listbox', { name: 'blocks' })
     expect(groupsOf(menu)).toEqual(['templates', BLANK_TEXT_GROUP, 'blocks', 'templates', 'pages'])
 
-    // PATH_STEP 5: typing a letter instead drops the hint/mono class and the
-    // eyebrow falls back to the ordinary save-state line.
+    // PATH_STEP 5: typing a letter instead drops the hint (tiptap removes
+    // `is-editor-empty`, which is what the mono `::before` rule is scoped to)
+    // and the eyebrow falls back to the ordinary save-state line.
     writeInTextBlock(field, 'h')
     await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument())
     const typedField = await findTextBlock()
-    expect(typedField.closest('[class*="before:font-mono"]')).toBeNull()
+    expect(typedField.querySelector('.is-editor-empty')).toBeNull()
     await waitFor(() => expect(screen.getByText('saving…')).toBeInTheDocument())
     expect(screen.queryByText('new — in recipes')).toBeNull()
+  })
+
+  it("the `page` template's own seeded line never autofocuses on arrival (KAN-345 rule 1: a fresh page's body is blank at rest) — no hint at all until the trailing gap is clicked, then the generic line", async () => {
+    renderUntouchedPage()
+
+    // No blur, no click: the line arrived with the page, so rule 1 says it
+    // never took focus on its own in the first place. Tiptap applies
+    // `autofocus` from a `window.setTimeout(..., 0)` queued at mount
+    // (`@tiptap/core`'s `Editor.mount`) — flush real time past that before
+    // asserting, or this reads "not focused yet" even with the bug (autofocus
+    // left on) still in place: confirmed with a bare 0ms flush, which still let
+    // this test pass with the bug reverted; 50ms (RTL's own default `waitFor`
+    // poll interval) reliably outlasts it.
+    const field = await findTextBlock()
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    })
+    expect(field).not.toHaveFocus()
+    expect(field).not.toHaveClass('ProseMirror-focused')
+    expect(document.body.textContent).not.toContain('blocks and templates')
+    expect(document.querySelector('[data-placeholder*="blocks and templates"]')).toBeNull()
+    expect(document.querySelector('[data-hover-ghost="true"]')).toBeNull()
+
+    fireEvent.click(screen.getByTestId('trailing-block-gap'))
+
+    await waitFor(() => expect(field).toHaveClass('ProseMirror-focused'))
+    const line = field.querySelector('.is-editor-empty')!
+    expect(line).toHaveAttribute('data-placeholder', PROSE_LINE_PLACEHOLDER)
   })
 })

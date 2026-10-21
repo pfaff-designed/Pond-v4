@@ -20,7 +20,7 @@
 
 import { useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { ModuleViewProps } from '../types'
-import type { ViewBlock, ViewSavedView } from './schema'
+import type { ViewBlock, ViewMode, ViewSavedView } from './schema'
 import { useSiblingBlocks } from '../sibling-context'
 import { viewCollectionId } from '../block-frame'
 import { useCollectionRows } from './use-collection-rows'
@@ -51,7 +51,12 @@ import { isChartCard } from './chart-compact'
 import { useChartProvenance } from './use-chart-provenance'
 import type { ChartProvenance } from '../chart/chrome'
 import { ViewNotice } from './notice'
-import { usePointerBucketDrag } from './use-pointer-bucket-drag'
+import {
+  DRAG_ACTIVE_CLASS,
+  DRAG_LIFT_CLASS,
+  DRAG_OVER_CLASS,
+  usePointerBucketDrag,
+} from './use-pointer-bucket-drag'
 import { isStepOutKey } from './step-out-key'
 import { usePointerGanttDrag } from './use-gantt-bar-drag'
 import {
@@ -99,9 +104,18 @@ import { DraftInput } from '@/components/atoms/draft-input'
 import { RecordPeek } from './record-peek'
 import { CollectionList } from './list'
 import { CollectionCalendar } from './collection-calendar'
-import { ROW_FOCUS_VISIBLE, ROW_FOCUS_VISIBLE_BASE, useRecordSelection } from './use-record-selection'
+import {
+  ROW_FOCUS_VISIBLE,
+  ROW_FOCUS_VISIBLE_BASE,
+  useRecordSelection,
+} from './use-record-selection'
 import { shouldSelectCardFromClick, shouldSelectRowFromClick } from './card-click'
-import { ViewBar, type ViewBarView } from '@/components/molecules/ViewBar'
+import {
+  ViewBar,
+  ViewGroupMenu,
+  ViewLayoutMenu,
+  type ViewBarView,
+} from '@/components/molecules/ViewBar'
 import { useBlockRow } from '../block-row-context'
 
 /**
@@ -242,6 +256,8 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
     isLoading,
     isError,
     setValue,
+    setValueAsStep,
+    setValuesAsStep,
     addRow,
     renameRow,
     updateSchema,
@@ -316,9 +332,27 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
   // active view is whichever one `CollectionView`'s bar has LOCALLY selected, not the
   // persisted `activeViewId` — a person can switch the bar without that being an edit,
   // so `activeId` arrives from `CollectionView` on every call.
+  // A write that changes the resolved kind (KAN-519) is structural. A list group
+  // choice is the same kind and is structural too (KAN-521): the patch carries
+  // `listFlat` or `groupBy`. `commitStep` is the host's flush (BlockCanvas), so
+  // the shell undo chord restores that one block. No host — Storybook, a bare
+  // `ViewView` — has nothing to flush, and the same next block falls back to
+  // `onChange` (todo/entries). An empty patch (the current group row) writes
+  // nothing, the same early return as `ViewLayoutMenu`.
+  const { commitStep } = useBlockRow()
+  const commit = (next: ViewBlock) => (commitStep ?? onChange)?.(next)
   const onConfigChange = onChange
-    ? (patch: ViewConfigPatch, activeId?: string) =>
-        onChange(applyConfigPatch(data, patch, activeId))
+    ? (patch: ViewConfigPatch, activeId?: string) => {
+        if (Object.keys(patch).length === 0) return
+        const next = applyConfigPatch(data, patch, activeId)
+        const kindOf = (block: ViewBlock) => activeSavedView(block, activeId).mode
+        const groups = 'listFlat' in patch || 'groupBy' in patch
+        if (groups || kindOf(data) !== kindOf(next)) {
+          commit(next)
+          return
+        }
+        onChange(next)
+      }
     : undefined
 
   // A row IS a page: `open ›` on the record peek navigates to it through the page-link
@@ -346,6 +380,8 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
       editable={editable}
       linked={!!data.collectionId}
       onEdit={setValue}
+      onMoveDate={setValueAsStep}
+      onMoveDates={setValuesAsStep}
       onAddRow={addRow}
       onRenameRow={renameRow}
       onConfigChange={onConfigChange}
@@ -380,12 +416,18 @@ export interface CollectionViewProps {
    *  "target unavailable" notice when a linked target is deleted or isn't a collection. */
   linked?: boolean
   onEdit?: (rowId: string, key: string, value: PropertyValue) => void
+  /** A calendar drag-drop's own date write (KAN-385) — logged and undone separately
+   *  from `onEdit`'s pause-grouped edits. Only the calendar branch forwards it. */
+  onMoveDate?: (rowId: string, key: string, value: PropertyValue) => void
+  /** A calendar bar drag writes both ends in one call (KAN-458): the start field,
+   *  then the end field. Only the calendar branch forwards it. */
+  onMoveDates?: (rowId: string, entries: { key: string; value: PropertyValue }[]) => void
   /** Manual card/row authoring (board-authoring Slice 2). Present only on the live
    *  editable host; Storybook renders static data and omits them. */
   onAddRow?: (values?: Record<string, PropertyValue>) => Promise<string | null>
   onRenameRow?: (rowId: string, title: string) => void
-  /** Rewrite the view block's own config — chart and big-number setup. Never its
-   *  kind (fixed once made, KAN-44). Absent on read-only / Storybook hosts. The
+  /** Rewrite the view block's own config — chart and big-number setup, and a
+   *  layout choice (`mode`, KAN-519). Absent on read-only / Storybook hosts. The
    *  optional second arg is which saved view's config to land the patch on (KAN-32
    *  fix) — `CollectionView` passes its own LOCAL active view, never the
    *  persisted `activeViewId`. */
@@ -422,6 +464,8 @@ export function CollectionView({
   editable,
   linked,
   onEdit,
+  onMoveDate,
+  onMoveDates,
   onAddRow,
   onRenameRow,
   onConfigChange,
@@ -572,6 +616,7 @@ export function CollectionView({
           schema={schema}
           rows={processed}
           groupBy={activeConfig.groupBy}
+          listFlat={activeConfig.listFlat}
           editable={editable}
           onEdit={onEdit}
           onAddRow={onAddRow}
@@ -587,10 +632,16 @@ export function CollectionView({
           groupBy={activeConfig.groupBy}
           editable={editable}
           onEdit={onEdit}
+          onMoveDate={onMoveDate}
+          onMoveDates={onMoveDates}
           onAddRow={onAddRow}
           onRenameRow={onRenameRow}
           onOpenRow={onOpenRow}
           onAddDateField={onAddDateField}
+          span={activeConfig.span}
+          startId={activeConfig.startDate}
+          endId={activeConfig.endDate}
+          onConfigChange={onConfigChange ? handleConfigChange : undefined}
         />
       ) : activeConfig.mode === 'gallery' ? (
         <CollectionGallery
@@ -666,8 +717,11 @@ export function CollectionView({
  * gate"). The saved-view bar is reading too (switching is not editing), so it
  * renders whenever the block has `views`; only "＋ view" and the chart/big-
  * number setup below it are affordances, gated on `editable && onConfigChange`.
- * A view's kind is fixed once made (ADR 0009), so there is no in-place switch
- * between kinds here.
+ * The layout chip sits before those tabs on every view, including a legacy
+ * block with no `views[]` (KAN-519). Choosing a layout writes that view's kind
+ * in place through the same gate. A reader sees the word and gets no button.
+ * A list's fact is that same gate (KAN-521): a button when editable, the
+ * sentence alone for a reader. A board's fact stays the span.
  */
 function ViewControls({
   config,
@@ -692,14 +746,13 @@ function ViewControls({
   editable?: boolean
   onConfigChange?: (patch: ViewConfigPatch) => void
 }) {
-  // The head's fact: a board reads its lanes' property, a list the date it groups by.
-  const groupDef =
-    config.mode === 'board'
-      ? pickGroupDef(schema, config.groupBy)
-      : config.mode === 'list'
-        ? pickDateDef(schema, config.groupBy)
-        : undefined
+  // A board's fact names its lanes. A list's fact is `ViewGroupMenu`.
+  const groupDef = config.mode === 'board' ? pickGroupDef(schema, config.groupBy) : undefined
   const groupName = groupDef?.name.toLowerCase()
+  const layoutEditable = Boolean(editable && onConfigChange)
+  const handleLayout = (mode: ViewMode) => {
+    onConfigChange?.({ mode })
+  }
 
   return (
     <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -716,6 +769,15 @@ function ViewControls({
           <span data-part="db-count" className="text-[10.5px] font-medium text-mn-text-meta">
             {recordCount} record{recordCount === 1 ? '' : 's'}
           </span>
+          {config.mode === 'list' && (
+            <ViewGroupMenu
+              schema={schema}
+              groupBy={config.groupBy}
+              listFlat={config.listFlat}
+              editable={layoutEditable}
+              onGroup={(patch) => onConfigChange?.(patch)}
+            />
+          )}
           {groupName && (
             <>
               <span aria-hidden="true" className="text-[10.5px] font-medium text-mn-text-meta">
@@ -727,17 +789,20 @@ function ViewControls({
             </>
           )}
         </div>
-        {savedViews && savedViews.length > 0 && activeViewId && onSelectView && (
-          <ViewBar
-            views={savedViews.map((view): ViewBarView => ({
-              id: view.id,
-              label: view.label ?? view.kind,
-            }))}
-            activeId={activeViewId}
-            onSelect={onSelectView}
-            showAddView={showAddView}
-          />
-        )}
+        <div className="flex items-center gap-[4px]">
+          <ViewLayoutMenu mode={config.mode} editable={layoutEditable} onLayout={handleLayout} />
+          {savedViews && savedViews.length > 0 && activeViewId && onSelectView && (
+            <ViewBar
+              views={savedViews.map((view): ViewBarView => ({
+                id: view.id,
+                label: view.label ?? view.kind,
+              }))}
+              activeId={activeViewId}
+              onSelect={onSelectView}
+              showAddView={showAddView}
+            />
+          )}
+        </div>
       </div>
 
       {editable && onConfigChange && config.mode === 'chart' && (
@@ -1054,15 +1119,22 @@ function CollectionBoard({
 
   // Dropping into a lane writes that option id onto the group-by property; the
   // "No <name>" lane clears it (null). A drop into the same lane is idempotent.
-  const { drag, overKey, registerBucket, onCardPointerDown, isClickSuppressed, containerHandlers } =
-    usePointerBucketDrag({
-      editable: !!editable,
-      onDrop: (rowId, key) => {
-        if (!grouped) return
-        const target = grouped.groups.find((g) => groupKey(g.id) === key)
-        if (target) onEdit?.(rowId, grouped.def.id, target.id)
-      },
-    })
+  const {
+    drag,
+    overKey,
+    registerBucket,
+    onCardPointerDown,
+    isClickSuppressed,
+    containerHandlers,
+    containerClassName,
+  } = usePointerBucketDrag({
+    editable: !!editable,
+    onDrop: (rowId, key) => {
+      if (!grouped) return
+      const target = grouped.groups.find((g) => groupKey(g.id) === key)
+      if (target) onEdit?.(rowId, grouped.def.id, target.id)
+    },
+  })
 
   const {
     rootRef: boardRef,
@@ -1132,7 +1204,7 @@ function CollectionBoard({
   const repeatDef = pickRepeatDef(schema)
 
   return (
-    <div ref={boardRef} {...containerHandlers}>
+    <div ref={boardRef} className={containerClassName} {...containerHandlers}>
       {/*
         The board is a GRID of equal lanes, not a horizontally scrolling row:
         `repeat(N, minmax(0,1fr))` at gap 10, N the lane count. A lane is an option of
@@ -1158,7 +1230,7 @@ function CollectionBoard({
               className={[
                 'flex min-h-[380px] flex-col gap-[7px] rounded-[16px] p-[7px]',
                 'transition-colors duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none',
-                isOver ? 'bg-mn-text/[0.08]' : 'bg-mn-text/[0.04]',
+                isOver ? DRAG_OVER_CLASS : 'bg-mn-text/[0.04]',
               ].join(' ')}
             >
               <header
@@ -1186,15 +1258,7 @@ function CollectionBoard({
                     {...keyboardProps(row.id)}
                     // The card is the drag target: a press anywhere on it starts a
                     // candidate drag, and below the hook's threshold it stays a click.
-                    onPointerDown={
-                      editable
-                        ? (e) => {
-                            if (!(e.target instanceof Element) || !e.target.closest('button, a')) {
-                              onCardPointerDown(e, row.id)
-                            }
-                          }
-                        : undefined
-                    }
+                    onPointerDown={editable ? (e) => onCardPointerDown(e, row.id) : undefined}
                     // The shadow matches no token (`--mn-shadow-card`'s second layer is
                     // 0 8px 24px), so it is written out.
                     className={[
@@ -1205,7 +1269,7 @@ function CollectionBoard({
                       // `mn-text` flips to paper in dark, so the outline does too.
                       ROW_FOCUS_VISIBLE_BASE,
                       isSelected ? 'outline-solid' : 'outline-none focus-visible:outline-solid',
-                      isDragging ? 'opacity-30' : '',
+                      isDragging ? DRAG_LIFT_CLASS : '',
                       editable ? 'cursor-grab' : 'cursor-pointer',
                     ].join(' ')}
                   >
@@ -1606,7 +1670,7 @@ function CollectionGantt({
 
   return (
     <div {...containerHandlers}>
-      <div className={drag?.active ? 'cursor-grabbing select-none' : undefined}>
+      <div className={drag?.active ? `cursor-grabbing ${DRAG_ACTIVE_CLASS}` : undefined}>
         {noBars ? (
           <PondBlockEmpty box="void" line={GANTT_EMPTY_LINE} />
         ) : (

@@ -12,6 +12,7 @@ import type { Row } from './helpers/fake-supabase'
 const page: Row = {
   id: 'p1',
   user_id: 'user-1',
+  pond_id: 'pond-1',
   parent_id: null,
   type: 'page',
   title: 'Untitled',
@@ -24,7 +25,7 @@ describe('fetchNodeContext reads the pages row fresh per call', () => {
   it('reflects a title + blocks change made between two calls, no caching', async () => {
     const sb = makeFakeSupabase([page])
 
-    const before = await fetchNodeContext(sb as never, 'user-1', 'p1')
+    const before = await fetchNodeContext(sb as never, 'user-1', 'p1', 'pond-1')
     expect(before?.title).toBe('Untitled')
     expect(before?.documents[0]?.blocks).toEqual([
       { id: 'b1', type: 'text', content: 'Hello world' },
@@ -37,10 +38,30 @@ describe('fetchNodeContext reads the pages row fresh per call', () => {
       blocks: [{ id: 'b1', type: 'text', content: 'Hello moon xyz' }],
     })
 
-    const after = await fetchNodeContext(sb as never, 'user-1', 'p1')
+    const after = await fetchNodeContext(sb as never, 'user-1', 'p1', 'pond-1')
     expect(after?.title).toBe('Plans')
     expect(after?.documents[0]?.blocks).toEqual([
       { id: 'b1', type: 'text', content: 'Hello moon xyz' },
     ])
+  })
+})
+
+// ── KAN-341 item 5: pond scope + trash exclusion ────────────────────────────
+
+describe('fetchNodeContext scopes by pond and excludes trash', () => {
+  it("returns null for a row in another pond — same as an unresolved id", async () => {
+    const sb = makeFakeSupabase([page])
+
+    const data = await fetchNodeContext(sb as never, 'user-1', 'p1', 'pond-2')
+
+    expect(data).toBeNull()
+  })
+
+  it('returns null for a trashed row (deleted_at set) — same as an unresolved id', async () => {
+    const sb = makeFakeSupabase([{ ...page, deleted_at: '2026-10-16T00:00:00Z' }])
+
+    const data = await fetchNodeContext(sb as never, 'user-1', 'p1', 'pond-1')
+
+    expect(data).toBeNull()
   })
 })

@@ -42,9 +42,11 @@ jest.mock('@/lib/pages/client', () => ({
 }))
 
 const mockCommitBlocks = jest.fn()
-jest.mock('@/lib/pages/commit', () => ({
-  commitBlocks: (...args: unknown[]) => mockCommitBlocks(...args),
-}))
+jest.mock('@/lib/pages/commit', () =>
+  jest.requireActual('./helpers/page-commit-mock').pageCommitMock({
+    commitBlocks: (...args: unknown[]) => mockCommitBlocks(...args),
+  })
+)
 
 const tableWith = (cell: string): Block =>
   ({
@@ -149,14 +151,22 @@ describe('DocumentPanel — each save says what it changed', () => {
     mount()
     fireEvent.change(await screen.findByDisplayValue('Saw'), { target: { value: 'Mitre saw' } })
     await waitFor(() => expect(mockCommitBlocks).toHaveBeenCalledTimes(1), pause)
+    expect(savedCall(0).opts).toMatchObject({ before: LOADED })
 
     fireEvent.change(await screen.findByDisplayValue('Mitre saw'), {
       target: { value: 'Mitre saw, 10in' },
     })
-    await waitFor(() => expect(mockCommitBlocks).toHaveBeenCalledTimes(2), pause)
 
-    // Nothing of the first pause was stored, so the second still starts from the load.
+    // The halted op is retried first — still starting from the load, since
+    // nothing of the failed attempt was ever stored — and only once that
+    // retry lands does the new edit get its own record, starting from what
+    // the retry actually stored. Neither record's `before` is a value the
+    // store never held.
+    await waitFor(() => expect(mockCommitBlocks).toHaveBeenCalledTimes(3), pause)
     expect(savedCall(1).opts).toMatchObject({ before: LOADED })
+    expect(savedCall(1).blocks).toEqual([tableWith('Mitre saw')])
+    expect(savedCall(2).opts).toMatchObject({ before: [tableWith('Mitre saw')] })
+    expect(savedCall(2).blocks).toEqual([tableWith('Mitre saw, 10in')])
     spy.mockRestore()
   })
 
