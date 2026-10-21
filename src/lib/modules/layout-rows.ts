@@ -25,15 +25,53 @@ function toTwelfths(width: BlockWidth | undefined): number {
 }
 
 /**
- * Pack `blocks` into rows: each row's widths sum to 12 twelfths (full) or less. A
- * block that would push the current row over 12 starts a new row instead, and so
- * does a block carrying `rowStart: true`, even with room left in the current row
- * (KAN-440) — a drop plan sets it so a partial-width block left behind never
- * re-packs the rows after it. Rows are built in array order, so flattening them
- * back out reproduces that order — a caller that needs a block's original index
- * can read it off the flattened position instead of threading a wrapper through.
+ * A named width's fixed percent of the content column, rounded to one decimal
+ * place (⅓ and ⅔ don't divide evenly) — the same rounding a free width is kept
+ * to at its write boundary (KAN-441), so a block committed at a snapped ⅓ and
+ * a block set to the named `'1/3'` render pixel-identical via `widthPercent`.
  */
-export function layoutRows<T extends { width?: BlockWidth; rowStart?: boolean }>(
+const NAMED_WIDTH_PERCENT: Record<BlockWidth, number> = {
+  '1/4': 25,
+  '1/3': 33.3,
+  '1/2': 50,
+  '2/3': 66.7,
+  '3/4': 75,
+  full: 100,
+}
+
+/**
+ * A width's percent of the content column (KAN-441): a named width's fixed
+ * percent (`NAMED_WIDTH_PERCENT`), or a free width's own value — a number
+ * already IS its percent of the column. Absent means full (6x).
+ */
+export function widthPercent(width: BlockWidth | number | undefined): number {
+  if (typeof width === 'number') return width
+  return NAMED_WIDTH_PERCENT[width ?? 'full']
+}
+
+/**
+ * `widthPercent`, in tenths of a percent (integer) rather than a float — row
+ * sums compare exactly this way, the same reason `TWELFTHS` exists, now
+ * generalized to cover a free numeric width packing or stacking beside a
+ * named one (KAN-441).
+ */
+export function widthTenths(width: BlockWidth | number | undefined): number {
+  return Math.round(widthPercent(width) * 10)
+}
+
+/**
+ * Pack `blocks` into rows: each row's widths sum to 1000 tenths-of-a-percent
+ * (full) or less. A block that would push the current row over starts a new
+ * row instead, and so does a block carrying `rowStart: true`, even with room
+ * left in the current row (KAN-440) — a drop plan sets it so a partial-width
+ * block left behind never re-packs the rows after it. A free numeric width
+ * (KAN-441) packs and overflows by its own percent the same way, alongside
+ * named widths in the same row. Rows are built in array order, so flattening
+ * them back out reproduces that order — a caller that needs a block's
+ * original index can read it off the flattened position instead of threading
+ * a wrapper through.
+ */
+export function layoutRows<T extends { width?: BlockWidth | number; rowStart?: boolean }>(
   blocks: readonly T[]
 ): T[][] {
   const rows: T[][] = []
@@ -41,8 +79,8 @@ export function layoutRows<T extends { width?: BlockWidth; rowStart?: boolean }>
   let used = 0
 
   for (const block of blocks) {
-    const width = toTwelfths(block.width)
-    if (row.length > 0 && (block.rowStart === true || used + width > 12)) {
+    const width = widthTenths(block.width)
+    if (row.length > 0 && (block.rowStart === true || used + width > 1000)) {
       rows.push(row)
       row = []
       used = 0
@@ -71,28 +109,57 @@ const EQUAL_SHARE_WIDTH: Record<number, BlockWidth> = {
 /** Below a quarter, a dropped block can't fit beside anything — the row shares equally instead (6x). */
 const MIN_ROOM_TWELFTHS = TWELFTHS['1/4']
 
+/** `MIN_ROOM_TWELFTHS`'s quarter, in tenths-of-a-percent — the numeric-width branch's threshold (KAN-441). */
+const MIN_ROOM_PERCENT_TENTHS = 250
+
 /**
  * The widths for `[...existing, droppedBlock]` when a block is dropped beside a
- * row, or `null` if the row already holds the max of four (6x). With room for at
- * least a quarter, the dropped block takes the widest `BlockWidth` that fits the
- * room and the existing blocks keep their widths untouched. With less room —
- * including none, and the "sixth after ⅓ + ½" case — every block in the row,
- * existing and dropped alike, becomes the equal share for the new count.
+ * row, or `null` if the row already holds the max of four (6x). Named-only rows
+ * (no numeric width in `existing`) behave exactly as before, by exact twelfths:
+ * with room for at least a quarter, the dropped block takes the widest
+ * `BlockWidth` that fits the room and the existing blocks keep their widths
+ * untouched; with less room — including none, and the "sixth after ⅓ + ½" case
+ * — every block in the row, existing and dropped alike, becomes the equal share
+ * for the new count.
+ *
+ * A row holding a numeric width (KAN-441 — only possible today from a block
+ * resized alone on its line, so `existing` has exactly one entry) is compared
+ * in percent-tenths instead, the same integer comparison `layoutRows` uses:
+ * with at least 25% of room left, the dropped block takes exactly that room as
+ * a free percent and the existing widths are untouched, so the row stays full
+ * and the resized block keeps its width; with less room, every block —
+ * existing and dropped alike — becomes the equal (named) share, same as the
+ * named-only case.
  */
-export function widthsForDropBeside(existing: readonly BlockWidth[]): BlockWidth[] | null {
+export function widthsForDropBeside(
+  existing: readonly (BlockWidth | number)[]
+): (BlockWidth | number)[] | null {
   if (existing.length >= 4) return null
 
-  const used = existing.reduce((sum, width) => sum + toTwelfths(width), 0)
+  if (existing.some((width) => typeof width === 'number')) {
+    const usedTenths = existing.reduce<number>((sum, width) => sum + widthTenths(width), 0)
+    const roomTenths = 1000 - usedTenths
+
+    if (roomTenths >= MIN_ROOM_PERCENT_TENTHS) {
+      return [...existing, roomTenths / 10]
+    }
+
+    const share = EQUAL_SHARE_WIDTH[existing.length + 1]
+    return [...existing.map(() => share), share]
+  }
+
+  const named = existing as BlockWidth[]
+  const used = named.reduce((sum, width) => sum + toTwelfths(width), 0)
   const room = 12 - used
 
   if (room >= MIN_ROOM_TWELFTHS) {
     const taken = TWELFTHS_ASCENDING.filter(([, twelfths]) => twelfths <= room).pop()
     // room >= MIN_ROOM_TWELFTHS guarantees at least '1/4' fits, so `taken` always exists.
-    return [...existing, taken![0]]
+    return [...named, taken![0]]
   }
 
-  const share = EQUAL_SHARE_WIDTH[existing.length + 1]
-  return [...existing.map(() => share), share]
+  const share = EQUAL_SHARE_WIDTH[named.length + 1]
+  return [...named.map(() => share), share]
 }
 
 /**
@@ -110,12 +177,9 @@ export function widthsForDropBeside(existing: readonly BlockWidth[]): BlockWidth
  * (KAN-440), so if it carried `rowStart` and left a row-mate behind, that
  * row-mate inherits it rather than silently re-packing into the row before it.
  */
-export function planBesideDrop<T extends { id: string; width?: BlockWidth; rowStart?: boolean }>(
-  blocks: readonly T[],
-  fromIndex: number,
-  targetId: string,
-  zone: 'left' | 'right'
-): T[] | null {
+export function planBesideDrop<
+  T extends { id: string; width?: BlockWidth | number; rowStart?: boolean },
+>(blocks: readonly T[], fromIndex: number, targetId: string, zone: 'left' | 'right'): T[] | null {
   const dragged = blocks[fromIndex]
   const { blocks: withoutDragged } = detachKeepingRows(blocks, fromIndex)
   const row = layoutRows(withoutDragged).find((r) => r.some((b) => b.id === targetId))
@@ -183,7 +247,7 @@ export interface DetachKeepingRowsResult<T> {
  * other block is the same reference, untouched.
  */
 export function detachKeepingRows<
-  T extends { id: string; width?: BlockWidth; rowStart?: boolean },
+  T extends { id: string; width?: BlockWidth | number; rowStart?: boolean },
 >(blocks: readonly T[], index: number): DetachKeepingRowsResult<T> {
   const removed = blocks[index]
   const rest = blocks.filter((_, i) => i !== index)
@@ -202,6 +266,73 @@ export function detachKeepingRows<
   }
 }
 
+/**
+ * An own-line drop. The dragged block becomes `full` with `rowStart`. A single
+ * former row-mate left alone is widened to `full`. A target row that is drawn
+ * stacked — several stored widths, each rendered on its own line because one
+ * of them is under `MIN_BLOCK_WIDTH_PX` — inserts beside the target block
+ * itself, and each of those blocks is stored `full` with `rowStart`, so the
+ * lines the person already sees stay lines. A row that actually holds inserts
+ * before or after the whole row and keeps the widths already there.
+ * `columnWidthPx` 0 never counts as stacked (the column isn't measured yet).
+ */
+export function planOwnLineDrop<
+  T extends { id: string; width?: BlockWidth | number; rowStart?: boolean },
+>(
+  blocks: readonly T[],
+  fromIndex: number,
+  targetId: string,
+  zone: 'above' | 'below',
+  columnWidthPx: number
+): T[] | null {
+  const draggedId = blocks[fromIndex].id
+  const originalRow = layoutRows(blocks).find((row) => row.some((block) => block.id === draggedId))
+  const dragged = { ...blocks[fromIndex], width: 'full' as BlockWidth, rowStart: true as const }
+  const { blocks: detached } = detachKeepingRows(blocks, fromIndex)
+  const mateIds = new Set(
+    (originalRow ?? []).map((block) => block.id).filter((id) => id !== draggedId)
+  )
+  const mateRow =
+    mateIds.size > 0
+      ? layoutRows(detached).find((row) => row.some((block) => mateIds.has(block.id)))
+      : undefined
+  const matesLeft = mateRow?.filter((block) => mateIds.has(block.id)) ?? []
+  const withoutDragged =
+    matesLeft.length === 1 && mateRow?.length === 1
+      ? detached.map((block) =>
+          block.id === matesLeft[0].id ? { ...block, width: 'full' as BlockWidth } : block
+        )
+      : detached
+  const row = layoutRows(withoutDragged).find((r) => r.some((b) => b.id === targetId))
+  if (!row) return null
+
+  const drawnStacked =
+    row.length > 1 && rowStacks(columnWidthPx, row.map((block) => block.width ?? 'full'))
+  if (drawnStacked) {
+    const memberIds = new Set(row.map((block) => block.id))
+    const promoted = withoutDragged.map((block) =>
+      memberIds.has(block.id)
+        ? { ...block, width: 'full' as BlockWidth, rowStart: true as const }
+        : block
+    )
+    const targetAt = promoted.findIndex((block) => block.id === targetId)
+    const insertAt = zone === 'above' ? targetAt : targetAt + 1
+    const spliced = [...promoted]
+    spliced.splice(insertAt, 0, dragged)
+    return spliced
+  }
+
+  const rowIds = new Set(row.map((block) => block.id))
+  const rowAt = withoutDragged.reduce<number[]>(
+    (acc, block, index) => (rowIds.has(block.id) ? [...acc, index] : acc),
+    []
+  )
+  const insertAt = zone === 'above' ? rowAt[0] : rowAt[rowAt.length - 1] + 1
+  const spliced = [...withoutDragged]
+  spliced.splice(insertAt, 0, dragged)
+  return spliced
+}
+
 /** Omits `rowStart` from a block — the field's own "absent means today's packing"
  *  convention (KAN-440), used to reverse a `detachKeepingRows` handoff on undo. */
 export function withoutRowStart<T extends { rowStart?: boolean }>(block: T): T {
@@ -216,15 +347,16 @@ export const BLOCK_ROW_GAP_PX = 16
 
 /**
  * A block's own CSS width, independent of its row-mates: `(100% + gap) *
- * fraction - gap`. Summed over a row whose fractions add to a full twelve
- * twelfths, the `- gap` terms cancel the real gaps between the blocks exactly,
- * so the row totals 100% for any number of blocks in it — the formula
+ * fraction - gap`. Summed over a row whose fractions add to a full 100%,
+ * the `- gap` terms cancel the real gaps between the blocks exactly, so the
+ * row totals 100% for any number of blocks in it — the formula
  * `Pond 06.23 Blocks side by side.dc.html` draws its rows with. A row whose
  * fractions add to less than full is short by the same amount, which is the
- * leftover paper at the row's end.
+ * leftover paper at the row's end. A free numeric width (KAN-441) renders by
+ * its own percent, via `widthPercent`.
  */
-export function blockWidthStyle(width: BlockWidth = 'full'): string {
-  const fraction = TWELFTHS[width] / 12
+export function blockWidthStyle(width: BlockWidth | number = 'full'): string {
+  const fraction = widthPercent(width) / 100
   return `calc((100% + ${BLOCK_ROW_GAP_PX}px) * ${fraction} - ${BLOCK_ROW_GAP_PX}px)`
 }
 
@@ -252,38 +384,30 @@ const EDGE_FRACTION = 0.25
  * The rects that make up `zone`'s own region of `rect` — the single home for drop-zone
  * geometry (KAN-440): both `classifyDropZone` (which zone a point falls in) and
  * `isWithinPaddedZone` (whether a point is still close enough to one) read these same
- * rects, so they can't disagree on what a zone covers the way the hand-simplified
- * halves/bands `isWithinPaddedZone` used to. `left`/`right` are each a union of two
- * rects — the outer 25% strip at full height, plus a middle-height quarter reaching to
- * the rect's midline — because the outer strip stays beside-left/right at any height,
- * but the inner quarter only does within the middle 50% of height (outside that band,
- * `above`/`below` claim it instead). `above`/`below` are each one rect: the middle 50%
- * of width, outer 25% of height.
+ * rects, so they can't disagree on what a zone covers.
+ *
+ * The top and bottom bands run the full width. A tall block (a calendar) otherwise
+ * keeps beside-zones down its whole side, and a drop in the gap under it — the
+ * place a person puts a block between two stacked ones — clamps onto that side
+ * and squeezes the stack into one row. Beside is only the middle band: the left
+ * or right half of the width, between 25% and 75% of the height.
  */
 function dropZoneRects(rect: Rect, zone: DropZone): Rect[] {
   const width = rect.right - rect.left
   const height = rect.bottom - rect.top
   const midX = rect.left + width / 2
-  const leftOuterEdge = rect.left + width * EDGE_FRACTION
-  const rightOuterEdge = rect.right - width * EDGE_FRACTION
   const topEdge = rect.top + height * EDGE_FRACTION
   const bottomEdge = rect.bottom - height * EDGE_FRACTION
 
   switch (zone) {
     case 'left':
-      return [
-        { left: rect.left, right: leftOuterEdge, top: rect.top, bottom: rect.bottom },
-        { left: leftOuterEdge, right: midX, top: topEdge, bottom: bottomEdge },
-      ]
+      return [{ left: rect.left, right: midX, top: topEdge, bottom: bottomEdge }]
     case 'right':
-      return [
-        { left: rightOuterEdge, right: rect.right, top: rect.top, bottom: rect.bottom },
-        { left: midX, right: rightOuterEdge, top: topEdge, bottom: bottomEdge },
-      ]
+      return [{ left: midX, right: rect.right, top: topEdge, bottom: bottomEdge }]
     case 'above':
-      return [{ left: leftOuterEdge, right: rightOuterEdge, top: rect.top, bottom: topEdge }]
+      return [{ left: rect.left, right: rect.right, top: rect.top, bottom: topEdge }]
     case 'below':
-      return [{ left: leftOuterEdge, right: rightOuterEdge, top: bottomEdge, bottom: rect.bottom }]
+      return [{ left: rect.left, right: rect.right, top: bottomEdge, bottom: rect.bottom }]
   }
 }
 
@@ -292,39 +416,52 @@ function pointInRect(rect: Rect, point: Point): boolean {
 }
 
 /**
- * Which drop zone a pointer point falls into over a block's rect, by checking
- * `dropZoneRects`' rects in the order that resolves their shared boundaries: the
- * outer left/right strips first (full height, so they win over `above`/`below` at the
- * shared 25%/75%-width edges), then `above`/`below` (so they win over the middle-height
- * quarters at the shared 25%/75%-height edges), then the right quarter before the left
- * one, so a point exactly on the rect's midline — equidistant from both — resolves to
- * `right`, matching the "nearer to, ties go right" rule.
+ * Which drop zone a pointer point falls into over a block's rect. Above and
+ * below are checked first, so the shared edge of the top and bottom bands is
+ * an own-line drop — a point in the gap under a block, clamped onto its bottom
+ * edge, stays `below` even at the corners. Right is checked before left, so a
+ * point exactly on the midline resolves to `right`.
  *
  * `onDragOver` fires for points outside the dragstart snapshot rect too (a block's
  * handle sits outside its own root; a beside preview can push a row below its
  * snapshotted position) — a point outside `rect` is clamped onto it first, so it
  * classifies as whichever zone its nearest in-rect point would.
  */
+/**
+ * A row drawn as separate full-width lines has no beside. `left` and `right`
+ * on that drawing are the own-line drop for whichever half of the block the
+ * pointer is in — otherwise a drop on the middle of a line the person sees as
+ * stacked writes a side-by-side row, and the next width that fits the column
+ * snaps the lines horizontal.
+ */
+export function zoneWhenDrawnStacked(
+  zone: DropZone,
+  rect: Rect,
+  point: Point,
+  drawnStacked: boolean
+): DropZone {
+  if (!drawnStacked || zone === 'above' || zone === 'below') return zone
+  const midY = rect.top + (rect.bottom - rect.top) / 2
+  return point.y < midY ? 'above' : 'below'
+}
+
 export function classifyDropZone(rect: Rect, point: Point): DropZone {
   const clamped: Point = {
     x: Math.min(Math.max(point.x, rect.left), rect.right),
     y: Math.min(Math.max(point.y, rect.top), rect.bottom),
   }
 
-  const [leftOuter, leftQuarter] = dropZoneRects(rect, 'left')
-  const [rightOuter, rightQuarter] = dropZoneRects(rect, 'right')
   const [above] = dropZoneRects(rect, 'above')
   const [below] = dropZoneRects(rect, 'below')
+  const [right] = dropZoneRects(rect, 'right')
+  const [left] = dropZoneRects(rect, 'left')
 
-  if (pointInRect(leftOuter, clamped)) return 'left'
-  if (pointInRect(rightOuter, clamped)) return 'right'
   if (pointInRect(above, clamped)) return 'above'
   if (pointInRect(below, clamped)) return 'below'
-  if (pointInRect(rightQuarter, clamped)) return 'right'
-  if (pointInRect(leftQuarter, clamped)) return 'left'
+  if (pointInRect(right, clamped)) return 'right'
+  if (pointInRect(left, clamped)) return 'left'
 
-  // Unreachable: the outer strips, above/below and the two quarters together already
-  // cover every point in the rect, so one of the checks above always returns first.
+  // Unreachable: the four bands cover every point in the rect.
   // Crash early in dev; fall back to 'left' in production rather than silently
   // misclassifying a point none of the checks was supposed to miss.
   if (process.env.NODE_ENV !== 'production') {
@@ -360,19 +497,55 @@ export function isWithinPaddedZone(rect: Rect, point: Point, zone: DropZone): bo
 }
 
 /** Below this, a block in a row is too narrow to be useful, so the row stacks (6x). */
-const MIN_BLOCK_WIDTH_PX = 240
+export const MIN_BLOCK_WIDTH_PX = 240
+
+/**
+ * `blockWidthStyle`'s formula, numeric: the actual rendered pixel width of a
+ * block at `percent` of a column `columnWidthPx` wide. The one home for this
+ * conversion (KAN-441) — an edge drag's clamp floor and its pointer-delta
+ * mapping both read it (via `renderedPxToPercent`) rather than the naive
+ * `percent/100 * columnWidthPx`, which ignores the `BLOCK_ROW_GAP_PX` term
+ * and so disagrees with what the renderer actually draws.
+ */
+export function percentToRenderedPx(columnWidthPx: number, percent: number): number {
+  const fraction = percent / 100
+  return (columnWidthPx + BLOCK_ROW_GAP_PX) * fraction - BLOCK_ROW_GAP_PX
+}
+
+/** Inverse of `percentToRenderedPx` — the percent whose rendered width is `renderedPx`. */
+export function renderedPxToPercent(columnWidthPx: number, renderedPx: number): number {
+  return ((renderedPx + BLOCK_ROW_GAP_PX) / (columnWidthPx + BLOCK_ROW_GAP_PX)) * 100
+}
 
 /** A block's actual pixel width at a given column width — `blockWidthStyle`'s formula, numeric. */
-function blockWidthPx(columnWidthPx: number, width: BlockWidth): number {
-  const fraction = TWELFTHS[width] / 12
-  return (columnWidthPx + BLOCK_ROW_GAP_PX) * fraction - BLOCK_ROW_GAP_PX
+function blockWidthPx(columnWidthPx: number, width: BlockWidth | number): number {
+  return percentToRenderedPx(columnWidthPx, widthPercent(width))
 }
 
 /**
  * A row holds while every block in it gets at least `MIN_BLOCK_WIDTH_PX` of the
  * column; below that it stacks instead (6x), each block full width in reading
- * order. `widths` is the row's blocks' own widths, absent meaning full.
+ * order. `widths` is the row's blocks' own widths, absent meaning full — a free
+ * numeric width (KAN-441) stacks by the same rule, via `blockWidthPx`.
  */
-export function rowHolds(columnWidthPx: number, widths: readonly BlockWidth[]): boolean {
+export function rowHolds(columnWidthPx: number, widths: readonly (BlockWidth | number)[]): boolean {
   return widths.every((width) => blockWidthPx(columnWidthPx, width) >= MIN_BLOCK_WIDTH_PX)
+}
+
+/**
+ * A row is drawn stacked — every block 100% wide — once the column is measured
+ * and `rowHolds` says no. The one home for that decision: the canvas's sizing
+ * divs and `drawnWidthPercent` both read it. An unmeasured column (0) never stacks.
+ */
+export function rowStacks(columnWidthPx: number, widths: readonly (BlockWidth | number)[]): boolean {
+  return columnWidthPx > 0 && !rowHolds(columnWidthPx, widths)
+}
+
+/**
+ * The percent of the column a block alone on its line is DRAWN at: 100 when its
+ * stored width would stack, else the stored width. A drag starts from this, not
+ * from the stored width, so pressing an edge never changes what is on screen.
+ */
+export function drawnWidthPercent(columnWidthPx: number, width: BlockWidth | number | undefined): number {
+  return rowStacks(columnWidthPx, [width ?? 'full']) ? 100 : widthPercent(width)
 }

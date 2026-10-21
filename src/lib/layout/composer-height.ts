@@ -13,7 +13,7 @@
  */
 
 import { useEffect, useState } from 'react'
-import { COMPOSER_BOTTOM_INSET } from '@/lib/layout/composer-clearance'
+import { COMPOSER_BOTTOM_INSET, COMPOSER_TOP_CLEARANCE } from '@/lib/layout/composer-clearance'
 
 export const COMPOSER_HEIGHT_KEY = 'pond:composer-height'
 /**
@@ -27,8 +27,6 @@ export const COMPOSER_DEFAULT_HEIGHT = 392
 export const COMPOSER_MIN_HEIGHT = 160
 /** Arrow-key nudge per press on the handle. */
 export const COMPOSER_HEIGHT_STEP = 24
-/** Room above the card for the ⌘K pill: its 20px inset, its 40px, and 12px of air. */
-export const COMPOSER_TOP_CLEARANCE = 72
 /** The card's tallest: the shell less the room above it and the inset below it. */
 export const COMPOSER_MAX_HEIGHT_CSS = `calc(100% - ${COMPOSER_TOP_CLEARANCE + COMPOSER_BOTTOM_INSET}px)`
 

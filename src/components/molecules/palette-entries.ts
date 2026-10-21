@@ -21,7 +21,7 @@
  */
 
 import type { ZenAction } from '@/lib/layout/use-zen-commands'
-import { normalizeQuery, splitMatch } from './slash-entries'
+import { fold, type MatchRun, matchRuns, normalizeQuery, subsequenceMatch } from './slash-entries'
 
 export type PaletteKind = 'page' | 'database' | 'record' | 'action' | 'pond'
 
@@ -78,7 +78,7 @@ export interface PaletteScope {
 export type PaletteEntry =
   | { kind: 'group'; label: string }
   | { kind: 'note'; text: string }
-  | { kind: 'row'; item: PaletteItem; pre: string; hit: string; post: string; sub?: string }
+  | { kind: 'row'; item: PaletteItem; runs: readonly MatchRun[]; sub?: string }
 
 export interface PaletteOptions {
   scope?: PaletteScope | null
@@ -104,6 +104,8 @@ export interface PaletteOptions {
    * a row that does nothing visible. @default true
    */
   ask?: boolean
+  /** Newest-first visited page ids (KAN-390) — `rankPages`'s recency boost for `pages` and `actions`. */
+  visits?: readonly string[]
 }
 
 /** The ids of the two rows the palette mints from the query — the host acts on them. */
@@ -120,6 +122,93 @@ export const PALETTE_FOOT_MOBILE: readonly string[] = ['↵ open', '> actions on
 /** How many close spellings `did you mean` offers. */
 const DID_YOU_MEAN_MAX = 3
 
+const EXACT_SCORE = 100
+const PREFIX_SCORE = 80
+const WORD_START_SCORE = 60
+const SUBSTRING_SCORE = 40
+const SUBSEQUENCE_SCORE = 20
+/** The full boost a visit at the newest position of `visits` adds; older positions scale down from it. */
+const VISIT_BOOST = 15
+
+/**
+ * The minimum word length a subsequence hit needs before it is even tried
+ * (KAN-390: a 1- or 2-char query scatter-matches almost anything).
+ */
+const SUBSEQUENCE_MIN_QUERY_LENGTH = 3
+/** How loose a subsequence hit's span may be, relative to the query's length. */
+const SUBSEQUENCE_SPAN_FACTOR = 2
+
+/**
+ * A page's or record's own near-miss spelling goes to `did you mean`, not a
+ * scattered subsequence hit — `PondPicker.dc.html`'s `empty` frame's own
+ * example (`cabnet` over "cabinet plan"). Shared with `didYouMean` so the two
+ * branches agree on what "close" means.
+ */
+function isCloseSpelling(label: string, q: string): boolean {
+  const folded = fold(label)
+  const foldedQuery = fold(q)
+  return [folded, ...folded.split(/[^\p{L}\p{N}]+/u)].some(
+    (w) => editDistance(w, foldedQuery) <= 2
+  )
+}
+
+function matchTier(item: PaletteItem, foldedQuery: string, q: string): number {
+  if (!foldedQuery) return 0
+  const foldedLabel = fold(item.label)
+  if (foldedLabel === foldedQuery) return EXACT_SCORE
+  if (foldedLabel.startsWith(foldedQuery)) return PREFIX_SCORE
+  const isWordStart = foldedLabel
+    .split(/[^\p{L}\p{N}]+/u)
+    .some((word) => word && word !== foldedLabel && word.startsWith(foldedQuery))
+  if (isWordStart) return WORD_START_SCORE
+  if (foldedLabel.includes(foldedQuery)) return SUBSTRING_SCORE
+  if (foldedQuery.length < SUBSEQUENCE_MIN_QUERY_LENGTH) return 0
+  const positions = subsequenceMatch(foldedLabel, foldedQuery)
+  const span = positions ? positions[positions.length - 1] - positions[0] + 1 : -1
+  if (span === -1 || span > foldedQuery.length * SUBSEQUENCE_SPAN_FACTOR) return 0
+  if (item.kind !== 'action' && isCloseSpelling(item.label, q)) return 0
+  return SUBSEQUENCE_SCORE
+}
+
+/**
+ * `visits` is newest first (`readRecentPageIds`'s shape): a hit at index 0
+ * gets the full boost, one at the last index barely more than none, scaled by
+ * `visits.length` so the curve holds whether the list is 3 or 20 long.
+ */
+function visitBoost(id: string, visits: readonly string[]): number {
+  if (!visits.length) return 0
+  const index = visits.indexOf(id)
+  return index === -1 ? 0 : VISIT_BOOST * (1 - index / visits.length)
+}
+
+/**
+ * Ranks `items` for `q` — exact beats a prefix, a prefix beats a word
+ * boundary, a contiguous substring beats a scattered subsequence; a label
+ * that doesn't even scatter-match scores 0 and is dropped, so the caller
+ * never has to filter twice. The visit boost and the depth tiebreak are
+ * added straight onto the tier score, not held back as a same-tier-only
+ * tiebreak — a recent, shallow page can outrank a higher tier's unboosted,
+ * deeper one. A full tie keeps `items`' own order (the `index` carried
+ * through `sort`).
+ */
+export function rankPages(
+  items: readonly PaletteItem[],
+  q: string,
+  visits: readonly string[] = []
+): PaletteItem[] {
+  const foldedQuery = fold(q)
+  return items
+    .map((item, index) => ({ item, index, tier: matchTier(item, foldedQuery, q) }))
+    .filter(({ tier }) => tier > 0)
+    .map(({ item, index, tier }) => ({
+      item,
+      index,
+      score: tier + visitBoost(item.id, visits) - (item.path?.length ?? 0),
+    }))
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .map(({ item }) => item)
+}
+
 export function paletteEntries(
   items: readonly PaletteItem[],
   query: string,
@@ -129,6 +218,7 @@ export function paletteEntries(
     parentTitle = pondName,
     suggested = [],
     ask: canAsk = true,
+    visits = [],
   }: PaletteOptions = {}
 ): PaletteEntry[] {
   const q = normalizeQuery(query)
@@ -165,11 +255,22 @@ export function paletteEntries(
   const hits = (kinds: PaletteKind[], from: readonly PaletteItem[] = pool) =>
     from.filter((i) => kinds.includes(i.kind) && i.label.toLowerCase().includes(q))
   const ponds = hits(['pond'])
-  const pages = hits(['page', 'database'])
+  // Ranked, not filtered by substring (KAN-390): exact/prefix/word-start/substring/
+  // subsequence tiers, the visit boost and the depth tiebreak decide both order and
+  // membership (a zero-score label is dropped the same as a missed `.includes`).
+  const pages = rankPages(
+    pool.filter((i) => i.kind === 'page' || i.kind === 'database'),
+    q,
+    visits
+  )
   // A record is searched by the host (title or field value), so it is not
   // filtered on its label again here — a field match would never survive that.
   const records = pool.filter((i) => i.kind === 'record')
-  const matched = hits(['action'], items)
+  const matched = rankPages(
+    items.filter((i) => i.kind === 'action'),
+    q,
+    visits
+  )
   const modes = matched.filter((i) => i.group === 'mode')
   const actions = matched.filter((i) => i.group !== 'mode')
   const ask: PaletteEntry[] = canAsk
@@ -235,10 +336,7 @@ export function paletteEntries(
 export function didYouMean(items: readonly PaletteItem[], q: string): PaletteItem[] {
   return items
     .filter((i) => i.kind !== 'action' && i.kind !== 'pond')
-    .filter((i) => {
-      const label = i.label.toLowerCase()
-      return [label, ...label.split(/\s+/)].some((w) => editDistance(w, q) <= 2)
-    })
+    .filter((i) => isCloseSpelling(i.label, q))
     .slice(0, DID_YOU_MEAN_MAX)
 }
 
@@ -247,7 +345,7 @@ function group(label: string): PaletteEntry {
 }
 
 function row(item: PaletteItem, q: string, sub = item.sub): PaletteEntry {
-  return { kind: 'row', item, ...splitMatch(item.label, q), sub }
+  return { kind: 'row', item, runs: matchRuns(item.label, q), sub }
 }
 
 /** Levenshtein, small strings only — the palette compares a word to a query. */

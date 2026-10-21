@@ -24,6 +24,8 @@ import { commitAcceptedEdit, readProposalForAccept } from '@/lib/change-log/reso
 import { createDeterministicMintId } from '@/lib/change-log/mint-id'
 import { changeLogKey } from '@/lib/change-log/keys'
 import { BLOCK_ACTIONS } from '@/lib/change-log/types'
+import { touchedMarks } from '@/lib/change-log/accept-marks-diff'
+import { recordAccept } from '@/lib/change-log/accept-marks'
 import { jsonEqual } from '@/lib/json-equal'
 import { applyProposedChanges } from './edits'
 import { getPage } from './client'
@@ -193,33 +195,6 @@ async function writeToTarget(
     refIds: opts.refIds,
     rejectedKeys,
   })
-  if (result.applied === 0) {
-    // Nothing landed, so the page has not moved on and the log must not say it
-    // has. The blocks are unchanged; committing them is what this path did before
-    // the log existed, and it keeps the receipt and skip reasons intact.
-    await commitBlocks(supabase, queryClient, target, result.blocks)
-  } else {
-    await commitAcceptedEdit(supabase, {
-      userId,
-      pondId: opts.pondId,
-      record: proposal.record,
-      targetPageId: target,
-      blocks: result.blocks,
-      commit: () => commitBlocks(supabase, queryClient, target, result.blocks),
-      propagate: () => propagateBlockWrite(queryClient, target),
-    })
-  }
-
-  // External write to the target page — invalidate ['page', target] (not the open
-  // page's key) so an open DocumentPanel on that page refetches and adopts the new
-  // blocks (commitBlocks leaves that cache alone precisely so this stays the
-  // caller's decision).
-  await queryClient.invalidateQueries({ queryKey: ['page', target] })
-  // The record above may have advanced (or, in the all-skipped branch, stayed put)
-  // — either way the write this function was called to do has resolved, so the
-  // change log's count/list queries must refetch rather than sit on their 30s
-  // staleTime (KAN-316).
-  await queryClient.invalidateQueries({ queryKey: changeLogKey() })
   // Only an applied edit/revert is a step `sessionUndo` can later undo — an
   // add_row or a skipped-everything accept has nothing the RPC knows how to
   // set back, so remembering it would be a step that silently no-ops on ⌘Z.
@@ -246,6 +221,38 @@ async function writeToTarget(
     jsonEqual(JSON.parse(JSON.stringify(result.blocks)), proposal.record.after)
       ? proposal.record.id
       : null
+  if (result.applied === 0) {
+    // Nothing landed, so the page has not moved on and the log must not say it
+    // has. The blocks are unchanged; committing them is what this path did before
+    // the log existed, and it keeps the receipt and skip reasons intact.
+    await commitBlocks(supabase, queryClient, target, result.blocks)
+  } else {
+    await commitAcceptedEdit(supabase, {
+      userId,
+      pondId: opts.pondId,
+      record: proposal.record,
+      targetPageId: target,
+      blocks: result.blocks,
+      commit: () => commitBlocks(supabase, queryClient, target, result.blocks),
+      propagate: () => propagateBlockWrite(queryClient, target),
+    })
+    // The mark is a session UI cue, not a record of what the RPC stored — it
+    // keys off recordId (nullable) rather than the undoable gate above, since
+    // "changed HH:MM" applies to every landed accept, undoable or not.
+    const marks = touchedMarks(page.blocks, result.blocks)
+    if (marks.length > 0) recordAccept(target, marks, recordId, new Date().toISOString())
+  }
+
+  // External write to the target page — invalidate ['page', target] (not the open
+  // page's key) so an open DocumentPanel on that page refetches and adopts the new
+  // blocks (commitBlocks leaves that cache alone precisely so this stays the
+  // caller's decision).
+  await queryClient.invalidateQueries({ queryKey: ['page', target] })
+  // The record above may have advanced (or, in the all-skipped branch, stayed put)
+  // — either way the write this function was called to do has resolved, so the
+  // change log's count/list queries must refetch rather than sit on their 30s
+  // staleTime (KAN-316).
+  await queryClient.invalidateQueries({ queryKey: changeLogKey() })
   return {
     applied: result.applied,
     skipped: result.skipped,

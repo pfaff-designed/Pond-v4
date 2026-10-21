@@ -42,6 +42,55 @@ describe('titleEyebrow', () => {
     const madeAt = new Date(2026, 9, 5, 7, 13)
     expect(titleEyebrow('page', true, at, false, null, madeAt)).toBe('page — saved 09:04')
   })
+
+  it('reads offline — kept on this device when offline, kind prefixed as usual', () => {
+    expect(titleEyebrow('project', true, at, false, null, null, true)).toBe('project — offline — kept on this device')
+  })
+
+  it('reads a bare offline state with no kind', () => {
+    expect(titleEyebrow(undefined, true, at, false, null, null, true)).toBe('offline — kept on this device')
+  })
+
+  it('lets offline win over a pending save', () => {
+    expect(titleEyebrow('project', false, null, false, null, null, true)).toBe('project — offline — kept on this device')
+  })
+
+  it('lets offline win over untouched', () => {
+    expect(titleEyebrow('project', true, at, true, 'recipes', null, true)).toBe('project — offline — kept on this device')
+  })
+
+  it('lets offline win over madeAt', () => {
+    const madeAt = new Date(2026, 9, 5, 7, 13)
+    expect(titleEyebrow('page', true, null, false, null, madeAt, true)).toBe('page — offline — kept on this device')
+  })
+
+  it('reads not saved — retrying when retrying, kind prefixed as usual', () => {
+    expect(titleEyebrow('project', false, null, false, null, null, false, true)).toBe(
+      'project — not saved — retrying',
+    )
+  })
+
+  it('reads a bare retrying state with no kind', () => {
+    expect(titleEyebrow(undefined, false, null, false, null, null, false, true)).toBe('not saved — retrying')
+  })
+
+  it('lets retrying win over a pending save', () => {
+    expect(titleEyebrow('project', false, at, false, null, null, false, true)).toBe(
+      'project — not saved — retrying',
+    )
+  })
+
+  it('lets retrying win over a landed save', () => {
+    expect(titleEyebrow('project', true, at, false, null, null, false, true)).toBe(
+      'project — not saved — retrying',
+    )
+  })
+
+  it('lets offline win over retrying', () => {
+    expect(titleEyebrow('project', false, null, false, null, null, true, true)).toBe(
+      'project — offline — kept on this device',
+    )
+  })
 })
 
 describe('isUntouchedPage', () => {

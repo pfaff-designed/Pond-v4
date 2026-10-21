@@ -100,6 +100,7 @@ import {
   COMPOSER_CLEARANCE_GAP,
   COMPOSER_CLEARANCE_VAR,
   COMPOSER_REST_HEIGHT,
+  COMPOSER_TOP_CLEARANCE,
   composerClearancePadding,
   composerFootprintPx,
 } from '@/lib/layout/composer-clearance'
@@ -107,10 +108,14 @@ import {
   COMPOSER_DEFAULT_HEIGHT,
   COMPOSER_HEIGHT_KEY,
   COMPOSER_MIN_HEIGHT,
-  COMPOSER_TOP_CLEARANCE,
   composerMaxHeight,
   readStoredComposerHeight,
 } from '@/lib/layout/composer-height'
+import TextEditor from '@/lib/modules/text/editor'
+import { findTextBlock, textEditorOf } from '@/__tests__/helpers/text-block'
+import { blockDomId } from '@/lib/modules/block-dom'
+import type { TextBlock } from '@/lib/modules/text/schema'
+import { selectWord } from '@/__tests__/helpers/selection'
 
 const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), 'utf8')
 /** Whitespace- and leading-zero-insensitive, so prettier's `0.86` matches the README's `.86`. */
@@ -971,6 +976,64 @@ describe('WorkspaceShell — the chrome floats over one canvas', () => {
     const column = main.querySelector<HTMLElement>('[data-testid="page-column"]')!
     expect(column.className).toMatch(/\bpt-\[76px\]/)
     expect(column.getAttribute('style')).toContain(COMPOSER_CLEARANCE_VAR)
+  })
+
+  it('<main> carries scroll-padding so native caret-follow and scrollIntoView clear the pill and the card', async () => {
+    const { container } = renderShell()
+    const main = container.querySelector<HTMLElement>('main')!
+    expect(main.style.scrollPaddingTop).toBe(`${COMPOSER_TOP_CLEARANCE}px`)
+    expect(main.style.scrollPaddingBottom).toContain(COMPOSER_CLEARANCE_VAR)
+    expect(main.style.scrollPaddingBottom).toContain('24px')
+  })
+
+  it('a real text block inside <main> reads the published clearance through the whole tree (path test, KAN-400)', async () => {
+    const data: TextBlock = { id: 'blk-1', type: 'text', content: 'hello' }
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const { container } = render(
+      <QueryClientProvider client={client}>
+        <WorkspaceShell>
+          <div id={blockDomId(data.id)}>
+            <TextEditor data={data} onChange={() => {}} standIn={null} pressRef={{ current: null }} />
+          </div>
+        </WorkspaceShell>
+      </QueryClientProvider>
+    )
+
+    const field = await findTextBlock()
+    // A real click's mousedown handler calls `document.elementFromPoint`,
+    // which jsdom lacks (see helpers/selection.ts) — a real `Range` +
+    // `selectionchange` is the established stand-in for "click into the
+    // field" here, and proves the real tree's own click-to-select path
+    // doesn't crash reading the live footprint.
+    selectWord(field, 'hello')
+
+    // Publish the thread footprint on the shell's real `[data-part="shell"]`
+    // node AFTER the block has already mounted (392 + its bottom inset,
+    // mirroring `shellEndingAt` in composer-clearance.test.ts) — proving
+    // `scrollMargin`'s live getters (KAN-400) track a change made well after
+    // creation, not just whatever was published at mount.
+    const shell = container.querySelector<HTMLElement>('[data-part="shell"]')!
+    // jsdom does no layout, so the shell's real getBoundingClientRect height
+    // is 0 — mock it to an 800px scroller (composer-clearance.test.ts's own
+    // fixture height) so the KAN-400 caret-band clamp has a real height to
+    // clamp against, matching a real browser's shell.
+    shell.getBoundingClientRect = () => ({ height: 800 } as DOMRect)
+    shell.style.setProperty(
+      COMPOSER_CLEARANCE_VAR,
+      `${composerFootprintPx(COMPOSER_DEFAULT_HEIGHT)}px`
+    )
+
+    expect(textEditorOf(field).view.someProp('scrollMargin')).toEqual({
+      top: 72,
+      bottom: 440,
+      left: 0,
+      right: 0,
+    })
+
+    const main = container.querySelector<HTMLElement>('main')!
+    expect(main.style.scrollPaddingTop).toBe(`${COMPOSER_TOP_CLEARANCE}px`)
+    expect(main.style.scrollPaddingBottom).toContain(COMPOSER_CLEARANCE_VAR)
+    expect(main.style.scrollPaddingBottom).toContain('24px')
   })
 
   it('a click on the pill grows it into the palette', async () => {

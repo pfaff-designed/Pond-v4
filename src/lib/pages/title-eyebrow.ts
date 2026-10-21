@@ -23,8 +23,19 @@ export const titleEyebrow = (
   untouched?: boolean,
   parentTitle?: string | null,
   madeAt: Date | null = null,
+  offline?: boolean,
+  retrying?: boolean,
 ): string => {
+  const label = typeof kind === 'string' ? kind.trim() : ''
+  if (offline) {
+    const state = 'offline — kept on this device'
+    return label ? `${label} — ${state}` : state
+  }
   if (untouched) return parentTitle ? `new — in ${parentTitle}` : 'new'
+  if (retrying) {
+    const state = 'not saved — retrying'
+    return label ? `${label} — ${state}` : state
+  }
   const state = saved
     ? savedAt
       ? `saved ${clock(savedAt)}`
@@ -32,6 +43,5 @@ export const titleEyebrow = (
         ? `made ${clock(madeAt)}`
         : 'saved'
     : 'saving…'
-  const label = typeof kind === 'string' ? kind.trim() : ''
   return label ? `${label} — ${state}` : state
 }

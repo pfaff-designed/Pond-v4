@@ -6,6 +6,11 @@
  * save that writes them back. Saves are debounced and write the whole block array
  * (blocks are never partially persisted); renaming refreshes the sidebar via the
  * ['pages'] query.
+ *
+ * The write queue (KAN-495) is the only record of what is stored and in what
+ * order. A failed typed save, an offline hold, and a debounce still waiting
+ * when the person leaves the page (KAN-407) sit on top of that queue: the
+ * eyebrow can say retrying or offline, and the draft is what gets sent.
  */
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
@@ -20,6 +25,8 @@ import type { HomePage } from '@/lib/pages/home'
 import { homeQueryKey } from '@/lib/pages/keys'
 import { getPageWriteQueue, registerPageFlush } from '@/lib/pages/page-flush'
 import { createPageWriteQueue, type PageWriteQueue } from '@/lib/pages/page-write-queue'
+import { nextRetryDelayMs } from '@/lib/pages/save-retry'
+import { useOnline } from '@/lib/pages/use-online'
 import { withValue, type PropertyValue } from '@/lib/properties/schema'
 import type { createClient } from '@/lib/supabase/client'
 
@@ -31,6 +38,9 @@ interface PageDraftInput {
   pondId: string | null
   getSupabase: () => ReturnType<typeof createClient>
 }
+
+type DraftSnapshot = { title: string; blocks: Block[] }
+type PendingDraft = DraftSnapshot & { pageId: string }
 
 /**
  * Pure (KAN-440): re-inserts `block` at `index` into `current`, having first
@@ -60,7 +70,8 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
   // `saved` has nothing of its own to track (KAN-495: the queue is the only
   // record of what's stored) — it's true exactly when there's no debounced
   // save still waiting on its pause AND the page's write queue is idle
-  // (nothing queued, mid-apply, or halted). The queue half is read straight
+  // (nothing queued, mid-apply, or halted) AND this page has no offline hold
+  // and no typed-save retry outstanding. The queue half is read straight
   // off the queue itself via `useSyncExternalStore` (below), not mirrored
   // into its own `useState` — the queue is the one place that fact lives.
   const [pendingDebounce, setPendingDebounce] = useState(false)
@@ -75,7 +86,7 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   // The save a debounce timer is currently waiting to fire, if any — held so
   // `flushNow` (KAN-302) can run it immediately instead of waiting out the pause.
-  const pendingSave = useRef<{ pageId: string; title: string; blocks: Block[] } | null>(null)
+  const pendingSave = useRef<PendingDraft | null>(null)
   // The latest `pondId` prop, read by the queue's writer AT WRITE TIME, never
   // at queue-creation time: `queueFor`'s `createQueue` callback only ever runs
   // ONCE per page id (the registry below is lazy), so closing over `pondId`
@@ -88,17 +99,73 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
   useEffect(() => {
     pondIdRef.current = pondId
   })
-  // The latest `blocks`, read by `undoRemove` instead of a `setBlocks`
+  // The latest title/blocks, read by a retry instead of a `setBlocks`
   // functional updater: StrictMode double-invokes an updater function, and
   // `undoRemove`'s updater enqueued a structural write as a side effect of
   // computing its return value, so one toast Undo produced two writes (two
   // change-log records) in development. A ref updated after every render
   // gives the same "latest, not stale" guarantee without running inside React's
-  // updater machinery.
+  // updater machinery. The title ref is the same idea for a retry that must
+  // resend what the open page shows now, not the payload that failed.
   const blocksRef = useRef(blocks)
+  const titleRef = useRef(title)
   useEffect(() => {
     blocksRef.current = blocks
+    titleRef.current = title
   })
+  const isOnline = useOnline()
+  const isOnlineRef = useRef(isOnline)
+  useEffect(() => {
+    isOnlineRef.current = isOnline
+  })
+
+  // Latest typed draft per page that has not landed: an in-flight save, a
+  // failed save waiting out its backoff, or an offline hold. Keyed by page id
+  // so leaving the page does not drop it. Cleared only when THAT draft lands.
+  const drafts = useRef<Map<string, DraftSnapshot>>(new Map())
+  const retryTimer = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
+  const retryAttempt = useRef<Map<string, number>>(new Map())
+  const retryingIdsRef = useRef<Set<string>>(new Set())
+  const heldIdsRef = useRef<Set<string>>(new Set())
+  const [retryingIds, setRetryingIds] = useState<Set<string>>(retryingIdsRef.current)
+  const [heldIds, setHeldIds] = useState<Set<string>>(heldIdsRef.current)
+
+  function setRetrying(id: string, on: boolean) {
+    const prev = retryingIdsRef.current
+    if (prev.has(id) === on) return
+    const next = new Set(prev)
+    if (on) next.add(id)
+    else next.delete(id)
+    retryingIdsRef.current = next
+    setRetryingIds(next)
+  }
+
+  function setHeld(id: string, on: boolean) {
+    const prev = heldIdsRef.current
+    if (prev.has(id) === on) return
+    const next = new Set(prev)
+    if (on) next.add(id)
+    else next.delete(id)
+    heldIdsRef.current = next
+    setHeldIds(next)
+  }
+
+  function clearDraft(id: string) {
+    drafts.current.delete(id)
+    const timer = retryTimer.current.get(id)
+    if (timer) clearTimeout(timer)
+    retryTimer.current.delete(id)
+    retryAttempt.current.delete(id)
+    setRetrying(id, false)
+    setHeld(id, false)
+  }
+
+  useEffect(
+    () => () => {
+      retryTimer.current.forEach((timer) => clearTimeout(timer))
+    },
+    []
+  )
 
   // The page's write queue (KAN-495) — created lazily on first use and kept
   // alive across remounts by the page-write registry, so a save still in
@@ -146,7 +213,124 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
     () => pageQueue?.idle() ?? true,
     () => true
   )
-  const saved = !pendingDebounce && queueIdle
+  const retryingHere = pageId !== null && retryingIds.has(pageId)
+  const heldHere = pageId !== null && heldIds.has(pageId)
+  const saved = !pendingDebounce && queueIdle && !retryingHere && !heldHere
+
+  // A typed save landed. The cache follows what the queue stored. A newer
+  // draft already remembered for this page (typed again while this one was
+  // in flight) is left alone — clearing it would reseed the page back to
+  // the save that just finished.
+  function land(id: string, nextTitle: string, nextBlocks: Block[]) {
+    queryClient.setQueryData(['page', id], (prev: PondPage | null | undefined) =>
+      prev ? { ...prev, title: nextTitle, blocks: nextBlocks } : prev
+    )
+    queryClient.setQueryData(homeQueryKey(pondIdRef.current), (prev: HomePage | null | undefined) =>
+      prev && prev.id === id ? { ...prev, title: nextTitle } : prev
+    )
+    const stored = drafts.current.get(id)
+    const landedThis = !stored || (stored.title === nextTitle && stored.blocks === nextBlocks)
+    if (!landedThis) return
+    clearDraft(id)
+    if (loadedId.current === id) setSavedAt(new Date())
+  }
+
+  // Back off and try the halted op again. `attempt` is the 0-based step
+  // already used; the next failure reads the incremented count, so a second
+  // failure waits 4s rather than restarting at 2s.
+  function scheduleRetry(id: string, nextTitle: string, nextBlocks: Block[]) {
+    const existing = retryTimer.current.get(id)
+    if (existing) clearTimeout(existing)
+    drafts.current.set(id, { title: nextTitle, blocks: nextBlocks })
+    const attempt = retryAttempt.current.get(id) ?? 0
+    retryAttempt.current.set(id, attempt + 1)
+    setRetrying(id, true)
+    setHeld(id, false)
+    const timer = setTimeout(() => {
+      retryTimer.current.delete(id)
+      runRetry(id)
+    }, nextRetryDelayMs(attempt))
+    retryTimer.current.set(id, timer)
+  }
+
+  // Offline: the draft cannot stay in the single `pendingSave` slot, because
+  // the next page's debounce writes that same slot. Park it under its page id.
+  // A halted typed op from before the drop is the older payload — drop it so
+  // reconnect sends this draft, not the one that failed.
+  function holdOffline(p: PendingDraft) {
+    drafts.current.set(p.pageId, { title: p.title, blocks: p.blocks })
+    const queue = queueFor(p.pageId, { title: p.title, blocks: p.blocks })
+    if (queue.halted()) {
+      const timer = retryTimer.current.get(p.pageId)
+      if (timer) clearTimeout(timer)
+      retryTimer.current.delete(p.pageId)
+      queue.discardHalted()
+      setRetrying(p.pageId, false)
+    }
+    setHeld(p.pageId, true)
+  }
+
+  // Enqueue a typed (debounced) write — what `scheduleSave`'s timer fires and
+  // what `flushNow` runs immediately. The queue reads `before` from its own
+  // `head()` at apply time, never from here.
+  function enqueueTyped(id: string, nextTitle: string, nextBlocks: Block[]): Promise<void> {
+    drafts.current.set(id, { title: nextTitle, blocks: nextBlocks })
+    setHeld(id, false)
+    const queue = queueFor(id, { title: nextTitle, blocks: nextBlocks })
+    // A later edit does not drop the failed save. `enqueue` retries that op
+    // first, then applies this one, so each stays its own undo step (KAN-495).
+    // The backoff timer for the failed attempt is stale once this write takes
+    // over the retry.
+    if (retryingIdsRef.current.has(id) && queue.halted()) {
+      const timer = retryTimer.current.get(id)
+      if (timer) clearTimeout(timer)
+      retryTimer.current.delete(id)
+    }
+    return queue
+      .enqueue({ kind: 'typed', after: { title: nextTitle, blocks: nextBlocks } })
+      .then(() => {
+        land(id, nextTitle, nextBlocks)
+      })
+      .catch((err: unknown) => {
+        if (!queue.halted()) {
+          const stored = drafts.current.get(id)
+          if (stored && stored.title === nextTitle && stored.blocks === nextBlocks) drafts.current.delete(id)
+          return
+        }
+        console.error('[document] save failed', id, err)
+        scheduleRetry(id, nextTitle, nextBlocks)
+      })
+  }
+
+  // `id` may no longer be the open page. While it is, send what it shows now;
+  // otherwise send the draft stored when the save failed or was held.
+  function runRetry(id: string) {
+    if (!isOnlineRef.current) return
+    const stored = drafts.current.get(id)
+    if (!stored) return
+    const isCurrent = id === loadedId.current
+    const nextTitle = isCurrent ? titleRef.current : stored.title
+    const nextBlocks = isCurrent ? blocksRef.current : stored.blocks
+    const queue = queueFor(id, { title: nextTitle, blocks: nextBlocks })
+    const same = stored.title === nextTitle && stored.blocks === nextBlocks
+    if (queue.halted() && same) {
+      void queue
+        .retry()
+        .then(() => {
+          land(id, nextTitle, nextBlocks)
+        })
+        .catch((err: unknown) => {
+          if (!queue.halted()) return
+          console.error('[document] save failed', id, err)
+          scheduleRetry(id, nextTitle, nextBlocks)
+        })
+      return
+    }
+    // The newer attempt is already in the queue. A backoff timer that fires
+    // in this window must not enqueue the same draft a second time.
+    if (!queue.idle() && same) return
+    void enqueueTyped(id, nextTitle, nextBlocks)
+  }
 
   // Seed local editable state when a different page loads. On a *same-page*
   // refetch we normally leave local edits alone — but when there are no unsaved
@@ -163,6 +347,21 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
   // block-level merge is deferred. Accept an AI edit with a settled ("Saved") panel.
   useEffect(() => {
     if (page && page.id !== loadedId.current) {
+      // The single `pendingSave` slot is shared by every page. The page being
+      // opened could type into it before the old timer fires, and the edit
+      // just left would be gone. Offline, hold it under its own page id.
+      // Online, start it now — there is no reason to wait out the pause.
+      const leavingId = loadedId.current
+      if (leavingId && pendingSave.current?.pageId === leavingId) {
+        if (saveTimer.current) {
+          clearTimeout(saveTimer.current)
+          saveTimer.current = null
+        }
+        const p = pendingSave.current
+        pendingSave.current = null
+        if (!isOnlineRef.current) holdOffline(p)
+        else void enqueueTyped(p.pageId, p.title, p.blocks)
+      }
       loadedId.current = page.id
       // Touch the page's queue so it exists with this baseline as `head()` if
       // this is the first visit; a queue from an earlier visit keeps its own
@@ -177,13 +376,21 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
       // Only rebase while idle: a queue halted on navigate-away keeps its
       // pending op and shows unsaved rather than dropping typed work — the
       // next retry/edit resolves it, same as returning to any other unsaved
-      // page.
-      if (queue.idle() && JSON.stringify(queue.head().blocks) !== JSON.stringify(page.blocks)) {
+      // page. A draft we are still holding (failed, in flight, or offline)
+      // is that typed work even when the queue is idle, so it is not rebased
+      // away either.
+      const stored = drafts.current.get(page.id)
+      if (queue.idle() && !stored && JSON.stringify(queue.head().blocks) !== JSON.stringify(page.blocks)) {
         queue.rebase({ title: page.title, blocks: page.blocks })
       }
       setSeededId(page.id)
-      setTitle(page.title)
-      setBlocks(page.blocks)
+      if (stored) {
+        setTitle(stored.title)
+        setBlocks(stored.blocks)
+      } else {
+        setTitle(page.title)
+        setBlocks(page.blocks)
+      }
       setPendingDebounce(false)
       setSavedAt(null)
     } else if (page && page.id === loadedId.current && saved) {
@@ -223,28 +430,6 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
   const viewBlocks: Block[] = seeded ? blocks : (page?.blocks ?? [])
   const viewTitle = seeded ? title : (page?.title ?? '')
 
-  // Enqueue a typed (debounced) write — what `scheduleSave`'s timer fires and
-  // what `flushNow` runs immediately. The queue reads `before` from its own
-  // `head()` at apply time, never from here.
-  function enqueueTyped(id: string, nextTitle: string, nextBlocks: Block[]): Promise<void> {
-    const queue = queueFor(id, { title: nextTitle, blocks: nextBlocks })
-    return queue
-      .enqueue({ kind: 'typed', after: { title: nextTitle, blocks: nextBlocks } })
-      .then(() => {
-        queryClient.setQueryData(['page', id], (prev: PondPage | null | undefined) =>
-          prev ? { ...prev, title: nextTitle, blocks: nextBlocks } : prev
-        )
-        // The root page's title is also the breadcrumb's root crumb on every page.
-        queryClient.setQueryData(homeQueryKey(pondId), (prev: HomePage | null | undefined) =>
-          prev && prev.id === id ? { ...prev, title: nextTitle } : prev
-        )
-        setSavedAt(new Date())
-      })
-      .catch((err) => {
-        console.error('[document] save failed', id, err)
-      })
-  }
-
   function scheduleSave(nextTitle: string, nextBlocks: Block[]) {
     const id = loadedId.current
     if (!id) return
@@ -255,8 +440,13 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
       saveTimer.current = null
       const p = pendingSave.current
       pendingSave.current = null
+      if (!p) return
       setPendingDebounce(false)
-      if (p) void enqueueTyped(p.pageId, p.title, p.blocks)
+      if (!isOnlineRef.current) {
+        holdOffline(p)
+        return
+      }
+      void enqueueTyped(p.pageId, p.title, p.blocks)
     }, EDIT_PAUSE_MS)
   }
 
@@ -267,12 +457,17 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
   // (synchronously — nothing else can slip in ahead of it), then returns
   // the queue's own drain promise, which already covers that write plus
   // anything else still outstanding (KAN-495: the queue is the only record
-  // of what's in flight).
+  // of what's in flight). Offline, the pending draft stays where it is: the
+  // `online` transition below is what sends it.
   function flushNow(): Promise<void> | undefined {
     const id = loadedId.current
     if (saveTimer.current) {
       clearTimeout(saveTimer.current)
       saveTimer.current = null
+    }
+    if (!isOnlineRef.current) {
+      if (!id) return undefined
+      return queueFor(id, { title: viewTitle, blocks: viewBlocks }).drained()
     }
     const p = pendingSave.current
     pendingSave.current = null
@@ -284,17 +479,84 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
     return queueFor(id, { title: viewTitle, blocks: viewBlocks }).drained()
   }
 
-  // `flushNow` is recreated every render; the registry entry stays stable per
-  // pageId and calls through this ref so it always runs the latest closure.
-  // The ref is written in an effect (never during render — react-hooks/refs).
+  // `flushNow` / `runRetry` / `enqueueTyped` are recreated every render; the
+  // effects below stay stable and call through these refs. Written in an
+  // effect (never during render — react-hooks/refs).
   const flushNowRef = useRef(flushNow)
+  const runRetryRef = useRef(runRetry)
+  const enqueueTypedRef = useRef(enqueueTyped)
   useEffect(() => {
     flushNowRef.current = flushNow
+    runRetryRef.current = runRetry
+    enqueueTypedRef.current = enqueueTyped
   })
   useEffect(() => {
     if (!pageId) return
     return registerPageFlush(pageId, () => flushNowRef.current())
   }, [pageId])
+
+  // `online` (KAN-407): send the draft the offline gate held, at once, with
+  // whatever is newest — never wait out a fresh debounce. A retry whose
+  // timer already fired while offline bailed without rescheduling; coming
+  // back starts it now, and resets the backoff so the next failure waits 2s
+  // again rather than whatever step was left.
+  const wasOnline = useRef(isOnline)
+  useEffect(() => {
+    if (isOnline && !wasOnline.current) {
+      const flushedPageId = pendingSave.current?.pageId ?? null
+      void flushNowRef.current()
+      for (const id of [...heldIdsRef.current]) {
+        if (id === flushedPageId) continue
+        const draft = drafts.current.get(id)
+        setHeld(id, false)
+        if (draft) void enqueueTypedRef.current(id, draft.title, draft.blocks)
+      }
+      for (const id of [...retryingIdsRef.current]) {
+        if (id === flushedPageId) continue
+        const timer = retryTimer.current.get(id)
+        if (timer) clearTimeout(timer)
+        retryTimer.current.delete(id)
+        retryAttempt.current.set(id, 0)
+        runRetryRef.current(id)
+      }
+    }
+    wasOnline.current = isOnline
+  }, [isOnline])
+
+  // `beforeunload` (KAN-407): `saved` is the OPEN page. Switching to page B
+  // can read saved while page A still has a retry or an offline hold, so the
+  // tab must still warn. `heldIds` / `retryingIds` are keyed by page id and
+  // survive that switch.
+  const hasUnsavedWork = !saved || retryingIds.size > 0 || heldIds.size > 0
+  useEffect(() => {
+    if (!hasUnsavedWork) return
+    function handleBeforeUnload(event: BeforeUnloadEvent) {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [hasUnsavedWork])
+
+  // `pagehide` / `visibilitychange` (KAN-407): flush the pending draft the
+  // instant the tab is closed or backgrounded, rather than waiting out the
+  // debounce — mirrors the deletion-undo flush-on-hide (useDeletionUndo.tsx).
+  // `visibilitychange` fires first and gives the request more time to leave.
+  // Offline, `flushNow` leaves the draft pending for the online transition.
+  useEffect(() => {
+    function handleHide() {
+      void flushNowRef.current()
+    }
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'hidden') handleHide()
+    }
+    window.addEventListener('pagehide', handleHide)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => {
+      window.removeEventListener('pagehide', handleHide)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [])
 
   function onTitle(value: string) {
     setTitle(value)
@@ -311,7 +573,9 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
     queryClient.setQueryData(['page', id], (prev: PondPage | null | undefined) =>
       prev ? { ...prev, props: withValue(prev.props, key, value) } : prev
     )
-    void setProperty(getSupabase(), id, key, value)
+    setProperty(getSupabase(), id, key, value).catch((err) =>
+      console.error('Failed to save property', key, err)
+    )
   }
 
   // Apply an in-editor block change (from BlockCanvas): update local state and
@@ -362,7 +626,7 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
         setSavedAt(new Date())
         return true
       })
-      .catch((err) => {
+      .catch((err: unknown) => {
         console.error('[document] structural save failed', id, err)
         if (opts?.discardOnFailure) {
           // Any op already queued behind the halt (a debounce that fired
@@ -428,6 +692,8 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
     viewBlocks,
     saved,
     savedAt,
+    offline: !isOnline,
+    retrying: retryingHere,
     onTitle,
     onProperty,
     commitLocalEdit,

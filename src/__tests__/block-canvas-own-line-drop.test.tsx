@@ -1,9 +1,11 @@
 /**
  * Committing an own-line drop (6x): the dragged block splices before or after
- * the TARGET'S ROW as a whole, becomes `full`, and every other block in the
- * row keeps the width it already had — one direct write, logged as one
- * own-edit record (KAN-247's fix: routed through the same direct-write
- * pattern `applyTemplateInPlaceUnguarded` uses, KAN-124) (Jira acceptance, 6x
+ * the TARGET'S ROW as a whole and becomes `full`. A row that still holds two
+ * or more blocks keeps the widths the person set. A single row-mate left
+ * alone is widened back to `full`, so a pair pulled apart is a vertical
+ * stack again — one direct write, logged as one own-edit record (KAN-247's
+ * fix: routed through the same direct-write pattern
+ * `applyTemplateInPlaceUnguarded` uses, KAN-124) (Jira acceptance, 6x
  * frame 5).
  */
 
@@ -198,7 +200,24 @@ describe('committing an own-line drop', () => {
     )
   })
 
-  it('dragging a row\'s rowStart holder away onto its own line hands rowStart to the row-mate left behind (KAN-440)', async () => {
+  it('a drop in the bottom-left of a tall block stays on its own line instead of squeezing both into one row', async () => {
+    const calendar: Block = { id: 'b-cal', type: 'text', content: 'calendar' }
+    const headlines: Block = { id: 'b-head', type: 'text', content: 'headlines' }
+    let result: Block[] | null = null
+    renderCanvas([calendar, headlines], (next) => {
+      result = next
+    })
+
+    // x=40 of a 400-wide, 743-tall rect is the outer left; y=700 is the bottom
+    // band. That used to read as beside and crush both blocks to 1/2.
+    dragAndDrop('b-head', 'b-cal', rect(0, 400, 0, 743), 40, 700)
+
+    await waitFor(() =>
+      expect(result).toEqual([calendar, { ...headlines, width: 'full', rowStart: true }])
+    )
+  })
+
+  it('dragging a row\'s rowStart holder away onto its own line restores the mate left alone to full (KAN-440)', async () => {
     const a: Block = { id: 'b-a', type: 'text', content: 'a', width: '1/2', rowStart: true }
     const x: Block = { id: 'b-x', type: 'text', content: 'x', width: '1/2', rowStart: true }
     const y: Block = { id: 'b-y', type: 'text', content: 'y', width: '1/2' }
@@ -212,7 +231,7 @@ describe('committing an own-line drop', () => {
     dragAndDrop('b-x', 'b-z', rect(0, 400, 0, 100), 200, 10)
 
     await waitFor(() =>
-      expect(result).toEqual([a, { ...y, rowStart: true }, { ...x, width: 'full', rowStart: true }, z])
+      expect(result).toEqual([a, { ...y, width: 'full', rowStart: true }, { ...x, width: 'full', rowStart: true }, z])
     )
   })
 })

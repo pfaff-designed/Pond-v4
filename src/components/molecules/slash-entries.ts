@@ -141,6 +141,133 @@ export function normalizeQuery(query: string): string {
   return query.trim().toLowerCase()
 }
 
+/** One stretch of a `matchRuns` split: a matched run underlines, the rest doesn't. */
+export interface MatchRun {
+  text: string
+  hit: boolean
+}
+
+/** NFD combining marks, stripped by `fold` so `cafe` matches `Café` (KAN-390). */
+const COMBINING_MARKS = /[\u0300-\u036f]/g
+
+/**
+ * `label` folded one code point at a time (NFD, combining marks stripped,
+ * lowercased) rather than as one string, so a matched range in `text` can
+ * grow back to the exact original character it came from — `map[i]` names
+ * `source[map[i]]` as `text[i]`'s origin — and an accent a fold would
+ * otherwise consume (e.g. `é`'s own combining mark) still underlines with
+ * its base letter instead of being left off the run.
+ */
+interface FoldedLabel {
+  text: string
+  map: readonly number[]
+  source: readonly string[]
+}
+
+function foldLabel(label: string): FoldedLabel {
+  const source = Array.from(label)
+  const text: string[] = []
+  const map: number[] = []
+  source.forEach((ch, i) => {
+    const folded = ch.normalize('NFD').replace(COMBINING_MARKS, '').toLowerCase()
+    for (let u = 0; u < folded.length; u++) {
+      text.push(folded[u])
+      map.push(i)
+    }
+  })
+  return { text: text.join(''), map, source }
+}
+
+/**
+ * Case- and mark-insensitive fold, shared with `palette-entries.ts`'s
+ * `matchTier` (KAN-390) — one owner, so a scoring tier and a highlighted run
+ * never disagree about what counts as a match.
+ */
+export function fold(s: string): string {
+  return foldLabel(s).text
+}
+
+/**
+ * The tightest subsequence window `q` fits in `text`: for every position
+ * where `q`'s first character matches, a greedy forward scan finds the
+ * earliest end for the rest of `q`; the scan whose window ends up shortest
+ * wins. Returns the matched indices for that window, in order — shared by
+ * `matchTier`'s span (`palette-entries.ts`, KAN-390) and `matchRuns`'
+ * highlight below, so a score and its underline can never disagree about
+ * which window matched. Anchoring on the first occurrence of `q[0]` alone
+ * (rather than trying every one) is the bug this guards: "pond projects"
+ * scored for `prj` would anchor on `pond`'s own `p` and span the whole
+ * label, instead of `projects`' tighter p-r-j. `null` when `q` is not a
+ * subsequence of `text` at all.
+ */
+export function subsequenceMatch(text: string, q: string): readonly number[] | null {
+  if (!q) return []
+  let best: number[] | null = null
+  for (let start = 0; start < text.length; start++) {
+    if (text[start] !== q[0]) continue
+    const positions = [start]
+    let pos = start + 1
+    let ok = true
+    for (let qi = 1; qi < q.length; qi++) {
+      const idx = text.indexOf(q[qi], pos)
+      if (idx === -1) {
+        ok = false
+        break
+      }
+      positions.push(idx)
+      pos = idx + 1
+    }
+    if (!ok) continue
+    if (!best || positions[positions.length - 1] - positions[0] < best[best.length - 1] - best[0]) {
+      best = positions
+    }
+  }
+  return best
+}
+
+/**
+ * The palette's highlight (KAN-390): a contiguous hit (exact / prefix / word-
+ * start / substring tier) still splits `pre` / `hit` / `post` like
+ * `splitMatch` — one run each side, at most one underlined. A subsequence
+ * (fuzzy) hit has no contiguous span to split, so this scatters the query's
+ * characters across the folded label using `subsequenceMatch`'s tightest
+ * window (the SAME scan that scored the tier, not a second one), maps each
+ * matched folded position back to its original character via `foldLabel`'s
+ * `map`, and merges adjacent matched characters into runs, so `nwp` against
+ * "new page" underlines `n`, `w`, `p` as three separate runs rather than one.
+ */
+export function matchRuns(label: string, q: string): MatchRun[] {
+  if (!q) return [{ text: label, hit: false }]
+  const { text: foldedLabel, map, source } = foldLabel(label)
+  const foldedQuery = fold(q)
+  const at = foldedLabel.indexOf(foldedQuery)
+  const hitAt = new Set<number>()
+  if (at !== -1) {
+    for (let i = at; i < at + foldedQuery.length; i++) hitAt.add(i)
+  } else {
+    subsequenceMatch(foldedLabel, foldedQuery)?.forEach((i) => hitAt.add(i))
+  }
+  const sourceHit = new Array<boolean>(source.length).fill(false)
+  hitAt.forEach((i) => {
+    sourceHit[map[i]] = true
+  })
+  const runs: MatchRun[] = []
+  let run = ''
+  let runHit = false
+  source.forEach((ch, i) => {
+    const hit = sourceHit[i]
+    if (run && hit === runHit) {
+      run += ch
+      return
+    }
+    if (run) runs.push({ text: run, hit: runHit })
+    run = ch
+    runHit = hit
+  })
+  if (run) runs.push({ text: run, hit: runHit })
+  return runs
+}
+
 /**
  * The DC's `mob` caps: the open list shows its first 12 entries, group heads
  * counted; the templates pane shows 8 premade shapes. A query is never capped.
