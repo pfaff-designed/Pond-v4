@@ -23,7 +23,7 @@ const Harness = ({
   size,
   withExtraItem,
 }: {
-  width: BlockWidth | undefined
+  width: BlockWidth | number | undefined
   onSelect?: (width: BlockWidth) => void
   onPreview?: (width: BlockWidth | null) => void
   size?: 'desktop' | 'mobile'
@@ -108,6 +108,69 @@ describe('BlockWidthRow', () => {
     for (const cls of ['bg-mn-text', 'text-raw-paper', 'dark:text-raw-ink']) {
       expect(classesOf(full)).toContain(cls)
     }
+  })
+
+  it('fills no cell for a free numeric width (KAN-441)', async () => {
+    const user = userEvent.setup()
+    render(<Harness width={46} />)
+    const menu = await openMenu(user)
+    for (const label of ['¼', '⅓', '½', '⅔', '¾', 'full']) {
+      const cell = within(menu).getByRole('menuitem', { name: label })
+      expect(classesOf(cell)).not.toContain('bg-mn-text')
+      expect(classesOf(cell)).toContain('text-mn-text')
+    }
+  })
+
+  it('shows "custom · N%" at rest for a free numeric width (KAN-441)', async () => {
+    const user = userEvent.setup()
+    render(<Harness width={46} />)
+    const menu = await openMenu(user)
+    expect(within(menu).getByText('custom · 46%')).toBeInTheDocument()
+  })
+
+  it('a custom note rounds to the nearest percent (KAN-441)', async () => {
+    const user = userEvent.setup()
+    render(<Harness width={46.7} />)
+    const menu = await openMenu(user)
+    expect(within(menu).getByText('custom · 47%')).toBeInTheDocument()
+  })
+
+  it('hovering a cell shows the normal hover note over the custom note (KAN-441)', async () => {
+    const user = userEvent.setup()
+    render(<Harness width={46} />)
+    const menu = await openMenu(user)
+    const half = within(menu).getByRole('menuitem', { name: '½' })
+    await user.hover(half)
+    expect(within(menu).getByText('showing ½ on the page · click to keep, esc to go back')).toBeInTheDocument()
+    expect(within(menu).queryByText(/custom/)).not.toBeInTheDocument()
+  })
+
+  it('leaving the row after hovering restores the custom note (KAN-441)', async () => {
+    const user = userEvent.setup()
+    render(<Harness width={46} />)
+    const menu = await openMenu(user)
+    const half = within(menu).getByRole('menuitem', { name: '½' })
+    await user.hover(half)
+    await user.unhover(half)
+    expect(within(menu).getByText('custom · 46%')).toBeInTheDocument()
+  })
+
+  it('picking a named cell calls onSelect with that BlockWidth from a custom width (KAN-441)', async () => {
+    const user = userEvent.setup()
+    const onSelect = jest.fn()
+    render(<Harness width={46} onSelect={onSelect} />)
+    const menu = await openMenu(user)
+    const half = within(menu).getByRole('menuitem', { name: '½' })
+    await user.click(half)
+    expect(onSelect).toHaveBeenCalledWith('1/2')
+  })
+
+  it('size="mobile": the phone note wins over the custom note (KAN-441)', async () => {
+    const user = userEvent.setup()
+    render(<Harness width={46} size="mobile" />)
+    const menu = await openMenu(user)
+    expect(within(menu).getByText('widths show on wider screens. on a phone every block is full.')).toBeInTheDocument()
+    expect(within(menu).queryByText(/custom/)).not.toBeInTheDocument()
   })
 
   it('previews a non-kept cell on hover and calls onPreview', async () => {

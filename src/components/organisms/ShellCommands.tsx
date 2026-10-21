@@ -255,19 +255,35 @@ export function ShellCommands() {
   const { inZen, handleModeSelect } = zenCommands
   const railMinimized = useRailMinimized()
 
-  // Recents are read as the palette opens, so a page opened from it lists next time.
+  // Recents are read once as the palette opens, so a page opened from it lists next
+  // time: the full up-to-20 list ranks `pages`/`actions` (KAN-390's `visits`), and
+  // the board's last-three (`Pond 02` 2g) is `paletteItems`' own `recent` group.
+  const recentPageIds = useMemo(
+    () => (paletteOpen ? readRecentPageIds(pondId) : []),
+    [paletteOpen, pondId]
+  )
   const items = useMemo(
     () =>
       paletteOpen
         ? [
-            ...paletteItems(pages, readRecentPageIds(), currentNodeId),
+            ...paletteItems(pages, recentPageIds, currentNodeId),
             ...zenCommands.items,
             ...railItems(railMinimized),
             ...pondItems(ponds, pond?.id ?? null),
             ...records,
           ]
         : [],
-    [pages, paletteOpen, currentNodeId, zenCommands.items, railMinimized, ponds, pond, records]
+    [
+      pages,
+      paletteOpen,
+      currentNodeId,
+      zenCommands.items,
+      railMinimized,
+      ponds,
+      pond,
+      records,
+      recentPageIds,
+    ]
   )
   const scope = useMemo(() => paletteScope(pages, currentNodeId), [pages, currentNodeId])
 
@@ -391,7 +407,7 @@ export function ShellCommands() {
           { id: created.id, parentId: parent.id, type: 'page', title: created.title },
           pondId
         )
-        writeRecent({ id: created.id, type: 'page', title: created.title })
+        writeRecent({ id: created.id, type: 'page', title: created.title }, pondId)
         openWorkspaceUrl(workspaceUrl({ id: created.id, type: 'page', title: created.title }), router)
         void queryClient.invalidateQueries({ queryKey: pagesKey(pondId) })
         // KAN-415: a failed link append is not a failed page creation — the
@@ -462,7 +478,7 @@ export function ShellCommands() {
       }
       const page = pages.find((p) => p.id === item.id)
       if (page) {
-        writeRecent({ id: page.id, type: page.type, title: page.title })
+        writeRecent({ id: page.id, type: page.type, title: page.title }, pondId)
         openWorkspaceUrl(workspaceUrl({ id: page.id, type: page.type, title: page.title }), router)
       }
     },
@@ -496,6 +512,7 @@ export function ShellCommands() {
         parentTitle={parent.title}
         onSelect={handlePaletteSelect}
         ask={!inZen}
+        visits={recentPageIds}
         onQueryChange={setQuery}
         sheet={templateSheet.sheet}
       />

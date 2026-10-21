@@ -89,6 +89,7 @@ import { PageMentioned, PageProvenance } from '@/components/organisms/PageProven
 import { readAskParam, urlWithoutAsk } from '@/lib/pages/ask-param'
 import { readTemplatesParam, urlWithoutTemplates } from '@/lib/pages/templates-param'
 import { requestTerminalFocus } from '@/lib/terminal-focus'
+import { writeRecent } from '@/lib/pages/recent-pages'
 import { FirstRunHints } from '@/components/organisms/FirstRunHints'
 import { useFirstRunPending } from '@/lib/first-run/use-first-run-pending'
 
@@ -252,6 +253,21 @@ export function DocumentPanel() {
     queryFn: () => (parentId ? getPage(getSupabase(), parentId) : Promise.resolve(null)),
     enabled: !!parentId,
   })
+
+  // KAN-390: the one owner of the ⌘K/@ recent-visits list. Every route that
+  // lands a page — rail, card, link, breadcrumb, undo, composer, ⌘K — resolves
+  // through the `page` query above, so recording the visit here (instead of at
+  // each caller) covers all of them. Guarded by `recentRecordedRef` so a
+  // re-render with the same page/pond pair (a refetch, a prop-driven re-render)
+  // doesn't re-write the already-front entry.
+  const recentRecordedRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!page) return
+    const key = `${pondId ?? ''}:${page.id}`
+    if (recentRecordedRef.current === key) return
+    recentRecordedRef.current = key
+    writeRecent({ id: page.id, type: page.type, title: page.title }, pondId)
+  }, [page, pondId])
 
   // The flat page tree — the same cache the rail reads — so this page's own
   // children (now ordinary page-link blocks, KAN-415) resolve against current

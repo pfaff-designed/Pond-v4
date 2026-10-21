@@ -10,6 +10,7 @@ import { AITerminal } from '@/components/organisms/AITerminal'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { NotifyBridge } from '@/lib/deletion/notify-bridge'
 import { CommandPathProvider } from '@/lib/layout/command-path'
+import { composerScrollPadding } from '@/lib/layout/composer-clearance'
 import { RAIL_WIDTH_PX } from '@/lib/layout/rail-width'
 import { useZen, ZenChrome, ZenComposerChrome, ZenProvider } from '@/lib/layout/zen'
 import { ZenPill } from '@/components/organisms/ZenPill'
@@ -71,7 +72,11 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
                   <div className="relative flex flex-col flex-1 min-h-0">
                     {/* Content owns the full column height; the surfaces inside pad
                     their own bottom against the composer's published height. */}
-                    <main ref={mainRef} className="flex-1 overflow-y-auto">
+                    <main
+                      ref={mainRef}
+                      className="flex-1 overflow-y-auto"
+                      style={composerScrollPadding()}
+                    >
                       {children}
                       <Suspense fallback={null}>
                         <DocumentPanel />

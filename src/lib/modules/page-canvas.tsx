@@ -24,6 +24,7 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react'
+import { composerScrollPadding } from '@/lib/layout/composer-clearance'
 
 interface TodayClaim {
   el: HTMLElement
@@ -75,6 +76,7 @@ export function PageCanvas({ className, children }: { className?: string; childr
       ref={setElement}
       data-part="page-canvas"
       className={['relative', className].filter(Boolean).join(' ')}
+      style={composerScrollPadding()}
     >
       <PageCanvasContext.Provider value={value}>{children}</PageCanvasContext.Provider>
     </div>
