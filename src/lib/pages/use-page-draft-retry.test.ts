@@ -1,8 +1,8 @@
 /**
  * Retry (KAN-407): a save that fails while online schedules a retry via
  * `save-retry.ts`'s backoff instead of silently returning. A later edit
- * replaces the pending retry's payload rather than racing it, so the retry
- * that lands always carries the latest draft, never the one that failed.
+ * retries that failed save first, then writes the later draft, so neither
+ * step is dropped and the page ends on what the person has now.
  */
 
 import React from 'react'
@@ -121,10 +121,9 @@ describe('usePageDraft retry (KAN-407)', () => {
     expect(result.current.savedAt).not.toBeNull()
   })
 
-  it('a retry resends the LATEST draft, never the one that failed', async () => {
-    mockUpdateTitle.mockRejectedValueOnce(new Error('first fails')) // v1 attempt
-    mockUpdateTitle.mockRejectedValueOnce(new Error('v2 attempt also fails')) // v2's own debounce attempt
-    mockUpdateTitle.mockResolvedValueOnce(undefined) // the scheduled retry, carrying v2
+  it('a later edit retries the failed save, then writes the later draft', async () => {
+    mockUpdateTitle.mockRejectedValueOnce(new Error('first fails'))
+    mockUpdateTitle.mockResolvedValue(undefined)
     mockCommitBlocks.mockResolvedValue({ remembered: Promise.resolve() })
     const { result } = mountDraft()
 
@@ -137,31 +136,14 @@ describe('usePageDraft retry (KAN-407)', () => {
       await Promise.resolve()
     })
     expect(mockUpdateTitle).toHaveBeenCalledTimes(1)
+    expect(result.current.retrying).toBe(true)
 
-    // Typed again before the backoff fired: v2's own debounce also fails and
-    // supersedes the pending retry rather than racing it.
     act(() => {
       result.current.commitLocalEdit([textBlock('v2')])
     })
     await act(async () => {
       jest.advanceTimersByTime(EDIT_PAUSE_MS)
       await Promise.resolve()
-      await Promise.resolve()
-    })
-    expect(mockUpdateTitle).toHaveBeenCalledTimes(2)
-    expect(result.current.retrying).toBe(true)
-
-    // The superseded retry's first-step delay (2000ms) elapsing changes nothing
-    // yet — its own retry now waits the SECOND backoff step (4000ms).
-    await act(async () => {
-      jest.advanceTimersByTime(2000)
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-    expect(mockUpdateTitle).toHaveBeenCalledTimes(2)
-
-    await act(async () => {
-      jest.advanceTimersByTime(2000) // completes the 4000ms second step
       await Promise.resolve()
       await Promise.resolve()
     })

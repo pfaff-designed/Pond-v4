@@ -277,14 +277,14 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
     drafts.current.set(id, { title: nextTitle, blocks: nextBlocks })
     setHeld(id, false)
     const queue = queueFor(id, { title: nextTitle, blocks: nextBlocks })
-    // A later typed draft replaces a failed one. Left halted, the queue
-    // would retry that op first, and the retry would resend the draft that
-    // failed rather than the one the person has now.
+    // A later edit does not drop the failed save. `enqueue` retries that op
+    // first, then applies this one, so each stays its own undo step (KAN-495).
+    // The backoff timer for the failed attempt is stale once this write takes
+    // over the retry.
     if (retryingIdsRef.current.has(id) && queue.halted()) {
       const timer = retryTimer.current.get(id)
       if (timer) clearTimeout(timer)
       retryTimer.current.delete(id)
-      queue.discardHalted()
     }
     return queue
       .enqueue({ kind: 'typed', after: { title: nextTitle, blocks: nextBlocks } })
