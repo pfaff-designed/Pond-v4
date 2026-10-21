@@ -9,6 +9,7 @@ import React from 'react'
 import { act, renderHook } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { usePageDraft } from '@/lib/pages/use-page-draft'
+import { resetPageWriteRegistry } from '@/lib/pages/page-flush'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { EDIT_PAUSE_MS } from '@/lib/change-log/pause'
 import type { Block } from '@/lib/documents/types'
@@ -25,9 +26,11 @@ jest.mock('@/lib/pages/client', () => ({
 }))
 
 const mockCommitBlocks = jest.fn()
-jest.mock('@/lib/pages/commit', () => ({
-  commitBlocks: (...args: unknown[]) => mockCommitBlocks(...args),
-}))
+jest.mock('@/lib/pages/commit', () =>
+  jest.requireActual('../../__tests__/helpers/page-commit-mock').pageCommitMock({
+    commitBlocks: (...args: unknown[]) => mockCommitBlocks(...args),
+  })
+)
 
 const textBlock = (content: string): Block => ({ id: 'b1', type: 'text', content }) as Block
 
@@ -62,6 +65,7 @@ function mountDraft(initialPage: PondPage = PAGE) {
 }
 
 beforeEach(() => {
+  resetPageWriteRegistry()
   jest.useFakeTimers()
   mockUpdateTitle.mockReset()
   mockCommitBlocks.mockReset()

@@ -54,13 +54,7 @@ it("a row's + opens the new-page menu, and \"page\" creates one with no title an
     'user-1',
     expect.objectContaining({
       title: '',
-      blocks: [
-        expect.objectContaining({
-          type: 'text',
-          content: '',
-          placeholder: 'type, or / for blocks and templates',
-        }),
-      ],
+      blocks: [expect.objectContaining({ type: 'text', content: '' })],
     })
   )
 })

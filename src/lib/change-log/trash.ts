@@ -19,6 +19,11 @@ import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
 import { TrashRefusedError, type TrashRefusalReason } from './errors'
 
+/** `restore_page` (0027) falls back to the pond root when the original
+ *  parent is itself trashed or gone — one home for the notice line, read by
+ *  every surface that offers restore (`ChangeLogPage`, `TrashPage`). */
+export const PARENT_FALLBACK_LINE = 'put back at the top of the pond — its old place is gone'
+
 const TRASH_REFUSAL_REASONS: readonly TrashRefusalReason[] = [
   'not-found',
   'page-gone',

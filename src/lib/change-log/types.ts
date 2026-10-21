@@ -79,6 +79,12 @@ export type ChangeLogAction =
    *  {@link AreaRole} or null (ink) — never a `Block[]`, so this stays out of
    *  {@link BLOCK_ACTIONS}. */
   | 'edit_area_role'
+  /** A person's own rename or delete of a schema field from the table header
+   *  menu (KAN-380); before/after are each a whole {@link PropertySchema} —
+   *  never a `Block[]`, so this stays out of {@link BLOCK_ACTIONS} like the
+   *  other collection tools (`define_schema`, `add_row`, `edit_row`). Written
+   *  as one atomic record per commit, never grouped by pause like a row edit. */
+  | 'edit_schema'
 
 /**
  * The actions whose before/after IS a page's `Block[]` — the ones a block write

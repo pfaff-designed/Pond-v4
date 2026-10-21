@@ -40,6 +40,10 @@ export function PageView({ data, editable, onChange }: ModuleViewProps<PageModul
               type={block.type}
               data={block}
               editable={editable}
+              // Rule 1 (KAN-345): a nested page's own blocks arrive with the
+              // page, never with a person's click — none of them may grab the
+              // caret on load.
+              autofocus={false}
               onChange={(next) => replaceBlockAt(i, next as Block)}
             />
           </div>

@@ -12,6 +12,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DocumentPanel } from '@/components/organisms/DocumentPanel'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { EDIT_PAUSE_MS } from '@/lib/change-log/pause'
+import { resetPageWriteRegistry } from '@/lib/pages/page-flush'
 
 jest.mock('next/navigation', () => ({
   useSearchParams: () => ({ get: (key: string) => (key === 'nodeId' ? 'page-1' : null) }),
@@ -28,9 +29,11 @@ jest.mock('@/lib/pages/client', () => ({
   setProperty: jest.fn().mockResolvedValue(undefined),
 }))
 const mockCommitBlocks = jest.fn()
-jest.mock('@/lib/pages/commit', () => ({
-  commitBlocks: (...args: unknown[]) => mockCommitBlocks(...args),
-}))
+jest.mock('@/lib/pages/commit', () =>
+  jest.requireActual('./helpers/page-commit-mock').pageCommitMock({
+    commitBlocks: (...args: unknown[]) => mockCommitBlocks(...args),
+  })
+)
 
 function renderPanel(title: string, blocks: Array<Record<string, unknown>>) {
   mockGetPage.mockResolvedValue({ id: 'page-1', title, blocks, props: {} })
@@ -49,6 +52,7 @@ function setOnline(value: boolean) {
 }
 
 beforeEach(() => {
+  resetPageWriteRegistry()
   jest.useFakeTimers().setSystemTime(new Date(2026, 9, 17, 14, 2))
   jest.clearAllMocks()
   mockUpdateTitle.mockResolvedValue(undefined)

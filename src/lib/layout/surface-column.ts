@@ -30,6 +30,10 @@ export interface SurfaceColumn {
 export const PAGE_COLUMN_PAD_PX = 32
 /** A bare text block's inset, each side (`PondTemplate`: `padding 2px 4px`); the title row aligns to it. */
 export const TEXT_BLOCK_INSET_PX = 4
+/** The same wrapper's top/bottom inset (the `2` in `padding 2px 4px`) — the trailing
+ *  gap's ghost row (`TrailingBlockGap`) reads this too, so its text starts at the
+ *  same offset the real line's text will, and a click moves nothing (KAN-345). */
+export const TEXT_BLOCK_TOP_INSET_PX = 2
 
 export function useSurfaceColumn(maxWidth: number | string): SurfaceColumn {
   const floats = useCommandFloats()

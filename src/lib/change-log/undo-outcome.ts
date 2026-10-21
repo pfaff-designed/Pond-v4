@@ -9,6 +9,7 @@
 import type { QueryClient } from '@tanstack/react-query'
 import { requestComposerNotice } from '@/lib/terminal-focus'
 import { pagesKey } from '@/lib/pages/keys'
+import { rowsKey } from '@/lib/modules/view/rows-key'
 import type { BlockedReason, RefusedReason, StaleReason } from './undo'
 import type { SessionUndoOutcome } from './session-undo'
 import { changeLogKey } from './keys'
@@ -47,11 +48,16 @@ export function noticeForReason(
 /**
  * The sidebar/rail mark (`pagesKey`), the "Changes to this page" panel
  * (`changeLogKey` — a prefix of its `pageChangesKey`, so one invalidation
- * reaches it at any page/pond) and the specific pages the step's records
- * touched (their own open `DocumentPanel`, keyed `['page', id]`) on `done`;
- * a one-line notice, or clearing one left up by an earlier chord/press,
- * otherwise. A stale/blocked/refused outcome changes nothing, so it says why
- * instead, in the direction it was pressed.
+ * reaches it at any page/pond), the specific pages the step's records
+ * touched (their own open `DocumentPanel`, keyed `['page', id]`), and each
+ * one's row cache (`rowsKey`, so a calendar/board/table already rendering
+ * the row redraws it from the reverted database value instead of waiting
+ * on an unrelated refetch — the undo/redo RPC's own records never carry an
+ * `add_row`/`edit_row` action to filter on, only `undo`/`redo`, so this
+ * invalidates every touched page's rows key rather than trying to tell rows
+ * from non-rows) on `done`; a one-line notice, or clearing one left up by an
+ * earlier chord/press, otherwise. A stale/blocked/refused outcome changes
+ * nothing, so it says why instead, in the direction it was pressed.
  */
 export function applyUndoOutcome(
   direction: 'undo' | 'redo',
@@ -69,7 +75,10 @@ export function applyUndoOutcome(
     const pageIds = new Set(
       result.records.map((record) => record.targetPageId).filter((id): id is string => id !== null)
     )
-    for (const id of pageIds) void queryClient.invalidateQueries({ queryKey: ['page', id] })
+    for (const id of pageIds) {
+      void queryClient.invalidateQueries({ queryKey: ['page', id] })
+      void queryClient.invalidateQueries({ queryKey: rowsKey(id) })
+    }
     return
   }
   requestComposerNotice(noticeForReason(direction, result.reason))

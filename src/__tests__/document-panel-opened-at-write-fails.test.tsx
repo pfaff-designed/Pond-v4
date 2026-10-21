@@ -42,9 +42,7 @@ jest.mock('@/lib/pages/client', () => ({
   deletePage: jest.fn().mockResolvedValue(undefined),
 }))
 
-jest.mock('@/lib/pages/commit', () => ({
-  commitBlocks: jest.fn().mockResolvedValue(undefined),
-}))
+jest.mock('@/lib/pages/commit', () => jest.requireActual('./helpers/page-commit-mock').pageCommitMock())
 
 const mockMarkOpened = jest.fn()
 jest.mock('@/lib/pages/nested-page', () => ({

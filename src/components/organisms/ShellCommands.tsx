@@ -50,6 +50,7 @@ import {
 } from '@/lib/terminal-focus'
 import {
   isPaletteChord,
+  isMinimizeRailChord,
   isRedoChord,
   isUndoChord,
   onApplePlatform,
@@ -62,11 +63,12 @@ import { describeChange, describeUndoneEffect } from '@/lib/change-log/page-chan
 import { getRecord } from '@/lib/change-log/store'
 import { rememberStruckRow } from '@/lib/change-log/undo-strike'
 import { useCommandPath } from '@/lib/layout/command-path'
+import { setRailMinimized, toggleRail, useRailMinimized } from '@/lib/layout/rail-chrome'
 import { PLACEMENT } from '@/lib/layout/shell-placement'
 import { useZenCommands } from '@/lib/layout/use-zen-commands'
-import { workspaceUrl } from '@/lib/pages/nav'
+import { openWorkspaceUrl, workspaceUrl } from '@/lib/pages/nav'
 import { flushPendingPageSave } from '@/lib/pages/page-flush'
-import { newPageParent, paletteItems, paletteScope, pondItems } from '@/lib/pages/palette-items'
+import { newPageParent, paletteItems, paletteScope, pondItems, railItems } from '@/lib/pages/palette-items'
 import { readRecentPageIds, writeRecent } from '@/lib/pages/recent-pages'
 import { usePaletteRecords } from '@/lib/pages/use-palette-records'
 import { createPage } from '@/lib/pages/client'
@@ -172,7 +174,7 @@ export function ShellCommands() {
             const target = pages?.find((p) => p.id === targetPageId)
             if (target) {
               openedPageTitle = target.title
-              router.push(workspaceUrl({ id: target.id, type: target.type, title: target.title }))
+              openWorkspaceUrl(workspaceUrl({ id: target.id, type: target.type, title: target.title }), router)
             }
           }
           const originalId = direction === 'undo' ? record?.links?.undoOf : record?.links?.redoOf
@@ -251,6 +253,7 @@ export function ShellCommands() {
     onEnter: closePalette,
   })
   const { inZen, handleModeSelect } = zenCommands
+  const railMinimized = useRailMinimized()
 
   // Recents are read as the palette opens, so a page opened from it lists next time.
   const items = useMemo(
@@ -259,11 +262,12 @@ export function ShellCommands() {
         ? [
             ...paletteItems(pages, readRecentPageIds(), currentNodeId),
             ...zenCommands.items,
+            ...railItems(railMinimized),
             ...pondItems(ponds, pond?.id ?? null),
             ...records,
           ]
         : [],
-    [pages, paletteOpen, currentNodeId, zenCommands.items, ponds, pond, records]
+    [pages, paletteOpen, currentNodeId, zenCommands.items, railMinimized, ponds, pond, records]
   )
   const scope = useMemo(() => paletteScope(pages, currentNodeId), [pages, currentNodeId])
 
@@ -289,6 +293,12 @@ export function ShellCommands() {
         e.stopPropagation()
         // A held key repeats keydown; it must not flap the card open and shut.
         if (!e.repeat) requestComposerToggle()
+        return
+      }
+      if (isMinimizeRailChord(e)) {
+        e.preventDefault()
+        e.stopPropagation()
+        if (!e.repeat) toggleRail()
         return
       }
       // Undo/redo belongs to an editable field first — Tiptap's own undo, an
@@ -382,7 +392,7 @@ export function ShellCommands() {
           pondId
         )
         writeRecent({ id: created.id, type: 'page', title: created.title })
-        router.push(workspaceUrl({ id: created.id, type: 'page', title: created.title }))
+        openWorkspaceUrl(workspaceUrl({ id: created.id, type: 'page', title: created.title }), router)
         void queryClient.invalidateQueries({ queryKey: pagesKey(pondId) })
         // KAN-415: a failed link append is not a failed page creation — the
         // page above has already landed and been navigated to.
@@ -406,6 +416,14 @@ export function ShellCommands() {
         return
       }
       setPaletteOpen(false)
+      if (item.action === 'minimize-rail') {
+        setRailMinimized(true)
+        return
+      }
+      if (item.action === 'show-rail') {
+        setRailMinimized(false)
+        return
+      }
       if (handleModeSelect(item.action)) return
       if (item.action === 'new-page') {
         void handleCreatePage(item.query)
@@ -439,13 +457,13 @@ export function ShellCommands() {
         return
       }
       if (item.kind === 'record') {
-        router.push(workspaceUrl({ id: item.id, type: ROW_TYPE, title: item.label }))
+        openWorkspaceUrl(workspaceUrl({ id: item.id, type: ROW_TYPE, title: item.label }), router)
         return
       }
       const page = pages.find((p) => p.id === item.id)
       if (page) {
         writeRecent({ id: page.id, type: page.type, title: page.title })
-        router.push(workspaceUrl({ id: page.id, type: page.type, title: page.title }))
+        openWorkspaceUrl(workspaceUrl({ id: page.id, type: page.type, title: page.title }), router)
       }
     },
     [pages, ponds, router, currentNodeId, handleModeSelect, startTemplateSheet, handleCreatePage]

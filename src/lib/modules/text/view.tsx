@@ -18,7 +18,12 @@ const TextEditor = lazy(loadEditor)
  * and paints at once. Editable loads the editor on demand, with that same render
  * standing in until it is ready; a press on the stand-in is where the caret lands.
  */
-export const TextView = ({ data, editable = false, onChange }: ModuleViewProps<TextBlock>) => {
+export const TextView = ({
+  data,
+  editable = false,
+  onChange,
+  autofocus,
+}: ModuleViewProps<TextBlock>) => {
   const pressRef = useRef<Press | null>(null)
   if (!editable) return <StaticProse content={data.content} />
 
@@ -35,7 +40,13 @@ export const TextView = ({ data, editable = false, onChange }: ModuleViewProps<T
   )
   return (
     <Suspense fallback={standIn}>
-      <TextEditor data={data} onChange={onChange} standIn={standIn} pressRef={pressRef} />
+      <TextEditor
+        data={data}
+        onChange={onChange}
+        standIn={standIn}
+        pressRef={pressRef}
+        autofocus={autofocus}
+      />
     </Suspense>
   )
 }

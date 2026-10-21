@@ -160,6 +160,43 @@ const MODE_IN_ZEN: readonly PaletteItem[] = [LEAVE_ZEN_ACTION]
 let modeOutOfZenKey: string | null = null
 let modeOutOfZen: readonly PaletteItem[] | null = null
 
+/**
+ * The rail's row, under `mode` beside zen. One row: minimize while the rail is
+ * open, show while it is hidden. ⌘\ is the hint on both — the button and the
+ * chord call the same store.
+ */
+let railItemsKey: string | null = null
+let railItemsOpen: readonly PaletteItem[] | null = null
+let railItemsHidden: readonly PaletteItem[] | null = null
+
+export const railItems = (minimized: boolean): readonly PaletteItem[] => {
+  const key = formatChord('mod+\\')
+  if (railItemsKey !== key || !railItemsOpen || !railItemsHidden) {
+    railItemsKey = key
+    railItemsOpen = [
+      {
+        id: 'action:minimize-rail',
+        label: 'minimize rail',
+        kind: 'action',
+        action: 'minimize-rail',
+        group: 'mode',
+        key,
+      },
+    ]
+    railItemsHidden = [
+      {
+        id: 'action:show-rail',
+        label: 'show rail',
+        kind: 'action',
+        action: 'show-rail',
+        group: 'mode',
+        key,
+      },
+    ]
+  }
+  return minimized ? railItemsHidden : railItemsOpen
+}
+
 export const modeItems = (inZen: boolean): readonly PaletteItem[] => {
   if (inZen) return MODE_IN_ZEN
   const key = formatChord('mod+.')

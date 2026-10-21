@@ -73,7 +73,10 @@ jest.mock('@/lib/pages/client', () => ({
   deletePage: jest.fn().mockResolvedValue(undefined),
 }))
 
-jest.mock('@/lib/pages/commit', () => ({ commitBlocks: jest.fn().mockResolvedValue(undefined) }))
+jest.mock('@/lib/pages/commit', () => ({
+  commitBlocks: jest.fn().mockResolvedValue(undefined),
+  createPageWriter: jest.fn(() => jest.fn().mockResolvedValue(undefined)),
+}))
 
 const YOURS_TEMPLATE: PondTemplate = {
   id: 'tpl-9',

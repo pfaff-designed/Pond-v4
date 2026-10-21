@@ -13,9 +13,8 @@ import { fireEvent, render } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
-import { blockWidthStyle, layoutRows } from '@/lib/modules/layout-rows'
+import { blockWidthStyle } from '@/lib/modules/layout-rows'
 import type { Block } from '@/lib/documents/types'
-import type { BlockWidth } from '@/lib/modules/content'
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
@@ -56,35 +55,40 @@ function asInlineStyle(width: string): string {
   return el.style.width
 }
 
-function dragOver(targetId: string, targetRect: DOMRect, x: number, y: number) {
+// The target's rect is mocked BEFORE `dragstart` fires: dragstart snapshots
+// every block's rect (KAN-440), so a mock set afterward is invisible to the
+// classification it drives.
+function dragOver(sourceId: string, targetId: string, targetRect: DOMRect, x: number, y: number) {
   const target = blockRoot(targetId)
   jest.spyOn(target, 'getBoundingClientRect').mockReturnValue(targetRect)
+  fireEvent.dragStart(blockRoot(sourceId))
   const event = new MouseEvent('dragover', { bubbles: true, cancelable: true })
   Object.defineProperty(event, 'clientX', { value: x })
   Object.defineProperty(event, 'clientY', { value: y })
   fireEvent(target, event)
 }
 
-const ALL_WIDTHS: BlockWidth[] = ['1/4', '1/3', '1/2', '2/3', '3/4']
-
-/** Reads an `id^="block-"` node's own rendered width back into a `BlockWidth`. */
-function widthLabelOf(el: HTMLElement): BlockWidth {
-  const style = (el.parentElement as HTMLElement).style.width
-  if (style === '100%') return 'full'
-  const match = ALL_WIDTHS.find((width) => asInlineStyle(blockWidthStyle(width)) === style)
-  return match ?? 'full'
-}
-
 /**
  * The actual row grouping a person would see: every `block-*` node (real and
- * ghost) in DOM order, each paired with its own rendered width, packed through
- * the same `layoutRows` the production row list uses. Proves row MEMBERSHIP —
- * which ids land in the same row — not just each id's own width in isolation.
+ * ghost) in DOM order, split wherever an explicit row-break sibling (KAN-440)
+ * sits right before its sizing div — not re-packed by width, since a row can
+ * now split with room left over (`rowStart`), which plain `layoutRows` on
+ * width alone can't see. Proves row MEMBERSHIP — which ids land in the same
+ * row — not just each id's own width in isolation.
  */
+function isRowBreak(el: Element | null): boolean {
+  return el?.getAttribute('aria-hidden') === 'true' && el.childElementCount === 0
+}
+
 function renderedRows(): string[][] {
   const elements = Array.from(document.querySelectorAll<HTMLElement>('[id^="block-"]'))
-  const items = elements.map((el) => ({ id: el.id.replace(/^block-/, ''), width: widthLabelOf(el) }))
-  return layoutRows(items).map((row) => row.map((item) => item.id))
+  const rows: string[][] = []
+  for (const el of elements) {
+    const sizingDiv = el.parentElement as HTMLElement
+    if (rows.length === 0 || isRowBreak(sizingDiv.previousElementSibling)) rows.push([])
+    rows[rows.length - 1].push(el.id.replace(/^block-/, ''))
+  }
+  return rows
 }
 
 describe('the ghost/origin split during a beside hover', () => {
@@ -93,9 +97,8 @@ describe('the ghost/origin split during a beside hover', () => {
     const b: Block = { id: 'b-b', type: 'text', content: 'b' }
     renderCanvas([a, b])
 
-    fireEvent.dragStart(blockRoot('b-a'))
     // x=360 of a 400-wide rect is 90% across: the outer-right 25%, beside-right.
-    dragOver('b-b', rect(0, 400), 360, 50)
+    dragOver('b-a', 'b-b', rect(0, 400), 360, 50)
 
     // One origin node: the real id, its OLD (full) width, opacity-40 only.
     const origin = blockRoot('b-a')
@@ -126,10 +129,9 @@ describe('the ghost/origin split during a beside hover', () => {
     const right: Block = { id: 'b-right', type: 'text', content: 'right' }
     renderCanvas([left, dragged, right])
 
-    fireEvent.dragStart(blockRoot('b-dragged'))
     // Beside-right of `right`: the dragged block's planned slot moves past it,
     // but its origin must stay right after `left` — its real old neighbour.
-    dragOver('b-right', rect(0, 400), 360, 50)
+    dragOver('b-dragged', 'b-right', rect(0, 400), 360, 50)
 
     const ids = Array.from(document.querySelectorAll<HTMLElement>('[data-block-id]')).map((el) =>
       el.getAttribute('data-block-id')
@@ -148,8 +150,7 @@ describe('the ghost/origin split during a beside hover', () => {
     const table: Block = { id: 'b-table', type: 'text', content: 'table' }
     renderCanvas([text, log, table])
 
-    fireEvent.dragStart(blockRoot('b-table'))
-    dragOver('b-log', rect(0, 400), 360, 50)
+    dragOver('b-table', 'b-log', rect(0, 400), 360, 50)
 
     expect(renderedRows()).toEqual([['b-text'], ['b-log', 'b-table::ghost'], ['b-table']])
   })
@@ -166,27 +167,48 @@ describe('the ghost/origin split during a beside hover', () => {
     const d: Block = { id: 'b-d', type: 'text', content: 'd', width: '1/3' }
     renderCanvas([x, b, c, d])
 
-    fireEvent.dragStart(blockRoot('b-b'))
     // Beside-right of `d`.
-    dragOver('b-d', rect(0, 400), 360, 50)
+    dragOver('b-b', 'b-d', rect(0, 400), 360, 50)
 
     expect(renderedRows()).toEqual([['b-x', 'b-c', 'b-d', 'b-b::ghost'], ['b-b']])
   })
 
-  it('swaps two blocks that already share a row: the narrow origin never packs into the planned row', () => {
+  it('swaps two blocks that already share a row: the planned row stays unbroken however narrow the origin is', () => {
     // D (1/3) and T (1/2) already share one row. Dragging D onto T's own
-    // right edge plans D and T beside each other at 1/2 each (unchanged for
-    // D is narrow enough that, if the origin were reinserted right before the
-    // row, it would pack INTO it (1/3 + 1/2 fits in 12 twelfths) and push the
-    // ghost onto a line of its own — the origin must land outside the row
-    // instead, however narrow it is.
+    // right edge plans D and T beside each other at 1/2 each; `planBesideDrop`
+    // marks T `rowStart: true` as the planned row's first member (KAN-440), so
+    // the row stays unbroken regardless of what lands before it — the origin
+    // can sit at its true old slot, right before its old right neighbour T,
+    // without ever merging into T's row.
     const d: Block = { id: 'b-d', type: 'text', content: 'd', width: '1/3' }
     const t: Block = { id: 'b-t', type: 'text', content: 't', width: '1/2' }
     renderCanvas([d, t])
 
-    fireEvent.dragStart(blockRoot('b-d'))
-    dragOver('b-t', rect(0, 400), 360, 50)
+    dragOver('b-d', 'b-t', rect(0, 400), 360, 50)
 
-    expect(renderedRows()).toEqual([['b-t', 'b-d::ghost'], ['b-d']])
+    expect(renderedRows()).toEqual([['b-d'], ['b-t', 'b-d::ghost']])
+  })
+
+  it('the origin carries no rowStart of its own, so it packs beside whatever precedes it instead of forcing an extra line (KAN-440)', () => {
+    // A has room (half-width): with the bug, the origin (X's placeholder)
+    // forces its OWN line anyway, because it still carries X's stale
+    // rowStart, needlessly pushing Y's own already-forced row down by one.
+    // The origin is a placeholder, not a row owner — only the row-mate
+    // `besidePlan` actually hands `rowStart` to (Y here) should force a break.
+    const a: Block = { id: 'b-a', type: 'text', content: 'a', width: '1/2' }
+    const x: Block = { id: 'b-x', type: 'text', content: 'x', width: '1/2', rowStart: true }
+    const y: Block = { id: 'b-y', type: 'text', content: 'y', width: '1/2' }
+    const b: Block = { id: 'b-b', type: 'text', content: 'b' }
+    renderCanvas([a, x, y, b])
+
+    dragOver('b-x', 'b-b', rect(0, 400), 360, 50)
+
+    expect(renderedRows()).toEqual([['b-a', 'b-x'], ['b-y'], ['b-b', 'b-x::ghost']])
+
+    // Every row after the first gets exactly one break, no more, no fewer.
+    const breakCount = Array.from(document.querySelectorAll('[aria-hidden="true"]')).filter(
+      isRowBreak
+    ).length
+    expect(breakCount).toBe(renderedRows().length - 1)
   })
 })

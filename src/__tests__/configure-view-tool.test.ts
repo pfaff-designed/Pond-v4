@@ -12,12 +12,15 @@ import { configureViewTool } from '@/app/api/chat/tools'
 
 const parse = (input: unknown) => configureViewTool.inputSchema.safeParse(input)
 
+const assumption = 'Taking the only existing view block as the one to reconfigure.'
+
 describe('configure_view input — chart mode (#111)', () => {
   it('accepts a chart naming its kind, axis property and plotted series by NAME', () => {
     const r = parse({
       pageId: 'p1',
       mode: 'chart',
       chart: { kind: 'line', xProperty: 'Date', series: [{ property: 'Weight', agg: 'latest' }] },
+      assumption,
     })
     expect(r.success).toBe(true)
   })
@@ -28,12 +31,13 @@ describe('configure_view input — chart mode (#111)', () => {
         pageId: 'p1',
         mode: 'chart',
         chart: { kind: 'bar', series: [{ property: 'Hours', agg: 'sum' }] },
+        assumption,
       }).success
     ).toBe(true)
   })
 
   it('REJECTS mode:"chart" with no chart config (repair re-asks)', () => {
-    const r = parse({ pageId: 'p1', mode: 'chart' })
+    const r = parse({ pageId: 'p1', mode: 'chart', assumption })
     expect(r.success).toBe(false)
     expect(r.success === false && JSON.stringify(r.error.issues)).toMatch(/what it plots/i)
   })
@@ -45,7 +49,7 @@ describe('configure_view input — chart mode (#111)', () => {
       { kind: 'bar', series: [{ property: 'Hours', agg: 'median' }] },
     ]
     for (const chart of bad) {
-      expect(parse({ pageId: 'p1', mode: 'chart', chart }).success).toBe(false)
+      expect(parse({ pageId: 'p1', mode: 'chart', chart, assumption }).success).toBe(false)
     }
   })
 
@@ -69,6 +73,7 @@ describe('configure_view input — chart mode (#111)', () => {
           pageId: 'p1',
           mode: 'chart',
           chart: { kind, series: [{ property: 'Hours', agg: 'sum' }] },
+          assumption,
         }).success
       ).toBe(true)
     }
@@ -82,6 +87,7 @@ describe('configure_view input — big-number mode (#111)', () => {
         pageId: 'p1',
         mode: 'big-number',
         bigNumber: { property: 'Spend', agg: 'sum', format: 'currency' },
+        assumption,
       }).success
     ).toBe(true)
   })
@@ -96,6 +102,7 @@ describe('configure_view input — big-number mode (#111)', () => {
           agg: 'sum',
           delta: { property: 'Month', value: 'September' },
         },
+        assumption,
       }).success
     ).toBe(true)
     // A half-written trend (no value) fails the gate rather than writing a clause
@@ -105,32 +112,38 @@ describe('configure_view input — big-number mode (#111)', () => {
         pageId: 'p1',
         mode: 'big-number',
         bigNumber: { property: 'Spend', agg: 'sum', delta: { property: 'Month' } },
+        assumption,
       }).success
     ).toBe(false)
   })
 
   it('accepts a property-less count of records', () => {
-    expect(parse({ pageId: 'p1', mode: 'big-number', bigNumber: { agg: 'count' } }).success).toBe(
-      true
-    )
+    expect(
+      parse({ pageId: 'p1', mode: 'big-number', bigNumber: { agg: 'count' }, assumption }).success
+    ).toBe(true)
   })
 
   it('REJECTS mode:"big-number" with no bigNumber config', () => {
-    const r = parse({ pageId: 'p1', mode: 'big-number' })
+    const r = parse({ pageId: 'p1', mode: 'big-number', assumption })
     expect(r.success).toBe(false)
     expect(r.success === false && JSON.stringify(r.error.issues)).toMatch(/which figure/i)
   })
 
   it('rejects a bogus verb or format', () => {
     expect(
-      parse({ pageId: 'p1', mode: 'big-number', bigNumber: { property: 'x', agg: 'median' } })
-        .success
+      parse({
+        pageId: 'p1',
+        mode: 'big-number',
+        bigNumber: { property: 'x', agg: 'median' },
+        assumption,
+      }).success
     ).toBe(false)
     expect(
       parse({
         pageId: 'p1',
         mode: 'big-number',
         bigNumber: { property: 'x', agg: 'sum', format: 'dollars' },
+        assumption,
       }).success
     ).toBe(false)
   })
@@ -138,12 +151,14 @@ describe('configure_view input — big-number mode (#111)', () => {
 
 describe('configure_view input — the older modes are unchanged', () => {
   it('still requires a board to group its rows', () => {
-    expect(parse({ pageId: 'p1', mode: 'board' }).success).toBe(false)
-    expect(parse({ pageId: 'p1', mode: 'board', groupBy: 'Status' }).success).toBe(true)
+    expect(parse({ pageId: 'p1', mode: 'board', assumption }).success).toBe(false)
+    expect(parse({ pageId: 'p1', mode: 'board', groupBy: 'Status', assumption }).success).toBe(
+      true
+    )
   })
 
   it('does not demand a chart/bigNumber config for a table', () => {
-    expect(parse({ pageId: 'p1', mode: 'table' }).success).toBe(true)
+    expect(parse({ pageId: 'p1', mode: 'table', assumption }).success).toBe(true)
   })
 
   it('carries no data of any kind — a points array is not part of the input', () => {
@@ -152,8 +167,23 @@ describe('configure_view input — the older modes are unchanged', () => {
       mode: 'chart',
       chart: { kind: 'line', series: [{ property: 'Hours', agg: 'sum' }] },
       points: [{ x: 'Jan', values: { Hours: 3 } }],
+      assumption,
     })
     expect(r.success).toBe(true)
     expect(r.success && 'points' in r.data).toBe(false)
+  })
+})
+
+describe('configure_view input — the assumption field (KAN-334)', () => {
+  it('rejects a payload with no assumption', () => {
+    expect(parse({ pageId: 'p1', mode: 'table' }).success).toBe(false)
+  })
+
+  it('rejects a blank assumption', () => {
+    expect(parse({ pageId: 'p1', mode: 'table', assumption: '' }).success).toBe(false)
+  })
+
+  it('passes with an assumption', () => {
+    expect(parse({ pageId: 'p1', mode: 'table', assumption }).success).toBe(true)
   })
 })

@@ -13,10 +13,11 @@
  * query client).
  */
 
-import React from 'react'
+import React, { useEffect } from 'react'
 import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { EditorContent, useEditor } from '@tiptap/react'
 
 // ── Module mocks — must be defined before imports ─────────────────────────
 
@@ -48,6 +49,12 @@ jest.mock('@/lib/pages/client', () => ({
   listPages: jest.fn().mockResolvedValue([]),
 }))
 
+// KAN-341: the root's own id, the same mock `first-run-path.test.tsx` uses.
+jest.mock('@/lib/pages/home', () => ({
+  HOME_TYPE: 'home',
+  getOrCreateHomePage: jest.fn().mockResolvedValue({ id: 'home-1', title: 'Life', blocks: [] }),
+}))
+
 jest.mock('@/lib/conversation/client', () => ({
   getOrCreateConversation: jest.fn().mockResolvedValue({
     id: 'conv-1',
@@ -62,6 +69,24 @@ jest.mock('@/lib/deletion/notify-bridge', () => ({
   requestNotify: jest.fn(),
 }))
 
+// KAN-341 (accept item): the real write path hits Supabase well past what
+// this file otherwise mocks — stub it so "accept" can be clicked and its
+// `openNodeId` argument inspected directly, the same way `mockSendMessage`
+// stands in for the real chat request.
+jest.mock('@/lib/pages/accept', () => ({
+  writeAcceptedChanges: jest
+    .fn()
+    .mockResolvedValue({ applied: 1, skipped: 0, skippedReasons: [], targetId: 'home-1', recordId: null }),
+}))
+
+// KAN-341 (acceptConfigureView fix): stub the write so a linked configure_view
+// card's accept can be clicked and `pageId` (the write's host) inspected directly —
+// `resolveCollectionByName` stays real, it's a pure name lookup over `allPages`.
+jest.mock('@/lib/pages/configure-view', () => ({
+  ...jest.requireActual('@/lib/pages/configure-view'),
+  configureViewFromProposal: jest.fn().mockResolvedValue({ id: 'view-1', replaced: false }),
+}))
+
 const mockSendMessage = jest.fn()
 // Mutable, read fresh by `useChat` on every call — lets a test stream a
 // message in mid-test via `rerender` (KAN-96's revision-stamping test below),
@@ -72,10 +97,12 @@ let mockMessages: Array<{
   parts: Array<Record<string, unknown>>
   metadata?: unknown
 }> = []
+const mockRegenerate = jest.fn()
 jest.mock('@ai-sdk/react', () => ({
   useChat: jest.fn(() => ({
     messages: mockMessages,
     sendMessage: mockSendMessage,
+    regenerate: mockRegenerate,
     addToolOutput: jest.fn(),
     setMessages: jest.fn(),
     status: 'ready',
@@ -95,9 +122,17 @@ import {
 import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
 import { useZen, ZenComposerChrome, ZenProvider } from '@/lib/layout/zen'
 import { COMPOSER_CLEARANCE_VAR } from '@/lib/layout/composer-clearance'
+import { writeAcceptedChanges } from '@/lib/pages/accept'
+import { configureViewFromProposal } from '@/lib/pages/configure-view'
+import { resolveAcceptTarget } from '@/lib/conversation/resolutions'
+import { registerTextEditor } from '@/lib/modules/text/active-editor'
+import { proseExtensions } from '@/lib/modules/text/extensions'
+import { clearSelection, selectWord } from './helpers/selection'
 
 const mockListPages = listPages as jest.Mock
 const mockGetPage = getPage as jest.Mock
+const mockWriteAcceptedChanges = writeAcceptedChanges as jest.Mock
+const mockConfigureViewFromProposal = configureViewFromProposal as jest.Mock
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -137,8 +172,37 @@ const smallHtmlFile = () =>
     type: 'text/html',
   })
 
+/** A registered, editable text-block editor standing in for a real page block — the bar only opens inside one. */
+function PassageBlockHost() {
+  const editor = useEditor({
+    extensions: proseExtensions,
+    content: '<p>hello garden</p>',
+    immediatelyRender: false,
+  })
+
+  useEffect(() => {
+    if (!editor) return
+    return registerTextEditor(editor)
+  }, [editor])
+
+  if (!editor) return null
+  return (
+    <div data-block-id="home-block-1">
+      <EditorContent editor={editor} />
+    </div>
+  )
+}
+
+/** `waitReady`, but disambiguated by name — `PassageBlockHost`'s own editor is a second `textbox`. */
+async function waitComposerReady() {
+  await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Pond' })).not.toBeDisabled())
+}
+
 beforeEach(() => {
   mockSendMessage.mockClear()
+  mockRegenerate.mockClear()
+  mockWriteAcceptedChanges.mockClear()
+  mockConfigureViewFromProposal.mockClear()
   mockAmbientNodeId = null
   mockMessages = []
 })
@@ -957,6 +1021,627 @@ describe('AITerminal — the @ mention picker opens, narrows and closes (KAN-99)
     const unrelatedIndex = options.findIndex((t) => t?.includes('kitchen renovation'))
     expect(recentIndex).toBeGreaterThanOrEqual(0)
     expect(recentIndex).toBeLessThan(unrelatedIndex)
+  })
+})
+
+describe('AITerminal — the root page sends its own id (KAN-341)', () => {
+  it('at the root (no ?nodeId=), sendMessage\'s body carries the home row\'s id', async () => {
+    renderTerminal()
+    await waitReady()
+
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'what is on this page' } })
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' })
+
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1))
+    expect(mockSendMessage).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        body: expect.objectContaining({ nodeId: 'home-1' }),
+      })
+    )
+  })
+})
+
+describe("AITerminal — the root page's contextLabel resolves to the home title (KAN-341)", () => {
+  it('currentPage fires with the home id, and the read chip names the home row once it loads', async () => {
+    mockGetPage.mockResolvedValueOnce({
+      id: 'home-1',
+      parentId: null,
+      type: 'home',
+      title: 'Garden Life',
+      blocks: [],
+      order: 0,
+      props: {},
+    })
+    mockMessages = [
+      { id: 'm-ask', role: 'user', parts: [{ type: 'text', text: 'what is on this page' }] },
+      { id: 'm-answer', role: 'assistant', parts: [{ type: 'text', text: 'Here is what is on it.' }] },
+    ]
+    renderTerminal()
+    await waitReady()
+
+    await waitFor(() => expect(mockGetPage).toHaveBeenCalledWith(expect.anything(), 'home-1'))
+    await waitFor(() =>
+      expect(screen.getAllByTestId('read-chip').map((el) => el.textContent)).toContain(
+        'Garden Life'
+      )
+    )
+  })
+})
+
+describe('AITerminal — a dismissed current-page chip comes back on a later visit (KAN-341)', () => {
+  it('dismiss on A, open B, reopen A: the current: reference reappears', async () => {
+    mockAmbientNodeId = 'page-a'
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const tree = () => (
+      <QueryClientProvider client={queryClient}>
+        <AITerminal />
+      </QueryClientProvider>
+    )
+    const { rerender } = render(tree())
+    await waitReady()
+
+    const currentChip = () => screen.getByRole('button', { name: /^remove reference:/ })
+    await waitFor(() => expect(currentChip()).toBeInTheDocument())
+    fireEvent.click(currentChip())
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /^remove reference:/ })).not.toBeInTheDocument()
+    )
+
+    mockAmbientNodeId = 'page-b'
+    rerender(tree())
+    await waitFor(() => expect(currentChip()).toBeInTheDocument())
+
+    mockAmbientNodeId = 'page-a'
+    rerender(tree())
+    await waitFor(() => expect(currentChip()).toBeInTheDocument())
+  })
+})
+
+describe('AITerminal — ask again keeps the hidden chip and references (KAN-341)', () => {
+  it("regenerate's body carries the same openPageContext and references as the original send", async () => {
+    mockAmbientNodeId = 'page-a'
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const tree = () => (
+      <QueryClientProvider client={queryClient}>
+        <AITerminal />
+      </QueryClientProvider>
+    )
+    const { rerender } = render(tree())
+    await waitReady()
+
+    const currentChip = () => screen.getByRole('button', { name: /^remove reference:/ })
+    await waitFor(() => expect(currentChip()).toBeInTheDocument())
+    fireEvent.click(currentChip())
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /^remove reference:/ })).not.toBeInTheDocument()
+    )
+
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'what is on this page' } })
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' })
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1))
+    const [sentMessage, sentOptions] = mockSendMessage.mock.calls[0]
+    const sentBody = sentOptions.body as { openPageContext: boolean; references: unknown[] }
+    expect(sentBody.openPageContext).toBe(false)
+
+    // The seeded user message carries the real stamp `sendText` wrote
+    // (`sentMessage.metadata`) — `handleAskAgain` reads the resend's
+    // openPageContext/references off this, not off live state.
+    mockMessages = [
+      {
+        id: 'm-ask',
+        role: 'user',
+        parts: [{ type: 'text', text: 'what is on this page' }],
+        metadata: (sentMessage as { metadata: unknown }).metadata,
+      },
+      { id: 'm-answer', role: 'assistant', parts: [{ type: 'text', text: 'The page has...' }] },
+    ]
+    rerender(tree())
+
+    const askAgain = await screen.findByRole('button', { name: 'ask again' })
+    fireEvent.click(askAgain)
+
+    await waitFor(() => expect(mockRegenerate).toHaveBeenCalledTimes(1))
+    const [regenerateOptions] = mockRegenerate.mock.calls[0]
+    expect(regenerateOptions.body.openPageContext).toBe(sentBody.openPageContext)
+    expect(regenerateOptions.body.references).toEqual(sentBody.references)
+  })
+})
+
+describe('AITerminal — ask again ignores a chip reset since the original send (KAN-341)', () => {
+  it('a hidden chip that reappeared after visiting another page and back stays hidden on regenerate', async () => {
+    const user = userEvent.setup()
+    mockAmbientNodeId = 'page-a'
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const tree = () => (
+      <QueryClientProvider client={queryClient}>
+        <AITerminal />
+      </QueryClientProvider>
+    )
+    const { rerender } = render(tree())
+    await waitReady()
+
+    // × the chip on A, then ask.
+    const currentChip = () => screen.getByRole('button', { name: /^remove reference:/ })
+    await waitFor(() => expect(currentChip()).toBeInTheDocument())
+    await user.click(currentChip())
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /^remove reference:/ })).not.toBeInTheDocument()
+    )
+    await user.type(screen.getByRole('textbox'), 'what is on this page')
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1))
+    const [sentMessage] = mockSendMessage.mock.calls[0]
+
+    mockMessages = [
+      {
+        id: 'm-ask',
+        role: 'user',
+        parts: [{ type: 'text', text: 'what is on this page' }],
+        metadata: (sentMessage as { metadata: unknown }).metadata,
+      },
+      { id: 'm-answer', role: 'assistant', parts: [{ type: 'text', text: 'The page has...' }] },
+    ]
+    rerender(tree())
+
+    // Open B, then back to A — the dismissal resets, so A's chip is back
+    // and live `openPageContext` for A is now true again.
+    mockAmbientNodeId = 'page-b'
+    rerender(tree())
+    await waitFor(() => expect(currentChip()).toBeInTheDocument())
+    mockAmbientNodeId = 'page-a'
+    rerender(tree())
+    await waitFor(() => expect(currentChip()).toBeInTheDocument())
+
+    const askAgain = await screen.findByRole('button', { name: 'ask again' })
+    await user.click(askAgain)
+
+    await waitFor(() => expect(mockRegenerate).toHaveBeenCalledTimes(1))
+    const [regenerateOptions] = mockRegenerate.mock.calls[0]
+    // The ORIGINAL send's choice (hidden), not the live, reset state (shown).
+    expect(regenerateOptions.body.openPageContext).toBe(false)
+    expect(regenerateOptions.body.nodeId).toBe('page-a')
+    expect(regenerateOptions.body.threadId).toBe('conv-1')
+  })
+})
+
+describe('AITerminal — ask again keeps a passage ×d since the original send (KAN-341)', () => {
+  afterEach(() => clearSelection())
+
+  it("a passage reference removed after asking still rides the regenerate body's references", async () => {
+    const user = userEvent.setup()
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const tree = () => (
+      <QueryClientProvider client={queryClient}>
+        <PassageBlockHost />
+        <AITerminal />
+      </QueryClientProvider>
+    )
+    const { rerender } = render(tree())
+    await waitComposerReady()
+
+    selectWord(screen.getByText('hello garden'), 'garden')
+    await user.click(await screen.findByRole('button', { name: 'ask pond' }))
+    await user.type(screen.getByRole('textbox', { name: 'Message Pond' }), 'what is this?')
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1))
+    const [sentMessage] = mockSendMessage.mock.calls[0]
+    const sentMetadata = (sentMessage as { metadata: { references: unknown[] } }).metadata
+    expect(sentMetadata.references).toEqual(
+      expect.arrayContaining([expect.objectContaining({ quotedText: 'garden' })])
+    )
+
+    mockMessages = [
+      {
+        id: 'm-ask',
+        role: 'user',
+        parts: [{ type: 'text', text: 'what is this?' }],
+        metadata: sentMetadata,
+      },
+      { id: 'm-answer', role: 'assistant', parts: [{ type: 'text', text: 'It is a garden.' }] },
+    ]
+    rerender(tree())
+
+    // × the passage chip — it drops from live `references`.
+    const passageChip = await screen.findByRole('button', { name: /^remove reference:.*garden/ })
+    await user.click(passageChip)
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /^remove reference:.*garden/ })).not.toBeInTheDocument()
+    )
+
+    const askAgain = await screen.findByRole('button', { name: 'ask again' })
+    await user.click(askAgain)
+
+    await waitFor(() => expect(mockRegenerate).toHaveBeenCalledTimes(1))
+    const [regenerateOptions] = mockRegenerate.mock.calls[0]
+    expect(regenerateOptions.body.references).toEqual(
+      expect.arrayContaining([expect.objectContaining({ quotedText: 'garden' })])
+    )
+  })
+})
+
+describe('AITerminal — at the root, a kept chip is not double-sent as a whole-page ref (KAN-341)', () => {
+  it("the sent metadata's wholePageRefPageIds is empty and the read row shows one chip, the home title", async () => {
+    const user = userEvent.setup()
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const tree = () => (
+      <QueryClientProvider client={queryClient}>
+        <AITerminal />
+      </QueryClientProvider>
+    )
+    const { rerender } = render(tree())
+    await waitReady()
+
+    // The current-page chip is kept (never ×'d) — the seeded `current:home-1`
+    // reference still rides along as a whole-page ref alongside openPageContext.
+    await user.type(screen.getByRole('textbox'), 'what is on this page')
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1))
+    const [sentMessage] = mockSendMessage.mock.calls[0]
+    const sentMetadata = (sentMessage as { metadata: { wholePageRefPageIds: string[] } }).metadata
+    expect(sentMetadata.wholePageRefPageIds).toEqual([])
+
+    mockMessages = [
+      { id: 'm-ask', role: 'user', parts: [{ type: 'text', text: 'what is on this page' }], metadata: sentMetadata },
+      { id: 'm-answer', role: 'assistant', parts: [{ type: 'text', text: 'The page has...' }] },
+    ]
+    rerender(tree())
+
+    await waitFor(() => expect(screen.getAllByTestId('read-chip')).toHaveLength(1))
+    expect(screen.getByTestId('read-chip')).toHaveTextContent('Life')
+  })
+})
+
+describe('AITerminal — at the root, the current-page chip resolves off the home id (KAN-341)', () => {
+  it('the chip labels the home title, × actually hides it, and a new thread reseeds it', async () => {
+    const user = userEvent.setup()
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const tree = () => (
+      <QueryClientProvider client={queryClient}>
+        <AITerminal />
+      </QueryClientProvider>
+    )
+    const { rerender } = render(tree())
+    await waitReady()
+
+    const currentChip = () => screen.getByRole('button', { name: 'remove reference: Life' })
+    await waitFor(() => expect(currentChip()).toBeInTheDocument())
+
+    await user.click(currentChip())
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /^remove reference:/ })).not.toBeInTheDocument()
+    )
+
+    await user.type(screen.getByRole('textbox'), 'what is on this page')
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1))
+    const [, sentOptions] = mockSendMessage.mock.calls[0]
+    expect((sentOptions.body as { openPageContext: boolean }).openPageContext).toBe(false)
+
+    // `ThreadHead`'s "new thread" button only draws once there's more than
+    // one turn (`groupTurns`) — two asks give it a head to hold.
+    mockMessages = [
+      { id: 'm-ask-1', role: 'user', parts: [{ type: 'text', text: 'what is on this page' }] },
+      { id: 'm-answer-1', role: 'assistant', parts: [{ type: 'text', text: 'The page has...' }] },
+      { id: 'm-ask-2', role: 'user', parts: [{ type: 'text', text: 'anything else' }] },
+      { id: 'm-answer-2', role: 'assistant', parts: [{ type: 'text', text: 'Nothing else.' }] },
+    ]
+    rerender(tree())
+
+    await user.click(screen.getByRole('button', { name: 'new thread' }))
+    await waitFor(() => expect(currentChip()).toBeInTheDocument())
+  })
+})
+
+describe('AITerminal — at the root, a diff card against the home page is not "missing" (KAN-341)', () => {
+  // Both cases must stamp { nodeId: 'home-1', nodeName: 'Life' }: with no
+  // targetPageId the stamp falls back to the open page; with targetPageId set
+  // to the home id itself, resolveStampTarget must not read the (home-less)
+  // `allPages` miss as a deleted/hallucinated target.
+  it.each([
+    ['no targetPageId', undefined],
+    ['targetPageId = the home id', 'home-1'],
+  ])('%s stamps the home page and accept is not withheld', async (_label, targetPageId) => {
+    mockMessages = [
+      { id: 'm-ask', role: 'user', parts: [{ type: 'text', text: 'add a line' }] },
+      {
+        id: 'm-answer',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'tool-propose_changes',
+            toolCallId: 'tc-root-target',
+            state: 'input-available',
+            input: {
+              ...(targetPageId ? { targetPageId } : {}),
+              changes: [{ op: 'edit', blockId: 'b0', data: { type: 'text', content: 'hello' } }],
+            },
+          },
+        ],
+      },
+    ]
+    renderTerminal()
+    await waitReady()
+
+    const card = await screen.findByRole('group', { name: 'proposed edit' })
+    // Not missing, not needing a place — the header names the home page.
+    await waitFor(() => expect(within(card).getByText(/— Life/)).toBeInTheDocument())
+    expect(within(card).queryByText(/target page not found/)).not.toBeInTheDocument()
+    expect(within(card).queryByText(/these changes need a place/)).not.toBeInTheDocument()
+    expect(within(card).getByRole('button', { name: 'accept' })).toBeEnabled()
+
+    fireEvent.click(within(card).getByRole('button', { name: 'accept' }))
+    await waitFor(() => expect(mockWriteAcceptedChanges).toHaveBeenCalledTimes(1))
+    const [call] = mockWriteAcceptedChanges.mock.calls[0]
+    expect(resolveAcceptTarget(call.resolutions, call.toolCallId, call.openNodeId)).toBe('home-1')
+  })
+})
+
+describe('AITerminal — ask again on a stale page stamps the regenerated card to the question\'s own page, not the live one (KAN-341)', () => {
+  it('a propose_changes part with no targetPageId on the regenerated answer is stamped to A, so accept resolves to A, not B', async () => {
+    const user = userEvent.setup()
+    mockListPages.mockResolvedValue([
+      { id: 'page-a', parentId: null, type: 'page', title: 'Garden', blocks: [], order: 0, props: {} },
+      { id: 'page-b', parentId: null, type: 'page', title: 'Kitchen', blocks: [], order: 1, props: {} },
+    ])
+    mockAmbientNodeId = 'page-a'
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const tree = () => (
+      <QueryClientProvider client={queryClient}>
+        <AITerminal />
+      </QueryClientProvider>
+    )
+    const { rerender } = render(tree())
+    await waitReady()
+
+    await user.type(screen.getByRole('textbox'), 'tidy this page')
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1))
+    const [sentMessage] = mockSendMessage.mock.calls[0]
+
+    mockMessages = [
+      {
+        id: 'm-ask',
+        role: 'user',
+        parts: [{ type: 'text', text: 'tidy this page' }],
+        metadata: (sentMessage as { metadata: unknown }).metadata,
+      },
+      { id: 'm-answer', role: 'assistant', parts: [{ type: 'text', text: 'Tidied.' }] },
+    ]
+    rerender(tree())
+
+    // Navigate to B, THEN ask again — the resend still reads A's own stamp.
+    mockAmbientNodeId = 'page-b'
+    rerender(tree())
+    const askAgain = await screen.findByRole('button', { name: 'ask again' })
+    await user.click(askAgain)
+    await waitFor(() => expect(mockRegenerate).toHaveBeenCalledTimes(1))
+    const [regenerateOptions] = mockRegenerate.mock.calls[0]
+    expect(regenerateOptions.body.nodeId).toBe('page-a')
+
+    // The regenerated answer's own card: the model read A's blocks and never
+    // names a target page.
+    mockMessages = [
+      ...mockMessages,
+      {
+        id: 'm-answer-2',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'tool-propose_changes',
+            toolCallId: 'tc-ask-again',
+            state: 'input-available',
+            input: {
+              changes: [{ op: 'edit', blockId: 'b0', data: { type: 'text', content: 'tidy' } }],
+            },
+          },
+        ],
+      },
+    ]
+    rerender(tree())
+
+    const card = await screen.findByRole('group', { name: 'proposed edit' })
+    await waitFor(() => expect(within(card).getByText(/— Garden/)).toBeInTheDocument())
+
+    fireEvent.click(within(card).getByRole('button', { name: 'accept' }))
+    await waitFor(() => expect(mockWriteAcceptedChanges).toHaveBeenCalledTimes(1))
+    const [call] = mockWriteAcceptedChanges.mock.calls[0]
+    expect(resolveAcceptTarget(call.resolutions, call.toolCallId, call.openNodeId)).toBe('page-a')
+  })
+})
+
+describe('AITerminal — the regenerated answer\'s read row leads with the question\'s own page, not the live one (KAN-341)', () => {
+  it('ask again from B on a question asked on A shows A as the lead read chip', async () => {
+    const user = userEvent.setup()
+    mockListPages.mockResolvedValue([
+      { id: 'page-a', parentId: null, type: 'page', title: 'Garden', blocks: [], order: 0, props: {} },
+      { id: 'page-b', parentId: null, type: 'page', title: 'Kitchen', blocks: [], order: 1, props: {} },
+    ])
+    mockAmbientNodeId = 'page-a'
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const tree = () => (
+      <QueryClientProvider client={queryClient}>
+        <AITerminal />
+      </QueryClientProvider>
+    )
+    const { rerender } = render(tree())
+    await waitReady()
+
+    await user.type(screen.getByRole('textbox'), 'what is on this page')
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1))
+    const [sentMessage] = mockSendMessage.mock.calls[0]
+
+    mockMessages = [
+      {
+        id: 'm-ask',
+        role: 'user',
+        parts: [{ type: 'text', text: 'what is on this page' }],
+        metadata: (sentMessage as { metadata: unknown }).metadata,
+      },
+      { id: 'm-answer', role: 'assistant', parts: [{ type: 'text', text: 'The page has...' }] },
+    ]
+    rerender(tree())
+
+    mockAmbientNodeId = 'page-b'
+    rerender(tree())
+    const askAgain = await screen.findByRole('button', { name: 'ask again' })
+    await user.click(askAgain)
+    await waitFor(() => expect(mockRegenerate).toHaveBeenCalledTimes(1))
+
+    // "ask again" replaces the old answer in place — only the regenerated one
+    // remains, with no `read` stamp yet (that write goes through
+    // `setMessages`, which a reload/first paint hasn't caught up to).
+    mockMessages = [
+      mockMessages[0],
+      { id: 'm-answer-2', role: 'assistant', parts: [{ type: 'text', text: 'It has a bench.' }] },
+    ]
+    rerender(tree())
+
+    await screen.findByText('It has a bench.')
+    expect(screen.getAllByTestId('read-chip')[0]).toHaveTextContent('Garden')
+  })
+})
+
+describe('AITerminal — at the root, accepting a linked configure_view card uses the home id (KAN-341)', () => {
+  it('accept calls configureViewFromProposal with pageId = the home id, not stuck on a null host', async () => {
+    mockMessages = [
+      { id: 'm-ask', role: 'user', parts: [{ type: 'text', text: 'show the tasks as a board' }] },
+      {
+        id: 'm-answer',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'tool-configure_view',
+            toolCallId: 'tc-root-view',
+            state: 'input-available',
+            input: {
+              pageId: 'collection-1',
+              mode: 'board',
+              targetCollection: 'Tasks',
+              reason: 'A board of the tasks collection',
+            },
+          },
+        ],
+      },
+    ]
+    renderTerminal()
+    await waitReady()
+
+    const card = await screen.findByRole('group', { name: 'Proposed view' })
+    fireEvent.click(within(card).getByRole('button', { name: 'Apply view' }))
+
+    await waitFor(() => expect(mockConfigureViewFromProposal).toHaveBeenCalledTimes(1))
+    const [, proposal] = mockConfigureViewFromProposal.mock.calls[0]
+    expect(proposal.pageId).toBe('home-1')
+  })
+})
+
+describe('AITerminal — the path, end to end (KAN-341, PATH_STEPS 1-5)', () => {
+  it('root sends the home id; a hidden chip returns after a visit elsewhere; ask again keeps it hidden', async () => {
+    const user = userEvent.setup()
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const tree = () => (
+      <QueryClientProvider client={queryClient}>
+        <AITerminal />
+      </QueryClientProvider>
+    )
+    const { rerender } = render(tree())
+    await waitReady()
+
+    // 1 & 3. At the root (no ?nodeId=) the send body carries the home row's
+    // own id, not null.
+    const textbox = screen.getByRole('textbox')
+    await user.type(textbox, 'what is on this page')
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1))
+    expect(mockSendMessage).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ body: expect.objectContaining({ nodeId: 'home-1' }) })
+    )
+
+    // 4. Open page A, × its chip, visit B, then return to A — the chip
+    // comes back.
+    mockAmbientNodeId = 'page-a'
+    rerender(tree())
+    const currentChip = () => screen.getByRole('button', { name: /^remove reference:/ })
+    await waitFor(() => expect(currentChip()).toBeInTheDocument())
+    await user.click(currentChip())
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /^remove reference:/ })).not.toBeInTheDocument()
+    )
+
+    mockAmbientNodeId = 'page-b'
+    rerender(tree())
+    await waitFor(() => expect(currentChip()).toBeInTheDocument())
+
+    mockAmbientNodeId = 'page-a'
+    rerender(tree())
+    await waitFor(() => expect(currentChip()).toBeInTheDocument())
+
+    // 5. On A, × the chip, ask, then "ask again" — the regenerate body keeps
+    // openPageContext: false and the same references as the original send.
+    await user.click(currentChip())
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /^remove reference:/ })).not.toBeInTheDocument()
+    )
+
+    mockSendMessage.mockClear()
+    await user.type(screen.getByRole('textbox'), 'what is on this page')
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1))
+    const [, sentOptions] = mockSendMessage.mock.calls[0]
+    const sentBody = sentOptions.body as { openPageContext: boolean; references: unknown[] }
+    expect(sentBody.openPageContext).toBe(false)
+
+    mockMessages = [
+      { id: 'm-ask', role: 'user', parts: [{ type: 'text', text: 'what is on this page' }] },
+      { id: 'm-answer', role: 'assistant', parts: [{ type: 'text', text: 'The page has...' }] },
+    ]
+    rerender(tree())
+
+    const askAgain = await screen.findByRole('button', { name: 'ask again' })
+    await user.click(askAgain)
+
+    await waitFor(() => expect(mockRegenerate).toHaveBeenCalledTimes(1))
+    const [regenerateOptions] = mockRegenerate.mock.calls[0]
+    expect(regenerateOptions.body.openPageContext).toBe(sentBody.openPageContext)
+    expect(regenerateOptions.body.references).toEqual(sentBody.references)
+  })
+})
+
+describe('AITerminal — ask-from-selection at the root uses the home id (KAN-341)', () => {
+  afterEach(() => clearSelection())
+
+  it('appends a passage reference stamped with the home id, not null', async () => {
+    const user = userEvent.setup()
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <PassageBlockHost />
+        <AITerminal />
+      </QueryClientProvider>
+    )
+    await waitComposerReady()
+
+    selectWord(screen.getByText('hello garden'), 'garden')
+    await user.click(await screen.findByRole('button', { name: 'ask pond' }))
+
+    await user.type(screen.getByRole('textbox', { name: 'Message Pond' }), 'what is this?')
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1))
+    const [, { body }] = mockSendMessage.mock.calls[0]
+    expect(body.references).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          pageId: 'home-1',
+          blockId: 'home-block-1',
+          quotedText: 'garden',
+        }),
+      ])
+    )
   })
 })
 

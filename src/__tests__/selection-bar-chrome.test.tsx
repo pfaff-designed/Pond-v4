@@ -6,16 +6,37 @@
  * observe computed layout.
  */
 
+import { useEffect } from 'react'
 import { render, screen } from '@testing-library/react'
+import { EditorContent, useEditor } from '@tiptap/react'
 import { SelectionBar } from '@/components/molecules/SelectionBar'
+import { registerTextEditor } from '@/lib/modules/text/active-editor'
+import { proseExtensions } from '@/lib/modules/text/extensions'
 import { clearSelection, selectText } from './helpers/selection'
 
-/** The bar only portals once a real selection is up — give it one, against `document.body` directly. */
+/** A registered, editable text-block editor — the bar only opens when both ends of the selection sit inside one. */
+function Host() {
+  const editor = useEditor({
+    extensions: proseExtensions,
+    content: '<p>select me</p>',
+    immediatelyRender: false,
+  })
+
+  useEffect(() => {
+    if (!editor) return
+    return registerTextEditor(editor)
+  }, [editor])
+
+  if (!editor) return null
+  return <EditorContent editor={editor} />
+}
+
+/** The bar only portals once a real selection is up — give it one inside the registered editor. */
 const renderBarWithSelection = () => {
   const result = render(
     <>
       <SelectionBar onAsk={jest.fn()} />
-      <p>select me</p>
+      <Host />
     </>
   )
   selectText(screen.getByText('select me'))

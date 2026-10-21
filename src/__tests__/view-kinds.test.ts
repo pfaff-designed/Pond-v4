@@ -3,12 +3,34 @@
  * — its own name, mark, card and empty state — over the one stored `view` carrier.
  */
 import { VIEW_MODES, type ViewBlock } from '@/lib/modules/view/schema'
-import { GANTT_EMPTY_LINE, VIEW_KINDS, viewKind } from '@/lib/modules/view/kinds'
+import { GANTT_EMPTY_LINE, LAYOUT_MENU_MODES, VIEW_KINDS, viewKind } from '@/lib/modules/view/kinds'
 import { blockEmptyBox, blockFrame } from '@/lib/modules/block-frame'
 import { slashRows } from '@/lib/modules/palette'
 import { SOURCE_BLOCKS, footFor, headFor, sourceBlockOf } from '@/components/molecules/source-entries'
 
 describe('view kinds', () => {
+  it('the layout menu lists table, board, calendar, timeline, gallery, list, chart — not big number (KAN-519)', () => {
+    expect([...LAYOUT_MENU_MODES]).toEqual([
+      'table',
+      'board',
+      'calendar',
+      'gantt',
+      'gallery',
+      'list',
+      'chart',
+    ])
+    expect(LAYOUT_MENU_MODES.map((mode) => VIEW_KINDS[mode].label)).toEqual([
+      'table',
+      'board',
+      'calendar',
+      'timeline',
+      'gallery',
+      'list',
+      'chart',
+    ])
+    expect(LAYOUT_MENU_MODES).not.toContain('big-number')
+  })
+
   it('names every mode in Pond’s words, lowercase', () => {
     expect(VIEW_MODES.map((mode) => VIEW_KINDS[mode].label)).toEqual([
       'table',
