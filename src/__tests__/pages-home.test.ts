@@ -22,6 +22,7 @@ interface Row {
   type: string
   title: string
   blocks: unknown
+  deleted_at?: string | null
 }
 
 function makeSupabase(opts: {
@@ -108,6 +109,22 @@ describe('getOrCreateHomePage', () => {
     expect(sb._inserts).toHaveLength(1)
     expect(sb._inserts[0].type).toBe(HOME_TYPE)
     expect(sb._inserts[0].parent_id).toBeNull()
+  })
+
+  it('does not recreate a home the person deleted', async () => {
+    const trashed: Row = {
+      id: 'home-trashed',
+      user_id: 'u1',
+      pond_id: POND,
+      parent_id: null,
+      type: HOME_TYPE,
+      title: 'Untitled',
+      blocks: [],
+      deleted_at: '2026-10-20T00:00:00Z',
+    }
+    const sb = makeSupabase({ user: { id: 'u1' }, rows: [trashed] })
+    expect(await getOrCreateHomePage(sb, POND)).toBeNull()
+    expect(sb._inserts).toHaveLength(0)
   })
 
   it('reuses the existing home row (idempotent, no second insert)', async () => {

@@ -68,7 +68,11 @@ export async function getOrCreateHomePage(
   const pond = await resolvePond(supabase, user.id, pondId)
 
   const existing = await readHomeRow(supabase, user.id, pond)
-  if (existing) return existing
+  // KAN-491: a home the person deleted stays gone. `deleted_at` is the trash
+  // stamp, so a missing live row is not the same as a pond that never had one
+  // — recreating here would put the root back the moment the rail refetched.
+  if (existing?.deletedAt) return null
+  if (existing) return toHome(existing)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
@@ -93,7 +97,9 @@ export async function getOrCreateHomePage(
     // Lost the create race (unique index) or a transient failure — re-read the
     // winning row. If that also comes back empty, surface null rather than throw
     // so the caller can show a loading state rather than crash.
-    return readHomeRow(supabase, user.id, pond)
+    const raced = await readHomeRow(supabase, user.id, pond)
+    if (!raced || raced.deletedAt) return null
+    return toHome(raced)
   }
 
   return {
@@ -103,12 +109,22 @@ export async function getOrCreateHomePage(
   }
 }
 
-/** Read the user's existing home row, or null if none exists yet. */
+type HomeRow = HomePage & { deletedAt: string | null }
+
+const toHome = (row: HomeRow): HomePage => ({
+  id: row.id,
+  title: row.title,
+  blocks: row.blocks,
+})
+
+/** Read the user's existing home row, or null if none exists yet. A trashed
+ *  row still comes back, with `deletedAt` set, so the caller can tell "never
+ *  created" from "the person deleted the root". */
 async function readHomeRow(
   supabase: SupabaseClient<Database>,
   userId: string,
   pond: string | null
-): Promise<HomePage | null> {
+): Promise<HomeRow | null> {
   // #312: scoped by POND, not just by person. Without the pond clause a second
   // pond's get-or-create reads the FIRST pond's root and hands it back — the
   // blocker 0018 refused to create a second root around, closed by 0019 dropping
@@ -116,7 +132,7 @@ async function readHomeRow(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const q: any = (supabase as any)
     .from('pages')
-    .select('id, title, blocks')
+    .select('id, title, blocks, deleted_at')
     .eq('user_id', userId)
     .eq('type', HOME_TYPE)
     .is('parent_id', null)
@@ -130,5 +146,6 @@ async function readHomeRow(
     id: row.id as string,
     title: (row.title as string) ?? 'life',
     blocks: toBlocks(row.blocks),
+    deletedAt: (row.deleted_at as string | null) ?? null,
   }
 }

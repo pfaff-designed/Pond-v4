@@ -15,9 +15,10 @@
  * split, kept strict: the caret toggles expand, the label opens, and the label
  * never toggles.
  *
- * Life is the workspace root, NOT a row in `pages`: it can't be renamed or
- * deleted, and its caret is a collapse-all (collapsing closes every folder, so
- * re-opening shows the resting top level). The data source is unchanged — the
+ * Life is the workspace root, NOT a row in `pages`: its label, rename and
+ * delete go through the home row (KAN-490/491), and its caret is a collapse-all
+ * (collapsing closes every folder, so re-opening shows the resting top level).
+ * The data source is unchanged — the
  * `['pages']` query + parent_id tree — this is a view-layer restructure.
  *
  * Split for Storybook: <RailView> is presentational (all data and mutations
@@ -65,7 +66,7 @@ import { changeLogKey } from '@/lib/change-log/keys'
 import { sessionUndo } from '@/lib/change-log/session-undo'
 import { TrashRefusedError } from '@/lib/change-log/errors'
 import { jsonEqual } from '@/lib/json-equal'
-import { pagesKey } from '@/lib/pages/keys'
+import { homeQueryKey, pagesKey } from '@/lib/pages/keys'
 import { appendChildLinkUnder, trashPageUnlinked } from '@/lib/pages/child-links'
 import { usePondId, usePond } from '@/lib/pond/context'
 import { useHomePage } from '@/lib/pages/use-home-page'
@@ -241,7 +242,10 @@ const NO_CAPABILITIES: RowCapabilities = {
  * and dropped on, never added to, deleted or renamed.
  */
 const rowCapabilities = (id: string, node: RailNode): RowCapabilities => {
-  if (id === LIFE_ID) return { ...NO_CAPABILITIES, droppable: true, addable: true }
+  // KAN-491: the home root renames and deletes like any other row. It still
+  // does not drag — it is the workspace root, not a page you reparent.
+  if (id === LIFE_ID)
+    return { ...NO_CAPABILITIES, droppable: true, addable: true, deletable: true, renameable: true }
   if (id === DATABASES_PLACEHOLDER_ID || id === CHANGE_LOG_NODE_ID || id === TRASH_NODE_ID)
     return NO_CAPABILITIES
   if (isDatabasesRoot(node)) return { ...NO_CAPABILITIES, draggable: true, droppable: true }
@@ -276,7 +280,8 @@ interface RailRowProps {
   /** The single roving tab stop lands here; arrow keys move it (APG tree). */
   isFocused: boolean
   isBusy: boolean
-  /** The root (Life) can't be renamed or deleted and shows no ＋/×. */
+  /** The home root. It renames and deletes (KAN-491); the flag is the row's
+   *  own voice (area label, full ink), not a capability gate. */
   isRoot?: boolean
   /** An area row — the raised label voice + its accent dot. The caller decides
    *  with `isAreaRow` (a top-level page). */
@@ -554,12 +559,12 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
                 there is pointing at the row itself (the row owns the hover state), so
                 × is reachable with one click and no row click first. ＋ is the one
                 thing that moves — alone at that same edge when selected-and-unhovered,
-                one slot left of × (gap 8) once × also draws. The root takes ＋ and
-                never ×. ＋'s margin-right move is NOT animated (KAN-320) — a pointer
+                one slot left of × (gap 8) once × also draws. The home root takes ＋
+                and × (KAN-491). ＋'s margin-right move is NOT animated (KAN-320) — a pointer
                 aimed at ×'s point during the slide must never catch ＋ mid-move — and
                 × stacks above ＋ (z-[1]) so ×'s point always resolves to × even if the
                 two ever overlap. */}
-              {(onNewPageMenuOpenChange || (!isRoot && onDelete)) && (
+              {(onNewPageMenuOpenChange || onDelete) && (
                 <span
                   data-part="row-tools"
                   className="absolute inset-y-0 right-2 flex items-center"
@@ -602,7 +607,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
                       />
                     </span>
                   )}
-                  {!isRoot && onDelete && (
+                  {onDelete && (
                     <span
                       className={`absolute inset-y-0 right-0 z-[1] flex items-center transition-opacity group-focus-within:opacity-100 group-focus-within:pointer-events-auto ${
                         hovered
@@ -672,6 +677,12 @@ export interface RailViewProps {
    * loading, the row falls back to `pondName`.
    */
   rootTitle?: string | null
+  /**
+   * KAN-491: false once the home root has been deleted (or was never there
+   * after a trash). The row hides and the empty hint stays. Defaults to shown
+   * so Storybook and older call sites keep the root.
+   */
+  showHomeRoot?: boolean
   /** The pond's own glyph — the root row's mark, the same one the head draws.
    *  Omit in Storybook and the root falls back to `LIFE_GLYPH`. */
   pondGlyph?: string
@@ -861,6 +872,7 @@ export function RailView({
   tree,
   pondName,
   rootTitle,
+  showHomeRoot = true,
   pondGlyph = LIFE_GLYPH,
   recentGlyphs = [],
   marks,
@@ -1010,14 +1022,16 @@ export function RailView({
       [
         // KAN-490: the root row is the home row, named for ITS title — the
         // pond's name is only the fallback while that title is loading.
-        ...flattenVisible(lifeChildren, expanded, lifeExpanded, rootLabel),
+        ...(showHomeRoot
+          ? flattenVisible(lifeChildren, expanded, lifeExpanded, rootLabel)
+          : []),
         // KAN-490/491: extra roots render after Life's own rows, before the
         // databases foot, regardless of whether Life itself is expanded.
         ...extraRootsFlat,
         ...databasesFlat,
         TRASH_ROW,
       ].filter((f) => !isStaged(f.id)), // KAN-300: a refetch mid-undo-toast can't resurrect a staged row
-    [lifeChildren, expanded, lifeExpanded, extraRootsFlat, databasesFlat, rootLabel]
+    [lifeChildren, expanded, lifeExpanded, extraRootsFlat, databasesFlat, rootLabel, showHomeRoot]
   )
   const visibleIds = useMemo(() => new Set(flat.map((f) => f.id)), [flat])
 
@@ -1114,7 +1128,9 @@ export function RailView({
   const handleRenameKeep = (id: string, value: string, refocus: boolean) => {
     // Empty or unchanged keeps the old title: nothing to write.
     const next = value.trim()
-    const current = flat.find((f) => f.id === id)?.node.title
+    // The home root's visible label is `rootLabel`, not `LIFE_NODE.title`
+    // ('life'). Comparing against the node would write a no-op confirm.
+    const current = id === LIFE_ID ? rootLabel : flat.find((f) => f.id === id)?.node.title
     endRename(id, refocus)
     if (next !== '' && next !== current) onRename(id, next)
   }
@@ -1279,6 +1295,11 @@ export function RailView({
         onDragOver={cap.droppable ? handleDragOver : undefined}
         onDragLeave={cap.droppable ? handleDragLeave : undefined}
         onDrop={cap.droppable ? handleDrop : undefined}
+        onDelete={cap.deletable ? onDelete : undefined}
+        onRenameStart={cap.renameable ? handleRenameStart : undefined}
+        isRenaming={renamingId === id}
+        onRenameKeep={handleRenameKeep}
+        onRenameCancel={handleRenameCancel}
       />
     ) : (
       <RailRow
@@ -1578,6 +1599,20 @@ export function Rail() {
   // that the home row IS the first root), not the pond's name — `rootLabel`
   // (in RailView) falls back to `pondName` only while this is still loading.
   const { data: home } = useHomePage(pondId, pondName, !pondLoading)
+  // KAN-491: set while the home root is in the undo window, before trash
+  // stamps `deleted_at`. A refetch in that window still finds the live row;
+  // hiding by id keeps the empty rail until undo or a failed commit.
+  const [hiddenHomeId, setHiddenHomeId] = useState<string | null>(null)
+  const homeHidden = hiddenHomeId != null && home?.id === hiddenHomeId
+  // Once trash has stamped the row, the query itself is null and the id
+  // guard is no longer what hides the root. Clearing it lets a later restore
+  // of that same page show the row again.
+  useEffect(() => {
+    if (!hiddenHomeId || home !== null) return
+    /* eslint-disable react-hooks/set-state-in-effect */
+    setHiddenHomeId(null)
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [hiddenHomeId, home])
   // The pond's own recent list, overridden optimistically the instant a pick
   // lands (KAN-248 7/8) — mirrors `applyGlyphOptimistic`'s "redraw before the
   // write settles", but as a session-only overlay rather than mirrored local
@@ -2105,7 +2140,96 @@ export function Rail() {
     }
   }
 
+  /** The home root as a tree node. Pages drawn inside it are parent-less rows
+   *  that are not extra roots — not SQL children of the home id — so a delete
+   *  has to trash each of them as well as the home row. */
+  function homeAsNode(): RailNode | null {
+    if (!home) return null
+    const { children } = splitExtraRoots(tree.filter((n) => !isDatabasesRoot(n)))
+    return {
+      id: home.id,
+      parentId: null,
+      type: 'home',
+      title: home.title,
+      order: 0,
+      children,
+    }
+  }
+
+  function hideHomeRoot(node: RailNode) {
+    setHiddenHomeId(node.id)
+    queryClient.setQueryData<PageRow[]>(pagesKey(pondId), (rows) => {
+      let next = rows ?? []
+      for (const id of subtreeIds(node)) {
+        if (id === node.id) continue
+        next = removeRow(next, id)
+      }
+      return next
+    })
+    const selected = selectedNodeId
+    if (selected && (selected === LIFE_ID || subtreeIds(node).has(selected))) {
+      openWorkspaceUrl(workspaceUrl(null), router)
+    }
+  }
+
+  async function commitHomeDelete(
+    node: RailNode,
+    reason?: CommitReason,
+    onWriteSettled?: () => void
+  ) {
+    const targets = [...node.children, node]
+    try {
+      await withUser(
+        async (sb) => {
+          for (const target of targets) {
+            await trashPageUnlinked(sb, queryClient, {
+              pondId,
+              rootPageId: target.id,
+              subtreeIds: subtreeIds(target),
+            })
+          }
+        },
+        reason,
+        onWriteSettled
+      )
+      if (reason !== 'flush-driven') {
+        queryClient.invalidateQueries({ queryKey: ['rows'] })
+        queryClient.invalidateQueries({ queryKey: ['page'] })
+        await queryClient.invalidateQueries({ queryKey: homeQueryKey(pondId) })
+        await queryClient.invalidateQueries({ queryKey: changeLogKey() })
+      }
+    } catch {
+      setHiddenHomeId(null)
+      queryClient.invalidateQueries({ queryKey: pagesKey() })
+      notify(`Couldn't delete "${node.title || 'Untitled'}"`)
+    }
+  }
+
+  function deleteHomeRoot() {
+    const node = homeAsNode()
+    if (!node) return
+    if (needsConfirm(countDescendants(node))) {
+      setConfirmTarget(node)
+      return
+    }
+    hideHomeRoot(node)
+    stageDeletion({
+      message: `Deleted "${node.title || 'Untitled'}"`,
+      scope: 'rail',
+      id: node.id,
+      commit: (reason, onWriteSettled) => commitHomeDelete(node, reason, onWriteSettled),
+      undo: () => {
+        setHiddenHomeId(null)
+        queryClient.invalidateQueries({ queryKey: pagesKey() })
+      },
+    })
+  }
+
   function handleDelete(id: string) {
+    if (id === LIFE_ID) {
+      deleteHomeRoot()
+      return
+    }
     const node = nodeById.get(id)
     if (!node) return
     // A subtree delete is irreversible and heavy — gate it behind the styled
@@ -2135,6 +2259,11 @@ export function Rail() {
     if (!node) return
     setBusyId(node.id)
     try {
+      if (node.type === 'home') {
+        hideHomeRoot(node)
+        await commitHomeDelete(node)
+        return
+      }
       await commitDelete(node)
     } finally {
       setBusyId(null)
@@ -2148,6 +2277,26 @@ export function Rail() {
    * or add that landed in between is untouched, and the clash is surfaced.
    */
   const handleRename = async (id: string, title: string) => {
+    // The home root is not in the pages cache. Its label is the home query.
+    if (id === LIFE_ID) {
+      if (!home) return
+      const previous = home.title
+      const key = homeQueryKey(pondId)
+      queryClient.setQueryData(key, { ...home, title })
+      try {
+        await withUser((sb) => updateTitle(sb, home.id, title))
+      } catch (error) {
+        queryClient.setQueryData(key, { ...home, title: previous })
+        notify(
+          error instanceof DuplicateTitleError
+            ? `"${title}" already exists here`
+            : `Couldn't rename "${previous || 'Untitled'}"`
+        )
+      }
+      void queryClient.invalidateQueries({ queryKey: ['page', home.id] })
+      void queryClient.invalidateQueries({ queryKey: key })
+      return
+    }
     const previous = nodeById.get(id)?.title ?? ''
     applyRenameOptimistic(queryClient, { id, title }, pondId)
     try {
@@ -2382,6 +2531,7 @@ export function Rail() {
         tree={tree}
         pondName={pondName}
         rootTitle={home?.title ?? null}
+        showHomeRoot={home !== null && !homeHidden}
         pondGlyph={pondGlyph}
         recentGlyphs={recentGlyphs}
         marks={marks}
