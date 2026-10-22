@@ -28,10 +28,6 @@ describe('hostile input finishes in well under a second', () => {
     expect(timed('<a '.repeat(MEGABYTE / 3))).toBeLessThan(1000)
   })
 
-  it('sixty-five thousand line breaks inside a mark', () => {
-    expect(timed(`<p><b>a${'<br>'.repeat(65_536)}b</b></p>`)).toBeLessThan(1000)
-  })
-
   it('a megabyte of spaces inside preformatted text', () => {
     expect(timed(`<pre>a${' '.repeat(MEGABYTE)}b</pre>`)).toBeLessThan(1000)
   })
@@ -44,6 +40,17 @@ describe('hostile input finishes in well under a second', () => {
   ])('a hundred thousand nested %s, refused as unreadable before parsing', (_, html) => {
     expect(timed(html)).toBeLessThan(1000)
     expect(readHtml(html)).toEqual({ ok: false, error: { kind: 'unreadable' } })
+  })
+})
+
+describe('hostile input reads in time linear in its size', () => {
+  // Timed against a sixteenth of itself in the same moment, so a busy CI runner slows
+  // both alike: linear reads 15–25× longer, quadratic ~256×. Sixty-five thousand line
+  // breaks read in ~0.25s alone but over a second beside the rest of the suite on CI.
+  it('sixty-five thousand line breaks inside a mark', () => {
+    const lineBreaks = (n: number) => `<p><b>a${'<br>'.repeat(n)}b</b></p>`
+    const sixteenth = Math.min(...[1, 2, 3].map(() => timed(lineBreaks(4096))))
+    expect(timed(lineBreaks(65_536)) / sixteenth).toBeLessThan(64)
   })
 })
 
