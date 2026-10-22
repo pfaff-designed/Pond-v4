@@ -108,11 +108,19 @@ describe('the trailing gap below the last block (KAN-345 rule 3)', () => {
     act(() => {
       fields[1].blur()
     })
+    // Leaving the empty line removes it. The gap click mints one new line.
+    await waitFor(() =>
+      expect(screen.getAllByRole('textbox', { name: 'text block' })).toHaveLength(1)
+    )
 
     fireEvent.click(gap)
 
-    await waitFor(() => expect(fields[1]).toHaveFocus())
-    expect(screen.getAllByRole('textbox', { name: 'text block' })).toHaveLength(2)
+    const again = await waitFor(() => {
+      const found = screen.getAllByRole('textbox', { name: 'text block' })
+      expect(found).toHaveLength(2)
+      return found
+    })
+    await waitFor(() => expect(again[1]).toHaveFocus())
   })
 
   it('a double click below the last block adds exactly one block, not two (G9)', async () => {
@@ -161,7 +169,7 @@ describe('the trailing gap below the last block (KAN-345 rule 3)', () => {
     expect(gap.style.paddingTop).toBe(`${BLOCK_ROW_GAP_PX + TEXT_BLOCK_TOP_INSET_PX}px`)
   })
 
-  it('clicking while the last empty line\'s editor is still a stand-in neither throws nor adds a second block', async () => {
+  it("clicking while the last empty line's editor is still a stand-in neither throws nor adds a second block", async () => {
     const empty: Block = { id: 'b-empty', type: 'text', content: '' }
     renderHarness([empty])
     // Deliberately not awaiting the editor's mount: right after render, with
@@ -175,7 +183,7 @@ describe('the trailing gap below the last block (KAN-345 rule 3)', () => {
     expect(screen.getAllByRole('textbox', { name: 'text block' })).toHaveLength(1)
   })
 
-  it('when the last block is already an empty text line, hovering paints THAT line\'s own placeholder — no second ghost text node below it', async () => {
+  it("when the last block is already an empty text line, hovering paints THAT line's own placeholder — no second ghost text node below it", async () => {
     const empty: Block = { id: 'b-empty', type: 'text', content: '' }
     renderHarness([empty])
     await findTextBlock()

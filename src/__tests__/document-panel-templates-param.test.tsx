@@ -38,7 +38,9 @@ jest.mock('@/lib/pages/client', () => ({
   updateTitle: jest.fn().mockResolvedValue(undefined),
   setProperty: jest.fn().mockResolvedValue(undefined),
 }))
-jest.mock('@/lib/pages/commit', () => jest.requireActual('./helpers/page-commit-mock').pageCommitMock())
+jest.mock('@/lib/pages/commit', () =>
+  jest.requireActual('./helpers/page-commit-mock').pageCommitMock()
+)
 
 const groupsOf = (menu: HTMLElement) =>
   [...menu.parentElement!.querySelectorAll('[data-part="group"]')].map((g) => g.textContent)
@@ -91,7 +93,7 @@ describe('DocumentPanel — the carried `?templates=1`', () => {
     expect(groupsOf(menu)[0]).toBe('templates')
     const premadeRows = firstGroupRows(menu)
     const labels = premadeRows.map((r) => r.querySelector('[data-part="label"]')!.textContent)
-    expect([...labels].sort()).toEqual([...TEMPLATE_KINDS].sort())
+    expect([...labels].sort()).toEqual([...TEMPLATE_KINDS].filter((kind) => kind !== 'page').sort())
 
     expect(mockReplace).toHaveBeenCalledWith('/workspace?nodeId=page-1')
   })

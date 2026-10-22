@@ -1682,8 +1682,6 @@ export const CalendarHoverAdd: Story = {
       await realUserEvent.click(plus)
 
       const body = within(document.body)
-      await body.findByRole('dialog', { name: 'new page' })
-      await realUserEvent.click(body.getByRole('button', { name: 'event' }))
       const title = await body.findByRole('textbox', { name: 'Record title' })
       await expect(title).toHaveFocus()
       await realUserEvent.type(title, 'dentist{Enter}')

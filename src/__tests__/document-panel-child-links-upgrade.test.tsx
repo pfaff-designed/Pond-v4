@@ -126,7 +126,9 @@ function mountWithShell() {
 }
 
 const linkRows = () =>
-  [...document.querySelectorAll('[id^="block-"]')].filter((el) => el.querySelector('[aria-label^="Open "]'))
+  [...document.querySelectorAll('[id^="block-"]')].filter((el) =>
+    el.querySelector('[aria-label^="Open "]')
+  )
 
 const rowTitle = (row: Element) =>
   within(row as HTMLElement).getByText(/^Creative$|^personal$|^professional$/).textContent
@@ -138,9 +140,30 @@ beforeEach(() => {
   mockCommitBlocks.mockResolvedValue({ remembered: Promise.resolve() })
   mockMarkChildLinksMigrated.mockResolvedValue(undefined)
   mockRows = [
-    { id: 'child-creative', parent_id: 'page-1', type: 'page', title: 'Creative', order: 0, updated_at: '2026-01-01' },
-    { id: 'child-personal', parent_id: 'page-1', type: 'page', title: 'personal', order: 1, updated_at: '2026-01-01' },
-    { id: 'child-professional', parent_id: 'page-1', type: 'page', title: 'professional', order: 2, updated_at: '2026-01-01' },
+    {
+      id: 'child-creative',
+      parent_id: 'page-1',
+      type: 'page',
+      title: 'Creative',
+      order: 0,
+      updated_at: '2026-01-01',
+    },
+    {
+      id: 'child-personal',
+      parent_id: 'page-1',
+      type: 'page',
+      title: 'personal',
+      order: 1,
+      updated_at: '2026-01-01',
+    },
+    {
+      id: 'child-professional',
+      parent_id: 'page-1',
+      type: 'page',
+      title: 'professional',
+      order: 2,
+      updated_at: '2026-01-01',
+    },
   ]
 })
 
@@ -150,14 +173,17 @@ describe('a page with children, upgraded on load, shows page-link rows not a car
     mount()
 
     await waitFor(() => expect(linkRows()).toHaveLength(3))
-    expect(linkRows().map((row) => within(row as HTMLElement).getByText(/^Creative$|^personal$|^professional$/).textContent)).toEqual([
-      'Creative',
-      'personal',
-      'professional',
-    ])
+    expect(
+      linkRows().map(
+        (row) =>
+          within(row as HTMLElement).getByText(/^Creative$|^personal$|^professional$/).textContent
+      )
+    ).toEqual(['Creative', 'personal', 'professional'])
     expect(screen.queryByText(/\d+ pages? inside/)).not.toBeInTheDocument()
 
-    await waitFor(() => expect(mockMarkChildLinksMigrated).toHaveBeenCalledWith(expect.anything(), 'page-1'))
+    await waitFor(() =>
+      expect(mockMarkChildLinksMigrated).toHaveBeenCalledWith(expect.anything(), 'page-1')
+    )
     await waitFor(() => expect(mockCommitBlocks).toHaveBeenCalledTimes(1))
     const [, , writtenPageId, writtenBlocks] = mockCommitBlocks.mock.calls[0]
     expect(writtenPageId).toBe('page-1')
@@ -214,6 +240,11 @@ const sessionUndoRecord = (targetPageId: string): ChangeLogRecord => ({
   statusAt: '2026-10-17T09:00:00.000Z',
 })
 
+async function confirmBlockDelete() {
+  const dialog = await screen.findByRole('alertdialog', { name: 'Delete this block?' })
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }))
+}
+
 describe('removing, undoing and reordering a migrated page-link row (KAN-415 path test B)', () => {
   beforeEach(() => {
     PAGES['page-1'] = {
@@ -234,6 +265,7 @@ describe('removing, undoing and reordering a migrated page-link row (KAN-415 pat
     const root = document.getElementById('block-b-professional')!
     root.focus()
     fireEvent.keyDown(root, { key: 'Backspace', metaKey: true })
+    await confirmBlockDelete()
 
     await waitFor(() => expect(linkRows()).toHaveLength(2))
     expect(linkRows().map(rowTitle)).toEqual(['Creative', 'personal'])
@@ -254,6 +286,7 @@ describe('removing, undoing and reordering a migrated page-link row (KAN-415 pat
     const root = document.getElementById('block-b-professional')!
     root.focus()
     fireEvent.keyDown(root, { key: 'Backspace', metaKey: true })
+    await confirmBlockDelete()
     await waitFor(() => expect(linkRows()).toHaveLength(2))
     // The structural delete (KAN-368) must land before an external write — the
     // undo, invalidating `['page', 'page-1']` — is adopted.
@@ -263,7 +296,10 @@ describe('removing, undoing and reordering a migrated page-link row (KAN-415 pat
     // simulate its server-side restore by putting the pre-delete blocks back on
     // the mocked page, then letting `applyUndoOutcome`'s real invalidate refetch it.
     PAGES['page-1'] = { ...PAGES['page-1'], blocks: MIGRATED_LINKS }
-    mockSessionUndo.mockResolvedValueOnce({ outcome: 'done', records: [sessionUndoRecord('page-1')] })
+    mockSessionUndo.mockResolvedValueOnce({
+      outcome: 'done',
+      records: [sessionUndoRecord('page-1')],
+    })
 
     fireEvent.keyDown(document.body, { key: 'z', metaKey: true })
 
@@ -279,7 +315,9 @@ describe('removing, undoing and reordering a migrated page-link row (KAN-415 pat
     root.focus()
     fireEvent.keyDown(root, { key: 'ArrowUp', altKey: true })
 
-    await waitFor(() => expect(linkRows().map(rowTitle)).toEqual(['personal', 'Creative', 'professional']))
+    await waitFor(() =>
+      expect(linkRows().map(rowTitle)).toEqual(['personal', 'Creative', 'professional'])
+    )
     expect(mockMovePage).not.toHaveBeenCalled()
   })
 })

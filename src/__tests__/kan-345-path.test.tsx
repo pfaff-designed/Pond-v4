@@ -120,11 +120,16 @@ describe('KAN-345 — the no-prompts-at-rest path, on the real page surface', ()
     })
     await waitFor(() => expect(fields[1]).toHaveFocus())
 
-    // Clicking it again while that line is still empty focuses it, not a third (G9).
+    // Leaving the empty line removes it. Clicking the gap mints one new line.
     fields[1].blur()
+    await waitFor(() => expect(queryAllTextBlocks()).toHaveLength(1))
     await user.click(gap)
-    await waitFor(() => expect(fields[1]).toHaveFocus())
-    expect(queryAllTextBlocks()).toHaveLength(2)
+    const minted = await waitFor(() => {
+      const found = queryAllTextBlocks()
+      expect(found).toHaveLength(2)
+      return found
+    })
+    await waitFor(() => expect(minted[1]).toHaveFocus())
   })
 
   it('two stacked non-text blocks: the between-row line opens a focused empty line between them', async () => {

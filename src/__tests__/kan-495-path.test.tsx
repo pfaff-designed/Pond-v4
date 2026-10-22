@@ -184,7 +184,9 @@ function toRow(r: ChangeLogRecord) {
 jest.mock('@/lib/supabase/client', () => ({
   createClient: () => ({
     auth: {
-      getUser: jest.fn().mockResolvedValue({ data: { user: { id: USER_ID, email: 'test@example.com' } } }),
+      getUser: jest
+        .fn()
+        .mockResolvedValue({ data: { user: { id: USER_ID, email: 'test@example.com' } } }),
     },
     rpc: jest.fn(async (fn: string, params: { p_record_ids: string[] }) => {
       if (fn === 'undo_change_log_record' || fn === 'redo_change_log_record') {
@@ -200,7 +202,9 @@ jest.mock('@/lib/supabase/client', () => ({
 // ── Pages: getPage/updateTitle/saveBlocks backed by fakePage ───────────────
 
 jest.mock('@/lib/pages/client', () => ({
-  getPage: jest.fn(async (_supabase: unknown, id: string) => (id === fakePage.id ? { ...fakePage } : null)),
+  getPage: jest.fn(async (_supabase: unknown, id: string) =>
+    id === fakePage.id ? { ...fakePage } : null
+  ),
   updateTitle: jest.fn(async (_supabase: unknown, id: string, title: string) => {
     if (id === fakePage.id) fakePage.title = title
   }),
@@ -296,7 +300,12 @@ jest.mock('@/lib/change-log/store', () => {
   return {
     ...actual,
     appendOwnEdit: jest.fn(async (_supabase: unknown, input: Partial<ChangeLogRecord>) => {
-      const record = makeRecord({ ...input, status: 'accepted', action: input.action ?? 'edit', actor: 'you' })
+      const record = makeRecord({
+        ...input,
+        status: 'accepted',
+        action: input.action ?? 'edit',
+        actor: 'you',
+      })
       fakeChangeLog.push(record)
       return record
     }),
@@ -331,8 +340,14 @@ function renderPath(blocks: Block[]) {
   )
 }
 
+async function confirmBlockDelete() {
+  const dialog = await screen.findByRole('alertdialog', { name: 'Delete this block?' })
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }))
+}
+
 const blockRoot = (id: string) => document.getElementById(`block-${id}`)!
-const textBlockIn = (id: string) => within(blockRoot(id)).findByRole('textbox', { name: 'text block' })
+const textBlockIn = (id: string) =>
+  within(blockRoot(id)).findByRole('textbox', { name: 'text block' })
 
 describe('KAN-495 path test', () => {
   it('SPEC.md Tests (a) / 73d96f71: a save chained behind one that fails is retried by the next write, and every edit stays undoable', async () => {
@@ -380,6 +395,7 @@ describe('KAN-495 path test', () => {
     fieldB.focus()
     await waitFor(() => expect(fieldB).toHaveFocus())
     fireEvent.keyDown(fieldB, { key: 'Backspace', metaKey: true })
+    await confirmBlockDelete()
     await waitFor(() => expect(screen.queryByText('B text')).not.toBeInTheDocument())
 
     rejectSave1(new Error('network error'))
@@ -527,7 +543,9 @@ describe('KAN-495 path test', () => {
     const undoSpy = jest.spyOn(sessionUndo, 'undo')
     fireEvent.keyDown(document.body, { key: 'z', metaKey: true })
     await waitFor(() => expect(undoSpy).toHaveBeenCalledTimes(1))
-    await waitFor(() => expect(undoSpy.mock.results[0]?.value).resolves.toEqual({ outcome: 'empty' }))
+    await waitFor(() =>
+      expect(undoSpy.mock.results[0]?.value).resolves.toEqual({ outcome: 'empty' })
+    )
     expect(screen.getByText('A text one two')).toBeInTheDocument()
 
     // Typing afterwards must not trigger an extra undo on top of this one
@@ -588,6 +606,7 @@ describe('KAN-495 path test', () => {
     fieldB.focus()
     await waitFor(() => expect(fieldB).toHaveFocus())
     fireEvent.keyDown(fieldB, { key: 'Backspace', metaKey: true })
+    await confirmBlockDelete()
     await waitFor(() => expect(screen.queryByText('B text')).not.toBeInTheDocument())
     expect(fakeChangeLog.length).toBe(0)
 
@@ -701,6 +720,7 @@ describe('KAN-495 path test', () => {
     fieldB.focus()
     await waitFor(() => expect(fieldB).toHaveFocus())
     fireEvent.keyDown(fieldB, { key: 'Backspace', metaKey: true })
+    await confirmBlockDelete()
     await waitFor(() => expect(screen.queryByText('B text')).not.toBeInTheDocument())
     await waitFor(() => expect(fakeChangeLog.length).toBe(2))
     await waitFor(() => expect(fakePage.blocks).toEqual([{ ...a, content: 'A text extra' }]))
@@ -757,6 +777,7 @@ describe('KAN-495 path test', () => {
     fieldB.focus()
     await waitFor(() => expect(fieldB).toHaveFocus())
     fireEvent.keyDown(fieldB, { key: 'Backspace', metaKey: true })
+    await confirmBlockDelete()
     await waitFor(() => expect(screen.queryByText('B text')).not.toBeInTheDocument())
     await waitFor(() => expect(fakeChangeLog.length).toBe(2))
 

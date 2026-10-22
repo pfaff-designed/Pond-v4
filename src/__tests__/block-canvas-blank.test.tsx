@@ -337,13 +337,14 @@ describe("the blank list ranks the parent's other children's template use first 
     expect(rows()[1].querySelector('[data-part="label"]')!.textContent).toBe('weeknight recipe')
     expect(rows()[1].querySelector('[data-part="hint"]')!.textContent).toBe('yours')
 
-    // The remaining twelve premade kinds follow, in their canonical order — the
-    // `templates` group ends where the next group (`text — scroll for …`) begins.
+    // The premade shapes follow, without `page` — that shape stays in the
+    // templates pane. The group ends where `text — scroll for …` begins.
+    const premade = TEMPLATE_KINDS.filter((kind) => kind !== 'page')
     expect(
       rows()
-        .slice(2, 2 + TEMPLATE_KINDS.length)
+        .slice(2, 2 + premade.length)
         .map((r) => r.querySelector('[data-part="label"]')!.textContent)
-    ).toEqual([...TEMPLATE_KINDS])
+    ).toEqual([...premade])
   })
 })
 
@@ -469,8 +470,7 @@ describe('a template pick on a blank page applies in place (KAN-124)', () => {
 
     writeInTextBlock(await findTextBlock(), '/')
     await screen.findByRole('listbox', { name: 'blocks' })
-    // The first template row is `page`; one ↓ reaches `notes`.
-    await user.keyboard('{ArrowDown}')
+    // The blank list leads with `notes`. The premade page shape stays in the templates pane.
     await user.keyboard('{Enter}')
 
     await waitFor(() =>
@@ -491,8 +491,7 @@ describe('a template pick on a blank page applies in place (KAN-124)', () => {
 
     writeInTextBlock(await findTextBlock(), '/')
     await screen.findByRole('listbox', { name: 'blocks' })
-    // The first template row is `page`; one ↓ reaches `notes`.
-    await user.keyboard('{ArrowDown}')
+    // The blank list leads with `notes`. The premade page shape stays in the templates pane.
     await user.keyboard('{Enter}')
 
     const field = await findTextBlock()
@@ -513,8 +512,7 @@ describe('a template pick on a blank page applies in place (KAN-124)', () => {
 
     writeInTextBlock(await findTextBlock(), '/')
     await screen.findByRole('listbox', { name: 'blocks' })
-    // The first template row is `page`; one ↓ reaches `notes`.
-    await user.keyboard('{ArrowDown}')
+    // The blank list leads with `notes`. The premade page shape stays in the templates pane.
     await user.keyboard('{Enter}')
 
     // The applied template's blocks already mounted and took focus — the
@@ -546,8 +544,7 @@ describe('a template pick on a blank page applies in place (KAN-124)', () => {
 
     writeInTextBlock(await findTextBlock(), '/')
     await screen.findByRole('listbox', { name: 'blocks' })
-    // The first template row is `page`; one ↓ reaches `notes`.
-    await user.keyboard('{ArrowDown}')
+    // The blank list leads with `notes`. The premade page shape stays in the templates pane.
     await user.keyboard('{Enter}')
 
     await waitFor(() => expect(mockSaveProps).toHaveBeenCalled())
@@ -589,8 +586,7 @@ describe('a template pick on a blank page applies in place (KAN-124)', () => {
 
     writeInTextBlock(await findTextBlock(), '/')
     await screen.findByRole('listbox', { name: 'blocks' })
-    // The first template row is `page`; one ↓ reaches `notes`.
-    await user.keyboard('{ArrowDown}')
+    // The blank list leads with `notes`. The premade page shape stays in the templates pane.
     await user.keyboard('{Enter}')
 
     await waitFor(() => expect(mockAppendOwnEdit).toHaveBeenCalledTimes(1))
@@ -624,8 +620,7 @@ describe('a template pick on a blank page applies in place (KAN-124)', () => {
 
     writeInTextBlock(await findTextBlock(), '/')
     await screen.findByRole('listbox', { name: 'blocks' })
-    // The first template row is `page`; one ↓ reaches `notes`.
-    await user.keyboard('{ArrowDown}')
+    // The blank list leads with `notes`. The premade page shape stays in the templates pane.
     // Fire two returns in quick succession, no await between them — the second
     // must land while the first apply is still in its awaits.
     await Promise.all([user.keyboard('{Enter}'), user.keyboard('{Enter}')])
@@ -647,10 +642,11 @@ describe('a template pick on a blank page applies in place (KAN-124)', () => {
     // any pick is made.
     expect(document.querySelector('[data-part="foot"]')?.textContent).toContain('↵ apply')
 
-    // `page`(0) … `meeting notes`(9) — a schema-carrying premade (`date`/`with`)
+    // `notes`(0) … `meeting notes`(8) — a schema-carrying premade (`date`/`with`)
     // with no collection view block, so applying it stays clear of the live
-    // view/collection fetch path (out of scope here).
-    await user.keyboard('{ArrowDown}'.repeat(9))
+    // view/collection fetch path (out of scope here). The premade page shape
+    // is not in this list.
+    await user.keyboard('{ArrowDown}'.repeat(8))
     // Two quick returns (G9): the write still runs once.
     await Promise.all([user.keyboard('{Enter}'), user.keyboard('{Enter}')])
 
@@ -1007,7 +1003,9 @@ describe('→ on a template row previews it, writing nothing (KAN-131)', () => {
     // Typing (the query changing) reaches the still-focused field and filters
     // the rows — the bug this item fixes left nothing focused to type into.
     writeInTextBlock(field, '/rec')
-    await waitFor(() => expect(screen.getByRole('listbox', { name: 'blocks' })).toHaveTextContent('recipe'))
+    await waitFor(() =>
+      expect(screen.getByRole('listbox', { name: 'blocks' })).toHaveTextContent('recipe')
+    )
     expect(document.activeElement).toBe(field)
 
     // `→` previews again; a query change while previewing drops it the same
@@ -1034,7 +1032,9 @@ describe('→ on a template row previews it, writing nothing (KAN-131)', () => {
     )
     expect(document.activeElement).toBe(field)
     writeInTextBlock(field, '/r')
-    await waitFor(() => expect(screen.getByRole('listbox', { name: 'blocks' })).toHaveTextContent('recipe'))
+    await waitFor(() =>
+      expect(screen.getByRole('listbox', { name: 'blocks' })).toHaveTextContent('recipe')
+    )
     expect(document.activeElement).toBe(field)
   })
 
