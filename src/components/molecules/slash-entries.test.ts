@@ -164,7 +164,7 @@ describe('blankRowEntries', () => {
     )
     expect(templateRowEntries.map((e) => e.kind === 'row' && e.id)).toEqual([
       'yours:t1',
-      ...TEMPLATE_KINDS.map((k) => `premade:${k}`),
+      ...TEMPLATE_KINDS.filter((k) => k !== 'page').map((k) => `premade:${k}`),
     ])
   })
 })
@@ -285,41 +285,68 @@ describe('matchRuns (KAN-390)', () => {
   // surrogate pair but one `Array.from` entry — `foldLabel`'s map must grow by
   // two slots for it, or every hit index past it lands one character late.
   it.each([
-    ['🌱 garden plan', 'garden', [
-      { text: '🌱 ', hit: false },
-      { text: 'garden', hit: true },
-      { text: ' plan', hit: false },
-    ]],
-    ['🌱 garden plan', 'gdp', [
-      { text: '🌱 ', hit: false },
-      { text: 'g', hit: true },
-      { text: 'ar', hit: false },
-      { text: 'd', hit: true },
-      { text: 'en ', hit: false },
-      { text: 'p', hit: true },
-      { text: 'lan', hit: false },
-    ]],
-    ['Café 🍰 menu', 'menu', [
-      { text: 'Café 🍰 ', hit: false },
-      { text: 'menu', hit: true },
-    ]],
-    ['👩‍👩‍👧 family', 'fam', [
-      { text: '👩‍👩‍👧 ', hit: false },
-      { text: 'fam', hit: true },
-      { text: 'ily', hit: false },
-    ]],
-    ['𠀋 notes', 'not', [
-      { text: '𠀋 ', hit: false },
-      { text: 'not', hit: true },
-      { text: 'es', hit: false },
-    ]],
-    ['𝐁old plan', 'plan', [
-      { text: '𝐁old ', hit: false },
-      { text: 'plan', hit: true },
-    ]],
-  ] as const)('a non-BMP character before the match does not shift it: %s + %s', (label, q, expected) => {
-    const runs = matchRuns(label, q)
-    expect(runs).toEqual(expected)
-    expect(runs.map((r) => r.text).join('')).toBe(label)
-  })
+    [
+      '🌱 garden plan',
+      'garden',
+      [
+        { text: '🌱 ', hit: false },
+        { text: 'garden', hit: true },
+        { text: ' plan', hit: false },
+      ],
+    ],
+    [
+      '🌱 garden plan',
+      'gdp',
+      [
+        { text: '🌱 ', hit: false },
+        { text: 'g', hit: true },
+        { text: 'ar', hit: false },
+        { text: 'd', hit: true },
+        { text: 'en ', hit: false },
+        { text: 'p', hit: true },
+        { text: 'lan', hit: false },
+      ],
+    ],
+    [
+      'Café 🍰 menu',
+      'menu',
+      [
+        { text: 'Café 🍰 ', hit: false },
+        { text: 'menu', hit: true },
+      ],
+    ],
+    [
+      '👩‍👩‍👧 family',
+      'fam',
+      [
+        { text: '👩‍👩‍👧 ', hit: false },
+        { text: 'fam', hit: true },
+        { text: 'ily', hit: false },
+      ],
+    ],
+    [
+      '𠀋 notes',
+      'not',
+      [
+        { text: '𠀋 ', hit: false },
+        { text: 'not', hit: true },
+        { text: 'es', hit: false },
+      ],
+    ],
+    [
+      '𝐁old plan',
+      'plan',
+      [
+        { text: '𝐁old ', hit: false },
+        { text: 'plan', hit: true },
+      ],
+    ],
+  ] as const)(
+    'a non-BMP character before the match does not shift it: %s + %s',
+    (label, q, expected) => {
+      const runs = matchRuns(label, q)
+      expect(runs).toEqual(expected)
+      expect(runs.map((r) => r.text).join('')).toBe(label)
+    }
+  )
 })

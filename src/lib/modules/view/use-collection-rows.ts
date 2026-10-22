@@ -37,7 +37,6 @@ import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import {
   createPage,
   defineSchema,
-  deletePage,
   getCollectionRows,
   getPage,
   setProperty,
@@ -63,6 +62,9 @@ import type { ChangeLogRecord, RowSnapshot } from '@/lib/change-log/types'
 import { jsonEqual } from '@/lib/json-equal'
 import { displayValue, type CollectionRow } from './apply'
 import { rowsKey } from './rows-key'
+import { trashPage } from '@/lib/change-log/trash'
+import { useOptionalDeletionUndo } from '@/lib/deletion/useDeletionUndo'
+import { pagesKey } from '@/lib/pages/keys'
 
 export interface CollectionData {
   /** The collection's property schema, or null when the page isn't a collection. */
@@ -108,14 +110,9 @@ export interface CollectionData {
    */
   addRow: (values?: Record<string, PropertyValue>) => Promise<string | null>
   /**
-   * Optimistically delete a row, then persist.
-   *
-   * **Deliberately unconsumed since #223.** The per-row `×` was deleted because no
-   * board draws one, which left this with no caller. It stays because it is
-   * persistence, not an affordance — AGENTS.md keeps "engine logic the boards
-   * assume but do not draw" through a surface gut — and because durable trash
-   * (#199) and the deleted-record restore diff (#201) are the surfaces that will
-   * call it. Do not re-expose it as a `×`; that is the defect #223 removed.
+   * Delete a record: drop it from the view, then trash the page. Undo during
+   * the toast puts it back before trash runs. Not a per-row `×` — the record's
+   * page draws the control.
    */
   removeRow: (rowId: string) => void
   /** Optimistically rename a row (its page title), then persist. */
@@ -230,6 +227,7 @@ const applyRowChange = (record: RowSnapshot | null, change: RowChange): RowSnaps
  */
 export function useCollectionRows(collectionId: string | undefined): CollectionData {
   const pondId = usePondId()
+  const deletionUndo = useOptionalDeletionUndo()
   // Lazily created on first fetch, not at render — so seeded/disabled queries
   // never construct a real client and throw (envless CI/Storybook, #38).
   const getSupabase = useLazySupabase()
@@ -286,9 +284,12 @@ export function useCollectionRows(collectionId: string | undefined): CollectionD
   // Made in an effect so leaving — or switching collection — closes the open
   // groups: leaving mid-pause still logs what was done. `onPause` hands back the
   // appended record so `setValueAsStep` can learn it once its own group closes.
-  const rowEdits = useRef<PauseGroups<RowSnapshot, RowChange, string, ChangeLogRecord | null> | null>(
-    null
-  )
+  const rowEdits = useRef<PauseGroups<
+    RowSnapshot,
+    RowChange,
+    string,
+    ChangeLogRecord | null
+  > | null>(null)
   useEffect(() => {
     if (!collectionId) return
     const groups = groupByPause<RowSnapshot, RowChange, string, ChangeLogRecord | null>({
@@ -371,7 +372,8 @@ export function useCollectionRows(collectionId: string | undefined): CollectionD
       // rather than taking the previous step.
       if (stepPondId) sessionUndo.trackPending(stepPondId, logged)
       void logged.then((record) => {
-        if (stepPondId && record) sessionUndo.remember({ pondId: stepPondId, recordIds: [record.id] })
+        if (stepPondId && record)
+          sessionUndo.remember({ pondId: stepPondId, recordIds: [record.id] })
       })
     },
     [collectionId, queryClient, getSupabase]
@@ -425,7 +427,8 @@ export function useCollectionRows(collectionId: string | undefined): CollectionD
       if (!stepPondId || !first) return
       sessionUndo.trackPending(stepPondId, first)
       void first.then((record) => {
-        if (stepPondId && record) sessionUndo.remember({ pondId: stepPondId, recordIds: [record.id] })
+        if (stepPondId && record)
+          sessionUndo.remember({ pondId: stepPondId, recordIds: [record.id] })
       })
     },
     [collectionId, queryClient, getSupabase]
@@ -470,21 +473,55 @@ export function useCollectionRows(collectionId: string | undefined): CollectionD
     [collectionId, queryClient, getSupabase, pondId]
   )
 
-  // Optimistically drop the row from the cache, then persist. Reconcile from server
-  // truth on failure (invalidate) rather than hand-rolling a rollback — mirrors setValue.
+  // Drop the row at once, then trash the page when the undo window closes.
+  // Undo before then puts the cached row back and never calls `trash_page`.
+  // A hard delete never reached trash, so a task you removed came back or
+  // vanished with no restore. `trash_page` is what the rail uses.
   const removeRow = useMemo(
     () => (rowId: string) => {
       if (!collectionId) return
       // An edit to a record that is gone has nothing left to name.
       rowEdits.current?.drop(rowId)
-      queryClient.setQueryData<PondPage[]>(rowsKey(collectionId), (prev) =>
+      const key = rowsKey(collectionId)
+      const snapshot =
+        queryClient.getQueryData<PondPage[]>(key)?.find((p) => p.id === rowId) ?? null
+      queryClient.setQueryData<PondPage[]>(key, (prev) =>
         prev ? prev.filter((p) => p.id !== rowId) : prev
       )
-      deletePage(getSupabase(), rowId).catch(() => {
-        void queryClient.invalidateQueries({ queryKey: rowsKey(collectionId) })
+      const commit = async () => {
+        try {
+          await trashPage(getSupabase(), rowId)
+          void queryClient.invalidateQueries({ queryKey: pagesKey() })
+          void queryClient.invalidateQueries({ queryKey: changeLogKey() })
+        } catch {
+          if (snapshot) {
+            queryClient.setQueryData<PondPage[]>(key, (prev) =>
+              prev?.some((p) => p.id === snapshot.id) ? prev : [...(prev ?? []), snapshot]
+            )
+          }
+          void queryClient.invalidateQueries({ queryKey: key })
+        }
+      }
+      if (!deletionUndo || !snapshot) {
+        void commit()
+        return
+      }
+      deletionUndo.stageDeletion({
+        message: `deleted ${snapshot.title || 'untitled'}`,
+        undoLabel: 'undo',
+        id: rowId,
+        scope: 'block',
+        undo: () => {
+          queryClient.setQueryData<PondPage[]>(key, (prev) => {
+            const list = prev ?? []
+            if (list.some((p) => p.id === snapshot.id)) return list
+            return [...list, snapshot]
+          })
+        },
+        commit,
       })
     },
-    [collectionId, queryClient, getSupabase]
+    [collectionId, queryClient, getSupabase, deletionUndo]
   )
 
   // Optimistically rename in both the ['rows'] cache and the row's own ['page']

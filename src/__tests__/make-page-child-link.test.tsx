@@ -21,7 +21,15 @@ jest.mock('@/lib/supabase/client', () => ({
 
 jest.mock('@/lib/pages/client', () => {
   const pages = [
-    { id: 'kr-1', parentId: null, type: 'page', title: 'Kitchen renovation', blocks: [], props: {}, order: 0 },
+    {
+      id: 'kr-1',
+      parentId: null,
+      type: 'page',
+      title: 'Kitchen renovation',
+      blocks: [],
+      props: {},
+      order: 0,
+    },
   ]
   return {
     createPage: jest
@@ -37,7 +45,11 @@ jest.mock('@/lib/pages/client', () => {
           order: 99,
         })
       ),
-    getPage: jest.fn().mockImplementation(async (_sb: unknown, id: string) => pages.find((p) => p.id === id) ?? null),
+    getPage: jest
+      .fn()
+      .mockImplementation(
+        async (_sb: unknown, id: string) => pages.find((p) => p.id === id) ?? null
+      ),
     listPages: jest.fn().mockResolvedValue(pages),
   }
 })
@@ -80,8 +92,18 @@ const PROSE = 'the cabinet quote is what everything else is downstream of.'
 
 type MockMessage = { id: string; role: string; parts: unknown[]; metadata?: unknown }
 const mockMessages: MockMessage[] = [
-  { id: 'u1', role: 'user', parts: [{ type: 'text', text: QUESTION }], metadata: { sentAt: '2026-09-22T07:12:00' } },
-  { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: PROSE }], metadata: { read: ['Kitchen renovation'] } },
+  {
+    id: 'u1',
+    role: 'user',
+    parts: [{ type: 'text', text: QUESTION }],
+    metadata: { sentAt: '2026-09-22T07:12:00' },
+  },
+  {
+    id: 'a1',
+    role: 'assistant',
+    parts: [{ type: 'text', text: PROSE }],
+    metadata: { read: ['Kitchen renovation'] },
+  },
 ]
 
 jest.mock('@ai-sdk/react', () => ({
@@ -99,6 +121,7 @@ jest.mock('@ai-sdk/react', () => ({
 }))
 
 import { AITerminal } from '@/components/organisms/AITerminal'
+import { openComposerIfClosed } from './helpers/open-composer'
 
 beforeEach(() => {
   jest.clearAllMocks()
@@ -107,12 +130,15 @@ beforeEach(() => {
 })
 
 async function ready() {
+  openComposerIfClosed()
   await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Pond' })).toBeEnabled())
 }
 
 it('make page appends a page-link block to the made page’s parent', async () => {
   render(
-    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
       <AITerminal />
     </QueryClientProvider>
   )

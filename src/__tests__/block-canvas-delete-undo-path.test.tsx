@@ -127,6 +127,7 @@ describe('⌘⌫ writes through persistBlocksAsOwnEdit, one ⌘Z step (KAN-368)'
     await waitFor(() => expect(field).toHaveFocus())
 
     await user.keyboard('{Meta>}{Backspace}{/Meta}')
+    await user.click(await screen.findByRole('button', { name: 'Delete' }))
 
     await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalledTimes(1))
     expect(mockSaveBlocks.mock.calls[0][2].map((b: Block) => b.id)).toEqual(['b-kept'])
@@ -155,6 +156,7 @@ describe('⌘⌫ writes through persistBlocksAsOwnEdit, one ⌘Z step (KAN-368)'
     await waitFor(() => expect(field).toHaveFocus())
 
     await user.keyboard('{Meta>}{Backspace}{/Meta}')
+    await user.click(await screen.findByRole('button', { name: 'Delete' }))
 
     await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(mockAppendOwnEdit).toHaveBeenCalledTimes(1))
@@ -188,6 +190,7 @@ describe('⌘⌫ writes through persistBlocksAsOwnEdit, one ⌘Z step (KAN-368)'
     fieldB.focus()
     await waitFor(() => expect(fieldB).toHaveFocus())
     await user.keyboard('{Meta>}{Backspace}{/Meta}')
+    await user.click(await screen.findByRole('button', { name: 'Delete' }))
 
     await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(screen.queryByText('cabinets')).not.toBeInTheDocument())
@@ -200,6 +203,7 @@ describe('⌘⌫ writes through persistBlocksAsOwnEdit, one ⌘Z step (KAN-368)'
     fieldC.focus()
     await waitFor(() => expect(fieldC).toHaveFocus())
     await user.keyboard('{Meta>}{Backspace}{/Meta}')
+    await user.click(await screen.findByRole('button', { name: 'Delete' }))
 
     // C is gone on screen at once (the local apply), but its write is
     // serialized behind B's still-open one (KAN-368): no second `saveBlocks`
@@ -239,6 +243,7 @@ describe('⌘⌫ writes through persistBlocksAsOwnEdit, one ⌘Z step (KAN-368)'
     const user = userEvent.setup()
     await user.click(handleOf('b-removed'))
     await user.click(await screen.findByRole('menuitem', { name: 'delete' }))
+    await user.click(await screen.findByRole('button', { name: 'Delete' }))
 
     await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(mockAppendOwnEdit).toHaveBeenCalledTimes(1))
@@ -268,6 +273,7 @@ describe('⌘⌫ writes through persistBlocksAsOwnEdit, one ⌘Z step (KAN-368)'
     await waitFor(() => expect(field).toHaveFocus())
 
     await user.keyboard('{Meta>}{Backspace}{/Meta}')
+    await user.click(await screen.findByRole('button', { name: 'Delete' }))
 
     await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(mockAppendOwnEdit).toHaveBeenCalledTimes(1))

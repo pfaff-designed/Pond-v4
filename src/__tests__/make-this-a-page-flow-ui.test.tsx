@@ -158,6 +158,7 @@ jest.mock('@/lib/pages/make-page', () => {
 })
 
 import { AITerminal } from '@/components/organisms/AITerminal'
+import { openComposerIfClosed } from './helpers/open-composer'
 import { ANSWER_PROSE_CLASS } from '@/components/molecules/Markdown'
 import { readStamp } from '@/lib/conversation/page-proposals'
 import { machineEyebrowClass, pageEyebrowClass } from '@/components/atoms/kicker'
@@ -247,6 +248,7 @@ function readChipLabels(): string[] {
 }
 
 async function ready() {
+  openComposerIfClosed()
   await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Pond' })).toBeEnabled())
 }
 
@@ -712,7 +714,9 @@ describe('make this a page → the `new page — proposed` card', () => {
     const card = await screen.findByRole('group', { name: /new page — proposed/i })
     fireEvent.click(within(card).getByRole('button', { name: 'make page' }))
 
-    await waitFor(() => expect(mockRouterPush).toHaveBeenCalledWith(expect.stringContaining('new-page-1')))
+    await waitFor(() =>
+      expect(mockRouterPush).toHaveBeenCalledWith(expect.stringContaining('new-page-1'))
+    )
     expect(screen.queryByText(/in trash/)).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^open /i })).not.toBeInTheDocument()
   })
@@ -780,7 +784,11 @@ describe('make this a page → the `new page — proposed` card', () => {
     // create_page records go through acceptCreatePageRecord (not the generic
     // advanceStatus) so the record remembers the made page's id.
     await waitFor(() =>
-      expect(mockAcceptCreatePageRecord).toHaveBeenCalledWith(expect.anything(), 'rec-1', 'new-page-1')
+      expect(mockAcceptCreatePageRecord).toHaveBeenCalledWith(
+        expect.anything(),
+        'rec-1',
+        'new-page-1'
+      )
     )
     // The card settles: no second make page is possible, and (per the KAN-179
     // chip-row move) the card itself renders nothing for the accepted state.
@@ -1122,7 +1130,11 @@ describe('the person’s path: make this a page → made → trashed (PATH_STEPS
     fireEvent.click(within(card).getByRole('button', { name: 'make page' }))
     await waitFor(() => expect(mockCreatePage).toHaveBeenCalledTimes(1))
     await waitFor(() =>
-      expect(mockAcceptCreatePageRecord).toHaveBeenCalledWith(expect.anything(), 'rec-1', 'new-page-1')
+      expect(mockAcceptCreatePageRecord).toHaveBeenCalledWith(
+        expect.anything(),
+        'rec-1',
+        'new-page-1'
+      )
     )
 
     // The action never comes back for this answer, and the card (deleted in
@@ -1157,7 +1169,11 @@ describe('KAN-179 — make page remembers its undo step', () => {
     fireEvent.click(within(card).getByRole('button', { name: 'make page' }))
 
     await waitFor(() =>
-      expect(mockAcceptCreatePageRecord).toHaveBeenCalledWith(expect.anything(), 'rec-1', 'new-page-1')
+      expect(mockAcceptCreatePageRecord).toHaveBeenCalledWith(
+        expect.anything(),
+        'rec-1',
+        'new-page-1'
+      )
     )
     await waitFor(() => expect(rememberSpy).toHaveBeenCalledTimes(1))
     expect(rememberSpy).toHaveBeenCalledWith({ pondId: 'pond-1', recordIds: ['rec-1'] })

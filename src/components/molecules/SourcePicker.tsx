@@ -183,7 +183,7 @@ export function SourcePicker({
 
   const entries =
     step === 'source'
-      ? sourceEntries(databases, pageTitle)
+      ? sourceEntries(databases, pageTitle, block)
       : step === 'type'
         ? typeEntries(source ? sourceFields : fields, expanded)
         : step === 'field-type'
@@ -215,15 +215,34 @@ export function SourcePicker({
 
   const finish = (chart?: ChartPick) => {
     if (source) onPick({ kind: 'existing', database: source, mode: block, chart })
-    else onPick({ kind: 'new', title: pageTitle, fields, recordsAre, mode: block, chart })
+    else
+      onPick({
+        kind: 'new',
+        title: block === 'board' ? 'tasks' : pageTitle,
+        fields,
+        recordsAre: block === 'board' ? 'pages' : recordsAre,
+        mode: block,
+        chart,
+      })
   }
 
   const pick = (item: RowEntry | undefined) => {
     if (step === 'source') {
       if (!item) return
       if (item.id === NEW_DATABASE_ID) {
+        const nextFields = defaultFieldsFor(block)
         setSource(null)
-        setFields(defaultFieldsFor(block))
+        setFields(nextFields)
+        if (block === 'board') {
+          onPick({
+            kind: 'new',
+            title: 'tasks',
+            fields: nextFields,
+            recordsAre: 'pages',
+            mode: block,
+          })
+          return
+        }
         go('new')
         return
       }

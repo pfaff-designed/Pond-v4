@@ -209,21 +209,18 @@ describe('A modified Backspace in an empty text block (KAN-307)', () => {
   // jsdom's platform is not Mac, so Meta+⌫ isn't the delete-block chord here:
   // the capture handler declines, tiptap doesn't bind it, and the bubble
   // empty-line rule is the only thing left that can remove the block.
-  it.each([{ metaKey: true }, { altKey: true }])(
-    'keeps the block (%o)',
-    async (mod) => {
-      const blocks: Block[] = [
-        { id: 'b0', type: 'text', content: 'keep' },
-        { id: 'b1', type: 'text', content: '' },
-      ]
-      renderWith({ id: 'page-1', title: 'Test', blocks })
+  it.each([{ metaKey: true }, { altKey: true }])('keeps the block (%o)', async (mod) => {
+    const blocks: Block[] = [
+      { id: 'b0', type: 'text', content: 'keep' },
+      { id: 'b1', type: 'text', content: '' },
+    ]
+    renderWith({ id: 'page-1', title: 'Test', blocks })
 
-      await waitFor(() => expect(queryAllTextBlocks()).toHaveLength(2))
-      fireEvent.keyDown(queryAllTextBlocks()[1], { key: 'Backspace', ...mod })
+    await waitFor(() => expect(queryAllTextBlocks()).toHaveLength(2))
+    fireEvent.keyDown(queryAllTextBlocks()[1], { key: 'Backspace', ...mod })
 
-      expect(queryAllTextBlocks()).toHaveLength(2)
-    }
-  )
+    expect(queryAllTextBlocks()).toHaveLength(2)
+  })
 
   it('select-all then Mod-⌫ clears the text and keeps the block', async () => {
     const blocks: Block[] = [{ id: 'b1', type: 'text', content: 'hello world' }]
@@ -289,6 +286,7 @@ describe('A block delete focuses the neighbour, or the title with none left', ()
     const handles = await screen.findAllByRole('button', { name: 'Block menu' })
     await user.click(handles[0])
     await user.click(await screen.findByRole('menuitem', { name: 'delete' }))
+    await user.click(await screen.findByRole('button', { name: 'Delete' }))
 
     await waitFor(() => expect(document.getElementById('block-b2')).toBe(document.activeElement))
   })
@@ -301,6 +299,7 @@ describe('A block delete focuses the neighbour, or the title with none left', ()
     const handles = await screen.findAllByRole('button', { name: 'Block menu' })
     fireEvent.click(handles[0])
     fireEvent.click(await screen.findByRole('menuitem', { name: 'delete' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete' }))
 
     await waitFor(() => expect(queryAllTextBlocks()).toHaveLength(0))
     await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText('Page title')))

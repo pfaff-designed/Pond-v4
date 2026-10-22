@@ -117,6 +117,8 @@ import {
   type PageReference,
 } from '@/lib/references/reference'
 import { ReferencesRow, type ReferenceChip } from '@/components/molecules/ReferencesRow'
+import { ComposerSkillMenu } from '@/components/molecules/ComposerSkillMenu'
+import { bugAnswer, composerSkillQuery, parseBugCommand } from '@/lib/bug/command'
 import { editorForBlock, onTextEditorRegistered } from '@/lib/modules/text/active-editor'
 import {
   onReferenceRangeDropped,
@@ -791,6 +793,10 @@ export function AITerminal() {
   const { messages, sendMessage, regenerate, setMessages, status, stop, error, clearError } =
     useChat()
   const [input, setInput] = useState('')
+  // `/bug` files outside the model. The ref closes the send gate for the
+  // whole request; the state only disables the line.
+  const filingBug = useRef(false)
+  const [bugBusy, setBugBusy] = useState(false)
   // 6a frame 2: "an error keeps nothing" — a turn that failed mid-stream drops
   // its partial answer, so the thread never holds half an answer as if it were
   // one. (Esc / stop is the opposite: it KEEPS what arrived — `stop` leaves the
@@ -1447,15 +1453,23 @@ export function AITerminal() {
   const htmlImportInputRef = useRef<HTMLInputElement>(null)
 
   // ── Collapse ───────────────────────────────────────────────────────────────
-  // Collapse is the session's alone: nothing is remembered, so the composer opens
-  // expanded every time. ⌘J, Esc and the thread head's × take it to the tab; the tab,
-  // ⌘J and any request for the input bring it back.
-  const [isCollapsed, setIsCollapsed] = useState(false)
+  // The composer starts closed. Nothing is remembered, so a new visit starts
+  // closed again (KAN-405 is the ticket that would remember a choice). ⌘J, the
+  // tab, and any request for the input open it; Esc and the thread head's ×
+  // take it back to the tab.
+  const [isCollapsed, setIsCollapsed] = useState(true)
   // Set by an explicit × click so that close reaches a card an unresolved
   // proposal would otherwise hold open (KAN-318) — cleared by `openComposer`,
   // the one door every reopen goes through, so a later auto-hold still applies.
   const [closedByPerson, setClosedByPerson] = useState(false)
+  // The starting closed state is the default, not a choice. A proposal that
+  // opens the card becomes an open composer, so accepting or rejecting it
+  // does not snap the card shut under the person using it. A later ⌘J or ×
+  // is a choice: the hold can still show the card, and resolving returns to
+  // that close.
+  const choseCollapse = useRef(false)
   const openComposer = useCallback(() => {
+    choseCollapse.current = false
     setIsCollapsed(false)
     setClosedByPerson(false)
   }, [])
@@ -1474,6 +1488,7 @@ export function AITerminal() {
   }, [messages, isStreaming])
   const [answerSeenAtCollapse, setAnswerSeenAtCollapse] = useState<string | null>(null)
   const collapseComposer = useCallback(() => {
+    choseCollapse.current = true
     setAnswerSeenAtCollapse(lastSettledAnswerId)
     setIsCollapsed(true)
     // Closing must not leave the composer reopening maximized or minimized
@@ -1607,7 +1622,9 @@ export function AITerminal() {
     // decision or the person's own question made while the last answer is blank
     // would never persist either, and a blank answer the thread later moves past
     // (a new question sent after it) would still get saved mid-thread.
-    const toSave = messages.filter((m) => m.role !== 'assistant' || hasVisibleAssistantContent(m.parts))
+    const toSave = messages.filter(
+      (m) => m.role !== 'assistant' || hasVisibleAssistantContent(m.parts)
+    )
     saveTranscript(getSupabase(), conversationId, toSave, resolutions).catch(console.error)
   }, [isReady, status, conversationId, messages, resolutions, getSupabase])
 
@@ -1673,9 +1690,9 @@ export function AITerminal() {
         // instead, so the stamp never lands on the change log it was sent from.
         // KAN-341: that target may be home, which `allPages` never carries.
         openNodeName: revisionTargetPageId
-          ? (revisionTargetPageId === home?.id
+          ? ((revisionTargetPageId === home?.id
               ? home?.title
-              : allPages.find((p) => p.id === revisionTargetPageId)?.title) ?? null
+              : allPages.find((p) => p.id === revisionTargetPageId)?.title) ?? null)
           : contextLabel,
       })
       // 'defer' → stamp on a later run (pages still loading); null → leave
@@ -1753,10 +1770,7 @@ export function AITerminal() {
         ...m.parts.filter(isLinkRecordsPart),
       ]
       for (const part of parts) {
-        if (
-          part.state !== 'input-available' ||
-          invalidatedProposalRef.current.has(part.toolCallId)
-        )
+        if (part.state !== 'input-available' || invalidatedProposalRef.current.has(part.toolCallId))
           continue
         pendingProposalInvalidationRef.current.add(part.toolCallId)
       }
@@ -1814,10 +1828,17 @@ export function AITerminal() {
   )
   const hasUnresolvedProposal = unresolvedIds.length > 0
 
-  // Held open while a proposal needs review. Derived, not an effect: the person's
-  // collapse is untouched, so it re-applies once the proposal resolves. An
-  // explicit × click (`closedByPerson`) overrides the hold outright — the
-  // boards draw a working close on the proposing composer, not a disabled one.
+  // A proposal that finds the composer on its default tab opens it for real.
+  // The person's own later close stays a close: `choseCollapse` blocks this.
+  useEffect(() => {
+    if (!hasUnresolvedProposal || closedByPerson || choseCollapse.current) return
+    setIsCollapsed(false)
+  }, [hasUnresolvedProposal, closedByPerson])
+
+  // Held open while a proposal needs review. A close the person chose
+  // re-applies once the proposal resolves. An explicit × click
+  // (`closedByPerson`) overrides the hold outright — the boards draw a
+  // working close on the proposing composer, not a disabled one.
   const effectiveCollapsed = isCollapsed && (!hasUnresolvedProposal || closedByPerson)
   // Mirrored into a ref so the html-import listener below (registered once,
   // not re-subscribed on every collapse toggle) always reads the live value.
@@ -1917,8 +1938,7 @@ export function AITerminal() {
     const handleToggleRequest = () => {
       // In zen, ⌘J is the person asking (KAN-186) — same door as the pill's
       // own Pond mark: it asks/unasks rather than just opening/collapsing the
-      // ordinary composer, whose own open-by-default state answers a
-      // different question (see `composerAsked`, `zen.tsx`).
+      // ordinary composer, which starts closed (see `composerAsked`, `zen.tsx`).
       if (inZen) {
         if (composerAsked) {
           collapseComposer()
@@ -2173,9 +2193,57 @@ export function AITerminal() {
     ]
   )
 
+  const submitBug = useCallback(
+    async (text: string, report: string) => {
+      filingBug.current = true
+      setBugBusy(true)
+      setInput('')
+      setComposerNotice('filing the issue')
+      setMessages((prev) => [
+        ...prev,
+        { id: crypto.randomUUID(), role: 'user', parts: [{ type: 'text', text }] },
+      ])
+      try {
+        const res = await fetch('/api/bug', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ report }),
+        })
+        const data = (await res.json()) as {
+          issueUrl?: string
+          transcriptUrl?: string
+          error?: string
+        }
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            role: 'assistant',
+            parts: [{ type: 'text', text: bugAnswer(res.ok, data) }],
+          },
+        ])
+      } catch {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            role: 'assistant',
+            parts: [{ type: 'text', text: 'the issue was not filed' }],
+          },
+        ])
+      } finally {
+        filingBug.current = false
+        setBugBusy(false)
+        setComposerNotice(null)
+      }
+    },
+    [setMessages]
+  )
+
   // ── Send ──────────────────────────────────────────────────────────────────
   const handleSend = useCallback(() => {
     const text = input.trim()
+    if (filingBug.current) return
     // An attachment can go out without accompanying text (#61); everything
     // else still requires a message.
     if ((!text && attachments.length === 0) || isStreaming) return
@@ -2210,6 +2278,16 @@ export function AITerminal() {
       return
     }
 
+    const bug = parseBugCommand(text)
+    if (bug) {
+      if (!bug.report) {
+        setComposerNotice('say what happened, what you expected, and how to reproduce it')
+        return
+      }
+      void submitBug(text, bug.report)
+      return
+    }
+
     sendText(text)
   }, [
     input,
@@ -2222,6 +2300,7 @@ export function AITerminal() {
     startHtmlRead,
     markHtmlOffline,
     clearHtmlOffline,
+    submitBug,
   ])
 
   // A follow-up chip / question option click sends its text as the next message
@@ -2303,6 +2382,11 @@ export function AITerminal() {
 
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
+      // `/` is choosing a skill. Enter names it. The report, once typed, is what sends.
+      if (composerSkillQuery(input) !== null && !parseBugCommand(input)?.report) {
+        setInput('/bug ')
+        return
+      }
       handleSend()
     }
   }
@@ -2540,9 +2624,7 @@ export function AITerminal() {
       const metadata = {
         sentAt: new Date().toISOString(),
         requestChanges: { toolCallId, reason },
-        ...(targetPageId
-          ? { openPageContext: false, wholePageRefPageIds: [targetPageId] }
-          : {}),
+        ...(targetPageId ? { openPageContext: false, wholePageRefPageIds: [targetPageId] } : {}),
       }
       clearError?.()
       sendMessage({ text: note, metadata }, { body })
@@ -2748,13 +2830,23 @@ export function AITerminal() {
           },
           pondId
         )
-        openWorkspaceUrl(workspaceHref({ id: created.id, type: part.type, title: part.title }), router)
+        openWorkspaceUrl(
+          workspaceHref({ id: created.id, type: part.type, title: part.title }),
+          router
+        )
         void queryClient.invalidateQueries({ queryKey: pagesKey() })
         // KAN-415: a failed link append is not a failed page creation — the page
         // above has already landed and been navigated to. A database/record made
         // this way is not a "page under a parent" for this rule (orchestrator note).
         if (part.type === 'page') {
-          void appendChildLinkUnder(getSupabase(), queryClient, parentRef, created.id, pondId, pondName)
+          void appendChildLinkUnder(
+            getSupabase(),
+            queryClient,
+            parentRef,
+            created.id,
+            pondId,
+            pondName
+          )
         }
         // The write landed — only now may the record say so. The log only grows,
         // so an `accepted` stamped before this point could never be taken back.
@@ -3190,7 +3282,14 @@ export function AITerminal() {
         openWorkspaceUrl(workspaceHref({ id: made.id, type: 'page', title: made.title }), router)
         // KAN-415: a failed link append is not a failed page creation — the
         // page above has already landed and been navigated to.
-        void appendChildLinkUnder(getSupabase(), queryClient, proposal.parentId, made.id, pondId, pondName)
+        void appendChildLinkUnder(
+          getSupabase(),
+          queryClient,
+          proposal.parentId,
+          made.id,
+          pondId,
+          pondName
+        )
         // The write landed — only now may the record say so (the log only grows).
         // Not the generic logDecision path: a create_page record has to remember
         // WHICH page it made, so undo (KAN-93) has something to trash —
@@ -4221,7 +4320,7 @@ export function AITerminal() {
   const showMadePageActions =
     !!madeProposal && !!madeProposalRecordId && topUndoRecordIds.includes(madeProposalRecordId)
   const madeProposalParentName = madeProposal?.parentId
-    ? allPages.find((p) => p.id === madeProposal.parentId)?.title ?? null
+    ? (allPages.find((p) => p.id === madeProposal.parentId)?.title ?? null)
     : null
   // Shared by the chip's `undoMadePage` and the ⌘Z effect below: an explicit
   // `null` (asked from top level) must resolve to the pond home; only a
@@ -4363,61 +4462,60 @@ export function AITerminal() {
       />
     ))
 
-  const messagesBody =
-    !threadFoldedForMadePage &&
+  const messagesBody = !threadFoldedForMadePage &&
     (messages.length > 0 || keptHtmlTurns.length > 0) && (
-    <>
-      {turns.length > 1 && (
-        <ThreadHead
-          area={threadArea}
-          turns={turns.length}
-          onNewThread={() => void handleClear()}
-        />
-      )}
-      <div
-        className="max-h-[calc(100dvh-14rem)] min-h-0 flex-1 overflow-y-auto group-data-[sized]/composer:max-h-none"
-      >
-        <div className="flex w-full flex-col gap-[14px]">
-          {foldedCount > 0 && (
-            <EarlierTurns
-              count={foldedCount}
-              onExpand={() => setEarlierOpenFrom(messages[0]?.id ?? null)}
-            />
-          )}
-          {renderKeptHtmlTurns(-1)}
-          {shownTurns.map((indices, shownIndex) => (
-            <Fragment key={messages[indices[0]].id}>
-              <Turn>
-                {indices.map((index) => renderMessage(messages[index], index))}
-                {shownIndex === shownTurns.length - 1 && (
-                  <>
-                    {/* Stays until the tool part settles, even once reply text is arriving: a
+      <>
+        {turns.length > 1 && (
+          <ThreadHead
+            area={threadArea}
+            turns={turns.length}
+            onNewThread={() => void handleClear()}
+          />
+        )}
+        <div className="max-h-[calc(100dvh-14rem)] min-h-0 flex-1 overflow-y-auto group-data-[sized]/composer:max-h-none">
+          <div className="flex w-full flex-col gap-[14px]">
+            {foldedCount > 0 && (
+              <EarlierTurns
+                count={foldedCount}
+                onExpand={() => setEarlierOpenFrom(messages[0]?.id ?? null)}
+              />
+            )}
+            {renderKeptHtmlTurns(-1)}
+            {shownTurns.map((indices, shownIndex) => (
+              <Fragment key={messages[indices[0]].id}>
+                <Turn>
+                  {indices.map((index) => renderMessage(messages[index], index))}
+                  {shownIndex === shownTurns.length - 1 && (
+                    <>
+                      {/* Stays until the tool part settles, even once reply text is arriving: a
                         long tool call beside growing text would otherwise look stalled. */}
-                    {isStreaming && lastAssistantHasActiveTool && (
-                      <StageText label={stageLine ?? THINKING_STAGE_TEXT} />
-                    )}
-                    {/* An error keeps nothing: the partial answer was dropped above. A
+                      {isStreaming && lastAssistantHasActiveTool && (
+                        <StageText label={stageLine ?? THINKING_STAGE_TEXT} />
+                      )}
+                      {/* An error keeps nothing: the partial answer was dropped above. A
                         stream that finished with nothing to show (no error, no text,
                         no card — KAN-284) gets the same row: a blank answer is never
                         shown, or saved, as if it were a real empty reply. */}
-                    {trailingErrorRowShows && (
-                      <AnswerError
-                        onAskAgain={
-                          lastQuestion.text ? () => handleAskAgain(messages.length - 1) : undefined
-                        }
-                      />
-                    )}
-                  </>
-                )}
-              </Turn>
-              {renderKeptHtmlTurns(indices[indices.length - 1])}
-            </Fragment>
-          ))}
-          <div ref={bottomRef} />
+                      {trailingErrorRowShows && (
+                        <AnswerError
+                          onAskAgain={
+                            lastQuestion.text
+                              ? () => handleAskAgain(messages.length - 1)
+                              : undefined
+                          }
+                        />
+                      )}
+                    </>
+                  )}
+                </Turn>
+                {renderKeptHtmlTurns(indices[indices.length - 1])}
+              </Fragment>
+            ))}
+            <div ref={bottomRef} />
+          </div>
         </div>
-      </div>
-    </>
-  )
+      </>
+    )
 
   const raisedRecordCards = raisedRecordIds.length > 0 && (
     <div className="flex flex-col gap-3">
@@ -4433,7 +4531,9 @@ export function AITerminal() {
   )
 
   // Send is off with nothing to send; mid-stream it is the stop square.
-  const canSend = isReady && !isUploading && (input.trim().length > 0 || attachments.length > 0)
+  const canSend =
+    isReady && !isUploading && !bugBusy && (input.trim().length > 0 || attachments.length > 0)
+  const skillQuery = composerSkillQuery(input)
 
   const csvAttachmentDescriptor = csvAttachment
     ? getInlineAttachmentDescriptor(csvAttachment.kind)
@@ -4560,15 +4660,26 @@ export function AITerminal() {
       )}
       <div className="flex flex-col gap-[14px]">
         <ReferencesRow items={composerReferenceItems} onRemove={handleRemoveReference} />
+        {skillQuery !== null && (
+          <ComposerSkillMenu
+            query={skillQuery}
+            onPick={() => {
+              setInput('/bug ')
+              inputRef.current?.focus()
+            }}
+          />
+        )}
         <ComposerLine
           value={input}
           placeholder={
             threadFoldedForMadePage
               ? 'ask about this page'
               : (htmlPlaceholder ??
-                (messages.length > 0 ? 'reply, or ask something else' : 'ask pond, or / for blocks'))
+                (messages.length > 0
+                  ? 'reply, or ask something else'
+                  : 'ask pond, or / for blocks'))
           }
-          disabled={!isReady}
+          disabled={!isReady || bugBusy}
           streaming={isStreaming}
           canSend={canSend}
           attachDisabled={isStreaming || !isReady}

@@ -92,6 +92,11 @@ function renderCanvas() {
   return { onChange, client }
 }
 
+async function confirmBlockDelete() {
+  const dialog = await screen.findByRole('alertdialog', { name: 'Delete this block?' })
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }))
+}
+
 const lastBlocks = (onChange: jest.Mock) => onChange.mock.calls.at(-1)![0] as Block[]
 
 const platform = Object.getOwnPropertyDescriptor(window.navigator, 'platform')
@@ -119,6 +124,7 @@ describe('removing a page-link block removes only the link (KAN-415)', () => {
     const root = document.getElementById('block-b-link')!
     root.focus()
     fireEvent.keyDown(root, { key: 'Backspace', metaKey: true })
+    await confirmBlockDelete()
 
     await waitFor(() => expect(lastBlocks(onChange).map((b) => b.id)).toEqual(['b-note']))
     expect(await screen.findByText('deleted page link ·')).toBeInTheDocument()
@@ -141,6 +147,7 @@ describe('removing a page-link block removes only the link (KAN-415)', () => {
     const item = await screen.findByRole('menuitem', { name: 'remove link' })
     expect(screen.queryByRole('menuitem', { name: 'delete' })).not.toBeInTheDocument()
     await user.click(item)
+    await confirmBlockDelete()
 
     await waitFor(() => expect(lastBlocks(onChange).map((b) => b.id)).toEqual(['b-note']))
     expect(mockDeletePage).not.toHaveBeenCalled()

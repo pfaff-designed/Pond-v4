@@ -35,6 +35,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { PostgrestError } from '@supabase/supabase-js'
 
 import { AITerminal } from '@/components/organisms/AITerminal'
+import { openComposerIfClosed } from './helpers/open-composer'
 import { DocumentPanel } from '@/components/organisms/DocumentPanel'
 import { ShellCommands } from '@/components/organisms/ShellCommands'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
@@ -87,7 +88,9 @@ function mintRecordId(): string {
   return `rec-${nextRecordId++}`
 }
 
-function makeRecord(partial: Partial<ChangeLogRecord> & Pick<ChangeLogRecord, 'status' | 'action'>): ChangeLogRecord {
+function makeRecord(
+  partial: Partial<ChangeLogRecord> & Pick<ChangeLogRecord, 'status' | 'action'>
+): ChangeLogRecord {
   const now = new Date().toISOString()
   return {
     id: mintRecordId(),
@@ -215,7 +218,9 @@ function toRow(r: ChangeLogRecord) {
 jest.mock('@/lib/supabase/client', () => ({
   createClient: () => ({
     auth: {
-      getUser: jest.fn().mockResolvedValue({ data: { user: { id: USER_ID, email: 'test@example.com' } } }),
+      getUser: jest
+        .fn()
+        .mockResolvedValue({ data: { user: { id: USER_ID, email: 'test@example.com' } } }),
     },
     rpc: jest.fn(async (fn: string, params: { p_record_ids: string[] }) => {
       if (fn === 'undo_change_log_record' || fn === 'redo_change_log_record') {
@@ -231,7 +236,9 @@ jest.mock('@/lib/supabase/client', () => ({
 // ── Pages: getPage/updateTitle backed by fakePage ───────────────────────────
 
 jest.mock('@/lib/pages/client', () => ({
-  getPage: jest.fn(async (_supabase: unknown, id: string) => (id === fakePage.id ? { ...fakePage } : null)),
+  getPage: jest.fn(async (_supabase: unknown, id: string) =>
+    id === fakePage.id ? { ...fakePage } : null
+  ),
   listPages: jest.fn(async () => [{ ...fakePage }]),
   updateTitle: jest.fn(async (_supabase: unknown, id: string, title: string) => {
     if (id === fakePage.id) fakePage.title = title
@@ -266,7 +273,8 @@ const mockCommitBlocks = jest.fn(
   }
 )
 jest.mock('@/lib/pages/commit', () => ({
-  commitBlocks: (...args: unknown[]) => mockCommitBlocks(...(args as Parameters<typeof mockCommitBlocks>)),
+  commitBlocks: (...args: unknown[]) =>
+    mockCommitBlocks(...(args as Parameters<typeof mockCommitBlocks>)),
   propagateBlockWrite: jest.fn().mockResolvedValue(undefined),
   // KAN-495: the page-write queue's writer. Not a path this file's tests
   // drive (no typed/structural edit here goes through BlockCanvas/the
@@ -313,11 +321,15 @@ jest.mock('@/lib/change-log/store', () => {
   const { assertTransition } = jest.requireActual('@/lib/change-log/status')
   return {
     ...actual,
-    listRecordsByToolCalls: jest.fn(async (_supabase: unknown, opts: { toolCallIds: readonly string[] }) =>
-      fakeChangeLog.filter((r) => r.toolCallId !== null && opts.toolCallIds.includes(r.toolCallId))
+    listRecordsByToolCalls: jest.fn(
+      async (_supabase: unknown, opts: { toolCallIds: readonly string[] }) =>
+        fakeChangeLog.filter(
+          (r) => r.toolCallId !== null && opts.toolCallIds.includes(r.toolCallId)
+        )
     ),
-    getRecordByToolCall: jest.fn(async (_supabase: unknown, opts: { toolCallId: string }) =>
-      fakeChangeLog.find((r) => r.toolCallId === opts.toolCallId) ?? null
+    getRecordByToolCall: jest.fn(
+      async (_supabase: unknown, opts: { toolCallId: string }) =>
+        fakeChangeLog.find((r) => r.toolCallId === opts.toolCallId) ?? null
     ),
     // KAN-302: batched over every record a reconcile run is watching, walking
     // the SAME `fakeChangeLog` links the single-chain predecessor walked.
@@ -344,24 +356,31 @@ jest.mock('@/lib/change-log/store', () => {
         return tips
       }
     ),
-    advanceStatus: jest.fn(async (_supabase: unknown, id: string, to: ChangeLogStatus, actor = 'you') => {
-      const record = fakeChangeLog.find((r) => r.id === id)
-      if (!record) throw new Error(`change log: record ${id} not found`)
-      assertTransition(record.status, to)
-      record.status = to
-      record.statusAt = new Date().toISOString()
-      record.transitions = [...record.transitions, { status: to, at: record.statusAt, actor }]
-      return { ...record }
-    }),
-    acceptRecord: jest.fn(async (_supabase: unknown, id: string, blocks: unknown, actor = 'you') => {
-      const record = fakeChangeLog.find((r) => r.id === id)
-      if (!record) throw new Error(`change log: accept of record ${id} returned no record`)
-      record.status = 'accepted'
-      record.statusAt = new Date().toISOString()
-      record.transitions = [...record.transitions, { status: 'accepted', at: record.statusAt, actor }]
-      if (record.targetPageId === fakePage.id) fakePage.blocks = blocks as Block[]
-      return { ...record }
-    }),
+    advanceStatus: jest.fn(
+      async (_supabase: unknown, id: string, to: ChangeLogStatus, actor = 'you') => {
+        const record = fakeChangeLog.find((r) => r.id === id)
+        if (!record) throw new Error(`change log: record ${id} not found`)
+        assertTransition(record.status, to)
+        record.status = to
+        record.statusAt = new Date().toISOString()
+        record.transitions = [...record.transitions, { status: to, at: record.statusAt, actor }]
+        return { ...record }
+      }
+    ),
+    acceptRecord: jest.fn(
+      async (_supabase: unknown, id: string, blocks: unknown, actor = 'you') => {
+        const record = fakeChangeLog.find((r) => r.id === id)
+        if (!record) throw new Error(`change log: accept of record ${id} returned no record`)
+        record.status = 'accepted'
+        record.statusAt = new Date().toISOString()
+        record.transitions = [
+          ...record.transitions,
+          { status: 'accepted', at: record.statusAt, actor },
+        ]
+        if (record.targetPageId === fakePage.id) fakePage.blocks = blocks as Block[]
+        return { ...record }
+      }
+    ),
     markOutdated: jest.fn(
       async (
         _supabase: unknown,
@@ -401,7 +420,12 @@ jest.mock('@/lib/change-log/store', () => {
       }
     ),
     appendOwnEdit: jest.fn(async (_supabase: unknown, input: Partial<ChangeLogRecord>) => {
-      const record = makeRecord({ ...input, status: 'accepted', action: input.action ?? 'edit', actor: 'you' })
+      const record = makeRecord({
+        ...input,
+        status: 'accepted',
+        action: input.action ?? 'edit',
+        actor: 'you',
+      })
       fakeChangeLog.push(record)
       return record
     }),
@@ -419,7 +443,11 @@ jest.mock('@/lib/deletion/notify-bridge', () => ({ requestNotify: jest.fn() }))
 
 let mockResolutions: Record<string, unknown> = { changes: {}, creates: {}, skipped: {} }
 jest.mock('@/lib/conversation/client', () => ({
-  getOrCreateConversation: jest.fn(async () => ({ id: 'conv-1', messages: [], resolutions: mockResolutions })),
+  getOrCreateConversation: jest.fn(async () => ({
+    id: 'conv-1',
+    messages: [],
+    resolutions: mockResolutions,
+  })),
   saveTranscript: jest.fn().mockResolvedValue(undefined),
   dissolveConversation: jest.fn().mockResolvedValue(undefined),
 }))
@@ -448,7 +476,9 @@ jest.mock('@ai-sdk/react', () => ({
   })),
 }))
 
-global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ extractions: [] }) } as Response)
+global.fetch = jest
+  .fn()
+  .mockResolvedValue({ ok: true, json: async () => ({ extractions: [] }) } as Response)
 
 // ── The harness ──────────────────────────────────────────────────────────────
 
@@ -467,6 +497,7 @@ function renderPath() {
 }
 
 async function ready() {
+  openComposerIfClosed()
   await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Pond' })).toBeEnabled())
 }
 
@@ -642,9 +673,7 @@ describe('KAN-302 path test harness', () => {
   // card's status, never a mocked `resolveChainStatuses`.
   it('an accepted card reads "undone" after ⌘Z and "accepted" again after ⇧⌘Z (KAN-302 item 4)', async () => {
     const user = userEvent.setup()
-    const platform = jest
-      .spyOn(window.navigator, 'platform', 'get')
-      .mockReturnValue('MacIntel')
+    const platform = jest.spyOn(window.navigator, 'platform', 'get').mockReturnValue('MacIntel')
     fakePage.blocks = [{ id: 'b0', type: 'text', content: 'Hello world' }]
     seedEditRecord('pc1')
     mockMessages = [{ id: 'm1', role: 'assistant', parts: [editBatch('pc1')] }]
@@ -685,12 +714,14 @@ describe('KAN-302 path test harness', () => {
     const updateTitleGate = new Promise<void>((resolve) => {
       releaseUpdateTitle = resolve
     })
-    ;(updateTitle as jest.Mock).mockImplementationOnce(async (_supabase: unknown, id: string, title: string) => {
-      order.push('updateTitle:called')
-      await updateTitleGate
-      if (id === fakePage.id) fakePage.title = title
-      order.push('updateTitle:resolved')
-    })
+    ;(updateTitle as jest.Mock).mockImplementationOnce(
+      async (_supabase: unknown, id: string, title: string) => {
+        order.push('updateTitle:called')
+        await updateTitleGate
+        if (id === fakePage.id) fakePage.title = title
+        order.push('updateTitle:resolved')
+      }
+    )
     mockSendMessage.mockImplementationOnce(() => {
       order.push('sendMessage:called')
     })
@@ -723,9 +754,7 @@ describe('KAN-302 path test harness', () => {
   // already-open ⌥⌘H panel must show the redo row, with no second keypress.
   it('one ⇧⌘Z puts a ⌘Z-removed created block back on the page and in the ⌥⌘H panel (KAN-302 item 6)', async () => {
     const user = userEvent.setup()
-    const platform = jest
-      .spyOn(window.navigator, 'platform', 'get')
-      .mockReturnValue('MacIntel')
+    const platform = jest.spyOn(window.navigator, 'platform', 'get').mockReturnValue('MacIntel')
     fakePage.blocks = []
     seedCreateRecord('pc1')
     mockMessages = [{ id: 'm1', role: 'assistant', parts: [createBatch('pc1')] }]

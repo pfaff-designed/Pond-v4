@@ -24,6 +24,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DocumentPanel } from '@/components/organisms/DocumentPanel'
 import { AITerminal } from '@/components/organisms/AITerminal'
+import { openComposerIfClosed } from './helpers/open-composer'
 import { ZenPill } from '@/components/organisms/ZenPill'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { useZen, ZenProvider } from '@/lib/layout/zen'
@@ -49,7 +50,9 @@ jest.mock('@/lib/pages/tree', () => ({
   insertPageOptimistic: jest.fn(),
 }))
 
-jest.mock('@/lib/pages/commit', () => jest.requireActual('./helpers/page-commit-mock').pageCommitMock())
+jest.mock('@/lib/pages/commit', () =>
+  jest.requireActual('./helpers/page-commit-mock').pageCommitMock()
+)
 
 jest.mock('@/lib/pages/client', () => ({
   getPage: jest.fn().mockResolvedValue(null),
@@ -126,8 +129,12 @@ function renderSurface(extraPages: PondPage[] = []) {
   )
 }
 
-const waitComposerReady = () =>
-  waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Pond' })).not.toBeDisabled())
+const waitComposerReady = () => {
+  openComposerIfClosed()
+  return waitFor(() =>
+    expect(screen.getByRole('textbox', { name: 'Message Pond' })).not.toBeDisabled()
+  )
+}
 
 /**
  * `handleAskFromSelection` refocuses the composer on a `requestAnimationFrame`
@@ -233,7 +240,9 @@ describe('a reference survives a send, a removal and an edit (KAN-98 path test)'
     await flushAskFocus()
 
     await waitFor(() => expect(field.querySelectorAll('.mn-reference-highlight')).toHaveLength(2))
-    const texts = Array.from(field.querySelectorAll('.mn-reference-highlight')).map((el) => el.textContent)
+    const texts = Array.from(field.querySelectorAll('.mn-reference-highlight')).map(
+      (el) => el.textContent
+    )
     expect(texts).toContain('wild')
     expect(texts).toContain('paths')
 
@@ -287,7 +296,9 @@ describe('a reference survives a send, a removal and an edit (KAN-98 path test)'
     // plugin state of its own — the highlight must be restored, not lost.
     rerender(surface(true))
     const newField = await findTextBlock()
-    await waitFor(() => expect(newField.querySelectorAll('.mn-reference-highlight')).toHaveLength(1))
+    await waitFor(() =>
+      expect(newField.querySelectorAll('.mn-reference-highlight')).toHaveLength(1)
+    )
     expect(newField.querySelector('.mn-reference-highlight')?.textContent).toBe('wild')
     expect(screen.getByText('Workshop — “wild”')).toBeInTheDocument()
   })
@@ -492,9 +503,7 @@ describe('the open page auto-references itself, deduped against a passage (KAN-9
 
     await user.click(screen.getByRole('button', { name: 'new thread' }))
 
-    await waitFor(() =>
-      expect(screen.queryByText('Workshop — “wild”')).not.toBeInTheDocument()
-    )
+    await waitFor(() => expect(screen.queryByText('Workshop — “wild”')).not.toBeInTheDocument())
     const refs = screen.getByRole('group', { name: 'references' })
     expect(refs).toHaveTextContent('Workshop')
     expect(screen.getByRole('button', { name: 'remove reference: Workshop' })).toBeInTheDocument()

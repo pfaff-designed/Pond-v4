@@ -9,6 +9,7 @@ import React from 'react'
 import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { openComposerIfClosed } from './helpers/open-composer'
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
@@ -72,7 +73,10 @@ const renderTerminal = () =>
   )
 
 const line = () => screen.getByRole('textbox', { name: 'Message Pond' })
-const waitReady = () => waitFor(() => expect(line()).toBeEnabled())
+const waitReady = () => {
+  openComposerIfClosed()
+  return waitFor(() => expect(line()).toBeEnabled())
+}
 
 const askedOnce = [
   { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'what is blocking the renovation?' }] },
@@ -250,6 +254,12 @@ const turn = (n: number) => [
 const thread = (turns: number) => Array.from({ length: turns }, (_, i) => turn(i + 1)).flat()
 
 describe('the composer card — collapse is the session’s, and ⌘J is its key', () => {
+  it('starts closed, as the tab', () => {
+    renderTerminal()
+    expect(screen.getByRole('button', { name: 'Open composer' })).toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: 'Message Pond' })).toBeNull()
+  })
+
   it('opens expanded every time: nothing about the collapse is remembered', async () => {
     window.localStorage.setItem('pond:terminal-collapsed', '1')
     renderTerminal()
@@ -307,6 +317,7 @@ describe('the composer card — collapse is the session’s, and ⌘J is its key
       </QueryClientProvider>
     )
     const { rerender } = render(tree())
+    openComposerIfClosed()
     await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Pond' })).toBeTruthy())
 
     act(() => requestComposerToggle())
@@ -353,9 +364,9 @@ describe('the composer card — the thread: head, fold, turns', () => {
     expect(bar.compareDocumentPosition(threadBody)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
     expect(bar.querySelector('[data-part="composer-window-controls"]')).not.toBeNull()
     expect(
-      document.querySelector('[data-part="answer-actions"]')!.querySelector(
-        '[data-part="composer-window-controls"]'
-      )
+      document
+        .querySelector('[data-part="answer-actions"]')!
+        .querySelector('[data-part="composer-window-controls"]')
     ).toBeNull()
     expect(screen.getAllByRole('button', { name: 'close' })).toHaveLength(1)
     expect(
@@ -500,7 +511,9 @@ describe('the composer card — maximize fills the canvas (KAN-323)', () => {
     expect(card().getAttribute('data-maximized')).toBe('true')
     expect(card().style.top).toBe(`${COMPOSER_TOP_CLEARANCE}px`)
     expect(card().style.bottom).toBe('var(--composer-card-bottom)')
-    expect(card().style.getPropertyValue('--composer-card-bottom')).toBe(`${COMPOSER_BOTTOM_INSET}px`)
+    expect(card().style.getPropertyValue('--composer-card-bottom')).toBe(
+      `${COMPOSER_BOTTOM_INSET}px`
+    )
     expect(card().style.left).toBe(`${20 + RAIL_WIDTH_PX + 20}px`)
     expect(card().style.height).toBe('')
 

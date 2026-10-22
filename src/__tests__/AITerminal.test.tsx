@@ -18,6 +18,7 @@ import { render, screen, fireEvent, waitFor, act, within } from '@testing-librar
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { EditorContent, useEditor } from '@tiptap/react'
+import { openComposerIfClosed } from './helpers/open-composer'
 
 // ── Module mocks — must be defined before imports ─────────────────────────
 
@@ -74,9 +75,13 @@ jest.mock('@/lib/deletion/notify-bridge', () => ({
 // `openNodeId` argument inspected directly, the same way `mockSendMessage`
 // stands in for the real chat request.
 jest.mock('@/lib/pages/accept', () => ({
-  writeAcceptedChanges: jest
-    .fn()
-    .mockResolvedValue({ applied: 1, skipped: 0, skippedReasons: [], targetId: 'home-1', recordId: null }),
+  writeAcceptedChanges: jest.fn().mockResolvedValue({
+    applied: 1,
+    skipped: 0,
+    skippedReasons: [],
+    targetId: 'home-1',
+    recordId: null,
+  }),
 }))
 
 // KAN-341 (acceptConfigureView fix): stub the write so a linked configure_view
@@ -165,6 +170,7 @@ function htmlPickerInput(container: HTMLElement): HTMLInputElement {
 }
 
 async function waitReady() {
+  openComposerIfClosed()
   await waitFor(() => expect(screen.getByRole('textbox')).not.toBeDisabled())
 }
 
@@ -196,7 +202,10 @@ function PassageBlockHost() {
 
 /** `waitReady`, but disambiguated by name — `PassageBlockHost`'s own editor is a second `textbox`. */
 async function waitComposerReady() {
-  await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Pond' })).not.toBeDisabled())
+  openComposerIfClosed()
+  await waitFor(() =>
+    expect(screen.getByRole('textbox', { name: 'Message Pond' })).not.toBeDisabled()
+  )
 }
 
 beforeEach(() => {
@@ -968,7 +977,15 @@ describe('AITerminal — the @ mention picker opens, narrows and closes (KAN-99)
   it('↓↓↑ leaves row 2 active — the keyup after an arrow key does not reset the highlight to row 1', async () => {
     mockListPages.mockResolvedValue([
       ...MENTION_PAGES,
-      { id: 'p3', parentId: null, type: 'page', title: 'garden layout', blocks: [], order: 2, props: {} },
+      {
+        id: 'p3',
+        parentId: null,
+        type: 'page',
+        title: 'garden layout',
+        blocks: [],
+        order: 2,
+        props: {},
+      },
     ])
     const user = userEvent.setup()
     renderTerminal()
@@ -1041,11 +1058,51 @@ describe('AITerminal — the @ mention picker opens, narrows and closes (KAN-99)
 
   it('leads with only the top 3 of 5 seeded recents (RECENT_SHOWN, same constant as the palette)', async () => {
     const fivePages = [
-      { id: 'r1', parentId: null, type: 'page', title: 'recent one', blocks: [], order: 0, props: {} },
-      { id: 'r2', parentId: null, type: 'page', title: 'recent two', blocks: [], order: 1, props: {} },
-      { id: 'r3', parentId: null, type: 'page', title: 'recent three', blocks: [], order: 2, props: {} },
-      { id: 'r4', parentId: null, type: 'page', title: 'recent four', blocks: [], order: 3, props: {} },
-      { id: 'r5', parentId: null, type: 'page', title: 'recent five', blocks: [], order: 4, props: {} },
+      {
+        id: 'r1',
+        parentId: null,
+        type: 'page',
+        title: 'recent one',
+        blocks: [],
+        order: 0,
+        props: {},
+      },
+      {
+        id: 'r2',
+        parentId: null,
+        type: 'page',
+        title: 'recent two',
+        blocks: [],
+        order: 1,
+        props: {},
+      },
+      {
+        id: 'r3',
+        parentId: null,
+        type: 'page',
+        title: 'recent three',
+        blocks: [],
+        order: 2,
+        props: {},
+      },
+      {
+        id: 'r4',
+        parentId: null,
+        type: 'page',
+        title: 'recent four',
+        blocks: [],
+        order: 3,
+        props: {},
+      },
+      {
+        id: 'r5',
+        parentId: null,
+        type: 'page',
+        title: 'recent five',
+        blocks: [],
+        order: 4,
+        props: {},
+      },
     ]
     mockListPages.mockResolvedValue(fivePages)
     window.localStorage.setItem(
@@ -1092,7 +1149,7 @@ describe('AITerminal — the @ mention picker opens, narrows and closes (KAN-99)
 })
 
 describe('AITerminal — the root page sends its own id (KAN-341)', () => {
-  it('at the root (no ?nodeId=), sendMessage\'s body carries the home row\'s id', async () => {
+  it("at the root (no ?nodeId=), sendMessage's body carries the home row's id", async () => {
     renderTerminal()
     await waitReady()
 
@@ -1122,7 +1179,11 @@ describe("AITerminal — the root page's contextLabel resolves to the home title
     })
     mockMessages = [
       { id: 'm-ask', role: 'user', parts: [{ type: 'text', text: 'what is on this page' }] },
-      { id: 'm-answer', role: 'assistant', parts: [{ type: 'text', text: 'Here is what is on it.' }] },
+      {
+        id: 'm-answer',
+        role: 'assistant',
+        parts: [{ type: 'text', text: 'Here is what is on it.' }],
+      },
     ]
     renderTerminal()
     await waitReady()
@@ -1313,7 +1374,9 @@ describe('AITerminal — ask again keeps a passage ×d since the original send (
     const passageChip = await screen.findByRole('button', { name: /^remove reference:.*garden/ })
     await user.click(passageChip)
     await waitFor(() =>
-      expect(screen.queryByRole('button', { name: /^remove reference:.*garden/ })).not.toBeInTheDocument()
+      expect(
+        screen.queryByRole('button', { name: /^remove reference:.*garden/ })
+      ).not.toBeInTheDocument()
     )
 
     const askAgain = await screen.findByRole('button', { name: 'ask again' })
@@ -1350,7 +1413,12 @@ describe('AITerminal — at the root, a kept chip is not double-sent as a whole-
     expect(sentMetadata.wholePageRefPageIds).toEqual([])
 
     mockMessages = [
-      { id: 'm-ask', role: 'user', parts: [{ type: 'text', text: 'what is on this page' }], metadata: sentMetadata },
+      {
+        id: 'm-ask',
+        role: 'user',
+        parts: [{ type: 'text', text: 'what is on this page' }],
+        metadata: sentMetadata,
+      },
       { id: 'm-answer', role: 'assistant', parts: [{ type: 'text', text: 'The page has...' }] },
     ]
     rerender(tree())
@@ -1445,12 +1513,28 @@ describe('AITerminal — at the root, a diff card against the home page is not "
   })
 })
 
-describe('AITerminal — ask again on a stale page stamps the regenerated card to the question\'s own page, not the live one (KAN-341)', () => {
+describe("AITerminal — ask again on a stale page stamps the regenerated card to the question's own page, not the live one (KAN-341)", () => {
   it('a propose_changes part with no targetPageId on the regenerated answer is stamped to A, so accept resolves to A, not B', async () => {
     const user = userEvent.setup()
     mockListPages.mockResolvedValue([
-      { id: 'page-a', parentId: null, type: 'page', title: 'Garden', blocks: [], order: 0, props: {} },
-      { id: 'page-b', parentId: null, type: 'page', title: 'Kitchen', blocks: [], order: 1, props: {} },
+      {
+        id: 'page-a',
+        parentId: null,
+        type: 'page',
+        title: 'Garden',
+        blocks: [],
+        order: 0,
+        props: {},
+      },
+      {
+        id: 'page-b',
+        parentId: null,
+        type: 'page',
+        title: 'Kitchen',
+        blocks: [],
+        order: 1,
+        props: {},
+      },
     ])
     mockAmbientNodeId = 'page-a'
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -1518,12 +1602,28 @@ describe('AITerminal — ask again on a stale page stamps the regenerated card t
   })
 })
 
-describe('AITerminal — the regenerated answer\'s read row leads with the question\'s own page, not the live one (KAN-341)', () => {
+describe("AITerminal — the regenerated answer's read row leads with the question's own page, not the live one (KAN-341)", () => {
   it('ask again from B on a question asked on A shows A as the lead read chip', async () => {
     const user = userEvent.setup()
     mockListPages.mockResolvedValue([
-      { id: 'page-a', parentId: null, type: 'page', title: 'Garden', blocks: [], order: 0, props: {} },
-      { id: 'page-b', parentId: null, type: 'page', title: 'Kitchen', blocks: [], order: 1, props: {} },
+      {
+        id: 'page-a',
+        parentId: null,
+        type: 'page',
+        title: 'Garden',
+        blocks: [],
+        order: 0,
+        props: {},
+      },
+      {
+        id: 'page-b',
+        parentId: null,
+        type: 'page',
+        title: 'Kitchen',
+        blocks: [],
+        order: 1,
+        props: {},
+      },
     ])
     mockAmbientNodeId = 'page-a'
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -1733,7 +1833,7 @@ describe('AITerminal — REQUEST_CHANGES_EVENT before the thread is ready (KAN-9
     )
   })
 
-  it('a view-originated request names the record\'s page, not the change log', async () => {
+  it("a view-originated request names the record's page, not the change log", async () => {
     mockAmbientNodeId = CHANGE_LOG_NODE_ID
     renderTerminal()
     await waitReady()
@@ -1763,7 +1863,15 @@ describe('AITerminal — REQUEST_CHANGES_EVENT before the thread is ready (KAN-9
   it("stamps and labels a revised batch against the record's page, not the change log", async () => {
     mockAmbientNodeId = CHANGE_LOG_NODE_ID
     mockListPages.mockResolvedValueOnce([
-      { id: 'page-77', parentId: null, type: 'page', title: 'Recipe', blocks: [], order: 0, props: {} },
+      {
+        id: 'page-77',
+        parentId: null,
+        type: 'page',
+        title: 'Recipe',
+        blocks: [],
+        order: 0,
+        props: {},
+      },
     ])
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const { rerender } = render(
@@ -1804,7 +1912,9 @@ describe('AITerminal — REQUEST_CHANGES_EVENT before the thread is ready (KAN-9
             toolCallId: 'tc-new',
             state: 'input-available',
             input: {
-              changes: [{ op: 'edit', blockId: 'b0', data: { type: 'text', content: 'Hello moon' } }],
+              changes: [
+                { op: 'edit', blockId: 'b0', data: { type: 'text', content: 'Hello moon' } },
+              ],
             },
           },
         ],
@@ -1854,10 +1964,18 @@ describe('AITerminal — tool-only answers still show their read chips (KAN-317)
     expect(card.compareDocumentPosition(readRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
-  it('a revised card with no text part still shows its read row under it, labeled for the record\'s page', async () => {
+  it("a revised card with no text part still shows its read row under it, labeled for the record's page", async () => {
     mockAmbientNodeId = CHANGE_LOG_NODE_ID
     mockListPages.mockResolvedValueOnce([
-      { id: 'page-77', parentId: null, type: 'page', title: 'Recipe', blocks: [], order: 0, props: {} },
+      {
+        id: 'page-77',
+        parentId: null,
+        type: 'page',
+        title: 'Recipe',
+        blocks: [],
+        order: 0,
+        props: {},
+      },
     ])
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const { rerender } = render(
@@ -1897,7 +2015,9 @@ describe('AITerminal — tool-only answers still show their read chips (KAN-317)
             toolCallId: 'tc-new',
             state: 'input-available',
             input: {
-              changes: [{ op: 'edit', blockId: 'b0', data: { type: 'text', content: 'Hello moon' } }],
+              changes: [
+                { op: 'edit', blockId: 'b0', data: { type: 'text', content: 'Hello moon' } },
+              ],
             },
           },
         ],
@@ -2031,7 +2151,9 @@ describe('"close" always reachable in zen (KAN-186, 6q f8)', () => {
     expect(screen.getAllByRole('button', { name: 'close' })).toHaveLength(1)
 
     fireEvent.click(screen.getByRole('button', { name: 'close' }))
-    await waitFor(() => expect(screen.queryByRole('button', { name: 'close' })).not.toBeInTheDocument())
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'close' })).not.toBeInTheDocument()
+    )
   })
 })
 
@@ -2400,7 +2522,7 @@ describe('AITerminal — the palette’s deep research row arms research (KAN-18
   })
 })
 
-describe('AITerminal — the off-again note under a deep-research answer\'s read chips (KAN-182, 6r f8)', () => {
+describe("AITerminal — the off-again note under a deep-research answer's read chips (KAN-182, 6r f8)", () => {
   const OFF_AGAIN_NOTE = 'deep research is off again. this answer read only your pond.'
 
   it('shows the note once, on the first answer after a deep-research answer', async () => {
@@ -2626,7 +2748,7 @@ describe('AITerminal — the path, end to end (KAN-182, PATH_STEPS 1-6)', () => 
   })
 })
 
-describe('the thread head names the CURRENT page\'s area, not where the thread began (KAN-331)', () => {
+describe("the thread head names the CURRENT page's area, not where the thread began (KAN-331)", () => {
   // A top-level page X (its own area) and a top-level page Y with a child
   // under it (Y's area is Y, the topmost ancestor) — `areaOf`'s walk per
   // `crumbs.ts`.
@@ -2664,7 +2786,7 @@ describe('the thread head names the CURRENT page\'s area, not where the thread b
     { id: 'm4', role: 'assistant', parts: [{ type: 'text', text: 'answer 2' }] },
   ]
 
-  it('reads X\'s own title on X, then Y\'s title after navigating to Y\'s child', async () => {
+  it("reads X's own title on X, then Y's title after navigating to Y's child", async () => {
     mockListPages.mockResolvedValue([pageX, pageY, pageYChild])
     mockAmbientNodeId = pageX.id
     mockMessages = twoTurns

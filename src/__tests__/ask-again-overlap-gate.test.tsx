@@ -137,6 +137,7 @@ global.fetch = jest.fn().mockResolvedValue({
 } as Response)
 
 import { AITerminal } from '@/components/organisms/AITerminal'
+import { openComposerIfClosed } from './helpers/open-composer'
 import { registerPageFlush } from '@/lib/pages/page-flush'
 
 const renderTerminal = () => {
@@ -153,8 +154,10 @@ const chat = (): ChatController => {
   return mockChat.current
 }
 
-const waitUntilReady = () =>
-  waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Pond' })).toBeEnabled())
+const waitUntilReady = () => {
+  openComposerIfClosed()
+  return waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Pond' })).toBeEnabled())
+}
 
 beforeEach(() => {
   jest.clearAllMocks()

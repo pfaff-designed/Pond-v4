@@ -136,6 +136,7 @@ describe('source — pick or create a database', () => {
 
   it('a pond with no database yet offers only the new row — no empty group', () => {
     expect(shape(sourceEntries([], 'recipes'))).toEqual(['G:new', 'new database — recipes'])
+    expect(shape(sourceEntries([], 'recipes', 'board'))).toEqual(['G:new', 'new tasks'])
   })
 
   it('the sub says `records` for a database whose records are pages and `rows` for rows only — the seg’s own distinction, one owner', () => {
@@ -223,7 +224,11 @@ describe('new — define a new database', () => {
   it('a field carrying options hints its labels joined with " · ", not its Pond word', () => {
     const fields: SourceField[] = [
       { name: 'title', type: 'text' },
-      { name: 'status', type: 'status', options: DEFAULT_STATUS_OPTIONS.map((label) => ({ label })) },
+      {
+        name: 'status',
+        type: 'status',
+        options: DEFAULT_STATUS_OPTIONS.map((label) => ({ label })),
+      },
     ]
     expect(shape(newEntries(fields))).toEqual([
       'G:fields',
@@ -261,13 +266,17 @@ describe('defaultFieldsFor — the fields a new database starts with, per view k
     ])
   })
 
-  it('board starts with a `status` field carrying DEFAULT_STATUS_OPTIONS as labels', () => {
+  it('a board starts as tasks: lanes, a done checkbox, a due date, repeats, and an assignee', () => {
     expect(defaultFieldsFor('board')).toEqual([
       {
         name: 'status',
         type: 'status',
         options: DEFAULT_STATUS_OPTIONS.map((label) => ({ label })),
       },
+      { name: 'done', type: 'checkbox' },
+      { name: 'due', type: 'date' },
+      { name: 'repeats', type: 'text' },
+      { name: 'assignee', type: 'text' },
     ])
   })
 
@@ -317,6 +326,13 @@ describe('head and foot — the board’s copy, per step', () => {
     expect(footFor('source', { block: 'table', newSelected: true })).toEqual(source)
     expect(footFor('type', { block: 'chart', newSelected: false })).toEqual(type)
     expect(footFor('new', { block: 'table', newSelected: false })).toEqual(fresh)
+  })
+
+  it('a board’s new row says each task is a page', () => {
+    expect(footFor('source', { block: 'board', newSelected: true })).toEqual([
+      'each task is a page',
+      '↵ create',
+    ])
   })
 
   it('with an existing database selected the source foot offers ↵ view; the new step names the view the page gets', () => {

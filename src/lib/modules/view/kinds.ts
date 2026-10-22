@@ -7,10 +7,10 @@
  * and the `/` row read from it, so every stored `{ type: 'view', mode }` reads as its
  * kind with no migration.
  *
- * KAN-519 is the exception: the layout menu may write a view's kind
- * (`LAYOUT_MENU_MODES`). No new persisted field — the kind is the mode the block
- * already stores. Pond's `configure_view` still rewrites the page's first view
- * block wholesale when a person accepts it.
+ * The view bar lists the layouts (`LAYOUT_MENU_MODES`) and a click writes the
+ * view's kind. No new persisted field — the kind is the mode the block already
+ * stores. Pond's `configure_view` still rewrites the page's first view block
+ * wholesale when a person accepts it.
  *
  * Server-safe, no React: `block-frame.ts`, the `/` rows, the template summary and the
  * proposal card all read it.
@@ -83,17 +83,19 @@ export interface ViewKind {
 }
 
 /**
- * The layouts the view-bar menu offers, in menu order (KAN-519). Not `VIEW_MODES`:
- * `gantt` sits where a person reads timeline, and `big-number` is absent. The word
- * on each row is `VIEW_KINDS[mode].label`, so this list stores modes only.
+ * The layouts the view bar shows, in the order Pond 10 draws them
+ * (board, timeline, table, calendar, list), then gallery and chart.
+ * Not `VIEW_MODES`: `gantt` sits where a person reads timeline, and
+ * `big-number` is absent. The word on each segment is `VIEW_KINDS[mode].label`,
+ * so this list stores modes only.
  */
 export const LAYOUT_MENU_MODES = [
-  'table',
   'board',
-  'calendar',
   'gantt',
-  'gallery',
+  'table',
+  'calendar',
   'list',
+  'gallery',
   'chart',
 ] as const satisfies readonly ViewMode[]
 

@@ -67,12 +67,7 @@ const pageRows = [
 function Harness({ initialBlocks }: { initialBlocks: Block[] }) {
   const [blocks, setBlocks] = useState(initialBlocks)
   return (
-    <BlockCanvas
-      blocks={blocks}
-      pageId="page-1"
-      pageTitle="sourdough, 78%"
-      onChange={setBlocks}
-    />
+    <BlockCanvas blocks={blocks} pageId="page-1" pageTitle="sourdough, 78%" onChange={setBlocks} />
   )
 }
 
@@ -111,10 +106,12 @@ describe('the whole `/` path on a blank page (KAN-276)', () => {
     expect(menu.parentElement!.querySelector('[data-part="head"]')).not.toBeInTheDocument()
     expect(groupsOf(menu)).toEqual(['templates', BLANK_TEXT_GROUP, 'blocks', 'templates', 'pages'])
 
-    // 3: ↓ past the twelve premade templates reaches `text`; ↵ inserts it and closes the menu.
-    for (let i = 0; i < 12; i++) await user.keyboard('{ArrowDown}')
-    expect(screen.getByRole('option', { selected: true }).querySelector('[data-part="label"]')!
-      .textContent).toBe('text')
+    // 3: ↓ past the premade templates (page stays in the templates pane) reaches `text`.
+    for (let i = 0; i < 11; i++) await user.keyboard('{ArrowDown}')
+    expect(
+      screen.getByRole('option', { selected: true }).querySelector('[data-part="label"]')!
+        .textContent
+    ).toBe('text')
     await user.keyboard('{Enter}')
     await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument())
 
@@ -145,9 +142,10 @@ describe('the templates pane always has a way out, on a page with content (KAN-2
     renderCanvas([note, emptyLine])
 
     // 5: existing content keeps the ordinary (non-leading) rows.
-    const host = () => within(document.getElementById('block-b-empty')!).getByRole('textbox', {
-      name: 'text block',
-    })
+    const host = () =>
+      within(document.getElementById('block-b-empty')!).getByRole('textbox', {
+        name: 'text block',
+      })
     writeInTextBlock(host(), '/')
     let menu = await screen.findByRole('listbox', { name: 'blocks' })
     expect(menu.parentElement!.querySelector('[data-part="head"]')).not.toBeInTheDocument()

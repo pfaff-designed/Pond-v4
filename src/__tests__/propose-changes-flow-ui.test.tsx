@@ -19,7 +19,13 @@ jest.mock('next/navigation', () => ({
 }))
 
 jest.mock('@/lib/pond/context', () => {
-  const active = { pond: { id: 'pond-7' }, ponds: [], loading: false, reload: () => {}, addPond: () => {} }
+  const active = {
+    pond: { id: 'pond-7' },
+    ponds: [],
+    loading: false,
+    reload: () => {},
+    addPond: () => {},
+  }
   return {
     ...jest.requireActual('@/lib/pond/context'),
     usePond: () => active,
@@ -162,6 +168,7 @@ global.fetch = jest.fn().mockResolvedValue({
 } as Response)
 
 import { AITerminal } from '@/components/organisms/AITerminal'
+import { openComposerIfClosed } from './helpers/open-composer'
 import { applyProposedChanges } from '@/lib/pages/edits'
 import { createDeterministicMintId } from '@/lib/change-log/mint-id'
 import { pagesKey } from '@/lib/pages/keys'
@@ -217,6 +224,7 @@ function noteBox(): HTMLElement {
 }
 
 async function ready() {
+  openComposerIfClosed()
   await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Pond' })).toBeEnabled())
 }
 
@@ -290,7 +298,11 @@ describe('AITerminal — propose_changes card (#98)', () => {
   // but a turn that does anyway must still drop it here).
   it('a proposal card shows only its assumption sentence above it; the message’s other prose is dropped', async () => {
     mockMessages = [
-      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'push the electrician out by a week' }] },
+      {
+        id: 'u1',
+        role: 'user',
+        parts: [{ type: 'text', text: 'push the electrician out by a week' }],
+      },
       {
         id: 'm1',
         role: 'assistant',
@@ -303,9 +315,7 @@ describe('AITerminal — propose_changes card (#98)', () => {
     renderWithQuery(<AITerminal />)
     await ready()
 
-    const assumption = screen.getByText(
-      "Taking 'a week' from the current w/c 29 Sep date."
-    )
+    const assumption = screen.getByText("Taking 'a week' from the current w/c 29 Sep date.")
     expect(assumption).toBeInTheDocument()
     expect(screen.queryByText('Sure, pushing that back for you now.')).not.toBeInTheDocument()
     const readChips = screen.getByTestId('read-chips')
@@ -329,7 +339,11 @@ describe('AITerminal — propose_changes card (#98)', () => {
   // belongs, on the composer card.
   it('a proposing turn with an assumption renders exactly one minimize/close control set, on the card', async () => {
     mockMessages = [
-      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'push the electrician out by a week' }] },
+      {
+        id: 'u1',
+        role: 'user',
+        parts: [{ type: 'text', text: 'push the electrician out by a week' }],
+      },
       {
         id: 'm1',
         role: 'assistant',
@@ -341,9 +355,9 @@ describe('AITerminal — propose_changes card (#98)', () => {
 
     const controls = document.querySelectorAll('[data-part="composer-window-controls"]')
     expect(controls).toHaveLength(1)
-    expect(
-      document.querySelector('[data-part="composer-window-bar"]')!.contains(controls[0])
-    ).toBe(true)
+    expect(document.querySelector('[data-part="composer-window-bar"]')!.contains(controls[0])).toBe(
+      true
+    )
 
     const card = screen.getByRole('group', { name: 'proposed edit' })
     expect(controls[0].compareDocumentPosition(card)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
@@ -356,7 +370,11 @@ describe('AITerminal — propose_changes card (#98)', () => {
   it('a proposing turn shows no ask again above the card; the card’s own ask again still works after reject', async () => {
     const user = userEvent.setup()
     mockMessages = [
-      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'push the electrician out by a week' }] },
+      {
+        id: 'u1',
+        role: 'user',
+        parts: [{ type: 'text', text: 'push the electrician out by a week' }],
+      },
       {
         id: 'm1',
         role: 'assistant',
@@ -386,7 +404,13 @@ describe('AITerminal — propose_changes card (#98)', () => {
       {
         id: 'm1',
         role: 'assistant',
-        parts: [defineSchemaPart('ds1', 'page-reading', 'Taking "each book" as every row in this collection.')],
+        parts: [
+          defineSchemaPart(
+            'ds1',
+            'page-reading',
+            'Taking "each book" as every row in this collection.'
+          ),
+        ],
       },
     ]
     renderWithQuery(<AITerminal />)
@@ -398,9 +422,9 @@ describe('AITerminal — propose_changes card (#98)', () => {
     const controls = document.querySelectorAll('[data-part="composer-window-controls"]')
 
     expect(controls).toHaveLength(1)
-    expect(
-      document.querySelector('[data-part="composer-window-bar"]')!.contains(controls[0])
-    ).toBe(true)
+    expect(document.querySelector('[data-part="composer-window-bar"]')!.contains(controls[0])).toBe(
+      true
+    )
     expect(assumption.compareDocumentPosition(card)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
     expect(card.compareDocumentPosition(readChips)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
     expect(controls[0].compareDocumentPosition(assumption)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
@@ -408,7 +432,11 @@ describe('AITerminal — propose_changes card (#98)', () => {
 
   it('a mixed turn (propose_changes + define_schema) puts the read chips after the last card, and the one control set on the card', async () => {
     mockMessages = [
-      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'push the date and track authors' }] },
+      {
+        id: 'u1',
+        role: 'user',
+        parts: [{ type: 'text', text: 'push the date and track authors' }],
+      },
       {
         id: 'm1',
         role: 'assistant',
@@ -427,9 +455,9 @@ describe('AITerminal — propose_changes card (#98)', () => {
     const controls = document.querySelectorAll('[data-part="composer-window-controls"]')
 
     expect(controls).toHaveLength(1)
-    expect(
-      document.querySelector('[data-part="composer-window-bar"]')!.contains(controls[0])
-    ).toBe(true)
+    expect(document.querySelector('[data-part="composer-window-bar"]')!.contains(controls[0])).toBe(
+      true
+    )
     expect(diffCard.compareDocumentPosition(schemaCard)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
     expect(schemaCard.compareDocumentPosition(readChips)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
     expect(controls[0].compareDocumentPosition(diffCard)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
@@ -442,7 +470,11 @@ describe('AITerminal — propose_changes card (#98)', () => {
   // this reads as a plain answer instead — raw text, one controls set.
   it('a qualifying part whose tool input is still input-streaming (stopped) shows the raw text and exactly one controls set', async () => {
     mockMessages = [
-      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'push the electrician out by a week' }] },
+      {
+        id: 'u1',
+        role: 'user',
+        parts: [{ type: 'text', text: 'push the electrician out by a week' }],
+      },
       {
         id: 'm1',
         role: 'assistant',
@@ -629,13 +661,19 @@ describe('AITerminal — propose_changes card (#98)', () => {
         role: 'assistant',
         // KAN-334: a proposal's answer prose is its `assumption`, not any
         // free text alongside it — carry the distinguishing text there.
-        parts: [{ type: 'text', text: 'extra prose, dropped' }, batch('pc1', undefined, 'older answer')],
+        parts: [
+          { type: 'text', text: 'extra prose, dropped' },
+          batch('pc1', undefined, 'older answer'),
+        ],
       },
       { id: 'u2', role: 'user', parts: [{ type: 'text', text: 'second question' }] },
       {
         id: 'm2',
         role: 'assistant',
-        parts: [{ type: 'text', text: 'extra prose, dropped' }, batch('pc2', undefined, 'newer answer')],
+        parts: [
+          { type: 'text', text: 'extra prose, dropped' },
+          batch('pc2', undefined, 'newer answer'),
+        ],
       },
     ]
     renderWithQuery(<AITerminal />)
@@ -713,7 +751,9 @@ describe('AITerminal — propose_changes card (#98)', () => {
     // The test's setMessages is a spy: fold its updaters into the mocked thread.
     const applySetMessages = () => {
       type Thread = typeof mockMessages
-      for (const [update] of mockSetMessages.mock.calls as [Thread | ((prev: Thread) => Thread)][]) {
+      for (const [update] of mockSetMessages.mock.calls as [
+        Thread | ((prev: Thread) => Thread),
+      ][]) {
         if (typeof update !== 'function') continue
         mockMessages = update(mockMessages)
       }
@@ -777,7 +817,9 @@ describe('AITerminal — propose_changes card (#98)', () => {
 
     const applySetMessages = () => {
       type Thread = typeof mockMessages
-      for (const [update] of mockSetMessages.mock.calls as [Thread | ((prev: Thread) => Thread)][]) {
+      for (const [update] of mockSetMessages.mock.calls as [
+        Thread | ((prev: Thread) => Thread),
+      ][]) {
         if (typeof update !== 'function') continue
         mockMessages = update(mockMessages)
       }
@@ -825,7 +867,9 @@ describe('AITerminal — propose_changes card (#98)', () => {
 
     const applySetMessages = () => {
       type Thread = typeof mockMessages
-      for (const [update] of mockSetMessages.mock.calls as [Thread | ((prev: Thread) => Thread)][]) {
+      for (const [update] of mockSetMessages.mock.calls as [
+        Thread | ((prev: Thread) => Thread),
+      ][]) {
         if (typeof update !== 'function') continue
         mockMessages = update(mockMessages)
       }
@@ -868,7 +912,9 @@ describe('AITerminal — propose_changes card (#98)', () => {
 
     const applySetMessages = () => {
       type Thread = typeof mockMessages
-      for (const [update] of mockSetMessages.mock.calls as [Thread | ((prev: Thread) => Thread)][]) {
+      for (const [update] of mockSetMessages.mock.calls as [
+        Thread | ((prev: Thread) => Thread),
+      ][]) {
         if (typeof update !== 'function') continue
         mockMessages = update(mockMessages)
       }
@@ -1102,10 +1148,7 @@ describe('AITerminal — propose_changes card (#98)', () => {
     const head = () => document.querySelector('[data-part="head"]')
     await waitFor(() => expect(head()?.textContent).toContain('Page B'))
 
-    queryClient.setQueryData(
-      [...pagesKey('pond-7'), 'full'],
-      [{ ...pageB, title: 'Renamed Page' }]
-    )
+    queryClient.setQueryData([...pagesKey('pond-7'), 'full'], [{ ...pageB, title: 'Renamed Page' }])
 
     await waitFor(() => expect(head()?.textContent).toContain('Renamed Page'))
     expect(head()?.textContent).not.toContain('Page B')
@@ -1166,12 +1209,12 @@ describe('AITerminal — accept hands its record to sessionUndo (KAN-93)', () =>
     await ready()
     await waitFor(() => expect(screen.getAllByRole('combobox', { name: 'under' })).toHaveLength(2))
     for (const box of screen.getAllByRole('combobox', { name: 'under' })) {
-      await waitFor(() => expect(within(box).getByRole('option', { name: 'Page B' })).toBeInTheDocument())
+      await waitFor(() =>
+        expect(within(box).getByRole('option', { name: 'Page B' })).toBeInTheDocument()
+      )
       await user.selectOptions(box, pageB.id)
     }
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'accept all' })).toBeEnabled()
-    )
+    await waitFor(() => expect(screen.getByRole('button', { name: 'accept all' })).toBeEnabled())
 
     await user.click(screen.getByRole('button', { name: 'accept all' }))
 
@@ -1210,12 +1253,12 @@ describe('AITerminal — accept hands its record to sessionUndo (KAN-93)', () =>
     await ready()
     await waitFor(() => expect(screen.getAllByRole('combobox', { name: 'under' })).toHaveLength(2))
     for (const box of screen.getAllByRole('combobox', { name: 'under' })) {
-      await waitFor(() => expect(within(box).getByRole('option', { name: 'Page B' })).toBeInTheDocument())
+      await waitFor(() =>
+        expect(within(box).getByRole('option', { name: 'Page B' })).toBeInTheDocument()
+      )
       await user.selectOptions(box, pageB.id)
     }
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'accept all' })).toBeEnabled()
-    )
+    await waitFor(() => expect(screen.getByRole('button', { name: 'accept all' })).toBeEnabled())
 
     const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
     await user.click(screen.getByRole('button', { name: 'accept all' }))

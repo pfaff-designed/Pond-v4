@@ -9,7 +9,13 @@
 import type { PropertyDef } from '@/lib/properties/schema'
 import { addDays, type CollectionRow } from './apply'
 import { splitDayRows, type DayRows } from './calendar-day'
-import { monthAbbr, rowDateIso, weekdayIndex } from './calendar-month'
+import {
+  monthAbbr,
+  nextProjectedIso,
+  repeatPhrase,
+  rowDateIso,
+  weekdayIndex,
+} from './calendar-month'
 
 /** Monday through the thirteenth day after it: the board's 14-day agenda window. */
 export interface AgendaRange {
@@ -61,7 +67,8 @@ export function buildAgenda(
   todayIso: string,
   rows: readonly CollectionRow[],
   dateDef: PropertyDef | undefined,
-  extensions = 0
+  extensions = 0,
+  repeatDef?: PropertyDef
 ): AgendaGroup[] {
   if (!dateDef) return []
 
@@ -70,7 +77,7 @@ export function buildAgenda(
   const groups: AgendaGroup[] = []
 
   for (let iso = range.start; iso <= last; iso = addDays(iso, 1)) {
-    const dayRows = splitDayRows(rows, dateDef, iso)
+    const dayRows = splitDayRows(rows, dateDef, iso, repeatDef)
     const hasRows = dayRows.untimed.length > 0 || dayRows.timed.length > 0
     if (!hasRows && iso !== todayIso) continue
     groups.push({ iso, rows: dayRows })
@@ -92,7 +99,8 @@ export function agendaExtensionsAfterReach(
   focusIso: string,
   rows: readonly CollectionRow[],
   dateDef: PropertyDef | undefined,
-  extensions: number
+  extensions: number,
+  repeatDef?: PropertyDef
 ): number {
   const count = Math.max(0, extensions)
   if (!dateDef) return count
@@ -101,10 +109,17 @@ export function agendaExtensionsAfterReach(
   const end = addDays(windowEnd, count * 14)
 
   let earliest: string | null = null
+  const consider = (current: string | null, iso: string | null): string | null => {
+    if (iso == null || !/^\d{4}-\d{2}-\d{2}$/.test(iso) || iso <= end) return current
+    if (current == null || iso < current) return iso
+    return current
+  }
   for (const item of rows) {
-    const iso = rowDateIso(item, dateDef)
-    if (iso == null || !/^\d{4}-\d{2}-\d{2}$/.test(iso) || iso <= end) continue
-    if (earliest == null || iso < earliest) earliest = iso
+    const start = rowDateIso(item, dateDef)
+    earliest = consider(earliest, start)
+    if (repeatDef && start) {
+      earliest = consider(earliest, nextProjectedIso(start, repeatPhrase(item, repeatDef), end))
+    }
   }
   if (earliest == null) return count
 

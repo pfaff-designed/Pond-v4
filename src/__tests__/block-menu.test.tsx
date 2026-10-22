@@ -124,6 +124,15 @@ const handleOf = (blockId: string) =>
 
 const lastBlocks = (onChange: jest.Mock) => onChange.mock.calls.at(-1)![0] as Block[]
 
+/** A block that already holds something asks first. Empty blocks never reach this. */
+async function confirmFilledBlockDelete(user?: ReturnType<typeof userEvent.setup>) {
+  const dialog = await screen.findByRole('alertdialog', { name: 'Delete this block?' })
+  expect(dialog).toHaveTextContent('It has something in it.')
+  const confirm = within(dialog).getByRole('button', { name: 'Delete' })
+  if (user) await user.click(confirm)
+  else fireEvent.click(confirm)
+}
+
 /** jsdom's CSSStyleDeclaration reorders a `calc()`, so compare normalized values. */
 function normalizedWidth(value: string) {
   const probe = document.createElement('div')
@@ -351,10 +360,11 @@ describe('the block menu opens from the handle', () => {
     const { onChange } = renderCanvas([heading, list])
     await user.click(handleOf('b-heading'))
     await user.click(await screen.findByRole('menuitem', { name: 'delete' }))
+    await confirmFilledBlockDelete(user)
     await waitFor(() => expect(lastBlocks(onChange).map((b) => b.id)).toEqual(['b-list']))
   })
 
-  it('⌥↓ on a row\'s rowStart holder swaps it within the row, not into a split (KAN-440)', async () => {
+  it("⌥↓ on a row's rowStart holder swaps it within the row, not into a split (KAN-440)", async () => {
     const user = userEvent.setup()
     const a: Block = { id: 'b-a', type: 'text', content: 'a', width: '1/2', rowStart: true }
     const x: Block = { id: 'b-x', type: 'text', content: 'x', width: '1/2', rowStart: true }
@@ -391,7 +401,7 @@ describe('the block menu opens from the handle', () => {
     expect(next).toEqual([p, { ...r, rowStart: undefined }, { ...q, rowStart: true }, s])
   })
 
-  it('deleting a row\'s rowStart holder hands rowStart to the row-mate left behind (KAN-440)', async () => {
+  it("deleting a row's rowStart holder hands rowStart to the row-mate left behind (KAN-440)", async () => {
     const user = userEvent.setup()
     const a: Block = { id: 'b-a', type: 'text', content: 'a', width: '1/2', rowStart: true }
     const x: Block = { id: 'b-x', type: 'text', content: 'x', width: '1/2', rowStart: true }
@@ -399,6 +409,7 @@ describe('the block menu opens from the handle', () => {
     const { onChange } = renderCanvas([a, x, y])
     await user.click(handleOf('b-x'))
     await user.click(await screen.findByRole('menuitem', { name: 'delete' }))
+    await confirmFilledBlockDelete(user)
     expect(lastBlocks(onChange)).toEqual([a, { ...y, rowStart: true }])
   })
 })
@@ -434,8 +445,9 @@ describe('phone: tapping a block reveals the handle and opens the same menu (fra
     await user.click(handleOf('b-heading'))
     const menu = await screen.findByRole('menu', { name: /block menu/i })
     expect(within(menu).getByRole('group', { name: 'width' })).toBeInTheDocument()
-    expect(within(menu).getByText('widths show on wider screens. on a phone every block is full.'))
-      .toBeInTheDocument()
+    expect(
+      within(menu).getByText('widths show on wider screens. on a phone every block is full.')
+    ).toBeInTheDocument()
     expect(within(menu).getByRole('menuitem', { name: '½' })).toHaveClass('h-[44px]')
   })
 
@@ -842,6 +854,7 @@ describe('⌘⌫ deletes the focused block (`Pond 08 Edges` 8e)', () => {
     const root = document.getElementById('block-b-table')!
     root.focus()
     fireEvent.keyDown(root, { key: 'Backspace', metaKey: true })
+    await confirmFilledBlockDelete()
 
     await waitFor(() => expect(lastBlocks(onChange).map((b) => b.id)).toEqual(['b-heading']))
     expect(await screen.findByText('deleted table ·')).toBeInTheDocument()
@@ -854,6 +867,7 @@ describe('⌘⌫ deletes the focused block (`Pond 08 Edges` 8e)', () => {
     const root = document.getElementById('block-b-table')!
     root.focus()
     fireEvent.keyDown(root, { key: 'Backspace', ctrlKey: true })
+    await confirmFilledBlockDelete()
 
     await waitFor(() => expect(lastBlocks(onChange).map((b) => b.id)).toEqual(['b-heading']))
   })
@@ -864,6 +878,7 @@ describe('⌘⌫ deletes the focused block (`Pond 08 Edges` 8e)', () => {
     const field = await textFieldOf('b-list')
     act(() => textEditorOf(field).commands.focus('start'))
     fireEvent.keyDown(field, { key: 'Backspace', metaKey: true })
+    await confirmFilledBlockDelete()
 
     await waitFor(() => expect(lastBlocks(onChange).map((b) => b.id)).toEqual(['b-heading']))
   })
@@ -874,6 +889,7 @@ describe('⌘⌫ deletes the focused block (`Pond 08 Edges` 8e)', () => {
     const field = await textFieldOf('b-list')
     act(() => textEditorOf(field).commands.focus('start'))
     fireEvent.keyDown(field, { key: 'Backspace', metaKey: true })
+    await confirmFilledBlockDelete()
 
     await waitFor(() => expect(lastBlocks(onChange).map((b) => b.id)).toEqual(['b-heading']))
     expect(await screen.findByText('deleted text ·')).toBeInTheDocument()
@@ -916,6 +932,7 @@ describe('⌘⌫ deletes the focused block (`Pond 08 Edges` 8e)', () => {
     const root = document.getElementById('block-b-table')!
     root.focus()
     fireEvent.keyDown(root, { key: 'Delete' })
+    await confirmFilledBlockDelete()
 
     expect(lastBlocks(onChange).map((b) => b.id)).toEqual(['b-heading'])
     expect(await screen.findByText('deleted table ·')).toBeInTheDocument()
@@ -926,6 +943,7 @@ describe('⌘⌫ deletes the focused block (`Pond 08 Edges` 8e)', () => {
     const root = document.getElementById('block-b-table')!
     root.focus()
     fireEvent.keyDown(root, { key: 'Backspace' })
+    await confirmFilledBlockDelete()
 
     expect(lastBlocks(onChange).map((b) => b.id)).toEqual(['b-heading'])
   })

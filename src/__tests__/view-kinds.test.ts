@@ -6,26 +6,31 @@ import { VIEW_MODES, type ViewBlock } from '@/lib/modules/view/schema'
 import { GANTT_EMPTY_LINE, LAYOUT_MENU_MODES, VIEW_KINDS, viewKind } from '@/lib/modules/view/kinds'
 import { blockEmptyBox, blockFrame } from '@/lib/modules/block-frame'
 import { slashRows } from '@/lib/modules/palette'
-import { SOURCE_BLOCKS, footFor, headFor, sourceBlockOf } from '@/components/molecules/source-entries'
+import {
+  SOURCE_BLOCKS,
+  footFor,
+  headFor,
+  sourceBlockOf,
+} from '@/components/molecules/source-entries'
 
 describe('view kinds', () => {
-  it('the layout menu lists table, board, calendar, timeline, gallery, list, chart — not big number (KAN-519)', () => {
+  it('the layout bar lists board, timeline, table, calendar, list, gallery, chart — not big number', () => {
     expect([...LAYOUT_MENU_MODES]).toEqual([
-      'table',
       'board',
-      'calendar',
       'gantt',
-      'gallery',
+      'table',
+      'calendar',
       'list',
+      'gallery',
       'chart',
     ])
     expect(LAYOUT_MENU_MODES.map((mode) => VIEW_KINDS[mode].label)).toEqual([
-      'table',
       'board',
-      'calendar',
       'timeline',
-      'gallery',
+      'table',
+      'calendar',
       'list',
+      'gallery',
       'chart',
     ])
     expect(LAYOUT_MENU_MODES).not.toContain('big-number')

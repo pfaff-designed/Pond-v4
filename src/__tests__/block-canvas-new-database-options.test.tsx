@@ -45,12 +45,7 @@ jest.mock('@/lib/pages/source-databases', () => ({
 function Harness({ initial }: { initial: Block[] }) {
   const [blocks, setBlocks] = React.useState(initial)
   return (
-    <BlockCanvas
-      blocks={blocks}
-      pageId="page-1"
-      pageTitle="trip planning"
-      onChange={setBlocks}
-    />
+    <BlockCanvas blocks={blocks} pageId="page-1" pageTitle="trip planning" onChange={setBlocks} />
   )
 }
 
@@ -70,8 +65,8 @@ beforeEach(() => {
   mockFetchPages.mockResolvedValue([])
 })
 
-describe('`/board` → `new database —` writes a status field with minted option ids (KAN-351)', () => {
-  it('carries the board default status field’s options into the written schema', async () => {
+describe('`/board` → `new tasks` writes the task fields, with minted status option ids (KAN-351)', () => {
+  it('creates a tasks database: status lanes, done, due, repeats, and assignee', async () => {
     const sb = makeFakeSupabase([])
     mockCreateClient.mockReturnValue(sb)
 
@@ -85,22 +80,24 @@ describe('`/board` → `new database —` writes a status field with minted opti
     fireEvent.click(within(menu).getByRole('option', { name: 'board' }))
 
     const picker = await screen.findByRole('listbox', { name: '/board' })
-    fireEvent.click(await within(picker).findByRole('option', { name: /new database/ }))
-
-    // `new` step opens prefilled (KAN-351, built in an earlier pass) — ↵ there
-    // finishes without any further selection, same as the picker's own test.
-    await screen.findByRole('listbox', { name: 'new database — trip planning' })
-    fireEvent.keyDown(document, { key: 'Enter' })
+    fireEvent.click(within(picker).getByText('new tasks'))
 
     let database: ReturnType<typeof sb._pages.get>
     await waitFor(() => {
       database = [...sb._pages.values()].find((p) => readSchema(p.props) !== null)
       expect(database).toBeDefined()
     })
+    expect(database!.title).toBe('tasks')
 
     const schema = readSchema(database!.props)!
-    expect(schema).toHaveLength(1)
-    const [status] = schema
+    expect(schema.map((field) => [field.name, field.type])).toEqual([
+      ['status', 'status'],
+      ['done', 'checkbox'],
+      ['due', 'date'],
+      ['repeats', 'text'],
+      ['assignee', 'text'],
+    ])
+    const status = schema[0]
     expect(status.name).toBe('status')
     expect(status.type).toBe('status')
     expect(status.id).toEqual(expect.any(String))

@@ -423,7 +423,7 @@ describe('viewFrameState — a board always yields to the view (rest): the kind 
     expect(viewFrameState(block, [], [], null, textOnlySchema)).toEqual({ state: 'rest' })
   })
 
-  it('a board filtered to nothing also yields (rest): its lanes draw empty, not the frame\'s filtered line', () => {
+  it("a board filtered to nothing also yields (rest): its lanes draw empty, not the frame's filtered line", () => {
     const block: ViewBlock = { id: 'v', type: 'view', mode: 'board' }
     expect(viewFrameState(block, [{ id: 'r1' }], [], null, statusSchema)).toEqual({ state: 'rest' })
   })
@@ -532,7 +532,7 @@ describe('addTodoItem / addTableRow / addEntry — inserts through the whole-blo
   it('addEntry PREPENDS one blank entry dated today (#250 — newest first); input untouched', () => {
     const next = addEntry(entries, new Date(2026, 9, 2))
     expect(next.entries).toHaveLength(2)
-    expect(next.entries[0]).toMatchObject({ date: '2 oct', text: '' })
+    expect(next.entries[0]).toMatchObject({ date: '2026-10-02', text: '' })
     expect(typeof next.entries[0].id).toBe('string')
     expect(next.entries[0].id).not.toBe('a')
     expect(next.entries[1]).toBe(entries.entries[0])

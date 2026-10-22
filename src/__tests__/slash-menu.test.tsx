@@ -197,12 +197,11 @@ describe('a row is a preset, and every registered type reaches the menu', () => 
     })
   })
 
-  it('the `pages` group makes pages, not blocks: its rows mint nothing and say where the page goes', () => {
+  it('the `pages` group is one page, and it makes a page on this page', () => {
     expect(mintPreset('page')).toBeNull()
-    expect(mintPreset('nested-page')).toBeNull()
-    expect(slashRows.find((r) => r.id === 'page')?.placement).toBe('sibling')
-    expect(slashRows.find((r) => r.id === 'nested-page')?.placement).toBe('child')
-    expect(slashRows.filter((r) => r.placement).map((r) => r.id)).toEqual(['page', 'nested-page'])
+    expect(slashRows.find((r) => r.id === 'page')?.placement).toBe('child')
+    expect(slashRows.filter((r) => r.placement).map((r) => r.id)).toEqual(['page'])
+    expect(slashRows.map((r) => r.label)).not.toContain('nested page')
   })
 
   it('leaves out the two rows nothing can serve: `page link` and `pond — update`', () => {
@@ -258,7 +257,6 @@ describe('a row is a preset, and every registered type reaches the menu', () => 
       'blocks/entry log',
       'templates/page from template',
       'pages/page',
-      'pages/nested page',
     ])
   })
 
@@ -663,8 +661,9 @@ describe('leads with templates (KAN-276, an empty page’s `/`)', () => {
 
   it('↓ past every template and the scroll cue reaches `text`, and ↵ inserts it', () => {
     const { anchor, onSelect } = renderMenu({ leadWithTemplates: true })
-    expect(labelOf(selected())).toBe(TEMPLATE_KINDS[0])
-    for (let i = 0; i < TEMPLATE_KINDS.length; i++) {
+    const leading = TEMPLATE_KINDS.filter((kind) => kind !== 'page')
+    expect(labelOf(selected())).toBe(leading[0])
+    for (let i = 0; i < leading.length; i++) {
       fireEvent.keyDown(anchor, { key: 'ArrowDown' })
     }
     expect(labelOf(selected())).toBe('text')
@@ -674,13 +673,14 @@ describe('leads with templates (KAN-276, an empty page’s `/`)', () => {
 
   it('a template row selected: the foot reads `↑↓ move · → preview · ↵ apply` — no `esc keep as text`', () => {
     renderMenu({ leadWithTemplates: true })
-    expect(labelOf(selected())).toBe(TEMPLATE_KINDS[0])
+    expect(labelOf(selected())).toBe('notes')
     expect(glass().querySelector('[data-part="foot"]')!.textContent).toBe('↑↓ move→ preview↵ apply')
   })
 
   it('`text` selected: the foot reads `↑↓ move · ↵ insert`', () => {
     const { anchor } = renderMenu({ leadWithTemplates: true })
-    for (let i = 0; i < TEMPLATE_KINDS.length; i++) {
+    const leading = TEMPLATE_KINDS.filter((kind) => kind !== 'page')
+    for (let i = 0; i < leading.length; i++) {
       fireEvent.keyDown(anchor, { key: 'ArrowDown' })
     }
     expect(labelOf(selected())).toBe('text')
@@ -692,8 +692,8 @@ describe('leads with templates (KAN-276, an empty page’s `/`)', () => {
       leadWithTemplates: true,
     })
     fireEvent.keyDown(anchor, { key: 'ArrowDown' })
-    expect(labelOf(selected())).toBe('notes')
-    // The ranking resolves: `journal` slots in ahead of `page` and `notes`.
+    expect(labelOf(selected())).toBe('list')
+    // The ranking resolves: `journal` slots in ahead of the row already chosen.
     rerender(
       <SlashMenu
         rows={slashRows}
@@ -707,9 +707,9 @@ describe('leads with templates (KAN-276, an empty page’s `/`)', () => {
       />
     )
     expect(labelOf(options()[0])).toBe('journal')
-    expect(labelOf(selected())).toBe('notes')
+    expect(labelOf(selected())).toBe('list')
     fireEvent.keyDown(anchor, { key: 'Enter' })
-    expect(onPickTemplate).toHaveBeenCalledWith({ origin: 'premade', kind: 'notes' })
+    expect(onPickTemplate).toHaveBeenCalledWith({ origin: 'premade', kind: 'list' })
   })
 })
 
@@ -732,7 +732,7 @@ describe('keys arrive from the field the person is typing in', () => {
     fireEvent.keyDown(anchor, { key: 'ArrowUp' })
     expect(labelOf(selected())).toBe('text')
     for (let i = 0; i < 30; i++) fireEvent.keyDown(anchor, { key: 'ArrowDown' })
-    expect(labelOf(selected())).toBe('nested page')
+    expect(labelOf(selected())).toBe('page')
   })
 
   it('esc keeps the typed text: it closes the menu and does not touch the field', () => {

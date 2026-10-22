@@ -2,7 +2,7 @@
 
 /**
  * Calendar view — the month span (#262 1/3), from `PondCalendar.dc.html`. Chrome is
- * the period label, prev/next stepping, the span pill (month, week, day, and agenda), and a
+ * the period label, prev/next stepping, the span pill (month, week, day, and year), and a
  * `today` button; the month grid (desktop weeks, mobile dots plus the tapped
  * day's own list, the DC's `showList` for
  * `mob && span === 'month'`) draws while the span is month. A week span unmounts
@@ -13,10 +13,13 @@
  * (`PondCalendar.dc.html` `isTime`).
  * On a phone the day span draws one Monday-first week strip before both bodies
  * (`PondCalendar.dc.html` lines 185–192).
- * An agenda span unmounts the month grid, both time bodies, the week strip and
- * the focus list, and draws the list (`showList` for `span === 'agenda'`,
- * lines 230–246) from `buildAgenda`.
- * A blank click on a desktop month cell opens that day (`goDay`). A mobile month
+ * A year span unmounts the month grid, both time bodies, the week strip and
+ * the focus list, and draws the twelve months of the focused year. A day
+ * opens that day. A month name opens that month.
+ * A blank click on an editable desktop month cell creates an untitled page on
+ * that day and opens it: the same page preview a task click opens, with that
+ * page's fields. A reader’s blank click still opens that
+ * day (`goDay`). A mobile month
  * dot only moves the focus and keeps the month span. The DC's
  * `isMonthD`/`isMonthM` don't depend on `isEmpty` (`empty` only zeroes `recs`), so
  * chrome and grid stay drawn under either empty case. No date property on the
@@ -27,13 +30,12 @@
  */
 
 import {
-  useCallback,
-  useEffect,
   useMemo,
   useRef,
   useState,
   type KeyboardEvent,
   type MouseEvent,
+  type ReactNode,
 } from 'react'
 import { Radio } from '@base-ui/react/radio'
 import { RadioGroup } from '@base-ui/react/radio-group'
@@ -43,6 +45,7 @@ import { PondAtom } from '@/components/atoms/PondAtom'
 import { PondBlockEmpty } from '@/components/organisms/PondBlock'
 import {
   coerceValue,
+  ensureEventFields,
   type PropertyDef,
   type PropertySchema,
   type PropertyValue,
@@ -57,13 +60,15 @@ import {
   monthAbbr,
   rangeForDrop,
   rowDateIso,
+  rowOccursOn,
   stepMonth,
   weekdayIndex,
   type MonthBar,
   type MonthBarSegment,
   type MonthDayCell,
+  type MonthGrid,
 } from './calendar-month'
-import { addDays, pickDateDef, pickGanttDefs, type CollectionRow } from './apply'
+import { addDays, pickDateDef, pickGanttDefs, pickRepeatDef, type CollectionRow } from './apply'
 import {
   DAY_GUTTER,
   DAY_HOUR_END,
@@ -80,19 +85,11 @@ import {
   type DayTimedRow,
   type StripDay,
 } from './calendar-day'
-import {
-  agendaExtensionsAfterReach,
-  agendaPeriodLabel,
-  agendaRange,
-  buildAgenda,
-  stepAgenda,
-  type AgendaGroup,
-} from './calendar-agenda'
+import { stepYear, yearPeriodLabel } from './calendar-year'
 import { stepWeek, weekPeriodLabel, weekRange } from './calendar-week'
 import { localDateIso } from './due'
 import { CALENDAR_EMPTY_LINE } from './kinds'
 import { RecordPeek } from './record-peek'
-import { UndatedRecords } from './undated-records'
 import { useDoneToggle } from './use-done-toggle'
 import {
   DRAG_LIFT_CLASS,
@@ -111,10 +108,9 @@ const NAV_BTN =
   'inline-flex size-11 items-center justify-center rounded-mn-pill text-mn-text hover:bg-mn-hover-fill md:size-7'
 
 /**
- * The header's span pill, month then week then day then agenda
- * (`PondCalendar.dc.html` line 133).
+ * The header's span pill, month then week then day then year.
  */
-export const CALENDAR_SPANS = ['month', 'week', 'day', 'agenda'] as const
+export const CALENDAR_SPANS = ['month', 'week', 'day', 'year'] as const
 export type CalendarSpan = (typeof CALENDAR_SPANS)[number]
 
 /** Track, `seg` at line 143: gap 4, padding 3, radius 999, weight 500, 12px mobile / 10.5px desktop. */
@@ -134,14 +130,12 @@ const DOW_HEAD_MOBILE =
 /** The DC's `todayNum(t,22,12,inM)`: today gets the one burnt-orange chip per screen. */
 const DAY_NUMBER =
   'inline-flex h-[22px] min-w-[22px] items-center justify-center rounded-full px-1 text-[12px] font-medium tabular-nums'
-/** The DC's stack item row: `gap 6 · height 20 · padding 0 4 · radius 6`. */
-const DAY_ITEM_ROW = 'flex h-5 min-w-0 items-center gap-1.5 rounded-[6px] px-1'
+/** A calendar event is the title (and its time) inside one pill. */
+const EVENT_PILL = 'rounded-full bg-mn-text/[0.075] dark:bg-mn-text/[0.12]'
+/** Month chip: height 20, the title and clock inside the pill. */
+const DAY_ITEM_ROW = `flex h-5 min-w-0 cursor-pointer items-center gap-1.5 px-2 ${EVENT_PILL}`
 /** `PondCalendar.dc.html`'s `ring(o)`: a selected item's own 1.5px inset ink ring. */
 const DAY_ITEM_SELECTED_RING = 'ring-[1.5px] ring-inset ring-mn-text'
-/** `boxSt(o,9)` size. A live row keeps the inset ring; a done row fills ink .68. */
-const DAY_ITEM_DOT_BOX = 'size-[9px] flex-none rounded-[2.5px] box-border'
-const DAY_ITEM_DOT_RING = 'ring-[1.4px] ring-inset ring-mn-text/[0.32]'
-const DAY_ITEM_DOT = `${DAY_ITEM_DOT_BOX} ${DAY_ITEM_DOT_RING}`
 /** `tSt(o,11.5)`: flex-1, one line, ellipsis. Ink is applied per chip: full when open, .68 and struck when done. */
 const DAY_ITEM_TITLE = 'min-w-0 flex-1 truncate text-[11.5px] leading-[1.3]'
 /**
@@ -172,25 +166,6 @@ const STRIP_DOT = 'size-1 flex-none rounded-full'
 /** The focused-day list's own head chip: `todayNum(t,30,20)`, `alignSelf: 'flex-start'`. */
 const DAY_NUMBER_LIST =
   'inline-flex h-[30px] min-w-[30px] self-start text-[20px] font-medium tabular-nums'
-/** `boxSt(o,13)`: the focused-day list's larger dot, `radius 4` (`sz > 11`). */
-const DAY_ITEM_DOT_LARGE =
-  'size-[13px] flex-none rounded-[4px] box-border ring-[1.4px] ring-inset ring-mn-text/[0.32]'
-/**
- * Agenda day group (`PondCalendar.dc.html` lines 239–244). One list at both
- * sizes: 52px / gap 8, and from `md` 88px / gap 16. Hair is the top border.
- */
-const AGENDA_DAY =
-  'grid grid-cols-[52px_minmax(0,1fr)] gap-2 border-t border-mn-text/[0.09] py-2.5 dark:border-mn-text/[0.14] md:grid-cols-[88px_minmax(0,1fr)] md:gap-4'
-/** Head column: gap 2, padding-top 6. */
-const AGENDA_HEAD = 'flex flex-col gap-0.5 pt-1.5'
-/** `` `${dow} ${day} ${abbr}` ``, uppercase 10.5px tracking .1em, ink .68. */
-const AGENDA_LABEL = 'text-[10.5px] font-medium uppercase tracking-[.1em] text-mn-text-secondary'
-/** Row: flex, center, gap 10, min-height 44 / 38 from `md`, padding 0 8px, radius 10. */
-const AGENDA_ITEM = 'flex min-h-11 min-w-0 items-center gap-2.5 rounded-[10px] px-2 md:min-h-[38px]'
-/** Title: 15px, 14px from `md`, leading 1.3. */
-const AGENDA_TITLE = 'min-w-0 flex-1 truncate text-[15px] leading-[1.3] text-mn-text md:text-[14px]'
-/** Timed meta: sliced `HH:MM`, 11px weight 500, ink .8. */
-const AGENDA_TIME = 'flex-none text-[11px] font-medium text-mn-text/80 tabular-nums'
 /** Board `noneStyle`: 13px, ink .68, padding `10px 0`. The day line `nothing dated`. */
 const AGENDA_NONE = 'py-2.5 text-[13px] text-mn-text-secondary'
 /** The day cell's add mark. Hidden until that cell is hovered or focus-within.
@@ -199,9 +174,8 @@ const AGENDA_NONE = 'py-2.5 text-[13px] text-mn-text-secondary'
  *  entered the block. */
 const DAY_ADD_BUTTON =
   'absolute right-1 top-1 text-mn-text-secondary opacity-0 group-hover/day:opacity-100 group-focus-within/day:opacity-100'
-/** Armed placement (KAN-454): the same hover fill as the month nav, so a day reads as a target. */
-const DAY_PLACE_HOVER = 'cursor-pointer hover:bg-mn-hover-fill'
-const UNDATED_LINE = 'px-0.5 text-left text-[13px] font-mono lowercase text-mn-text-secondary'
+/** Hover fill, the same as the month nav, so a day reads as a target. */
+const DAY_HOVER = 'cursor-pointer hover:bg-mn-hover-fill'
 /** Desktop month bar (`PondCalendar.dc.html` `bs`): 20px, 11.5px weight 500, ink
  *  .075 light / .12 dark. Not `pointer-events-none` — the bar is the drag handle. */
 const MONTH_BAR =
@@ -237,20 +211,17 @@ function handleCalendarRowClick(
   rowId: string,
   selectedId: string | undefined,
   selectWithPointer: RowSelection['selectWithPointer'],
-  onOpenRow: ((rowId: string) => void) | undefined,
   isClickSuppressed: PointerBucketDrag['isClickSuppressed'],
   e: React.MouseEvent<HTMLDivElement>
 ) {
   // A drag's trailing click lands here too (its row is the click's target) —
   // it must never open or select, same as `selectWithPointer`'s own guard below.
   if (isClickSuppressed()) return
-  // A row is its own target. Stopping the click keeps it off the block row
-  // underneath, which focuses itself on a click that is not an inner control.
+  // A row is its own target. Stopping the click keeps it off the day cell,
+  // which would otherwise open the new-page choice, and off the block row.
   e.stopPropagation()
-  if (rowId === selectedId) {
-    onOpenRow?.(rowId)
-    return
-  }
+  // A pill opens that record's page in the window. Expanding it leaves the window.
+  if (rowId === selectedId) return
   selectWithPointer(rowId)
 }
 
@@ -312,23 +283,10 @@ function MonthDayStack({
             {...keyboardProps(row.id)}
             onKeyDown={(e) => selectOrOpenOnKey(row.id, e, onOpenRow)}
             onClick={(e) =>
-              handleCalendarRowClick(
-                row.id,
-                selectedId,
-                selectWithPointer,
-                onOpenRow,
-                isClickSuppressed,
-                e
-              )
+              handleCalendarRowClick(row.id, selectedId, selectWithPointer, isClickSuppressed, e)
             }
             onPointerDown={editable ? (e) => onCardPointerDown(e, row.id) : undefined}
           >
-            <span
-              className={cn(
-                DAY_ITEM_DOT_BOX,
-                rowDone ? 'bg-mn-text-secondary' : DAY_ITEM_DOT_RING
-              )}
-            />
             <span
               className={cn(
                 DAY_ITEM_TITLE,
@@ -355,12 +313,14 @@ function MonthBarView({
   lifted,
   editable,
   onCardPointerDown,
+  onRecordClick,
 }: {
   segment: MonthBarSegment
   /** True while this row is the active drag — every segment of it lifts. */
   lifted: boolean
   editable?: boolean
   onCardPointerDown: PointerBucketDrag['onCardPointerDown']
+  onRecordClick: (rowId: string, event: MouseEvent<HTMLDivElement>) => void
 }) {
   const left = segment.squareLeft ? 0 : 6
   const right = segment.squareRight ? 0 : 6
@@ -370,7 +330,8 @@ function MonthBarView({
     <div
       data-part="calendar-bar"
       data-row={segment.rowId}
-      className={cn(MONTH_BAR, lifted && DRAG_LIFT_CLASS)}
+      className={cn(MONTH_BAR, 'cursor-pointer', lifted && DRAG_LIFT_CLASS)}
+      onClick={(event) => onRecordClick(segment.rowId, event)}
       onPointerDown={editable ? (event) => onCardPointerDown(event, segment.rowId) : undefined}
       style={{
         gridRow: segment.lane + 2,
@@ -397,11 +358,10 @@ function MonthDayCellView({
   lanes,
   dateDef,
   canAdd,
-  onAdd,
+  onRequestCreate,
   selectedId,
   draggingRowId,
   isOver,
-  armed,
   editable,
   registerBucket,
   onCardPointerDown,
@@ -411,7 +371,6 @@ function MonthDayCellView({
   selectWithPointer,
   selectOrOpenOnKey,
   onOpenRow,
-  onPlace,
   onOpenDay,
   isDone,
 }: {
@@ -422,12 +381,10 @@ function MonthDayCellView({
   /** The date property that placed this cell's chips. */
   dateDef: PropertyDef | undefined
   canAdd: boolean
-  onAdd: () => void
+  onRequestCreate: (iso: string) => void
   selectedId?: string
   draggingRowId?: string
   isOver: boolean
-  /** While a record is armed, the cell takes the month-nav hover fill. */
-  armed: boolean
   editable?: boolean
   registerBucket: PointerBucketDrag['registerBucket']
   onCardPointerDown: PointerBucketDrag['onCardPointerDown']
@@ -437,21 +394,20 @@ function MonthDayCellView({
   selectWithPointer: RowSelection['selectWithPointer']
   selectOrOpenOnKey: RowSelection['selectOrOpenOnKey']
   onOpenRow?: (rowId: string) => void
-  /** Armed placement (KAN-454): a click on this day writes that date. */
-  onPlace?: (iso: string) => void
-  /** Blank space (the day number or the cell padding) opens this day. */
+  /** A reader’s blank click opens this day. An editable blank click creates. */
   onOpenDay: (iso: string) => void
   /** `done.isDone` from the calendar's `useDoneToggle`. */
   isDone: (row: CollectionRow) => boolean
 }) {
-  // A stack item's Enter bubbles. Only the cell itself adds; the item's own
-  // Enter still selects (KAN-358). A blank click opens the day (KAN-455).
-  // A drag's trailing click is suppressed, and an armed click dates the record.
+  // A stack item's Enter bubbles. Only the cell itself creates; the item's own
+  // Enter still selects (KAN-358). An editable blank click creates the page and
+  // opens it. A reader’s blank click opens the day (KAN-455). A drag's trailing
+  // click is suppressed.
   const handleCellClick = (event: MouseEvent<HTMLDivElement>) => {
     if (isClickSuppressed()) return
     event.stopPropagation()
-    if (onPlace) {
-      onPlace(cell.iso)
+    if (canAdd) {
+      onRequestCreate(cell.iso)
       return
     }
     onOpenDay(cell.iso)
@@ -459,11 +415,11 @@ function MonthDayCellView({
   const handleCellKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'Enter' || event.target !== event.currentTarget) return
     event.preventDefault()
-    onAdd()
+    onRequestCreate(cell.iso)
   }
   const handlePlusClick = (event: MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation()
-    onAdd()
+    onRequestCreate(cell.iso)
   }
   return (
     <div
@@ -478,7 +434,7 @@ function MonthDayCellView({
         'group/day relative min-h-[108px] p-1.5 transition-colors duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none',
         columnIndex !== 0 && 'border-l border-mn-text/[0.09] dark:border-mn-text/[0.14]',
         isOver ? DRAG_OVER_CLASS : columnIndex >= 5 ? 'bg-mn-text/[0.025]' : '',
-        armed && DAY_PLACE_HOVER
+        !isOver && DAY_HOVER
       )}
     >
       <MonthDayNumber day={cell.dayOfMonth} isToday={cell.isToday} inMonth={cell.inMonth} />
@@ -623,25 +579,18 @@ function FocusDayList({
             <div
               key={row.id}
               className={cn(
-                'flex min-h-11 min-w-0 items-center gap-2.5 rounded-[10px] px-2',
+                'flex min-h-11 min-w-0 cursor-pointer items-center gap-2.5 px-3',
                 ROW_FOCUS_VISIBLE,
-                row.id === selectedId && DAY_ITEM_SELECTED_RING
+                row.id === selectedId && DAY_ITEM_SELECTED_RING,
+                EVENT_PILL
               )}
               {...rowProps(row.id)}
               {...keyboardProps(row.id)}
               onKeyDown={(e) => selectOrOpenOnKey(row.id, e, onOpenRow)}
               onClick={(e) =>
-                handleCalendarRowClick(
-                  row.id,
-                  selectedId,
-                  selectWithPointer,
-                  onOpenRow,
-                  isClickSuppressed,
-                  e
-                )
+                handleCalendarRowClick(row.id, selectedId, selectWithPointer, isClickSuppressed, e)
               }
             >
-              <span className={DAY_ITEM_DOT_LARGE} />
               <span className="min-w-0 flex-1 truncate text-[15px] leading-[1.3] text-mn-text">
                 {row.title}
               </span>
@@ -653,177 +602,73 @@ function FocusDayList({
   )
 }
 
-/** `` `${dow} ${day} ${month}` ``, plus ` · today` when the group is today. */
-function agendaDayLabel(iso: string, todayIso: string): string {
-  const day = Number(iso.slice(8, 10))
-  const label = `${DOW_LABELS[weekdayIndex(iso)]} ${day} ${monthAbbr(iso)}`
-  return iso === todayIso ? `${label} · today` : label
-}
-
-const agendaGroupHasRows = (group: AgendaGroup): boolean =>
-  group.rows.untimed.length > 0 || group.rows.timed.length > 0
-
-/** The board's day line when a shown day, or a whole empty window, has no rows. */
-const AgendaNone = () => <span className={AGENDA_NONE}>nothing dated</span>
-
-/**
- * One agenda row. The click and key calls are the month stack's: the first
- * click selects and the peek `CollectionCalendar` already mounts for
- * `selectedRow` opens; a second click on the selected row opens the page.
- */
-function AgendaItem({
-  row,
-  timeLabel,
-  selectedId,
-  isClickSuppressed,
-  rowProps,
-  keyboardProps,
-  selectWithPointer,
-  selectOrOpenOnKey,
-  onOpenRow,
+function YearGrid({
+  grids,
+  onOpenMonth,
+  onOpenDay,
 }: {
-  row: CollectionRow
-  timeLabel?: string
-  selectedId?: string
-  isClickSuppressed: PointerBucketDrag['isClickSuppressed']
-  rowProps: RowSelection['rowProps']
-  keyboardProps: RowSelection['keyboardProps']
-  selectWithPointer: RowSelection['selectWithPointer']
-  selectOrOpenOnKey: RowSelection['selectOrOpenOnKey']
-  onOpenRow?: (rowId: string) => void
+  grids: readonly MonthGrid[]
+  onOpenMonth: (iso: string) => void
+  onOpenDay: (iso: string) => void
 }) {
   return (
-    <div
-      data-part="calendar-agenda-item"
-      className={cn(
-        AGENDA_ITEM,
-        ROW_FOCUS_VISIBLE,
-        row.id === selectedId && DAY_ITEM_SELECTED_RING
-      )}
-      {...rowProps(row.id)}
-      {...keyboardProps(row.id)}
-      onKeyDown={(e) => selectOrOpenOnKey(row.id, e, onOpenRow)}
-      onClick={(e) =>
-        handleCalendarRowClick(
-          row.id,
-          selectedId,
-          selectWithPointer,
-          onOpenRow,
-          isClickSuppressed,
-          e
-        )
-      }
-    >
-      <span className={DAY_ITEM_DOT_LARGE} />
-      <span className={AGENDA_TITLE}>{row.title}</span>
-      {timeLabel ? (
-        <span data-part="calendar-agenda-time" className={AGENDA_TIME}>
-          {timeLabel}
-        </span>
-      ) : null}
-    </div>
-  )
-}
-
-/**
- * The agenda span's list (`PondCalendar.dc.html` lines 239–244). Groups are
- * `buildAgenda`: untimed rows, then timed rows. An untimed row has no time node.
- * Today with no rows keeps its heading and draws `nothing dated` under it. A
- * window with no groups draws that line once, with no day heading. An empty
- * sentinel after those groups is observed against the viewport; reaching it
- * asks the calendar to extend the list. No observer means the list stays put.
- */
-function AgendaList({
-  groups,
-  todayIso,
-  selectedId,
-  isClickSuppressed,
-  rowProps,
-  keyboardProps,
-  selectWithPointer,
-  selectOrOpenOnKey,
-  onOpenRow,
-  onReach,
-}: {
-  groups: readonly AgendaGroup[]
-  todayIso: string
-  selectedId?: string
-  isClickSuppressed: PointerBucketDrag['isClickSuppressed']
-  rowProps: RowSelection['rowProps']
-  keyboardProps: RowSelection['keyboardProps']
-  selectWithPointer: RowSelection['selectWithPointer']
-  selectOrOpenOnKey: RowSelection['selectOrOpenOnKey']
-  onOpenRow?: (rowId: string) => void
-  onReach: () => void
-}) {
-  const endRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (typeof IntersectionObserver === 'undefined') return
-    const node = endRef.current
-    if (!node) return
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (!entries.some((entry) => entry.isIntersecting)) return
-        onReach()
-      },
-      { root: null }
-    )
-    observer.observe(node)
-    return () => {
-      observer.disconnect()
-    }
-  }, [onReach])
-  const itemProps = {
-    selectedId,
-    isClickSuppressed,
-    rowProps,
-    keyboardProps,
-    selectWithPointer,
-    selectOrOpenOnKey,
-    onOpenRow,
-  }
-  return (
-    <div data-part="calendar-agenda" className="flex flex-col">
-      {groups.length === 0 ? (
-        <AgendaNone />
-      ) : (
-        groups.map((group) => (
-          <div
-            key={group.iso}
-            data-part="calendar-agenda-day"
-            data-iso={group.iso}
-            className={AGENDA_DAY}
-          >
-            <div className={AGENDA_HEAD}>
-              <FocusedDayNumber
-                day={Number(group.iso.slice(8, 10))}
-                isToday={group.iso === todayIso}
-              />
-              <span className={AGENDA_LABEL}>{agendaDayLabel(group.iso, todayIso)}</span>
-            </div>
-            <div className="flex flex-col">
-              {agendaGroupHasRows(group) ? (
-                <>
-                  {group.rows.untimed.map((row) => (
-                    <AgendaItem key={row.id} row={row} {...itemProps} />
-                  ))}
-                  {group.rows.timed.map((timed) => (
-                    <AgendaItem
-                      key={timed.row.id}
-                      row={timed.row}
-                      timeLabel={timed.timeLabel}
-                      {...itemProps}
-                    />
-                  ))}
-                </>
-              ) : (
-                <AgendaNone />
+    <div data-part="calendar-year" className="grid grid-cols-1 gap-x-8 gap-y-6 md:grid-cols-3">
+      {grids.map((grid) => {
+        const name = grid.periodLabel.replace(/ \d{4}$/, '')
+        const first = grid.weeks.flatMap((week) => week.days).find((cell) => cell.inMonth)
+        return (
+          <section key={grid.periodLabel} className="min-w-0">
+            <button
+              type="button"
+              onClick={() => {
+                if (first) onOpenMonth(first.iso)
+              }}
+              className="mb-1 text-left text-[13px] font-medium text-mn-text"
+            >
+              {name}
+            </button>
+            <div className="grid grid-cols-7">
+              {DOW_LABELS.map((label) => (
+                <span
+                  key={label}
+                  className="pb-0.5 text-center text-[10.5px] font-medium uppercase tracking-[.1em] text-mn-text-secondary"
+                >
+                  {label}
+                </span>
+              ))}
+              {grid.weeks.flatMap((week) =>
+                week.days.map((cell) => {
+                  if (!cell.inMonth) return <span key={cell.iso} />
+                  const marked = cell.items.length > 0 || cell.marks.length > 0
+                  return (
+                    <button
+                      key={cell.iso}
+                      type="button"
+                      data-part="calendar-year-day"
+                      data-iso={cell.iso}
+                      aria-label={`${cell.dayOfMonth} ${monthAbbr(cell.iso)}`}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        onOpenDay(cell.iso)
+                      }}
+                      className="flex flex-col items-center"
+                    >
+                      <MonthDayNumber day={cell.dayOfMonth} isToday={cell.isToday} inMonth />
+                      <span
+                        data-part={marked ? 'calendar-year-mark' : undefined}
+                        className={cn(
+                          'size-1 rounded-full',
+                          marked ? 'bg-mn-text' : 'bg-transparent'
+                        )}
+                      />
+                    </button>
+                  )
+                })
               )}
             </div>
-          </div>
-        ))
-      )}
-      <div ref={endRef} data-part="calendar-agenda-end" aria-hidden="true" />
+          </section>
+        )
+      })}
     </div>
   )
 }
@@ -899,9 +744,8 @@ function SpanPill({
 
 /** `adLabel`: 10.5px, weight 500, ink .68, centered in the gutter track. */
 const ALL_DAY_LABEL = 'self-center text-[10.5px] font-medium text-mn-text-secondary'
-/** Untimed row: height 22, margin 1px 2px, gap 6, padding 0 6px, radius 6. Title is 11.5px weight 500. */
-const ALL_DAY_ITEM =
-  'mx-[2px] my-px flex h-[22px] min-w-0 items-center gap-[6px] rounded-[6px] px-[6px]'
+/** Untimed row: height 22, the title inside one pill. */
+const ALL_DAY_ITEM = `mx-[2px] my-px flex h-[22px] min-w-0 cursor-pointer items-center px-2 ${EVENT_PILL}`
 const ALL_DAY_TITLE = 'min-w-0 flex-1 truncate text-[11.5px] font-medium leading-[1.3] text-mn-text'
 /** Hour labels, the DC's `h.style`: 10.5px, weight 500, ink .68, tabular. */
 const HOUR_LABEL = 'absolute left-0 text-[10.5px] font-medium text-mn-text-secondary tabular-nums'
@@ -911,7 +755,7 @@ const HOUR_LABEL = 'absolute left-0 text-[10.5px] font-medium text-mn-text-secon
  * 12px weight 500; time is `mSt(10.5)` — 10.5px, weight 500, ink .80, tabular.
  */
 const TIMED_EVENT =
-  'absolute right-1 left-1 z-[1] box-border flex overflow-hidden rounded-[8px] bg-mn-drag-ghost shadow-[0_1px_2px_rgba(40,34,24,.08),0_2px_8px_rgba(40,34,24,.07)] dark:shadow-[0_1px_2px_rgba(0,0,0,.3),0_2px_8px_rgba(0,0,0,.3)]'
+  'absolute right-1 left-1 z-[1] box-border flex cursor-pointer overflow-hidden rounded-[8px] bg-mn-drag-ghost shadow-[0_1px_2px_rgba(40,34,24,.08),0_2px_8px_rgba(40,34,24,.07)] dark:shadow-[0_1px_2px_rgba(0,0,0,.3),0_2px_8px_rgba(0,0,0,.3)]'
 const TIMED_TITLE = 'truncate text-[12px] font-medium leading-[1.25] text-mn-text'
 /** Hair across the day column and the all-day rule: `a(ink ? .14 : .09)`. */
 const DAY_HAIR_BORDER = 'border-mn-text/[0.09] dark:border-mn-text/[0.14]'
@@ -942,7 +786,9 @@ function WeekBody({
   nowHm,
   rows,
   dateDef,
+  repeatDef,
   onOpenDay,
+  onRecordClick,
   editable,
   drag,
   overKey,
@@ -956,7 +802,9 @@ function WeekBody({
   nowHm: string
   rows: CollectionRow[]
   dateDef: PropertyDef | undefined
+  repeatDef?: PropertyDef
   onOpenDay: (iso: string) => void
+  onRecordClick: (rowId: string, event: MouseEvent<HTMLDivElement>) => void
   editable?: boolean
   drag: PointerBucketDrag['drag']
   overKey: PointerBucketDrag['overKey']
@@ -970,7 +818,7 @@ function WeekBody({
   const bodyHeight = (DAY_HOUR_END - DAY_HOUR_START) * rowHeight
   const hours = dayHourLabels()
   const days = Array.from({ length: 7 }, (_, offset) => addDays(startIso, offset))
-  const untimedByDay = days.map((iso) => splitDayRows(rows, dateDef, iso).untimed)
+  const untimedByDay = days.map((iso) => splitDayRows(rows, dateDef, iso, repeatDef).untimed)
   const allDayTracks = Math.max(1, ...untimedByDay.map((items) => items.length))
 
   return (
@@ -1023,9 +871,9 @@ function WeekBody({
               data-part="calendar-all-day-item"
               className={cn(ALL_DAY_ITEM, drag?.active && drag.rowId === row.id && DRAG_LIFT_CLASS)}
               style={{ gridColumn: index + 2, gridRow: rowIndex + 1 }}
+              onClick={(event) => onRecordClick(row.id, event)}
               onPointerDown={editable ? (e) => onCardPointerDown(e, row.id) : undefined}
             >
-              <span className={DAY_ITEM_DOT} />
               <span className={ALL_DAY_TITLE}>{row.title}</span>
             </div>
           ))
@@ -1061,7 +909,7 @@ function WeekBody({
         ))}
         {days.map((iso, index) => {
           const weekend = weekdayIndex(iso) > 4
-          const timed = splitDayRows(rows, dateDef, iso).timed
+          const timed = splitDayRows(rows, dateDef, iso, repeatDef).timed
           const nowTop = nowLineTop(iso, todayIso, nowHm, 'desktop')
           return (
             <div
@@ -1092,6 +940,7 @@ function WeekBody({
                       drag?.active && drag.rowId === event.row.id && DRAG_LIFT_CLASS
                     )}
                     style={{ top, height }}
+                    onClick={(click) => onRecordClick(event.row.id, click)}
                     onPointerDown={editable ? (e) => onCardPointerDown(e, event.row.id) : undefined}
                   >
                     <span className={cn(TIMED_TITLE, compact && 'min-w-0 flex-1')}>
@@ -1179,6 +1028,7 @@ function DayBody({
   nowHm,
   untimed,
   timed,
+  onRecordClick,
 }: {
   size: DayMetricSize
   focusIso: string
@@ -1186,6 +1036,7 @@ function DayBody({
   nowHm: string
   untimed: CollectionRow[]
   timed: DayTimedRow[]
+  onRecordClick: (rowId: string, event: MouseEvent<HTMLDivElement>) => void
 }) {
   const rowHeight = DAY_ROW_HEIGHT[size]
   const gutter = DAY_GUTTER[size]
@@ -1215,8 +1066,8 @@ function DayBody({
             data-part="calendar-all-day-item"
             className={ALL_DAY_ITEM}
             style={{ gridColumn: 2, gridRow: index + 1 }}
+            onClick={(event) => onRecordClick(row.id, event)}
           >
-            <span className={DAY_ITEM_DOT} />
             <span className={ALL_DAY_TITLE}>{row.title}</span>
           </div>
         ))}
@@ -1268,6 +1119,7 @@ function DayBody({
                     : 'flex-col items-stretch gap-[2px] px-2 py-[6px]'
                 )}
                 style={{ top, height }}
+                onClick={(click) => onRecordClick(event.row.id, click)}
               >
                 <span className={cn(TIMED_TITLE, compact && 'min-w-0 flex-1')}>
                   {event.row.title}
@@ -1304,8 +1156,12 @@ export function CollectionCalendar({
   editable,
   onEdit,
   onAddRow,
+  onUpdateSchema,
   onRenameRow,
   onOpenRow,
+  onDeleteRow,
+  renderPage,
+  renderGuests,
   onAddDateField,
   onMoveDate,
   onMoveDates,
@@ -1324,8 +1180,20 @@ export function CollectionCalendar({
   editable?: boolean
   onEdit?: (rowId: string, key: string, value: PropertyValue) => void
   onAddRow?: (values?: Record<string, PropertyValue>) => Promise<string | null>
+  /** Writes location, guests, and repeats onto the collection when a page is created. */
+  onUpdateSchema?: (next: PropertySchema) => void
   onRenameRow?: (rowId: string, title: string) => void
   onOpenRow?: (rowId: string) => void
+  /** Removes the record from the page window. */
+  onDeleteRow?: (rowId: string) => void
+  /** The record's page, drawn under its fields. Absent in a static render. */
+  renderPage?: (row: CollectionRow) => ReactNode
+  /** The guests finder. Absent draws guests as plain text. */
+  renderGuests?: (field: {
+    value: PropertyValue
+    editable: boolean
+    onChange: (value: PropertyValue) => void
+  }) => ReactNode
   onAddDateField?: () => void
   onMoveDate?: (rowId: string, key: string, value: PropertyValue) => void
   /** A bar drop writes both ends in one call: the start field, then the end field. */
@@ -1339,6 +1207,7 @@ export function CollectionCalendar({
   onConfigChange?: (patch: { span: CalendarSpan }) => void
 }) {
   const dateDef = useMemo(() => pickDateDef(schema, groupBy), [schema, groupBy])
+  const repeatDef = useMemo(() => pickRepeatDef(schema), [schema])
   const rangeDefs = useMemo(() => pickGanttDefs(schema, startId, endId), [endId, schema, startId])
   // A named start is the bar's start. Otherwise the calendar date stays the
   // field chips and drops already use, and `endDef` is the range's other end.
@@ -1348,7 +1217,6 @@ export function CollectionCalendar({
   const [todayIso] = useState(() => localDateIso(new Date()))
   const [now] = useState(() => new Date())
   const [focusIso, setFocusIso] = useState(todayIso)
-  const [agendaExtensions, setAgendaExtensions] = useState(0)
   // Local span, seeded from the view field. A later change to that field
   // (another saved view) drops the override so the pill follows the view again.
   const seededSpan: CalendarSpan = spanProp ?? 'month'
@@ -1365,8 +1233,8 @@ export function CollectionCalendar({
     onConfigChange?.({ span: next })
   }
   const grid = useMemo(
-    () => buildMonthGrid(focusIso, todayIso, rows, monthDateDef, rangeDefs?.endDef),
-    [focusIso, monthDateDef, rangeDefs, rows, todayIso]
+    () => buildMonthGrid(focusIso, todayIso, rows, monthDateDef, rangeDefs?.endDef, repeatDef),
+    [focusIso, monthDateDef, rangeDefs, repeatDef, rows, todayIso]
   )
   const barSegments = useMemo(() => {
     const endDef = rangeDefs?.endDef
@@ -1383,68 +1251,78 @@ export function CollectionCalendar({
       bars
     )
   }, [grid.weeks, monthDateDef, rangeDefs, rows])
-  const dayRows = useMemo(() => splitDayRows(rows, dateDef, focusIso), [dateDef, focusIso, rows])
-  const weekStrip = useMemo(() => stripWeek(focusIso, rows, dateDef), [dateDef, focusIso, rows])
-  // The open focus is session state. A week span labels `weekRange` of that
-  // focus and steps seven days; a day span labels and steps that day; an
-  // agenda span labels `agendaRange(focus).start` (`from 19 oct`) and steps
-  // fourteen days via `stepAgenda`; a month span keeps the month label and
-  // `stepMonth`. `today` only moves the focus, so it never leaves the span.
-  // A week span draws the desktop week body (day heads, all-day row, hour
-  // grid). On a phone (`mob && span === 'week'`) that grid stays hidden: the
-  // week strip and the focused-day list show instead, and a strip tap only
-  // moves the focus. An agenda span draws `buildAgenda` and none of those.
-  const openWeek = span === 'week' ? weekRange(focusIso) : null
-  const openAgenda = span === 'agenda' ? agendaRange(focusIso) : null
-  const agendaGroups = useMemo(
-    () =>
-      span === 'agenda' ? buildAgenda(focusIso, todayIso, rows, dateDef, agendaExtensions) : [],
-    [agendaExtensions, dateDef, focusIso, rows, span, todayIso]
+  const dayRows = useMemo(
+    () => splitDayRows(rows, dateDef, focusIso, repeatDef),
+    [dateDef, focusIso, repeatDef, rows]
   )
-  const handleAgendaReach = useCallback(() => {
-    setAgendaExtensions((current) => agendaExtensionsAfterReach(focusIso, rows, dateDef, current))
-  }, [dateDef, focusIso, rows])
-  const periodLabel = openAgenda
-    ? agendaPeriodLabel(openAgenda.start)
-    : openWeek
-      ? weekPeriodLabel(openWeek.start, openWeek.end)
-      : span === 'day'
-        ? dayPeriodLabel(focusIso)
-        : grid.periodLabel
-  const stepFocus = openAgenda
-    ? stepAgenda
-    : openWeek
-      ? stepWeek
-      : span === 'day'
-        ? stepDay
-        : stepMonth
-  const previousName = openAgenda
-    ? 'Previous agenda'
-    : openWeek
-      ? 'Previous week'
-      : span === 'day'
-        ? 'Previous day'
-        : 'Previous month'
-  const nextName = openAgenda
-    ? 'Next agenda'
-    : openWeek
-      ? 'Next week'
-      : span === 'day'
-        ? 'Next day'
-        : 'Next month'
+  const weekStrip = useMemo(
+    () => stripWeek(focusIso, rows, dateDef, repeatDef),
+    [dateDef, focusIso, repeatDef, rows]
+  )
+  // The open focus is session state. A week span labels `weekRange` of that
+  // focus and steps seven days; a day span labels and steps that day; a year
+  // span labels the year and steps a whole year; a month span keeps the month
+  // label and `stepMonth`. `today` only moves the focus, so it never leaves
+  // the span. A week span draws the desktop week body (day heads, all-day
+  // row, hour grid). On a phone (`mob && span === 'week'`) that grid stays
+  // hidden: the week strip and the focused-day list show instead, and a strip
+  // tap only moves the focus. A year span draws the twelve months.
+  const openWeek = span === 'week' ? weekRange(focusIso) : null
+  const yearGrids = useMemo(() => {
+    if (span !== 'year') return []
+    const year = focusIso.slice(0, 4)
+    return Array.from({ length: 12 }, (_, month0) =>
+      buildMonthGrid(
+        `${year}-${String(month0 + 1).padStart(2, '0')}-01`,
+        todayIso,
+        rows,
+        monthDateDef,
+        rangeDefs?.endDef,
+        repeatDef
+      )
+    )
+  }, [focusIso, monthDateDef, rangeDefs, repeatDef, rows, span, todayIso])
+  const periodLabel =
+    span === 'year'
+      ? yearPeriodLabel(focusIso)
+      : openWeek
+        ? weekPeriodLabel(openWeek.start, openWeek.end)
+        : span === 'day'
+          ? dayPeriodLabel(focusIso)
+          : grid.periodLabel
+  const stepFocus =
+    span === 'year' ? stepYear : openWeek ? stepWeek : span === 'day' ? stepDay : stepMonth
+  const previousName =
+    span === 'year'
+      ? 'Previous year'
+      : openWeek
+        ? 'Previous week'
+        : span === 'day'
+          ? 'Previous day'
+          : 'Previous month'
+  const nextName =
+    span === 'year'
+      ? 'Next year'
+      : openWeek
+        ? 'Next week'
+        : span === 'day'
+          ? 'Next day'
+          : 'Next month'
   const handleStepFocus = (direction: -1 | 1) => {
-    setAgendaExtensions(0)
     setFocusIso((current) => stepFocus(current, direction))
   }
   const handleToday = () => {
-    setAgendaExtensions(0)
     setFocusIso(goToday(todayIso))
   }
   // Desktop `goDay`: blank space opens that day. A mobile month dot only moves
-  // the focus (`mob && span !== 'day'` keeps the span).
+  // the focus (`mob && span !== 'day'` keeps the span). A year day opens that day.
   const handleOpenDay = (iso: string) => {
     setFocusIso(iso)
     handleSpanChange('day')
+  }
+  const handleOpenMonth = (iso: string) => {
+    setFocusIso(iso)
+    handleSpanChange('month')
   }
 
   // Dropping on a day cell writes that day to the date field; a drop back onto the
@@ -1480,7 +1358,7 @@ export function CollectionCalendar({
         return
       }
       if (!dateDef || !onMoveDate) return
-      if (rowDateIso(row, dateDef) === key) return
+      if (rowOccursOn(row, dateDef, key, repeatDef)) return
       onMoveDate(rowId, dateDef.id, dateForDrop(row.values[dateDef.id], key))
     },
   })
@@ -1490,54 +1368,21 @@ export function CollectionCalendar({
   const done = useDoneToggle({ schema, editable, onEdit })
 
   const canAdd = !!dateDef && !!editable && !!onAddRow
-  // Guards handleAddDay against a second click while its write is in flight
+  // Guards handleCreate against a second click while its write is in flight
   // (AUDIT G9), same shape as CollectionGallery's handleAddRecord.
   const addingRef = useRef(false)
-  // The id this click just added. `focusTitle` is that id only — a keyboard
-  // select of an existing stack item must not move focus into the peek (KAN-358).
   const [focusTitleId, setFocusTitleId] = useState<string | null>(null)
-  const [undatedOpen, setUndatedOpen] = useState(false)
-  const [placement, setPlacement] = useState<{ id: string; title: string } | null>(null)
-
-  useEffect(() => {
-    if (!placement) return
-    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      setPlacement(null)
-    }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [placement])
-
-  const handlePickUndated = (row: CollectionRow) => {
-    setPlacement({ id: row.id, title: row.title })
-    setUndatedOpen(false)
-  }
-
-  const handleUndatedLineClick = () => {
-    if (placement) return
-    setUndatedOpen((open) => !open)
-  }
-
-  // The same own edit a drop uses: `onMoveDate` is `setValueAsStep` (KAN-385).
-  // A click on the row's own day writes nothing. Clearing the arm is the gesture ending.
-  const handlePlaceOnDay = (iso: string) => {
-    if (!placement || !dateDef || !onMoveDate) return
-    const row = rows.find((candidate) => candidate.id === placement.id)
-    if (row && rowDateIso(row, dateDef) !== iso) {
-      onMoveDate(placement.id, dateDef.id, dateForDrop(row.values[dateDef.id], iso))
-    }
-    setPlacement(null)
-  }
 
   // The date rides in `addRow`'s own values rather than a follow-up `setValue` —
   // one write, same one-change-log-record pause as `CollectionList`'s add
-  // (session undo for row adds is KAN-419).
+  // (session undo for row adds is KAN-419). The page stays untitled; the window
+  // focuses the title so the person names it.
   const handleAddDay = async (iso: string) => {
     if (!dateDef || !onAddRow || addingRef.current) return
     addingRef.current = true
     try {
+      const next = ensureEventFields(schema)
+      if (next) onUpdateSchema?.(next)
       const id = await onAddRow({ [dateDef.id]: iso })
       if (!id) return
       setFocusTitleId(id)
@@ -1549,20 +1394,16 @@ export function CollectionCalendar({
     }
   }
 
+  const handleRecordClick = (rowId: string, event: MouseEvent<HTMLDivElement>) => {
+    handleCalendarRowClick(rowId, selectedRow?.id, selectWithPointer, isClickSuppressed, event)
+  }
+
   const nowHm = clockHm(now)
   const focusIsToday = focusIso === todayIso
   const focusDayOfMonth = Number(focusIso.slice(8, 10))
   const focusLabel = `${DOW_LABELS[weekdayIndex(focusIso)]} ${monthAbbr(focusIso)}${focusIsToday ? ' · today' : ''}`
-  const focusItems = dayItems(rows, dateDef, focusIso)
-  const undatedRows = dateDef ? rows.filter((row) => rowDateIso(row, dateDef) === null) : []
-  const undatedCount = undatedRows.length
-  const showUndatedLine = !!dateDef && undatedCount > 0
-  // The calendar's own empty (no date field, no rows, or every row undated)
-  // already draws its line. Agenda must not add its list or `nothing dated`.
-  const calendarOwnEmpty = !dateDef || rows.length === 0 || undatedCount === rows.length
-  const undatedLabel = placement
-    ? `pick a day for ${placement.title.toLowerCase()}`
-    : `${undatedCount} without a date`
+  const focusItems = dayItems(rows, dateDef, focusIso, repeatDef)
+  const undatedCount = dateDef ? rows.filter((row) => rowDateIso(row, dateDef) === null).length : 0
 
   return (
     <div
@@ -1608,24 +1449,6 @@ export function CollectionCalendar({
           </button>
         </div>
       </div>
-      {showUndatedLine ? (
-        <button
-          type="button"
-          aria-expanded={placement ? undefined : undatedOpen}
-          onClick={handleUndatedLineClick}
-          className={UNDATED_LINE}
-        >
-          {undatedLabel}
-        </button>
-      ) : null}
-      {showUndatedLine && undatedOpen && !placement ? (
-        <UndatedRecords
-          rows={undatedRows}
-          pageMarkClassName={DAY_ITEM_DOT}
-          onClose={() => setUndatedOpen(false)}
-          onPick={handlePickUndated}
-        />
-      ) : null}
       {!dateDef ? (
         onAddDateField ? (
           <PondBlockEmpty
@@ -1653,6 +1476,7 @@ export function CollectionCalendar({
             nowHm={nowHm}
             untimed={dayRows.untimed}
             timed={dayRows.timed}
+            onRecordClick={handleRecordClick}
           />
           <DayBody
             size="mobile"
@@ -1661,6 +1485,7 @@ export function CollectionCalendar({
             nowHm={nowHm}
             untimed={dayRows.untimed}
             timed={dayRows.timed}
+            onRecordClick={handleRecordClick}
           />
         </>
       ) : openWeek ? (
@@ -1672,7 +1497,9 @@ export function CollectionCalendar({
             nowHm={nowHm}
             rows={rows}
             dateDef={dateDef}
+            repeatDef={repeatDef}
             onOpenDay={handleOpenDay}
+            onRecordClick={handleRecordClick}
             editable={editable}
             drag={drag}
             overKey={overKey}
@@ -1682,21 +1509,8 @@ export function CollectionCalendar({
             containerClassName={containerClassName}
           />
         </>
-      ) : span === 'agenda' ? (
-        calendarOwnEmpty ? null : (
-          <AgendaList
-            groups={agendaGroups}
-            todayIso={todayIso}
-            selectedId={selectedRow?.id}
-            isClickSuppressed={isClickSuppressed}
-            rowProps={rowProps}
-            keyboardProps={keyboardProps}
-            selectWithPointer={selectWithPointer}
-            selectOrOpenOnKey={selectOrOpenOnKey}
-            onOpenRow={onOpenRow}
-            onReach={handleAgendaReach}
-          />
-        )
+      ) : span === 'year' ? (
+        <YearGrid grids={yearGrids} onOpenMonth={handleOpenMonth} onOpenDay={handleOpenDay} />
       ) : (
         <>
           <div
@@ -1738,12 +1552,12 @@ export function CollectionCalendar({
                       lanes={lanes}
                       dateDef={monthDateDef}
                       canAdd={canAdd}
-                      onAdd={() => void handleAddDay(cell.iso)}
+                      onRequestCreate={(iso) => {
+                        void handleAddDay(iso)
+                      }}
                       selectedId={selectedRow?.id}
                       draggingRowId={drag?.active ? drag.rowId : undefined}
                       isOver={!!editable && !!drag?.active && overKey === cell.iso}
-                      armed={placement !== null}
-                      onPlace={placement ? handlePlaceOnDay : undefined}
                       onOpenDay={handleOpenDay}
                       editable={editable}
                       registerBucket={registerBucket}
@@ -1764,6 +1578,7 @@ export function CollectionCalendar({
                       lifted={drag !== null && drag.active && drag.rowId === segment.rowId}
                       editable={editable}
                       onCardPointerDown={onCardPointerDown}
+                      onRecordClick={handleRecordClick}
                     />
                   ))}
                 </div>
@@ -1789,7 +1604,7 @@ export function CollectionCalendar({
           </div>
         </>
       )}
-      {span !== 'day' && span !== 'agenda' ? (
+      {span !== 'day' && span !== 'year' ? (
         <FocusDayList
           dayOfMonth={focusDayOfMonth}
           isToday={focusIsToday}
@@ -1813,10 +1628,15 @@ export function CollectionCalendar({
           onToggleDone={done.toggle && (() => done.toggle?.(selectedRow))}
           now={now}
           editable={editable}
+          placement="center"
+          onDelete={onDeleteRow && (() => onDeleteRow(selectedRow.id))}
           focusTitle={selectedRow.id === focusTitleId}
           onEdit={onEdit}
           onRenameRow={onRenameRow}
           onOpenRow={onOpenRow}
+          page={renderPage?.(selectedRow)}
+          renderGuests={renderGuests}
+          onDismiss={() => select(null)}
         />
       )}
     </div>

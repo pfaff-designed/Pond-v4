@@ -59,11 +59,7 @@ const ROW_CHROME: Partial<
  * view (ADR 0009), and the static table block moved to its own `grid` row
  * (`ROW_CHROME.table`) so the two never read alike.
  */
-const viewRow = (
-  mode: ViewMode,
-  alias?: string,
-  label?: string,
-): SlashRow & { id: ViewMode } => ({
+const viewRow = (mode: ViewMode, alias?: string, label?: string): SlashRow & { id: ViewMode } => ({
   id: mode,
   type: 'view',
   group: 'blocks',
@@ -133,7 +129,8 @@ const VARIANT_ROWS: Partial<Record<DescriptorType, readonly SlashRow[]>> = {
 export const WITHHELD = {
   page: 'structural — a page is made through the rail or `page from template`, not inserted as a block',
   view: 'wholly covered by its variants — each view kind is its own row (ADR 0009)',
-  'page-link': "minted only by `makePage`'s `/ nested page` swap (KAN-122), never picked from the menu directly",
+  'page-link':
+    "minted only by `makePage`'s `/ nested page` swap (KAN-122), never picked from the menu directly",
 } as const satisfies Partial<Record<DescriptorType, string>>
 
 /**
@@ -160,7 +157,6 @@ export const BOARD_ORDER: readonly string[] = [
   'entry-log',
   'page-from-template',
   'page',
-  'nested-page',
 ]
 const GROUP_ORDER: readonly SlashGroup[] = ['text', 'blocks', 'templates', 'pages']
 
@@ -195,10 +191,12 @@ const templateRow: SlashRow = {
   submenu: 'templates',
 }
 
-/** The `pages` group makes pages, not blocks: no row mints one, and the host acts on `placement`. */
+/**
+ * One page. It is a page on this page: a link where you typed, and the new page
+ * under this one. The blank page shape stays in the templates pane.
+ */
 const PAGE_ROWS: readonly SlashRow[] = [
-  { id: 'page', group: 'pages', label: 'page', icon: ICON.page, placement: 'sibling' },
-  { id: 'nested-page', group: 'pages', label: 'nested page', icon: ICON.page, placement: 'child' },
+  { id: 'page', group: 'pages', label: 'page', icon: ICON.page, placement: 'child' },
 ]
 
 const rank = (row: SlashRow) => {

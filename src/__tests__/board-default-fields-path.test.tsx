@@ -8,7 +8,7 @@
  */
 
 import React from 'react'
-import { render, screen, fireEvent, within } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
@@ -44,12 +44,7 @@ jest.mock('@/lib/pages/source-databases', () => ({
 function Harness({ initial }: { initial: Block[] }) {
   const [blocks, setBlocks] = React.useState(initial)
   return (
-    <BlockCanvas
-      blocks={blocks}
-      pageId="page-1"
-      pageTitle="trip planning"
-      onChange={setBlocks}
-    />
+    <BlockCanvas blocks={blocks} pageId="page-1" pageTitle="trip planning" onChange={setBlocks} />
   )
 }
 
@@ -90,37 +85,37 @@ describe('`/board` with no databases yet lands real lanes, and a card lands in o
     // the exact `board` block row is picked by name, not by ↵ on the top match.
     fireEvent.click(within(menu).getByRole('option', { name: 'board' }))
 
-    // `source`: no databases, so `new database — trip planning` is the only row
-    // and is preselected — ↵ is enough.
+    // `source`: no databases, so `new tasks` is the only row and is preselected.
+    // ↵ creates the tasks database — there is no field step.
     const source = await screen.findByRole('listbox', { name: '/board' })
-    expect(within(source).getByText(/new database/)).toBeInTheDocument()
-    fireEvent.keyDown(document, { key: 'Enter' })
-
-    // `new`: opens prefilled with `title` and `status` — no further picking needed.
-    const draft = await screen.findByRole('listbox', { name: 'new database — trip planning' })
-    expect(within(draft).getByText('title')).toBeInTheDocument()
-    expect(within(draft).getByText('status')).toBeInTheDocument()
+    expect(within(source).getByText('new tasks')).toBeInTheDocument()
     fireEvent.keyDown(document, { key: 'Enter' })
 
     expect(await screen.findByText('to do')).toBeInTheDocument()
     expect(screen.getByText('doing')).toBeInTheDocument()
     expect(screen.getByText('done')).toBeInTheDocument()
     expect(screen.queryByText(BOARD_EMPTY_LINE)).not.toBeInTheDocument()
-    expect(
-      screen.queryByRole('button', { name: 'add a status field' })
-    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'add a status field' })).not.toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: '＋ task' })).toHaveLength(3)
 
     const toDoLane = container.querySelector<HTMLElement>('[data-lane="to do"]')!
     fireEvent.click(within(toDoLane).getByRole('button', { name: '＋ task' }))
 
-    const titleInput = await within(toDoLane).findByRole('textbox', { name: 'Card title' })
-    fireEvent.change(titleInput, { target: { value: 'wash the car' } })
-    fireEvent.keyDown(titleInput, { key: 'Enter' })
+    const page = await screen.findByLabelText('Record: Untitled')
+    expect(page).toHaveAttribute('data-placement', 'center')
+    expect(within(page).getByRole('checkbox', { name: 'done value' })).toBeInTheDocument()
+    expect(within(page).getByText('due')).toBeInTheDocument()
+    expect(within(page).getByRole('button', { name: 'repeats' })).toBeInTheDocument()
+    expect(within(page).getByText('assignee')).toBeInTheDocument()
+    const title = within(page).getByRole('textbox', { name: 'Record title' })
+    fireEvent.change(title, { target: { value: 'wash the car' } })
+    fireEvent.keyDown(title, { key: 'Enter' })
 
-    expect(within(toDoLane).getByRole('textbox', { name: 'Card title' })).toHaveValue(
-      'wash the car'
-    )
+    await waitFor(() => {
+      expect(within(toDoLane).getByRole('textbox', { name: 'Card title' })).toHaveValue(
+        'wash the car'
+      )
+    })
   })
 })
 

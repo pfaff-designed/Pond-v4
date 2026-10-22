@@ -90,7 +90,9 @@ jest.mock('@/lib/change-log/undo', () => ({
 function Harness({ initial }: { initial: Block[] }) {
   const [blocks, setBlocks] = React.useState(initial)
   const queryClient = useQueryClient()
-  const queueRef = React.useRef<ReturnType<typeof createPageWriteQueue<PageWriteState>> | null>(null)
+  const queueRef = React.useRef<ReturnType<typeof createPageWriteQueue<PageWriteState>> | null>(
+    null
+  )
 
   const onStructuralWrite = async (
     next: Block[],
@@ -101,10 +103,13 @@ function Harness({ initial }: { initial: Block[] }) {
   ) => {
     setBlocks(next)
     if (!queueRef.current) {
-      queueRef.current = createPageWriteQueue(createPageWriter(mockCreateClient(), queryClient, 'page-1', 'pond-1'), {
-        title: 'trip planning',
-        blocks: initial,
-      })
+      queueRef.current = createPageWriteQueue(
+        createPageWriter(mockCreateClient(), queryClient, 'page-1', 'pond-1'),
+        {
+          title: 'trip planning',
+          blocks: initial,
+        }
+      )
     }
     let resolveIds: (ids: readonly string[] | null) => void = () => {}
     const recordIds = new Promise<readonly string[] | null>((resolve) => {
@@ -157,9 +162,8 @@ beforeEach(() => {
   sessionUndo.clear()
 })
 
-/** Opens `/board` on an empty page and sends ↵ at the `/board` source step,
- *  which lands on `new database — trip planning` (preselected when no databases
- *  exist) or the clicked existing row — the caller does the picking. */
+/** Opens `/board` on an empty page. `new tasks` is preselected when no
+ *  databases exist; the caller picks that row or an existing one. */
 async function openBoardSource(): Promise<HTMLElement> {
   fireEvent.click(screen.getByTestId('trailing-block-gap'))
   const editor = await findTextBlock()
@@ -178,8 +182,6 @@ describe('a view insert writes one ⌘Z step whose side effects match its databa
 
     renderCanvas([])
     await openBoardSource()
-    fireEvent.keyDown(document, { key: 'Enter' })
-    await screen.findByRole('listbox', { name: 'new database — trip planning' })
     fireEvent.keyDown(document, { key: 'Enter' })
 
     await waitFor(() => expect(mockAppendOwnEdit).toHaveBeenCalledTimes(1))
@@ -218,7 +220,7 @@ describe('a view insert writes one ⌘Z step whose side effects match its databa
 
     renderCanvas([])
     const source = await openBoardSource()
-    fireEvent.click(await within(source).findByRole('option', { name: /tasks/ }))
+    fireEvent.click(within(source).getByRole('option', { name: /^tasks/ }))
 
     await waitFor(() => expect(mockAppendOwnEdit).toHaveBeenCalledTimes(1))
 

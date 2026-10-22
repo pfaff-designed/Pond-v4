@@ -7,7 +7,6 @@ import { CollectionView } from './view'
 import { CollectionList } from './list'
 import { BOARD_EMPTY_LINE, CALENDAR_EMPTY_LINE } from './kinds'
 import { localDateIso } from './due'
-import { formatAtomDate } from '@/lib/properties/date-input'
 import { PondBlock } from '@/components/organisms/PondBlock'
 import { PageCanvas } from '@/lib/modules/page-canvas'
 import type { CollectionRow } from './apply'
@@ -234,8 +233,9 @@ export const TableEmptyBare: Story = {
 
 /**
  * `Pond 06.21 Tasks` 6u.1's head row (KAN-59): the database's name and how the view
- * reads it. An editable head carries the layout chip named with the current layout
- * (KAN-519). The bar over a block's saved views is KAN-32's.
+ * reads it. An editable head carries the layouts as one pill — board, timeline,
+ * table, calendar, list, gallery, chart — with the current one filled (KAN-519).
+ * The bar over a block's saved views is KAN-32's.
  *
  * Values read inline from 6u.1:
  *
@@ -267,12 +267,16 @@ export const ViewHeadGeometry: Story = {
     await expect(facts).toHaveTextContent(/^grouped by status$/)
     // …as text. There is no group-by select.
     await expect(within(head).queryByRole('combobox')).toBeNull()
-    // The layout chip is the button named with the current layout (KAN-519).
-    await expect(within(head).getByRole('button', { name: 'board' })).toBeInTheDocument()
+    // The layouts sit in one pill. Board is the one filled.
+    await expect(within(head).getByRole('tab', { name: 'board' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    )
+    await expect(within(head).getByRole('tab', { name: 'table' })).toBeInTheDocument()
   },
 }
 
-/** An editable gantt head carries the layout chip named timeline (KAN-519). */
+/** An editable gantt head fills the timeline segment. */
 export const ViewHeadSwitchesNoKind: Story = {
   args: {
     config: ganttConfig,
@@ -285,16 +289,18 @@ export const ViewHeadSwitchesNoKind: Story = {
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement)
     await expect(canvasElement.querySelector('[data-part="db-name"]')).toBeInTheDocument()
-    await expect(canvas.getByRole('button', { name: 'timeline' })).toBeInTheDocument()
+    await expect(canvas.getByRole('tab', { name: 'timeline' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    )
     await expect(args.onConfigChange).not.toHaveBeenCalled()
   },
 }
 
 /**
- * The layout chip is named with the current layout, and the body behind it is
- * that layout (KAN-524). Gallery is one of list, timeline, gallery, and chart.
- * Opening the chip lists those four by their kind labels. The gallery stays
- * the body while the menu is open.
+ * The layout pill names every layout, and the body behind it is the filled one
+ * (KAN-524). Gallery is one of list, timeline, gallery, and chart. The gallery
+ * stays the body while those segments are showing.
  */
 export const LayoutChipOffersListTimelineGalleryAndChart: Story = {
   args: {
@@ -306,17 +312,16 @@ export const LayoutChipOffersListTimelineGalleryAndChart: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getByRole('button', { name: 'gallery' })).toBeInTheDocument()
+    await expect(canvas.getByRole('tab', { name: 'gallery' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    )
     const gallery = canvasElement.querySelector('[data-part="gallery"]')
     await expect(gallery).toHaveTextContent('Trim the rim')
 
-    await userEvent.click(canvas.getByRole('button', { name: 'gallery' }))
-    const menu = await within(document.body).findByRole('menu', { name: 'layout' })
-    const items = within(menu)
-    await expect(items.getByRole('menuitem', { name: 'list' })).toBeInTheDocument()
-    await expect(items.getByRole('menuitem', { name: 'timeline' })).toBeInTheDocument()
-    await expect(items.getByRole('menuitem', { name: 'gallery' })).toBeInTheDocument()
-    await expect(items.getByRole('menuitem', { name: 'chart' })).toBeInTheDocument()
+    await expect(canvas.getByRole('tab', { name: 'list' })).toBeInTheDocument()
+    await expect(canvas.getByRole('tab', { name: 'timeline' })).toBeInTheDocument()
+    await expect(canvas.getByRole('tab', { name: 'chart' })).toBeInTheDocument()
     await expect(canvasElement.querySelector('[data-part="gallery"]')).toHaveTextContent(
       'Trim the rim'
     )
@@ -345,7 +350,9 @@ export const ViewHeadWithoutAName: Story = {
     const head = canvasElement.querySelector<HTMLElement>('[data-part="view-head"]')!
     await expect(head.querySelector('[data-part="db-name"]')).toBeNull()
     // The facts still read — they do not depend on the name.
-    await expect(head.querySelector('[data-part="db-facts"]')).toHaveTextContent('grouped by status')
+    await expect(head.querySelector('[data-part="db-facts"]')).toHaveTextContent(
+      'grouped by status'
+    )
   },
 }
 
@@ -973,15 +980,15 @@ const onPageCanvas: NonNullable<Story['decorators']> = [
 ]
 
 /**
- * 6u.2: a click selects the card — an ink .5 outline, 1.5px, offset 1 — and the record
- * opens beside the view at right 44 / top 150, 330 wide. Another card swaps the record;
- * the lanes stay live (no scrim); Esc and empty paper close it.
+ * A click selects the card — an ink .5 outline, 1.5px, offset 1 — and opens the
+ * same centered page creating a task opens. Another card swaps the record; the
+ * lanes stay live (no scrim); Esc and empty paper close it.
  */
 export const BoardCardSelectsAndPeeks: Story = {
   args: peekArgs,
   decorators: onPageCanvas,
   play: async ({ canvasElement }) => {
-    const peek = () => canvasElement.querySelector<HTMLElement>('[data-part="record-peek"]')
+    const peek = () => document.querySelector<HTMLElement>('[data-part="record-peek"]')
     await expect(peek()).toBeNull()
 
     const first = cardByTitle(canvasElement, 'chase the cabinet quote')
@@ -999,30 +1006,25 @@ export const BoardCardSelectsAndPeeks: Story = {
 
     const p = peek()!
     const ps = getComputedStyle(p)
-    // Against the canvas, not the window: a block's overflow cannot clip it.
-    await expect(ps.position).toBe('absolute')
-    await expect(p.parentElement).toBe(canvasElement.querySelector('[data-part="page-canvas"]'))
-    await expect(pxOf(ps.right)).toBeCloseTo(44, 1)
-    await expect(pxOf(ps.top)).toBeCloseTo(150, 1)
-    await expect(pxOf(ps.width)).toBeCloseTo(330, 1)
+    await expect(p).toHaveAttribute('data-placement', 'center')
+    await expect(ps.position).toBe('fixed')
+    await expect(p.parentElement).toBe(document.body)
+    await expect(p.className).not.toContain('right-[44px]')
     await expect(pxOf(ps.borderTopLeftRadius)).toBeCloseTo(20, 1)
-    await expect(ps.paddingTop).toBe('16px')
-    await expect(ps.paddingLeft).toBe('12px')
-    await expect(ps.paddingBottom).toBe('12px')
     await expect(pxOf(ps.rowGap)).toBeCloseTo(6, 1)
     await expect(shadowLayers(ps.boxShadow)).toHaveLength(2)
 
     const title = within(p).getByText('chase the cabinet quote')
     const ts = getComputedStyle(title)
-    await expect(pxOf(ts.fontSize)).toBeCloseTo(16, 1)
-    await expect(ts.fontWeight).toBe('500')
+    await expect(pxOf(ts.fontSize)).toBeCloseTo(28, 1)
+    await expect(ts.fontWeight).toBe('200')
     // No scrim, no trap: another card is still a live click and swaps the record.
     const second = cardByTitle(canvasElement, 'choose oak veneer finish')
     await userEvent.click(second)
     await expect(first).not.toHaveAttribute('aria-current')
     await expect(second).toHaveAttribute('aria-current', 'true')
     await expect(within(peek()!).getByText('choose oak veneer finish')).toBeInTheDocument()
-    await expect(canvasElement.querySelectorAll('[data-part="record-peek"]')).toHaveLength(1)
+    await expect(document.querySelectorAll('[data-part="record-peek"]')).toHaveLength(1)
 
     await userEvent.keyboard('{Escape}')
     await expect(peek()).toBeNull()
@@ -1043,7 +1045,7 @@ export const RecordPeekFields: Story = {
   args: peekArgs,
   play: async ({ canvasElement }) => {
     await userEvent.click(cardByTitle(canvasElement, 'choose oak veneer finish'))
-    const peek = canvasElement.querySelector<HTMLElement>('[data-part="record-peek"]')!
+    const peek = document.querySelector<HTMLElement>('[data-part="record-peek"]')!
     const fields = [...peek.querySelectorAll<HTMLElement>('[data-part="peek-field"]')]
     await expect(fields.map((f) => f.firstElementChild!.textContent)).toEqual(
       peekSchema.map((d) => d.name)
@@ -1071,16 +1073,13 @@ export const RecordPeekFields: Story = {
   },
 }
 
-/** `open ›` is drawn only when the host can navigate, and asks for the row's page. */
+/** Open page is drawn only when the host can navigate, and asks for the row's page. */
 export const RecordPeekOpensTheRowPage: Story = {
   args: { ...peekArgs, onOpenRow: fn() },
   play: async ({ canvasElement, args }) => {
     await userEvent.click(cardByTitle(canvasElement, 'skip hire returned'))
-    const open = within(canvasElement).getByRole('button', { name: 'open ›' })
-    const os = getComputedStyle(open)
-    await expect(pxOf(os.fontSize)).toBeCloseTo(11, 1)
-    await expect(os.fontWeight).toBe('500')
-    await expectTier(os.color, 'ink', 0.68)
+    const open = within(document.body).getByRole('button', { name: 'Open page' })
+    await expect(within(document.body).queryByRole('button', { name: 'open ›' })).toBeNull()
     await userEvent.click(open)
     await expect(args.onOpenRow).toHaveBeenCalledWith('k3')
   },
@@ -1090,9 +1089,8 @@ export const RecordPeekWithoutHostHasNoOpen: Story = {
   args: peekArgs,
   play: async ({ canvasElement }) => {
     await userEvent.click(cardByTitle(canvasElement, 'skip hire returned'))
-    await expect(
-      within(canvasElement).queryByRole('button', { name: 'open ›' })
-    ).not.toBeInTheDocument()
+    await expect(within(document.body).queryByRole('button', { name: 'open ›' })).toBeNull()
+    await expect(within(document.body).queryByRole('button', { name: 'Open page' })).toBeNull()
   },
 }
 
@@ -1105,7 +1103,7 @@ export const RecordPeekEditsTheRecord: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await userEvent.click(cardByTitle(canvasElement, 'choose oak veneer finish'))
-    const peek = within(canvasElement.querySelector<HTMLElement>('[data-part="record-peek"]')!)
+    const peek = within(document.querySelector<HTMLElement>('[data-part="record-peek"]')!)
     await userEvent.click(peek.getByRole('button', { name: 'status value' }))
     // The popover portals to document.body, outside canvasElement.
     await userEvent.click(await within(document.body).findByRole('option', { name: 'done' }))
@@ -1126,16 +1124,16 @@ export const BoardCardIsKeyboardReachable: Story = {
     await expect(card).toHaveAttribute('tabindex', '0')
     card.focus()
     await userEvent.keyboard('{Enter}')
-    const peek = canvasElement.querySelector<HTMLElement>('[data-part="record-peek"]')!
+    const peek = document.querySelector<HTMLElement>('[data-part="record-peek"]')!
     await expect(card).toHaveAttribute('aria-current', 'true')
     await expect(peek.contains(document.activeElement)).toBe(true)
 
     await userEvent.keyboard('{Escape}')
-    await expect(canvasElement.querySelector('[data-part="record-peek"]')).toBeNull()
+    await expect(document.querySelector('[data-part="record-peek"]')).toBeNull()
     await expect(document.activeElement).toBe(card)
 
     await userEvent.keyboard(' ')
-    await expect(canvasElement.querySelector('[data-part="record-peek"]')).not.toBeNull()
+    await expect(document.querySelector('[data-part="record-peek"]')).not.toBeNull()
   },
 }
 
@@ -1364,7 +1362,7 @@ export const ListRowSelectsAndPeeks: Story = {
   play: async ({ canvasElement }) => {
     const rowOf = (title: string) => listRowOf(canvasElement, title)
     const titleOf = (title: string) => within(rowOf(title)).getByRole('button', { name: title })
-    const peek = () => canvasElement.querySelector<HTMLElement>('[data-part="record-peek"]')
+    const peek = () => document.querySelector<HTMLElement>('[data-part="record-peek"]')
 
     const first = rowOf('chase the cabinet quote')
     await expect(first).not.toHaveAttribute('tabindex')
@@ -1372,15 +1370,14 @@ export const ListRowSelectsAndPeeks: Story = {
     await userEvent.click(titleOf('chase the cabinet quote'))
     await expect(titleOf('chase the cabinet quote')).toHaveAttribute('aria-current', 'true')
     await expect(within(peek()!).getByText('chase the cabinet quote')).toBeInTheDocument()
-    await expect(peek()!.parentElement).toBe(
-      canvasElement.querySelector('[data-part="page-canvas"]')
-    )
+    await expect(peek()).toHaveAttribute('data-placement', 'center')
+    await expect(peek()!.parentElement).toBe(document.body)
     const outline = getComputedStyle(first)
     await expect(outline.outlineStyle).toBe('solid')
     await expect(alphaOf(outline.outlineColor)).toBeCloseTo(0.5, 1)
 
     await userEvent.click(titleOf('order the worktop'))
-    await expect(canvasElement.querySelectorAll('[data-part="record-peek"]')).toHaveLength(1)
+    await expect(document.querySelectorAll('[data-part="record-peek"]')).toHaveLength(1)
     await expect(titleOf('chase the cabinet quote')).not.toHaveAttribute('aria-current')
 
     await userEvent.keyboard('{Escape}')
@@ -1441,17 +1438,22 @@ export const PageHoldsOneOrangeAndOnePeek: Story = {
     await expectTier(getComputedStyle(pills[0]).color, 'ink', 1)
 
     await userEvent.click(cardByTitle(canvasElement, 'board record'))
-    await expect(canvasElement.querySelectorAll('[data-part="record-peek"]')).toHaveLength(1)
+    await expect(document.querySelectorAll('[data-part="record-peek"]')).toHaveLength(1)
+    await expect(document.querySelector('[data-part="record-peek"]')).toHaveAttribute(
+      'data-placement',
+      'center'
+    )
     await userEvent.click(within(canvasElement).getByRole('button', { name: 'list record' }))
-    const peeks = canvasElement.querySelectorAll('[data-part="record-peek"]')
+    const peeks = document.querySelectorAll('[data-part="record-peek"]')
     await expect(peeks).toHaveLength(1)
+    await expect(peeks[0]).toHaveAttribute('data-placement', 'center')
     await expect(peeks[0]).toHaveTextContent('list record')
   },
 }
 
 /**
  * 6v's head: the database's name and `grouped by due`, drawn above the card, not
- * inside it. An editable head carries the layout chip named list (KAN-519).
+ * inside it. An editable head carries list as the filled layout (KAN-519).
  */
 export const ListHead: Story = {
   args: { ...listArgs, collectionName: 'tasks', editable: true, onConfigChange: fn() },
@@ -1459,7 +1461,10 @@ export const ListHead: Story = {
     const head = canvasElement.querySelector<HTMLElement>('[data-part="view-head"]')!
     await expect(head).toHaveTextContent('tasks')
     await expect(head).toHaveTextContent('grouped by due')
-    await expect(within(head).getByRole('button', { name: 'list' })).toBeInTheDocument()
+    await expect(within(head).getByRole('tab', { name: 'list' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    )
     await expect(canvasElement.querySelector('[data-part="list-card"]')!.contains(head)).toBe(false)
   },
 }
@@ -1615,14 +1620,14 @@ export const CalendarDragLeavesNoNativeSelection: Story = {
 
 /**
  * KAN-453. Hovering a day of the current month shows the plus, and clicking it
- * opens the new record's peek with the title focused and that day already set.
+ * opens the new-page choice. Choosing event opens an untitled page on that day.
  *
  * `StatefulView` does not implement `onAddRow`, so this harness appends the
  * minted row with the date values the calendar passed. The month grid is
  * `hidden md:flex`, and `storybook/test` hover does not apply `:hover` — the
  * same real-input constraint as `CalendarDragLeavesNoNativeSelection`. The day
  * is `localDateIso(new Date())`, so it stays on the current month without a
- * clock mock. The date reads `formatAtomDate` (`en-US`, UTC noon).
+ * clock mock.
  */
 const hoverAddIso = localDateIso(new Date())
 
@@ -1677,100 +1682,11 @@ export const CalendarHoverAdd: Story = {
       await realUserEvent.click(plus)
 
       const body = within(document.body)
-      const peek = await body.findByRole('complementary', { name: 'Record: Untitled' })
-      await expect(peek).toBeInTheDocument()
       const title = await body.findByRole('textbox', { name: 'Record title' })
       await expect(title).toHaveFocus()
-      await expect(body.getByRole('button', { name: 'Due value' })).toHaveTextContent(
-        formatAtomDate(hoverAddIso)
-      )
-    } finally {
-      const { width, height } = loaded.prevViewport as { width: number; height: number }
-      await page.viewport(width, height)
-    }
-  },
-}
-
-/**
- * KAN-454. The quiet line `n without a date` opens the undated records.
- * Picking one arms placement (`pick a day for <title>`). Clicking a day of
- * the current month writes that date through `onMoveDate`, the record sits
- * on the day, and the line count drops.
- *
- * The month grid is `hidden md:flex`, so this story sets a desktop viewport
- * the same way `CalendarHoverAdd` does. The day is the 21st of the current
- * month, which every month contains, and the grid opens on the current month.
- */
-const placeDayIso = `${localDateIso(new Date()).slice(0, 8)}21`
-
-const undatedCalendarRows: CollectionRow[] = [
-  { id: 'r-dentist', title: 'dentist', values: {} },
-  { id: 'r-optician', title: 'optician', values: {} },
-]
-
-function CalendarWithoutADateHarness({
-  config,
-  hostSchema,
-}: {
-  config: ViewBlock
-  hostSchema: PropertySchema
-}) {
-  const [data, setData] = useState<CollectionRow[]>(undatedCalendarRows)
-  const handleMoveDate = (rowId: string, key: string, value: PropertyValue) => {
-    setData((prev) =>
-      prev.map((row) =>
-        row.id === rowId ? { ...row, values: { ...row.values, [key]: value } } : row
-      )
-    )
-  }
-  return (
-    <CollectionView
-      config={config}
-      schema={hostSchema}
-      rows={data}
-      editable
-      onMoveDate={handleMoveDate}
-    />
-  )
-}
-
-export const CalendarWithoutADate: Story = {
-  args: { config: calendarConfig, schema, rows: undatedCalendarRows, editable: true },
-  render: (args) => (
-    <CalendarWithoutADateHarness config={args.config} hostSchema={args.schema ?? schema} />
-  ),
-  loaders: [
-    async () => {
-      const prevViewport = { width: window.innerWidth, height: window.innerHeight }
-      await page.viewport(1440, 900)
-      return { prevViewport }
-    },
-  ],
-  play: async ({ canvasElement, loaded }) => {
-    try {
-      const canvas = within(canvasElement)
-      await expect(canvas.getByRole('button', { name: '2 without a date' })).toBeInTheDocument()
-      await userEvent.click(canvas.getByRole('button', { name: '2 without a date' }))
-
-      const list = await canvas.findByRole('listbox', { name: 'without a date' })
-      await expect(within(list).getByRole('option', { name: 'dentist' })).toBeInTheDocument()
-      await expect(within(list).getByRole('option', { name: 'optician' })).toBeInTheDocument()
-      await userEvent.click(within(list).getByRole('option', { name: 'dentist' }))
-
-      await expect(canvas.queryByRole('listbox', { name: 'without a date' })).not.toBeInTheDocument()
-      await expect(canvas.getByRole('button', { name: 'pick a day for dentist' })).toBeInTheDocument()
-
-      const cell = canvasElement.querySelector<HTMLElement>(`[data-iso="${placeDayIso}"]`)
-      if (!cell) throw new Error('calendar without-a-date story: day cell not found')
-      await expect(cell).toHaveClass('hover:bg-mn-hover-fill')
-      await userEvent.click(cell)
-
+      await realUserEvent.type(title, 'dentist{Enter}')
       await expect(within(cell).getByText('dentist')).toBeInTheDocument()
-      await expect(within(cell).queryByText('optician')).not.toBeInTheDocument()
-      await expect(canvas.getByRole('button', { name: '1 without a date' })).toBeInTheDocument()
-      await expect(
-        canvas.queryByRole('button', { name: 'pick a day for dentist' })
-      ).not.toBeInTheDocument()
+      await expect(body.getByLabelText('Record: dentist')).toBeInTheDocument()
     } finally {
       const { width, height } = loaded.prevViewport as { width: number; height: number }
       await page.viewport(width, height)
@@ -2040,25 +1956,20 @@ export const CalendarWeekSpan: Story = {
 }
 
 /**
- * KAN-457. Agenda lists what's coming, grouped by day. The month opens first;
- * choosing agenda shows the two-week window from this Monday.
+ * Year span. The month opens first. Choosing year draws the twelve months
+ * of 2026, marks the dated days, and a day click opens that day.
  *
- * Same static `CollectionView` mount as `CalendarWeekSpan`. The loader sets
- * 1440×900 and fixes the clock at local noon on 19 Oct 2026, so October is
- * open and the agenda period is `from 19 oct`.
+ * The loader sets 1440×900 and fixes the clock at local noon on 19 Oct 2026.
  */
-const agendaSpanRows: CollectionRow[] = [
+const yearSpanRows: CollectionRow[] = [
   { id: 'alcove', title: 'confirm alcove', values: { 'p-due': '2026-10-19' } },
   { id: 'dentist', title: 'dentist', values: { 'p-due': '2026-10-20T10:00:00' } },
-  { id: 'plaster', title: 'plaster', values: { 'p-due': '2026-10-21' } },
-  { id: 'optician', title: 'optician', values: { 'p-due': '2026-10-21T09:00:00' } },
-  { id: 'skip', title: 'skip hire', values: { 'p-due': '2026-10-18' } },
   { id: 'renew', title: 'renew', values: { 'p-due': '2026-11-02' } },
 ]
 
-export const CalendarAgendaSpan: Story = {
-  name: 'agenda span',
-  args: { config: calendarConfig, schema, rows: agendaSpanRows },
+export const CalendarYearSpan: Story = {
+  name: 'year span',
+  args: { config: calendarConfig, schema, rows: yearSpanRows },
   loaders: [
     async () => {
       const prevViewport = { width: window.innerWidth, height: window.innerHeight }
@@ -2071,133 +1982,25 @@ export const CalendarAgendaSpan: Story = {
     try {
       const canvas = within(canvasElement)
       await expect(canvas.getByText('october 2026')).toBeVisible()
-      await userEvent.click(canvas.getByRole('radio', { name: 'agenda' }))
+      await userEvent.click(canvas.getByRole('radio', { name: 'year' }))
 
-      await expect(canvas.getByText('from 19 oct')).toBeVisible()
+      await expect(canvas.getByText('2026')).toBeVisible()
+      await expect(canvas.getByRole('button', { name: 'october' })).toBeVisible()
+      await expect(canvas.getByRole('button', { name: 'november' })).toBeVisible()
 
-      const list = canvasElement.querySelector<HTMLElement>('[data-part="calendar-agenda"]')
-      if (!list) throw new Error('calendar agenda span story: agenda list missing')
-
-      const today = list.querySelector<HTMLElement>(
-        '[data-part="calendar-agenda-day"][data-iso="2026-10-19"]'
+      const nineteenth = canvasElement.querySelector<HTMLElement>(
+        '[data-part="calendar-year-day"][data-iso="2026-10-19"]'
       )
-      if (!today) throw new Error('calendar agenda span story: today missing')
-      const alcove = within(today)
-        .getByText('confirm alcove')
-        .closest<HTMLElement>('[data-part="calendar-agenda-item"]')
-      if (!alcove) throw new Error('calendar agenda span story: confirm alcove is not an agenda item')
-      await expect(alcove.querySelector('[data-part="calendar-agenda-time"]')).toBeNull()
-
-      const tomorrow = list.querySelector<HTMLElement>(
-        '[data-part="calendar-agenda-day"][data-iso="2026-10-20"]'
+      const second = canvasElement.querySelector<HTMLElement>(
+        '[data-part="calendar-year-day"][data-iso="2026-11-02"]'
       )
-      if (!tomorrow) throw new Error('calendar agenda span story: tomorrow missing')
-      const dentist = within(tomorrow)
-        .getByText('dentist')
-        .closest<HTMLElement>('[data-part="calendar-agenda-item"]')
-      if (!dentist) throw new Error('calendar agenda span story: dentist is not an agenda item')
-      await expect(within(dentist).getByText('10:00')).toBeVisible()
+      if (!nineteenth || !second) throw new Error('calendar year story: dated days missing')
+      await expect(nineteenth.querySelector('[data-part="calendar-year-mark"]')).not.toBeNull()
+      await expect(second.querySelector('[data-part="calendar-year-mark"]')).not.toBeNull()
 
-      const wednesday = list.querySelector<HTMLElement>(
-        '[data-part="calendar-agenda-day"][data-iso="2026-10-21"]'
-      )
-      if (!wednesday) throw new Error('calendar agenda span story: Wednesday missing')
-      const wednesdayItems = [
-        ...wednesday.querySelectorAll<HTMLElement>('[data-part="calendar-agenda-item"]'),
-      ]
-      await expect(wednesdayItems).toHaveLength(2)
-      await expect(wednesdayItems[0]?.textContent).toContain('plaster')
-      await expect(wednesdayItems[0]?.querySelector('[data-part="calendar-agenda-time"]')).toBeNull()
-      await expect(wednesdayItems[1]?.textContent).toContain('optician')
-      const opticianTime = wednesdayItems[1]?.querySelector('[data-part="calendar-agenda-time"]')
-      await expect(opticianTime).toHaveTextContent('09:00')
-
-      await expect(canvas.queryByText('skip hire')).not.toBeInTheDocument()
-
-      await userEvent.click(dentist)
-      await expect(canvas.getByLabelText('Record: dentist')).toBeVisible()
-    } finally {
-      const restoreClock = loaded.restoreClock as (() => void) | undefined
-      restoreClock?.()
-      const { width, height } = loaded.prevViewport as { width: number; height: number }
-      await page.viewport(width, height)
-    }
-  },
-}
-
-/**
- * KAN-527. Reaching the end of the agenda appends the next dated days.
- * The sentinel is already in view at 1440×900, so the reach is that end,
- * not a button. The period stays on this Monday.
- */
-export const CalendarAgendaReachesTheEnd: Story = {
-  name: 'agenda reaches the end',
-  args: { config: calendarConfig, schema, rows: agendaSpanRows },
-  loaders: CalendarAgendaSpan.loaders,
-  play: async ({ canvasElement, loaded }) => {
-    try {
-      const canvas = within(canvasElement)
-      await expect(canvas.getByText('october 2026')).toBeVisible()
-      await userEvent.click(canvas.getByRole('radio', { name: 'agenda' }))
-
-      await expect(canvas.getByText('from 19 oct')).toBeVisible()
-
-      const list = canvasElement.querySelector<HTMLElement>('[data-part="calendar-agenda"]')
-      if (!list) throw new Error('calendar agenda reach story: agenda list missing')
-
-      const today = list.querySelector<HTMLElement>(
-        '[data-part="calendar-agenda-day"][data-iso="2026-10-19"]'
-      )
-      if (!today) throw new Error('calendar agenda reach story: today missing')
-      const alcove = within(today)
-        .getByText('confirm alcove')
-        .closest<HTMLElement>('[data-part="calendar-agenda-item"]')
-      if (!alcove) throw new Error('calendar agenda reach story: confirm alcove is not an agenda item')
-      await expect(alcove.querySelector('[data-part="calendar-agenda-time"]')).toBeNull()
-
-      const tomorrow = list.querySelector<HTMLElement>(
-        '[data-part="calendar-agenda-day"][data-iso="2026-10-20"]'
-      )
-      if (!tomorrow) throw new Error('calendar agenda reach story: tomorrow missing')
-      const dentist = within(tomorrow)
-        .getByText('dentist')
-        .closest<HTMLElement>('[data-part="calendar-agenda-item"]')
-      if (!dentist) throw new Error('calendar agenda reach story: dentist is not an agenda item')
-      await expect(within(dentist).getByText('10:00')).toBeVisible()
-
-      const wednesday = list.querySelector<HTMLElement>(
-        '[data-part="calendar-agenda-day"][data-iso="2026-10-21"]'
-      )
-      if (!wednesday) throw new Error('calendar agenda reach story: Wednesday missing')
-      const wednesdayItems = [
-        ...wednesday.querySelectorAll<HTMLElement>('[data-part="calendar-agenda-item"]'),
-      ]
-      await expect(wednesdayItems).toHaveLength(2)
-      await expect(wednesdayItems[0]?.textContent).toContain('plaster')
-      await expect(wednesdayItems[0]?.querySelector('[data-part="calendar-agenda-time"]')).toBeNull()
-      await expect(wednesdayItems[1]?.textContent).toContain('optician')
-      const opticianTime = wednesdayItems[1]?.querySelector('[data-part="calendar-agenda-time"]')
-      await expect(opticianTime).toHaveTextContent('09:00')
-
-      await expect(canvas.queryByText('skip hire')).not.toBeInTheDocument()
-
-      const end = list.querySelector<HTMLElement>('[data-part="calendar-agenda-end"]')
-      if (!end) throw new Error('calendar agenda reach story: end sentinel missing')
-      end.scrollIntoView()
-
-      await waitFor(() => {
-        const renewDay = list.querySelector<HTMLElement>(
-          '[data-part="calendar-agenda-day"][data-iso="2026-11-02"]'
-        )
-        if (!renewDay) throw new Error('calendar agenda reach story: renew day missing')
-        expect(within(renewDay).getByText('renew')).toBeInTheDocument()
-      })
-      expect(
-        list.querySelector('[data-part="calendar-agenda-day"][data-iso="2026-10-22"]')
-      ).toBeNull()
-      await expect(canvas.getByText('from 19 oct')).toBeVisible()
-      await expect(canvas.queryByText('skip hire')).not.toBeInTheDocument()
-      await expect(canvas.queryByRole('button', { name: 'load more' })).toBeNull()
+      await userEvent.click(canvas.getByRole('button', { name: '19 oct' }))
+      await expect(canvas.getByRole('radio', { name: 'day' })).toBeChecked()
+      await expect(canvas.getByText('mon 19 oct 2026')).toBeVisible()
     } finally {
       const restoreClock = loaded.restoreClock as (() => void) | undefined
       restoreClock?.()
@@ -2352,7 +2155,8 @@ export const CalendarWeekDrag: Story = {
       if (!allDayAfter) throw new Error('calendar week drag story: all-day row missing after drop')
       const movedAlcove = within(allDayAfter).getByText('confirm alcove')
       const movedItem = movedAlcove.closest<HTMLElement>('[data-part="calendar-all-day-item"]')
-      if (!movedItem) throw new Error('calendar week drag story: confirm alcove left the all-day row')
+      if (!movedItem)
+        throw new Error('calendar week drag story: confirm alcove left the all-day row')
       const fridayAfter = weekColumn(desktopWeekBody(canvasElement), '2026-10-23')
       await expect(movedItem.style.gridColumn).toBe(fridayAfter.style.gridColumn)
       await expect(movedAlcove.closest('[data-part="calendar-timed-event"]')).toBeNull()
@@ -2454,7 +2258,10 @@ function assertBarCovers(bar: HTMLElement, days: readonly string[]) {
 }
 
 /** A point inside the 19th cell, more than 4px (Manhattan) from the press. */
-function rangeBarDragPoints(bar: HTMLElement, cell: HTMLElement): {
+function rangeBarDragPoints(
+  bar: HTMLElement,
+  cell: HTMLElement
+): {
   down: RangeBarPoint
   move: RangeBarPoint
 } {
@@ -2680,7 +2487,9 @@ export const GanttNeedsDate: Story = {
   args: { config: ganttConfig, schema: noDateSchema, rows },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getByText('tasks with a start and a due date draw here')).toBeInTheDocument()
+    await expect(
+      canvas.getByText('tasks with a start and a due date draw here')
+    ).toBeInTheDocument()
   },
 }
 

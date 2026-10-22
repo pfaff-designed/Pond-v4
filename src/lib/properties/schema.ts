@@ -265,6 +265,48 @@ export function addDateField(
   return [...schema, { id: mintId(), name, type: 'date' }]
 }
 
+/** Text fields an event page adds beside its date: location, then guests. */
+export const EVENT_TEXT_FIELDS = ['location', 'guests'] as const
+
+function fieldNameIs(def: PropertyDef, name: string): boolean {
+  return def.name.trim().toLowerCase() === name
+}
+
+function hasRepeatField(schema: PropertySchema): boolean {
+  return schema.some(
+    (def) => (def.type === 'text' || def.type === 'select') && /^repeats?$/i.test(def.name.trim())
+  )
+}
+
+/**
+ * The event page: a date, then location, guests, and repeats.
+ * Reuses a date the collection already has (that is what places the event).
+ * A field named `repeat` or `repeats` is the one the calendar projects.
+ * Returns null when those fields are already present, so a second event does
+ * not rewrite the schema.
+ */
+export function ensureEventFields(
+  schema: PropertySchema,
+  mintId: () => string = () => crypto.randomUUID()
+): PropertySchema | null {
+  let next = schema
+  let changed = false
+  if (!next.some((def) => def.type === 'date')) {
+    next = [...next, { id: mintId(), name: 'Date', type: 'date' }]
+    changed = true
+  }
+  for (const name of EVENT_TEXT_FIELDS) {
+    if (next.some((def) => fieldNameIs(def, name))) continue
+    next = [...next, { id: mintId(), name, type: 'text' }]
+    changed = true
+  }
+  if (!hasRepeatField(next)) {
+    next = [...next, { id: mintId(), name: 'repeats', type: 'text' }]
+    changed = true
+  }
+  return changed ? next : null
+}
+
 /** The three lanes a board never ships without (KAN-351): `addStatusField`'s
  *  default options, and the board's own `add a status field` remedy. */
 export const DEFAULT_STATUS_OPTIONS = ['to do', 'doing', 'done'] as const
@@ -350,7 +392,9 @@ export function fieldNameClash(
   excludeId?: string
 ): string | null {
   const candidate = name.trim().toLowerCase()
-  const existing = schema.find((d) => d.id !== excludeId && d.name.trim().toLowerCase() === candidate)
+  const existing = schema.find(
+    (d) => d.id !== excludeId && d.name.trim().toLowerCase() === candidate
+  )
   if (existing) return existing.name
   return candidate === RESERVED_TITLE_LABEL.toLowerCase() ? RESERVED_TITLE_LABEL : null
 }

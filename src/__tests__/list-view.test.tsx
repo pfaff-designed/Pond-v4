@@ -254,25 +254,20 @@ describe('list — selection and the record peek', () => {
     expect(peek()).toBeNull()
   })
 
-  it('the peek marks a done record done', () => {
+  it('a row opens the centered page, with no side head checkbox', () => {
     renderList()
     fireEvent.click(titleButton('Dehumidifier'))
-    expect(peek()!.querySelector('[data-part="peek-head"] [data-done]')).not.toBeNull()
+    const page = peek()!
+    expect(page).toHaveAttribute('data-placement', 'center')
+    expect(page.querySelector('[data-part="peek-head"] [data-done]')).toBeNull()
+    expect(screen.getByRole('checkbox', { name: 'Dehumidifier done' })).toBeChecked()
   })
 
-  it('the peek head ticks the record through onEdit', async () => {
-    const onEdit = jest.fn()
-    renderList({ editable: true, onEdit })
-    fireEvent.click(titleButton('Chase the quote'))
-    await userEvent.click(within(peek()!).getByRole('checkbox', { name: 'Chase the quote done' }))
-    expect(onEdit).toHaveBeenCalledWith('b', 's', 'done')
-  })
-
-  it('`open ›` navigates through onOpenRow', () => {
+  it('Open page navigates through onOpenRow', () => {
     const onOpenRow = jest.fn()
     renderList({ onOpenRow })
     fireEvent.click(titleButton('Cabinet quote'))
-    fireEvent.click(screen.getByRole('button', { name: 'open ›' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Open page' }))
     expect(onOpenRow).toHaveBeenCalledWith('a')
   })
 })

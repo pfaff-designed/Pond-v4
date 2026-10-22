@@ -80,11 +80,11 @@ describe('`/ nested page` leaves a page-link block where the `/` line was (KAN-1
     })
     writeInTextBlock(field, '/')
     await screen.findByRole('listbox', { name: 'blocks' })
-    writeInTextBlock(field, '/nested')
+    writeInTextBlock(field, '/page')
     const menu = await screen.findByRole('listbox', { name: 'blocks' })
     const row = within(menu)
       .getAllByRole('option')
-      .find((o) => o.querySelector('[data-part="label"]')?.textContent === 'nested page')!
+      .find((o) => o.querySelector('[data-part="label"]')?.textContent === 'page')!
     await user.click(row)
 
     await waitFor(() => expect(createPage).toHaveBeenCalledTimes(1))

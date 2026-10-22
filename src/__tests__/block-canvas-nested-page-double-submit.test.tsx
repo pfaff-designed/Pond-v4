@@ -76,11 +76,11 @@ describe('`/ nested page` double-submit guard (KAN-122, AUDIT G9)', () => {
     })
     writeInTextBlock(field, '/')
     await screen.findByRole('listbox', { name: 'blocks' })
-    writeInTextBlock(field, '/nested')
+    writeInTextBlock(field, '/page')
     const menu = await screen.findByRole('listbox', { name: 'blocks' })
     const row = within(menu)
       .getAllByRole('option')
-      .find((o) => o.querySelector('[data-part="label"]')?.textContent === 'nested page')!
+      .find((o) => o.querySelector('[data-part="label"]')?.textContent === 'page')!
 
     // Both clicks dispatched inside one `act`, so the second lands before the
     // first's `closeSlashMenu` state update flushes — the real double-submit

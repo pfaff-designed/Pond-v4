@@ -7,17 +7,12 @@
 
 import React from 'react'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
-import { ShellCommands } from '@/components/organisms/ShellCommands'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { sessionUndo } from '@/lib/change-log/session-undo'
-import type { ChangeLogRecord } from '@/lib/change-log/types'
 import type { Block } from '@/lib/documents/types'
 import type { PondPage } from '@/lib/pages/client'
-import { PondContext, type PondContextValue } from '@/lib/pond/context'
-import type { Pond } from '@/lib/pond/client'
 import { withSchema, type PropertySchema } from '@/lib/properties/schema'
 import { CALENDAR_EMPTY_LINE } from '@/lib/modules/view/kinds'
 import { findTextBlock, writeInTextBlock } from './helpers/text-block'
@@ -219,51 +214,6 @@ function renderCanvas(blocks: Block[]) {
   )
 }
 
-const sessionPond: Pond = { id: 'pond-1', name: 'life', glyph: null, theme: 'paper', order: 0 }
-
-const sessionPondContext = (): PondContextValue => ({
-  pond: sessionPond,
-  ponds: [sessionPond],
-  loading: false,
-  reload: () => {},
-  addPond: () => {},
-})
-
-/** The calendar path's `BlockCanvas`, plus the shell listener that owns session undo. */
-function renderCanvasWithSessionUndo(blocks: Block[]) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(
-    <QueryClientProvider client={client}>
-      <PondContext.Provider value={sessionPondContext()}>
-        <DeletionUndoProvider>
-          <ShellCommands />
-          <Harness initial={blocks} />
-        </DeletionUndoProvider>
-      </PondContext.Provider>
-    </QueryClientProvider>
-  )
-}
-
-const undoRecord = {
-  id: 'undo-1',
-  userId: 'user-1',
-  pondId: 'pond-1',
-  status: 'accepted',
-  action: 'undo',
-  actor: 'you',
-  targetPageId: 'db-visits',
-  targetBlockId: null,
-  before: null,
-  after: null,
-  sourceThreadId: null,
-  toolCallId: null,
-  read: null,
-  links: {},
-  transitions: [],
-  createdAt: '2026-09-10T12:00:00.000Z',
-  statusAt: '2026-09-10T12:00:00.000Z',
-} satisfies ChangeLogRecord
-
 beforeEach(() => {
   jest.clearAllMocks()
   mockFetchPages.mockResolvedValue(databaseRows)
@@ -302,7 +252,9 @@ describe('`/calendar` path (KAN-262)', () => {
     // folded into the overflow label. (Today is also the mobile focused-day list's
     // default focus, which reads all four uncapped — scope here to the desktop grid.)
     await waitFor(() => expect(screen.getByText('september 2026')).toBeInTheDocument())
-    const desktopWrap = [...container.querySelectorAll('div')].find((d) => d.classList.contains('md:flex'))!
+    const desktopWrap = [...container.querySelectorAll('div')].find((d) =>
+      d.classList.contains('md:flex')
+    )!
     await waitFor(() => expect(within(desktopWrap).getByText('first')).toBeInTheDocument())
     expect(within(desktopWrap).getByText('second')).toBeInTheDocument()
     expect(within(desktopWrap).getByText('third')).toBeInTheDocument()
@@ -348,12 +300,9 @@ describe('`/calendar` path (KAN-262)', () => {
   })
 })
 
-describe('`/calendar` undated records (KAN-454)', () => {
-  it('dates dentist on the 21st, then session undo restores 3 without a date', async () => {
-    jest.spyOn(window.navigator, 'platform', 'get').mockReturnValue('MacIntel')
-    mockUndoStep.mockResolvedValue({ outcome: 'done', records: [undoRecord] })
-    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
-    const { container } = renderCanvasWithSessionUndo([])
+describe('`/calendar` undated records', () => {
+  it('opens the visits calendar without a without-a-date line', async () => {
+    renderCanvas([])
     fireEvent.click(await screen.findByTestId('trailing-block-gap'))
     const editor = await findTextBlock()
     writeInTextBlock(editor, '/')
@@ -365,36 +314,7 @@ describe('`/calendar` undated records (KAN-454)', () => {
     const picker = await screen.findByRole('listbox', { name: '/calendar' })
     fireEvent.click(await within(picker).findByRole('option', { name: /visits/ }))
 
-    await user.click(await screen.findByRole('button', { name: '3 without a date' }))
-    const list = await screen.findByRole('listbox', { name: 'without a date' })
-    expect(within(list).getByRole('option', { name: 'dentist' })).toBeInTheDocument()
-    expect(within(list).getByRole('option', { name: 'optician' })).toBeInTheDocument()
-    expect(within(list).getByRole('option', { name: 'library' })).toBeInTheDocument()
-    await user.click(within(list).getByRole('option', { name: 'dentist' }))
-    expect(await screen.findByRole('button', { name: 'pick a day for dentist' })).toBeInTheDocument()
-
-    const desktopWrap = [...container.querySelectorAll('div')].find((d) =>
-      d.classList.contains('md:flex')
-    )!
-    const dayCell = () =>
-      desktopWrap.querySelector<HTMLElement>(
-        '[data-part="calendar-day-cell"][data-iso="2026-09-21"]'
-      )!
-    await user.click(dayCell())
-
-    await waitFor(() => expect(within(dayCell()).getByText('dentist')).toBeInTheDocument())
-    expect(screen.getByRole('button', { name: '2 without a date' })).toBeInTheDocument()
-    await waitFor(() => expect(sessionUndo.getSnapshot('pond-1').canUndo).toBe(true))
-
-    fireEvent.keyDown(document.body, { key: 'z', metaKey: true })
-
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: '3 without a date' })).toBeInTheDocument()
-    )
-    expect(within(dayCell()).queryByText('dentist')).not.toBeInTheDocument()
-    expect(mockUndoStep).toHaveBeenCalledWith(expect.anything(), {
-      pondId: 'pond-1',
-      recordIds: ['rec-date'],
-    })
+    expect(await screen.findByText('3 records, none with a date')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /without a date/ })).not.toBeInTheDocument()
   })
 })

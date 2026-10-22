@@ -59,6 +59,7 @@ jest.mock('@ai-sdk/react', () => ({
 }))
 
 import { AITerminal } from '@/components/organisms/AITerminal'
+import { openComposerIfClosed } from './helpers/open-composer'
 
 function renderTerminal() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -74,6 +75,7 @@ beforeEach(() => jest.clearAllMocks())
 describe('AITerminal — the virtual trash node', () => {
   it('never calls getPage for the virtual id', async () => {
     renderTerminal()
+    openComposerIfClosed()
     await waitFor(() => expect(screen.getByRole('textbox')).not.toBeDisabled())
     expect(mockGetPage).not.toHaveBeenCalled()
   })

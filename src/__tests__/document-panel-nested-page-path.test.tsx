@@ -99,9 +99,7 @@ function renderPanel() {
 
 beforeEach(() => {
   jest.clearAllMocks()
-  mockFetchPages
-    .mockResolvedValueOnce([PARENT_ROW])
-    .mockImplementation(() => new Promise(() => {})) // the post-create refetch never resolves
+  mockFetchPages.mockResolvedValueOnce([PARENT_ROW]).mockImplementation(() => new Promise(() => {})) // the post-create refetch never resolves
   mockCreatePage.mockResolvedValue({ id: 'new-page', title: 'untitled', type: 'page' })
 })
 
@@ -116,9 +114,12 @@ describe('`/ nested page` on the real page-hosting surface (KAN-122 path test)',
     })
     writeInTextBlock(field, '/')
     await screen.findByRole('listbox', { name: 'blocks' })
-    writeInTextBlock(field, '/nested')
-    await screen.findByRole('listbox', { name: 'blocks' })
-    fireEvent.keyDown(document, { key: 'Enter' })
+    writeInTextBlock(field, '/page')
+    const menu = await screen.findByRole('listbox', { name: 'blocks' })
+    const pageRow = within(menu)
+      .getAllByRole('option')
+      .find((o) => o.querySelector('[data-part="label"]')?.textContent === 'page')!
+    fireEvent.click(pageRow)
 
     await waitFor(() => expect(mockCreatePage).toHaveBeenCalledTimes(1))
     expect(mockCreatePage).toHaveBeenCalledWith(

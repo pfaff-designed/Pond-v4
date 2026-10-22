@@ -83,6 +83,36 @@ export function ViewBar(props: ViewBarProps) {
     addViewRef.current?.focus()
   }
 
+  const addView = showAddView ? (
+    <>
+      <button
+        ref={addViewRef}
+        type="button"
+        aria-label="add a view"
+        onClick={() => setPickerOpen((open) => !open)}
+        className={ADD_VIEW}
+      >
+        ＋ view
+      </button>
+      {pickerOpen && (
+        <ViewKindPicker
+          rows={props.addViewRows}
+          anchor={addViewRef}
+          onPick={(mode) => {
+            closePicker()
+            props.onAddView(mode)
+          }}
+          onClose={closePicker}
+        />
+      )}
+    </>
+  ) : null
+
+  // The layout bar already names a lone kind, so this bar can be just ＋ view.
+  if (views.length === 0) {
+    return addView ? <div className={ROW}>{addView}</div> : null
+  }
+
   return (
     <ViewTabsRoot value={activeId} onValueChange={onSelect} className={ROW}>
       <ViewTabsList className={SEGMENT_ROW}>
@@ -96,37 +126,16 @@ export function ViewBar(props: ViewBarProps) {
           </ViewTabsTab>
         ))}
       </ViewTabsList>
-      {showAddView && (
-        <button
-          ref={addViewRef}
-          type="button"
-          aria-label="add a view"
-          onClick={() => setPickerOpen((open) => !open)}
-          className={ADD_VIEW}
-        >
-          ＋ view
-        </button>
-      )}
-      {showAddView && pickerOpen && (
-        <ViewKindPicker
-          rows={props.addViewRows}
-          anchor={addViewRef}
-          onPick={(mode) => {
-            closePicker()
-            props.onAddView(mode)
-          }}
-          onClose={closePicker}
-        />
-      )}
+      {addView}
     </ViewTabsRoot>
   )
 }
 
 /**
- * The view's layout chip (KAN-519). Closed, one chip named with the current
- * layout. Rows are `LAYOUT_MENU_MODES`, each named from `VIEW_KINDS`.
- * Choosing the open layout is not a change. A reader sees the word and gets
- * no button. The chip wears this file's pill classes.
+ * The view's layouts, as one segmented pill (Pond 10: board, timeline, table,
+ * calendar, list, then gallery and chart). The filled segment is the layout
+ * showing. Choosing it again is not a change. A reader sees the words and
+ * gets no tabs. The pill wears this file's segment classes.
  */
 export interface ViewLayoutMenuProps {
   mode: ViewMode
@@ -148,61 +157,49 @@ const openMenuOnActivationKey = (
 
 const MENU_PLACEMENT = { align: 'start' as const, top: 40, alignOffset: -8 }
 
-const LAYOUT_MENU_GROUPS: PondMenuGroup<ViewMode>[] = [
-  {
-    id: 'layout',
-    label: 'layout',
-    items: LAYOUT_MENU_MODES.map((mode) => ({
-      id: mode,
-      label: VIEW_KINDS[mode].label,
-      action: mode,
-    })),
-  },
-]
+const layoutSegments = LAYOUT_MENU_MODES.map((item) => ({
+  id: item,
+  label: VIEW_KINDS[item].label,
+}))
 
 export const ViewLayoutMenu = ({ mode, editable, onLayout }: ViewLayoutMenuProps) => {
-  const anchorRef = useRef<HTMLDivElement>(null)
-  const [open, setOpen] = useState(false)
-  const label = VIEW_KINDS[mode].label
-
-  const handleSelect = (next: ViewMode) => {
-    if (next === mode) return
-    onLayout(next)
-  }
-
-  const handleChipKeyDown = (event: BaseUIEvent<KeyboardEvent<HTMLButtonElement>>) => {
-    openMenuOnActivationKey(event, () => setOpen(true))
+  // The tab list is controlled. One click activates on focus and then on
+  // click, and the parent does not rerender between those two events, so
+  // the value has to move here or the same choice is reported twice.
+  const [chosen, setChosen] = useState(mode)
+  const [seenMode, setSeenMode] = useState(mode)
+  if (mode !== seenMode) {
+    setSeenMode(mode)
+    setChosen(mode)
   }
 
   if (!editable) {
     return (
-      <span className={SEGMENT_ROW}>
-        <span className={`${SEGMENT} ${SEGMENT_ON}`}>{label}</span>
-      </span>
+      <div className={SEGMENT_ROW}>
+        {layoutSegments.map((segment) => (
+          <span
+            key={segment.id}
+            className={`${SEGMENT} ${segment.id === mode ? SEGMENT_ON : SEGMENT_OFF}`}
+          >
+            {segment.label}
+          </span>
+        ))}
+      </div>
     )
   }
 
   return (
-    <div ref={anchorRef} className={SEGMENT_ROW}>
-      <PondMenu
-        kind="block"
-        label="layout"
-        groups={LAYOUT_MENU_GROUPS}
-        open={open}
-        onOpenChange={setOpen}
-        onSelect={handleSelect}
-        trigger={
-          <button
-            type="button"
-            className={`${SEGMENT} ${SEGMENT_ON}`}
-            onKeyDown={handleChipKeyDown}
-          >
-            {label}
-          </button>
-        }
-        placement={{ anchor: anchorRef, ...MENU_PLACEMENT }}
-      />
-    </div>
+    <ViewBar
+      views={layoutSegments}
+      activeId={chosen}
+      onSelect={(id) => {
+        if (id === chosen) return
+        const next = id as ViewMode
+        setChosen(next)
+        onLayout(next)
+      }}
+      showAddView={false}
+    />
   )
 }
 

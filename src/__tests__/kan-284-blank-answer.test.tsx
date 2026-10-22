@@ -67,13 +67,18 @@ jest.mock('@/lib/supabase/client', () => {
   const chain = () => {
     const q: Record<string, unknown> = {}
     for (const method of ['select', 'eq', 'is', 'order', 'limit']) q[method] = () => q
-    q.maybeSingle = async () => ({ data: { id: 'conv-1', transcript: mockStoredTranscript }, error: null })
+    q.maybeSingle = async () => ({
+      data: { id: 'conv-1', transcript: mockStoredTranscript },
+      error: null,
+    })
     return q
   }
   return {
     createClient: () => ({
       auth: {
-        getUser: jest.fn().mockResolvedValue({ data: { user: { id: 'user-1', email: 'test@example.com' } } }),
+        getUser: jest
+          .fn()
+          .mockResolvedValue({ data: { user: { id: 'user-1', email: 'test@example.com' } } }),
       },
       from: (table: string) => {
         if (table !== 'conversations') return chain()
@@ -228,7 +233,11 @@ const mockFetch = jest.fn((input: RequestInfo | URL) => {
   const url = typeof input === 'string' ? input : input.toString()
   if (url.includes('/api/chat')) {
     lastChatStreamBody = chatStreamQueue.length > 0 ? chatStreamQueue.shift()! : lastChatStreamBody
-    return Promise.resolve({ ok: true, body: sseBodyStream(lastChatStreamBody), text: async () => '' })
+    return Promise.resolve({
+      ok: true,
+      body: sseBodyStream(lastChatStreamBody),
+      text: async () => '',
+    })
   }
   return Promise.resolve({ ok: true, json: async () => ({ extractions: [] }) })
 })
@@ -238,6 +247,7 @@ polyfillGlobal.fetch = mockFetch
 // which needs the polyfills above already installed — `require`d here, after them,
 // never `import`ed (see the file header).
 const { AITerminal } = require('@/components/organisms/AITerminal')
+const { openComposerIfClosed } = require('./helpers/open-composer')
 
 function renderTerminal() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -248,13 +258,18 @@ function renderTerminal() {
   )
 }
 
-const waitUntilReady = () =>
-  waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Pond' })).toBeEnabled())
+const waitUntilReady = () => {
+  openComposerIfClosed()
+  return waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Pond' })).toBeEnabled())
+}
 
 beforeEach(() => {
   mockFetch.mockClear()
   mockSupabaseUpdate.mockClear()
-  mockStoredTranscript = { messages: buildUnresolvedToolThreadFixture(), resolutions: emptyResolutions() }
+  mockStoredTranscript = {
+    messages: buildUnresolvedToolThreadFixture(),
+    resolutions: emptyResolutions(),
+  }
   chatStreamQueue = [CAPTURED_STREAM]
   lastChatStreamBody = CAPTURED_STREAM
 })
@@ -270,12 +285,19 @@ describe('KAN-284 — the normal case over a Life-2-shaped thread (Done-when #1)
       'which areas does this pond have? one line, no changes{Enter}'
     )
 
-    await waitFor(() => expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining('/api/chat'), expect.anything()))
+    await waitFor(() =>
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/api/chat'),
+        expect.anything()
+      )
+    )
 
     expect(await screen.findByText(ANSWER_TEXT)).toBeInTheDocument()
 
     await waitFor(() => {
-      const saved = mockStoredTranscript as { messages: Array<{ role: string; parts: Array<{ type: string; text?: string }> }> }
+      const saved = mockStoredTranscript as {
+        messages: Array<{ role: string; parts: Array<{ type: string; text?: string }> }>
+      }
       const last = saved.messages[saved.messages.length - 1]
       expect(last.role).toBe('assistant')
       expect(last.parts.some((p) => p.type === 'text' && p.text === ANSWER_TEXT)).toBe(true)
@@ -284,7 +306,7 @@ describe('KAN-284 — the normal case over a Life-2-shaped thread (Done-when #1)
 })
 
 describe('KAN-284 — a stream that finishes with nothing to show gets the error row, never a blank answer', () => {
-  it('shows the error row with ask again, and never saves the blank message as the transcript\'s last entry', async () => {
+  it("shows the error row with ask again, and never saves the blank message as the transcript's last entry", async () => {
     chatStreamQueue = [BLANK_STREAM]
     const user = userEvent.setup()
     renderTerminal()
@@ -295,7 +317,12 @@ describe('KAN-284 — a stream that finishes with nothing to show gets the error
       'which areas does this pond have? one line, no changes{Enter}'
     )
 
-    await waitFor(() => expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining('/api/chat'), expect.anything()))
+    await waitFor(() =>
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/api/chat'),
+        expect.anything()
+      )
+    )
 
     const errorRow = await screen.findByRole('alert')
     expect(errorRow).toHaveTextContent('nothing was kept')
@@ -330,7 +357,12 @@ describe('KAN-284 — ask again on a real answer whose replacement finishes blan
       'which areas does this pond have? one line, no changes{Enter}'
     )
 
-    await waitFor(() => expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining('/api/chat'), expect.anything()))
+    await waitFor(() =>
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/api/chat'),
+        expect.anything()
+      )
+    )
     expect(await screen.findByText(ANSWER_TEXT)).toBeInTheDocument()
 
     const askAgainButton = screen.getByRole('button', { name: 'ask again' })
@@ -349,7 +381,11 @@ describe('KAN-284 — ask again on a real answer whose replacement finishes blan
       const saved = (lastPayload as { transcript: { messages: UIMessage[] } }).transcript
       const last = saved.messages[saved.messages.length - 1]
       expect(last.role).toBe('assistant')
-      expect((last.parts as Array<{ type: string; text?: string }>).some((p) => p.type === 'text' && p.text === ANSWER_TEXT)).toBe(true)
+      expect(
+        (last.parts as Array<{ type: string; text?: string }>).some(
+          (p) => p.type === 'text' && p.text === ANSWER_TEXT
+        )
+      ).toBe(true)
     })
   })
 })
@@ -369,7 +405,12 @@ describe('KAN-324 — ask again on a real answer whose replacement errors shows 
       'which areas does this pond have? one line, no changes{Enter}'
     )
 
-    await waitFor(() => expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining('/api/chat'), expect.anything()))
+    await waitFor(() =>
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/api/chat'),
+        expect.anything()
+      )
+    )
     expect(await screen.findByText(ANSWER_TEXT)).toBeInTheDocument()
 
     const askAgainButton = screen.getByRole('button', { name: 'ask again' })
@@ -403,7 +444,12 @@ describe('KAN-284 — PATH_STEPS end to end: a failed turn shows the error row, 
       'which areas does this pond have? one line, no changes{Enter}'
     )
 
-    await waitFor(() => expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining('/api/chat'), expect.anything()))
+    await waitFor(() =>
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/api/chat'),
+        expect.anything()
+      )
+    )
 
     // useChat's own `error` path (the stream-level `error` chunk, not a blank
     // finish) — already covered by the `error && !isStreaming` branch `AnswerError`
@@ -419,7 +465,9 @@ describe('KAN-284 — PATH_STEPS end to end: a failed turn shows the error row, 
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
 
     await waitFor(() => {
-      const saved = mockStoredTranscript as { messages: Array<{ role: string; parts: Array<{ type: string; text?: string }> }> }
+      const saved = mockStoredTranscript as {
+        messages: Array<{ role: string; parts: Array<{ type: string; text?: string }> }>
+      }
       const last = saved.messages[saved.messages.length - 1]
       expect(last.role).toBe('assistant')
       expect(last.parts.some((p) => p.type === 'text' && p.text === ANSWER_TEXT)).toBe(true)

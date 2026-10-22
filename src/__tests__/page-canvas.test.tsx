@@ -100,16 +100,26 @@ describe('one record peek per page', () => {
     expect(peeks()[0]).toHaveTextContent('l1')
   })
 
-  it('draws against the canvas, absolutely, so no block can clip it', () => {
+  it('a board task opens the centered page, the same one creating a task opens', () => {
     page([dueToday('b1')], [dueToday('l1')])
     selectOnBoard('b1')
     const peek = peeks()[0] as HTMLElement
-    expect(canvas().contains(peek)).toBe(true)
-    expect(peek.parentElement).toBe(canvas())
-    expect(peek.className).toContain('absolute')
-    expect(peek.className).not.toContain('fixed')
-    expect(peek.className).toContain('right-[44px]')
-    expect(peek).toHaveStyle({ top: '150px' })
+    expect(peek).toHaveAttribute('data-placement', 'center')
+    expect(peek.className).toContain('fixed')
+    expect(peek.className).not.toContain('right-[44px]')
+    expect(canvas().contains(peek)).toBe(false)
+    expect(peek.parentElement).toBe(document.body)
+  })
+
+  it('a list record opens that same centered page', () => {
+    page([dueToday('b1')], [dueToday('l1')])
+    selectOnList('l1')
+    const peek = peeks()[0] as HTMLElement
+    expect(peek).toHaveAttribute('data-placement', 'center')
+    expect(peek.className).toContain('fixed')
+    expect(peek.className).not.toContain('right-[44px]')
+    expect(canvas().contains(peek)).toBe(false)
+    expect(peek.parentElement).toBe(document.body)
   })
 })
 
@@ -121,11 +131,11 @@ describe('dismissing the peek', () => {
     expect(peeks()).toHaveLength(0)
   })
 
-  it('a press on the rail or the composer — outside the canvas — does not', () => {
+  it('a press on the rail closes the page', () => {
     page([dueToday('b1')], [dueToday('l1')])
-    selectOnBoard('b1')
+    selectOnList('l1')
     fireEvent.pointerDown(screen.getByTestId('rail'))
-    expect(peeks()).toHaveLength(1)
+    expect(peeks()).toHaveLength(0)
   })
 
   it('Esc closes it', () => {
