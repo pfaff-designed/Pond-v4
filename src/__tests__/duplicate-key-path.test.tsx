@@ -174,6 +174,7 @@ global.fetch = jest.fn().mockResolvedValue({
 } as Response)
 
 import { AITerminal } from '@/components/organisms/AITerminal'
+import { openComposerIfClosed } from './helpers/open-composer'
 
 const renderTerminal = () => {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -189,8 +190,10 @@ const chat = (): ChatController => {
   return mockChat.current
 }
 
-const waitUntilReady = () =>
-  waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Pond' })).toBeEnabled())
+const waitUntilReady = () => {
+  openComposerIfClosed()
+  return waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Pond' })).toBeEnabled())
+}
 
 const answer = (id: string, text: string) => {
   act(() => chat().streamAnswer(id, text))

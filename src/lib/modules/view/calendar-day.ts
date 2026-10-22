@@ -8,7 +8,7 @@
  */
 import { coerceValue, type PropertyDef } from '@/lib/properties/schema'
 import { addDays, type CollectionRow } from './apply'
-import { monthAbbr, rowDateIso, weekdayIndex } from './calendar-month'
+import { monthAbbr, rowOccursOn, weekdayIndex } from './calendar-month'
 
 /** The DC's `DW` — Monday-first, lowercase, the day span's period label. */
 const DW = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const
@@ -100,13 +100,14 @@ export function stepDay(iso: string, direction: -1 | 1): string {
 export function stripWeek(
   focusIso: string,
   rows: readonly CollectionRow[],
-  dateDef: PropertyDef | undefined
+  dateDef: PropertyDef | undefined,
+  repeatDef?: PropertyDef
 ): StripDay[] {
   const startIso = addDays(focusIso, -weekdayIndex(focusIso))
   return Array.from({ length: 7 }, (_, offset): StripDay => {
     const iso = addDays(startIso, offset)
     const hasDot =
-      dateDef !== undefined && rows.some((row) => rowDateIso(row, dateDef) === iso)
+      dateDef !== undefined && rows.some((row) => rowOccursOn(row, dateDef, iso, repeatDef))
     return {
       iso,
       letter: DW[offset].slice(0, 1),
@@ -135,7 +136,8 @@ export function dayHourLabels(): string[] {
 export function splitDayRows(
   rows: readonly CollectionRow[],
   dateDef: PropertyDef | undefined,
-  iso: string
+  iso: string,
+  repeatDef?: PropertyDef
 ): DayRows {
   if (!dateDef) return { untimed: [], timed: [] }
 
@@ -143,7 +145,7 @@ export function splitDayRows(
   const timed: DayTimedRow[] = []
 
   for (const row of rows) {
-    if (rowDateIso(row, dateDef) !== iso) continue
+    if (!rowOccursOn(row, dateDef, iso, repeatDef)) continue
     const value = coerceValue(dateDef, row.values[dateDef.id])
     const timeLabel = typeof value === 'string' ? slicedHm(value) : null
     if (!timeLabel) {

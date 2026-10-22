@@ -59,13 +59,14 @@ afterEach(() => {
 })
 
 describe('⌘⌫ writes through onStructuralWrite, the one structural entry point', () => {
-  it('calls onStructuralWrite synchronously with the next blocks, never onChange', () => {
+  it('calls onStructuralWrite synchronously with the next blocks, never onChange', async () => {
     const onStructuralWrite = jest.fn(() => Promise.resolve(true))
     const { onChange } = renderCanvas([heading, table], onStructuralWrite)
     const root = document.getElementById('block-b-table')!
     root.focus()
 
     fireEvent.keyDown(root, { key: 'Backspace', metaKey: true })
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete' }))
 
     expect(onStructuralWrite).toHaveBeenCalledWith(
       [heading],
@@ -80,6 +81,7 @@ describe('⌘⌫ writes through onStructuralWrite, the one structural entry poin
     root.focus()
 
     fireEvent.keyDown(root, { key: 'Backspace', metaKey: true })
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete' }))
 
     expect(onChange.mock.calls.at(-1)![0].map((b: Block) => b.id)).toEqual(['b-heading'])
     expect(await screen.findByText('deleted table ·')).toBeInTheDocument()

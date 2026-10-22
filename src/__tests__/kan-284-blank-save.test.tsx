@@ -24,7 +24,13 @@ jest.mock('next/navigation', () => ({
 }))
 
 jest.mock('@/lib/pond/context', () => {
-  const active = { pond: { id: 'pond-7' }, ponds: [], loading: false, reload: () => {}, addPond: () => {} }
+  const active = {
+    pond: { id: 'pond-7' },
+    ponds: [],
+    loading: false,
+    reload: () => {},
+    addPond: () => {},
+  }
   return {
     ...jest.requireActual('@/lib/pond/context'),
     usePond: () => active,
@@ -36,7 +42,9 @@ jest.mock('@/lib/pond/name', () => ({ usePondName: () => 'Pond 7' }))
 jest.mock('@/lib/supabase/client', () => ({
   createClient: () => ({
     auth: {
-      getUser: jest.fn().mockResolvedValue({ data: { user: { id: 'user-1', email: 'test@example.com' } } }),
+      getUser: jest
+        .fn()
+        .mockResolvedValue({ data: { user: { id: 'user-1', email: 'test@example.com' } } }),
     },
     from: jest.fn().mockReturnValue({
       select: jest.fn().mockReturnThis(),
@@ -86,7 +94,11 @@ jest.mock('@/lib/deletion/notify-bridge', () => ({ requestNotify: jest.fn() }))
 const mockSaveTranscript = jest.fn().mockResolvedValue(undefined)
 let mockResolutions: Record<string, unknown> = { changes: {}, creates: {}, skipped: {} }
 jest.mock('@/lib/conversation/client', () => ({
-  getOrCreateConversation: jest.fn(async () => ({ id: 'conv-1', messages: [], resolutions: mockResolutions })),
+  getOrCreateConversation: jest.fn(async () => ({
+    id: 'conv-1',
+    messages: [],
+    resolutions: mockResolutions,
+  })),
   saveTranscript: (...args: unknown[]) => mockSaveTranscript(...args),
   dissolveConversation: jest.fn().mockResolvedValue(undefined),
 }))
@@ -111,18 +123,24 @@ jest.mock('@ai-sdk/react', () => ({
   })),
 }))
 
-global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ extractions: [] }) } as Response)
+global.fetch = jest
+  .fn()
+  .mockResolvedValue({ ok: true, json: async () => ({ extractions: [] }) } as Response)
 
 import { AITerminal } from '@/components/organisms/AITerminal'
+import { openComposerIfClosed } from './helpers/open-composer'
 
 function renderWithQuery(ui: React.ReactElement) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  const wrap = (node: React.ReactElement) => <QueryClientProvider client={queryClient}>{node}</QueryClientProvider>
+  const wrap = (node: React.ReactElement) => (
+    <QueryClientProvider client={queryClient}>{node}</QueryClientProvider>
+  )
   const result = render(wrap(ui))
   return { ...result, rerender: (node: React.ReactElement) => result.rerender(wrap(node)) }
 }
 
 async function ready() {
+  openComposerIfClosed()
   await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Pond' })).toBeEnabled())
 }
 
@@ -136,7 +154,9 @@ function batch(toolCallId: string) {
     type: 'tool-propose_changes',
     toolCallId,
     state: 'input-available',
-    input: { changes: [{ op: 'create', data: { type: 'text', content: `line of ${toolCallId}` } }] },
+    input: {
+      changes: [{ op: 'create', data: { type: 'text', content: `line of ${toolCallId}` } }],
+    },
   }
 }
 

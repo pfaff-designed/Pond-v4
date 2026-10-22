@@ -131,6 +131,7 @@ global.fetch = jest
   .mockResolvedValue({ ok: true, json: async () => ({ extractions: [] }) } as Response)
 
 import { AITerminal } from '@/components/organisms/AITerminal'
+import { openComposerIfClosed } from './helpers/open-composer'
 
 function renderWithQuery(ui: React.ReactElement) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -161,6 +162,7 @@ function editBatch(toolCallId: string) {
 }
 
 async function ready() {
+  openComposerIfClosed()
   await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Pond' })).toBeEnabled())
 }
 
@@ -193,7 +195,7 @@ describe('KAN-302 — contextLabel follows the live page title, not the stale no
     expect(within(card).queryByText(/— Untitled/)).not.toBeInTheDocument()
   })
 
-  it("an empty-titled open page still yields a read chip, labelled Untitled, never the pond name", async () => {
+  it('an empty-titled open page still yields a read chip, labelled Untitled, never the pond name', async () => {
     // The rail's `+` navigates here with an empty `nodeName` too — if the live
     // title's own fallback to 'Untitled' were skipped, the chain would fall
     // through to `nodeName || pondName`, and since usePondName() is never

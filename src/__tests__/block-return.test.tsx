@@ -257,6 +257,67 @@ describe('Return after a block opens a line for `/`', () => {
     await waitFor(() => expect(blockRoot('b-table')).toHaveFocus())
   })
 
+  it('leaving an empty block removes it and leaves focus where the person went', async () => {
+    const { onChange } = renderCanvas([note, emptyLine])
+    const line = await textBlockIn('b-empty')
+    const above = await textBlockIn('b-note')
+    act(() => {
+      textEditorOf(line).commands.focus('end')
+    })
+    await waitFor(() => expect(line).toHaveFocus())
+
+    act(() => {
+      textEditorOf(above).commands.focus('end')
+    })
+
+    await waitFor(() => expect(lastBlocks(onChange)).toEqual([note]))
+    expect(above).toHaveFocus()
+    expect(screen.queryByText(/deleted/i)).not.toBeInTheDocument()
+  })
+
+  it('leaving the page’s only empty block keeps it', async () => {
+    const { onChange } = renderCanvas([emptyLine])
+    const line = await textBlockIn('b-empty')
+    const outside = document.createElement('button')
+    document.body.appendChild(outside)
+    act(() => {
+      textEditorOf(line).commands.focus('end')
+    })
+    await waitFor(() => expect(line).toHaveFocus())
+
+    act(() => {
+      outside.focus()
+    })
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(onChange).not.toHaveBeenCalled()
+    expect(blockRoot('b-empty')).toBeInTheDocument()
+    outside.remove()
+  })
+
+  it('leaving a named empty block keeps it', async () => {
+    const named: Block = { id: 'b-named', type: 'text', content: '', label: 'goal' }
+    const { onChange } = renderCanvas([note, named])
+    const line = await textBlockIn('b-named')
+    const above = await textBlockIn('b-note')
+    act(() => {
+      textEditorOf(line).commands.focus('end')
+    })
+    await waitFor(() => expect(line).toHaveFocus())
+
+    act(() => {
+      textEditorOf(above).commands.focus('end')
+    })
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(onChange).not.toHaveBeenCalled()
+    expect(await textBlockIn('b-named')).toBeInTheDocument()
+  })
+
   it('Backspace in an empty line hands rowStart to the row-mate it leaves behind (KAN-440)', async () => {
     const user = userEvent.setup()
     const c: Block = { id: 'b-c', type: 'text', content: 'c', width: '1/2', rowStart: true }
@@ -675,7 +736,7 @@ describe('`/` on an empty line inside a text block splits it at that line', () =
     mockCreatePage.mockResolvedValue({ id: 'new-page', title: 'untitled', type: 'page' })
     const { onChange } = renderCanvas([{ ...prose, label: 'method' }])
     await slashAfterFirstLine()
-    fireEvent.click(rowNamed(await screen.findByRole('listbox', { name: 'blocks' }), 'nested page'))
+    fireEvent.click(rowNamed(await screen.findByRole('listbox', { name: 'blocks' }), 'page'))
 
     await waitFor(() => expect(mockCreatePage).toHaveBeenCalled())
     await waitFor(() =>

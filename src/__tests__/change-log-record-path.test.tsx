@@ -74,7 +74,9 @@ function mintRecordId(): string {
   return `rec-${nextRecordId++}`
 }
 
-function makeRecord(partial: Partial<ChangeLogRecord> & Pick<ChangeLogRecord, 'status' | 'action'>): ChangeLogRecord {
+function makeRecord(
+  partial: Partial<ChangeLogRecord> & Pick<ChangeLogRecord, 'status' | 'action'>
+): ChangeLogRecord {
   const now = new Date().toISOString()
   return {
     id: mintRecordId(),
@@ -129,13 +131,17 @@ jest.mock('next/navigation', () => {
 jest.mock('@/lib/supabase/client', () => ({
   createClient: () => ({
     auth: {
-      getUser: jest.fn().mockResolvedValue({ data: { user: { id: USER_ID, email: 'test@example.com' } } }),
+      getUser: jest
+        .fn()
+        .mockResolvedValue({ data: { user: { id: USER_ID, email: 'test@example.com' } } }),
     },
   }),
 }))
 
 jest.mock('@/lib/pages/client', () => ({
-  getPage: jest.fn(async (_supabase: unknown, id: string) => (id === fakePage.id ? { ...fakePage } : null)),
+  getPage: jest.fn(async (_supabase: unknown, id: string) =>
+    id === fakePage.id ? { ...fakePage } : null
+  ),
   listPages: jest.fn(async () => [{ ...fakePage }]),
   updateTitle: jest.fn(async (_supabase: unknown, id: string, title: string) => {
     if (id === fakePage.id) fakePage.title = title
@@ -209,11 +215,15 @@ jest.mock('@/lib/change-log/store', () => {
   const { assertTransition, WAITING_STATUSES } = jest.requireActual('@/lib/change-log/status')
   return {
     ...actual,
-    listRecordsByToolCalls: jest.fn(async (_supabase: unknown, opts: { toolCallIds: readonly string[] }) =>
-      fakeChangeLog.filter((r) => r.toolCallId !== null && opts.toolCallIds.includes(r.toolCallId))
+    listRecordsByToolCalls: jest.fn(
+      async (_supabase: unknown, opts: { toolCallIds: readonly string[] }) =>
+        fakeChangeLog.filter(
+          (r) => r.toolCallId !== null && opts.toolCallIds.includes(r.toolCallId)
+        )
     ),
-    getRecordByToolCall: jest.fn(async (_supabase: unknown, opts: { toolCallId: string }) =>
-      fakeChangeLog.find((r) => r.toolCallId === opts.toolCallId) ?? null
+    getRecordByToolCall: jest.fn(
+      async (_supabase: unknown, opts: { toolCallId: string }) =>
+        fakeChangeLog.find((r) => r.toolCallId === opts.toolCallId) ?? null
     ),
     resolveChainStatuses: jest.fn(
       async (
@@ -225,24 +235,31 @@ jest.mock('@/lib/change-log/store', () => {
         return tips
       }
     ),
-    advanceStatus: jest.fn(async (_supabase: unknown, id: string, to: ChangeLogStatus, actor = 'you') => {
-      const record = fakeChangeLog.find((r) => r.id === id)
-      if (!record) throw new Error(`change log: record ${id} not found`)
-      assertTransition(record.status, to)
-      record.status = to
-      record.statusAt = new Date().toISOString()
-      record.transitions = [...record.transitions, { status: to, at: record.statusAt, actor }]
-      return { ...record }
-    }),
-    acceptRecord: jest.fn(async (_supabase: unknown, id: string, blocks: unknown, actor = 'you') => {
-      const record = fakeChangeLog.find((r) => r.id === id)
-      if (!record) throw new Error(`change log: accept of record ${id} returned no record`)
-      record.status = 'accepted'
-      record.statusAt = new Date().toISOString()
-      record.transitions = [...record.transitions, { status: 'accepted', at: record.statusAt, actor }]
-      if (record.targetPageId === fakePage.id) fakePage.blocks = blocks as Block[]
-      return { ...record }
-    }),
+    advanceStatus: jest.fn(
+      async (_supabase: unknown, id: string, to: ChangeLogStatus, actor = 'you') => {
+        const record = fakeChangeLog.find((r) => r.id === id)
+        if (!record) throw new Error(`change log: record ${id} not found`)
+        assertTransition(record.status, to)
+        record.status = to
+        record.statusAt = new Date().toISOString()
+        record.transitions = [...record.transitions, { status: to, at: record.statusAt, actor }]
+        return { ...record }
+      }
+    ),
+    acceptRecord: jest.fn(
+      async (_supabase: unknown, id: string, blocks: unknown, actor = 'you') => {
+        const record = fakeChangeLog.find((r) => r.id === id)
+        if (!record) throw new Error(`change log: accept of record ${id} returned no record`)
+        record.status = 'accepted'
+        record.statusAt = new Date().toISOString()
+        record.transitions = [
+          ...record.transitions,
+          { status: 'accepted', at: record.statusAt, actor },
+        ]
+        if (record.targetPageId === fakePage.id) fakePage.blocks = blocks as Block[]
+        return { ...record }
+      }
+    ),
     markOutdated: jest.fn(async () => []),
     listRecords: jest.fn(
       async (
@@ -266,11 +283,18 @@ jest.mock('@/lib/change-log/store', () => {
       async () => fakeChangeLog.filter((r) => WAITING_STATUSES.includes(r.status)).length
     ),
     appendOwnEdit: jest.fn(async (_supabase: unknown, input: Partial<ChangeLogRecord>) => {
-      const record = makeRecord({ ...input, status: 'accepted', action: input.action ?? 'edit', actor: 'you' })
+      const record = makeRecord({
+        ...input,
+        status: 'accepted',
+        action: input.action ?? 'edit',
+        actor: 'you',
+      })
       fakeChangeLog.push(record)
       return record
     }),
-    getRecord: jest.fn(async (_supabase: unknown, id: string) => fakeChangeLog.find((r) => r.id === id) ?? null),
+    getRecord: jest.fn(
+      async (_supabase: unknown, id: string) => fakeChangeLog.find((r) => r.id === id) ?? null
+    ),
     listRevertsOf: jest.fn(async (_supabase: unknown, opts: { recordId: string }) =>
       fakeChangeLog
         .filter((r) => r.links.revertOf === opts.recordId)
@@ -293,31 +317,36 @@ jest.mock('@/lib/change-log/store', () => {
       }
       return chain
     }),
-    appendRecord: jest.fn(async (_supabase: unknown, input: Partial<ChangeLogRecord> & { status: ChangeLogStatus; action: string }) => {
-      const now = new Date().toISOString()
-      const actor = input.actor ?? 'you'
-      const record: ChangeLogRecord = {
-        id: mintRecordId(),
-        userId: input.userId ?? USER_ID,
-        pondId: input.pondId ?? POND_ID,
-        status: input.status,
-        action: input.action as ChangeLogRecord['action'],
-        actor,
-        targetPageId: input.targetPageId ?? null,
-        targetBlockId: input.targetBlockId ?? null,
-        before: input.before ?? null,
-        after: input.after ?? null,
-        sourceThreadId: input.sourceThreadId ?? null,
-        toolCallId: input.toolCallId ?? null,
-        read: input.read ?? null,
-        links: input.links ?? {},
-        transitions: [{ status: input.status, at: now, actor }],
-        createdAt: now,
-        statusAt: now,
+    appendRecord: jest.fn(
+      async (
+        _supabase: unknown,
+        input: Partial<ChangeLogRecord> & { status: ChangeLogStatus; action: string }
+      ) => {
+        const now = new Date().toISOString()
+        const actor = input.actor ?? 'you'
+        const record: ChangeLogRecord = {
+          id: mintRecordId(),
+          userId: input.userId ?? USER_ID,
+          pondId: input.pondId ?? POND_ID,
+          status: input.status,
+          action: input.action as ChangeLogRecord['action'],
+          actor,
+          targetPageId: input.targetPageId ?? null,
+          targetBlockId: input.targetBlockId ?? null,
+          before: input.before ?? null,
+          after: input.after ?? null,
+          sourceThreadId: input.sourceThreadId ?? null,
+          toolCallId: input.toolCallId ?? null,
+          read: input.read ?? null,
+          links: input.links ?? {},
+          transitions: [{ status: input.status, at: now, actor }],
+          createdAt: now,
+          statusAt: now,
+        }
+        fakeChangeLog.push(record)
+        return record
       }
-      fakeChangeLog.push(record)
-      return record
-    }),
+    ),
   }
 })
 
@@ -352,13 +381,23 @@ jest.mock('@ai-sdk/react', () => ({
   })),
 }))
 
-global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ extractions: [] }) } as Response)
+global.fetch = jest
+  .fn()
+  .mockResolvedValue({ ok: true, json: async () => ({ extractions: [] }) } as Response)
 
 // Imported after the mocks above so AITerminal picks up the mocked `useChat`
 // and every component below picks up the stateful `next/navigation` fake.
 import { AITerminal } from '@/components/organisms/AITerminal'
+import { openComposerIfClosed } from './helpers/open-composer'
 
-const POND: Pond = { id: POND_ID, name: 'life', glyph: null, theme: 'light', order: 0, recentGlyphs: [] }
+const POND: Pond = {
+  id: POND_ID,
+  name: 'life',
+  glyph: null,
+  theme: 'light',
+  order: 0,
+  recentGlyphs: [],
+}
 const PROVIDER_VALUE: PondContextValue = {
   pond: POND,
   ponds: [POND],
@@ -435,6 +474,7 @@ function renderPath() {
 }
 
 async function ready() {
+  openComposerIfClosed()
   await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Pond' })).toBeEnabled())
 }
 

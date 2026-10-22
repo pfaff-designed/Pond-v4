@@ -24,6 +24,7 @@ import {
   withValue,
   addDateField,
   addStatusField,
+  ensureEventFields,
   addOption,
   removeField,
   renameField,
@@ -314,6 +315,27 @@ describe('addStatusField — the laneless-board remedy (#351)', () => {
   it('is undone by removeField, same as addDateField', () => {
     const out = addStatusField(SCHEMA, mintIds('field-id', 'opt-1', 'opt-2', 'opt-3'))
     expect(removeField(out, 'field-id')).toEqual(SCHEMA)
+  })
+})
+
+describe('ensureEventFields', () => {
+  it('adds location, guests, and repeats, and leaves a schema that already has them', () => {
+    const dated: PropertySchema = [{ id: 'due', name: 'Due', type: 'date' }]
+    const ids = ['loc', 'guests', 'repeats']
+    const out = ensureEventFields(dated, () => ids.shift() ?? 'extra')
+    expect(out?.map((field) => field.name)).toEqual(['Due', 'location', 'guests', 'repeats'])
+
+    expect(ensureEventFields(out ?? dated, () => 'again')).toBeNull()
+  })
+
+  it('keeps a field already named repeat', () => {
+    const dated: PropertySchema = [
+      { id: 'due', name: 'Due', type: 'date' },
+      { id: 'loc', name: 'location', type: 'text' },
+      { id: 'guests', name: 'guests', type: 'text' },
+      { id: 'rep', name: 'repeat', type: 'select' },
+    ]
+    expect(ensureEventFields(dated, () => 'again')).toBeNull()
   })
 })
 

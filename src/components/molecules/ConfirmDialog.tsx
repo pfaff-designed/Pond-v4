@@ -7,8 +7,10 @@
  * inside it: the dialog states the real blast radius ("Deletes 3 pages inside.")
  * so a subtree delete never reads the same as an empty-page delete.
  *
- * Leaf/block deletes skip this entirely and go straight to the undo toast — this
- * modal is reserved for the irreversible, multi-item case.
+ * A block that already holds something confirms here before the undo-toast
+ * delete. An empty block, and a page delete that takes only itself, skip this
+ * and go straight to the toast. A page that has other pages inside it uses
+ * this dialog for that blast radius.
  *
  * Built on base-ui's AlertDialog (focus trap, Esc, role="alertdialog", initial
  * focus on the least-destructive action). Controlled: the host owns `open`.

@@ -19,6 +19,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DocumentPanel } from '@/components/organisms/DocumentPanel'
 import { AITerminal } from '@/components/organisms/AITerminal'
+import { openComposerIfClosed } from './helpers/open-composer'
 import { ZenPill } from '@/components/organisms/ZenPill'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { useZen, ZenComposerChrome, ZenProvider } from '@/lib/layout/zen'
@@ -96,8 +97,12 @@ const PAGE = {
   props: {},
 } as PondPage
 
-const waitComposerReady = () =>
-  waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Pond' })).not.toBeDisabled())
+const waitComposerReady = () => {
+  openComposerIfClosed()
+  return waitFor(() =>
+    expect(screen.getByRole('textbox', { name: 'Message Pond' })).not.toBeDisabled()
+  )
+}
 
 function ZenSurfaceBody() {
   const { enterZen } = useZen()
@@ -220,9 +225,7 @@ describe('KAN-186 — the zen pill path test (PATH_STEPS 1-8)', () => {
     expect(screen.getByRole('button', { name: 'leave' })).toBeInTheDocument()
 
     fireEvent.keyDown(document.body, { key: 'Escape' })
-    await waitFor(() =>
-      expect(document.querySelector('[data-part="zen-pill"]')).toBeNull()
-    )
+    await waitFor(() => expect(document.querySelector('[data-part="zen-pill"]')).toBeNull())
 
     // STEP 6 — re-enter zen, select a passage, ask pond from the bar.
     fireEvent.click(screen.getByRole('button', { name: 'enter' }))

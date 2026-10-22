@@ -18,7 +18,13 @@ jest.mock('next/navigation', () => ({
 }))
 
 jest.mock('@/lib/pond/context', () => {
-  const active = { pond: { id: 'pond-7' }, ponds: [], loading: false, reload: () => {}, addPond: () => {} }
+  const active = {
+    pond: { id: 'pond-7' },
+    ponds: [],
+    loading: false,
+    reload: () => {},
+    addPond: () => {},
+  }
   return {
     ...jest.requireActual('@/lib/pond/context'),
     usePond: () => active,
@@ -133,6 +139,7 @@ global.fetch = jest.fn().mockResolvedValue({
 } as Response)
 
 import { AITerminal } from '@/components/organisms/AITerminal'
+import { openComposerIfClosed } from './helpers/open-composer'
 import { ShellCommands } from '@/components/organisms/ShellCommands'
 import { undoStep, redoStep } from '@/lib/change-log/undo'
 import { pagesKey } from '@/lib/pages/keys'
@@ -167,6 +174,7 @@ function batch(toolCallId: string) {
 }
 
 async function ready() {
+  openComposerIfClosed()
   await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Pond' })).toBeEnabled())
 }
 
@@ -218,8 +226,12 @@ beforeEach(() => {
   mockStatus = 'ready'
   mockError = undefined
   mockMessages = [{ id: 'm1', role: 'assistant', parts: [batch('pc1')] }]
-  jest.mocked(undoStep).mockResolvedValue({ outcome: 'done', records: [fakeRecord('rec-1', 'pc1', 'page-b')] })
-  jest.mocked(redoStep).mockResolvedValue({ outcome: 'done', records: [fakeRecord('rec-1', 'pc1', 'page-b')] })
+  jest
+    .mocked(undoStep)
+    .mockResolvedValue({ outcome: 'done', records: [fakeRecord('rec-1', 'pc1', 'page-b')] })
+  jest
+    .mocked(redoStep)
+    .mockResolvedValue({ outcome: 'done', records: [fakeRecord('rec-1', 'pc1', 'page-b')] })
   onPlatform('MacIntel')
 })
 
@@ -254,12 +266,18 @@ describe('accept a diff, then ⌘Z/⇧⌘Z take it back and put it back (KAN-93 
     await user.keyboard('{Meta>}z{/Meta}')
 
     await waitFor(() => expect(undoStep).toHaveBeenCalledTimes(1))
-    expect(undoStep).toHaveBeenCalledWith(expect.anything(), { pondId: 'pond-7', recordIds: ['rec-1'] })
+    expect(undoStep).toHaveBeenCalledWith(expect.anything(), {
+      pondId: 'pond-7',
+      recordIds: ['rec-1'],
+    })
 
     await user.keyboard('{Meta>}{Shift>}z{/Shift}{/Meta}')
 
     await waitFor(() => expect(redoStep).toHaveBeenCalledTimes(1))
-    expect(redoStep).toHaveBeenCalledWith(expect.anything(), { pondId: 'pond-7', recordIds: ['rec-1'] })
+    expect(redoStep).toHaveBeenCalledWith(expect.anything(), {
+      pondId: 'pond-7',
+      recordIds: ['rec-1'],
+    })
   })
 
   it('on done invalidates the page and change-log caches; on stale it shows the notice and changes nothing else', async () => {

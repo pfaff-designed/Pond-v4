@@ -501,7 +501,11 @@ export function blankRowEntries(
   justSavedId: string | null = null,
   parentTitle: string | null = null
 ): SlashEntry[] {
-  const ranked = rankTemplateRows(yours, siblingRanking, justSavedId, parentTitle)
+  // The pages group is the one row called page. The blank page shape stays in
+  // the templates pane (`templateEntries`), not beside it in this list.
+  const ranked = rankTemplateRows(yours, siblingRanking, justSavedId, parentTitle).filter(
+    (row) => row.id !== 'premade:page'
+  )
   if (normalizeQuery(query)) return rowEntries([...ranked, ...rows], query, cap)
   // A query is never capped (`rowEntries` ignores `cap` once filtered), but at
   // rest the two groups are capped on their own: the templates group to its own

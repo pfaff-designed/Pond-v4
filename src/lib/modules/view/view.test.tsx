@@ -52,8 +52,7 @@ jest.mock('./use-collection-rows', () => ({
     updateSchema.mockImplementation((next: PropertySchema) => setSchema(next))
     updateRows.mockImplementation((next: CollectionRow[]) => setRows(next))
     // Mirrors the real hook's shape enough for the board's "＋ task": mints a row
-    // seeded with the dropped values and returns its id, so `handleAddCard` can
-    // focus the new card's title input.
+    // seeded with the dropped values and returns its id, so the new page can open.
     addRow.mockImplementation(async (values?: CollectionRow['values']) => {
       const id = `r-new-${rows.length}`
       setRows((prev) => [...prev, { id, title: '', values: values ?? {} }])
@@ -387,10 +386,13 @@ describe('CollectionBoard — the card-title input commits once, not per keystro
     const input = screen.getByRole('textbox', { name: 'Card title' })
     await user.click(input)
 
+    const page = screen.getByLabelText('Record: Untitled')
+    expect(page).toHaveAttribute('data-placement', 'center')
+    expect(page.className).not.toContain('right-[44px]')
     expect(screen.getByRole('textbox', { name: 'Record title' })).toBeInTheDocument()
   })
 
-  it('still adds a card into its lane through the unchanged "＋ task" path', async () => {
+  it('＋ task opens the new card as the same centered page a calendar day opens', async () => {
     const user = userEvent.setup()
     renderView(board)
 
@@ -399,6 +401,12 @@ describe('CollectionBoard — the card-title input commits once, not per keystro
     expect(addRow).toHaveBeenCalledWith({ 'p-status': 'opt-todo' })
     const inputs = await screen.findAllByRole('textbox', { name: 'Card title' })
     expect(inputs).toHaveLength(2)
+    const page = screen.getByLabelText('Record: Untitled')
+    expect(page).toHaveAttribute('data-placement', 'center')
+    const title = within(page).getByRole('textbox', { name: 'Record title' })
+    expect(title).toHaveFocus()
+    await user.type(title, 'wash the car{Enter}')
+    expect(renameRow).toHaveBeenCalledWith('r-new-1', 'wash the car')
   })
 })
 
@@ -558,58 +566,55 @@ describe('ViewView — the path test: calendar, through the real host (KAN-352)'
   const twentiethIso = `${localDateIso(new Date()).slice(0, 8)}20`
   const twentyFirstIso = `${localDateIso(new Date()).slice(0, 8)}21`
 
-  it('clicking the 20th’s plus adds a record dated that day, and a blank click adds nothing', async () => {
+  it('clicking the 20th’s plus opens that day’s untitled page', async () => {
     const user = userEvent.setup()
     const { container } = renderView(calendar)
     const cell = cellFor(container, twentiethIso)
 
     await user.click(within(cell).getByRole('button', { name: /Add on 20/ }))
+    const title = await screen.findByRole('textbox', { name: 'Record title' })
+    expect(screen.getByText('Due')).toBeInTheDocument()
+    await user.type(title, 'lumber{Enter}')
 
     expect(addRow).toHaveBeenCalledTimes(1)
     expect(addRow).toHaveBeenCalledWith({ 'p-due': twentiethIso })
-    expect(renameRow).not.toHaveBeenCalled()
-    expect(cell.querySelector('[data-row-id="r-new-0"]')).not.toBeNull()
+    expect(renameRow).toHaveBeenCalledWith('r-new-0', 'lumber')
+    expect(within(cell).getByText('lumber')).toBeInTheDocument()
     expect(screen.queryByRole('textbox', { name: /Add an item/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'new page' })).not.toBeInTheDocument()
 
     const anotherIso = addDays(twentiethIso, 1)
     fireEvent.click(cellFor(container, anotherIso))
 
-    expect(addRow).toHaveBeenCalledTimes(1)
-    expect(renameRow).not.toHaveBeenCalled()
-    expect(screen.queryByRole('textbox', { name: /Add an item/ })).not.toBeInTheDocument()
+    expect(addRow).toHaveBeenCalledTimes(2)
+    expect(renameRow).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('textbox', { name: 'Record title' })).toBeInTheDocument()
   })
 
-  it('calendar: hover the 21st, add, name it, Esc keeps it, a blank click adds nothing (KAN-453)', async () => {
+  it('calendar: hover the 21st, open the page, name it, and a later click opens another page (KAN-453)', async () => {
     const user = userEvent.setup()
     const { container } = renderView(calendar)
     const cell = cellFor(container, twentyFirstIso)
 
     await user.hover(cell)
+    expect(cell).toHaveClass('hover:bg-mn-hover-fill')
     await user.click(within(cell).getByRole('button', { name: /Add on 21/ }))
 
-    expect(addRow).toHaveBeenCalledTimes(1)
-    expect(addRow).toHaveBeenCalledWith({ 'p-due': twentyFirstIso })
-    expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Record title' }))
-
-    // Enter commits. Esc on a still-dirty title reverts and writes nothing.
-    await user.keyboard('dentist{Enter}')
+    const title = await screen.findByRole('textbox', { name: 'Record title' })
+    await user.type(title, 'dentist{Enter}')
 
     expect(within(cell).getByText('dentist')).toBeInTheDocument()
     expect(screen.getByLabelText('Record: dentist')).toBeInTheDocument()
-
-    await user.keyboard('{Escape}')
-
-    expect(screen.queryByLabelText('Record: dentist')).not.toBeInTheDocument()
-    expect(within(cell).getByText('dentist')).toBeInTheDocument()
     expect(addRow).toHaveBeenCalledTimes(1)
+    expect(addRow).toHaveBeenCalledWith({ 'p-due': twentyFirstIso })
+    expect(renameRow).toHaveBeenCalledWith('r-new-0', 'dentist')
 
     await user.click(within(cell).getByText('21'))
 
-    expect(addRow).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('dialog', { name: 'new page' })).not.toBeInTheDocument()
+    expect(addRow).toHaveBeenCalledTimes(2)
     expect(renameRow).toHaveBeenCalledTimes(1)
-    expect(renameRow).toHaveBeenCalledWith('r-new-0', 'dentist')
     expect(screen.queryByRole('textbox', { name: /Add an item/ })).not.toBeInTheDocument()
-    expect(screen.queryByPlaceholderText('Untitled')).not.toBeInTheDocument()
   })
 
   it('a non-editable render shows no input on any click', async () => {
@@ -643,7 +648,7 @@ describe('ViewView — a blank day click opens that day (KAN-455)', () => {
     )
   }
 
-  it('clicking the day number opens that day, steps back one day, and month returns the cell', async () => {
+  it('clicking the day number opens that day’s page; the day span still opens that day', async () => {
     jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
     const onChange = jest.fn()
@@ -653,24 +658,30 @@ describe('ViewView — a blank day click opens that day (KAN-455)', () => {
 
     await user.click(within(cell).getByText('21'))
 
-    expect(screen.getByText('wed 21 oct 2026')).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'new page' })).not.toBeInTheDocument()
+    expect(await screen.findByRole('textbox', { name: 'Record title' })).toBeInTheDocument()
+    expect(screen.getByText('Due')).toBeInTheDocument()
+    expect(screen.getByText('october 2026')).toBeInTheDocument()
+    expect(onChange).not.toHaveBeenCalled()
+    await user.keyboard('{Escape}')
+
+    await user.click(screen.getByRole('radio', { name: 'day' }))
+
+    expect(screen.getByText('mon 19 oct 2026')).toBeInTheDocument()
     expect(screen.queryByText('october 2026')).not.toBeInTheDocument()
     expect(cellFor(container, '2026-10-21')).toBeNull()
-    const allDay = container.querySelector('[data-part="calendar-all-day"]')
-    expect(allDay).not.toBeNull()
-    expect(within(allDay as HTMLElement).getByText('dentist')).toBeInTheDocument()
     expect(onChange).toHaveBeenCalledTimes(1)
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ span: 'day' }))
 
     await user.click(screen.getByRole('button', { name: 'Previous day' }))
 
-    expect(screen.getByText('tue 20 oct 2026')).toBeInTheDocument()
+    expect(screen.getByText('sun 18 oct 2026')).toBeInTheDocument()
     expect(onChange).toHaveBeenCalledTimes(1)
 
     await user.click(screen.getByRole('radio', { name: 'month' }))
 
     expect(screen.getByText('october 2026')).toBeInTheDocument()
-    expect(screen.queryByText('tue 20 oct 2026')).not.toBeInTheDocument()
+    expect(screen.queryByText('sun 18 oct 2026')).not.toBeInTheDocument()
     expect(cellFor(container, '2026-10-21')).not.toBeNull()
     expect(onChange).toHaveBeenCalledTimes(2)
     expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ span: 'month' }))
@@ -835,7 +846,9 @@ describe('KAN-526', () => {
     expect(moved).not.toBeNull()
     if (!moved) return
     expect(within(moved).getByText('10:00')).toBeInTheDocument()
-    expect(within(columnFor(container, '2026-10-21')).queryByText('dentist')).not.toBeInTheDocument()
+    expect(
+      within(columnFor(container, '2026-10-21')).queryByText('dentist')
+    ).not.toBeInTheDocument()
     expect(setValueAsStep).toHaveBeenCalledWith('dentist', 'p-due', '2026-10-22T10:00:00')
 
     const alcove = within(allDayRow(container))
@@ -1137,7 +1150,9 @@ describe('ViewView — dragging a timeline bar writes both dates as one step (KA
       { coords: { clientX: 10, clientY: 0 } },
       { keys: '[/MouseLeft]' },
     ])
-    expect(setValuesAsStep).toHaveBeenLastCalledWith('r1', [{ key: 'p-start', value: '2026-09-09' }])
+    expect(setValuesAsStep).toHaveBeenLastCalledWith('r1', [
+      { key: 'p-start', value: '2026-09-09' },
+    ])
     expect(setValuesAsStep).toHaveBeenCalledTimes(3)
     expect(setValue).not.toHaveBeenCalled()
 
@@ -1392,40 +1407,28 @@ describe('CollectionView — every mode/groupBy/sort/filter/chart/bigNumber read
 const layoutNames = LAYOUT_MENU_MODES.map((mode) => VIEW_KINDS[mode].label)
 
 describe('ViewView — the layout menu sits in the head (KAN-519)', () => {
-  it('a legacy table shows a button named table and its synthesized tab; opening the button lists the seven layouts, and Esc does not call onChange', async () => {
+  it('a legacy table shows the layouts in one pill, table filled, and ＋ view; choosing the filled layout does not call onChange', async () => {
     const user = userEvent.setup()
     const onChange = jest.fn()
     renderView(table, true, onChange)
 
-    expect(screen.getByRole('button', { name: 'table' })).toBeInTheDocument()
-    // KAN-243: an editable legacy block synthesizes its one segment so ＋ view is reachable.
-    expect(screen.getByRole('tab', { name: 'table' })).toBeInTheDocument()
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(layoutNames)
+    expect(screen.getByRole('tab', { name: 'table' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('button', { name: 'add a view' })).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'table' }))
-    const menu = await screen.findByRole('menu', { name: 'layout' })
-    expect(
-      within(menu)
-        .getAllByRole('menuitem')
-        .map((item) => item.textContent)
-    ).toEqual(layoutNames)
-
-    await waitFor(() =>
-      expect(screen.getByRole('menu', { name: 'layout' }).contains(document.activeElement)).toBe(
-        true
-      )
-    )
-    await user.keyboard('{Escape}')
+    await user.click(screen.getByRole('tab', { name: 'table' }))
 
     expect(onChange).not.toHaveBeenCalled()
   })
 
-  it('editable={false} shows the word table and no layout button', () => {
+  it('editable={false} shows the layouts as words and no tabs', () => {
     renderView(table, false)
 
     const word = screen.getByText('table')
     expect(word.closest('button')).toBeNull()
-    expect(screen.queryByRole('button', { name: 'table' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument()
+    expect(screen.getByText('board')).toBeInTheDocument()
+    expect(screen.getByText('timeline')).toBeInTheDocument()
   })
 })
 
@@ -1461,8 +1464,7 @@ describe('ViewView — choosing Board on a legacy table (KAN-519)', () => {
     expect(screen.getByRole('table')).toBeInTheDocument()
     expect(screen.getByDisplayValue('Standup')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'table' }))
-    await user.click(await screen.findByRole('menuitem', { name: 'board' }))
+    await user.click(screen.getByRole('tab', { name: 'board' }))
 
     expect(onChange).toHaveBeenCalledTimes(1)
     const next = onChange.mock.calls[0][0] as ViewBlock
@@ -1509,8 +1511,7 @@ describe('ViewView — choosing Calendar when the schema has no date field (KAN-
     const onChange = jest.fn()
     renderStatefulView(legacyTable, onChange)
 
-    await user.click(screen.getByRole('button', { name: 'table' }))
-    await user.click(await screen.findByRole('menuitem', { name: 'calendar' }))
+    await user.click(screen.getByRole('tab', { name: 'calendar' }))
 
     expect(onChange).toHaveBeenCalledTimes(1)
     const next = onChange.mock.calls[0][0] as ViewBlock
@@ -1565,8 +1566,7 @@ describe('ViewView — choosing List on a dated legacy table (KAN-523)', () => {
     expect(screen.getByRole('table')).toBeInTheDocument()
     expect(screen.getByDisplayValue('Standup')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'table' }))
-    await user.click(await screen.findByRole('menuitem', { name: 'list' }))
+    await user.click(screen.getByRole('tab', { name: 'list' }))
 
     expect(onChange).toHaveBeenCalledTimes(1)
     const next = onChange.mock.calls[0][0] as ViewBlock
@@ -1621,8 +1621,7 @@ describe('ViewView — choosing Timeline on a dated legacy table (KAN-523)', () 
     expect(screen.getByRole('table')).toBeInTheDocument()
     expect(screen.getByDisplayValue('Standup')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'table' }))
-    await user.click(await screen.findByRole('menuitem', { name: 'timeline' }))
+    await user.click(screen.getByRole('tab', { name: 'timeline' }))
 
     expect(onChange).toHaveBeenCalledTimes(1)
     const next = onChange.mock.calls[0][0] as ViewBlock
@@ -1677,8 +1676,7 @@ describe('ViewView — choosing Gallery on a dated legacy table (KAN-523)', () =
     expect(screen.getByRole('table')).toBeInTheDocument()
     expect(screen.getByDisplayValue('Standup')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'table' }))
-    await user.click(await screen.findByRole('menuitem', { name: 'gallery' }))
+    await user.click(screen.getByRole('tab', { name: 'gallery' }))
 
     expect(onChange).toHaveBeenCalledTimes(1)
     const next = onChange.mock.calls[0][0] as ViewBlock
@@ -1736,8 +1734,7 @@ describe('ViewView — choosing Chart on a dated legacy table (KAN-523)', () => 
     expect(screen.getByRole('table')).toBeInTheDocument()
     expect(screen.getByDisplayValue('Standup')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'table' }))
-    await user.click(await screen.findByRole('menuitem', { name: 'chart' }))
+    await user.click(screen.getByRole('tab', { name: 'chart' }))
 
     expect(onChange).toHaveBeenCalledTimes(1)
     const next = onChange.mock.calls[0][0] as ViewBlock
@@ -1785,8 +1782,7 @@ describe('ViewView — choosing Board when the schema has no status or select fi
 
     expect(screen.getByRole('table')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'table' }))
-    await user.click(await screen.findByRole('menuitem', { name: 'board' }))
+    await user.click(screen.getByRole('tab', { name: 'board' }))
 
     expect(onChange).toHaveBeenCalledTimes(1)
     const next = onChange.mock.calls[0][0] as ViewBlock
@@ -1849,16 +1845,15 @@ describe('ViewView — switching a non-first saved view to Board (KAN-523)', () 
     const onChange = jest.fn()
     const { unmount } = renderStatefulView(savedViews, onChange)
 
-    expect(screen.getByRole('button', { name: 'table' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'table' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'rows' })).toHaveAttribute('aria-selected', 'true')
 
     await user.click(screen.getByRole('tab', { name: 'queue' }))
 
     expect(onChange).not.toHaveBeenCalled()
-    expect(screen.getByRole('button', { name: 'list' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'list' })).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'list' }))
-    await user.click(await screen.findByRole('menuitem', { name: 'board' }))
+    await user.click(screen.getByRole('tab', { name: 'board' }))
 
     expect(onChange).toHaveBeenCalledTimes(1)
     const next = onChange.mock.calls[0][0] as ViewBlock
@@ -1874,13 +1869,13 @@ describe('ViewView — switching a non-first saved view to Board (KAN-523)', () 
     renderView(next)
 
     expect(next.views?.[0]?.kind).toBe('table')
-    expect(screen.getByRole('button', { name: 'table' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'table' })).toBeInTheDocument()
     expect(screen.getByRole('table')).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'rows' })).toHaveAttribute('aria-selected', 'true')
 
     await user.click(screen.getByRole('tab', { name: 'queue' }))
 
-    expect(screen.getByRole('button', { name: 'board' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'board' })).toBeInTheDocument()
     const card = screen.getByRole('article', { name: 'Standup' })
     expect(card).toHaveAttribute('data-part', 'card')
     expect(within(card).getByDisplayValue('Standup')).toBeInTheDocument()
@@ -1942,8 +1937,7 @@ describe('ViewView — a layout write that changes the kind is one structural co
 
     const { rerender } = render(tree(legacyTable))
 
-    await user.click(screen.getByRole('button', { name: 'table' }))
-    await user.click(await screen.findByRole('menuitem', { name: 'board' }))
+    await user.click(screen.getByRole('tab', { name: 'board' }))
 
     expect(commitStep).toHaveBeenCalledTimes(1)
     expect(onChange).not.toHaveBeenCalled()
@@ -1952,8 +1946,7 @@ describe('ViewView — a layout write that changes the kind is one structural co
 
     rerender(tree(next))
 
-    await user.click(screen.getByRole('button', { name: 'board' }))
-    await user.click(await screen.findByRole('menuitem', { name: 'board' }))
+    await user.click(screen.getByRole('tab', { name: 'board' }))
 
     expect(commitStep).toHaveBeenCalledTimes(1)
 
@@ -2082,23 +2075,20 @@ describe('ViewView — the path: layout menu, board, table, calendar, one step b
     expect(screen.getByRole('table')).toBeInTheDocument()
     expect(screen.getByDisplayValue('Standup')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'table' }))
-    await user.click(await screen.findByRole('menuitem', { name: 'board' }))
+    await user.click(screen.getByRole('tab', { name: 'board' }))
 
     expect(screen.getByRole('article', { name: 'Standup' })).toBeInTheDocument()
     const head = container.querySelector('[data-part="view-head"]')
     expect(head).toHaveTextContent(/grouped by status/)
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'board' }))
-    await user.click(await screen.findByRole('menuitem', { name: 'table' }))
+    await user.click(screen.getByRole('tab', { name: 'table' }))
 
     const table = screen.getByRole('table')
     expect(within(table).getByDisplayValue('Standup')).toBeInTheDocument()
     expect(screen.queryByRole('article', { name: 'Standup' })).not.toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'table' }))
-    await user.click(await screen.findByRole('menuitem', { name: 'calendar' }))
+    await user.click(screen.getByRole('tab', { name: 'calendar' }))
 
     expect(screen.getByText(CALENDAR_EMPTY_LINE)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'add a date field' })).toBeInTheDocument()
@@ -2154,12 +2144,11 @@ describe('ViewView — one layout write steps back to the previous kind (KAN-523
     }
     const { container } = renderLayoutPath(legacyTable, handleReady)
 
-    expect(screen.getByRole('button', { name: 'table' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'table' })).toBeInTheDocument()
     expect(screen.getByRole('table')).toBeInTheDocument()
     expect(screen.getByDisplayValue('Standup')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'table' }))
-    await user.click(await screen.findByRole('menuitem', { name: 'timeline' }))
+    await user.click(screen.getByRole('tab', { name: 'timeline' }))
 
     const label = container.querySelector('[data-part="gantt-label"]')
     expect(label).toHaveTextContent('Standup')
@@ -2171,7 +2160,7 @@ describe('ViewView — one layout write steps back to the previous kind (KAN-523
 
     const table = screen.getByRole('table')
     expect(within(table).getByDisplayValue('Standup')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'table' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'table' })).toBeInTheDocument()
     expect(container.querySelector('[data-part="gantt-label"]')).not.toBeInTheDocument()
   })
 })
@@ -2234,8 +2223,7 @@ describe('ViewView — the path: list, timeline, gallery, chart, board, saved vi
     const onChange = jest.fn()
     const first = renderStatefulView(legacyTable, onChange)
 
-    await user.click(screen.getByRole('button', { name: 'table' }))
-    await user.click(await screen.findByRole('menuitem', { name: 'list' }))
+    await user.click(screen.getByRole('tab', { name: 'list' }))
 
     expect(onChange).toHaveBeenCalledTimes(1)
     const listed = onChange.mock.calls[0][0] as ViewBlock
@@ -2243,14 +2231,12 @@ describe('ViewView — the path: list, timeline, gallery, chart, board, saved vi
     expect(listed).not.toHaveProperty('views')
     expect(first.container.querySelector('[data-part="list-row"]')).toHaveTextContent('Standup')
 
-    await user.click(screen.getByRole('button', { name: 'list' }))
-    await user.click(await screen.findByRole('menuitem', { name: 'timeline' }))
+    await user.click(screen.getByRole('tab', { name: 'timeline' }))
 
     expect(onChange).toHaveBeenCalledTimes(2)
     expect(first.container.querySelector('[data-part="gantt-label"]')).toHaveTextContent('Standup')
 
-    await user.click(screen.getByRole('button', { name: 'timeline' }))
-    await user.click(await screen.findByRole('menuitem', { name: 'gallery' }))
+    await user.click(screen.getByRole('tab', { name: 'gallery' }))
 
     expect(onChange).toHaveBeenCalledTimes(3)
     const gallery = first.container.querySelector('[data-part="gallery"]')
@@ -2259,8 +2245,7 @@ describe('ViewView — the path: list, timeline, gallery, chart, board, saved vi
       within(gallery as HTMLElement).getByRole('article', { name: 'Standup' })
     ).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'gallery' }))
-    await user.click(await screen.findByRole('menuitem', { name: 'chart' }))
+    await user.click(screen.getByRole('tab', { name: 'chart' }))
 
     expect(onChange).toHaveBeenCalledTimes(4)
     const charted = onChange.mock.calls[3][0] as ViewBlock
@@ -2276,8 +2261,7 @@ describe('ViewView — the path: list, timeline, gallery, chart, board, saved vi
     const onBoard = jest.fn()
     const second = renderStatefulView(legacyTable, onBoard)
 
-    await user.click(screen.getByRole('button', { name: 'table' }))
-    await user.click(await screen.findByRole('menuitem', { name: 'board' }))
+    await user.click(screen.getByRole('tab', { name: 'board' }))
 
     expect(onBoard).toHaveBeenCalledTimes(1)
     const boarded = onBoard.mock.calls[0][0] as ViewBlock
@@ -2308,17 +2292,16 @@ describe('ViewView — the path: list, timeline, gallery, chart, board, saved vi
       }
     )
 
-    expect(screen.getByRole('button', { name: 'table' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'table' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'rows' })).toHaveAttribute('aria-selected', 'true')
 
     await user.click(screen.getByRole('tab', { name: 'queue' }))
 
     expect(onSavedChange).not.toHaveBeenCalled()
     expect(commits).toHaveLength(0)
-    expect(screen.getByRole('button', { name: 'list' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'list' })).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'list' }))
-    await user.click(await screen.findByRole('menuitem', { name: 'board' }))
+    await user.click(screen.getByRole('tab', { name: 'board' }))
 
     expect(onSavedChange).not.toHaveBeenCalled()
     expect(commits).toHaveLength(1)
@@ -2335,13 +2318,13 @@ describe('ViewView — the path: list, timeline, gallery, chart, board, saved vi
     })
 
     expect(written.views?.[0]?.kind).toBe('table')
-    expect(screen.getByRole('button', { name: 'table' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'table' })).toBeInTheDocument()
     expect(screen.getByRole('table')).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'rows' })).toHaveAttribute('aria-selected', 'true')
 
     await user.click(screen.getByRole('tab', { name: 'queue' }))
 
-    expect(screen.getByRole('button', { name: 'board' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'board' })).toBeInTheDocument()
     const card = screen.getByRole('article', { name: 'Standup' })
     expect(card).toHaveAttribute('data-part', 'card')
     expect(within(card).getByDisplayValue('Standup')).toBeInTheDocument()
@@ -2352,7 +2335,7 @@ describe('ViewView — the path: list, timeline, gallery, chart, board, saved vi
     })
 
     expect(screen.getByRole('tab', { name: 'queue' })).toHaveAttribute('aria-selected', 'true')
-    expect(screen.getByRole('button', { name: 'list' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'list' })).toBeInTheDocument()
     expect(third.container.querySelector('[data-part="list-row"]')).toHaveTextContent('Standup')
     expect(screen.queryByRole('article', { name: 'Standup' })).not.toBeInTheDocument()
     expect(written.views?.[0]).toBe(rowsView)
@@ -2461,7 +2444,7 @@ describe('CollectionView — the saved-view bar switches views as reading, not e
   })
 })
 
-describe('CollectionView — the ＋ view picker carries each kind\'s remedy line (KAN-243)', () => {
+describe("CollectionView — the ＋ view picker carries each kind's remedy line (KAN-243)", () => {
   const onePickerView: ViewBlock = {
     id: 'v-picker',
     type: 'view',
@@ -2524,7 +2507,12 @@ describe('ViewView — picking a ＋ view row adds the view, minting its remedy 
     const next = onChange.mock.calls[0][0] as ViewBlock
     expect(next.views).toHaveLength(2)
     const newView = next.views!.find((v) => v.kind === 'calendar')
-    expect(newView).toEqual({ id: expect.any(String), label: 'calendar', kind: 'calendar', config: {} })
+    expect(newView).toEqual({
+      id: expect.any(String),
+      label: 'calendar',
+      kind: 'calendar',
+      config: {},
+    })
     expect(next.activeViewId).toBe(newView!.id)
   })
 
@@ -2758,10 +2746,12 @@ describe('ViewView — the ＋ view path test: calendar from a dateless table, e
       screen.queryByText('This view needs a collection with properties.')
     ).not.toBeInTheDocument()
 
-    // (d) undo removes both the segment and the field it minted, in one step.
+    // (d) undo removes the added view and the field it minted, in one step.
+    // Calendar stays in the layout pill; it is no longer the view showing.
     await user.click(screen.getByRole('button', { name: 'Undo' }))
 
-    expect(screen.queryByRole('tab', { name: 'calendar' })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('tab')).toHaveLength(layoutNames.length)
+    expect(screen.getByRole('tab', { name: 'calendar' })).toHaveAttribute('aria-selected', 'false')
     expect(screen.getByRole('tab', { name: 'table' })).toHaveAttribute('aria-selected', 'true')
     const afterUndo = updateSchema.mock.calls.at(-1)![0] as PropertySchema
     expect(afterUndo).toEqual(dateless)
@@ -2852,11 +2842,11 @@ describe('ViewView — a legacy block (no views[] yet) still shows ＋ view, edi
     )
   }
 
-  it('editable: one segment synthesized from the legacy mode, plus ＋ view; picking a kind adds a second segment, active', async () => {
+  it('editable: the layouts are the segments, table filled, plus ＋ view; picking a kind makes the saved views the bar', async () => {
     const user = userEvent.setup()
     renderLegacy()
 
-    expect(screen.getAllByRole('tab')).toHaveLength(1)
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(layoutNames)
     expect(screen.getByRole('tab', { name: 'table' })).toHaveAttribute('aria-selected', 'true')
 
     await user.click(screen.getByRole('button', { name: 'add a view' }))
@@ -2904,7 +2894,9 @@ describe('ViewView — a picked view still becomes active through BlockCanvas-st
         <ViewView
           data={moduleData}
           editable
-          onChange={(next) => setBlock({ ...(next as ViewBlock), activeViewId: block.activeViewId })}
+          onChange={(next) =>
+            setBlock({ ...(next as ViewBlock), activeViewId: block.activeViewId })
+          }
         />
       </ActiveViewSelectionContext.Provider>
     )
@@ -2926,23 +2918,30 @@ describe('ViewView — a picked view still becomes active through BlockCanvas-st
   it.each([
     ['a legacy table', legacyTable],
     ['a views-shaped table', viewsShapedTable],
-  ])('%s: picking calendar activates its segment, and undo re-selects the original', async (_label, initial) => {
-    const user = userEvent.setup()
-    renderStripping(initial)
+  ])(
+    '%s: picking calendar activates its segment, and undo re-selects the original',
+    async (_label, initial) => {
+      const user = userEvent.setup()
+      renderStripping(initial)
 
-    expect(screen.getByRole('tab', { name: 'table' })).toHaveAttribute('aria-selected', 'true')
+      expect(screen.getByRole('tab', { name: 'table' })).toHaveAttribute('aria-selected', 'true')
 
-    await user.click(screen.getByRole('button', { name: 'add a view' }))
-    await user.click(screen.getByRole('option', { name: /calendar/ }))
+      await user.click(screen.getByRole('button', { name: 'add a view' }))
+      await user.click(screen.getByRole('option', { name: /calendar/ }))
 
-    expect(screen.getByRole('tab', { name: 'calendar' })).toHaveAttribute('aria-selected', 'true')
-    expect(screen.getByRole('button', { name: 'add a view' })).toBeInTheDocument()
+      expect(screen.getByRole('tab', { name: 'calendar' })).toHaveAttribute('aria-selected', 'true')
+      expect(screen.getByRole('button', { name: 'add a view' })).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Undo' }))
+      await user.click(screen.getByRole('button', { name: 'Undo' }))
 
-    expect(screen.queryByRole('tab', { name: 'calendar' })).not.toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'table' })).toHaveAttribute('aria-selected', 'true')
-  })
+      expect(screen.getAllByRole('tab')).toHaveLength(layoutNames.length)
+      expect(screen.getByRole('tab', { name: 'calendar' })).toHaveAttribute(
+        'aria-selected',
+        'false'
+      )
+      expect(screen.getByRole('tab', { name: 'table' })).toHaveAttribute('aria-selected', 'true')
+    }
+  )
 })
 
 const FACT_CLASS = 'text-[10.5px] font-medium text-mn-text-meta'
@@ -3381,7 +3380,15 @@ describe('KAN-525 strip week', () => {
     { id: 'p-due', name: 'Due', type: 'date' },
   ]
   const dayCalendar: ViewBlock = { id: 'v-cal', type: 'view', mode: 'calendar', span: 'day' }
-  const previousWeek = ['mon 12', 'tue 13', 'wed 14', 'thu 15', 'fri 16', 'sat 17', 'sun 18'] as const
+  const previousWeek = [
+    'mon 12',
+    'tue 13',
+    'wed 14',
+    'thu 15',
+    'fri 16',
+    'sat 17',
+    'sun 18',
+  ] as const
 
   beforeEach(() => {
     initialSchema = calendarSchema
@@ -3533,15 +3540,7 @@ describe('KAN-457', () => {
     jest.useRealTimers()
   })
 
-  function agendaDay(list: HTMLElement, iso: string) {
-    const day = list.querySelector<HTMLElement>(
-      `[data-part="calendar-agenda-day"][data-iso="${iso}"]`
-    )
-    if (!day) throw new Error(`agenda day ${iso} missing`)
-    return day
-  }
-
-  it('opens the agenda on the page host, lists the coming days, and peeks dentist', async () => {
+  it('opens the year on the page host and marks the dated days', async () => {
     jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
     const onChange = jest.fn()
@@ -3549,178 +3548,29 @@ describe('KAN-457', () => {
 
     expect(screen.getByText('october 2026')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('radio', { name: 'agenda' }))
+    await user.click(screen.getByRole('radio', { name: 'year' }))
 
     expect(onChange).toHaveBeenCalledTimes(1)
-    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ span: 'agenda' }))
-    expect(screen.getByText('from 19 oct')).toBeInTheDocument()
-
-    const list = container.querySelector<HTMLElement>('[data-part="calendar-agenda"]')
-    if (!list) throw new Error('agenda list missing')
-
-    const today = agendaDay(list, '2026-10-19')
-    const alcove = within(today)
-      .getByText('confirm alcove')
-      .closest<HTMLElement>('[data-part="calendar-agenda-item"]')
-    if (!alcove) throw new Error('confirm alcove is not an agenda item')
-    expect(alcove.querySelector('[data-part="calendar-agenda-time"]')).toBeNull()
-
-    const tomorrow = agendaDay(list, '2026-10-20')
-    const dentist = within(tomorrow)
-      .getByText('dentist')
-      .closest<HTMLElement>('[data-part="calendar-agenda-item"]')
-    if (!dentist) throw new Error('dentist is not an agenda item')
-    expect(within(dentist).getByText('10:00')).toBeInTheDocument()
-
-    const wednesday = agendaDay(list, '2026-10-21')
-    const wednesdayItems = [
-      ...wednesday.querySelectorAll<HTMLElement>('[data-part="calendar-agenda-item"]'),
-    ]
-    const plaster = wednesdayItems[0]
-    const optician = wednesdayItems[1]
-    if (!plaster || !optician) throw new Error('wednesday agenda items missing')
-    expect(plaster.textContent).toContain('plaster')
-    expect(plaster.compareDocumentPosition(optician) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING
-    )
-    expect(optician.querySelector('[data-part="calendar-agenda-time"]')).toHaveTextContent('09:00')
-
-    expect(screen.queryByText('skip hire')).not.toBeInTheDocument()
-    expect(screen.queryByText('renew')).not.toBeInTheDocument()
-    expect(container.querySelector('[data-part="calendar-week-body"]')).toBeNull()
-    expect(container.querySelector('[data-part="calendar-day-body"]')).toBeNull()
-
-    await user.click(dentist)
-
-    expect(screen.getByLabelText('Record: dentist')).toBeInTheDocument()
-  })
-})
-
-describe('KAN-527', () => {
-  const calendarSchema: PropertySchema = [
-    { id: 'p-title', name: 'Title', type: 'text' },
-    { id: 'p-due', name: 'Due', type: 'date' },
-  ]
-
-  let previousObserver: typeof window.IntersectionObserver | undefined
-  let reachAgendaEnd: () => void
-
-  beforeEach(() => {
-    initialSchema = calendarSchema
-    initialRows = [
-      { id: 'alcove', title: 'confirm alcove', values: { 'p-due': '2026-10-19' } },
-      { id: 'dentist', title: 'dentist', values: { 'p-due': '2026-10-20T10:00:00' } },
-      { id: 'plaster', title: 'plaster', values: { 'p-due': '2026-10-21' } },
-      { id: 'optician', title: 'optician', values: { 'p-due': '2026-10-21T09:00:00' } },
-      { id: 'skip', title: 'skip hire', values: { 'p-due': '2026-10-18' } },
-      { id: 'renew', title: 'renew', values: { 'p-due': '2026-11-02' } },
-    ]
-    previousObserver = window.IntersectionObserver
-    let observed: IntersectionObserverCallback | null = null
-    reachAgendaEnd = () => {
-      const fire = observed
-      if (!fire) return
-      act(() => {
-        fire([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver)
-      })
-    }
-    class AgendaEndObserver implements IntersectionObserver {
-      readonly root: Element | Document | null = null
-      readonly rootMargin = ''
-      readonly thresholds: readonly number[] = []
-      private readonly callback: IntersectionObserverCallback
-
-      constructor(callback: IntersectionObserverCallback) {
-        this.callback = callback
-      }
-
-      observe(): void {
-        observed = this.callback
-      }
-
-      unobserve(): void {}
-
-      disconnect(): void {}
-
-      takeRecords(): IntersectionObserverEntry[] {
-        return []
-      }
-    }
-    window.IntersectionObserver = AgendaEndObserver as unknown as typeof IntersectionObserver
-  })
-
-  afterEach(() => {
-    window.IntersectionObserver = previousObserver as typeof IntersectionObserver
-    jest.useRealTimers()
-  })
-
-  function agendaDay(list: HTMLElement, iso: string) {
-    const day = list.querySelector<HTMLElement>(
-      `[data-part="calendar-agenda-day"][data-iso="${iso}"]`
-    )
-    if (!day) throw new Error(`agenda day ${iso} missing`)
-    return day
-  }
-
-  it('reaches the end of the agenda on the page host and shows the next dated day', async () => {
-    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
-    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
-    const { container } = renderView(calendar, true)
-
-    expect(screen.getByText('october 2026')).toBeInTheDocument()
-
-    await user.click(screen.getByRole('radio', { name: 'agenda' }))
-
-    expect(screen.getByText('from 19 oct')).toBeInTheDocument()
-
-    const list = container.querySelector<HTMLElement>('[data-part="calendar-agenda"]')
-    if (!list) throw new Error('agenda list missing')
-    expect(container.querySelectorAll('[data-part="calendar-agenda"]')).toHaveLength(1)
-
-    const today = agendaDay(list, '2026-10-19')
-    const alcove = within(today)
-      .getByText('confirm alcove')
-      .closest<HTMLElement>('[data-part="calendar-agenda-item"]')
-    if (!alcove) throw new Error('confirm alcove is not an agenda item')
-    expect(alcove.querySelector('[data-part="calendar-agenda-time"]')).toBeNull()
-
-    const tomorrow = agendaDay(list, '2026-10-20')
-    const dentist = within(tomorrow)
-      .getByText('dentist')
-      .closest<HTMLElement>('[data-part="calendar-agenda-item"]')
-    if (!dentist) throw new Error('dentist is not an agenda item')
-    expect(within(dentist).getByText('10:00')).toBeInTheDocument()
-
-    const wednesday = agendaDay(list, '2026-10-21')
-    const wednesdayItems = [
-      ...wednesday.querySelectorAll<HTMLElement>('[data-part="calendar-agenda-item"]'),
-    ]
-    const plaster = wednesdayItems[0]
-    const optician = wednesdayItems[1]
-    if (!plaster || !optician) throw new Error('wednesday agenda items missing')
-    expect(plaster.textContent).toContain('plaster')
-    expect(plaster.compareDocumentPosition(optician) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING
-    )
-    expect(optician.querySelector('[data-part="calendar-agenda-time"]')).toHaveTextContent('09:00')
-
-    expect(screen.queryByText('renew')).not.toBeInTheDocument()
-    expect(screen.queryByText('skip hire')).not.toBeInTheDocument()
-    expect(container.querySelector('[data-part="calendar-week-body"]')).toBeNull()
-    expect(container.querySelector('[data-part="calendar-day-body"]')).toBeNull()
-    expect(screen.queryByRole('button', { name: 'load more' })).toBeNull()
-
-    reachAgendaEnd()
-
-    const renewDay = agendaDay(list, '2026-11-02')
-    expect(within(renewDay).getByText('renew')).toBeInTheDocument()
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ span: 'year' }))
+    expect(screen.getByText('2026')).toBeInTheDocument()
+    const year = container.querySelector('[data-part="calendar-year"]')
+    expect(year).not.toBeNull()
     expect(
-      list.querySelector('[data-part="calendar-agenda-day"][data-iso="2026-10-22"]')
-    ).toBeNull()
-    expect(screen.queryByText('skip hire')).not.toBeInTheDocument()
-    expect(screen.getByText('from 19 oct')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'load more' })).toBeNull()
-    expect(container.querySelectorAll('[data-part="calendar-agenda"]')).toHaveLength(1)
+      year?.querySelector(
+        '[data-part="calendar-year-day"][data-iso="2026-10-19"] [data-part="calendar-year-mark"]'
+      )
+    ).not.toBeNull()
+    expect(
+      year?.querySelector(
+        '[data-part="calendar-year-day"][data-iso="2026-11-02"] [data-part="calendar-year-mark"]'
+      )
+    ).not.toBeNull()
+    expect(container.querySelector('[data-part="calendar-week-body"]')).toBeNull()
+    expect(container.querySelector('[data-part="calendar-day-body"]')).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: '20 oct' }))
+    expect(screen.getByRole('radio', { name: 'day' })).toBeChecked()
+    expect(screen.getByText('tue 20 oct 2026')).toBeInTheDocument()
   })
 })
 
@@ -3758,7 +3608,7 @@ describe('KAN-459 path', () => {
     jest.useRealTimers()
   })
 
-  it('ticks dentist done from the peek and the month chip stays timed and struck', async () => {
+  it('opens dentist as a page window, with no done checkbox, and the chip stays timed', async () => {
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
     const { container } = renderView(monthCalendar)
     const cell = container.querySelector<HTMLElement>(
@@ -3772,12 +3622,10 @@ describe('KAN-459 path', () => {
 
     await user.click(within(cell).getByText('dentist'))
 
-    const tick = screen.getByRole('checkbox', { name: 'dentist done' })
-    expect(tick).toBeEnabled()
-    await user.click(tick)
-
-    const title = within(cell).getByText('dentist')
-    expect(title).toHaveClass('line-through', 'text-mn-text-secondary')
+    const page = screen.getByLabelText('Record: dentist')
+    expect(page).toHaveAttribute('data-placement', 'center')
+    expect(within(page).queryByRole('checkbox', { name: 'dentist done' })).not.toBeInTheDocument()
     expect(within(cell).getByText('10:00')).toBeInTheDocument()
+    expect(within(cell).getByText('dentist')).not.toHaveClass('line-through')
   })
 })

@@ -35,7 +35,12 @@ import { useOptionalDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import { ViewBar, type ViewBarView } from '@/components/molecules/ViewBar'
 import { addViewRemedyLine, hasRequiredField, VIEW_KIND_REQUIREMENT, VIEW_KINDS } from './kinds'
 import type { ViewKindPickerRow } from '@/components/molecules/ViewKindPicker'
-import { addDateField, addStatusField, removeField, type PropertySchema } from '@/lib/properties/schema'
+import {
+  addDateField,
+  addStatusField,
+  removeField,
+  type PropertySchema,
+} from '@/lib/properties/schema'
 
 /**
  * Adds a saved view (KAN-243's ＋ view): when the kind needs a field the schema
@@ -164,7 +169,8 @@ export type SavedViewBarProps = SavedViewBarBase &
   )
 
 export function SavedViewBar(props: SavedViewBarProps) {
-  const { block, schema, activeId, onSelect, editable, latestBlock, getLatestSchema, writeBlock } = props
+  const { block, schema, activeId, onSelect, editable, latestBlock, getLatestSchema, writeBlock } =
+    props
   const deletionUndo = useOptionalDeletionUndo()
 
   // Local fallback only: a host that owns neither getter (a bare story/test
@@ -230,18 +236,34 @@ export function SavedViewBar(props: SavedViewBarProps) {
   const hasSavedViews = !!block.views && block.views.length > 0
   const legacyView = hasSavedViews ? undefined : resolveActiveView(block)
   const barViews: readonly ViewBarView[] | undefined = hasSavedViews
-    ? (block.views as ViewSavedView[]).map((v) => ({ id: v.id, label: v.label ?? VIEW_KINDS[v.kind].label }))
+    ? (block.views as ViewSavedView[]).map((v) => ({
+        id: v.id,
+        label: v.label ?? VIEW_KINDS[v.kind].label,
+      }))
     : editable && legacyView
       ? [{ id: legacyView.id, label: legacyView.label ?? VIEW_KINDS[legacyView.kind].label }]
       : undefined
-  const barActiveId = hasSavedViews ? (activeId ?? (block.views as ViewSavedView[])[0].id) : legacyView?.id
+  const barActiveId = hasSavedViews
+    ? (activeId ?? (block.views as ViewSavedView[])[0].id)
+    : legacyView?.id
+  // One view named after its layout is already the filled segment on the layout
+  // bar. Drawing it again is the second "calendar".
+  const activeKindLabel = VIEW_KINDS[resolveActiveView(block).kind].label
+  const loneKindTab = !!barViews && barViews.length === 1 && barViews[0].label === activeKindLabel
+  const shownViews = loneKindTab ? [] : barViews
 
-  if (!barViews || barViews.length === 0 || !barActiveId) return null
+  if (
+    !shownViews ||
+    (shownViews.length === 0 && !(editable && props.onChange)) ||
+    (shownViews.length > 0 && !barActiveId)
+  ) {
+    return null
+  }
 
   return (
     <ViewBar
-      views={barViews}
-      activeId={barActiveId}
+      views={shownViews}
+      activeId={barActiveId ?? ''}
       onSelect={onSelect}
       {...(editable && props.onChange
         ? { showAddView: true, addViewRows, onAddView }

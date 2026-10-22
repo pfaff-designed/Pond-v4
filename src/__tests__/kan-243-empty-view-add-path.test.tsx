@@ -19,6 +19,7 @@ import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import type { Block } from '@/lib/documents/types'
 import type { PropertySchema } from '@/lib/properties/schema'
 import type { CollectionRow } from '@/lib/modules/view/apply'
+import { LAYOUT_MENU_MODES } from '@/lib/modules/view/kinds'
 
 const tableSchema: PropertySchema = [
   { id: 'p-name', name: 'Name', type: 'text' },
@@ -128,7 +129,7 @@ describe('BlockCanvas — "＋ view" reaches an empty database too (KAN-243)', (
     expect(screen.getByRole('button', { name: 'add a view' })).toBeInTheDocument()
   })
 
-  it('undoing the OLDER of two staged adds removes only its own view and field, through BlockCanvas\'s two SavedViewBar instances', async () => {
+  it("undoing the OLDER of two staged adds removes only its own view and field, through BlockCanvas's two SavedViewBar instances", async () => {
     const user = userEvent.setup()
     renderCanvas([table])
 
@@ -195,7 +196,7 @@ describe('BlockCanvas — "＋ view" reaches an empty database too (KAN-243)', (
     )
   })
 
-  it('undoing an add-view toast through the LIVE ViewControls bar (non-empty rows) leaves another block\'s edit alone (KAN-243 fix-3c)', async () => {
+  it("undoing an add-view toast through the LIVE ViewControls bar (non-empty rows) leaves another block's edit alone (KAN-243 fix-3c)", async () => {
     // Non-empty rows put `viewFrameState` at 'rest' from the first render, so
     // the add lands through `ViewControls`' live bar (view.tsx:461's
     // `writeBlock={savedViewHost?.writeBlock}`), never BlockCanvas's
@@ -224,7 +225,11 @@ describe('BlockCanvas — "＋ view" reaches an empty database too (KAN-243)', (
 
     await user.click(screen.getByRole('button', { name: 'Undo' }))
 
-    expect(screen.queryByRole('tab', { name: 'calendar' })).not.toBeInTheDocument()
+    // The added calendar view is gone: table is the selected layout again, and
+    // the bar is the layout list (calendar stays in it as a layout, unselected).
+    expect(screen.getByRole('tab', { name: 'table' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'calendar' })).toHaveAttribute('aria-selected', 'false')
+    expect(screen.getAllByRole('tab')).toHaveLength(LAYOUT_MENU_MODES.length)
     expect(screen.getByRole('checkbox', { name: 'sand the top' })).toHaveAttribute(
       'aria-checked',
       'true'

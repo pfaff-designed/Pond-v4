@@ -12,7 +12,7 @@
  * `groupBy`, or none, still draws `groupRowsByDue`. Same rows as every other view.
  *
  * A row's title is its tab stop: click, Enter or Space selects the record and opens
- * its peek (6u.2), exactly as a board card does. The checkbox is the person's own
+ * the same centered page a board task opens. The checkbox is the person's own
  * edit — it writes the record's `done` status through `onEdit`.
  *
  * No date property on the collection (KAN-292) → `CALENDAR_EMPTY_LINE` draws in
@@ -23,7 +23,7 @@
  * take that path: the rows draw flat, or the list's own empty line when there are none.
  */
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { PondBlockEmpty } from '@/components/organisms/PondBlock'
 import { type PropertySchema, type PropertyValue } from '@/lib/properties/schema'
 import { useOrangeToday } from '../page-canvas'
@@ -62,8 +62,11 @@ export function CollectionList({
   onAddRow,
   onRenameRow,
   onOpenRow,
+  onDeleteRow,
   onAddDateField,
   today,
+  renderPage,
+  renderGuests,
 }: {
   /** The view block's id — what the page canvas keys its one peek and one orange pill by. */
   viewKey: string
@@ -77,11 +80,20 @@ export function CollectionList({
   onAddRow?: (values?: Record<string, PropertyValue>) => Promise<string | null>
   onRenameRow?: (rowId: string, title: string) => void
   onOpenRow?: (rowId: string) => void
+  onDeleteRow?: (rowId: string) => void
   /** KAN-292: mint a `date` field onto this collection's schema, offered when it
    *  has none to group by. Absent when not editable — no undrawn affordance. */
   onAddDateField?: () => void
   /** The day the groups are measured from; read once per mount from the clock when absent. */
   today?: Date
+  /** The record's page, drawn under its fields. */
+  renderPage?: (row: CollectionRow) => ReactNode
+  /** The guests finder. Absent draws that field as plain text. */
+  renderGuests?: (field: {
+    value: PropertyValue
+    editable: boolean
+    onChange: (value: PropertyValue) => void
+  }) => ReactNode
 }) {
   const [now] = useState(() => today ?? new Date())
   const [addingRow, setAddingRow] = useState(false)
@@ -96,7 +108,9 @@ export function CollectionList({
       }))
     }
     if (listFlat === true) {
-      return rows.length === 0 ? [] : [{ key: 'flat', label: '', rows, showCount: false, showHeading: false }]
+      return rows.length === 0
+        ? []
+        : [{ key: 'flat', label: '', rows, showCount: false, showHeading: false }]
     }
     const byDue = groupRowsByDue(rows, schema, now, groupBy)
     if (!byDue) return null
@@ -107,7 +121,7 @@ export function CollectionList({
       showCount: false,
     }))
   }, [rows, schema, now, groupBy, listFlat])
-  const { rootRef, selection, selectedRow, rowProps, buttonProps } = useRecordSelection(
+  const { rootRef, selection, selectedRow, select, rowProps, buttonProps } = useRecordSelection(
     rows,
     viewKey
   )
@@ -128,7 +142,11 @@ export function CollectionList({
 
   if (!sections) {
     return onAddDateField ? (
-      <PondBlockEmpty line={CALENDAR_EMPTY_LINE} action="add a date field" onAction={onAddDateField} />
+      <PondBlockEmpty
+        line={CALENDAR_EMPTY_LINE}
+        action="add a date field"
+        onAction={onAddDateField}
+      />
     ) : (
       <span className="text-[14px] text-mn-text-secondary">{CALENDAR_EMPTY_LINE}</span>
     )
@@ -285,10 +303,15 @@ export function CollectionList({
           onToggleDone={done.toggle && (() => done.toggle?.(selectedRow))}
           now={now}
           editable={editable}
+          placement="center"
           focusOnOpen={selection?.via === 'keyboard'}
+          page={renderPage?.(selectedRow)}
+          renderGuests={renderGuests}
+          onDismiss={() => select(null)}
           onEdit={onEdit}
           onRenameRow={onRenameRow}
           onOpenRow={onOpenRow}
+          onDelete={editable && onDeleteRow ? () => onDeleteRow(selectedRow.id) : undefined}
         />
       )}
     </div>

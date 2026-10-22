@@ -94,6 +94,7 @@ describe('PATH_STEPS A — delete a block from its handle menu', () => {
     const handles = await screen.findAllByRole('button', { name: 'Block menu' })
     await user.click(handles[1])
     await user.click(await screen.findByRole('menuitem', { name: 'delete' }))
+    await user.click(await screen.findByRole('button', { name: 'Delete' }))
 
     expect(await screen.findByText('deleted text ·')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'undo' })).toBeInTheDocument()

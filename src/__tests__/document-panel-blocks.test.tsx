@@ -230,21 +230,7 @@ describe('the / menu on an empty page makes pages', () => {
     fireEvent.click(row)
   }
 
-  it('`nested page` makes a child of this page and removes the `/…` line', async () => {
-    renderWith({ id: 'page-1', parentId: 'root-1', type: 'page', title: 'Health', blocks: [] })
-    const { editor } = await openSlash('nested')
-    await pick(editor, 'nested', 'nested page')
-
-    await waitFor(() => expect(mockCreatePage).toHaveBeenCalled())
-    expect(mockCreatePage).toHaveBeenCalledWith(
-      expect.anything(),
-      'user-1',
-      expect.objectContaining({ parentId: 'page-1', type: 'page', title: 'untitled' })
-    )
-    await waitFor(() => expect(screen.queryByText(/^\/nested/)).not.toBeInTheDocument())
-  })
-
-  it('`page` makes a sibling: a child of this page’s own parent', async () => {
+  it('`page` makes a child of this page and removes the `/…` line', async () => {
     renderWith({ id: 'page-1', parentId: 'root-1', type: 'page', title: 'Health', blocks: [] })
     const { editor } = await openSlash('page')
     await pick(editor, 'page', 'page')
@@ -253,7 +239,21 @@ describe('the / menu on an empty page makes pages', () => {
     expect(mockCreatePage).toHaveBeenCalledWith(
       expect.anything(),
       'user-1',
-      expect.objectContaining({ parentId: 'root-1', title: 'untitled' })
+      expect.objectContaining({ parentId: 'page-1', type: 'page', title: 'untitled' })
+    )
+    await waitFor(() => expect(screen.queryByText(/^\/page/)).not.toBeInTheDocument())
+  })
+
+  it('`page` makes a child of this page, not a sibling beside it', async () => {
+    renderWith({ id: 'page-1', parentId: 'root-1', type: 'page', title: 'Health', blocks: [] })
+    const { editor } = await openSlash('page')
+    await pick(editor, 'page', 'page')
+
+    await waitFor(() => expect(mockCreatePage).toHaveBeenCalled())
+    expect(mockCreatePage).toHaveBeenCalledWith(
+      expect.anything(),
+      'user-1',
+      expect.objectContaining({ parentId: 'page-1', title: 'untitled' })
     )
   })
 
@@ -264,14 +264,16 @@ describe('the / menu on an empty page makes pages', () => {
     writeInTextBlock(editor, '/page')
     const menu = await screen.findByRole('listbox', { name: 'blocks' })
 
-    // `page` is a sibling, so making it waits on the parent lookup — held here.
+    // Making the page waits on `createPage` — held here so a line can land above
+    // the `/…` block before the swap.
     let release: (page: unknown) => void = () => {}
-    mockGetPage.mockImplementation(() => new Promise((resolve) => (release = resolve)))
+    mockCreatePage.mockImplementation(() => new Promise((resolve) => (release = resolve)))
     const row = within(menu)
       .getAllByRole('option')
+      .reverse()
       .find((o) => o.querySelector('[data-part="label"]')?.textContent === 'page')!
     fireEvent.click(row)
-    await waitFor(() => expect(mockGetPage).toHaveBeenCalled())
+    await waitFor(() => expect(mockCreatePage).toHaveBeenCalled())
 
     // While it waits, Return after the table puts a line above the `/…` block
     // and moves its index.
@@ -282,7 +284,7 @@ describe('the / menu on an empty page makes pages', () => {
     await waitFor(() => expect(queryAllTextBlocks()).toHaveLength(2))
     expect(screen.getByText('/page')).toBeInTheDocument()
 
-    release({ id: 'page-1', parentId: 'root-1', type: 'page', title: 'Health', blocks: [] })
+    release({ id: 'made-1', type: 'page', title: 'untitled' })
     await waitFor(() => expect(mockCreatePage).toHaveBeenCalled())
     await waitFor(() => expect(screen.queryByText('/page')).not.toBeInTheDocument())
     const [survivor] = queryAllTextBlocks()
@@ -380,7 +382,9 @@ describe('the / menu on an empty page makes pages', () => {
 
     await waitFor(() =>
       expect(
-        mockCommitBlocks.mock.calls.some((c) => contentOf((c[3] as Block[])[0]) === 'chickpeas, harissa')
+        mockCommitBlocks.mock.calls.some(
+          (c) => contentOf((c[3] as Block[])[0]) === 'chickpeas, harissa'
+        )
       ).toBe(true)
     )
     expect(justSaved.get('pond-1')).toBe('t1')

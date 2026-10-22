@@ -4,6 +4,7 @@ import {
   goToday,
   isMonthBar,
   layoutMonthBars,
+  occursOn,
   rangeForDrop,
   stepMonth,
 } from './calendar-month'
@@ -281,6 +282,52 @@ describe('month bar', () => {
     }
     const withoutEnd = buildMonthGrid('2026-10-01', '2026-10-20', [datedOnly], startDef)
     expect(cellOn(withoutEnd, '2026-10-12')?.items.map((item) => item.id)).toEqual(['only'])
+  })
+})
+
+const repeatDef: PropertyDef = { id: 'p-rep', name: 'repeats', type: 'text' }
+
+describe('occursOn', () => {
+  const start = '2026-10-05'
+
+  it.each([
+    ['', '2026-10-12', false],
+    ["doesn't repeat", '2026-10-12', false],
+    ['every day', '2026-10-06', true],
+    ['every 4 days', '2026-10-09', true],
+    ['every 4 days', '2026-10-08', false],
+    ['every week', '2026-10-12', true],
+    ['every week', '2026-10-06', false],
+    ['every weekday', '2026-10-06', true],
+    ['every weekday', '2026-10-10', false],
+    ['every month', '2026-11-05', true],
+    ['every month', '2026-11-06', false],
+    ['every year', '2027-10-05', true],
+    ['every mon', '2026-10-12', true],
+    ['every mon', '2026-10-13', false],
+  ] as const)('%s on %s is %s', (phrase, iso, expected) => {
+    expect(occursOn(start, phrase, iso)).toBe(expected)
+  })
+
+  it('never matches a day before the start', () => {
+    expect(occursOn(start, 'every day', '2026-10-04')).toBe(false)
+    expect(occursOn(start, 'every day', start)).toBe(true)
+  })
+
+  it('draws a weekly event on each later monday of the month', () => {
+    const weekly: CollectionRow = {
+      id: 'standup',
+      title: 'Standup',
+      values: { 'p-due': start, 'p-rep': 'every week' },
+    }
+    const grid = buildMonthGrid('2026-10-21', '2026-10-21', [weekly], dueDef, undefined, repeatDef)
+    for (const iso of ['2026-10-05', '2026-10-12', '2026-10-19', '2026-10-26']) {
+      expect(grid.weeks.flatMap((week) => week.days).find((day) => day.iso === iso)?.items).toEqual(
+        [weekly]
+      )
+    }
+    const tuesday = grid.weeks.flatMap((week) => week.days).find((day) => day.iso === '2026-10-06')
+    expect(tuesday?.items).toEqual([])
   })
 })
 

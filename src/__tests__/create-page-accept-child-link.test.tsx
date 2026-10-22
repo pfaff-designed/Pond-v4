@@ -21,11 +21,17 @@ jest.mock('@/lib/supabase/client', () => ({
 
 jest.mock('@/lib/pages/client', () => ({
   getPage: jest.fn().mockResolvedValue(null),
-  listPages: jest
-    .fn()
-    .mockResolvedValue([
-      { id: 'kr-1', parentId: null, type: 'page', title: 'Kitchen renovation', blocks: [], props: {}, order: 0 },
-    ]),
+  listPages: jest.fn().mockResolvedValue([
+    {
+      id: 'kr-1',
+      parentId: null,
+      type: 'page',
+      title: 'Kitchen renovation',
+      blocks: [],
+      props: {},
+      order: 0,
+    },
+  ]),
 }))
 
 jest.mock('@/lib/pages/tree', () => ({
@@ -109,6 +115,7 @@ jest.mock('@ai-sdk/react', () => ({
 }))
 
 import { AITerminal } from '@/components/organisms/AITerminal'
+import { openComposerIfClosed } from './helpers/open-composer'
 
 beforeEach(() => {
   jest.clearAllMocks()
@@ -117,21 +124,22 @@ beforeEach(() => {
 })
 
 async function ready() {
+  openComposerIfClosed()
   await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Pond' })).toBeEnabled())
 }
 
 function renderTerminal() {
   return render(
-    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
       <AITerminal />
     </QueryClientProvider>
   )
 }
 
 it('accepting a page create_page proposal with a parent appends a link', async () => {
-  mockMessages = [
-    { id: 'a1', role: 'assistant', parts: [createPagePart('call-1', 'page')] },
-  ]
+  mockMessages = [{ id: 'a1', role: 'assistant', parts: [createPagePart('call-1', 'page')] }]
   mockCreatePageFromProposal.mockResolvedValue({
     id: 'spice-1',
     parentId: 'kr-1',
@@ -158,9 +166,7 @@ it('accepting a page create_page proposal with a parent appends a link', async (
 })
 
 it('accepting a non-page create_page proposal (a database/record) does not append a link', async () => {
-  mockMessages = [
-    { id: 'a1', role: 'assistant', parts: [createPagePart('call-2', 'routine')] },
-  ]
+  mockMessages = [{ id: 'a1', role: 'assistant', parts: [createPagePart('call-2', 'routine')] }]
   mockCreatePageFromProposal.mockResolvedValue({
     id: 'routine-1',
     parentId: 'kr-1',

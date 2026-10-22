@@ -100,7 +100,12 @@ import {
   type DropZone,
   type Rect,
 } from '@/lib/modules/layout-rows'
-import { KEY_WIDTHS, handOffRowStartOnResize, resizeAlone, roundFreePercent } from '@/lib/modules/block-resize'
+import {
+  KEY_WIDTHS,
+  handOffRowStartOnResize,
+  resizeAlone,
+  roundFreePercent,
+} from '@/lib/modules/block-resize'
 import { SlashLineContext, type SlashLineAt } from '@/lib/modules/text/slash-line'
 import { useSlashLine } from '@/components/organisms/use-slash-line'
 import { focusTextBlock, hasTextBeforeCaret } from '@/lib/modules/text/focus'
@@ -119,6 +124,9 @@ import { applyUndoOutcome } from '@/lib/change-log/undo-outcome'
 import { blockName as changeBlockName } from '@/lib/change-log/summary'
 import { listRecords } from '@/lib/change-log/store'
 import { restorePage, trashPage } from '@/lib/change-log/trash'
+import { blockHoldsContent } from '@/lib/modules/block-holds-content'
+import { blockLabel } from '@/lib/modules/types'
+import { ConfirmDialog } from '@/components/molecules/ConfirmDialog'
 import {
   blockMenuGroups,
   runBlockMenuAction,
@@ -517,6 +525,7 @@ export function BlockCanvas({
   // (react-hooks/refs), and `renderBlockEditor` reads this set every render
   // to compute each block's `autofocus` prop.
   const [autofocusIds, setAutofocusIds] = useState<Set<string>>(() => new Set())
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   // F27: link capabilities for card→page links, parented at THIS page. Provided to
   // every module view below via context — modules that don't link (all but kanban
   // today) simply never read it.
@@ -1053,7 +1062,8 @@ export function BlockCanvas({
     // Locked commits the named width (KEY_WIDTHS is the one home for the
     // glyph→named mapping), not the number its position happens to round to —
     // snapping to ½ must keep reading as '1/2' in the width row, not "custom".
-    const lockedKey = st.lockedPercent !== null ? KEY_WIDTHS.find((k) => k.percent === st.lockedPercent) : undefined
+    const lockedKey =
+      st.lockedPercent !== null ? KEY_WIDTHS.find((k) => k.percent === st.lockedPercent) : undefined
     const committed: BlockWidth | number = lockedKey
       ? lockedKey.width
       : roundFreePercent(st.livePercent, columnWidth)
@@ -1114,7 +1124,7 @@ export function BlockCanvas({
       },
       'move-into-new-page': () => onMoveIntoNewPage?.(block),
       'copy-link': () => void copyBlockLink(block.id),
-      delete: () => removeBlockAt(index),
+      delete: () => requestDelete(index),
       'set-width': ({ width }) => setBlockWidth(block, width),
       'fit-height': () => setBlockHeight(block, blockWithoutHeight(block)),
     })
@@ -1164,7 +1174,25 @@ export function BlockCanvas({
     [onChange]
   )
 
-  function removeBlockAt(index: number) {
+  function requestDelete(index: number) {
+    const block = blocks[index]
+    if (!block) return
+    if (blockHoldsContent(block)) {
+      setPendingDeleteId(block.id)
+      return
+    }
+    removeBlockAt(index)
+  }
+
+  function confirmDelete() {
+    const id = pendingDeleteId
+    if (!id) return
+    const index = blocks.findIndex((block) => block.id === id)
+    setPendingDeleteId(null)
+    if (index !== -1) removeBlockAt(index)
+  }
+
+  function removeBlockAt(index: number, focusNeighbour = true) {
     const removed = blocks[index]
     if (!removed) return
     const { blocks: after } = detachKeepingRows(blocks, index)
@@ -1179,7 +1207,7 @@ export function BlockCanvas({
         handle = next
       },
     })
-    focusBlockNeighbour(blocks, index)
+    if (focusNeighbour) focusBlockNeighbour(blocks, index)
     stageUndo({
       message: `deleted ${changeBlockName(removed)} ·`,
       undoLabel: 'undo',
@@ -1211,8 +1239,27 @@ export function BlockCanvas({
       commitStructuralBlocks(detachKeepingRows(blocks, index).blocks)
       focusBlockNeighbour(blocks, index)
     } else {
-      removeBlockAt(index)
+      requestDelete(index)
     }
+  }
+
+  // Focus left the block. An empty one goes with it: an unlabelled empty line
+  // the same way Backspace takes it (nothing to undo), anything else through
+  // the delete that can be undone. The page's only block stays, and a block
+  // the person named stays. Focus is already where they went.
+  function removeEmptyOnExit(id: string) {
+    const current = blocksRef.current
+    if (current.length < 2) return
+    const index = current.findIndex((block) => block.id === id)
+    const block = current[index]
+    if (!block || blockLabel(block) || blockHoldsContent(block)) return
+    if (block.type === 'text') {
+      commitStructuralBlocks(detachKeepingRows(current, index).blocks)
+      return
+    }
+    const stateIndex = blocks.findIndex((item) => item.id === id)
+    if (stateIndex === -1) return
+    removeBlockAt(stateIndex, false)
   }
 
   // Return on a focused block opens an empty text block after it; its editor
@@ -1759,10 +1806,17 @@ export function BlockCanvas({
   function drawsStacked(blockId: string): boolean {
     const row = layoutRows(blocks).find((member) => member.some((block) => block.id === blockId))
     if (!row || row.length < 2) return false
-    return rowStacks(columnWidth, row.map((block) => block.width ?? 'full'))
+    return rowStacks(
+      columnWidth,
+      row.map((block) => block.width ?? 'full')
+    )
   }
 
-  async function commitOwnLineDrop(fromIndex: number, targetIndex: number, zone: 'above' | 'below') {
+  async function commitOwnLineDrop(
+    fromIndex: number,
+    targetIndex: number,
+    zone: 'above' | 'below'
+  ) {
     const next = planOwnLineDrop(blocks, fromIndex, blocks[targetIndex].id, zone, columnWidth)
     if (!next) return
     await persistBlocksAsOwnEdit(next)
@@ -1897,7 +1951,8 @@ export function BlockCanvas({
         onChange={(next) => setBlockAt(i, next)}
         writeBlock={writeBlock}
         onRemoveEmpty={() => removeEmptyLineAt(i)}
-        onDeleteBlock={() => removeBlockAt(i)}
+        onExitEmpty={() => removeEmptyOnExit(block.id)}
+        onDeleteBlock={() => requestDelete(i)}
         onReturn={(patch) => insertLineAfter(i, patch)}
         onMoveUp={() => moveBlockAt(i, 'up')}
         onMoveDown={() => moveBlockAt(i, 'down')}
@@ -2053,6 +2108,16 @@ export function BlockCanvas({
 
   return (
     <PageLinkProvider value={pageLinks}>
+      <ConfirmDialog
+        open={pendingDeleteId !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDeleteId(null)
+        }}
+        title="Delete this block?"
+        consequence="It has something in it."
+        confirmLabel="Delete"
+        onConfirm={confirmDelete}
+      />
       {draggingIndex !== null &&
         blocks[draggingIndex] &&
         createPortal(
@@ -2280,8 +2345,14 @@ export function BlockCanvas({
                           side="left"
                           hidden={!chrome || draggingIndex !== null}
                           dragging={resizing !== null}
-                          readout={resizing ? edgeResizeReadout(resizing.percent, resizing.locked) : undefined}
-                          valueNow={resizing ? resizing.percent : drawnWidthPercent(columnWidth, item.width)}
+                          readout={
+                            resizing
+                              ? edgeResizeReadout(resizing.percent, resizing.locked)
+                              : undefined
+                          }
+                          valueNow={
+                            resizing ? resizing.percent : drawnWidthPercent(columnWidth, item.width)
+                          }
                           onPointerDown={(e) => handleEdgeResizePointerDown(e, i, 'left')}
                           onPointerMove={handleEdgeResizePointerMove}
                           onPointerUp={handleEdgeResizePointerUp}
@@ -2291,8 +2362,14 @@ export function BlockCanvas({
                           side="right"
                           hidden={!chrome || draggingIndex !== null}
                           dragging={resizing !== null}
-                          readout={resizing ? edgeResizeReadout(resizing.percent, resizing.locked) : undefined}
-                          valueNow={resizing ? resizing.percent : drawnWidthPercent(columnWidth, item.width)}
+                          readout={
+                            resizing
+                              ? edgeResizeReadout(resizing.percent, resizing.locked)
+                              : undefined
+                          }
+                          valueNow={
+                            resizing ? resizing.percent : drawnWidthPercent(columnWidth, item.width)
+                          }
                           onPointerDown={(e) => handleEdgeResizePointerDown(e, i, 'right')}
                           onPointerMove={handleEdgeResizePointerMove}
                           onPointerUp={handleEdgeResizePointerUp}
@@ -2555,6 +2632,7 @@ function BlockEditor({
   onChange,
   writeBlock,
   onRemoveEmpty,
+  onExitEmpty,
   onDeleteBlock,
   onReturn,
   onMoveUp,
@@ -2610,6 +2688,8 @@ function BlockEditor({
   writeBlock: (next: ViewBlock) => void
   /** Backspace in an empty text block. */
   onRemoveEmpty: () => void
+  /** Focus left this block. The canvas removes it when the block is empty. */
+  onExitEmpty?: () => void
   /** ⌘⌫ / Ctrl+⌫ on the focused block. */
   onDeleteBlock: () => void
   /** Return on a focused block that is not text. An optional `patch` replaces
@@ -2686,6 +2766,23 @@ function BlockEditor({
   const pressEndCleanupRef = useRef<(() => void) | null>(null)
   useEffect(() => () => pressEndCleanupRef.current?.(), [])
   const rootRef = useRef<HTMLDivElement>(null)
+  // Read in the exit timeout, which runs after the render that opened a menu
+  // or a template preview. A `/` menu and the block menu portal outside this
+  // row, so their focus looks like leaving.
+  const exitGuardRef = useRef({ slash: false, menu: false, preview: false, dragging: false })
+  exitGuardRef.current = {
+    slash: !!slashMenuOpen,
+    menu: !!menuOpen,
+    preview: !!previewing,
+    dragging: !!isDragging,
+  }
+  const exitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(
+    () => () => {
+      if (exitTimerRef.current !== null) clearTimeout(exitTimerRef.current)
+    },
+    []
+  )
   // KAN-321: the empty-state fetch must read whichever saved view the bar has
   // switched to, not the block's top-level mode/filter.
   const [activeViewId, setActiveViewId] = useState<string | undefined>(undefined)
@@ -3097,6 +3194,21 @@ function BlockEditor({
   }
   function handleBlur(e: React.FocusEvent) {
     if (e.target === e.currentTarget) setRowSelected(false)
+    const next = e.relatedTarget
+    if (next instanceof Node && e.currentTarget.contains(next)) return
+    // The file dialog blurs the upload field with nowhere to land. That is
+    // the picker opening, not the person leaving the block.
+    if (e.target instanceof HTMLInputElement && e.target.type === 'file') return
+    const root = e.currentTarget
+    if (exitTimerRef.current !== null) clearTimeout(exitTimerRef.current)
+    exitTimerRef.current = setTimeout(() => {
+      exitTimerRef.current = null
+      const guard = exitGuardRef.current
+      if (guard.slash || guard.menu || guard.preview || guard.dragging) return
+      const active = document.activeElement
+      if (active && root.contains(active)) return
+      onExitEmpty?.()
+    }, 0)
   }
   // A click anywhere on the row's own chrome (padding, header, empty space)
   // focuses the row; a click inside a cell/input/button/link leaves that

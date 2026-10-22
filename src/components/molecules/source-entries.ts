@@ -151,14 +151,20 @@ const kindId = (kind: ChartKind) => `kind:${kind}`
 
 // ── source ─────────────────────────────────────────────────────────────────────
 
-/** Pick or create: `new database — <page>` first, then every database with its count. */
+/**
+ * Pick or create. A board's new database is tasks — the row says so, and
+ * picking it creates that database. Every other block offers
+ * `new database — <page>`, then the field step.
+ */
 export function sourceEntries(
   databases: readonly SourceDatabase[],
-  pageTitle: string
+  pageTitle: string,
+  block?: SourceBlock
 ): SourceEntry[] {
+  const creating = block === 'board' ? 'new tasks' : `new database — ${pageTitle}`
   const out: SourceEntry[] = [
     { kind: 'group', label: 'new' },
-    row(NEW_DATABASE_ID, `new database — ${pageTitle}`, { icon: ICON.plus }),
+    row(NEW_DATABASE_ID, creating, { icon: ICON.plus }),
   ]
   if (databases.length) {
     out.push({ kind: 'group', label: 'or view an existing one' })
@@ -311,8 +317,8 @@ export const DEFAULT_STATUS_FIELD_OPTIONS: readonly { label: string }[] =
 /**
  * The fields a new database starts with for a view kind (KAN-351): a calendar or
  * list needs a date to place a record on; a timeline needs both ends; a board
- * needs a group-by lane, so its `status` field carries {@link DEFAULT_STATUS_OPTIONS}
- * by default. Table and gallery stay fieldless (title only, added by the caller);
+ * needs a group-by lane, so a board starts as tasks: `status` lanes plus done,
+ * due, repeats, and assignee. Table and gallery stay fieldless (title only);
  * chart and big-number keep their own flow (KAN-109) — unaffected here.
  */
 export function defaultFieldsFor(block: SourceBlock): SourceField[] {
@@ -326,7 +332,13 @@ export function defaultFieldsFor(block: SourceBlock): SourceField[] {
         { name: 'due', type: 'date' },
       ]
     case 'board':
-      return [{ name: 'status', type: 'status', options: DEFAULT_STATUS_FIELD_OPTIONS }]
+      return [
+        { name: 'status', type: 'status', options: DEFAULT_STATUS_FIELD_OPTIONS },
+        { name: 'done', type: 'checkbox' },
+        { name: 'due', type: 'date' },
+        { name: 'repeats', type: 'text' },
+        { name: 'assignee', type: 'text' },
+      ]
     case 'table':
     case 'gallery':
     case 'chart':
@@ -386,7 +398,11 @@ export function footFor(
   step: SourceStep,
   ctx: { block: SourceBlock; newSelected: boolean }
 ): string[] {
-  if (step === 'source') return ctx.newSelected ? ['named after this page', '↵ create'] : ['↵ view']
+  if (step === 'source') {
+    if (!ctx.newSelected) return ['↵ view']
+    if (ctx.block === 'board') return ['each task is a page', '↵ create']
+    return ['named after this page', '↵ create']
+  }
   if (step === 'type') return ['suggested from the source’s fields']
   if (step === 'field-type') return ['added to the new database']
   return ['filed in databases', `this page gets a ${VIEW_KINDS[ctx.block].label} view`]

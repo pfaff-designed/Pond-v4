@@ -151,6 +151,7 @@ global.fetch = jest.fn().mockResolvedValue({
 } as Response)
 
 import { AITerminal } from '@/components/organisms/AITerminal'
+import { openComposerIfClosed } from './helpers/open-composer'
 
 function renderWithQuery(ui: React.ReactElement) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -189,6 +190,7 @@ function editBatch(toolCallId: string) {
 }
 
 async function ready() {
+  openComposerIfClosed()
   await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Pond' })).toBeEnabled())
 }
 
@@ -244,7 +246,7 @@ describe('KAN-302 — an accepted card freezes its diff text', () => {
 // without this fix it would recompute against the LIVE page and freeze
 // "Hello moon xyz" (the further edit) as if it were the original "before".
 describe('KAN-302 — a settled card reads its "before" off the change-log record', () => {
-  it('a fresh mount of an already-accepted card shows the record\'s before, not the further-edited live page', async () => {
+  it("a fresh mount of an already-accepted card shows the record's before, not the further-edited live page", async () => {
     mockResolutions = { changes: { 'pc1:0': 'accepted' }, creates: {}, skipped: {} }
     // The live page has moved on since the edit was accepted (someone typed
     // " xyz" after it landed) — this must NOT be what the "−" line shows.

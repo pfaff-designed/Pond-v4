@@ -365,7 +365,13 @@ const YOURS = [{ id: 't1', name: 'weeknight recipe', hint: 'from chickpeas…' }
 // past that in the real board order — a minimal fixture keeps it reachable so
 // these stories can walk in rather than render already-open.
 const TEMPLATE_ROW_ONLY = [
-  { id: 'page-from-template', group: 'templates' as const, label: 'page from template', icon: ICON.tpl, submenu: 'templates' as const },
+  {
+    id: 'page-from-template',
+    group: 'templates' as const,
+    label: 'page from template',
+    icon: ICON.tpl,
+    submenu: 'templates' as const,
+  },
 ]
 
 /** Walks into the templates pane the way a person does: hover `page from template`, →. */
@@ -523,7 +529,7 @@ export const KeyEdges: Story = {
     }
 
     await userEvent.keyboard('{ArrowDown>30/}')
-    await expect(selectedLabel(canvasElement)).toBe('nested page')
+    await expect(selectedLabel(canvasElement)).toBe('page')
   },
 }
 
@@ -620,15 +626,15 @@ export const PickYoursTemplate: Story = {
   },
 }
 
-/** The `pages` group closes the open list: `page`, then `nested page`, each with the page mark. */
+/** The `pages` group closes the open list: one row, `page`, with the page mark. */
 export const PagesGroup: Story = {
   tags: ['!dev'],
   play: async ({ canvasElement }) => {
     const glass = glassOf(canvasElement)
     const groups = [...glass.querySelectorAll('[data-part="group"]')]
     await expect(groups.at(-1)!.textContent).toBe('pages')
-    await expect(labels(canvasElement).slice(-2)).toEqual(['page', 'nested page'])
-    const page = [...glass.querySelectorAll<HTMLElement>('[role="option"]')].at(-2)!
+    await expect(labels(canvasElement).slice(-1)).toEqual(['page'])
+    const page = [...glass.querySelectorAll<HTMLElement>('[role="option"]')].at(-1)!
     await expect(page.querySelector('svg path')!.getAttribute('d')).toBe(ICON.page.d)
     await expect(page.querySelector('[data-part="hint"]')).toBeNull()
   },

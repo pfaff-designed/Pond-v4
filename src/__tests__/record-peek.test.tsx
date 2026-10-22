@@ -198,24 +198,24 @@ describe('record peek — editing and navigation', () => {
     expect(peek()!.querySelector('input, select, textarea')).toBeNull()
   })
 
-  it('`open ›` navigates to the row; it is absent without a host', () => {
+  it('Open page navigates to the row; it is absent without a host', () => {
     const onOpenRow = jest.fn()
     const { unmount } = renderBoard({ onOpenRow })
     fireEvent.click(card('Pack the kiln'))
-    fireEvent.click(screen.getByRole('button', { name: 'open ›' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Open page' }))
     expect(onOpenRow).toHaveBeenCalledWith('row-3')
     unmount()
 
     renderBoard()
     fireEvent.click(card('Pack the kiln'))
-    expect(screen.queryByRole('button', { name: 'open ›' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Open page' })).not.toBeInTheDocument()
   })
 })
 
-describe('record peek — position on a scrolled canvas', () => {
+describe('record peek — a scrolled canvas still opens the page in the viewport', () => {
   const canvasEl = () => document.querySelector<HTMLElement>('.canvas')!
 
-  it('measures top from the canvas’s visible top, not the scrolled content’s', () => {
+  it('does not park the page at the canvas scroll offset', () => {
     render(
       <PageCanvas className="canvas">
         <CollectionView config={config} schema={schema} rows={rows} />
@@ -223,24 +223,9 @@ describe('record peek — position on a scrolled canvas', () => {
     )
     canvasEl().scrollTop = 800
     fireEvent.click(card('Trim the rim'))
-    expect(peek()).toHaveStyle({ top: '950px' })
-  })
-
-  it('a canvas scrolled to the top keeps 150', () => {
-    render(
-      <PageCanvas className="canvas">
-        <CollectionView config={config} schema={schema} rows={rows} />
-      </PageCanvas>
-    )
-    canvasEl().scrollTop = 0
-    fireEvent.click(card('Trim the rim'))
-    expect(peek()).toHaveStyle({ top: '150px' })
-  })
-
-  it('off a canvas, top stays 150', () => {
-    renderBoard()
-    fireEvent.click(card('Trim the rim'))
-    expect(peek()).toHaveStyle({ top: '150px' })
+    expect(peek()).toHaveAttribute('data-placement', 'center')
+    expect(peek()!.className).toContain('fixed')
+    expect(peek()).not.toHaveStyle({ top: '950px' })
   })
 })
 

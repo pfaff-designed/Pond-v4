@@ -56,7 +56,16 @@ describe('SourcePicker — the `new` step opens prefilled per view kind (KAN-351
         ['due', 'date'],
       ],
     },
-    { block: 'board', fields: [['status', STATUS_HINT]] },
+    {
+      block: 'board',
+      fields: [
+        ['status', STATUS_HINT],
+        ['done', 'checkbox'],
+        ['due', 'date'],
+        ['repeats', 'text'],
+        ['assignee', 'text'],
+      ],
+    },
   ]
 
   for (const { block, fields } of CASES) {
@@ -75,13 +84,27 @@ describe('SourcePicker — the `new` step opens prefilled per view kind (KAN-351
     })
   }
 
-  it('reaching `new` by picking `new database —` seeds the same defaults as opening on it directly', async () => {
-    const { container } = renderPicker({ block: 'board', defaultStep: 'source' })
+  it('picking `new tasks` creates the tasks database without a field step', async () => {
+    const { container, onPick } = renderPicker({ block: 'board', defaultStep: 'source' })
+    expect(labelOf(rowsOf(container)[0])).toBe('new tasks')
     await userEvent.click(rowsOf(container)[0])
-    const rows = rowsOf(container)
-    expect(labelOf(rows[0])).toBe('title')
-    expect([labelOf(rows[1]), hintOf(rows[1])]).toEqual(['status', STATUS_HINT])
-    expect(labelOf(rows[2])).toBe('field')
+    expect(onPick).toHaveBeenCalledWith({
+      kind: 'new',
+      title: 'tasks',
+      fields: [
+        {
+          name: 'status',
+          type: 'status',
+          options: DEFAULT_STATUS_OPTIONS.map((label) => ({ label })),
+        },
+        { name: 'done', type: 'checkbox' },
+        { name: 'due', type: 'date' },
+        { name: 'repeats', type: 'text' },
+        { name: 'assignee', type: 'text' },
+      ],
+      recordsAre: 'pages',
+      mode: 'board',
+    })
   })
 })
 

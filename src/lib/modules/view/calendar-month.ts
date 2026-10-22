@@ -82,6 +82,83 @@ export function rowDateIso(row: CollectionRow, dateDef: PropertyDef): string | n
   return typeof value === 'string' && value ? value.slice(0, 10) : null
 }
 
+const WEEKDAY_NAMES = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const
+
+/** The phrase stored on a `repeat` / `repeats` text or select field. Empty means once. */
+export function repeatPhrase(
+  row: CollectionRow,
+  repeatDef: PropertyDef | undefined
+): string | null {
+  if (!repeatDef) return null
+  const value = row.values[repeatDef.id]
+  return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+/**
+ * Whether `iso` is the start day or a later day the phrase projects.
+ * One record stays the event. Later days are drawn from the phrase, not new rows.
+ * `every 4 days` and `every mon` match the phrases the board already stores.
+ */
+export function occursOn(
+  startIso: string,
+  repeat: string | null | undefined,
+  iso: string
+): boolean {
+  const start = startIso.slice(0, 10)
+  const day = iso.slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return false
+  if (day === start) return true
+  if (day < start) return false
+  const rule = (repeat ?? '').trim().toLowerCase()
+  if (!rule || rule === "doesn't repeat" || rule === 'does not repeat' || rule === 'none') {
+    return false
+  }
+  if (rule === 'every day' || rule === 'daily') return true
+  const everyN = /^every (\d+) days?$/.exec(rule)
+  if (everyN) {
+    const step = Number(everyN[1])
+    if (!Number.isFinite(step) || step < 1) return false
+    return (epochDay(day) - epochDay(start)) % step === 0
+  }
+  if (rule === 'every week' || rule === 'weekly') return weekdayIndex(day) === weekdayIndex(start)
+  if (rule === 'every weekday' || rule === 'weekdays') return weekdayIndex(day) <= 4
+  if (rule === 'every month' || rule === 'monthly') return day.slice(8, 10) === start.slice(8, 10)
+  if (rule === 'every year' || rule === 'yearly') return day.slice(5, 10) === start.slice(5, 10)
+  const named =
+    /^every (monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun)$/.exec(
+      rule
+    )
+  if (named) return WEEKDAY_NAMES[weekdayIndex(day)] === named[1].slice(0, 3)
+  return false
+}
+
+/** The anchor day, or a later day its repeat phrase projects onto. No phrase means the anchor only. */
+export function rowOccursOn(
+  row: CollectionRow,
+  dateDef: PropertyDef,
+  iso: string,
+  repeatDef?: PropertyDef
+): boolean {
+  const start = rowDateIso(row, dateDef)
+  if (!start) return false
+  if (!repeatDef) return start === iso
+  return occursOn(start, repeatPhrase(row, repeatDef), iso)
+}
+
+/** The next day after `afterIso` the phrase projects, within a year. None means it does not recur. */
+export function nextProjectedIso(
+  startIso: string,
+  repeat: string | null | undefined,
+  afterIso: string
+): string | null {
+  if (!repeat?.trim()) return null
+  for (let step = 1; step <= 366; step += 1) {
+    const iso = addDays(afterIso, step)
+    if (occursOn(startIso, repeat, iso)) return iso
+  }
+  return null
+}
+
 /** A `YYYY-MM-DD` day from an ISO string, or null when the value does not parse.
  *  The day is the leading date part; a time suffix stays on the stored value
  *  and is not part of the comparison. */
@@ -206,7 +283,8 @@ function marksForDay(
   rows: readonly CollectionRow[],
   dateDef: PropertyDef | undefined,
   endDef: PropertyDef | undefined,
-  iso: string
+  iso: string,
+  repeatDef?: PropertyDef
 ): CollectionRow[] {
   if (!dateDef) return []
   const marks: CollectionRow[] = []
@@ -215,7 +293,9 @@ function marksForDay(
     if (!start) continue
     const end = endDef ? rowDateIso(row, endDef) : null
     const covers =
-      end !== null && isMonthBar(start, end) ? start <= iso && end >= iso : start === iso
+      end !== null && isMonthBar(start, end)
+        ? start <= iso && end >= iso
+        : rowOccursOn(row, dateDef, iso, repeatDef)
     if (!covers) continue
     marks.push(row)
     if (marks.length === 3) break
@@ -223,15 +303,39 @@ function marksForDay(
   return marks
 }
 
+/** Anchored chips for this day, plus other rows whose phrase projects onto it. A range bar stays a bar. */
+function chipsForDay(
+  anchored: readonly CollectionRow[],
+  rows: readonly CollectionRow[],
+  dateDef: PropertyDef | undefined,
+  endDef: PropertyDef | undefined,
+  iso: string,
+  repeatDef?: PropertyDef
+): CollectionRow[] {
+  if (!dateDef || !repeatDef) return [...anchored]
+  const seen = new Set(anchored.map((row) => row.id))
+  const projected: CollectionRow[] = []
+  for (const row of rows) {
+    if (seen.has(row.id)) continue
+    const start = rowDateIso(row, dateDef)
+    if (!start) continue
+    if (endDef && isMonthBar(start, rowDateIso(row, endDef))) continue
+    if (!rowOccursOn(row, dateDef, iso, repeatDef)) continue
+    projected.push(row)
+  }
+  return projected.length > 0 ? [...anchored, ...projected] : [...anchored]
+}
+
 /** All of a day's dated rows, not capped to 3 — the mobile month's focused-day list
  *  (DC's `agDays` for `listDays=[focus]`) reads every row, where a grid cell caps at 3. */
 export function dayItems(
   rows: readonly CollectionRow[],
   dateDef: PropertyDef | undefined,
-  iso: string
+  iso: string,
+  repeatDef?: PropertyDef
 ): CollectionRow[] {
   if (!dateDef) return []
-  return rows.filter((row) => rowDateIso(row, dateDef) === iso)
+  return rows.filter((row) => rowOccursOn(row, dateDef, iso, repeatDef))
 }
 
 /**
@@ -248,7 +352,8 @@ export function buildMonthGrid(
   todayIso: string,
   rows: readonly CollectionRow[],
   dateDef: PropertyDef | undefined,
-  endDef?: PropertyDef
+  endDef?: PropertyDef,
+  repeatDef?: PropertyDef
 ): MonthGrid {
   const { year, month0 } = parseYearMonth(focusIso)
   const m1Iso = isoFromYearMonth(year, month0, 1)
@@ -262,7 +367,7 @@ export function buildMonthGrid(
   const weeks: MonthWeek[] = Array.from({ length: nWeeks }, (_, w) => ({
     days: Array.from({ length: 7 }, (_, i): MonthDayCell => {
       const iso = addDays(gStartIso, w * 7 + i)
-      const items = byDate.get(iso) ?? []
+      const items = chipsForDay(byDate.get(iso) ?? [], rows, dateDef, endDef, iso, repeatDef)
       return {
         iso,
         dayOfMonth: Number(iso.slice(8, 10)),
@@ -270,7 +375,7 @@ export function buildMonthGrid(
         isToday: iso === todayIso,
         items: items.slice(0, 3),
         moreCount: Math.max(0, items.length - 3),
-        marks: marksForDay(rows, dateDef, endDef, iso),
+        marks: marksForDay(rows, dateDef, endDef, iso, repeatDef),
       }
     }),
   }))

@@ -150,10 +150,7 @@ describe('CollectionBoard — the "add a status field" remedy (KAN-351)', () => 
 
 describe('CollectionBoard — a status field with no options (KAN-377)', () => {
   it('draws one "No <name>" lane, min-h-[380px], with ＋ task — not zero lanes', () => {
-    initialSchema = [
-      ...titleOnly,
-      { id: 'p-status', name: 'status', type: 'status', options: [] },
-    ]
+    initialSchema = [...titleOnly, { id: 'p-status', name: 'status', type: 'status', options: [] }]
 
     const { container } = renderView(board)
 
@@ -203,7 +200,12 @@ describe('CollectionBoard — the full ＋ task path, on the real `CollectionVie
       ],
     },
   ]
-  const boardConfig: ViewBlock = { id: 'v-board2', type: 'view', mode: 'board', groupBy: 'p-status' }
+  const boardConfig: ViewBlock = {
+    id: 'v-board2',
+    type: 'view',
+    mode: 'board',
+    groupBy: 'p-status',
+  }
 
   it('click ＋ task in doing writes the status and lands the card there, opening its peek; the row going away returns three empty lanes', async () => {
     const user = userEvent.setup()
@@ -246,8 +248,9 @@ describe('CollectionBoard — the full ＋ task path, on the real `CollectionVie
     expect(within(doingLane()).getByText('1')).toBeInTheDocument()
     expect(within(doingLane()).getByRole('article')).toBeInTheDocument()
 
-    const peek = container.querySelector<HTMLElement>('[data-part="record-peek"]')
+    const peek = document.querySelector<HTMLElement>('[data-part="record-peek"]')
     expect(peek).not.toBeNull()
+    expect(peek).toHaveAttribute('data-placement', 'center')
     expect(within(peek!).getByLabelText('status value')).toHaveTextContent('doing')
 
     rows = []
@@ -255,7 +258,7 @@ describe('CollectionBoard — the full ＋ task path, on the real `CollectionVie
 
     const lanes = container.querySelectorAll<HTMLElement>('[data-part="lane"]')
     expect(Array.from(lanes).map((lane) => lane.dataset.lane)).toEqual(['to do', 'doing', 'done'])
-    expect(container.querySelector('[data-part="record-peek"]')).toBeNull()
+    expect(document.querySelector('[data-part="record-peek"]')).toBeNull()
   })
 })
 
@@ -273,7 +276,12 @@ describe('CollectionBoard — ＋ task double-click guard (KAN-377, AUDIT G9)', 
       ],
     },
   ]
-  const boardConfig: ViewBlock = { id: 'v-board3', type: 'view', mode: 'board', groupBy: 'p-status' }
+  const boardConfig: ViewBlock = {
+    id: 'v-board3',
+    type: 'view',
+    mode: 'board',
+    groupBy: 'p-status',
+  }
 
   it('a fast double-click writes one row; a further click after it resolves adds a second', async () => {
     const user = userEvent.setup()

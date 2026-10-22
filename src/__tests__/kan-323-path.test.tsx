@@ -11,6 +11,7 @@ import React from 'react'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { openComposerIfClosed } from './helpers/open-composer'
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
@@ -73,7 +74,10 @@ const line = () => screen.getByRole('textbox', { name: 'Message Pond' })
 // query can't find the card once `collapsed` sets it — read the card by its
 // own data-part, the same selector `shell-reskin.test.tsx` settled on.
 const card = () => document.querySelector('[data-part="composer-card"]') as HTMLElement
-const waitReady = () => waitFor(() => expect(line()).toBeEnabled())
+const waitReady = () => {
+  openComposerIfClosed()
+  return waitFor(() => expect(line()).toBeEnabled())
+}
 
 const pointer = (type: string, clientY: number) => {
   const event = new Event(type, { bubbles: true, cancelable: true })

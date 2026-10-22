@@ -18,7 +18,16 @@
  * module, `collection-calendar.tsx` (#262).
  */
 
-import { useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react'
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react'
 import { useBlockHeightConstrained } from '@/components/organisms/block-height-context'
 import { cn } from '@/lib/utils'
 import type { ModuleViewProps } from '../types'
@@ -78,7 +87,13 @@ import {
   GANTT_TRACK_STYLE,
 } from './gantt-shared'
 import { PondBlockEmpty } from '@/components/organisms/PondBlock'
-import { BOARD_EMPTY_LINE, GANTT_EMPTY_LINE, type ViewConfigPatch } from './kinds'
+import {
+  BOARD_EMPTY_LINE,
+  GANTT_EMPTY_LINE,
+  LAYOUT_MENU_MODES,
+  VIEW_KINDS,
+  type ViewConfigPatch,
+} from './kinds'
 import {
   addDateField,
   addStatusField,
@@ -105,6 +120,8 @@ import { useOrangeToday } from '../page-canvas'
 import { Cell, RepeatMark } from './cells'
 import { DraftInput } from '@/components/atoms/draft-input'
 import { RecordPeek } from './record-peek'
+import { RecordPage } from './record-page'
+import { GuestFinder } from './guest-finder'
 import { CollectionList } from './list'
 import { CollectionCalendar } from './collection-calendar'
 import {
@@ -258,6 +275,7 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
     setValuesAsStep,
     addRow,
     renameRow,
+    removeRow,
     updateSchema,
     logSchemaEdit,
   } = useCollectionRows(collectionId)
@@ -353,7 +371,7 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
       }
     : undefined
 
-  // A row IS a page: `open ›` on the record peek navigates to it through the page-link
+  // A row IS a page: Open page on the record navigates to it through the page-link
   // seam. Absent off a page host (Storybook, the AI terminal), where the peek omits it.
   const links = usePageLinks()
   const handleOpenRow = links
@@ -381,7 +399,19 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
       onMoveDate={setValueAsStep}
       onMoveDates={setValuesAsStep}
       onAddRow={addRow}
+      onUpdateSchema={
+        editable
+          ? (next) => applySchemaEdit(schemaRef, updateSchema, logSchemaEdit, () => next)
+          : undefined
+      }
+      renderPage={
+        collectionId
+          ? (row) => <RecordPage pageId={row.id} collectionId={collectionId} title={row.title} />
+          : undefined
+      }
+      renderGuests={collectionId ? (field) => <GuestFinder {...field} /> : undefined}
       onRenameRow={renameRow}
+      onDeleteRow={editable ? removeRow : undefined}
       onConfigChange={onConfigChange}
       onOpenRow={handleOpenRow}
       chartProvenance={chartProvenance}
@@ -425,7 +455,19 @@ export interface CollectionViewProps {
   /** Manual card/row authoring (board-authoring Slice 2). Present only on the live
    *  editable host; Storybook renders static data and omits them. */
   onAddRow?: (values?: Record<string, PropertyValue>) => Promise<string | null>
+  /** Adds location, guests, and repeats when a calendar page is created. */
+  onUpdateSchema?: (next: PropertySchema) => void
+  /** The calendar event's page, drawn under its fields. */
+  renderPage?: (row: CollectionRow) => ReactNode
+  /** The guests finder on a calendar event. */
+  renderGuests?: (field: {
+    value: PropertyValue
+    editable: boolean
+    onChange: (value: PropertyValue) => void
+  }) => ReactNode
   onRenameRow?: (rowId: string, title: string) => void
+  /** Removes a record. Every record page (table, board, list, gallery, calendar) draws delete from this. */
+  onDeleteRow?: (rowId: string) => void
   /** Rewrite the view block's own config — chart and big-number setup, and a
    *  layout choice (`mode`, KAN-519). Absent on read-only / Storybook hosts. The
    *  optional second arg is which saved view's config to land the patch on (KAN-32
@@ -433,7 +475,7 @@ export interface CollectionViewProps {
    *  persisted `activeViewId`. */
   onConfigChange?: (patch: ViewConfigPatch, activeId?: string) => void
   /** Navigate to a row's page — a row IS a page, so this receives the row id. Draws
-   *  the record peek's `open ›`; absent on Storybook/static renders (no dead affordance). */
+   *  the record's Open page control; absent on Storybook/static renders (no dead affordance). */
   onOpenRow?: (rowId: string) => void
   /** The chart card's `on` / `reads` (#227). Absent off a page host; the rows are omitted. */
   chartProvenance?: ChartProvenance
@@ -475,7 +517,11 @@ export function CollectionView({
   onMoveDate,
   onMoveDates,
   onAddRow,
+  onUpdateSchema,
+  renderPage,
+  renderGuests,
   onRenameRow,
+  onDeleteRow,
   onConfigChange,
   onOpenRow,
   chartProvenance,
@@ -632,113 +678,133 @@ export function CollectionView({
         />
       </div>
       <div data-part="view-body" className={cn(constrained && 'min-h-0 flex-1 overflow-y-auto')}>
-      {activeConfig.mode === 'board' ? (
-        <CollectionBoard
-          schema={schema}
-          rows={processed}
-          viewKey={viewKey}
-          groupBy={activeConfig.groupBy}
-          editable={editable}
-          onEdit={onEdit}
-          onAddRow={onAddRow}
-          onRenameRow={onRenameRow}
-          onOpenRow={onOpenRow}
-          onAddStatusField={onAddStatusField}
-        />
-      ) : activeConfig.mode === 'list' ? (
-        <CollectionList
-          viewKey={viewKey}
-          schema={schema}
-          rows={processed}
-          groupBy={activeConfig.groupBy}
-          listFlat={activeConfig.listFlat}
-          editable={editable}
-          onEdit={onEdit}
-          onAddRow={onAddRow}
-          onRenameRow={onRenameRow}
-          onOpenRow={onOpenRow}
-          onAddDateField={onAddDateField}
-        />
-      ) : activeConfig.mode === 'calendar' ? (
-        <CollectionCalendar
-          viewKey={viewKey}
-          schema={schema}
-          rows={processed}
-          groupBy={activeConfig.groupBy}
-          editable={editable}
-          onEdit={onEdit}
-          onMoveDate={onMoveDate}
-          onMoveDates={onMoveDates}
-          onAddRow={onAddRow}
-          onRenameRow={onRenameRow}
-          onOpenRow={onOpenRow}
-          onAddDateField={onAddDateField}
-          span={activeConfig.span}
-          startId={activeConfig.startDate}
-          endId={activeConfig.endDate}
-          onConfigChange={onConfigChange ? handleConfigChange : undefined}
-        />
-      ) : activeConfig.mode === 'gallery' ? (
-        <CollectionGallery
-          viewKey={viewKey}
-          schema={schema}
-          rows={processed}
-          editable={editable}
-          onEdit={onEdit}
-          onAddRow={onAddRow}
-          onRenameRow={onRenameRow}
-          onOpenRow={onOpenRow}
-        />
-      ) : activeConfig.mode === 'gantt' ? (
-        <CollectionGantt
-          schema={schema}
-          rows={processed}
-          startId={activeConfig.startDate}
-          endId={activeConfig.endDate}
-          editable={editable}
-          onMoveDates={onMoveDates}
-          onAddRow={onAddRow}
-          onRenameRow={onRenameRow}
-          onAddDateField={onAddDateField}
-        />
-      ) : activeConfig.mode === 'chart' ? (
-        // #259: the chart's PRESENTATION — the compact inline mark (the board's
-        // `bars` strip / `heat` grid) or the chart card. Same rows, same aggregation.
-        !chartCard && activeConfig.chart ? (
-          <CompactChart schema={schema} rows={processed} chart={activeConfig.chart} />
-        ) : (
-          <CollectionChart
-            config={activeConfig}
+        {activeConfig.mode === 'board' ? (
+          <CollectionBoard
             schema={schema}
             rows={processed}
-            totalRows={rows.length}
-            provenance={chartProvenance}
-            /* `editable` gates it, as every other mode's insert is gated: a diff
+            viewKey={viewKey}
+            groupBy={activeConfig.groupBy}
+            editable={editable}
+            onEdit={onEdit}
+            onAddRow={onAddRow}
+            onRenameRow={onRenameRow}
+            onOpenRow={onOpenRow}
+            onDeleteRow={onDeleteRow}
+            onAddStatusField={onAddStatusField}
+            renderPage={renderPage}
+            renderGuests={renderGuests}
+          />
+        ) : activeConfig.mode === 'list' ? (
+          <CollectionList
+            viewKey={viewKey}
+            schema={schema}
+            rows={processed}
+            groupBy={activeConfig.groupBy}
+            listFlat={activeConfig.listFlat}
+            editable={editable}
+            onEdit={onEdit}
+            onAddRow={onAddRow}
+            onRenameRow={onRenameRow}
+            onOpenRow={onOpenRow}
+            onDeleteRow={onDeleteRow}
+            onAddDateField={onAddDateField}
+            renderPage={renderPage}
+            renderGuests={renderGuests}
+          />
+        ) : activeConfig.mode === 'calendar' ? (
+          <CollectionCalendar
+            viewKey={viewKey}
+            schema={schema}
+            rows={processed}
+            groupBy={activeConfig.groupBy}
+            editable={editable}
+            onEdit={onEdit}
+            onMoveDate={onMoveDate}
+            onMoveDates={onMoveDates}
+            onAddRow={onAddRow}
+            onUpdateSchema={onUpdateSchema}
+            onRenameRow={onRenameRow}
+            onOpenRow={onOpenRow}
+            onDeleteRow={onDeleteRow}
+            renderPage={renderPage}
+            renderGuests={renderGuests}
+            onAddDateField={onAddDateField}
+            span={activeConfig.span}
+            startId={activeConfig.startDate}
+            endId={activeConfig.endDate}
+            onConfigChange={onConfigChange ? handleConfigChange : undefined}
+          />
+        ) : activeConfig.mode === 'gallery' ? (
+          <CollectionGallery
+            viewKey={viewKey}
+            schema={schema}
+            rows={processed}
+            editable={editable}
+            onEdit={onEdit}
+            onAddRow={onAddRow}
+            onRenameRow={onRenameRow}
+            onOpenRow={onOpenRow}
+            onDeleteRow={onDeleteRow}
+            renderPage={renderPage}
+            renderGuests={renderGuests}
+          />
+        ) : activeConfig.mode === 'gantt' ? (
+          <CollectionGantt
+            schema={schema}
+            rows={processed}
+            startId={activeConfig.startDate}
+            endId={activeConfig.endDate}
+            editable={editable}
+            onMoveDates={onMoveDates}
+            onAddRow={onAddRow}
+            onRenameRow={onRenameRow}
+            onAddDateField={onAddDateField}
+          />
+        ) : activeConfig.mode === 'chart' ? (
+          // #259: the chart's PRESENTATION — the compact inline mark (the board's
+          // `bars` strip / `heat` grid) or the chart card. Same rows, same aggregation.
+          !chartCard && activeConfig.chart ? (
+            <CompactChart schema={schema} rows={processed} chart={activeConfig.chart} />
+          ) : (
+            <CollectionChart
+              config={activeConfig}
+              schema={schema}
+              rows={processed}
+              totalRows={rows.length}
+              provenance={chartProvenance}
+              /* `editable` gates it, as every other mode's insert is gated: a diff
                card and a create-page proposal both render this view with no
                `editable`, and an `add a row` there would write to the
                collection from a surface whose whole job is to be reviewed —
                "pages change only through the person's own edits or an accepted
                diff" (`PROJECT_RULES.md`). */
-            onAddRow={editable && onAddRow ? () => void onAddRow() : undefined}
+              onAddRow={editable && onAddRow ? () => void onAddRow() : undefined}
+            />
+          )
+        ) : activeConfig.mode === 'big-number' ? (
+          <CollectionBigNumber
+            schema={schema}
+            rows={processed}
+            bigNumber={activeConfig.bigNumber}
           />
-        )
-      ) : activeConfig.mode === 'big-number' ? (
-        <CollectionBigNumber schema={schema} rows={processed} bigNumber={activeConfig.bigNumber} />
-      ) : (
-        <CollectionTable
-          viewKey={viewKey}
-          schema={schema}
-          rows={tableRows}
-          struckIds={struckIds}
-          editable={editable}
-          onEdit={onEdit}
-          onAddRow={onAddRow}
-          onRenameRow={onRenameRow}
-          onOpenRow={onOpenRow}
-          onRenameField={onRenameField}
-          onDeleteField={onDeleteField}
-        />
-      )}
+        ) : (
+          <CollectionTable
+            viewKey={viewKey}
+            schema={schema}
+            rows={tableRows}
+            struckIds={struckIds}
+            editable={editable}
+            onEdit={onEdit}
+            onAddRow={onAddRow}
+            onRenameRow={onRenameRow}
+            onOpenRow={onOpenRow}
+            onDeleteRow={onDeleteRow}
+            onRenameField={onRenameField}
+            onDeleteField={onDeleteField}
+            renderPage={renderPage}
+            renderGuests={renderGuests}
+          />
+        )}
       </div>
     </div>
   )
@@ -753,9 +819,12 @@ export function CollectionView({
  * gate"). The saved-view bar is reading too (switching is not editing), so it
  * renders whenever the block has `views`; only "＋ view" and the chart/big-
  * number setup below it are affordances, gated on `editable && onConfigChange`.
- * The layout chip sits before those tabs on every view, including a legacy
- * block with no `views[]` (KAN-519). Choosing a layout writes that view's kind
- * in place through the same gate. A reader sees the word and gets no button.
+ * The layouts sit in one pill before those tabs — board, timeline, table,
+ * calendar, list, gallery, chart — including on a legacy block with no
+ * `views[]` (KAN-519). Choosing one writes that view's kind in place through
+ * the same gate. A reader sees the words and gets no tabs. When the saved
+ * views already are those layouts, that pill is the bar and this one is not
+ * drawn again.
  * A list's fact is that same gate (KAN-521): a button when editable, the
  * sentence alone for a reader. A board's fact stays the span.
  */
@@ -802,6 +871,15 @@ function ViewControls({
   const handleLayout = (mode: ViewMode) => {
     onConfigChange?.({ mode })
   }
+  // Saved views that are themselves the layouts (board, timeline, table, …)
+  // are the bar. A single view named after its kind is not: the layout
+  // segments already say that word, and repeating it is the second pill.
+  const layoutLabels = new Set(LAYOUT_MENU_MODES.map((item) => VIEW_KINDS[item].label))
+  const savedLabels = (rawBlock.views ?? []).map(
+    (view) => view.label ?? VIEW_KINDS[view.kind].label
+  )
+  const savedViewsAreTheLayouts =
+    savedLabels.length >= 2 && savedLabels.every((label) => layoutLabels.has(label))
 
   return (
     <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -839,7 +917,9 @@ function ViewControls({
           )}
         </div>
         <div className="flex items-center gap-[4px]">
-          <ViewLayoutMenu mode={config.mode} editable={layoutEditable} onLayout={handleLayout} />
+          {!savedViewsAreTheLayouts && (
+            <ViewLayoutMenu mode={config.mode} editable={layoutEditable} onLayout={handleLayout} />
+          )}
           {onSelectView &&
             (() => {
               const savedViewBarProps = {
@@ -892,8 +972,11 @@ function CollectionTable({
   onAddRow,
   onRenameRow,
   onOpenRow,
+  onDeleteRow,
   onRenameField,
   onDeleteField,
+  renderPage,
+  renderGuests,
 }: {
   /** The view block's id — what the page canvas keys its one peek and one orange pill by. */
   viewKey: string
@@ -907,23 +990,24 @@ function CollectionTable({
   onAddRow?: (values?: Record<string, PropertyValue>) => Promise<string | null>
   onRenameRow?: (rowId: string, title: string) => void
   onOpenRow?: (rowId: string) => void
+  onDeleteRow?: (rowId: string) => void
   /** KAN-380: commit a rename from the field-header menu. Absent when not
    *  `editable` — the schema-field headers below fall back to plain text. */
   onRenameField?: (id: string, name: string) => void
   /** KAN-380: commit a `delete field` from the field-header menu. Absent when
    *  not `editable` — same fallback as `onRenameField`. */
   onDeleteField?: (id: string) => void
+  renderPage?: CollectionViewProps['renderPage']
+  renderGuests?: CollectionViewProps['renderGuests']
 }) {
   const { stepOut } = useBlockRow()
   const [now] = useState(() => new Date())
-  const { selectedRow, selectWithPointer, keyboardProps, selectOrOpenOnKey } = useRecordSelection(
-    rows,
-    viewKey
-  )
+  const { selectedRow, select, selectWithPointer, keyboardProps, selectOrOpenOnKey } =
+    useRecordSelection(rows, viewKey)
   const done = useDoneToggle({ schema, editable, onEdit })
 
   // A click on the row's own space (not a cell's input/control) selects it and
-  // opens the board's peek beside the table; `shouldSelectRowFromClick` is the
+  // opens the record's page; `shouldSelectRowFromClick` is the
   // row-shaped predicate (unlike the card's, it doesn't exclude `td`/`th`,
   // which is the row's entire clickable surface). A struck row (KAN-139) is an
   // undo-removed record still drawn for the notice's duration — it must never
@@ -1077,9 +1161,14 @@ function CollectionTable({
           onToggleDone={done.toggle && (() => done.toggle?.(selectedRow))}
           now={now}
           editable={editable}
+          placement="center"
+          page={renderPage?.(selectedRow)}
+          renderGuests={renderGuests}
+          onDismiss={() => select(null)}
           onEdit={onEdit}
           onRenameRow={onRenameRow}
           onOpenRow={onOpenRow}
+          onDelete={editable && onDeleteRow ? () => onDeleteRow(selectedRow.id) : undefined}
         />
       )}
     </div>
@@ -1153,7 +1242,10 @@ function CollectionBoard({
   onAddRow,
   onRenameRow,
   onOpenRow,
+  onDeleteRow,
   onAddStatusField,
+  renderPage,
+  renderGuests,
 }: {
   /** The view block's id — what the page canvas keys its one peek and one orange pill by. */
   viewKey: string
@@ -1165,16 +1257,20 @@ function CollectionBoard({
   onAddRow?: (values?: Record<string, PropertyValue>) => Promise<string | null>
   onRenameRow?: (rowId: string, title: string) => void
   onOpenRow?: (rowId: string) => void
+  onDeleteRow?: (rowId: string) => void
   /** KAN-351: mint a `status` field, offered by a board whose schema has none to
    *  group by. Absent when not `editable` — the bare notice stands in instead. */
   onAddStatusField?: () => void
+  /** The new task's page, the same body the calendar draws under a new event. */
+  renderPage?: (row: CollectionRow) => ReactNode
+  renderGuests?: CollectionViewProps['renderGuests']
 }) {
   const groupDef = pickGroupDef(schema, groupBy)
   const grouped = useMemo(() => groupRows(rows, schema, groupDef?.id), [rows, schema, groupDef])
   const groupKey = (id: string | null) => id ?? NULL_BUCKET
-  // The row whose title input should take focus — set when a card is just added, so
-  // "＋ task" drops you straight into typing the new card's name.
-  const [focusRowId, setFocusRowId] = useState<string | null>(null)
+  // The task ＋ just created. Its title is focused. Opening any task, new or
+  // already on the board, is that same centered page.
+  const [createdId, setCreatedId] = useState<string | null>(null)
   // `today` is read once per mount: a board left open across midnight keeps the
   // day it was drawn on until it next renders fresh.
   const [now] = useState(() => new Date())
@@ -1210,6 +1306,13 @@ function CollectionBoard({
     keyboardProps,
   } = useRecordSelection(rows, viewKey, { isClickSuppressed })
   const done = useDoneToggle({ schema, groupBy, editable, onEdit })
+  // Choosing another card ends the create focus. The card stays in its lane.
+  const selectedId = selection?.id ?? null
+  const [seenSelection, setSeenSelection] = useState(selectedId)
+  if (selectedId !== seenSelection) {
+    setSeenSelection(selectedId)
+    if (createdId && selectedId && selectedId !== createdId) setCreatedId(null)
+  }
 
   // Hide the trailing "No <name>" lane while it's empty — a fresh board then reads as
   // just its status lanes. It reappears the moment a card lands there unset. Except
@@ -1248,16 +1351,16 @@ function CollectionBoard({
   const { def: boardDef } = grouped
 
   // "＋ task": mint a row seeded with this lane's status (null → the "No <name>"
-  // lane), then focus its title so you can name it immediately. A second click
-  // while the first write is in flight is a no-op (AUDIT G9) — a fast double-click
-  // must not mint two rows.
+  // lane), then open it as a page the way a calendar day does — the title is
+  // named on that page, and the card in the lane shows the name. A second click
+  // while the first write is in flight is a no-op (AUDIT G9).
   const handleAddCard = async (optionId: string | null) => {
     if (!onAddRow || addingRef.current) return
     addingRef.current = true
     try {
       const id = await onAddRow(optionId ? { [boardDef.id]: optionId } : {})
       if (!id) return
-      setFocusRowId(id)
+      setCreatedId(id)
       select({ id, via: 'pointer' })
     } finally {
       addingRef.current = false
@@ -1342,7 +1445,6 @@ function CollectionBoard({
                         aria-label="Card title"
                         value={row.title}
                         placeholder="Untitled"
-                        autoFocus={row.id === focusRowId}
                         onClick={() => selectWithPointer(row.id)}
                         onCommit={(title) => onRenameRow(row.id, title)}
                         className={[
@@ -1401,10 +1503,19 @@ function CollectionBoard({
           onToggleDone={done.toggle && (() => done.toggle?.(selectedRow))}
           now={now}
           editable={editable}
+          placement="center"
+          focusTitle={selectedRow.id === createdId}
           focusOnOpen={selection?.via === 'keyboard'}
+          page={renderPage?.(selectedRow)}
+          renderGuests={renderGuests}
+          onDismiss={() => {
+            setCreatedId(null)
+            select(null)
+          }}
           onEdit={onEdit}
           onRenameRow={onRenameRow}
           onOpenRow={onOpenRow}
+          onDelete={editable && onDeleteRow ? () => onDeleteRow(selectedRow.id) : undefined}
         />
       )}
 
@@ -1450,6 +1561,9 @@ function CollectionGallery({
   onAddRow,
   onRenameRow,
   onOpenRow,
+  onDeleteRow,
+  renderPage,
+  renderGuests,
 }: {
   /** The view block's id — what the page canvas keys its one peek and one orange pill by. */
   viewKey: string
@@ -1460,6 +1574,9 @@ function CollectionGallery({
   onAddRow?: (values?: Record<string, PropertyValue>) => Promise<string | null>
   onRenameRow?: (rowId: string, title: string) => void
   onOpenRow?: (rowId: string) => void
+  onDeleteRow?: (rowId: string) => void
+  renderPage?: CollectionViewProps['renderPage']
+  renderGuests?: CollectionViewProps['renderGuests']
 }) {
   const [now] = useState(() => new Date())
   const [hoveredId, setHoveredId] = useState<string | null>(null)
@@ -1559,9 +1676,14 @@ function CollectionGallery({
           onToggleDone={done.toggle && (() => done.toggle?.(selectedRow))}
           now={now}
           editable={editable}
+          placement="center"
+          page={renderPage?.(selectedRow)}
+          renderGuests={renderGuests}
+          onDismiss={() => select(null)}
           onEdit={onEdit}
           onRenameRow={onRenameRow}
           onOpenRow={onOpenRow}
+          onDelete={editable && onDeleteRow ? () => onDeleteRow(selectedRow.id) : undefined}
         />
       )}
     </div>

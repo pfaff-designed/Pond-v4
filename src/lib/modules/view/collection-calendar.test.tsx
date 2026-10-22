@@ -5,7 +5,6 @@ import { CollectionCalendar } from './collection-calendar'
 import { CollectionView } from './view'
 import { CALENDAR_EMPTY_LINE } from './kinds'
 import { localDateIso } from './due'
-import { formatAtomDate } from '@/lib/properties/date-input'
 import type { PropertySchema, PropertyValue } from '@/lib/properties/schema'
 import type { CollectionRow } from './apply'
 import type { ViewBlock } from './schema'
@@ -75,7 +74,7 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
     expect(screen.getByText('today')).toBeInTheDocument()
   })
 
-  describe('records without a date (KAN-454)', () => {
+  describe('records without a date', () => {
     const dated: CollectionRow = {
       id: 'r1',
       title: 'Trim the rim',
@@ -87,265 +86,46 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
       values: {},
     })
 
-    it('shows n without a date under the header, in the empty-line style, when some records lack a date', () => {
+    it('keeps the month when some records lack a date, and draws no without-a-date line', () => {
       render(
         <CollectionCalendar
           schema={schemaWithDate}
           rows={[dated, undated('r2', 'dentist'), undated('r3', 'optician')]}
         />
       )
-      const line = screen.getByText('2 without a date')
-      expect(line.tagName).toBe('BUTTON')
-      expect(line).toHaveClass(
-        'px-0.5',
-        'text-[13px]',
-        'font-mono',
-        'lowercase',
-        'text-mn-text-secondary'
-      )
-      const header = screen.getByRole('button', { name: 'today' }).closest('div.flex-wrap')
-      expect(line.previousElementSibling).toBe(header)
-      expect(line.nextElementSibling).toHaveClass('md:flex')
+      expect(screen.queryByRole('button', { name: /without a date/ })).not.toBeInTheDocument()
+      expect(screen.queryByText(/without a date/)).not.toBeInTheDocument()
       expect(screen.queryByText(CALENDAR_EMPTY_LINE)).not.toBeInTheDocument()
       expect(screen.getAllByText('mon').length).toBeGreaterThan(0)
     })
 
-    it('does not show the line when every record has a date', () => {
+    it('draws no without-a-date line when every record has a date', () => {
       render(<CollectionCalendar schema={schemaWithDate} rows={[dated]} />)
       expect(screen.queryByText(/without a date/)).not.toBeInTheDocument()
     })
 
-    it('does not show the line when the collection has no records', () => {
+    it('draws no without-a-date line when the collection has no records', () => {
       render(<CollectionCalendar schema={schemaWithDate} rows={[]} />)
       expect(screen.queryByText(/without a date/)).not.toBeInTheDocument()
       expect(screen.getByText(CALENDAR_EMPTY_LINE)).toBeInTheDocument()
     })
 
-    it('does not show the line when the collection has no date field', () => {
+    it('draws no without-a-date line when the collection has no date field', () => {
       render(<CollectionCalendar schema={schemaNoDate} rows={[undated('r2', 'dentist')]} />)
       expect(screen.queryByText(/without a date/)).not.toBeInTheDocument()
       expect(screen.getByText(CALENDAR_EMPTY_LINE)).toBeInTheDocument()
     })
 
-    it('updates the count when a record gains a date', () => {
-      const Harness = () => {
-        const [items, setItems] = useState<CollectionRow[]>([
-          dated,
-          undated('r2', 'dentist'),
-          undated('r3', 'optician'),
-        ])
-        const handleDateDentist = () => {
-          setItems([
-            dated,
-            { id: 'r2', title: 'dentist', values: { 'p-due': '2026-09-21' } },
-            undated('r3', 'optician'),
-          ])
-        }
-        return (
-          <>
-            <button type="button" onClick={handleDateDentist}>
-              date dentist
-            </button>
-            <CollectionCalendar schema={schemaWithDate} rows={items} />
-          </>
-        )
-      }
-      render(<Harness />)
-      expect(screen.getByText('2 without a date')).toBeInTheDocument()
-      fireEvent.click(screen.getByRole('button', { name: 'date dentist' }))
-      expect(screen.getByText('1 without a date')).toBeInTheDocument()
-      expect(screen.queryByText('2 without a date')).not.toBeInTheDocument()
-    })
-
-    it('clicking 2 without a date lists dentist and optician, not the dated record', async () => {
-      const user = userEvent.setup()
-      const onMoveDate = jest.fn()
-      render(
-        <CollectionCalendar
-          schema={schemaWithDate}
-          rows={[dated, undated('r2', 'dentist'), undated('r3', 'optician')]}
-          onMoveDate={onMoveDate}
-        />
-      )
-
-      await user.click(screen.getByRole('button', { name: '2 without a date' }))
-
-      const list = screen.getByRole('listbox', { name: 'without a date' })
-      expect(list.closest('[data-part="glass"]')).not.toBeNull()
-      const dentist = within(list).getByRole('option', { name: 'dentist' })
-      const optician = within(list).getByRole('option', { name: 'optician' })
-      expect(within(list).queryByRole('option', { name: 'Trim the rim' })).not.toBeInTheDocument()
-      expect(dentist).toHaveAttribute('data-part', 'row')
-      expect(optician).toHaveAttribute('data-part', 'row')
-      expect(dentist.querySelector('[data-part="icon"] span')).toHaveClass(
-        'size-[9px]',
-        'rounded-[2.5px]'
-      )
-      expect(optician.querySelector('[data-part="icon"] span')).toHaveClass(
-        'size-[9px]',
-        'rounded-[2.5px]'
-      )
-
-      await user.click(screen.getByRole('button', { name: '2 without a date' }))
-      expect(screen.queryByRole('listbox', { name: 'without a date' })).not.toBeInTheDocument()
-
-      await user.click(screen.getByRole('button', { name: '2 without a date' }))
-      expect(screen.getByRole('listbox', { name: 'without a date' })).toBeInTheDocument()
-      await user.keyboard('{Escape}')
-      expect(screen.queryByRole('listbox', { name: 'without a date' })).not.toBeInTheDocument()
-      expect(onMoveDate).not.toHaveBeenCalled()
-    })
-
-    it('draws heart on dentist and ring on optician', async () => {
-      const user = userEvent.setup()
-      const withGlyph = (id: string, title: string, glyph: string): CollectionRow => ({
-        id,
-        title,
-        values: {},
-        glyph,
-      })
-      render(
-        <CollectionCalendar
-          schema={schemaWithDate}
-          rows={[dated, withGlyph('r2', 'dentist', 'heart'), withGlyph('r3', 'optician', 'ring')]}
-        />
-      )
-
-      await user.click(screen.getByRole('button', { name: '2 without a date' }))
-
-      const list = screen.getByRole('listbox', { name: 'without a date' })
-      const dentist = within(list).getByRole('option', { name: 'dentist' })
-      const optician = within(list).getByRole('option', { name: 'optician' })
-      expect(dentist.querySelector('[data-area-mark] [data-icon="heart"]')).not.toBeNull()
-      expect(optician.querySelector('[data-icon="ring"]')).not.toBeNull()
-      expect(within(list).queryByRole('option', { name: dated.title })).not.toBeInTheDocument()
-    })
-
-    it('picking a record arms placement, day cells take a hover state, and Escape writes nothing', async () => {
-      const user = userEvent.setup()
-      const onMoveDate = jest.fn()
-      const { container } = render(
-        <CollectionCalendar
-          schema={schemaWithDate}
-          rows={[dated, undated('r2', 'dentist'), undated('r3', 'optician')]}
-          onMoveDate={onMoveDate}
-        />
-      )
-      const dayCells = () => container.querySelectorAll('[data-part="calendar-day-cell"]')
-      expect(dayCells().length).toBeGreaterThan(0)
-      for (const cell of dayCells()) {
-        expect(cell).not.toHaveClass('hover:bg-mn-hover-fill')
-      }
-
-      await user.click(screen.getByRole('button', { name: '2 without a date' }))
-      await user.click(
-        within(screen.getByRole('listbox', { name: 'without a date' })).getByRole('option', {
-          name: /dentist/,
-        })
-      )
-
-      expect(screen.queryByRole('listbox', { name: 'without a date' })).not.toBeInTheDocument()
-      expect(screen.getByRole('button', { name: 'pick a day for dentist' })).toBeInTheDocument()
-      for (const cell of dayCells()) {
-        expect(cell).toHaveClass('hover:bg-mn-hover-fill')
-      }
-
-      await user.keyboard('{Escape}')
-
-      expect(screen.getByRole('button', { name: '2 without a date' })).toBeInTheDocument()
-      expect(
-        screen.queryByRole('button', { name: 'pick a day for dentist' })
-      ).not.toBeInTheDocument()
-      expect(onMoveDate).not.toHaveBeenCalled()
-      for (const cell of dayCells()) {
-        expect(cell).not.toHaveClass('hover:bg-mn-hover-fill')
-      }
-    })
-
-    it('clicking a day writes that date, the record sits on that day, and the line count drops', async () => {
-      jest.useFakeTimers().setSystemTime(new Date('2026-09-10T12:00:00Z'))
-      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
-      const onMoveDate = jest.fn()
-      const onAddRow = jest.fn()
-      try {
-        const { container, rerender } = render(
-          <CollectionCalendar
-            schema={schemaWithDate}
-            rows={[dated, undated('r2', 'dentist'), undated('r3', 'optician')]}
-            editable
-            onAddRow={onAddRow}
-            onMoveDate={onMoveDate}
-          />
-        )
-        const dayCell = (iso: string) =>
-          container.querySelector<HTMLElement>(
-            `[data-part="calendar-day-cell"][data-iso="${iso}"]`
-          )!
-
-        await user.click(screen.getByRole('button', { name: '2 without a date' }))
-        await user.click(
-          within(screen.getByRole('listbox', { name: 'without a date' })).getByRole('option', {
-            name: /dentist/,
-          })
-        )
-        await user.click(dayCell('2026-09-21'))
-
-        expect(onMoveDate).toHaveBeenCalledTimes(1)
-        expect(onMoveDate).toHaveBeenCalledWith('r2', 'p-due', '2026-09-21')
-        expect(onAddRow).not.toHaveBeenCalled()
-
-        rerender(
-          <CollectionCalendar
-            schema={schemaWithDate}
-            rows={[
-              dated,
-              { id: 'r2', title: 'dentist', values: { 'p-due': '2026-09-21' } },
-              undated('r3', 'optician'),
-            ]}
-            editable
-            onAddRow={onAddRow}
-            onMoveDate={onMoveDate}
-          />
-        )
-
-        expect(screen.getByText('1 without a date')).toBeInTheDocument()
-        expect(within(dayCell('2026-09-21')).getByText('dentist')).toBeInTheDocument()
-      } finally {
-        jest.useRealTimers()
-      }
-    })
-
-    it('shows n without a date when every record is undated, and keeps the grid empty line', () => {
+    it('says none with a date when every record is undated, and draws no without-a-date line', () => {
       render(
         <CollectionCalendar
           schema={schemaWithDate}
           rows={[undated('r1', 'dentist'), undated('r2', 'optician'), undated('r3', 'library')]}
         />
       )
-      expect(screen.getByText('3 without a date')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /without a date/ })).not.toBeInTheDocument()
       expect(screen.getByText('3 records, none with a date')).toBeInTheDocument()
       expect(screen.queryByText(CALENDAR_EMPTY_LINE)).not.toBeInTheDocument()
-    })
-
-    it('opens dentist, checkup, and lab, then Escape closes the list', () => {
-      const onMoveDate = jest.fn()
-      render(
-        <CollectionCalendar
-          schema={schemaWithDate}
-          rows={[undated('d1', 'dentist'), undated('d2', 'checkup'), undated('d3', 'lab')]}
-          onMoveDate={onMoveDate}
-        />
-      )
-      expect(screen.getByRole('button', { name: '3 without a date' })).toBeInTheDocument()
-      expect(screen.getByText('3 records, none with a date')).toBeInTheDocument()
-      fireEvent.click(screen.getByRole('button', { name: '3 without a date' }))
-      const list = screen.getByRole('listbox', { name: 'without a date' })
-      expect(within(list).getByRole('option', { name: 'dentist' })).toBeInTheDocument()
-      expect(within(list).getByRole('option', { name: 'checkup' })).toBeInTheDocument()
-      expect(within(list).getByRole('option', { name: 'lab' })).toBeInTheDocument()
-      fireEvent.keyDown(list, { key: 'Escape' })
-      expect(screen.queryByRole('listbox', { name: 'without a date' })).not.toBeInTheDocument()
-      expect(onMoveDate).not.toHaveBeenCalled()
     })
   })
 
@@ -583,15 +363,9 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
       )!
     }
 
-    it('the plus and Enter add that day’s record; a blank click does not', async () => {
+    it('the plus, Enter, and a blank click open that day’s untitled page', async () => {
       const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
-      let resolveAdd: (id: string) => void = () => {}
-      const onAddRow = jest.fn(
-        () =>
-          new Promise<string>((resolve) => {
-            resolveAdd = resolve
-          })
-      )
+      const onAddRow = jest.fn().mockResolvedValue('r-new')
       const onRenameRow = jest.fn()
       const { container } = render(
         <CollectionCalendar
@@ -610,37 +384,31 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
       occupied.focus()
       await user.keyboard('{Enter}')
       expect(onAddRow).not.toHaveBeenCalled()
+      expect(screen.queryByRole('dialog', { name: 'new page' })).not.toBeInTheDocument()
 
       const cell = cellFor(container, '2026-09-20')
-      const plus = within(cell).getByRole('button', { name: 'Add on 20 sep' })
-      await user.click(plus)
-      await user.click(plus)
+      expect(cell).toHaveClass('hover:bg-mn-hover-fill', 'cursor-pointer')
+      await user.click(within(cell).getByRole('button', { name: 'Add on 20 sep' }))
+      await act(async () => {})
       expect(onAddRow).toHaveBeenCalledTimes(1)
       expect(onAddRow).toHaveBeenCalledWith({ 'p-due': '2026-09-20' })
-
-      await act(async () => {
-        resolveAdd('r-new')
-        for (let i = 0; i < 5; i++) await Promise.resolve()
-      })
+      expect(screen.queryByRole('dialog', { name: 'new page' })).not.toBeInTheDocument()
+      expect(screen.getByText('september 2026')).toBeInTheDocument()
 
       cell.focus()
       await user.keyboard('{Enter}')
+      await act(async () => {})
       expect(onAddRow).toHaveBeenCalledTimes(2)
-      expect(onAddRow).toHaveBeenLastCalledWith({ 'p-due': '2026-09-20' })
+      await user.keyboard('{Escape}')
 
-      await act(async () => {
-        resolveAdd('r-new-2')
-        for (let i = 0; i < 5; i++) await Promise.resolve()
-      })
-
-      // Blank space opens the day (KAN-455) and must not add a record.
       fireEvent.click(cell)
-      expect(onAddRow).toHaveBeenCalledTimes(2)
+      await act(async () => {})
+      expect(onAddRow).toHaveBeenCalledTimes(3)
       expect(onRenameRow).not.toHaveBeenCalled()
-      expect(screen.queryByRole('textbox', { name: /Add an item/ })).not.toBeInTheDocument()
+      expect(screen.getByText('september 2026')).toBeInTheDocument()
     })
 
-    it('adding from the plus selects the record, opens the peek, and focuses the title with the date set', async () => {
+    it('creating from the plus opens an untitled page on that day', async () => {
       const iso = '2026-09-20'
       const mint = jest.fn().mockResolvedValue('r-new')
       function Harness() {
@@ -650,13 +418,16 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
           setLiveRows((prev) => [...prev, { id: id as string, title: '', values: values ?? {} }])
           return id as string
         }
+        const onRenameRow = (rowId: string, title: string) => {
+          setLiveRows((prev) => prev.map((row) => (row.id === rowId ? { ...row, title } : row)))
+        }
         return (
           <CollectionCalendar
             schema={schemaWithDate}
             rows={liveRows}
             editable
             onAddRow={onAddRow}
-            onRenameRow={jest.fn()}
+            onRenameRow={onRenameRow}
           />
         )
       }
@@ -669,21 +440,15 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
       await user.click(
         within(cellFor(container, iso)).getByRole('button', { name: 'Add on 20 sep' })
       )
-      await act(async () => {
-        for (let i = 0; i < 5; i++) await Promise.resolve()
-      })
+      const title = await screen.findByRole('textbox', { name: 'Record title' })
+      await user.type(title, 'dentist{Enter}')
 
-      const item = cellFor(container, iso).querySelector<HTMLElement>('[data-row-id="r-new"]')
-      expect(item).toHaveClass('ring-[1.5px]', 'ring-inset', 'ring-mn-text')
-      expect(screen.getByLabelText('Record: Untitled')).toBeInTheDocument()
-      expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Record title' }))
-      expect(screen.getByRole('button', { name: 'Due value' })).toHaveTextContent(
-        formatAtomDate(iso)
-      )
+      expect(within(cellFor(container, iso)).getByText('dentist')).toBeInTheDocument()
+      expect(screen.getByLabelText('Record: dentist')).toBeInTheDocument()
       expect(mint).toHaveBeenCalledTimes(1)
     })
 
-    it('a typed title stays on the day after Esc closes the peek', async () => {
+    it('a created title stays on the day', async () => {
       const iso = '2026-09-20'
       const renames: Array<[string, string]> = []
       function Harness() {
@@ -718,24 +483,14 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
       await user.click(
         within(cellFor(container, iso)).getByRole('button', { name: 'Add on 20 sep' })
       )
-      await act(async () => {
-        for (let i = 0; i < 5; i++) await Promise.resolve()
-      })
-
-      expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Record title' }))
-      // Enter commits before Esc. Esc on a still-dirty title reverts and writes nothing.
-      await user.keyboard('dentist{Enter}')
+      const title = await screen.findByRole('textbox', { name: 'Record title' })
+      await user.type(title, 'dentist{Enter}')
 
       const cell = cellFor(container, iso)
       expect(renames).toEqual([['r-new', 'dentist']])
       expect(within(cell).getByText('dentist')).toBeInTheDocument()
+      expect(screen.queryByRole('dialog', { name: 'new page' })).not.toBeInTheDocument()
       expect(screen.getByLabelText('Record: dentist')).toBeInTheDocument()
-
-      await user.keyboard('{Escape}')
-
-      expect(screen.queryByLabelText('Record: dentist')).not.toBeInTheDocument()
-      expect(within(cell).getByText('dentist')).toBeInTheDocument()
-      expect(renames).toEqual([['r-new', 'dentist']])
     })
 
     it('clicking an existing day-item row never opens the input (stopPropagation on MonthDayStack)', async () => {
@@ -866,7 +621,7 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
       expect(onOpenRow).toHaveBeenCalledWith('r1')
     })
 
-    it('a second click on the already-selected stack item also opens the record', async () => {
+    it('a click on a stack item opens that record’s page in the window', async () => {
       const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
       const onOpenRow = jest.fn()
       const { container } = render(
@@ -885,10 +640,13 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
       const item = within(desktopWrap).getByText('Trim the rim').closest('div')!
 
       await user.click(item)
+
       expect(onOpenRow).not.toHaveBeenCalled()
-
-      await user.click(item)
-
+      expect(screen.getByLabelText('Record: Trim the rim')).toHaveAttribute(
+        'data-placement',
+        'center'
+      )
+      await user.click(screen.getByRole('button', { name: 'Open page' }))
       expect(onOpenRow).toHaveBeenCalledWith('r1')
     })
   })
@@ -996,8 +754,10 @@ describe('CollectionCalendar — a day cell is not a button around its events (K
     })
 
     await user.click(addButton)
+    await act(async () => {})
 
     expect(onAddRow).toHaveBeenCalledWith({ 'p-due': '2026-09-20' })
+    expect(screen.queryByRole('dialog', { name: 'new page' })).not.toBeInTheDocument()
     expect(screen.queryByRole('textbox', { name: /Add an item/ })).not.toBeInTheDocument()
   })
 
@@ -1031,7 +791,7 @@ describe('CollectionCalendar — a day cell is not a button around its events (K
 
     // `userEvent.hover` does not set :hover in jsdom, so the reveal is the
     // named group classes. Bare `group` would also match BlockCanvas's wrapper.
-    expect(cell).toHaveClass('group/day')
+    expect(cell).toHaveClass('group/day', 'cursor-pointer', 'hover:bg-mn-hover-fill')
     expect(cell).not.toHaveClass('group')
     expect(cell).toHaveAttribute('tabindex', '0')
     cell.focus()
@@ -1262,13 +1022,14 @@ describe('CollectionView — dragging a calendar event onto another day (KAN-385
     )
     const item = rowItem(container, '2026-09-12')
 
-    // Select it first — the open branch only fires on an already-selected row.
+    // A click opens the page window. A drag's trailing click must not open the page.
     fireEvent.pointerDown(item, { clientX: 10, clientY: 10 })
     fireEvent.pointerUp(item)
     fireEvent.click(item)
+    expect(onOpenRow).not.toHaveBeenCalled()
     expect(screen.getByLabelText('Record: Trim the rim')).toBeInTheDocument()
+    onOpenRow.mockClear()
 
-    // Drag it and release back onto its own row: the trailing click must not open it.
     fireEvent.pointerDown(item, { clientX: 10, clientY: 10 })
     fireEvent.pointerMove(item, { clientX: 50, clientY: 50 })
     fireEvent.pointerUp(item)
@@ -1311,7 +1072,7 @@ describe('CollectionView — dragging a calendar event onto another day (KAN-385
 describe('span pill (KAN-455)', () => {
   const calendarConfig: ViewBlock = { id: 'cal', type: 'view', mode: 'calendar' }
 
-  it('month is selected by default, week is present and unchecked, agenda is present and unchecked, choosing week reports { span: week } once', async () => {
+  it('month is selected by default, week is present and unchecked, year is present and unchecked, choosing week reports { span: week } once', async () => {
     const user = userEvent.setup()
     const onConfigChange = jest.fn()
     render(
@@ -1323,8 +1084,8 @@ describe('span pill (KAN-455)', () => {
     expect(within(group).getByRole('radio', { name: 'week' })).toBeInTheDocument()
     expect(within(group).getByRole('radio', { name: 'week' })).not.toBeChecked()
     expect(within(group).getByRole('radio', { name: 'day' })).not.toBeChecked()
-    expect(within(group).getByRole('radio', { name: 'agenda' })).toBeInTheDocument()
-    expect(within(group).getByRole('radio', { name: 'agenda' })).not.toBeChecked()
+    expect(within(group).getByRole('radio', { name: 'year' })).toBeInTheDocument()
+    expect(within(group).getByRole('radio', { name: 'year' })).not.toBeChecked()
 
     await user.click(within(group).getByRole('radio', { name: 'week' }))
 
@@ -1334,7 +1095,7 @@ describe('span pill (KAN-455)', () => {
     expect(onConfigChange).toHaveBeenCalledWith({ span: 'week' })
   })
 
-  it('agenda is present and unchecked by default, and choosing agenda reports { span: agenda } once', async () => {
+  it('year is present and unchecked by default, and choosing year reports { span: year } once', async () => {
     const user = userEvent.setup()
     const onConfigChange = jest.fn()
     render(
@@ -1342,15 +1103,15 @@ describe('span pill (KAN-455)', () => {
     )
 
     const group = screen.getByRole('radiogroup', { name: 'span' })
-    expect(within(group).getByRole('radio', { name: 'agenda' })).toBeInTheDocument()
-    expect(within(group).getByRole('radio', { name: 'agenda' })).not.toBeChecked()
+    expect(within(group).getByRole('radio', { name: 'year' })).toBeInTheDocument()
+    expect(within(group).getByRole('radio', { name: 'year' })).not.toBeChecked()
     expect(within(group).getByRole('radio', { name: 'month' })).toBeChecked()
 
-    await user.click(within(group).getByRole('radio', { name: 'agenda' }))
+    await user.click(within(group).getByRole('radio', { name: 'year' }))
 
-    expect(within(group).getByRole('radio', { name: 'agenda' })).toBeChecked()
+    expect(within(group).getByRole('radio', { name: 'year' })).toBeChecked()
     expect(onConfigChange).toHaveBeenCalledTimes(1)
-    expect(onConfigChange).toHaveBeenCalledWith({ span: 'agenda' })
+    expect(onConfigChange).toHaveBeenCalledWith({ span: 'year' })
   })
 
   it('seeds the selected span from the view field, and an absent field stays month', () => {
@@ -1384,12 +1145,12 @@ describe('span pill (KAN-455)', () => {
     expect(onConfigChange).toHaveBeenCalledWith({ span: 'month' }, undefined)
   })
 
-  it('CollectionView passes a stored span: agenda and reports { span: agenda } through its config handler', async () => {
+  it('CollectionView passes a stored span: year and reports { span: year } through its config handler', async () => {
     const user = userEvent.setup()
     const onConfigChange = jest.fn()
     render(
       <CollectionView
-        config={{ ...calendarConfig, span: 'agenda' }}
+        config={{ ...calendarConfig, span: 'year' }}
         schema={schemaWithDate}
         rows={rows}
         onConfigChange={onConfigChange}
@@ -1397,12 +1158,12 @@ describe('span pill (KAN-455)', () => {
     )
 
     const group = screen.getByRole('radiogroup', { name: 'span' })
-    expect(within(group).getByRole('radio', { name: 'agenda' })).toBeChecked()
+    expect(within(group).getByRole('radio', { name: 'year' })).toBeChecked()
 
     await user.click(within(group).getByRole('radio', { name: 'day' }))
-    await user.click(within(group).getByRole('radio', { name: 'agenda' }))
+    await user.click(within(group).getByRole('radio', { name: 'year' }))
 
-    expect(onConfigChange).toHaveBeenCalledWith({ span: 'agenda' }, undefined)
+    expect(onConfigChange).toHaveBeenCalledWith({ span: 'year' }, undefined)
   })
 
   it('CollectionView passes a stored span: week and reports { span: week } through its config handler', async () => {
@@ -1577,9 +1338,11 @@ describe('week header', () => {
   })
 })
 
-describe('agenda header', () => {
-  const thisWindow = 'from 19 oct'
-  const nextWindow = 'from 2 nov'
+describe('year span', () => {
+  const yearRows: CollectionRow[] = [
+    { id: 'dentist', title: 'dentist', values: { 'p-due': '2026-10-19' } },
+    { id: 'renew', title: 'renew', values: { 'p-due': '2026-11-02' } },
+  ]
 
   beforeEach(() => {
     jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
@@ -1588,44 +1351,88 @@ describe('agenda header', () => {
     jest.useRealTimers()
   })
 
-  it('when the span is agenda, the period is the agenda window, prev and next step fourteen days, and today stays on the agenda span', async () => {
+  it('labels the year, steps a year, and today stays on the year span', async () => {
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
     const onConfigChange = jest.fn()
     render(
       <CollectionCalendar
         schema={schemaWithDate}
-        rows={rows}
-        span="agenda"
+        rows={yearRows}
+        span="year"
         onConfigChange={onConfigChange}
       />
     )
 
-    expect(screen.getByText(thisWindow)).toBeInTheDocument()
+    expect(screen.getByText('2026')).toBeInTheDocument()
     expect(screen.queryByText('october 2026')).not.toBeInTheDocument()
-    expect(screen.getByRole('radio', { name: 'agenda' })).toBeChecked()
-    expect(screen.getByRole('button', { name: 'Previous agenda' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Next agenda' })).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'year' })).toBeChecked()
+    expect(screen.getByRole('button', { name: 'Previous year' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Next year' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Previous month' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Next month' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Previous week' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Next week' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Previous day' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Next day' })).not.toBeInTheDocument()
+    expect(
+      screen.getAllByRole('button', {
+        name: /^(january|february|march|april|may|june|july|august|september|october|november|december)$/,
+      })
+    ).toHaveLength(12)
+    expect(screen.getAllByText('mon')).toHaveLength(12)
 
-    await user.click(screen.getByRole('button', { name: 'Next agenda' }))
-    expect(screen.getByText(nextWindow)).toBeInTheDocument()
-    expect(screen.getByRole('radio', { name: 'agenda' })).toBeChecked()
+    await user.click(screen.getByRole('button', { name: 'Next year' }))
+    expect(screen.getByText('2027')).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'year' })).toBeChecked()
 
-    await user.click(screen.getByRole('button', { name: 'Previous agenda' }))
-    expect(screen.getByText(thisWindow)).toBeInTheDocument()
-    expect(screen.getByRole('radio', { name: 'agenda' })).toBeChecked()
+    await user.click(screen.getByRole('button', { name: 'Previous year' }))
+    expect(screen.getByText('2026')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Next agenda' }))
-    expect(screen.getByText(nextWindow)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Next year' }))
     await user.click(screen.getByRole('button', { name: 'today' }))
-    expect(screen.getByText(thisWindow)).toBeInTheDocument()
-    expect(screen.getByRole('radio', { name: 'agenda' })).toBeChecked()
+    expect(screen.getByText('2026')).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'year' })).toBeChecked()
     expect(onConfigChange).not.toHaveBeenCalled()
+  })
+
+  it('marks a day that has a record, and a day click opens that day', async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    const { container } = render(
+      <CollectionCalendar schema={schemaWithDate} rows={yearRows} span="year" />
+    )
+    const year = container.querySelector('[data-part="calendar-year"]')
+    expect(year).not.toBeNull()
+    const nineteenth = container.querySelector(
+      '[data-part="calendar-year-day"][data-iso="2026-10-19"]'
+    )
+    const eighteenth = container.querySelector(
+      '[data-part="calendar-year-day"][data-iso="2026-10-18"]'
+    )
+    const second = container.querySelector('[data-part="calendar-year-day"][data-iso="2026-11-02"]')
+    expect(nineteenth?.querySelector('[data-part="calendar-year-mark"]')).not.toBeNull()
+    expect(second?.querySelector('[data-part="calendar-year-mark"]')).not.toBeNull()
+    expect(eighteenth?.querySelector('[data-part="calendar-year-mark"]')).toBeNull()
+    expect(container.querySelector('[data-part="calendar-day-cell"]')).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: '19 oct' }))
+
+    expect(screen.getByRole('radio', { name: 'day' })).toBeChecked()
+    expect(screen.getByText('mon 19 oct 2026')).toBeInTheDocument()
+    expect(container.querySelector('[data-part="calendar-year"]')).toBeNull()
+  })
+
+  it('a month name opens that month', async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    const onConfigChange = jest.fn()
+    render(
+      <CollectionCalendar
+        schema={schemaWithDate}
+        rows={yearRows}
+        span="year"
+        onConfigChange={onConfigChange}
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: 'november' }))
+
+    expect(screen.getByRole('radio', { name: 'month' })).toBeChecked()
+    expect(screen.getByText('november 2026')).toBeInTheDocument()
+    expect(onConfigChange).toHaveBeenCalledWith({ span: 'month' })
   })
 
   it('the month span keeps Previous month and Next month and the month label', () => {
@@ -1634,8 +1441,7 @@ describe('agenda header', () => {
     expect(screen.getByText('october 2026')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Previous month' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Next month' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Previous agenda' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Next agenda' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Previous year' })).not.toBeInTheDocument()
     expect(screen.getByRole('radio', { name: 'month' })).toBeChecked()
   })
 
@@ -1645,8 +1451,7 @@ describe('agenda header', () => {
     expect(screen.getByText('19 \u2013 25 oct 2026')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Previous week' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Next week' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Previous agenda' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Next agenda' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Previous year' })).not.toBeInTheDocument()
     expect(screen.getByRole('radio', { name: 'week' })).toBeChecked()
   })
 
@@ -1656,440 +1461,8 @@ describe('agenda header', () => {
     expect(screen.getByText('mon 19 oct 2026')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Previous day' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Next day' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Previous agenda' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Next agenda' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Previous year' })).not.toBeInTheDocument()
     expect(screen.getByRole('radio', { name: 'day' })).toBeChecked()
-  })
-})
-
-describe('agenda list', () => {
-  const agendaRows: CollectionRow[] = [
-    { id: 'alcove', title: 'confirm alcove', values: { 'p-due': '2026-10-19' } },
-    { id: 'dentist', title: 'dentist', values: { 'p-due': '2026-10-20T10:00:00' } },
-    { id: 'optician', title: 'optician', values: { 'p-due': '2026-10-21T09:00:00' } },
-    { id: 'plaster', title: 'plaster', values: { 'p-due': '2026-10-21' } },
-    { id: 'skip', title: 'skip hire', values: { 'p-due': '2026-10-18' } },
-    { id: 'renew', title: 'renew', values: { 'p-due': '2026-11-02' } },
-  ]
-
-  beforeEach(() => {
-    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
-  })
-  afterEach(() => {
-    jest.useRealTimers()
-  })
-
-  const day = (container: HTMLElement, iso: string) => {
-    const group = container.querySelector<HTMLElement>(
-      `[data-part="calendar-agenda-day"][data-iso="${iso}"]`
-    )
-    expect(group).not.toBeNull()
-    if (!group) throw new Error(`agenda day ${iso} missing`)
-    return group
-  }
-
-  it('lists coming days from buildAgenda, on both sizes, and draws none of the other bodies', () => {
-    const { container } = render(
-      <CollectionCalendar schema={schemaWithDate} rows={agendaRows} span="agenda" />
-    )
-
-    const list = container.querySelector<HTMLElement>('[data-part="calendar-agenda"]')
-    expect(list).not.toBeNull()
-    if (!list) return
-    expect(container.querySelectorAll('[data-part="calendar-agenda"]')).toHaveLength(1)
-    expect(list).toHaveClass('flex', 'flex-col')
-    expect(list).not.toHaveClass('md:hidden')
-    expect(list).not.toHaveClass('hidden')
-
-    const groups = [...list.querySelectorAll<HTMLElement>('[data-part="calendar-agenda-day"]')]
-    expect(groups.map((group) => group.dataset.iso)).toEqual([
-      '2026-10-19',
-      '2026-10-20',
-      '2026-10-21',
-    ])
-    for (const group of groups) {
-      expect(group).toHaveClass(
-        'grid',
-        'grid-cols-[52px_minmax(0,1fr)]',
-        'gap-2',
-        'py-2.5',
-        'border-t',
-        'border-mn-text/[0.09]',
-        'dark:border-mn-text/[0.14]',
-        'md:grid-cols-[88px_minmax(0,1fr)]',
-        'md:gap-4'
-      )
-      const head = group.firstElementChild
-      expect(head).toHaveClass('flex', 'flex-col', 'gap-0.5', 'pt-1.5')
-    }
-
-    const today = day(container, '2026-10-19')
-    const todayLabel = within(today).getByText('mon 19 oct · today')
-    expect(todayLabel).toHaveClass(
-      'text-[10.5px]',
-      'font-medium',
-      'uppercase',
-      'tracking-[.1em]',
-      'text-mn-text-secondary'
-    )
-    const todayNumber = today.querySelector('[data-part="due-today"]')
-    expect(todayNumber).toHaveAttribute('data-kind', 'date')
-    expect(todayNumber).toHaveClass(
-      'inline-flex',
-      'h-[30px]',
-      'min-w-[30px]',
-      'text-[20px]',
-      'font-medium',
-      'tabular-nums'
-    )
-    const alcove = within(today)
-      .getByText('confirm alcove')
-      .closest<HTMLElement>('[data-part="calendar-agenda-item"]')
-    expect(alcove).not.toBeNull()
-    if (!alcove) return
-    expect(alcove.querySelector('[data-part="calendar-agenda-time"]')).toBeNull()
-    expect(alcove.querySelector('span')).toHaveClass(
-      'size-[13px]',
-      'flex-none',
-      'rounded-[4px]',
-      'ring-[1.4px]',
-      'ring-inset',
-      'ring-mn-text/[0.32]'
-    )
-    expect(within(alcove).getByText('confirm alcove')).toHaveClass(
-      'min-w-0',
-      'flex-1',
-      'truncate',
-      'text-[15px]',
-      'leading-[1.3]',
-      'text-mn-text',
-      'md:text-[14px]'
-    )
-    expect(alcove).toHaveClass(
-      'flex',
-      'items-center',
-      'gap-2.5',
-      'min-h-11',
-      'rounded-[10px]',
-      'px-2',
-      'md:min-h-[38px]'
-    )
-
-    const tuesday = day(container, '2026-10-20')
-    expect(within(tuesday).getByText('tue 20 oct')).toBeInTheDocument()
-    expect(tuesday.querySelector('[data-part="due-today"]')).toBeNull()
-    expect(within(tuesday).getByText('20')).toHaveClass(
-      'h-[30px]',
-      'min-w-[30px]',
-      'text-[20px]',
-      'font-medium',
-      'tabular-nums',
-      'text-mn-text'
-    )
-    const dentist = within(tuesday)
-      .getByText('dentist')
-      .closest<HTMLElement>('[data-part="calendar-agenda-item"]')
-    expect(dentist?.querySelector('[data-part="calendar-agenda-time"]')).toHaveTextContent('10:00')
-    expect(dentist?.querySelector('[data-part="calendar-agenda-time"]')).toHaveClass(
-      'text-[11px]',
-      'font-medium',
-      'text-mn-text/80',
-      'tabular-nums'
-    )
-
-    const wednesday = day(container, '2026-10-21')
-    expect(within(wednesday).getByText('wed 21 oct')).toBeInTheDocument()
-    const wednesdayItems = [
-      ...wednesday.querySelectorAll<HTMLElement>('[data-part="calendar-agenda-item"]'),
-    ]
-    expect(wednesdayItems.map((item) => (item.textContent ?? '').replace(/\s+/g, ''))).toEqual([
-      'plaster',
-      'optician09:00',
-    ])
-    const opticianTime = wednesdayItems[1]?.querySelector('[data-part="calendar-agenda-time"]')
-    expect(opticianTime).toHaveTextContent('09:00')
-    expect(wednesdayItems[0]?.querySelector('[data-part="calendar-agenda-time"]')).toBeNull()
-
-    expect(screen.queryByText('skip hire')).not.toBeInTheDocument()
-    expect(screen.queryByText('renew')).not.toBeInTheDocument()
-    expect(screen.queryByText('thu 22 oct')).not.toBeInTheDocument()
-    expect(container.querySelector('[data-part="calendar-day-cell"]')).toBeNull()
-    expect(container.querySelector('[data-part="calendar-week-body"]')).toBeNull()
-    expect(container.querySelector('[data-part="calendar-day-body"]')).toBeNull()
-    expect(container.querySelector('[data-part="calendar-week-strip"]')).toBeNull()
-    expect(container.querySelector('[data-part="calendar-focus-list"]')).toBeNull()
-  })
-})
-
-describe('agenda reach', () => {
-  const agendaRows: CollectionRow[] = [
-    { id: 'alcove', title: 'confirm alcove', values: { 'p-due': '2026-10-19' } },
-    { id: 'dentist', title: 'dentist', values: { 'p-due': '2026-10-20T10:00:00' } },
-    { id: 'optician', title: 'optician', values: { 'p-due': '2026-10-21T09:00:00' } },
-    { id: 'plaster', title: 'plaster', values: { 'p-due': '2026-10-21' } },
-    { id: 'skip', title: 'skip hire', values: { 'p-due': '2026-10-18' } },
-    { id: 'renew', title: 'renew', values: { 'p-due': '2026-11-02' } },
-  ]
-
-  let previousObserver: typeof window.IntersectionObserver | undefined
-  let reachAgendaEnd: () => void
-
-  beforeEach(() => {
-    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
-    previousObserver = window.IntersectionObserver
-    let observed: IntersectionObserverCallback | null = null
-    reachAgendaEnd = () => {
-      const fire = observed
-      if (!fire) return
-      act(() => {
-        fire([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver)
-      })
-    }
-    class AgendaEndObserver implements IntersectionObserver {
-      readonly root: Element | Document | null = null
-      readonly rootMargin = ''
-      readonly thresholds: readonly number[] = []
-      private readonly callback: IntersectionObserverCallback
-
-      constructor(callback: IntersectionObserverCallback) {
-        this.callback = callback
-      }
-
-      observe(): void {
-        observed = this.callback
-      }
-
-      unobserve(): void {}
-
-      disconnect(): void {}
-
-      takeRecords(): IntersectionObserverEntry[] {
-        return []
-      }
-    }
-    window.IntersectionObserver = AgendaEndObserver as unknown as typeof IntersectionObserver
-  })
-
-  afterEach(() => {
-    window.IntersectionObserver = previousObserver as typeof IntersectionObserver
-    jest.useRealTimers()
-  })
-
-  it('appends the next dated days when the list end is reached', () => {
-    const { container } = render(
-      <CollectionCalendar schema={schemaWithDate} rows={agendaRows} span="agenda" />
-    )
-
-    expect(
-      [...container.querySelectorAll<HTMLElement>('[data-part="calendar-agenda-day"]')].map(
-        (group) => group.dataset.iso
-      )
-    ).toEqual(['2026-10-19', '2026-10-20', '2026-10-21'])
-    expect(screen.queryByText('renew')).not.toBeInTheDocument()
-    expect(screen.queryByText('skip hire')).not.toBeInTheDocument()
-    expect(screen.getByText('from 19 oct')).toBeInTheDocument()
-
-    reachAgendaEnd()
-
-    const renewDay = container.querySelector<HTMLElement>(
-      '[data-part="calendar-agenda-day"][data-iso="2026-11-02"]'
-    )
-    expect(renewDay).not.toBeNull()
-    if (!renewDay) return
-    expect(within(renewDay).getByText('renew')).toBeInTheDocument()
-    expect(
-      container.querySelector('[data-part="calendar-agenda-day"][data-iso="2026-10-22"]')
-    ).toBeNull()
-    expect(screen.queryByText('skip hire')).not.toBeInTheDocument()
-    expect(screen.getByText('from 19 oct')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'load more' })).toBeNull()
-    expect(container.querySelector('[data-part="calendar-agenda-end"]')?.tagName).toBe('DIV')
-  })
-
-  it('adds nothing when nothing is dated past the current end', () => {
-    const rows: CollectionRow[] = [
-      { id: 'alcove', title: 'confirm alcove', values: { 'p-due': '2026-10-19' } },
-      { id: 'dentist', title: 'dentist', values: { 'p-due': '2026-10-20T10:00:00' } },
-      { id: 'plaster', title: 'plaster', values: { 'p-due': '2026-10-21' } },
-      { id: 'optician', title: 'optician', values: { 'p-due': '2026-10-21T09:00:00' } },
-      { id: 'skip', title: 'skip hire', values: { 'p-due': '2026-10-18' } },
-    ]
-    const { container } = render(
-      <CollectionCalendar schema={schemaWithDate} rows={rows} span="agenda" />
-    )
-    const dayIsos = () =>
-      [...container.querySelectorAll<HTMLElement>('[data-part="calendar-agenda-day"]')].map(
-        (group) => group.dataset.iso
-      )
-
-    reachAgendaEnd()
-
-    expect(dayIsos()).toEqual(['2026-10-19', '2026-10-20', '2026-10-21'])
-    expect(
-      container.querySelector('[data-part="calendar-agenda-day"][data-iso="2026-11-02"]')
-    ).toBeNull()
-    expect(screen.queryByText('skip hire')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'load more' })).toBeNull()
-    expect(container.querySelector('[data-part="calendar-agenda-end"]')?.tagName).toBe('DIV')
-
-    reachAgendaEnd()
-
-    expect(dayIsos()).toEqual(['2026-10-19', '2026-10-20', '2026-10-21'])
-    expect(
-      container.querySelector('[data-part="calendar-agenda-day"][data-iso="2026-11-02"]')
-    ).toBeNull()
-    expect(screen.queryByText('skip hire')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'load more' })).toBeNull()
-  })
-
-  it('agenda step replaces the window', async () => {
-    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
-    const { container } = render(
-      <CollectionCalendar schema={schemaWithDate} rows={agendaRows} span="agenda" />
-    )
-
-    reachAgendaEnd()
-
-    expect(screen.getByText('renew')).toBeInTheDocument()
-    expect(screen.getByText('from 19 oct')).toBeInTheDocument()
-    expect(screen.getByText('confirm alcove')).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'Next agenda' }))
-
-    expect(screen.getByText('from 2 nov')).toBeInTheDocument()
-    expect(screen.queryByText('confirm alcove')).not.toBeInTheDocument()
-    expect(screen.getByRole('radio', { name: 'agenda' })).toBeChecked()
-
-    await user.click(screen.getByRole('button', { name: 'today' }))
-
-    expect(screen.getByText('from 19 oct')).toBeInTheDocument()
-    expect(screen.getByText('confirm alcove')).toBeInTheDocument()
-    expect(screen.getByRole('radio', { name: 'agenda' })).toBeChecked()
-
-    await user.click(screen.getByRole('button', { name: 'Previous agenda' }))
-
-    expect(screen.getByText('from 5 oct')).toBeInTheDocument()
-    expect(screen.getByRole('radio', { name: 'agenda' })).toBeChecked()
-    expect(container.querySelector('[data-part="calendar-agenda"]')).not.toBeNull()
-  })
-})
-
-describe('agenda peek', () => {
-  const dentist: CollectionRow = {
-    id: 'dentist',
-    title: 'dentist',
-    values: { 'p-due': '2026-10-20T10:00:00' },
-  }
-
-  beforeEach(() => {
-    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
-  })
-  afterEach(() => {
-    jest.useRealTimers()
-  })
-
-  it('clicking an agenda item selects it and opens the existing peek, and does not open the record', async () => {
-    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
-    const onOpenRow = jest.fn()
-    const { container } = render(
-      <CollectionCalendar
-        schema={schemaWithDate}
-        rows={[dentist]}
-        span="agenda"
-        onOpenRow={onOpenRow}
-      />
-    )
-
-    const item = container.querySelector<HTMLElement>('[data-part="calendar-agenda-item"]')
-    expect(item).not.toBeNull()
-    if (!item) return
-    expect(item).not.toHaveClass('ring-[1.5px]')
-    expect(screen.queryByLabelText('Record: dentist')).not.toBeInTheDocument()
-    expect(container.querySelectorAll('[data-part="record-peek"]')).toHaveLength(0)
-
-    await user.click(item)
-
-    expect(item).toHaveClass('ring-[1.5px]', 'ring-inset', 'ring-mn-text')
-    expect(screen.getByLabelText('Record: dentist')).toBeInTheDocument()
-    expect(container.querySelectorAll('[data-part="record-peek"]')).toHaveLength(1)
-    expect(onOpenRow).not.toHaveBeenCalled()
-  })
-})
-
-describe('agenda empty', () => {
-  const skipHire: CollectionRow = {
-    id: 'skip',
-    title: 'skip hire',
-    values: { 'p-due': '2026-10-18' },
-  }
-
-  beforeEach(() => {
-    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 19, 12, 0, 0))
-  })
-  afterEach(() => {
-    jest.useRealTimers()
-  })
-
-  it('a dated row outside the window leaves today with nothing dated, and a later empty window shows that line once', async () => {
-    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
-    const { container } = render(
-      <CollectionCalendar schema={schemaWithDate} rows={[skipHire]} span="agenda" />
-    )
-
-    const today = container.querySelector<HTMLElement>(
-      '[data-part="calendar-agenda-day"][data-iso="2026-10-19"]'
-    )
-    expect(today).not.toBeNull()
-    if (!today) return
-    expect(within(today).getByText('mon 19 oct · today')).toBeInTheDocument()
-    const todayNone = within(today).getByText('nothing dated')
-    expect(todayNone).toHaveClass('py-2.5', 'text-[13px]', 'text-mn-text-secondary')
-    expect(todayNone.compareDocumentPosition(within(today).getByText('mon 19 oct · today'))).toBe(
-      Node.DOCUMENT_POSITION_PRECEDING
-    )
-    expect(screen.queryByText('skip hire')).not.toBeInTheDocument()
-    expect(screen.queryByText(CALENDAR_EMPTY_LINE)).not.toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'Next agenda' }))
-    expect(screen.getByText('nothing dated')).toBeInTheDocument()
-    expect(screen.getAllByText('nothing dated')).toHaveLength(1)
-    expect(screen.queryByText('mon 19 oct · today')).not.toBeInTheDocument()
-    expect(container.querySelector('[data-part="calendar-agenda-day"]')).toBeNull()
-    expect(screen.queryByText(CALENDAR_EMPTY_LINE)).not.toBeInTheDocument()
-  })
-
-  it('zero rows still shows the calendar empty line and not nothing dated', () => {
-    const { container } = render(
-      <CollectionCalendar schema={schemaWithDate} rows={[]} span="agenda" />
-    )
-    expect(screen.getByText(CALENDAR_EMPTY_LINE)).toBeInTheDocument()
-    expect(screen.queryByText('nothing dated')).not.toBeInTheDocument()
-    expect(container.querySelector('[data-part="calendar-agenda"]')).toBeNull()
-  })
-
-  it('no date field and every row undated keep the calendar empty and omit the agenda list', () => {
-    const { container, rerender } = render(
-      <CollectionCalendar
-        schema={schemaNoDate}
-        rows={[{ id: 'note', title: 'note', values: {} }]}
-        span="agenda"
-      />
-    )
-    expect(screen.getByText(CALENDAR_EMPTY_LINE)).toBeInTheDocument()
-    expect(screen.queryByText('nothing dated')).not.toBeInTheDocument()
-    expect(container.querySelector('[data-part="calendar-agenda"]')).toBeNull()
-
-    rerender(
-      <CollectionCalendar
-        schema={schemaWithDate}
-        rows={[{ id: 'note', title: 'note', values: {} }]}
-        span="agenda"
-      />
-    )
-    expect(screen.getByText('1 records, none with a date')).toBeInTheDocument()
-    expect(screen.queryByText('nothing dated')).not.toBeInTheDocument()
-    expect(screen.queryByText(CALENDAR_EMPTY_LINE)).not.toBeInTheDocument()
-    expect(container.querySelector('[data-part="calendar-agenda"]')).toBeNull()
   })
 })
 
@@ -2322,8 +1695,8 @@ describe('week all day', () => {
     expect(item).not.toBeNull()
     if (!item) return
     expect(item.style.gridColumn).toBe(wednesday.style.gridColumn)
-    expect(item).toHaveClass('h-[22px]')
-    expect(item.querySelector('span')).toHaveClass('size-[9px]')
+    expect(item).toHaveClass('h-[22px]', 'rounded-full', 'bg-mn-text/[0.075]')
+    expect(item.querySelector('.size-\\[9px\\]')).toBeNull()
     expect(within(item).getByText('confirm alcove')).toHaveClass('text-[11.5px]', 'font-medium')
 
     expect(within(allDay).queryByText('dentist')).not.toBeInTheDocument()
@@ -2631,7 +2004,7 @@ describe('blank click opens the day (KAN-455)', () => {
     expect(onConfigChange).toHaveBeenCalledWith({ span: 'day' })
   })
 
-  it('blank click opens nothing from the plus, Enter, a record, a drag, or an armed cell, and a mobile dot only moves the focus', async () => {
+  it('blank click opens nothing from the plus, Enter, a record, or a drag, and a mobile dot only moves the focus', async () => {
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
     const onAddRow = jest.fn().mockResolvedValue('r-new')
     const onMoveDate = jest.fn()
@@ -2651,17 +2024,20 @@ describe('blank click opens the day (KAN-455)', () => {
     await user.click(
       within(cellFor(container, '2026-10-21')).getByRole('button', { name: 'Add on 21 oct' })
     )
-    expect(onAddRow).toHaveBeenCalledTimes(1)
+    await act(async () => {})
     expect(onAddRow).toHaveBeenCalledWith({ 'p-due': '2026-10-21' })
+    expect(screen.queryByRole('dialog', { name: 'new page' })).not.toBeInTheDocument()
     expect(screen.getByRole('radio', { name: 'month' })).toBeChecked()
     expect(screen.getByText('october 2026')).toBeInTheDocument()
+    await user.keyboard('{Escape}')
 
     const empty = cellFor(container, '2026-10-22')
     empty.focus()
     await user.keyboard('{Enter}')
+    await act(async () => {})
     expect(onAddRow).toHaveBeenCalledTimes(2)
-    expect(onAddRow).toHaveBeenLastCalledWith({ 'p-due': '2026-10-22' })
     expect(screen.getByRole('radio', { name: 'month' })).toBeChecked()
+    await user.keyboard('{Escape}')
 
     await user.click(within(cellFor(container, '2026-10-21')).getByText('dentist'))
     expect(screen.getByText('october 2026')).toBeInTheDocument()
@@ -2676,21 +2052,8 @@ describe('blank click opens the day (KAN-455)', () => {
     expect(within(focusList).getByText('thu oct')).toBeInTheDocument()
     expect(within(focusList).queryByText('mon oct · today')).not.toBeInTheDocument()
     expect(container.querySelector('[data-part="calendar-day-body"]')).toBeNull()
-    expect(onConfigChange).not.toHaveBeenCalled()
-
-    await user.click(screen.getByRole('button', { name: '1 without a date' }))
-    await user.click(
-      within(screen.getByRole('listbox', { name: 'without a date' })).getByRole('option', {
-        name: /optician/,
-      })
-    )
-    await user.click(cellFor(container, '2026-10-23'))
-    expect(onMoveDate).toHaveBeenCalledTimes(1)
-    expect(onMoveDate).toHaveBeenCalledWith('undated', 'p-due', '2026-10-23')
-    expect(onAddRow).toHaveBeenCalledTimes(2)
-    expect(screen.getByText('october 2026')).toBeInTheDocument()
-    expect(screen.getByRole('radio', { name: 'month' })).toBeChecked()
-    expect(container.querySelector('[data-part="calendar-day-cell"]')).not.toBeNull()
+    expect(screen.queryByRole('button', { name: /without a date/ })).not.toBeInTheDocument()
+    expect(onMoveDate).not.toHaveBeenCalled()
     expect(onConfigChange).not.toHaveBeenCalled()
     unmount()
 
@@ -3519,18 +2882,82 @@ describe('KAN-459 done', () => {
 
     const dentist = cell.querySelector<HTMLElement>('[data-row-id="dentist"]')
     const dentistTitle = dentist && within(dentist).getByText('dentist')
-    const dentistDot = dentistTitle?.previousElementSibling
+    expect(dentist).toHaveClass('rounded-full', 'bg-mn-text/[0.075]')
+    expect(dentist?.querySelector('.size-\\[9px\\]')).toBeNull()
     expect(dentistTitle).toHaveClass('text-mn-text-secondary', 'line-through')
     expect(dentistTitle).not.toHaveClass('text-mn-text')
-    expect(dentistDot).toHaveClass('size-[9px]', 'bg-mn-text-secondary')
-    expect(dentistDot).not.toHaveClass('ring-[1.4px]', 'ring-inset', 'ring-mn-text/[0.32]')
 
     const alcove = cell.querySelector<HTMLElement>('[data-row-id="alcove"]')
     const alcoveTitle = alcove && within(alcove).getByText('confirm alcove')
-    const alcoveDot = alcoveTitle?.previousElementSibling
+    expect(alcove).toHaveClass('rounded-full')
+    expect(alcove?.querySelector('.size-\\[9px\\]')).toBeNull()
     expect(alcoveTitle).toHaveClass('text-mn-text')
     expect(alcoveTitle).not.toHaveClass('text-mn-text-secondary', 'line-through')
-    expect(alcoveDot).toHaveClass('ring-[1.4px]', 'ring-inset', 'ring-mn-text/[0.32]')
-    expect(alcoveDot).not.toHaveClass('bg-mn-text-secondary')
+  })
+})
+
+describe('recurring events', () => {
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-10-21T15:00:00Z'))
+  })
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  const schema: PropertySchema = [
+    { id: 'p-due', name: 'Due', type: 'date' },
+    { id: 'p-rep', name: 'repeats', type: 'text' },
+  ]
+  const weekly: CollectionRow[] = [
+    {
+      id: 'r1',
+      title: 'Standup',
+      values: { 'p-due': '2026-10-05', 'p-rep': 'every week' },
+    },
+  ]
+
+  function cellFor(container: HTMLElement, iso: string) {
+    return container.querySelector<HTMLElement>(
+      `[data-part="calendar-day-cell"][data-iso="${iso}"]`
+    )!
+  }
+
+  it('draws one weekly record on each later week', () => {
+    const { container } = render(<CollectionCalendar schema={schema} rows={weekly} />)
+    for (const iso of ['2026-10-05', '2026-10-12', '2026-10-19', '2026-10-26']) {
+      expect(within(cellFor(container, iso)).getByText('Standup')).toBeInTheDocument()
+    }
+    expect(cellFor(container, '2026-10-06').textContent).not.toContain('Standup')
+  })
+
+  it('stores a repeat from the event page', async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    const onEdit = jest.fn()
+    const once: CollectionRow[] = [
+      { id: 'r1', title: 'Standup', values: { 'p-due': '2026-10-05', 'p-rep': '' } },
+    ]
+    render(<CollectionCalendar schema={schema} rows={once} editable onEdit={onEdit} />)
+    await user.click(screen.getAllByText('Standup')[0])
+    await user.click(screen.getByRole('button', { name: 'repeats' }))
+    await user.click(screen.getByRole('option', { name: 'every week' }))
+    expect(onEdit).toHaveBeenCalledWith('r1', 'p-rep', 'every week')
+  })
+
+  it('opens the task as its page, with the fields that task has', async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    const dated: PropertySchema = [
+      { id: 'p-due', name: 'Due', type: 'date' },
+      { id: 'p-status', name: 'Status', type: 'text' },
+    ]
+    const once: CollectionRow[] = [
+      { id: 'r1', title: 'Standup', values: { 'p-due': '2026-10-05', 'p-status': 'open' } },
+    ]
+    render(<CollectionCalendar schema={dated} rows={once} editable onRenameRow={jest.fn()} />)
+    await user.click(screen.getAllByText('Standup')[0])
+    const page = screen.getByLabelText('Record: Standup')
+    expect(within(page).getByText('Due')).toBeInTheDocument()
+    expect(within(page).getByText('Status')).toBeInTheDocument()
+    expect(within(page).queryByRole('button', { name: 'repeats' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'new page' })).not.toBeInTheDocument()
   })
 })

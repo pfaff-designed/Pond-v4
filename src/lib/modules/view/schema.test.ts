@@ -198,7 +198,15 @@ describe('applyConfigPatch mode', () => {
     expect(layoutPatch('calendar').mode).toBe('calendar')
   })
 
-  it.each<[string, ViewBlock, ViewConfigPatch, string | undefined, (block: ViewBlock, patched: ViewBlock) => void]>([
+  it.each<
+    [
+      string,
+      ViewBlock,
+      ViewConfigPatch,
+      string | undefined,
+      (block: ViewBlock, patched: ViewBlock) => void,
+    ]
+  >([
     [
       'legacy block writes top-level mode and leaves views absent',
       legacy,
@@ -517,10 +525,11 @@ describe('span (KAN-455)', () => {
     expect(resolveActiveView(viewSchema.parse(saved)).config.span ?? 'month').toBe('week')
   })
 
-  it('round-trips span: agenda on a legacy block and on a saved view', () => {
-    const agendaLegacy: ViewBlock = { ...legacyBlock, mode: 'calendar', span: 'agenda' }
-    expect(viewSchema.parse(agendaLegacy)).toEqual(agendaLegacy)
-    expect(viewSchema.parse(agendaLegacy).span ?? 'month').toBe('agenda')
+  it('round-trips span: year, and a stored agenda reads as year', () => {
+    const yearLegacy: ViewBlock = { ...legacyBlock, mode: 'calendar', span: 'year' }
+    expect(viewSchema.parse(yearLegacy)).toEqual(yearLegacy)
+    expect(viewSchema.parse(yearLegacy).span ?? 'month').toBe('year')
+    expect(viewSchema.parse({ ...legacyBlock, mode: 'calendar', span: 'agenda' }).span).toBe('year')
 
     const saved: ViewBlock = {
       id: 'b-cal',
@@ -528,12 +537,12 @@ describe('span (KAN-455)', () => {
       mode: 'board',
       views: [
         { id: 'v-board', label: 'board', kind: 'board', config: { groupBy: 'p-status' } },
-        { id: 'v-agenda', label: 'agenda', kind: 'calendar', config: { span: 'agenda' } },
+        { id: 'v-year', label: 'year', kind: 'calendar', config: { span: 'year' } },
       ],
-      activeViewId: 'v-agenda',
+      activeViewId: 'v-year',
     }
     expect(viewSchema.parse(saved)).toEqual(saved)
-    expect(resolveActiveView(viewSchema.parse(saved)).config.span ?? 'month').toBe('agenda')
+    expect(resolveActiveView(viewSchema.parse(saved)).config.span ?? 'month').toBe('year')
   })
 
   it('resolveActiveView returns span from a views[] config', () => {

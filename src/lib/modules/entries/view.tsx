@@ -15,7 +15,7 @@ import { useBlockRow } from '@/lib/modules/block-row-context'
  * blank row in the stack shows nothing (KAN-444).
  */
 const blankLine = (data: EntriesBlock, index: number) =>
-  index === data.entries.length - 1 ? data.placeholder ?? ENTRIES_EMPTY_LINE : ''
+  index === data.entries.length - 1 ? (data.placeholder ?? ENTRIES_EMPTY_LINE) : ''
 
 /**
  * Entries view (#250) — dated prose. Row geometry and serif size follow
@@ -146,9 +146,29 @@ export function requestEntryFocus(blockId: string, entryId: string): void {
 /** The board's month copy — lowercase English, three letters (`28 oct`, `14 nov`). */
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
 
+const pad = (n: number) => String(n).padStart(2, '0')
+
+/** The day an entry was written, as a local `YYYY-MM-DD`. The label is derived. */
+export function entryDateIso(date: Date): string {
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
+
 /** A date as the board labels an entry: `d mmm`, lowercase, no leading zero. */
 export function entryDateLabel(date: Date): string {
   return `${date.getDate()} ${MONTHS[date.getMonth()]}`
+}
+
+/**
+ * What the date column shows. A stored day that is today reads `today`, and
+ * tomorrow it reads that day's label. A legacy label (`28 oct`, or the word
+ * `today` that was never a day) is shown as stored until a write stamps a day.
+ */
+export function displayEntryDate(stored: string, now: Date = new Date()): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(stored)
+  if (!match) return stored
+  const iso = `${match[1]}-${match[2]}-${match[3]}`
+  if (iso === entryDateIso(now)) return 'today'
+  return entryDateLabel(new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])))
 }
 
 /**
@@ -166,7 +186,7 @@ export function addEntry(
 ): EntriesBlock {
   return {
     ...data,
-    entries: [{ id, date: entryDateLabel(now), text }, ...data.entries],
+    entries: [{ id, date: entryDateIso(now), text }, ...data.entries],
   }
 }
 
@@ -195,7 +215,8 @@ export function addEntryFocused(data: EntriesBlock, text: string = ''): EntriesB
  * cannot), a `scrollHeight`-driven fallback where it doesn't. Running both
  * together would have the JS path fight the CSS one for the same box.
  */
-const SUPPORTS_FIELD_SIZING = typeof CSS !== 'undefined' && CSS.supports?.('field-sizing', 'content')
+const SUPPORTS_FIELD_SIZING =
+  typeof CSS !== 'undefined' && CSS.supports?.('field-sizing', 'content')
 
 /**
  * The `scrollHeight` fallback: a `useLayoutEffect` on the text re-measures
@@ -305,6 +326,21 @@ export function EntriesView({ data, editable, onChange }: ModuleViewProps<Entrie
     pendingFocusByBlock.delete(data.id)
   }, [editable, data.id, data.entries])
 
+  // A seeded entry stores the word `today`, which never becomes the day it was
+  // written. The first time the block can be saved, stamp today's date. After
+  // that the label follows the day: `today` while it is, `21 oct` once it isn't.
+  useEffect(() => {
+    if (!onChange) return
+    if (!data.entries.some((entry) => entry.date === 'today')) return
+    const iso = entryDateIso(new Date())
+    onChange({
+      ...data,
+      entries: data.entries.map((entry) =>
+        entry.date === 'today' ? { ...entry, date: iso } : entry
+      ),
+    })
+  }, [data, onChange])
+
   function patchEntry(index: number, patch: Partial<Entry>) {
     onChange?.({
       ...data,
@@ -386,7 +422,7 @@ export function EntriesView({ data, editable, onChange }: ModuleViewProps<Entrie
               onMouseLeave={() => setHoveredId((id) => (id === entry.id ? null : id))}
             >
               <span data-part="date" className={DATE}>
-                {entry.date}
+                {displayEntryDate(entry.date)}
               </span>
               <EntryTextarea
                 entry={entry}
@@ -420,21 +456,14 @@ export function EntriesView({ data, editable, onChange }: ModuleViewProps<Entrie
         return (
           <div key={entry.id} className={ROW}>
             <span data-part="date" className={DATE}>
-              {entry.date}
+              {displayEntryDate(entry.date)}
             </span>
             {filled ? (
-              <p
-                data-part="text"
-                className={`${SERIF} whitespace-pre-wrap text-mn-text`}
-              >
+              <p data-part="text" className={`${SERIF} whitespace-pre-wrap text-mn-text`}>
                 {entry.text}
               </p>
             ) : (
-              <p
-                data-part="text"
-                data-empty=""
-                className={`${SERIF} text-mn-text-secondary`}
-              >
+              <p data-part="text" data-empty="" className={`${SERIF} text-mn-text-secondary`}>
                 {blankLine(data, i)}
               </p>
             )}

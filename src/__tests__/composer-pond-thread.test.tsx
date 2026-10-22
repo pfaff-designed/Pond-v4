@@ -55,6 +55,7 @@ jest.mock('@ai-sdk/react', () => ({
 }))
 
 import { AITerminal } from '@/components/organisms/AITerminal'
+import { openComposerIfClosed } from './helpers/open-composer'
 import { PondContext, type PondContextValue } from '@/lib/pond/context'
 import { getOrCreateConversation, saveTranscript } from '@/lib/conversation/client'
 import type { Pond } from '@/lib/pond/client'
@@ -85,8 +86,7 @@ const pondContext = (
   addPond: () => {},
 })
 
-const queryClient = () =>
-  new QueryClient({ defaultOptions: { queries: { retry: false } } })
+const queryClient = () => new QueryClient({ defaultOptions: { queries: { retry: false } } })
 
 const renderIn = (value: PondContextValue) => {
   const client = queryClient()
@@ -98,6 +98,7 @@ const renderIn = (value: PondContextValue) => {
     </QueryClientProvider>
   )
   const utils = render(view(value))
+  openComposerIfClosed()
   return { rerenderIn: (v: PondContextValue) => utils.rerender(view(v)) }
 }
 
@@ -191,7 +192,12 @@ describe('the composer thread follows the active pond', () => {
     const { rerenderIn } = renderIn(pondContext(LIFE, false))
     await resolveThread(LIFE)
     await waitFor(() =>
-      expect(saveTranscript).toHaveBeenCalledWith(expect.anything(), `conv-${LIFE.id}`, mockMessages, expect.anything())
+      expect(saveTranscript).toHaveBeenCalledWith(
+        expect.anything(),
+        `conv-${LIFE.id}`,
+        mockMessages,
+        expect.anything()
+      )
     )
     jest.mocked(saveTranscript).mockClear()
 

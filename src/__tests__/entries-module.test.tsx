@@ -29,7 +29,13 @@ import {
   ENTRIES_EMPTY_LINE,
   type EntriesBlock,
 } from '@/lib/modules/entries/schema'
-import { EntriesView, addEntry, entryDateLabel } from '@/lib/modules/entries/view'
+import {
+  EntriesView,
+  addEntry,
+  displayEntryDate,
+  entryDateIso,
+  entryDateLabel,
+} from '@/lib/modules/entries/view'
 import { BlockRowProvider } from '@/lib/modules/block-row-context'
 import { blockSchema } from '@/lib/modules/content'
 import { moduleDescriptors } from '@/lib/modules/registry'
@@ -215,10 +221,10 @@ describe('entries in the palette and the frame', () => {
 // ── addEntry — the insert path ──────────────────────────────────────────────────
 
 describe('addEntry / entryDateLabel — the engine-shaped insert, newest first', () => {
-  it('prepends one blank entry dated today, in the board’s lowercase `d mmm`; the rest by reference', () => {
+  it('prepends one blank entry dated that day, stored as the day so the label can change; the rest by reference', () => {
     const next = addEntry(updates, new Date(2026, 9, 2))
     expect(next.entries).toHaveLength(3)
-    expect(next.entries[0]).toMatchObject({ date: '2 oct', text: '' })
+    expect(next.entries[0]).toMatchObject({ date: '2026-10-02', text: '' })
     expect(typeof next.entries[0].id).toBe('string')
     expect(next.entries[1]).toBe(updates.entries[0])
     expect(next.entries[2]).toBe(updates.entries[1])
@@ -228,6 +234,14 @@ describe('addEntry / entryDateLabel — the engine-shaped insert, newest first',
   it('entryDateLabel is the board’s copy: lowercase English month, no leading zero', () => {
     expect(entryDateLabel(new Date(2026, 10, 14))).toBe('14 nov')
     expect(entryDateLabel(new Date(2026, 2, 1))).toBe('1 mar')
+  })
+
+  it('a stored day reads today on that day and the date after it', () => {
+    const day = new Date(2026, 9, 21)
+    expect(entryDateIso(day)).toBe('2026-10-21')
+    expect(displayEntryDate('2026-10-21', day)).toBe('today')
+    expect(displayEntryDate('2026-10-21', new Date(2026, 9, 22))).toBe('21 oct')
+    expect(displayEntryDate('28 oct', day)).toBe('28 oct')
   })
 })
 
@@ -720,7 +734,11 @@ describe('EntriesView — the hover `remove` (KAN-356)', () => {
 
 describe('EntriesView — ⌫ in an empty entry’s own field (KAN-445)', () => {
   it('removes that entry via onChange, and focuses the row above with the caret at its end (KAN-445)', () => {
-    render(<Stateful data={{ ...updates, entries: [...updates.entries, { id: 'u3', date: '1 nov', text: '' }] }} />)
+    render(
+      <Stateful
+        data={{ ...updates, entries: [...updates.entries, { id: 'u3', date: '1 nov', text: '' }] }}
+      />
+    )
     const texts = screen.getAllByRole('textbox', { name: 'Entry text' })
     expect(texts).toHaveLength(3)
     fireEvent.keyDown(texts[2], { key: 'Backspace' })
@@ -734,7 +752,11 @@ describe('EntriesView — ⌫ in an empty entry’s own field (KAN-445)', () => 
   })
 
   it('with no previous entry (the top row), focuses the row below instead, caret at its end', () => {
-    render(<Stateful data={{ ...updates, entries: [{ id: 'u0', date: '1 nov', text: '' }, ...updates.entries] }} />)
+    render(
+      <Stateful
+        data={{ ...updates, entries: [{ id: 'u0', date: '1 nov', text: '' }, ...updates.entries] }}
+      />
+    )
     const texts = screen.getAllByRole('textbox', { name: 'Entry text' })
     fireEvent.keyDown(texts[0], { key: 'Backspace' })
 
@@ -758,7 +780,9 @@ describe('EntriesView — ⌫ in an empty entry’s own field (KAN-445)', () => 
   it('does nothing when the entry has text — the browser deletes a character instead', () => {
     const onChange = jest.fn()
     render(<EntriesView data={updates} editable onChange={onChange} />)
-    fireEvent.keyDown(screen.getAllByRole('textbox', { name: 'Entry text' })[0], { key: 'Backspace' })
+    fireEvent.keyDown(screen.getAllByRole('textbox', { name: 'Entry text' })[0], {
+      key: 'Backspace',
+    })
     expect(onChange).not.toHaveBeenCalled()
   })
 
