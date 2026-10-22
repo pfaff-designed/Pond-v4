@@ -74,6 +74,7 @@ export function RecordPeek({
   focusTitle,
   onEdit,
   onRenameRow,
+  onDeleteRow,
   onOpenRow,
 }: {
   row: CollectionRow
@@ -91,6 +92,9 @@ export function RecordPeek({
   focusTitle?: boolean
   onEdit?: (rowId: string, key: string, value: PropertyValue) => void
   onRenameRow?: (rowId: string, title: string) => void
+  /** Delete the record (#517 — a board drew no way to remove a task). Present
+   *  only when `editable`; absent hides `delete`. */
+  onDeleteRow?: (rowId: string) => void
   /** Present when the host can navigate; absent hides `open ›`. */
   onOpenRow?: (rowId: string) => void
 }) {
@@ -148,6 +152,16 @@ export function RecordPeek({
             className="flex-none text-[11px] font-medium text-mn-text-secondary hover:text-mn-text"
           >
             open ›
+          </button>
+        )}
+        {editable && onDeleteRow && (
+          <button
+            type="button"
+            onClick={() => onDeleteRow(row.id)}
+            aria-label={`Delete ${title}`}
+            className="flex-none text-[11px] font-medium text-mn-text-secondary hover:text-mn-text"
+          >
+            delete
           </button>
         )}
       </div>
