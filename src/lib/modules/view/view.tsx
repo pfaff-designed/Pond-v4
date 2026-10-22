@@ -96,20 +96,28 @@ import {
 } from './kinds'
 import {
   addDateField,
+  addOption,
   addStatusField,
   coerceValue,
   fieldNameClash,
   freeFieldName,
+  freeOptionLabel,
   isFieldNameTaken,
+  isOptionNameTaken,
+  optionNameClash,
   removeField,
+  removeOption,
   renameField,
+  renameOption,
   restoreFieldAt,
+  restoreOptionAt,
   ROW_TYPE,
   type PropertyDef,
+  type PropertyOption,
   type PropertySchema,
   type PropertyValue,
 } from '@/lib/properties/schema'
-import { FieldHeaderMenu } from './field-header-menu'
+import { HeaderMenu } from './header-menu'
 import { useOptionalDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import { usePageLinks } from '../page-link/context'
 import { dueOfRow, firstOrangeToday, localDateIso } from './due'
@@ -254,6 +262,114 @@ function runFieldDelete(
   })
 }
 
+/**
+ * The board's own "add column" (#521): mint a fresh option, labelled `new
+ * column` (or `new column 2`, … on a collision with a sibling option — the
+ * same single-then-counting fallback `freeOptionLabel` gives a restore), onto
+ * the group-by field. Never touches the change log — the same choice as
+ * `runFieldRemedy`'s date/status adds, which this mirrors one level down
+ * (a field's OPTION, not the field itself).
+ */
+function runOptionAdd(
+  schemaRef: { current: PropertySchema | null },
+  updateSchema: (next: PropertySchema) => void,
+  deletionUndo: NonNullable<ReturnType<typeof useOptionalDeletionUndo>>,
+  fieldId: string
+): void {
+  const schema = schemaRef.current
+  const field = schema?.find((d) => d.id === fieldId)
+  if (!schema || !field) return
+  const label = freeOptionLabel(field.options ?? [], 'new column')
+  const { schema: next, optionId } = addOption(schema, fieldId, label)
+  if (!optionId) return
+  applySchemaEdit(schemaRef, updateSchema, null, () => next)
+  deletionUndo.stageUndo({
+    message: `added column ${label}`,
+    scope: 'block',
+    undo: () => applySchemaEdit(schemaRef, updateSchema, null, (s) => removeOption(s, fieldId, optionId)),
+  })
+}
+
+/**
+ * A board lane's rename commit (#521), and its undo — the option-level mirror
+ * of {@link runFieldRename}. The outer `option.label === label` check guards a
+ * same-tick double commit of the SAME rename; the undo no-ops via
+ * {@link isOptionNameTaken}, scoped to the field's own sibling options, for
+ * the same reason `runFieldRename`'s undo does: a later rename can claim the
+ * old label first.
+ */
+function runOptionRename(
+  schemaRef: { current: PropertySchema | null },
+  updateSchema: (next: PropertySchema) => void,
+  logSchemaEdit: (before: PropertySchema, after: PropertySchema) => void,
+  deletionUndo: NonNullable<ReturnType<typeof useOptionalDeletionUndo>>,
+  fieldId: string,
+  optionId: string,
+  label: string
+): void {
+  const schema = schemaRef.current
+  const field = schema?.find((d) => d.id === fieldId)
+  const option = field?.options?.find((o) => o.id === optionId)
+  if (!schema || !field || !option || option.label === label) return
+  const oldLabel = option.label
+  applySchemaEdit(schemaRef, updateSchema, logSchemaEdit, (s) =>
+    renameOption(s, fieldId, optionId, label)
+  )
+  deletionUndo.stageUndo({
+    message: `renamed column ${oldLabel} to ${label}`,
+    scope: 'block',
+    undo: () =>
+      applySchemaEdit(schemaRef, updateSchema, logSchemaEdit, (s) => {
+        const f = s.find((d) => d.id === fieldId)
+        if (!f) return null
+        return isOptionNameTaken(f.options ?? [], oldLabel, optionId)
+          ? null
+          : renameOption(s, fieldId, optionId, oldLabel)
+      }),
+  })
+}
+
+/**
+ * A board lane's `delete column` commit (#521), and its undo — the
+ * option-level mirror of {@link runFieldDelete}. Row values pointing at the
+ * deleted option are left as-is (lenient, same as `removeField`): they fall
+ * into the board's own "No <name>" lane until restored. The undo is never
+ * refused by a name clash — {@link restoreOptionAt} is the only thing that
+ * gives the deleted option its original position back, so a label someone
+ * else has claimed since is resolved with {@link freeOptionLabel}, exactly
+ * as `runFieldDelete`'s undo resolves a field-name clash.
+ */
+function runOptionDelete(
+  schemaRef: { current: PropertySchema | null },
+  updateSchema: (next: PropertySchema) => void,
+  logSchemaEdit: (before: PropertySchema, after: PropertySchema) => void,
+  deletionUndo: NonNullable<ReturnType<typeof useOptionalDeletionUndo>>,
+  fieldId: string,
+  optionId: string
+): void {
+  const schema = schemaRef.current
+  const field = schema?.find((d) => d.id === fieldId)
+  const index = field?.options?.findIndex((o) => o.id === optionId) ?? -1
+  if (!schema || !field || index === -1) return
+  const option = field.options![index]
+  applySchemaEdit(schemaRef, updateSchema, logSchemaEdit, (s) => removeOption(s, fieldId, optionId))
+  deletionUndo.stageUndo({
+    message: `deleted column ${option.label}`,
+    scope: 'block',
+    undo: () =>
+      applySchemaEdit(schemaRef, updateSchema, logSchemaEdit, (s) => {
+        const f = s.find((d) => d.id === fieldId)
+        if (!f) return null
+        if (f.options?.some((o) => o.id === option.id)) return null
+        const clash = optionNameClash(f.options ?? [], option.label, option.id)
+        const restored = clash
+          ? { ...option, label: freeOptionLabel(f.options ?? [], option.label, option.id) }
+          : option
+        return restoreOptionAt(s, fieldId, index, restored)
+      }),
+  })
+}
+
 // ── Registry entry: fetch, then draw ──────────────────────────────────────────
 
 export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock>) {
@@ -341,6 +457,30 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
       ? (id: string) => runFieldDelete(schemaRef, updateSchema, logSchemaEdit, deletionUndo, id)
       : undefined
 
+  // #521: the board's "+ column" — mints a fresh option on the group-by
+  // field. Same `schemaRef` + `stageUndo` seam as the field-level remedies
+  // above, gated the same way.
+  const handleAddColumn =
+    editable && schema && deletionUndo
+      ? (fieldId: string) => runOptionAdd(schemaRef, updateSchema, deletionUndo, fieldId)
+      : undefined
+
+  // #521: a board lane header's rename commit — the option-level mirror of
+  // `handleRenameField`, same seam.
+  const handleRenameColumn =
+    editable && schema && deletionUndo
+      ? (fieldId: string, optionId: string, label: string) =>
+          runOptionRename(schemaRef, updateSchema, logSchemaEdit, deletionUndo, fieldId, optionId, label)
+      : undefined
+
+  // #521: a board lane header's `delete column` row — the option-level
+  // mirror of `handleDeleteField`, same seam.
+  const handleDeleteColumn =
+    editable && schema && deletionUndo
+      ? (fieldId: string, optionId: string) =>
+          runOptionDelete(schemaRef, updateSchema, logSchemaEdit, deletionUndo, fieldId, optionId)
+      : undefined
+
   // Config edits (chart/big-number setup) rewrite the persisted view block through the
   // module's own onChange — the same whole-block save path every editable module uses.
   // `applyConfigPatch` (KAN-32) lands the patch on the ACTIVE saved view's config on a
@@ -421,6 +561,9 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
       onChange={onChange}
       onRenameField={handleRenameField}
       onDeleteField={handleDeleteField}
+      onAddColumn={handleAddColumn}
+      onRenameColumn={handleRenameColumn}
+      onDeleteColumn={handleDeleteColumn}
     />
   )
 }
@@ -501,6 +644,17 @@ export interface CollectionViewProps {
   /** KAN-380: commit a `delete field` from the table's field-header menu.
    *  Absent when not `editable` — the menu never draws the delete row. */
   onDeleteField?: (id: string) => void
+  /** #521: the board's "+ column" — mints a new option onto the named
+   *  group-by field. Absent when not `editable` — the board draws no
+   *  affordance there. */
+  onAddColumn?: (fieldId: string) => void
+  /** #521: commit a rename from a board lane's column-header menu. Absent
+   *  when not `editable` — the lane header renders as plain text instead of
+   *  a button. */
+  onRenameColumn?: (fieldId: string, optionId: string, label: string) => void
+  /** #521: commit a `delete column` from a board lane's column-header menu.
+   *  Absent when not `editable` — the menu never draws the delete row. */
+  onDeleteColumn?: (fieldId: string, optionId: string) => void
 }
 
 export function CollectionView({
@@ -531,6 +685,9 @@ export function CollectionView({
   onChange,
   onRenameField,
   onDeleteField,
+  onAddColumn,
+  onRenameColumn,
+  onDeleteColumn,
 }: CollectionViewProps) {
   // What the page canvas keys this view's peek and orange pill by.
   const instanceKey = useId()
@@ -691,6 +848,9 @@ export function CollectionView({
             onOpenRow={onOpenRow}
             onDeleteRow={onDeleteRow}
             onAddStatusField={onAddStatusField}
+            onAddColumn={onAddColumn}
+            onRenameColumn={onRenameColumn}
+            onDeleteColumn={onDeleteColumn}
             renderPage={renderPage}
             renderGuests={renderGuests}
           />
@@ -1177,7 +1337,7 @@ function CollectionTable({
 
 /**
  * One schema-field `<th>`, editable only (KAN-380): the header itself is the
- * `FieldHeaderMenu` trigger, anchored off the cell. `canDelete` is always
+ * `HeaderMenu` trigger, anchored off the cell. `canDelete` is always
  * true here — every looped field is a real `PropertyDef`; the fixed `Name`
  * title `<th>` above never routes through this component at all, so the
  * title-can't-be-deleted rule holds structurally, with no flag to check.
@@ -1201,9 +1361,10 @@ function FieldHeaderCell({
       ref={anchorRef}
       className="border-b border-mn-hair py-1 pr-3 text-xs font-medium text-mn-text-secondary"
     >
-      <FieldHeaderMenu
-        field={field}
-        schema={schema}
+      <HeaderMenu
+        name={field.name}
+        entityLabel="field"
+        clash={(candidate) => fieldNameClash(schema, candidate, field.id)}
         canDelete={!!onDeleteField}
         onRename={(name) => onRenameField(field.id, name)}
         onDelete={() => onDeleteField?.(field.id)}
@@ -1226,6 +1387,58 @@ function FieldHeaderCell({
   )
 }
 
+/**
+ * One board lane's label, editable only (#521): the header itself is the
+ * `HeaderMenu` trigger, anchored off the label — the option-level mirror of
+ * {@link FieldHeaderCell} one level down. Never drawn for the trailing
+ * "No <name>" lane (`group.id` is null there — a synthetic bucket, not a
+ * real option a menu could rename or delete); `CollectionBoard` falls back
+ * to a plain span for that one.
+ */
+function BoardColumnHead({
+  label,
+  fieldId,
+  optionId,
+  options,
+  onRename,
+  onDelete,
+}: {
+  label: string
+  fieldId: string
+  optionId: string
+  options: PropertyOption[]
+  onRename: (fieldId: string, optionId: string, label: string) => void
+  onDelete?: (fieldId: string, optionId: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const anchorRef = useRef<HTMLSpanElement>(null)
+
+  return (
+    <span ref={anchorRef} className="min-w-0 truncate">
+      <HeaderMenu
+        name={label}
+        entityLabel="column"
+        clash={(candidate) => optionNameClash(options, candidate, optionId)}
+        canDelete={!!onDelete}
+        onRename={(name) => onRename(fieldId, optionId, name)}
+        onDelete={() => onDelete?.(fieldId, optionId)}
+        open={open}
+        onOpenChange={setOpen}
+        trigger={
+          // Same focus-visible ring as `FieldHeaderCell`'s trigger.
+          <button
+            type="button"
+            className="block w-full truncate rounded-[4px] text-left outline-offset-2 focus-visible:outline-[1.5px] focus-visible:outline-mn-text/50 focus-visible:outline-solid"
+          >
+            {label}
+          </button>
+        }
+        placement={{ anchor: anchorRef, align: 'start', top: 20, alignOffset: -8 }}
+      />
+    </span>
+  )
+}
+
 // ── Board ──────────────────────────────────────────────────────────────────────
 
 // The DOM key for a null (unset) bucket — a stable sentinel shared by board columns
@@ -1244,6 +1457,9 @@ function CollectionBoard({
   onOpenRow,
   onDeleteRow,
   onAddStatusField,
+  onAddColumn,
+  onRenameColumn,
+  onDeleteColumn,
   renderPage,
   renderGuests,
 }: {
@@ -1261,6 +1477,15 @@ function CollectionBoard({
   /** KAN-351: mint a `status` field, offered by a board whose schema has none to
    *  group by. Absent when not `editable` — the bare notice stands in instead. */
   onAddStatusField?: () => void
+  /** #521: the board's own "+ column" — mints a new option onto the group-by
+   *  field. Absent when not `editable` — no trailing "+ column" lane. */
+  onAddColumn?: (fieldId: string) => void
+  /** #521: a lane header's rename commit. Absent when not `editable` — the
+   *  lane header renders as plain text instead of a button. */
+  onRenameColumn?: (fieldId: string, optionId: string, label: string) => void
+  /** #521: a lane header's `delete column` row. Absent when not `editable`
+   *  — the menu never draws the delete row. */
+  onDeleteColumn?: (fieldId: string, optionId: string) => void
   /** The new task's page, the same body the calendar draws under a new event. */
   renderPage?: (row: CollectionRow) => ReactNode
   renderGuests?: CollectionViewProps['renderGuests']
@@ -1369,19 +1594,24 @@ function CollectionBoard({
 
   const draggingRow = drag?.active ? rows.find((r) => r.id === drag.rowId) : undefined
   const repeatDef = pickRepeatDef(schema)
+  // #521: the trailing "+ column" lane — its own grid cell, same width as every
+  // other lane, drawn only when editable and the host can write the schema.
+  const canAddColumn = !!(editable && onAddColumn)
+  const columnCount = visibleGroups.length + (canAddColumn ? 1 : 0)
 
   return (
     <div ref={boardRef} className={containerClassName} {...containerHandlers}>
       {/*
         The board is a GRID of equal lanes, not a horizontally scrolling row:
-        `repeat(N, minmax(0,1fr))` at gap 10, N the lane count. A lane is an option of
-        the group-by property, so adding, renaming and reordering lanes is editing
-        that property, which the board does not do.
+        `repeat(N, minmax(0,1fr))` at gap 10, N the lane count (plus one for the
+        trailing "+ column" lane, when editable). A lane is an option of the
+        group-by property (#521): adding, renaming and removing one is editing
+        that property, through `onAddColumn`/`onRenameColumn`/`onDeleteColumn`.
       */}
       <div
         data-part="lanes"
         className="grid gap-[10px]"
-        style={{ gridTemplateColumns: `repeat(${visibleGroups.length}, minmax(0,1fr))` }}
+        style={{ gridTemplateColumns: `repeat(${columnCount}, minmax(0,1fr))` }}
       >
         {visibleGroups.map((group) => {
           const key = groupKey(group.id)
@@ -1404,8 +1634,21 @@ function CollectionBoard({
                 data-part="lane-head"
                 className="flex items-center justify-between gap-2 px-[4px] pt-[3px] pb-[2px] text-[10.5px] font-medium tracking-[.1em] text-mn-text-secondary uppercase"
               >
-                {/* Two bare spans, no option dot; the count inherits the head's type. */}
-                <span className="truncate">{group.label}</span>
+                {/* A real option gets the rename/delete menu (#521); the synthetic
+                    "No <name>" lane (group.id null) is never a `PropertyOption`,
+                    so it stays a bare span. */}
+                {editable && group.id !== null && onRenameColumn ? (
+                  <BoardColumnHead
+                    label={group.label}
+                    fieldId={boardDef.id}
+                    optionId={group.id}
+                    options={boardDef.options ?? []}
+                    onRename={onRenameColumn}
+                    onDelete={onDeleteColumn}
+                  />
+                ) : (
+                  <span className="truncate">{group.label}</span>
+                )}
                 <span data-part="lane-n">{group.rows.length}</span>
               </header>
 
@@ -1492,6 +1735,20 @@ function CollectionBoard({
             </section>
           )
         })}
+
+        {/* #521: the board's own "+ column" — one grid cell, same width as a
+            lane, with no rows and no drop target of its own. */}
+        {canAddColumn && onAddColumn && (
+          <div data-part="lane-add-column" className="flex min-h-[380px] flex-col p-[7px]">
+            <button
+              type="button"
+              onClick={() => onAddColumn(boardDef.id)}
+              className="rounded-[8px] p-[4px] text-left text-[11px] font-medium text-mn-text-secondary transition-colors hover:bg-mn-text/[0.04] hover:text-mn-text motion-reduce:transition-none"
+            >
+              ＋ column
+            </button>
+          </div>
+        )}
       </div>
 
       {selectedRow && (

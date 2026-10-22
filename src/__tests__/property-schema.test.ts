@@ -31,6 +31,12 @@ import {
   isFieldNameTaken,
   freeFieldName,
   restoreFieldAt,
+  renameOption,
+  removeOption,
+  restoreOptionAt,
+  isOptionNameTaken,
+  optionNameClash,
+  freeOptionLabel,
   DEFAULT_STATUS_OPTIONS,
   type PropertyDef,
   type PropertySchema,
@@ -450,6 +456,130 @@ describe('restoreFieldAt — delete field’s undo (#380)', () => {
     const removed = removeField(SCHEMA, 'due')
     expect(restoreFieldAt(removed, 999, SCHEMA[2]).at(-1)).toEqual(SCHEMA[2])
     expect(restoreFieldAt(removed, -5, SCHEMA[2])[0]).toEqual(SCHEMA[2])
+  })
+})
+
+describe('renameOption — a board column rename (#521)', () => {
+  it('renames the matching option on the matching field, leaving its id and color', () => {
+    const out = renameOption(SCHEMA, 'stage', 'done', 'Shipped')
+    expect(out.find((d) => d.id === 'stage')?.options).toEqual([
+      { id: 'todo', label: 'To do' },
+      { id: 'done', label: 'Shipped', color: 'green' },
+    ])
+  })
+
+  it('does not mutate the input schema', () => {
+    const before = JSON.parse(JSON.stringify(SCHEMA))
+    renameOption(SCHEMA, 'stage', 'done', 'Shipped')
+    expect(SCHEMA).toEqual(before)
+  })
+
+  it('leaves the schema unchanged when the field id is not found', () => {
+    expect(renameOption(SCHEMA, 'nope', 'done', 'Shipped')).toEqual(SCHEMA)
+  })
+
+  it('leaves the schema unchanged when the option id is not found', () => {
+    expect(renameOption(SCHEMA, 'stage', 'nope', 'Shipped')).toEqual(SCHEMA)
+  })
+})
+
+describe('isOptionNameTaken / optionNameClash — the column rename collision guard (#521)', () => {
+  const options = SCHEMA.find((d) => d.id === 'stage')!.options!
+
+  it('is taken when another option already has the label, case-insensitively and trimmed', () => {
+    expect(isOptionNameTaken(options, 'DONE')).toBe(true)
+    expect(isOptionNameTaken(options, '  Done  ')).toBe(true)
+  })
+
+  it('is not taken against the option’s own current label when excluded', () => {
+    expect(isOptionNameTaken(options, 'Done', 'done')).toBe(false)
+  })
+
+  it('is not taken for a label nothing else has', () => {
+    expect(isOptionNameTaken(options, 'Blocked')).toBe(false)
+  })
+
+  it('optionNameClash returns the existing option’s own-cased label', () => {
+    expect(optionNameClash(options, 'done')).toBe('Done')
+    expect(optionNameClash(options, 'Blocked')).toBeNull()
+  })
+})
+
+describe('freeOptionLabel — delete column’s undo label-clash fallback (#521)', () => {
+  const options = SCHEMA.find((d) => d.id === 'stage')!.options!
+
+  it('returns the label as-is when nothing claims it', () => {
+    expect(freeOptionLabel(options, 'Blocked')).toBe('Blocked')
+  })
+
+  it('falls back to "<label> 2" when another option already has the label', () => {
+    const withDone2 = [...options, { id: 'done2', label: 'Done' }]
+    expect(freeOptionLabel(withDone2, 'Done', 'done')).toBe('Done 2')
+  })
+
+  it('counts past "<label> 2" when that is also taken', () => {
+    const taken = [...options, { id: 'done2', label: 'Done' }, { id: 'done3', label: 'Done 2' }]
+    expect(freeOptionLabel(taken, 'Done', 'done')).toBe('Done 3')
+  })
+
+  it('is not a collision with its own excluded id', () => {
+    expect(freeOptionLabel(options, 'Done', 'done')).toBe('Done')
+  })
+})
+
+describe('removeOption — a board column delete (#521)', () => {
+  it('removes the matching option from the matching field, leaving the rest in order', () => {
+    const out = removeOption(SCHEMA, 'stage', 'todo')
+    expect(out.find((d) => d.id === 'stage')?.options).toEqual([
+      { id: 'done', label: 'Done', color: 'green' },
+    ])
+  })
+
+  it('does not mutate the input schema', () => {
+    const before = JSON.parse(JSON.stringify(SCHEMA))
+    removeOption(SCHEMA, 'stage', 'todo')
+    expect(SCHEMA).toEqual(before)
+  })
+
+  it('leaves the schema unchanged when the field id is not found', () => {
+    expect(removeOption(SCHEMA, 'nope', 'todo')).toEqual(SCHEMA)
+  })
+
+  it('leaves every other field untouched', () => {
+    const out = removeOption(SCHEMA, 'stage', 'todo')
+    expect(out.find((d) => d.id === 'count')).toEqual(SCHEMA.find((d) => d.id === 'count'))
+  })
+})
+
+describe('restoreOptionAt — delete column’s undo (#521)', () => {
+  it('reinserts the option at its original index on the right field, preserving order', () => {
+    const removed = removeOption(SCHEMA, 'stage', 'todo')
+    const restored = restoreOptionAt(removed, 'stage', 0, SCHEMA.find((d) => d.id === 'stage')!.options![0])
+    expect(restored).toEqual(SCHEMA)
+  })
+
+  it('does not mutate the input schema', () => {
+    const removed = removeOption(SCHEMA, 'stage', 'todo')
+    const before = JSON.parse(JSON.stringify(removed))
+    restoreOptionAt(removed, 'stage', 0, SCHEMA.find((d) => d.id === 'stage')!.options![0])
+    expect(removed).toEqual(before)
+  })
+
+  it('clamps an out-of-range index instead of throwing', () => {
+    const removed = removeOption(SCHEMA, 'stage', 'todo')
+    const todo = SCHEMA.find((d) => d.id === 'stage')!.options![0]
+    expect(restoreOptionAt(removed, 'stage', 999, todo).find((d) => d.id === 'stage')?.options?.at(-1)).toEqual(
+      todo
+    )
+    expect(restoreOptionAt(removed, 'stage', -5, todo).find((d) => d.id === 'stage')?.options?.[0]).toEqual(
+      todo
+    )
+  })
+
+  it('leaves the schema unchanged when the field id is not found', () => {
+    const removed = removeOption(SCHEMA, 'stage', 'todo')
+    const todo = SCHEMA.find((d) => d.id === 'stage')!.options![0]
+    expect(restoreOptionAt(removed, 'nope', 0, todo)).toEqual(removed)
   })
 })
 
