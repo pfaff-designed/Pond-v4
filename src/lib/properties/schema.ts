@@ -440,6 +440,110 @@ export function restoreFieldAt(
   return [...schema.slice(0, at), def, ...schema.slice(at)]
 }
 
+// ── select/status option edits (a board's own columns, #521) ──────────────────
+// A board's lanes ARE the options of its group-by property (`groupRows`, apply.ts):
+// adding, renaming or removing a lane is editing that property's `options`, never
+// the property itself. These mirror the field-level rename/delete/restore above,
+// scoped to one field's option list instead of the whole schema.
+
+/**
+ * The label `label` collides with — case-insensitively, trimmed — among `options`,
+ * or `null` if it's free (the board column menu's rename guard, same shape as
+ * {@link fieldNameClash}). `excludeId` is the option being renamed; it is never a
+ * collision with its own current label.
+ */
+export function optionNameClash(
+  options: PropertyOption[],
+  label: string,
+  excludeId?: string
+): string | null {
+  const candidate = label.trim().toLowerCase()
+  const existing = options.find(
+    (o) => o.id !== excludeId && o.label.trim().toLowerCase() === candidate
+  )
+  return existing ? existing.label : null
+}
+
+/** Whether `label` collides with another option's label — see {@link optionNameClash}. */
+export function isOptionNameTaken(
+  options: PropertyOption[],
+  label: string,
+  excludeId?: string
+): boolean {
+  return optionNameClash(options, label, excludeId) !== null
+}
+
+/**
+ * The first of `label`, `label 2`, `label 3`, … not claimed among `options` (the
+ * "delete column" undo, when the label it's restoring under has since been taken
+ * by another option — same fallback `freeFieldName` gives a restored field).
+ */
+export function freeOptionLabel(
+  options: PropertyOption[],
+  label: string,
+  excludeId?: string
+): string {
+  if (!optionNameClash(options, label, excludeId)) return label
+  let n = 2
+  while (optionNameClash(options, `${label} ${n}`, excludeId)) n++
+  return `${label} ${n}`
+}
+
+/**
+ * Rename one option, on one `select`/`status` field, by id. A missing field or
+ * option leaves `schema` unchanged — the caller checks {@link isOptionNameTaken}
+ * before writing, mirroring {@link renameField}.
+ */
+export function renameOption(
+  schema: PropertySchema,
+  fieldId: string,
+  optionId: string,
+  label: string
+): PropertySchema {
+  return schema.map((d) =>
+    d.id === fieldId
+      ? { ...d, options: (d.options ?? []).map((o) => (o.id === optionId ? { ...o, label } : o)) }
+      : d
+  )
+}
+
+/**
+ * Remove one option, on one `select`/`status` field, by id (a board's own
+ * "delete column"). Row values pointing at the removed option are never
+ * rewritten here — exactly like {@link removeField}, a stale id is a lenient
+ * read-side concern (`optionForValue`), not this write's.
+ */
+export function removeOption(
+  schema: PropertySchema,
+  fieldId: string,
+  optionId: string
+): PropertySchema {
+  return schema.map((d) =>
+    d.id === fieldId ? { ...d, options: (d.options ?? []).filter((o) => o.id !== optionId) } : d
+  )
+}
+
+/**
+ * Reinsert a removed option at `index` on one field (the {@link removeOption}
+ * inverse, "delete column"'s undo). `index` clamps into the field's current
+ * option count so an undo staged against a schema whose options have since
+ * shrunk still lands the option somewhere sane rather than throwing. A missing
+ * field leaves `schema` unchanged.
+ */
+export function restoreOptionAt(
+  schema: PropertySchema,
+  fieldId: string,
+  index: number,
+  option: PropertyOption
+): PropertySchema {
+  return schema.map((d) => {
+    if (d.id !== fieldId) return d
+    const options = d.options ?? []
+    const at = Math.max(0, Math.min(index, options.length))
+    return { ...d, options: [...options.slice(0, at), option, ...options.slice(at)] }
+  })
+}
+
 // ── Reserved-key merge helpers (the only place `_schema` and values coexist) ───
 
 type Props = Record<string, unknown>
