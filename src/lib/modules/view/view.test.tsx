@@ -40,6 +40,7 @@ let applyRowValue: (rowId: string, key: string, value: PropertyValue) => void = 
 
 const updateSchema = jest.fn()
 const renameRow = jest.fn()
+const removeRow = jest.fn()
 const updateRows = jest.fn()
 const addRow = jest.fn()
 const setValue = jest.fn()
@@ -65,6 +66,11 @@ jest.mock('./use-collection-rows', () => ({
     renameRow.mockImplementation((rowId: string, title: string) => {
       setRows((prev) => prev.map((row) => (row.id === rowId ? { ...row, title } : row)))
     })
+    // Mirrors the real `removeRow`'s cache drop (#517's path test): the card
+    // must actually leave `rows`, not just record that it was asked to.
+    removeRow.mockImplementation((rowId: string) => {
+      setRows((prev) => prev.filter((row) => row.id !== rowId))
+    })
     applyRowValue = (rowId: string, key: string, value: PropertyValue) => {
       setRows((prev) =>
         prev.map((row) =>
@@ -82,7 +88,7 @@ jest.mock('./use-collection-rows', () => ({
       setValueAsStep,
       setValuesAsStep,
       addRow,
-      removeRow: jest.fn(),
+      removeRow,
       renameRow,
       updateSchema,
     }
@@ -150,6 +156,7 @@ function renderStatefulView(
 beforeEach(() => {
   updateSchema.mockClear()
   renameRow.mockClear()
+  removeRow.mockClear()
   updateRows.mockClear()
   addRow.mockClear()
   setValue.mockClear()
@@ -399,6 +406,43 @@ describe('CollectionBoard — the card-title input commits once, not per keystro
     expect(addRow).toHaveBeenCalledWith({ 'p-status': 'opt-todo' })
     const inputs = await screen.findAllByRole('textbox', { name: 'Card title' })
     expect(inputs).toHaveLength(2)
+  })
+})
+
+describe('CollectionBoard — a task can be deleted from its record peek (#517)', () => {
+  const boardSchema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    {
+      id: 'p-status',
+      name: 'Status',
+      type: 'select',
+      options: [{ id: 'opt-todo', label: 'Todo' }],
+    },
+  ]
+
+  beforeEach(() => {
+    initialSchema = boardSchema
+    initialRows = [{ id: 'r1', title: 'Wash the car', values: { 'p-status': 'opt-todo' } }]
+  })
+
+  it('removes the card from its lane and persists through removeRow', async () => {
+    const user = userEvent.setup()
+    renderView(board)
+
+    await user.click(screen.getByRole('article', { name: 'Wash the car' }))
+    await user.click(screen.getByRole('button', { name: 'Delete Wash the car' }))
+
+    expect(removeRow).toHaveBeenCalledWith('r1')
+    expect(screen.queryByRole('article', { name: 'Wash the car' })).not.toBeInTheDocument()
+  })
+
+  it('draws no delete control on a read-only board', async () => {
+    const user = userEvent.setup()
+    renderView(board, false)
+
+    await user.click(screen.getByRole('article', { name: 'Wash the car' }))
+
+    expect(screen.queryByRole('button', { name: 'Delete Wash the car' })).not.toBeInTheDocument()
   })
 })
 
@@ -835,7 +879,9 @@ describe('KAN-526', () => {
     expect(moved).not.toBeNull()
     if (!moved) return
     expect(within(moved).getByText('10:00')).toBeInTheDocument()
-    expect(within(columnFor(container, '2026-10-21')).queryByText('dentist')).not.toBeInTheDocument()
+    expect(
+      within(columnFor(container, '2026-10-21')).queryByText('dentist')
+    ).not.toBeInTheDocument()
     expect(setValueAsStep).toHaveBeenCalledWith('dentist', 'p-due', '2026-10-22T10:00:00')
 
     const alcove = within(allDayRow(container))
@@ -1137,7 +1183,9 @@ describe('ViewView — dragging a timeline bar writes both dates as one step (KA
       { coords: { clientX: 10, clientY: 0 } },
       { keys: '[/MouseLeft]' },
     ])
-    expect(setValuesAsStep).toHaveBeenLastCalledWith('r1', [{ key: 'p-start', value: '2026-09-09' }])
+    expect(setValuesAsStep).toHaveBeenLastCalledWith('r1', [
+      { key: 'p-start', value: '2026-09-09' },
+    ])
     expect(setValuesAsStep).toHaveBeenCalledTimes(3)
     expect(setValue).not.toHaveBeenCalled()
 
@@ -2461,7 +2509,7 @@ describe('CollectionView — the saved-view bar switches views as reading, not e
   })
 })
 
-describe('CollectionView — the ＋ view picker carries each kind\'s remedy line (KAN-243)', () => {
+describe("CollectionView — the ＋ view picker carries each kind's remedy line (KAN-243)", () => {
   const onePickerView: ViewBlock = {
     id: 'v-picker',
     type: 'view',
@@ -2524,7 +2572,12 @@ describe('ViewView — picking a ＋ view row adds the view, minting its remedy 
     const next = onChange.mock.calls[0][0] as ViewBlock
     expect(next.views).toHaveLength(2)
     const newView = next.views!.find((v) => v.kind === 'calendar')
-    expect(newView).toEqual({ id: expect.any(String), label: 'calendar', kind: 'calendar', config: {} })
+    expect(newView).toEqual({
+      id: expect.any(String),
+      label: 'calendar',
+      kind: 'calendar',
+      config: {},
+    })
     expect(next.activeViewId).toBe(newView!.id)
   })
 
@@ -2904,7 +2957,9 @@ describe('ViewView — a picked view still becomes active through BlockCanvas-st
         <ViewView
           data={moduleData}
           editable
-          onChange={(next) => setBlock({ ...(next as ViewBlock), activeViewId: block.activeViewId })}
+          onChange={(next) =>
+            setBlock({ ...(next as ViewBlock), activeViewId: block.activeViewId })
+          }
         />
       </ActiveViewSelectionContext.Provider>
     )
@@ -2926,23 +2981,26 @@ describe('ViewView — a picked view still becomes active through BlockCanvas-st
   it.each([
     ['a legacy table', legacyTable],
     ['a views-shaped table', viewsShapedTable],
-  ])('%s: picking calendar activates its segment, and undo re-selects the original', async (_label, initial) => {
-    const user = userEvent.setup()
-    renderStripping(initial)
+  ])(
+    '%s: picking calendar activates its segment, and undo re-selects the original',
+    async (_label, initial) => {
+      const user = userEvent.setup()
+      renderStripping(initial)
 
-    expect(screen.getByRole('tab', { name: 'table' })).toHaveAttribute('aria-selected', 'true')
+      expect(screen.getByRole('tab', { name: 'table' })).toHaveAttribute('aria-selected', 'true')
 
-    await user.click(screen.getByRole('button', { name: 'add a view' }))
-    await user.click(screen.getByRole('option', { name: /calendar/ }))
+      await user.click(screen.getByRole('button', { name: 'add a view' }))
+      await user.click(screen.getByRole('option', { name: /calendar/ }))
 
-    expect(screen.getByRole('tab', { name: 'calendar' })).toHaveAttribute('aria-selected', 'true')
-    expect(screen.getByRole('button', { name: 'add a view' })).toBeInTheDocument()
+      expect(screen.getByRole('tab', { name: 'calendar' })).toHaveAttribute('aria-selected', 'true')
+      expect(screen.getByRole('button', { name: 'add a view' })).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Undo' }))
+      await user.click(screen.getByRole('button', { name: 'Undo' }))
 
-    expect(screen.queryByRole('tab', { name: 'calendar' })).not.toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'table' })).toHaveAttribute('aria-selected', 'true')
-  })
+      expect(screen.queryByRole('tab', { name: 'calendar' })).not.toBeInTheDocument()
+      expect(screen.getByRole('tab', { name: 'table' })).toHaveAttribute('aria-selected', 'true')
+    }
+  )
 })
 
 const FACT_CLASS = 'text-[10.5px] font-medium text-mn-text-meta'
@@ -3381,7 +3439,15 @@ describe('KAN-525 strip week', () => {
     { id: 'p-due', name: 'Due', type: 'date' },
   ]
   const dayCalendar: ViewBlock = { id: 'v-cal', type: 'view', mode: 'calendar', span: 'day' }
-  const previousWeek = ['mon 12', 'tue 13', 'wed 14', 'thu 15', 'fri 16', 'sat 17', 'sun 18'] as const
+  const previousWeek = [
+    'mon 12',
+    'tue 13',
+    'wed 14',
+    'thu 15',
+    'fri 16',
+    'sat 17',
+    'sun 18',
+  ] as const
 
   beforeEach(() => {
     initialSchema = calendarSchema
