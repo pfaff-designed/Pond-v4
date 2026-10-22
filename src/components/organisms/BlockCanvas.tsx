@@ -2777,9 +2777,26 @@ function BlockEditor({
     dragging: !!isDragging,
   }
   const exitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // The unmount cleanup below reads the LATEST `onExitEmpty` through this
+  // ref, never the closure its own mount-time effect captured — a block's
+  // index (and so its `onExitEmpty`) is free to change across this row's
+  // lifetime, and the empty-dependency effect only ever sees the first one.
+  const onExitEmptyRef = useRef(onExitEmpty)
+  onExitEmptyRef.current = onExitEmpty
   useEffect(
     () => () => {
-      if (exitTimerRef.current !== null) clearTimeout(exitTimerRef.current)
+      if (exitTimerRef.current === null) return
+      clearTimeout(exitTimerRef.current)
+      exitTimerRef.current = null
+      // Leaving mid-check — closing a record peek, navigating off the page —
+      // unmounts this row before its deferred macrotask ever runs. Without
+      // flushing it here, under the same guard `handleBlur`'s own timeout
+      // reads, an empty block the person already left outlives the very view
+      // that was about to drop it: the removal, and the write behind it,
+      // never happen at all (#520).
+      const guard = exitGuardRef.current
+      if (guard.slash || guard.menu || guard.preview || guard.dragging) return
+      onExitEmptyRef.current?.()
     },
     []
   )
