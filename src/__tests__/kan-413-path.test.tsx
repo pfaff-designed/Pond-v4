@@ -37,7 +37,12 @@ const mockMatchMedia = (dark: boolean) => {
 
 const runBootScript = () => new Function(MODE_BOOT_SCRIPT)()
 
-const PATH = { glyph: 'ramp', trail: ['life'], current: 'standups', role: null }
+const PATH = {
+  glyph: 'ramp',
+  trail: [{ title: 'life', to: { kind: 'home' as const } }],
+  current: 'standups',
+  role: null,
+}
 
 afterEach(() => {
   html.classList.remove('dark')

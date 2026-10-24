@@ -14,7 +14,15 @@ function PathProbe() {
   if (!path) return null
   return (
     <output data-testid="command-path" data-glyph={path.glyph} data-role={path.role ?? ''}>
-      {[...path.trail, path.current].join(' › ')}
+      {[...path.trail.map((crumb) => crumb.title), path.current].join(' › ')}
+      {path.trail.map((crumb, i) => (
+        <span
+          key={i}
+          data-testid="command-path-crumb"
+          data-title={crumb.title}
+          data-linkable={crumb.to !== null}
+        />
+      ))}
     </output>
   )
 }

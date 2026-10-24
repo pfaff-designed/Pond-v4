@@ -12,15 +12,32 @@
  */
 
 import type { AreaRole } from '@/lib/rail/glyph-library'
+import type { WorkspaceNodeRef } from '@/lib/pages/nav'
 
 import { crumbTrail } from './crumbs'
 import { markIndex, resolveMark } from './mark'
 import type { PageRow } from './tree'
 
+/**
+ * One breadcrumb segment: its label, and where it navigates — never inferred
+ * from the node shape, since life's root has no `pages` row to carry.
+ *
+ * `{ kind: 'page' }` opens that row. `{ kind: 'home' }` opens the pond's root
+ * (`workspaceUrl(null)`) — life's own root crumb, and the trash trail's life
+ * crumb, both open the pond home even though neither has a row. `null` is a
+ * crumb with nothing to open (a virtual trail's non-navigable segment).
+ */
+export type CommandCrumbTarget = { kind: 'page'; node: WorkspaceNodeRef } | { kind: 'home' } | null
+
+export interface CommandCrumb {
+  title: string
+  to: CommandCrumbTarget
+}
+
 export interface CommandPath {
   glyph: string
   /** The root and the ancestors, root-ward first. */
-  trail: string[]
+  trail: CommandCrumb[]
   /** The page in view. */
   current: string
   /** The role of the area the page sits in, or itself if it is one; null for ink. */
@@ -46,7 +63,18 @@ export function commandPath(
       glyphOf(area, index) ??
       (root && glyphOf(root.id, index)) ??
       pondGlyph,
-    trail: [root?.title ?? rootTitle, ...crumbs.map((c) => c.title)],
+    trail: [
+      {
+        title: root?.title ?? rootTitle,
+        to: root
+          ? { kind: 'page', node: { id: root.id, type: root.type, title: root.title } }
+          : { kind: 'home' },
+      },
+      ...crumbs.map((c) => ({
+        title: c.title,
+        to: { kind: 'page', node: { id: c.id, type: c.type, title: c.title } } as const,
+      })),
+    ],
     current,
     role: own.role,
   }

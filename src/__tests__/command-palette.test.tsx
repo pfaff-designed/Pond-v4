@@ -404,7 +404,15 @@ describe('paletteItems — every value from the owner that already derives it', 
 
 // ── The surface: one element, ARIA, keys, and the gut ─────────────────────────
 
-const PATH = { glyph: 'ramp', trail: ['life', 'professional'], current: 'standups', role: null }
+const PATH = {
+  glyph: 'ramp',
+  trail: [
+    { title: 'life', to: { kind: 'home' as const } },
+    { title: 'professional', to: null },
+  ],
+  current: 'standups',
+  role: null,
+}
 
 function renderPalette(props: Partial<PondCommandProps> = {}) {
   const onSelect = jest.fn()
@@ -635,7 +643,25 @@ describe('the gut: one morphing element — nothing of the dialog, the wash or t
   })
 
   it('⌘K has one owner: the element registers no chord, and the shell reads one platform-aware predicate', () => {
-    expect(command).not.toMatch(/metaKey|ctrlKey|toLowerCase\(\) === 'k'/)
+    expect(command).not.toMatch(/toLowerCase\(\) === 'k'/)
+    // A modified click on a breadcrumb link is not a chord: `metaKey`/`ctrlKey` may
+    // appear in a mouse handler, but no keydown listener or onKeyDown handler may
+    // read them — that would be a second ⌘K registration.
+    const keyboardHandlerBodies = [...command.matchAll(/\(e: (?:React\.)?KeyboardEvent[^)]*\) => \{/g)].map(
+      (m) => {
+        let depth = 1
+        let i = m.index + m[0].length
+        const start = i
+        while (depth > 0) {
+          if (command[i] === '{') depth++
+          else if (command[i] === '}') depth--
+          i++
+        }
+        return command.slice(start, i - 1)
+      }
+    )
+    expect(keyboardHandlerBodies.length).toBeGreaterThan(0)
+    for (const body of keyboardHandlerBodies) expect(body).not.toMatch(/metaKey|ctrlKey/)
     const shell = read('src/components/organisms/ShellCommands.tsx')
     expect(shell).toMatch(/isPaletteChord/)
     expect(shell).not.toMatch(/metaKey|ctrlKey/)

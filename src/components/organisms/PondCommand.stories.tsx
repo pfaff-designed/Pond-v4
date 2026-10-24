@@ -65,7 +65,15 @@ const MOBILE = {
 type Metrics = typeof DESKTOP
 
 /** The board's default path: `life › professional › standups`, professional's mark. */
-const PATH = { glyph: 'ramp', trail: ['life', 'professional'], current: 'standups', role: null }
+const PATH = {
+  glyph: 'ramp',
+  trail: [
+    { title: 'life', to: { kind: 'home' as const } },
+    { title: 'professional', to: null },
+  ],
+  current: 'standups',
+  role: null,
+}
 
 const MONO = /PP Neue Montreal Mono/
 const px = (v: string) => parseFloat(v)
