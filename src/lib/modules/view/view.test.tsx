@@ -254,6 +254,104 @@ describe('CollectionTable — the row-title input commits once, not per keystrok
   })
 })
 
+describe("CollectionTable — clicking a row's title opens its record (KAN-546)", () => {
+  const schema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    {
+      id: 'p-status',
+      name: 'Status',
+      type: 'select',
+      options: [{ id: 'opt-todo', label: 'Todo' }],
+    },
+  ]
+
+  beforeEach(() => {
+    initialSchema = schema
+    initialRows = [
+      { id: 'r1', title: 'Trim the rim', values: { 'p-status': 'opt-todo' } },
+      { id: 'r2', title: '', values: {} },
+    ]
+  })
+
+  it("clicking the title opens the record as the board's own centered page", async () => {
+    const user = userEvent.setup()
+    renderView(table)
+
+    await user.click(screen.getAllByRole('textbox', { name: 'Row title' })[0])
+
+    const page = screen.getByLabelText('Record: Trim the rim')
+    expect(page).toHaveAttribute('data-placement', 'center')
+  })
+
+  it('an empty title opens "Record: Untitled"', async () => {
+    const user = userEvent.setup()
+    renderView(table)
+
+    await user.click(screen.getAllByRole('textbox', { name: 'Row title' })[1])
+
+    expect(screen.getByLabelText('Record: Untitled')).toBeInTheDocument()
+  })
+
+  it("clicking a field cell's control, or its bare td padding, opens nothing", async () => {
+    const user = userEvent.setup()
+    renderView(table)
+
+    const statusButton = screen.getAllByRole('button', { name: 'Status value' })[0]
+    await user.click(statusButton)
+    expect(screen.queryByLabelText(/^Record:/)).not.toBeInTheDocument()
+
+    fireEvent.click(statusButton.closest('td')!)
+    expect(screen.queryByLabelText(/^Record:/)).not.toBeInTheDocument()
+  })
+
+  it('double-clicking the title opens exactly one record page', async () => {
+    const user = userEvent.setup()
+    renderView(table)
+
+    await user.dblClick(screen.getAllByRole('textbox', { name: 'Row title' })[0])
+
+    expect(screen.getAllByLabelText('Record: Trim the rim')).toHaveLength(1)
+  })
+
+  it('a row struck by an undo (KAN-139) never opens', () => {
+    initialRows = []
+    rememberStruckRow({
+      targetPageId: 'page-1',
+      before: { id: 'r-struck', title: 'chickpeas, harissa', values: {}, shown: {} },
+      after: null,
+    } as unknown as ChangeLogRecord)
+
+    renderView(table)
+    act(() => {
+      requestUndoNotice({
+        direction: 'undo',
+        pastTense: 'removed chickpeas, harissa',
+        previousPageTitle: 'kitchen renovation',
+      })
+    })
+
+    fireEvent.click(screen.getByText('chickpeas, harissa'))
+    expect(screen.queryByLabelText(/^Record:/)).not.toBeInTheDocument()
+
+    act(() => clearUndoNotice())
+  })
+
+  it('a pointer open moves focus into the peek, so typing next never reaches the title input', async () => {
+    const user = userEvent.setup()
+    renderView(table)
+
+    const titleInput = screen.getAllByRole('textbox', { name: 'Row title' })[0]
+    await user.click(titleInput)
+
+    const page = screen.getByLabelText('Record: Trim the rim')
+    expect(page).toContainElement(document.activeElement as HTMLElement)
+
+    await user.keyboard('Z')
+    expect(titleInput).toHaveValue('Trim the rim')
+    expect(renameRow).not.toHaveBeenCalled()
+  })
+})
+
 describe('CollectionTable — a row an undo just removed stays struck through (KAN-139, s6o5)', () => {
   // `requestUndoNotice`/`clearUndoNotice` write a module-level snapshot, read
   // whenever a reader mounts — matching how `ShellCommands` (the one real
@@ -1248,7 +1346,9 @@ describe('ViewView — the /table path end to end: add a row, type a title and a
     await user.type(titleInput, 'kan299 dated record')
     expect(renameRow).not.toHaveBeenCalled()
 
-    const dateButton = screen.getByRole('button', { name: 'Date value' })
+    // The title click opened the record peek too (KAN-546) — it draws its own
+    // "Date value" control, so the row's own is the first of the two.
+    const dateButton = screen.getAllByRole('button', { name: 'Date value' })[0]
     // Clicking the date cell blurs the title input, committing it, and opens
     // the date editor (KAN-350: the atom's `editing` state, no native
     // `type="date"` input left to drive).
@@ -1257,7 +1357,7 @@ describe('ViewView — the /table path end to end: add a row, type a title and a
     const rowId = renameRow.mock.calls[0]![0] as string
     expect(renameRow).toHaveBeenCalledWith(rowId, 'kan299 dated record')
 
-    const dateInput = screen.getByLabelText('Date value')
+    const dateInput = screen.getAllByLabelText('Date value')[0]
     await user.type(dateInput, '2026-10-20')
     expect(setValue).not.toHaveBeenCalled()
 

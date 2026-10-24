@@ -171,6 +171,28 @@ export const TableEditCell: Story = {
   },
 }
 
+/** Clicking a row's title opens its record peek; a field cell click does not (KAN-546). */
+export const TableTitleOpensRecord: Story = {
+  args: { config: tableConfig, schema, rows },
+  render: (args) => <StatefulView config={args.config} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getAllByRole('textbox', { name: 'Row title' })[0])
+    await expect(
+      await within(document.body).findByLabelText('Record: Trim the rim')
+    ).toBeInTheDocument()
+    await userEvent.keyboard('{Escape}')
+    await expect(
+      within(document.body).queryByLabelText('Record: Trim the rim')
+    ).not.toBeInTheDocument()
+    await userEvent.click(canvas.getAllByRole('button', { name: 'Status value' })[1])
+    await expect(
+      within(document.body).queryByLabelText('Record: Celadon glaze test')
+    ).not.toBeInTheDocument()
+    await userEvent.keyboard('{Escape}')
+  },
+}
+
 /**
  * A legacy row that stored a status by LABEL ("Doing"), not the option id (a
  * pre-slice-1 / #18 row). The editable select must still resolve it to its option

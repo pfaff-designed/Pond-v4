@@ -6,7 +6,7 @@
  * on (or inside) any of those must NOT also select it; only a click on the
  * card's passive body should.
  */
-import { shouldSelectCardFromClick, shouldSelectRowFromClick } from './card-click'
+import { shouldOpenRowFromClick, shouldSelectCardFromClick } from './card-click'
 
 function buildCard(): HTMLElement {
   const li = document.createElement('li')
@@ -24,8 +24,8 @@ function buildCard(): HTMLElement {
 function buildRow(): HTMLTableRowElement {
   const tr = document.createElement('tr')
   tr.innerHTML = `
-    <td class="title-cell"><input aria-label="Title" /></td>
-    <td class="value-cell"><span class="value">Doing</span></td>
+    <td data-part="title-cell"><input aria-label="Title" /><span>Title text</span></td>
+    <td class="value-cell"><button type="button">Doing</button></td>
   `
   document.body.appendChild(tr)
   return tr
@@ -67,28 +67,30 @@ describe('shouldSelectCardFromClick', () => {
   })
 })
 
-describe('shouldSelectRowFromClick', () => {
-  it('selects from a click on a bare td (no nested control)', () => {
+describe('shouldOpenRowFromClick', () => {
+  it.each([
+    [
+      'the title td itself',
+      (tr: HTMLTableRowElement) => tr.querySelector('[data-part="title-cell"]'),
+      true,
+    ],
+    ['the title input', (tr: HTMLTableRowElement) => tr.querySelector('input'), true],
+    ['the title span', (tr: HTMLTableRowElement) => tr.querySelector('span'), true],
+    ['a field td', (tr: HTMLTableRowElement) => tr.querySelector('.value-cell'), false],
+    ['a control inside a field td', (tr: HTMLTableRowElement) => tr.querySelector('button'), false],
+  ])('%s', (_name, pick, expected) => {
     const tr = buildRow()
-    expect(shouldSelectRowFromClick(tr)).toBe(true)
-    expect(shouldSelectRowFromClick(tr.querySelector('.value-cell'))).toBe(true)
-    expect(shouldSelectRowFromClick(tr.querySelector('.value'))).toBe(true)
+    expect(shouldOpenRowFromClick(pick(tr))).toBe(expected)
   })
 
-  it('does NOT select from a click on an input inside the cell', () => {
-    const tr = buildRow()
-    expect(shouldSelectRowFromClick(tr.querySelector('input'))).toBe(false)
+  it('does NOT open from a non-element target', () => {
+    expect(shouldOpenRowFromClick(null)).toBe(false)
+    expect(shouldOpenRowFromClick(document)).toBe(false)
   })
 
-  it('does NOT select from a click on a button inside the cell', () => {
+  it('does NOT open from a text node', () => {
     const tr = buildRow()
-    const td = tr.querySelector('.value-cell') as HTMLElement
-    td.innerHTML += '<button type="button">Open</button>'
-    expect(shouldSelectRowFromClick(td.querySelector('button'))).toBe(false)
-  })
-
-  it('does NOT select from a non-element target', () => {
-    expect(shouldSelectRowFromClick(null)).toBe(false)
-    expect(shouldSelectRowFromClick(document)).toBe(false)
+    const span = tr.querySelector('span') as HTMLElement
+    expect(shouldOpenRowFromClick(span.firstChild)).toBe(false)
   })
 })

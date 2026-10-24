@@ -223,7 +223,10 @@ describe('KAN-344 — the person’s path, keys only', () => {
     const { onChange } = renderCanvas([viewTable, chart])
 
     const titles = screen.getAllByLabelText('Row title')
-    await user.click(titles[1])
+    // Focused directly, not clicked: a click now opens the row's record too
+    // (KAN-546) and moves focus into its peek, which is a separate path from
+    // this file's "keys only" one.
+    titles[1].focus()
     await user.keyboard(' sanded')
     await user.keyboard('{Enter}')
 
