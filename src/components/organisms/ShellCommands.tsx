@@ -221,13 +221,16 @@ export function ShellCommands() {
     close: closeTemplateSheet,
     start: startTemplateSheet,
   } = templateSheet
-  const closeNewPondSheet = useCallback(() => setNaming(null), [])
-  // ⌘K must not close the sheet mid-create (a dismissed-but-still-running create
-  // would still land) — a ref, not state, since it only needs reading inside the
-  // keydown handler, not a re-render.
+  // A create in flight must not be closed out from under it (a dismissed-but-
+  // still-running create would still land) — a ref, not state, since it only
+  // needs reading inside `closeNewPondSheet`, not a re-render.
   const pondCreatePendingRef = useRef(false)
   const handlePondCreatePendingChange = useCallback((next: boolean) => {
     pondCreatePendingRef.current = next
+  }, [])
+  const closeNewPondSheet = useCallback(() => {
+    if (pondCreatePendingRef.current) return
+    setNaming(null)
   }, [])
 
   const closeReport = useCallback(() => {
@@ -313,9 +316,7 @@ export function ShellCommands() {
         e.preventDefault()
         e.stopPropagation()
         if (templateSheetOpen) closeTemplateSheet()
-        else if (pondSheetOpen) {
-          if (!pondCreatePendingRef.current) closeNewPondSheet()
-        }
+        else if (pondSheetOpen) closeNewPondSheet()
         else if (reportOpen) closeReport()
         else setPaletteOpen((prev) => !prev)
         return
