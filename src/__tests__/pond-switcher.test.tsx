@@ -264,6 +264,9 @@ describe('the pond switcher', () => {
       'data-icon',
       'star-01'
     )
+    // The editor unmounted on save — focus must land back on the switcher,
+    // not <body>.
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: /Studio/ }))
 
     await user.click(await screen.findByRole('button', { name: /Studio/ }))
     const row = screen.getByRole('menuitem', { name: /Studio/ })
@@ -299,11 +302,15 @@ describe('the pond switcher', () => {
     expect(screen.queryByRole('textbox', { name: 'pond name' })).not.toBeInTheDocument()
     expect(screen.getByRole('menu', { name: 'Ponds' })).toBeInTheDocument()
     expect(screen.queryByText('Studio')).not.toBeInTheDocument()
-    expect(screen.getByRole('menuitem', { name: /^life/ })).toBeInTheDocument()
+    const firstRow = screen.getByRole('menuitem', { name: /^life/ })
+    expect(firstRow).toBeInTheDocument()
+    // The editor unmounted — Esc must not leave focus stranded on <body>.
+    expect(document.activeElement).toBe(firstRow)
     expect(updatePond).not.toHaveBeenCalled()
 
     await user.keyboard('{Escape}')
     expect(screen.queryByRole('menu', { name: 'Ponds' })).not.toBeInTheDocument()
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: /life/ }))
   })
 
   it('disables rename & icon while a rename is in flight, so a second edit cannot start', async () => {
@@ -347,6 +354,44 @@ describe('the pond switcher', () => {
 
     await waitFor(() => expect(requestNotify).toHaveBeenCalledWith({ message: expect.any(String) }))
     expect(container.querySelector('[data-part="pond-name"]')).toHaveTextContent('life')
+  })
+
+  it('starts the draft glyph from the resolved header glyph, not the row default, for a null-glyph pond', async () => {
+    const user = userEvent.setup()
+    ;(listPonds as jest.Mock).mockResolvedValue([{ ...LIFE, glyph: null }])
+    renderSwitcher()
+    await user.click(await screen.findByRole('button', { name: /life/ }))
+    await user.click(screen.getByRole('menuitem', { name: /rename & icon/ }))
+
+    // `usePondGlyph` falls back to LIFE_GLYPH (waves-02) — the editor's own
+    // row must agree, not default to GLYPHS[0] (lightning-03).
+    expect(screen.getByRole('radio', { name: 'waves' })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('radio', { name: 'lightning' })).toHaveAttribute(
+      'aria-checked',
+      'false'
+    )
+
+    await user.keyboard('{Enter}')
+
+    await waitFor(() =>
+      expect(updatePond).toHaveBeenCalledWith('p-life', { name: 'life', glyph: 'waves-02' })
+    )
+  })
+
+  it("keeps the glyph row reachable by Tab when the pond's own glyph isn't one of the curated six", async () => {
+    const user = userEvent.setup()
+    ;(listPonds as jest.Mock).mockResolvedValue([{ ...LIFE, glyph: 'flame-04' }])
+    renderSwitcher()
+    await user.click(await screen.findByRole('button', { name: /life/ }))
+    await user.click(screen.getByRole('menuitem', { name: /rename & icon/ }))
+
+    const radios = screen.getAllByRole('radio')
+    expect(radios.every((r) => r.getAttribute('aria-checked') === 'false')).toBe(true)
+    // None of the six matches `flame-04` — the row's own fallback (its first
+    // cell) must still carry tabIndex 0, or the whole radiogroup drops out of
+    // the Tab order.
+    expect(radios[0]).toHaveAttribute('tabIndex', '0')
+    expect(radios.slice(1).every((r) => r.getAttribute('tabIndex') === '-1')).toBe(true)
   })
 
   it("opens the sheet's first of two steps, not a field in the menu", async () => {

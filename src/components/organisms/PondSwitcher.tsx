@@ -65,6 +65,13 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
   const [draftName, setDraftName] = useState('')
   const [draftGlyph, setDraftGlyph] = useState<string>(GLYPHS[0])
   const nameInputRef = useRef<HTMLInputElement>(null)
+  const switcherButtonRef = useRef<HTMLButtonElement>(null)
+  const firstMenuItemRef = useRef<HTMLAnchorElement>(null)
+  // Where focus goes once the render this triggers has committed — neither
+  // target exists yet at the moment Enter/Esc fires (the list or the closed
+  // menu haven't (re)mounted), so the actual `.focus()` happens in the
+  // no-deps effect below, which runs after every render.
+  const pendingFocusRef = useRef<'list' | 'switcher' | null>(null)
 
   useEffect(() => {
     if (!editing) return
@@ -72,22 +79,35 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
     nameInputRef.current?.select()
   }, [editing])
 
+  useEffect(() => {
+    const target = pendingFocusRef.current
+    if (!target) return
+    pendingFocusRef.current = null
+    if (target === 'list') firstMenuItemRef.current?.focus()
+    else switcherButtonRef.current?.focus()
+  })
+
   const handleRenameStart = () => {
     if (renamePending) return
     setDraftName(active?.name ?? '')
-    setDraftGlyph(active?.glyph ?? GLYPHS[0])
+    // The same resolved glyph the header already shows — not a second
+    // `?? GLYPHS[0]` fallback that disagrees with `usePondGlyph`'s own
+    // `?? LIFE_GLYPH`, which would silently change a null-glyph pond's mark.
+    setDraftGlyph(pondGlyph)
     setEditing(true)
   }
 
   const handleSave = () => {
     const trimmed = draftName.trim()
     if (!trimmed || !active) return
+    pendingFocusRef.current = 'switcher'
     setEditing(false)
     setOpen(false)
     rename(active.id, { name: trimmed, glyph: draftGlyph })
   }
 
   const handleCancel = () => {
+    pendingFocusRef.current = 'list'
     setEditing(false)
   }
 
@@ -101,7 +121,10 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
   useEffect(() => {
     if (!open || editing) return
     const handleDocumentKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false)
+      if (e.key === 'Escape') {
+        pendingFocusRef.current = 'switcher'
+        setOpen(false)
+      }
     }
     document.addEventListener('keydown', handleDocumentKeyDown)
     return () => document.removeEventListener('keydown', handleDocumentKeyDown)
@@ -134,6 +157,7 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
       {hasPonds ? (
         <button
           type="button"
+          ref={switcherButtonRef}
           data-part="pond-switcher"
           aria-haspopup="menu"
           aria-expanded={open}
@@ -176,9 +200,10 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
                   ponds
                 </div>
 
-                {ponds.map((p) => (
+                {ponds.map((p, i) => (
                   <a
                     key={p.id}
+                    ref={i === 0 ? firstMenuItemRef : undefined}
                     role="menuitem"
                     href={pondHref(p.id, p.lastPageId)}
                     onClick={() => setOpen(false)}

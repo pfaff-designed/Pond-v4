@@ -34,6 +34,11 @@ export function GlyphRow({ value, onChange }: { value: string; onChange: (glyph:
     cellRefs.current[target]?.focus()
   }
 
+  // `value` may be a glyph outside this curated six (a pond's own glyph, read
+  // straight off its row) — fall the roving tabIndex to the first cell rather
+  // than landing on none of them and dropping the row out of the Tab order.
+  const isKnownValue = (GLYPHS as readonly string[]).includes(value)
+
   return (
     <div role="radiogroup" aria-label="glyph" className="flex flex-wrap gap-[6px]">
       {GLYPHS.map((g, i) => (
@@ -46,7 +51,7 @@ export function GlyphRow({ value, onChange }: { value: string; onChange: (glyph:
           role="radio"
           aria-checked={g === value}
           aria-label={glyphLabel(g)}
-          tabIndex={g === value ? 0 : -1}
+          tabIndex={(isKnownValue ? g === value : i === 0) ? 0 : -1}
           onClick={() => onChange(g)}
           onKeyDown={handleKeyDown(i)}
           className={`${GLYPH_CELL} ${g === value ? GLYPH_SELECTED : GLYPH_UNSELECTED}`}
