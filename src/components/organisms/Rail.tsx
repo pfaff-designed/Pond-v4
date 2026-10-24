@@ -66,7 +66,9 @@ import { setPageGlyph, setAreaRole } from '@/lib/pages/mark-client'
 import { appendOwnEdit } from '@/lib/change-log/store'
 import { changeLogKey } from '@/lib/change-log/keys'
 import { sessionUndo } from '@/lib/change-log/session-undo'
+import { applyUndoOutcome } from '@/lib/change-log/undo-outcome'
 import { TrashRefusedError } from '@/lib/change-log/errors'
+import type { MoveSnapshot } from '@/lib/change-log/types'
 import { jsonEqual } from '@/lib/json-equal'
 import { homeQueryKey, pagesKey } from '@/lib/pages/keys'
 import { appendChildLinkUnder, trashPageUnlinked } from '@/lib/pages/child-links'
@@ -1651,7 +1653,7 @@ export function Rail() {
   const [busyId, setBusyId] = useState<string | null>(null)
   // The subtree-delete confirm (blast-radius modal); null when closed.
   const [confirmTarget, setConfirmTarget] = useState<RailNode | null>(null)
-  const { stageDeletion, notify } = useDeletionUndo()
+  const { stageDeletion, stageUndo, notify } = useDeletionUndo()
 
   const {
     data: pages = [],
@@ -2505,6 +2507,7 @@ export function Rail() {
     // the old parent's link, if any, is left for the person to remove.
     const draggedRow = pages.find((r) => r.id === draggedId)
     const isReparent = (draggedRow?.parent_id ?? null) !== move.newParentId
+    const title = draggedRow?.title || 'Untitled'
 
     const snapshot = applyMoveOptimistic(
       queryClient,
@@ -2535,13 +2538,30 @@ export function Rail() {
     }
 
     try {
-      await withUser((sb) =>
+      const record = await withUser((sb) =>
         movePage(sb, {
           id: draggedId,
           newParentId: move.newParentId,
           siblingOrder: move.siblingOrder,
         })
       )
+      if (pondId && record && draggedRow) {
+        const handle = sessionUndo.rememberPending({
+          pondId,
+          recordIds: Promise.resolve([record.id]),
+        })
+        const after = record.after as MoveSnapshot
+        stageUndo({
+          message: `moved ${title} to ${after.parentTitle}`,
+          undoLabel: 'undo',
+          undo: () =>
+            sessionUndo
+              .undoHandle(pondId, handle)
+              .then((outcome) => applyUndoOutcome('undo', outcome, queryClient)),
+          action: () => navigateTo(draggedRow),
+          actionLabel: 'open',
+        })
+      }
     } catch {
       if (snapshot) queryClient.setQueryData<PageRow[]>(pagesKey(pondId), snapshot)
       notify(`Couldn't move "${nodeById.get(draggedId)?.title || 'Untitled'}"`)

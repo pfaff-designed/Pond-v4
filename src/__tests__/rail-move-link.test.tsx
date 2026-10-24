@@ -22,7 +22,10 @@ jest.mock('@/lib/supabase/client', () => ({
 jest.mock('@/lib/pages/client', () => ({
   createPage: jest.fn().mockResolvedValue({ id: 'new-page', title: '' }),
   deletePage: jest.fn().mockResolvedValue(undefined),
-  movePage: jest.fn().mockResolvedValue(undefined),
+  movePage: jest.fn().mockResolvedValue({
+    id: 'record-1',
+    after: { parentId: 'page-b', parentTitle: 'Page B', siblingOrder: [] },
+  }),
   updateTitle: jest.fn().mockResolvedValue(undefined),
 }))
 
@@ -102,4 +105,18 @@ it('a same-parent reorder does not append a second link', async () => {
   fireEvent(target, dropEvent(1000))
 
   expect(appendChildLinkUnder).not.toHaveBeenCalled()
+})
+
+it('dropping a row into a new parent shows an undo toast naming both titles', async () => {
+  mountRail(ROOT_ROWS)
+
+  const dragged = screen.getByRole('treeitem', { name: 'Page A' })
+  const target = screen.getByRole('treeitem', { name: 'Page B' })
+
+  fireEvent(dragged, dragStartEvent())
+  fireEvent(target, dropEvent(0))
+
+  await waitFor(() => expect(screen.getByText('moved Page A to Page B')).toBeInTheDocument())
+  expect(screen.getByRole('button', { name: 'open' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'undo' })).toBeInTheDocument()
 })
