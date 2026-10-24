@@ -13,6 +13,7 @@
 
 import { createClient } from '@/lib/supabase/client'
 import { pushRecentGlyph } from '@/lib/rail/glyph-library'
+import { clampPondName } from './name'
 import type { PondTheme } from '@/lib/supabase/types'
 
 export interface Pond {
@@ -164,15 +165,16 @@ export interface UpdatePondPatch {
 
 /**
  * Rename a pond and/or change its glyph (KAN-492). Same seam as `createPond`:
- * a provided `name` is trimmed, and a blank/whitespace-only one throws before
- * the write is ever attempted.
+ * a provided `name` is trimmed and capped (`clampPondName`, the cap's one
+ * home), and a blank/whitespace-only one throws before the write is ever
+ * attempted.
  */
 export async function updatePond(pondId: string, patch: UpdatePondPatch): Promise<Pond> {
   const update: { name?: string; glyph?: string } = {}
   if (patch.name !== undefined) {
     const trimmed = patch.name.trim()
     if (!trimmed) throw new Error('updatePond: a pond needs a name')
-    update.name = trimmed
+    update.name = clampPondName(trimmed)
   }
   if (patch.glyph !== undefined) update.glyph = patch.glyph
 

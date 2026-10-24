@@ -4,9 +4,9 @@
  * `pond-context-last-page.test.tsx`'s mocking and `Probe` pattern.
  */
 
-import React from 'react'
+import React, { useEffect } from 'react'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
-import { PondProvider, usePond } from '@/lib/pond/context'
+import { PondProvider, usePond, type PondContextValue } from '@/lib/pond/context'
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
@@ -23,8 +23,16 @@ import { listPonds, setPondLastPage } from '@/lib/pond/client'
 const LIFE = { id: 'p-life', name: 'life', glyph: 'waves-02', theme: 'paper', order: 0 }
 const NOISE = { id: 'p-noise', name: 'make noise', glyph: null, theme: 'ink', order: 1 }
 
+// Captured so the blank-name test can call `patchPond` as a plain function —
+// React's event dispatch reports an error thrown inside a click handler to
+// `console.error` rather than rethrowing it to `fireEvent.click`'s caller.
+let capturedPatchPond: PondContextValue['patchPond'] | null = null
+
 function Probe() {
   const { pond, ponds, patchPond } = usePond()
+  useEffect(() => {
+    capturedPatchPond = patchPond
+  }, [patchPond])
   const other = ponds.find((p) => p.id !== pond?.id) ?? null
   return (
     <div>
@@ -61,5 +69,19 @@ describe('PondProvider patchPond', () => {
     )
     expect(screen.getByTestId('other')).toHaveTextContent('make noise:')
     expect(setPondLastPage).not.toHaveBeenCalled()
+  })
+
+  it('throws in development on a blank name — an impossible state (KAN-492)', async () => {
+    render(
+      <PondProvider>
+        <Probe />
+      </PondProvider>
+    )
+    await waitFor(() => expect(screen.getByTestId('active')).toHaveTextContent('life:waves-02'))
+
+    expect(() => capturedPatchPond!('p-life', { name: '   ' })).toThrow(
+      'patchPond: a pond needs a name'
+    )
+    expect(screen.getByTestId('active')).toHaveTextContent('life:waves-02')
   })
 })

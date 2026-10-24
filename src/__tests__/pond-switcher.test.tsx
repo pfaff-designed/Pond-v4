@@ -17,6 +17,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { PondSwitcher } from '@/components/organisms/PondSwitcher'
 import { PondProvider } from '@/lib/pond/context'
+import { POND_NAME_MAX } from '@/lib/pond/name'
 
 const push = jest.fn()
 
@@ -227,6 +228,18 @@ describe('the pond switcher', () => {
 
     // LIFE's glyph is `waves-02` — the row's radio for it is checked.
     expect(screen.getByRole('radio', { name: 'waves' })).toHaveAttribute('aria-checked', 'true')
+  })
+
+  it('caps the name field at POND_NAME_MAX on a long paste (KAN-492)', async () => {
+    const user = userEvent.setup()
+    renderSwitcher()
+    await user.click(await screen.findByRole('button', { name: /life/ }))
+    await user.click(screen.getByRole('menuitem', { name: /rename & icon/ }))
+
+    const nameField = screen.getByRole('textbox', { name: 'pond name' }) as HTMLInputElement
+    fireEvent.change(nameField, { target: { value: 'a'.repeat(10000) } })
+
+    expect(nameField.value).toHaveLength(POND_NAME_MAX)
   })
 
   it('saves the new name and glyph on Enter: one write, header and row both update, menu closes (KAN-492)', async () => {

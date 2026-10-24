@@ -25,6 +25,7 @@ import { NewPondFlow } from './NewPondFlow'
 import { pondHref } from '@/lib/pond/active'
 import { usePondGlyph } from '@/lib/pond/glyph'
 import { useRenamePond } from '@/lib/pond/use-rename-pond'
+import { clampPondName } from '@/lib/pond/name'
 import { GLYPHS, GlyphRow } from '@/components/molecules/GlyphRow'
 
 /** The board's `menuRow` plus a 12×12 stroked plus. */
@@ -249,7 +250,7 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
                   value={draftName}
                   spellCheck={false}
                   autoComplete="off"
-                  onChange={(e) => setDraftName(e.target.value)}
+                  onChange={(e) => setDraftName(clampPondName(e.target.value))}
                   className="min-w-0 rounded-[10px] bg-mn-text/[0.04] px-[10px] py-[7px] text-[13px] leading-[normal] text-mn-text caret-mn-text outline-none"
                 />
                 <GlyphRow value={draftGlyph} onChange={setDraftGlyph} />

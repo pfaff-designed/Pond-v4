@@ -74,6 +74,16 @@ export function PondProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const patchPond = useCallback((pondId: string, patch: Partial<Pick<Pond, 'name' | 'glyph'>>) => {
+    // A blank name is impossible here: every caller (the rename editor's
+    // `handleSave`, its rejection rollback) already guards against one before
+    // calling in. Crash early in dev; in production, drop the patch rather
+    // than committing a pond with no name (AGENTS.md 'Crash early').
+    if (patch.name !== undefined && !patch.name.trim()) {
+      if (process.env.NODE_ENV !== 'production') {
+        throw new Error('patchPond: a pond needs a name')
+      }
+      return
+    }
     setPonds((rows) => rows.map((row) => (row.id === pondId ? { ...row, ...patch } : row)))
   }, [])
 
