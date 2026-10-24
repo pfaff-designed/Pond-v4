@@ -157,6 +157,7 @@ describe('ShellCommands — ⌘K while a pond is being made', () => {
     fireEvent.click(screen.getByRole('button', { name: 'make pond' }))
     await waitFor(() => expect(screen.getByRole('button', { name: 'make pond' })).toBeDisabled())
 
+    await waitFor(() => expect(screen.queryByRole('combobox', LIST)).toBeNull())
     press({ metaKey: true })
 
     expect(screen.getByRole('dialog', { name: 'New pond' })).toBeInTheDocument()
