@@ -162,4 +162,20 @@ describe('ShellCommands — ⌘K while a pond is being made', () => {
     expect(screen.getByRole('dialog', { name: 'New pond' })).toBeInTheDocument()
     expect(screen.queryByRole('combobox', LIST)).toBeNull()
   })
+
+  it('closes the sheet once make pond succeeds, even though pending is still true that tick', async () => {
+    onPlatform('MacIntel')
+    ;(createPond as jest.Mock).mockResolvedValue({ ...MATCHING_POND, id: 'p-new' })
+    renderShellWithPonds()
+
+    press({ metaKey: true })
+    fireEvent.change(await screen.findByRole('combobox', LIST), { target: { value: 'studio' } })
+    fireEvent.click(await screen.findByRole('option', { name: /new pond/ }))
+
+    await screen.findByRole('dialog', { name: 'New pond' })
+    fireEvent.click(screen.getByRole('button', { name: 'continue' }))
+    fireEvent.click(screen.getByRole('button', { name: 'make pond' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'New pond' })).toBeNull())
+  })
 })

@@ -228,8 +228,8 @@ export function ShellCommands() {
   const handlePondCreatePendingChange = useCallback((next: boolean) => {
     pondCreatePendingRef.current = next
   }, [])
-  const closeNewPondSheet = useCallback(() => {
-    if (pondCreatePendingRef.current) return
+  const closeNewPondSheet = useCallback((created?: boolean) => {
+    if (!created && pondCreatePendingRef.current) return
     setNaming(null)
   }, [])
 
