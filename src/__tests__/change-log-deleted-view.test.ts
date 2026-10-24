@@ -215,6 +215,53 @@ describe('purgeDay', () => {
 
   it.each(cases)('$name', ({ createdAt, expected }) => {
     const purged = purgeDay(createdAt)
-    expect([purged.getFullYear(), purged.getMonth() + 1, purged.getDate()]).toEqual(expected)
+    expect(purged).not.toBeNull()
+    expect([purged!.getFullYear(), purged!.getMonth() + 1, purged!.getDate()]).toEqual(expected)
+  })
+})
+
+/** `NODE_ENV` is typed read-only (`@types/node`) so production can't be set
+ *  by accident outside a test; this is the one deliberate exception. */
+const setNodeEnv = (value: string | undefined): void => {
+  (process.env as { NODE_ENV: string | undefined }).NODE_ENV = value
+}
+
+describe('purgeDay — unreadable createdAt (KAN-551)', () => {
+  const ORIGINAL_NODE_ENV = process.env.NODE_ENV
+
+  afterEach(() => {
+    setNodeEnv(ORIGINAL_NODE_ENV)
+  })
+
+  const unreadable: Array<[string, string | undefined]> = [
+    ['missing', undefined],
+    ['an unparseable string', 'not-a-date'],
+  ]
+
+  it.each(unreadable)('throws a named assertion in development for %s createdAt', (_label, createdAt) => {
+    expect(() => purgeDay(createdAt as unknown as string)).toThrow(/purgeDay/)
+  })
+
+  it.each(unreadable)(
+    'logs and returns null in production for %s createdAt, never an Invalid Date',
+    (_label, createdAt) => {
+      setNodeEnv('production')
+      const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+      try {
+        expect(purgeDay(createdAt as unknown as string)).toBeNull()
+        expect(errorSpy).toHaveBeenCalled()
+      } finally {
+        errorSpy.mockRestore()
+      }
+    }
+  )
+
+  it.each([
+    ['a date in the future', '2099-01-01T12:00:00.000Z', [2099, 1, 31]],
+    ['a normal, parseable date', '2026-08-27T12:00:00.000Z', [2026, 9, 26]],
+  ] as const)('still purges %s correctly, in either environment', (_label, createdAt, expected) => {
+    const purged = purgeDay(createdAt)
+    expect(purged).not.toBeNull()
+    expect([purged!.getFullYear(), purged!.getMonth() + 1, purged!.getDate()]).toEqual(expected)
   })
 })

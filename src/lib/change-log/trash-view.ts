@@ -51,15 +51,22 @@ const dayWord = (n: number): string => `${n} ${n === 1 ? 'day' : 'days'}`
 /** Calendar days from `now` until `createdAt + TRASH_RETENTION_DAYS` — the
  *  negation of `daysBetween`, which measures the other direction (elapsed
  *  days since `iso`, as of `now`). Can go negative: the purge (KAN-452) isn't
- *  built, so a trashed page can sit past its own retention window. */
-const daysUntilGone = (createdAt: string, now: Date): number => {
-  const purgeMoment = purgeDay(createdAt).toISOString()
-  return -daysBetween(now, purgeMoment)
+ *  built, so a trashed page can sit past its own retention window.
+ *
+ *  `null` when `purgeDay` can't read `createdAt` — already thrown (dev) or
+ *  logged (production) there; never calls `.toISOString()` on that failure
+ *  (KAN-551). */
+const daysUntilGone = (createdAt: string, now: Date): number | null => {
+  const purgeMoment = purgeDay(createdAt)
+  if (purgeMoment === null) return null
+  return -daysBetween(now, purgeMoment.toISOString())
 }
 
 /** `daysUntilGone` clamped at the reader: zero or overdue both read `today`,
- *  never a negative day count. */
-const goesLabel = (daysLeft: number): string => (daysLeft <= 0 ? 'today' : `in ${dayWord(daysLeft)}`)
+ *  never a negative day count. `null` (unreadable `createdAt`) reads as `''`
+ *  — the row still lists, just with no countdown (KAN-551). */
+const goesLabel = (daysLeft: number | null): string =>
+  daysLeft === null ? '' : daysLeft <= 0 ? 'today' : `in ${dayWord(daysLeft)}`
 
 /**
  * One row per `delete` record still in trash — the subtree's root only, as

@@ -22,9 +22,22 @@ export const TRASH_RETENTION_DAYS = 30
 /** The local calendar day a page trashed at `createdAt` goes — `setDate` in
  *  local time, never ms addition, so a page deleted near a DST change still
  *  reads the right day (KAN-500). The one home both `purgeDate` below and
- *  `daysUntilGone` (`trash-view.ts`) read. */
-export function purgeDay(createdAt: string): Date {
+ *  `daysUntilGone` (`trash-view.ts`) read.
+ *
+ *  `null` for an unreadable `createdAt` (missing or unparseable) — the one
+ *  impossible state (AGENTS.md "crash early"): throws in development, logs
+ *  and returns `null` in production, so no caller ever feeds an Invalid Date
+ *  into `.toISOString()` (KAN-551). */
+export function purgeDay(createdAt: string): Date | null {
   const d = new Date(createdAt)
+  if (Number.isNaN(d.getTime())) {
+    const message = `purgeDay: unreadable createdAt (${JSON.stringify(createdAt)})`
+    if (process.env.NODE_ENV !== 'production') {
+      throw new Error(message)
+    }
+    console.error(message)
+    return null
+  }
   d.setDate(d.getDate() + TRASH_RETENTION_DAYS)
   return d
 }
@@ -47,7 +60,12 @@ const whenLabel = (iso: string, now: Date): string => {
 const pluralCount = (n: number, singular: string, plural: string = `${singular}s`): string =>
   `${n} ${n === 1 ? singular : plural}`
 
-const purgeDate = (createdAt: string): string => shortDate(purgeDay(createdAt))
+/** `''` for an unreadable `createdAt` — `purgeDay` already logged/threw;
+ *  the card still renders, just with no restorable/emptied date. */
+const purgeDate = (createdAt: string): string => {
+  const day = purgeDay(createdAt)
+  return day === null ? '' : shortDate(day)
+}
 
 /** `restore_page` (0027) stamps this DB-side-only onto the `restore` record's
  *  `after` when the original parent was trashed or gone — not part of the
