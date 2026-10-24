@@ -177,7 +177,7 @@ export const TableTitleOpensRecord: Story = {
   render: (args) => <StatefulView config={args.config} />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await userEvent.click(canvas.getAllByRole('textbox', { name: 'Row title' })[0])
+    await userEvent.click(canvas.getByText('Trim the rim'))
     await expect(
       await within(document.body).findByLabelText('Record: Trim the rim')
     ).toBeInTheDocument()
