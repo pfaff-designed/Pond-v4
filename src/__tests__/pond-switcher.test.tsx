@@ -31,9 +31,15 @@ jest.mock('@/lib/pond/client', () => ({
   listPonds: jest.fn(),
   createPond: jest.fn(),
   setPondLastPage: jest.fn(),
+  updatePond: jest.fn(),
 }))
 
-import { createPond, listPonds, setPondLastPage } from '@/lib/pond/client'
+const requestNotify = jest.fn()
+jest.mock('@/lib/deletion/notify-bridge', () => ({
+  requestNotify: (...args: unknown[]) => requestNotify(...args),
+}))
+
+import { createPond, listPonds, setPondLastPage, updatePond } from '@/lib/pond/client'
 
 const LIFE = { id: 'p-life', name: 'life', glyph: 'waves-02', theme: 'paper', order: 0 }
 const NOISE = { id: 'p-noise', name: 'make noise', glyph: 'lightning-03', theme: 'ink', order: 1 }
@@ -53,9 +59,11 @@ function renderSwitcher() {
 beforeEach(() => {
   mockSearch = ''
   push.mockClear()
+  requestNotify.mockClear()
   ;(listPonds as jest.Mock).mockResolvedValue([LIFE, NOISE])
   ;(createPond as jest.Mock).mockReset()
   ;(setPondLastPage as jest.Mock).mockReset().mockResolvedValue(undefined)
+  ;(updatePond as jest.Mock).mockReset().mockResolvedValue(LIFE)
 })
 
 describe('the rail head before migration 0018', () => {
@@ -219,6 +227,87 @@ describe('the pond switcher', () => {
 
     // LIFE's glyph is `waves-02` — the row's radio for it is checked.
     expect(screen.getByRole('radio', { name: 'waves' })).toHaveAttribute('aria-checked', 'true')
+  })
+
+  it('saves the new name and glyph on Enter: one write, header and row both update, menu closes (KAN-492)', async () => {
+    const user = userEvent.setup()
+    const { container } = renderSwitcher()
+    await user.click(await screen.findByRole('button', { name: /life/ }))
+    await user.click(screen.getByRole('menuitem', { name: /rename & icon/ }))
+
+    const nameField = screen.getByRole('textbox', { name: 'pond name' })
+    await user.clear(nameField)
+    await user.type(nameField, 'Studio')
+    await user.click(screen.getByRole('radio', { name: 'star' }))
+    await user.click(nameField)
+    await user.keyboard('{Enter}')
+
+    await waitFor(() =>
+      expect(updatePond).toHaveBeenCalledWith('p-life', { name: 'Studio', glyph: 'star-01' })
+    )
+    expect(updatePond).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('menu', { name: 'Ponds' })).not.toBeInTheDocument()
+    expect(container.querySelector('[data-part="pond-name"]')).toHaveTextContent('Studio')
+    expect(container.querySelector('[data-pond-mark] [data-icon]')).toHaveAttribute(
+      'data-icon',
+      'star-01'
+    )
+
+    await user.click(await screen.findByRole('button', { name: /Studio/ }))
+    const row = screen.getByRole('menuitem', { name: /Studio/ })
+    expect(row.querySelector('[data-icon]')).toHaveAttribute('data-icon', 'star-01')
+  })
+
+  it('does nothing on Enter when the trimmed name is blank: the field stays, no write', async () => {
+    const user = userEvent.setup()
+    renderSwitcher()
+    await user.click(await screen.findByRole('button', { name: /life/ }))
+    await user.click(screen.getByRole('menuitem', { name: /rename & icon/ }))
+
+    const nameField = screen.getByRole('textbox', { name: 'pond name' })
+    await user.clear(nameField)
+    await user.type(nameField, '   ')
+    await user.keyboard('{Enter}')
+
+    expect(updatePond).not.toHaveBeenCalled()
+    expect(screen.getByRole('textbox', { name: 'pond name' })).toBeInTheDocument()
+  })
+
+  it('Esc once discards the draft and returns to the original list; Esc again closes the menu', async () => {
+    const user = userEvent.setup()
+    renderSwitcher()
+    await user.click(await screen.findByRole('button', { name: /life/ }))
+    await user.click(screen.getByRole('menuitem', { name: /rename & icon/ }))
+
+    const nameField = screen.getByRole('textbox', { name: 'pond name' })
+    await user.clear(nameField)
+    await user.type(nameField, 'Studio')
+
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('textbox', { name: 'pond name' })).not.toBeInTheDocument()
+    expect(screen.getByRole('menu', { name: 'Ponds' })).toBeInTheDocument()
+    expect(screen.queryByText('Studio')).not.toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: /^life/ })).toBeInTheDocument()
+    expect(updatePond).not.toHaveBeenCalled()
+
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('menu', { name: 'Ponds' })).not.toBeInTheDocument()
+  })
+
+  it('rolls the header back to the old name and notifies on a rejected save', async () => {
+    const user = userEvent.setup()
+    ;(updatePond as jest.Mock).mockRejectedValue(new Error('nope'))
+    const { container } = renderSwitcher()
+    await user.click(await screen.findByRole('button', { name: /life/ }))
+    await user.click(screen.getByRole('menuitem', { name: /rename & icon/ }))
+
+    const nameField = screen.getByRole('textbox', { name: 'pond name' })
+    await user.clear(nameField)
+    await user.type(nameField, 'Studio')
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => expect(requestNotify).toHaveBeenCalledWith({ message: expect.any(String) }))
+    expect(container.querySelector('[data-part="pond-name"]')).toHaveTextContent('life')
   })
 
   it("opens the sheet's first of two steps, not a field in the menu", async () => {

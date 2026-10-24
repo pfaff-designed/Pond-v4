@@ -24,6 +24,7 @@ import { PondMark } from '@/components/atoms/PondMark'
 import { NewPondFlow } from './NewPondFlow'
 import { pondHref } from '@/lib/pond/active'
 import { usePondGlyph } from '@/lib/pond/glyph'
+import { useRenamePond } from '@/lib/pond/use-rename-pond'
 import { GLYPHS, GlyphRow } from '@/components/molecules/GlyphRow'
 
 /** The board's `menuRow` plus a 12×12 stroked plus. */
@@ -56,9 +57,9 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
   const [naming, setNaming] = useState(false)
   const { pond: active, ponds } = usePond()
   const pondGlyph = usePondGlyph()
+  const { rename } = useRenamePond()
 
-  // The rename editor's draft — local until save (KAN-492). Nothing here
-  // touches `usePond()` until save is wired (next item).
+  // The rename editor's draft — local until Enter commits it via `rename` (KAN-492).
   const [editing, setEditing] = useState(false)
   const [draftName, setDraftName] = useState('')
   const [draftGlyph, setDraftGlyph] = useState<string>(GLYPHS[0])
@@ -76,10 +77,31 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
     setEditing(true)
   }
 
-  // No-ops until save/cancel are wired (next item): the field's keydown
-  // already reaches them so that wiring is the only change left to make.
-  const handleSave = () => {}
-  const handleCancel = () => {}
+  const handleSave = () => {
+    const trimmed = draftName.trim()
+    if (!trimmed || !active) return
+    setEditing(false)
+    setOpen(false)
+    rename(active.id, { name: trimmed, glyph: draftGlyph })
+  }
+
+  const handleCancel = () => {
+    setEditing(false)
+  }
+
+  // Esc is handled on `document` rather than the field's own `onKeyDown` so a
+  // second Esc — now that `editing` is false — still reaches this listener and
+  // closes the popover (AUDIT, "no Escape handling in PondSwitcher").
+  useEffect(() => {
+    if (!open) return
+    const handleDocumentKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      if (editing) handleCancel()
+      else setOpen(false)
+    }
+    document.addEventListener('keydown', handleDocumentKeyDown)
+    return () => document.removeEventListener('keydown', handleDocumentKeyDown)
+  }, [open, editing])
 
   // Before migration 0018 is applied the table does not exist and `listPonds`
   // returns []. The head then renders the glyph and name without the chevron —
@@ -133,6 +155,7 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
             onClick={() => {
               setOpen(false)
               setNaming(false)
+              setEditing(false)
             }}
           />
           {/* The board's `top: 44` is from the rail CARD's top edge, so the menu
