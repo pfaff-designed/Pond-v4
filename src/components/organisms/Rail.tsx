@@ -2503,10 +2503,7 @@ export function Rail() {
     const move = computeMove(pages, draggedId, targetId, zone)
     if (!move) return
 
-    // A re-parent (not a same-parent reorder) gets a link on its new parent;
-    // the old parent's link, if any, is left for the person to remove.
     const draggedRow = pages.find((r) => r.id === draggedId)
-    const isReparent = (draggedRow?.parent_id ?? null) !== move.newParentId
     const title = draggedRow?.title || 'Untitled'
 
     const snapshot = applyMoveOptimistic(
@@ -2525,17 +2522,8 @@ export function Rail() {
       else setExpanded((prev) => new Set(prev).add(targetId))
     }
 
-    // KAN-415: a failed link append is not a failed move — fired alongside it.
-    if (isReparent) {
-      void appendChildLinkUnder(
-        createClient(),
-        queryClient,
-        move.newParentId,
-        draggedId,
-        pondId,
-        pondName
-      )
-    }
+    // KAN-477: a reparent writes no link block of its own — the new parent's
+    // child links are derived at read time, so the move stays one undo step.
 
     try {
       const record = await withUser((sb) =>

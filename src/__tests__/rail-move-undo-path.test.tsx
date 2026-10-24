@@ -26,8 +26,10 @@ import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { pagesKey } from '@/lib/pages/keys'
 import { fetchPages, type PageRow } from '@/lib/pages/tree'
 import { movePage } from '@/lib/pages/client'
+import { createClient } from '@/lib/supabase/client'
 import { undoStep, redoStep } from '@/lib/change-log/undo'
 import type { MoveSnapshot } from '@/lib/change-log/types'
+import type { Block } from '@/lib/modules/content'
 import type { Pond } from '@/lib/pond/client'
 
 const routerPush = jest.fn()
@@ -36,10 +38,14 @@ jest.mock('next/navigation', () => ({
   useSearchParams: () => ({ get: () => null }),
 }))
 
+// A plain jest.fn, not a static factory: the regression test below swaps in
+// a richer fake (one that also answers `.from('pages')`) for its own run, so
+// `appendChildLinkUnder` — NOT mocked away in this file — can actually land
+// a write if a reparent ever calls it again.
 jest.mock('@/lib/supabase/client', () => ({
-  createClient: () => ({
+  createClient: jest.fn(() => ({
     auth: { getUser: async () => ({ data: { user: { id: 'user-1' } } }) },
-  }),
+  })),
 }))
 
 jest.mock('@/lib/pages/tree', () => ({
@@ -63,10 +69,10 @@ jest.mock('@/lib/pond/client', () => ({
   pushRecentGlyphToPond: jest.fn().mockResolvedValue(undefined),
 }))
 
-jest.mock('@/lib/pages/child-links', () => ({
-  appendChildLinkUnder: jest.fn().mockResolvedValue(undefined),
-  trashPageUnlinked: jest.fn().mockResolvedValue(undefined),
-}))
+// KAN-466: deliberately NOT mocked (unlike every other Rail test file) — a
+// reparent must land no real write through this module's real
+// `appendChildLinkUnder`, so the regression test below exercises it for
+// real rather than against a no-op stand-in.
 
 jest.mock('@/lib/change-log/store', () => ({
   ...jest.requireActual('@/lib/change-log/store'),
@@ -91,12 +97,15 @@ const POND_ID = 'pond-1'
 // Stands in for the `pages` table a real Postgres would hold — `movePage`,
 // `undoStep` and `redoStep` all mutate it, `fetchPages` reads it, so the
 // refetch `applyUndoOutcome`'s invalidate drives sees the real effect of
-// whichever RPC ran, not a value this file hand-fed the cache.
-let table: PageRow[]
+// whichever RPC ran, not a value this file hand-fed the cache. `blocks`
+// carries no RPC fake of its own — only the regression test below's richer
+// `createClient` fake reads/writes it, through the real `getPage`/`saveBlocks`.
+type TestPageRow = PageRow & { blocks: Block[] }
+let table: TestPageRow[]
 function resetTable() {
   table = [
-    { id: 'house', parent_id: null, type: 'page', title: 'house', order: 0, updated_at: AT },
-    { id: 'roof', parent_id: null, type: 'page', title: 'roof', order: 1, updated_at: AT },
+    { id: 'house', parent_id: null, type: 'page', title: 'house', order: 0, updated_at: AT, blocks: [] },
+    { id: 'roof', parent_id: null, type: 'page', title: 'roof', order: 1, updated_at: AT, blocks: [] },
   ]
 }
 const titleOf = (id: string | null) => table.find((r) => r.id === id)?.title ?? 'life'
@@ -252,5 +261,94 @@ describe("rail drag-move: the toast's open/undo and ⌘Z/⇧⌘Z share one undo 
 
     await user.keyboard('{Meta>}{Shift>}z{/Shift}{/Meta}')
     await waitFor(() => expect(parentIdOfRoof()).toBe('house'))
+  })
+})
+
+/**
+ * KAN-466 fix: a reparent used to fire `appendChildLinkUnder` (KAN-415) on the
+ * new parent, and that write pushed its OWN session-undo step — usually ABOVE
+ * the move's, so one ⌘Z only undid the link and left the page reparented.
+ * `appendChildLinkUnder` is NOT mocked away in this file (see the top-of-file
+ * note by the removed mock), so if a reparent ever calls it again, this real
+ * implementation runs — through the real `getPage`/`saveBlocks` against the
+ * richer fake `createClient` below — and the write actually lands, the same
+ * as it would in the old, buggy code.
+ */
+describe('KAN-466 regression: a reparent writes no link block of its own', () => {
+  it('one ⌘Z after a reparent fully restores it, and house holds no stored link to roof', async () => {
+    renderPath()
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const noopBuilder = (): any =>
+      new Proxy(
+        {},
+        {
+          get(_target, prop) {
+            if (prop === 'then') return (resolve: (v: unknown) => unknown) =>
+              Promise.resolve({ data: [], error: null }).then(resolve)
+            return () => noopBuilder()
+          },
+        }
+      )
+
+    // Answers `getPage`/`saveBlocks`'s real `.from('pages')` calls against
+    // the same mutable `table` every other fake in this file reads/writes —
+    // any other table (`markOutdated`'s sweep, say) gets a safe no-op.
+    const richSb = {
+      auth: { getUser: async () => ({ data: { user: { id: 'user-1' } } }) },
+      from: (name: string) => {
+        if (name !== 'pages') return noopBuilder()
+        let op: 'select' | 'update' | null = null
+        let updatePayload: Record<string, unknown> | null = null
+        const filters: Array<(r: TestPageRow) => boolean> = []
+        const builder = {
+          select() {
+            op = op ?? 'select'
+            return builder
+          },
+          update(payload: Record<string, unknown>) {
+            op = 'update'
+            updatePayload = payload
+            return builder
+          },
+          eq(col: string, val: string) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            filters.push((r) => (r as any)[col] === val)
+            return builder
+          },
+          maybeSingle() {
+            const row = table.find((r) => filters.every((f) => f(r)))
+            return Promise.resolve({ data: row ? { ...row } : null, error: null })
+          },
+          then(resolve: (v: { data: null; error: null }) => unknown) {
+            if (op === 'update') {
+              for (const row of table) {
+                if (filters.every((f) => f(row))) Object.assign(row, updatePayload)
+              }
+            }
+            return Promise.resolve({ data: null, error: null }).then(resolve)
+          },
+        }
+        return builder
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any
+
+    jest.mocked(createClient).mockImplementation(() => richSb)
+
+    dragRoofOntoHouse()
+    await waitFor(() => expect(movePage).toHaveBeenCalledTimes(1))
+    await screen.findByText('moved roof to house')
+    // Flush: a stray reparent-link write (the old bug) is a detached async
+    // chain `handleMove` never awaits — give it room to land before checking.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const user = userEvent.setup()
+    await user.click(document.body)
+    await user.keyboard('{Meta>}z{/Meta}')
+
+    await waitFor(() => expect(parentIdOfRoof()).toBe(null))
+    expect(table.find((r) => r.id === 'house')?.blocks ?? []).toEqual([])
   })
 })
