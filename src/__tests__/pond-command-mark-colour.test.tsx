@@ -15,7 +15,12 @@ const glyph = () => document.querySelector<HTMLElement>('[data-part="glyph"]')!
 function renderCommand(role: 'area-a' | null) {
   return render(
     <PondCommand
-      path={{ glyph: 'ramp', trail: [{ title: 'life', node: null }], current: 'health', role }}
+      path={{
+        glyph: 'ramp',
+        trail: [{ title: 'life', to: { kind: 'home' } }],
+        current: 'health',
+        role,
+      }}
       open={false}
       items={[]}
       onSelect={jest.fn()}

@@ -53,8 +53,8 @@ import {
   type PaletteScope,
 } from '@/components/molecules/palette-entries'
 import { PaletteRow, type PaletteRowEntry } from '@/components/molecules/palette-row'
-import type { CommandPath } from '@/lib/pages/command-path'
-import { workspaceUrl, type WorkspaceNodeRef } from '@/lib/pages/nav'
+import type { CommandCrumbTarget, CommandPath } from '@/lib/pages/command-path'
+import { workspaceUrl } from '@/lib/pages/nav'
 import { markAccent } from '@/lib/rail/glyph-library'
 import { useMorph } from '@/lib/motion/use-morph'
 import { ariaKeyshortcuts, formatChord, useApplePlatform } from '@/lib/shell-commands'
@@ -112,7 +112,7 @@ export interface PondCommandProps {
   /** Fires when arrowing/typing lands on a new page row (KAN-388) — the host prefetches it. */
   onActiveItemChange?: (item: PaletteItem) => void
   /** A plain click on an ancestor breadcrumb link. A modified click opens a new tab instead. */
-  onNavigate?: (node: WorkspaceNodeRef) => void
+  onNavigate?: (to: Exclude<CommandCrumbTarget, null>) => void
 }
 
 const ramp = (from: number, span: number) => `clamp(0, calc((var(--e, 0) - ${from}) / ${span}), 1)`
@@ -311,11 +311,14 @@ export function PondCommand({
 
   // A modified click (⌘/Ctrl/Shift/Alt) is left unprevented so the browser's
   // native new-tab/new-window/download behaviour fires instead of a navigate.
-  const handleCrumbClick = (e: React.MouseEvent<HTMLAnchorElement>, node: WorkspaceNodeRef) => {
+  const handleCrumbClick = (
+    e: React.MouseEvent<HTMLAnchorElement>,
+    to: Exclude<CommandCrumbTarget, null>
+  ) => {
     e.stopPropagation()
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
     e.preventDefault()
-    onNavigate?.(node)
+    onNavigate?.(to)
   }
 
   const handleModeClick = (e: React.MouseEvent) => {
@@ -371,13 +374,13 @@ export function PondCommand({
           className={`${PATH} z-10 ${half ? 'pointer-events-none' : ''}`}
         >
           {path.trail.map((crumb, i) => {
-            const { node } = crumb
+            const { to } = crumb
             return (
               <Fragment key={i}>
-                {node ? (
+                {to ? (
                   <a
-                    href={workspaceUrl(node)}
-                    onClick={(e) => handleCrumbClick(e, node)}
+                    href={workspaceUrl(to.kind === 'page' ? to.node : null)}
+                    onClick={(e) => handleCrumbClick(e, to)}
                     className={`min-w-0 truncate text-mn-text-secondary hover:underline underline-offset-[3px] decoration-1 ${FOCUS_VISIBLE_RING}`}
                   >
                     {crumb.title}

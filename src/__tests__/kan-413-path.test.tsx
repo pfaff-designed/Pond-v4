@@ -39,7 +39,7 @@ const runBootScript = () => new Function(MODE_BOOT_SCRIPT)()
 
 const PATH = {
   glyph: 'ramp',
-  trail: [{ title: 'life', node: null }],
+  trail: [{ title: 'life', to: { kind: 'home' as const } }],
   current: 'standups',
   role: null,
 }

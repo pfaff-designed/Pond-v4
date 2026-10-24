@@ -139,7 +139,7 @@ function renderPath(blocks: Block[]) {
         <PondCommand
           path={{
             glyph: 'ramp',
-            trail: [{ title: 'life', node: null }],
+            trail: [{ title: 'life', to: { kind: 'home' } }],
             current: 'Workshop',
             role: null,
           }}

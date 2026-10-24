@@ -39,7 +39,9 @@ jest.mock('@/lib/pond/client', () => ({
 jest.mock('@/lib/layout/command-path', () => ({
   useCommandPath: () => ({
     glyph: 'ramp',
-    trail: [{ title: 'house', node: { id: 'house', type: 'page', title: 'house' } }],
+    trail: [
+      { title: 'house', to: { kind: 'page', node: { id: 'house', type: 'page', title: 'house' } } },
+    ],
     current: 'budget',
     role: null,
   }),

@@ -407,8 +407,8 @@ describe('paletteItems — every value from the owner that already derives it', 
 const PATH = {
   glyph: 'ramp',
   trail: [
-    { title: 'life', node: null },
-    { title: 'professional', node: null },
+    { title: 'life', to: { kind: 'home' as const } },
+    { title: 'professional', to: null },
   ],
   current: 'standups',
   role: null,

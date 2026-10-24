@@ -440,15 +440,18 @@ describe('commandPath — the root, the ancestors, then the page; led by its are
     expect(area).toEqual({
       glyph: healthMark,
       role: null,
-      trail: [{ title: 'life', node: null }],
+      trail: [{ title: 'life', to: { kind: 'home' } }],
       current: 'Health',
     })
     expect(child).toEqual({
       glyph: healthMark,
       role: null,
       trail: [
-        { title: 'life', node: null },
-        { title: 'Health', node: { id: 'health', type: 'page', title: 'Health' } },
+        { title: 'life', to: { kind: 'home' } },
+        {
+          title: 'Health',
+          to: { kind: 'page', node: { id: 'health', type: 'page', title: 'Health' } },
+        },
       ],
       current: 'Sleep',
     })
@@ -458,8 +461,11 @@ describe('commandPath — the root, the ancestors, then the page; led by its are
   // lowercase "life", and nothing is title-cased by the pill.
   it('segments are titles verbatim: the root lowercase, the pages in their own case', () => {
     expect(commandPath(ROWS, 'sleep', opts('Sleep')).trail).toEqual([
-      { title: 'life', node: null },
-      { title: 'Health', node: { id: 'health', type: 'page', title: 'Health' } },
+      { title: 'life', to: { kind: 'home' } },
+      {
+        title: 'Health',
+        to: { kind: 'page', node: { id: 'health', type: 'page', title: 'Health' } },
+      },
     ])
   })
 
@@ -468,7 +474,12 @@ describe('commandPath — the root, the ancestors, then the page; led by its are
   // node — unlike life's reserved-home fallback above.
   it('starts at the databases root, never inside life; the root page reads simply "databases"', () => {
     expect(commandPath(ROWS, 'db-1', opts('ingredients'))).toMatchObject({
-      trail: [{ title: 'databases', node: { id: 'root-db', type: 'page', title: 'databases' } }],
+      trail: [
+        {
+          title: 'databases',
+          to: { kind: 'page', node: { id: 'root-db', type: 'page', title: 'databases' } },
+        },
+      ],
       current: 'ingredients',
     })
     expect(commandPath(ROWS, 'root-db', opts('databases'))).toMatchObject({

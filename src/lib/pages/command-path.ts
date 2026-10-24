@@ -19,12 +19,19 @@ import { markIndex, resolveMark } from './mark'
 import type { PageRow } from './tree'
 
 /**
- * One breadcrumb segment: its label, and the real page it opens — or `null` for
- * a crumb with no openable page (life's reserved-home root, a virtual trail).
+ * One breadcrumb segment: its label, and where it navigates — never inferred
+ * from the node shape, since life's root has no `pages` row to carry.
+ *
+ * `{ kind: 'page' }` opens that row. `{ kind: 'home' }` opens the pond's root
+ * (`workspaceUrl(null)`) — life's own root crumb, and the trash trail's life
+ * crumb, both open the pond home even though neither has a row. `null` is a
+ * crumb with nothing to open (a virtual trail's non-navigable segment).
  */
+export type CommandCrumbTarget = { kind: 'page'; node: WorkspaceNodeRef } | { kind: 'home' } | null
+
 export interface CommandCrumb {
   title: string
-  node: WorkspaceNodeRef | null
+  to: CommandCrumbTarget
 }
 
 export interface CommandPath {
@@ -59,9 +66,14 @@ export function commandPath(
     trail: [
       {
         title: root?.title ?? rootTitle,
-        node: root ? { id: root.id, type: root.type, title: root.title } : null,
+        to: root
+          ? { kind: 'page', node: { id: root.id, type: root.type, title: root.title } }
+          : { kind: 'home' },
       },
-      ...crumbs.map((c) => ({ title: c.title, node: { id: c.id, type: c.type, title: c.title } })),
+      ...crumbs.map((c) => ({
+        title: c.title,
+        to: { kind: 'page', node: { id: c.id, type: c.type, title: c.title } } as const,
+      })),
     ],
     current,
     role: own.role,

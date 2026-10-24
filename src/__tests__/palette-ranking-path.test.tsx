@@ -19,7 +19,7 @@ import type { PageRow } from '@/lib/pages/tree'
 
 const PATH = {
   glyph: 'ramp',
-  trail: [{ title: 'life', node: null }],
+  trail: [{ title: 'life', to: { kind: 'home' as const } }],
   current: 'projects',
   role: null,
 }

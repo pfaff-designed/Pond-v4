@@ -19,7 +19,7 @@ function renderCommand() {
     <PondCommand
       path={{
         glyph: 'ramp',
-        trail: [{ title: 'life', node: null }],
+        trail: [{ title: 'life', to: { kind: 'home' } }],
         current: 'health',
         role: null,
       }}
@@ -38,7 +38,7 @@ describe('PondCommand — the server render agrees with the first client render,
       <PondCommand
         path={{
           glyph: 'ramp',
-          trail: [{ title: 'life', node: null }],
+          trail: [{ title: 'life', to: { kind: 'home' } }],
           current: 'health',
           role: null,
         }}

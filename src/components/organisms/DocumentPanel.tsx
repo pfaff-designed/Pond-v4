@@ -489,13 +489,13 @@ export function DocumentPanel() {
           glyph: pond?.glyph ?? LIFE_GLYPH,
           trail: recordId
             ? [
-                { title: home?.title || pondName || 'life', node: null },
-                { title: DATABASES_ROOT_TITLE, node: null },
-                { title: 'change log', node: null },
+                { title: home?.title || pondName || 'life', to: { kind: 'home' } },
+                { title: DATABASES_ROOT_TITLE, to: null },
+                { title: 'change log', to: null },
               ]
             : [
-                { title: home?.title || pondName || 'life', node: null },
-                { title: DATABASES_ROOT_TITLE, node: null },
+                { title: home?.title || pondName || 'life', to: { kind: 'home' } },
+                { title: DATABASES_ROOT_TITLE, to: null },
               ],
           // `viewTitle`'s own fallback (an ordinary page's title read off the
           // row until it lands) has no row to read here — a record's title
@@ -518,7 +518,7 @@ export function DocumentPanel() {
             glyph: pond?.glyph ?? LIFE_GLYPH,
             // Trash is its own top-level rail row (KAN-504), not a databases
             // child — unlike change log above, its trail carries no databases crumb.
-            trail: [{ title: home?.title || pondName || 'life', node: null }],
+            trail: [{ title: home?.title || pondName || 'life', to: { kind: 'home' } }],
             current: 'trash',
             role: null,
           }
