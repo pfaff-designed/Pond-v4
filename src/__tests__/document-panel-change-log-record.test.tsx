@@ -30,7 +30,18 @@ jest.mock('@/lib/supabase/client', () => ({
     auth: { getUser: jest.fn().mockResolvedValue({ data: { user: { id: 'user-1' } } }) },
   }),
 }))
-jest.mock('@/lib/pages/tree', () => ({ fetchPages: jest.fn().mockResolvedValue([]) }))
+jest.mock('@/lib/pages/tree', () => ({
+  fetchPages: jest.fn().mockResolvedValue([
+    {
+      id: 'root-db',
+      parent_id: null,
+      type: 'page',
+      title: 'databases',
+      order: 0,
+      updated_at: '2026-09-30T00:00:00.000Z',
+    },
+  ]),
+}))
 jest.mock('@/lib/change-log/store', () => ({
   ...jest.requireActual('@/lib/change-log/store'),
   countWaiting: jest.fn().mockResolvedValue(0),
@@ -137,6 +148,19 @@ describe('DocumentPanel — a change log record route', () => {
 
     await screen.findByTestId('change-log-record-title')
     expect(screen.queryByTestId('change-log-column')).not.toBeInTheDocument()
+  })
+
+  it('the "databases" and "change log" crumbs are links, not dead text', async () => {
+    mockGetRecord.mockResolvedValue(record())
+
+    renderPanel()
+
+    await screen.findByTestId('change-log-record-title')
+    const crumbs = screen.getAllByTestId('command-path-crumb')
+    const databasesCrumb = crumbs.find((c) => c.dataset.title === 'databases')
+    const changeLogCrumb = crumbs.find((c) => c.dataset.title === 'change log')
+    expect(databasesCrumb?.dataset.linkable).toBe('true')
+    expect(changeLogCrumb?.dataset.linkable).toBe('true')
   })
 
   it("the breadcrumb's last crumb is the record's own name, not its full before → after title", async () => {

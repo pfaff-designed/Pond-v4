@@ -58,7 +58,7 @@ import {
   type Zen,
 } from '@/lib/layout/zen'
 import { usePublishCommandPath } from '@/lib/layout/command-path'
-import { commandPath } from '@/lib/pages/command-path'
+import { commandPath, type CommandCrumbTarget } from '@/lib/pages/command-path'
 import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
 import { consumeOnOpen, registerPageOpen } from '@/lib/change-log/accept-marks'
 import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
@@ -69,7 +69,7 @@ import { TrashPage } from '@/components/organisms/TrashPage'
 import { RECORD_PARAM, recordBreadcrumbTitle } from '@/lib/change-log/record-page'
 import { recordKey } from '@/lib/change-log/keys'
 import { getRecord } from '@/lib/change-log/store'
-import { DATABASES_ROOT_TITLE } from '@/lib/pages/databases-root'
+import { DATABASES_ROOT_TITLE, isDatabasesRoot } from '@/lib/pages/databases-root'
 import { isUntouchedPage, titleEyebrow } from '@/lib/pages/title-eyebrow'
 import { readMadeFrom } from '@/lib/pages/made-from'
 import { isNewNestedPage, markOpened } from '@/lib/pages/nested-page'
@@ -481,6 +481,16 @@ export function DocumentPanel() {
     enabled: recordId !== null,
   })
 
+  // The databases root is a real `pages` row (same predicate `commandPath` uses
+  // via `crumbTrail`), so its crumb can link even on these virtual trails.
+  const databasesRoot = rows.find((r) => isDatabasesRoot({ parentId: r.parent_id, title: r.title }))
+  const databasesRootTo: CommandCrumbTarget = databasesRoot
+    ? {
+        kind: 'page',
+        node: { id: databasesRoot.id, type: databasesRoot.type, title: databasesRoot.title },
+      }
+    : null
+
   // The shell's `PondCommand` reads this page's path at rest: the root, the
   // ancestors, then this page — its name read off the row until the page lands.
   usePublishCommandPath(
@@ -490,12 +500,15 @@ export function DocumentPanel() {
           trail: recordId
             ? [
                 { title: home?.title || pondName || 'life', to: { kind: 'home' } },
-                { title: DATABASES_ROOT_TITLE, to: null },
-                { title: 'change log', to: null },
+                { title: DATABASES_ROOT_TITLE, to: databasesRootTo },
+                {
+                  title: 'change log',
+                  to: { kind: 'page', node: { id: CHANGE_LOG_NODE_ID, type: 'page', title: 'change log' } },
+                },
               ]
             : [
                 { title: home?.title || pondName || 'life', to: { kind: 'home' } },
-                { title: DATABASES_ROOT_TITLE, to: null },
+                { title: DATABASES_ROOT_TITLE, to: databasesRootTo },
               ],
           // `viewTitle`'s own fallback (an ordinary page's title read off the
           // row until it lands) has no row to read here — a record's title
