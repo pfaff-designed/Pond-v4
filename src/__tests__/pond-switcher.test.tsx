@@ -202,6 +202,25 @@ describe('the pond switcher', () => {
     expect(lifeRow).toHaveAttribute('href', `/workspace?pond=p-life&nodeId=${PAGE_X}`)
   })
 
+  it('swaps the menu body to the inline rename editor, prefilled and selected (KAN-492)', async () => {
+    const user = userEvent.setup()
+    renderSwitcher()
+    await user.click(await screen.findByRole('button', { name: /life/ }))
+    await user.click(screen.getByRole('menuitem', { name: /rename & icon/ }))
+
+    // The body swapped: the pond list and `new pond` row are gone.
+    expect(screen.queryByText('make noise')).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: /new pond/ })).not.toBeInTheDocument()
+
+    const nameField = screen.getByRole('textbox', { name: 'pond name' }) as HTMLInputElement
+    expect(nameField).toHaveValue('life')
+    expect(nameField.selectionStart).toBe(0)
+    expect(nameField.selectionEnd).toBe('life'.length)
+
+    // LIFE's glyph is `waves-02` — the row's radio for it is checked.
+    expect(screen.getByRole('radio', { name: 'waves' })).toHaveAttribute('aria-checked', 'true')
+  })
+
   it("opens the sheet's first of two steps, not a field in the menu", async () => {
     renderSwitcher()
     fireEvent.click(await screen.findByRole('button', { name: /life/ }))

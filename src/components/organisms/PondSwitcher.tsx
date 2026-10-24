@@ -17,13 +17,14 @@
  * that kept `import from notes` out of #177.
  */
 
-import { useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { usePond } from '@/lib/pond/context'
 import { Caret } from '@/components/atoms/Caret'
 import { PondMark } from '@/components/atoms/PondMark'
 import { NewPondFlow } from './NewPondFlow'
 import { pondHref } from '@/lib/pond/active'
 import { usePondGlyph } from '@/lib/pond/glyph'
+import { GLYPHS, GlyphRow } from '@/components/molecules/GlyphRow'
 
 /** The board's `menuRow` plus a 12×12 stroked plus. */
 function Plus() {
@@ -55,6 +56,30 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
   const [naming, setNaming] = useState(false)
   const { pond: active, ponds } = usePond()
   const pondGlyph = usePondGlyph()
+
+  // The rename editor's draft — local until save (KAN-492). Nothing here
+  // touches `usePond()` until save is wired (next item).
+  const [editing, setEditing] = useState(false)
+  const [draftName, setDraftName] = useState('')
+  const [draftGlyph, setDraftGlyph] = useState<string>(GLYPHS[0])
+  const nameInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (!editing) return
+    nameInputRef.current?.focus()
+    nameInputRef.current?.select()
+  }, [editing])
+
+  const handleRenameStart = () => {
+    setDraftName(active?.name ?? '')
+    setDraftGlyph(active?.glyph ?? GLYPHS[0])
+    setEditing(true)
+  }
+
+  // No-ops until save/cancel are wired (next item): the field's keydown
+  // already reaches them so that wiring is the only change left to make.
+  const handleSave = () => {}
+  const handleCancel = () => {}
 
   // Before migration 0018 is applied the table does not exist and `listPonds`
   // returns []. The head then renders the glyph and name without the chevron —
@@ -118,44 +143,79 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
             aria-label="Ponds"
             className="absolute top-[44px] right-[10px] left-[10px] z-[5] flex flex-col gap-[1px] rounded-[16px] p-[6px] font-sans text-mn-text [background:var(--mn-menu-bg)] [backdrop-filter:blur(24px)_saturate(1.3)] [border:var(--mn-menu-border)] [box-shadow:var(--mn-menu-shadow)]"
           >
-            <div className="px-[10px] pt-[6px] pb-[4px] font-sans text-[10.5px] leading-[normal] font-medium tracking-[0.1em] text-mn-text-secondary uppercase">
-              ponds
-            </div>
+            {!editing && (
+              <>
+                <div className="px-[10px] pt-[6px] pb-[4px] font-sans text-[10.5px] leading-[normal] font-medium tracking-[0.1em] text-mn-text-secondary uppercase">
+                  ponds
+                </div>
 
-            {ponds.map((p) => (
-              <a
-                key={p.id}
-                role="menuitem"
-                href={pondHref(p.id, p.lastPageId)}
-                onClick={() => setOpen(false)}
-                className={`flex items-center gap-[9px] rounded-[10px] px-[10px] py-[7px] text-[13px] leading-[normal] ${
-                  p.id === active?.id ? 'bg-mn-text/[0.07] font-medium' : 'font-normal'
-                }`}
-              >
-                {p.glyph && <PondMark glyph={p.glyph} />}
-                <span className="min-w-0 flex-1 truncate">{p.name}</span>
-                {p.id === active?.id && (
-                  <span className="font-mono text-[10.5px] text-mn-text">✓</span>
-                )}
-              </a>
-            ))}
+                {ponds.map((p) => (
+                  <a
+                    key={p.id}
+                    role="menuitem"
+                    href={pondHref(p.id, p.lastPageId)}
+                    onClick={() => setOpen(false)}
+                    className={`flex items-center gap-[9px] rounded-[10px] px-[10px] py-[7px] text-[13px] leading-[normal] ${
+                      p.id === active?.id ? 'bg-mn-text/[0.07] font-medium' : 'font-normal'
+                    }`}
+                  >
+                    {p.glyph && <PondMark glyph={p.glyph} />}
+                    <span className="min-w-0 flex-1 truncate">{p.name}</span>
+                    {p.id === active?.id && (
+                      <span className="font-mono text-[10.5px] text-mn-text">✓</span>
+                    )}
+                  </a>
+                ))}
 
-            <div className="mx-[8px] my-[4px] h-px bg-mn-text/[0.09]" />
+                {/* Rename + glyph for the active pond (KAN-492): its own row, not a
+                    second affordance on the active pond's row above. */}
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={handleRenameStart}
+                  className="flex items-center gap-[9px] rounded-[10px] px-[10px] py-[7px] text-[13px] leading-[normal] font-normal text-mn-text-meta"
+                >
+                  <span className="min-w-0 flex-1 truncate text-left">rename & icon</span>
+                </button>
 
-            {/* `s6m2`: the board draws a three-step SHEET over a paper scrim, not a
-                field in the menu. This row opens it (#316). */}
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                setNaming(true)
-                setOpen(false)
-              }}
-              className="flex items-center gap-[9px] rounded-[10px] px-[10px] py-[7px] text-[13px] leading-[normal] font-normal text-mn-text-meta"
-            >
-              <Plus />
-              <span className="min-w-0 flex-1 truncate text-left">new pond</span>
-            </button>
+                <div className="mx-[8px] my-[4px] h-px bg-mn-text/[0.09]" />
+
+                {/* `s6m2`: the board draws a three-step SHEET over a paper scrim, not a
+                    field in the menu. This row opens it (#316). */}
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setNaming(true)
+                    setOpen(false)
+                  }}
+                  className="flex items-center gap-[9px] rounded-[10px] px-[10px] py-[7px] text-[13px] leading-[normal] font-normal text-mn-text-meta"
+                >
+                  <Plus />
+                  <span className="min-w-0 flex-1 truncate text-left">new pond</span>
+                </button>
+              </>
+            )}
+
+            {editing && (
+              <div className="flex flex-col gap-[10px] px-[10px] py-[7px]">
+                <input
+                  ref={nameInputRef}
+                  type="text"
+                  aria-label="pond name"
+                  value={draftName}
+                  spellCheck={false}
+                  autoComplete="off"
+                  onChange={(e) => setDraftName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleSave()
+                    else if (e.key === 'Escape') handleCancel()
+                  }}
+                  className="min-w-0 rounded-[10px] bg-mn-text/[0.04] px-[10px] py-[7px] text-[13px] leading-[normal] text-mn-text caret-mn-text outline-none"
+                />
+                <GlyphRow value={draftGlyph} onChange={setDraftGlyph} />
+              </div>
+            )}
           </div>
         </>
       )}
