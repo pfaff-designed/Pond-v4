@@ -77,14 +77,6 @@ import { applyPagePropsOptimistic } from '@/lib/pages/tree'
 import { WORKSPACE_PATH } from '@/lib/pages/nav'
 import { homeQueryKey, pagesKey } from '@/lib/pages/keys'
 import { usePagesRows } from '@/lib/pages/use-pages'
-import {
-  appendChildLink,
-  childLinkTargets,
-  markChildLinksMigrated,
-  saveThenStamp,
-  stampChildLinksMigratedInCache,
-} from '@/lib/pages/child-links'
-import { flushPendingPageSave } from '@/lib/pages/page-flush'
 import { usePond } from '@/lib/pond/context'
 import { PageCanvas } from '@/lib/modules/page-canvas'
 import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
@@ -387,46 +379,7 @@ export function DocumentPanel() {
     commitLocalEdit,
     undoRemove,
     writeStructural,
-  } = usePageDraft({ page, pageId, pondId, getSupabase })
-
-  // KAN-415: child pages are ordinary page-link blocks on their parent now, not
-  // an auto-drawn grid, so a page saved before this ticket needs each of its
-  // CURRENT children appended once — the same scope and order the deleted
-  // `childCards` used (direct children, root scoped via `withoutDatabasesRoot`
-  // when `nodeId` is null, i.e. this is the home row). Goes through the
-  // editor's own `commitLocalEdit`, not a direct write, because this page is —
-  // by construction — the one currently open. Guarded by `migratedRef`, every
-  // page id migrated so far (not just the last one), so a double-mount/
-  // strict-mode re-render never re-appends. The stamp also lands on the
-  // `['page', id]` cache at once (`stampChildLinksMigratedInCache`), not only
-  // the DB — navigating away and back while `markChildLinksMigrated`'s write
-  // is still in flight, or already landed but unrefetched, must not re-read an
-  // unstamped cached page and re-append a link the person just removed. The
-  // appended blocks only reach the DB through this page's own 600ms-debounced
-  // save, so the DB stamp (`markChildLinksMigrated`) waits on that save's
-  // flush (`saveThenStamp`) — a reload inside the debounce window must not see
-  // the stamp without the links it promises.
-  const migratedRef = useRef<Set<string>>(new Set())
-  useEffect(() => {
-    if (!page || rowsPending || migratedRef.current.has(page.id)) return
-    if (page.props?.childLinksMigrated === true) return
-    migratedRef.current.add(page.id)
-
-    const nextBlocks = childLinkTargets(rows, nodeId).reduce(
-      (blocks, childId) => appendChildLink(blocks, childId),
-      viewBlocks
-    )
-    if (nextBlocks !== viewBlocks) commitLocalEdit(nextBlocks)
-
-    stampChildLinksMigratedInCache(queryClient, page.id)
-
-    void saveThenStamp({
-      flush: () => flushPendingPageSave(page.id),
-      stamp: () => markChildLinksMigrated(getSupabase(), page.id),
-    }).catch((err) => {
-      console.error('Failed to mark child links migrated', page.id, err)
-    })
-  }, [page, rows, rowsPending, nodeId, viewBlocks, commitLocalEdit, getSupabase, queryClient])
+  } = usePageDraft({ page, pageId, pondId, getSupabase, rows, parentId: nodeId, rowsReady: !rowsPending })
 
   // KAN-350 "+ new tag": adds the label as a new option on the field's owning
   // schema, then sets THIS page's value to the minted option id. When the

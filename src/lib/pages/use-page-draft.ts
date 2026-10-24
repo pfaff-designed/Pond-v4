@@ -22,12 +22,18 @@ import type { Block } from '@/lib/documents/types'
 import { closeBlockHistory } from '@/lib/modules/text/active-editor'
 import { withoutRowStart } from '@/lib/modules/layout-rows'
 import { setProperty, type PondPage } from '@/lib/pages/client'
+import {
+  markChildLinksMigrated,
+  stampChildLinksMigratedInCache,
+  withDerivedChildLinks,
+} from '@/lib/pages/child-links'
 import { createPageWriter, type PageWriteState } from '@/lib/pages/commit'
 import type { HomePage } from '@/lib/pages/home'
 import { homeQueryKey } from '@/lib/pages/keys'
 import { getPageWriteQueue, registerPageFlush } from '@/lib/pages/page-flush'
 import { createPageWriteQueue, type PageWriteQueue } from '@/lib/pages/page-write-queue'
 import { nextRetryDelayMs } from '@/lib/pages/save-retry'
+import type { PageRow } from '@/lib/pages/tree'
 import { useOnline } from '@/lib/pages/use-online'
 import { withValue, type PropertyValue } from '@/lib/properties/schema'
 import type { createClient } from '@/lib/supabase/client'
@@ -39,10 +45,32 @@ interface PageDraftInput {
   pageId: string | null
   pondId: string | null
   getSupabase: () => ReturnType<typeof createClient>
+  /**
+   * The flat page tree, for deriving this page's child-link rows (KAN-477).
+   * Optional — absent means no derivation, today's behaviour — so a caller
+   * with no children to derive (a record row) needn't pass it.
+   */
+  rows?: PageRow[]
+  /** This page's own id, as the parent scope `withDerivedChildLinks` reads children against — `null` at the root. */
+  parentId?: string | null
+  /**
+   * Whether `rows` reflects the loaded page tree rather than a still-pending
+   * query (KAN-477 fix). `getPage` can resolve before `rows`'s own query does
+   * (a hard reload): the seeding effect below still seeds against whatever
+   * `rows` holds at that moment (possibly none), and a re-derive effect picks
+   * up the real children once this flips true. Also gates the queue writer's
+   * stamp, so a write that lands while rows are still unknown can't lock in
+   * `childLinksMigrated` ahead of the links it should carry. Defaults to
+   * `true` — a caller that never passes `rows` has nothing to wait on.
+   */
+  rowsReady?: boolean
 }
 
 type DraftSnapshot = { title: string; blocks: Block[] }
 type PendingDraft = DraftSnapshot & { pageId: string }
+
+/** Stable empty default for `PageDraftInput.rows` so a caller that omits it doesn't force a new array (and a fresh derivation) every render. */
+const EMPTY_ROWS: PageRow[] = []
 
 /**
  * Pure (KAN-440): re-inserts `block` at `index` into `current`, having first
@@ -65,7 +93,15 @@ export function withUndoneRemove(
   return [...restored.slice(0, at), block, ...restored.slice(at)]
 }
 
-export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInput) {
+export function usePageDraft({
+  page,
+  pageId,
+  pondId,
+  getSupabase,
+  rows = EMPTY_ROWS,
+  parentId = null,
+  rowsReady = true,
+}: PageDraftInput) {
   const queryClient = useQueryClient()
   const [title, setTitle] = useState('')
   const [blocks, setBlocks] = useState<Block[]>([])
@@ -101,6 +137,50 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
   useEffect(() => {
     pondIdRef.current = pondId
   })
+  // Page ids already stamped (or being stamped) this session (KAN-477) — a
+  // synchronous guard so a typed write and a structural write that both land
+  // for the same unstamped page in quick succession can't both see the
+  // pre-stamp page and fire `markChildLinksMigrated` twice. Cleared on
+  // failure so a later landed write still gets to try again.
+  const childLinksStamped = useRef<Set<string>>(new Set())
+  // The latest `page` prop, read by `stampChildLinksIfNeeded` at WRITE-LANDED
+  // time rather than whatever render scheduled the write — same reasoning as
+  // `pondIdRef` above: `queueFor`'s writer closure is created once per page
+  // id and kept alive across renders, so a value closed over directly would
+  // freeze at whichever `page` was in scope on the queue's first use.
+  const pageRef = useRef(page)
+  useEffect(() => {
+    pageRef.current = page
+  })
+  // The latest `rowsReady`, read by `stampChildLinksIfNeeded` at WRITE-LANDED
+  // time (KAN-477 fix) — same reasoning as `pageRef` above: a write that
+  // lands while the page tree is still loading must not stamp, or a hard
+  // reload where `getPage` resolves before `rows` does would lock in
+  // `childLinksMigrated` on a save that never got the chance to carry the
+  // real children.
+  const rowsReadyRef = useRef(rowsReady)
+  useEffect(() => {
+    rowsReadyRef.current = rowsReady
+  })
+  // The latest `rows`/`parentId`, read by `rebaseDerivedLinksBeforeEnqueue`
+  // at ENQUEUE time (KAN-477 fix) — same reasoning as `pageRef` above: a
+  // debounced save's timer fires against the closure `scheduleSave`
+  // captured when it was scheduled, which can be renders stale by the time
+  // it actually runs.
+  const rowsRef = useRef(rows)
+  const parentIdRef = useRef(parentId)
+  useEffect(() => {
+    rowsRef.current = rows
+    parentIdRef.current = parentId
+  })
+  // Page ids with at least one of the person's own writes enqueued this
+  // session (KAN-477) — once true, `shouldDerive` never derives for that id
+  // again, no matter how many cache writes or rows refetches land between
+  // here and the (async) `childLinksMigrated` stamp. Never cleared on
+  // failure: a discarded write still left the head holding the derived
+  // blocks the person was editing, so re-enabling derivation would re-append
+  // whatever they just removed.
+  const ownWriteEnqueued = useRef<Set<string>>(new Set())
   // The latest title/blocks, read by a retry instead of a `setBlocks`
   // functional updater: StrictMode double-invokes an updater function, and
   // `undoRemove`'s updater enqueued a structural write as a side effect of
@@ -182,10 +262,90 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
   function queueFor(id: string, fallback: PageWriteState): PageWriteQueue<PageWriteState> {
     return getPageWriteQueue<PageWriteQueue<PageWriteState>>(id, () =>
       createPageWriteQueue(
-        (op, settle) => createPageWriter(getSupabase(), queryClient, id, pondIdRef.current)(op, settle),
+        (op, settle) => {
+          const write = createPageWriter(getSupabase(), queryClient, id, pondIdRef.current)(op, settle)
+          // KAN-477: every write this page's queue ever runs — typed,
+          // structural, or a retry of either — lands here. Fire the stamp
+          // off `write`'s own resolution (never its rejection), without
+          // making the write itself wait on it, so a person's edit is never
+          // held up by a stamp that's slow or fails. `write`'s own rejection
+          // is already handled by `pump()`'s caller — swallowed here (not
+          // rethrown) so this chain doesn't become its own unhandled
+          // rejection on top of that.
+          void write.then(
+            () => stampChildLinksIfNeeded(id),
+            () => {}
+          )
+          return write
+        },
         fallback
       )
     )
+  }
+
+  // Stamp `childLinksMigrated` once a write for an unstamped page has
+  // landed (KAN-477) — never before, never on a failed write (this only runs
+  // off a successful `write`), and once per page id this session. Skips only
+  // when `pageRef` positively shows this page already migrated; a write
+  // landing for a page that isn't the open one (a background retry) still
+  // attempts the stamp — `markChildLinksMigrated`'s own read-before-write
+  // makes that a no-op rather than a second write when it was already true.
+  // Also skips, without marking `id` stamped, while `rowsReadyRef` is false
+  // (KAN-477 fix): a write that lands before the page tree has loaded cannot
+  // be trusted to carry the real children, so the stamp is left for the next
+  // write to attempt once rows are known.
+  function stampChildLinksIfNeeded(id: string) {
+    if (!rowsReadyRef.current) return
+    if (childLinksStamped.current.has(id)) return
+    const current = pageRef.current
+    if (current?.id === id && current.props?.childLinksMigrated === true) return
+    childLinksStamped.current.add(id)
+    markChildLinksMigrated(getSupabase(), id)
+      .then(() => stampChildLinksMigratedInCache(queryClient, id))
+      .catch((err: unknown) => {
+        childLinksStamped.current.delete(id)
+        console.error('[page-link] child links not stamped', id, err)
+      })
+  }
+
+  // The ONE predicate (KAN-477) gating every derivation site: the seeding
+  // effect's two `setBlocks` calls, the same-page adopt branch's `setBlocks`,
+  // the re-derive effect, and `rebaseDerivedLinksBeforeEnqueue` itself. A page
+  // is derived only while it is both unstamped AND has no own write enqueued
+  // yet — once either becomes true it stays true (neither flips back).
+  function shouldDerive(id: string, props: Record<string, unknown> | undefined): boolean {
+    return props?.childLinksMigrated !== true && !ownWriteEnqueued.current.has(id)
+  }
+
+  // The queue's head starts out as the STORED blocks (`queueFor`'s only
+  // fallback) — no derived links. Left alone, an unstamped page's first
+  // write records `before` as those stored blocks while `after` carries
+  // the links the person was actually looking at, so undoing their own
+  // edit (⌘Z) would also delete links they never touched. Rebase the head
+  // onto the derived blocks right before the first typed or structural
+  // enqueue of an unstamped page — one seam for both paths — so `before`
+  // always matches what was rendered. A no-op once the head already
+  // carries the links (`withDerivedChildLinks` is idempotent), the queue
+  // isn't idle (nothing safe to rebase onto yet — `rebase`'s own
+  // contract), or the page is already migrated.
+  //
+  // Marks `id` in `ownWriteEnqueued` unconditionally, before any of those
+  // early-outs — this is the one seam every typed and structural enqueue
+  // shares (KAN-477), so it is also where "the person now has a write of
+  // their own in flight for this page" is recorded, even when there is
+  // nothing to rebase (already migrated, already derived, or a background
+  // write for a page that isn't the open one). The derivability check below
+  // reads `shouldDerive` BEFORE that mark, so the write that makes the page
+  // no-longer-derived still gets to carry the derived links itself.
+  function rebaseDerivedLinksBeforeEnqueue(id: string, queue: PageWriteQueue<PageWriteState>) {
+    const current = pageRef.current
+    const derivable = !!current && current.id === id && shouldDerive(id, current.props) && queue.idle()
+    ownWriteEnqueued.current.add(id)
+    if (!derivable || !current) return
+    const head = queue.head()
+    const derived = withDerivedChildLinks(head.blocks, rowsRef.current, parentIdRef.current, current.props)
+    if (derived === head.blocks) return
+    queue.rebase({ title: head.title, blocks: derived })
   }
 
   // The current page's write queue (KAN-495), or null before it's loaded —
@@ -279,6 +439,7 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
     drafts.current.set(id, { title: nextTitle, blocks: nextBlocks })
     setHeld(id, false)
     const queue = queueFor(id, { title: nextTitle, blocks: nextBlocks })
+    rebaseDerivedLinksBeforeEnqueue(id, queue)
     // A later edit does not drop the failed save. `enqueue` retries that op
     // first, then applies this one, so each stays its own undo step (KAN-495).
     // The backoff timer for the failed attempt is stale once this write takes
@@ -391,10 +552,18 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
       setSeededId(page.id)
       if (stored) {
         setTitle(stored.title)
-        setBlocks(stored.blocks)
+        setBlocks(
+          shouldDerive(page.id, page.props)
+            ? withDerivedChildLinks(stored.blocks, rows, parentId, page.props)
+            : stored.blocks
+        )
       } else {
         setTitle(page.title)
-        setBlocks(page.blocks)
+        setBlocks(
+          shouldDerive(page.id, page.props)
+            ? withDerivedChildLinks(page.blocks, rows, parentId, page.props)
+            : page.blocks
+        )
       }
       setPendingDebounce(false)
       setSavedAt(null)
@@ -403,12 +572,18 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
       // differ from what the queue holds — i.e. an external write (accepted
       // proposal, undo/redo landing) — via `rebase`, which also moves the
       // queue's own `head()` so it never sees a later op's `before` as the
-      // pre-adopt value.
+      // pre-adopt value. `rebase` keeps the REAL (undecorated) blocks as the
+      // queue's head — only what's rendered gets the derived links (KAN-477)
+      // — so a later edit's `before` matches what the DB actually holds.
       const queue = queueFor(page.id, { title: page.title, blocks: page.blocks })
       const next = { title: page.title, blocks: page.blocks }
       if (JSON.stringify(next) !== JSON.stringify(queue.head())) {
         // eslint-disable-next-line react-hooks/set-state-in-effect -- guarded one-shot adopt of an external write (accepted diff, undo/redo landing), not a cascade: the `if` above only ever lets this fire once per external write, since `rebase` moves `queue.head()` to match.
-        setBlocks(page.blocks)
+        setBlocks(
+          shouldDerive(page.id, page.props)
+            ? withDerivedChildLinks(page.blocks, rows, parentId, page.props)
+            : page.blocks
+        )
         queue.rebase(next)
       }
     }
@@ -422,8 +597,35 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
     // had just landed (KAN-495). Running only on `page`/`pageId` means this
     // branch next runs once the cache actually reflects the write, at which
     // point `next` already equals `queue.head()` and nothing is adopted.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `queueFor` is recreated every render (closes over `getSupabase`/`queryClient`/`pondId`) but only touches the module-level registry; keying off it would re-run this seeding effect on every render instead of only on page/pageId changes. `saved` is read, not a dep, per the comment above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `queueFor` is recreated every render (closes over `getSupabase`/`queryClient`/`pondId`) but only touches the module-level registry; keying off it would re-run this seeding effect on every render instead of only on page/pageId changes. `saved` is read, not a dep, per the comment above. `rows`/`parentId` (KAN-477 derivation) are read too, but a rail change elsewhere must not re-seed this page's draft mid-edit — the latest values at the moment `page`/`pageId` actually changes are enough.
   }, [page, pageId])
+
+  // KAN-477 fix: `rows` is a separate query from `page` and can still be
+  // pending (returning `EMPTY_ROWS`) when the seeding effect above runs on a
+  // hard reload — that seed then has no children to derive against and never
+  // gets another chance, since the effect above only reruns on `page`/`pageId`
+  // changes. Once rows for the seeded, unstamped page are ready, re-derive the
+  // RENDERED blocks against them. `withDerivedChildLinks` is idempotent
+  // (`appendChildLink` skips a child that already has a link), so this is a
+  // no-op — same `blocks` reference, no re-render — once the normal seed path
+  // already had the real rows, or once the page is migrated.
+  //
+  // KAN-477 fix 2: this effect's deps include `page`, whose IDENTITY changes
+  // on every `['page', id]` cache write — `enqueueStructural`'s own two
+  // `setQueryData` calls, and a `pagesKey` invalidation's rows refetch landing
+  // between the person's write and the (async) `childLinksMigrated` stamp. Any
+  // of those re-running this effect while the page is still (momentarily)
+  // unstamped would re-append a derived link the person just removed. Gate on
+  // `shouldDerive`, not the stamp alone, so a page with its own write already
+  // enqueued never re-derives again regardless of what `page`/`rows` do next.
+  useEffect(() => {
+    if (!rowsReady) return
+    if (!page || page.id !== seededId) return
+    if (!shouldDerive(page.id, page.props)) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- re-derives against the now-loaded rows; a no-op (same `blocks` reference) once those rows match what the seeding effect already derived.
+    setBlocks((prev) => withDerivedChildLinks(prev, rows, parentId, page.props))
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `seededId` is read only to confirm `page` is the page this hook's local state was actually seeded from; it is set by the seeding effect above and must not itself retrigger this one.
+  }, [rowsReady, rows, parentId, page])
 
   // Until the seeding effect above has run for THIS page, the local title/blocks
   // state still holds the previous node's values (effects run after paint). Every
@@ -475,6 +677,11 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
     return { resolve: resolveRecordIds, handle }
   }
 
+  // The one save seam every typed edit path (`commitLocalEdit`, `onTitle`)
+  // funnels through. `childLinksMigrated` (KAN-477) is stamped from
+  // `queueFor`'s writer instead, above — the one seam a STRUCTURAL write
+  // (`writeStructural`/`enqueueStructural`) also passes through, which this
+  // debounce never sees.
   function scheduleSave(nextTitle: string, nextBlocks: Block[]) {
     const id = loadedId.current
     if (!id) return
@@ -676,6 +883,7 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
       if ('content' in block) closeBlockHistory(block.id, block.content)
     }
     const queue = queueFor(id, { title: viewTitle, blocks: next })
+    rebaseDerivedLinksBeforeEnqueue(id, queue)
     // The cache is what a return trip reads. Write the in-flight blocks now,
     // not when the save resolves: leaving and coming back before it settles
     // would otherwise paint the pre-write page, and a word typed on that
