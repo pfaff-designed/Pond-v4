@@ -5,12 +5,20 @@
  * Restore itself lands in the next item.
  */
 
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TrashPage } from '@/components/organisms/TrashPage'
 import { TrashRefusedError } from '@/lib/change-log/errors'
 import type { ChangeLogRecord, TrashSnapshot } from '@/lib/change-log/types'
+
+/** `NODE_ENV` is typed read-only (`@types/node`); this is the one deliberate
+ *  exception, matching `change-log-trash-view.test.ts`'s own helper — needed
+ *  to exercise the production fallback `purgeDay` takes for an unreadable
+ *  `createdAt` (KAN-551), since jest itself runs with `NODE_ENV=test`. */
+const setNodeEnv = (value: string | undefined): void => {
+  (process.env as { NODE_ENV: string | undefined }).NODE_ENV = value
+}
 
 jest.mock('@/lib/pond/context', () => ({
   usePondId: () => 'pond-1',
@@ -109,6 +117,42 @@ describe('TrashPage', () => {
     expect(await screen.findAllByTestId('trash-row')).toHaveLength(2)
     expect(screen.getByText('old quotes')).toBeInTheDocument()
     expect(screen.getByText('supplier list')).toBeInTheDocument()
+  })
+
+  it('lists a bad-date row with its page and restore control and an empty goes cell, while other rows still show their countdown (KAN-551)', async () => {
+    const ORIGINAL_NODE_ENV = process.env.NODE_ENV
+    setNodeEnv('production')
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      mockListRecords.mockResolvedValue([
+        record({
+          id: 'del-1',
+          targetPageId: 'page-1',
+          before: snapshot({ title: 'old quotes' }),
+          createdAt: 'not-a-date',
+        }),
+        record({ id: 'del-2', targetPageId: 'page-2', before: snapshot({ title: 'supplier list' }) }),
+      ])
+
+      renderPage()
+
+      const rows = await screen.findAllByTestId('trash-row')
+      expect(rows).toHaveLength(2)
+
+      const badRow = within(rows[0])
+      expect(badRow.getByText('old quotes')).toBeInTheDocument()
+      expect(badRow.getByRole('button', { name: 'restore' })).toBeInTheDocument()
+      expect(badRow.queryByText(/^(today|in \d+ days?)$/)).not.toBeInTheDocument()
+
+      const goodRow = within(rows[1])
+      expect(goodRow.getByText('supplier list')).toBeInTheDocument()
+      expect(goodRow.getByText(/^(today|in \d+ days?)$/)).toBeInTheDocument()
+
+      expect(errorSpy).toHaveBeenCalled()
+    } finally {
+      errorSpy.mockRestore()
+      setNodeEnv(ORIGINAL_NODE_ENV)
+    }
   })
 
   it('reads the lead line singular for one page, plural for more than one', async () => {
