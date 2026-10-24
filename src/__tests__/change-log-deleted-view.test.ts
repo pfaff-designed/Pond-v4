@@ -10,8 +10,7 @@
  * string — so these pass under any machine's local timezone.
  */
 
-import { buildDeletedCards, TRASH_RETENTION_MS, TRASH_RETENTION_DAYS } from '@/lib/change-log/deleted-view'
-import { DAY_MS } from '@/lib/change-log/log-page'
+import { buildDeletedCards, purgeDay } from '@/lib/change-log/deleted-view'
 import type { ChangeLogRecord, TrashSnapshot } from '@/lib/change-log/types'
 
 const NOW = new Date('2026-09-26T12:00:00.000Z')
@@ -201,6 +200,19 @@ describe('buildDeletedCards', () => {
   })
 })
 
-it('derives TRASH_RETENTION_MS from TRASH_RETENTION_DAYS', () => {
-  expect(TRASH_RETENTION_MS).toBe(TRASH_RETENTION_DAYS * DAY_MS)
+describe('purgeDay', () => {
+  /** Expectations built with local-time calendar arithmetic (`setDate`/`getDate`),
+   *  never ms math, so these hold under any zone — see KAN-500. */
+  const cases: Array<{ name: string; createdAt: string; expected: [number, number, number] }> = [
+    { name: 'delete at 00:30 local, 30 days before the US fall-back', createdAt: '2026-10-02T00:30:00', expected: [2026, 11, 1] },
+    { name: 'delete at 23:30 local, 30 days before the US fall-back', createdAt: '2026-10-02T23:30:00', expected: [2026, 11, 1] },
+    { name: '30 days before the US spring-forward', createdAt: '2027-02-12T09:00:00', expected: [2027, 3, 14] },
+    { name: 'spans a leap day', createdAt: '2028-02-10T09:00:00', expected: [2028, 3, 11] },
+    { name: 'a plain case with no DST or leap-day crossing', createdAt: '2026-01-01T09:00:00', expected: [2026, 1, 31] },
+  ]
+
+  it.each(cases)('$name', ({ createdAt, expected }) => {
+    const purged = purgeDay(createdAt)
+    expect([purged.getFullYear(), purged.getMonth() + 1, purged.getDate()]).toEqual(expected)
+  })
 })

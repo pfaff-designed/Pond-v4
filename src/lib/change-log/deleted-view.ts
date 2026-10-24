@@ -13,12 +13,21 @@
  * no React, no formatting decisions beyond a short human label.
  */
 
-import { DAY_MS, daysBetween } from './log-page'
+import { daysBetween } from './log-page'
 import { readTrashSnapshot } from './summary'
 import type { ChangeLogRecord } from './types'
 
 export const TRASH_RETENTION_DAYS = 30
-export const TRASH_RETENTION_MS = TRASH_RETENTION_DAYS * DAY_MS
+
+/** The local calendar day a page trashed at `createdAt` goes — `setDate` in
+ *  local time, never ms addition, so a page deleted near a DST change still
+ *  reads the right day (KAN-500). The one home both `purgeDate` below and
+ *  `daysUntilGone` (`trash-view.ts`) read. */
+export function purgeDay(createdAt: string): Date {
+  const d = new Date(createdAt)
+  d.setDate(d.getDate() + TRASH_RETENTION_DAYS)
+  return d
+}
 
 /** `12 aug` — s6o6's own register: day first, lowercase short month, no year. */
 const shortDate = (d: Date): string =>
@@ -38,7 +47,7 @@ const whenLabel = (iso: string, now: Date): string => {
 const pluralCount = (n: number, singular: string, plural: string = `${singular}s`): string =>
   `${n} ${n === 1 ? singular : plural}`
 
-const purgeDate = (createdAt: string): string => shortDate(new Date(Date.parse(createdAt) + TRASH_RETENTION_MS))
+const purgeDate = (createdAt: string): string => shortDate(purgeDay(createdAt))
 
 /** `restore_page` (0027) stamps this DB-side-only onto the `restore` record's
  *  `after` when the original parent was trashed or gone — not part of the

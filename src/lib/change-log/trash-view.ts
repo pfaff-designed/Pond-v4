@@ -13,7 +13,7 @@
  */
 
 import { CHANGE_LOG_NODE_ID, daysBetween, dayHeaderLabel } from './log-page'
-import { groupByTarget, TRASH_RETENTION_MS } from './deleted-view'
+import { groupByTarget, purgeDay } from './deleted-view'
 import { readTrashSnapshot } from './summary'
 import type { ChangeLogRecord } from './types'
 
@@ -53,7 +53,7 @@ const dayWord = (n: number): string => `${n} ${n === 1 ? 'day' : 'days'}`
  *  days since `iso`, as of `now`). Can go negative: the purge (KAN-452) isn't
  *  built, so a trashed page can sit past its own retention window. */
 const daysUntilGone = (createdAt: string, now: Date): number => {
-  const purgeMoment = new Date(Date.parse(createdAt) + TRASH_RETENTION_MS).toISOString()
+  const purgeMoment = purgeDay(createdAt).toISOString()
   return -daysBetween(now, purgeMoment)
 }
 
