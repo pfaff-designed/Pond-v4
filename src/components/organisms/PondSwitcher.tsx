@@ -58,7 +58,7 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
   const [naming, setNaming] = useState(false)
   const { pond: active, ponds } = usePond()
   const pondGlyph = usePondGlyph()
-  const { rename } = useRenamePond()
+  const { rename, pending: renamePending } = useRenamePond()
 
   // The rename editor's draft — local until Enter commits it via `rename` (KAN-492).
   const [editing, setEditing] = useState(false)
@@ -73,6 +73,7 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
   }, [editing])
 
   const handleRenameStart = () => {
+    if (renamePending) return
     setDraftName(active?.name ?? '')
     setDraftGlyph(active?.glyph ?? GLYPHS[0])
     setEditing(true)
@@ -198,8 +199,11 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
                 <button
                   type="button"
                   role="menuitem"
+                  aria-disabled={renamePending}
                   onClick={handleRenameStart}
-                  className="flex items-center gap-[9px] rounded-[10px] px-[10px] py-[7px] text-[13px] leading-[normal] font-normal text-mn-text-meta"
+                  className={`flex items-center gap-[9px] rounded-[10px] px-[10px] py-[7px] text-[13px] leading-[normal] font-normal text-mn-text-meta ${
+                    renamePending ? 'opacity-50' : ''
+                  }`}
                 >
                   <span className="min-w-0 flex-1 truncate text-left">rename & icon</span>
                 </button>

@@ -306,6 +306,33 @@ describe('the pond switcher', () => {
     expect(screen.queryByRole('menu', { name: 'Ponds' })).not.toBeInTheDocument()
   })
 
+  it('disables rename & icon while a rename is in flight, so a second edit cannot start', async () => {
+    const user = userEvent.setup()
+    // Never resolves within the test: `pending` stays true for its whole body.
+    ;(updatePond as jest.Mock).mockReturnValue(new Promise(() => {}))
+    renderSwitcher()
+    await user.click(await screen.findByRole('button', { name: /life/ }))
+    await user.click(screen.getByRole('menuitem', { name: /rename & icon/ }))
+
+    const nameField = screen.getByRole('textbox', { name: 'pond name' })
+    await user.clear(nameField)
+    await user.type(nameField, 'Studio')
+    await user.keyboard('{Enter}')
+
+    // Optimistic: the menu closed and the header already reads the new name,
+    // but the write to updatePond is still outstanding.
+    await waitFor(() =>
+      expect(screen.queryByRole('menu', { name: 'Ponds' })).not.toBeInTheDocument()
+    )
+
+    await user.click(await screen.findByRole('button', { name: /Studio/ }))
+    const renameRow = screen.getByRole('menuitem', { name: /rename & icon/ })
+    expect(renameRow).toHaveAttribute('aria-disabled', 'true')
+
+    await user.click(renameRow)
+    expect(screen.queryByRole('textbox', { name: 'pond name' })).not.toBeInTheDocument()
+  })
+
   it('rolls the header back to the old name and notifies on a rejected save', async () => {
     const user = userEvent.setup()
     ;(updatePond as jest.Mock).mockRejectedValue(new Error('nope'))
