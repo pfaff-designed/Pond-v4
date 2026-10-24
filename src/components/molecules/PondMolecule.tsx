@@ -115,6 +115,9 @@ export interface PondMoleculeProps {
   qty?: string
   /** record-card (mockup mode) — the tag chip. */
   tag?: string
+  /** record-card (mockup mode) — draws the media tile; `false` for a record
+   *  with no image (KAN-545). `stat` mode ignores it. @default true */
+  media?: boolean
   /** notice — the offered action's label; `''` renders none. */
   action?: string
   /** diff-line — an addition or the red-struck removal. @default 'add' */
@@ -242,6 +245,7 @@ export function PondMolecule({
   valueKind = 'number',
   qty,
   tag,
+  media = true,
   action,
   variant = 'add',
   color = 'ink',
@@ -279,6 +283,12 @@ export function PondMolecule({
   const emptyCopy = placeholder ?? EMPTY_TITLE[kind]
   const displayTitle = empty ? (emptyCopy ?? title ?? fixtureTitle) : (title ?? fixtureTitle)
   const displayMeta = meta ?? fixtureMeta
+  /** record-card — a blank (or whitespace-only) title given by the host reads
+   *  as untitled, same as `state="empty"`, even at rest (KAN-545). `title`
+   *  left unset entirely still falls through to the fixture, as every other
+   *  kind does. */
+  const titleBlank = title !== undefined && title.trim() === ''
+  const recordCardTitle = titleBlank ? EMPTY_TITLE['record-card'] : displayTitle
   const displayTag = tag ?? 'recipe'
 
   /** The atom state the composed value atoms inherit (mockup `atomState`). */
@@ -560,7 +570,7 @@ export function PondMolecule({
     )
   }
 
-  /* ── record-card: media card (mockup) or focal-numeral card (OverviewCard) ── */
+  /* ── record-card: media card, no-media card, or focal-numeral card (OverviewCard) ── */
   if (kind === 'record-card') {
     const shell = cn(
       'flex flex-col rounded-mn-card bg-card font-sans',
@@ -618,21 +628,23 @@ export function PondMolecule({
         data-state={state}
         className={cn('gap-2.5 p-2.5', mobile ? 'w-44' : 'w-[170px]', shell)}
       >
-        <PondAtom
-          kind="image"
-          state={empty ? 'empty' : loading ? 'loading' : error ? 'error' : 'rest'}
-          size={size}
-        />
-        <span className="flex flex-col gap-1.5 px-0.5 pb-0.5">
+        {media && (
+          <PondAtom
+            kind="image"
+            state={empty ? 'empty' : loading ? 'loading' : error ? 'error' : 'rest'}
+            size={size}
+          />
+        )}
+        <span className="flex min-w-0 flex-col gap-1.5 px-0.5 pb-0.5">
           <span
             data-part="title"
             className={cn(
-              'leading-[1.35] font-medium',
+              'min-w-0 leading-[1.35] font-medium [overflow-wrap:anywhere]',
               mobile ? 'text-[14px]' : 'text-mn-13',
-              empty && 'text-mn-text-secondary'
+              (empty || titleBlank) && 'text-mn-text-secondary'
             )}
           >
-            {displayTitle}
+            {recordCardTitle}
           </span>
           <span className="flex items-center justify-between gap-1.5">
             {displayTag !== '' && <PondAtom kind="tag" value={displayTag} size={size} />}

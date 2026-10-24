@@ -354,6 +354,40 @@ export const RecordCardStat: Story = {
   },
 }
 
+/** A gallery record-card with no image: the plain card, no media tile (KAN-545). */
+export const RecordCardNoMedia: Story = {
+  args: {
+    kind: 'record-card',
+    media: false,
+    title: 'chickpeas, harissa, yoghurt',
+    meta: '25m',
+    tag: 'recipe',
+  },
+  play: async ({ canvasElement }) => {
+    const card = moleculeRoot(canvasElement, 'record-card')
+    await expect(card.querySelector('[data-kind="image"]')).not.toBeInTheDocument()
+    await expect(part(card, 'title').textContent).toBe('chickpeas, harissa, yoghurt')
+    await expect(part(card, 'meta').textContent).toBe('25m')
+  },
+}
+
+// A 46-char unbroken word (no spaces to break on) — the title must wrap on
+// its own characters rather than overflow the card (KAN-545).
+export const RecordCardNoMediaLongTitle: Story = {
+  args: {
+    kind: 'record-card',
+    media: false,
+    title: 'p'.repeat(46),
+    meta: '25m',
+  },
+  play: async ({ canvasElement }) => {
+    const card = moleculeRoot(canvasElement, 'record-card')
+    const title = part(card, 'title')
+    await expect(title.scrollWidth).toBeLessThanOrEqual(title.clientWidth)
+    await expect(card.scrollWidth).toBeLessThanOrEqual(card.clientWidth)
+  },
+}
+
 // ── Empty / geometry / register stories ───────────────────────────────────
 
 /**
