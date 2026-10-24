@@ -309,14 +309,11 @@ export function PondCommand({
     if (!open && atRest) onOpenChange(true)
   }
 
-  // Never also opens the palette; a modified click is left unprevented so the
-  // browser's native new-tab/new-window behaviour fires instead of a navigate.
-  // Read via `getModifierState` so this file stays free of the modifier-key
-  // literals the ⌘K "one owner" test below guards against.
+  // A modified click (⌘/Ctrl/Shift/Alt) is left unprevented so the browser's
+  // native new-tab/new-window/download behaviour fires instead of a navigate.
   const handleCrumbClick = (e: React.MouseEvent<HTMLAnchorElement>, node: WorkspaceNodeRef) => {
     e.stopPropagation()
-    const modified = e.getModifierState('Meta') || e.getModifierState('Control') || e.shiftKey
-    if (modified || e.button !== 0) return
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
     e.preventDefault()
     onNavigate?.(node)
   }
@@ -371,26 +368,29 @@ export function PondCommand({
           data-part="path"
           style={MORPH.path}
           inert={open}
-          className={`${PATH} z-10`}
+          className={`${PATH} z-10 ${half ? 'pointer-events-none' : ''}`}
         >
-          {path.trail.map((crumb, i) => (
-            <Fragment key={i}>
-              {crumb.node ? (
-                <a
-                  href={workspaceUrl(crumb.node)}
-                  onClick={(e) => handleCrumbClick(e, crumb.node as WorkspaceNodeRef)}
-                  className={`min-w-0 truncate text-mn-text-secondary hover:underline ${FOCUS_VISIBLE_RING}`}
-                >
-                  {crumb.title}
-                </a>
-              ) : (
-                <span className="min-w-0 truncate text-mn-text-secondary">{crumb.title}</span>
-              )}
-              <span aria-hidden className="text-mn-text-meta">
-                ›
-              </span>
-            </Fragment>
-          ))}
+          {path.trail.map((crumb, i) => {
+            const { node } = crumb
+            return (
+              <Fragment key={i}>
+                {node ? (
+                  <a
+                    href={workspaceUrl(node)}
+                    onClick={(e) => handleCrumbClick(e, node)}
+                    className={`min-w-0 truncate text-mn-text-secondary hover:underline underline-offset-[3px] decoration-1 ${FOCUS_VISIBLE_RING}`}
+                  >
+                    {crumb.title}
+                  </a>
+                ) : (
+                  <span className="min-w-0 truncate text-mn-text-secondary">{crumb.title}</span>
+                )}
+                <span aria-hidden className="text-mn-text-meta">
+                  ›
+                </span>
+              </Fragment>
+            )
+          })}
           <span
             id={currentId}
             data-part="current"

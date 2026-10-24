@@ -61,11 +61,21 @@ describe('breadcrumb ancestors with a real node are links; `node: null` crumbs s
     expect(onOpenChange).not.toHaveBeenCalledWith(true)
   })
 
-  it('a modified click leaves the native new-tab behaviour unprevented, and never opens the palette', () => {
-    const { onOpenChange } = renderCommand()
+  it('a metaKey click leaves the native new-tab behaviour unprevented, does not navigate, and never opens the palette', () => {
+    const { onNavigate, onOpenChange } = renderCommand()
     const link = screen.getByRole('link', { name: 'house' })
     const notPrevented = fireEvent.click(link, { metaKey: true })
     expect(notPrevented).toBe(true) // preventDefault() was NOT called — the browser opens its own tab
+    expect(onNavigate).not.toHaveBeenCalled()
+    expect(onOpenChange).not.toHaveBeenCalledWith(true)
+  })
+
+  it('an altKey click leaves the native download behaviour unprevented, does not navigate, and never opens the palette', () => {
+    const { onNavigate, onOpenChange } = renderCommand()
+    const link = screen.getByRole('link', { name: 'house' })
+    const notPrevented = fireEvent.click(link, { altKey: true })
+    expect(notPrevented).toBe(true) // preventDefault() was NOT called — the browser downloads
+    expect(onNavigate).not.toHaveBeenCalled()
     expect(onOpenChange).not.toHaveBeenCalledWith(true)
   })
 })
