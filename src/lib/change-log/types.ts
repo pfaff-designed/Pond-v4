@@ -133,6 +133,20 @@ export interface TrashSnapshot {
 }
 
 /**
+ * A page's parent and sibling order as `move` stores it (KAN-466): enough to put
+ * the page back exactly where it was. `parentTitle` is resolved at move time (the
+ * pond's home page title when `parentId` is null) and frozen in the snapshot, the
+ * same way `TrashSnapshot.parentPath` is — a later rename or trash of that parent
+ * must not change what an old record reads. `siblingOrder` is the full dense
+ * order of the group named by `parentId`, the moved page included.
+ */
+export interface MoveSnapshot {
+  parentId: string | null
+  parentTitle: string
+  siblingOrder: string[]
+}
+
+/**
  * Who acted. Single-user ponds today, so in practice `you` or `pond`; the column
  * is free text so a sharer's identity fits without a migration.
  */

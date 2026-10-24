@@ -1,0 +1,217 @@
+// Schema tests for 0030_move_page.sql (KAN-466 part 1): `move_page` reparents
+// a page, densely reindexes the destination sibling group, and logs exactly
+// one accepted `move` record in a single atomic write — replacing
+// `movePage`'s old two-step client write (parent_id, then a `Promise.all` of
+// per-row order updates). Every refusal is checked for its reason code and
+// for leaving the page, its order and the log exactly as they were.
+
+import type { PGlite } from '@electric-sql/pglite'
+import { makeDb, seedUser } from './helpers/pglite-harness'
+
+const USER = '11111111-1111-1111-1111-111111111111'
+const OTHER = '22222222-2222-2222-2222-222222222222'
+
+/** Supabase's grants and auth.uid(), which the harness's owner connection lacks. */
+const actAs = async (db: PGlite, userId: string) => {
+  await db.exec(`
+    grant usage on schema public to authenticated;
+    grant select, insert, update, delete on all tables in schema public to authenticated;
+    create or replace function auth.uid() returns uuid language sql stable as
+      $fn$ select nullif(current_setting('test.uid', true), '')::uuid $fn$;
+  `)
+  await db.exec(`set test.uid = '${userId}'; set role authenticated;`)
+}
+
+const lifePondId = async (db: PGlite, userId: string = USER): Promise<string> => {
+  const res = await db.query<{ id: string }>(
+    'select id from public.ponds where user_id = $1 order by "order" limit 1',
+    [userId]
+  )
+  return res.rows[0].id
+}
+
+const addPage = async (
+  db: PGlite,
+  pondId: string,
+  opts: { parentId?: string | null; title?: string; order?: number; userId?: string } = {}
+): Promise<string> => {
+  const { parentId = null, title = 'Untitled', order = 0, userId = USER } = opts
+  const res = await db.query<{ id: string }>(
+    `insert into public.pages (user_id, pond_id, parent_id, type, title, "order")
+     values ($1, $2, $3, 'page', $4, $5) returning id`,
+    [userId, pondId, parentId, title, order]
+  )
+  return res.rows[0].id
+}
+
+interface MoveRecord {
+  status: string
+  action: string
+  before: { parentId: string | null; parentTitle: string; siblingOrder: string[] }
+  after: { parentId: string | null; parentTitle: string; siblingOrder: string[] }
+}
+
+const moveRecordsFor = async (db: PGlite, pageId: string): Promise<MoveRecord[]> => {
+  const res = await db.query<MoveRecord>(
+    `select status, action, before, after from public.change_log
+      where action = 'move' and target_page_id = $1`,
+    [pageId]
+  )
+  return res.rows
+}
+
+describe('0030_move_page — move_page()', () => {
+  it('reparents the page, densely reindexes the destination group, and logs exactly one accepted move record', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pond = await lifePondId(db)
+
+    const parentA = await addPage(db, pond, { title: 'parent a' })
+    const parentB = await addPage(db, pond, { title: 'parent b' })
+    const roof = await addPage(db, pond, { parentId: parentA, title: 'roof', order: 0 })
+    const a = await addPage(db, pond, { parentId: parentA, title: 'a', order: 1 })
+    const b = await addPage(db, pond, { parentId: parentA, title: 'b', order: 2 })
+    const x = await addPage(db, pond, { parentId: parentB, title: 'x', order: 0 })
+    const y = await addPage(db, pond, { parentId: parentB, title: 'y', order: 1 })
+
+    await actAs(db, USER)
+    await db.query('select public.move_page($1, $2, $3)', [roof, parentB, [x, roof, y]])
+    await db.exec('reset role;')
+
+    const moved = await db.query<{ parent_id: string; order: number }>(
+      'select parent_id, "order" from public.pages where id = $1',
+      [roof]
+    )
+    expect(moved.rows[0].parent_id).toBe(parentB)
+    expect(moved.rows[0].order).toBe(1)
+
+    const destination = await db.query<{ id: string; order: number }>(
+      'select id, "order" from public.pages where id in ($1, $2, $3) order by "order"',
+      [x, roof, y]
+    )
+    expect(destination.rows.map((r) => r.id)).toEqual([x, roof, y])
+    expect(destination.rows.map((r) => r.order)).toEqual([0, 1, 2])
+
+    // The old group is a snapshot, not a rewrite: nothing left behind moves.
+    const left = await db.query<{ id: string; order: number }>(
+      'select id, "order" from public.pages where id in ($1, $2) order by "order"',
+      [a, b]
+    )
+    expect(left.rows.map((r) => r.order)).toEqual([1, 2])
+
+    const records = await moveRecordsFor(db, roof)
+    expect(records).toHaveLength(1)
+    expect(records[0].status).toBe('accepted')
+    expect(records[0].before).toEqual({
+      parentId: parentA,
+      parentTitle: 'parent a',
+      siblingOrder: [roof, a, b],
+    })
+    expect(records[0].after).toEqual({
+      parentId: parentB,
+      parentTitle: 'parent b',
+      siblingOrder: [x, roof, y],
+    })
+    await db.close()
+  })
+
+  it("resolves a null destination parent to the pond's home page title", async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pond = await lifePondId(db)
+    await db.query(
+      `insert into public.pages (user_id, pond_id, parent_id, type, title, blocks)
+       values ($1, $2, null, 'home', 'life', '[]')`,
+      [USER, pond]
+    )
+    const parentA = await addPage(db, pond, { title: 'parent a' })
+    const roof = await addPage(db, pond, { parentId: parentA, title: 'roof' })
+
+    await actAs(db, USER)
+    await db.query('select public.move_page($1, $2, $3)', [roof, null, [roof]])
+    await db.exec('reset role;')
+
+    const records = await moveRecordsFor(db, roof)
+    expect(records[0].after.parentId).toBeNull()
+    expect(records[0].after.parentTitle).toBe('life')
+    await db.close()
+  })
+})
+
+describe('0030_move_page — move_page() refuses what it cannot see', () => {
+  it("raises not-found for another user's page, writing nothing", async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    await seedUser(db, OTHER)
+    const pond = await lifePondId(db)
+    const parentA = await addPage(db, pond, { title: 'parent a' })
+    const roof = await addPage(db, pond, { parentId: parentA, title: 'roof' })
+
+    await actAs(db, OTHER)
+    await expect(
+      db.query('select public.move_page($1, $2, $3)', [roof, null, [roof]])
+    ).rejects.toMatchObject({ code: 'P0002', detail: 'not-found' })
+    await db.exec('reset role;')
+
+    const check = await db.query<{ parent_id: string | null }>(
+      'select parent_id from public.pages where id = $1',
+      [roof]
+    )
+    expect(check.rows[0].parent_id).toBe(parentA)
+    expect(await moveRecordsFor(db, roof)).toHaveLength(0)
+    await db.close()
+  })
+
+  it('raises not-found for a page id that does not exist, writing nothing', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    await actAs(db, USER)
+
+    const bogus = '99999999-9999-9999-9999-999999999999'
+    await expect(
+      db.query('select public.move_page($1, $2, $3)', [bogus, null, [bogus]])
+    ).rejects.toMatchObject({ code: 'P0002', detail: 'not-found' })
+    await db.exec('reset role;')
+
+    const log = await db.query<{ n: number }>('select count(*)::int as n from public.change_log')
+    expect(log.rows[0].n).toBe(0)
+    await db.close()
+  })
+})
+
+describe('0030_move_page — a sibling order missing the moved page leaves nothing half-applied', () => {
+  it('raises invalid_parameter_value and leaves parent_id, order and the log untouched', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pond = await lifePondId(db)
+    const parentA = await addPage(db, pond, { title: 'parent a' })
+    const parentB = await addPage(db, pond, { title: 'parent b' })
+    const roof = await addPage(db, pond, { parentId: parentA, title: 'roof', order: 0 })
+    const x = await addPage(db, pond, { parentId: parentB, title: 'x', order: 0 })
+
+    await actAs(db, USER)
+    await expect(
+      // Deliberately omits `roof` itself from the sibling order — the
+      // mid-write failure that must leave the earlier parent_id UPDATE
+      // rolled back along with it (see the migration header).
+      db.query('select public.move_page($1, $2, $3)', [roof, parentB, [x]])
+    ).rejects.toMatchObject({ code: '22023', detail: 'invalid-sibling-order' })
+    await db.exec('reset role;')
+
+    const check = await db.query<{ parent_id: string; order: number }>(
+      'select parent_id, "order" from public.pages where id = $1',
+      [roof]
+    )
+    expect(check.rows[0].parent_id).toBe(parentA)
+    expect(check.rows[0].order).toBe(0)
+
+    const xRow = await db.query<{ order: number }>(
+      'select "order" from public.pages where id = $1',
+      [x]
+    )
+    expect(xRow.rows[0].order).toBe(0)
+
+    expect(await moveRecordsFor(db, roof)).toHaveLength(0)
+    await db.close()
+  })
+})
