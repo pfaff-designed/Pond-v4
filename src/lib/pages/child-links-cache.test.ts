@@ -1,5 +1,5 @@
 import { QueryClient } from '@tanstack/react-query'
-import { saveThenStamp, stampChildLinksMigratedInCache } from './child-links'
+import { stampChildLinksMigratedInCache } from './child-links'
 import type { PondPage } from './client'
 
 const pageWith = (props: Record<string, unknown>): PondPage => ({
@@ -41,40 +41,5 @@ describe('stampChildLinksMigratedInCache', () => {
     stampChildLinksMigratedInCache(queryClient, 'missing-page')
 
     expect(queryClient.getQueryData(['page', 'missing-page'])).toBeUndefined()
-  })
-})
-
-describe('saveThenStamp', () => {
-  it('awaits flush before stamping', async () => {
-    const order: string[] = []
-    const flush = jest.fn(async () => {
-      order.push('flush')
-    })
-    const stamp = jest.fn(async () => {
-      order.push('stamp')
-    })
-
-    await saveThenStamp({ flush, stamp })
-
-    expect(order).toEqual(['flush', 'stamp'])
-  })
-
-  it('never stamps when flush rejects, and rethrows', async () => {
-    const flush = jest.fn(async () => {
-      throw new Error('save failed')
-    })
-    const stamp = jest.fn(async () => undefined)
-
-    await expect(saveThenStamp({ flush, stamp })).rejects.toThrow('save failed')
-    expect(stamp).not.toHaveBeenCalled()
-  })
-
-  it('stamps when flush had nothing pending (undefined)', async () => {
-    const flush = jest.fn(() => undefined)
-    const stamp = jest.fn(async () => undefined)
-
-    await saveThenStamp({ flush, stamp })
-
-    expect(stamp).toHaveBeenCalledTimes(1)
   })
 })

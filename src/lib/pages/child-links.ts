@@ -38,10 +38,10 @@ import { inPond } from '@/lib/pond/scope'
  * exists anywhere in the array — then `blocks` is returned unchanged (same
  * reference), so a caller can tell "nothing to write" from "wrote a block".
  */
-export function appendChildLink(blocks: Block[], childId: string): Block[] {
+export function appendChildLink(blocks: Block[], childId: string, id = crypto.randomUUID()): Block[] {
   const hasLink = blocks.some((block) => block.type === 'page-link' && block.pageId === childId)
   if (hasLink) return blocks
-  return [...blocks, { id: crypto.randomUUID(), type: 'page-link', pageId: childId }]
+  return [...blocks, { id, type: 'page-link', pageId: childId }]
 }
 
 /**
@@ -122,6 +122,36 @@ export async function appendChildLinkUnder(
 export function childLinkTargets(rows: PageRow[], parentId: string | null): string[] {
   const scope = parentId === null ? withoutDatabasesRoot(rows) : rows
   return sortedChildIds(scope, parentId)
+}
+
+/**
+ * A derived page-link block's id, deterministic from `childId` alone
+ * (KAN-477) — not `crypto.randomUUID()` — so two calls across renders for the
+ * same child produce the SAME id and React keys/selection don't churn.
+ */
+const derivedLinkId = (childId: string): string => `derived-link:${childId}`
+
+/**
+ * The read-time replacement for the KAN-415 write-on-open upgrade (KAN-477):
+ * for a page whose `props.childLinksMigrated !== true`, returns `blocks`
+ * with one page-link block appended — via {@link appendChildLink}, which
+ * already skips a child that's linked anywhere in `blocks` — for each of
+ * `parentId`'s current children ({@link childLinkTargets}, rail order) that
+ * lacks one. Pure: no write, no React, no Supabase. Once migrated, or once
+ * nothing needs appending, returns `blocks` unchanged (same reference) so a
+ * caller can skip reseeding state that hasn't actually changed.
+ */
+export function withDerivedChildLinks(
+  blocks: Block[],
+  rows: PageRow[],
+  parentId: string | null,
+  props: Record<string, unknown> | undefined
+): Block[] {
+  if (props?.childLinksMigrated === true) return blocks
+  return childLinkTargets(rows, parentId).reduce(
+    (current, childId) => appendChildLink(current, childId, derivedLinkId(childId)),
+    blocks
+  )
 }
 
 /** A page-link block removed from one parent, enough to put it back (KAN-448). */
@@ -487,30 +517,15 @@ export function stampChildLinksMigratedInCache(queryClient: QueryClient, pageId:
 }
 
 /**
- * Stamp `props.childLinksMigrated` on the open page itself, once its current
+ * Stamp `props.childLinksMigrated` on the page itself, once its current
  * children have each been given a page-link block (KAN-415's one-time
  * upgrade) — read-merge-write on `props`, exactly like `nested-page.ts`'s
  * `markOpened`, so the schema and every other prop are untouched. No-op once
- * the stamp is already there, so a reload never re-runs the upgrade.
+ * the stamp is already there, so a reload never re-runs the upgrade. Called
+ * by the page queue's writer (`use-page-draft.ts`'s `stampChildLinksIfNeeded`)
+ * off a successful write landing, never before — so the DB write this stamp
+ * follows already carries the links it promises.
  */
-/**
- * Await a pending save before stamping — the one-time upgrade's appended
- * links only reach the DB through the open page's own 600ms-debounced save
- * (`flushPendingPageSave`), so stamping before that save lands would leave a
- * reload within the debounce window with the stamp but none of the links it
- * promises. A rejected `flush` propagates and the stamp never runs.
- */
-export async function saveThenStamp({
-  flush,
-  stamp,
-}: {
-  flush: () => Promise<void> | undefined
-  stamp: () => Promise<void>
-}): Promise<void> {
-  await flush()
-  await stamp()
-}
-
 export async function markChildLinksMigrated(
   supabase: SupabaseClient<Database>,
   pageId: string

@@ -7,13 +7,23 @@ import {
   unlinkTrashedSubtree,
   relinkRestoredSubtree,
   trashPageUnlinked,
+  withDerivedChildLinks,
   type RemovedLink,
 } from './child-links'
 import type { Block } from '@/lib/modules/content'
 import type { PondPage } from './client'
+import type { PageRow } from './tree'
 
 const link = (id: string, pageId: string): Block => ({ id, type: 'page-link', pageId })
 const text = (id: string): Block => ({ id, type: 'text', content: id })
+const row = (id: string, parentId: string | null, order: number, title = id): PageRow => ({
+  id,
+  parent_id: parentId,
+  type: 'page',
+  title,
+  order,
+  updated_at: '2026-01-01T00:00:00.000Z',
+})
 
 const mockGetPage = jest.fn()
 jest.mock('./client', () => ({
@@ -59,6 +69,58 @@ describe('appendChildLink', () => {
     const next = appendChildLink(existing, 'child-1')
     expect(next).toBe(existing)
     expect(next).toHaveLength(2)
+  })
+})
+
+describe('withDerivedChildLinks', () => {
+  it('returns blocks unchanged when unmigrated with no rows', () => {
+    const blocks: Block[] = [text('b1')]
+    const next = withDerivedChildLinks(blocks, [], 'parent-1', {})
+    expect(next).toBe(blocks)
+  })
+
+  it('returns blocks unchanged when unmigrated but every child already has a link', () => {
+    const rows = [row('child-1', 'parent-1', 0), row('child-2', 'parent-1', 1)]
+    const blocks: Block[] = [text('b1'), link('b2', 'child-1'), link('b3', 'child-2')]
+    const next = withDerivedChildLinks(blocks, rows, 'parent-1', {})
+    expect(next).toBe(blocks)
+  })
+
+  it('appends a link for each child missing one, in rail order, with stable ids across calls', () => {
+    const rows = [
+      row('child-2', 'parent-1', 1),
+      row('child-1', 'parent-1', 0),
+      row('child-3', 'parent-1', 2),
+    ]
+    const blocks: Block[] = [text('b1'), link('b2', 'child-2')]
+
+    const first = withDerivedChildLinks(blocks, rows, 'parent-1', {})
+    expect(first).not.toBe(blocks)
+    expect(first.slice(2)).toEqual([
+      { id: expect.any(String), type: 'page-link', pageId: 'child-1' },
+      { id: expect.any(String), type: 'page-link', pageId: 'child-3' },
+    ])
+
+    const second = withDerivedChildLinks(blocks, rows, 'parent-1', {})
+    expect(second.map((b) => b.id)).toEqual(first.map((b) => b.id))
+  })
+
+  it('is a no-op once migrated, regardless of rows', () => {
+    const rows = [row('child-1', 'parent-1', 0)]
+    const blocks: Block[] = [text('b1')]
+    const next = withDerivedChildLinks(blocks, rows, 'parent-1', { childLinksMigrated: true })
+    expect(next).toBe(blocks)
+  })
+
+  it('scopes parentId === null to the home row via withoutDatabasesRoot, matching childLinkTargets', () => {
+    const rows = [
+      row('db-root', null, 0, 'databases'),
+      row('db-child', 'db-root', 0),
+      row('top-1', null, 1),
+    ]
+    const blocks: Block[] = []
+    const next = withDerivedChildLinks(blocks, rows, null, {})
+    expect(next.map((b) => (b.type === 'page-link' ? b.pageId : null))).toEqual(['top-1'])
   })
 })
 

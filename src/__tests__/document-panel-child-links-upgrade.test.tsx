@@ -168,7 +168,7 @@ beforeEach(() => {
 })
 
 describe('a page with children, upgraded on load, shows page-link rows not a card grid (KAN-415 path test A)', () => {
-  it('appends three page-link rows in rail order and stamps the migration', async () => {
+  it('derives the three rows at read time with no write, even across a reload — the person’s own edit is what stores and stamps them (KAN-477)', async () => {
     PAGES['page-1'] = { id: 'page-1', title: 'Workshop', blocks: [], props: {} }
     mount()
 
@@ -181,10 +181,29 @@ describe('a page with children, upgraded on load, shows page-link rows not a car
     ).toEqual(['Creative', 'personal', 'professional'])
     expect(screen.queryByText(/\d+ pages? inside/)).not.toBeInTheDocument()
 
-    await waitFor(() =>
-      expect(mockMarkChildLinksMigrated).toHaveBeenCalledWith(expect.anything(), 'page-1')
-    )
-    await waitFor(() => expect(mockCommitBlocks).toHaveBeenCalledTimes(1))
+    // Past the 600ms debounce — a derived-at-read render must never schedule
+    // or land a save.
+    await new Promise((r) => setTimeout(r, 700))
+    expect(mockCommitBlocks).not.toHaveBeenCalled()
+    expect(mockMarkChildLinksMigrated).not.toHaveBeenCalled()
+
+    // A reload of the SAME still-unstamped page re-derives the same rows,
+    // still with no write.
+    cleanup()
+    mount()
+    await waitFor(() => expect(linkRows()).toHaveLength(3))
+    await new Promise((r) => setTimeout(r, 700))
+    expect(mockCommitBlocks).not.toHaveBeenCalled()
+    expect(mockMarkChildLinksMigrated).not.toHaveBeenCalled()
+
+    // The person's own edit — typing a character into the title — is what
+    // finally stores the derived links, and stamps the migration in that
+    // same save.
+    fireEvent.change(await screen.findByDisplayValue('Workshop'), {
+      target: { value: 'Workshopx' },
+    })
+
+    await waitFor(() => expect(mockCommitBlocks).toHaveBeenCalledTimes(1), { timeout: 2000 })
     const [, , writtenPageId, writtenBlocks] = mockCommitBlocks.mock.calls[0]
     expect(writtenPageId).toBe('page-1')
     expect(writtenBlocks).toEqual([
@@ -192,22 +211,8 @@ describe('a page with children, upgraded on load, shows page-link rows not a car
       { id: expect.any(String), type: 'page-link', pageId: 'child-personal' },
       { id: expect.any(String), type: 'page-link', pageId: 'child-professional' },
     ])
-
-    cleanup()
-    PAGES['page-1'] = {
-      id: 'page-1',
-      title: 'Workshop',
-      blocks: writtenBlocks as Block[],
-      props: { childLinksMigrated: true },
-    }
-    mount()
-
-    await waitFor(() => expect(linkRows()).toHaveLength(3))
-    await screen.findByText('Creative')
-    await screen.findByText('personal')
-    await screen.findByText('professional')
-    expect(mockCommitBlocks).toHaveBeenCalledTimes(1)
     expect(mockMarkChildLinksMigrated).toHaveBeenCalledTimes(1)
+    expect(mockMarkChildLinksMigrated).toHaveBeenCalledWith(expect.anything(), 'page-1')
   })
 })
 
