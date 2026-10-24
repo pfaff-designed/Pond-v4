@@ -36,6 +36,26 @@ describe('NewPondSheet — the name field has a length limit (KAN-502)', () => {
 
     expect(field).toHaveValue('a'.repeat(80))
   })
+
+  it('clamps by code point, not UTF-16 code unit, so a trailing emoji is kept whole', async () => {
+    const user = userEvent.setup()
+    render(<NewPondSheet onCreate={jest.fn()} onCancel={jest.fn()} />)
+
+    const field = screen.getByPlaceholderText('Name your pond')
+    await user.type(field, `${'a'.repeat(79)}😀`)
+    expect(field).toHaveValue(`${'a'.repeat(79)}😀`)
+
+    await user.clear(field)
+    await user.type(field, `${'a'.repeat(80)}😀`)
+    expect(field).toHaveValue('a'.repeat(80))
+  })
+
+  it('clamps a defaultName by code point when the sheet opens already over the limit', () => {
+    const defaultName = `${'a'.repeat(89)}😀`
+    render(<NewPondSheet onCreate={jest.fn()} onCancel={jest.fn()} defaultName={defaultName} />)
+
+    expect(screen.getByPlaceholderText('Name your pond')).toHaveValue('a'.repeat(80))
+  })
 })
 
 describe('NewPondSheet — back and Esc (KAN-488)', () => {

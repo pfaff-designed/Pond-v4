@@ -52,6 +52,10 @@ import { holdInkGround, holdPaperGround } from '@/lib/theme/mode'
  *  (`page-proposals.ts`) caps a proposed page's name, a different fact. */
 const POND_NAME_MAX = 80
 
+/** `v.slice(0, n)` cuts UTF-16 code units, splitting a surrogate pair (an emoji)
+ *  in two and storing the lone leading half. Clamp by code point instead. */
+const clampPondName = (v: string) => Array.from(v).slice(0, POND_NAME_MAX).join('')
+
 /** `s6m2`'s glyph row, in the board's order. The first is the column default. */
 const GLYPHS = ['lightning-03', 'waves-02', 'star-01', 'house', 'ring', 'heart'] as const
 
@@ -170,7 +174,7 @@ export function NewPondSheet({
   defaultName = '',
 }: NewPondSheetProps) {
   const [step, setStep] = useState(1)
-  const [name, setName] = useState(defaultName)
+  const [name, setName] = useState(() => clampPondName(defaultName))
   // Step-1-level, not step-scoped: a step 2 → step 1 round trip must keep the pick.
   const [glyph, setGlyph] = useState<string>(GLYPHS[0])
   const [theme, setTheme] = useState<LiveTheme>('paper')
@@ -278,7 +282,7 @@ export function NewPondSheet({
                 kind="field"
                 label="Name your pond"
                 value={name}
-                onValueChange={(v) => setName(v.slice(0, POND_NAME_MAX))}
+                onValueChange={(v) => setName(clampPondName(v))}
                 disabled={pending}
                 autoFocus
                 onKeyDown={(e) => {
