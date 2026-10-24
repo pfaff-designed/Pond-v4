@@ -1,6 +1,6 @@
 /**
  * KAN-466 — PATH_STEPS' own walk: drag "roof" onto "house" in the rail, the
- * undo toast reads `moved roof to house` with `open`/`undo` buttons, `open`
+ * undo toast reads `moved roof to house ·` with `open`/`undo` buttons, `open`
  * navigates to roof, `undo` puts it back; dragging again and using ⌘Z/⇧⌘Z
  * (the shell's chord, a different door onto the SAME `sessionUndo` stack)
  * does the same. Mounts the real `Rail` + `ShellCommands` +
@@ -238,7 +238,7 @@ describe("rail drag-move: the toast's open/undo and ⌘Z/⇧⌘Z share one undo 
     dragRoofOntoHouse()
 
     await waitFor(() => expect(movePage).toHaveBeenCalledTimes(1))
-    await screen.findByText('moved roof to house')
+    await screen.findByText('moved roof to house ·')
     expect(screen.getByRole('button', { name: 'open' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'undo' })).toBeInTheDocument()
     await waitFor(() => expect(parentIdOfRoof()).toBe('house'))
@@ -247,7 +247,7 @@ describe("rail drag-move: the toast's open/undo and ⌘Z/⇧⌘Z share one undo 
     expect(routerPush).toHaveBeenCalledWith(expect.stringContaining('nodeId=roof'))
 
     await userEvent.click(screen.getByRole('button', { name: 'undo' }))
-    expect(screen.queryByText('moved roof to house')).not.toBeInTheDocument()
+    expect(screen.queryByText('moved roof to house ·')).not.toBeInTheDocument()
     await waitFor(() => expect(parentIdOfRoof()).toBe(null))
 
     dragRoofOntoHouse()
@@ -338,7 +338,7 @@ describe('KAN-466 regression: a reparent writes no link block of its own', () =>
 
     dragRoofOntoHouse()
     await waitFor(() => expect(movePage).toHaveBeenCalledTimes(1))
-    await screen.findByText('moved roof to house')
+    await screen.findByText('moved roof to house ·')
     // Flush: a stray reparent-link write (the old bug) is a detached async
     // chain `handleMove` never awaits — give it room to land before checking.
     await new Promise((resolve) => setTimeout(resolve, 0))

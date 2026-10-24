@@ -118,6 +118,18 @@ describe('describeChange', () => {
       describeChange(record({ action: 'move', before: null, after: { parentId: 'page-b' } }), null)
     ).toBe('moved')
   })
+
+  it('never reads "moved to " bare — a null or untitled parent falls back to Untitled', () => {
+    const noHomeRow = { parentId: null, parentTitle: null, siblingOrder: [] }
+    expect(
+      describeChange(record({ action: 'move', before: null, after: noHomeRow }), null)
+    ).toBe('moved to Untitled')
+
+    const untitledParent = { parentId: 'page-b', parentTitle: '', siblingOrder: [] }
+    expect(
+      describeChange(record({ action: 'move', before: null, after: untitledParent }), null)
+    ).toBe('moved to Untitled')
+  })
 })
 
 describe('platformShortcutLabel', () => {

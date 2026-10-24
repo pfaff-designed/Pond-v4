@@ -137,12 +137,15 @@ export interface TrashSnapshot {
  * the page back exactly where it was. `parentTitle` is resolved at move time (the
  * pond's home page title when `parentId` is null) and frozen in the snapshot, the
  * same way `TrashSnapshot.parentPath` is — a later rename or trash of that parent
- * must not change what an old record reads. `siblingOrder` is the full dense
- * order of the group named by `parentId`, the moved page included.
+ * must not change what an old record reads. `null` when `parentId` is null and no
+ * home row exists to name (`private.page_move_parent_title`); `''` for a live
+ * parent that is itself untitled — a reader must fall back for both, never render
+ * either bare. `siblingOrder` is the full dense order of the group named by
+ * `parentId`, the moved page included.
  */
 export interface MoveSnapshot {
   parentId: string | null
-  parentTitle: string
+  parentTitle: string | null
   siblingOrder: string[]
 }
 

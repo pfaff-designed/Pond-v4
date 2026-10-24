@@ -68,7 +68,7 @@ import { changeLogKey } from '@/lib/change-log/keys'
 import { sessionUndo } from '@/lib/change-log/session-undo'
 import { applyUndoOutcome } from '@/lib/change-log/undo-outcome'
 import { TrashRefusedError } from '@/lib/change-log/errors'
-import type { MoveSnapshot } from '@/lib/change-log/types'
+import { readMoveSnapshot, moveParentLabel } from '@/lib/change-log/page-changes'
 import { jsonEqual } from '@/lib/json-equal'
 import { homeQueryKey, pagesKey } from '@/lib/pages/keys'
 import { appendChildLinkUnder, trashPageUnlinked } from '@/lib/pages/child-links'
@@ -2533,14 +2533,15 @@ export function Rail() {
           siblingOrder: move.siblingOrder,
         })
       )
-      if (pondId && record && draggedRow) {
+      const after = record ? readMoveSnapshot(record.after) : null
+      if (pondId && record && draggedRow && after) {
         const handle = sessionUndo.rememberPending({
           pondId,
           recordIds: Promise.resolve([record.id]),
         })
-        const after = record.after as MoveSnapshot
+        queryClient.invalidateQueries({ queryKey: changeLogKey() })
         stageUndo({
-          message: `moved ${title} to ${after.parentTitle}`,
+          message: `moved ${title} to ${moveParentLabel(after.parentTitle, home?.title ?? pondName)} ·`,
           undoLabel: 'undo',
           undo: () =>
             sessionUndo
