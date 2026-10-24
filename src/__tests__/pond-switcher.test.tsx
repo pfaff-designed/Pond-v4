@@ -241,7 +241,10 @@ describe('the pond switcher', () => {
     await user.click(continueButton)
     expect(sheet).toHaveTextContent('2 of 2')
     expect(sheet).toHaveTextContent('Areas')
-    expect(screen.getByText('clients')).toHaveAttribute('aria-disabled', 'true')
+    expect(screen.getByText('clients')).not.toHaveAttribute('aria-disabled')
+    // The field has no label/aria-label, only a placeholder — not queryable by
+    // accessible role name, so find it the same way `nameField` above is found.
+    expect(screen.getByPlaceholderText('add your own')).not.toHaveAttribute('aria-disabled')
 
     // Back keeps the name.
     await user.click(screen.getByRole('button', { name: 'back' }))

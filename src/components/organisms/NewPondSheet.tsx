@@ -144,11 +144,9 @@ function Pill({
     )
   }
 
-  return (
-    <span aria-disabled={muted ? 'true' : undefined} className={className}>
-      {children}
-    </span>
-  )
+  // No `aria-disabled`: a role-less span isn't a control AT exposes, and a muted
+  // pill is inert copy for an unbuilt theme/area (#175/AUDIT 6m), not a disabled one.
+  return <span className={className}>{children}</span>
 }
 
 export interface NewPondSheetProps {
@@ -333,7 +331,7 @@ export function NewPondSheet({
               ))}
             </div>
             <div className="pointer-events-none opacity-40">
-              <PondControl kind="field" label="add your own" disabled aria-disabled="true" />
+              <PondControl kind="field" label="add your own" disabled />
             </div>
           </>
         )}
