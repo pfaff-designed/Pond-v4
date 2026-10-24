@@ -184,6 +184,7 @@ export function PondCommand({
   onNavigate,
 }: PondCommandProps) {
   const listId = useId()
+  const currentId = useId()
   const boxRef = useRef<HTMLDivElement>(null)
   const { half, atRest } = useMorph(boxRef, open, at)
   const live = open || !atRest
@@ -390,7 +391,11 @@ export function PondCommand({
               </span>
             </Fragment>
           ))}
-          <span data-part="current" className="min-w-0 truncate font-medium text-mn-text">
+          <span
+            id={currentId}
+            data-part="current"
+            className="min-w-0 truncate font-medium text-mn-text"
+          >
             {path.current}
           </span>
           <span aria-hidden className="h-[14px] w-px flex-none bg-mn-text/[0.09]" />
@@ -401,6 +406,7 @@ export function PondCommand({
           aria-haspopup="listbox"
           aria-expanded={open}
           aria-keyshortcuts={ariaKeyshortcuts('mod+k', apple)}
+          aria-labelledby={currentId}
           inert={open}
           className={`${OPENER} ${half ? 'pointer-events-none' : ''}`}
         />

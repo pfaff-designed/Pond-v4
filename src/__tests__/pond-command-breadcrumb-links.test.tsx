@@ -69,3 +69,10 @@ describe('breadcrumb ancestors with a real node are links; `node: null` crumbs s
     expect(onOpenChange).not.toHaveBeenCalledWith(true)
   })
 })
+
+describe('the opener button keeps an accessible name now the path moved out of it', () => {
+  it('is labelled by the current crumb', () => {
+    renderCommand()
+    expect(screen.getByRole('button', { name: 'gutters' })).toHaveAttribute('data-part', 'opener')
+  })
+})
