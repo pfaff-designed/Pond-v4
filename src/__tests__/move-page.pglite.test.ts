@@ -45,6 +45,7 @@ const addPage = async (
 }
 
 interface MoveRecord {
+  id: string
   status: string
   action: string
   before: { parentId: string | null; parentTitle: string; siblingOrder: string[] }
@@ -53,8 +54,9 @@ interface MoveRecord {
 
 const moveRecordsFor = async (db: PGlite, pageId: string): Promise<MoveRecord[]> => {
   const res = await db.query<MoveRecord>(
-    `select status, action, before, after from public.change_log
-      where action = 'move' and target_page_id = $1`,
+    `select id, status, action, before, after from public.change_log
+      where action = 'move' and target_page_id = $1
+      order by created_at asc`,
     [pageId]
   )
   return res.rows
@@ -212,6 +214,125 @@ describe('0030_move_page — a sibling order missing the moved page leaves nothi
     expect(xRow.rows[0].order).toBe(0)
 
     expect(await moveRecordsFor(db, roof)).toHaveLength(0)
+    await db.close()
+  })
+})
+
+const undo = (db: PGlite, ids: string[], pondId: string) =>
+  db.query(`select * from public.undo_change_log_record($1::uuid[], $2, 'you')`, [ids, pondId])
+
+const redo = (db: PGlite, ids: string[], pondId: string) =>
+  db.query(`select * from public.redo_change_log_record($1::uuid[], $2, 'you')`, [ids, pondId])
+
+const pageOf = async (db: PGlite, pageId: string) => {
+  const res = await db.query<{ parent_id: string | null; order: number }>(
+    'select parent_id, "order" from public.pages where id = $1',
+    [pageId]
+  )
+  return res.rows[0]
+}
+
+/** A refusal: its SQLSTATE and the reason code the client reads off DETAIL. */
+const refusal = (code: string, detail: string) => ({ code, detail })
+
+describe('0030_move_page — undo_change_log_record / redo_change_log_record on a move', () => {
+  it("restores parent_id and the exact old sibling order, leaving the untouched siblings as they were", async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pond = await lifePondId(db)
+
+    const parentA = await addPage(db, pond, { title: 'parent a' })
+    const parentB = await addPage(db, pond, { title: 'parent b' })
+    const roof = await addPage(db, pond, { parentId: parentA, title: 'roof', order: 0 })
+    const a = await addPage(db, pond, { parentId: parentA, title: 'a', order: 1 })
+    const b = await addPage(db, pond, { parentId: parentA, title: 'b', order: 2 })
+    const x = await addPage(db, pond, { parentId: parentB, title: 'x', order: 0 })
+    const y = await addPage(db, pond, { parentId: parentB, title: 'y', order: 1 })
+
+    await actAs(db, USER)
+    await db.query('select public.move_page($1, $2, $3)', [roof, parentB, [x, roof, y]])
+    await db.exec('reset role;')
+    const record = (await moveRecordsFor(db, roof))[0]
+
+    await undo(db, [record.id], pond)
+
+    expect(await pageOf(db, roof)).toEqual({ parent_id: parentA, order: 0 })
+    expect(await pageOf(db, a)).toEqual({ parent_id: parentA, order: 1 })
+    expect(await pageOf(db, b)).toEqual({ parent_id: parentA, order: 2 })
+    await db.close()
+  })
+
+  it('redo re-applies the move', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pond = await lifePondId(db)
+
+    const parentA = await addPage(db, pond, { title: 'parent a' })
+    const parentB = await addPage(db, pond, { title: 'parent b' })
+    const roof = await addPage(db, pond, { parentId: parentA, title: 'roof', order: 0 })
+    const x = await addPage(db, pond, { parentId: parentB, title: 'x', order: 0 })
+    const y = await addPage(db, pond, { parentId: parentB, title: 'y', order: 1 })
+
+    await actAs(db, USER)
+    await db.query('select public.move_page($1, $2, $3)', [roof, parentB, [x, roof, y]])
+    await db.exec('reset role;')
+    const record = (await moveRecordsFor(db, roof))[0]
+
+    await undo(db, [record.id], pond)
+    await redo(db, [record.id], pond)
+
+    expect(await pageOf(db, roof)).toEqual({ parent_id: parentB, order: 1 })
+    expect(await pageOf(db, x)).toEqual({ parent_id: parentB, order: 0 })
+    expect(await pageOf(db, y)).toEqual({ parent_id: parentB, order: 2 })
+    await db.close()
+  })
+
+  it('refuses to undo the same move record twice', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pond = await lifePondId(db)
+
+    const parentA = await addPage(db, pond, { title: 'parent a' })
+    const parentB = await addPage(db, pond, { title: 'parent b' })
+    const roof = await addPage(db, pond, { parentId: parentA, title: 'roof' })
+
+    await actAs(db, USER)
+    await db.query('select public.move_page($1, $2, $3)', [roof, parentB, [roof]])
+    await db.exec('reset role;')
+    const record = (await moveRecordsFor(db, roof))[0]
+
+    await undo(db, [record.id], pond)
+
+    await expect(undo(db, [record.id], pond)).rejects.toMatchObject(
+      refusal('22023', 'already-undone')
+    )
+    expect(await pageOf(db, roof)).toEqual({ parent_id: parentA, order: 0 })
+    await db.close()
+  })
+
+  it('refuses to undo a move once a later, unrelated move has changed the page, and changes nothing', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pond = await lifePondId(db)
+
+    const parentA = await addPage(db, pond, { title: 'parent a' })
+    const parentB = await addPage(db, pond, { title: 'parent b' })
+    const parentC = await addPage(db, pond, { title: 'parent c' })
+    const roof = await addPage(db, pond, { parentId: parentA, title: 'roof' })
+
+    await actAs(db, USER)
+    await db.query('select public.move_page($1, $2, $3)', [roof, parentB, [roof]])
+    await db.exec('reset role;')
+    const firstMove = (await moveRecordsFor(db, roof))[0]
+
+    await actAs(db, USER)
+    await db.query('select public.move_page($1, $2, $3)', [roof, parentC, [roof]])
+    await db.exec('reset role;')
+
+    await expect(undo(db, [firstMove.id], pond)).rejects.toMatchObject(
+      refusal('P0001', 'page-changed')
+    )
+    expect(await pageOf(db, roof)).toEqual({ parent_id: parentC, order: 0 })
     await db.close()
   })
 })
