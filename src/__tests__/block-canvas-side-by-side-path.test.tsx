@@ -137,7 +137,12 @@ function renderPath(blocks: Block[]) {
       <DeletionUndoProvider>
         <DocumentPanel />
         <PondCommand
-          path={{ glyph: 'ramp', trail: ['life'], current: 'Workshop', role: null }}
+          path={{
+            glyph: 'ramp',
+            trail: [{ title: 'life', node: null }],
+            current: 'Workshop',
+            role: null,
+          }}
           open={false}
           items={[]}
           onSelect={jest.fn()}

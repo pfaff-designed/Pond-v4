@@ -361,7 +361,7 @@ export function PondCommand({
           <span ref={pathRef} data-part="path" style={MORPH.path} className={PATH}>
             {path.trail.map((crumb, i) => (
               <Fragment key={i}>
-                <span className="min-w-0 truncate text-mn-text-secondary">{crumb}</span>
+                <span className="min-w-0 truncate text-mn-text-secondary">{crumb.title}</span>
                 <span aria-hidden className="text-mn-text-meta">
                   ›
                 </span>

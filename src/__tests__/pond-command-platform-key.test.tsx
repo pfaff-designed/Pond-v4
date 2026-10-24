@@ -17,7 +17,12 @@ afterEach(() => jest.restoreAllMocks())
 function renderCommand() {
   return render(
     <PondCommand
-      path={{ glyph: 'ramp', trail: ['life'], current: 'health', role: null }}
+      path={{
+        glyph: 'ramp',
+        trail: [{ title: 'life', node: null }],
+        current: 'health',
+        role: null,
+      }}
       open={false}
       items={[]}
       onSelect={jest.fn()}
@@ -31,7 +36,12 @@ describe('PondCommand — the server render agrees with the first client render,
     onPlatform('Win32')
     const html = renderToString(
       <PondCommand
-        path={{ glyph: 'ramp', trail: ['life'], current: 'health', role: null }}
+        path={{
+          glyph: 'ramp',
+          trail: [{ title: 'life', node: null }],
+          current: 'health',
+          role: null,
+        }}
         open={false}
         items={[]}
         onSelect={jest.fn()}

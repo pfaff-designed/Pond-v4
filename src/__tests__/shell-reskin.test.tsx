@@ -437,11 +437,19 @@ describe('commandPath — the root, the ancestors, then the page; led by its are
     expect(healthMark).not.toBeNull()
     const area = commandPath(ROWS, 'health', opts('Health'))
     const child = commandPath(ROWS, 'sleep', opts('Sleep'))
-    expect(area).toEqual({ glyph: healthMark, role: null, trail: ['life'], current: 'Health' })
+    expect(area).toEqual({
+      glyph: healthMark,
+      role: null,
+      trail: [{ title: 'life', node: null }],
+      current: 'Health',
+    })
     expect(child).toEqual({
       glyph: healthMark,
       role: null,
-      trail: ['life', 'Health'],
+      trail: [
+        { title: 'life', node: null },
+        { title: 'Health', node: { id: 'health', type: 'page', title: 'Health' } },
+      ],
       current: 'Sleep',
     })
   })
@@ -449,14 +457,18 @@ describe('commandPath — the root, the ancestors, then the page; led by its are
   // #101 review: every segment is the page title verbatim — the root reads
   // lowercase "life", and nothing is title-cased by the pill.
   it('segments are titles verbatim: the root lowercase, the pages in their own case', () => {
-    expect(commandPath(ROWS, 'sleep', opts('Sleep')).trail).toEqual(['life', 'Health'])
+    expect(commandPath(ROWS, 'sleep', opts('Sleep')).trail).toEqual([
+      { title: 'life', node: null },
+      { title: 'Health', node: { id: 'health', type: 'page', title: 'Health' } },
+    ])
   })
 
   // 3c's two roots are peers, so a page under databases must not read as if it
-  // were inside life.
+  // were inside life. The databases root is a real row, so its crumb carries a
+  // node — unlike life's reserved-home fallback above.
   it('starts at the databases root, never inside life; the root page reads simply "databases"', () => {
     expect(commandPath(ROWS, 'db-1', opts('ingredients'))).toMatchObject({
-      trail: ['databases'],
+      trail: [{ title: 'databases', node: { id: 'root-db', type: 'page', title: 'databases' } }],
       current: 'ingredients',
     })
     expect(commandPath(ROWS, 'root-db', opts('databases'))).toMatchObject({

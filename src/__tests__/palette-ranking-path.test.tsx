@@ -17,7 +17,12 @@ import { paletteItems } from '@/lib/pages/palette-items'
 import { readRecentPageIds, writeRecent } from '@/lib/pages/recent-pages'
 import type { PageRow } from '@/lib/pages/tree'
 
-const PATH = { glyph: 'ramp', trail: ['life'], current: 'projects', role: null }
+const PATH = {
+  glyph: 'ramp',
+  trail: [{ title: 'life', node: null }],
+  current: 'projects',
+  role: null,
+}
 
 const row = (p: Partial<PageRow> & Pick<PageRow, 'id' | 'title'>): PageRow => ({
   parent_id: null,

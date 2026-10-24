@@ -12,15 +12,25 @@
  */
 
 import type { AreaRole } from '@/lib/rail/glyph-library'
+import type { WorkspaceNodeRef } from '@/lib/pages/nav'
 
 import { crumbTrail } from './crumbs'
 import { markIndex, resolveMark } from './mark'
 import type { PageRow } from './tree'
 
+/**
+ * One breadcrumb segment: its label, and the real page it opens — or `null` for
+ * a crumb with no openable page (life's reserved-home root, a virtual trail).
+ */
+export interface CommandCrumb {
+  title: string
+  node: WorkspaceNodeRef | null
+}
+
 export interface CommandPath {
   glyph: string
   /** The root and the ancestors, root-ward first. */
-  trail: string[]
+  trail: CommandCrumb[]
   /** The page in view. */
   current: string
   /** The role of the area the page sits in, or itself if it is one; null for ink. */
@@ -46,7 +56,13 @@ export function commandPath(
       glyphOf(area, index) ??
       (root && glyphOf(root.id, index)) ??
       pondGlyph,
-    trail: [root?.title ?? rootTitle, ...crumbs.map((c) => c.title)],
+    trail: [
+      {
+        title: root?.title ?? rootTitle,
+        node: root ? { id: root.id, type: root.type, title: root.title } : null,
+      },
+      ...crumbs.map((c) => ({ title: c.title, node: { id: c.id, type: c.type, title: c.title } })),
+    ],
     current,
     role: own.role,
   }

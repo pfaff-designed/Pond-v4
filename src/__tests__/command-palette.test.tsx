@@ -404,7 +404,15 @@ describe('paletteItems — every value from the owner that already derives it', 
 
 // ── The surface: one element, ARIA, keys, and the gut ─────────────────────────
 
-const PATH = { glyph: 'ramp', trail: ['life', 'professional'], current: 'standups', role: null }
+const PATH = {
+  glyph: 'ramp',
+  trail: [
+    { title: 'life', node: null },
+    { title: 'professional', node: null },
+  ],
+  current: 'standups',
+  role: null,
+}
 
 function renderPalette(props: Partial<PondCommandProps> = {}) {
   const onSelect = jest.fn()
