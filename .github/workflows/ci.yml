@@ -52,6 +52,12 @@ jobs:
       - name: Test (jest)
         run: npm test
 
+      # CI's runner is UTC, which has no DST transitions, so the trash DST regression tables
+      # (purgeDay in change-log-deleted-view.test.ts, the "in 30 days" case in
+      # change-log-trash-view.test.ts) pass here even if purgeDay reverted to ms math. KAN-500.
+      - name: Test (jest, a DST time zone)
+        run: TZ=America/New_York npx jest src/__tests__/change-log-deleted-view.test.ts src/__tests__/change-log-trash-view.test.ts src/__tests__/trash-path.test.tsx
+
   pglite:
     name: Test (PGLite schema invariants)
     runs-on: ubuntu-latest
