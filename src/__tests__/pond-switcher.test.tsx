@@ -241,7 +241,10 @@ describe('the pond switcher', () => {
     await user.click(continueButton)
     expect(sheet).toHaveTextContent('2 of 2')
     expect(sheet).toHaveTextContent('Areas')
-    expect(screen.getByText('clients')).toHaveAttribute('aria-disabled', 'true')
+    expect(screen.getByText('clients')).not.toHaveAttribute('aria-disabled')
+    // The field has no label/aria-label, only a placeholder — not queryable by
+    // accessible role name, so find it the same way `nameField` above is found.
+    expect(screen.getByPlaceholderText('add your own')).not.toHaveAttribute('aria-disabled')
 
     // Back keeps the name.
     await user.click(screen.getByRole('button', { name: 'back' }))
@@ -387,6 +390,21 @@ describe('the pond switcher', () => {
     await waitFor(() => expect(screen.getByText(/could not make it/)).toBeInTheDocument())
     expect(screen.getByRole('dialog', { name: 'New pond' })).toBeInTheDocument()
     expect(push).not.toHaveBeenCalled()
+  })
+
+  it('closes the ponds menu when new pond opens the sheet, and keeps it closed through Esc', async () => {
+    const user = userEvent.setup()
+    renderSwitcher()
+    await user.click(await screen.findByRole('button', { name: /life/ }))
+    await user.click(screen.getByRole('menuitem', { name: /new pond/ }))
+
+    expect(screen.getByRole('dialog', { name: 'New pond' })).toBeInTheDocument()
+    expect(screen.queryByRole('menu', { name: 'Ponds' })).not.toBeInTheDocument()
+
+    await user.keyboard('{Escape}')
+
+    expect(screen.queryByRole('dialog', { name: 'New pond' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menu', { name: 'Ponds' })).not.toBeInTheDocument()
   })
 
   it('Esc and a scrim click do nothing while make pond is in flight', async () => {

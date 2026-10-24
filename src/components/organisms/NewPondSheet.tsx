@@ -47,6 +47,15 @@ import { FOCUS_VISIBLE_RING } from '@/components/atoms/focus-ring'
 import { PondControl } from '@/components/atoms/PondControl'
 import { holdInkGround, holdPaperGround } from '@/lib/theme/mode'
 
+/** No board value exists; a pond's name renders in the rail head and the switcher
+ *  menu, so a generous title length rather than the field's own cap. `PAGE_NAME_MAX`
+ *  (`page-proposals.ts`) caps a proposed page's name, a different fact. */
+const POND_NAME_MAX = 80
+
+/** `v.slice(0, n)` cuts UTF-16 code units, splitting a surrogate pair (an emoji)
+ *  in two and storing the lone leading half. Clamp by code point instead. */
+const clampPondName = (v: string) => Array.from(v).slice(0, POND_NAME_MAX).join('')
+
 /** `s6m2`'s glyph row, in the board's order. The first is the column default. */
 const GLYPHS = ['lightning-03', 'waves-02', 'star-01', 'house', 'ring', 'heart'] as const
 
@@ -139,11 +148,9 @@ function Pill({
     )
   }
 
-  return (
-    <span aria-disabled={muted ? 'true' : undefined} className={className}>
-      {children}
-    </span>
-  )
+  // No `aria-disabled`: a role-less span isn't a control AT exposes, and a muted
+  // pill is inert copy for an unbuilt theme/area (#175/AUDIT 6m), not a disabled one.
+  return <span className={className}>{children}</span>
 }
 
 export interface NewPondSheetProps {
@@ -167,7 +174,7 @@ export function NewPondSheet({
   defaultName = '',
 }: NewPondSheetProps) {
   const [step, setStep] = useState(1)
-  const [name, setName] = useState(defaultName)
+  const [name, setName] = useState(() => clampPondName(defaultName))
   // Step-1-level, not step-scoped: a step 2 → step 1 round trip must keep the pick.
   const [glyph, setGlyph] = useState<string>(GLYPHS[0])
   const [theme, setTheme] = useState<LiveTheme>('paper')
@@ -275,7 +282,7 @@ export function NewPondSheet({
                 kind="field"
                 label="Name your pond"
                 value={name}
-                onValueChange={setName}
+                onValueChange={(v) => setName(clampPondName(v))}
                 disabled={pending}
                 autoFocus
                 onKeyDown={(e) => {
@@ -328,7 +335,7 @@ export function NewPondSheet({
               ))}
             </div>
             <div className="pointer-events-none opacity-40">
-              <PondControl kind="field" label="add your own" disabled aria-disabled="true" />
+              <PondControl kind="field" label="add your own" disabled />
             </div>
           </>
         )}

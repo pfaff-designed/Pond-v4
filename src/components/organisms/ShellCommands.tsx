@@ -221,7 +221,17 @@ export function ShellCommands() {
     close: closeTemplateSheet,
     start: startTemplateSheet,
   } = templateSheet
-  const closeNewPondSheet = useCallback(() => setNaming(null), [])
+  // A create in flight must not be closed out from under it (a dismissed-but-
+  // still-running create would still land) — a ref, not state, since it only
+  // needs reading inside `closeNewPondSheet`, not a re-render.
+  const pondCreatePendingRef = useRef(false)
+  const handlePondCreatePendingChange = useCallback((next: boolean) => {
+    pondCreatePendingRef.current = next
+  }, [])
+  const closeNewPondSheet = useCallback((created?: boolean) => {
+    if (!created && pondCreatePendingRef.current) return
+    setNaming(null)
+  }, [])
 
   const closeReport = useCallback(() => {
     setReportOpen(false)
@@ -498,7 +508,13 @@ export function ShellCommands() {
 
   return (
     <>
-      {naming !== null && <NewPondFlow defaultName={naming} onClose={closeNewPondSheet} />}
+      {naming !== null && (
+        <NewPondFlow
+          defaultName={naming}
+          onClose={closeNewPondSheet}
+          onPendingChange={handlePondCreatePendingChange}
+        />
+      )}
       {reportOpen && (
         <ReportProblemBox
           pageTitle={pageTitle}

@@ -26,6 +26,38 @@ describe('NewPondSheet — one name field, a required name (KAN-487)', () => {
   })
 })
 
+describe('NewPondSheet — the name field has a length limit (KAN-502)', () => {
+  it('clamps typed input at 80 characters', async () => {
+    const user = userEvent.setup()
+    render(<NewPondSheet onCreate={jest.fn()} onCancel={jest.fn()} />)
+
+    const field = screen.getByPlaceholderText('Name your pond')
+    await user.type(field, 'a'.repeat(90))
+
+    expect(field).toHaveValue('a'.repeat(80))
+  })
+
+  it('clamps by code point, not UTF-16 code unit, so a trailing emoji is kept whole', async () => {
+    const user = userEvent.setup()
+    render(<NewPondSheet onCreate={jest.fn()} onCancel={jest.fn()} />)
+
+    const field = screen.getByPlaceholderText('Name your pond')
+    await user.type(field, `${'a'.repeat(79)}😀`)
+    expect(field).toHaveValue(`${'a'.repeat(79)}😀`)
+
+    await user.clear(field)
+    await user.type(field, `${'a'.repeat(80)}😀`)
+    expect(field).toHaveValue('a'.repeat(80))
+  })
+
+  it('clamps a defaultName by code point when the sheet opens already over the limit', () => {
+    const defaultName = `${'a'.repeat(89)}😀`
+    render(<NewPondSheet onCreate={jest.fn()} onCancel={jest.fn()} defaultName={defaultName} />)
+
+    expect(screen.getByPlaceholderText('Name your pond')).toHaveValue('a'.repeat(80))
+  })
+})
+
 describe('NewPondSheet — back and Esc (KAN-488)', () => {
   it('Escape or ArrowLeft on step 2 returns to step 1 with the name intact', async () => {
     const user = userEvent.setup()
@@ -148,8 +180,8 @@ describe('NewPondSheet — Enter in the name field (KAN-488)', () => {
   })
 })
 
-describe('NewPondSheet — areas step pills and field are aria-disabled (KAN-488)', () => {
-  it('the areas pills and "add your own" field report aria-disabled and have no click action', async () => {
+describe('NewPondSheet — areas step pills and field have no click action (KAN-488)', () => {
+  it('the areas pills and "add your own" field carry no aria-disabled and have no click action', async () => {
     const user = userEvent.setup()
     render(<NewPondSheet onCreate={jest.fn()} onCancel={jest.fn()} />)
 
@@ -157,9 +189,9 @@ describe('NewPondSheet — areas step pills and field are aria-disabled (KAN-488
     await user.click(screen.getByRole('button', { name: 'continue' }))
 
     const pill = screen.getByText('clients')
-    expect(pill).toHaveAttribute('aria-disabled', 'true')
+    expect(pill).not.toHaveAttribute('aria-disabled')
     const field = screen.getByPlaceholderText('add your own')
-    expect(field).toHaveAttribute('aria-disabled', 'true')
+    expect(field).not.toHaveAttribute('aria-disabled')
 
     await user.click(pill)
     expect(screen.getByText('2 of 2')).toBeInTheDocument()
