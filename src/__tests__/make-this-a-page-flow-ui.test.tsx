@@ -229,6 +229,7 @@ function terminalTreeForPond(qc: QueryClient, pondId: string) {
           loading: false,
           reload: () => {},
           addPond: () => {},
+          patchPond: () => {},
         }}
       >
         <AITerminal />

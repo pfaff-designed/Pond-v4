@@ -295,7 +295,14 @@ describe('renaming the root page (#312: one root per pond)', () => {
     render(
       <QueryClientProvider client={client}>
         <PondContext.Provider
-          value={{ pond: POND, ponds: [POND], loading: false, reload: () => {}, addPond: () => {} }}
+          value={{
+            pond: POND,
+            ponds: [POND],
+            loading: false,
+            reload: () => {},
+            addPond: () => {},
+            patchPond: () => {},
+          }}
         >
           <DeletionUndoProvider>
             <DocumentPanel />

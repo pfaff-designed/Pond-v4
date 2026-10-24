@@ -55,6 +55,7 @@ const PROVIDER_VALUE: PondContextValue = {
   loading: false,
   reload: () => {},
   addPond: () => {},
+  patchPond: () => {},
 }
 
 function viewProps(overrides: Partial<React.ComponentProps<typeof RailView>> = {}) {

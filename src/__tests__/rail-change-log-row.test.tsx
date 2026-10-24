@@ -166,6 +166,7 @@ describe('rail — the change log row (KAN-94)', () => {
       loading: false,
       reload: () => {},
       addPond: () => {},
+      patchPond: () => {},
     }
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
     client.setQueryData(pagesKey('pond-1'), ROWS)
@@ -208,6 +209,7 @@ describe('rail — the change log row (KAN-94)', () => {
       loading: false,
       reload: () => {},
       addPond: () => {},
+      patchPond: () => {},
     }
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
     client.setQueryData(pagesKey('pond-1'), NO_ROOT)

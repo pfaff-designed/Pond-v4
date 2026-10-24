@@ -157,6 +157,40 @@ export async function pushRecentGlyphToPond(
   return next
 }
 
+export interface UpdatePondPatch {
+  name?: string
+  glyph?: string
+}
+
+/**
+ * Rename a pond and/or change its glyph (KAN-492). Same seam as `createPond`:
+ * a provided `name` is trimmed, and a blank/whitespace-only one throws before
+ * the write is ever attempted.
+ */
+export async function updatePond(pondId: string, patch: UpdatePondPatch): Promise<Pond> {
+  const update: { name?: string; glyph?: string } = {}
+  if (patch.name !== undefined) {
+    const trimmed = patch.name.trim()
+    if (!trimmed) throw new Error('updatePond: a pond needs a name')
+    update.name = trimmed
+  }
+  if (patch.glyph !== undefined) update.glyph = patch.glyph
+
+  const supabase = createClient()
+  // Cast as `createPond` does above: `Database` can't infer an Update shape
+  // for a quoted-identifier table either.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('ponds')
+    .update(update)
+    .eq('id', pondId)
+    .select(COLUMNS)
+    .single()
+
+  if (error) throw error
+  return mapPondRow(data as unknown as PondRow)
+}
+
 /**
  * Remember (or clear, with `pageId: null`) the page a pond was last on —
  * `s6m6`'s write. Owner-scoped by RLS, same shape as `pushRecentGlyphToPond`.

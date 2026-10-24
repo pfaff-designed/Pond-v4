@@ -32,6 +32,13 @@ export interface PondContextValue {
    * yet and `resolveActivePond` returns null — the shell would flash unscoped.
    */
   addPond: (pond: Pond) => void
+  /**
+   * Update a pond's `name`/`glyph` in the in-memory list only — no network
+   * call (KAN-492). The write itself is the caller's job (`updatePond`); this
+   * is the local half, so every reader of `usePond()` sees the change the
+   * instant it is called, same as `addPond`.
+   */
+  patchPond: (pondId: string, patch: Partial<Pick<Pond, 'name' | 'glyph'>>) => void
 }
 
 /** Exported so a story can stand a pond list in without a Supabase round trip. */
@@ -41,6 +48,7 @@ export const PondContext = createContext<PondContextValue>({
   loading: false,
   reload: () => {},
   addPond: () => {},
+  patchPond: () => {},
 })
 
 export function PondProvider({ children }: { children: React.ReactNode }) {
@@ -63,6 +71,10 @@ export function PondProvider({ children }: { children: React.ReactNode }) {
 
   const addPond = useCallback((pond: Pond) => {
     setPonds((rows) => (rows.some((r) => r.id === pond.id) ? rows : [...rows, pond]))
+  }, [])
+
+  const patchPond = useCallback((pondId: string, patch: Partial<Pick<Pond, 'name' | 'glyph'>>) => {
+    setPonds((rows) => rows.map((row) => (row.id === pondId ? { ...row, ...patch } : row)))
   }, [])
 
   useEffect(() => {
@@ -109,8 +121,8 @@ export function PondProvider({ children }: { children: React.ReactNode }) {
   }, [pond?.id, pond?.lastPageId, nodeId])
 
   const value = useMemo(
-    () => ({ pond, ponds, loading, reload, addPond }),
-    [pond, ponds, loading, reload, addPond]
+    () => ({ pond, ponds, loading, reload, addPond, patchPond }),
+    [pond, ponds, loading, reload, addPond, patchPond]
   )
 
   return <PondContext.Provider value={value}>{children}</PondContext.Provider>

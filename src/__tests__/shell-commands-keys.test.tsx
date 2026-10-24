@@ -131,6 +131,7 @@ describe('ShellCommands — ⌘K while a pond is being made', () => {
             loading: false,
             reload: jest.fn(),
             addPond: jest.fn(),
+            patchPond: jest.fn(),
           }}
         >
           <ShellCommands />

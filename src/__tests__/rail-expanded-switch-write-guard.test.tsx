@@ -71,6 +71,7 @@ const providerValue = (pond: Pond): PondContextValue => ({
   loading: false,
   reload: () => {},
   addPond: () => {},
+  patchPond: () => {},
 })
 
 const withPond = (client: QueryClient, pond: Pond, strict = false) => {
