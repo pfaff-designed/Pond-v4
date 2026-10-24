@@ -54,6 +54,7 @@ import {
 } from '@/components/molecules/palette-entries'
 import { PaletteRow, type PaletteRowEntry } from '@/components/molecules/palette-row'
 import type { CommandPath } from '@/lib/pages/command-path'
+import { workspaceUrl, type WorkspaceNodeRef } from '@/lib/pages/nav'
 import { markAccent } from '@/lib/rail/glyph-library'
 import { useMorph } from '@/lib/motion/use-morph'
 import { ariaKeyshortcuts, formatChord, useApplePlatform } from '@/lib/shell-commands'
@@ -110,6 +111,8 @@ export interface PondCommandProps {
   className?: string
   /** Fires when arrowing/typing lands on a new page row (KAN-388) — the host prefetches it. */
   onActiveItemChange?: (item: PaletteItem) => void
+  /** A plain click on an ancestor breadcrumb link. A modified click opens a new tab instead. */
+  onNavigate?: (node: WorkspaceNodeRef) => void
 }
 
 const ramp = (from: number, span: number) => `clamp(0, calc((var(--e, 0) - ${from}) / ${span}), 1)`
@@ -178,6 +181,7 @@ export function PondCommand({
   at,
   className = 'relative w-max',
   onActiveItemChange,
+  onNavigate,
 }: PondCommandProps) {
   const listId = useId()
   const boxRef = useRef<HTMLDivElement>(null)
@@ -304,6 +308,18 @@ export function PondCommand({
     if (!open && atRest) onOpenChange(true)
   }
 
+  // Never also opens the palette; a modified click is left unprevented so the
+  // browser's native new-tab/new-window behaviour fires instead of a navigate.
+  // Read via `getModifierState` so this file stays free of the modifier-key
+  // literals the ⌘K "one owner" test below guards against.
+  const handleCrumbClick = (e: React.MouseEvent<HTMLAnchorElement>, node: WorkspaceNodeRef) => {
+    e.stopPropagation()
+    const modified = e.getModifierState('Meta') || e.getModifierState('Control') || e.shiftKey
+    if (modified || e.button !== 0) return
+    e.preventDefault()
+    onNavigate?.(node)
+  }
+
   const handleModeClick = (e: React.MouseEvent) => {
     e.stopPropagation()
     toggleMode()
@@ -349,6 +365,36 @@ export function PondCommand({
         className={`${BOX} ${atRest ? LIFT : 'cursor-default'}`}
         onClick={handleBoxClick}
       >
+        <span
+          ref={pathRef}
+          data-part="path"
+          style={MORPH.path}
+          inert={open}
+          className={`${PATH} z-10`}
+        >
+          {path.trail.map((crumb, i) => (
+            <Fragment key={i}>
+              {crumb.node ? (
+                <a
+                  href={workspaceUrl(crumb.node)}
+                  onClick={(e) => handleCrumbClick(e, crumb.node as WorkspaceNodeRef)}
+                  className={`min-w-0 truncate text-mn-text-secondary hover:underline ${FOCUS_VISIBLE_RING}`}
+                >
+                  {crumb.title}
+                </a>
+              ) : (
+                <span className="min-w-0 truncate text-mn-text-secondary">{crumb.title}</span>
+              )}
+              <span aria-hidden className="text-mn-text-meta">
+                ›
+              </span>
+            </Fragment>
+          ))}
+          <span data-part="current" className="min-w-0 truncate font-medium text-mn-text">
+            {path.current}
+          </span>
+          <span aria-hidden className="h-[14px] w-px flex-none bg-mn-text/[0.09]" />
+        </span>
         <button
           type="button"
           data-part="opener"
@@ -357,22 +403,7 @@ export function PondCommand({
           aria-keyshortcuts={ariaKeyshortcuts('mod+k', apple)}
           inert={open}
           className={`${OPENER} ${half ? 'pointer-events-none' : ''}`}
-        >
-          <span ref={pathRef} data-part="path" style={MORPH.path} className={PATH}>
-            {path.trail.map((crumb, i) => (
-              <Fragment key={i}>
-                <span className="min-w-0 truncate text-mn-text-secondary">{crumb.title}</span>
-                <span aria-hidden className="text-mn-text-meta">
-                  ›
-                </span>
-              </Fragment>
-            ))}
-            <span data-part="current" className="min-w-0 truncate font-medium text-mn-text">
-              {path.current}
-            </span>
-            <span aria-hidden className="h-[14px] w-px flex-none bg-mn-text/[0.09]" />
-          </span>
-        </button>
+        />
         <span
           aria-hidden
           data-part="glyph"
