@@ -1,16 +1,20 @@
 'use client'
 
 import { useContext, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { Extension } from '@tiptap/core'
 import { EditorContent, useEditor, type Editor } from '@tiptap/react'
 import { Placeholder } from '@tiptap/extensions'
 import { redo, undo } from '@tiptap/pm/history'
+import { Plugin } from '@tiptap/pm/state'
 import type { EditorView } from '@tiptap/pm/view'
 import { COMPOSER_TOP_CLEARANCE, composerClearanceMarginPx } from '@/lib/layout/composer-clearance'
 import { isRedoChord, isUndoChord } from '@/lib/shell-commands'
 import type { ModuleViewProps } from '../types'
+import { useBlockRow, type BlockRowValue } from '../block-row-context'
 import { registerTextEditor } from './active-editor'
 import { proseExtensions } from './extensions'
 import { parseMarkdown, serializeMarkdown } from './markdown'
+import { enterSplit } from './next-block'
 import { TEXT_PROSE_CLASS, textPlaceholderFor } from './prose'
 import { markdownHandlePaste } from './paste'
 import { ReferenceHighlight } from './reference-highlight'
@@ -35,13 +39,71 @@ const isUnwritten = (content: string): boolean => content.replace(/^#{1,6}\s*/, 
 // keystrokes not yet read — this must stay a stable, module-level reference.
 const ENABLED_PASTE_RULES = ['link']
 
+/** What the split-on-Enter plugin reads at the moment a key is actually pressed. */
+interface LatestForSplit {
+  data: TextBlock
+  stepOut?: BlockRowValue['stepOut']
+}
+
+/**
+ * Plain Enter splits the block in two through the row's `stepOut`, ahead of
+ * StarterKit's own Enter (a new paragraph INSIDE this block) — priority above
+ * StarterKit's default (100) puts this plugin's `handleKeyDown` first, so a
+ * split never also runs ProseMirror's default handling for the same key.
+ */
+const createSplitOnEnter = (latest: RefObject<LatestForSplit>) =>
+  Extension.create({
+    name: 'splitOnEnter',
+    priority: 1000,
+    addProseMirrorPlugins: () => [
+      new Plugin({
+        props: {
+          handleKeyDown: (view, event) => {
+            if (
+              event.key !== 'Enter' ||
+              event.shiftKey ||
+              event.altKey ||
+              event.metaKey ||
+              event.ctrlKey ||
+              event.isComposing ||
+              view.composing
+            )
+              return false
+            const split = enterSplit(view.state)
+            if (split === 'own') return false
+            if (split === 'stay') return true
+            const { data, stepOut } = latest.current
+            // Nothing before the caret: the empty block goes ABOVE this one
+            // (Enter at the start of a non-empty block; an empty FIRST list
+            // item, which also loses that item from `split.after`). `where`
+            // is explicit — never inferred downstream from `patch`/`content`'s
+            // shapes, which mis-fired for a side-by-side row's own 'above'
+            // case (KAN-506 fix).
+            if (split.before === '') {
+              const changed = split.after !== data.content
+              stepOut?.(changed ? { ...data, content: split.after } : undefined, '', 'above')
+              return true
+            }
+            stepOut?.({ ...data, content: split.before }, split.after, 'below')
+            return true
+          },
+        },
+      }),
+    ],
+  })
+
 /** The block's own placeholder and id, fixed at mount — neither is ever typed over. */
-const buildExtensions = (placeholder: string | undefined, blockId: string) => [
+const buildExtensions = (
+  placeholder: string | undefined,
+  blockId: string,
+  latest: RefObject<LatestForSplit>
+) => [
   ...proseExtensions,
   Placeholder.configure({
     placeholder: ({ node }) => textPlaceholderFor(node.type.name, placeholder),
   }),
   ReferenceHighlight.configure({ blockId }),
+  createSplitOnEnter(latest),
 ]
 
 /** A bare Tab over a selection — Shift-Tab and chorded Tab keep their meaning. */
@@ -176,23 +238,28 @@ const TextEditor = ({
   standIn: ReactNode
   pressRef: RefObject<Press | null>
 }) => {
+  const onSlashLine = useContext(SlashLineContext)
+  const { stepOut } = useBlockRow()
+  const latest = useRef({ data, onChange, onSlashLine, stepOut })
+  useEffect(() => {
+    latest.current = { data, onChange, onSlashLine, stepOut }
+  })
+
   // Options must be the same values on every render: any change makes `useEditor`
   // re-apply them, which redraws the document over keystrokes not yet read.
+  // `buildExtensions` only stores `latest`, read later from `handleKeyDown` —
+  // never during render.
+  // eslint-disable-next-line react-hooks/refs -- latest-ref idiom, see comment above
   const [opening] = useState(() => ({
     content: parseMarkdown(data.content).toJSON(),
     autofocus: autofocus && isUnwritten(data.content) ? ('end' as const) : false,
-    extensions: buildExtensions(data.placeholder, data.id),
+    extensions: buildExtensions(data.placeholder, data.id, latest),
   }))
   const written = useRef(data.content)
   // What this editor wrote that the page hasn't rendered back yet. The page can
   // render an earlier write after a later one is typed; that value is an echo,
   // not a change from outside, and must not rewind the document.
   const unechoed = useRef<string[]>([])
-  const onSlashLine = useContext(SlashLineContext)
-  const latest = useRef({ data, onChange, onSlashLine })
-  useEffect(() => {
-    latest.current = { data, onChange, onSlashLine }
-  })
 
   const editor = useEditor({
     extensions: opening.extensions,

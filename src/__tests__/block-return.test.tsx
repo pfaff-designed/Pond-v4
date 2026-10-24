@@ -14,6 +14,7 @@ import { BlockCanvas } from '@/components/organisms/BlockCanvas'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { PageCanvas } from '@/lib/modules/page-canvas'
 import type { Block } from '@/lib/documents/types'
+import { layoutRows } from '@/lib/modules/layout-rows'
 import { textEditorOf, writeInTextBlock } from './helpers/text-block'
 
 jest.mock('next/navigation', () => ({
@@ -746,5 +747,212 @@ describe('`/` on an empty line inside a text block splits it at that line', () =
         { id: expect.any(String), type: 'text', content: 'simmer with bay' },
       ])
     )
+  })
+})
+
+describe('Enter in a text block makes the next block', () => {
+  const alpha: Block = { id: 'b-alpha', type: 'text', content: 'alpha beta' }
+
+  it('at the end of the text makes a new empty block, focused, with its own handle', async () => {
+    const user = userEvent.setup()
+    const { onChange } = renderCanvas([alpha])
+    const field = await textBlockIn('b-alpha')
+    act(() => {
+      textEditorOf(field).commands.focus('end')
+    })
+    await waitFor(() => expect(field).toHaveFocus())
+
+    await user.keyboard('{Enter}')
+
+    const saved = lastBlocks(onChange)
+    expect(saved).toEqual([alpha, { id: expect.any(String), type: 'text', content: '' }])
+    const newId = saved[1].id
+    expect(handleOf(newId)).toBeInTheDocument()
+    const newField = await textBlockIn(newId)
+    await waitFor(() => expect(newField).toHaveFocus())
+  })
+
+  it('in the middle of the text splits it: the second half is its own block, caret at its start', async () => {
+    const user = userEvent.setup()
+    const { onChange } = renderCanvas([alpha])
+    const field = await textBlockIn('b-alpha')
+    act(() => {
+      // Position 7: right after "alpha " (the trailing space stays with the
+      // text before the caret — the split is exactly where it was cut).
+      textEditorOf(field).commands.focus(7)
+    })
+    await waitFor(() => expect(field).toHaveFocus())
+
+    await user.keyboard('{Enter}')
+
+    const saved = lastBlocks(onChange)
+    expect(saved).toEqual([
+      { id: 'b-alpha', type: 'text', content: 'alpha ' },
+      { id: expect.any(String), type: 'text', content: 'beta' },
+    ])
+    const newField = await textBlockIn(saved[1].id)
+    await waitFor(() => expect(newField).toHaveFocus())
+    expect(textEditorOf(newField).state.selection.from).toBe(1)
+  })
+
+  it('at the start of non-empty text puts an empty block above, keeping the id/label and the caret', async () => {
+    const user = userEvent.setup()
+    const labelled: Block = { ...alpha, label: 'intro' }
+    const { onChange } = renderCanvas([labelled])
+    const field = await textBlockIn('b-alpha')
+    act(() => {
+      textEditorOf(field).commands.focus('start')
+    })
+    await waitFor(() => expect(field).toHaveFocus())
+
+    await user.keyboard('{Enter}')
+
+    const saved = lastBlocks(onChange)
+    expect(saved).toEqual([{ id: expect.any(String), type: 'text', content: '' }, labelled])
+    expect(saved[0].id).not.toBe('b-alpha')
+    expect(field).toHaveFocus()
+  })
+
+  it('at the start of a labelled quote block: the empty block goes above, the quote keeps its id and label', async () => {
+    const user = userEvent.setup()
+    const quote: Block = { id: 'b-quote', type: 'text', content: '> alpha beta', label: 'said' }
+    const { onChange } = renderCanvas([quote])
+    const field = await textBlockIn('b-quote')
+    act(() => {
+      textEditorOf(field).commands.focus('start')
+    })
+    await waitFor(() => expect(field).toHaveFocus())
+
+    await user.keyboard('{Enter}')
+
+    const saved = lastBlocks(onChange)
+    expect(saved).toEqual([{ id: expect.any(String), type: 'text', content: '' }, quote])
+    expect(saved[0].id).not.toBe('b-quote')
+    expect(field).toHaveFocus()
+  })
+
+  it('in a side-by-side row: the new block goes after the row, full width, and the row stays together', async () => {
+    const user = userEvent.setup()
+    const textHalf: Block = { id: 'b-text', type: 'text', content: 'gamma', width: '1/2', rowStart: true }
+    const tableHalf: Block = { ...table, width: '1/2' }
+    const { onChange } = renderCanvas([textHalf, tableHalf])
+    const field = await textBlockIn('b-text')
+    act(() => {
+      textEditorOf(field).commands.focus('end')
+    })
+    await waitFor(() => expect(field).toHaveFocus())
+
+    await user.keyboard('{Enter}')
+
+    const saved = lastBlocks(onChange)
+    expect(saved.map((b) => b.id)).toEqual(['b-text', 'b-table', expect.any(String)])
+    expect(saved[2]).toMatchObject({ type: 'text', content: '', width: 'full' })
+    expect(layoutRows(saved).map((row) => row.map((b) => b.id))).toEqual([
+      ['b-text', 'b-table'],
+      [saved[2].id],
+    ])
+  })
+
+  it('in a side-by-side row, caret at the start of the FIRST member: the new block goes before the row, the row stays together', async () => {
+    const user = userEvent.setup()
+    const textHalf: Block = { id: 'b-text', type: 'text', content: 'gamma', width: '1/2', rowStart: true }
+    const tableHalf: Block = { ...table, width: '1/2' }
+    const { onChange } = renderCanvas([textHalf, tableHalf])
+    const field = await textBlockIn('b-text')
+    act(() => {
+      textEditorOf(field).commands.focus('start')
+    })
+    await waitFor(() => expect(field).toHaveFocus())
+
+    await user.keyboard('{Enter}')
+
+    const saved = lastBlocks(onChange)
+    expect(saved.map((b) => b.id)).toEqual([expect.any(String), 'b-text', 'b-table'])
+    expect(saved[0]).toMatchObject({ type: 'text', content: '', width: 'full' })
+    expect(layoutRows(saved).map((row) => row.map((b) => b.id))).toEqual([
+      [saved[0].id],
+      ['b-text', 'b-table'],
+    ])
+  })
+
+  it('in a side-by-side row, caret at the start of the SECOND member: the new block goes before the row, not between its members', async () => {
+    const user = userEvent.setup()
+    const textFirst: Block = { id: 'b-first', type: 'text', content: 'gamma', width: '1/2', rowStart: true }
+    const textSecond: Block = { id: 'b-second', type: 'text', content: 'delta', width: '1/2' }
+    const { onChange } = renderCanvas([textFirst, textSecond])
+    const field = await textBlockIn('b-second')
+    act(() => {
+      textEditorOf(field).commands.focus('start')
+    })
+    await waitFor(() => expect(field).toHaveFocus())
+
+    await user.keyboard('{Enter}')
+
+    const saved = lastBlocks(onChange)
+    expect(saved.map((b) => b.id)).toEqual([expect.any(String), 'b-first', 'b-second'])
+    expect(saved[0]).toMatchObject({ type: 'text', content: '', width: 'full' })
+    expect(layoutRows(saved).map((row) => row.map((b) => b.id))).toEqual([
+      [saved[0].id],
+      ['b-first', 'b-second'],
+    ])
+  })
+
+  it('Enter on an empty FIRST list item: the list keeps the rest, a new empty block goes above, focused', async () => {
+    const user = userEvent.setup()
+    const list: Block = { id: 'b-list', type: 'text', content: '- \n- two' }
+    const { onChange } = renderCanvas([list])
+    const field = await textBlockIn('b-list')
+    act(() => {
+      textEditorOf(field).commands.focus('start')
+    })
+    await waitFor(() => expect(field).toHaveFocus())
+
+    await user.keyboard('{Enter}')
+
+    const saved = lastBlocks(onChange)
+    expect(saved.map((b) => b.id)).toEqual([expect.any(String), 'b-list'])
+    expect(saved[0]).toMatchObject({ type: 'text', content: '' })
+    expect(saved[1]).toMatchObject({ type: 'text', content: expect.stringContaining('two') })
+    const newField = await textBlockIn(saved[0].id)
+    await waitFor(() => expect(newField).toHaveFocus())
+  })
+
+  it('on an empty, unlabelled block does nothing: one action, one write', async () => {
+    const user = userEvent.setup()
+    const { onChange } = renderCanvas([emptyLine])
+    const field = await textBlockIn('b-empty')
+    act(() => {
+      textEditorOf(field).commands.focus('end')
+    })
+    await waitFor(() => expect(field).toHaveFocus())
+
+    await user.keyboard('{Enter}')
+
+    expect(onChange).not.toHaveBeenCalled()
+    expect(field).toHaveFocus()
+  })
+
+  it('Backspace right after Enter takes the new empty block back out, caret at the end of the text', async () => {
+    const user = userEvent.setup()
+    const solo: Block = { id: 'b-solo', type: 'text', content: 'alpha' }
+    const { onChange } = renderCanvas([solo])
+    const field = await textBlockIn('b-solo')
+    act(() => {
+      textEditorOf(field).commands.focus('end')
+    })
+    await waitFor(() => expect(field).toHaveFocus())
+
+    await user.keyboard('{Enter}')
+    const newId = lastBlocks(onChange)[1].id
+    const newField = await textBlockIn(newId)
+    await waitFor(() => expect(newField).toHaveFocus())
+
+    await user.keyboard('{Backspace}')
+
+    await waitFor(() => expect(lastBlocks(onChange)).toEqual([solo]))
+    const above = await textBlockIn('b-solo')
+    await waitFor(() => expect(above).toHaveFocus())
+    const { state } = textEditorOf(above)
+    expect(state.selection.from).toBe(state.doc.content.size - 1)
   })
 })

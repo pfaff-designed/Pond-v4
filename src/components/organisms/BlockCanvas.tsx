@@ -383,9 +383,20 @@ function focusEmptyLineOrInsert(candidate: Block | undefined, insert: () => void
     insert()
     return
   }
-  if (focusTextBlock(document.getElementById(blockDomId(candidate.id)), 'end')) return
+  focusTextBlockSoon(candidate.id, 'end')
+}
+
+/**
+ * Focuses a text block's editor, retrying once on the next frame when it
+ * isn't mounted yet: `focusTextBlock` returning `false` there is a documented
+ * expected state (`focus.ts`, `immediatelyRender: false`), not a bug. A retry
+ * that still can't find a mounted editor simply gives up rather than claiming
+ * a guarantee that no longer holds.
+ */
+function focusTextBlockSoon(id: string, at: 'start' | 'end') {
+  if (focusTextBlock(document.getElementById(blockDomId(id)), at)) return
   requestAnimationFrame(() => {
-    focusTextBlock(document.getElementById(blockDomId(candidate.id)), 'end')
+    focusTextBlock(document.getElementById(blockDomId(id)), at)
   })
 }
 
@@ -1267,17 +1278,67 @@ export function BlockCanvas({
     removeBlockAt(stateIndex, false)
   }
 
+  // A row is never split by landing a new block between its members (KAN-506):
+  // when `base[atIndex]` is stored as part of a multi-member row, the insert
+  // point redirects to just before the row's first member ('above') or just
+  // after its last ('below') — the one home both `insertLineAfter` branches
+  // read, so neither can redirect past the row's own edge differently from
+  // the other. `rowStart` is never set on the redirected block: it is always
+  // full width, and a full-width block already overflows any row ahead of it
+  // by itself (`layoutRows`'s own `used + width > 1000` check), so `rowStart`
+  // would only ever repeat what the width already forces.
+  function rowRedirectedIndex(
+    base: Block[],
+    atIndex: number,
+    where: 'above' | 'below'
+  ): { insertAt: number; inRow: boolean } {
+    const row = layoutRows(base).find((member) => member.some((block) => block.id === base[atIndex].id))
+    if (!row || row.length < 2) return { insertAt: where === 'above' ? atIndex : atIndex + 1, inRow: false }
+    const insertAt =
+      where === 'above'
+        ? base.findIndex((b) => b.id === row[0].id)
+        : base.findIndex((b) => b.id === row[row.length - 1].id) + 1
+    return { insertAt, inRow: true }
+  }
+
   // Return on a focused block opens an empty text block after it; its editor
   // opens with the caret in it, ready for `/`. An optional `patch` replaces the
   // block at `index` in the SAME call (KAN-344's checklist: the empty item that
   // triggered this must be gone in the array this inserts into, not left for a
   // second `onChange` that would rebuild from the pre-patch `blocks` and drop it).
-  function insertLineAfter(index: number, patch?: Block) {
+  // `content` seeds the new block's text (KAN-506's split on Enter). `where` is
+  // explicit, never inferred from `patch`/`content`'s shapes (KAN-506 fix: that
+  // inference also mis-fired for a side-by-side row's own `'above'` case): Enter
+  // at the START of a non-empty block, and Enter on an empty FIRST list item,
+  // both land `'above'` — the empty block goes there instead of after.
+  function insertLineAfter(
+    index: number,
+    patch?: Block,
+    content = '',
+    where: 'above' | 'below' = 'below'
+  ) {
     const nb = emptyBlockForType('text')
     if (!nb) return
-    markInserted(nb.id)
     const base = patch ? blocks.map((b, i) => (i === index ? patch : b)) : blocks
-    commitStructuralBlocks([...base.slice(0, index + 1), nb, ...base.slice(index + 1)])
+    const { insertAt, inRow } = rowRedirectedIndex(base, index, where)
+    const nbPlaced = { ...nb, content, ...(inRow ? { width: 'full' as BlockWidth } : {}) }
+
+    if (where === 'above') {
+      commitStructuralBlocks([...base.slice(0, insertAt), nbPlaced, ...base.slice(insertAt)])
+      // `patch` only exists here when the caret's own line was removed (the
+      // empty FIRST list item case, "- \n- two": the list block keeps its id
+      // but loses that item) — its editor's content just moved out from under
+      // it, so focus has to move to the fresh empty block instead of staying.
+      if (patch) {
+        markInserted(nbPlaced.id)
+        focusTextBlockSoon(nbPlaced.id, 'start')
+      }
+      return
+    }
+
+    markInserted(nbPlaced.id)
+    commitStructuralBlocks([...base.slice(0, insertAt), nbPlaced, ...base.slice(insertAt)])
+    if (content) focusTextBlockSoon(nbPlaced.id, 'start')
   }
 
   /**
@@ -1977,7 +2038,7 @@ export function BlockCanvas({
         onRemoveEmpty={() => removeEmptyLineAt(i)}
         onExitEmpty={() => removeEmptyOnExit(block.id)}
         onDeleteBlock={() => requestDelete(i)}
-        onReturn={(patch) => insertLineAfter(i, patch)}
+        onReturn={(patch, content, where) => insertLineAfter(i, patch, content, where)}
         onMoveUp={() => moveBlockAt(i, 'up')}
         onMoveDown={() => moveBlockAt(i, 'down')}
         onSlashKey={() => openSlashMenuAt(i)}
@@ -2756,8 +2817,12 @@ function BlockEditor({
   onDeleteBlock: () => void
   /** Return on a focused block that is not text. An optional `patch` replaces
    *  this block in the same call (KAN-344: the checklist's "remove the empty
-   *  last item, then step out" is one `onChange`, never two). */
-  onReturn: (patch?: Block) => void
+   *  last item, then step out" is one `onChange`, never two). An optional
+   *  `content` seeds the new block's text (KAN-506's split on Enter). `where`
+   *  is explicit (never inferred from `patch`/`content`'s shapes): `'below'`
+   *  (default) is today's "after this block"; `'above'` is Enter at the start
+   *  of a non-empty block. */
+  onReturn: (patch?: Block, content?: string, where?: 'above' | 'below') => void
   onMoveUp?: () => void
   onMoveDown?: () => void
   onSlashKey?: () => void

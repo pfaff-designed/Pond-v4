@@ -20,9 +20,14 @@ export interface BlockRowValue {
    * optional `patch` replaces this row's own block in the SAME call (KAN-344's
    * checklist: removing the triggering empty item and stepping out must land
    * as one `onChange`, since a second call would rebuild from the pre-patch
-   * `blocks` array and silently drop the edit).
+   * `blocks` array and silently drop the edit). An optional `content` seeds
+   * the new block's text (KAN-506's split on Enter) — absent is today's
+   * empty block. `where` is explicit, never inferred from the patch/content
+   * shapes (KAN-506): `'below'` (default) puts the new block after this row's
+   * block; `'above'` puts it before — a row is never split by landing between
+   * its members either way.
    */
-  stepOut: (patch?: Block) => void
+  stepOut: (patch?: Block, content?: string, where?: 'above' | 'below') => void
   /**
    * One structural edit, as its own change-log record (KAN-355): the host
    * flushes whatever save is already pending (the typing before this edit),
