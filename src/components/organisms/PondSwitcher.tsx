@@ -21,6 +21,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { usePond } from '@/lib/pond/context'
 import { Caret } from '@/components/atoms/Caret'
 import { PondMark } from '@/components/atoms/PondMark'
+import { PondControl } from '@/components/atoms/PondControl'
 import { NewPondFlow } from './NewPondFlow'
 import { pondHref } from '@/lib/pond/active'
 import { usePondGlyph } from '@/lib/pond/glyph'
@@ -254,7 +255,7 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
 
             {editing && (
               <div
-                className="flex flex-col gap-[10px] px-[10px] py-[7px]"
+                className="flex flex-col items-start gap-[10px] px-[10px] py-[7px]"
                 // One home for Enter/Esc: a glyph pick leaves focus on the
                 // GlyphRow's radio button, not the name field, so the field's
                 // own `onKeyDown` would never see the key. Catching it here,
@@ -272,15 +273,13 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
                   }
                 }}
               >
-                <input
+                <PondControl
+                  kind="field"
                   ref={nameInputRef}
-                  type="text"
+                  label={null}
                   aria-label="pond name"
                   value={draftName}
-                  spellCheck={false}
-                  autoComplete="off"
-                  onChange={(e) => setDraftName(clampPondName(e.target.value))}
-                  className="min-w-0 rounded-[10px] bg-mn-text/[0.04] px-[10px] py-[7px] text-[13px] leading-[normal] text-mn-text caret-mn-text outline-none"
+                  onValueChange={(v) => setDraftName(clampPondName(v))}
                 />
                 <GlyphRow value={draftGlyph} onChange={setDraftGlyph} />
               </div>

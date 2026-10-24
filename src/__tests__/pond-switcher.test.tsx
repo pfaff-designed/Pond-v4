@@ -230,6 +230,18 @@ describe('the pond switcher', () => {
     expect(screen.getByRole('radio', { name: 'waves' })).toHaveAttribute('aria-checked', 'true')
   })
 
+  it("renders the name field through the component library's PondControl, not a hand-rolled input (KAN-492)", async () => {
+    const user = userEvent.setup()
+    renderSwitcher()
+    await user.click(await screen.findByRole('button', { name: /life/ }))
+    await user.click(screen.getByRole('menuitem', { name: /rename & icon/ }))
+
+    const nameField = screen.getByRole('textbox', { name: 'pond name' })
+    // `data-kind="field"` only ever lands on PondControl's own `Field.Root` —
+    // a plain `<input>` cannot carry it.
+    expect(nameField.closest('[data-kind="field"]')).toBeInTheDocument()
+  })
+
   it('caps the name field at POND_NAME_MAX on a long paste (KAN-492)', async () => {
     const user = userEvent.setup()
     renderSwitcher()
