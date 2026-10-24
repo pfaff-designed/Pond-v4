@@ -55,6 +55,23 @@
 -- null` (0026's own test for the pond root) — the Rail's toast reads "moved
 -- roof to <that title>" when roof lands at the top level.
 --
+-- HARDENING (KAN-466 fix). `apply_page_move` is `security definer`, so it
+-- bypasses `"pages: update own live rows"` (0027) entirely rather than
+-- inheriting its checks — the function's own WHERE clauses have to stand in
+-- for that policy's `deleted_at is null` and ownership guards, every place a
+-- row it touches isn't already pinned down by the initial `v_page` lookup.
+-- Three gaps, fixed inline rather than in a new function: (1) the moved-page
+-- lookup and the destination reindex both now require `deleted_at is null`,
+-- so a trashed page can be neither moved nor reindexed as someone else's
+-- live sibling. (2) `p_new_parent_id`, when given, must be a live page this
+-- caller owns in the SAME pond, and not the moved page or any page in its
+-- own subtree — otherwise a drag could hide a page (and its whole subtree)
+-- from every rail by parenting it to its own child, or reparent it across
+-- ponds. (3) `change_log_set_back`'s `move` branch (below) now refuses
+-- `page-gone` when the parent it would restore (or re-apply, on redo) to is
+-- itself trashed or gone, rather than letting that UPDATE's dangling
+-- `parent_id` surface as a raw `23503` foreign-key violation.
+--
 -- Down (manual):
 --   revoke execute on function public.move_page(uuid, uuid, uuid[]) from authenticated;
 --   drop function if exists public.move_page(uuid, uuid, uuid[]);
@@ -115,11 +132,44 @@ declare
   v_idx integer := 0;
 begin
   select * into v_page from public.pages
-    where id = p_page_id and user_id = auth.uid()
+    where id = p_page_id and user_id = auth.uid() and deleted_at is null
     for update;
   if not found then
     raise exception 'page % not found', p_page_id
       using errcode = 'no_data_found', detail = 'not-found';
+  end if;
+
+  -- The destination must be a live page this caller owns, in the same pond —
+  -- a trashed, cross-pond or someone-else's page is "not found" to a mover,
+  -- the same way v_page's own lookup above treats those. Checked separately
+  -- from a cycle (below) so each raises the refusal that actually fits it.
+  if p_new_parent_id is not null and not exists (
+    select 1 from public.pages
+     where id = p_new_parent_id
+       and user_id = auth.uid()
+       and pond_id is not distinct from v_page.pond_id
+       and deleted_at is null
+  ) then
+    raise exception 'page % not found', p_new_parent_id
+      using errcode = 'no_data_found', detail = 'not-found';
+  end if;
+
+  -- A page cannot become its own parent, or move under one of its own
+  -- descendants (that would hide it from every rail along with the whole
+  -- subtree underneath). The subtree walk's base case (`id = p_page_id`)
+  -- catches the first; the recursive step catches the second.
+  if p_new_parent_id is not null and exists (
+    with recursive subtree as (
+      select id from public.pages where id = p_page_id
+      union all
+      select p.id from public.pages p
+        join subtree s on p.parent_id = s.id
+       where p.user_id = v_page.user_id
+    )
+    select 1 from subtree where id = p_new_parent_id
+  ) then
+    raise exception 'page % is a descendant of %, and cannot become its parent', p_new_parent_id, p_page_id
+      using errcode = 'invalid_parameter_value', detail = 'invalid-new-parent';
   end if;
 
   v_old_parent_id := v_page.parent_id;
@@ -150,7 +200,7 @@ begin
   foreach v_id in array p_sibling_order loop
     update public.pages
        set "order" = v_idx, updated_at = v_now
-     where id = v_id and user_id = v_page.user_id;
+     where id = v_id and user_id = v_page.user_id and deleted_at is null;
     v_idx := v_idx + 1;
   end loop;
 
@@ -348,6 +398,20 @@ begin
     then
       raise exception 'page % changed since change_log record %', p_record.target_page_id, p_record.id
         using errcode = 'P0001', detail = 'page-changed';
+    end if;
+
+    -- The parent being restored (or re-applied, on redo) to must still be a
+    -- live page this record's own user/pond can reach — a trashed or gone
+    -- one would otherwise only surface as a raw 23503 off the UPDATE below.
+    if p_to ->> 'parentId' is not null and not exists (
+      select 1 from public.pages
+       where id = (p_to ->> 'parentId')::uuid
+         and user_id = p_record.user_id
+         and pond_id is not distinct from p_record.pond_id
+         and deleted_at is null
+    ) then
+      raise exception 'change_log record %: the page it moved to is gone', p_record.id
+        using errcode = 'no_data_found', detail = 'page-gone';
     end if;
 
     update public.pages

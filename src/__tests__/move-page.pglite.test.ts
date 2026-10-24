@@ -22,6 +22,14 @@ const actAs = async (db: PGlite, userId: string) => {
   await db.exec(`set test.uid = '${userId}'; set role authenticated;`)
 }
 
+const addPond = async (db: PGlite, userId: string): Promise<string> => {
+  const res = await db.query<{ id: string }>(
+    `insert into public.ponds (user_id, name, "order") values ($1, 'other pond', 1) returning id`,
+    [userId]
+  )
+  return res.rows[0].id
+}
+
 const lifePondId = async (db: PGlite, userId: string = USER): Promise<string> => {
   const res = await db.query<{ id: string }>(
     'select id from public.ponds where user_id = $1 order by "order" limit 1',
@@ -333,6 +341,126 @@ describe('0030_move_page — undo_change_log_record / redo_change_log_record on 
       refusal('P0001', 'page-changed')
     )
     expect(await pageOf(db, roof)).toEqual({ parent_id: parentC, order: 0 })
+    await db.close()
+  })
+})
+
+describe('0030_move_page — move_page() guards parentage (KAN-466 fix)', () => {
+  it('raises not-found for a trashed page, writing nothing', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pond = await lifePondId(db)
+    const parentA = await addPage(db, pond, { title: 'parent a' })
+    const parentB = await addPage(db, pond, { title: 'parent b' })
+    const roof = await addPage(db, pond, { parentId: parentA, title: 'roof' })
+    await db.query('update public.pages set deleted_at = now() where id = $1', [roof])
+
+    await actAs(db, USER)
+    await expect(
+      db.query('select public.move_page($1, $2, $3)', [roof, parentB, [roof]])
+    ).rejects.toMatchObject(refusal('P0002', 'not-found'))
+    await db.exec('reset role;')
+
+    const check = await db.query<{ parent_id: string | null }>(
+      'select parent_id from public.pages where id = $1',
+      [roof]
+    )
+    expect(check.rows[0].parent_id).toBe(parentA)
+    expect(await moveRecordsFor(db, roof)).toHaveLength(0)
+    await db.close()
+  })
+
+  it('raises invalid_parameter_value for a parent that is its own descendant, writing nothing', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pond = await lifePondId(db)
+    const roof = await addPage(db, pond, { title: 'roof' })
+    const child = await addPage(db, pond, { parentId: roof, title: 'child' })
+
+    await actAs(db, USER)
+    await expect(
+      db.query('select public.move_page($1, $2, $3)', [roof, child, [roof]])
+    ).rejects.toMatchObject(refusal('22023', 'invalid-new-parent'))
+    await db.exec('reset role;')
+
+    const check = await db.query<{ parent_id: string | null }>(
+      'select parent_id from public.pages where id = $1',
+      [roof]
+    )
+    expect(check.rows[0].parent_id).toBeNull()
+    expect(await moveRecordsFor(db, roof)).toHaveLength(0)
+    await db.close()
+  })
+
+  it('raises not-found for a parent in another pond, writing nothing', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pond = await lifePondId(db)
+    const otherPond = await addPond(db, USER)
+    const parentA = await addPage(db, pond, { title: 'parent a' })
+    const roof = await addPage(db, pond, { parentId: parentA, title: 'roof' })
+    const otherPondPage = await addPage(db, otherPond, { title: 'elsewhere' })
+
+    await actAs(db, USER)
+    await expect(
+      db.query('select public.move_page($1, $2, $3)', [roof, otherPondPage, [roof]])
+    ).rejects.toMatchObject(refusal('P0002', 'not-found'))
+    await db.exec('reset role;')
+
+    const check = await db.query<{ parent_id: string | null }>(
+      'select parent_id from public.pages where id = $1',
+      [roof]
+    )
+    expect(check.rows[0].parent_id).toBe(parentA)
+    expect(await moveRecordsFor(db, roof)).toHaveLength(0)
+    await db.close()
+  })
+
+  it('raises not-found for a trashed parent, writing nothing', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pond = await lifePondId(db)
+    const parentA = await addPage(db, pond, { title: 'parent a' })
+    const parentB = await addPage(db, pond, { title: 'parent b' })
+    const roof = await addPage(db, pond, { parentId: parentA, title: 'roof' })
+    await db.query('update public.pages set deleted_at = now() where id = $1', [parentB])
+
+    await actAs(db, USER)
+    await expect(
+      db.query('select public.move_page($1, $2, $3)', [roof, parentB, [roof]])
+    ).rejects.toMatchObject(refusal('P0002', 'not-found'))
+    await db.exec('reset role;')
+
+    const check = await db.query<{ parent_id: string | null }>(
+      'select parent_id from public.pages where id = $1',
+      [roof]
+    )
+    expect(check.rows[0].parent_id).toBe(parentA)
+    expect(await moveRecordsFor(db, roof)).toHaveLength(0)
+    await db.close()
+  })
+})
+
+describe('0030_move_page — undo refuses a restore parent that is gone (KAN-466 fix)', () => {
+  it('refuses page-gone to undo a move once the old parent has been trashed, and changes nothing', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pond = await lifePondId(db)
+    const parentA = await addPage(db, pond, { title: 'parent a' })
+    const parentB = await addPage(db, pond, { title: 'parent b' })
+    const roof = await addPage(db, pond, { parentId: parentA, title: 'roof' })
+
+    await actAs(db, USER)
+    await db.query('select public.move_page($1, $2, $3)', [roof, parentB, [roof]])
+    await db.exec('reset role;')
+    const record = (await moveRecordsFor(db, roof))[0]
+
+    await db.query('update public.pages set deleted_at = now() where id = $1', [parentA])
+
+    await expect(undo(db, [record.id], pond)).rejects.toMatchObject(
+      refusal('P0002', 'page-gone')
+    )
+    expect(await pageOf(db, roof)).toEqual({ parent_id: parentB, order: 0 })
     await db.close()
   })
 })
