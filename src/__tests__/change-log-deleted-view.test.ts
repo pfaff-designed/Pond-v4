@@ -206,6 +206,8 @@ describe('purgeDay', () => {
   const cases: Array<{ name: string; createdAt: string; expected: [number, number, number] }> = [
     { name: 'delete at 00:30 local, 30 days before the US fall-back', createdAt: '2026-10-02T00:30:00', expected: [2026, 11, 1] },
     { name: 'delete at 23:30 local, 30 days before the US fall-back', createdAt: '2026-10-02T23:30:00', expected: [2026, 11, 1] },
+    { name: 'delete at 00:30 local whose +720h crosses local midnight at the fall-back (regression: ms math lands a day early)', createdAt: '2026-10-03T00:30:00', expected: [2026, 11, 2] },
+    { name: 'delete at 23:30 local whose +720h crosses local midnight at the spring-forward (regression: ms math lands a day late)', createdAt: '2027-02-12T23:30:00', expected: [2027, 3, 14] },
     { name: '30 days before the US spring-forward', createdAt: '2027-02-12T09:00:00', expected: [2027, 3, 14] },
     { name: 'spans a leap day', createdAt: '2028-02-10T09:00:00', expected: [2028, 3, 11] },
     { name: 'a plain case with no DST or leap-day crossing', createdAt: '2026-01-01T09:00:00', expected: [2026, 1, 31] },

@@ -121,6 +121,14 @@ describe('buildTrashRows', () => {
     expect(row.goes).toBe(expected)
   })
 
+  it('reads `goes` as "in 30 days" for a delete at local midnight-eve that crosses the fall-back (KAN-500 regression)', () => {
+    const createdAt = '2026-10-03T00:30:00'
+    const now = new Date(createdAt)
+    const [row] = buildTrashRows([record({ createdAt })], new Map(), new Set(), 'life', now)
+
+    expect(row.goes).toBe('in 30 days')
+  })
+
   it('counts `goes` from the second delete when a page is deleted, restored, then deleted again', () => {
     const firstDelete = record({ id: 'rec-1', createdAt: '2026-08-01T12:00:00.000Z' })
     const restore = record({
