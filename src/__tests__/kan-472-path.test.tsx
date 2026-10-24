@@ -149,7 +149,17 @@ describe('KAN-472 path test — ancestor crumbs navigate, the current crumb open
     await ready()
 
     const houseLink = await screen.findByRole('link', { name: 'house' })
-    houseLink.focus()
+    const opener = screen.getByRole('button', { name: 'gutters' })
+
+    // Walk the real tab order from the page until the house link gets focus,
+    // asserting the opener button never gets there first.
+    let guard = 0
+    while (document.activeElement !== houseLink) {
+      expect(document.activeElement).not.toBe(opener)
+      await user.tab()
+      guard += 1
+      if (guard > 100) throw new Error('Tab never reached the house ancestor link')
+    }
     expect(houseLink).toHaveFocus()
 
     await user.keyboard('{Enter}')
