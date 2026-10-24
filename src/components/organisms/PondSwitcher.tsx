@@ -147,7 +147,10 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
             <button
               type="button"
               role="menuitem"
-              onClick={() => setNaming(true)}
+              onClick={() => {
+                setNaming(true)
+                setOpen(false)
+              }}
               className="flex items-center gap-[9px] rounded-[10px] px-[10px] py-[7px] text-[13px] leading-[normal] font-normal text-mn-text-meta"
             >
               <Plus />
@@ -157,14 +160,7 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
         </>
       )}
 
-      {naming && (
-        <NewPondFlow
-          onClose={(created) => {
-            setNaming(false)
-            if (created) setOpen(false)
-          }}
-        />
-      )}
+      {naming && <NewPondFlow onClose={() => setNaming(false)} />}
     </div>
   )
 }

@@ -389,6 +389,21 @@ describe('the pond switcher', () => {
     expect(push).not.toHaveBeenCalled()
   })
 
+  it('closes the ponds menu when new pond opens the sheet, and keeps it closed through Esc', async () => {
+    const user = userEvent.setup()
+    renderSwitcher()
+    await user.click(await screen.findByRole('button', { name: /life/ }))
+    await user.click(screen.getByRole('menuitem', { name: /new pond/ }))
+
+    expect(screen.getByRole('dialog', { name: 'New pond' })).toBeInTheDocument()
+    expect(screen.queryByRole('menu', { name: 'Ponds' })).not.toBeInTheDocument()
+
+    await user.keyboard('{Escape}')
+
+    expect(screen.queryByRole('dialog', { name: 'New pond' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menu', { name: 'Ponds' })).not.toBeInTheDocument()
+  })
+
   it('Esc and a scrim click do nothing while make pond is in flight', async () => {
     const user = userEvent.setup()
     // Never resolves within the test: `pending` stays true for its whole body.
