@@ -222,6 +222,13 @@ export function ShellCommands() {
     start: startTemplateSheet,
   } = templateSheet
   const closeNewPondSheet = useCallback(() => setNaming(null), [])
+  // ⌘K must not close the sheet mid-create (a dismissed-but-still-running create
+  // would still land) — a ref, not state, since it only needs reading inside the
+  // keydown handler, not a re-render.
+  const pondCreatePendingRef = useRef(false)
+  const handlePondCreatePendingChange = useCallback((next: boolean) => {
+    pondCreatePendingRef.current = next
+  }, [])
 
   const closeReport = useCallback(() => {
     setReportOpen(false)
@@ -306,7 +313,9 @@ export function ShellCommands() {
         e.preventDefault()
         e.stopPropagation()
         if (templateSheetOpen) closeTemplateSheet()
-        else if (pondSheetOpen) closeNewPondSheet()
+        else if (pondSheetOpen) {
+          if (!pondCreatePendingRef.current) closeNewPondSheet()
+        }
         else if (reportOpen) closeReport()
         else setPaletteOpen((prev) => !prev)
         return
@@ -498,7 +507,13 @@ export function ShellCommands() {
 
   return (
     <>
-      {naming !== null && <NewPondFlow defaultName={naming} onClose={closeNewPondSheet} />}
+      {naming !== null && (
+        <NewPondFlow
+          defaultName={naming}
+          onClose={closeNewPondSheet}
+          onPendingChange={handlePondCreatePendingChange}
+        />
+      )}
       {reportOpen && (
         <ReportProblemBox
           pageTitle={pageTitle}

@@ -32,8 +32,15 @@ jest.mock('@/lib/pages/tree', () => ({
   ]),
   insertPageOptimistic: jest.fn(),
 }))
+jest.mock('@/lib/pond/client', () => ({
+  listPonds: jest.fn(),
+  createPond: jest.fn(),
+  setPondLastPage: jest.fn(),
+}))
 
 import { ShellCommands } from '@/components/organisms/ShellCommands'
+import { createPond } from '@/lib/pond/client'
+import { PondContext } from '@/lib/pond/context'
 
 const LIST = { name: 'command palette' }
 const SHEET = { name: 'Template name' }
@@ -96,5 +103,63 @@ describe('ShellCommands — ⌘K while the save-as-template sheet is open', () =
 
     press({ metaKey: true })
     expect(await screen.findByRole('combobox', LIST)).toBeInTheDocument()
+  })
+})
+
+describe('ShellCommands — ⌘K while a pond is being made', () => {
+  const ACTIVE_POND = { id: 'p-active', name: 'life', glyph: 'waves-02', theme: 'paper', order: 0 }
+  // Excluded from the palette's own `new pond "q"` row by `pondItems` filtering
+  // out the active pond, so this one both supplies the query match AND is the
+  // ponds list's only non-active entry.
+  const MATCHING_POND = {
+    id: 'p-match',
+    name: 'Studio',
+    glyph: 'lightning-03',
+    theme: 'ink',
+    order: 1,
+  }
+
+  const renderShellWithPonds = () =>
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <PondContext.Provider
+          value={{
+            pond: ACTIVE_POND,
+            ponds: [ACTIVE_POND, MATCHING_POND],
+            loading: false,
+            reload: jest.fn(),
+            addPond: jest.fn(),
+          }}
+        >
+          <ShellCommands />
+        </PondContext.Provider>
+      </QueryClientProvider>
+    )
+
+  it('leaves the sheet open and does not raise the list behind it while the create is in flight', async () => {
+    onPlatform('MacIntel')
+    // Never resolves within the test: `pending` stays true for the whole body,
+    // matching the real "⌘K pressed before the create settles" case.
+    ;(createPond as jest.Mock).mockReturnValue(new Promise(() => {}))
+    renderShellWithPonds()
+
+    press({ metaKey: true })
+    fireEvent.change(await screen.findByRole('combobox', LIST), { target: { value: 'studio' } })
+    fireEvent.click(await screen.findByRole('option', { name: /new pond/ }))
+
+    const sheet = await screen.findByRole('dialog', { name: 'New pond' })
+    expect(screen.getByPlaceholderText('Name your pond')).toHaveValue('studio')
+
+    fireEvent.click(screen.getByRole('button', { name: 'continue' }))
+    expect(sheet).toHaveTextContent('2 of 2')
+    fireEvent.click(screen.getByRole('button', { name: 'make pond' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'make pond' })).toBeDisabled())
+
+    press({ metaKey: true })
+
+    expect(screen.getByRole('dialog', { name: 'New pond' })).toBeInTheDocument()
+    expect(screen.queryByRole('combobox', LIST)).toBeNull()
   })
 })

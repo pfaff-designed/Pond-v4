@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect } from 'react'
 import { useCreatePond } from '@/lib/pond/use-create-pond'
 import { setMode } from '@/lib/theme/mode'
 import { NewPondSheet } from './NewPondSheet'
@@ -13,15 +14,24 @@ import { NewPondSheet } from './NewPondSheet'
  * The theme applies once, at creation, never on a later switch (KAN-503 owns
  * that): `options.theme` is only present when the person actually clicked a
  * pill in the sheet, so an untouched sheet leaves the person's own mode alone.
+ *
+ * `onPendingChange` surfaces `pending` to a closer outside the sheet (⌘K, owned
+ * by `ShellCommands`) that can't see the sheet's own `pendingRef` guard, so the
+ * one in-flight-create rule stays in this one place.
  */
 export function NewPondFlow({
   defaultName,
   onClose,
+  onPendingChange,
 }: {
   defaultName?: string
   onClose: (created: boolean) => void
+  onPendingChange?: (pending: boolean) => void
 }) {
   const { create, pending, failure } = useCreatePond()
+  useEffect(() => {
+    onPendingChange?.(pending)
+  }, [pending, onPendingChange])
   return (
     <NewPondSheet
       defaultName={defaultName}
