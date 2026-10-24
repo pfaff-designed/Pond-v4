@@ -47,6 +47,11 @@ import { FOCUS_VISIBLE_RING } from '@/components/atoms/focus-ring'
 import { PondControl } from '@/components/atoms/PondControl'
 import { holdInkGround, holdPaperGround } from '@/lib/theme/mode'
 
+/** No board value exists; a pond's name renders in the rail head and the switcher
+ *  menu, so a generous title length rather than the field's own cap. `PAGE_NAME_MAX`
+ *  (`page-proposals.ts`) caps a proposed page's name, a different fact. */
+const POND_NAME_MAX = 80
+
 /** `s6m2`'s glyph row, in the board's order. The first is the column default. */
 const GLYPHS = ['lightning-03', 'waves-02', 'star-01', 'house', 'ring', 'heart'] as const
 
@@ -275,7 +280,7 @@ export function NewPondSheet({
                 kind="field"
                 label="Name your pond"
                 value={name}
-                onValueChange={setName}
+                onValueChange={(v) => setName(v.slice(0, POND_NAME_MAX))}
                 disabled={pending}
                 autoFocus
                 onKeyDown={(e) => {

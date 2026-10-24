@@ -26,6 +26,18 @@ describe('NewPondSheet — one name field, a required name (KAN-487)', () => {
   })
 })
 
+describe('NewPondSheet — the name field has a length limit (KAN-502)', () => {
+  it('clamps typed input at 80 characters', async () => {
+    const user = userEvent.setup()
+    render(<NewPondSheet onCreate={jest.fn()} onCancel={jest.fn()} />)
+
+    const field = screen.getByPlaceholderText('Name your pond')
+    await user.type(field, 'a'.repeat(90))
+
+    expect(field).toHaveValue('a'.repeat(80))
+  })
+})
+
 describe('NewPondSheet — back and Esc (KAN-488)', () => {
   it('Escape or ArrowLeft on step 2 returns to step 1 with the name intact', async () => {
     const user = userEvent.setup()
