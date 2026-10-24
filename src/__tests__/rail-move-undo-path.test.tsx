@@ -28,7 +28,8 @@ import { fetchPages, type PageRow } from '@/lib/pages/tree'
 import { movePage } from '@/lib/pages/client'
 import { createClient } from '@/lib/supabase/client'
 import { undoStep, redoStep } from '@/lib/change-log/undo'
-import type { MoveSnapshot } from '@/lib/change-log/types'
+import { describeChange } from '@/lib/change-log/page-changes'
+import type { ChangeLogRecord, MoveSnapshot } from '@/lib/change-log/types'
 import type { Block } from '@/lib/modules/content'
 import type { Pond } from '@/lib/pond/client'
 
@@ -231,6 +232,52 @@ function dragRoofOntoHouse() {
 
 const parentIdOfRoof = () => table.find((r) => r.id === 'roof')?.parent_id ?? null
 
+// The rendered tree's own ARIA sibling coordinates (`flattenVisible`,
+// src/lib/rail/tree.ts) — reading these off the real `roof` treeitem, rather
+// than the mock-mutated `table`, proves the RAIL re-rendered from a genuine
+// refetch (`applyUndoOutcome`'s invalidation), not just that the fake RPCs
+// agreed on a parent id.
+function roofTreeCoords() {
+  const row = screen.getByRole('treeitem', { name: 'roof' })
+  return {
+    level: row.getAttribute('aria-level'),
+    posInSet: row.getAttribute('aria-posinset'),
+    setSize: row.getAttribute('aria-setsize'),
+  }
+}
+const waitForRoofTreeCoords = (expected: ReturnType<typeof roofTreeCoords>) =>
+  waitFor(() => expect(roofTreeCoords()).toEqual(expected))
+
+// house and roof start as life's only two children, house (order 0) then roof
+// (order 1) — roof's "old position" throughout this test.
+const ROOF_AT_OLD_TOP_LEVEL_POSITION = { level: '2', posInSet: '2', setSize: '2' }
+const ROOF_UNDER_HOUSE = { level: '3', posInSet: '1', setSize: '1' }
+
+/** The change log's own label for a `move` record carrying `after` — reused
+ *  by `describeChange` (page-changes.ts) the same way a real log row would. */
+function describeMoveRecord(after: MoveSnapshot): string {
+  const record: ChangeLogRecord = {
+    id: 'move-record',
+    userId: 'user-1',
+    pondId: POND_ID,
+    status: 'accepted',
+    action: 'move',
+    actor: 'you',
+    targetPageId: 'roof',
+    targetBlockId: null,
+    before: null,
+    after,
+    sourceThreadId: null,
+    toolCallId: null,
+    read: null,
+    links: {},
+    transitions: [],
+    createdAt: AT,
+    statusAt: AT,
+  }
+  return describeChange(record, null)
+}
+
 describe("rail drag-move: the toast's open/undo and ⌘Z/⇧⌘Z share one undo stack (KAN-466)", () => {
   it('walks PATH_STEPS: drag, open, undo, drag again, ⌘Z, ⇧⌘Z', async () => {
     renderPath()
@@ -241,26 +288,30 @@ describe("rail drag-move: the toast's open/undo and ⌘Z/⇧⌘Z share one undo 
     await screen.findByText('moved roof to house ·')
     expect(screen.getByRole('button', { name: 'open' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'undo' })).toBeInTheDocument()
-    await waitFor(() => expect(parentIdOfRoof()).toBe('house'))
+    await waitForRoofTreeCoords(ROOF_UNDER_HOUSE)
+
+    const firstMove = moveLog.get('record-1')
+    expect(firstMove).toBeDefined()
+    expect(describeMoveRecord(firstMove!.after)).toBe('moved to house')
 
     await userEvent.click(screen.getByRole('button', { name: 'open' }))
     expect(routerPush).toHaveBeenCalledWith(expect.stringContaining('nodeId=roof'))
 
     await userEvent.click(screen.getByRole('button', { name: 'undo' }))
     expect(screen.queryByText('moved roof to house ·')).not.toBeInTheDocument()
-    await waitFor(() => expect(parentIdOfRoof()).toBe(null))
+    await waitForRoofTreeCoords(ROOF_AT_OLD_TOP_LEVEL_POSITION)
 
     dragRoofOntoHouse()
     await waitFor(() => expect(movePage).toHaveBeenCalledTimes(2))
-    await waitFor(() => expect(parentIdOfRoof()).toBe('house'))
+    await waitForRoofTreeCoords(ROOF_UNDER_HOUSE)
 
     const user = userEvent.setup()
     await user.click(document.body)
     await user.keyboard('{Meta>}z{/Meta}')
-    await waitFor(() => expect(parentIdOfRoof()).toBe(null))
+    await waitForRoofTreeCoords(ROOF_AT_OLD_TOP_LEVEL_POSITION)
 
     await user.keyboard('{Meta>}{Shift>}z{/Shift}{/Meta}')
-    await waitFor(() => expect(parentIdOfRoof()).toBe('house'))
+    await waitForRoofTreeCoords(ROOF_UNDER_HOUSE)
   })
 })
 
