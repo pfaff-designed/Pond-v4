@@ -8,9 +8,6 @@
  */
 
 import { usePond } from './context'
-// Re-exported from the leaf `./name-cap` module (see its header comment for why
-// the cap itself doesn't live here).
-export { POND_NAME_MAX, clampPondName } from './name-cap'
 
 export function defaultPondName(): string {
   return 'life'

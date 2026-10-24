@@ -17,7 +17,7 @@
  * that kept `import from notes` out of #177.
  */
 
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { usePond } from '@/lib/pond/context'
 import { Caret } from '@/components/atoms/Caret'
 import { PondMark } from '@/components/atoms/PondMark'
@@ -26,7 +26,7 @@ import { NewPondFlow } from './NewPondFlow'
 import { pondHref } from '@/lib/pond/active'
 import { usePondGlyph } from '@/lib/pond/glyph'
 import { useRenamePond } from '@/lib/pond/use-rename-pond'
-import { clampPondName } from '@/lib/pond/name'
+import { clampPondName } from '@/lib/pond/name-cap'
 import { GLYPHS, GlyphRow } from '@/components/molecules/GlyphRow'
 
 /** The board's `menuRow` plus a 12×12 stroked plus. */
@@ -107,29 +107,37 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
     rename(active.id, { name: trimmed, glyph: draftGlyph })
   }
 
-  const handleCancel = () => {
+  // A stable reference: the document Esc listener below depends on it, and an
+  // unstable one would tear down and re-add that listener on every render.
+  const handleCancel = useCallback(() => {
     pendingFocusRef.current = 'list'
     setEditing(false)
-  }
+  }, [])
 
-  // Second Esc — the popover closing once the editor is already gone — has to
-  // be a `document` listener: Esc unmounts the editor without giving focus
-  // back to anything inside the menu, so nothing in the React tree is left to
-  // bubble a keydown through. Gated to `!editing` so it never also fires for
-  // the FIRST Esc, which the editor's own `onKeyDown` (below) already handles
-  // — that duplication (both document and the field reacting to one Esc) was
-  // the bug; this listener now only ever sees Esc presses the editor doesn't.
+  // A `document` listener, not just the editor container's own `onKeyDown`:
+  // a click on the gap between glyph cells (or anywhere else inside the menu
+  // that isn't focusable) drops focus to `<body>`, which is an ancestor of
+  // the editor, not a descendant — a keydown there bubbles straight to
+  // `document` and never passes through the editor's own handler at all.
+  // While editing, this listener reverts the draft (same as the editor's own
+  // first Esc); once the editor is gone, it closes the popover. It never
+  // double-fires with the editor's own handler: when focus IS inside the
+  // editor, that handler's `stopPropagation` keeps the bubbling keydown from
+  // ever reaching this one.
   useEffect(() => {
-    if (!open || editing) return
+    if (!open) return
     const handleDocumentKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        pendingFocusRef.current = 'switcher'
-        setOpen(false)
+      if (e.key !== 'Escape') return
+      if (editing) {
+        handleCancel()
+        return
       }
+      pendingFocusRef.current = 'switcher'
+      setOpen(false)
     }
     document.addEventListener('keydown', handleDocumentKeyDown)
     return () => document.removeEventListener('keydown', handleDocumentKeyDown)
-  }, [open, editing])
+  }, [open, editing, handleCancel])
 
   // Before migration 0018 is applied the table does not exist and `listPonds`
   // returns []. The head then renders the glyph and name without the chevron —
@@ -263,6 +271,10 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
                 // descendant is focused.
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
+                    // An IME's own Enter confirms the composed text, not the
+                    // editor's save (NewPondSheet's Escape does the same check
+                    // for its own key, src/__tests__/pond-switcher.test.tsx:514).
+                    if (e.nativeEvent.isComposing) return
                     e.preventDefault()
                     e.stopPropagation()
                     handleSave()

@@ -45,7 +45,7 @@ import { useEffect, useRef, useState } from 'react'
 import { FOCUS_VISIBLE_RING } from '@/components/atoms/focus-ring'
 import { PondControl } from '@/components/atoms/PondControl'
 import { GLYPHS, GlyphRow } from '@/components/molecules/GlyphRow'
-import { clampPondName } from '@/lib/pond/name'
+import { clampPondName } from '@/lib/pond/name-cap'
 import { holdInkGround, holdPaperGround } from '@/lib/theme/mode'
 
 /** `s6m2`'s theme row. `paper` is the column default. Only these two are live (#175 owns the rest). */

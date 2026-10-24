@@ -17,7 +17,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { PondSwitcher } from '@/components/organisms/PondSwitcher'
 import { PondProvider } from '@/lib/pond/context'
-import { POND_NAME_MAX } from '@/lib/pond/name'
+import { POND_NAME_MAX } from '@/lib/pond/name-cap'
 
 const push = jest.fn()
 
@@ -323,6 +323,45 @@ describe('the pond switcher', () => {
     await user.keyboard('{Escape}')
     expect(screen.queryByRole('menu', { name: 'Ponds' })).not.toBeInTheDocument()
     expect(document.activeElement).toBe(screen.getByRole('button', { name: /life/ }))
+  })
+
+  it('Esc still reverts and returns to the menu once focus has left the editor to <body> (KAN-492)', async () => {
+    const user = userEvent.setup()
+    renderSwitcher()
+    await user.click(await screen.findByRole('button', { name: /life/ }))
+    await user.click(screen.getByRole('menuitem', { name: /rename & icon/ }))
+
+    const nameField = screen.getByRole('textbox', { name: 'pond name' })
+    await user.clear(nameField)
+    await user.type(nameField, 'Studio')
+    // A click on the gap between glyph cells drops focus to <body> with the
+    // editor still open — the editor container's own `onKeyDown` never sees
+    // an Escape whose target is <body>, since body is an ancestor of the
+    // editor, not a descendant.
+    nameField.blur()
+    expect(document.activeElement).toBe(document.body)
+
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+
+    expect(screen.queryByRole('textbox', { name: 'pond name' })).not.toBeInTheDocument()
+    expect(screen.getByRole('menu', { name: 'Ponds' })).toBeInTheDocument()
+    expect(screen.queryByText('Studio')).not.toBeInTheDocument()
+    expect(updatePond).not.toHaveBeenCalled()
+  })
+
+  it('does not save on Enter mid-IME-composition (KAN-492)', async () => {
+    const user = userEvent.setup()
+    renderSwitcher()
+    await user.click(await screen.findByRole('button', { name: /life/ }))
+    await user.click(screen.getByRole('menuitem', { name: /rename & icon/ }))
+
+    const nameField = screen.getByRole('textbox', { name: 'pond name' })
+    await user.clear(nameField)
+    await user.type(nameField, 'Studio')
+    fireEvent.keyDown(nameField, { key: 'Enter', isComposing: true })
+
+    expect(updatePond).not.toHaveBeenCalled()
+    expect(screen.getByRole('textbox', { name: 'pond name' })).toBeInTheDocument()
   })
 
   it('disables rename & icon while a rename is in flight, so a second edit cannot start', async () => {

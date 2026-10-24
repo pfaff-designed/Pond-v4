@@ -1,12 +1,12 @@
 /**
  * Unit test for `updatePond`'s name cap (src/lib/pond/client.ts, KAN-492) —
- * `clampPondName`/`POND_NAME_MAX` (src/lib/pond/name.ts) is the cap's one
+ * `clampPondName`/`POND_NAME_MAX` (src/lib/pond/name-cap.ts) is the cap's one
  * home; `updatePond` applies it to the trimmed name before the write, same
  * mocked-chain approach as `pond-create-name.test.ts`.
  */
 
 import { updatePond } from '@/lib/pond/client'
-import { POND_NAME_MAX } from '@/lib/pond/name'
+import { POND_NAME_MAX } from '@/lib/pond/name-cap'
 
 jest.mock('@/lib/supabase/client', () => ({ createClient: jest.fn() }))
 import { createClient } from '@/lib/supabase/client'

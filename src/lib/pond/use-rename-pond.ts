@@ -28,8 +28,8 @@ export function useRenamePond() {
     inFlight.current = true
     setPending(true)
     const previous = ponds.find((p) => p.id === pondId)
-    patchPond(pondId, patch)
     try {
+      patchPond(pondId, patch)
       await updatePond(pondId, patch)
     } catch (err) {
       console.error(err)
