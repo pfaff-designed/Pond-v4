@@ -536,6 +536,7 @@ export function ShellCommands() {
         pondName={pondName}
         parentTitle={parent.title}
         onSelect={handlePaletteSelect}
+        onNavigate={(node) => openWorkspaceUrl(workspaceUrl(node), router)}
         onActiveItemChange={handleActiveItemChange}
         ask={!inZen}
         visits={recentPageIds}
