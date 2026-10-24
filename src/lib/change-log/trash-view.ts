@@ -48,18 +48,24 @@ export interface TrashRow {
 
 const dayWord = (n: number): string => `${n} ${n === 1 ? 'day' : 'days'}`
 
-/** Calendar days from `now` until `createdAt + TRASH_RETENTION_DAYS` — the
- *  negation of `daysBetween`, which measures the other direction (elapsed
- *  days since `iso`, as of `now`). Can go negative: the purge (KAN-452) isn't
- *  built, so a trashed page can sit past its own retention window. */
-const daysUntilGone = (createdAt: string, now: Date): number => {
-  const purgeMoment = purgeDay(createdAt).toISOString()
-  return -daysBetween(now, purgeMoment)
+/** Calendar days from `now` until `purgeMoment`, the negation of
+ *  `daysBetween`, which measures the other direction (elapsed days since
+ *  `iso`, as of `now`). Can go negative: the purge (KAN-452) isn't built, so
+ *  a trashed page can sit past its own retention window.
+ *
+ *  `null` when `purgeMoment` is `null` — the caller's own `purgeDay` call
+ *  already threw (dev) or logged (production) on an unreadable `createdAt`;
+ *  this never calls `.toISOString()` on that failure (KAN-551). */
+const daysUntilGone = (purgeMoment: Date | null, now: Date): number | null => {
+  if (purgeMoment === null) return null
+  return -daysBetween(now, purgeMoment.toISOString())
 }
 
 /** `daysUntilGone` clamped at the reader: zero or overdue both read `today`,
- *  never a negative day count. */
-const goesLabel = (daysLeft: number): string => (daysLeft <= 0 ? 'today' : `in ${dayWord(daysLeft)}`)
+ *  never a negative day count. `null` (unreadable `createdAt`) reads as `''`
+ *  — the row still lists, just with no countdown (KAN-551). */
+const goesLabel = (daysLeft: number | null): string =>
+  daysLeft === null ? '' : daysLeft <= 0 ? 'today' : `in ${dayWord(daysLeft)}`
 
 /**
  * One row per `delete` record still in trash — the subtree's root only, as
@@ -100,13 +106,17 @@ export function buildTrashRows(
           snapshot.parentPath[snapshot.parentPath.length - 1] ??
           rootLabel
 
+    const purgeMoment = purgeDay(record.createdAt)
     rows.push({
       record,
       page: snapshot.title,
       wasIn,
-      deletedAt: dayHeaderLabel(record.createdAt, now),
+      // `dayHeaderLabel` calls `toLocaleDateString`, which doesn't throw on an
+      // Invalid Date — it returns the literal string "Invalid Date" — so an
+      // unreadable `createdAt` must be caught here, not left to that call (KAN-551).
+      deletedAt: purgeMoment === null ? '' : dayHeaderLabel(record.createdAt, now),
       deletedBy: record.actor,
-      goes: goesLabel(daysUntilGone(record.createdAt, now)),
+      goes: goesLabel(daysUntilGone(purgeMoment, now)),
     })
   }
   return rows

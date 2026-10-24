@@ -14,6 +14,12 @@ import type { ChangeLogRecord, TrashSnapshot } from '@/lib/change-log/types'
 
 const NOW = new Date('2026-09-26T12:00:00.000Z')
 
+/** `NODE_ENV` is typed read-only (`@types/node`) so production can't be set
+ *  by accident outside a test; this is the one deliberate exception. */
+const setNodeEnv = (value: string | undefined): void => {
+  (process.env as { NODE_ENV: string | undefined }).NODE_ENV = value
+}
+
 const snapshot = (over: Partial<TrashSnapshot> = {}): TrashSnapshot => ({
   title: 'old quotes',
   parentId: 'parent-1',
@@ -145,6 +151,26 @@ describe('buildTrashRows', () => {
     expect(rows).toHaveLength(1)
     expect(rows[0].record.id).toBe('rec-3')
     expect(rows[0].goes).toBe('in 24 days')
+  })
+
+  it('throws in development for a row whose createdAt is unreadable, rather than computing a bogus `goes` (KAN-551)', () => {
+    expect(() =>
+      buildTrashRows([record({ createdAt: 'not-a-date' })], new Map(), new Set(), 'life', NOW)
+    ).toThrow(/purgeDay/)
+  })
+
+  it('reads `goes` as "" in production for a row whose createdAt is unreadable, never throwing `.toISOString()` on an Invalid Date (KAN-551)', () => {
+    const ORIGINAL_NODE_ENV = process.env.NODE_ENV
+    setNodeEnv('production')
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const [row] = buildTrashRows([record({ createdAt: 'not-a-date' })], new Map(), new Set(), 'life', NOW)
+      expect(row.goes).toBe('')
+      expect(errorSpy).toHaveBeenCalled()
+    } finally {
+      errorSpy.mockRestore()
+      setNodeEnv(ORIGINAL_NODE_ENV)
+    }
   })
 
   it('keeps `TrashRow` free of any colour/urgency field — "ink only" is structural, not a flag', () => {
