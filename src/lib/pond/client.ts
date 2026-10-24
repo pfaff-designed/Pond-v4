@@ -13,7 +13,7 @@
 
 import { createClient } from '@/lib/supabase/client'
 import { pushRecentGlyph } from '@/lib/rail/glyph-library'
-import { clampPondName } from './name'
+import { clampPondName } from './name-cap'
 import type { PondTheme } from '@/lib/supabase/types'
 
 export interface Pond {
