@@ -265,3 +265,33 @@ describe('purgeDay — unreadable createdAt (KAN-551)', () => {
     expect([purged!.getFullYear(), purged!.getMonth() + 1, purged!.getDate()]).toEqual(expected)
   })
 })
+
+describe("buildDeletedCards — card's when text for an unreadable createdAt (KAN-551)", () => {
+  const ORIGINAL_NODE_ENV = process.env.NODE_ENV
+
+  afterEach(() => {
+    setNodeEnv(ORIGINAL_NODE_ENV)
+  })
+
+  it('never reads "NaN" or "Invalid Date" in production, for a restored card that never reaches purgeDay', () => {
+    setNodeEnv('production')
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const deleteRecord = record({ id: 'rec-1', createdAt: 'not-a-date' })
+      const restoreRecord = record({
+        id: 'rec-2',
+        action: 'restore',
+        createdAt: '2026-08-28T09:00:00.000Z',
+        before: null,
+        after: snapshot(),
+      })
+
+      const [card] = buildDeletedCards([deleteRecord, restoreRecord], NOW, new Set(), 'life')
+
+      expect(card.actorTime).not.toMatch(/NaN|invalid date/i)
+      expect(card.actorTime).toBe('you · ')
+    } finally {
+      errorSpy.mockRestore()
+    }
+  })
+})

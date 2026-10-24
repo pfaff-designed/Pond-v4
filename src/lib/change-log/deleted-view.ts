@@ -19,25 +19,32 @@ import type { ChangeLogRecord } from './types'
 
 export const TRASH_RETENTION_DAYS = 30
 
-/** The local calendar day a page trashed at `createdAt` goes — `setDate` in
- *  local time, never ms addition, so a page deleted near a DST change still
- *  reads the right day (KAN-500). The one home both `purgeDate` below and
- *  `daysUntilGone` (`trash-view.ts`) read.
- *
- *  `null` for an unreadable `createdAt` (missing or unparseable) — the one
- *  impossible state (AGENTS.md "crash early"): throws in development, logs
- *  and returns `null` in production, so no caller ever feeds an Invalid Date
- *  into `.toISOString()` (KAN-551). */
-export function purgeDay(createdAt: string): Date | null {
-  const d = new Date(createdAt)
+/** `null` for an unreadable ISO date string (missing or unparseable) — the
+ *  one impossible state (AGENTS.md "crash early"): throws in development,
+ *  logs and returns `null` in production. `context` names the caller in the
+ *  thrown/logged message. The one home `purgeDay` and `whenLabel` both read,
+ *  so no caller ever feeds an Invalid Date into `.toISOString()` (KAN-551)
+ *  or a date formatter that silently renders `"Invalid Date"`/`NaN`. */
+function readDate(iso: string, context: string): Date | null {
+  const d = new Date(iso)
   if (Number.isNaN(d.getTime())) {
-    const message = `purgeDay: unreadable createdAt (${JSON.stringify(createdAt)})`
+    const message = `${context}: unreadable date (${JSON.stringify(iso)})`
     if (process.env.NODE_ENV !== 'production') {
       throw new Error(message)
     }
     console.error(message)
     return null
   }
+  return d
+}
+
+/** The local calendar day a page trashed at `createdAt` goes — `setDate` in
+ *  local time, never ms addition, so a page deleted near a DST change still
+ *  reads the right day (KAN-500). The one home both `purgeDate` below and
+ *  `daysUntilGone` (`trash-view.ts`) read. */
+export function purgeDay(createdAt: string): Date | null {
+  const d = readDate(createdAt, 'purgeDay')
+  if (d === null) return null
   d.setDate(d.getDate() + TRASH_RETENTION_DAYS)
   return d
 }
@@ -49,12 +56,16 @@ const shortDate = (d: Date): string =>
 const clock = (d: Date): string =>
   d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
 
-/** `yesterday 18:40` within a day either side of `now`, else the bare `shortDate`. */
+/** `yesterday 18:40` within a day either side of `now`, else the bare
+ *  `shortDate` — `''` for an unreadable `createdAt` (KAN-551), same
+ *  dev-throw/production-log fallback as `purgeDay`, via `readDate`. */
 const whenLabel = (iso: string, now: Date): string => {
+  const d = readDate(iso, 'whenLabel')
+  if (d === null) return ''
   const diffDays = daysBetween(now, iso)
-  if (diffDays === 0) return `today ${clock(new Date(iso))}`
-  if (diffDays === 1) return `yesterday ${clock(new Date(iso))}`
-  return shortDate(new Date(iso))
+  if (diffDays === 0) return `today ${clock(d)}`
+  if (diffDays === 1) return `yesterday ${clock(d)}`
+  return shortDate(d)
 }
 
 const pluralCount = (n: number, singular: string, plural: string = `${singular}s`): string =>
