@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import type { Decorator, Meta, StoryObj } from '@storybook/nextjs-vite'
-import { expect, userEvent, within, waitFor } from 'storybook/test'
+import type { TiptapEditorHTMLElement } from '@tiptap/core'
+import { expect, fn, userEvent, within, waitFor } from 'storybook/test'
 
 import { TextView } from './view'
 import type { TextBlock } from './schema'
+import { BlockRowProvider, type BlockRowValue } from '../block-row-context'
 import { PondBlock } from '@/components/organisms/PondBlock'
 import { pageEyebrowClass } from '@/components/atoms/kicker'
 import { blockFrame } from '@/lib/modules/block-frame'
@@ -272,6 +274,47 @@ export const HeadingStartsEditing: Story = {
     await userEvent.keyboard('warm-up')
     await waitFor(() => expect(savedOf(canvasElement)).toBe(`${HEADING_PREFIX}warm-up`))
     await expect(within(field).getByRole('heading', { level: 2, name: 'warm-up' })).toBeVisible()
+  },
+}
+
+/**
+ * KAN-506: a plain Enter steps out to make the next block, through the row's
+ * `stepOut` — `BlockRowProvider` stands in for the canvas's own
+ * `insertLineAfter` (proven in `block-return.test.tsx`); this story only proves
+ * the editor calls it. Shift+Enter breaks the line inside this block instead
+ * and never calls `stepOut`.
+ */
+function EnterStepsOut({ data, stepOut }: { data: TextBlock; stepOut: BlockRowValue['stepOut'] }) {
+  return (
+    <BlockRowProvider value={{ selected: false, stepOut }}>
+      <TextView data={data} editable />
+    </BlockRowProvider>
+  )
+}
+
+const enterStepOut = fn()
+
+export const EnterMakesTheNextBlock: Story = {
+  args: { data: { id: 'txt-enter', type: 'text', content: 'alpha' } as TextBlock },
+  render: (args) => <EnterStepsOut data={args.data} stepOut={enterStepOut} />,
+  play: async ({ canvasElement, args }) => {
+    enterStepOut.mockClear()
+    const canvas = within(canvasElement)
+    const field = await findEditor(canvas)
+    const { editor } = field as TiptapEditorHTMLElement
+    if (!editor) throw new Error('not a text block field')
+    editor.commands.focus('end')
+    await waitFor(() => expect(field).toHaveFocus())
+    await userEvent.keyboard('{Enter}')
+    await expect(enterStepOut).toHaveBeenCalledTimes(1)
+    await expect(enterStepOut).toHaveBeenCalledWith(args.data, '', 'below')
+    // Still unchanged: `stepOut` only reports the split, the host applies it.
+    await expect(field.textContent).toBe('alpha')
+
+    await userEvent.keyboard('{Shift>}{Enter}{/Shift}x')
+    await expect(field.querySelector('br')).toBeInTheDocument()
+    await expect(field.textContent).toBe('alphax')
+    await expect(enterStepOut).toHaveBeenCalledTimes(1)
   },
 }
 

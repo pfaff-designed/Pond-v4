@@ -8,6 +8,7 @@ import {
   textEditorOf as editorOf,
 } from '@/__tests__/helpers/text-block'
 import { moduleDataSchema } from '@/lib/modules/ai-composition'
+import { BlockRowProvider } from '../block-row-context'
 import type { TextBlock } from './schema'
 import { TextView } from './view'
 import TextEditor from './editor'
@@ -718,5 +719,90 @@ describe('TextView — the text block edits in place as rendered prose', () => {
     expect(field.querySelector('pre')).toBeInTheDocument()
     typeOnAFreshLine('**x**')
     expect(within(field).getByText('x').tagName).toBe('STRONG')
+  })
+
+  describe('a plain Enter splits the block through stepOut (KAN-506)', () => {
+    it('at the end of the text calls stepOut once, with the unchanged patch and an empty after', async () => {
+      const stepOut = jest.fn()
+      render(
+        <BlockRowProvider value={{ selected: false, stepOut }}>
+          <TextEditor
+            data={{ id: 't', type: 'text', content: 'hello' }}
+            standIn={null}
+            pressRef={{ current: null }}
+          />
+        </BlockRowProvider>
+      )
+      const field = await findField()
+      act(() => {
+        editorOf(field).commands.focus('end')
+      })
+      fireEvent.keyDown(field, { key: 'Enter' })
+      expect(stepOut).toHaveBeenCalledTimes(1)
+      expect(stepOut).toHaveBeenCalledWith({ id: 't', type: 'text', content: 'hello' }, '', 'below')
+    })
+
+    it('Shift+Enter breaks the line inside the block and never calls stepOut', async () => {
+      const stepOut = jest.fn()
+      const onChange = jest.fn()
+      render(
+        <BlockRowProvider value={{ selected: false, stepOut }}>
+          <TextEditor
+            data={{ id: 't', type: 'text', content: 'a' }}
+            onChange={onChange}
+            standIn={null}
+            pressRef={{ current: null }}
+          />
+        </BlockRowProvider>
+      )
+      const field = await findField()
+      act(() => {
+        editorOf(field).commands.focus('end')
+      })
+      fireEvent.keyDown(field, { key: 'Enter', shiftKey: true })
+      act(() => {
+        editorOf(field).commands.insertContent('b')
+      })
+      expect(onChange).toHaveBeenLastCalledWith({ id: 't', type: 'text', content: 'a\nb' })
+      expect(stepOut).not.toHaveBeenCalled()
+    })
+
+    it('inside a code fence calls nothing — ProseMirror keeps the newline inside it', async () => {
+      const stepOut = jest.fn()
+      render(
+        <BlockRowProvider value={{ selected: false, stepOut }}>
+          <TextEditor
+            data={{ id: 't', type: 'text', content: '```\nconst x = 1\n```' }}
+            standIn={null}
+            pressRef={{ current: null }}
+          />
+        </BlockRowProvider>
+      )
+      const field = await findField()
+      act(() => {
+        editorOf(field).commands.focus('end')
+      })
+      fireEvent.keyDown(field, { key: 'Enter' })
+      expect(stepOut).not.toHaveBeenCalled()
+    })
+
+    it('while composing (IME) calls nothing', async () => {
+      const stepOut = jest.fn()
+      render(
+        <BlockRowProvider value={{ selected: false, stepOut }}>
+          <TextEditor
+            data={{ id: 't', type: 'text', content: 'hello' }}
+            standIn={null}
+            pressRef={{ current: null }}
+          />
+        </BlockRowProvider>
+      )
+      const field = await findField()
+      act(() => {
+        editorOf(field).commands.focus('end')
+      })
+      fireEvent.keyDown(field, { key: 'Enter', isComposing: true })
+      expect(stepOut).not.toHaveBeenCalled()
+    })
   })
 })
