@@ -90,7 +90,6 @@ describe('the rename & icon path, end to end (KAN-492)', () => {
     await user.clear(nameField)
     await user.type(nameField, 'Studio')
     await user.click(screen.getByRole('radio', { name: 'house' }))
-    await user.click(nameField)
     await user.keyboard('{Enter}')
 
     await waitFor(() =>

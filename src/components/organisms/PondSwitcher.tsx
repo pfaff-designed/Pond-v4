@@ -89,15 +89,17 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
     setEditing(false)
   }
 
-  // Esc is handled on `document` rather than the field's own `onKeyDown` so a
-  // second Esc — now that `editing` is false — still reaches this listener and
-  // closes the popover (AUDIT, "no Escape handling in PondSwitcher").
+  // Second Esc — the popover closing once the editor is already gone — has to
+  // be a `document` listener: Esc unmounts the editor without giving focus
+  // back to anything inside the menu, so nothing in the React tree is left to
+  // bubble a keydown through. Gated to `!editing` so it never also fires for
+  // the FIRST Esc, which the editor's own `onKeyDown` (below) already handles
+  // — that duplication (both document and the field reacting to one Esc) was
+  // the bug; this listener now only ever sees Esc presses the editor doesn't.
   useEffect(() => {
-    if (!open) return
+    if (!open || editing) return
     const handleDocumentKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return
-      if (editing) handleCancel()
-      else setOpen(false)
+      if (e.key === 'Escape') setOpen(false)
     }
     document.addEventListener('keydown', handleDocumentKeyDown)
     return () => document.removeEventListener('keydown', handleDocumentKeyDown)
@@ -221,7 +223,25 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
             )}
 
             {editing && (
-              <div className="flex flex-col gap-[10px] px-[10px] py-[7px]">
+              <div
+                className="flex flex-col gap-[10px] px-[10px] py-[7px]"
+                // One home for Enter/Esc: a glyph pick leaves focus on the
+                // GlyphRow's radio button, not the name field, so the field's
+                // own `onKeyDown` would never see the key. Catching it here,
+                // on the container both share, works regardless of which
+                // descendant is focused.
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    handleSave()
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    handleCancel()
+                  }
+                }}
+              >
                 <input
                   ref={nameInputRef}
                   type="text"
@@ -230,10 +250,6 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
                   spellCheck={false}
                   autoComplete="off"
                   onChange={(e) => setDraftName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleSave()
-                    else if (e.key === 'Escape') handleCancel()
-                  }}
                   className="min-w-0 rounded-[10px] bg-mn-text/[0.04] px-[10px] py-[7px] text-[13px] leading-[normal] text-mn-text caret-mn-text outline-none"
                 />
                 <GlyphRow value={draftGlyph} onChange={setDraftGlyph} />

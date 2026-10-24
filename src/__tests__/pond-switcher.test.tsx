@@ -239,7 +239,6 @@ describe('the pond switcher', () => {
     await user.clear(nameField)
     await user.type(nameField, 'Studio')
     await user.click(screen.getByRole('radio', { name: 'star' }))
-    await user.click(nameField)
     await user.keyboard('{Enter}')
 
     await waitFor(() =>
