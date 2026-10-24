@@ -200,6 +200,11 @@ const MENU_PLACEMENT: Record<PondMenuSize, Omit<PondMenuPlacement, 'anchor'>> = 
 /** The page a `/` pick makes: a template's shape, or a person's own copied whole. */
 type NewPage = InstantiatedTemplate & { props?: Record<string, unknown> }
 
+/** The gap above row 0 lies outside `canvasRef`, so a real drag there reaches
+ * no element of the canvas; this band, a child, makes those dragover/drop
+ * events bubble to the root's handlers. */
+const TOP_DROP_BAND_PX = 40
+
 /**
  * The block list is the one flex container — gutted from a per-row wrapper div
  * plus per-block sizing div: a flat sizing div per block, keyed `block.id`, with
@@ -1839,6 +1844,25 @@ export function BlockCanvas({
   }
 
   /**
+   * The own-line (above/below) indicator's span is the canvas's own rect
+   * relative to the target block's snapshot rect — both the per-block
+   * branch (hovering a block's own above/below padding) and the canvas
+   * root branch (the gap above row 0) show the same line against the same
+   * target, so they share this one computation rather than re-spelling it.
+   */
+  function showOwnLineIndicator(index: number, zone: DropZone, rect: Rect | undefined) {
+    stickyZoneRef.current = { index, zone }
+    setPreviewWidth(null)
+    const columnRect = canvasRef.current?.getBoundingClientRect()
+    setDropIndicator({
+      index,
+      zone,
+      span:
+        columnRect && rect ? { left: columnRect.left - rect.left, width: columnRect.width } : undefined,
+    })
+  }
+
+  /**
    * Commits exactly the `dropIndicator` currently shown — not a fresh
    * classification of wherever the release landed. The lifted ghost is
    * `pointer-events-none` and the gap between blocks has no handler of its
@@ -2082,15 +2106,7 @@ export function BlockCanvas({
             setPreviewWidth(null)
             return
           }
-          setPreviewWidth(null)
-          const columnRect = canvasRef.current?.getBoundingClientRect()
-          setDropIndicator({
-            index: i,
-            zone,
-            span: columnRect
-              ? { left: columnRect.left - rect.left, width: columnRect.width }
-              : undefined,
-          })
+          showOwnLineIndicator(i, zone, rect)
         }}
         onDrop={(e) => {
           e.preventDefault()
@@ -2232,14 +2248,47 @@ export function BlockCanvas({
             // has no element of its own, so a release over either reaches no
             // block's `onDrop` — this root commits the shown indicator for
             // those (a block's own `onDrop` stops propagation first, so it
-            // never double-commits the same release). `onDragLeave` only
-            // clears the indicator when the drag leaves the canvas itself
-            // (`relatedTarget` outside it) — moving from a block into the
-            // ghost or a gap is still inside the canvas, so the indicator
-            // stays up rather than flickering off and on.
+            // never double-commits the same release). The gap above row 0
+            // DOES have an element now (`drop-band-top`, below) — its events
+            // bubble here, which is why this handles that case too.
+            // `onDragLeave` only clears the indicator when the drag leaves
+            // the canvas itself (`relatedTarget` outside it) — moving from a
+            // block into the ghost or a gap is still inside the canvas, so
+            // the indicator stays up rather than flickering off and on.
             onDragOver={(e) => {
               e.preventDefault()
               placeDragFloat(e.clientX, e.clientY)
+              if (draggingIndex === null) return
+              // KAN-529/547: the space above row 0 has no block DOM node to
+              // carry its own `onDragOver`, so a point above the first row's
+              // snapshot top reaches only here (via the band's bubbled
+              // event). Shows the same `above` indicator row 0's first block
+              // would show for a point at its own top edge, so a release
+              // there still lands the drag first.
+              const firstRowFirst = blockRows[0]?.[0]
+              if (!firstRowFirst) return
+              const firstIndex = blocks.findIndex((b) => b.id === firstRowFirst.id)
+              if (firstIndex === -1) return
+              const rect = dragRectsRef.current.get(firstRowFirst.id)
+              const top = rect?.top ?? canvasRef.current?.getBoundingClientRect().top
+              // This handler also receives every dragover bubbled up from a
+              // block below row 0 (no block stops propagation on this event),
+              // so the "above row 0" classification below must gate on the
+              // point actually being above `top` — never on `draggingIndex`
+              // alone, or every hover anywhere on the canvas while dragging
+              // the first block would hit it.
+              if (top === undefined || e.clientY >= top) return
+              if (firstIndex === draggingIndex) {
+                // Dragging the first block above itself: an indicator left
+                // behind from hovering a later zone must not survive into
+                // this band, or a release here would commit that earlier
+                // target instead.
+                clearDropPreview()
+                return
+              }
+              const sticky = stickyZoneRef.current
+              if (sticky !== null && sticky.index === firstIndex && sticky.zone === 'above') return
+              showOwnLineIndicator(firstIndex, 'above', rect)
             }}
             onDrop={(e) => {
               e.preventDefault()
@@ -2255,6 +2304,19 @@ export function BlockCanvas({
               clearDropPreview()
             }}
           >
+            {draggingIndex !== null && !previewing && (
+              <div
+                aria-hidden
+                data-part="drop-band-top"
+                style={{
+                  position: 'absolute',
+                  left: 0,
+                  right: 0,
+                  top: -TOP_DROP_BAND_PX,
+                  height: TOP_DROP_BAND_PX,
+                }}
+              />
+            )}
             {/*
              * A single flat `.flatMap()`, not a `.map()` of each row's own
              * `.map()`: nested arrays give React an implicit key path scoped to
