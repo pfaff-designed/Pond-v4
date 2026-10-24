@@ -662,6 +662,44 @@ describe('CollectionGallery — PondBlock.dc.html’s gallery frame, each card a
     expect(container.querySelector('[data-part="gallery-title"]')).toBeNull()
     expect(container.querySelector('[data-part="gallery-meta"]')).toBeNull()
   })
+
+  it('a record with no image draws no media tile — just the card (KAN-545)', () => {
+    const longTitle = 'p'.repeat(120)
+    const { container } = renderView(gallery, plantSchema, [
+      row('e', '', { 'p-care': 'water weekly' }),
+      row('l', longTitle, { 'p-care': 'water weekly' }),
+      ...plants(2),
+    ])
+    const cards = container.querySelectorAll<HTMLElement>('[data-kind="record-card"]')
+    expect(cards).toHaveLength(4)
+    const [empty, long] = cards
+    cards.forEach((card) => {
+      expect(card.querySelector('[data-kind="image"]')).toBeNull()
+      expect(card.querySelector('[data-part="title"]')).not.toBeNull()
+      expect(card.querySelector('[data-part="meta"]')).not.toBeNull()
+    })
+    expect(empty.querySelector('[data-part="title"]')!.textContent).toBe('untitled')
+    expect(long.querySelector('[data-part="title"]')!.textContent).toBe(longTitle)
+  })
+
+  it('a long unbroken title wraps instead of overflowing the card (KAN-545)', () => {
+    const { container } = renderView(gallery, plantSchema, [row('l', 'p'.repeat(120), {})])
+    const title = container.querySelector<HTMLElement>('[data-part="title"]')!
+    expect(classesOf(title)).toContain('[overflow-wrap:anywhere]')
+  })
+
+  it('an empty-title card reads untitled in ink .68, a titled card in full ink (KAN-545)', () => {
+    const { container } = renderView(gallery, plantSchema, [
+      row('e', '', {}),
+      row('m', 'monstera', {}),
+    ])
+    const [empty, titled] = container.querySelectorAll<HTMLElement>('[data-kind="record-card"]')
+    const emptyTitle = empty.querySelector('[data-part="title"]')!
+    const titledTitle = titled.querySelector('[data-part="title"]')!
+    expect(emptyTitle.textContent).toBe('untitled')
+    expect(classesOf(emptyTitle)).toContain('text-mn-text-secondary')
+    expect(classesOf(titledTitle)).not.toContain('text-mn-text-secondary')
+  })
 })
 
 describe('CollectionGallery — hover, selection and the peek (KAN-358)', () => {

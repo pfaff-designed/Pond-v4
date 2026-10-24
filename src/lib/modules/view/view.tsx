@@ -1651,9 +1651,12 @@ function CollectionGallery({
               <PondMolecule
                 kind="record-card"
                 state={state}
-                title={row.title || 'untitled'}
+                title={row.title}
                 meta={galleryCardMeta(schema, row) || '—'}
                 tag={galleryCardTag(schema, row)}
+                // No record carries an image until KAN-432, which will pass `true`
+                // for a record with a cover.
+                media={false}
               />
             </article>
           )

@@ -16,8 +16,8 @@ import type { PropertySchema } from '@/lib/properties/schema'
  * `renderVals()` (its frames render under a transform, so the literals in that script
  * are the source, never DOM geometry read off the board):
  *
- *   gallery  grid · repeat(3) · gap 10 — gcard column gap 6 · tile 64 / radius 12 / ink .07 ·
- *            title 13.5 / 500 full ink · meta mono 10.5 / ink .68 · every record a card
+ *   gallery  flex · wrap · gap 12 — card2 column, width 170, radius 20 · title 13 / 500
+ *            full ink · meta mono 10.5 / ink .68 · every record a card
  *   gantt    gHead grid 120px · gap 10 · pb 6 · 1px ink .09 — gRow 1px ink .055 (two values)
  *            · gTick mono 10 / ink .68, four of them · gTrack 18 high, 25% gridlines ·
  *            bar top/bottom 4 (→ 10 high) · radius 4 · done ink .22 / live full ink
@@ -159,13 +159,8 @@ async function assertGallery(canvasElement: HTMLElement, theme: Theme) {
     await expect(cs.paddingTop).toBe('10px')
     await expect(cs.rowGap).toBe('10px')
     await expect(cs.borderTopLeftRadius).toBe('20px')
-    // image tile: 150×99 · radius 14 (mn-inner) · ink .07 ground
-    const img = card.querySelector<HTMLElement>('[data-kind="image"]')!
-    const is = getComputedStyle(img)
-    await expect(is.height).toBe('99px')
-    await expect(is.width).toBe('150px')
-    await expect(is.borderTopLeftRadius).toBe('14px')
-    await expect(alphaOf(is.backgroundColor)).toBeCloseTo(0.07, 2)
+    // No image field exists yet (KAN-432): the gallery card draws no media tile.
+    await expect(card.querySelector('[data-kind="image"]')).not.toBeInTheDocument()
     // title: 13 / 500 / full ink
     const title = card.querySelector<HTMLElement>('[data-part="title"]')!
     const ts = getComputedStyle(title)
@@ -525,7 +520,7 @@ export const GalleryFallbacks: Story = {
   play: async ({ canvasElement }) => {
     const title = canvasElement.querySelector<HTMLElement>('[data-part="title"]')!
     await expect(title.textContent).toBe('untitled')
-    await expect(getComputedStyle(title).color).toBe(LIGHT.ink)
+    await expect(getComputedStyle(title).color).toBe(LIGHT.ink68)
     const metaEl = canvasElement.querySelector<HTMLElement>('[data-part="meta"]')!
     await expect(metaEl.textContent).toBe('—')
     const ms = getComputedStyle(metaEl)
