@@ -1,0 +1,256 @@
+/**
+ * KAN-466 — PATH_STEPS' own walk: drag "roof" onto "house" in the rail, the
+ * undo toast reads `moved roof to house` with `open`/`undo` buttons, `open`
+ * navigates to roof, `undo` puts it back; dragging again and using ⌘Z/⇧⌘Z
+ * (the shell's chord, a different door onto the SAME `sessionUndo` stack)
+ * does the same. Mounts the real `Rail` + `ShellCommands` +
+ * `DeletionUndoProvider` sharing one real `sessionUndo` stack — only the RPC
+ * boundary is mocked (`@/lib/pages/client`'s `movePage`, a fake that mimics
+ * `move_page`'s shape, and `@/lib/change-log/undo`'s `undoStep`/`redoStep`),
+ * same pattern as `block-canvas-move-undo-path.test.tsx`. `fetchPages` is
+ * mocked against a mutable in-memory table the three fakes all mutate
+ * together — the same "stand in for Postgres" shape
+ * `rail-delete-then-create.test.tsx` uses — so the undo/redo assertions read
+ * the real refetch `applyUndoOutcome`'s invalidate drives, not a hand-fed
+ * snapshot.
+ */
+
+import React from 'react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { Rail } from '@/components/organisms/Rail'
+import { ShellCommands } from '@/components/organisms/ShellCommands'
+import { PondContext, type PondContextValue } from '@/lib/pond/context'
+import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
+import { pagesKey } from '@/lib/pages/keys'
+import { fetchPages, type PageRow } from '@/lib/pages/tree'
+import { movePage } from '@/lib/pages/client'
+import { undoStep, redoStep } from '@/lib/change-log/undo'
+import type { MoveSnapshot } from '@/lib/change-log/types'
+import type { Pond } from '@/lib/pond/client'
+
+const routerPush = jest.fn()
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({ push: routerPush }),
+  useSearchParams: () => ({ get: () => null }),
+}))
+
+jest.mock('@/lib/supabase/client', () => ({
+  createClient: () => ({
+    auth: { getUser: async () => ({ data: { user: { id: 'user-1' } } }) },
+  }),
+}))
+
+jest.mock('@/lib/pages/tree', () => ({
+  ...jest.requireActual('@/lib/pages/tree'),
+  fetchPages: jest.fn(),
+}))
+
+jest.mock('@/lib/pages/client', () => ({
+  movePage: jest.fn(),
+  createPage: jest.fn(),
+  deletePage: jest.fn().mockResolvedValue(undefined),
+  updateTitle: jest.fn().mockResolvedValue(undefined),
+}))
+
+jest.mock('@/lib/pages/mark-client', () => ({
+  setPageGlyph: jest.fn().mockResolvedValue(undefined),
+  setAreaRole: jest.fn().mockResolvedValue(undefined),
+}))
+
+jest.mock('@/lib/pond/client', () => ({
+  pushRecentGlyphToPond: jest.fn().mockResolvedValue(undefined),
+}))
+
+jest.mock('@/lib/pages/child-links', () => ({
+  appendChildLinkUnder: jest.fn().mockResolvedValue(undefined),
+  trashPageUnlinked: jest.fn().mockResolvedValue(undefined),
+}))
+
+jest.mock('@/lib/change-log/store', () => ({
+  ...jest.requireActual('@/lib/change-log/store'),
+  appendOwnEdit: jest.fn().mockResolvedValue({}),
+}))
+
+// `undo.ts` stays real apart from the RPC boundary (like block-canvas-move-
+// undo-path.test.tsx) — this proves the toast's own undo (`sessionUndo.undoHandle`)
+// and ⌘Z/⇧⌘Z (`sessionUndo.undo`/`redo`) share one real stack.
+jest.mock('@/lib/change-log/undo', () => ({
+  ...jest.requireActual('@/lib/change-log/undo'),
+  undoStep: jest.fn(),
+  redoStep: jest.fn(),
+}))
+
+const onPlatform = (platform: string) =>
+  jest.spyOn(window.navigator, 'platform', 'get').mockReturnValue(platform)
+
+const AT = '2026-01-01T00:00:00Z'
+const POND_ID = 'pond-1'
+
+// Stands in for the `pages` table a real Postgres would hold — `movePage`,
+// `undoStep` and `redoStep` all mutate it, `fetchPages` reads it, so the
+// refetch `applyUndoOutcome`'s invalidate drives sees the real effect of
+// whichever RPC ran, not a value this file hand-fed the cache.
+let table: PageRow[]
+function resetTable() {
+  table = [
+    { id: 'house', parent_id: null, type: 'page', title: 'house', order: 0, updated_at: AT },
+    { id: 'roof', parent_id: null, type: 'page', title: 'roof', order: 1, updated_at: AT },
+  ]
+}
+const titleOf = (id: string | null) => table.find((r) => r.id === id)?.title ?? 'life'
+function applySnapshot(pageId: string, snap: MoveSnapshot) {
+  const page = table.find((r) => r.id === pageId)
+  if (page) page.parent_id = snap.parentId
+  snap.siblingOrder.forEach((id, i) => {
+    const row = table.find((r) => r.id === id)
+    if (row) row.order = i
+  })
+}
+
+interface MoveLogEntry {
+  pageId: string
+  before: MoveSnapshot
+  after: MoveSnapshot
+}
+let moveLog: Map<string, MoveLogEntry>
+let recordSeq: number
+
+const POND: Pond = {
+  id: POND_ID,
+  name: 'life',
+  glyph: null,
+  theme: 'light',
+  order: 0,
+  recentGlyphs: [],
+}
+const PROVIDER_VALUE: PondContextValue = {
+  pond: POND,
+  ponds: [POND],
+  loading: false,
+  reload: () => {},
+  addPond: () => {},
+}
+
+beforeEach(() => {
+  jest.clearAllMocks()
+  resetTable()
+  moveLog = new Map()
+  recordSeq = 0
+
+  jest.mocked(fetchPages).mockImplementation(async () => table.map((r) => ({ ...r })))
+
+  jest.mocked(movePage).mockImplementation(
+    async (_sb: unknown, input: { id: string; newParentId: string | null; siblingOrder: string[] }) => {
+      const page = table.find((r) => r.id === input.id)
+      if (!page) throw new Error(`move_page: moving page ${input.id} returned no record`)
+      const before: MoveSnapshot = {
+        parentId: page.parent_id,
+        parentTitle: titleOf(page.parent_id),
+        siblingOrder: table.filter((r) => r.parent_id === page.parent_id).map((r) => r.id),
+      }
+      applySnapshot(input.id, { parentId: input.newParentId, parentTitle: '', siblingOrder: input.siblingOrder })
+      const after: MoveSnapshot = {
+        parentId: input.newParentId,
+        parentTitle: titleOf(input.newParentId),
+        siblingOrder: input.siblingOrder,
+      }
+      const id = `record-${++recordSeq}`
+      moveLog.set(id, { pageId: input.id, before, after })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return { id, before, after } as any
+    }
+  )
+
+  jest.mocked(undoStep).mockImplementation(async (_sb: unknown, step: { recordIds: readonly string[] }) => {
+    const entry = moveLog.get(step.recordIds[0])
+    if (!entry) throw new Error(`no move record for ${step.recordIds[0]}`)
+    applySnapshot(entry.pageId, entry.before)
+    return { outcome: 'done', records: [] }
+  })
+  jest.mocked(redoStep).mockImplementation(async (_sb: unknown, step: { recordIds: readonly string[] }) => {
+    const entry = moveLog.get(step.recordIds[0])
+    if (!entry) throw new Error(`no move record for ${step.recordIds[0]}`)
+    applySnapshot(entry.pageId, entry.after)
+    return { outcome: 'done', records: [] }
+  })
+
+  onPlatform('MacIntel')
+})
+
+afterEach(() => jest.restoreAllMocks())
+
+function renderPath() {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  })
+  client.setQueryData(pagesKey(POND_ID), table)
+  render(
+    <QueryClientProvider client={client}>
+      <PondContext.Provider value={PROVIDER_VALUE}>
+        <DeletionUndoProvider>
+          <ShellCommands />
+          <Rail />
+        </DeletionUndoProvider>
+      </PondContext.Provider>
+    </QueryClientProvider>
+  )
+  return client
+}
+
+function dragStartEvent() {
+  const event = new Event('dragstart', { bubbles: true, cancelable: true })
+  Object.defineProperty(event, 'dataTransfer', {
+    value: { effectAllowed: '', dropEffect: '', setData: jest.fn() },
+  })
+  Object.defineProperty(event, 'clientY', { value: 0 })
+  return event
+}
+function dropEvent(clientY: number) {
+  const event = new Event('drop', { bubbles: true, cancelable: true })
+  Object.defineProperty(event, 'clientY', { value: clientY })
+  return event
+}
+
+function dragRoofOntoHouse() {
+  const dragged = screen.getByRole('treeitem', { name: 'roof' })
+  const target = screen.getByRole('treeitem', { name: 'house' })
+  fireEvent(dragged, dragStartEvent())
+  fireEvent(target, dropEvent(0))
+}
+
+const parentIdOfRoof = () => table.find((r) => r.id === 'roof')?.parent_id ?? null
+
+describe("rail drag-move: the toast's open/undo and ⌘Z/⇧⌘Z share one undo stack (KAN-466)", () => {
+  it('walks PATH_STEPS: drag, open, undo, drag again, ⌘Z, ⇧⌘Z', async () => {
+    renderPath()
+
+    dragRoofOntoHouse()
+
+    await waitFor(() => expect(movePage).toHaveBeenCalledTimes(1))
+    await screen.findByText('moved roof to house')
+    expect(screen.getByRole('button', { name: 'open' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'undo' })).toBeInTheDocument()
+    await waitFor(() => expect(parentIdOfRoof()).toBe('house'))
+
+    await userEvent.click(screen.getByRole('button', { name: 'open' }))
+    expect(routerPush).toHaveBeenCalledWith(expect.stringContaining('nodeId=roof'))
+
+    await userEvent.click(screen.getByRole('button', { name: 'undo' }))
+    expect(screen.queryByText('moved roof to house')).not.toBeInTheDocument()
+    await waitFor(() => expect(parentIdOfRoof()).toBe(null))
+
+    dragRoofOntoHouse()
+    await waitFor(() => expect(movePage).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(parentIdOfRoof()).toBe('house'))
+
+    const user = userEvent.setup()
+    await user.click(document.body)
+    await user.keyboard('{Meta>}z{/Meta}')
+    await waitFor(() => expect(parentIdOfRoof()).toBe(null))
+
+    await user.keyboard('{Meta>}{Shift>}z{/Shift}{/Meta}')
+    await waitFor(() => expect(parentIdOfRoof()).toBe('house'))
+  })
+})
