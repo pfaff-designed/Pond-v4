@@ -48,16 +48,15 @@ export interface TrashRow {
 
 const dayWord = (n: number): string => `${n} ${n === 1 ? 'day' : 'days'}`
 
-/** Calendar days from `now` until `createdAt + TRASH_RETENTION_DAYS` — the
- *  negation of `daysBetween`, which measures the other direction (elapsed
- *  days since `iso`, as of `now`). Can go negative: the purge (KAN-452) isn't
- *  built, so a trashed page can sit past its own retention window.
+/** Calendar days from `now` until `purgeMoment`, the negation of
+ *  `daysBetween`, which measures the other direction (elapsed days since
+ *  `iso`, as of `now`). Can go negative: the purge (KAN-452) isn't built, so
+ *  a trashed page can sit past its own retention window.
  *
- *  `null` when `purgeDay` can't read `createdAt` — already thrown (dev) or
- *  logged (production) there; never calls `.toISOString()` on that failure
- *  (KAN-551). */
-const daysUntilGone = (createdAt: string, now: Date): number | null => {
-  const purgeMoment = purgeDay(createdAt)
+ *  `null` when `purgeMoment` is `null` — the caller's own `purgeDay` call
+ *  already threw (dev) or logged (production) on an unreadable `createdAt`;
+ *  this never calls `.toISOString()` on that failure (KAN-551). */
+const daysUntilGone = (purgeMoment: Date | null, now: Date): number | null => {
   if (purgeMoment === null) return null
   return -daysBetween(now, purgeMoment.toISOString())
 }
@@ -107,13 +106,17 @@ export function buildTrashRows(
           snapshot.parentPath[snapshot.parentPath.length - 1] ??
           rootLabel
 
+    const purgeMoment = purgeDay(record.createdAt)
     rows.push({
       record,
       page: snapshot.title,
       wasIn,
-      deletedAt: dayHeaderLabel(record.createdAt, now),
+      // `dayHeaderLabel` calls `toLocaleDateString`, which doesn't throw on an
+      // Invalid Date — it returns the literal string "Invalid Date" — so an
+      // unreadable `createdAt` must be caught here, not left to that call (KAN-551).
+      deletedAt: purgeMoment === null ? '' : dayHeaderLabel(record.createdAt, now),
       deletedBy: record.actor,
-      goes: goesLabel(daysUntilGone(record.createdAt, now)),
+      goes: goesLabel(daysUntilGone(purgeMoment, now)),
     })
   }
   return rows

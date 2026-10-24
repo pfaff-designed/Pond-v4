@@ -143,6 +143,7 @@ describe('TrashPage', () => {
       expect(badRow.getByText('old quotes')).toBeInTheDocument()
       expect(badRow.getByRole('button', { name: 'restore' })).toBeInTheDocument()
       expect(badRow.queryByText(/^(today|in \d+ days?)$/)).not.toBeInTheDocument()
+      expect(badRow.queryByText(/Invalid Date|NaN/)).not.toBeInTheDocument()
 
       const goodRow = within(rows[1])
       expect(goodRow.getByText('supplier list')).toBeInTheDocument()
