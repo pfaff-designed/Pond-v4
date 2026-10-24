@@ -129,7 +129,7 @@ import {
   ROW_FOCUS_VISIBLE_BASE,
   useRecordSelection,
 } from './use-record-selection'
-import { shouldSelectCardFromClick, shouldSelectRowFromClick } from './card-click'
+import { shouldOpenRowFromClick, shouldSelectCardFromClick } from './card-click'
 import { ViewGroupMenu, ViewLayoutMenu } from '@/components/molecules/ViewBar'
 import { useBlockRow } from '../block-row-context'
 
@@ -1002,27 +1002,27 @@ function CollectionTable({
 }) {
   const { stepOut } = useBlockRow()
   const [now] = useState(() => new Date())
-  const { selectedRow, select, selectWithPointer, keyboardProps, selectOrOpenOnKey } =
+  const { selection, selectedRow, select, selectWithPointer, keyboardProps, selectOrOpenOnKey } =
     useRecordSelection(rows, viewKey)
   const done = useDoneToggle({ schema, editable, onEdit })
 
-  // A click on the row's own space (not a cell's input/control) selects it and
-  // opens the record's page; `shouldSelectRowFromClick` is the
-  // row-shaped predicate (unlike the card's, it doesn't exclude `td`/`th`,
-  // which is the row's entire clickable surface). A struck row (KAN-139) is an
-  // undo-removed record still drawn for the notice's duration — it must never
-  // select, or its peek would let a person edit a record that no longer exists.
+  // Only the title cell opens the row's record (KAN-546) — a field cell, its
+  // own control or its bare padding, belongs to that field, not the row. A
+  // struck row (KAN-139) is an undo-removed record still drawn for the
+  // notice's duration — it must never select, or its peek would let a person
+  // edit a record that no longer exists.
   function handleRowClick(rowId: string, struck: boolean, e: React.MouseEvent) {
     if (struck) return
-    if (shouldSelectRowFromClick(e.target)) selectWithPointer(rowId)
+    if (shouldOpenRowFromClick(e.target)) selectWithPointer(rowId)
   }
 
   // ↵ on the row itself (not a cell's input — `keyboardProps`' own guard) opens
   // the record's page once the row is already selected; a first ↵ (or Space,
   // any time) selects it instead, same as the board's keyboard behaviour, so
-  // a keyboard user reaches the peek before the page. Focus never moves into
-  // the peek from here (no `focusOnOpen`), so the second ↵ still lands on the
-  // row.
+  // a keyboard user reaches the peek before the page. The peek's own
+  // `focusOnOpen` (below) is gated on `selection.via === 'pointer'`, so a
+  // keyboard select leaves focus on the row — the second ↵ still lands here
+  // (KAN-358).
   function handleRowKeyDown(rowId: string, e: React.KeyboardEvent<HTMLTableRowElement>) {
     selectOrOpenOnKey(rowId, e, onOpenRow)
   }
@@ -1096,11 +1096,13 @@ function CollectionTable({
                 ].join(' ')}
               >
                 <td
+                  data-part="title-cell"
                   className={[
                     struck ? 'py-1.5 pr-3 font-medium' : 'py-1.5 pr-3 font-medium text-mn-text',
                     'rounded-l-[8px]',
                     schema.length === 0 ? 'rounded-r-[8px]' : '',
                     selected ? 'bg-mn-text/[0.07]' : '',
+                    struck ? '' : 'cursor-pointer',
                   ].join(' ')}
                   onKeyDown={(e) => handleCellKeyDown(ri, -1, e)}
                 >
@@ -1110,10 +1112,16 @@ function CollectionTable({
                       value={row.title}
                       placeholder="Untitled"
                       onCommit={(title) => onRenameRow(row.id, title)}
-                      className="min-w-[4ch] max-w-full border-0 bg-transparent p-0 font-medium text-mn-text outline-none [field-sizing:content] placeholder:text-mn-text-secondary"
+                      className="min-w-[4ch] max-w-full border-0 bg-transparent p-0 font-medium text-mn-text outline-none [field-sizing:content] placeholder:text-mn-text-secondary hover:underline underline-offset-2"
                     />
                   ) : (
-                    row.title || 'Untitled'
+                    <span
+                      className={
+                        struck ? undefined : 'cursor-pointer hover:underline underline-offset-2'
+                      }
+                    >
+                      {row.title || 'Untitled'}
+                    </span>
                   )}
                 </td>
                 {schema.map((def, ci) => (
@@ -1162,6 +1170,7 @@ function CollectionTable({
           now={now}
           editable={editable}
           placement="center"
+          focusOnOpen={selection?.via === 'pointer'}
           page={renderPage?.(selectedRow)}
           renderGuests={renderGuests}
           onDismiss={() => select(null)}

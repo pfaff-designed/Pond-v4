@@ -1,7 +1,7 @@
 /**
- * A table row's own space (not a cell's input) selects it and opens the board's
- * `RecordPeek` beside the table; a click inside a cell's input still edits in
- * place and selects nothing (KAN-378).
+ * A table row's own space, and its title (text or input), select it and open
+ * the board's `RecordPeek` beside the table (KAN-378, KAN-546); a click inside
+ * a field cell's own input still edits in place and selects nothing.
  */
 
 import { act, render, screen, within } from '@testing-library/react'
@@ -114,16 +114,16 @@ describe('table — a row opens its record in the peek', () => {
     expect(onOpenRow).toHaveBeenCalledWith('a')
   })
 
-  it('a click-selected row opens its page on the next ↵, with no second select', async () => {
+  it('a click-selected row moves focus into the peek, so a stray ↵ never reaches the row (KAN-546)', async () => {
     const onOpenRow = jest.fn()
     renderTable(jest.fn(), onOpenRow)
 
     await userEvent.click(cellOf('First'))
-    expect(screen.getByLabelText('Record: First')).toBeInTheDocument()
+    const page = screen.getByLabelText('Record: First')
+    expect(page).toContainElement(document.activeElement as HTMLElement)
 
     await userEvent.keyboard('{Enter}')
-    expect(onOpenRow).toHaveBeenCalledTimes(1)
-    expect(onOpenRow).toHaveBeenCalledWith('a')
+    expect(onOpenRow).not.toHaveBeenCalled()
   })
 
   it('↵ inside the last cell’s input still steps out, not opens the row', async () => {
@@ -197,17 +197,16 @@ describe('table — a row opens its record in the peek', () => {
     expect(screen.getByLabelText('Record: First')).toBeInTheDocument()
   })
 
-  it('a click inside the one-column table’s title input edits, opening no peek', async () => {
+  it('a click inside the title input opens the record too, same as the row space around it (KAN-546)', async () => {
     const oneColumnRows = [{ id: 'a', title: 'First', values: {} }]
     renderTable(jest.fn(), jest.fn(), { schema: [], rows: oneColumnRows })
 
     await userEvent.click(screen.getByDisplayValue('First'))
-    expect(peek()).toBeNull()
+    expect(screen.getByLabelText('Record: First')).toBeInTheDocument()
   })
 
-  it('walks the person’s path: click selects, click swaps, ↵ opens the page, Esc clears', async () => {
-    const onOpenRow = jest.fn()
-    renderTable(jest.fn(), onOpenRow)
+  it('walks the person’s path: click selects, click swaps, Esc clears', async () => {
+    renderTable()
 
     await userEvent.click(cellOf('First'))
     expect(screen.getByLabelText('Record: First')).toBeInTheDocument()
@@ -216,9 +215,6 @@ describe('table — a row opens its record in the peek', () => {
     await userEvent.click(cellOf('Second'))
     expect(screen.queryByLabelText('Record: First')).not.toBeInTheDocument()
     expect(screen.getByLabelText('Record: Second')).toBeInTheDocument()
-
-    await userEvent.keyboard('{Enter}')
-    expect(onOpenRow).toHaveBeenCalledWith('b')
 
     await userEvent.click(cellOf('First'))
     expect(peek()).not.toBeNull()

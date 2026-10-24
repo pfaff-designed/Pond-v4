@@ -16,14 +16,10 @@ export function shouldSelectCardFromClick(target: EventTarget | null): boolean {
 }
 
 /**
- * Selector for a table row's own interactive elements. Same as INTERACTIVE
- * minus `td, th` — a row's entire clickable surface is inside a `td`, so
- * excluding it (as the card predicate does) would never let a row select.
+ * Should this click open the row's record (KAN-546)? Only the title cell is
+ * the row's way in — a field cell, whether its own control or its bare
+ * padding, belongs to that field and must never open the record.
  */
-const ROW_INTERACTIVE =
-  'button, input, a, textarea, select, [contenteditable], ' +
-  '[role="menu"], [role="menuitem"], [role="textbox"], [role="button"]'
-
-export function shouldSelectRowFromClick(target: EventTarget | null): boolean {
-  return target instanceof Element && !target.closest(ROW_INTERACTIVE)
+export function shouldOpenRowFromClick(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest('[data-part="title-cell"]') !== null
 }
