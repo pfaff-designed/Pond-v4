@@ -41,26 +41,12 @@
  * with one root, per #320).
  */
 
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
-import { Icon } from '@/components/atoms/Icon'
+import { useEffect, useRef, useState } from 'react'
 import { FOCUS_VISIBLE_RING } from '@/components/atoms/focus-ring'
 import { PondControl } from '@/components/atoms/PondControl'
+import { GLYPHS, GlyphRow } from '@/components/molecules/GlyphRow'
+import { clampPondName } from '@/lib/pond/name'
 import { holdInkGround, holdPaperGround } from '@/lib/theme/mode'
-
-/** No board value exists; a pond's name renders in the rail head and the switcher
- *  menu, so a generous title length rather than the field's own cap. `PAGE_NAME_MAX`
- *  (`page-proposals.ts`) caps a proposed page's name, a different fact. */
-const POND_NAME_MAX = 80
-
-/** `v.slice(0, n)` cuts UTF-16 code units, splitting a surrogate pair (an emoji)
- *  in two and storing the lone leading half. Clamp by code point instead. */
-const clampPondName = (v: string) => Array.from(v).slice(0, POND_NAME_MAX).join('')
-
-/** `s6m2`'s glyph row, in the board's order. The first is the column default. */
-const GLYPHS = ['lightning-03', 'waves-02', 'star-01', 'house', 'ring', 'heart'] as const
-
-/** A glyph's accessible name: its library id without the glyph library's `-NN` suffix. */
-const glyphLabel = (glyph: string) => glyph.replace(/-\d+$/, '')
 
 /** `s6m2`'s theme row. `paper` is the column default. Only these two are live (#175 owns the rest). */
 const THEMES = ['paper', 'ink', 'sage', 'mist', 'navy', 'wheat', 'burnt orange', 'ember'] as const
@@ -80,47 +66,6 @@ const SHEET_GLASS =
 
 const LABEL =
   'text-[10.5px] leading-[normal] font-medium tracking-[0.1em] uppercase text-mn-text-secondary'
-
-const GLYPH_CELL = `flex h-[34px] w-[34px] items-center justify-center rounded-[10px] ${FOCUS_VISIBLE_RING}`
-const GLYPH_SELECTED = 'bg-mn-text/[0.05] shadow-[inset_0_0_0_2px_var(--mn-text)]'
-const GLYPH_UNSELECTED = 'bg-mn-text/[0.04]'
-
-/** `s6m2`'s glyph row: a real radiogroup, roving tabindex, clamped (no wrap) ←/→. */
-function GlyphRow({ value, onChange }: { value: string; onChange: (glyph: string) => void }) {
-  const cellRefs = useRef<(HTMLButtonElement | null)[]>([])
-
-  const handleKeyDown = (index: number) => (e: ReactKeyboardEvent<HTMLButtonElement>) => {
-    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
-    const target = index + (e.key === 'ArrowRight' ? 1 : -1)
-    if (target < 0 || target >= GLYPHS.length) return
-    e.preventDefault()
-    onChange(GLYPHS[target])
-    cellRefs.current[target]?.focus()
-  }
-
-  return (
-    <div role="radiogroup" aria-label="glyph" className="flex flex-wrap gap-[6px]">
-      {GLYPHS.map((g, i) => (
-        <button
-          key={g}
-          type="button"
-          ref={(el) => {
-            cellRefs.current[i] = el
-          }}
-          role="radio"
-          aria-checked={g === value}
-          aria-label={glyphLabel(g)}
-          tabIndex={g === value ? 0 : -1}
-          onClick={() => onChange(g)}
-          onKeyDown={handleKeyDown(i)}
-          className={`${GLYPH_CELL} ${g === value ? GLYPH_SELECTED : GLYPH_UNSELECTED}`}
-        >
-          <Icon name={g} size={15} />
-        </button>
-      ))}
-    </div>
-  )
-}
 
 /** A pill: the board's one shape for a theme, an area and a selected tick. Live when `onClick` is given. */
 function Pill({
