@@ -24,6 +24,14 @@ export interface PageRow {
   order: number
   updated_at: string
   /**
+   * KAN-536: the real insert time, for `pickTasksDatabase`'s oldest-wins
+   * tie-break only — every other reader of `PageRow` keeps using
+   * `updated_at`. Optional because it predates every fixture/mock that
+   * builds a `PageRow` by hand; absent falls back to `updated_at` at the
+   * one call site that reads it.
+   */
+  created_at?: string
+  /**
    * #134: the page's own mark. OPTIONAL rather than `| null` because a row
    * synthesised in code (the Life home row) or a fixture testing rail ordering
    * has no business carrying mark columns — and `markIndex` already reads an
@@ -62,7 +70,7 @@ export async function fetchPages(pondId: string | null): Promise<PageRow[]> {
     // mark — no surface fetches anything extra to draw one.
     // KAN-122: props rides along too (small write-once stamps only), so the same
     // cache resolves isNewNestedPage per row with no second fetch.
-    .select('id, parent_id, type, title, "order", updated_at, glyph, area_role, props')
+    .select('id, parent_id, type, title, "order", updated_at, created_at, glyph, area_role, props')
     .eq('user_id', user.id)
     // #312: scoped by POND, not by workspace. The sandbox pond holds exactly the
     // `workspace='sandbox'` rows, so the pond filter already says everything the
