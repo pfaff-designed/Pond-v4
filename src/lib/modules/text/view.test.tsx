@@ -897,5 +897,30 @@ describe('TextView — the text block edits in place as rendered prose', () => {
       fireEvent.keyDown(field, { key: 'Enter', isComposing: true })
       expect(stepOut).not.toHaveBeenCalled()
     })
+
+    it('a rule then an empty quote: Return keeps the rule, stepping out instead of lifting the whole doc (KAN-462)', async () => {
+      const stepOut = jest.fn()
+      render(
+        <BlockRowProvider value={{ selected: false, stepOut }}>
+          <TextEditor
+            data={{ id: 't', type: 'text', content: `${TEXT_MARKUP.divider}\n\n> ` }}
+            standIn={null}
+            pressRef={{ current: null }}
+          />
+        </BlockRowProvider>
+      )
+      const field = await findField()
+      act(() => {
+        editorOf(field).commands.focus('end')
+      })
+      fireEvent.keyDown(field, { key: 'Enter' })
+      expect(field.querySelector('hr')).toBeInTheDocument()
+      expect(stepOut).toHaveBeenCalledTimes(1)
+      expect(stepOut).toHaveBeenCalledWith(
+        { id: 't', type: 'text', content: TEXT_MARKUP.divider },
+        '',
+        'below'
+      )
+    })
   })
 })

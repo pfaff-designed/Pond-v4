@@ -116,6 +116,30 @@ describe('enterSplit — what a plain Enter does to a text block’s doc at the 
     expect(enterSplit(stateAt(doc, 2))).toBe('lift')
   })
 
+  it('a rule then an empty blockquote: the rule is not the lift’s doc, split instead', () => {
+    const doc = parseMarkdown('---\n\n> ')
+    expect(enterSplit(stateAtEnd(doc))).toEqual({
+      before: '---',
+      after: '',
+    })
+  })
+
+  it('a rule then a lone empty ordered item: the rule is not the lift’s doc, split instead', () => {
+    const doc = parseMarkdown('---\n\n1. ')
+    expect(enterSplit(stateAtEnd(doc))).toEqual({
+      before: '---',
+      after: '',
+    })
+  })
+
+  it('a rule then a lone empty bullet item: the rule is not the lift’s doc, split instead', () => {
+    const doc = parseMarkdown('---\n\n- ')
+    expect(enterSplit(stateAtEnd(doc))).toEqual({
+      before: '---',
+      after: '',
+    })
+  })
+
   it('two paragraphs, caret at the end of the first: after is the second paragraph', () => {
     const doc = parseMarkdown('alpha\n\nbeta')
     expect(enterSplit(stateAt(doc, inside(doc, 0, 'alpha'.length)))).toEqual({
