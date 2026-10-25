@@ -146,28 +146,51 @@ function postgrestError(detail: string): PostgrestError {
   return { message: detail, details: detail, hint: '', code: '' } as PostgrestError
 }
 
-function runUndoRpc(recordIds: string[]) {
+// Generic over undo and redo (`kan-368-path.test.tsx`'s own fake): it acts on
+// whatever record id is passed, original or a prior redo's, rather than
+// special-casing "the original" — the same way `0021_undo_redo.sql`'s
+// `change_log_step` does, so a second undo-after-redo round trip (this
+// file's keyboard-case test) targets the redo record it actually landed on.
+function runChangeLogStep(recordIds: string[], redo: boolean) {
   const made: ChangeLogRecord[] = []
   for (const id of recordIds) {
     const record = fakeChangeLog.find((r) => r.id === id)
     if (!record) return { error: postgrestError('not-found') }
-    if (record.status !== 'accepted') return { error: postgrestError('already-undone') }
+    if (!redo && record.status !== 'accepted') return { error: postgrestError('already-undone') }
+    if (redo && record.status !== 'undone') return { error: postgrestError('not-undone') }
+
+    let from: unknown
+    let to: unknown
+    let standingUndo: ChangeLogRecord | undefined
+    if (redo) {
+      standingUndo = fakeChangeLog.find(
+        (r) => r.links.undoOf === id && r.action === 'undo' && r.status === 'accepted'
+      )
+      if (!standingUndo) return { error: postgrestError('not-undone') }
+      from = record.before
+      to = record.after
+    } else {
+      from = record.after
+      to = record.before
+    }
 
     if (record.targetPageId && pages[record.targetPageId]) {
-      pages[record.targetPageId].blocks = Array.isArray(record.before) ? (record.before as Block[]) : []
+      pages[record.targetPageId].blocks = Array.isArray(to) ? (to as Block[]) : []
     }
 
     const step = makeRecord({
       status: 'accepted',
-      action: 'undo',
-      before: record.after,
-      after: record.before,
+      action: redo ? 'redo' : 'undo',
+      before: from,
+      after: to,
       targetPageId: record.targetPageId,
-      links: { undoOf: id },
+      links: redo ? { redoOf: id } : { undoOf: id },
     })
     fakeChangeLog.push(step)
     made.push(step)
-    record.status = 'undone'
+
+    if (redo && standingUndo) standingUndo.status = 'undone'
+    else if (!redo) record.status = 'undone'
   }
   return { made }
 }
@@ -200,8 +223,8 @@ jest.mock('@/lib/supabase/client', () => ({
       getUser: jest.fn().mockResolvedValue({ data: { user: { id: USER_ID, email: 'test@example.com' } } }),
     },
     rpc: jest.fn(async (fn: string, params: { p_record_ids: string[] }) => {
-      if (fn === 'undo_change_log_record') {
-        const result = runUndoRpc(params.p_record_ids)
+      if (fn === 'undo_change_log_record' || fn === 'redo_change_log_record') {
+        const result = runChangeLogStep(params.p_record_ids, fn === 'redo_change_log_record')
         if ('error' in result) return { data: null, error: result.error }
         return { data: result.made.map(toRow), error: null }
       }
@@ -355,6 +378,45 @@ describe('KAN-479 — move to… across two pages, undo brings it back (path tes
     // the toast is gone.
     expect(screen.queryByText('moved 1 block to House ·')).not.toBeInTheDocument()
     act(() => mockNavigate(`/workspace?nodeId=${mockSource.id}`))
+    await screen.findByDisplayValue('Paint the fence')
+  })
+
+  it('⌘Z undoes the move, ⇧⌘Z redoes it, and ⌘Z again undoes the redo', async () => {
+    renderPath()
+    const user = userEvent.setup()
+
+    await screen.findByDisplayValue('Paint the fence')
+    fireEvent.contextMenu(document.getElementById(`block-${CHECKLIST_ID}`)!)
+    const menu = await screen.findByRole('menu', { name: /block menu/i })
+    const group = within(menu).getByRole('group', { name: 'block' })
+
+    await user.click(within(group).getByRole('menuitem', { name: 'move to…' }))
+    const input = await screen.findByRole('combobox', { name: 'command palette' })
+    await user.type(input, 'House')
+    await screen.findByRole('option', { name: new RegExp(mockTarget.title) })
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => expect(screen.queryByDisplayValue('Paint the fence')).not.toBeInTheDocument())
+    expect(pages[mockSource.id].blocks).toHaveLength(0)
+    expect(pages[mockTarget.id].blocks).toHaveLength(1)
+
+    // ⌘Z: the move's one two-record step comes back as one — the checklist
+    // is on the source again and gone from house.
+    fireEvent.keyDown(document, { key: 'z', metaKey: true })
+    await waitFor(() => expect(pages[mockSource.id].blocks).toHaveLength(1))
+    expect(pages[mockTarget.id].blocks).toHaveLength(0)
+    await screen.findByDisplayValue('Paint the fence')
+
+    // ⇧⌘Z: moved again.
+    fireEvent.keyDown(document, { key: 'z', metaKey: true, shiftKey: true })
+    await waitFor(() => expect(pages[mockTarget.id].blocks).toHaveLength(1))
+    expect(pages[mockSource.id].blocks).toHaveLength(0)
+    await waitFor(() => expect(screen.queryByDisplayValue('Paint the fence')).not.toBeInTheDocument())
+
+    // ⌘Z once more: back on the source, gone from house — undo of the redo.
+    fireEvent.keyDown(document, { key: 'z', metaKey: true })
+    await waitFor(() => expect(pages[mockSource.id].blocks).toHaveLength(1))
+    expect(pages[mockTarget.id].blocks).toHaveLength(0)
     await screen.findByDisplayValue('Paint the fence')
   })
 })
