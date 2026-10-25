@@ -70,7 +70,8 @@ const TEXT_KIND_OF_TARGET: Partial<Record<ConversionTarget, TextKind>> = {
   code: 'code',
 }
 
-const TARGET_OF_TEXT_KIND: Record<TextKind, LineTarget> = {
+/** Only levels 1-3 have a dashed target; a heading 4-6 has none, so it has no "own kind" to exclude. */
+const TARGET_OF_TEXT_KIND: Partial<Record<TextKind, LineTarget>> = {
   text: 'text',
   heading1: 'heading-1',
   heading2: 'heading-2',
@@ -153,7 +154,7 @@ interface Line {
 }
 
 const kindOf = (block: Block): LineTarget | null => {
-  if (block.type === 'text') return TARGET_OF_TEXT_KIND[textKindOf(block.content) ?? 'text']
+  if (block.type === 'text') return TARGET_OF_TEXT_KIND[textKindOf(block.content) ?? 'text'] ?? null
   if (block.type === 'todo') return todoMarker(block) === 'check' ? 'checklist' : 'list'
   return null
 }
@@ -271,11 +272,13 @@ export const conversionsFor = (
   block: Block,
   mintId: () => string = () => crypto.randomUUID()
 ): Conversion[] => {
-  const kind = kindOf(block)
-  if (kind === null || (block.type !== 'text' && block.type !== 'todo')) return []
+  if (block.type !== 'text' && block.type !== 'todo') return []
   if (block.type === 'text' && linesOf(block.content).length === 0) return []
   if (block.type === 'todo' && block.items.length === 0) return []
 
+  // null for a heading 4-6: it is a single node (so the five retype targets and page
+  // apply below) but has no dashed target of its own to exclude.
+  const kind = kindOf(block)
   const singleNode = block.type === 'text' && textKindOf(block.content) !== null
 
   return CONVERSION_TARGETS.flatMap((target): Conversion[] => {

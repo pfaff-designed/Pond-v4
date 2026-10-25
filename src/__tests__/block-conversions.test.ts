@@ -234,6 +234,21 @@ describe('heading, quote, code', () => {
     ])
   })
 
+  it('a heading past level 3 offers text, heading 1-3, quote, code and page, same as a heading 1-3 — it has no target of its own to exclude', () => {
+    const h5: TextBlock = { id: 'b-h5', type: 'text', content: '##### too deep' }
+    expect(targets(h5)).toEqual([
+      'heading-1',
+      'heading-2',
+      'heading-3',
+      'quote',
+      'code',
+      'page',
+      'list',
+      'checklist',
+      'text',
+    ])
+  })
+
   it('a quote offers every heading level, code and text — never itself, and never list/checklist/table (its lines are markdown, not list items)', () => {
     expect(targets(quote)).toEqual(['heading-1', 'heading-2', 'heading-3', 'code', 'page', 'text'])
   })

@@ -6,6 +6,9 @@ describe('textKindOf', () => {
     ['# hello', 'heading1'],
     ['## hello', 'heading2'],
     ['### hello', 'heading3'],
+    ['#### hello', 'heading4'],
+    ['##### hello', 'heading5'],
+    ['###### hello', 'heading6'],
     ['> hello', 'quote'],
     ['```\nhello\n```', 'code'],
   ])('reads %j as %s', (content, kind) => {
@@ -16,11 +19,19 @@ describe('textKindOf', () => {
     ['', 'empty'],
     ['- a\n- b', 'a list'],
     ['a\n\nb', 'two paragraphs'],
-    ['#### too small a heading', 'a heading past level 3'],
     ['> a\n>\n> b', 'a blockquote of two paragraphs'],
     ['> - x\n> - y', 'a blockquote holding a list'],
   ])('is null for %j (%s)', (content) => {
     expect(textKindOf(content)).toBeNull()
+  })
+
+  it.each<[string, TextKind]>([
+    ['#### a', 'heading4'],
+    ['##### a', 'heading5'],
+    ['###### a', 'heading6'],
+  ])('reads a heading past level 3, %j as %s, and keeps its text turning back to text', (content, kind) => {
+    expect(textKindOf(content)).toBe(kind)
+    expect(retypeText(content, 'text')).toBe('a')
   })
 })
 

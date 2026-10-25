@@ -2,19 +2,25 @@ import { Fragment, type Node as ProseNode } from '@tiptap/pm/model'
 import { proseSchema, numberAttr } from './document'
 import { parseMarkdown, serializeMarkdown } from './markdown'
 
-export type TextKind = 'text' | 'heading1' | 'heading2' | 'heading3' | 'quote' | 'code'
-
-const HEADING_KIND = { 1: 'heading1', 2: 'heading2', 3: 'heading3' } as const satisfies Record<
-  number,
-  TextKind
->
+export type TextKind =
+  | 'text'
+  | 'heading1'
+  | 'heading2'
+  | 'heading3'
+  | 'heading4'
+  | 'heading5'
+  | 'heading6'
+  | 'quote'
+  | 'code'
 
 /**
  * The single top-level node a text block's markdown parses to, or null when
  * there isn't one to turn into something else: empty content (KAN-345's one
  * empty paragraph), more than one node (a list, two paragraphs — KAN-552 splits
- * those into their own blocks at write time), or a heading past level 3 (turn
- * into has no target for it).
+ * those into their own blocks at write time). A heading reads as its own kind
+ * at every level 1-6, even past the three levels `conversions.ts` offers as
+ * targets — it is still one node a person can turn into text, quote, code or
+ * a heading 1-3.
  */
 export const textKindOf = (content: string): TextKind | null => {
   const doc = parseMarkdown(content)
@@ -34,7 +40,7 @@ export const textKindOf = (content: string): TextKind | null => {
       return 'code'
     case 'heading': {
       const level = numberAttr(node.attrs, 'level')
-      return level === 1 || level === 2 || level === 3 ? HEADING_KIND[level] : null
+      return level !== null && level >= 1 && level <= 6 ? (`heading${level}` as TextKind) : null
     }
     default:
       return null
@@ -79,10 +85,6 @@ const retypedNode = (node: ProseNode, kind: TextKind): ProseNode => {
   switch (kind) {
     case 'text':
       return proseSchema.nodes.paragraph.create(null, inline)
-    case 'heading1':
-    case 'heading2':
-    case 'heading3':
-      return proseSchema.nodes.heading.create({ level: Number(kind.slice(-1)) }, joinLines(inline))
     case 'quote':
       return proseSchema.nodes.blockquote.create(
         null,
@@ -92,6 +94,9 @@ const retypedNode = (node: ProseNode, kind: TextKind): ProseNode => {
       const text = plainTextOf(inline)
       return proseSchema.nodes.codeBlock.create(null, text ? proseSchema.text(text) : undefined)
     }
+    // Every other TextKind is `heading${level}` — the level lives in the kind string itself.
+    default:
+      return proseSchema.nodes.heading.create({ level: Number(kind.slice(-1)) }, joinLines(inline))
   }
 }
 
