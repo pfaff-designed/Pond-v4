@@ -20,8 +20,9 @@ import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/reac
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { sessionUndo } from '@/lib/change-log/session-undo'
-import { undoStep } from '@/lib/change-log/undo'
+import { undoStep, redoStep } from '@/lib/change-log/undo'
 import { trashPage, restorePage } from '@/lib/change-log/trash'
+import { listRecords } from '@/lib/change-log/store'
 import type { Block } from '@/lib/documents/types'
 import { createPageWriter, type PageWriteState } from '@/lib/pages/commit'
 import { createPageWriteQueue } from '@/lib/pages/page-write-queue'
@@ -160,6 +161,7 @@ beforeEach(() => {
   mockSaveBlocks.mockResolvedValue(undefined)
   mockAppendOwnEdit.mockImplementation(async () => ({ id: `record-${++recordSeq}` }))
   jest.mocked(undoStep).mockResolvedValue({ outcome: 'done', records: [] })
+  jest.mocked(redoStep).mockResolvedValue({ outcome: 'done', records: [] })
   sessionUndo.clear()
 })
 
@@ -212,6 +214,18 @@ describe('a view insert writes one ⌘Z step whose side effects match its databa
     await waitFor(() => expect(trashPage).toHaveBeenCalledTimes(1))
     expect(trashPage).toHaveBeenCalledWith(expect.anything(), database.id)
     expect(restorePage).not.toHaveBeenCalled()
+
+    // ⇧⌘Z brings the database back, then ⌘Z must trash it again (KAN-496):
+    // the redo-rebuilt step on the undo stack has to keep carrying onUndone.
+    jest.mocked(listRecords).mockResolvedValueOnce([{ id: 'record-trash-1' } as never])
+    await sessionUndo.redo('pond-1')
+    await waitFor(() => expect(restorePage).toHaveBeenCalledTimes(1))
+    expect(restorePage).toHaveBeenCalledWith(expect.anything(), 'record-trash-1')
+
+    await sessionUndo.undo('pond-1')
+    await waitFor(() => expect(trashPage).toHaveBeenCalledTimes(2))
+    expect(trashPage).toHaveBeenLastCalledWith(expect.anything(), database.id)
+    expect(restorePage).toHaveBeenCalledTimes(1)
   })
 
   it('undoing a view onto an EXISTING database leaves it alone', async () => {

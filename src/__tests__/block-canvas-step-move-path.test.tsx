@@ -315,3 +315,35 @@ describe('⌥↓/⌥↑ from the caret keeps focus in the moved block’s own ed
     await waitFor(() => expect(blockRoot('b-2').contains(document.activeElement)).toBe(true))
   })
 })
+
+describe('⌥↓ from a SELECTED row keeps focus on the moved row (KAN-496)', () => {
+  it('two ⌥↓ presses from a selected row each find focus still on the moved row', async () => {
+    const blocks: Block[] = [
+      { id: 'b-1', type: 'text', content: 'one' },
+      { id: 'b-2', type: 'text', content: 'two' },
+      { id: 'b-3', type: 'text', content: 'three' },
+    ]
+    renderPath(blocks, { strict: true })
+    const [first] = await findAllTextBlocks()
+    const user = userEvent.setup()
+
+    // Esc from the caret selects the row (`createEscapeSelectsRow`) — the
+    // same entry a person uses, not a direct `.focus()` on the row.
+    act(() => first.focus())
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(document.activeElement).toBe(blockRoot('b-1')))
+
+    // `user.keyboard` with no explicit target fires on `document.activeElement`.
+    await user.keyboard('{Alt>}{ArrowDown}{/Alt}')
+
+    await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(blockOrder()).toEqual(['b-2', 'b-1', 'b-3']))
+    await waitFor(() => expect(document.activeElement).toBe(blockRoot('b-1')))
+
+    await user.keyboard('{Alt>}{ArrowDown}{/Alt}')
+
+    await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(blockOrder()).toEqual(['b-2', 'b-3', 'b-1']))
+    await waitFor(() => expect(document.activeElement).toBe(blockRoot('b-1')))
+  })
+})
