@@ -558,6 +558,38 @@ describe('movePage', () => {
       movePage(sb as never, { id: 'x', newParentId: null, siblingOrder: ['x'] })
     ).rejects.toThrow(/no record/)
   })
+
+  it('forwards newTitle as p_new_title when a rename is needed (KAN-470)', async () => {
+    const rpc = jest.fn().mockResolvedValue({ data: moveChangeLogRow(), error: null })
+    const sb = { rpc }
+
+    await movePage(sb as never, {
+      id: 'x',
+      newParentId: 'health',
+      siblingOrder: ['a', 'x', 'b'],
+      newTitle: 'Notes 2',
+    })
+
+    expect(rpc).toHaveBeenCalledWith('move_page', {
+      p_page_id: 'x',
+      p_new_parent_id: 'health',
+      p_sibling_order: ['a', 'x', 'b'],
+      p_new_title: 'Notes 2',
+    })
+  })
+
+  it('omits p_new_title when newTitle is not passed', async () => {
+    const rpc = jest.fn().mockResolvedValue({ data: moveChangeLogRow(), error: null })
+    const sb = { rpc }
+
+    await movePage(sb as never, { id: 'x', newParentId: 'health', siblingOrder: ['a', 'x', 'b'] })
+
+    expect(rpc).toHaveBeenCalledWith('move_page', {
+      p_page_id: 'x',
+      p_new_parent_id: 'health',
+      p_sibling_order: ['a', 'x', 'b'],
+    })
+  })
 })
 
 // ── setProperty / defineSchema (#17, merge-safe props writes) ─────────────────
