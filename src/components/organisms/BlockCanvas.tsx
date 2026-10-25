@@ -887,8 +887,12 @@ export function BlockCanvas({
         : null
     const handleFocusIn = (e: FocusEvent) => {
       const id = rowIdOf(e.target)
-      if (id === null) return
-      setFocusedBlockId(id)
+      if (id !== null) setFocusedBlockId(id)
+      // ANY focusin inside the canvas clears the range unless it's this
+      // extend step's own — an editor, a cell, the drag handle or a plain
+      // click into a different row all count (KAN-373 fix): `rowIdOf` only
+      // tells us whether the target is a ROW, which used to gate this off
+      // entirely and leave a stale range once focus left row chrome.
       if (extendingSelectionRef.current) {
         extendingSelectionRef.current = false
         return
@@ -898,6 +902,11 @@ export function BlockCanvas({
     const handleFocusOut = (e: FocusEvent) => {
       if (rowIdOf(e.relatedTarget) !== null) return
       setFocusedBlockId(null)
+      // Focus leaving the canvas entirely (relatedTarget outside it, or
+      // null) fires no focusin here to clear the range itself.
+      if (!(e.relatedTarget instanceof Element && el.contains(e.relatedTarget))) {
+        setSelection(null)
+      }
     }
     el.addEventListener('focusin', handleFocusIn)
     el.addEventListener('focusout', handleFocusOut)
@@ -918,19 +927,40 @@ export function BlockCanvas({
       anchorIndex <= focusIndex ? [anchorIndex, focusIndex] : [focusIndex, anchorIndex]
     return new Set(blocks.slice(start, end + 1).map((b) => b.id))
   }, [selection, blocks])
+  // Marks the upcoming `selectBlockAt` focus as an extend step, so the
+  // canvas's own `focusin` listener (above) leaves the range alone instead
+  // of clearing it. Focusing a row that already holds focus (the mate of a
+  // ½+½ row sharing DOM order with no actual focus move, or any other
+  // no-op focus call) fires no `focusin` at all, so nothing would ever flip
+  // this back — queued to run after the current task either way, so a real
+  // `focusin` consumes it first and this is a no-op, or none arrives and
+  // this is what consumes it. It can never stick at `true`.
+  function markExtendingSelection() {
+    extendingSelectionRef.current = true
+    queueMicrotask(() => {
+      extendingSelectionRef.current = false
+    })
+  }
   // ⇧↓/⇧↑ on the focused row (KAN-373): starts the range at this row if none
   // exists yet, then moves the FOCUS end one block — a second press fires
   // from there, never back from `i`. Out of bounds (⇧↑ at block 0) is a
-  // no-op: no range started, no focus moved.
+  // no-op: no range started, no focus moved. If the range's own focus block
+  // no longer exists (edited away elsewhere), there is nothing to step from
+  // — clear the stale range rather than resolving its missing index to -1
+  // and stepping off block 0.
   function extendRangeStep(i: number, dir: 'up' | 'down') {
     const block = blocks[i]
     if (!block) return
     const focusIndex = selection ? blocks.findIndex((b) => b.id === selection.focusId) : i
+    if (selection && focusIndex === -1) {
+      setSelection(null)
+      return
+    }
     const nextIndex = dir === 'up' ? focusIndex - 1 : focusIndex + 1
     const next = blocks[nextIndex]
     if (!next) return
     setSelection({ anchorId: selection?.anchorId ?? block.id, focusId: next.id })
-    extendingSelectionRef.current = true
+    markExtendingSelection()
     selectBlockAt(blocks, nextIndex)
   }
   // ⇧-click on a row's chrome (KAN-373): the anchor is the existing range's,
@@ -942,7 +972,7 @@ export function BlockCanvas({
     const anchorId = selection?.anchorId ?? focusedBlockId
     if (!anchorId) return
     setSelection({ anchorId, focusId: block.id })
-    extendingSelectionRef.current = true
+    markExtendingSelection()
     selectBlockAt(blocks, i)
   }
   // While previewing, `canvasRef` collapses to zero height (6f frame 3's
@@ -1864,13 +1894,16 @@ export function BlockCanvas({
     [onChange]
   )
 
-  function requestDelete(index: number) {
+  function requestDelete(index: number, fromRow = true) {
     const block = blocks[index]
     if (!block) return
     // ⌫/⌘⌫ on a focused row that is part of a multi-block range (KAN-373)
     // deletes the whole range, not just this row — `rangeIds` always
     // includes the focused row itself, so a size of 1 is really no range.
-    if (rangeIds.size > 1 && rangeIds.has(block.id)) {
+    // `fromRow` gates this on top: a caret-start ⌘⌫ fired from this same
+    // block's own EDITOR, not its row, must only ever delete this one block
+    // — the range belongs to the row, not to whatever text field it hosts.
+    if (fromRow && rangeIds.size > 1 && rangeIds.has(block.id)) {
       requestDeleteRange(rangeIds)
       return
     }
@@ -2996,7 +3029,7 @@ export function BlockCanvas({
         writeBlock={writeBlock}
         onRemoveEmpty={() => removeEmptyLineAt(i)}
         onExitEmpty={() => removeEmptyOnExit(block.id)}
-        onDeleteBlock={() => requestDelete(i)}
+        onDeleteBlock={(fromRow) => requestDelete(i, fromRow)}
         onReturn={(patch, content, where) => insertLineAfter(i, patch, content, where)}
         onLeaveUp={
           i === 0 ? () => focusPageTitle('end') : (x) => leaveBlockEdge(blocks, i, 'up', x)
@@ -3976,8 +4009,10 @@ function BlockEditor({
   onRemoveEmpty: () => void
   /** Focus left this block. The canvas removes it when the block is empty. */
   onExitEmpty?: () => void
-  /** ⌘⌫ / Ctrl+⌫ on the focused block. */
-  onDeleteBlock: () => void
+  /** ⌘⌫ / Ctrl+⌫ on the focused block. `fromRow` is false when the chord
+   *  fired from this block's own editor rather than its row (KAN-373): only
+   *  a row-originated delete may act on a multi-block range. */
+  onDeleteBlock: (fromRow?: boolean) => void
   /** Return on a focused block that is not text. An optional `patch` replaces
    *  this block in the same call (KAN-344: the checklist's "remove the empty
    *  last item, then step out" is one `onChange`, never two). An optional
@@ -4375,7 +4410,11 @@ function BlockEditor({
     if (!rowFocused && !(inOwnEditor && !hasTextBeforeCaret(rootRef.current))) return
     e.preventDefault()
     e.stopPropagation()
-    onDeleteBlock()
+    // `rowFocused` tells `requestDelete` whether a multi-block range may act
+    // here — the caret-at-start path (`inOwnEditor`) fires from this block's
+    // own editor, never the row, so it must only ever delete this one block
+    // even while a stale range still names it (KAN-373 fix).
+    onDeleteBlock(rowFocused)
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
