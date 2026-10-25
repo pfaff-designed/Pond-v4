@@ -127,11 +127,13 @@ describe('PATH_STEPS — Esc selects, ↑/↓ walk the blocks, Return re-enters 
     await waitFor(() => expect(omegaField).toHaveFocus())
     textEditorOf(omegaField).view.endOfTextblock = () => true
 
-    // ↑ leaves omega for the checklist's last item, 'two'.
+    // ↑ leaves omega for the checklist's last item, 'two', caret at its end
+    // (PATH_STEPS step 2 — not the item's start).
     fireEvent.keyDown(omegaField, { key: 'ArrowUp' })
-    const items = screen.getAllByRole('textbox', { name: 'Step' })
+    const items = screen.getAllByRole('textbox', { name: 'Step' }) as HTMLInputElement[]
     await waitFor(() => expect(items[1]).toHaveFocus())
     expect(items[1]).toHaveValue('two')
+    expect(items[1].selectionStart).toBe(items[1].value.length)
 
     // ↑ steps within the checklist, to 'one'.
     fireEvent.keyDown(items[1], { key: 'ArrowUp' })

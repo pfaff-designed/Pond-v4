@@ -370,7 +370,7 @@ function leaveTextBlockEdge(blocks: Block[], index: number, dir: 'up' | 'down', 
   }
   if (neighbour.type === 'todo' && neighbour.items.length > 0) {
     const item = dir === 'up' ? neighbour.items[neighbour.items.length - 1] : neighbour.items[0]
-    focusTodoItem(neighbour.id, item.id)
+    focusTodoItem(neighbour.id, dir === 'up' ? 'end' : 'start', item.id)
     return
   }
   if (element instanceof HTMLElement) element.focus()
@@ -383,9 +383,11 @@ function leaveTextBlockEdge(blocks: Block[], index: number, dir: 'up' | 'down', 
  * own, so focus fell to `<body>` and the next keystroke was lost. Deferred a
  * tick for the same reason as `focusBlockNeighbour` — the row that will hold
  * `itemId` only exists once this render commits. Without `itemId`, the first
- * item (a freshly minted list's only one).
+ * item (a freshly minted list's only one). `caret`: 'end' when ↑ lands in the
+ * checklist's last item from the text block below it (KAN-367); every other
+ * caller keeps today's 'start'.
  */
-function focusTodoItem(blockId: string, itemId?: string) {
+function focusTodoItem(blockId: string, caret: 'start' | 'end', itemId?: string) {
   setTimeout(() => {
     const host = document.getElementById(blockDomId(blockId))
     const row = itemId
@@ -393,7 +395,8 @@ function focusTodoItem(blockId: string, itemId?: string) {
       : host?.querySelector<HTMLElement>('[data-item-id]')
     const input = row?.querySelector<HTMLInputElement>('input')
     input?.focus()
-    input?.setSelectionRange(0, 0)
+    const pos = caret === 'end' ? (input?.value.length ?? 0) : 0
+    input?.setSelectionRange(pos, pos)
   }, 0)
 }
 
@@ -654,7 +657,7 @@ export function BlockCanvas({
     // Only `todo` (list/checklist) has no editor of its own to keep focus in
     // (KAN-355) — every other landed type keeps today's behaviour.
     onLanded: (landed) => {
-      if (landed.type === 'todo') focusTodoItem(landed.id)
+      if (landed.type === 'todo') focusTodoItem(landed.id, 'start')
     },
   })
   // KAN-198: the carried `?templates=1` names a page by id, not a boolean, so
@@ -3070,7 +3073,7 @@ function useBlockEmptyState(
                 commitStructural(pageId, () => {
                   const next = addTodoItem(block)
                   onChange(next)
-                  focusTodoItem(block.id, next.items[next.items.length - 1].id)
+                  focusTodoItem(block.id, 'start', next.items[next.items.length - 1].id)
                 })
               },
             }
