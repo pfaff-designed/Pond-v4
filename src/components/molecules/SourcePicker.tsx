@@ -72,7 +72,10 @@ import {
   headFor,
   kindOf,
   NEW_DATABASE_ID,
+  NEW_PROJECT_ID,
   newEntries,
+  newProjectLabel,
+  projectEntries,
   RECORDS_ARE,
   sourceEntries,
   typeEntries,
@@ -107,6 +110,12 @@ export type SourcePick =
       mode: SourceBlock
       chart?: ChartPick
     }
+  | {
+      kind: 'tasks'
+      /** The board's project (KAN-536): an existing `project` option, or a new
+       *  one (no `id` yet — the host mints it). */
+      project: { id?: string; label: string }
+    }
 
 export interface SourcePickerProps {
   /** Which `/` row summoned it — names the head and is the view mode it makes. */
@@ -114,6 +123,10 @@ export interface SourcePickerProps {
   /** The host page's title: `new database — <title>`. */
   pageTitle: string
   databases: readonly SourceDatabase[]
+  /** The tasks database's `project` options (KAN-536), for the `project` step a
+   *  board's `new` row opens onto. Absent when the host has none loaded yet —
+   *  the step still opens, offering only `new project — <title>`. */
+  projects?: { options: { id: string; label: string }[]; pageTitle: string }
   /** An existing database's fields, for the chart step; the host fetches its schema on demand. */
   loadFields?: (databaseId: string) => Promise<readonly SourceField[]>
   /** Opens on this step. @default 'source' */
@@ -150,6 +163,7 @@ export function SourcePicker({
   block,
   pageTitle,
   databases,
+  projects,
   loadFields,
   defaultStep = 'source',
   defaultSource,
@@ -180,6 +194,13 @@ export function SourcePicker({
   // The selection is keyed to the step it was made on, so a new step starts at
   // its own first row (or, for `new`, at none) without an effect writing state.
   const [sel, setSel] = useState<{ step: SourceStep; index: number } | null>(null)
+  // The `project` step's own typeahead — no `<input>`, printable keys build it
+  // from the document listener below (KAN-536).
+  const [query, setQuery] = useState('')
+  // A double ↵ on the same keydown-handled render must make one pick, not two
+  // (G9) — `onPick` closes the glass asynchronously, so a second `Enter` can
+  // still reach `pick()` before that unmount lands.
+  const pickedRef = useRef(false)
 
   const entries =
     step === 'source'
@@ -188,7 +209,9 @@ export function SourcePicker({
         ? typeEntries(source ? sourceFields : fields, expanded)
         : step === 'field-type'
           ? fieldTypeEntries()
-          : newEntries([TITLE_FIELD, ...fields])
+          : step === 'project'
+            ? projectEntries(projects?.options ?? [], projects?.pageTitle ?? pageTitle, query)
+            : newEntries([TITLE_FIELD, ...fields])
   const hasSeg = entries.some((e) => e.kind === 'seg')
   const listEntries = entries.filter((e) => e.kind !== 'seg')
   const items = entries.filter((e): e is RowEntry => e.kind === 'row')
@@ -198,6 +221,7 @@ export function SourcePicker({
   const go = (next: SourceStep) => {
     setStep(next)
     setSel(null)
+    setQuery('')
   }
 
   // An existing database's fields arrive when the chart step opens on it.
@@ -230,19 +254,16 @@ export function SourcePicker({
     if (step === 'source') {
       if (!item) return
       if (item.id === NEW_DATABASE_ID) {
+        // A board's `new` row leads to the `project` step (KAN-536: one shared
+        // tasks database per pond) instead of defining fields — the host builds
+        // the tasks database, this picker only names the project.
+        if (block === 'board') {
+          go('project')
+          return
+        }
         const nextFields = defaultFieldsFor(block)
         setSource(null)
         setFields(nextFields)
-        if (block === 'board') {
-          onPick({
-            kind: 'new',
-            title: 'tasks',
-            fields: nextFields,
-            recordsAre: 'pages',
-            mode: block,
-          })
-          return
-        }
         go('new')
         return
       }
@@ -251,6 +272,20 @@ export function SourcePicker({
       setSource(db)
       if (block === 'chart') go('type')
       else onPick({ kind: 'existing', database: db, mode: block })
+    } else if (step === 'project') {
+      if (!item || pickedRef.current) return
+      pickedRef.current = true
+      if (item.id === NEW_PROJECT_ID) {
+        // The same label the row itself was built from (`newProjectLabel`) —
+        // never the raw, untrimmed `query`, which would carry a whitespace
+        // query through as a blank or trailing-space option (KAN-536).
+        onPick({
+          kind: 'tasks',
+          project: { label: newProjectLabel(projects?.pageTitle ?? pageTitle, query) },
+        })
+        return
+      }
+      onPick({ kind: 'tasks', project: { id: item.id, label: item.label } })
     } else if (step === 'type') {
       if (!item) return
       if (item.id === ALL_CHARTS_ID) {
@@ -294,7 +329,23 @@ export function SourcePicker({
       else if (e.key === 'ArrowUp') select(Math.max(active - 1, first))
       else if (e.key === 'Escape') onClose()
       else if (e.key === 'Enter') pick(items[active])
-      else handled = false
+      // The query is typed state, not a field — only the `project` step reads
+      // printable keys (every other step has no filter, per this file's own
+      // top note). Backspace deletes a character of it; elsewhere Backspace is
+      // not this picker's to take.
+      else if (step === 'project' && e.key === 'Backspace') {
+        setQuery((q) => q.slice(0, -1))
+        setSel(null)
+      } else if (
+        step === 'project' &&
+        e.key.length === 1 &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey
+      ) {
+        setQuery((q) => q + e.key)
+        setSel(null)
+      } else handled = false
       if (handled) {
         e.preventDefault()
         e.stopPropagation()
@@ -325,6 +376,7 @@ export function SourcePicker({
     block,
     pageTitle,
     source: step === 'type' ? (source?.title ?? pageTitle) : undefined,
+    query: step === 'project' ? query : undefined,
   })
   const foot = footFor(step, { block, newSelected: items[active]?.id === NEW_DATABASE_ID })
   const indexOf = new Map(items.map((item, i) => [item, i]))

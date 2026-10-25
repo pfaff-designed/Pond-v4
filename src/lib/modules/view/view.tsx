@@ -38,6 +38,7 @@ import { useCollectionRows } from './use-collection-rows'
 import { useStruckRows } from '@/lib/change-log/undo-strike'
 import { DIFF_REMOVAL_TEXT_CLASSNAME, PondMolecule } from '@/components/molecules/PondMolecule'
 import { activeSavedView, applyConfigPatch } from './schema'
+import { seedFromFilter, filterHead } from './filter-seed'
 import { ActiveViewSelectionContext, SavedViewHostContext } from './active-view-context'
 import { SavedViewBar } from './saved-view-bar'
 import {
@@ -589,6 +590,15 @@ export function CollectionView({
     [rows, schema, activeConfig]
   )
 
+  // KAN-536: a row added from a filtered view inherits the filter's `eq` value —
+  // the lane's own value (a board's status, set by `handleAddCard`) wins over it,
+  // since the filter and the lane can disagree on the same field.
+  const seededAddRow = useMemo(() => {
+    if (!onAddRow) return undefined
+    return (laneValues?: Record<string, PropertyValue>) =>
+      onAddRow({ ...seedFromFilter(schema ?? [], activeConfig.filter), ...laneValues })
+  }, [onAddRow, schema, activeConfig.filter])
+
   // KAN-139 (s6o5): the row an undo/redo just removed from `rows` stays
   // visible, struck through, while the notice shows — appended past whatever
   // filter/sort `applyView` already ran, since it is no longer live data.
@@ -665,7 +675,7 @@ export function CollectionView({
           rawBlock={config}
           schema={schema}
           collectionName={collectionName}
-          recordCount={rows.length}
+          recordCount={processed.length}
           activeViewId={localActiveViewId}
           onSelectView={handleSelectView}
           updateSchema={updateSchema}
@@ -686,7 +696,7 @@ export function CollectionView({
             groupBy={activeConfig.groupBy}
             editable={editable}
             onEdit={onEdit}
-            onAddRow={onAddRow}
+            onAddRow={seededAddRow}
             onRenameRow={onRenameRow}
             onOpenRow={onOpenRow}
             onDeleteRow={onDeleteRow}
@@ -703,7 +713,7 @@ export function CollectionView({
             listFlat={activeConfig.listFlat}
             editable={editable}
             onEdit={onEdit}
-            onAddRow={onAddRow}
+            onAddRow={seededAddRow}
             onRenameRow={onRenameRow}
             onOpenRow={onOpenRow}
             onDeleteRow={onDeleteRow}
@@ -721,7 +731,7 @@ export function CollectionView({
             onEdit={onEdit}
             onMoveDate={onMoveDate}
             onMoveDates={onMoveDates}
-            onAddRow={onAddRow}
+            onAddRow={seededAddRow}
             onUpdateSchema={onUpdateSchema}
             onRenameRow={onRenameRow}
             onOpenRow={onOpenRow}
@@ -741,7 +751,7 @@ export function CollectionView({
             rows={processed}
             editable={editable}
             onEdit={onEdit}
-            onAddRow={onAddRow}
+            onAddRow={seededAddRow}
             onRenameRow={onRenameRow}
             onOpenRow={onOpenRow}
             onDeleteRow={onDeleteRow}
@@ -756,7 +766,7 @@ export function CollectionView({
             endId={activeConfig.endDate}
             editable={editable}
             onMoveDates={onMoveDates}
-            onAddRow={onAddRow}
+            onAddRow={seededAddRow}
             onRenameRow={onRenameRow}
             onAddDateField={onAddDateField}
           />
@@ -778,7 +788,7 @@ export function CollectionView({
                collection from a surface whose whole job is to be reviewed —
                "pages change only through the person's own edits or an accepted
                diff" (`PROJECT_RULES.md`). */
-              onAddRow={editable && onAddRow ? () => void onAddRow() : undefined}
+              onAddRow={editable && seededAddRow ? () => void seededAddRow() : undefined}
             />
           )
         ) : activeConfig.mode === 'big-number' ? (
@@ -795,7 +805,7 @@ export function CollectionView({
             struckIds={struckIds}
             editable={editable}
             onEdit={onEdit}
-            onAddRow={onAddRow}
+            onAddRow={seededAddRow}
             onRenameRow={onRenameRow}
             onOpenRow={onOpenRow}
             onDeleteRow={onDeleteRow}
@@ -890,7 +900,7 @@ function ViewControls({
         <div className="flex min-w-0 items-baseline gap-[10px]">
           {collectionName && (
             <span data-part="db-name" className="truncate text-[15px] font-medium text-mn-text">
-              {collectionName}
+              {filterHead(collectionName, schema, config.filter)}
             </span>
           )}
           <span data-part="db-count" className="text-[10.5px] font-medium text-mn-text-meta">

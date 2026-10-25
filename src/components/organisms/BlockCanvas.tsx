@@ -122,7 +122,8 @@ import {
 import { sessionUndo, type UndoHandle } from '@/lib/change-log/session-undo'
 import { applyUndoOutcome } from '@/lib/change-log/undo-outcome'
 import { blockName as changeBlockName } from '@/lib/change-log/summary'
-import { listRecords } from '@/lib/change-log/store'
+import { appendOwnEdit, listRecords } from '@/lib/change-log/store'
+import { changeLogKey } from '@/lib/change-log/keys'
 import { restorePage, trashPage } from '@/lib/change-log/trash'
 import { blockHoldsContent } from '@/lib/modules/block-holds-content'
 import { blockLabel } from '@/lib/modules/types'
@@ -163,12 +164,17 @@ import {
   type PondPage,
 } from '@/lib/pages/client'
 import { createDatabase } from '@/lib/pages/create-database'
+import {
+  getOrCreateTasksDatabase,
+  pickTasksDatabase,
+  projectFieldOf,
+} from '@/lib/pages/tasks-database'
 import { fetchRecordCounts, sourceDatabases } from '@/lib/pages/source-databases'
 import { insertPageOptimistic } from '@/lib/pages/tree'
 import { pagesKey } from '@/lib/pages/keys'
 import { usePagesRows } from '@/lib/pages/use-pages'
 import { flushPendingPageSave } from '@/lib/pages/page-flush'
-import { readSchema } from '@/lib/properties/schema'
+import { addOption, readSchema, withSchema } from '@/lib/properties/schema'
 import type { ViewBlock } from '@/lib/modules/view/schema'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { usePondId } from '@/lib/pond/context'
@@ -753,6 +759,40 @@ export function BlockCanvas({
     () => sourceDatabases(pageRows, recordCounts ?? new Map()),
     [pageRows, recordCounts]
   )
+
+  /**
+   * The board's `project` step (KAN-536) offers the shared tasks database's
+   * existing `project` options, read off the SAME `['pages']` rows `databases`
+   * derives from — no second fetch. `created_at` falls back to `updated_at`
+   * only for a row a fixture built by hand without it; `pickTasksDatabase`'s
+   * oldest-wins tie-break is the one reader that cares. Undefined (not `[]`)
+   * while no role database exists yet, so the picker still opens, offering
+   * only `new project — <title>`. `pickTasksDatabase` throws in development
+   * on more than one role row (an impossible, restore-only state) — caught
+   * here, not let through, so that state degrades to "no projects yet"
+   * instead of crashing every canvas render.
+   */
+  const projects = useMemo(() => {
+    try {
+      const picked = pickTasksDatabase(
+        pageRows.map((r) => ({
+          id: r.id,
+          props: r.props ?? {},
+          created_at: r.created_at ?? r.updated_at,
+        }))
+      )
+      if (!picked) return undefined
+      const schema = readSchema(picked.props) ?? []
+      const projectField = projectFieldOf(schema)
+      return {
+        options: (projectField?.options ?? []).map((o) => ({ id: o.id, label: o.label })),
+        pageTitle: pageTitle || 'untitled',
+      }
+    } catch (err) {
+      console.error(err)
+      return undefined
+    }
+  }, [pageRows, pageTitle])
 
   // The person's own templates, read only while a `/` menu is open — the pane's
   // `yours` group. Refetched on each open, so one saved a moment ago is there.
@@ -1460,6 +1500,80 @@ export function BlockCanvas({
     const open = sourcePicker
     setSourcePicker(null)
     if (!open) return
+    if (pick.kind === 'tasks') {
+      // One shared tasks database per pond (KAN-536) — never a database of this
+      // page's own. `getOrCreateTasksDatabase` always finds or makes it; a new
+      // `project` option is written as its own `edit_schema` change-log record
+      // (one `/board` gesture, two writes) rather than through `createDatabase`,
+      // which mints a fresh collection every time. Undo removes the inserted
+      // block only — the shared database, and the option, are never trashed.
+      try {
+        const supabase = getSupabase()
+        const { id: tasksId, schema } = await getOrCreateTasksDatabase(supabase, pondId)
+        // `projectFieldOf` (not a bare name match): a `project` field retyped to
+        // `text` cannot hold an option, so it is impossible here, never a path
+        // to an unfiltered board (KAN-536) — `getOrCreateTasksDatabase` already
+        // guarantees a real one.
+        const projectField = projectFieldOf(schema)
+        if (!projectField) throw new Error('The tasks database has no project field')
+        let optionId = pick.project.id ?? null
+        let finalSchema = schema
+        if (!optionId) {
+          // Never add a blank option (KAN-536): the picker already carries the
+          // trimmed label (`newProjectLabel`), and the host refuses one too
+          // rather than trust the picker alone.
+          const label = pick.project.label.trim()
+          if (!label) throw new Error('A project needs a name')
+          const minted = addOption(schema, projectField.id, label)
+          optionId = minted.optionId
+          if (!optionId) throw new Error('Could not add the project option')
+          finalSchema = minted.schema
+          await defineSchema(supabase, tasksId, minted.schema)
+          const {
+            data: { user },
+          } = await supabase.auth.getUser()
+          if (user) {
+            try {
+              await appendOwnEdit(supabase, {
+                userId: user.id,
+                pondId,
+                action: 'edit_schema',
+                targetPageId: tasksId,
+                before: schema,
+                after: minted.schema,
+              })
+              queryClient.invalidateQueries({ queryKey: changeLogKey() })
+            } catch (err) {
+              console.error('[change-log] schema edit not logged', tasksId, err)
+            }
+          }
+        }
+        // `defineSchema` (here, and inside `getOrCreateTasksDatabase` re-adding a
+        // missing `project` field) writes straight to Supabase and never touches
+        // the `['page', tasksId]` cache the view reads its schema from — a second
+        // board made within the app-wide 30s staleTime would otherwise mount
+        // against the schema as it stood before this pick's write (KAN-536).
+        queryClient.setQueryData<PondPage | null>(['page', tasksId], (prev) =>
+          prev ? { ...prev, props: withSchema(prev.props, finalSchema) } : prev
+        )
+        const statusField = finalSchema.find((f) => f.type === 'status')
+        const view: ViewBlock = {
+          id: crypto.randomUUID(),
+          type: 'view',
+          mode: 'board',
+          collectionId: tasksId,
+          ...(statusField ? { groupBy: statusField.id } : {}),
+          ...(optionId ? { filter: { property: projectField.id, op: 'eq', value: optionId } } : {}),
+        }
+        const landing = placeView(view, open.target)
+        queryClient.invalidateQueries({ queryKey: pagesKey() })
+        void persistBlocksAsOwnEdit(landing.next)
+      } catch (err) {
+        console.error('Failed to make the tasks board', err)
+        notify("Couldn't make the tasks board")
+      }
+      return
+    }
     // The kind the person chose, over the two fields the row promised. An empty
     // `property` with `agg: 'count'` would plot 1 per record, and a config with no
     // `xProperty` buckets by record TITLE — `resolveChartConfig` infers an x axis
@@ -2594,6 +2708,7 @@ export function BlockCanvas({
           /* Lowercase on the machine surface — see `sourceDatabases`. */
           pageTitle={pageTitle || 'untitled'}
           databases={databases}
+          projects={projects}
           loadFields={loadFields}
           /* ONE expression decides both: the step is `type` exactly when there IS
              a source to open it on. Deriving them separately opened the chart step
