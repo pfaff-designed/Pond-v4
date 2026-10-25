@@ -9,6 +9,7 @@
  */
 
 jest.mock('@/lib/change-log/store', () => ({
+  ...jest.requireActual('@/lib/change-log/store'),
   markOutdated: jest.fn().mockResolvedValue([]),
   appendOwnEdit: jest.fn(),
 }))
@@ -20,6 +21,40 @@ jest.mock('@/lib/pages/client', () => ({
 jest.mock('@/lib/pages/page-flush', () => ({
   flushPendingPageSave: jest.fn().mockResolvedValue(undefined),
 }))
+// `sessionUndo.undo`'s real queueing (session-undo.ts) is what proves a ⌘Z
+// mid-move takes THIS step, not whatever sits beneath it — only the RPC
+// boundary it calls through `createClient()` is faked here.
+jest.mock('@/lib/supabase/client', () => {
+  const rpc = jest.fn(async (fn: string, params: { p_record_ids: string[] }) => {
+    if (fn !== 'undo_change_log_record') {
+      return { data: null, error: { message: 'unsupported', details: 'not-found', hint: '', code: '' } }
+    }
+    const now = new Date().toISOString()
+    return {
+      data: params.p_record_ids.map((id) => ({
+        id: `undo-${id}`,
+        user_id: 'user-1',
+        pond_id: 'pond-1',
+        status: 'accepted',
+        action: 'undo',
+        actor: 'you',
+        target_page_id: null,
+        target_block_id: null,
+        before: null,
+        after: null,
+        source_thread_id: null,
+        tool_call_id: null,
+        read: null,
+        links: {},
+        transitions: [],
+        created_at: now,
+        status_at: now,
+      })),
+      error: null,
+    }
+  })
+  return { createClient: () => ({ rpc }) }
+})
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
@@ -28,6 +63,8 @@ import { appendOwnEdit } from '@/lib/change-log/store'
 import { getPage, saveBlocks } from '@/lib/pages/client'
 import type { PondPage } from '@/lib/pages/client'
 import { moveBlockToPage, planBlockMove } from '@/lib/pages/move-block'
+import { sessionUndo } from '@/lib/change-log/session-undo'
+import { createClient } from '@/lib/supabase/client'
 import type { ChangeLogRecord } from '@/lib/change-log/types'
 import type { Block } from '@/lib/documents/types'
 import type { BlockWidth } from '@/lib/modules/content'
@@ -35,6 +72,7 @@ import type { BlockWidth } from '@/lib/modules/content'
 const mockedGetPage = getPage as jest.MockedFunction<typeof getPage>
 const mockedSaveBlocks = saveBlocks as jest.MockedFunction<typeof saveBlocks>
 const mockedAppend = appendOwnEdit as jest.MockedFunction<typeof appendOwnEdit>
+const mockedRpc = (createClient() as unknown as { rpc: jest.Mock }).rpc
 
 const page = (id: string, blocks: Block[]): PondPage => ({
   id,
@@ -58,6 +96,7 @@ const queryClient = { invalidateQueries: jest.fn().mockResolvedValue(undefined) 
 
 beforeEach(() => {
   jest.clearAllMocks()
+  sessionUndo.clear()
   global.fetch = jest.fn().mockResolvedValue({ ok: true } as Response)
   mockedGetPage.mockImplementation(async (_s, id) => {
     if (id === 'verify') return page('verify', [KEPT, BLOCK])
@@ -96,7 +135,8 @@ it('reports one history step with both record ids, source first', async () => {
     pondId: 'pond-1',
   })
 
-  expect(result).toEqual({ pondId: 'pond-1', recordIds: ['rec-verify', 'rec-house'] })
+  expect(result).toMatchObject({ pondId: 'pond-1', recordIds: ['rec-verify', 'rec-house'] })
+  expect(result?.handle).not.toBeNull()
 })
 
 it('leaves the source untouched when the target write fails', async () => {
@@ -112,6 +152,70 @@ it('leaves the source untouched when the target write fails', async () => {
   ).rejects.toThrow('network')
 
   expect(mockedSaveBlocks).toHaveBeenCalledTimes(1)
+  // The reserved slot resolved to nothing written — a ⌘Z finds it, and
+  // drops it, rather than undoing some unrelated earlier step.
+  await expect(sessionUndo.undo('pond-1')).resolves.toEqual({ outcome: 'empty' })
+})
+
+it('a failed source write leaves the target unchanged and nothing on the undo stack', async () => {
+  mockedSaveBlocks.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('network'))
+
+  await expect(
+    moveBlockToPage(supabase, queryClient, {
+      blockId: 'block-1',
+      sourcePageId: 'verify',
+      targetPageId: 'house',
+      pondId: 'pond-1',
+    })
+  ).rejects.toThrow('network')
+
+  // Target write, source write (fails), then the compensating write that
+  // puts the target back to what it held before the move.
+  expect(mockedSaveBlocks).toHaveBeenCalledTimes(3)
+  const [, revertedId, revertedBlocks] = mockedSaveBlocks.mock.calls[2]
+  expect(revertedId).toBe('house')
+  expect(revertedBlocks).toEqual([EXISTING])
+  await expect(sessionUndo.undo('pond-1')).resolves.toEqual({ outcome: 'empty' })
+})
+
+it('⌘Z pressed while the move is in flight undoes the move, not the step before it', async () => {
+  sessionUndo.remember({ pondId: 'pond-1', recordIds: ['older-record'] })
+
+  let releaseTarget: () => void = () => {}
+  mockedSaveBlocks.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        releaseTarget = () => resolve(undefined)
+      })
+  )
+
+  const movePromise = moveBlockToPage(supabase, queryClient, {
+    blockId: 'block-1',
+    sourcePageId: 'verify',
+    targetPageId: 'house',
+    pondId: 'pond-1',
+  })
+  // Lets the slot get reserved and `saveBlocks` get called before ⌘Z presses —
+  // the reservation happens before this call, so the step is already on top.
+  for (let i = 0; i < 10 && mockedSaveBlocks.mock.calls.length === 0; i++) await Promise.resolve()
+  expect(sessionUndo.getSnapshot('pond-1').canUndo).toBe(true)
+
+  const undoPromise = sessionUndo.undo('pond-1')
+  releaseTarget()
+  const result = await movePromise
+  const outcome = await undoPromise
+
+  expect(result).not.toBeNull()
+  expect(outcome.outcome).toBe('done')
+  expect(mockedRpc).toHaveBeenCalledWith(
+    'undo_change_log_record',
+    expect.objectContaining({ p_record_ids: ['rec-verify', 'rec-house'] })
+  )
+  // The older step is still underneath, untouched — the press took the
+  // move's own step, not whatever was there before it started.
+  const snapshot = sessionUndo.getSnapshot('pond-1')
+  expect(snapshot.canUndo).toBe(true)
+  expect(snapshot.topUndoRecordIds).toEqual(['older-record'])
 })
 
 it('is a no-op when the block is no longer on the source page', async () => {

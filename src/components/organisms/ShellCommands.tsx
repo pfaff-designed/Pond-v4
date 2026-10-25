@@ -654,12 +654,14 @@ export function ShellCommands() {
             return
           }
           // `null` means nothing moved (the block was already gone from the
-          // source) — there is nothing to undo and nothing to tell.
-          if (!result || pondId === null) return
-          const handle = sessionUndo.rememberPending({
-            pondId,
-            recordIds: Promise.resolve(result.recordIds),
-          })
+          // source, or it landed but couldn't be remembered) — there is
+          // nothing to undo and nothing to tell. The slot is reserved
+          // inside `moveBlockToPage` itself, before either write started
+          // (KAN-368's pattern), so `undoHandle` below is the SAME step a
+          // ⌘Z pressed mid-move would already have taken — not a second,
+          // later slot staged only once this promise resolves.
+          const handle = result?.handle
+          if (!result || pondId === null || !handle) return
           queryClient.invalidateQueries({ queryKey: changeLogKey() })
           stageUndo({
             message: `moved 1 block to ${targetPage.title || 'Untitled'} ·`,

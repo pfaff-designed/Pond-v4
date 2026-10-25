@@ -12,6 +12,15 @@
  * change-log record, and the two are reported back as ONE history step
  * (`recordIds`, source first) so a caller can hand them to `sessionUndo` as
  * a single ⌘Z.
+ *
+ * The undo slot is reserved (`sessionUndo.rememberPending`, KAN-368's
+ * pattern) BEFORE the target write even starts, with a deferred that
+ * resolves once both record ids are known or the move can't be undone —
+ * never after both writes land, or a ⌘Z pressed mid-move would fall through
+ * to whatever step sits underneath this one. A target write that lands
+ * followed by a source write that throws is compensated: the target is
+ * written back to its pre-move blocks, so the block is never left on both
+ * pages with nothing undoable.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -19,6 +28,7 @@ import type { QueryClient } from '@tanstack/react-query'
 import type { Database } from '@/lib/supabase/types'
 import type { Block } from '@/lib/documents/types'
 import { detachKeepingRows } from '@/lib/modules/layout-rows'
+import { sessionUndo, type UndoHandle } from '@/lib/change-log/session-undo'
 import { getPage } from './client'
 import { commitBlocks } from './commit'
 import { flushPendingPageSave } from './page-flush'
@@ -63,10 +73,35 @@ export interface MoveBlockToPageInput {
 
 /** One undoable step across both pages — `recordIds` is SOURCE then TARGET,
  *  so a caller reading it back knows which half is which without re-deriving
- *  it from the ids themselves. */
+ *  it from the ids themselves. `handle` is the already-reserved session-undo
+ *  slot (`sessionUndo.rememberPending`, called before either write started)
+ *  — a caller hands it straight to `sessionUndo.undoHandle`, rather than
+ *  reserving a second, wrongly-ordered slot of its own. */
 export interface MoveBlockResult {
   pondId: string | null
   recordIds: readonly string[]
+  handle: UndoHandle | null
+}
+
+/**
+ * Best-effort write of `blocks` back onto `pageId` — for when one side of a
+ * move landed but the step as a whole must be unwound. Never throws past
+ * this function: the caller already has the real error to report (or, for a
+ * move that landed but can't be remembered, there is no error at all, only
+ * a log line).
+ */
+async function restoreBlocks(
+  supabase: SupabaseClient<Database>,
+  queryClient: QueryClient,
+  pageId: string,
+  blocks: Block[]
+): Promise<void> {
+  try {
+    await commitBlocks(supabase, queryClient, pageId, blocks)
+    await queryClient.invalidateQueries({ queryKey: ['page', pageId] })
+  } catch (err) {
+    console.error('[move-block] compensating write failed', pageId, err)
+  }
 }
 
 /**
@@ -103,50 +138,102 @@ export async function moveBlockToPage(
       return null
     }
 
+    // KAN-368's pattern (`use-page-draft.ts`'s `reserveUndoSlot`): the slot
+    // exists on the stack from before either write starts, so a ⌘Z pressed
+    // while the move is still in flight takes THIS step rather than falling
+    // through to whatever settled underneath it. `resolveRecordIds` is a
+    // no-op when there's no pond to remember a step in.
+    let resolveRecordIds: (ids: readonly string[] | null) => void = () => {}
+    let handle: UndoHandle | null = null
+    if (pondId) {
+      const recordIds = new Promise<readonly string[] | null>((resolve) => {
+        resolveRecordIds = resolve
+      })
+      handle = sessionUndo.rememberPending({ pondId, recordIds })
+    }
+
     // Appended first: if this throws (the write never lands), the source
-    // removal below never runs — the source page is left exactly as it was.
+    // removal below never runs — the source page is left exactly as it was,
+    // and the reserved slot resolves to nothing so ⌘Z drops it cleanly.
     let targetRecordId: string | null = null
-    const { remembered: targetRemembered } = await commitBlocks(
-      supabase,
-      queryClient,
-      targetPageId,
-      plan.target,
-      {
-        ownEdit: true,
-        before: target.blocks,
-        pondId,
-        onPending: (ids) => {
-          targetRecordId = ids?.[0] ?? null
-        },
-      }
-    )
-    await targetRemembered
-    await queryClient.invalidateQueries({ queryKey: ['page', targetPageId] })
+    try {
+      const { remembered: targetRemembered } = await commitBlocks(
+        supabase,
+        queryClient,
+        targetPageId,
+        plan.target,
+        {
+          ownEdit: true,
+          before: target.blocks,
+          pondId,
+          onPending: (ids) => {
+            targetRecordId = ids?.[0] ?? null
+          },
+        }
+      )
+      await targetRemembered
+      await queryClient.invalidateQueries({ queryKey: ['page', targetPageId] })
+    } catch (err) {
+      resolveRecordIds(null)
+      throw err
+    }
 
     let sourceRecordId: string | null = null
-    const { remembered: sourceRemembered } = await commitBlocks(
-      supabase,
-      queryClient,
-      sourcePageId,
-      plan.source,
-      {
-        ownEdit: true,
-        before: source.blocks,
-        pondId,
-        onPending: (ids) => {
-          sourceRecordId = ids?.[0] ?? null
-        },
-      }
-    )
-    await sourceRemembered
-    await queryClient.invalidateQueries({ queryKey: ['page', sourcePageId] })
+    try {
+      const { remembered: sourceRemembered } = await commitBlocks(
+        supabase,
+        queryClient,
+        sourcePageId,
+        plan.source,
+        {
+          ownEdit: true,
+          before: source.blocks,
+          pondId,
+          onPending: (ids) => {
+            sourceRecordId = ids?.[0] ?? null
+          },
+        }
+      )
+      await sourceRemembered
+      await queryClient.invalidateQueries({ queryKey: ['page', sourcePageId] })
+    } catch (err) {
+      // The target append landed but the source removal didn't (a single
+      // `saveBlocks` call either lands whole or not at all, so the source
+      // itself is untouched) — the block must not be left on both pages
+      // with nothing to undo.
+      await restoreBlocks(supabase, queryClient, targetPageId, target.blocks)
+      resolveRecordIds(null)
+      throw err
+    }
 
     // Read after both `remembered` promises settle, so each `onPending`
     // closure has already run — cast past TS's control-flow narrowing
     // (it can't see a write inside a callback it doesn't trace) rather than
     // widening the declared `string | null` with a cast at every read.
     const ids = [sourceRecordId, targetRecordId] as (string | null)[]
-    return { pondId, recordIds: ids.filter((id): id is string => id !== null) }
+    if (ids.some((id) => id === null)) {
+      // Both physical writes landed, but one side's change-log record never
+      // did — a one-sided step can never be undone correctly (⌘Z would only
+      // reverse half the move), so the whole move is unwound rather than
+      // offered as a step with a missing half.
+      console.error('[move-block] move landed without a full undo record', {
+        blockId,
+        sourcePageId,
+        targetPageId,
+        sourceRecordId,
+        targetRecordId,
+      })
+      await Promise.all([
+        restoreBlocks(supabase, queryClient, targetPageId, target.blocks),
+        restoreBlocks(supabase, queryClient, sourcePageId, source.blocks),
+      ])
+      resolveRecordIds(null)
+      return null
+    }
+
+    const recordIds = ids as string[]
+    resolveRecordIds(recordIds)
+    return { pondId, recordIds, handle }
   } finally {
     inFlight.delete(blockId)
   }
