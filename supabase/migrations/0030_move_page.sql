@@ -72,11 +72,33 @@
 -- itself trashed or gone, rather than letting that UPDATE's dangling
 -- `parent_id` surface as a raw `23503` foreign-key violation.
 --
+-- UNDO-CYCLE HARDENING (KAN-466 fix). `change_log_set_back`'s `move` branch
+-- only compared the moved page's CURRENT parent_id against the record's
+-- `before.parentId` — it never checked whether the RESTORE target (redo:
+-- the re-apply target) now sits inside the moved page's own subtree. Two
+-- tabs drag roof (under A) onto house, then drag A under roof, then tab one
+-- undoes the first move: roof's parent is still house (so that compare
+-- passes), and roof is reparented under A, which is now under roof — a
+-- cycle that vanishes roof, A, and both subtrees from every rail. Fixed by
+-- extracting `apply_page_move`'s subtree walk into
+-- `private.page_is_self_or_descendant` (one home for the check — both
+-- functions now call it) and refusing with `P0001`/`page-changed` when the
+-- restore target is the page itself or a descendant of it, the same
+-- refusal the existing parent-compare already uses for "this record is
+-- stale".
+--
+-- The subtree walk itself used `union all`, so a cycle already present in
+-- the data (written directly, bypassing these RPCs, or left behind by a
+-- bug) made it recurse forever instead of raising. `union` (set semantics)
+-- de-duplicates visited ids, so a cycle's walk revisits an id already in
+-- the CTE's result and terminates instead of looping past it.
+--
 -- Down (manual):
 --   revoke execute on function public.move_page(uuid, uuid, uuid[]) from authenticated;
 --   drop function if exists public.move_page(uuid, uuid, uuid[]);
 --   drop function if exists private.apply_page_move(uuid, uuid, uuid[], text);
 --   drop function if exists private.page_move_parent_title(uuid, uuid, uuid);
+--   drop function if exists private.page_is_self_or_descendant(uuid, uuid, uuid);
 
 begin;
 
@@ -108,6 +130,38 @@ $$;
 
 revoke all on function private.page_move_parent_title(uuid, uuid, uuid) from public;
 grant execute on function private.page_move_parent_title(uuid, uuid, uuid) to authenticated;
+
+-- `p_candidate_id` is `p_root_id` itself or sits anywhere under it. Used to
+-- refuse a reparent that would hide a page under its own subtree. `union`
+-- (not `union all`): a cycle already present in the data must make the walk
+-- terminate by revisiting an id already in the CTE's result, not recurse
+-- forever. `security definer`, scoped explicitly by `p_user_id` rather than
+-- `auth.uid()`, so both an `apply_page_move` caller (itself definer) and a
+-- `change_log_set_back` caller (invoker) see the same subtree regardless of
+-- which role is current when they call it.
+create or replace function private.page_is_self_or_descendant(
+  p_root_id uuid,
+  p_candidate_id uuid,
+  p_user_id uuid
+)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  with recursive subtree as (
+    select p_root_id as id
+    union
+    select p.id from public.pages p
+      join subtree s on p.parent_id = s.id
+     where p.user_id = p_user_id
+  )
+  select exists (select 1 from subtree where id = p_candidate_id)
+$$;
+
+revoke all on function private.page_is_self_or_descendant(uuid, uuid, uuid) from public;
+grant execute on function private.page_is_self_or_descendant(uuid, uuid, uuid) to authenticated;
 
 create or replace function private.apply_page_move(
   p_page_id uuid,
@@ -158,16 +212,9 @@ begin
   -- descendants (that would hide it from every rail along with the whole
   -- subtree underneath). The subtree walk's base case (`id = p_page_id`)
   -- catches the first; the recursive step catches the second.
-  if p_new_parent_id is not null and exists (
-    with recursive subtree as (
-      select id from public.pages where id = p_page_id
-      union all
-      select p.id from public.pages p
-        join subtree s on p.parent_id = s.id
-       where p.user_id = v_page.user_id
-    )
-    select 1 from subtree where id = p_new_parent_id
-  ) then
+  if p_new_parent_id is not null
+     and private.page_is_self_or_descendant(p_page_id, p_new_parent_id, v_page.user_id)
+  then
     raise exception 'page % is a descendant of %, and cannot become its parent', p_new_parent_id, p_page_id
       using errcode = 'invalid_parameter_value', detail = 'invalid-new-parent';
   end if;
@@ -412,6 +459,20 @@ begin
     ) then
       raise exception 'change_log record %: the page it moved to is gone', p_record.id
         using errcode = 'no_data_found', detail = 'page-gone';
+    end if;
+
+    -- The parent being restored (or re-applied, on redo) to must not be the
+    -- moved page itself, or now sit inside the moved page's own subtree —
+    -- otherwise this would create a cycle (see the migration header's
+    -- UNDO-CYCLE HARDENING note) even though the simple parent_id compare
+    -- above found nothing stale.
+    if p_to ->> 'parentId' is not null
+       and private.page_is_self_or_descendant(
+             p_record.target_page_id, (p_to ->> 'parentId')::uuid, p_record.user_id
+           )
+    then
+      raise exception 'page % changed since change_log record %', p_record.target_page_id, p_record.id
+        using errcode = 'P0001', detail = 'page-changed';
     end if;
 
     update public.pages

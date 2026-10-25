@@ -464,3 +464,67 @@ describe('0030_move_page — undo refuses a restore parent that is gone (KAN-466
     await db.close()
   })
 })
+
+describe('0030_move_page — undo refuses a cycle a second, unrelated move has set up (KAN-466 fix)', () => {
+  it("refuses page-changed when the restore parent now sits in the moved page's own subtree, and changes nothing", async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pond = await lifePondId(db)
+    const house = await addPage(db, pond, { title: 'house' })
+    const a = await addPage(db, pond, { title: 'a' })
+    const roof = await addPage(db, pond, { parentId: a, title: 'roof' })
+
+    // Tab 1: drag roof (under a) onto house.
+    await actAs(db, USER)
+    await db.query('select public.move_page($1, $2, $3)', [roof, house, [roof]])
+    await db.exec('reset role;')
+    const roofMove = (await moveRecordsFor(db, roof))[0]
+
+    // Tab 2: drag a under roof. Roof's subtree is now { roof, a }.
+    await actAs(db, USER)
+    await db.query('select public.move_page($1, $2, $3)', [a, roof, [a]])
+    await db.exec('reset role;')
+
+    // Tab 1: press undo on the first move. Restoring roof's parent to `a`
+    // would nest roof under its own descendant — a cycle the simple
+    // parent_id compare alone (current parent is still `house`) does not
+    // catch.
+    await expect(undo(db, [roofMove.id], pond)).rejects.toMatchObject(
+      refusal('P0001', 'page-changed')
+    )
+    expect(await pageOf(db, roof)).toEqual({ parent_id: house, order: 0 })
+    expect(await pageOf(db, a)).toEqual({ parent_id: roof, order: 0 })
+    await db.close()
+  })
+})
+
+describe('0030_move_page — a pre-existing cycle in the data terminates instead of hanging (KAN-466 fix)', () => {
+  it('reparents past a cycle written directly into the table instead of looping forever', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pond = await lifePondId(db)
+    const dest = await addPage(db, pond, { title: 'dest' })
+    const p1 = await addPage(db, pond, { title: 'p1' })
+    const p2 = await addPage(db, pond, { parentId: p1, title: 'p2' })
+    // A cycle written directly, bypassing move_page/apply_page_move entirely —
+    // the only way the schema's FK/trigger layer can't itself prevent one.
+    // p1 -> p2 -> p1: dest is outside the cycle, so the subtree walk rooted
+    // at p1 must exhaust the whole cycle (bouncing between p1 and p2) before
+    // it can correctly conclude dest isn't in it — it bounces forever unless
+    // it de-duplicates visited ids.
+    await db.query('update public.pages set parent_id = $1 where id = $2', [p2, p1])
+
+    // Guard: if the `union all` cycle walk ever regresses, this statement
+    // hits the timeout (and the call rejects) instead of hanging the whole
+    // test run.
+    await db.exec(`set statement_timeout = '3s';`)
+    await actAs(db, USER)
+    await expect(
+      db.query('select public.move_page($1, $2, $3)', [p1, dest, [p1]])
+    ).resolves.toBeDefined()
+    await db.exec('reset role; reset statement_timeout;')
+
+    expect(await pageOf(db, p1)).toEqual({ parent_id: dest, order: 0 })
+    await db.close()
+  }, 15000)
+})
