@@ -370,11 +370,19 @@ describe('right-click opens the block menu at the pointer (KAN-485)', () => {
     expect(await screen.findByRole('menu', { name: /block menu/i })).toBeInTheDocument()
   })
 
-  it('opens from an inner element of a page-link card (its whole card is role="button")', async () => {
+  it('opens from an inner element of a page-link card (its whole card is an <a>)', async () => {
     renderCanvas([pageLink])
-    const card = await screen.findByRole('button', { name: 'Open brioche' })
+    const card = await screen.findByRole('link', { name: 'Open brioche' })
     const title = within(card).getByText('brioche')
+    let event: Event | undefined
+    const capture = (e: Event) => {
+      event = e
+    }
+    card.addEventListener('contextmenu', capture)
     fireEvent.contextMenu(title, { clientX: 10, clientY: 10 })
+    card.removeEventListener('contextmenu', capture)
+
+    expect(event?.defaultPrevented).toBe(true)
     expect(await screen.findByRole('menu', { name: /block menu/i })).toBeInTheDocument()
   })
 
