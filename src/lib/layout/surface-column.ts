@@ -28,6 +28,12 @@ export interface SurfaceColumn {
 
 /** The column's own padding, each side — read wherever a width inside it is worked out. */
 export const PAGE_COLUMN_PAD_PX = 32
+/** Added at the page-column call site (not inside `useSurfaceColumn` itself, which
+ *  ChangeLogPage/ChangeLogRecordPage/TrashPage also use): makes the column at
+ *  least the canvas's height, so the trailing gap's `flex-1` has room to fill
+ *  down to the canvas end on a short page, instead of collapsing to content
+ *  height (KAN-498). Never `h-full` — that would clip a long page. */
+export const PAGE_COLUMN_FILL_CLASS = 'flex flex-col min-h-full'
 /** A bare text block's inset, each side (`PondTemplate`: `padding 2px 4px`); the title row aligns to it. */
 export const TEXT_BLOCK_INSET_PX = 4
 /** The same wrapper's top/bottom inset (the `2` in `padding 2px 4px`) — the trailing

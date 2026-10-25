@@ -49,7 +49,7 @@ import { BlockCanvas } from '@/components/organisms/BlockCanvas'
 import { PageTitleRow } from '@/components/organisms/PageTitleRow'
 import { ContentWidthHandle } from '@/components/molecules/ContentWidthHandle'
 import { useContentWidth } from '@/lib/layout/content-width'
-import { useSurfaceColumn } from '@/lib/layout/surface-column'
+import { PAGE_COLUMN_FILL_CLASS, useSurfaceColumn } from '@/lib/layout/surface-column'
 import { useZen, zenColumn, ZEN_BLOCK_LIST_STYLE, ZEN_COLUMN_PX } from '@/lib/layout/zen'
 import { usePublishCommandPath } from '@/lib/layout/command-path'
 import { commandPath, type CommandCrumbTarget } from '@/lib/pages/command-path'
@@ -115,6 +115,11 @@ export function DocumentPanel() {
   // #96: the column's insets — 76 under the floating pill, the composer's
   // published clearance below (lib/layout/surface-column).
   const { column, handle } = useSurfaceColumn(zen ? ZEN_COLUMN_PX : contentWidth)
+  // KAN-498: the column is at least the canvas height, so the trailing gap's
+  // `flex-1` can fill down to the canvas end on a short page. Applied before the
+  // zen transform too — zen mounts no trailing gap, so it just leaves empty space.
+  const fillColumn = { ...column, className: `${column.className} ${PAGE_COLUMN_FILL_CLASS}` }
+  const columnProps = zen ? zenColumn(fillColumn) : fillColumn
   // KAN-369: Return/↓ leaving the title — BlockCanvas assigns its own
   // `enterFromTitle` here, so this panel can hand the title row a callback
   // without reaching into BlockCanvas's block state itself.
@@ -538,7 +543,7 @@ export function DocumentPanel() {
     )
     return (
       <PageCanvas className="h-full overflow-y-auto">
-        <div {...(zen ? zenColumn(column) : column)} data-testid="page-column">
+        <div {...columnProps} data-testid="page-column">
           {!zen && (
             <ContentWidthHandle
               {...handle}
@@ -621,7 +626,7 @@ export function DocumentPanel() {
           composer's published clearance + 24 below) come from useSurfaceColumn,
           and the handle is bounded to the READABLE column — it stops where the
           content stops, so the drag strip never runs through the composer's region. */}
-      <div {...(zen ? zenColumn(column) : column)} data-testid="page-column">
+      <div {...columnProps} data-testid="page-column">
         {!zen && (
           <ContentWidthHandle
             {...handle}
