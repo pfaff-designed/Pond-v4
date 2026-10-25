@@ -19,6 +19,7 @@
 
 import type { PaletteItem, PaletteScope } from '@/components/molecules/palette-entries'
 import { ancestorPath, crumbTrail } from '@/lib/pages/crumbs'
+import { isDuplicablePageRow } from '@/lib/pages/databases-root'
 import { markIndex, resolveMark } from '@/lib/pages/mark'
 import { RECENT_SHOWN } from '@/lib/pages/recent-pages'
 import type { PageRow } from '@/lib/pages/tree'
@@ -90,7 +91,9 @@ export const SAVE_AS_TEMPLATE_ACTION: PaletteItem = {
 /**
  * KAN-468: no board draws this — "No board draws it; the app's flow applies"
  * (Notion's page-menu Duplicate, ⌘D). A page action like `save-as-template`
- * just above, so it lists only when there is a page open to duplicate.
+ * just above, so it lists only when there is a page open to duplicate — AND
+ * that page passes `isDuplicablePageRow`, the same rule Rail's own ⌘D
+ * capability reads, which refuses the pond root and the databases root.
  */
 export const DUPLICATE_PAGE_ACTION: PaletteItem = {
   id: 'action:duplicate-page',
@@ -128,6 +131,10 @@ export function paletteItems(
   // slots doesn't shrink the visible group below RECENT_SHOWN.
   const recent = recentIds.flatMap((id) => byId.get(id) ?? []).slice(0, RECENT_SHOWN)
   const recentSet = new Set(recent.map((r) => r.id))
+  // The home page is never in `rows` (fetchPages excludes `type = 'home'`), so
+  // a missing lookup is itself a reason not to offer duplicate — the rule
+  // defaults closed, not open, on an id it can't resolve.
+  const openPage = openPageId ? byId.get(openPageId) : undefined
   return [
     ...recent.map((r) => ({ ...item(r), recent: true })),
     ...all.filter((r) => !recentSet.has(r.id)).map(item),
@@ -136,7 +143,8 @@ export function paletteItems(
     NEW_PAGE_ACTION,
     { ...ASK_POND_ACTION, key: formatChord('mod+j') },
     DEEP_RESEARCH_ACTION,
-    ...(openPageId ? [SAVE_AS_TEMPLATE_ACTION, DUPLICATE_PAGE_ACTION] : []),
+    ...(openPageId ? [SAVE_AS_TEMPLATE_ACTION] : []),
+    ...(openPage && isDuplicablePageRow(openPage) ? [DUPLICATE_PAGE_ACTION] : []),
   ]
 }
 

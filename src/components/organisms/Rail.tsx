@@ -96,6 +96,7 @@ import {
   DATABASES_ROOT_TITLE,
   getOrCreateDatabasesRoot,
   isDatabasesRoot,
+  isDuplicablePage,
 } from '@/lib/pages/databases-root'
 import { usePondName } from '@/lib/pond/name'
 import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
@@ -269,7 +270,7 @@ const rowCapabilities = (id: string, node: RailNode): RowCapabilities => {
       addable: true,
       deletable: true,
       renameable: true,
-      duplicable: true,
+      duplicable: isDuplicablePage(node),
     }
   return {
     draggable: true,
@@ -277,7 +278,7 @@ const rowCapabilities = (id: string, node: RailNode): RowCapabilities => {
     addable: true,
     deletable: true,
     renameable: true,
-    duplicable: true,
+    duplicable: isDuplicablePage(node),
   }
 }
 

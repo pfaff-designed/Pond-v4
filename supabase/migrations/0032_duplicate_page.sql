@@ -54,6 +54,11 @@
 -- page" distinguishable from "made a page" in its history, even though both
 -- share the same undo machinery via the `page` kind.
 --
+-- NOT DUPLICABLE (KAN-468 part 4). The pond root (`type = 'home'`) and the
+-- databases root are each a pond's one-per-kind row, same as `trash_page`
+-- (0027) already guards — refused with `trash_page`'s own convention
+-- (`errcode = 'invalid_parameter_value', detail = 'not-duplicable'`).
+--
 -- Down (manual):
 --   drop function if exists public.duplicate_page(uuid, text, text);
 --   drop function if exists private.rewrite_page_link_ids(jsonb, jsonb);
@@ -112,6 +117,19 @@ begin
   if not found then
     raise exception 'page % not found', p_page_id
       using errcode = 'no_data_found', detail = 'not-found';
+  end if;
+
+  -- The pond root (`type = 'home'`) and the databases root (a top-level page
+  -- titled "databases") are each a pond's one-per-kind root, same as
+  -- `trash_page` (0027) already guards — copying either verbatim would try to
+  -- insert a second one and fail on `pages_one_root_per_pond` (home) or just
+  -- silently duplicate every database and record under a top-level "databases
+  -- 2" (the root itself has no such constraint). Neither is ever duplicable.
+  if v_page.type = 'home'
+     or (v_page.parent_id is null and lower(btrim(v_page.title)) = 'databases')
+  then
+    raise exception 'page % cannot be duplicated', p_page_id
+      using errcode = 'invalid_parameter_value', detail = 'not-duplicable';
   end if;
 
   -- Make room directly below the original before any id is minted: shift

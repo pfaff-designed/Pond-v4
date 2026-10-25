@@ -276,6 +276,58 @@ describe('0032_duplicate_page — duplicate_page()', () => {
 
     await db.close()
   })
+
+  it('refuses to duplicate the pond root (type = home), writing nothing', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pond = await lifePondId(db)
+    const home = await db.query<{ id: string }>(
+      `insert into public.pages (user_id, pond_id, parent_id, type, title, blocks)
+       values ($1, $2, null, 'home', 'life', '[]') returning id`,
+      [USER, pond]
+    )
+    const homeId = home.rows[0].id
+
+    await actAs(db, USER)
+    await expect(
+      db.query(`select public.duplicate_page($1, $2)`, [homeId, 'life 2'])
+    ).rejects.toMatchObject({ detail: 'not-duplicable' })
+    await db.exec('reset role;')
+
+    const log = await db.query<{ n: number }>('select count(*)::int as n from public.change_log')
+    expect(log.rows[0].n).toBe(0)
+    const children = await childrenOf(db, null, pond)
+    expect(children.map((c) => c.title)).not.toContain('life 2')
+
+    await db.close()
+  })
+
+  it('refuses to duplicate the databases root, writing nothing', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pond = await lifePondId(db)
+    const databasesRoot = await addPage(db, pond, { title: 'databases' })
+    const database = await addPage(db, pond, { parentId: databasesRoot, title: 'Tasks' })
+
+    await actAs(db, USER)
+    await expect(
+      db.query(`select public.duplicate_page($1, $2)`, [databasesRoot, 'databases 2'])
+    ).rejects.toMatchObject({ detail: 'not-duplicable' })
+    await db.exec('reset role;')
+
+    const log = await db.query<{ n: number }>('select count(*)::int as n from public.change_log')
+    expect(log.rows[0].n).toBe(0)
+    const rootChildren = await childrenOf(db, null, pond)
+    expect(rootChildren.map((c) => c.title)).not.toContain('databases 2')
+    // The database underneath was never copied either.
+    const tasksRows = await db.query<{ n: number }>(
+      `select count(*)::int as n from public.pages where title = 'Tasks'`
+    )
+    expect(tasksRows.rows[0].n).toBe(1)
+    expect(await pageRow(db, database)).toBeDefined()
+
+    await db.close()
+  })
 })
 
 const undo = (db: PGlite, ids: string[], pondId: string) =>
