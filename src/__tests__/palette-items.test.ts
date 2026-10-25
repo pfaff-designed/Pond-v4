@@ -9,6 +9,7 @@ import {
   ASK_POND_ACTION,
   DEEP_RESEARCH_ACTION,
   DUPLICATE_PAGE_ACTION,
+  FAVOURITE_PAGE_ACTION,
   IMPORT_A_PAGE_ACTION,
   modeItems,
   MOVE_PAGE_ACTION,
@@ -16,6 +17,7 @@ import {
   paletteItems,
   REPORT_A_PROBLEM_ACTION,
   SAVE_AS_TEMPLATE_ACTION,
+  UNFAVOURITE_PAGE_ACTION,
   ZEN_ACTION,
 } from '@/lib/pages/palette-items'
 import { LIFE_ID } from '@/lib/rail/tree'
@@ -183,6 +185,69 @@ describe('paletteItems — move page', () => {
 
     expect(withExtraRootOpen).not.toContainEqual(MOVE_PAGE_ACTION)
     expect(withExtraRootOpen).toContainEqual(DUPLICATE_PAGE_ACTION)
+  })
+})
+
+describe('FAVOURITE_PAGE_ACTION / UNFAVOURITE_PAGE_ACTION', () => {
+  it('are action rows in Pond’s own words', () => {
+    expect(FAVOURITE_PAGE_ACTION).toMatchObject({
+      id: 'action:favourite-page',
+      label: 'favourite this page',
+      kind: 'action',
+      action: 'favourite-page',
+    })
+    expect(UNFAVOURITE_PAGE_ACTION).toMatchObject({
+      id: 'action:unfavourite-page',
+      label: 'unfavourite this page',
+      kind: 'action',
+      action: 'unfavourite-page',
+    })
+  })
+})
+
+describe('paletteItems — favourite / unfavourite page', () => {
+  it('offers "favourite this page" for an open page not in the pond’s favourites', () => {
+    const items = paletteItems([ordinaryPage], [], 'some-page', [])
+
+    expect(items).toContainEqual(FAVOURITE_PAGE_ACTION)
+    expect(items).not.toContainEqual(UNFAVOURITE_PAGE_ACTION)
+  })
+
+  it('offers "unfavourite this page" for an open page already in the pond’s favourites', () => {
+    const items = paletteItems([ordinaryPage], [], 'some-page', ['some-page'])
+
+    expect(items).toContainEqual(UNFAVOURITE_PAGE_ACTION)
+    expect(items).not.toContainEqual(FAVOURITE_PAGE_ACTION)
+  })
+
+  it('offers neither row for the home page', () => {
+    const home = { ...ordinaryPage, id: 'home-id', type: 'home', title: 'life' }
+    const items = paletteItems([home], [], 'home-id', ['home-id'])
+
+    expect(items).not.toContainEqual(FAVOURITE_PAGE_ACTION)
+    expect(items).not.toContainEqual(UNFAVOURITE_PAGE_ACTION)
+  })
+
+  it('offers neither row for the databases root', () => {
+    const databasesRoot = { ...ordinaryPage, id: 'databases-id', title: 'databases' }
+    const items = paletteItems([databasesRoot], [], 'databases-id', ['databases-id'])
+
+    expect(items).not.toContainEqual(FAVOURITE_PAGE_ACTION)
+    expect(items).not.toContainEqual(UNFAVOURITE_PAGE_ACTION)
+  })
+
+  it('offers neither row when no page is open', () => {
+    const items = paletteItems([ordinaryPage], [])
+
+    expect(items).not.toContainEqual(FAVOURITE_PAGE_ACTION)
+    expect(items).not.toContainEqual(UNFAVOURITE_PAGE_ACTION)
+  })
+
+  it('offers neither row while the pond has not resolved yet, even for a duplicable open page', () => {
+    const items = paletteItems([ordinaryPage], [], 'some-page', [], false)
+
+    expect(items).not.toContainEqual(FAVOURITE_PAGE_ACTION)
+    expect(items).not.toContainEqual(UNFAVOURITE_PAGE_ACTION)
   })
 })
 

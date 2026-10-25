@@ -43,6 +43,8 @@ export type PaletteAction =
   | 'save-as-template'
   | 'duplicate-page'
   | 'move-page'
+  | 'favourite-page'
+  | 'unfavourite-page'
   | 'import-a-page'
   | 'report-a-problem'
   | 'minimize-rail'
