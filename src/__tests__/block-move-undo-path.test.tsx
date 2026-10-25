@@ -184,4 +184,21 @@ describe('KAN-479: block move-pick select wires moveBlockToPage + toast', () => 
     await waitFor(() => expect(blockOf('verify')).toBeDefined())
     expect(blockOf('house')).toBeUndefined()
   })
+
+  it("notifies instead of closing silently when there's nothing left to move", async () => {
+    renderPath()
+    const user = userEvent.setup()
+
+    // The block the menu named is already gone from the source by the time
+    // the pick resolves — `moveBlockToPage` returns `null`, same as a
+    // target trashed mid-pick or the record page's unsaved `blankId` block.
+    act(() => requestBlockMovePick({ blockId: 'already-gone', sourcePageId: 'verify', label: 'checklist' }))
+    const input = await screen.findByRole('combobox', { name: 'command palette' })
+    await user.type(input, 'House')
+    await user.keyboard('{Enter}')
+
+    await screen.findByText("Couldn't move checklist")
+    expect(blockOf('house')).toBeUndefined()
+    expect(mockSaveBlocks).not.toHaveBeenCalled()
+  })
 })

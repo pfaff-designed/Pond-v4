@@ -78,8 +78,7 @@ import { openWorkspaceUrl, workspaceUrl } from '@/lib/pages/nav'
 import { requestTitleFocus } from '@/lib/pages/title-focus'
 import { flushPendingPageSave } from '@/lib/pages/page-flush'
 import { moveAndStageUndo } from '@/lib/pages/move'
-import { moveBlockToPage } from '@/lib/pages/move-block'
-import { changeLogKey } from '@/lib/change-log/keys'
+import { moveBlockAndStageUndo } from '@/lib/pages/move-block'
 import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import { useFavouritePage } from '@/lib/pond/use-favourite-page'
 import {
@@ -640,40 +639,15 @@ export function ShellCommands() {
         setBlockMovePick(null)
         setPaletteOpen(false)
         if (!targetPage) return
-        void (async () => {
-          let result: Awaited<ReturnType<typeof moveBlockToPage>>
-          try {
-            result = await moveBlockToPage(createClient(), queryClient, {
-              blockId: pick.blockId,
-              sourcePageId: pick.sourcePageId,
-              targetPageId: targetPage.id,
-              pondId,
-            })
-          } catch {
-            notify(`Couldn't move ${pick.label}`)
-            return
-          }
-          // `null` means nothing moved (the block was already gone from the
-          // source, or it landed but couldn't be remembered) — there is
-          // nothing to undo and nothing to tell. The slot is reserved
-          // inside `moveBlockToPage` itself, before either write started
-          // (KAN-368's pattern), so `undoHandle` below is the SAME step a
-          // ⌘Z pressed mid-move would already have taken — not a second,
-          // later slot staged only once this promise resolves.
-          const handle = result?.handle
-          if (!result || pondId === null || !handle) return
-          queryClient.invalidateQueries({ queryKey: changeLogKey() })
-          stageUndo({
-            message: `moved 1 block to ${targetPage.title || 'Untitled'} ·`,
-            undoLabel: 'undo',
-            actionLabel: 'open',
-            action: () => navigateTo(targetPage),
-            undo: () =>
-              sessionUndo
-                .undoHandle(pondId, handle)
-                .then((outcome) => applyUndoOutcome('undo', outcome, queryClient)),
-          })
-        })()
+        void moveBlockAndStageUndo(
+          createClient(),
+          queryClient,
+          { blockId: pick.blockId, sourcePageId: pick.sourcePageId, targetPageId: targetPage.id, pondId, label: pick.label },
+          targetPage,
+          stageUndo,
+          notify,
+          navigateTo
+        )
         return
       }
       if (item.action === 'save-as-template') {

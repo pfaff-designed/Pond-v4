@@ -1666,8 +1666,7 @@ export function BlockCanvas({
   }
 
   // The block menu's `move to…` row (KAN-479 slice 1): asks `ShellCommands`
-  // to open its one palette in block-pick mode — the write itself lands in
-  // a later pass, once the picker's select branch is wired.
+  // to open its one palette in block-pick mode.
   const onMoveTo = (block: Block) => {
     requestBlockMovePick({
       blockId: block.id,

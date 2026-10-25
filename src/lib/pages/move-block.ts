@@ -29,6 +29,9 @@ import type { Database } from '@/lib/supabase/types'
 import type { Block } from '@/lib/documents/types'
 import { detachKeepingRows } from '@/lib/modules/layout-rows'
 import { sessionUndo, type UndoHandle } from '@/lib/change-log/session-undo'
+import { changeLogKey } from '@/lib/change-log/keys'
+import { applyUndoOutcome } from '@/lib/change-log/undo-outcome'
+import type { StageUndoInput } from '@/lib/deletion/useDeletionUndo'
 import { getPage } from './client'
 import { commitBlocks } from './commit'
 import { flushPendingPageSave } from './page-flush'
@@ -61,7 +64,13 @@ export function planBlockMove<
 
 /** One move per block at a time — a second pick landing on the same block
  *  while the first move is still writing is a no-op, matching BlockCanvas's
- *  own `moveInFlightRef` guard on `moveBlockIntoNewPage`. */
+ *  own `moveInFlightRef` guard on `moveBlockIntoNewPage`. Kept, not dropped:
+ *  `ShellCommands`'s own `setPaletteOpen(false)` on select only tells React
+ *  to unmount the palette on its next render, so a double-↵ fired on the
+ *  same tick (before that render happens) reaches this function twice for
+ *  the same `blockId` — proven by move-block.test.ts's "refuses a second
+ *  move of the same block while the first is still writing"; without this
+ *  guard that test fails, because nothing else stops the second call. */
 const inFlight = new Set<string>()
 
 export interface MoveBlockToPageInput {
@@ -237,4 +246,61 @@ export async function moveBlockToPage(
   } finally {
     inFlight.delete(blockId)
   }
+}
+
+/**
+ * The block-menu `move to…` picker's own commit: the same split as
+ * `move.ts`'s `moveAndStageUndo` (a lib function, the caller supplies its
+ * own `stageUndo`/`notify`/`navigateTo`) — `ShellCommands` only resolves the
+ * picked row into a `targetPage` and hands the rest here, rather than
+ * staging the toast itself.
+ *
+ * `null` back from `moveBlockToPage` covers every "nothing to move" case
+ * alike — the block already gone from the source, the target trashed out
+ * from under the open picker, or a move that landed but couldn't be
+ * remembered and was unwound — and all of them are told apart from a silent
+ * close, since the person watched the picker confirm a target and got
+ * nothing for it.
+ */
+export async function moveBlockAndStageUndo(
+  supabase: SupabaseClient<Database>,
+  queryClient: QueryClient,
+  input: MoveBlockToPageInput & { label: string },
+  targetPage: { id: string; type: string; title: string },
+  stageUndo: (input: StageUndoInput) => string,
+  notify: (message: string) => void,
+  navigateTo: (node: { id: string; type: string; title: string }) => void
+): Promise<void> {
+  let result: MoveBlockResult | null
+  try {
+    result = await moveBlockToPage(supabase, queryClient, input)
+  } catch {
+    notify(`Couldn't move ${input.label}`)
+    return
+  }
+  if (!result) {
+    notify(`Couldn't move ${input.label}`)
+    return
+  }
+
+  // No pond to remember a step in (or, unreachably, a reserved slot with no
+  // handle) — the move itself already landed, there's just nothing to hand
+  // `sessionUndo`, so no toast.
+  const { pondId, handle } = result
+  if (pondId === null || !handle) return
+
+  queryClient.invalidateQueries({ queryKey: changeLogKey() })
+  stageUndo({
+    message: `moved 1 block to ${targetPage.title || 'Untitled'} ·`,
+    undoLabel: 'undo',
+    actionLabel: 'open',
+    action: () => navigateTo(targetPage),
+    undo: () =>
+      // Mirrors `moveAndStageUndo`'s own undo (move.ts): flush either page's
+      // own debounced save before the undo RPC runs, or a save still
+      // in flight on either side lands after undo and overwrites it.
+      Promise.all([flushPendingPageSave(input.sourcePageId), flushPendingPageSave(input.targetPageId)])
+        .then(() => sessionUndo.undoHandle(pondId, handle))
+        .then((outcome) => applyUndoOutcome('undo', outcome, queryClient)),
+  })
 }
