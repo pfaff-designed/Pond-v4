@@ -70,7 +70,7 @@ import { applyUndoOutcome } from '@/lib/change-log/undo-outcome'
 import { TrashRefusedError } from '@/lib/change-log/errors'
 import { readMoveSnapshot, moveParentLabel } from '@/lib/change-log/page-changes'
 import { jsonEqual } from '@/lib/json-equal'
-import { homeQueryKey, pagesKey } from '@/lib/pages/keys'
+import { homeQueryKey, pagesKey, resolveLinkParentId } from '@/lib/pages/keys'
 import { appendChildLinkUnder, trashPageUnlinked } from '@/lib/pages/child-links'
 import { usePondId, usePond } from '@/lib/pond/context'
 import { useHomePage } from '@/lib/pages/use-home-page'
@@ -2542,8 +2542,8 @@ export function Rail() {
         // The move's own RPC edits the old and new link-parents' `blocks` —
         // rebase an open draft of either onto that write instead of waiting
         // for a reload.
-        const oldLinkParentId = draggedRow.parent_id ?? home?.id
-        const newLinkParentId = move.newParentId ?? home?.id
+        const oldLinkParentId = resolveLinkParentId(draggedRow.parent_id, home?.id)
+        const newLinkParentId = resolveLinkParentId(move.newParentId, home?.id)
         if (oldLinkParentId) queryClient.invalidateQueries({ queryKey: ['page', oldLinkParentId] })
         if (newLinkParentId) queryClient.invalidateQueries({ queryKey: ['page', newLinkParentId] })
         stageUndo({
