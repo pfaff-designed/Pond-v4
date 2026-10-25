@@ -121,17 +121,28 @@ export function snapPercent(
  * `widthPercent('full')` that this clamp's `100` literal matches), so that
  * clamp reports `locked: true` rather than a free number the width row would
  * then show as "custom · 100%" instead of `full`.
+ *
+ * `maxPercent` lowers the upper clamp below 100 — a row's outer edge passes
+ * `100 - sum(the row's other members)` so growing that block can never push
+ * the row's total past 100 and split it. Unlike the 100% ceiling, a lowered
+ * ceiling is not itself a `KEY_WIDTHS` position (it's the complement of
+ * whatever the row-mates happen to add up to), so hitting it always reports
+ * `locked: false`, same as every other clamp in this module — the
+ * `locked: true` special case below only fires when the ceiling actually is
+ * 100 (the default).
  */
 export function resizeAlone(
   columnPx: number,
   startPercent: number,
   deltaPx: number,
-  lockedPercent: number | null
+  lockedPercent: number | null,
+  maxPercent = 100
 ): SnapResult {
   const rawPercent = renderedPxToPercent(columnPx, percentToRenderedPx(columnPx, startPercent) + deltaPx)
   const snapped = snapPercent(rawPercent, columnPx, lockedPercent)
   const minPercent = renderedPxToPercent(columnPx, MIN_BLOCK_WIDTH_PX) + FLOOR_EPSILON_PERCENT
-  const clampedPercent = Math.min(100, Math.max(minPercent, snapped.percent))
+  const ceiling = Math.min(100, maxPercent)
+  const clampedPercent = Math.min(ceiling, Math.max(minPercent, snapped.percent))
   if (clampedPercent === 100) return { percent: 100, locked: true }
   if (clampedPercent !== snapped.percent) return { percent: clampedPercent, locked: false }
   return snapped

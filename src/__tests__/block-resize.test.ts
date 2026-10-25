@@ -182,6 +182,46 @@ describe('resizeAlone', () => {
   })
 })
 
+describe('resizeAlone with a row outer-edge maxPercent', () => {
+  // A row outer edge passes `100 - sum(other row members)` as `maxPercent`,
+  // so growing that block can never push the row's total past 100 and split
+  // it. ½+⅓ row: the right block's max is `100 - 50` = 50.
+  const MIN_PERCENT = renderedPxToPercent(COLUMN_PX, MIN_BLOCK_WIDTH_PX)
+  const renderedDelta = (fromPercent: number, toPercent: number) =>
+    percentToRenderedPx(COLUMN_PX, toPercent) - percentToRenderedPx(COLUMN_PX, fromPercent)
+
+  it.each<[string, number, number, number | null, number, { percent: number; locked: boolean }]>([
+    [
+      'growing the right block of a ½+⅓ row stops at the row max (½), reported unlocked',
+      33.3,
+      renderedDelta(33.3, 90),
+      null,
+      50,
+      { percent: 50, locked: false },
+    ],
+    [
+      'a grow that stays under the row max still locks onto a key normally',
+      33.3,
+      renderedDelta(33.3, 50),
+      null,
+      66.7,
+      { percent: 50, locked: true },
+    ],
+    [
+      'shrinking against the same max still floors at 240px, not the max',
+      33.3,
+      -500,
+      null,
+      50,
+      { percent: MIN_PERCENT, locked: false },
+    ],
+  ])('%s', (_description, startPercent, deltaPx, lockedPercent, maxPercent, expected) => {
+    const result = resizeAlone(COLUMN_PX, startPercent, deltaPx, lockedPercent, maxPercent)
+    expect(result.locked).toBe(expected.locked)
+    expect(result.percent).toBeCloseTo(expected.percent, 4)
+  })
+})
+
 describe('roundFreePercent (the one-decimal commit never renders under the floor)', () => {
   // The bug this item fixes: `Math.round(percent * 10) / 10`, applied to the
   // *unrounded* clamp floor, rounds DOWN at roughly half of all column
