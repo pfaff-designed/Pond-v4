@@ -174,6 +174,18 @@ export const setMode = (mode: Mode): void => {
   notify()
 }
 
+/**
+ * Applies a pond's theme on an in-session switch (KAN-503), through the same
+ * session-only `setMode` the new-pond sheet uses at creation — never
+ * `localStorage`. Only `'ink'` maps to a mode; every other value (`'paper'`,
+ * the column default, and the six pills `PondControl` still disables) is a
+ * no-op, so the person's own mode stands untouched rather than being forced
+ * to light.
+ */
+export const applyPondTheme = (theme: string): void => {
+  if (theme === 'ink') setMode('dark')
+}
+
 export function useMode(): { mode: Mode; toggleMode: () => void } {
   const mode = useSyncExternalStore<Mode>(subscribe, readMode, () => 'light')
   const toggleMode = useCallback(() => {
