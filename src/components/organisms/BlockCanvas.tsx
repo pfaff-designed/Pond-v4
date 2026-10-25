@@ -199,7 +199,7 @@ import type { BlockWidth } from '@/lib/modules/content'
 const blockName = (block: Block, frame: BlockFrame | null): string =>
   frame?.heading ?? descriptorFor(block.type)?.label ?? block.type
 
-const TURNED_INTO: Record<Exclude<ConversionTarget, 'table' | 'page'>, string> = {
+const TURNED_INTO: Record<Exclude<ConversionTarget, 'table'>, string> = {
   'heading-1': 'Turned into heading 1',
   'heading-2': 'Turned into heading 2',
   'heading-3': 'Turned into heading 3',
@@ -208,6 +208,7 @@ const TURNED_INTO: Record<Exclude<ConversionTarget, 'table' | 'page'>, string> =
   list: 'Turned into a list',
   checklist: 'Turned into a checklist',
   text: 'Turned into text',
+  page: 'Turned into a page',
 }
 
 const MENU_PLACEMENT: Record<PondMenuSize, Omit<PondMenuPlacement, 'anchor'>> = {
@@ -1072,7 +1073,7 @@ export function BlockCanvas({
       )
       queryClient.invalidateQueries({ queryKey: pagesKey() })
       stageUndo({
-        message: 'Turned into a page',
+        message: TURNED_INTO.page,
         scope: 'block',
         undo: async () => {
           onChange(blocksRef.current.map((b) => (b.id === pageLink.id ? block : b)))

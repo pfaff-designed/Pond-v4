@@ -22,12 +22,15 @@ const toKeymapName = (chord: string) =>
  */
 const HeadingWithChords = Heading.extend({
   addKeyboardShortcuts() {
-    return Object.fromEntries(
-      (Object.entries(HEADING_CHORDS) as [`${1 | 2 | 3}`, string][]).map(([level, chord]) => [
-        toKeymapName(chord),
-        () => this.editor.commands.toggleHeading({ level: Number(level) as 1 | 2 | 3 }),
-      ])
-    )
+    return {
+      ...this.parent?.(),
+      ...Object.fromEntries(
+        (Object.entries(HEADING_CHORDS) as [`${1 | 2 | 3}`, string][]).map(([level, chord]) => [
+          toKeymapName(chord),
+          () => this.editor.commands.toggleHeading({ level: Number(level) as 1 | 2 | 3 }),
+        ])
+      ),
+    }
   },
 })
 

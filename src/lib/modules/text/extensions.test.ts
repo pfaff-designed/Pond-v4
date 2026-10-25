@@ -51,4 +51,21 @@ describe('Heading shortcuts bound from HEADING_CHORDS', () => {
     expect(editor.isActive('heading', { level: 2 })).toBe(true)
     editor.destroy()
   })
+
+  it('⌘⌥5, pinned to Mac, still turns the line into a heading 5 (StarterKit default, not in HEADING_CHORDS)', () => {
+    const editor = mountPinnedToMac('<p>hello</p>')
+
+    editor.view.dom.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: '5',
+        altKey: true,
+        metaKey: true,
+        bubbles: true,
+        cancelable: true,
+      })
+    )
+
+    expect(editor.isActive('heading', { level: 5 })).toBe(true)
+    editor.destroy()
+  })
 })
