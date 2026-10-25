@@ -2327,31 +2327,64 @@ export function BlockCanvas({
     // mount — before this ever ran. A failed write discards the blocks, so
     // stale ids left in the set are harmless.
     for (const block of applied.blocks) markInserted(block.id)
-    if (!(await persistBlocksAsOwnEdit(applied.blocks, { discardOnFailure: true }))) return
+    // Snapshot the page's props (the schema, board 8e's reserved `_schema`
+    // key, lives inside it) BEFORE any write below, so ⌘Z can put the whole
+    // page — blocks, schema and props — back as one step rather than just
+    // the blocks.
+    const priorProps = (await getPage(supabase, pageId))?.props ?? {}
+    // Applies the template's schema (if it has one) and props on top of
+    // whatever the page carries right now — shared by the first apply and
+    // ⇧⌘Z's redo, which both run against a page that may have changed
+    // underneath (undo put `priorProps` back first).
+    const applyTemplateSchemaProps = async () => {
+      if (applied.schema) {
+        try {
+          await defineSchema(supabase, pageId, applied.schema)
+        } catch (err) {
+          console.error('Failed to define the template schema', err)
+        }
+      }
+      // Read-modify-write against whatever this page's props already carry (a
+      // glyph, an area role, …) rather than overwriting them with just the
+      // kind/stamp the template adds.
+      try {
+        const current = await getPage(supabase, pageId)
+        const nextProps = { ...(current?.props ?? {}), ...applied.props }
+        await saveProps(supabase, pageId, nextProps)
+        queryClient.setQueryData<PondPage | null>(['page', pageId], (prev) =>
+          prev ? { ...prev, props: nextProps } : prev
+        )
+      } catch (err) {
+        console.error('Failed to write the template props', err)
+      }
+    }
+    // ⌘Z's half: a full replace back to `priorProps`, never a merge — a page
+    // with no schema before must have none after, which `defineSchema`'s
+    // own read-modify-write (it only adds/replaces `_schema`, never removes
+    // it) can't do.
+    const revertTemplateSchemaProps = async () => {
+      try {
+        await saveProps(supabase, pageId, priorProps)
+        queryClient.setQueryData<PondPage | null>(['page', pageId], (prev) =>
+          prev ? { ...prev, props: priorProps } : prev
+        )
+      } catch (err) {
+        console.error('Failed to revert the template props', err)
+      }
+    }
+    if (
+      !(await persistBlocksAsOwnEdit(applied.blocks, {
+        discardOnFailure: true,
+        onUndone: revertTemplateSchemaProps,
+        onRedone: applyTemplateSchemaProps,
+      }))
+    )
+      return
     // KAN-138: applying a `yours` template retires its "just saved" lead — but
     // only once the blocks write above actually landed; a failed apply keeps
     // the lead so the person's retry still sees it first.
     if (pick.origin === 'yours' && pondId) justSaved.clear(pondId, pick.id)
-    if (applied.schema) {
-      try {
-        await defineSchema(supabase, pageId, applied.schema)
-      } catch (err) {
-        console.error('Failed to define the template schema', err)
-      }
-    }
-    // Read-modify-write against whatever this page's props already carry (a
-    // glyph, an area role, …) rather than overwriting them with just the
-    // kind/stamp the template adds.
-    try {
-      const current = await getPage(supabase, pageId)
-      const nextProps = { ...(current?.props ?? {}), ...applied.props }
-      await saveProps(supabase, pageId, nextProps)
-      queryClient.setQueryData<PondPage | null>(['page', pageId], (prev) =>
-        prev ? { ...prev, props: nextProps } : prev
-      )
-    } catch (err) {
-      console.error('Failed to write the template props', err)
-    }
+    await applyTemplateSchemaProps()
     // `onStructuralWrite`/`onChange` already ran inside `persistBlocksAsOwnEdit`,
     // ahead of the schema/props writes above — this apply's own blocks are
     // already the caller's baseline by the time those (independent) writes land.
