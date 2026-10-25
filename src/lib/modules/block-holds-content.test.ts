@@ -30,10 +30,22 @@ describe('blockHoldsContent', () => {
       true
     )
     expect(blockHoldsContent({ id: 'p', type: 'page-link', pageId: 'child' })).toBe(true)
-    expect(blockHoldsContent({ id: 'toc', type: 'toc' })).toBe(true)
   })
 
-  it('a blank log and an empty table do not', () => {
+  it('a bare heading or quote marker holds nothing, so ⌘⌫ skips the confirm', () => {
+    expect(blockHoldsContent(text('## '))).toBe(false)
+    expect(blockHoldsContent(text('> '))).toBe(false)
+  })
+
+  it('a bare bulleted-list marker holds nothing, so ⌘⌫ skips the confirm', () => {
+    expect(blockHoldsContent(text('- '))).toBe(false)
+  })
+
+  it('a bulleted-list item with words holds something', () => {
+    expect(blockHoldsContent(text('- milk'))).toBe(true)
+  })
+
+  it('a blank log, an empty table and a toc do not', () => {
     expect(
       blockHoldsContent({
         id: 'e',
@@ -49,5 +61,6 @@ describe('blockHoldsContent', () => {
         rows: [{ id: 'r', cells: [''] }],
       })
     ).toBe(false)
+    expect(blockHoldsContent({ id: 'toc', type: 'toc' })).toBe(false)
   })
 })

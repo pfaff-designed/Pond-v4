@@ -9,6 +9,7 @@ import { Plugin, TextSelection } from '@tiptap/pm/state'
 import type { EditorView } from '@tiptap/pm/view'
 import { COMPOSER_TOP_CLEARANCE, composerClearanceMarginPx } from '@/lib/layout/composer-clearance'
 import { isRedoChord, isUndoChord } from '@/lib/shell-commands'
+import { textIsVacant } from '../block-holds-content'
 import type { ModuleViewProps } from '../types'
 import { useBlockRow, type BlockRowValue } from '../block-row-context'
 import { registerTextEditor } from './active-editor'
@@ -28,15 +29,17 @@ export interface Press {
   top: number
 }
 
-const TEXT_MARKUP_VALUES: Set<string> = new Set(Object.values(TEXT_MARKUP))
-
 /**
- * Has nothing been written here yet? Blank, or only markdown scaffolding the row
- * that minted the block typed for you — a heading's `#` run, or one of
- * `TEXT_MARKUP`'s exact strings. All open with the caret in them.
+ * Has nothing been written here yet? Blank, or only markdown scaffolding a
+ * row typed for you — `textIsVacant` (block-holds-content.ts, the one home
+ * for that fact) answers this for every marker but the divider's: a divider
+ * has no "written" state for the exit/delete question `textIsVacant`
+ * answers (`openingDocFor`'s comment above), but still counts as fresh here
+ * so `autofocus: 'end'` below lands in its appended empty paragraph. All
+ * open with the caret in them.
  */
 const isUnwritten = (content: string): boolean =>
-  TEXT_MARKUP_VALUES.has(content) || content.replace(/^#{1,6}\s*/, '').trim() === ''
+  textIsVacant(content) || content === TEXT_MARKUP.divider
 
 /**
  * The divider row's markdown parses to a bare `horizontalRule` — CommonMark has no
