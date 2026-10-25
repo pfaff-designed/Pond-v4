@@ -15,7 +15,7 @@ import { registerTextEditor } from './active-editor'
 import { proseExtensions } from './extensions'
 import { parseMarkdown, serializeMarkdown } from './markdown'
 import { TEXT_MARKUP } from './markup'
-import { enterSplit, leavesUpToTitle } from './next-block'
+import { enterSplit, leavesBlock } from './next-block'
 import { TEXT_PROSE_CLASS, textPlaceholderFor } from './prose'
 import { markdownHandlePaste } from './paste'
 import { ReferenceHighlight } from './reference-highlight'
@@ -62,6 +62,8 @@ interface LatestForSplit {
   data: TextBlock
   stepOut?: BlockRowValue['stepOut']
   leaveUp?: BlockRowValue['leaveUp']
+  leaveDown?: BlockRowValue['leaveDown']
+  select?: BlockRowValue['select']
 }
 
 /**
@@ -122,24 +124,31 @@ const createSplitOnEnter = (latest: RefObject<LatestForSplit>) =>
   })
 
 /**
- * Bare ArrowUp at block 0's first visual line hands focus to the page title
- * (KAN-464) instead of running ProseMirror's own ArrowUp — which, at the very
- * top of the doc, would otherwise just leave the caret where it is. Only
- * block 0's row ever has a `leaveUp` (wired in `BlockCanvas`), so every other
- * block falls through to ProseMirror's default here.
+ * Bare ArrowUp/ArrowDown at the block's first/last visual line hands focus to
+ * the row's own `leaveUp`/`leaveDown` (KAN-367) instead of running
+ * ProseMirror's own handling — which, at the very top/bottom of the doc,
+ * would otherwise just leave the caret where it is. `x` is the caret's own
+ * column, read fresh off the view at the moment the key is pressed (not
+ * memoised — a wrapped line's column moves as the editor reflows), so the
+ * neighbour it lands in keeps the same column rather than snapping to its
+ * start. Block 0's `leaveUp` is wired to the page title instead of a
+ * neighbour (KAN-464); the last block has no `leaveDown` at all, so ArrowDown
+ * there falls through to ProseMirror's default below.
  */
-const createLeaveUpToTitle = (latest: RefObject<LatestForSplit>) =>
+const createLeaveBlockEdge = (latest: RefObject<LatestForSplit>) =>
   Extension.create({
-    name: 'leaveUpToTitle',
+    name: 'leaveBlockEdge',
     priority: 1000,
     addProseMirrorPlugins: () => [
       new Plugin({
         props: {
           handleKeyDown: (view, event) => {
-            const { leaveUp } = latest.current
-            if (!leaveUp) return false
+            const dir = event.key === 'ArrowUp' ? 'up' : event.key === 'ArrowDown' ? 'down' : null
+            if (!dir) return false
+            const { leaveUp, leaveDown } = latest.current
+            const leave = dir === 'up' ? leaveUp : leaveDown
+            if (!leave) return false
             if (
-              event.key !== 'ArrowUp' ||
               event.shiftKey ||
               event.altKey ||
               event.metaKey ||
@@ -148,8 +157,39 @@ const createLeaveUpToTitle = (latest: RefObject<LatestForSplit>) =>
               view.composing
             )
               return false
-            if (!leavesUpToTitle(view)) return false
-            leaveUp()
+            if (!leavesBlock(view, dir)) return false
+            leave(view.coordsAtPos(view.state.selection.from).left)
+            return true
+          },
+        },
+      }),
+    ],
+  })
+
+/**
+ * Esc selects this block's row (KAN-367) instead of blurring to the page
+ * body — read via `latest`, the same idiom as `leaveUp`. A plugin, not the
+ * shared `handleKeyDown` below: that object is one reference used by every
+ * text block's editor, with no per-block `latest` to read `select` off. With
+ * no row to select (a standalone `TextEditor` outside a `BlockCanvas` host),
+ * falls back to the editor's own blur — unchanged from today. The selection
+ * bar claims an Esc pressed while it is up (`defaultPrevented`, the editor
+ * keeps focus).
+ */
+const createEscapeSelectsRow = (latest: RefObject<LatestForSplit>) =>
+  Extension.create({
+    name: 'escapeSelectsRow',
+    priority: 1000,
+    addProseMirrorPlugins: () => [
+      new Plugin({
+        props: {
+          handleKeyDown: (view, event) => {
+            if (event.key !== 'Escape' || event.isComposing || view.composing) return false
+            if (!event.defaultPrevented) {
+              const { select } = latest.current
+              if (select) select()
+              else view.dom.blur()
+            }
             return true
           },
         },
@@ -169,7 +209,8 @@ const buildExtensions = (
   }),
   ReferenceHighlight.configure({ blockId }),
   createSplitOnEnter(latest),
-  createLeaveUpToTitle(latest),
+  createLeaveBlockEdge(latest),
+  createEscapeSelectsRow(latest),
 ]
 
 /** A bare Tab over a selection — Shift-Tab and chorded Tab keep their meaning. */
@@ -205,13 +246,14 @@ const focusSelectionBar = (): boolean => {
  * native undo from ever seeing the key, whether or not there was anything to do
  * — also true of `@tiptap/extensions`' own `Mod-y`/`Mod-я`/`Shift-Mod-я` undo
  * keymap bindings, which this predicate matches too (KAN-268).
+ *
+ * Escape is NOT handled here: this object is shared, by reference, across
+ * every text block's editor (`editorProps` below), so it has no per-block
+ * `latest` to read a row's `select` off. `createEscapeSelectsRow` (above)
+ * owns Escape instead, as a plugin built per-instance alongside
+ * `createLeaveBlockEdge`.
  */
 const handleKeyDown = (view: EditorView, event: KeyboardEvent): boolean => {
-  if (event.key === 'Escape') {
-    // The selection bar claims an Esc pressed while it is up (it is dismissed, the editor keeps focus).
-    if (!event.defaultPrevented) view.dom.blur()
-    return true
-  }
   if (isTabIntoSelectionBar(view, event)) return focusSelectionBar()
   if (isUndoChord(event)) {
     undo(view.state, (tr) => view.dispatch(tr))
@@ -305,10 +347,10 @@ const TextEditor = ({
   pressRef: RefObject<Press | null>
 }) => {
   const onSlashLine = useContext(SlashLineContext)
-  const { stepOut, leaveUp } = useBlockRow()
-  const latest = useRef({ data, onChange, onSlashLine, stepOut, leaveUp })
+  const { stepOut, leaveUp, leaveDown, select } = useBlockRow()
+  const latest = useRef({ data, onChange, onSlashLine, stepOut, leaveUp, leaveDown, select })
   useEffect(() => {
-    latest.current = { data, onChange, onSlashLine, stepOut, leaveUp }
+    latest.current = { data, onChange, onSlashLine, stepOut, leaveUp, leaveDown, select }
   })
 
   // Options must be the same values on every render: any change makes `useEditor`

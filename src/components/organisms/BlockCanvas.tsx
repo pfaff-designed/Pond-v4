@@ -61,7 +61,7 @@ import { CHART_EMPTY_LINE } from '@/lib/modules/chart/card'
 import { addTodoItem } from '@/lib/modules/todo/view'
 import { addTableRow } from '@/lib/modules/table/view'
 import { addEntryFocused } from '@/lib/modules/entries/view'
-import { PondBlock, POND_BLOCK_SELECTED_RING } from '@/components/organisms/PondBlock'
+import { PondBlock, POND_BLOCK_SELECTED_RING_ROUNDED } from '@/components/organisms/PondBlock'
 import {
   SlashMenu,
   type SlashRow,
@@ -110,7 +110,7 @@ import {
 } from '@/lib/modules/block-resize'
 import { SlashLineContext, type SlashLineAt } from '@/lib/modules/text/slash-line'
 import { useSlashLine } from '@/components/organisms/use-slash-line'
-import { focusTextBlock, hasTextBeforeCaret } from '@/lib/modules/text/focus'
+import { focusTextBlock, focusTextBlockAt, hasTextBeforeCaret } from '@/lib/modules/text/focus'
 import { HOVER_GHOST_CLASS, UNTOUCHED_HINT_CLASS } from '@/lib/modules/text/prose'
 import { useAcceptMarks } from '@/lib/change-log/accept-marks'
 import { markTarget } from '@/lib/change-log/accept-marks-diff'
@@ -342,15 +342,54 @@ function focusBlockNeighbour(blocks: Block[], index: number) {
 }
 
 /**
+ * ↑/↓ on a SELECTED block (KAN-367): moves the selection to the block at
+ * `index`, by focusing its row directly — selection never enters a field,
+ * only Return does that.
+ */
+function selectBlockAt(blocks: Block[], index: number) {
+  const target = blocks[index]
+  if (!target) return
+  document.getElementById(blockDomId(target.id))?.focus()
+}
+
+/**
+ * ↑/↓ leaving a block's edge (KAN-367): a text editor's first/last visual line, or
+ * (now) a checklist's first/last item. Lands in the neighbour's own editable field,
+ * at column `x` — a text neighbour's editor (nearest the caret's column), a
+ * checklist's last (↑) / first (↓) item, or (any other card, which has no field of
+ * its own) its row, selected via `selectBlockAt`. Only wired where a neighbour
+ * exists; block 0's own ArrowUp goes to the page title instead (`renderBlockEditor`),
+ * never here.
+ */
+function leaveBlockEdge(blocks: Block[], index: number, dir: 'up' | 'down', x: number) {
+  const neighbourIndex = dir === 'up' ? index - 1 : index + 1
+  const neighbour = blocks[neighbourIndex]
+  if (!neighbour) return
+  if (neighbour.type === 'text') {
+    const element = document.getElementById(blockDomId(neighbour.id))
+    focusTextBlockAt(element, x, dir === 'up' ? 'bottom' : 'top')
+    return
+  }
+  if (neighbour.type === 'todo' && neighbour.items.length > 0) {
+    const item = dir === 'up' ? neighbour.items[neighbour.items.length - 1] : neighbour.items[0]
+    focusTodoItem(neighbour.id, dir === 'up' ? 'end' : 'start', item.id)
+    return
+  }
+  selectBlockAt(blocks, neighbourIndex)
+}
+
+/**
  * Focus a todo block's item field after it lands (KAN-355 fix): a `/list`/
  * `/checklist` pick mints the block and lands it via `onChange` alone — a text
  * landing keeps the host editor's focus, but a todo block has no editor of its
  * own, so focus fell to `<body>` and the next keystroke was lost. Deferred a
  * tick for the same reason as `focusBlockNeighbour` — the row that will hold
  * `itemId` only exists once this render commits. Without `itemId`, the first
- * item (a freshly minted list's only one).
+ * item (a freshly minted list's only one). `caret`: 'end' when ↑ lands in the
+ * checklist's last item from the text block below it (KAN-367); every other
+ * caller keeps today's 'start'.
  */
-function focusTodoItem(blockId: string, itemId?: string) {
+function focusTodoItem(blockId: string, caret: 'start' | 'end', itemId?: string) {
   setTimeout(() => {
     const host = document.getElementById(blockDomId(blockId))
     const row = itemId
@@ -358,7 +397,8 @@ function focusTodoItem(blockId: string, itemId?: string) {
       : host?.querySelector<HTMLElement>('[data-item-id]')
     const input = row?.querySelector<HTMLInputElement>('input')
     input?.focus()
-    input?.setSelectionRange(0, 0)
+    const pos = caret === 'end' ? (input?.value.length ?? 0) : 0
+    input?.setSelectionRange(pos, pos)
   }, 0)
 }
 
@@ -619,7 +659,7 @@ export function BlockCanvas({
     // Only `todo` (list/checklist) has no editor of its own to keep focus in
     // (KAN-355) — every other landed type keeps today's behaviour.
     onLanded: (landed) => {
-      if (landed.type === 'todo') focusTodoItem(landed.id)
+      if (landed.type === 'todo') focusTodoItem(landed.id, 'start')
     },
   })
   // KAN-198: the carried `?templates=1` names a page by id, not a boolean, so
@@ -2374,7 +2414,14 @@ export function BlockCanvas({
         onExitEmpty={() => removeEmptyOnExit(block.id)}
         onDeleteBlock={() => requestDelete(i)}
         onReturn={(patch, content, where) => insertLineAfter(i, patch, content, where)}
-        onLeaveUp={i === 0 ? () => focusPageTitle('end') : undefined}
+        onLeaveUp={
+          i === 0 ? () => focusPageTitle('end') : (x) => leaveBlockEdge(blocks, i, 'up', x)
+        }
+        onLeaveDown={
+          i === blocks.length - 1 ? undefined : (x) => leaveBlockEdge(blocks, i, 'down', x)
+        }
+        onSelectPrev={i === 0 ? () => focusPageTitle('end') : () => selectBlockAt(blocks, i - 1)}
+        onSelectNext={i === blocks.length - 1 ? undefined : () => selectBlockAt(blocks, i + 1)}
         onMoveUp={() => moveBlockAt(i, 'up')}
         onMoveDown={() => moveBlockAt(i, 'down')}
         onSlashKey={() => openSlashMenuAt(i)}
@@ -3028,7 +3075,7 @@ function useBlockEmptyState(
                 commitStructural(pageId, () => {
                   const next = addTodoItem(block)
                   onChange(next)
-                  focusTodoItem(block.id, next.items[next.items.length - 1].id)
+                  focusTodoItem(block.id, 'start', next.items[next.items.length - 1].id)
                 })
               },
             }
@@ -3109,6 +3156,9 @@ function BlockEditor({
   onDeleteBlock,
   onReturn,
   onLeaveUp,
+  onLeaveDown,
+  onSelectPrev,
+  onSelectNext,
   onMoveUp,
   onMoveDown,
   onSlashKey,
@@ -3174,8 +3224,20 @@ function BlockEditor({
    *  (default) is today's "after this block"; `'above'` is Enter at the start
    *  of a non-empty block. */
   onReturn: (patch?: Block, content?: string, where?: 'above' | 'below') => void
-  /** ↑ on this block's first visual line, text blocks only — only block 0's wiring is ever set. */
-  onLeaveUp?: () => void
+  /** ↑ at this block's own edge — a text editor's first visual line, or a checklist's
+   *  first item (KAN-367): lands in the previous block's own field at the caret's
+   *  column, or (block 0) the page title. */
+  onLeaveUp?: (x: number) => void
+  /** ↓ at this block's own edge — a text editor's last visual line, or a checklist's
+   *  last item (KAN-367): lands in the next block's own field at the caret's column.
+   *  Undefined on the LAST block. */
+  onLeaveDown?: (x: number) => void
+  /** ↑ on this block's row while SELECTED (KAN-367): selects the previous block's row, or
+   *  (block 0) the page title. Always set — unlike `onLeaveUp`, every row can be selected. */
+  onSelectPrev?: () => void
+  /** ↓ on this block's row while SELECTED (KAN-367): selects the next block's row. Undefined
+   *  on the last block — its row handler falls back to KAN-344's step-out instead. */
+  onSelectNext?: () => void
   onMoveUp?: () => void
   onMoveDown?: () => void
   onSlashKey?: () => void
@@ -3439,7 +3501,14 @@ function BlockEditor({
 
   const view = (
     <BlockRowProvider
-      value={{ selected: state === 'selected', stepOut: onReturn, commitStep, leaveUp: onLeaveUp }}
+      value={{
+        selected: state === 'selected',
+        stepOut: onReturn,
+        commitStep,
+        leaveUp: onLeaveUp,
+        leaveDown: onLeaveDown,
+        select: selectRow,
+      }}
     >
       <SlashLineContext.Provider value={slash.handleSlashLine}>
         <ActiveViewSelectionContext.Provider value={setActiveViewId}>
@@ -3487,37 +3556,54 @@ function BlockEditor({
       handleMenuOpenChange(true)
       return
     }
+    // Return on a selected row (KAN-367/KAN-344): a text row goes back into
+    // editing, caret at the end; any other kind opens a line below it.
     if (
       e.key === 'Enter' &&
       e.target === e.currentTarget &&
-      block.type !== 'text' &&
       !e.shiftKey &&
       !e.altKey &&
       !e.metaKey &&
       !e.ctrlKey
     ) {
       e.preventDefault()
-      onReturn()
+      if (block.type === 'text') {
+        focusTextBlockSoon(block.id, 'end')
+      } else {
+        onReturn()
+      }
       return
     }
-    // ↓ steps out of a selected row the same as Return (KAN-344) — but only for
-    // kinds with no in-field meaning for ↓. `table` and `todo` read it inside
-    // their own last-cell / empty-last-item rules instead (BlockRowContext's
-    // `stepOut`, wired at the module level); this generic branch would otherwise
-    // race theirs.
+    // ↑/↓ on a selected row (KAN-367) move the selection, in array order —
+    // `onSelectPrev` always lands somewhere (the previous row, or block 0's
+    // title); `onSelectNext` is only unset on the LAST block, where ↓ instead
+    // keeps KAN-344's step-out (opens a line below it).
+    if (
+      e.key === 'ArrowUp' &&
+      e.target === e.currentTarget &&
+      !e.shiftKey &&
+      !e.altKey &&
+      !e.metaKey &&
+      !e.ctrlKey
+    ) {
+      e.preventDefault()
+      onSelectPrev?.()
+      return
+    }
     if (
       e.key === 'ArrowDown' &&
       e.target === e.currentTarget &&
-      block.type !== 'text' &&
-      block.type !== 'table' &&
-      block.type !== 'todo' &&
       !e.shiftKey &&
       !e.altKey &&
       !e.metaKey &&
       !e.ctrlKey
     ) {
       e.preventDefault()
-      onReturn()
+      if (onSelectNext) {
+        onSelectNext()
+      } else {
+        onReturn()
+      }
       return
     }
     if (e.altKey && e.key === 'ArrowUp') {
@@ -3708,6 +3794,13 @@ function BlockEditor({
     rootRef.current?.focus()
   }
 
+  // Esc inside a text editor (KAN-367): focusing the row's own element is
+  // what `handleFocus` above already reads `rowSelected` off, same as a
+  // card's own click-to-select.
+  function selectRow() {
+    rootRef.current?.focus()
+  }
+
   function handleHeightPreview(next: number) {
     setPreviewHeight(next)
   }
@@ -3745,9 +3838,16 @@ function BlockEditor({
       {changedMark}
     </PondBlock>
   ) : block.type === 'text' ? (
-    // Bare prose: `padding 2px 4px`, no card.
+    // Bare prose: `padding 2px 4px`, no card. Selected draws the library's
+    // ring here instead of on the row (the row excludes text, ~:3699) since
+    // there is no card for that ring to sit on.
     <div
-      className={cn(untouched && UNTOUCHED_HINT_CLASS, hoverGhost && HOVER_GHOST_CLASS)}
+      data-part="prose"
+      className={cn(
+        untouched && UNTOUCHED_HINT_CLASS,
+        hoverGhost && HOVER_GHOST_CLASS,
+        state === 'selected' && POND_BLOCK_SELECTED_RING_ROUNDED
+      )}
       data-hover-ghost={hoverGhost || undefined}
       style={{ paddingBlock: TEXT_BLOCK_TOP_INSET_PX, paddingInline: TEXT_BLOCK_INSET_PX }}
     >
@@ -3779,10 +3879,7 @@ function BlockEditor({
         // A calendar sits in a card, so selecting it draws the card's ring.
         // A board draws its own lanes and has no card, so the same ring goes
         // on the row itself — otherwise a click selects it and nothing shows.
-        state === 'selected' &&
-          !frame &&
-          block.type !== 'text' &&
-          cn(POND_BLOCK_SELECTED_RING, 'rounded-[20px]'),
+        state === 'selected' && !frame && block.type !== 'text' && POND_BLOCK_SELECTED_RING_ROUNDED,
         settleOnMount && 'motion-settle-in',
         // `origin` (old place) from `PondBlock.dc.html` is opacity .4 ONLY — the
         // tilt and stepped-up shadow belong to the separate `lifted` copy, built

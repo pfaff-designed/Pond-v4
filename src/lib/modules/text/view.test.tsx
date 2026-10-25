@@ -571,6 +571,27 @@ describe('TextView — the text block edits in place as rendered prose', () => {
     expect(field).not.toHaveFocus()
   })
 
+  it('Escape while composing (IME) does not select the row', async () => {
+    const select = jest.fn()
+    render(
+      <BlockRowProvider value={{ selected: false, stepOut: jest.fn(), select }}>
+        <TextEditor
+          data={{ id: 't', type: 'text', content: 'hello' }}
+          standIn={null}
+          pressRef={{ current: null }}
+        />
+      </BlockRowProvider>
+    )
+    const field = await findField()
+    act(() => {
+      editorOf(field).commands.focus('end')
+    })
+    await waitFor(() => expect(field).toHaveFocus())
+    fireEvent.keyDown(field, { key: 'Escape', isComposing: true })
+    expect(select).not.toHaveBeenCalled()
+    expect(field).toHaveFocus()
+  })
+
   it('read-only is the same typeset document, drawn at once with no editor, in the same type', () => {
     const { container } = render(<TextView data={sample} />)
     expect(screen.getByRole('heading', { level: 2, name: 'Warm-up' })).toBeInTheDocument()

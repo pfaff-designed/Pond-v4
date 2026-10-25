@@ -9,6 +9,7 @@
 import React from 'react'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { EditorView } from '@tiptap/pm/view'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
@@ -178,6 +179,8 @@ beforeEach(() => {
   mockSaveBlocks.mockResolvedValue(undefined)
   mockAppendOwnEdit.mockResolvedValue({ id: 'record-1' })
 })
+// So a failing assertion mid-test can't leak `posAtCoords`'s spy into the next test.
+afterEach(() => jest.restoreAllMocks())
 
 describe('Return after a block opens a line for `/`', () => {
   it('Return after the table, then `/`', async () => {
@@ -460,28 +463,164 @@ describe('pointer selection draws PondBlock’s own `selected` state (07.05)', (
   })
 })
 
-describe('↓ on a selected row steps out, same as Return (KAN-344)', () => {
-  it('↓ on a focused image block opens a new line after it', async () => {
+describe('↑/↓ out of an editor land in the neighbouring block (KAN-367)', () => {
+  const alpha: Block = { id: 'b-alpha', type: 'text', content: 'alpha' }
+  const omega: Block = { id: 'b-omega', type: 'text', content: 'omega' }
+
+  it('↑ from text into text above lands the caret in it', async () => {
+    // jsdom has no layout: `posAtCoords` (the landing) needs a real one, same
+    // caveat `view.test.tsx:~404` stubs around for the press landing.
+    jest.spyOn(EditorView.prototype, 'posAtCoords').mockReturnValue({
+      pos: 3,
+      inside: -1,
+    })
+    renderCanvas([alpha, omega])
+    const lower = await textBlockIn('b-omega')
+    act(() => {
+      textEditorOf(lower).commands.focus('start')
+    })
+    await waitFor(() => expect(lower).toHaveFocus())
+    // jsdom has no layout, so `endOfTextblock` is stubbed true — same as `next-block.test.ts`.
+    textEditorOf(lower).view.endOfTextblock = () => true
+
+    fireEvent.keyDown(lower, { key: 'ArrowUp' })
+
+    const upper = await textBlockIn('b-alpha')
+    await waitFor(() => expect(upper).toHaveFocus())
+    expect(textEditorOf(upper).state.selection.from).toBe(3)
+  })
+
+  it('↓ from text into text below', async () => {
+    jest.spyOn(EditorView.prototype, 'posAtCoords').mockReturnValue({
+      pos: 1,
+      inside: -1,
+    })
+    renderCanvas([alpha, omega])
+    const upper = await textBlockIn('b-alpha')
+    act(() => {
+      textEditorOf(upper).commands.focus('end')
+    })
+    await waitFor(() => expect(upper).toHaveFocus())
+    textEditorOf(upper).view.endOfTextblock = () => true
+
+    fireEvent.keyDown(upper, { key: 'ArrowDown' })
+
+    const lower = await textBlockIn('b-omega')
+    await waitFor(() => expect(lower).toHaveFocus())
+  })
+
+  it('↑ into an image card selects it, instead of landing in a field', async () => {
+    const line: Block = { id: 'b-line', type: 'text', content: 'simmer' }
+    renderCanvas([image, line])
+    const field = await textBlockIn('b-line')
+    act(() => {
+      textEditorOf(field).commands.focus('start')
+    })
+    await waitFor(() => expect(field).toHaveFocus())
+    textEditorOf(field).view.endOfTextblock = () => true
+
+    fireEvent.keyDown(field, { key: 'ArrowUp' })
+
+    await waitFor(() => expect(blockRoot('b-image')).toHaveFocus())
+  })
+})
+
+describe('Esc in a text block selects its row (KAN-367)', () => {
+  it('Esc with the caret in text focuses the row, selected', async () => {
+    const user = userEvent.setup()
+    renderCanvas([note, table])
+    const line = await textBlockIn('b-note')
+    act(() => {
+      textEditorOf(line).commands.focus('end')
+    })
+    await waitFor(() => expect(line).toHaveFocus())
+
+    await user.keyboard('{Escape}')
+
+    await waitFor(() => expect(blockRoot('b-note')).toHaveFocus())
+  })
+
+  it('a selected text row’s prose wrapper carries the selected ring; unfocused does not', async () => {
+    const user = userEvent.setup()
+    renderCanvas([note, table])
+    const prose = blockRoot('b-note').querySelector('[data-part="prose"]')!
+    expect(prose).not.toHaveClass('ring-2')
+
+    const line = await textBlockIn('b-note')
+    act(() => {
+      textEditorOf(line).commands.focus('end')
+    })
+    await waitFor(() => expect(line).toHaveFocus())
+    await user.keyboard('{Escape}')
+
+    await waitFor(() => expect(blockRoot('b-note')).toHaveFocus())
+    expect(prose).toHaveClass('ring-2', 'ring-mn-text', 'rounded-[20px]')
+  })
+})
+
+describe('↑/↓ on a selected row move the selection across blocks (KAN-367)', () => {
+  it('↓ on a selected non-last card selects the next block', async () => {
     const user = userEvent.setup()
     const { onChange } = renderCanvas([image, note])
     blockRoot('b-image').focus()
     await user.keyboard('{ArrowDown}')
 
+    await waitFor(() => expect(blockRoot('b-note')).toHaveFocus())
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('↓ on the last block still opens a line, same as Return (KAN-344)', async () => {
+    const user = userEvent.setup()
+    const { onChange } = renderCanvas([image])
+    blockRoot('b-image').focus()
+    await user.keyboard('{ArrowDown}')
+
     const opened = lastBlocks(onChange)
-    expect(opened.map((b) => b.id)).toEqual(['b-image', expect.any(String), 'b-note'])
+    expect(opened.map((b) => b.id)).toEqual(['b-image', expect.any(String)])
     expect(opened[1]).toMatchObject({ type: 'text', content: '' })
   })
 
-  it('↓ on a focused table row does nothing: the table reads ↓ itself', async () => {
-    const { onChange } = renderCanvas([table, note])
-    fireEvent.keyDown(blockRoot('b-table'), { key: 'ArrowDown' })
-    expect(onChange).not.toHaveBeenCalled()
+  it('↑ from a selected second block selects the first', async () => {
+    const user = userEvent.setup()
+    renderCanvas([image, note])
+    blockRoot('b-note').focus()
+    await waitFor(() => expect(blockRoot('b-note')).toHaveFocus())
+
+    await user.keyboard('{ArrowUp}')
+
+    await waitFor(() => expect(blockRoot('b-image')).toHaveFocus())
   })
 
-  it('↓ on a focused checklist row does nothing: the checklist reads ↓ itself', async () => {
-    const { onChange } = renderCanvas([checklist, note])
-    fireEvent.keyDown(blockRoot('b-checklist'), { key: 'ArrowDown' })
-    expect(onChange).not.toHaveBeenCalled()
+  it('↑ on a selected FIRST block focuses the page title', async () => {
+    const user = userEvent.setup()
+    renderCanvas([image, note])
+    blockRoot('b-image').focus()
+    await waitFor(() => expect(blockRoot('b-image')).toHaveFocus())
+
+    await user.keyboard('{ArrowUp}')
+
+    const title = screen.getByLabelText('title') as HTMLTextAreaElement
+    await waitFor(() => expect(title).toHaveFocus())
+  })
+})
+
+describe('Return on a selected row (KAN-367/KAN-344)', () => {
+  it('Return on a selected text row puts the caret at its end', async () => {
+    const user = userEvent.setup()
+    renderCanvas([note, table])
+    const line = await textBlockIn('b-note')
+    act(() => {
+      textEditorOf(line).commands.focus('end')
+    })
+    await waitFor(() => expect(line).toHaveFocus())
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(blockRoot('b-note')).toHaveFocus())
+
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => expect(line).toHaveFocus())
+    const { state } = textEditorOf(line)
+    expect(state.selection.from).toBe(state.doc.content.size - 1)
   })
 })
 
