@@ -169,20 +169,21 @@ describe('⌘Z after applying `meeting notes` in place undoes the whole template
     fireEvent.click(meetingNotesRow)
 
     await waitFor(() => expect(mockAppendOwnEdit).toHaveBeenCalledTimes(1))
-    await waitFor(() => expect(mockDefineSchema).toHaveBeenCalledTimes(1))
-    expect(mockDefineSchema).toHaveBeenCalledWith(
-      expect.anything(),
-      'page-1',
-      expect.arrayContaining([expect.objectContaining({ name: 'date', type: 'date' })])
-    )
     await waitFor(() => expect(mockSaveProps).toHaveBeenCalled())
     expect(mockSaveProps).toHaveBeenLastCalledWith(
       expect.anything(),
       'page-1',
-      expect.objectContaining({ ...PRIOR_PROPS, kind: 'meeting notes' })
+      expect.objectContaining({
+        ...PRIOR_PROPS,
+        kind: 'meeting notes',
+        [SCHEMA_KEY]: expect.arrayContaining([expect.objectContaining({ name: 'date', type: 'date' })]),
+      })
     )
+    // `applyTemplateSchemaProps` writes the schema through the same
+    // `writePageProps` call as the props, not through `defineSchema` — that
+    // call would only be overwritten by this one.
+    expect(mockDefineSchema).not.toHaveBeenCalled()
 
-    const definesAfterApply = mockDefineSchema.mock.calls.length
     const savePropsAfterApply = mockSaveProps.mock.calls.length
 
     // PATH_STEPS 2: ⌘Z — one step undoes the whole apply, schema and props
@@ -193,11 +194,7 @@ describe('⌘Z after applying `meeting notes` in place undoes the whole template
       expect(mockSaveProps.mock.calls.length).toBeGreaterThan(savePropsAfterApply)
     )
     expect(mockSaveProps).toHaveBeenLastCalledWith(expect.anything(), 'page-1', PRIOR_PROPS)
-    // `meeting notes` carries a schema — undoing it must put the page's prior
-    // (schema-less) props back, not just restore the blocks.
-    expect(mockDefineSchema.mock.calls.length).toBe(definesAfterApply)
 
-    const definesAfterUndo = mockDefineSchema.mock.calls.length
     const savePropsAfterUndo = mockSaveProps.mock.calls.length
 
     // PATH_STEPS 2 (redo): ⇧⌘Z re-applies the whole step — schema and props
@@ -205,23 +202,18 @@ describe('⌘Z after applying `meeting notes` in place undoes the whole template
     await sessionUndo.redo('pond-1')
 
     await waitFor(() =>
-      expect(mockDefineSchema.mock.calls.length).toBeGreaterThan(definesAfterUndo)
-    )
-    expect(mockDefineSchema).toHaveBeenLastCalledWith(
-      expect.anything(),
-      'page-1',
-      expect.arrayContaining([expect.objectContaining({ name: 'date', type: 'date' })])
-    )
-    await waitFor(() =>
       expect(mockSaveProps.mock.calls.length).toBeGreaterThan(savePropsAfterUndo)
     )
     expect(mockSaveProps).toHaveBeenLastCalledWith(
       expect.anything(),
       'page-1',
-      expect.objectContaining({ ...PRIOR_PROPS, kind: 'meeting notes' })
+      expect.objectContaining({
+        ...PRIOR_PROPS,
+        kind: 'meeting notes',
+        [SCHEMA_KEY]: expect.arrayContaining([expect.objectContaining({ name: 'date', type: 'date' })]),
+      })
     )
 
-    const definesAfterRedo = mockDefineSchema.mock.calls.length
     const savePropsAfterRedo = mockSaveProps.mock.calls.length
 
     // A second ⌘Z reverts the redone step the same way the first one did.
@@ -231,7 +223,7 @@ describe('⌘Z after applying `meeting notes` in place undoes the whole template
       expect(mockSaveProps.mock.calls.length).toBeGreaterThan(savePropsAfterRedo)
     )
     expect(mockSaveProps).toHaveBeenLastCalledWith(expect.anything(), 'page-1', PRIOR_PROPS)
-    expect(mockDefineSchema.mock.calls.length).toBe(definesAfterRedo)
+    expect(mockDefineSchema).not.toHaveBeenCalled()
   })
 })
 
@@ -293,11 +285,16 @@ describe('⌘Z/⇧⌘Z race against the apply\'s own in-flight writes (KAN-557)'
 
     await applyMeetingNotes()
 
-    // `defineSchema` still runs (it does its own safe read-modify-write), but
-    // no write is safer than a lossy one for the bundled props+template write —
-    // the apply must not touch `saveProps` when it cannot snapshot what the
-    // page carried before.
-    await waitFor(() => expect(mockDefineSchema).toHaveBeenCalledTimes(1))
+    // Flush the rejected snapshot read's own promise chain (no other mock
+    // call marks this apply as finished, now that it never calls
+    // `defineSchema`).
+    for (let i = 0; i < 20; i++) await Promise.resolve()
+
+    // No write is safer than a lossy one for the bundled schema+props write —
+    // the apply must not touch `saveProps` (or `defineSchema`, which it no
+    // longer calls at all) when it cannot snapshot what the page carried
+    // before.
+    expect(mockDefineSchema).not.toHaveBeenCalled()
     expect(mockSaveProps).not.toHaveBeenCalled()
 
     await sessionUndo.undo('pond-1')
@@ -364,16 +361,12 @@ describe.each(KINDS_WITH_SCHEMA)(
       )
       expect(mockSaveProps).toHaveBeenLastCalledWith(expect.anything(), 'page-1', PRIOR_PROPS)
 
-      const definesAfterUndo = mockDefineSchema.mock.calls.length
       const savePropsAfterUndo = mockSaveProps.mock.calls.length
 
       // ⇧⌘Z re-applies the whole step — schema and props land again too, not
       // only the blocks.
       await sessionUndo.redo('pond-1')
 
-      await waitFor(() =>
-        expect(mockDefineSchema.mock.calls.length).toBeGreaterThan(definesAfterUndo)
-      )
       await waitFor(() =>
         expect(mockSaveProps.mock.calls.length).toBeGreaterThan(savePropsAfterUndo)
       )
@@ -382,6 +375,7 @@ describe.each(KINDS_WITH_SCHEMA)(
         'page-1',
         expect.objectContaining({ ...PRIOR_PROPS, kind })
       )
+      expect(mockDefineSchema).not.toHaveBeenCalled()
     })
   }
 )

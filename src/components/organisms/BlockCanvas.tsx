@@ -2365,13 +2365,11 @@ export function BlockCanvas({
       // only "unknown" case — a page that was read fine but simply has no
       // `props` yet is a known, empty prior, not an unknown one.
       priorProps = current ? current.props ?? {} : null
-      if (applied.schema) {
-        try {
-          await defineSchema(supabase, pageId, applied.schema)
-        } catch (err) {
-          console.error('Failed to define the template schema', err)
-        }
-      }
+      // No separate `defineSchema` call here: `base` below already merges
+      // `applied.schema` into `priorProps` via `withSchema`, and the
+      // `writePageProps` write right after this would overwrite whatever
+      // `defineSchema`'s own read-modify-write had just saved — a second,
+      // wasted round-trip to the same row.
       // An unknown prior (the snapshot read failed or returned null) must
       // never feed a full-replace `saveProps` — that would stomp whatever
       // props the page actually carries (glyph, area, made-from) with just
