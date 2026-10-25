@@ -551,8 +551,6 @@ export interface BlockCanvasProps {
    * Optional — a surface that doesn't track it passes nothing and no block animates.
    */
   insertedIds?: Set<string>
-  /** Move a block into a page of its own. Without it the block menu does not offer the move. */
-  onMoveIntoNewPage?: (block: Block) => void
   /** False hides the editing chrome — every block's handle and the trailing gap — mounted (zen: the page and nothing else). */
   chrome?: boolean
   /**
@@ -601,7 +599,6 @@ export function BlockCanvas({
   onChange,
   onStructuralWrite,
   insertedIds,
-  onMoveIntoNewPage,
   chrome = true,
   untouched = false,
   openTemplatesFor = null,
@@ -1582,7 +1579,7 @@ export function BlockCanvas({
         }
         convertBlock(block, conversion)
       },
-      'move-into-new-page': () => onMoveIntoNewPage?.(block),
+      'move-into-new-page': () => void moveBlockIntoNewPage(index),
       'copy-link': () => void copyBlockLink(block.id),
       delete: () => requestDelete(index),
       'set-width': ({ width }) => setBlockWidth(block, width),
@@ -2665,7 +2662,9 @@ export function BlockCanvas({
             ? blockMenuGroups(
                 block,
                 {
-                  moveIntoNewPage: onMoveIntoNewPage !== undefined,
+                  // Every block but a page-link has something to move — it has
+                  // nothing of its own, so the row is dropped for it.
+                  moveIntoNewPage: block.type !== 'page-link',
                   width: (
                     <BlockWidthRow
                       width={block.width}
