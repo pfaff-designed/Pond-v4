@@ -27,7 +27,10 @@ import { HIGHLIGHT_EMPTY_LINE, type HighlightBlock } from './schema'
  * ground belongs to the KEPT passage, not to its source), blur or Escape returns.
  * An empty editable block starts in edit mode so a freshly-added block is typeable —
  * but only when `autofocus !== false` (KAN-345/499): a line that merely arrived with
- * the page never grabs the caret, only one a person just inserted this session.
+ * the page never grabs the caret, only one a person just inserted this session. When
+ * it isn't editing, the empty line's hint is hidden at rest (KAN-499: "the page shows
+ * nothing until you point at where you can type") and shown on hover or focus-within
+ * of the block row's `group` (`BlockCanvas.tsx`); the read-only path stays visible.
  */
 
 /**
@@ -58,7 +61,13 @@ export function HighlightView({
   }, [editing])
 
   const passage = isEmpty ? (
-    <p data-part="passage" data-empty="" className={`${REGISTER} text-mn-text-secondary`}>
+    <p
+      data-part="passage"
+      data-empty=""
+      className={`${REGISTER} text-mn-text-secondary${
+        editable ? ' opacity-0 group-hover:opacity-100 group-focus-within:opacity-100' : ''
+      }`}
+    >
       {HIGHLIGHT_EMPTY_LINE}
     </p>
   ) : (
