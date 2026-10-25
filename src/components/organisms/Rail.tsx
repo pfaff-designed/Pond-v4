@@ -242,9 +242,10 @@ const NO_CAPABILITIES: RowCapabilities = {
 
 /**
  * The pond root is a drop target and the one row a page is added under when the
- * pond is empty — but not while it is, since an empty pond's root draws no ＋. The
- * placeholder is no page at all. The databases root is a foot row: it can be moved
- * and dropped on, never added to, deleted or renamed.
+ * pond is empty — and while it is, its ＋ is visible at rest (KAN-471): the hover
+ * rule returns once a first page exists. The placeholder is no page at all. The
+ * databases root is a foot row: it can be moved and dropped on, never added to,
+ * deleted or renamed.
  */
 const rowCapabilities = (id: string, node: RailNode): RowCapabilities => {
   // KAN-491: the home root renames and deletes like any other row. It still
@@ -303,6 +304,11 @@ interface RailRowProps {
   /** A leading mark slot (an area's glyph, the Life root's waves — #91) —
    *  replaces the dot. */
   leading?: ReactNode
+  /** KAN-471: the root row's ＋ while the pond has no pages — Notion/Linear
+   *  show their create affordance at rest in an empty list; the board's own
+   *  hover-only rule returns once a page exists. Reuses the existing hover
+   *  opacity class, no new value. */
+  plusVisibleAtRest?: boolean
   /** KAN-122: a non-shared row note (`new`, for a nested page not yet
    *  opened) — mono, ink .68, `flex:none`. Rides alongside `row-tools`, never
    *  replaces it. Absent once the page has been opened. KAN-75's shared row
@@ -360,6 +366,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
     accent,
     settleOnMount = false,
     leading,
+    plusVisibleAtRest = false,
     rowNote,
     onSelect,
     onToggle,
@@ -411,14 +418,20 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
   // colour of its own in the board, so it is full at rest.
   const isFullInk = isSelected || hovered || isAreaRow || isDbRoot
   // `PondRail.dc.html`: the selected row draws ＋ alone, a hovered one ＋ and ×.
-  const showPlus = isSelected || hovered
+  // KAN-471: an empty pond's root row also draws it at rest (Notion/Linear).
+  const showPlus = isSelected || hovered || plusVisibleAtRest
   // The tools sit out of flow (absolutely, over the row's own right padding —
   // KAN-314), so they take no flow width at rest and the label needs no extra
   // clearance. Only while a control is actually drawn does the label give up
   // the width it would overlap: the row's own 7px gap plus ＋ alone (7+12=19),
   // or plus ＋ · gap 8 · × together (7+12+8+12=39). `group-focus-within` covers
   // the keyboard case, where both draw regardless of `hovered`/`showPlus`.
-  const toolsPad = hovered ? 'pr-[39px]' : showPlus ? 'pr-[19px]' : ''
+  // Whenever ＋ carries the `mr-5` shift that clears ×'s slot (`hovered` or
+  // `plusVisibleAtRest`), it sits 20px further from the edge than the ＋-alone
+  // math above assumes — the label needs the same 39px it gives a hovered row,
+  // even though × itself isn't drawn yet.
+  const toolsPad =
+    hovered || plusVisibleAtRest ? 'pr-[39px]' : showPlus ? 'pr-[19px]' : ''
 
   return (
     <div
@@ -595,7 +608,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
                         showPlus
                           ? 'opacity-100 pointer-events-auto'
                           : 'opacity-0 pointer-events-none'
-                      } ${hovered ? 'mr-5' : ''}`}
+                      } ${hovered || plusVisibleAtRest ? 'mr-5' : ''}`}
                     >
                       <NewPageMenu
                         parentTitle={label}
@@ -613,6 +626,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
                             aria-label={`Add sub-page to ${label}`}
                             disabled={isBusy}
                             onClick={(e) => e.stopPropagation()}
+                            onDoubleClick={(e) => e.stopPropagation()}
                           >
                             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
                               <path
@@ -1294,8 +1308,9 @@ export function RailView({
         depth={0}
         isFolder={isFolder}
         isExpanded={lifeExpanded}
-        // `PondRail` `empty`: the lone root is not selected, so it draws no resting ＋;
-        // hovered, it shows its tools like any row (`hasTools: hov`).
+        // `PondRail` `empty`: the lone root is not selected, so it draws no `isSelected`
+        // wash; but its ＋ shows at rest while the pond is empty (KAN-471, below), then
+        // goes back to hover-only (`hasTools: hov`) once a first page exists.
         isSelected={selectedId === null && !isEmpty}
         isFocused={rovingId === id}
         isBusy={false}
@@ -1303,6 +1318,7 @@ export function RailView({
         posInSet={posInSet}
         setSize={setSize}
         leading={<PondMark glyph={pondGlyph} />}
+        plusVisibleAtRest={isEmpty}
         onSelect={onLife}
         onToggle={onToggleLife}
         newPageMenuOpen={newPageMenu?.id === id}
@@ -1487,12 +1503,12 @@ export function RailView({
                 </div>
               </div>
             )}
-            {!isLoading && isEmpty && (
+            {isEmpty && showHomeRoot && (
               <p
                 className="mt-2 mr-2 ml-[26px] text-[12.5px] leading-[1.5] text-pretty text-mn-text-secondary"
                 role="status"
               >
-                no pages yet. ＋ new page, or ask pond to start one.
+                no pages yet. the ＋ beside {rootLabel} makes one, or ask pond to start one.
               </p>
             )}
           </div>
