@@ -43,6 +43,20 @@ describe('describeChange', () => {
     expect(describeChange(record({ action: 'memory_note' }), null)).toBe('recorded a memory note')
   })
 
+  it('names a duplicate, including its own undo row', () => {
+    const duplicate = record({
+      id: 'dup-1',
+      action: 'duplicate_page',
+      before: null,
+      after: { pageId: 'copy-1' },
+    })
+    expect(describeChange(duplicate, null)).toBe('duplicated this page')
+
+    const undo = record({ action: 'undo', links: { undoOf: 'dup-1' } })
+    const byId = new Map([[duplicate.id, duplicate]])
+    expect(describeChange(undo, null, byId)).toBe('undo · duplicated this page')
+  })
+
   it('names a glyph pick as a mark change, in Pond\'s words', () => {
     expect(
       describeChange(record({ action: 'edit_glyph', before: null, after: 'flower-02' }), null)

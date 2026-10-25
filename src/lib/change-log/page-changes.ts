@@ -192,6 +192,8 @@ export function describeChange(
     }
     case 'create_page':
       return 'created this page'
+    case 'duplicate_page':
+      return 'duplicated this page'
     case 'define_schema':
       return 'set up the fields'
     case 'edit_schema':

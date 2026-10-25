@@ -87,6 +87,12 @@ export type ChangeLogAction =
    *  other collection tools (`define_schema`, `add_row`, `edit_row`). Written
    *  as one atomic record per commit, never grouped by pause like a row edit. */
   | 'edit_schema'
+  /** A page (and its subtree) copied below the original (KAN-468); `after`
+   *  carries `{pageId}` (the copy's root) and, when the parent gained a
+   *  page-link for it, `appendedLinkId`/`linkParentId` — never a title, so
+   *  this reads generic like {@link ChangeLogAction}'s other page-structural
+   *  actions (`create_page`), not by name. */
+  | 'duplicate_page'
 
 /**
  * The actions whose before/after IS a page's `Block[]` — the ones a block write

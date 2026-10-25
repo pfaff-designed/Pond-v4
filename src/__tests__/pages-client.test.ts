@@ -645,6 +645,31 @@ describe('duplicatePage', () => {
     expect(rpc).toHaveBeenCalledWith('duplicate_page', { p_page_id: 'missing', p_title: '' })
   })
 
+  it('excludes trashed rows from the sibling dedupe, so a freed name is reused (KAN-468)', async () => {
+    // A trashed "Recipes 2" (⌘Z'd copy) no longer blocks `pages_sibling_title_pond_uniq`
+    // (0027's partial index is `where deleted_at is null`) — so the next duplicate must
+    // dedupe back to "Recipes 2", not skip to "Recipes 3". The query must filter
+    // `deleted_at is null` itself; a live DB would never hand back the trashed row.
+    const chain = makeChain({
+      maybeSingle: jest.fn().mockResolvedValue({
+        data: { title: 'Recipes', parent_id: 'root-1', pond_id: 'pond-1' },
+        error: null,
+      }),
+      then: (resolve: (v: unknown) => void) =>
+        resolve({ data: [{ id: 'page-1', title: 'Recipes' }], error: null }),
+    })
+    const rpc = jest.fn().mockResolvedValue({ data: duplicateChangeLogRow(), error: null })
+    const sb = { ...makeSupabase(chain), rpc }
+
+    await duplicatePage(sb as never, 'user-1', 'page-1')
+
+    expect(chain.is).toHaveBeenCalledWith('deleted_at', null)
+    expect(rpc).toHaveBeenCalledWith('duplicate_page', {
+      p_page_id: 'page-1',
+      p_title: 'Recipes 2',
+    })
+  })
+
   it('throws when the RPC errors', async () => {
     const chain = makeChain({
       maybeSingle: jest.fn().mockResolvedValue({

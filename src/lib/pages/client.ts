@@ -230,9 +230,13 @@ export async function listPages(
 // ── Writes ───────────────────────────────────────────────────────────────────
 
 /**
- * The `{id, title}` of every sibling under `parentId` (root when null) in a
- * pond — the scope `pages_sibling_title_pond_uniq` guards (#84, re-keyed by
- * 0019). Used to auto-suffix new titles and to detect rename collisions.
+ * The `{id, title}` of every LIVE sibling under `parentId` (root when null)
+ * in a pond — the scope `pages_sibling_title_pond_uniq` guards (#84, re-keyed
+ * by 0019, made partial on `deleted_at is null` by 0027/KAN-97). Used to
+ * auto-suffix new titles and to detect rename collisions: a trashed sibling
+ * no longer blocks the index, so it must not count here either, or a dedupe
+ * run after a trash (⌘Z on a duplicate, say) skips past the freed name and
+ * suffixes one further than the DB would ever require.
  */
 async function siblingRows(
   supabase: SupabaseClient<Database>,
@@ -242,7 +246,11 @@ async function siblingRows(
   pond: string | null
 ): Promise<{ id: string; title: string }[]> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let q: any = (supabase as any).from('pages').select('id, title').eq('user_id', userId)
+  let q: any = (supabase as any)
+    .from('pages')
+    .select('id, title')
+    .eq('user_id', userId)
+    .is('deleted_at', null)
   // #312: 0018's `pages_sibling_title_pond_uniq` is keyed per pond, so the
   // auto-suffix must read THIS pond's siblings — otherwise it renames around a
   // name that does not collide.
