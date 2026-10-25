@@ -238,13 +238,6 @@ export function PondCommand({
   // at the first row without an effect writing state.
   const [sel, setSel] = useState({ query, scope, index: 0 })
 
-  // A row can appear exactly where the pointer already rests — the block
-  // menu's `move to…` row and the palette's first row land at the same
-  // screen position — and the browser fires that row's mouseenter the
-  // instant it exists, with no actual movement. Hover must not steal the
-  // fresh `sel=0` until the pointer genuinely moves after open.
-  const pointerMovedRef = useRef(false)
-
   // Every opening starts clean: no query, the first row, the scope the host hands.
   // `resetOn` catches a reset point the `open` flip alone can't — pick mode
   // starting without the palette itself closing (KAN-469).
@@ -351,18 +344,6 @@ export function PondCommand({
       document.removeEventListener('pointerdown', handlePointerDown, true)
     }
   }, [open, onOpenChange, boxRef])
-
-  // Arms on every fresh open and on `resetOn` (pick mode swapping in without
-  // a close/open cycle) — same two triggers the sel reset above answers to.
-  useEffect(() => {
-    if (!open) return
-    pointerMovedRef.current = false
-    const handlePointerMove = () => {
-      pointerMovedRef.current = true
-    }
-    document.addEventListener('pointermove', handlePointerMove)
-    return () => document.removeEventListener('pointermove', handlePointerMove)
-  }, [open, resetOn])
 
   // `atRest` lags `open` by a frame, so both are read: a row's click bubbling up
   // in the first frame of an opening must not ask to open again.
@@ -597,9 +578,7 @@ export function PondCommand({
                         id={rowId(index)}
                         entry={entry}
                         selected={index === active}
-                        onHover={() => {
-                          if (pointerMovedRef.current) select(index)
-                        }}
+                        onHover={() => select(index)}
                         onPick={() => onSelect(entry.item)}
                         style={enter(i)}
                       />

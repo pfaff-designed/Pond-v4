@@ -503,19 +503,14 @@ describe('open, it is a combobox in the same box — not a dialog, not a portal'
     platform.mockRestore()
   })
 
-  it('↓↓↵ opens the third row; hover selects once the pointer actually moves; a click opens', () => {
+  it('↓↓↵ opens the third row; a pointermove onto a row selects it; a click opens', () => {
     const { onSelect } = renderPalette()
     fireEvent.keyDown(input(), { key: 'ArrowDown' })
     fireEvent.keyDown(input(), { key: 'ArrowDown' })
     fireEvent.keyDown(input(), { key: 'Enter' })
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 'journal' }))
     const budget = screen.getAllByRole('option')[1]
-    // A stationary pointer's mouseenter (fired when a row appears under it,
-    // with no real movement) must not steal the selection.
-    fireEvent.mouseEnter(budget)
-    expect(input().getAttribute('aria-activedescendant')).not.toBe(budget.id)
-    fireEvent.pointerMove(document)
-    fireEvent.mouseEnter(budget)
+    fireEvent.pointerMove(budget)
     expect(input().getAttribute('aria-activedescendant')).toBe(budget.id)
     fireEvent.click(budget)
     expect(onSelect).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'budget' }))
@@ -524,12 +519,20 @@ describe('open, it is a combobox in the same box — not a dialog, not a portal'
   it('opening under a stationary pointer still selects the first row, and ↵ picks it', () => {
     const { onSelect } = renderPalette()
     const options = screen.getAllByRole('option')
-    // The row that lands under the pointer on open (no movement since) must
-    // not steal the selection the board sets on open — only a real move does.
+    // The row that lands under the pointer on open fires mouseenter but no
+    // pointermove (the pointer itself never moved) — it must not steal the
+    // selection the board sets on open.
     fireEvent.mouseEnter(options[2])
     expect(screen.getByRole('option', { selected: true })).toBe(options[0])
     fireEvent.keyDown(input(), { key: 'Enter' })
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 'kitchen' }))
+  })
+
+  it('a single pointermove onto row 2 selects row 2', () => {
+    renderPalette()
+    const options = screen.getAllByRole('option')
+    fireEvent.pointerMove(options[2])
+    expect(screen.getByRole('option', { selected: true })).toBe(options[2])
   })
 
   it('arrowing to a page or database row fires onActiveItemChange with it (KAN-388) — a record/action row does not', () => {
