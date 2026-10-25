@@ -398,4 +398,21 @@ describe('an alone-on-line edge drag (KAN-441)', () => {
     expect(edgeHandle('b-right', 'left')).toBeNull()
     expect(edgeHandle('b-right', 'right')).toBeNull()
   })
+
+  it('a toggle\'s left edge strip starts short of its own fold button\'s 28px row (KAN-480, bounded round-3 fix)', () => {
+    const toggle: Block = { id: 'b-toggle', type: 'toggle', content: 'packing list' }
+    renderCanvas([toggle], () => {})
+
+    const left = edgeHandle('b-toggle', 'left')!
+    expect(left.style.top).toBe('28px')
+    // The right edge never meets the fold button, so it keeps the full height.
+    expect(edgeHandle('b-toggle', 'right')!.style.top).toBe('')
+  })
+
+  it('every other block type\'s left edge strip still spans the block\'s full height', () => {
+    const lone: Block = { id: 'b-lone', type: 'text', content: 'calendar' }
+    renderCanvas([lone], () => {})
+
+    expect(edgeHandle('b-lone', 'left')!.style.top).toBe('')
+  })
 })

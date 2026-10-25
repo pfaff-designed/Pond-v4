@@ -21,6 +21,14 @@ import { SlashLineContext } from '../text/slash-line'
 const TOGGLE_BODY_INDENT = 15
 
 /**
+ * The fold button's own height in px (`--prose-line`'s 28px fallback, read as
+ * a number here since `BlockCanvas.tsx`'s `topInsetPx` prop takes one) — the
+ * one home both the button's CSS and BlockCanvas's edge-resize-strip clip
+ * (KAN-480, bounded round-3 fix) read, so the two can never drift apart.
+ */
+export const TOGGLE_FOLD_ROW_PX = 28
+
+/**
  * The body's own row (KAN-480, build item 5): `ownEnter` makes its Enter
  * ProseMirror's own (a new paragraph inside the body), never a `stepOut`
  * split — a toggle's body is one field of several lines, not a run of page
@@ -152,24 +160,30 @@ export function ToggleView({ data, editable, onChange, autofocus }: ModuleViewPr
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-start gap-1.5">
-        {/* WCAG 2.5.8: the glyph alone is a 9×9 hit target. `p-[1px]` grows the
-            clickable box; the equal `-mx-[1px]` keeps both the glyph and this
-            item's own 9px flow footprint (the sum `TOGGLE_BODY_INDENT` reads)
-            unchanged, so the summary text beside it doesn't shift. Horizontally
-            that's as far as it goes: the live-measured gutter between the block
-            handle and the summary text is only ~11px (pw3) — short of the 24px
-            minimum, and 1px a side is the most this gutter allows before
-            touching a neighbour. Vertically there's room to spare: height
-            matches the first line's own `--prose-line` box (28px ≥ 24px), so
-            the glyph centres on the line itself instead of the old `mt-[0.3em]`
-            guess. */}
+        {/* WCAG 2.5.8: the glyph alone is a 9×9 hit target, grown to 16×28
+            (KAN-480, bounded round-3 fix). Growth is asymmetric — 1px left
+            (`pl-[1px]`/`-ml-[1px]`), 6px right (`pr-[6px]`/`-mr-[6px]`) —
+            because the left side already meets `BlockEdgeHandle`'s edge-resize
+            strip (BlockCanvas.tsx) at the 17px gutter's limit, while the 6px
+            on the right is the `gap-1.5` flex gap before the summary: blank
+            flow space, never the summary's own text, so growing into it can't
+            cover a glyph a click should instead place the caret in. Each
+            side's margin cancels its own padding (content width 9 + pl 1 +
+            pr 6 = 16 border-box; 16 + -1 + -6 = 9 margin-box), so the 9px flow
+            footprint (`TOGGLE_BODY_INDENT`'s own sum) and the summary's
+            position are both unchanged. `relative z-[2]` lifts this border
+            box, where it overlaps that gutter, above the edge-resize strip's
+            `z-[1]` (BlockCanvas clips the strip's own top 28px for a toggle's
+            left handle so the rest of the edge still starts a resize).
+            Height still matches the first line's own `--prose-line` box
+            (28px), so the glyph centres on the line itself. */}
         <button
           type="button"
           aria-expanded={!folded}
           aria-label={folded ? 'unfold' : 'fold'}
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => commit({ ...data, folded: !folded })}
-          className="-mx-[1px] grid h-[var(--prose-line,calc(17.5px*1.6))] flex-none place-items-center p-[1px] text-mn-text-secondary"
+          className="relative z-[2] -ml-[1px] -mr-[6px] grid h-[var(--prose-line,calc(17.5px*1.6))] flex-none place-items-center pl-[1px] pr-[6px] text-mn-text-secondary"
         >
           <Caret className={cn(!folded && 'rotate-90')} />
         </button>

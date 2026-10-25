@@ -306,3 +306,18 @@ describe('ToggleView — fold (KAN-480 build item 6)', () => {
     expect(screen.queryByText('Passport')).not.toBeInTheDocument()
   })
 })
+
+describe('ToggleView — fold button above the edge-resize strip (KAN-480, bounded round-3 fix)', () => {
+  it('is positioned and stacked above BlockCanvas\'s edge-resize strip (z-[1])', () => {
+    render(<ToggleView data={{ ...full, folded: false }} editable onChange={() => {}} />)
+    const button = screen.getByRole('button')
+    expect(button).toHaveClass('relative', 'z-[2]')
+  })
+
+  it('a click on the button still folds it, undisturbed by the stacking change', () => {
+    const onChange = jest.fn()
+    render(<ToggleView data={{ ...full, folded: false }} editable onChange={onChange} />)
+    fireEvent.click(screen.getByRole('button'))
+    expect(onChange).toHaveBeenCalledWith({ ...full, folded: true })
+  })
+})
