@@ -22,6 +22,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
 import type { Block } from '@/lib/modules/content'
 import { inPond, resolvePond } from '@/lib/pond/scope'
+import { toBlocks } from '@/lib/pages/to-blocks'
 import {
   isTemplateKind,
   isTemplateOrigin,
@@ -77,11 +78,6 @@ type PostgrestError = { code?: string; message?: string } | null
 
 function isUniqueViolation(error: PostgrestError): boolean {
   return error?.code === '23505'
-}
-
-/** Blocks are stored as jsonb; coerce anything non-array to []. */
-function toBlocks(value: unknown): Block[] {
-  return Array.isArray(value) ? (value as Block[]) : []
 }
 
 function mapRow(row: TemplateRow): PondTemplate {
