@@ -1,10 +1,12 @@
 /**
- * The pond theme applies at creation only (KAN-501 scope cut; applying it on
- * switch moved to KAN-503). `PondProvider` must never flip the mode just
- * because `?pond=` changed — every existing pond defaults to `theme: 'paper'`
- * (0018), so applying it on switch would stomp a person's own dark mode
- * (KAN-413). Mocks `@/lib/pond/client` the same way
- * `pond-context-last-page.test.tsx` does.
+ * The pond theme applies only on an in-session switch (KAN-503) — never at
+ * mount/page load, since `PondProvider`'s pond-id ref starts null on every
+ * mount and a first resolved pond always reads as "no previous pond" (the
+ * same null-across-remounts rule `previousRenderRef` already follows for the
+ * last-page write). Only the explicit `'ink'` theme maps to a mode; every
+ * other value, paper's column default included, is a no-op — the person's
+ * own mode stands, even right after an earlier switch forced it dark. Mocks
+ * `@/lib/pond/client` the same way `pond-context-last-page.test.tsx` does.
  */
 
 import React from 'react'
@@ -30,6 +32,7 @@ const INK_POND = { id: 'p-ink', name: 'studio', glyph: null, theme: 'ink', order
 
 const html = document.documentElement
 const isDark = () => html.classList.contains('dark')
+const setDark = (dark: boolean) => html.classList.toggle('dark', dark)
 
 function Probe() {
   const { pond } = usePond()
@@ -42,9 +45,54 @@ beforeEach(() => {
   ;(listPonds as jest.Mock).mockReset().mockResolvedValue([PAPER_POND, INK_POND])
 })
 
-describe('switching ponds never changes the mode', () => {
-  it('leaves a dark mode unchanged across paper -> ink -> paper', async () => {
-    html.classList.add('dark')
+afterEach(() => {
+  setDark(false)
+})
+
+describe('pond theme applies only on an in-session switch', () => {
+  it.each([false, true])(
+    'mount never applies the theme, even onto the ink pond (starting dark=%s)',
+    async (startDark) => {
+      setDark(startDark)
+      mockSearch = 'pond=p-ink'
+
+      render(
+        <PondProvider>
+          <Probe />
+        </PondProvider>
+      )
+      await waitFor(() => expect(screen.getByTestId('probe')).toHaveTextContent('p-ink'))
+      expect(isDark()).toBe(startDark)
+    }
+  )
+
+  it.each([false, true])(
+    'an in-session switch into the ink pond sets dark regardless of the mode at the time (starting dark=%s)',
+    async (startDark) => {
+      setDark(startDark)
+      mockSearch = 'pond=p-paper'
+
+      const { rerender } = render(
+        <PondProvider>
+          <Probe />
+        </PondProvider>
+      )
+      await waitFor(() => expect(screen.getByTestId('probe')).toHaveTextContent('p-paper'))
+      expect(isDark()).toBe(startDark)
+
+      mockSearch = 'pond=p-ink'
+      rerender(
+        <PondProvider>
+          <Probe />
+        </PondProvider>
+      )
+      await waitFor(() => expect(screen.getByTestId('probe')).toHaveTextContent('p-ink'))
+      expect(isDark()).toBe(true)
+    }
+  )
+
+  it('a switch into the paper pond is a no-op, leaving the mode exactly as it stood — even right after an ink switch', async () => {
+    setDark(false)
     mockSearch = 'pond=p-paper'
 
     const { rerender } = render(
@@ -53,7 +101,7 @@ describe('switching ponds never changes the mode', () => {
       </PondProvider>
     )
     await waitFor(() => expect(screen.getByTestId('probe')).toHaveTextContent('p-paper'))
-    expect(isDark()).toBe(true)
+    expect(isDark()).toBe(false)
 
     mockSearch = 'pond=p-ink'
     rerender(
@@ -64,6 +112,9 @@ describe('switching ponds never changes the mode', () => {
     await waitFor(() => expect(screen.getByTestId('probe')).toHaveTextContent('p-ink'))
     expect(isDark()).toBe(true)
 
+    // The PATH_STEPS case: switching into a pond with no chosen theme after an
+    // ink switch stands dark — it never reverts to light just because paper
+    // is the column default.
     mockSearch = 'pond=p-paper'
     rerender(
       <PondProvider>
@@ -72,38 +123,5 @@ describe('switching ponds never changes the mode', () => {
     )
     await waitFor(() => expect(screen.getByTestId('probe')).toHaveTextContent('p-paper'))
     expect(isDark()).toBe(true)
-
-    html.classList.remove('dark')
-  })
-
-  it('leaves a light mode unchanged across paper -> ink -> paper', async () => {
-    html.classList.remove('dark')
-    mockSearch = 'pond=p-paper'
-
-    const { rerender } = render(
-      <PondProvider>
-        <Probe />
-      </PondProvider>
-    )
-    await waitFor(() => expect(screen.getByTestId('probe')).toHaveTextContent('p-paper'))
-    expect(isDark()).toBe(false)
-
-    mockSearch = 'pond=p-ink'
-    rerender(
-      <PondProvider>
-        <Probe />
-      </PondProvider>
-    )
-    await waitFor(() => expect(screen.getByTestId('probe')).toHaveTextContent('p-ink'))
-    expect(isDark()).toBe(false)
-
-    mockSearch = 'pond=p-paper'
-    rerender(
-      <PondProvider>
-        <Probe />
-      </PondProvider>
-    )
-    await waitFor(() => expect(screen.getByTestId('probe')).toHaveTextContent('p-paper'))
-    expect(isDark()).toBe(false)
   })
 })
