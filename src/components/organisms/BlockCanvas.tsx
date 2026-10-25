@@ -1908,8 +1908,15 @@ export function BlockCanvas({
     // `activeElement` right before focusing, not before the await, since that's
     // the only moment that matters.
     const first = applied.blocks[0]
-    if (!first) return
     const activeElement = document.activeElement
+    // `templateBlocksFrom` can strip every block (a `yours` template that is
+    // only a page-link, never carried) — there is no first line to land in, so
+    // fall back to the title, the safest state (AGENTS.md, crash early).
+    if (!first) {
+      const caretMovedElsewhere = activeElement !== null && activeElement !== document.body
+      if (!caretMovedElsewhere) focusPageTitle()
+      return
+    }
     const firstBlockHost = document.getElementById(blockDomId(first.id))
     const caretMovedElsewhere =
       activeElement !== null &&

@@ -731,7 +731,8 @@ describe('a template pick on a blank page applies in place (KAN-124)', () => {
     // tick rather than a real timer — `waitFor`'s real-time polling could
     // observe either mid-flight under load. One flushed animation frame
     // settles both before asserting: the applied, still-unwritten text line
-    // ends up with the caret, same as test 490's "rule 2" case.
+    // ends up with the caret, same as the "rule 2 (KAN-345): the applied
+    // template's own unwritten line ends up with the caret" test above.
     await act(() => new Promise(requestAnimationFrame))
     expect(await findTextBlock()).toHaveFocus()
 
@@ -792,6 +793,32 @@ describe('a template pick on a blank page applies in place (KAN-124)', () => {
     await waitFor(() => expect(field).toHaveFocus())
     expect(screen.getByLabelText('title')).not.toHaveFocus()
     expect(insertPageOptimistic).not.toHaveBeenCalled()
+  })
+
+  it('a `yours` template with no carried blocks (a lone page-link, never carried) applies in place and falls back to the title (KAN-499)', async () => {
+    const YOURS_TEMPLATE: PondTemplate = {
+      id: 'tpl-10',
+      name: 'just a link',
+      kind: 'notes',
+      blocks: [{ id: 'orig-1', type: 'page-link', pageId: 'original-page' } as Block],
+      origin: 'yours',
+      createdAt: '2026-10-01T10:00:00.000Z',
+      updatedAt: '2026-10-01T10:00:00.000Z',
+    }
+    mockListTemplates.mockResolvedValue([YOURS_TEMPLATE])
+    const user = userEvent.setup()
+    renderBlankPageHarness()
+
+    writeInTextBlock(await findTextBlock(), '/')
+    await screen.findByRole('listbox', { name: 'blocks' })
+    // `yours` templates lead the `templates` group — no ↓ needed.
+    await screen.findByText('just a link')
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalledTimes(1))
+    expect(mockSaveBlocks.mock.calls[0][2]).toEqual([])
+
+    await waitFor(() => expect(screen.getByLabelText('title')).toHaveFocus())
   })
 })
 
