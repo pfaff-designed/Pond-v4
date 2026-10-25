@@ -78,12 +78,12 @@ describe('breadcrumb ancestors with a navigable target are links; `to: null` cru
     expect(onOpenChange).not.toHaveBeenCalledWith(true)
   })
 
-  it('an altKey click leaves the native download behaviour unprevented, does not navigate, and never opens the palette', () => {
+  it('an altKey click behaves like a plain click — alt-click downloads in Chrome/Safari, so it stays in-app rather than opening a tab', () => {
     const { onNavigate, onOpenChange } = renderCommand()
     const link = screen.getByRole('link', { name: 'house' })
     const notPrevented = fireEvent.click(link, { altKey: true })
-    expect(notPrevented).toBe(true) // preventDefault() was NOT called — the browser downloads
-    expect(onNavigate).not.toHaveBeenCalled()
+    expect(notPrevented).toBe(false) // preventDefault() WAS called — in-app navigation, not a download
+    expect(onNavigate).toHaveBeenCalledWith({ kind: 'page', node: HOUSE })
     expect(onOpenChange).not.toHaveBeenCalledWith(true)
   })
 })

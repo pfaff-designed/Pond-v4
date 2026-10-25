@@ -482,6 +482,7 @@ describe('at rest the palette is the breadcrumb (`PondCommand` t = 0)', () => {
 
 describe('open, it is a combobox in the same box — not a dialog, not a portal', () => {
   it('combobox → listbox → options; the input keeps focus and names the active row', () => {
+    const platform = jest.spyOn(window.navigator, 'platform', 'get').mockReturnValue('MacIntel')
     const { container } = renderPalette()
     expect(container.contains(box())).toBe(true)
     expect(screen.queryByRole('dialog')).toBeNull()
@@ -494,8 +495,12 @@ describe('open, it is a combobox in the same box — not a dialog, not a portal'
     const selected = screen.getByRole('option', { selected: true })
     expect(input().getAttribute('aria-activedescendant')).toBe(selected.id)
     expect(selected).toHaveTextContent('kitchen renovation')
-    expect(box().querySelector('[data-part="foot"]')!.textContent).toBe(PALETTE_FOOT.join(''))
+    // The opened frame's recent pages include a page row, so the new-tab hint joins the foot.
+    expect(box().querySelector('[data-part="foot"]')!.textContent).toBe(
+      ['↑↓ move', '↵ open', '⌘↵ new tab', '> actions only', 'esc close'].join('')
+    )
     expect(box().querySelector('[data-part="opener"]')!.getAttribute('aria-expanded')).toBe('true')
+    platform.mockRestore()
   })
 
   it('↓↓↵ opens the third row; hover selects; a click opens', () => {
@@ -571,14 +576,18 @@ describe('open, it is a combobox in the same box — not a dialog, not a portal'
   })
 
   it('below md the foot hides the hints a touch screen has no key for; the rest stay', () => {
+    const platform = jest.spyOn(window.navigator, 'platform', 'get').mockReturnValue('MacIntel')
     renderPalette()
     const spans = [...box().querySelectorAll('[data-part="foot"] span')]
     expect(spans.map((f) => [f.textContent, f.classList.contains('max-md:hidden')])).toEqual([
       ['↑↓ move', true],
       ['↵ open', false],
+      // ⌘↵/Ctrl+↵ has no key on a touch screen either — hidden below md, same as `↑↓ move`.
+      ['⌘↵ new tab', true],
       ['> actions only', false],
       ['esc close', true],
     ])
+    platform.mockRestore()
   })
 
   it('scoped: the chip, no placeholder, and ⌫ on an empty line clears it', () => {
@@ -597,11 +606,16 @@ describe('open, it is a combobox in the same box — not a dialog, not a portal'
   })
 
   it('the chrome is lowercase in every state — Pond’s words; a page’s title is content and keeps its case', () => {
+    // Pinned to a Mac: off one, the new-tab hint's chord reads as words ("Ctrl Enter"),
+    // same accepted exception as the ⌘K chip's own "Ctrl K" (shell-commands.test.ts) —
+    // a key legend, not Pond's copy, and this guard is about Pond's copy.
+    const platform = jest.spyOn(window.navigator, 'platform', 'get').mockReturnValue('MacIntel')
     for (const q of QUERIES) {
       const { unmount } = renderPalette({ defaultQuery: q, suggested: PALETTE_SUGGESTED })
       expect(paletteChrome(box())).not.toMatch(/[A-Z]/)
       unmount()
     }
+    platform.mockRestore()
     // The guard is narrow, not blind: `Savings` renders as written (ADR 0004 §4).
     renderPalette({ defaultQuery: 'sav' })
     expect(screen.getByRole('option', { selected: true })).toHaveTextContent('Savings')
@@ -645,8 +659,9 @@ describe('the gut: one morphing element — nothing of the dialog, the wash or t
   it('⌘K has one owner: the element registers no chord, and the shell reads one platform-aware predicate', () => {
     expect(command).not.toMatch(/toLowerCase\(\) === 'k'/)
     // A modified click on a breadcrumb link is not a chord: `metaKey`/`ctrlKey` may
-    // appear in a mouse handler, but no keydown listener or onKeyDown handler may
-    // read them — that would be a second ⌘K registration.
+    // appear in a mouse handler. A keydown/onKeyDown handler may read them too, for
+    // ⌘↵/Ctrl+↵'s own job (open a page row in a new tab, KAN-474) — but none may
+    // ALSO test for the 'k' key, which would be a second ⌘K registration.
     const keyboardHandlerBodies = [...command.matchAll(/\(e: (?:React\.)?KeyboardEvent[^)]*\) => \{/g)].map(
       (m) => {
         let depth = 1
@@ -661,7 +676,8 @@ describe('the gut: one morphing element — nothing of the dialog, the wash or t
       }
     )
     expect(keyboardHandlerBodies.length).toBeGreaterThan(0)
-    for (const body of keyboardHandlerBodies) expect(body).not.toMatch(/metaKey|ctrlKey/)
+    for (const body of keyboardHandlerBodies)
+      expect(body).not.toMatch(/key(?:\.toLowerCase\(\))?\s*===\s*['"]k['"]/i)
     const shell = read('src/components/organisms/ShellCommands.tsx')
     expect(shell).toMatch(/isPaletteChord/)
     expect(shell).not.toMatch(/metaKey|ctrlKey/)

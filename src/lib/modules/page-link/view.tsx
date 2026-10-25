@@ -9,7 +9,9 @@ import { useBlockRow } from '../block-row-context'
 import type { PageLinkBlock } from './schema'
 import type { PageRow } from '@/lib/pages/tree'
 import { pagesKey } from '@/lib/pages/keys'
+import { isNewTabClick, workspaceRenderHref } from '@/lib/pages/nav'
 import { usePagePrefetchHandlers } from '@/lib/pages/use-page-prefetch'
+import { usePondId } from '@/lib/pond/context'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { cn } from '@/lib/utils'
 import { POND_BLOCK_SELECTED_RING } from '@/components/organisms/PondBlock'
@@ -57,6 +59,11 @@ function findCachedPageRow(queryClient: QueryClient, pageId: string): PageRow | 
 export function PageLinkView({ data }: ModuleViewProps<PageLinkBlock>) {
   const pageLinks = usePageLinks()
   const ref = pageLinks?.resolvePage(data.pageId) ?? null
+  // KAN-474: `workspaceRenderHref` never reads `window.location` itself, so the
+  // href below agrees on the server, the first client render (pondId still
+  // null) and every render after — `workspaceUrl`'s own fallback disagreed
+  // between those passes whenever the address already carried a `?pond=`.
+  const pondId = usePondId()
   // Read via the raw context (not `useQueryClient()`, which throws without a
   // provider) — a host with no `PageLinkProvider` (the change-log diff card)
   // may still have a `QueryClientProvider` above it, whose `['pages']` cache
@@ -101,16 +108,21 @@ export function PageLinkView({ data }: ModuleViewProps<PageLinkBlock>) {
   }
 
   return (
-    <div
-      role="button"
-      tabIndex={0}
+    <a
+      href={workspaceRenderHref(ref, pondId)}
       aria-label={`Open ${ref.title}`}
       className={cn(
         ROW,
         'cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-mn-text',
         selectedRing
       )}
-      onClick={() => pageLinks!.navigateToPage(ref)}
+      draggable={false}
+      onDragStart={(e) => e.preventDefault()}
+      onClick={(e) => {
+        if (isNewTabClick(e)) return
+        e.preventDefault()
+        pageLinks!.navigateToPage(ref)
+      }}
       onKeyDown={(e) => {
         if (e.key !== 'Enter') return
         e.preventDefault()
@@ -132,6 +144,6 @@ export function PageLinkView({ data }: ModuleViewProps<PageLinkBlock>) {
       <span aria-hidden className="text-mn-text-meta">
         ›
       </span>
-    </div>
+    </a>
   )
 }

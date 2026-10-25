@@ -14,7 +14,7 @@ jest.mock('next/navigation', () => ({
 }))
 
 import { usePageLinkCapabilities } from './use-capabilities'
-import { workspaceHref } from '@/lib/pages/nav'
+import { workspaceUrl } from '@/lib/pages/nav'
 
 const ref = { id: 'p-1', title: 'Notes', type: 'page', isNew: false }
 
@@ -37,7 +37,7 @@ describe('usePageLinkCapabilities().navigateToPage', () => {
 
     result.current.navigateToPage(ref)
 
-    expect(pushStateSpy).toHaveBeenCalledWith(null, '', workspaceHref(ref))
+    expect(pushStateSpy).toHaveBeenCalledWith(null, '', workspaceUrl(ref))
     expect(push).not.toHaveBeenCalled()
     pushStateSpy.mockRestore()
   })
@@ -51,8 +51,27 @@ describe('usePageLinkCapabilities().navigateToPage', () => {
 
     result.current.navigateToPage(ref)
 
-    expect(push).toHaveBeenCalledWith(workspaceHref(ref))
+    expect(push).toHaveBeenCalledWith(workspaceUrl(ref))
     expect(pushStateSpy).not.toHaveBeenCalled()
+    pushStateSpy.mockRestore()
+  })
+
+  // KAN-474 follow-up: `navigateToPage` used to build its URL with the alias
+  // KAN-474 repurposed into a window-less, render-safe builder — so a click in
+  // a second pond silently dropped its `?pond=` and opened the page in the
+  // first pond instead. Fails before the fix (pushState called with a
+  // pond-less href while the address carries `?pond=p2`).
+  it('carries the address bar pond forward, so a click in a second pond stays there', () => {
+    window.history.replaceState({}, '', '/workspace?pond=p2')
+    const pushStateSpy = jest.spyOn(window.history, 'pushState')
+    const { result } = renderHook(() => usePageLinkCapabilities('page-1'), {
+      wrapper: wrapper(),
+    })
+
+    result.current.navigateToPage(ref)
+
+    expect(pushStateSpy).toHaveBeenCalledWith(null, '', workspaceUrl(ref))
+    expect(pushStateSpy.mock.calls[0][2]).toContain('pond=p2')
     pushStateSpy.mockRestore()
   })
 })

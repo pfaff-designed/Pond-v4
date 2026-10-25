@@ -44,6 +44,7 @@ import {
   useState,
   type DragEvent,
   type KeyboardEvent,
+  type MouseEvent,
   type ReactNode,
 } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -75,7 +76,7 @@ import { usePondId, usePond } from '@/lib/pond/context'
 import { useHomePage } from '@/lib/pages/use-home-page'
 import { pushRecentGlyphToPond } from '@/lib/pond/client'
 import { PondSwitcher } from './PondSwitcher'
-import { openWorkspaceUrl, workspaceUrl } from '@/lib/pages/nav'
+import { isNewTabClick, openWorkspaceUrl, workspaceRenderHref, workspaceUrl } from '@/lib/pages/nav'
 import { requestTitleFocus } from '@/lib/pages/title-focus'
 import { withTemplatesParam } from '@/lib/pages/templates-param'
 import { markIndex, resolveMark, type MarkSource, type PageMark } from '@/lib/pages/mark'
@@ -297,6 +298,11 @@ const GUIDE_OFFSET = 4
 interface RailRowProps {
   id: string
   title: string
+  /** The row's real workspace URL, so a modified/middle click opens it the
+   *  browser's own way (KAN-474). Absent for a row with no destination of its
+   *  own (the databases root, which is a disclosure, not a page) — the row
+   *  then stays a plain `<div>`, toggle-only, unaffected by modifier keys. */
+  href?: string
   depth: number
   isFolder: boolean
   isExpanded: boolean
@@ -350,7 +356,7 @@ interface RailRowProps {
   onRenameKeep?: (id: string, value: string, refocus: boolean) => void
   onRenameCancel?: (id: string) => void
   onFocus: (id: string) => void
-  onKeyDown: (id: string, e: KeyboardEvent<HTMLDivElement>) => void
+  onKeyDown: (id: string, e: KeyboardEvent<HTMLElement>) => void
 
   // ── Drag-to-reparent/reorder (F25) ────────────────────────────────────────
   draggable?: boolean
@@ -359,17 +365,18 @@ interface RailRowProps {
   isDragging?: boolean
   dropZone?: DropZone | null
   isDropRejected?: boolean
-  onDragStart?: (id: string, e: DragEvent<HTMLDivElement>) => void
-  onDragOver?: (id: string, e: DragEvent<HTMLDivElement>) => void
-  onDragLeave?: (id: string, e: DragEvent<HTMLDivElement>) => void
-  onDrop?: (id: string, e: DragEvent<HTMLDivElement>) => void
-  onDragEnd?: (id: string, e: DragEvent<HTMLDivElement>) => void
+  onDragStart?: (id: string, e: DragEvent<HTMLElement>) => void
+  onDragOver?: (id: string, e: DragEvent<HTMLElement>) => void
+  onDragLeave?: (id: string, e: DragEvent<HTMLElement>) => void
+  onDrop?: (id: string, e: DragEvent<HTMLElement>) => void
+  onDragEnd?: (id: string, e: DragEvent<HTMLElement>) => void
 }
 
-const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
+const RailRow = forwardRef<HTMLElement, RailRowProps>(function RailRow(
   {
     id,
     title,
+    href,
     depth,
     isFolder,
     isExpanded,
@@ -451,9 +458,50 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
   const toolsPad =
     hovered || plusVisibleAtRest ? 'pr-[39px]' : showPlus ? 'pr-[19px]' : ''
 
+  // A real `<a href>` when the row has a destination of its own (KAN-474) —
+  // a plain click still shallow-navigates in-app, while a modified click or
+  // middle-click is left unprevented for the browser's own new-tab/window.
+  // The databases root has no destination (it's a disclosure, not a page) and
+  // stays the plain `<div>` it always was, unaffected by modifier keys.
+  const Tag = href ? 'a' : 'div'
+  const handleRowClick = (e: MouseEvent<HTMLElement>) => {
+    if (href && isNewTabClick(e)) return
+    e.preventDefault()
+    onSelect(id)
+  }
+  // The row's interactive descendants (caret, ＋, ×, the mark button, the rename
+  // field) stop the click's propagation so it never reaches `handleRowClick` above —
+  // but `stopPropagation` alone leaves the anchor's own default action armed, and a
+  // click anywhere inside an `<a href>` navigates unless something calls
+  // `preventDefault`. Capture phase runs before those descendants' own bubble
+  // handlers, so this is the one place that can disarm it for all of them at once.
+  // `auxclick` (middle-click) fires the same native navigation the anchor would
+  // otherwise open in a new tab, so it needs the identical guard.
+  const targetsInteractiveDescendant = (e: MouseEvent<HTMLElement>) => {
+    const interactive = (e.target as HTMLElement).closest(
+      'button, input, textarea, select, [role="menuitem"], [contenteditable]'
+    )
+    return Boolean(interactive && e.currentTarget.contains(interactive))
+  }
+  const handleRowClickCapture = (e: MouseEvent<HTMLElement>) => {
+    if (targetsInteractiveDescendant(e)) e.preventDefault()
+  }
+  const handleRowAuxClickCapture = (e: MouseEvent<HTMLElement>) => {
+    if (targetsInteractiveDescendant(e)) e.preventDefault()
+  }
+  // A plain callback (not the forwarded ref object/callback itself) so its type
+  // — `(el: HTMLElement | null) => void` — fits both `<a>`'s and `<div>`'s own
+  // narrower ref slot; `ref` only ever arrives as a callback from `setRowRef`,
+  // never a ref object, so this is a safe forward, not a cast.
+  const setTagRef = (el: HTMLElement | null) => {
+    if (typeof ref === 'function') ref(el)
+    else if (ref) ref.current = el
+  }
+
   return (
-    <div
-      ref={ref}
+    <Tag
+      ref={setTagRef}
+      href={href}
       role="treeitem"
       aria-level={depth + 1}
       aria-selected={isSelected}
@@ -482,7 +530,9 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
       onPointerLeave={pagePrefetch.onPointerLeave}
       // The whole row opens the page (the caret and ＋/× stop propagation) —
       // strictly navigation; expansion belongs to the caret alone.
-      onClick={() => onSelect(id)}
+      onClickCapture={handleRowClickCapture}
+      onAuxClickCapture={handleRowAuxClickCapture}
+      onClick={handleRowClick}
       onDoubleClick={onRenameStart ? () => onRenameStart(id) : undefined}
       onFocus={(e) => {
         // Only the row itself — focusing an inner control (＋/×) must not yank
@@ -709,7 +759,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
           isFullInk ? '' : ' text-mn-text-secondary'
         } leading-[normal]`}
       />
-    </div>
+    </Tag>
   )
 })
 
@@ -717,6 +767,16 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
 
 export interface RailViewProps {
   tree: RailNode[]
+  /**
+   * KAN-474: the active pond, for every row's `href` (`workspaceUrl(node, pondId)`).
+   * Read from the pond context, not `currentPondId()`'s `window.location` fallback —
+   * that read returns null during SSR while the client resolves the real id, so a
+   * row built from it carried a pond-less `href` on first paint and a `?pond=`-carrying
+   * one after hydration, a mismatch React won't patch up. Optional so the existing
+   * `RailView` call sites (stories, unit tests predating this ticket) keep compiling
+   * untouched; omit it and a row's href falls back to `workspaceUrl`'s own default.
+   */
+  pondId?: string | null
   /**
    * The pond's name — the rail header's label (AUDIT C3). The switcher chevron
    * appears once the pond list is non-empty. Resolved by `usePondName`.
@@ -928,6 +988,7 @@ interface OpenGlyphPicker {
 
 export function RailView({
   tree,
+  pondId = null,
   pondName,
   rootTitle,
   showHomeRoot = true,
@@ -965,9 +1026,9 @@ export function RailView({
   // Empty when the caller supplies none (Storybook): every row then resolves to
   // its derived mark, which is what the rail showed before marks were choosable.
   const markMap = useMemo(() => marks ?? new Map<string, MarkSource>(), [marks])
-  const rowRefs = useRef(new Map<string, HTMLDivElement>())
+  const rowRefs = useRef(new Map<string, HTMLElement>())
   const setRowRef = useCallback(
-    (id: string) => (el: HTMLDivElement | null) => {
+    (id: string) => (el: HTMLElement | null) => {
       if (el) rowRefs.current.set(id, el)
       else rowRefs.current.delete(id)
     },
@@ -1213,7 +1274,7 @@ export function RailView({
   const handleRenameCancel = (id: string) => endRename(id, true)
 
   // ── Keyboard machine (pure rules; commands dispatched to the callbacks) ────
-  function handleKeyDown(id: string, e: KeyboardEvent<HTMLDivElement>) {
+  function handleKeyDown(id: string, e: KeyboardEvent<HTMLElement>) {
     // AUDIT K1: ⌘D/Ctrl+D is the browser's own bookmark chord. Every press of
     // it on a focused row — a repeat from holding it down, or one aimed at a
     // row `treeKeyCommand`/`allowsCommand` refuses to dispatch — must still be
@@ -1292,7 +1353,7 @@ export function RailView({
 
   /** Three-zone hit-test from the pointer's Y within the row: top ¼ before,
    *  bottom ¼ after, middle into. The Life root is an into-only target. */
-  function zoneFor(id: string, e: DragEvent<HTMLDivElement>): DropZone {
+  function zoneFor(id: string, e: DragEvent<HTMLElement>): DropZone {
     if (id === LIFE_ID) return 'into'
     const rect = e.currentTarget.getBoundingClientRect()
     const frac = (e.clientY - rect.top) / rect.height
@@ -1301,7 +1362,7 @@ export function RailView({
     return 'into'
   }
 
-  function handleDragStart(id: string, e: DragEvent<HTMLDivElement>) {
+  function handleDragStart(id: string, e: DragEvent<HTMLElement>) {
     setDraggingId(id)
     trackGhost(e.clientY)
     e.dataTransfer.effectAllowed = 'move'
@@ -1310,7 +1371,7 @@ export function RailView({
     hideNativeDragImage(e.dataTransfer)
   }
 
-  function handleDragOver(id: string, e: DragEvent<HTMLDivElement>) {
+  function handleDragOver(id: string, e: DragEvent<HTMLElement>) {
     if (!draggingId || draggingId === id) return // no indicator over the dragged row itself
     const zone = zoneFor(id, e)
     if (canDrop(draggingId, id, zone)) {
@@ -1326,14 +1387,14 @@ export function RailView({
     }
   }
 
-  function handleDragLeave(id: string, e: DragEvent<HTMLDivElement>) {
+  function handleDragLeave(id: string, e: DragEvent<HTMLElement>) {
     // Only clear when the pointer actually leaves this row (not on entering a
     // child element); dragover on the next row re-sets the target immediately.
     if (e.currentTarget.contains(e.relatedTarget as Node | null)) return
     setDropTarget((prev) => (prev?.id === id ? null : prev))
   }
 
-  function handleDrop(id: string, e: DragEvent<HTMLDivElement>) {
+  function handleDrop(id: string, e: DragEvent<HTMLElement>) {
     e.preventDefault()
     const dragged = draggingId
     const zone = dropTarget?.id === id ? dropTarget.zone : zoneFor(id, e)
@@ -1361,11 +1422,25 @@ export function RailView({
     // the synthetic Life row, which is no `pages` row and carries `LIFE_MARK`.
     const mark = id === LIFE_ID ? null : rowMark(node, markMap)
     const cap = rowCapabilities(id, node)
+    // KAN-474: every row's real destination, so it can be a true `<a href>` —
+    // the Life root's is the workspace root (`workspaceRenderHref(null)`); the
+    // databases root (placeholder or real) is a disclosure, not a page, and
+    // has none (KAN-486), so it stays the plain non-link row it already was.
+    // `workspaceRenderHref` (never `workspaceUrl`'s `window.location` fallback)
+    // so a server-rendered row and its client hydration agree on `&pond=` even
+    // while `pondId` is still null (KAN-474 follow-up).
+    const href =
+      id === LIFE_ID
+        ? workspaceRenderHref(null, pondId)
+        : id === DATABASES_PLACEHOLDER_ID || isDatabasesRoot(node)
+          ? undefined
+          : workspaceRenderHref(node, pondId)
     return id === LIFE_ID || mark === null ? (
       <RailRow
         ref={setRowRef(id)}
         key={id}
         id={id}
+        href={href}
         // KAN-490: the root row is the home page, so its label is the home
         // row's OWN title, not the word "life" or the pond's name — the data
         // model point that the home row IS the first root. This was a
@@ -1410,6 +1485,7 @@ export function RailView({
         ref={setRowRef(id)}
         key={id}
         id={id}
+        href={href}
         title={node.title}
         depth={depth}
         isFolder={isFolder}
@@ -2646,6 +2722,7 @@ export function Rail() {
     <>
       <RailView
         tree={tree}
+        pondId={pondId}
         pondName={pondName}
         rootTitle={home?.title ?? null}
         showHomeRoot={home !== null && !homeHidden}

@@ -55,10 +55,15 @@ import {
 } from '@/components/molecules/palette-entries'
 import { PaletteRow, type PaletteRowEntry } from '@/components/molecules/palette-row'
 import type { CommandCrumbTarget, CommandPath } from '@/lib/pages/command-path'
-import { workspaceUrl } from '@/lib/pages/nav'
+import { isNewTabClick, workspaceRenderHref } from '@/lib/pages/nav'
 import { markAccent } from '@/lib/rail/glyph-library'
 import { useMorph } from '@/lib/motion/use-morph'
-import { ariaKeyshortcuts, formatChord, useApplePlatform } from '@/lib/shell-commands'
+import {
+  ariaKeyshortcuts,
+  formatChord,
+  formatChordMachine,
+  useApplePlatform,
+} from '@/lib/shell-commands'
 import { useMode } from '@/lib/theme/mode'
 
 export type { PaletteItem, PaletteKind, PaletteScope } from '@/components/molecules/palette-entries'
@@ -87,8 +92,12 @@ export interface PondCommandProps {
   /** A click on the box opens; esc, a press outside and the `esc` chip close. */
   onOpenChange: (open: boolean) => void
   items: readonly PaletteItem[]
-  /** ⏎ or a click on a row. The host closes. */
-  onSelect: (item: PaletteItem) => void
+  /**
+   * ⏎ or a click on a row. The host closes. ⌘↵/Ctrl+↵ on a page row passes
+   * `{ newTab: true }` (AUDIT K1–K4) — every other row ignores it, same as
+   * plain ⏎.
+   */
+  onSelect: (item: PaletteItem, options?: { newTab?: boolean }) => void
   /** The rail's selected page and its children (2g `scoped`); ⌫ on an empty line clears it. */
   scope?: PaletteScope | null
   /** For `pages in <pond>`. @default 'life' */
@@ -128,6 +137,14 @@ export interface PondCommandProps {
   pickMode?: boolean
   /** A plain click on an ancestor breadcrumb link. A modified click opens a new tab instead. */
   onNavigate?: (to: Exclude<CommandCrumbTarget, null>) => void
+  /**
+   * KAN-474: the active pond, for an ancestor breadcrumb segment's `href`
+   * (`workspaceRenderHref(node, pondId)`, never `workspaceUrl`'s `window.location`
+   * fallback — that disagrees between the server, the first client render
+   * and the pond resolving). Optional so existing call sites (stories, unit
+   * tests predating this ticket) keep compiling untouched.
+   */
+  pondId?: string | null
 }
 
 const ramp = (from: number, span: number) => `clamp(0, calc((var(--e, 0) - ${from}) / ${span}), 1)`
@@ -201,6 +218,7 @@ export function PondCommand({
   onActiveItemChange,
   onNavigate,
   pickMode = false,
+  pondId = null,
 }: PondCommandProps) {
   const listId = useId()
   const currentId = useId()
@@ -333,14 +351,14 @@ export function PondCommand({
     if (!open && atRest) onOpenChange(true)
   }
 
-  // A modified click (⌘/Ctrl/Shift/Alt) is left unprevented so the browser's
-  // native new-tab/new-window/download behaviour fires instead of a navigate.
+  // A modified click (⌘/Ctrl/Shift) or middle-click is left unprevented so the
+  // browser's own new-tab/new-window behaviour fires instead of a navigate.
   const handleCrumbClick = (
     e: React.MouseEvent<HTMLAnchorElement>,
     to: Exclude<CommandCrumbTarget, null>
   ) => {
     e.stopPropagation()
-    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
+    if (isNewTabClick(e)) return
     e.preventDefault()
     onNavigate?.(to)
   }
@@ -372,7 +390,11 @@ export function PondCommand({
     if (e.key === 'ArrowDown') select(Math.min(active + 1, rows.length - 1))
     else if (e.key === 'ArrowUp') select(Math.max(active - 1, 0))
     else if (e.key === 'Enter') {
-      if (rows[active]) onSelect(rows[active].item)
+      const row = rows[active]
+      if (row) {
+        if ((e.metaKey || e.ctrlKey) && row.item.kind === 'page') onSelect(row.item, { newTab: true })
+        else onSelect(row.item)
+      }
     } else if (e.key === 'Backspace' && query === '' && scope) setScope(null)
     else return
     e.preventDefault()
@@ -380,6 +402,11 @@ export function PondCommand({
 
   const indexOf = new Map(rows.map((r, i) => [r, i]))
   const pointer = half ? '' : 'pointer-events-none'
+  // Notion's footer reads "↵ Open · ⌘↵ Open in new tab" — shown only where a page
+  // row is actually on screen to open; `enterHint` overriding `↵ open` (the move
+  // picker's `↵ move`) means ⏎ no longer opens anything, so the hint is wrong there.
+  const showNewTabHint = !enterHint && rows.some((r) => r.item.kind === 'page')
+  const newTabHint = `${formatChordMachine('mod+enter', apple)} new tab`
   return (
     <div className={`${className} ${live ? 'z-[100]' : 'z-20'}`}>
       <div
@@ -403,7 +430,7 @@ export function PondCommand({
               <Fragment key={i}>
                 {to ? (
                   <a
-                    href={workspaceUrl(to.kind === 'page' ? to.node : null)}
+                    href={workspaceRenderHref(to.kind === 'page' ? to.node : null, pondId)}
                     onClick={(e) => handleCrumbClick(e, to)}
                     className={`min-w-0 truncate text-mn-text-secondary hover:underline underline-offset-[3px] decoration-1 ${FOCUS_VISIBLE_RING}`}
                   >
@@ -560,12 +587,16 @@ export function PondCommand({
                 </div>
                 <div data-part="foot" style={MORPH.keys} className={FOOT}>
                   {PALETTE_FOOT.map((f) => (
-                    <span
-                      key={f}
-                      className={PALETTE_FOOT_MOBILE.includes(f) ? undefined : 'max-md:hidden'}
-                    >
-                      {f === PALETTE_FOOT_ENTER ? enterHint ?? f : f}
-                    </span>
+                    <Fragment key={f}>
+                      <span
+                        className={PALETTE_FOOT_MOBILE.includes(f) ? undefined : 'max-md:hidden'}
+                      >
+                        {f === PALETTE_FOOT_ENTER ? enterHint ?? f : f}
+                      </span>
+                      {f === PALETTE_FOOT_ENTER && showNewTabHint && (
+                        <span className="max-md:hidden">{newTabHint}</span>
+                      )}
+                    </Fragment>
                   ))}
                 </div>
               </>
