@@ -202,7 +202,7 @@ import { insertPageOptimistic } from '@/lib/pages/tree'
 import { pagesKey } from '@/lib/pages/keys'
 import { usePagesRows } from '@/lib/pages/use-pages'
 import { flushPendingPageSave } from '@/lib/pages/page-flush'
-import { addOption, readSchema, withSchema, SCHEMA_KEY } from '@/lib/properties/schema'
+import { addOption, readSchema, withSchema } from '@/lib/properties/schema'
 import type { ViewBlock } from '@/lib/modules/view/schema'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { usePondId } from '@/lib/pond/context'
@@ -2386,21 +2386,12 @@ export function BlockCanvas({
     // schema before must have none after, which `defineSchema`'s own
     // read-modify-write (it only adds/replaces `_schema`, never removes it)
     // can't do. An unknown `priorProps` (the snapshot read failed or
-    // returned null) instead removes only the keys this apply added — never
-    // a full replace with `{}`, which would wipe props this apply never saw.
+    // returned null) means `applyTemplateSchemaProps` itself skipped its
+    // write — the template's keys were never set, so the page's current
+    // props are entirely its own. There is nothing to revert: write nothing.
     const revertTemplateSchemaProps = async () => {
-      if (priorProps !== null) {
-        await writePageProps(priorProps)
-        return
-      }
-      const current = await getPage(supabase, pageId).catch(() => null)
-      if (!current) return
-      const addedKeys = new Set(Object.keys(applied.props))
-      if (applied.schema) addedKeys.add(SCHEMA_KEY)
-      const next = Object.fromEntries(
-        Object.entries(current.props ?? {}).filter(([key]) => !addedKeys.has(key))
-      )
-      await writePageProps(next)
+      if (priorProps === null) return
+      await writePageProps(priorProps)
     }
     // A fast ⌘Z/⇧⌘Z can fire before the step it is undoing/redoing has
     // actually landed — `onUndone`/`onRedone` always await whatever is still

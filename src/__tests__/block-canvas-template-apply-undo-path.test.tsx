@@ -275,13 +275,19 @@ describe('⌘Z/⇧⌘Z race against the apply\'s own in-flight writes (KAN-557)'
     expect(lastProps).not.toHaveProperty(SCHEMA_KEY)
   })
 
-  it('a snapshot read that rejects skips the props write at apply, then reverts cleanly', async () => {
+  it('a snapshot read that rejects skips the props write at apply, then writes nothing on revert either', async () => {
     mockGetPage.mockImplementationOnce(() => Promise.reject(new Error('network down')))
-    // The revert's own fallback read sees exactly what the apply actually left
-    // behind: since the apply skipped its props write (the snapshot was
-    // unknown), the page's props are still the pre-apply ones — no kind, no
-    // schema ever landed.
-    mockGetPage.mockImplementationOnce(() => Promise.resolve({ id: 'page-1', props: PRIOR_PROPS }))
+    // If the revert still read the page, this is what it would see — the
+    // page's OWN current props, never touched by the skipped apply write
+    // (`kind`/`_schema` here are the page's, not this template's). A revert
+    // that read this and stripped keys from it would be editing values this
+    // apply never wrote.
+    mockGetPage.mockImplementationOnce(() =>
+      Promise.resolve({
+        id: 'page-1',
+        props: { ...PRIOR_PROPS, kind: 'tracker', [SCHEMA_KEY]: [{ name: 'status', type: 'text' }] },
+      })
+    )
 
     await applyMeetingNotes()
 
@@ -297,11 +303,16 @@ describe('⌘Z/⇧⌘Z race against the apply\'s own in-flight writes (KAN-557)'
     expect(mockDefineSchema).not.toHaveBeenCalled()
     expect(mockSaveProps).not.toHaveBeenCalled()
 
+    // The apply wrote nothing, so ⌘Z has nothing to undo — the template's
+    // keys on the page are the page's own values, not this apply's.
     await sessionUndo.undo('pond-1')
+    for (let i = 0; i < 20; i++) await Promise.resolve()
 
-    await waitFor(() => expect(mockSaveProps).toHaveBeenCalled())
-    const lastProps = mockSaveProps.mock.calls.at(-1)?.[2]
-    expect(lastProps).toEqual(PRIOR_PROPS)
+    expect(mockSaveProps).not.toHaveBeenCalled()
+
+    // The revert never consumed the second queued read above (it no longer
+    // reads the page at all) — drain it so it can't leak into the next test.
+    mockGetPage.mockReset().mockResolvedValue({ id: 'page-1', props: PRIOR_PROPS })
   })
 
   it('props changed between undo and redo survive the next undo', async () => {
