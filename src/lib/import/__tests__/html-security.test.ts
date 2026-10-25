@@ -29,7 +29,19 @@ describe('hostile input finishes in well under a second', () => {
   })
 
   it('sixty-five thousand line breaks inside a mark', () => {
-    expect(timed(`<p><b>a${'<br>'.repeat(65_536)}b</b></p>`)).toBeLessThan(1000)
+    const breaksHtml = (n: number) => `<p><b>a${'<br>'.repeat(n)}b</b></p>`
+    const minTime = (n: number): number => {
+      const html = breaksHtml(n)
+      timed(html) // warm up the JIT before measuring
+      return Math.min(timed(html), timed(html), timed(html), timed(html), timed(html))
+    }
+    const n = 16_384
+    const base = minTime(n)
+    const quadrupled = minTime(4 * n) // 65,536 — the case this test is named for
+    // A linear parser's time roughly quadruples when the input does; a quadratic
+    // one's roughly sixteen-tuples. 8 sits between the two, so a regression to
+    // quadratic trips this without flaking on a slower or noisier CI runner.
+    expect(quadrupled / base).toBeLessThan(8)
   })
 
   it('a megabyte of spaces inside preformatted text', () => {
