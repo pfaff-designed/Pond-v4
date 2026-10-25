@@ -60,6 +60,7 @@ const PROVIDER_VALUE: PondContextValue = {
   reload: () => {},
   addPond: () => {},
   patchPond: () => {},
+  removePond: () => {},
 }
 
 /** No preset cache data — the query runs the real (mocked) `fetchPages`. */

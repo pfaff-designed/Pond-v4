@@ -303,6 +303,7 @@ describe('renaming the root page (#312: one root per pond)', () => {
             reload: () => {},
             addPond: () => {},
             patchPond: () => {},
+            removePond: () => {},
           }}
         >
           <DeletionUndoProvider>

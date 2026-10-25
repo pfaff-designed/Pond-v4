@@ -65,6 +65,7 @@ const PROVIDER_VALUE: PondContextValue = {
   reload: () => {},
   addPond: () => {},
   patchPond: () => {},
+  removePond: () => {},
 }
 
 /** A probe standing in for an already-open `⌥⌘H` panel hung off the root key. */

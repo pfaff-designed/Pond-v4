@@ -56,10 +56,11 @@ import { commandPath, type CommandCrumbTarget } from '@/lib/pages/command-path'
 import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
 import { consumeOnOpen, registerPageOpen } from '@/lib/change-log/accept-marks'
 import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
-import { isVirtualNodeId, TRASH_NODE_ID } from '@/lib/change-log/trash-view'
+import { isVirtualNodeId, TRASH_NODE_ID, SETTINGS_NODE_ID } from '@/lib/change-log/trash-view'
 import { ChangeLogPage } from '@/components/organisms/ChangeLogPage'
 import { ChangeLogRecordPage } from '@/components/organisms/ChangeLogRecordPage'
 import { TrashPage } from '@/components/organisms/TrashPage'
+import { PondSettingsPage } from '@/components/organisms/PondSettingsPage'
 import { RECORD_PARAM, recordBreadcrumbTitle } from '@/lib/change-log/record-page'
 import { recordKey } from '@/lib/change-log/keys'
 import { getRecord } from '@/lib/change-log/store'
@@ -96,6 +97,9 @@ export function DocumentPanel() {
   // The reserved trash page (KAN-451): same shape as the change log — a
   // virtual node with no `pages` row, rendered by `TrashPage` instead.
   const isTrashNode = nodeId === TRASH_NODE_ID
+  // The reserved settings page (KAN-493): same shape as trash — a virtual
+  // node with no `pages` row, rendered by `PondSettingsPage` instead.
+  const isSettingsNode = nodeId === SETTINGS_NODE_ID
   // A record route under the virtual change-log node (`?record=`, KAN-152):
   // read here (not inside `ChangeLogRecordPage`) because the breadcrumb below
   // needs the record's title before that component ever mounts.
@@ -491,11 +495,20 @@ export function DocumentPanel() {
             current: 'trash',
             role: null,
           }
-        : commandPath(rows, nodeId, {
-            rootTitle: home?.title || pondName || 'life',
-            current: viewTitle || rows.find((r) => r.id === nodeId)?.title || 'Untitled',
-            pondGlyph: pond?.glyph ?? LIFE_GLYPH,
-          })
+        : isSettingsNode
+          ? {
+              glyph: pond?.glyph ?? LIFE_GLYPH,
+              // Same shape as trash above: its own top-level rail row, no
+              // databases crumb.
+              trail: [{ title: home?.title || pondName || 'life', to: { kind: 'home' } }],
+              current: 'settings',
+              role: null,
+            }
+          : commandPath(rows, nodeId, {
+              rootTitle: home?.title || pondName || 'life',
+              current: viewTitle || rows.find((r) => r.id === nodeId)?.title || 'Untitled',
+              pondGlyph: pond?.glyph ?? LIFE_GLYPH,
+            })
   )
 
   // The virtual change-log page: the breadcrumb above has already taken effect;
@@ -510,6 +523,14 @@ export function DocumentPanel() {
   // fetching, so this surface takes none of the `getPage`/rows path below.
   if (isTrashNode) {
     return <TrashPage />
+  }
+
+  // The virtual settings page: same shape as trash above — the breadcrumb
+  // has already taken effect, and `PondSettingsPage` owns its own data
+  // (the pond list already lives in `usePond()`), so this surface takes
+  // none of the `getPage`/rows path below.
+  if (isSettingsNode) {
+    return <PondSettingsPage />
   }
 
   // KAN-388: while `['page', pageId]` is still in flight, the row this id

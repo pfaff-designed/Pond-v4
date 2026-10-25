@@ -17,9 +17,11 @@
  * Purely presentational — no delete logic lives here.
  */
 
+import { useState } from 'react'
 import { AlertDialog } from '@base-ui/react/alert-dialog'
 import { dialogBackdropClass, dialogPopupClass } from '@/components/atoms/dialog-chrome'
 import { Button, buttonVariants } from '@/components/ui/button'
+import { PondControl } from '@/components/atoms/PondControl'
 
 export interface ConfirmDialogProps {
   open: boolean
@@ -36,6 +38,12 @@ export interface ConfirmDialogProps {
   confirmLabel?: string
   cancelLabel?: string
   onConfirm: () => void
+  /**
+   * The exact text the person must type (trimmed, case-sensitive) before
+   * `confirmLabel` enables, e.g. a pond's name (KAN-493). Omit for today's
+   * dialog, which enables immediately.
+   */
+  requiredText?: string
 }
 
 export function ConfirmDialog({
@@ -47,7 +55,18 @@ export function ConfirmDialog({
   confirmLabel = 'Delete',
   cancelLabel = 'Cancel',
   onConfirm,
+  requiredText,
 }: ConfirmDialogProps) {
+  const [typed, setTyped] = useState('')
+  // Adjusted during render (not an effect) per the "reset state on prop
+  // change" pattern — a reopened dialog starts from a blank field rather
+  // than the last attempt.
+  const [wasOpen, setWasOpen] = useState(open)
+  if (open !== wasOpen) {
+    setWasOpen(open)
+    if (open) setTyped('')
+  }
+  const confirmDisabled = requiredText !== undefined && typed.trim() !== requiredText
   return (
     <AlertDialog.Root open={open} onOpenChange={onOpenChange}>
       <AlertDialog.Portal>
@@ -65,11 +84,22 @@ export function ConfirmDialog({
               <>{consequence}</>
             )}
           </AlertDialog.Description>
+          {requiredText !== undefined && (
+            <PondControl
+              kind="field"
+              label={`Type "${requiredText}" to confirm`}
+              value={typed}
+              onValueChange={setTyped}
+              fullWidth
+              autoFocus
+              className="mt-3"
+            />
+          )}
           <div className="mt-5 flex justify-end gap-2">
             <AlertDialog.Close className={buttonVariants({ variant: 'ghost', size: 'sm' })}>
               {cancelLabel}
             </AlertDialog.Close>
-            <Button size="sm" onClick={onConfirm}>
+            <Button size="sm" disabled={confirmDisabled} onClick={onConfirm}>
               {confirmLabel}
             </Button>
           </div>

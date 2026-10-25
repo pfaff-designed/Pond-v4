@@ -19,8 +19,26 @@ import { QueryClientContext, type QueryClient } from '@tanstack/react-query'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
 import { pageQueryOptions } from './page-query'
+import { LIFE_ID, DATABASES_PLACEHOLDER_ID } from '@/lib/rail/tree'
+import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
+import { TRASH_NODE_ID, SETTINGS_NODE_ID } from '@/lib/change-log/trash-view'
 
 const PREFETCH_HOLD_MS = 60
+
+/** True for a rail row with no `pages` row behind it — the Life root, the
+ *  databases-placeholder, the change log, trash, or settings — so a
+ *  page-id-keyed fetch (`getPage`/prefetch) never runs against it. One home
+ *  for the list, reused by `usePagePrefetchHandlers` and `rowCapabilities`
+ *  (Rail.tsx) wherever these ids are checked together. */
+export function isPseudoPageId(id: string): boolean {
+  return (
+    id === LIFE_ID ||
+    id === DATABASES_PLACEHOLDER_ID ||
+    id === CHANGE_LOG_NODE_ID ||
+    id === TRASH_NODE_ID ||
+    id === SETTINGS_NODE_ID
+  )
+}
 
 /**
  * Shared by every prefetch site (this hook's hold, and `ShellCommands`'
@@ -54,6 +72,7 @@ export function usePagePrefetchHandlers(id: string, getSupabase: () => SupabaseC
   useEffect(() => clearPending, [])
 
   const startHold = () => {
+    if (isPseudoPageId(id)) return
     clearPending()
     timerRef.current = setTimeout(() => {
       timerRef.current = null

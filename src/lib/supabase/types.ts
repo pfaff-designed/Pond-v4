@@ -69,6 +69,8 @@ export interface Database {
           recent_glyphs: string[]
           /** 0035: this pond's favourited page ids, in band order. NULL = none. */
           favourite_page_ids: string[] | null
+          /** 0036: when this pond was soft-deleted. NULL = live. */
+          deleted_at: string | null
           created_at: string
           updated_at: string
         }
@@ -82,6 +84,7 @@ export interface Database {
           last_page_id?: string | null
           recent_glyphs?: string[]
           favourite_page_ids?: string[] | null
+          deleted_at?: string | null
         }
         Update: {
           name?: string
@@ -91,6 +94,7 @@ export interface Database {
           last_page_id?: string | null
           recent_glyphs?: string[]
           favourite_page_ids?: string[] | null
+          deleted_at?: string | null
           updated_at?: string
         }
         Relationships: []

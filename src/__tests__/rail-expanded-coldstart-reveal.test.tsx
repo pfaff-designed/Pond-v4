@@ -57,6 +57,7 @@ const UNRESOLVED_VALUE: PondContextValue = {
   reload: () => {},
   addPond: () => {},
   patchPond: () => {},
+  removePond: () => {},
 }
 const RESOLVED_VALUE: PondContextValue = {
   pond: POND,
@@ -65,6 +66,7 @@ const RESOLVED_VALUE: PondContextValue = {
   reload: () => {},
   addPond: () => {},
   patchPond: () => {},
+  removePond: () => {},
 }
 
 describe('the rail keeps a cold-reload ancestor reveal across pondId resolving (KAN-393)', () => {

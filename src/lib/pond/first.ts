@@ -13,6 +13,19 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
 
+interface LiveFilterable<Q> {
+  is(column: 'deleted_at', value: null): Q
+}
+
+/** Confine a `ponds` select to live (not soft-deleted) rows — KAN-493's
+ *  `deleted_at`. The one filter `listPonds` (`@/lib/pond/client`) and
+ *  `firstPondId` both apply, so a reader can't forget it the way `firstPondId`
+ *  itself once did (KAN-493: deleting your only pond left this fallback
+ *  returning it anyway). */
+export function liveOnly<Q extends LiveFilterable<Q>>(query: Q): Q {
+  return query.is('deleted_at', null)
+}
+
 export async function firstPondId(
   supabase: SupabaseClient<Database>,
   userId: string
@@ -26,13 +39,8 @@ export async function firstPondId(
   // Throwing here would turn a missing fallback into a failed page read.
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data } = await (supabase as any)
-      .from('ponds')
-      .select('id')
-      .eq('user_id', userId)
-      .order('order')
-      .limit(1)
-      .maybeSingle()
+    const ponds = (supabase as any).from('ponds').select('id').eq('user_id', userId)
+    const { data } = await liveOnly(ponds).order('order').limit(1).maybeSingle()
     return (data?.id as string | undefined) ?? null
   } catch {
     return null

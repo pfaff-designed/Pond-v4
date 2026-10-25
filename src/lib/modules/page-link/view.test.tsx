@@ -269,6 +269,7 @@ describe('PageLinkView — href never read from window during render, even while
     reload: jest.fn(),
     addPond: jest.fn(),
     patchPond: jest.fn(),
+    removePond: jest.fn(),
   })
 
   it('a window URL carrying ?pond=p2 is ignored while the pond context is still unresolved, then the href updates once the pond resolves', () => {

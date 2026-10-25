@@ -83,6 +83,7 @@ const pondContext = (): PondContextValue => ({
   reload: () => {},
   addPond: () => {},
   patchPond: () => {},
+  removePond: () => {},
 })
 
 function mount() {

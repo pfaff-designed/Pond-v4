@@ -40,6 +40,13 @@ export interface PondContextValue {
    * instant it is called, same as `addPond`.
    */
   patchPond: (pondId: string, patch: Partial<Pick<Pond, 'name' | 'glyph' | 'favouritePageIds'>>) => void
+  /**
+   * Drop a just-deleted pond from the in-memory list only — no network call
+   * (KAN-493). The write itself is the caller's job (`softDeletePond`); this
+   * is the local half, so the switcher never shows a soft-deleted pond while
+   * waiting on a refetch, same as `addPond`/`patchPond`.
+   */
+  removePond: (pondId: string) => void
 }
 
 /** Exported so a story can stand a pond list in without a Supabase round trip. */
@@ -50,6 +57,7 @@ export const PondContext = createContext<PondContextValue>({
   reload: () => {},
   addPond: () => {},
   patchPond: () => {},
+  removePond: () => {},
 })
 
 export function PondProvider({ children }: { children: React.ReactNode }) {
@@ -77,7 +85,17 @@ export function PondProvider({ children }: { children: React.ReactNode }) {
   const reload = useCallback(() => setNonce((n) => n + 1), [])
 
   const addPond = useCallback((pond: Pond) => {
-    setPonds((rows) => (rows.some((r) => r.id === pond.id) ? rows : [...rows, pond]))
+    // Sorted insert, not append: a restore (KAN-493) hands back a pond whose
+    // `order` sits BEFORE rows already in the list, and the switcher must show
+    // it at that old position, not at the end — the same ascending-by-`order`
+    // rule `listPonds`' own `.order('order')` already applies server-side. A
+    // freshly created pond's `order` is already the list's max (`createPond`),
+    // so for that caller a sorted insert and an append land in the same place.
+    setPonds((rows) =>
+      rows.some((r) => r.id === pond.id)
+        ? rows
+        : [...rows, pond].sort((a, b) => a.order - b.order)
+    )
   }, [])
 
   const patchPond = useCallback((pondId: string, patch: Partial<Pick<Pond, 'name' | 'glyph' | 'favouritePageIds'>>) => {
@@ -92,6 +110,10 @@ export function PondProvider({ children }: { children: React.ReactNode }) {
       return
     }
     setPonds((rows) => rows.map((row) => (row.id === pondId ? { ...row, ...patch } : row)))
+  }, [])
+
+  const removePond = useCallback((pondId: string) => {
+    setPonds((rows) => rows.filter((row) => row.id !== pondId))
   }, [])
 
   useEffect(() => {
@@ -155,8 +177,8 @@ export function PondProvider({ children }: { children: React.ReactNode }) {
   }, [pond?.id, pond?.theme])
 
   const value = useMemo(
-    () => ({ pond, ponds, loading, reload, addPond, patchPond }),
-    [pond, ponds, loading, reload, addPond, patchPond]
+    () => ({ pond, ponds, loading, reload, addPond, patchPond, removePond }),
+    [pond, ponds, loading, reload, addPond, patchPond, removePond]
   )
 
   return <PondContext.Provider value={value}>{children}</PondContext.Provider>

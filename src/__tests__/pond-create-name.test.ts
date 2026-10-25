@@ -38,9 +38,11 @@ describe('createPond — the name contract', () => {
       select: jest.fn().mockReturnThis(),
       insert: jest.fn().mockReturnThis(),
       eq: jest.fn().mockReturnThis(),
-      // `listPonds` (called internally for the new row's `order`) awaits `.order(...)`
+      is: jest.fn().mockReturnThis(),
+      order: jest.fn().mockReturnThis(),
+      // The max-order lookup (ALL the user's ponds, KAN-493) awaits `.limit(...)`
       // directly; the insert path awaits `.single()` instead — both share this chain.
-      order: jest.fn().mockResolvedValue({ data: [], error: null }),
+      limit: jest.fn().mockResolvedValue({ data: [], error: null }),
       single: jest.fn().mockResolvedValue({ data: insertedRow, error: null }),
     }
     const supabase = {
@@ -73,7 +75,9 @@ describe('createPond — the name contract', () => {
       select: jest.fn().mockReturnThis(),
       insert: jest.fn().mockReturnThis(),
       eq: jest.fn().mockReturnThis(),
-      order: jest.fn().mockResolvedValue({ data: [], error: null }),
+      is: jest.fn().mockReturnThis(),
+      order: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue({ data: [], error: null }),
       single: jest.fn().mockResolvedValue({ data: insertedRow, error: null }),
     }
     const supabase = {
@@ -87,5 +91,39 @@ describe('createPond — the name contract', () => {
     expect(chain.insert).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'Studio', glyph: 'lightning-03', theme: 'ink' })
     )
+  })
+
+  it('gets a fresh order after a delete, not the deleted pond’s own (KAN-493)', async () => {
+    // The only OTHER pond on this account is the one just deleted — still
+    // holding order 0 so a restore lands back there. `existing.length` over
+    // live ponds only would see zero live ponds and hand the new one order 0
+    // too, colliding the moment the deleted one is restored.
+    const insertedRow = {
+      id: 'p-3',
+      name: 'Studio',
+      glyph: null,
+      theme: 'paper',
+      order: 1,
+      recentGlyphs: null,
+      lastPage: null,
+    }
+    const chain = {
+      select: jest.fn().mockReturnThis(),
+      insert: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      is: jest.fn().mockReturnThis(),
+      order: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue({ data: [{ order: 0 }], error: null }),
+      single: jest.fn().mockResolvedValue({ data: insertedRow, error: null }),
+    }
+    const supabase = {
+      auth: { getUser: jest.fn().mockResolvedValue({ data: { user: { id: 'u-1' } } }) },
+      from: jest.fn().mockReturnValue(chain),
+    }
+    ;(createClient as jest.Mock).mockReturnValue(supabase)
+
+    await createPond('Studio')
+
+    expect(chain.insert).toHaveBeenCalledWith(expect.objectContaining({ order: 1 }))
   })
 })

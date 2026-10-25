@@ -16,6 +16,10 @@ import type { PageRow } from '@/lib/pages/tree'
 /** The synthetic id of the Life root — never a real `pages` row. */
 export const LIFE_ID = '__life__'
 
+/** The rail foot's databases row while the pond has no databases root (Rail.tsx) —
+ *  never a real `pages` row either. */
+export const DATABASES_PLACEHOLDER_ID = '__databases__'
+
 export interface RailNode {
   id: string
   parentId: string | null
