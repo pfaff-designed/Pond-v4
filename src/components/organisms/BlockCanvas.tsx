@@ -92,6 +92,7 @@ import {
   blockWidthStyle,
   classifyDropZone,
   detachKeepingRows,
+  detachRangeKeepingRows,
   isWithinPaddedZone,
   layoutRows,
   drawnWidthPercent,
@@ -357,6 +358,29 @@ function focusBlockNeighbour(blocks: Block[], index: number) {
     }
     const element = document.getElementById(blockDomId(neighbour.id))
     if (neighbour.type === 'text' && focusTextBlock(element, index === 0 ? 'start' : 'end')) return
+    if (element instanceof HTMLElement) element.focus()
+  }, 0)
+}
+
+/**
+ * Focus the neighbour of a removed block RANGE (KAN-373) — the one after
+ * it, else the one before (the reverse of `focusBlockNeighbour`'s single-
+ * block order): a range delete's own entry point, the block after it, is
+ * still visible at the same spot the range vacated, so landing there reads
+ * as "the range is gone, here's what's next" rather than jumping up to what
+ * was already above it. Deferred a tick for the same reason as
+ * `focusBlockNeighbour`.
+ */
+function focusBlockRangeNeighbour(blocks: Block[], firstIndex: number, lastIndex: number) {
+  const after = blocks[lastIndex + 1]
+  const neighbour = after ?? blocks[firstIndex - 1]
+  setTimeout(() => {
+    if (!neighbour) {
+      focusPageTitle()
+      return
+    }
+    const element = document.getElementById(blockDomId(neighbour.id))
+    if (neighbour.type === 'text' && focusTextBlock(element, after ? 'start' : 'end')) return
     if (element instanceof HTMLElement) element.focus()
   }, 0)
 }
@@ -683,6 +707,9 @@ export function BlockCanvas({
   // to compute each block's `autofocus` prop.
   const [autofocusIds, setAutofocusIds] = useState<Set<string>>(() => new Set())
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
+  // A range delete (KAN-373) whose blocks hold content: confirms once, for
+  // the whole range, rather than once per block.
+  const [pendingDeleteRangeIds, setPendingDeleteRangeIds] = useState<Set<string> | null>(null)
   // F27: link capabilities for card→page links, parented at THIS page. Provided to
   // every module view below via context — modules that don't link (all but kanban
   // today) simply never read it.
@@ -1840,6 +1867,13 @@ export function BlockCanvas({
   function requestDelete(index: number) {
     const block = blocks[index]
     if (!block) return
+    // ⌫/⌘⌫ on a focused row that is part of a multi-block range (KAN-373)
+    // deletes the whole range, not just this row — `rangeIds` always
+    // includes the focused row itself, so a size of 1 is really no range.
+    if (rangeIds.size > 1 && rangeIds.has(block.id)) {
+      requestDeleteRange(rangeIds)
+      return
+    }
     if (blockHoldsContent(block)) {
       setPendingDeleteId(block.id)
       return
@@ -1873,6 +1907,72 @@ export function BlockCanvas({
     if (focusNeighbour) focusBlockNeighbour(blocks, index)
     stageUndo({
       message: `deleted ${changeBlockName(removed)} ·`,
+      undoLabel: 'undo',
+      scope: 'block',
+      undo: () => {
+        if (!pondId || !handle) return
+        return sessionUndo
+          .undoHandle(pondId, handle)
+          .then((result) => applyUndoOutcome('undo', result, queryClient))
+      },
+    })
+  }
+
+  function requestDeleteRange(ids: Set<string>) {
+    const rangeBlocks = blocks.filter((block) => ids.has(block.id))
+    if (rangeBlocks.some((block) => blockHoldsContent(block))) {
+      setPendingDeleteRangeIds(ids)
+      return
+    }
+    removeRange(ids)
+  }
+
+  function confirmDeleteRange() {
+    const ids = pendingDeleteRangeIds
+    if (!ids) return
+    setPendingDeleteRangeIds(null)
+    removeRange(ids)
+  }
+
+  /**
+   * Deletes every block in `ids` as ONE structural write (KAN-373) — one
+   * `commitStructuralBlocks` call, so one ⌘Z step and one change-log record,
+   * via `detachRangeKeepingRows` rather than looping `removeBlockAt`. `ids`
+   * is always array-contiguous (it comes from `rangeIds`), so its first and
+   * last indices bound the whole range. An empty result (the range was every
+   * block on the page) keeps one fresh, unlabelled text line — the page
+   * always keeps one, the same fact `removeEmptyLineAt` holds for its own
+   * last-block case.
+   */
+  function removeRange(ids: Set<string>) {
+    const indices = blocks.reduce<number[]>(
+      (acc, block, i) => (ids.has(block.id) ? [...acc, i] : acc),
+      []
+    )
+    if (indices.length === 0) return
+    const removedBlocks = indices.map((i) => blocks[i])
+    const firstIndex = indices[0]
+    const lastIndex = indices[indices.length - 1]
+    const detached = detachRangeKeepingRows(blocks, ids)
+    const emptiedPage = detached.length === 0
+    const after: Block[] = emptiedPage
+      ? [{ id: crypto.randomUUID(), type: 'text', content: '' }]
+      : detached
+
+    let handle: UndoHandle | undefined
+    commitStructuralBlocks(after, {
+      onUndoHandle: (next) => {
+        handle = next
+      },
+    })
+    setSelection(null)
+    if (emptiedPage) {
+      focusTextBlockSoon(after[0].id, 'start')
+    } else {
+      focusBlockRangeNeighbour(blocks, firstIndex, lastIndex)
+    }
+    stageUndo({
+      message: `deleted ${removedBlocks.length} blocks ·`,
       undoLabel: 'undo',
       scope: 'block',
       undo: () => {
@@ -3081,6 +3181,16 @@ export function BlockCanvas({
         consequence="It has something in it."
         confirmLabel="Delete"
         onConfirm={confirmDelete}
+      />
+      <ConfirmDialog
+        open={pendingDeleteRangeIds !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDeleteRangeIds(null)
+        }}
+        title={`Delete ${pendingDeleteRangeIds?.size ?? 0} blocks?`}
+        consequence="They have something in them."
+        confirmLabel="Delete"
+        onConfirm={confirmDeleteRange}
       />
       {draggingIndex !== null &&
         blocks[draggingIndex] &&
