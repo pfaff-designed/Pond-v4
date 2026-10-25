@@ -67,6 +67,12 @@ describe('restorePage', () => {
     expect(rpc).toHaveBeenCalledWith('restore_page', { p_record_id: 'record-1' })
   })
 
+  it('resolves to the new restore record’s id (0037), for session undo to remember', async () => {
+    const { client } = fakeSupabase(null, 'restore-1')
+
+    await expect(restorePage(client, 'record-1')).resolves.toBe('restore-1')
+  })
+
   it.each([
     ['page-gone', 'that page no longer exists'],
     ['already-restored', 'that page has already been restored'],

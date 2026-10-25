@@ -46,21 +46,23 @@ const run = async (
   supabase: SupabaseClient<Database>,
   fn: 'trash_page' | 'restore_page',
   args: Record<string, unknown>
-): Promise<void> => {
-  const { error } = await rpc(supabase, fn, args)
-  if (error === null) return
+): Promise<unknown> => {
+  const { data, error } = await rpc(supabase, fn, args)
+  if (error === null) return data
   const reason = error.details ?? ''
   if (isTrashRefusalReason(reason)) throw new TrashRefusedError(reason, error.message)
   throw error
 }
 
 /** Trash a page and its whole subtree in one stamp, logging one `delete` record. */
-export const trashPage = (supabase: SupabaseClient<Database>, pageId: string): Promise<void> =>
-  run(supabase, 'trash_page', { p_page_id: pageId })
+export const trashPage = async (supabase: SupabaseClient<Database>, pageId: string): Promise<void> => {
+  await run(supabase, 'trash_page', { p_page_id: pageId })
+}
 
-/** Restore the subtree a `delete` record trashed, logging one `restore` record. */
-export const restorePage = (supabase: SupabaseClient<Database>, recordId: string): Promise<void> =>
-  run(supabase, 'restore_page', { p_record_id: recordId })
+/** Restore the subtree a `delete` record trashed, logging one `restore` record —
+ *  resolves to the new `restore` record's own id (0037), for session undo to remember. */
+export const restorePage = (supabase: SupabaseClient<Database>, recordId: string): Promise<string> =>
+  run(supabase, 'restore_page', { p_record_id: recordId }) as Promise<string>
 
 /** Which of `pageIds` still exist as rows at all (trashed or live) — the deleted
  *  view's only way to tell "still in trash" from "emptied" now that part 2's

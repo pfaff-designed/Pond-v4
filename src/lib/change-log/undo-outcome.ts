@@ -45,6 +45,8 @@ export function noticeForReason(
       return `can't ${direction} — that record is gone.`
     case 'page-gone':
       return `can't ${direction} — the page is gone.`
+    case 'already-restored':
+      return `can't ${direction} — that page was already restored.`
   }
 }
 
