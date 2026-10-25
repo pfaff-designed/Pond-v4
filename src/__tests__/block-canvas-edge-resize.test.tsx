@@ -516,7 +516,7 @@ describe('an alone-on-line edge drag (KAN-441)', () => {
       }
     })
 
-    it("the right block's grip stacks above the shared strip it overlaps, so a press there arms a drag, not a resize", () => {
+    it("the right block's own sizing div (not its card) stacks above the shared strip it overlaps, so a press on its grip arms a drag, not a resize", () => {
       const ro = mockResizeObserver()
       try {
         const left: Block = { id: 'b-left', type: 'text', content: 'left', width: '1/2' }
@@ -524,21 +524,39 @@ describe('an alone-on-line edge drag (KAN-441)', () => {
         renderCanvas([left, right], () => {})
         setColumnWidth('b-left', 1000, ro)
 
-        // The shared strip (carried by the left member) is an explicit `z-[1]` — a
-        // positioned element with no z-index (`auto`) loses to it regardless of DOM
-        // order, so the right member's own grip needs an explicit z-index HIGHER
-        // than the strip's to win the overlap.
+        // The shared strip (carried by the left member) is an explicit `z-[1]`.
+        // The right member's CARD can gain its own stacking context mid-session
+        // (`motion-settle-in`'s transform, left `both`), which would trap any
+        // z-index raised inside it — so the lift has to sit on the right
+        // member's SIZING DIV, outside the card, where no transform reaches.
         const strip = edgeHandle('b-left', 'shared')!
-        const stripZ = Number(strip.className.match(/z-\[(\d+)\]/)?.[1])
-        const handle = blockRoot('b-right').querySelector('[data-part="handle"]')!
-        const handleZ = Number(handle.className.match(/z-\[(\d+)\]/)?.[1] ?? '0')
-        expect(handleZ).toBeGreaterThan(stripZ)
+        expect(strip.className).toMatch(/z-\[1\]/)
+        expect(sizingDiv('b-right').className).toMatch(/\brelative\b/)
+        expect(sizingDiv('b-right').className).toMatch(/z-\[2\]/)
+        // The left member's own sizing div carries no such lift — it isn't the
+        // right mate of any boundary.
+        expect(sizingDiv('b-left').className).not.toMatch(/z-\[2\]/)
 
         const grip = within(blockRoot('b-right')).getByRole('button', { name: 'drag to move' })
         fireEvent.pointerDown(grip, { clientX: 0, clientY: 0 })
 
         expect(blockRoot('b-right')).toHaveAttribute('draggable', 'true')
         expect(strip.getAttribute('data-dragging')).toBeNull()
+      } finally {
+        ro.restore()
+      }
+    })
+
+    it('an in-session-inserted right row-mate (carrying motion-settle-in) still gets the lift above the shared strip', () => {
+      const ro = mockResizeObserver()
+      try {
+        const left: Block = { id: 'b-left', type: 'text', content: 'left', width: '1/2' }
+        const right: Block = { id: 'b-right', type: 'text', content: 'right', width: '1/2' }
+        renderCanvas([left, right], () => {}, { insertedIds: new Set(['b-right']) })
+        setColumnWidth('b-left', 1000, ro)
+
+        expect(blockRoot('b-right').className).toMatch(/motion-settle-in/)
+        expect(sizingDiv('b-right').className).toMatch(/z-\[2\]/)
       } finally {
         ro.restore()
       }

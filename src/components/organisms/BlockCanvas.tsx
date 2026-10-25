@@ -3052,6 +3052,15 @@ export function BlockCanvas({
                   sharedRightId: itemIndex < row.length - 1 ? row[itemIndex + 1].id : undefined,
                   showRightEdge: itemIndex === row.length - 1 && (row.length === 1 || !stacks),
                   sharedOffsetPx,
+                  // The right member of every boundary (KAN-505): its own sizing
+                  // div — NOT the card inside it — needs an explicit z-index
+                  // above the shared strip's `z-[1]` (carried by the LEFT
+                  // member), because the card can gain its own stacking context
+                  // mid-session (`motion-settle-in`'s transform, left `both`)
+                  // that would otherwise trap any z-index set inside it. This
+                  // wrapper sits outside any card transform, so it stacks the
+                  // whole subtree — grip included — above the strip regardless.
+                  liftAboveSharedStrip: itemIndex > 0 && row.length > 1 && !stacks,
                   // A row-sharing block's outer edge (KAN-505) resizes only
                   // itself — its row-mates never move — so growing it is
                   // capped at `100 - sum(the row's other members)`: the
@@ -3089,6 +3098,7 @@ export function BlockCanvas({
                   showRightEdge,
                   outerMaxPercent,
                   sharedOffsetPx,
+                  liftAboveSharedStrip,
                   marginTop,
                 } = entry
                 // A live edge drag previews this block's width locally — never
@@ -3127,7 +3137,10 @@ export function BlockCanvas({
                       if (node) itemSizingRefs.current.set(item.id, node)
                       else itemSizingRefs.current.delete(item.id)
                     }}
-                    className="relative min-w-0 transition-[width] duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none"
+                    className={cn(
+                      'relative min-w-0 transition-[width] duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none',
+                      liftAboveSharedStrip && 'z-[2]'
+                    )}
                     style={{ width: sizingWidth, marginTop }}
                   >
                     {renderBlockEditor(blocks[i], i)}
@@ -4465,9 +4478,12 @@ function BlockEditor({
           lowest lift that does it, under every floating surface (z ≥ 4).
           Desktop's own grip sits further out (`-left-3.5`), where a row-mate's
           shared edge strip (KAN-505, `z-[1]`) reaches into the same pixels —
-          an explicit z-index beats a positioned-but-`auto` one regardless of
-          DOM order, so without `z-[2]` here the strip, not the grip, took
-          every press over that overlap. */}
+          but that fight is won one level up, on the sizing div outside this
+          card (`liftAboveSharedStrip`, above): a card with `motion-settle-in`
+          keeps a `transform` (fill-mode `both`) long after it finishes,
+          which makes the card its own stacking context and would trap any
+          z-index raised in here instead. This `z-[1]` only has to clear the
+          body beside it, same as before KAN-505. */}
       <div
         data-part="handle"
         hidden={!chrome}
@@ -4476,7 +4492,7 @@ function BlockEditor({
           menuSize === 'mobile'
             ? 'right-0.5 top-0.5 z-[1]'
             : [
-                '-left-3.5 z-[2] opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
+                '-left-3.5 z-[1] opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
                 // A card centres the 24px handle on its head row; bare prose has no head
                 // row, so it centres on the first line (2px inset + half the 28px line).
                 !frame && block.type === 'text' ? 'top-1' : 'top-3',
