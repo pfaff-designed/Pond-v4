@@ -87,8 +87,12 @@ export interface PondCommandProps {
   /** A click on the box opens; esc, a press outside and the `esc` chip close. */
   onOpenChange: (open: boolean) => void
   items: readonly PaletteItem[]
-  /** ⏎ or a click on a row. The host closes. */
-  onSelect: (item: PaletteItem) => void
+  /**
+   * ⏎ or a click on a row. The host closes. ⌘↵/Ctrl+↵ on a page row passes
+   * `{ newTab: true }` (AUDIT K1–K4) — every other row ignores it, same as
+   * plain ⏎.
+   */
+  onSelect: (item: PaletteItem, options?: { newTab?: boolean }) => void
   /** The rail's selected page and its children (2g `scoped`); ⌫ on an empty line clears it. */
   scope?: PaletteScope | null
   /** For `pages in <pond>`. @default 'life' */
@@ -372,7 +376,11 @@ export function PondCommand({
     if (e.key === 'ArrowDown') select(Math.min(active + 1, rows.length - 1))
     else if (e.key === 'ArrowUp') select(Math.max(active - 1, 0))
     else if (e.key === 'Enter') {
-      if (rows[active]) onSelect(rows[active].item)
+      const row = rows[active]
+      if (row) {
+        if ((e.metaKey || e.ctrlKey) && row.item.kind === 'page') onSelect(row.item, { newTab: true })
+        else onSelect(row.item)
+      }
     } else if (e.key === 'Backspace' && query === '' && scope) setScope(null)
     else return
     e.preventDefault()

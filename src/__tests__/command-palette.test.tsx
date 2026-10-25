@@ -645,8 +645,9 @@ describe('the gut: one morphing element — nothing of the dialog, the wash or t
   it('⌘K has one owner: the element registers no chord, and the shell reads one platform-aware predicate', () => {
     expect(command).not.toMatch(/toLowerCase\(\) === 'k'/)
     // A modified click on a breadcrumb link is not a chord: `metaKey`/`ctrlKey` may
-    // appear in a mouse handler, but no keydown listener or onKeyDown handler may
-    // read them — that would be a second ⌘K registration.
+    // appear in a mouse handler. A keydown/onKeyDown handler may read them too, for
+    // ⌘↵/Ctrl+↵'s own job (open a page row in a new tab, KAN-474) — but none may
+    // ALSO test for the 'k' key, which would be a second ⌘K registration.
     const keyboardHandlerBodies = [...command.matchAll(/\(e: (?:React\.)?KeyboardEvent[^)]*\) => \{/g)].map(
       (m) => {
         let depth = 1
@@ -661,7 +662,8 @@ describe('the gut: one morphing element — nothing of the dialog, the wash or t
       }
     )
     expect(keyboardHandlerBodies.length).toBeGreaterThan(0)
-    for (const body of keyboardHandlerBodies) expect(body).not.toMatch(/metaKey|ctrlKey/)
+    for (const body of keyboardHandlerBodies)
+      expect(body).not.toMatch(/key(?:\.toLowerCase\(\))?\s*===\s*['"]k['"]/i)
     const shell = read('src/components/organisms/ShellCommands.tsx')
     expect(shell).toMatch(/isPaletteChord/)
     expect(shell).not.toMatch(/metaKey|ctrlKey/)
