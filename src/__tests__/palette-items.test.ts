@@ -11,6 +11,7 @@ import {
   DUPLICATE_PAGE_ACTION,
   IMPORT_A_PAGE_ACTION,
   modeItems,
+  MOVE_PAGE_ACTION,
   paletteItems,
   REPORT_A_PROBLEM_ACTION,
   SAVE_AS_TEMPLATE_ACTION,
@@ -124,6 +125,52 @@ describe('paletteItems — duplicate page', () => {
     const withUnknownOpen = paletteItems([ordinaryPage], [], 'no-such-page')
 
     expect(withUnknownOpen).not.toContainEqual(DUPLICATE_PAGE_ACTION)
+  })
+})
+
+describe('MOVE_PAGE_ACTION', () => {
+  it('is an action row in Pond’s own words, carrying the ⌘⇧P chord', () => {
+    expect(MOVE_PAGE_ACTION).toMatchObject({
+      id: 'action:move-page',
+      label: 'move page to…',
+      kind: 'action',
+      action: 'move-page',
+    })
+    expect(MOVE_PAGE_ACTION.key).toBeTruthy()
+  })
+})
+
+describe('paletteItems — move page', () => {
+  it('lists only when a page is open, like duplicate page, and sits right beside it', () => {
+    const withoutOpenPage = paletteItems([], [])
+    const withOpenPage = paletteItems([ordinaryPage], [], 'some-page')
+
+    expect(withoutOpenPage).not.toContainEqual(MOVE_PAGE_ACTION)
+    expect(withOpenPage).toContainEqual(MOVE_PAGE_ACTION)
+
+    const duplicateIndex = withOpenPage.findIndex((i) => i === DUPLICATE_PAGE_ACTION)
+    const moveIndex = withOpenPage.findIndex((i) => i === MOVE_PAGE_ACTION)
+    expect(moveIndex).toBe(duplicateIndex + 1)
+  })
+
+  it('does not list for the home page', () => {
+    const home = { ...ordinaryPage, id: 'home-id', type: 'home', title: 'life' }
+    const withHomeOpen = paletteItems([home], [], 'home-id')
+
+    expect(withHomeOpen).not.toContainEqual(MOVE_PAGE_ACTION)
+  })
+
+  it('does not list for the databases root', () => {
+    const databasesRoot = { ...ordinaryPage, id: 'databases-id', title: 'databases' }
+    const withDatabasesRootOpen = paletteItems([databasesRoot], [], 'databases-id')
+
+    expect(withDatabasesRootOpen).not.toContainEqual(MOVE_PAGE_ACTION)
+  })
+
+  it('does not list when no page is open at all', () => {
+    const withNoOpenPage = paletteItems([ordinaryPage], [])
+
+    expect(withNoOpenPage).not.toContainEqual(MOVE_PAGE_ACTION)
   })
 })
 

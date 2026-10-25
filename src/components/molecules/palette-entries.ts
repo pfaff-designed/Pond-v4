@@ -42,6 +42,7 @@ export type PaletteAction =
   | 'deep-research'
   | 'save-as-template'
   | 'duplicate-page'
+  | 'move-page'
   | 'import-a-page'
   | 'report-a-problem'
   | 'minimize-rail'

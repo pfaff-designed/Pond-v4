@@ -102,6 +102,19 @@ export const DUPLICATE_PAGE_ACTION: PaletteItem = {
   action: 'duplicate-page',
 }
 
+/**
+ * KAN-469: Notion's page-menu "Move to" (⌘⇧P), moved into the palette rather
+ * than an undesigned header menu. A page action like `duplicate page` just
+ * above, so it lists only under the same `isDuplicablePageRow` open page.
+ */
+export const MOVE_PAGE_ACTION: PaletteItem = {
+  id: 'action:move-page',
+  label: 'move page to…',
+  kind: 'action',
+  action: 'move-page',
+  key: formatChord('mod+shift+p'),
+}
+
 export function paletteItems(
   rows: readonly PageRow[],
   /** Newest first, up to the store's own 20-entry cap — not pre-sliced by the caller. */
@@ -144,7 +157,7 @@ export function paletteItems(
     { ...ASK_POND_ACTION, key: formatChord('mod+j') },
     DEEP_RESEARCH_ACTION,
     ...(openPageId ? [SAVE_AS_TEMPLATE_ACTION] : []),
-    ...(openPage && isDuplicablePageRow(openPage) ? [DUPLICATE_PAGE_ACTION] : []),
+    ...(openPage && isDuplicablePageRow(openPage) ? [DUPLICATE_PAGE_ACTION, MOVE_PAGE_ACTION] : []),
   ]
 }
 
