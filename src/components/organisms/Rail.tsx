@@ -51,29 +51,26 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { usePagePrefetchHandlers } from '@/lib/pages/use-page-prefetch'
-import { createPage, movePage, updateTitle } from '@/lib/pages/client'
-import { DuplicateTitleError, nextAvailableTitle, moveTitle } from '@/lib/pages/dedupe-title'
+import { createPage, updateTitle } from '@/lib/pages/client'
+import { DuplicateTitleError, nextAvailableTitle } from '@/lib/pages/dedupe-title'
 import {
   fetchPages,
   insertPageOptimistic,
-  applyMoveOptimistic,
   applyRenameOptimistic,
   applyGlyphOptimistic,
   applyAreaRoleOptimistic,
   type PageRow,
 } from '@/lib/pages/tree'
 import { duplicateAndOpen } from '@/lib/pages/duplicate'
+import { moveAndStageUndo } from '@/lib/pages/move'
 import { setPageGlyph, setAreaRole } from '@/lib/pages/mark-client'
 import { appendOwnEdit } from '@/lib/change-log/store'
 import { changeLogKey } from '@/lib/change-log/keys'
 import { sessionUndo } from '@/lib/change-log/session-undo'
-import { applyUndoOutcome } from '@/lib/change-log/undo-outcome'
 import { TrashRefusedError } from '@/lib/change-log/errors'
-import { readMoveSnapshot, moveParentLabel } from '@/lib/change-log/page-changes'
 import { jsonEqual } from '@/lib/json-equal'
-import { homeQueryKey, pagesKey, resolveLinkParentId } from '@/lib/pages/keys'
+import { homeQueryKey, pagesKey } from '@/lib/pages/keys'
 import { appendChildLinkUnder, trashPageUnlinked } from '@/lib/pages/child-links'
-import { flushPendingPageSave } from '@/lib/pages/page-flush'
 import { usePondId, usePond } from '@/lib/pond/context'
 import { useHomePage } from '@/lib/pages/use-home-page'
 import { pushRecentGlyphToPond } from '@/lib/pond/client'
@@ -2577,42 +2574,16 @@ export function Rail() {
   }
 
   /**
-   * Commit a move: resolve it (computeMove absorbs self / cycle / no-op → null),
-   * apply it optimistically so the rail restructures instantly, auto-expand the
-   * target on an *into* so the moved child is visible, then persist. On failure,
-   * restore the pre-move snapshot, surface the miss, and reconcile.
+   * Commit a move: auto-expand the target on an *into* so the moved child is
+   * visible (view-layer state `moveAndStageUndo` has no access to), then run
+   * the actual resolve/optimistic-apply/persist/undo through the shared
+   * `moveAndStageUndo` the rail and ⌘K's "move page to…" row both call.
+   * `computeMove` is resolved twice (here and inside `moveAndStageUndo`) —
+   * it's pure, so the duplicate call costs nothing and keeps the expand gated
+   * on the same self/cycle/no-op check the move itself uses.
    */
   async function handleMove(draggedId: string, targetId: string, zone: DropZone) {
-    const move = computeMove(pages, draggedId, targetId, zone)
-    if (!move) return
-
-    const draggedRow = pages.find((r) => r.id === draggedId)
-    const title = draggedRow?.title || 'Untitled'
-
-    // KAN-470: the destination's other children (the new sibling group minus
-    // the moved page itself) — if the dragged title collides with one of
-    // them, suffix it the same way `createPage` already would.
-    const destinationSiblingTitles = move.siblingOrder
-      .filter((id) => id !== draggedId)
-      .map((id) => pages.find((r) => r.id === id)?.title)
-      .filter((t): t is string => t !== undefined)
-    const newTitle = draggedRow ? moveTitle(draggedRow.title, destinationSiblingTitles) : undefined
-
-    // Resolved before the move so both sides can be flushed ahead of the RPC
-    // (below) and reused for the invalidate after it — one resolve, no drift.
-    const oldLinkParentId = draggedRow ? resolveLinkParentId(draggedRow.parent_id, home?.id) : undefined
-    const newLinkParentId = resolveLinkParentId(move.newParentId, home?.id)
-
-    const snapshot = applyMoveOptimistic(
-      queryClient,
-      {
-        movedId: draggedId,
-        newParentId: move.newParentId,
-        siblingOrder: move.siblingOrder,
-        ...(newTitle !== undefined ? { newTitle } : {}),
-      },
-      pondId
-    )
+    if (!computeMove(pages, draggedId, targetId, zone)) return
 
     // Expand-on-drop: an into-drop reveals the moved child under its new parent.
     if (zone === 'into') {
@@ -2620,67 +2591,19 @@ export function Rail() {
       else setExpanded((prev) => new Set(prev).add(targetId))
     }
 
-    try {
-      // The move's own RPC reads and rewrites both link-parents' `blocks` —
-      // flush either side's own debounced save first, or a save already in
-      // flight lands after the RPC and overwrites its edit with stale blocks
-      // (the same race `child-links.ts`'s own write seams guard against).
-      await Promise.all([flushPendingPageSave(oldLinkParentId), flushPendingPageSave(newLinkParentId)])
-      const record = await withUser((sb) =>
-        movePage(sb, {
-          id: draggedId,
-          newParentId: move.newParentId,
-          siblingOrder: move.siblingOrder,
-          ...(newTitle !== undefined ? { newTitle } : {}),
-        })
-      )
-      const after = record ? readMoveSnapshot(record.after) : null
-      if (pondId && record && draggedRow && after) {
-        const handle = sessionUndo.rememberPending({
-          pondId,
-          recordIds: Promise.resolve([record.id]),
-        })
-        queryClient.invalidateQueries({ queryKey: changeLogKey() })
-        // The move's own RPC edits the old and new link-parents' `blocks` —
-        // rebase an open draft of either onto that write instead of waiting
-        // for a reload.
-        if (oldLinkParentId) queryClient.invalidateQueries({ queryKey: ['page', oldLinkParentId] })
-        if (newLinkParentId) queryClient.invalidateQueries({ queryKey: ['page', newLinkParentId] })
-        // KAN-470: a renaming move changes the moved page's own title — an
-        // open DocumentPanel's draft only rebases when ['page', id]
-        // refreshes (use-page-draft.ts), so without this the open page keeps
-        // showing its pre-move title and a later edit's updateTitle clashes
-        // with the destination's sibling again.
-        if (after.title) queryClient.invalidateQueries({ queryKey: ['page', draggedId] })
-        // KAN-470: `after.title` is only present on the RPC's own record when
-        // the move clashed and the RPC actually renamed it — the toast and
-        // the "open" action read that back rather than trusting the
-        // pre-move `draggedRow.title`, so both match what the move really
-        // did, not what the client hoped it would.
-        const destinationLabel = moveParentLabel(after.parentTitle, home?.title ?? pondName)
-        const message = after.title
-          ? `moved ${title} to ${destinationLabel} as "${after.title}" ·`
-          : `moved ${title} to ${destinationLabel} ·`
-        stageUndo({
-          message,
-          undoLabel: 'undo',
-          undo: () =>
-            // The undo RPC rewrites both link-parents' `blocks` just like the
-            // forward move did — flush either side's own debounced save
-            // first (mirrors the guard above), or a save still pending from
-            // typing on P/Q lands after undo and overwrites the restored link.
-            Promise.all([flushPendingPageSave(oldLinkParentId), flushPendingPageSave(newLinkParentId)])
-              .then(() => sessionUndo.undoHandle(pondId, handle))
-              .then((outcome) => applyUndoOutcome('undo', outcome, queryClient)),
-          action: () => navigateTo(after.title ? { ...draggedRow, title: after.title } : draggedRow),
-          actionLabel: 'open',
-        })
-      }
-    } catch {
-      if (snapshot) queryClient.setQueryData<PageRow[]>(pagesKey(pondId), snapshot)
-      notify(`Couldn't move "${nodeById.get(draggedId)?.title || 'Untitled'}"`)
-      queryClient.invalidateQueries({ queryKey: pagesKey() })
-    }
+    await moveAndStageUndo(
+      queryClient,
+      pondId,
+      pages,
+      draggedId,
+      targetId,
+      zone,
+      home,
+      pondName,
+      stageUndo,
+      notify,
+      navigateTo
+    )
   }
 
   const confirmCount = confirmTarget ? countDescendants(confirmTarget) : 0
