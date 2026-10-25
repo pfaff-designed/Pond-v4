@@ -152,13 +152,24 @@ export function ToggleView({ data, editable, onChange, autofocus }: ModuleViewPr
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-start gap-1.5">
+        {/* WCAG 2.5.8: the glyph alone is a 9×9 hit target. `p-[1px]` grows the
+            clickable box; the equal `-mx-[1px]` keeps both the glyph and this
+            item's own 9px flow footprint (the sum `TOGGLE_BODY_INDENT` reads)
+            unchanged, so the summary text beside it doesn't shift. Horizontally
+            that's as far as it goes: the live-measured gutter between the block
+            handle and the summary text is only ~11px (pw3) — short of the 24px
+            minimum, and 1px a side is the most this gutter allows before
+            touching a neighbour. Vertically there's room to spare: height
+            matches the first line's own `--prose-line` box (28px ≥ 24px), so
+            the glyph centres on the line itself instead of the old `mt-[0.3em]`
+            guess. */}
         <button
           type="button"
           aria-expanded={!folded}
           aria-label={folded ? 'unfold' : 'fold'}
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => commit({ ...data, folded: !folded })}
-          className="mt-[0.3em] grid w-[9px] flex-none place-items-center text-mn-text-secondary"
+          className="-mx-[1px] grid h-[var(--prose-line,calc(17.5px*1.6))] flex-none place-items-center p-[1px] text-mn-text-secondary"
         >
           <Caret className={cn(!folded && 'rotate-90')} />
         </button>
