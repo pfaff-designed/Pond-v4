@@ -486,6 +486,35 @@ describe('an alone-on-line edge drag (KAN-441)', () => {
         ro.restore()
       }
     })
+
+    it("in a ⅓/⅓/⅓ row, dragging boundary 1 leaves boundary 2's strip unlit", () => {
+      const ro = mockResizeObserver()
+      try {
+        const a: Block = { id: 'b-a', type: 'text', content: 'a', width: '1/3' }
+        const b: Block = { id: 'b-b', type: 'text', content: 'b', width: '1/3' }
+        const c: Block = { id: 'b-c', type: 'text', content: 'c', width: '1/3' }
+        renderCanvas([a, b, c], () => {})
+        setColumnWidth('b-a', 1200, ro)
+
+        // Boundary 1 (carried by a) is the one actually grabbed.
+        const boundary1 = edgeHandle('b-a', 'shared')!
+        fireEvent.pointerDown(boundary1, { clientX: 0 })
+        dragSharedEdge('b-a', 50)
+        expect(boundary1.getAttribute('data-dragging')).toBe('true')
+        expect(readoutText('b-a', 'shared')).not.toBeNull()
+
+        // Boundary 2 (carried by b) must stay dark: b's own width previews
+        // too, as boundary 1's right mate, but b carries a DIFFERENT
+        // boundary's strip — nobody is dragging it.
+        const boundary2 = edgeHandle('b-b', 'shared')!
+        expect(boundary2.getAttribute('data-dragging')).toBeNull()
+        expect(readoutText('b-b', 'shared')).toBeNull()
+
+        fireEvent.pointerUp(boundary1, { clientX: 50 })
+      } finally {
+        ro.restore()
+      }
+    })
   })
 
   describe('a row\'s outer-edge drag (KAN-505)', () => {

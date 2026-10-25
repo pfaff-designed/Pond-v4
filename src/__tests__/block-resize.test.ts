@@ -304,6 +304,21 @@ describe('resizeSharedEdge', () => {
     expect(rowHolds(WIDE_COLUMN_PX, [result.left, result.right])).toBe(true)
   })
 
+  it('a pair rendered just over the double 240px floor: growing either side still pins the OTHER side within a hair of its own floor', () => {
+    // At this column, a 100/0 split renders columnPx - 16 = 484px total for
+    // the pair — only ~4px of give above both 240px floors at once, so
+    // dragging the left side all the way out still leaves it, not just the
+    // shrinking right side, almost at its own floor.
+    const NARROW_COLUMN_PX = 500
+    const minPercent = renderedPxToPercent(NARROW_COLUMN_PX, MIN_BLOCK_WIDTH_PX)
+    const result = resizeSharedEdge(NARROW_COLUMN_PX, 50, 100, 1_000_000, null)
+    expect(result.locked).toBe(false)
+    expect(result.right).toBeCloseTo(minPercent, 3)
+    expect(result.left).toBeCloseTo(100 - minPercent, 3)
+    expect(result.left - minPercent).toBeLessThan(1)
+    expect(rowHolds(NARROW_COLUMN_PX, [result.left, result.right])).toBe(true)
+  })
+
   it('holds a lock within the 16px release zone (hysteresis)', () => {
     expect(resizeSharedEdge(WIDE_COLUMN_PX, 66.7, 100, 8, 66.7)).toEqual({
       left: 66.7,

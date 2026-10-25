@@ -1265,17 +1265,21 @@ export function BlockCanvas({
    * and a drag fires many moves per gesture that only need to update the
    * rendered preview, not re-run an effect. `edgePreview` is that preview:
    * the live percent, lock state and dragged `side` for whichever block
-   * (`index`) is mid-drag, read by the sizing div below to override its
+   * (`id`) is mid-drag, read by the sizing div below to override its
    * width and by the handle's readout chip. `side` is kept so only the strip
    * actually grabbed lights its pill — a mirrored block's other edge stays
-   * unlit even though the same `index` is mid-drag. `maxPercent` is `100` for
+   * unlit even though the same `id` is mid-drag. `maxPercent` is `100` for
    * an alone block and `100 - sum(the row's other members)` for a row's
    * outer edge, so growing it can never push the row's total past 100 and
    * split it — the row's own other members never move. `null` off a drag.
+   * The dragged block's `id`, not its `blocks` index, is what the ref holds —
+   * the index is resolved fresh at move/release time, so a concurrent
+   * `blocks` change mid-drag (another tab's edit landing, an accepted diff)
+   * can't leave this drag writing to whatever block now sits at a stale index.
    */
   const edgeDragRef = useRef<{
     pointerId: number
-    index: number
+    id: string
     side: 'left' | 'right'
     startClientX: number
     startPercent: number
@@ -1284,7 +1288,7 @@ export function BlockCanvas({
     maxPercent: number
   } | null>(null)
   const [edgePreview, setEdgePreview] = useState<{
-    index: number
+    id: string
     percent: number
     locked: boolean
     side: 'left' | 'right'
@@ -1296,14 +1300,15 @@ export function BlockCanvas({
    * `resizeSharedEdge`'s own hysteresis threads through `lockedPercent` the
    * same way, and `locked` is kept on the ref too (not just read off each
    * move's return) so release can commit the named widths without redoing
-   * the snap math. `leftIndex`/`rightIndex` are the pair's `blocks` indices,
-   * resolved once on press — the pair's sum never changes mid-drag, so
-   * neither index can go stale before release.
+   * the snap math. `leftId`/`rightId` are the pair's own `blocks` ids, not
+   * indices — resolved to indices only at release, so a concurrent `blocks`
+   * change mid-drag can't write the wrong pair (same reasoning as
+   * `edgeDragRef`'s own `id` above).
    */
   const sharedEdgeDragRef = useRef<{
     pointerId: number
-    leftIndex: number
-    rightIndex: number
+    leftId: string
+    rightId: string
     startClientX: number
     startLeftPercent: number
     pairSumPercent: number
@@ -1349,7 +1354,7 @@ export function BlockCanvas({
 
   function handleEdgeResizePointerDown(
     e: React.PointerEvent<HTMLDivElement>,
-    index: number,
+    id: string,
     side: 'left' | 'right',
     maxPercent = 100
   ) {
@@ -1360,12 +1365,13 @@ export function BlockCanvas({
     } catch {
       /* capture can fail for an already-released pointer; the drag still works while over the strip */
     }
+    const block = blocks.find((b) => b.id === id)
     // The drawn width, not the stored one: a width that stacks is drawn full,
     // and the drag must begin from what the person sees.
-    const startPercent = drawnWidthPercent(columnWidth, blocks[index]?.width)
+    const startPercent = drawnWidthPercent(columnWidth, block?.width)
     edgeDragRef.current = {
       pointerId: e.pointerId,
-      index,
+      id,
       side,
       startClientX: e.clientX,
       startPercent,
@@ -1373,7 +1379,7 @@ export function BlockCanvas({
       livePercent: startPercent,
       maxPercent,
     }
-    setEdgePreview({ index, percent: startPercent, locked: false, side })
+    setEdgePreview({ id, percent: startPercent, locked: false, side })
     setEdgeDragActive(true)
   }
 
@@ -1390,7 +1396,7 @@ export function BlockCanvas({
     )
     st.lockedPercent = locked ? percent : null
     st.livePercent = percent
-    setEdgePreview({ index: st.index, percent, locked, side: st.side })
+    setEdgePreview({ id: st.id, percent, locked, side: st.side })
   }
 
   function handleEdgeResizePointerUp(e: React.PointerEvent<HTMLDivElement>) {
@@ -1399,7 +1405,9 @@ export function BlockCanvas({
     edgeDragRef.current = null
     setEdgePreview(null)
     setEdgeDragActive(false)
-    const before = blocks[st.index]
+    // Resolved by id, now, not the index read at press: a concurrent `blocks`
+    // change mid-drag can't make this write land on the wrong block.
+    const before = blocks.find((b) => b.id === st.id)
     if (!before) return
     // Locked commits the named width (KEY_WIDTHS is the one home for the
     // glyph→named mapping), not the number its position happens to round to —
@@ -1428,12 +1436,12 @@ export function BlockCanvas({
 
   function handleSharedEdgeResizePointerDown(
     e: React.PointerEvent<HTMLDivElement>,
-    leftIndex: number,
-    rightIndex: number
+    leftId: string,
+    rightId: string
   ) {
     if (edgeDragRef.current || sharedEdgeDragRef.current) return
-    const leftBlock = blocks[leftIndex]
-    const rightBlock = blocks[rightIndex]
+    const leftBlock = blocks.find((b) => b.id === leftId)
+    const rightBlock = blocks.find((b) => b.id === rightId)
     if (!leftBlock || !rightBlock) return
     e.preventDefault()
     try {
@@ -1449,8 +1457,8 @@ export function BlockCanvas({
     const pairSumPercent = startLeftPercent + widthPercent(rightBlock.width)
     sharedEdgeDragRef.current = {
       pointerId: e.pointerId,
-      leftIndex,
-      rightIndex,
+      leftId,
+      rightId,
       startClientX: e.clientX,
       startLeftPercent,
       pairSumPercent,
@@ -1460,8 +1468,8 @@ export function BlockCanvas({
       locked: false,
     }
     setSharedEdgePreview({
-      leftId: leftBlock.id,
-      rightId: rightBlock.id,
+      leftId,
+      rightId,
       leftPercent: startLeftPercent,
       rightPercent: pairSumPercent - startLeftPercent,
       locked: false,
@@ -1484,12 +1492,9 @@ export function BlockCanvas({
     st.liveLeft = left
     st.liveRight = right
     st.locked = locked
-    const leftBlock = blocks[st.leftIndex]
-    const rightBlock = blocks[st.rightIndex]
-    if (!leftBlock || !rightBlock) return
     setSharedEdgePreview({
-      leftId: leftBlock.id,
-      rightId: rightBlock.id,
+      leftId: st.leftId,
+      rightId: st.rightId,
       leftPercent: left,
       rightPercent: right,
       locked,
@@ -1502,8 +1507,10 @@ export function BlockCanvas({
     sharedEdgeDragRef.current = null
     setSharedEdgePreview(null)
     setEdgeDragActive(false)
-    const leftBefore = blocks[st.leftIndex]
-    const rightBefore = blocks[st.rightIndex]
+    // Resolved by id, now, not the indices read at press — see `edgeDragRef`'s
+    // own `id` field above for why.
+    const leftBefore = blocks.find((b) => b.id === st.leftId)
+    const rightBefore = blocks.find((b) => b.id === st.rightId)
     if (!leftBefore || !rightBefore) return
     const committed = commitSharedEdgeWidths(columnWidth, st.pairSumPercent, {
       left: st.liveLeft,
@@ -3088,9 +3095,7 @@ export function BlockCanvas({
                 // written to `blocks` until release — so it overrides the
                 // committed width here rather than going through `stacks`.
                 const resizing =
-                  !item.ghost && edgePreview && blocks[edgePreview.index]?.id === item.id
-                    ? edgePreview
-                    : null
+                  !item.ghost && edgePreview && edgePreview.id === item.id ? edgePreview : null
                 // A shared-edge drag previews BOTH row-mates at once: this
                 // item reads whichever side of the pair it is, by id (not
                 // index — the dragged pair's own ids are fixed for the
@@ -3112,8 +3117,6 @@ export function BlockCanvas({
                       ? '100%'
                       : blockWidthStyle(item.width)
                 const i = blocks.findIndex((b) => b.id === item.id)
-                const sharedRightIndex =
-                  sharedRightId !== undefined ? blocks.findIndex((b) => b.id === sharedRightId) : -1
                 // Measured by `itemSizingRefs` (above) so the row-boundary
                 // line below — rendered once per ROW, not here — can anchor
                 // to this row's tallest item rather than this one's own box.
@@ -3158,7 +3161,7 @@ export function BlockCanvas({
                         // other members' complement for a shared row, and 100
                         // (no cap) for an alone block.
                         onPointerDown={(e) =>
-                          handleEdgeResizePointerDown(e, i, 'left', outerMaxPercent)
+                          handleEdgeResizePointerDown(e, item.id, 'left', outerMaxPercent)
                         }
                         onPointerMove={handleEdgeResizePointerMove}
                         onPointerUp={handleEdgeResizePointerUp}
@@ -3173,8 +3176,16 @@ export function BlockCanvas({
                       <BlockEdgeHandle
                         side="shared"
                         hidden={!chrome || draggingIndex !== null}
-                        dragging={sharedResizing !== null}
+                        // This boundary's own drag, not just its width changing: the
+                        // right row-mate's width previews too (`sharedResizing` matches
+                        // either side, for `sizingWidth` above), but only the LEFT
+                        // member of THIS boundary carries its pill and readout — the
+                        // right mate is also the left member of a DIFFERENT boundary,
+                        // whose own strip must stay dark while this one drags.
+                        dragging={sharedEdgePreview !== null && sharedEdgePreview.leftId === item.id}
                         readout={
+                          sharedEdgePreview !== null &&
+                          sharedEdgePreview.leftId === item.id &&
                           sharedResizing
                             ? edgeResizeReadout(sharedResizing.percent, sharedResizing.locked)
                             : undefined
@@ -3184,8 +3195,8 @@ export function BlockCanvas({
                         }
                         sharedOffsetPx={sharedOffsetPx}
                         onPointerDown={
-                          sharedRightIndex !== -1
-                            ? (e) => handleSharedEdgeResizePointerDown(e, i, sharedRightIndex)
+                          sharedRightId !== undefined
+                            ? (e) => handleSharedEdgeResizePointerDown(e, item.id, sharedRightId)
                             : undefined
                         }
                         onPointerMove={handleSharedEdgeResizePointerMove}
@@ -3214,7 +3225,7 @@ export function BlockCanvas({
                         // complement, so this edge resizes only itself and
                         // the row never splits.
                         onPointerDown={(e) =>
-                          handleEdgeResizePointerDown(e, i, 'right', outerMaxPercent)
+                          handleEdgeResizePointerDown(e, item.id, 'right', outerMaxPercent)
                         }
                         onPointerMove={handleEdgeResizePointerMove}
                         onPointerUp={handleEdgeResizePointerUp}

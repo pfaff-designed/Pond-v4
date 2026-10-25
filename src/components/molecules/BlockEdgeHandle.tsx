@@ -15,10 +15,9 @@
  * `sharedOffsetPx`, so it draws between two blocks rather than at either
  * one's border.
  *
- * Presentational only — pointer wiring for a shared strip (arming a
- * two-block drag, committing both widths) is a later item's job; this
- * component just renders the strip's states and forwards whatever pointer
- * handlers the caller passes.
+ * Presentational only — pointer wiring (arming a drag, committing widths) is
+ * the caller's job; this component just renders the strip's states and
+ * forwards whatever pointer handlers the caller passes.
  */
 
 import { cn } from '@/lib/utils'
