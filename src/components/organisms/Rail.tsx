@@ -302,6 +302,11 @@ interface RailRowProps {
   /** A leading mark slot (an area's glyph, the Life root's waves — #91) —
    *  replaces the dot. */
   leading?: ReactNode
+  /** KAN-471: the root row's ＋ while the pond has no pages — Notion/Linear
+   *  show their create affordance at rest in an empty list; the board's own
+   *  hover-only rule returns once a page exists. Reuses the existing hover
+   *  opacity class, no new value. */
+  plusVisibleAtRest?: boolean
   /** KAN-122: a non-shared row note (`new`, for a nested page not yet
    *  opened) — mono, ink .68, `flex:none`. Rides alongside `row-tools`, never
    *  replaces it. Absent once the page has been opened. KAN-75's shared row
@@ -359,6 +364,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
     accent,
     settleOnMount = false,
     leading,
+    plusVisibleAtRest = false,
     rowNote,
     onSelect,
     onToggle,
@@ -410,7 +416,8 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
   // colour of its own in the board, so it is full at rest.
   const isFullInk = isSelected || hovered || isAreaRow || isDbRoot
   // `PondRail.dc.html`: the selected row draws ＋ alone, a hovered one ＋ and ×.
-  const showPlus = isSelected || hovered
+  // KAN-471: an empty pond's root row also draws it at rest (Notion/Linear).
+  const showPlus = isSelected || hovered || plusVisibleAtRest
   // The tools sit out of flow (absolutely, over the row's own right padding —
   // KAN-314), so they take no flow width at rest and the label needs no extra
   // clearance. Only while a control is actually drawn does the label give up
@@ -1302,6 +1309,7 @@ export function RailView({
         posInSet={posInSet}
         setSize={setSize}
         leading={<PondMark glyph={pondGlyph} />}
+        plusVisibleAtRest={isEmpty}
         onSelect={onLife}
         onToggle={onToggleLife}
         newPageMenuOpen={newPageMenu?.id === id}
@@ -1491,7 +1499,7 @@ export function RailView({
                 className="mt-2 mr-2 ml-[26px] text-[12.5px] leading-[1.5] text-pretty text-mn-text-secondary"
                 role="status"
               >
-                no pages yet. ＋ new page, or ask pond to start one.
+                no pages yet. ＋ beside the pond name makes one.
               </p>
             )}
           </div>
