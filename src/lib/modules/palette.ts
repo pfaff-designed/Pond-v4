@@ -120,6 +120,26 @@ const VARIANT_ROWS: Partial<Record<DescriptorType, readonly SlashRow[]>> = {
       key: '#',
       icon: ICON.heading,
     },
+    // KAN-462: markup inside the current text block, not new block types — Linear
+    // and Notion both list these with their markdown key as the hint.
+    { id: 'quote', type: 'text', group: 'text', label: 'quote', key: '>', icon: ICON.quote },
+    { id: 'code', type: 'text', group: 'text', label: 'code', key: '```', icon: ICON.code },
+    {
+      id: 'divider',
+      type: 'text',
+      group: 'text',
+      label: 'divider',
+      key: '---',
+      icon: ICON.divider,
+    },
+    {
+      id: 'numbered-list',
+      type: 'text',
+      group: 'text',
+      label: 'numbered list',
+      key: '1.',
+      icon: ICON.numbered,
+    },
   ],
   todo: [
     {
@@ -157,6 +177,14 @@ export const BOARD_ORDER: readonly string[] = [
   'text',
   'heading',
   'highlight',
+  // KAN-462: markup rows, ranked right after `highlight` and ahead of `embed-file`
+  // so the app-over-board additions sit together; `numbered-list` is markup in a
+  // text block too (not `bulleted-list`'s own `todo` kind), so it stays in this
+  // group rather than beside `bulleted-list` in `blocks`.
+  'quote',
+  'code',
+  'divider',
+  'numbered-list',
   'embed-file',
   'bulleted-list',
   'checklist',
@@ -290,6 +318,9 @@ export function mintPreset(rowId: string): Block | null {
   const block = emptyBlockForType(row.type)
   if (!block) return null
   if (block.type === 'text' && rowId === 'heading') return { ...block, content: HEADING_PREFIX }
+  if (block.type === 'text' && Object.hasOwn(TEXT_MARKUP, rowId)) {
+    return { ...block, content: TEXT_MARKUP[rowId as keyof typeof TEXT_MARKUP] }
+  }
   if (block.type === 'todo' && rowId === 'bulleted-list') return { ...block, marker: 'dot' }
   if (block.type === 'view') {
     const mode = viewModeSchema.safeParse(rowId)

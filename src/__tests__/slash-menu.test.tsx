@@ -13,7 +13,14 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { render, screen, fireEvent, within } from '@testing-library/react'
 import { SlashMenu } from '@/components/molecules/SlashMenu'
-import { slashRows, mintPreset, BOARD_ORDER, HEADING_PREFIX, WITHHELD } from '@/lib/modules/palette'
+import {
+  slashRows,
+  mintPreset,
+  BOARD_ORDER,
+  HEADING_PREFIX,
+  WITHHELD,
+  TEXT_MARKUP,
+} from '@/lib/modules/palette'
 import { moduleDescriptors } from '@/lib/modules/registry'
 import { TEMPLATE_KINDS } from '@/lib/templates/types'
 import { VIEW_KINDS } from '@/lib/modules/view/kinds'
@@ -56,6 +63,13 @@ const ALLOWED = new Set([
   // KAN-240: an undrawn row — the list view's own row, labelled distinctly from
   // the bulleted list's `list` so `/list` never reads as a second copy.
   'list view',
+  // KAN-462: four rows the board omits — Linear and Notion both list them
+  // (Mobbin f63a07dd, 3c855d1d); added under the app-over-board flow rule, so
+  // they are no board or glossary word to read back.
+  'quote',
+  'code',
+  'divider',
+  'numbered list',
 ])
 
 function renderMenu(overrides: Partial<React.ComponentProps<typeof SlashMenu>> = {}) {
@@ -242,6 +256,10 @@ describe('a row is a preset, and every registered type reaches the menu', () => 
       'text/text',
       'text/heading',
       'text/highlight',
+      'text/quote',
+      'text/code',
+      'text/divider',
+      'text/numbered list',
       'text/embed / file',
       'blocks/list',
       'blocks/checklist',
@@ -372,6 +390,49 @@ describe('filtered', () => {
   })
 })
 
+// ── KAN-462: numbered list, quote, code, divider ────────────────────────────────
+
+describe('numbered list, quote, code and divider are markup in the current text block, not new block types', () => {
+  it('each query lists only that one row', () => {
+    for (const [query, label] of [
+      ['quo', 'quote'],
+      // not `num`: that is also a substring of `big number`'s own label.
+      ['numbered', 'numbered list'],
+      ['code', 'code'],
+      ['div', 'divider'],
+    ] as const) {
+      const { unmount } = renderMenu({ query })
+      expect(options().map((o) => labelOf(o as HTMLElement))).toEqual([label])
+      unmount()
+    }
+  })
+
+  it('at rest, unselected, each shows the board’s markdown key as its hint', () => {
+    const { unmount } = renderMenu()
+    for (const [label, hint] of [
+      ['quote', '>'],
+      ['numbered list', '1.'],
+      ['code', '```'],
+      ['divider', '---'],
+    ] as const) {
+      const row = options().find((o) => labelOf(o as HTMLElement) === label)!
+      expect(row).not.toHaveAttribute('aria-selected', 'true')
+      expect(within(row).getByText(hint)).toBeInTheDocument()
+    }
+    unmount()
+  })
+
+  it('mints a text block already opened on the row’s markup, empty, caret-ready', () => {
+    for (const id of ['numbered-list', 'quote', 'code', 'divider'] as const) {
+      expect(mintPreset(id)).toEqual({
+        id: expect.any(String),
+        type: 'text',
+        content: TEXT_MARKUP[id],
+      })
+    }
+  })
+})
+
 describe('free text (KAN-84)', () => {
   it('an unmatched word offers to insert it as text (selected, ↵ only) or heading (no hint), and the foot names what ↵ inserts', () => {
     const { anchor } = renderMenu({ query: 'wine' })
@@ -436,11 +497,13 @@ describe('mobile', () => {
       'text',
       'blocks',
     ])
+    // KAN-462 pushed four more rows into the `text` group, so the mobile cap of
+    // 12 (group heads counted) now runs out inside `blocks` one row sooner.
     expect(
       options()
         .map((o) => labelOf(o as HTMLElement))
         .at(-1)
-    ).toBe('calendar')
+    ).toBe('checklist')
   })
 
   it('does not cap a query', () => {
