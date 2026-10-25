@@ -6,7 +6,9 @@
  * old width), and Esc cancels with no write. Hidden during a `⋮⋮` block drag
  * (KAN-440) or with `chrome={false}`; a row-sharing block mounts a shared
  * strip at its boundary and the row's two outer strips instead of its own
- * left/right pair (KAN-505) — pointer wiring for those is a later ticket.
+ * left/right pair (KAN-505) — the outer strips resize only their own block,
+ * through the same `setBlockWidth` route, capped at the row's max so the row
+ * never splits.
  */
 
 import React from 'react'
@@ -480,6 +482,37 @@ describe('an alone-on-line edge drag (KAN-441)', () => {
         fireEvent.pointerUp(shared, { clientX: 0 })
 
         expect(onChange).not.toHaveBeenCalled()
+      } finally {
+        ro.restore()
+      }
+    })
+  })
+
+  describe('a row\'s outer-edge drag (KAN-505)', () => {
+    it('dragging the right outer edge of a ½/½ row left to ⅓ resizes only that block; the row stays one row', () => {
+      const ro = mockResizeObserver()
+      try {
+        const left: Block = { id: 'b-left', type: 'text', content: 'left', width: '1/2' }
+        const right: Block = { id: 'b-right', type: 'text', content: 'right', width: '1/2' }
+        const onChange = jest.fn()
+        renderCanvas([left, right], onChange)
+        setColumnWidth('b-left', 1000, ro)
+
+        const rightEdge = edgeHandle('b-right', 'right')!
+        fireEvent.pointerDown(rightEdge, { clientX: 0 })
+
+        // 1016 = columnPx(1000) + the row gap; the delta that moves the
+        // rendered right edge from ½'s own 492px down to ⅓'s own 322.67px —
+        // landing exactly on the key, same `percentToRenderedPx` formula as
+        // the shared-edge test's own `PAST_TWO_THIRDS_CLIENT_X` above.
+        const TO_ONE_THIRD_CLIENT_X = 1016 * (1 / 3) - 16 - (1016 * 0.5 - 16)
+        dragRightEdge('b-right', TO_ONE_THIRD_CLIENT_X)
+        expect(readoutText('b-right', 'right')).toBe('⅓')
+
+        fireEvent.pointerUp(rightEdge, { clientX: TO_ONE_THIRD_CLIENT_X })
+
+        expect(onChange).toHaveBeenCalledTimes(1)
+        expect(onChange).toHaveBeenCalledWith([left, { ...right, width: '1/3' }])
       } finally {
         ro.restore()
       }

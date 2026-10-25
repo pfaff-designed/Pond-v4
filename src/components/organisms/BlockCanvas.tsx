@@ -1259,15 +1259,19 @@ export function BlockCanvas({
   }
 
   /**
-   * An alone-on-line edge drag (KAN-441): a ref, not state, for the live
-   * pointer math — `resizeAlone`'s own hysteresis (`lockedPercent`) threads
-   * call to call, and a drag fires many moves per gesture that only need to
-   * update the rendered preview, not re-run an effect. `edgePreview` is that
-   * preview: the live percent, lock state and dragged `side` for whichever
-   * block (`index`) is mid-drag, read by the sizing div below to override its
+   * An alone-on-line edge drag (KAN-441), now shared with a row's own outer
+   * edges (KAN-505): a ref, not state, for the live pointer math —
+   * `resizeAlone`'s own hysteresis (`lockedPercent`) threads call to call,
+   * and a drag fires many moves per gesture that only need to update the
+   * rendered preview, not re-run an effect. `edgePreview` is that preview:
+   * the live percent, lock state and dragged `side` for whichever block
+   * (`index`) is mid-drag, read by the sizing div below to override its
    * width and by the handle's readout chip. `side` is kept so only the strip
    * actually grabbed lights its pill — a mirrored block's other edge stays
-   * unlit even though the same `index` is mid-drag. `null` off a drag.
+   * unlit even though the same `index` is mid-drag. `maxPercent` is `100` for
+   * an alone block and `100 - sum(the row's other members)` for a row's
+   * outer edge, so growing it can never push the row's total past 100 and
+   * split it — the row's own other members never move. `null` off a drag.
    */
   const edgeDragRef = useRef<{
     pointerId: number
@@ -1277,6 +1281,7 @@ export function BlockCanvas({
     startPercent: number
     lockedPercent: number | null
     livePercent: number
+    maxPercent: number
   } | null>(null)
   const [edgePreview, setEdgePreview] = useState<{
     index: number
@@ -1345,7 +1350,8 @@ export function BlockCanvas({
   function handleEdgeResizePointerDown(
     e: React.PointerEvent<HTMLDivElement>,
     index: number,
-    side: 'left' | 'right'
+    side: 'left' | 'right',
+    maxPercent = 100
   ) {
     if (edgeDragRef.current) return
     e.preventDefault()
@@ -1365,6 +1371,7 @@ export function BlockCanvas({
       startPercent,
       lockedPercent: null,
       livePercent: startPercent,
+      maxPercent,
     }
     setEdgePreview({ index, percent: startPercent, locked: false, side })
     setEdgeDragActive(true)
@@ -1374,7 +1381,13 @@ export function BlockCanvas({
     const st = edgeDragRef.current
     if (!st || e.pointerId !== st.pointerId) return
     const deltaPx = st.side === 'right' ? e.clientX - st.startClientX : st.startClientX - e.clientX
-    const { percent, locked } = resizeAlone(columnWidth, st.startPercent, deltaPx, st.lockedPercent)
+    const { percent, locked } = resizeAlone(
+      columnWidth,
+      st.startPercent,
+      deltaPx,
+      st.lockedPercent,
+      st.maxPercent
+    )
     st.lockedPercent = locked ? percent : null
     st.livePercent = percent
     setEdgePreview({ index: st.index, percent, locked, side: st.side })
@@ -3032,12 +3045,19 @@ export function BlockCanvas({
                   sharedRightId: itemIndex < row.length - 1 ? row[itemIndex + 1].id : undefined,
                   showRightEdge: itemIndex === row.length - 1 && (row.length === 1 || !stacks),
                   sharedOffsetPx,
-                  // Only an alone block's outer edges are wired to a live
-                  // drag here: a row-sharing block's outer edge needs the
-                  // row's max cap, which is a later item's job. This item
-                  // only mounts it (the shared strip between two row-mates
-                  // is wired below, not gated on `aloneOnLine`).
-                  aloneOnLine: row.length === 1,
+                  // A row-sharing block's outer edge (KAN-505) resizes only
+                  // itself — its row-mates never move — so growing it is
+                  // capped at `100 - sum(the row's other members)`: the
+                  // complement of whatever share they already hold, which is
+                  // exactly how far this one can grow before the row's total
+                  // would pass 100 and split. An alone block has no row-mates
+                  // to cap against, so its own edges keep the default (100).
+                  outerMaxPercent:
+                    row.length > 1 && !stacks
+                      ? 100 -
+                        (widths.reduce<number>((sum, w) => sum + widthPercent(w), 0) -
+                          widthPercent(item.width))
+                      : 100,
                   marginTop:
                     rowIndex === 0 && (!stacks || itemIndex === 0) ? 0 : rowGapValue(listStyle),
                 }))
@@ -3056,11 +3076,11 @@ export function BlockCanvas({
                 const {
                   item,
                   stacks,
-                  aloneOnLine,
                   showLeftEdge,
                   showSharedEdge,
                   sharedRightId,
                   showRightEdge,
+                  outerMaxPercent,
                   sharedOffsetPx,
                   marginTop,
                 } = entry
@@ -3131,17 +3151,18 @@ export function BlockCanvas({
                         // pointer-down; every other block type's left edge is
                         // untouched (prop left unset, full height).
                         topInsetPx={blocks[i]?.type === 'toggle' ? TOGGLE_FOLD_ROW_PX : undefined}
-                        // A row-sharing block's left edge is never its row's
-                        // first (it's covered by the previous block's shared
-                        // strip, below) — only an alone block wires this one;
-                        // the row's own left edge, when shared, is the next
-                        // item's job (SPEC: "Outer-edge drag").
-                        onPointerDown={
-                          aloneOnLine ? (e) => handleEdgeResizePointerDown(e, i, 'left') : undefined
+                        // This strip only ever mounts on a row's first member
+                        // (`showLeftEdge`'s own gate) — alone or sharing a row,
+                        // it's always that row's own left edge, so both wire
+                        // the same handler; `outerMaxPercent` is the row's
+                        // other members' complement for a shared row, and 100
+                        // (no cap) for an alone block.
+                        onPointerDown={(e) =>
+                          handleEdgeResizePointerDown(e, i, 'left', outerMaxPercent)
                         }
-                        onPointerMove={aloneOnLine ? handleEdgeResizePointerMove : undefined}
-                        onPointerUp={aloneOnLine ? handleEdgeResizePointerUp : undefined}
-                        onPointerCancel={aloneOnLine ? handleEdgeResizePointerCancel : undefined}
+                        onPointerMove={handleEdgeResizePointerMove}
+                        onPointerUp={handleEdgeResizePointerUp}
+                        onPointerCancel={handleEdgeResizePointerCancel}
                       />
                     )}
                     {showSharedEdge && (
@@ -3185,16 +3206,19 @@ export function BlockCanvas({
                         valueNow={
                           resizing ? resizing.percent : drawnWidthPercent(columnWidth, item.width)
                         }
-                        // A row-sharing block's right edge, when it's also the
-                        // row's last, is the row's own outer edge — resizing
-                        // it with the row's max cap is the next item's job
-                        // ("Outer-edge drag"); only an alone block wires it here.
-                        onPointerDown={
-                          aloneOnLine ? (e) => handleEdgeResizePointerDown(e, i, 'right') : undefined
+                        // This strip only ever mounts on a row's last member
+                        // (`showRightEdge`'s own gate) — alone or sharing a
+                        // row, it's always that row's own right edge, so both
+                        // wire the same handler; `outerMaxPercent` caps a
+                        // shared row's growth at its other members'
+                        // complement, so this edge resizes only itself and
+                        // the row never splits.
+                        onPointerDown={(e) =>
+                          handleEdgeResizePointerDown(e, i, 'right', outerMaxPercent)
                         }
-                        onPointerMove={aloneOnLine ? handleEdgeResizePointerMove : undefined}
-                        onPointerUp={aloneOnLine ? handleEdgeResizePointerUp : undefined}
-                        onPointerCancel={aloneOnLine ? handleEdgeResizePointerCancel : undefined}
+                        onPointerMove={handleEdgeResizePointerMove}
+                        onPointerUp={handleEdgeResizePointerUp}
+                        onPointerCancel={handleEdgeResizePointerCancel}
                       />
                     )}
                   </div>
