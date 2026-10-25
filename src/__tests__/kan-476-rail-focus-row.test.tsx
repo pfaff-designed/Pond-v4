@@ -2,10 +2,12 @@
  * KAN-476 — `Rail` listens for `FOCUS_RAIL_ROW_EVENT` and focuses the open
  * page's row, re-expanding any ancestor the person hand-collapsed after
  * opening the page (NOT gated by the ticket-25 `revealedForRef` guard, unlike
- * the ordinary navigation reveal). No open page is a no-op.
+ * the ordinary navigation reveal). No open page is a no-op. Esc then returns
+ * focus to whatever had it before — unless a row-local control (rename, the
+ * glyph picker) already owns Esc, where existing behaviour is unchanged.
  */
 import React from 'react'
-import { act, render, screen } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Rail } from '@/components/organisms/Rail'
@@ -74,6 +76,26 @@ function mountRail(rows: PageRow[]) {
   )
 }
 
+/** A stub "editor" element standing in for wherever focus was before the
+ *  rail-focus key — the page editor, in the real app. */
+function mountRailWithEditor(rows: PageRow[]) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  })
+  client.setQueryData(pagesKey('pond-1'), rows)
+  render(
+    <QueryClientProvider client={client}>
+      <PondContext.Provider value={PROVIDER_VALUE}>
+        <DeletionUndoProvider>
+          <input aria-label="editor" />
+          <Rail />
+        </DeletionUndoProvider>
+      </PondContext.Provider>
+    </QueryClientProvider>
+  )
+  return screen.getByRole('textbox', { name: 'editor' })
+}
+
 describe('KAN-476 — the rail-focus key focuses the open row', () => {
   beforeEach(() => {
     window.localStorage.clear()
@@ -100,5 +122,51 @@ describe('KAN-476 — the rail-focus key focuses the open row', () => {
 
     expect(() => act(() => requestRailRowFocus())).not.toThrow()
     expect(document.activeElement).toBe(document.body)
+  })
+
+  it('Esc returns focus to what had it before the focus-row chord', async () => {
+    nodeId = 'desk'
+    const editor = mountRailWithEditor(ALL_ROWS)
+    editor.focus()
+    expect(editor).toHaveFocus()
+
+    act(() => requestRailRowFocus())
+    expect(screen.getByRole('treeitem', { name: 'Desk' })).toHaveFocus()
+
+    await userEvent.keyboard('{Escape}')
+    expect(editor).toHaveFocus()
+  })
+
+  it('Esc while renaming leaves rail focus alone (existing behaviour)', async () => {
+    nodeId = 'desk'
+    const editor = mountRailWithEditor(ALL_ROWS)
+    editor.focus()
+
+    act(() => requestRailRowFocus())
+    const row = screen.getByRole('treeitem', { name: 'Desk' })
+    expect(row).toHaveFocus()
+
+    await userEvent.keyboard('{F2}')
+    expect(screen.getByRole('textbox', { name: 'rename Desk' })).toHaveFocus()
+
+    await userEvent.keyboard('{Escape}')
+    expect(editor).not.toHaveFocus()
+    expect(row).toHaveFocus()
+  })
+
+  it('Esc while the glyph picker is open leaves rail focus alone (existing behaviour)', async () => {
+    nodeId = 'desk'
+    const editor = mountRailWithEditor(ALL_ROWS)
+    editor.focus()
+
+    act(() => requestRailRowFocus())
+    const row = screen.getByRole('treeitem', { name: 'Desk' })
+    const mark = within(row).getByRole('button', { name: 'change icon for Desk' })
+
+    await userEvent.click(mark)
+    await userEvent.keyboard('{Escape}')
+
+    expect(editor).not.toHaveFocus()
+    expect(mark).toHaveFocus()
   })
 })

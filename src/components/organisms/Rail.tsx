@@ -1241,10 +1241,15 @@ export function RailView({
   // effect runs. `handledFocusTokenRef` keeps a later, unrelated re-render
   // from refocusing the same request again.
   const handledFocusTokenRef = useRef<number | null>(null)
+  // What had focus right before the rail-focus key moved it here — restored on
+  // Esc below, then cleared so a later, unrelated Esc has nothing to restore.
+  const preRailFocusRef = useRef<HTMLElement | null>(null)
   useEffect(() => {
     if (!focusRequest || handledFocusTokenRef.current === focusRequest.token) return
     if (!visibleIds.has(focusRequest.id)) return
     handledFocusTokenRef.current = focusRequest.token
+    preRailFocusRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null
     // Responds to an external request (the rail-focus key), not a derived
     // value — same justification as the reveal effects above.
     /* eslint-disable react-hooks/set-state-in-effect */
@@ -1303,6 +1308,27 @@ export function RailView({
 
   // ── Keyboard machine (pure rules; commands dispatched to the callbacks) ────
   function handleKeyDown(id: string, e: KeyboardEvent<HTMLElement>) {
+    // KAN-476: Esc undoes the rail-focus key, returning focus to whatever had
+    // it before — but only while that request is still the whole story: the
+    // rail still owns focus, and no row-local UI (rename, the new-page menu,
+    // the glyph picker) has its own Esc meaning to keep. Outside those
+    // conditions this falls through untouched, same as today.
+    if (e.key === 'Escape') {
+      if (
+        focusInRailRef.current &&
+        !renamingId &&
+        !newPageMenu &&
+        !picker &&
+        preRailFocusRef.current
+      ) {
+        e.preventDefault()
+        e.stopPropagation()
+        const target = preRailFocusRef.current
+        preRailFocusRef.current = null
+        target.focus()
+      }
+      return
+    }
     // AUDIT K1: ⌘D/Ctrl+D is the browser's own bookmark chord. Every press of
     // it on a focused row — a repeat from holding it down, or one aimed at a
     // row `treeKeyCommand`/`allowsCommand` refuses to dispatch — must still be
