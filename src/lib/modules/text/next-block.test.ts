@@ -93,13 +93,27 @@ describe('enterSplit — what a plain Enter does to a text block’s doc at the 
     expect(enterSplit(stateAt(doc, inside(doc, 0)))).toBe('stay')
   })
 
-  it('a doc with only one empty list item: `stay`, nothing on either side', () => {
+  it('a doc with only one empty bullet item: `lift`, back to plain prose', () => {
     const doc = proseSchema.node('doc', null, [
       proseSchema.node('bulletList', { tight: true, bullet: '-' }, [
         proseSchema.node('listItem', null, [proseSchema.node('paragraph', null, [])]),
       ]),
     ])
-    expect(enterSplit(stateAtEnd(doc))).toBe('stay')
+    expect(enterSplit(stateAtEnd(doc))).toBe('lift')
+  })
+
+  it('a doc with only one empty ordered item: `lift`, back to plain prose', () => {
+    const doc = proseSchema.node('doc', null, [
+      proseSchema.node('orderedList', { tight: true, start: 1 }, [
+        proseSchema.node('listItem', null, [proseSchema.node('paragraph', null, [])]),
+      ]),
+    ])
+    expect(enterSplit(stateAtEnd(doc))).toBe('lift')
+  })
+
+  it('an empty blockquote: `lift`, back to plain prose', () => {
+    const doc = parseMarkdown('> ')
+    expect(enterSplit(stateAt(doc, 2))).toBe('lift')
   })
 
   it('two paragraphs, caret at the end of the first: after is the second paragraph', () => {

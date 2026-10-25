@@ -340,6 +340,30 @@ describe('the `/quote` path lands empty and Return returns to prose (KAN-462)', 
     expect(prose.querySelector('blockquote')).not.toBeInTheDocument()
     expect(fields[0].querySelector('blockquote')?.textContent).toBe('words')
   })
+
+  it('`/quo` → ↵ on the still-empty quote: Return lifts it back to prose, not a new block', async () => {
+    const user = userEvent.setup()
+    const emptyLine: Block = { id: 'b-empty', type: 'text', content: '' }
+    renderCanvas([emptyLine])
+
+    const editorAtStart = await findTextBlock()
+    writeInTextBlock(editorAtStart, '/')
+    await screen.findByRole('listbox', { name: 'blocks' })
+    writeInTextBlock(editorAtStart, '/quo')
+    await screen.findByRole('listbox', { name: 'blocks' })
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument())
+
+    const quoteField = await findTextBlock()
+    await waitFor(() => expect(quoteField).toHaveFocus())
+    expect(quoteField.querySelector('blockquote')).toBeInTheDocument()
+
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(quoteField.querySelector('blockquote')).not.toBeInTheDocument())
+    expect((await findAllTextBlocks())).toHaveLength(1)
+    expect(quoteField).toHaveFocus()
+    expect(quoteField.textContent).toBe('')
+  })
 })
 
 describe('the `/divider` and `/numbered` paths land with the caret ready (KAN-462)', () => {

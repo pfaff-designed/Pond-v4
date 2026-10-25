@@ -5,7 +5,7 @@ import { Extension } from '@tiptap/core'
 import { EditorContent, useEditor, type Editor } from '@tiptap/react'
 import { Placeholder } from '@tiptap/extensions'
 import { redo, undo } from '@tiptap/pm/history'
-import { Plugin } from '@tiptap/pm/state'
+import { Plugin, TextSelection } from '@tiptap/pm/state'
 import type { EditorView } from '@tiptap/pm/view'
 import { COMPOSER_TOP_CLEARANCE, composerClearanceMarginPx } from '@/lib/layout/composer-clearance'
 import { isRedoChord, isUndoChord } from '@/lib/shell-commands'
@@ -91,6 +91,16 @@ const createSplitOnEnter = (latest: RefObject<LatestForSplit>) =>
             const split = enterSplit(view.state)
             if (split === 'own') return false
             if (split === 'stay') return true
+            if (split === 'lift') {
+              // The whole doc is this one empty quote/list item: replacing it
+              // with a plain paragraph in place is the lift — no sibling block
+              // is created, and the ordinary `onUpdate` below writes the now-
+              // empty content back, same as any other edit.
+              const paragraph = view.state.schema.nodes.paragraph.create()
+              const tr = view.state.tr.replaceWith(0, view.state.doc.content.size, paragraph)
+              view.dispatch(tr.setSelection(TextSelection.create(tr.doc, 1)))
+              return true
+            }
             const { data, stepOut } = latest.current
             // Nothing before the caret: the empty block goes ABOVE this one
             // (Enter at the start of a non-empty block; an empty FIRST list
