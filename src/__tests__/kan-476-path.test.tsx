@@ -260,7 +260,8 @@ function renderShell() {
 }
 
 const pressGoToParent = () => fireEvent.keyDown(document, { key: 'ArrowUp', metaKey: true, shiftKey: true })
-const pressRailFocus = () => fireEvent.keyDown(document, { key: '\\', metaKey: true, shiftKey: true })
+const pressRailFocus = () =>
+  fireEvent.keyDown(document, { key: '|', code: 'Backslash', metaKey: true, shiftKey: true })
 const nodeIdInUrl = () => new URLSearchParams(window.location.search).get('nodeId')
 
 describe('KAN-476 path test — go-to-parent and the rail-focus chord, walked on the real workspace shell', () => {

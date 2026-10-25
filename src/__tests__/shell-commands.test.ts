@@ -141,23 +141,28 @@ describe('isGoToParentChord — ⌘⇧↑ on a Mac, Ctrl+Shift+↑ everywhere el
   })
 })
 
+/** A real browser reports the Shift-ed character in `e.key` (`'|'` on a US layout) while
+ *  `e.code` stays the unshifted physical key — so these fixtures default to that pair,
+ *  not to `{ key: '\\' }`, which no real Shift+\ keydown ever produces. */
 const backslashKeyDown = (init: Partial<KeyboardEventInit>) =>
-  new KeyboardEvent('keydown', { key: '\\', ...init })
+  new KeyboardEvent('keydown', { key: '|', code: 'Backslash', ...init })
 
 describe('isRailFocusChord — ⌘⇧\\ on a Mac, Ctrl+Shift+\\ everywhere else', () => {
-  it('matches ⌘⇧\\ on a Mac', () => {
+  it('matches ⌘⇧\\ on a Mac (key reports the shifted "|" character)', () => {
     onPlatform('MacIntel')
     expect(isRailFocusChord(backslashKeyDown({ metaKey: true, shiftKey: true }))).toBe(true)
   })
 
-  it('matches Ctrl+Shift+\\ off a Mac', () => {
+  it('matches Ctrl+Shift+\\ off a Mac (key reports the shifted "|" character)', () => {
     onPlatform('Win32')
     expect(isRailFocusChord(backslashKeyDown({ ctrlKey: true, shiftKey: true }))).toBe(true)
   })
 
   it('does not match ⌘\\ alone, with no shift (already isMinimizeRailChord)', () => {
     onPlatform('MacIntel')
-    expect(isRailFocusChord(backslashKeyDown({ metaKey: true }))).toBe(false)
+    expect(
+      isRailFocusChord(backslashKeyDown({ metaKey: true, key: '\\', shiftKey: false }))
+    ).toBe(false)
   })
 
   it('does not match with Alt held', () => {
@@ -193,6 +198,12 @@ describe('isEditableField — a plain text field, no undo-specific exceptions', 
     const el = document.createElement('div')
     el.setAttribute('contenteditable', 'true')
     expect(isEditableField(el)).toBe(true)
+  })
+
+  it('does not match contenteditable="false"', () => {
+    const el = document.createElement('div')
+    el.setAttribute('contenteditable', 'false')
+    expect(isEditableField(el)).toBe(false)
   })
 
   it('does not match a plain div', () => {

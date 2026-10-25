@@ -47,7 +47,7 @@ const renderShell = () =>
   )
 
 const pressRailFocus = (target: Document | Element = document) =>
-  fireEvent.keyDown(target, { key: '\\', metaKey: true, shiftKey: true })
+  fireEvent.keyDown(target, { key: '|', code: 'Backslash', metaKey: true, shiftKey: true })
 
 beforeEach(() => {
   jest.spyOn(window.navigator, 'platform', 'get').mockReturnValue('MacIntel')

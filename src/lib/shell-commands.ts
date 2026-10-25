@@ -113,15 +113,28 @@ export const isGoToParentChord = (e: KeyboardEvent) => {
 
 /** Whether `el` is a plain text field whose own keys (not Pond's) should win —
  *  narrower than `isEditable` above, which carries undo-specific exceptions that
- *  answer a different question ("does the browser or Pond own undo here"). */
-export const isEditableField = (el: Element | null): boolean =>
-  el !== null && el.matches('input, textarea, [contenteditable]')
+ *  answer a different question ("does the browser or Pond own undo here"). Reads
+ *  the nearest `contenteditable` ancestor's value directly rather than the
+ *  `[contenteditable]` selector (which also matches `contenteditable="false"`) or
+ *  `isContentEditable` (which jsdom — this repo's test DOM — never implements, so
+ *  it reads as `undefined` in every test regardless of markup). */
+export const isEditableField = (el: Element | null): boolean => {
+  if (el === null) return false
+  if (el.matches('input, textarea')) return true
+  const value = el.closest('[contenteditable]')?.getAttribute('contenteditable')
+  return value === '' || value === 'true'
+}
 
 /**
  * ⌘⇧\ on a Mac, Ctrl+Shift+\ everywhere else: focus the open page's row in the rail.
  * Global, including inside the editor — that is the chord's whole point. Shares its
  * base key with `isMinimizeRailChord` (⌘\, no shift) — same physical key, shift as
  * "the stronger action: focus into it" — and nothing else in this file uses shift+\.
+ *
+ * Matches on `e.code` (the physical key), not `e.key`: with Shift held, a real
+ * browser reports the shifted character in `e.key` (`'|'` on a US layout), not `'\\'`,
+ * so a `key`-based check never matches for anyone despite passing a test that
+ * synthesizes `{ key: '\\', shiftKey: true }` — a fixture no real keydown produces.
  *
  * Rejected ⌘⇧E (the spec's preferred candidate): Firefox binds Ctrl+Shift+E to the
  * devtools Network panel at the browser-chrome level, a reservation a page's own
@@ -135,7 +148,7 @@ export const isEditableField = (el: Element | null): boolean =>
  * into the rail remains the fallback.
  */
 export const isRailFocusChord = (e: KeyboardEvent) => {
-  if (e.altKey || !e.shiftKey || e.key !== '\\') return false
+  if (e.altKey || !e.shiftKey || e.code !== 'Backslash') return false
   return isCommandOnly(e)
 }
 

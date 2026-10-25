@@ -113,7 +113,7 @@ import { ROW_TYPE } from '@/lib/properties/schema'
  * so the chord falls through to the session step instead. */
 const isEditable = (el: Element | null): boolean =>
   el !== null &&
-  el.matches('input, textarea, select, [contenteditable]') &&
+  (isEditableField(el) || el.matches('select')) &&
   !isEmptyPageTitleInput(el) &&
   !el.closest(`[${SESSION_UNDO_SCOPE_ATTR}]`)
 
