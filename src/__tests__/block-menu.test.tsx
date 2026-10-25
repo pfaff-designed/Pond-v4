@@ -447,7 +447,7 @@ describe('the block menu opens with no ring on the block, and offers moving it i
       within(block)
         .getAllByRole('menuitem')
         .map((i) => i.textContent)
-    ).toEqual(['move into a new page', 'copy link to block'])
+    ).toEqual(['move into a new page', 'move to…', 'copy link to block'])
     await user.click(within(block).getByRole('menuitem', { name: 'move into a new page' }))
 
     await waitFor(() => expect(mockCreatePage).toHaveBeenCalledTimes(1))

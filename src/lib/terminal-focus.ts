@@ -283,3 +283,22 @@ export function raiseRecordCard(recordId: string) {
     new CustomEvent<RaiseRecordCardDetail>(RAISE_RECORD_CARD_EVENT, { detail: { recordId } })
   )
 }
+
+/**
+ * "Open the pages picker for one block's `move to…`" (KAN-479). The block
+ * menu's row asks; `ShellCommands` owns the only mounted `PondCommand` and
+ * answers by opening it in block-pick mode — the same decoupling as
+ * `requestComposerToggle`, so `BlockCanvas` never imports the shell.
+ */
+export const BLOCK_MOVE_PICK_EVENT = 'pond:block-move-pick'
+
+export interface BlockMovePickDetail {
+  blockId: string
+  sourcePageId: string
+  /** The block's own eyebrow/kind name, for the picker's `move <label> to…` placeholder. */
+  label: string
+}
+
+export function requestBlockMovePick(detail: BlockMovePickDetail) {
+  window.dispatchEvent(new CustomEvent<BlockMovePickDetail>(BLOCK_MOVE_PICK_EVENT, { detail }))
+}
