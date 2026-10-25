@@ -1090,11 +1090,14 @@ export function BlockCanvas({
    * (as `/page` does in `makePage`, above) and leaves a page-link row in its
    * place, swapped in by id rather than landed at a slash target — and with
    * NO navigation, since leaving the page would blow past the undo toast
-   * before anyone could reach it. Undo puts the block back and removes the
-   * page it made, as `turnIntoTable`'s undo removes the database it made.
-   * Guarded against a second pick on the same block while the first is still
-   * in flight (G9). `message` is the undo toast's copy: the menu's own "move
-   * into a new page" row and "turn into › page" read differently, even
+   * before anyone could reach it. The swap writes through
+   * `persistBlocksAsOwnEdit` with `onUndone`/`onRedone` (as the view's
+   * made-database path does, above), so ⌘Z and the toast's undo are the
+   * SAME step: either trashes the page it made (never just the blocks
+   * record alone, which would leave an orphan in the rail), and ⇧⌘Z restores
+   * it. Guarded against a second pick on the same block while the first is
+   * still in flight (G9). `message` is the undo toast's copy: the menu's own
+   * "move into a new page" row and "turn into › page" read differently, even
    * though they share this one engine.
    */
   const moveBlockIntoNewPage = async (index: number, message: string) => {
@@ -1128,7 +1131,6 @@ export function BlockCanvas({
         width: block.width,
         rowStart: block.rowStart,
       }
-      onChange(blocksRef.current.map((b) => (b.id === block.id ? pageLink : b)))
       insertPageOptimistic(
         queryClient,
         {
@@ -1141,19 +1143,74 @@ export function BlockCanvas({
         pondId
       )
       queryClient.invalidateQueries({ queryKey: pagesKey() })
+      // ⌘Z and the toast's undo are the same step (KAN-368, as the view's
+      // made-database path above): the handle `onStructuralWrite` reserves
+      // here is what the toast calls through `sessionUndo.undoHandle`, so
+      // either one trashes the made page (never `deletePage` — redo must be
+      // able to bring it back) rather than leaving it orphaned in the rail.
+      let handle: UndoHandle | undefined
+      void persistBlocksAsOwnEdit(
+        blocksRef.current.map((b) => (b.id === block.id ? pageLink : b)),
+        {
+          onUndoHandle: (next) => {
+            handle = next
+          },
+          onUndone: async () => {
+            try {
+              await trashPage(getSupabase(), created.id)
+            } catch (err) {
+              console.error('Failed to trash the page this move made', created.id, err)
+            }
+            queryClient.invalidateQueries({ queryKey: pagesKey() })
+          },
+          onRedone: async () => {
+            try {
+              const supabase = getSupabase()
+              const {
+                data: { user },
+              } = await supabase.auth.getUser()
+              if (!user || !pondId) return
+              const [deleted] = await listRecords(supabase, {
+                userId: user.id,
+                pondId,
+                targetPageId: created.id,
+                action: 'delete',
+                limit: 1,
+              })
+              if (deleted) await restorePage(supabase, deleted.id)
+            } catch (err) {
+              console.error('Failed to restore the page this move made', created.id, err)
+            }
+            queryClient.invalidateQueries({ queryKey: pagesKey() })
+          },
+        }
+      )
       stageUndo({
         message,
         scope: 'block',
-        undo: async () => {
-          onChange(blocksRef.current.map((b) => (b.id === pageLink.id ? block : b)))
-          try {
-            // Removes its own blocks too (parent_id cascade).
-            await deletePage(getSupabase(), created.id)
-          } catch (err) {
-            console.error('Failed to remove the page after undo', err)
-          }
-          queryClient.invalidateQueries({ queryKey: pagesKey() })
-        },
+        // With a write queue, `handle` is the step ⌘Z already takes — the
+        // toast must run THAT, not a second revert, or ⌘Z and the toast
+        // would race to undo the same move twice. A host with no queue
+        // (Storybook, this canvas rendered bare) never reserves a handle,
+        // so the toast stays its own undo, exactly as before.
+        undo:
+          onStructuralWrite && pondId
+            ? () => {
+                if (!handle) return
+                return sessionUndo
+                  .undoHandle(pondId, handle)
+                  .then((result) => applyUndoOutcome('undo', result, queryClient))
+              }
+            : async () => {
+                onChange(blocksRef.current.map((b) => (b.id === pageLink.id ? block : b)))
+                try {
+                  // Removes its own blocks too (parent_id cascade).
+                  await deletePage(getSupabase(), created.id)
+                } catch (err) {
+                  console.error('Failed to remove the page after undo', err)
+                }
+                queryClient.invalidateQueries({ queryKey: pagesKey() })
+              },
       })
     } catch (err) {
       console.error('Failed to move the block into a page', err)
