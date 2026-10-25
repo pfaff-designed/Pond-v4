@@ -2327,11 +2327,23 @@ export function BlockCanvas({
     // mount — before this ever ran. A failed write discards the blocks, so
     // stale ids left in the set are harmless.
     for (const block of applied.blocks) markInserted(block.id)
-    // Snapshot the page's props (the schema, board 8e's reserved `_schema`
-    // key, lives inside it) BEFORE any write below, so ⌘Z can put the whole
-    // page — blocks, schema and props — back as one step rather than just
-    // the blocks.
-    const priorProps = (await getPage(supabase, pageId))?.props ?? {}
+    // The schema (board 8e's reserved `_schema` key) lives inside `props`.
+    // A template with no schema never calls `defineSchema` below, so the one
+    // read-modify-write inside `applyTemplateSchemaProps` is already "prior"
+    // — nothing runs ahead of it to change `props`. A template WITH a schema
+    // needs its prior snapshot taken before `defineSchema` runs (it writes
+    // `props` too, so reading after it would snapshot the schema this very
+    // apply just wrote) — kicked off here, not awaited, so this extra read
+    // can't gate `persistBlocksAsOwnEdit` (and so the apply's own first-line
+    // focus, KAN-499) on a network hop that has nothing to do with the
+    // blocks themselves.
+    const priorSchemaPropsPromise = applied.schema
+      ? getPage(supabase, pageId).then((p) => p?.props ?? {})
+      : null
+    // Set inside `applyTemplateSchemaProps` below, before its own
+    // `saveProps` — the state right before THIS run's write, so a later
+    // ⌘Z always reverts to the step it is undoing, apply or redo alike.
+    let priorProps: Record<string, unknown> = {}
     // Applies the template's schema (if it has one) and props on top of
     // whatever the page carries right now — shared by the first apply and
     // ⇧⌘Z's redo, which both run against a page that may have changed
@@ -2349,6 +2361,7 @@ export function BlockCanvas({
       // kind/stamp the template adds.
       try {
         const current = await getPage(supabase, pageId)
+        priorProps = priorSchemaPropsPromise ? await priorSchemaPropsPromise : current?.props ?? {}
         const nextProps = { ...(current?.props ?? {}), ...applied.props }
         await saveProps(supabase, pageId, nextProps)
         queryClient.setQueryData<PondPage | null>(['page', pageId], (prev) =>
