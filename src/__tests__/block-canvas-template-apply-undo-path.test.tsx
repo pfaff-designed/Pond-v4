@@ -184,5 +184,41 @@ describe('⌘Z after applying `meeting notes` in place undoes the whole template
     // `meeting notes` carries a schema — undoing it must put the page's prior
     // (schema-less) props back, not just restore the blocks.
     expect(mockDefineSchema.mock.calls.length).toBe(definesAfterApply)
+
+    const definesAfterUndo = mockDefineSchema.mock.calls.length
+    const savePropsAfterUndo = mockSaveProps.mock.calls.length
+
+    // PATH_STEPS 2 (redo): ⇧⌘Z re-applies the whole step — schema and props
+    // land again, not only the blocks.
+    await sessionUndo.redo('pond-1')
+
+    await waitFor(() =>
+      expect(mockDefineSchema.mock.calls.length).toBeGreaterThan(definesAfterUndo)
+    )
+    expect(mockDefineSchema).toHaveBeenLastCalledWith(
+      expect.anything(),
+      'page-1',
+      expect.arrayContaining([expect.objectContaining({ name: 'date', type: 'date' })])
+    )
+    await waitFor(() =>
+      expect(mockSaveProps.mock.calls.length).toBeGreaterThan(savePropsAfterUndo)
+    )
+    expect(mockSaveProps).toHaveBeenLastCalledWith(
+      expect.anything(),
+      'page-1',
+      expect.objectContaining({ ...PRIOR_PROPS, kind: 'meeting notes' })
+    )
+
+    const definesAfterRedo = mockDefineSchema.mock.calls.length
+    const savePropsAfterRedo = mockSaveProps.mock.calls.length
+
+    // A second ⌘Z reverts the redone step the same way the first one did.
+    await sessionUndo.undo('pond-1')
+
+    await waitFor(() =>
+      expect(mockSaveProps.mock.calls.length).toBeGreaterThan(savePropsAfterRedo)
+    )
+    expect(mockSaveProps).toHaveBeenLastCalledWith(expect.anything(), 'page-1', PRIOR_PROPS)
+    expect(mockDefineSchema.mock.calls.length).toBe(definesAfterRedo)
   })
 })
