@@ -52,7 +52,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { usePagePrefetchHandlers } from '@/lib/pages/use-page-prefetch'
 import { createPage, movePage, updateTitle } from '@/lib/pages/client'
-import { DuplicateTitleError, nextAvailableTitle } from '@/lib/pages/dedupe-title'
+import { DuplicateTitleError, nextAvailableTitle, moveTitle } from '@/lib/pages/dedupe-title'
 import {
   fetchPages,
   insertPageOptimistic,
@@ -2596,11 +2596,7 @@ export function Rail() {
       .filter((id) => id !== draggedId)
       .map((id) => pages.find((r) => r.id === id)?.title)
       .filter((t): t is string => t !== undefined)
-    const suffixedTitle =
-      draggedRow && draggedRow.title.trim() !== ''
-        ? nextAvailableTitle(draggedRow.title, destinationSiblingTitles)
-        : undefined
-    const newTitle = suffixedTitle !== undefined && suffixedTitle !== draggedRow?.title ? suffixedTitle : undefined
+    const newTitle = draggedRow ? moveTitle(draggedRow.title, destinationSiblingTitles) : undefined
 
     // Resolved before the move so both sides can be flushed ahead of the RPC
     // (below) and reused for the invalidate after it — one resolve, no drift.

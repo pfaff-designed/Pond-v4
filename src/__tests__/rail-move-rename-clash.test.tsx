@@ -77,6 +77,13 @@ const NO_CLASH_ROWS: PageRow[] = [
   { id: 'roof-child', parent_id: 'house', type: 'page', title: 'roof', order: 0, updated_at: AT },
   { id: 'notes-top', parent_id: null, type: 'page', title: 'Notes', order: 1, updated_at: AT },
 ]
+// KAN-470 regression: the dragged page's title has trailing whitespace
+// (`updateTitle` stores it untrimmed) and there is still no real clash.
+const TRAILING_SPACE_NO_CLASH_ROWS: PageRow[] = [
+  { id: 'house', parent_id: null, type: 'page', title: 'house', order: 0, updated_at: AT },
+  { id: 'roof-child', parent_id: 'house', type: 'page', title: 'roof', order: 0, updated_at: AT },
+  { id: 'notes-top', parent_id: null, type: 'page', title: 'Notes ', order: 1, updated_at: AT },
+]
 
 afterEach(() => {
   jest.clearAllMocks()
@@ -142,6 +149,19 @@ it('a non-clashing drop calls movePage with no newTitle and leaves the title unt
     siblingOrder: expect.arrayContaining(['notes-top', 'roof-child']),
   })
   await screen.findByText('moved Notes to house ·')
+})
+
+it('a trailing-space title with no clash still calls movePage with no newTitle', async () => {
+  mountRail(TRAILING_SPACE_NO_CLASH_ROWS)
+
+  dragNotesOntoHouse()
+
+  await waitFor(() => expect(movePage).toHaveBeenCalledTimes(1))
+  expect(movePage).toHaveBeenCalledWith(expect.anything(), {
+    id: 'notes-top',
+    newParentId: 'house',
+    siblingOrder: expect.arrayContaining(['notes-top', 'roof-child']),
+  })
 })
 
 // KAN-470: the toast and its "open" action read the RENAMED title back off
