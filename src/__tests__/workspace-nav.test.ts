@@ -1,5 +1,5 @@
 /**
- * `workspaceUrl` / `workspaceHref` — the one way a node becomes an address.
+ * `workspaceUrl` / `workspaceRenderHref` — the one way a node becomes an address.
  *
  * There is a single route. The sandbox's `/sandbox` base path was retired with
  * the sandbox route itself (#315): a pond is scope carried in `?pond=`, not a
@@ -11,7 +11,12 @@
  * dropped you back into `life`.
  */
 
-import { workspaceUrl, workspaceHref, openWorkspaceUrl, WORKSPACE_PATH } from '@/lib/pages/nav'
+import {
+  workspaceUrl,
+  workspaceRenderHref,
+  openWorkspaceUrl,
+  WORKSPACE_PATH,
+} from '@/lib/pages/nav'
 
 const node = { id: 'n1', type: 'page', title: 'Notes' }
 
@@ -55,32 +60,35 @@ describe('workspaceUrl', () => {
   })
 })
 
-describe('workspaceHref', () => {
-  // KAN-474 follow-up: `workspaceHref` is the one render-safe builder — it must
-  // NEVER read `window`, even when the address already carries a `?pond=`.
-  // `workspaceUrl` is the only one of the two allowed to fall back to the live
-  // address, which is why it delegates to `workspaceHref` rather than the
-  // other way around.
+describe('workspaceRenderHref', () => {
+  // KAN-474 follow-up: `workspaceRenderHref` is the one render-safe builder —
+  // it must NEVER read `window`, even when the address already carries a
+  // `?pond=`. `workspaceUrl` is the only one of the two allowed to fall back
+  // to the live address, which is why it delegates to `workspaceRenderHref`
+  // rather than the other way around. This is a dedicated name, not a reused
+  // alias — a later pass repurposing the render-safe builder again can't
+  // silently change what an unrelated caller gets back, the way renaming the
+  // ticket-26 alias in place once did.
   it('ignores the address entirely — no pond id given means no &pond=, regardless of what the address carries', () => {
-    expect(workspaceHref(node)).toBe('/workspace?nodeType=page&nodeId=n1&nodeName=Notes')
+    expect(workspaceRenderHref(node)).toBe('/workspace?nodeType=page&nodeId=n1&nodeName=Notes')
     addressIs('?pond=p-second')
-    expect(workspaceHref(node)).toBe('/workspace?nodeType=page&nodeId=n1&nodeName=Notes')
-    expect(workspaceHref(null)).toBe('/workspace')
+    expect(workspaceRenderHref(node)).toBe('/workspace?nodeType=page&nodeId=n1&nodeName=Notes')
+    expect(workspaceRenderHref(null)).toBe('/workspace')
   })
 
   it('carries exactly the pond id handed to it, never the address', () => {
     addressIs('?pond=p-second')
-    expect(workspaceHref(node, 'p-third')).toBe(
+    expect(workspaceRenderHref(node, 'p-third')).toBe(
       '/workspace?nodeType=page&nodeId=n1&nodeName=Notes&pond=p-third'
     )
-    expect(workspaceHref(null, 'p-third')).toBe('/workspace?pond=p-third')
+    expect(workspaceRenderHref(null, 'p-third')).toBe('/workspace?pond=p-third')
   })
 
-  it('workspaceUrl delegates to it, adding only the window fallback workspaceHref deliberately lacks', () => {
+  it('workspaceUrl delegates to it, adding only the window fallback workspaceRenderHref deliberately lacks', () => {
     addressIs('?pond=p-second')
-    expect(workspaceUrl(node)).toBe(workspaceHref(node, 'p-second'))
-    expect(workspaceHref(node)).not.toBe(workspaceUrl(node)) // workspaceHref never reads the address
-    expect(workspaceUrl(node, 'p-third')).toBe(workspaceHref(node, 'p-third'))
+    expect(workspaceUrl(node)).toBe(workspaceRenderHref(node, 'p-second'))
+    expect(workspaceRenderHref(node)).not.toBe(workspaceUrl(node)) // never reads the address
+    expect(workspaceUrl(node, 'p-third')).toBe(workspaceRenderHref(node, 'p-third'))
   })
 })
 

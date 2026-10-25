@@ -15,7 +15,7 @@ import React from 'react'
 import { render, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
-import { workspaceHref } from '@/lib/pages/nav'
+import { workspaceUrl } from '@/lib/pages/nav'
 
 const mockRouterPush = jest.fn()
 jest.mock('next/navigation', () => ({
@@ -111,7 +111,7 @@ describe('AITerminal — open_change_log navigates on arrival (KAN-94)', () => {
 
     await waitFor(() =>
       expect(mockRouterPush).toHaveBeenCalledWith(
-        workspaceHref({ id: CHANGE_LOG_NODE_ID, type: 'page', title: 'change log' })
+        workspaceUrl({ id: CHANGE_LOG_NODE_ID, type: 'page', title: 'change log' })
       )
     )
   })

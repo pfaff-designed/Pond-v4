@@ -55,7 +55,7 @@ import {
 } from '@/components/molecules/palette-entries'
 import { PaletteRow, type PaletteRowEntry } from '@/components/molecules/palette-row'
 import type { CommandCrumbTarget, CommandPath } from '@/lib/pages/command-path'
-import { isNewTabClick, workspaceHref } from '@/lib/pages/nav'
+import { isNewTabClick, workspaceRenderHref } from '@/lib/pages/nav'
 import { markAccent } from '@/lib/rail/glyph-library'
 import { useMorph } from '@/lib/motion/use-morph'
 import { ariaKeyshortcuts, formatChord, useApplePlatform } from '@/lib/shell-commands'
@@ -134,7 +134,7 @@ export interface PondCommandProps {
   onNavigate?: (to: Exclude<CommandCrumbTarget, null>) => void
   /**
    * KAN-474: the active pond, for an ancestor breadcrumb segment's `href`
-   * (`workspaceHref(node, pondId)`, never `workspaceUrl`'s `window.location`
+   * (`workspaceRenderHref(node, pondId)`, never `workspaceUrl`'s `window.location`
    * fallback — that disagrees between the server, the first client render
    * and the pond resolving). Optional so existing call sites (stories, unit
    * tests predating this ticket) keep compiling untouched.
@@ -425,7 +425,7 @@ export function PondCommand({
               <Fragment key={i}>
                 {to ? (
                   <a
-                    href={workspaceHref(to.kind === 'page' ? to.node : null, pondId)}
+                    href={workspaceRenderHref(to.kind === 'page' ? to.node : null, pondId)}
                     onClick={(e) => handleCrumbClick(e, to)}
                     className={`min-w-0 truncate text-mn-text-secondary hover:underline underline-offset-[3px] decoration-1 ${FOCUS_VISIBLE_RING}`}
                   >

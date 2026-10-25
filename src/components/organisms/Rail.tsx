@@ -76,7 +76,7 @@ import { usePondId, usePond } from '@/lib/pond/context'
 import { useHomePage } from '@/lib/pages/use-home-page'
 import { pushRecentGlyphToPond } from '@/lib/pond/client'
 import { PondSwitcher } from './PondSwitcher'
-import { isNewTabClick, openWorkspaceUrl, workspaceHref, workspaceUrl } from '@/lib/pages/nav'
+import { isNewTabClick, openWorkspaceUrl, workspaceRenderHref, workspaceUrl } from '@/lib/pages/nav'
 import { requestTitleFocus } from '@/lib/pages/title-focus'
 import { withTemplatesParam } from '@/lib/pages/templates-param'
 import { markIndex, resolveMark, type MarkSource, type PageMark } from '@/lib/pages/mark'
@@ -1423,18 +1423,18 @@ export function RailView({
     const mark = id === LIFE_ID ? null : rowMark(node, markMap)
     const cap = rowCapabilities(id, node)
     // KAN-474: every row's real destination, so it can be a true `<a href>` —
-    // the Life root's is the workspace root (`workspaceHref(null)`); the
+    // the Life root's is the workspace root (`workspaceRenderHref(null)`); the
     // databases root (placeholder or real) is a disclosure, not a page, and
     // has none (KAN-486), so it stays the plain non-link row it already was.
-    // `workspaceHref` (never `workspaceUrl`'s `window.location` fallback) so a
-    // server-rendered row and its client hydration agree on `&pond=` even
+    // `workspaceRenderHref` (never `workspaceUrl`'s `window.location` fallback)
+    // so a server-rendered row and its client hydration agree on `&pond=` even
     // while `pondId` is still null (KAN-474 follow-up).
     const href =
       id === LIFE_ID
-        ? workspaceHref(null, pondId)
+        ? workspaceRenderHref(null, pondId)
         : id === DATABASES_PLACEHOLDER_ID || isDatabasesRoot(node)
           ? undefined
-          : workspaceHref(node, pondId)
+          : workspaceRenderHref(node, pondId)
     return id === LIFE_ID || mark === null ? (
       <RailRow
         ref={setRowRef(id)}

@@ -39,7 +39,10 @@ export function currentPondId(): string | null {
 /**
  * The workspace href for a node — or the workspace root when `node` is null.
  * NEVER reads `window` — the one builder safe to call during render, where the
- * server and the first client pass must agree byte-for-byte.
+ * server and the first client pass must agree byte-for-byte. Used ONLY for an
+ * href computed during render (the rail rows, the page-link row, the
+ * breadcrumb's ancestor segments) — a click-time caller wants `workspaceUrl`,
+ * which carries the live address's `?pond=` as a fallback.
  *
  * Carries `?pond=` so a click stays in the pond you are in, but only the
  * `pondId` handed in: no ambient fallback. A render-time caller that passes
@@ -50,7 +53,10 @@ export function currentPondId(): string | null {
  * `window.location` there disagreed between the two whenever the address bar
  * already carried a `?pond=`, which React's hydration never patches up).
  */
-export function workspaceHref(node: WorkspaceNodeRef | null, pondId: string | null = null): string {
+export function workspaceRenderHref(
+  node: WorkspaceNodeRef | null,
+  pondId: string | null = null
+): string {
   if (!node) return pondId ? `${WORKSPACE_PATH}?pond=${encodeURIComponent(pondId)}` : WORKSPACE_PATH
   const params = new URLSearchParams({
     nodeType: node.type,
@@ -66,10 +72,14 @@ export function workspaceHref(node: WorkspaceNodeRef | null, pondId: string | nu
 /**
  * The workspace href for a node, falling back to the live address's `?pond=`
  * when no `pondId` is given — safe only at click time (a `useCallback`/event
- * handler), never during render (see `workspaceHref`, which this delegates to).
+ * handler), never during render (see `workspaceRenderHref`, which this
+ * delegates to). Every pre-existing caller (AITerminal, RelationValueField,
+ * BacklinksPanel, `usePageLinkCapabilities`) wants this one, not the render-safe
+ * builder — they build a URL at the moment of a click or an accepted diff, not
+ * during a render pass.
  */
 export function workspaceUrl(node: WorkspaceNodeRef | null, pondId?: string | null): string {
-  return workspaceHref(node, pondId ?? currentPondId())
+  return workspaceRenderHref(node, pondId ?? currentPondId())
 }
 
 /** The click-event fields `isNewTabClick` reads — matches a React MouseEvent of any target. */
