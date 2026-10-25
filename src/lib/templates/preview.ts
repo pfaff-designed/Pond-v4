@@ -55,7 +55,7 @@ const DEFAULT_HEIGHT = 110
 function outlineKind(block: Block): string {
   switch (block.type) {
     case 'text':
-      return OPENS_ON_A_HEADING.test(block.content) ? 'heading' : 'text'
+      return OPENS_ON_A_HEADING(block.content) ? 'heading' : 'text'
     case 'todo':
       return TODO_KIND[todoMarker(block)]
     case 'table':
@@ -84,7 +84,7 @@ function outlineKind(block: Block): string {
 function outlineIcon(block: Block): SlashIcon {
   switch (block.type) {
     case 'text':
-      return OPENS_ON_A_HEADING.test(block.content) ? ICON.heading : ICON.text
+      return OPENS_ON_A_HEADING(block.content) ? ICON.heading : ICON.text
     case 'todo':
       return todoMarker(block) === 'check' ? ICON.check : ICON.list
     case 'table':

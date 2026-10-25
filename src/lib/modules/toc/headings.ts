@@ -4,7 +4,7 @@
  * this helper recomputes the list on every render from the current siblings.
  */
 import type { Block } from '../content'
-import { headingLine } from '../text/heading-line'
+import { headingLine } from '../text/heading-words'
 
 export interface Heading {
   id: string
