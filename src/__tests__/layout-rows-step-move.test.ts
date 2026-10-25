@@ -299,6 +299,42 @@ describe('planStepMove', () => {
       expect(layoutRows(up)).toEqual([[up[0]], [up[1]], [up[2]]])
     })
   })
+
+  // Round 3's guard ran AFTER `planOwnLineDrop`, by which point `planOwnLineDrop`
+  // had already packed the mate together with the next stored row's own members
+  // (nothing yet stopped that natural width-sum packing), so the splice point was
+  // computed against the wrong row. Forcing the follower's `rowStart` onto the
+  // ALREADY-MERGED result only split the merged row at the wrong seam — it never
+  // un-merged the mate from the row-mate it should never have joined (KAN-376
+  // regression, round 4).
+  describe('the row-member seam guard must run BEFORE planOwnLineDrop, not after (KAN-376 regression, round 4)', () => {
+    it('⌥↓ on the left half of a ½+½ row, followed by another ½+½ row: the right half stays alone and the row below stays one row', () => {
+      const left = blk('left', '1/2')
+      const right = blk('right', '1/2')
+      const c = blk('c', '1/2')
+      const e = blk('e', '1/2')
+      const blocks = [left, right, c, e]
+
+      const result = planStepMove(blocks, 0, 'down')!
+      expect(result).toEqual([
+        { id: 'right', width: '1/2' },
+        { id: 'left', width: 'full', rowStart: true },
+        { id: 'c', width: '1/2', rowStart: true },
+        { id: 'e', width: '1/2' },
+      ])
+      expect(layoutRows(result)).toEqual([[result[0]], [result[1]], [result[2], result[3]]])
+    })
+
+    it('⌥↓ on the left half of a ½+½ row, followed by a single ½ line: the line is not pulled into a row with the right half', () => {
+      const left = blk('left', '1/2')
+      const right = blk('right', '1/2')
+      const n = blk('n', '1/2')
+      const blocks = [left, right, n]
+
+      const result = planStepMove(blocks, 0, 'down')!
+      expect(layoutRows(result)).toEqual([[result[0]], [result[1]], [result[2]]])
+    })
+  })
 })
 
 describe('planRowSwap', () => {

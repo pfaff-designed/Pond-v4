@@ -362,11 +362,17 @@ export function planOwnLineDrop<
  * that comes after it in `blocks` may have relied on THAT width being full
  * (or on the removed block's own row) to start a line of its own. If that
  * follower started its own row before the move (first member of its row in
- * `layoutRows(blocks)`), it keeps `rowStart: true` in the result — never
- * written `false` — so `layoutRows` can't re-pack it into whatever now
- * precedes it. A follower that already shared a row with others (not a
- * row of its own) is untouched, so the guard never splits a row it should
- * leave alone.
+ * `layoutRows(blocks)`), it keeps `rowStart: true` — never written `false`
+ * — so `layoutRows` can't re-pack it into whatever now precedes it. A
+ * follower that already shared a row with others (not a row of its own)
+ * is untouched, so the guard never splits a row it should leave alone.
+ * In the 2+ row branch the guard is applied to `blocks` BEFORE calling
+ * `planOwnLineDrop`, not patched onto its result afterward: `planOwnLineDrop`
+ * packs the mate against whatever follows it by plain width sum, so an
+ * unguarded follower can merge INTO the mate's row before the drop is even
+ * planned, and patching the result afterward only splits that already-wrong
+ * merge at the wrong seam instead of keeping the mate and the follower's row
+ * apart from the start.
  *
  * `null` when there is no row in that direction (the first/last block, or
  * already alone at the page's edge).
@@ -381,19 +387,19 @@ export function planStepMove<
 
   if (ownRow.length > 1) {
     const mateId = ownRow.find((b) => b.id !== block.id)!.id
-    const planned = planOwnLineDrop(blocks, index, mateId, dir === 'up' ? 'above' : 'below', 0, {
-      widenLoneMate: false,
-    })
-    if (!planned) return null
 
     const lastMemberId = ownRow[ownRow.length - 1].id
     const lastMemberIndex = blocks.findIndex((b) => b.id === lastMemberId)
     const rowFollower = blocks[lastMemberIndex + 1]
     const rowFollowerStartsOwnRow =
       rowFollower !== undefined && rows.some((row) => row[0].id === rowFollower.id)
-    if (!rowFollowerStartsOwnRow) return planned
+    const guardedBlocks = rowFollowerStartsOwnRow
+      ? blocks.map((b) => (b.id === rowFollower.id ? withRowStartValue(b, true) : b))
+      : blocks
 
-    return planned.map((b) => (b.id === rowFollower.id ? withRowStartValue(b, true) : b))
+    return planOwnLineDrop(guardedBlocks, index, mateId, dir === 'up' ? 'above' : 'below', 0, {
+      widenLoneMate: false,
+    })
   }
 
   const neighbourRow = rows[ownRowIndex + (dir === 'up' ? -1 : 1)]
