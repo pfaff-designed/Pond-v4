@@ -288,12 +288,12 @@ async function assertFiltered(root: HTMLElement, p: Palette, mobile = false) {
   await expect(hit.textDecorationLine).toBe('underline')
   await expect(hit.textUnderlineOffset).toBe('3px')
   await expect(hit.textDecorationThickness).toBe('1px')
-  // `/ta` is the table and, through its alias, the entry log — and nothing else.
-  await expect(labels(root)).toEqual(['table', 'entry log'])
-  const log = glass.querySelectorAll<HTMLElement>('[role="option"]')[1]
+  // `/ta` is the table, table of contents, and, through its alias, the entry log.
+  await expect(labels(root)).toEqual(['table', 'table of contents', 'entry log'])
+  const log = glass.querySelectorAll<HTMLElement>('[role="option"]')[2]
   await expect(log.querySelector('[data-part="hit"]')!.textContent).toBe('')
   await expect(log.querySelector('[data-part="hint"]')!.textContent).toBe('dated table')
-  await expect(glass.querySelector('[data-part="foot"]')!.textContent).toBe('/ ta — 2 matches')
+  await expect(glass.querySelector('[data-part="foot"]')!.textContent).toBe('/ ta — 3 matches')
 }
 
 /** `/ta` typed on the page: the hit underlined, the groups gone, the count in the foot. */
