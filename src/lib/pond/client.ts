@@ -32,6 +32,12 @@ export interface Pond {
    *  reads this back as null itself when it is trashed or gone. Optional for
    *  the same reason `recentGlyphs` is. */
   lastPageId?: string | null
+  /** 0035's `ponds.favourite_page_ids` — this pond's favourited page ids, in
+   *  band order. Optional for the same reason `recentGlyphs` is: a NULL
+   *  column (no favourites yet) maps to undefined, not an empty array. Ids
+   *  that no longer resolve to a live page are filtered at the rail, not here —
+   *  this is the raw carried field. */
+  favouritePageIds?: string[]
 }
 
 interface PondRow {
@@ -42,10 +48,11 @@ interface PondRow {
   order: number
   recentGlyphs: string[] | null
   lastPage: { id: string; deleted_at: string | null } | null
+  favouritePageIds: string[] | null
 }
 
 const COLUMNS =
-  'id, name, glyph, theme, "order", recentGlyphs:recent_glyphs, lastPage:pages!last_page_id(id, deleted_at)'
+  'id, name, glyph, theme, "order", recentGlyphs:recent_glyphs, lastPage:pages!last_page_id(id, deleted_at), favouritePageIds:favourite_page_ids'
 
 /** `PondRow` (the embedded `lastPage`) → `Pond` (the flat `lastPageId`), dropping
  *  a trashed or gone remembered page — see the FK comment on `lastPageId` above. */
@@ -58,6 +65,7 @@ function mapPondRow(row: PondRow): Pond {
     order: row.order,
     recentGlyphs: row.recentGlyphs ?? undefined,
     lastPageId: row.lastPage && row.lastPage.deleted_at === null ? row.lastPage.id : null,
+    favouritePageIds: row.favouritePageIds ?? undefined,
   }
 }
 
@@ -205,6 +213,23 @@ export async function setPondLastPage(pondId: string, pageId: string | null): Pr
   const { error } = await (supabase as any)
     .from('ponds')
     .update({ last_page_id: pageId })
+    .eq('id', pondId)
+  if (error) throw error
+}
+
+/**
+ * Persist a pond's favourite page ids, in band order (KAN-475, migration
+ * 0035). Same shape as `setPondLastPage`: the caller already holds the next
+ * ids (the pure toggle's result), this is only the write.
+ */
+export async function setPondFavourites(pondId: string, ids: string[]): Promise<void> {
+  const supabase = createClient()
+  // Cast as `setPondLastPage` does above: `Database` can't infer an Update
+  // shape for a quoted-identifier table either.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any)
+    .from('ponds')
+    .update({ favourite_page_ids: ids })
     .eq('id', pondId)
   if (error) throw error
 }
