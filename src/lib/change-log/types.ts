@@ -145,21 +145,26 @@ export interface TrashSnapshot {
  * either bare. `siblingOrder` is the full dense order of the group named by
  * `parentId`, the moved page included.
  *
- * `removedLink` and `appendedLinkId` (KAN-467) are the link-row edit that rides
- * inside the same record: `before.removedLink` is the moved page's own
- * `page-link` block as it sat on the OLD parent, and the index it sat at, so
- * undo can put it back exactly where it was; `after.appendedLinkId` is the id
+ * `removedLinks` and `appendedLinkId` (KAN-467) are the link-row edit that
+ * rides inside the same record: `before.removedLinks` is every one of the
+ * moved page's own `page-link` blocks as they sat on the OLD parent, each
+ * with the index it sat at, so undo can put them all back exactly where they
+ * were (restored in ascending index order); `after.appendedLinkId` is the id
  * of the `page-link` block appended to the NEW parent, so undo knows which
  * block to remove. Both are absent on a pre-KAN-467 record (nothing to undo)
  * and either can be absent on its own side when that side had nothing to
  * edit (no stored link to remove on the old parent, or the new parent
  * already carried a link and `apply_page_move` wrote no duplicate).
+ * `readMoveSnapshot` also accepts a pre-this-fix record's singular
+ * `removedLink` object and normalizes it into a one-entry `removedLinks`
+ * array, so an older record (written before the old parent could carry more
+ * than one matching link) still reads.
  */
 export interface MoveSnapshot {
   parentId: string | null
   parentTitle: string | null
   siblingOrder: string[]
-  removedLink?: { block: Block; index: number }
+  removedLinks?: { block: Block; index: number }[]
   appendedLinkId?: string
 }
 

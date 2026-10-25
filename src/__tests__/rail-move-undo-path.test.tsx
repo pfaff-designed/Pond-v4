@@ -128,19 +128,22 @@ function applySnapshot(pageId: string, snap: MoveSnapshot) {
  * `from`/`to` the same way `change_log_step` does for the SQL branch).
  */
 function applyLinkEdit(pageId: string, from: MoveSnapshot, to: MoveSnapshot) {
-  if (from.appendedLinkId || from.removedLink) {
+  if (from.appendedLinkId || from.removedLinks) {
     const row = from.parentId ? table.find((r) => r.id === from.parentId) : undefined
     if (row) {
-      const removeId = from.appendedLinkId ?? from.removedLink!.block.id
-      row.blocks = row.blocks.filter((b) => b.id !== removeId)
+      const removeIds = from.appendedLinkId
+        ? [from.appendedLinkId]
+        : (from.removedLinks ?? []).map((entry) => entry.block.id)
+      row.blocks = row.blocks.filter((b) => !removeIds.includes(b.id))
     }
   }
-  if (to.removedLink || to.appendedLinkId) {
+  if (to.removedLinks || to.appendedLinkId) {
     const row = to.parentId ? table.find((r) => r.id === to.parentId) : undefined
     if (row) {
-      if (to.removedLink) {
-        const { block, index } = to.removedLink
-        row.blocks = [...row.blocks.slice(0, index), block, ...row.blocks.slice(index)]
+      if (to.removedLinks) {
+        for (const { block, index } of [...to.removedLinks].sort((a, b) => a.index - b.index)) {
+          row.blocks = [...row.blocks.slice(0, index), block, ...row.blocks.slice(index)]
+        }
       } else if (
         to.appendedLinkId &&
         !row.blocks.some((b) => b.type === 'page-link' && b.pageId === pageId)
@@ -197,7 +200,7 @@ beforeEach(() => {
       // Migration 0031 part A/B: a reparent (not a same-parent reorder) strips
       // the moved page's own page-link block off the old parent and appends
       // one onto the new parent, unless it already carries one.
-      let removedLink: MoveSnapshot['removedLink']
+      let removedLinks: MoveSnapshot['removedLinks']
       let appendedLinkId: string | undefined
       if (oldParentId !== input.newParentId) {
         const oldParent = oldParentId ? table.find((r) => r.id === oldParentId) : undefined
@@ -206,7 +209,7 @@ beforeEach(() => {
             (b) => b.type === 'page-link' && b.pageId === input.id
           )
           if (index !== -1) {
-            removedLink = { block: oldParent.blocks[index], index }
+            removedLinks = [{ block: oldParent.blocks[index], index }]
             oldParent.blocks = oldParent.blocks.filter((_, i) => i !== index)
           }
         }
@@ -226,7 +229,7 @@ beforeEach(() => {
         siblingOrder: input.siblingOrder,
         ...(appendedLinkId ? { appendedLinkId } : {}),
       }
-      const fullBefore: MoveSnapshot = { ...before, ...(removedLink ? { removedLink } : {}) }
+      const fullBefore: MoveSnapshot = { ...before, ...(removedLinks ? { removedLinks } : {}) }
       const id = `record-${++recordSeq}`
       moveLog.set(id, { pageId: input.id, before: fullBefore, after })
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

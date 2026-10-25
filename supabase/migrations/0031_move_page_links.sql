@@ -4,11 +4,12 @@
 -- siblings, but the old parent's `blocks` jsonb still carries a `page-link`
 -- row pointing at a child that no longer lives there (KAN-415 left this "for
 -- the person to remove"). This part removes that stale link as part of the
--- same atomic move: the moved page's OWN `page-link` block is stripped from
--- the old parent's (or, for a top-level page, the pond's home row's)
--- `blocks`, and the removed block plus the index it sat at are recorded on
--- the `move` record's `before.removedLink` so undo (part C, a later
--- migration edit to this same file) can put it back exactly.
+-- same atomic move: EVERY `page-link` block on the old parent's (or, for a
+-- top-level page, the pond's home row's) `blocks` whose `pageId` is the
+-- moved page is stripped, and each removed block plus the index it sat at is
+-- recorded on the `move` record's `before.removedLinks` array so undo
+-- (part C, below in this same file) can put every one of them back exactly,
+-- in ascending index order.
 --
 -- `private.page_link_parent_id` resolves which row actually carries the
 -- structural link the same way `private.page_move_parent_title` (0030)
@@ -18,7 +19,7 @@
 -- there is nothing to edit — the same tolerance `page_move_parent_title`
 -- already has for a missing home row.
 --
--- Only the moved page's OWN link is touched: the lookup matches a
+-- Only the moved page's OWN links are touched: the lookup matches every
 -- `page-link` block by `pageId = p_page_id` wherever it sits in the old
 -- parent's `blocks`, which is also every `/link to page` link a person might
 -- have added to that SAME target on that SAME page — `appendChildLink`'s own
@@ -71,10 +72,10 @@ as $$
   end
 $$;
 
--- Part C (a later migration edit to this file) calls this from
--- `change_log_set_back`, which is `security invoker` — that nested call will
--- need its own EXECUTE grant, same reasoning `page_is_self_or_descendant`'s
--- comment (0030) already gives.
+-- Part C (below in this same file) calls this from `change_log_set_back`,
+-- which is `security invoker` — that nested call needs its own EXECUTE
+-- grant, same reasoning `page_is_self_or_descendant`'s comment (0030)
+-- already gives.
 revoke all on function private.page_link_parent_id(uuid, uuid, uuid) from public;
 grant execute on function private.page_link_parent_id(uuid, uuid, uuid) to authenticated;
 
@@ -101,9 +102,7 @@ declare
   v_idx integer := 0;
   v_old_link_parent_id uuid;
   v_old_link_blocks jsonb;
-  v_removed_block jsonb;
-  v_removed_index integer;
-  v_removed_link jsonb;
+  v_removed_links jsonb;
   v_new_link_parent_id uuid;
   v_new_link_blocks jsonb;
   v_appended_link_id uuid;
@@ -179,22 +178,20 @@ begin
       for update;
 
     if found then
-      select elem, ord - 1 into v_removed_block, v_removed_index
+      select jsonb_agg(jsonb_build_object('block', elem, 'index', ord - 1) order by ord)
+        into v_removed_links
         from jsonb_array_elements(v_old_link_blocks) with ordinality as t(elem, ord)
-       where elem ->> 'type' = 'page-link' and elem ->> 'pageId' = p_page_id::text
-       limit 1;
+       where elem ->> 'type' = 'page-link' and elem ->> 'pageId' = p_page_id::text;
 
-      if v_removed_block is not null then
+      if v_removed_links is not null then
         update public.pages
            set blocks = (
                  select coalesce(jsonb_agg(elem order by ord), '[]'::jsonb)
                    from jsonb_array_elements(v_old_link_blocks) with ordinality as t(elem, ord)
-                  where ord - 1 <> v_removed_index
+                  where not (elem ->> 'type' = 'page-link' and elem ->> 'pageId' = p_page_id::text)
                ),
                updated_at = v_now
          where id = v_old_link_parent_id;
-
-        v_removed_link := jsonb_build_object('block', v_removed_block, 'index', v_removed_index);
       end if;
     end if;
   end if;
@@ -255,8 +252,8 @@ begin
       'parentId', v_old_parent_id,
       'parentTitle', v_old_parent_title,
       'siblingOrder', to_jsonb(coalesce(v_old_sibling_order, '{}'::uuid[]))
-    ) || case when v_removed_link is not null
-           then jsonb_build_object('removedLink', v_removed_link)
+    ) || case when v_removed_links is not null
+           then jsonb_build_object('removedLinks', v_removed_links)
            else '{}'::jsonb
          end,
     jsonb_build_object(
@@ -284,9 +281,9 @@ commit;
 -- ─── Undo/redo learn the link edit (KAN-467 part C) ────────────────────────
 --
 -- Why: parts A and B made the link edit ride inside `apply_page_move`'s own
--- `move` change_log record (`before.removedLink`, `after.appendedLinkId`),
+-- `move` change_log record (`before.removedLinks`, `after.appendedLinkId`),
 -- but `change_log_set_back`'s `move` branch (0030 part 2b) only ever put the
--- page itself back — the link stayed wherever the forward move left it.
+-- page itself back — the link(s) stayed wherever the forward move left them.
 --
 -- `change_log_step` (0021) already pre-swaps `p_from`/`p_to` for undo vs
 -- redo: on undo, `p_from := v_record.after` (where the move landed, i.e. now)
@@ -294,34 +291,40 @@ commit;
 -- are swapped. So one pass, keyed on which jsonb key each side actually
 -- carries rather than on an undo/redo flag, covers both directions:
 --
---   * `p_from` names "the link as it now stands" and is always the side to
---     REMOVE a block from. On undo that is the appended link the forward
---     move made (`p_from.appendedLinkId`, by id). On redo that is the link
---     an earlier undo just put back (`p_from.removedLink.block.id` — the
---     exact block id the original removal recorded).
---   * `p_to` names "the link as it is going back to" and is always the side
---     to ADD a block to. On undo that is the original block, reinserted at
---     its recorded index (`p_to.removedLink`). On redo that is a freshly
---     built `page-link` block for `p_to.appendedLinkId` (the same id the
---     original append used), appended at the end — mirroring the no-
---     duplicate guard part B already applies, in case the new parent's
---     `blocks` picked up its own link to this page in the meantime.
+--   * `p_from` names "the link(s) as they now stand" and is always the side
+--     to REMOVE block(s) from. On undo that is the appended link the
+--     forward move made (`p_from.appendedLinkId`, by id). On redo that is
+--     every link an earlier undo just put back (`p_from.removedLinks[].
+--     block.id` — the exact block ids the original removal recorded).
+--   * `p_to` names "the link(s) as they are going back to" and is always the
+--     side to ADD block(s) to. On undo that is every original block,
+--     reinserted at its recorded index, in ascending index order
+--     (`p_to.removedLinks`). On redo that is a freshly built `page-link`
+--     block for `p_to.appendedLinkId` (the same id the original append
+--     used), appended at the end — mirroring the no-duplicate guard part B
+--     already applies, in case the new parent's `blocks` picked up its own
+--     link to this page in the meantime. Each reinsert skips a block whose
+--     id, or whose link target, is already there, the same tolerance the
+--     forward append already has.
 --
 -- Neither key is present on a same-parent reorder (parts A/B's own guard),
 -- so this is a no-op for it, matching the forward RPC.
 --
--- The reinsert-at-index math works by giving the restored element a
+-- The reinsert-at-index math works by giving each restored element a
 -- fractional ordinal position (`v_link_removed_index + 0.5`) among the
 -- current blocks' own 1-based ordinals, so it sorts back between the exact
 -- same neighbours it sat between before removal — the index recorded is
 -- 0-based (matching part A's own `ord - 1`), and `+ 0.5` lands strictly
 -- between the 1-based ordinal that WAS at that 0-based index and the one
--- before it.
+-- before it. Restoring in ascending index order (the loop's own `order by`)
+-- means every earlier reinsert has already landed before a later one's
+-- index is interpreted, so multiple removed links come back in their
+-- original relative order.
 --
--- Re-created from 0030 part 2b's body verbatim, adding only the two new
--- declares (`v_link_parent_id`, `v_link_blocks`, `v_link_removed_index`,
--- `v_link_removed_id`) and the link-edit block inside the `move` branch,
--- right before its `return null`.
+-- Re-created from 0030 part 2b's body verbatim, adding only the new declares
+-- (`v_link_parent_id`, `v_link_blocks`, `v_link_removed_index`,
+-- `v_link_removed_ids`, `v_link_entry`) and the link-edit block inside the
+-- `move` branch, right before its `return null`.
 --
 -- Down (manual): re-run 0030's `create or replace function
 --   private.change_log_set_back` to drop the link-edit block.
@@ -352,7 +355,9 @@ declare
   v_link_parent_id uuid;
   v_link_blocks jsonb;
   v_link_removed_index integer;
-  v_link_removed_id text;
+  v_link_removed_ids text[];
+  v_link_entry jsonb;
+  v_link_blocks_snapshot jsonb;
 begin
   if p_kind = 'move' then
     if not (
@@ -421,11 +426,12 @@ begin
       v_idx := v_idx + 1;
     end loop;
 
-    -- Remove the link as it now stands (see migration header): an
-    -- `appendedLinkId` on `p_from` undoes the forward append by id; a
-    -- `removedLink` on `p_from` (redo, undoing an earlier undo's put-back)
-    -- removes that same block by the id it was originally recorded under.
-    if p_from ? 'appendedLinkId' or p_from ? 'removedLink' then
+    -- Remove the link(s) as they now stand (see migration header): an
+    -- `appendedLinkId` on `p_from` undoes the forward append by id; every
+    -- entry of a `removedLinks` array on `p_from` (redo, undoing an earlier
+    -- undo's put-back) removes that same block by the id it was originally
+    -- recorded under.
+    if p_from ? 'appendedLinkId' or p_from ? 'removedLinks' then
       v_link_parent_id := private.page_link_parent_id(
         case when p_from ->> 'parentId' is null then null else (p_from ->> 'parentId')::uuid end,
         p_record.pond_id, p_record.user_id
@@ -435,15 +441,17 @@ begin
           where id = v_link_parent_id and user_id = p_record.user_id and deleted_at is null
           for update;
         if found then
-          v_link_removed_id := coalesce(
-            p_from ->> 'appendedLinkId',
-            p_from -> 'removedLink' -> 'block' ->> 'id'
-          );
+          select coalesce(array_agg(e -> 'block' ->> 'id'), array[]::text[])
+            into v_link_removed_ids
+            from jsonb_array_elements(coalesce(p_from -> 'removedLinks', '[]'::jsonb)) as e;
+          if p_from ->> 'appendedLinkId' is not null then
+            v_link_removed_ids := array_append(v_link_removed_ids, p_from ->> 'appendedLinkId');
+          end if;
           update public.pages
              set blocks = (
                    select coalesce(jsonb_agg(elem order by ord), '[]'::jsonb)
                      from jsonb_array_elements(v_link_blocks) with ordinality as t(elem, ord)
-                    where elem ->> 'id' is distinct from v_link_removed_id
+                    where (elem ->> 'id') <> all(v_link_removed_ids)
                  ),
                  updated_at = now()
            where id = v_link_parent_id;
@@ -451,11 +459,15 @@ begin
       end if;
     end if;
 
-    -- Put the link back where it is going to (see migration header): a
-    -- `removedLink` on `p_to` reinserts the original block at its recorded
-    -- index; an `appendedLinkId` on `p_to` (redo) rebuilds the appended
-    -- block and appends it again, skipping if one is already there.
-    if p_to ? 'removedLink' or p_to ? 'appendedLinkId' then
+    -- Put the link(s) back where they are going to (see migration header): a
+    -- `removedLinks` array on `p_to` reinserts every original block at its
+    -- recorded index, in ascending index order; an `appendedLinkId` on
+    -- `p_to` (redo) rebuilds the appended block and appends it again. Each
+    -- reinsert is skipped if a block with that id, or a link to that page,
+    -- is already there — the same no-duplicate rule part B applies, in case
+    -- the parent's `blocks` picked up its own link to the page in the
+    -- meantime.
+    if p_to ? 'removedLinks' or p_to ? 'appendedLinkId' then
       v_link_parent_id := private.page_link_parent_id(
         case when p_to ->> 'parentId' is null then null else (p_to ->> 'parentId')::uuid end,
         p_record.pond_id, p_record.user_id
@@ -465,21 +477,42 @@ begin
           where id = v_link_parent_id and user_id = p_record.user_id and deleted_at is null
           for update;
         if found then
-          if p_to ? 'removedLink' then
-            v_link_removed_index := (p_to -> 'removedLink' ->> 'index')::integer;
-            select coalesce(jsonb_agg(elem order by ord), '[]'::jsonb)
-              into v_link_blocks
-              from (
-                select elem, ord::numeric as ord
-                  from jsonb_array_elements(v_link_blocks) with ordinality as t(elem, ord)
-                union all
-                select (p_to -> 'removedLink' -> 'block'), v_link_removed_index + 0.5
-              ) s(elem, ord);
+          if p_to ? 'removedLinks' then
+            -- Duplicate guard checks against the snapshot taken BEFORE this
+            -- record's own removed links start coming back, not the array as
+            -- it grows across loop iterations — two links this same record
+            -- removed (both pointing at the moved page) must not see each
+            -- other as "already there" and skip; only a link some OTHER
+            -- cause (a manual re-link made between the move and this undo)
+            -- added in the meantime should block a reinsert.
+            v_link_blocks_snapshot := v_link_blocks;
+            for v_link_entry in
+              select value from jsonb_array_elements(p_to -> 'removedLinks') as value
+              order by (value ->> 'index')::integer asc
+            loop
+              if not exists (
+                select 1 from jsonb_array_elements(v_link_blocks_snapshot) as elem
+                 where elem ->> 'id' = (v_link_entry -> 'block' ->> 'id')
+                    or (elem ->> 'type' = 'page-link'
+                        and elem ->> 'pageId' = (v_link_entry -> 'block' ->> 'pageId'))
+              ) then
+                v_link_removed_index := (v_link_entry ->> 'index')::integer;
+                select coalesce(jsonb_agg(elem order by ord), '[]'::jsonb)
+                  into v_link_blocks
+                  from (
+                    select elem, ord::numeric as ord
+                      from jsonb_array_elements(v_link_blocks) with ordinality as t(elem, ord)
+                    union all
+                    select (v_link_entry -> 'block'), v_link_removed_index + 0.5
+                  ) s(elem, ord);
+              end if;
+            end loop;
             update public.pages set blocks = v_link_blocks, updated_at = now()
               where id = v_link_parent_id;
           elsif not exists (
             select 1 from jsonb_array_elements(v_link_blocks) as elem
-             where elem ->> 'type' = 'page-link' and elem ->> 'pageId' = p_record.target_page_id::text
+             where elem ->> 'id' = (p_to ->> 'appendedLinkId')
+                or (elem ->> 'type' = 'page-link' and elem ->> 'pageId' = p_record.target_page_id::text)
           ) then
             update public.pages
                set blocks = v_link_blocks || jsonb_build_array(

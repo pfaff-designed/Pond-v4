@@ -144,7 +144,7 @@ describe('readMoveSnapshot', () => {
       parentId: 'page-a',
       parentTitle: 'Page A',
       siblingOrder: [],
-      removedLink: { block: removedLinkBlock, index: 2 },
+      removedLinks: [{ block: removedLinkBlock, index: 2 }],
     }
     const after = {
       parentId: 'page-b',
@@ -156,12 +156,41 @@ describe('readMoveSnapshot', () => {
     expect(readMoveSnapshot(after)).toEqual(after)
   })
 
-  it('drops a malformed removedLink rather than failing the whole snapshot', () => {
+  it('parses every entry of a multi-link removedLinks array', () => {
+    const before = {
+      parentId: 'page-a',
+      parentTitle: 'Page A',
+      siblingOrder: [],
+      removedLinks: [
+        { block: { id: 'link-1', type: 'page-link', pageId: 'page-1' }, index: 1 },
+        { block: { id: 'link-2', type: 'page-link', pageId: 'page-1' }, index: 3 },
+      ],
+    }
+    expect(readMoveSnapshot(before)).toEqual(before)
+  })
+
+  it('normalizes a pre-this-fix record\'s singular removedLink into a one-entry array', () => {
+    const removedLinkBlock = { id: 'link-1', type: 'page-link', pageId: 'page-1' }
+    const legacy = {
+      parentId: 'page-a',
+      parentTitle: 'Page A',
+      siblingOrder: [],
+      removedLink: { block: removedLinkBlock, index: 2 },
+    }
+    expect(readMoveSnapshot(legacy)).toEqual({
+      parentId: 'page-a',
+      parentTitle: 'Page A',
+      siblingOrder: [],
+      removedLinks: [{ block: removedLinkBlock, index: 2 }],
+    })
+  })
+
+  it('drops a malformed removedLinks entry rather than failing the whole snapshot', () => {
     const snapshot = {
       parentId: 'page-a',
       parentTitle: 'Page A',
       siblingOrder: [],
-      removedLink: { block: { id: 'link-1', type: 'not-a-real-block' }, index: 2 },
+      removedLinks: [{ block: { id: 'link-1', type: 'not-a-real-block' }, index: 2 }],
     }
     expect(readMoveSnapshot(snapshot)).toEqual({
       parentId: 'page-a',
