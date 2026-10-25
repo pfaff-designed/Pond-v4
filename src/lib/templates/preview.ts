@@ -70,6 +70,8 @@ function outlineKind(block: Block): string {
       return viewKind(block).label
     case 'page-link':
       return 'page link'
+    case 'toc':
+      return 'contents'
   }
 }
 
@@ -97,6 +99,10 @@ function outlineIcon(block: Block): SlashIcon {
       return viewKind(block).icon
     case 'page-link':
       return ICON.page
+    // KAN-482: no board-drawn mark for this row yet (the `/` row item decides);
+    // `list` reads closest to a quiet list of entries.
+    case 'toc':
+      return ICON.list
   }
 }
 

@@ -25,6 +25,9 @@ export function blockHoldsContent(block: Block): boolean {
     case 'page-link':
     case 'view':
       return true
+    // KAN-482: stores nothing of its own — nothing to lose on delete.
+    case 'toc':
+      return false
     default: {
       const unreachable: never = block
       return unreachable
