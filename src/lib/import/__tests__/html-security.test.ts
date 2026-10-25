@@ -30,17 +30,32 @@ describe('hostile input finishes in well under a second', () => {
 
   it('sixty-five thousand line breaks inside a mark', () => {
     const breaksHtml = (n: number) => `<p><b>a${'<br>'.repeat(n)}b</b></p>`
-    const minTime = (n: number): number => {
+    const cpuTimed = (html: string): number => {
+      const start = process.cpuUsage()
+      readHtml(html)
+      const { user, system } = process.cpuUsage(start)
+      return (user + system) / 1000
+    }
+    const minCpuTime = (n: number): number => {
       const html = breaksHtml(n)
-      timed(html) // warm up the JIT before measuring
-      return Math.min(timed(html), timed(html), timed(html), timed(html), timed(html))
+      cpuTimed(html) // warm up the JIT before measuring
+      return Math.min(
+        cpuTimed(html),
+        cpuTimed(html),
+        cpuTimed(html),
+        cpuTimed(html),
+        cpuTimed(html)
+      )
     }
     const n = 16_384
-    const base = minTime(n)
-    const quadrupled = minTime(4 * n) // 65,536 — the case this test is named for
-    // A linear parser's time roughly quadruples when the input does; a quadratic
-    // one's roughly sixteen-tuples. 8 sits between the two, so a regression to
-    // quadratic trips this without flaking on a slower or noisier CI runner.
+    const base = minCpuTime(n)
+    const quadrupled = minCpuTime(4 * n) // 65,536 — the case this test is named for
+    // Measured as CPU time, not wall-clock: a shared/loaded runner can preempt
+    // the longer run but not the shorter one, which biases a wall-clock ratio
+    // upward regardless of the algorithm. A linear parser's CPU time roughly
+    // quadruples when the input does; a quadratic one's roughly sixteen-tuples.
+    // 8 sits between the two, so a regression to quadratic trips this without
+    // flaking on a slower or noisier CI runner.
     expect(quadrupled / base).toBeLessThan(8)
   })
 
