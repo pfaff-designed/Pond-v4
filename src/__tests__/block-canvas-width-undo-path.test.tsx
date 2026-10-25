@@ -9,7 +9,7 @@
  */
 
 import React from 'react'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DocumentPanel } from '@/components/organisms/DocumentPanel'
@@ -99,10 +99,7 @@ function renderPath(blocks: Block[]) {
   )
 }
 
-const handleOf = (blockId: string) =>
-  within(document.getElementById(`block-${blockId}`)!).getByRole('button', {
-    name: /block menu/i,
-  })
+const blockRoot = (blockId: string) => document.getElementById(`block-${blockId}`)!
 
 describe('A width pick from the handle menu writes through persistBlocksAsOwnEdit, one ⌘Z step (KAN-368)', () => {
   it('is one change-log record and one ⌘Z step that restores the previous width', async () => {
@@ -111,7 +108,7 @@ describe('A width pick from the handle menu writes through persistBlocksAsOwnEdi
     await screen.findByLabelText('Page title')
 
     const user = userEvent.setup()
-    await user.click(handleOf('b-note'))
+    fireEvent.contextMenu(blockRoot('b-note'))
     await user.click(await screen.findByRole('menuitem', { name: '½' }))
 
     await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalledTimes(1))

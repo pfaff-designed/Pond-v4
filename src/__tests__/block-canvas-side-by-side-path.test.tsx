@@ -224,7 +224,7 @@ function dropAt(targetId: string, targetRect: DOMRect, x: number, y: number) {
 }
 
 async function armHandle(user: ReturnType<typeof userEvent.setup>, blockId: string) {
-  const handle = within(blockRoot(blockId)).getByRole('button', { name: 'Block menu' })
+  const handle = within(blockRoot(blockId)).getByRole('button', { name: 'drag to move' })
   await user.pointer({ keys: '[MouseLeft>]', target: handle })
 }
 

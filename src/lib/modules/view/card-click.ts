@@ -23,3 +23,20 @@ export function shouldSelectCardFromClick(target: EventTarget | null): boolean {
 export function shouldOpenRowFromClick(target: EventTarget | null): boolean {
   return target instanceof Element && target.closest('[data-part="title-cell"]') !== null
 }
+
+/**
+ * Should a right-click on this target keep the browser's native menu instead of
+ * opening the block menu (KAN-485)? `INTERACTIVE` above is deliberately wide (a
+ * whole `td`, a `role="button"` card like page-link/highlight) because a plain
+ * click there means "this is that control's click, not the card's" — but a
+ * right-click only ever needs the browser's own copy/paste, which exists on a
+ * field with its own text content: `input`/`textarea`/`select`/a bare
+ * `[contenteditable]`. A text block's own prose root is `[role="textbox"]
+ * [contenteditable]`; `:not([role="textbox"])` excludes it so right-clicking
+ * inside prose still opens the block menu.
+ */
+const CONTEXT_MENU_FIELD = 'input, textarea, select, [contenteditable]:not([role="textbox"])'
+
+export function isContextMenuField(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest(CONTEXT_MENU_FIELD) !== null
+}
