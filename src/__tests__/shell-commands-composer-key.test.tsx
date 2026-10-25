@@ -20,12 +20,15 @@ jest.mock('@/lib/pages/tree', () => ({
 }))
 
 import { ShellCommands } from '@/components/organisms/ShellCommands'
+import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { TOGGLE_COMPOSER_EVENT } from '@/lib/terminal-focus'
 
 const renderShell = () =>
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <ShellCommands />
+      <DeletionUndoProvider>
+        <ShellCommands />
+      </DeletionUndoProvider>
       <textarea aria-label="somewhere to type" />
     </QueryClientProvider>
   )

@@ -32,6 +32,33 @@ export function subtreeIds(node: TreeNodeLike): Set<string> {
   return ids
 }
 
+/** The minimal flat-row shape these helpers need (e.g. `PageRow`). */
+export interface FlatRowLike {
+  id: string
+  parent_id: string | null
+}
+
+/**
+ * The same fact `subtreeIds` holds for a `RailNode`, over a flat
+ * `{ id, parent_id }[]` instead — for callers (the move picker) that have
+ * page rows but no tree built. Pages are a tree by construction, so no
+ * cycle guard is needed.
+ */
+export function subtreeIdsFromRows(rows: FlatRowLike[], rootId: string): Set<string> {
+  const ids = new Set<string>([rootId])
+  let added = true
+  while (added) {
+    added = false
+    for (const row of rows) {
+      if (row.parent_id !== null && ids.has(row.parent_id) && !ids.has(row.id)) {
+        ids.add(row.id)
+        added = true
+      }
+    }
+  }
+  return ids
+}
+
 /**
  * A subtree delete (descendantCount > 0) is destructive enough to warrant a
  * styled confirm that states the blast radius; a leaf (0 descendants) skips the

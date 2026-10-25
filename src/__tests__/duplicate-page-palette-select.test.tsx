@@ -10,6 +10,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { duplicatePage } from '@/lib/pages/client'
 import { ShellCommands } from '@/components/organisms/ShellCommands'
+import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { requestComposerNotice } from '@/lib/terminal-focus'
 import { workspaceUrl } from '@/lib/pages/nav'
 import { PondContext, type PondContextValue } from '@/lib/pond/context'
@@ -59,7 +60,9 @@ const renderShell = () =>
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
     >
-      <ShellCommands />
+      <DeletionUndoProvider>
+        <ShellCommands />
+      </DeletionUndoProvider>
     </QueryClientProvider>
   )
 
@@ -79,7 +82,9 @@ const renderShellWithPond = () =>
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
     >
       <PondContext.Provider value={PROVIDER_VALUE}>
-        <ShellCommands />
+        <DeletionUndoProvider>
+          <ShellCommands />
+        </DeletionUndoProvider>
       </PondContext.Provider>
     </QueryClientProvider>
   )
