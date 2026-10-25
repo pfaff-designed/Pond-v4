@@ -7,8 +7,11 @@
  * handlers, which commit the dragged block as row 0. A short first block
  * (whose own-line/beside boundary sits inside the hysteresis margin,
  * `DROP_ZONE_HYSTERESIS_PX`) is covered by the same band and commits the same
- * way; the sticky left/right corner case for a short block is a separate
- * concern owned by KAN-548.
+ * way.
+ *
+ * KAN-548: dropping on row 0's own block, at a corner still inside a held
+ * beside zone's hysteresis padding, places the block above it rather than
+ * beside — covered below.
  */
 
 import React from 'react'
@@ -229,5 +232,54 @@ describe('KAN-547: dropping at the top of the page places the block first', () =
     dropAt(band, 200, -6)
 
     expect(mockSaveBlocks).not.toHaveBeenCalled()
+  })
+})
+
+describe('KAN-548: a held beside zone on row 0 still yields to the corner', () => {
+  it('a release at the top-left corner, after holding left, lands above instead of beside', async () => {
+    const first: Block = { id: 'b-first', type: 'text', content: 'first' }
+    const second: Block = { id: 'b-second', type: 'text', content: 'second' }
+    renderCanvas([first, second], () => {})
+
+    jest.spyOn(blockRoot('b-first'), 'getBoundingClientRect').mockReturnValue(rect(0, 400, 0, 24))
+    fireEvent.dragStart(blockRoot('b-second'))
+
+    const target = blockRoot('b-first')
+    // Mid-height left (x=20, y=12 of a 24-tall rect): the beside-left zone,
+    // held sticky.
+    dragOverAt(target, 20, 12)
+    // The top-left corner (x=4, y=2): still within `isWithinPaddedZone`'s 8px
+    // hysteresis of the held left zone, but row 0's own-line band wins.
+    dragOverAt(target, 4, 2)
+    dropAt(target, 4, 2)
+
+    await waitFor(() =>
+      expect(mockSaveBlocks.mock.calls[0]?.[2]).toEqual([
+        { ...second, width: 'full', rowStart: true },
+        first,
+      ])
+    )
+    expect(mockAppendOwnEdit).toHaveBeenCalledTimes(1)
+    expect(mockRemember).toHaveBeenCalledTimes(1)
+  })
+
+  it('control: a release at mid-height left, with no corner hover, still commits a 1/2+1/2 beside row', async () => {
+    const first: Block = { id: 'b-first', type: 'text', content: 'first' }
+    const second: Block = { id: 'b-second', type: 'text', content: 'second' }
+    renderCanvas([first, second], () => {})
+
+    jest.spyOn(blockRoot('b-first'), 'getBoundingClientRect').mockReturnValue(rect(0, 400, 0, 24))
+    fireEvent.dragStart(blockRoot('b-second'))
+
+    const target = blockRoot('b-first')
+    dragOverAt(target, 20, 12)
+    dropAt(target, 20, 12)
+
+    await waitFor(() =>
+      expect(mockSaveBlocks.mock.calls[0]?.[2]).toEqual([
+        { ...second, width: '1/2', rowStart: true },
+        { ...first, width: '1/2' },
+      ])
+    )
   })
 })

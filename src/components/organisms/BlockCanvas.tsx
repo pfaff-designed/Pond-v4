@@ -94,6 +94,7 @@ import {
   drawnWidthPercent,
   planBesideDrop,
   planOwnLineDrop,
+  rowZeroZone,
   zoneWhenDrawnStacked,
   rowStacks,
   widthTenths,
@@ -2222,12 +2223,18 @@ export function BlockCanvas({
             sticky.index === i &&
             isWithinPaddedZone(rect, point, sticky.zone) &&
             !(drawnStacked && (sticky.zone === 'left' || sticky.zone === 'right'))
-          const zone = zoneWhenDrawnStacked(
-            stickyHolds && sticky ? sticky.zone : classifyDropZone(rect, point),
-            rect,
-            point,
-            drawnStacked
-          )
+          // Row 0's own-line band overrides a held beside zone (KAN-548): a
+          // short first block's sticky left/right would otherwise survive
+          // into its top corner, where the drop line shown is `above`.
+          const isRowZero = blockRows[0]?.some((b) => b.id === block.id) ?? false
+          const zone =
+            rowZeroZone(rect, point, isRowZero) ??
+            zoneWhenDrawnStacked(
+              stickyHolds && sticky ? sticky.zone : classifyDropZone(rect, point),
+              rect,
+              point,
+              drawnStacked
+            )
           // Nothing classified differently from what's already shown for this
           // block: `planned`/`changed` below are pure functions of
           // (blocks, draggingIndex, target id, zone), none of which moved, so
