@@ -27,9 +27,10 @@ import type { QueryClient } from '@tanstack/react-query'
 import { appendOwnEdit } from '@/lib/change-log/store'
 import { getPage, saveBlocks } from '@/lib/pages/client'
 import type { PondPage } from '@/lib/pages/client'
-import { moveBlockToPage } from '@/lib/pages/move-block'
+import { moveBlockToPage, planBlockMove } from '@/lib/pages/move-block'
 import type { ChangeLogRecord } from '@/lib/change-log/types'
 import type { Block } from '@/lib/documents/types'
+import type { BlockWidth } from '@/lib/modules/content'
 
 const mockedGetPage = getPage as jest.MockedFunction<typeof getPage>
 const mockedSaveBlocks = saveBlocks as jest.MockedFunction<typeof saveBlocks>
@@ -155,4 +156,64 @@ it('refuses a second move of the same block while the first is still writing', a
   expect(second).toBeNull()
   releaseTarget()
   await first
+})
+
+/**
+ * `planBlockMove`'s pure half, over its boundaries: a leader handing
+ * `rowStart` to its mate, the mate itself (no handoff), a lone ½ with no
+ * mate to hand off to, a plain full block, and the two `null` cases.
+ */
+describe('planBlockMove', () => {
+  interface Row {
+    id: string
+    width?: BlockWidth
+    rowStart?: boolean
+  }
+
+  const blk = (id: string, width?: BlockWidth, rowStart?: boolean): Row =>
+    rowStart ? { id, width, rowStart: true } : { id, width }
+
+  const target = [blk('existing')]
+
+  it.each([
+    {
+      name: 'a ½ leader with a mate, after an X ½ line: the mate inherits rowStart',
+      blocks: [blk('x', '1/2', true), blk('leader', '1/2', true), blk('mate', '1/2')],
+      blockId: 'leader',
+      expectedSource: [blk('x', '1/2', true), { id: 'mate', width: '1/2', rowStart: true }],
+    },
+    {
+      name: 'the mate itself: no handoff, the leader is untouched',
+      blocks: [blk('x', '1/2', true), blk('leader', '1/2', true), blk('mate', '1/2')],
+      blockId: 'mate',
+      expectedSource: [blk('x', '1/2', true), blk('leader', '1/2', true)],
+    },
+    {
+      name: 'a lone ½ with no row-mate: a plain removal, no handoff',
+      blocks: [blk('lone', '1/2', true), blk('full')],
+      blockId: 'lone',
+      expectedSource: [blk('full')],
+    },
+    {
+      name: 'a full block: a plain removal',
+      blocks: [blk('leader', '1/2', true), blk('mate', '1/2'), blk('full')],
+      blockId: 'full',
+      expectedSource: [blk('leader', '1/2', true), blk('mate', '1/2')],
+    },
+  ])('$name', ({ blocks, blockId, expectedSource }) => {
+    const result = planBlockMove(blocks, target, blockId)
+
+    expect(result).not.toBeNull()
+    expect(result!.source).toEqual(expectedSource)
+    expect(result!.target).toEqual([...target, { id: blockId }])
+  })
+
+  it('returns null when the block is no longer on the source', () => {
+    expect(planBlockMove([blk('kept')], target, 'missing')).toBeNull()
+  })
+
+  it('returns null when the target already holds the block (duplicate id)', () => {
+    const blocks = [blk('leader', '1/2', true), blk('mate', '1/2')]
+    expect(planBlockMove(blocks, [blk('leader')], 'leader')).toBeNull()
+  })
 })

@@ -17,9 +17,37 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { QueryClient } from '@tanstack/react-query'
 import type { Database } from '@/lib/supabase/types'
+import type { Block } from '@/lib/documents/types'
+import { detachKeepingRows } from '@/lib/modules/layout-rows'
 import { getPage } from './client'
 import { commitBlocks } from './commit'
 import { flushPendingPageSave } from './page-flush'
+
+/** The pure half of a move: `source` with `blockId` removed through
+ *  `detachKeepingRows` (KAN-440) — a leader handing over `rowStart` keeps
+ *  the row below intact — and `target` with a `rowStart`- and `width`-
+ *  stripped copy appended. A block's row was a fact about the page it's
+ *  leaving; on the target it lands full width on its own line at the end,
+ *  the same reason `moveIntoPagePrep` (conversions.ts) drops `rowStart` for
+ *  a block moving into a new page. `null` when `blockId` isn't on `source`,
+ *  or `target` already holds it (a stale retry — the caller crashes on
+ *  this, not this planner). */
+export interface BlockMovePlan<T> {
+  source: T[]
+  target: T[]
+}
+
+export function planBlockMove<
+  T extends { id: string; width?: Block['width']; rowStart?: boolean },
+>(source: readonly T[], target: readonly T[], blockId: string): BlockMovePlan<T> | null {
+  const index = source.findIndex((b) => b.id === blockId)
+  if (index === -1) return null
+  if (target.some((b) => b.id === blockId)) return null
+
+  const { blocks: nextSource } = detachKeepingRows(source, index)
+  const { width: _width, rowStart: _rowStart, ...moved } = source[index]
+  return { source: nextSource, target: [...target, moved as T] }
+}
 
 /** One move per block at a time — a second pick landing on the same block
  *  while the first move is still writing is a no-op, matching BlockCanvas's
@@ -59,11 +87,21 @@ export async function moveBlockToPage(
     await Promise.all([flushPendingPageSave(sourcePageId), flushPendingPageSave(targetPageId)])
 
     const source = await getPage(supabase, sourcePageId)
-    const block = source?.blocks.find((b) => b.id === blockId)
-    if (!source || !block) return null
+    if (!source || !source.blocks.some((b) => b.id === blockId)) return null
 
     const target = await getPage(supabase, targetPageId)
     if (!target) return null
+
+    const plan = planBlockMove(source.blocks, target.blocks, blockId)
+    if (!plan) {
+      // `source` was already confirmed to hold `blockId` above, so the only
+      // way `planBlockMove` returns null here is the target already holding
+      // it — a stale retry replaying a move that already landed.
+      const message = `moveBlockToPage: target ${targetPageId} already holds block ${blockId}`
+      if (process.env.NODE_ENV !== 'production') throw new Error(message)
+      console.error(message)
+      return null
+    }
 
     // Appended first: if this throws (the write never lands), the source
     // removal below never runs — the source page is left exactly as it was.
@@ -72,7 +110,7 @@ export async function moveBlockToPage(
       supabase,
       queryClient,
       targetPageId,
-      [...target.blocks, block],
+      plan.target,
       {
         ownEdit: true,
         before: target.blocks,
@@ -90,7 +128,7 @@ export async function moveBlockToPage(
       supabase,
       queryClient,
       sourcePageId,
-      source.blocks.filter((b) => b.id !== blockId),
+      plan.source,
       {
         ownEdit: true,
         before: source.blocks,
