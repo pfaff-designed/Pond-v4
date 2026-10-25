@@ -241,6 +241,21 @@ describe('the / menu on an empty page makes pages', () => {
     fireEvent.click(row)
   }
 
+  // KAN-556: the page-link write that replaces the `/page` block is
+  // fire-and-forget from `BlockCanvas`'s own `onChange` (`void
+  // writeStructural(next)`) — unawaited, its `commitBlocks` call can still be
+  // in flight when this test's `cleanup()`/`resetPageWriteRegistry()` run,
+  // landing instead inside the NEXT test's `mockCommitBlocks` calls. Wait for
+  // it to land before the test ends so no write crosses a test boundary.
+  const waitForPageLinkWrite = () =>
+    waitFor(() =>
+      expect(
+        mockCommitBlocks.mock.calls.some(
+          (c) => c[2] === 'page-1' && (c[3] as Block[]).some((b) => b.type === 'page-link')
+        )
+      ).toBe(true)
+    )
+
   it('`page` makes a child of this page and removes the `/…` line', async () => {
     renderWith({ id: 'page-1', parentId: 'root-1', type: 'page', title: 'Health', blocks: [] })
     const { editor } = await openSlash('page')
@@ -253,6 +268,7 @@ describe('the / menu on an empty page makes pages', () => {
       expect.objectContaining({ parentId: 'page-1', type: 'page', title: '' })
     )
     await waitFor(() => expect(screen.queryByText(/^\/page/)).not.toBeInTheDocument())
+    await waitForPageLinkWrite()
   })
 
   it('`page` makes a child of this page, not a sibling beside it', async () => {
@@ -266,6 +282,7 @@ describe('the / menu on an empty page makes pages', () => {
       'user-1',
       expect.objectContaining({ parentId: 'page-1', title: '' })
     )
+    await waitForPageLinkWrite()
   })
 
   it('removes the `/…` block by id, so a block inserted above it during the awaits survives', async () => {
@@ -300,6 +317,7 @@ describe('the / menu on an empty page makes pages', () => {
     await waitFor(() => expect(screen.queryByText('/page')).not.toBeInTheDocument())
     const [survivor] = queryAllTextBlocks()
     expect(survivor).toHaveTextContent('')
+    await waitForPageLinkWrite()
   })
 
   it('a template of yours is listed under `yours` and applied whole, stamped once with where it came from', async () => {
@@ -386,6 +404,21 @@ describe('the / menu on an empty page makes pages', () => {
       madeFromTemplate: { templateId: 't1', name: 'weeknight recipe' },
     })
     expect(justSaved.get('pond-1')).toBeNull()
+    // KAN-556: the content match above only proves the apply itself landed —
+    // not that it was the LAST page-1 write, which is what the comment above
+    // (`the apply itself is the LAST commit for this page`) promises. Find the
+    // apply's own call by reference among every page-1 call, then prove
+    // nothing after it carries a text block (a leaked page-link from another
+    // test is still tolerated — it isn't the stale `/` save this guards
+    // against).
+    const page1Calls = mockCommitBlocks.mock.calls
+      .filter((c) => c[2] === 'page-1')
+      .map((c) => c[3] as Block[])
+    const applyIndex = page1Calls.indexOf(appliedBlocksAtApply!)
+    expect(applyIndex).toBeGreaterThan(-1)
+    expect(
+      page1Calls.slice(applyIndex + 1).filter((call) => call[0]?.type === 'text')
+    ).toEqual([])
     // Hand `commitBlocks` back to its plain default — the next test (a failed
     // apply) sets its own implementation, but a test added after it shouldn't
     // inherit this one's resolve-signalling wrapper.
