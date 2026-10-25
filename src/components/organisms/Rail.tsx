@@ -2525,6 +2525,19 @@ export function Rail() {
     const draggedRow = pages.find((r) => r.id === draggedId)
     const title = draggedRow?.title || 'Untitled'
 
+    // KAN-470: the destination's other children (the new sibling group minus
+    // the moved page itself) — if the dragged title collides with one of
+    // them, suffix it the same way `createPage` already would.
+    const destinationSiblingTitles = move.siblingOrder
+      .filter((id) => id !== draggedId)
+      .map((id) => pages.find((r) => r.id === id)?.title)
+      .filter((t): t is string => t !== undefined)
+    const suffixedTitle =
+      draggedRow && draggedRow.title.trim() !== ''
+        ? nextAvailableTitle(draggedRow.title, destinationSiblingTitles)
+        : undefined
+    const newTitle = suffixedTitle !== undefined && suffixedTitle !== draggedRow?.title ? suffixedTitle : undefined
+
     // Resolved before the move so both sides can be flushed ahead of the RPC
     // (below) and reused for the invalidate after it — one resolve, no drift.
     const oldLinkParentId = draggedRow ? resolveLinkParentId(draggedRow.parent_id, home?.id) : undefined
@@ -2536,6 +2549,7 @@ export function Rail() {
         movedId: draggedId,
         newParentId: move.newParentId,
         siblingOrder: move.siblingOrder,
+        ...(newTitle !== undefined ? { newTitle } : {}),
       },
       pondId
     )
@@ -2557,6 +2571,7 @@ export function Rail() {
           id: draggedId,
           newParentId: move.newParentId,
           siblingOrder: move.siblingOrder,
+          ...(newTitle !== undefined ? { newTitle } : {}),
         })
       )
       const after = record ? readMoveSnapshot(record.after) : null
