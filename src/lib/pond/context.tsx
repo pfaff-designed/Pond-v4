@@ -38,7 +38,7 @@ export interface PondContextValue {
    * is the local half, so every reader of `usePond()` sees the change the
    * instant it is called, same as `addPond`.
    */
-  patchPond: (pondId: string, patch: Partial<Pick<Pond, 'name' | 'glyph'>>) => void
+  patchPond: (pondId: string, patch: Partial<Pick<Pond, 'name' | 'glyph' | 'favouritePageIds'>>) => void
 }
 
 /** Exported so a story can stand a pond list in without a Supabase round trip. */
@@ -73,7 +73,7 @@ export function PondProvider({ children }: { children: React.ReactNode }) {
     setPonds((rows) => (rows.some((r) => r.id === pond.id) ? rows : [...rows, pond]))
   }, [])
 
-  const patchPond = useCallback((pondId: string, patch: Partial<Pick<Pond, 'name' | 'glyph'>>) => {
+  const patchPond = useCallback((pondId: string, patch: Partial<Pick<Pond, 'name' | 'glyph' | 'favouritePageIds'>>) => {
     // A blank name is impossible here: every caller (the rename editor's
     // `handleSave`, its rejection rollback) already guards against one before
     // calling in. Crash early in dev; in production, drop the patch rather

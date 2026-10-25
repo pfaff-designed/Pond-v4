@@ -67,6 +67,8 @@ export interface Database {
           last_page_id: string | null
           /** The last 8 distinct glyphs picked in this pond, newest first. */
           recent_glyphs: string[]
+          /** 0035: this pond's favourited page ids, in band order. NULL = none. */
+          favourite_page_ids: string[] | null
           created_at: string
           updated_at: string
         }
@@ -79,6 +81,7 @@ export interface Database {
           order?: number
           last_page_id?: string | null
           recent_glyphs?: string[]
+          favourite_page_ids?: string[] | null
         }
         Update: {
           name?: string
@@ -87,6 +90,7 @@ export interface Database {
           order?: number
           last_page_id?: string | null
           recent_glyphs?: string[]
+          favourite_page_ids?: string[] | null
           updated_at?: string
         }
         Relationships: []

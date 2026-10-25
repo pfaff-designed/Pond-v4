@@ -98,6 +98,19 @@ export function isAreaRow(node: RailNode): boolean {
   return node.parentId === null
 }
 
+/** Every node in `tree`, by id, for resolving an id the rail doesn't already
+ *  have a row for in hand (KAN-475: a favourite, looked up off its id alone). */
+export function nodeIndex(tree: RailNode[]): Map<string, RailNode> {
+  const map = new Map<string, RailNode>()
+  const walk = (nodes: RailNode[]) =>
+    nodes.forEach((n) => {
+      map.set(n.id, n)
+      walk(n.children)
+    })
+  walk(tree)
+  return map
+}
+
 // ── Extra roots (KAN-490/491) ────────────────────────────────────────────────
 
 /**
