@@ -1902,14 +1902,25 @@ export function BlockCanvas({
     // already the caller's baseline by the time those (independent) writes land.
     // The caret belongs in the template's first line, not the title (KAN-499) —
     // `focusTextBlockSoon` for text, else the same direct-focus fallback
-    // `focusBlockNeighbour` uses for a non-text neighbour.
+    // `focusBlockNeighbour` uses for a non-text neighbour. The props write just
+    // above is awaited, so a person who has already clicked into another line
+    // or the title while it was in flight must keep the caret there — read
+    // `activeElement` right before focusing, not before the await, since that's
+    // the only moment that matters.
     const first = applied.blocks[0]
     if (!first) return
+    const activeElement = document.activeElement
+    const firstBlockHost = document.getElementById(blockDomId(first.id))
+    const caretMovedElsewhere =
+      activeElement !== null &&
+      activeElement !== document.body &&
+      !firstBlockHost?.contains(activeElement)
+    if (caretMovedElsewhere) return
     if (first.type === 'text') {
       focusTextBlockSoon(first.id, 'start')
       return
     }
-    document.getElementById(blockDomId(first.id))?.focus()
+    firstBlockHost?.focus()
   }
 
   const makePageFromTemplate = async (pick: TemplatePick, target: SlashTarget, index: number) => {

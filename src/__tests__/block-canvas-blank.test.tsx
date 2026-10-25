@@ -556,6 +556,41 @@ describe('a template pick on a blank page applies in place (KAN-124)', () => {
     expect(field).toHaveFocus()
   })
 
+  it("KAN-499 regression: a person who moves the caret elsewhere while the template's props read/write (getPage/saveProps) is still in flight keeps it there — the apply's own first-line focus doesn't yank it back", async () => {
+    const user = userEvent.setup()
+    let resolveGetPage: (() => void) | undefined
+    mockGetPage.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveGetPage = () => resolve(null)
+        })
+    )
+    renderBlankPageHarness()
+
+    writeInTextBlock(await findTextBlock(), '/')
+    await screen.findByRole('listbox', { name: 'blocks' })
+    // The blank list leads with `notes`. The premade page shape stays in the templates pane.
+    await user.keyboard('{Enter}')
+
+    // The applied line's own mount-time autofocus (rule 2, KAN-345) lands
+    // the caret first — wait for it, same as the pending-`getPage` case
+    // above, so moving focus to the title isn't racing that same mount
+    // effect. Then the person clicks into the title before `getPage` (held
+    // pending above) resolves.
+    const field = await findTextBlock()
+    await waitFor(() => expect(field).toHaveFocus())
+    const title = screen.getByLabelText('title')
+    act(() => title.focus())
+    expect(title).toHaveFocus()
+
+    resolveGetPage?.()
+    await waitFor(() => expect(mockSaveProps).toHaveBeenCalledTimes(1))
+    // One flushed animation frame settles the apply's own first-line focus
+    // call (KAN-499) before asserting it did NOT move the caret.
+    await act(() => new Promise(requestAnimationFrame))
+    expect(title).toHaveFocus()
+  })
+
   it("writes the kind label and provenance stamp onto the page, preserving its existing props, and reflects them in the ['page', id] cache", async () => {
     const user = userEvent.setup()
     const existing = {
