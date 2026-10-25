@@ -13,6 +13,8 @@
  * plain notice (e.g. "Couldn't delete …") with only the dismiss affordance.
  */
 
+import { layerVars } from '@/lib/layout/layers'
+
 export interface UndoToastProps {
   /** The removed thing, e.g. `Deleted "Scratchpad"` or `deleted text ·` (paired with `undoLabel: 'undo'`). */
   message: string
@@ -109,7 +111,11 @@ export function UndoToast({
  */
 export function UndoToastViewport({ children }: { children: React.ReactNode }) {
   return (
-    <div className="pointer-events-none absolute top-4 right-4 z-40 flex flex-col items-end gap-2">
+    <div
+      data-testid="undo-toast-viewport"
+      className="pointer-events-none absolute top-4 right-4 z-[var(--z-toast-stack)] flex flex-col items-end gap-2"
+      style={layerVars('toastStack')}
+    >
       {children}
     </div>
   )
