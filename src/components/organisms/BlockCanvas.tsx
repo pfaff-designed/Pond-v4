@@ -96,6 +96,8 @@ import {
   drawnWidthPercent,
   planBesideDrop,
   planOwnLineDrop,
+  planRowSwap,
+  planStepMove,
   rowZeroZone,
   zoneWhenDrawnStacked,
   rowStacks,
@@ -115,7 +117,14 @@ import {
 } from '@/lib/modules/block-resize'
 import { SlashLineContext, type SlashLineAt } from '@/lib/modules/text/slash-line'
 import { useSlashLine } from '@/components/organisms/use-slash-line'
-import { focusTextBlock, focusTextBlockAt, hasTextBeforeCaret } from '@/lib/modules/text/focus'
+import {
+  captureTextSelection,
+  focusTextBlock,
+  focusTextBlockAt,
+  hasTextBeforeCaret,
+  restoreTextSelection,
+  type TextSelectionSnapshot,
+} from '@/lib/modules/text/focus'
 import { HOVER_GHOST_CLASS, UNTOUCHED_HINT_CLASS } from '@/lib/modules/text/prose'
 import { useAcceptMarks } from '@/lib/change-log/accept-marks'
 import { markTarget } from '@/lib/change-log/accept-marks-diff'
@@ -278,19 +287,6 @@ function canvasListStyle(listStyle: CSSProperties | undefined): CSSProperties {
  * in sync at every read site by construction. */
 function rowGapValue(listStyle: CSSProperties | undefined): NonNullable<CSSProperties['rowGap']> {
   return listStyle?.rowGap ?? BLOCK_ROW_GAP_PX
-}
-
-/** Sets `rowStart` on a copy of `block`, omitting the key rather than writing
- * `false` (KAN-440) — matches `rowStart`'s own "absent means today's packing"
- * convention everywhere else it's set. */
-function withRowStart<T extends { rowStart?: boolean }>(
-  block: T,
-  rowStart: boolean | undefined
-): T {
-  if (rowStart === true) return { ...block, rowStart: true }
-  const next = { ...block }
-  delete (next as { rowStart?: boolean }).rowStart
-  return next
 }
 
 /**
@@ -479,6 +475,25 @@ function focusTextBlockSoon(id: string, at: 'start' | 'end') {
 }
 
 /**
+ * Restores a selection a structural move captured (KAN-376: moving a block
+ * past its row re-inserts its own DOM node, blurring the editor it was
+ * focused in). Runs once in the commit and once more on the next frame, unless
+ * focus is by then somewhere else: in development React 19's StrictMode
+ * re-runs a moved fiber's effects after the commit, and tiptap's EditorContent
+ * unmounts and remounts around the same editor DOM, blurring it again after
+ * the first restore (seen live, KAN-376 re-verify). The frame pass also covers
+ * an editor that is still drawing its stand-in.
+ */
+function restoreTextSelectionSoon(id: string, selection: TextSelectionSnapshot) {
+  restoreTextSelection(document.getElementById(blockDomId(id)), selection)
+  requestAnimationFrame(() => {
+    // Focus kept, or the person has moved it on: nothing to restore.
+    if (document.activeElement && document.activeElement !== document.body) return
+    restoreTextSelection(document.getElementById(blockDomId(id)), selection)
+  })
+}
+
+/**
  * Same mount-race retry as `focusTextBlockSoon`, for a non-text block: its
  * frame only takes a tabIndex, never typed keys, so the caret belongs on its
  * first editable descendant (an `input`/`textarea`/`contenteditable`, e.g. a
@@ -627,6 +642,18 @@ export function BlockCanvas({
   const blocksRef = useRef(blocks)
   useEffect(() => {
     blocksRef.current = blocks
+  }, [blocks])
+  // ⌥↑/⌥↓ from the caret (KAN-376, live verify): a structural move re-inserts
+  // the moved block's own DOM node, blurring whatever editor was focused in
+  // it, before this effect's own render commits — so the restore can only run
+  // AFTER that DOM mutation lands, never synchronously inside `moveBlockAt`
+  // itself (the node it would restore onto there is the one about to move).
+  const pendingCaretFocusRef = useRef<{ id: string; selection: TextSelectionSnapshot } | null>(null)
+  useLayoutEffect(() => {
+    const pending = pendingCaretFocusRef.current
+    if (!pending) return
+    pendingCaretFocusRef.current = null
+    restoreTextSelectionSoon(pending.id, pending.selection)
   }, [blocks])
   // G9: guards `applyTemplateInPlace` itself against a double ↵ — a ref, not
   // state, since the second pick can land mid-await, before a state update
@@ -2403,24 +2430,29 @@ export function BlockCanvas({
     focusEmptyLineOrInsert(blocks[blocks.length - 1], addTextBlock)
   }
 
-  // ⌥↑/⌥↓ swaps the two adjacent SLOTS, not the two blocks (KAN-440):
-  // `detachKeepingRows` hands `rowStart` to the row-mate a block leaves
-  // behind, which is right for a drop or a delete, but a swap never leaves
-  // either slot — each one is immediately refilled by the other block. Using
-  // `detachKeepingRows` here let the moved block arrive still carrying its
-  // OWN `rowStart`, splitting a row in two it used to swap within. Instead,
-  // `rowStart` stays with the position: whichever block now sits at `index`
-  // gets the flag `index` held before the swap, and likewise for `target` —
-  // so an in-row swap stays in its row, and a swap across a row boundary
-  // keeps both rows' boundaries, just with the two blocks at the seam traded.
+  // ⌥↑/⌥↓ steps a block past a whole STORED row, or out of a stored row onto
+  // its own line, never splitting a row (KAN-376) — `planStepMove` carries
+  // the row-aware rules and never looks at how a row is drawn; `null` means
+  // there is nowhere to go (e.g. the first block, ⌥↑). Fired from inside the
+  // block's own text editor (not a selected row, which keeps its own focus):
+  // the commit re-inserts the moved block's DOM node and blurs its editor, so
+  // a second ⌥↓/⌥↑ would have nowhere to fire from — the caret's own
+  // selection is captured here and left for `pendingCaretFocusRef`'s layout
+  // effect (above) to restore once the move's own re-render has landed.
   function moveBlockAt(index: number, dir: 'up' | 'down') {
-    const target = dir === 'up' ? index - 1 : index + 1
-    if (target < 0 || target >= blocks.length) return
-    const atIndex = blocks[index]
-    const atTarget = blocks[target]
-    const next = [...blocks]
-    next[index] = withRowStart(atTarget, atIndex.rowStart)
-    next[target] = withRowStart(atIndex, atTarget.rowStart)
+    const next = planStepMove(blocks, index, dir)
+    if (!next) return
+    const moved = blocks[index]
+    const selection = captureTextSelection(document.getElementById(blockDomId(moved.id)))
+    if (selection) pendingCaretFocusRef.current = { id: moved.id, selection }
+    commitStructuralBlocks(next)
+  }
+
+  // ⌥←/⌥→ swaps a block with its row-mate on that side (KAN-376); `null`
+  // means there is no row-mate there (a solo block, or already at that edge).
+  function swapInRowAt(index: number, dir: 'left' | 'right') {
+    const next = planRowSwap(blocks, index, dir)
+    if (!next) return
     commitStructuralBlocks(next)
   }
 
@@ -2699,6 +2731,8 @@ export function BlockCanvas({
         onSelectNext={i === blocks.length - 1 ? undefined : () => selectBlockAt(blocks, i + 1)}
         onMoveUp={() => moveBlockAt(i, 'up')}
         onMoveDown={() => moveBlockAt(i, 'down')}
+        onSwapLeft={() => swapInRowAt(i, 'left')}
+        onSwapRight={() => swapInRowAt(i, 'right')}
         onSlashKey={() => openSlashMenuAt(i)}
         slashMenuOpen={slashMenuOpenAt === i}
         blank={blank}
@@ -3590,6 +3624,8 @@ function BlockEditor({
   onSelectNext,
   onMoveUp,
   onMoveDown,
+  onSwapLeft,
+  onSwapRight,
   onSlashKey,
   onSlashPickTemplate,
   onPreviewTemplate,
@@ -3669,6 +3705,10 @@ function BlockEditor({
   onSelectNext?: () => void
   onMoveUp?: () => void
   onMoveDown?: () => void
+  /** ⌥←/⌥→ on the selected row — never from inside a text editor or field,
+   *  where ⌥←/→ jump words (KAN-376). */
+  onSwapLeft?: () => void
+  onSwapRight?: () => void
   onSlashKey?: () => void
   slashMenuOpen?: boolean
   /** A page with nothing on it yet besides this block (6f): `/` leads with templates. */
@@ -4100,6 +4140,16 @@ function BlockEditor({
     if (e.altKey && e.key === 'ArrowDown') {
       e.preventDefault()
       onMoveDown?.()
+    }
+    // ⌥←/⌥→ only on the selected row itself (`e.target === e.currentTarget`):
+    // inside a text editor or field, ⌥←/→ jump a word, and must keep doing so.
+    if (e.altKey && e.key === 'ArrowLeft' && e.target === e.currentTarget) {
+      e.preventDefault()
+      onSwapLeft?.()
+    }
+    if (e.altKey && e.key === 'ArrowRight' && e.target === e.currentTarget) {
+      e.preventDefault()
+      onSwapRight?.()
     }
     // Esc clears the pointer-selected row (07.05) — the row itself does not blur
     // on Escape by default, so this blurs it explicitly; `handleBlur` below then

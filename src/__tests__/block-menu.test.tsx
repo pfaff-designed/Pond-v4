@@ -257,7 +257,7 @@ describe('the block menu opens from the handle', () => {
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 
-  it("⌥↓ on a row's rowStart holder swaps it within the row, not into a split (KAN-440)", async () => {
+  it("⌥↓ on a row's rowStart holder leaves it onto its own full line, the row-mate keeps the row (KAN-376)", async () => {
     const user = userEvent.setup()
     const a: Block = { id: 'b-a', type: 'text', content: 'a', width: '1/2', rowStart: true }
     const x: Block = { id: 'b-x', type: 'text', content: 'x', width: '1/2', rowStart: true }
@@ -266,10 +266,10 @@ describe('the block menu opens from the handle', () => {
     handleOf('b-x').focus()
     await user.keyboard('{Alt>}{ArrowDown}{/Alt}')
     const next = lastBlocks(onChange)
-    expect(next).toEqual([a, { ...y, rowStart: true }, { ...x, rowStart: undefined }])
+    expect(next).toEqual([a, { ...y, rowStart: true }, { ...x, width: 'full' }])
   })
 
-  it('⌥↑ on the row-mate left behind swaps the rowStart right back (KAN-440)', async () => {
+  it('⌥↑ on the row-mate left behind leaves it onto its own full line, the other half keeps the row (KAN-376)', async () => {
     const user = userEvent.setup()
     const a: Block = { id: 'b-a', type: 'text', content: 'a', width: '1/2', rowStart: true }
     const y: Block = { id: 'b-y', type: 'text', content: 'y', width: '1/2', rowStart: true }
@@ -278,10 +278,10 @@ describe('the block menu opens from the handle', () => {
     handleOf('b-x').focus()
     await user.keyboard('{Alt>}{ArrowUp}{/Alt}')
     const next = lastBlocks(onChange)
-    expect(next).toEqual([a, { ...x, rowStart: true }, { ...y, rowStart: undefined }])
+    expect(next).toEqual([a, { ...x, rowStart: true, width: 'full' }, { ...y, rowStart: true }])
   })
 
-  it('⌥↓ across a row boundary swaps the two blocks at the seam but keeps both rows (KAN-440)', async () => {
+  it('⌥↓ on a row-mate leaves it onto its own full line between the rows, the mate left behind keeps its width (KAN-376)', async () => {
     const user = userEvent.setup()
     const p: Block = { id: 'b-p', type: 'text', content: 'p', width: '1/2' }
     const q: Block = { id: 'b-q', type: 'text', content: 'q', width: '1/2' }
@@ -291,7 +291,7 @@ describe('the block menu opens from the handle', () => {
     handleOf('b-q').focus()
     await user.keyboard('{Alt>}{ArrowDown}{/Alt}')
     const next = lastBlocks(onChange)
-    expect(next).toEqual([p, { ...r, rowStart: undefined }, { ...q, rowStart: true }, s])
+    expect(next).toEqual([p, { ...q, width: 'full', rowStart: true }, r, s])
   })
 })
 

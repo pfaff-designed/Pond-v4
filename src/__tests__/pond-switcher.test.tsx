@@ -152,6 +152,34 @@ describe('the pond switcher', () => {
     expect(link).toHaveAttribute('href', '/workspace?pond=p-noise')
   })
 
+  it('a plain click navigates in-app, with no reload (KAN-449/503)', async () => {
+    const user = userEvent.setup()
+    mockSearch = 'pond=p-life'
+    renderSwitcher()
+
+    await user.click(await screen.findByRole('button'))
+    await user.click(screen.getByRole('menuitem', { name: /make noise/ }))
+
+    // `window.location.pathname` is not `/workspace` under this mocked
+    // `useSearchParams`, so `openWorkspaceUrl` takes the `router.push`
+    // branch rather than a real `pushState` — still proves the plain click
+    // went through the shared nav helper, not a browser-driven reload.
+    expect(push).toHaveBeenCalledWith('/workspace?pond=p-noise')
+  })
+
+  it('a ⌘-click leaves the native new-tab behaviour unprevented and never pushes', async () => {
+    mockSearch = 'pond=p-life'
+    renderSwitcher()
+
+    fireEvent.click(await screen.findByRole('button'))
+    const row = screen.getByRole('menuitem', { name: /make noise/ })
+    const notPrevented = fireEvent.click(row, { metaKey: true })
+
+    expect(notPrevented).toBe(true) // preventDefault() was NOT called — the browser opens its own tab
+    expect(push).not.toHaveBeenCalled()
+    expect(row).toHaveAttribute('href', '/workspace?pond=p-noise')
+  })
+
   it('carries a pond’s remembered page as &nodeId=', async () => {
     ;(listPonds as jest.Mock).mockResolvedValue([LIFE, { ...NOISE, lastPageId: 'n-99' }])
     renderSwitcher()

@@ -17,13 +17,15 @@
  * that kept `import from notes` out of #177.
  */
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
+import { useRouter } from 'next/navigation'
 import { usePond } from '@/lib/pond/context'
 import { Caret } from '@/components/atoms/Caret'
 import { PondMark } from '@/components/atoms/PondMark'
 import { PondControl } from '@/components/atoms/PondControl'
 import { NewPondFlow } from './NewPondFlow'
 import { pondHref } from '@/lib/pond/active'
+import { isNewTabClick, openWorkspaceUrl } from '@/lib/pages/nav'
 import { usePondGlyph } from '@/lib/pond/glyph'
 import { useRenamePond } from '@/lib/pond/use-rename-pond'
 import { clampPondName } from '@/lib/pond/name-cap'
@@ -60,6 +62,7 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
   const { pond: active, ponds } = usePond()
   const pondGlyph = usePondGlyph()
   const { rename, pending: renamePending } = useRenamePond()
+  const router = useRouter()
 
   // The rename editor's draft — local until Enter commits it via `rename` (KAN-492).
   const [editing, setEditing] = useState(false)
@@ -96,6 +99,16 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
     // `?? LIFE_GLYPH`, which would silently change a null-glyph pond's mark.
     setDraftGlyph(pondGlyph)
     setEditing(true)
+  }
+
+  // A plain click shallow-navigates in-app (KAN-449/474, same guard as
+  // `Rail.tsx`'s `handleRowClick`); ⌘/middle/⇧-click fall through to the
+  // anchor's own `href` for the browser's new-tab/window handling.
+  const handleRowClick = (e: MouseEvent<HTMLAnchorElement>, pondId: string, lastPageId?: string | null) => {
+    if (isNewTabClick(e)) return
+    e.preventDefault()
+    setOpen(false)
+    openWorkspaceUrl(pondHref(pondId, lastPageId), router)
   }
 
   const handleSave = () => {
@@ -215,7 +228,7 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
                     ref={i === 0 ? firstMenuItemRef : undefined}
                     role="menuitem"
                     href={pondHref(p.id, p.lastPageId)}
-                    onClick={() => setOpen(false)}
+                    onClick={(e) => handleRowClick(e, p.id, p.lastPageId)}
                     className={`flex items-center gap-[9px] rounded-[10px] px-[10px] py-[7px] text-[13px] leading-[normal] ${
                       p.id === active?.id ? 'bg-mn-text/[0.07] font-medium' : 'font-normal'
                     }`}
