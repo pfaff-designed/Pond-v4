@@ -21,6 +21,25 @@ import { blockWidthStyle } from '@/lib/modules/layout-rows'
 import { selectText, selectWord } from './helpers/selection'
 import { textEditorOf } from './helpers/text-block'
 
+// A spy on the real `pointAnchor` (BlockCanvas's own point-anchor builder),
+// so the trailing-contextmenu test below can tell whether a right-click-style
+// point anchor was ever built, independent of jsdom's positioner transform
+// (which doesn't move when the anchor prop's identity changes mid-open — see
+// that test). Declared as a getter so the lazily-invoked factory below (run
+// the first time something requires PondMenu, which happens while this file's
+// own imports are still being hoisted-required) never reads `pointAnchorSpy`
+// before its `const` initialises.
+const pointAnchorSpy = jest.fn(
+  (jest.requireActual('@/components/molecules/PondMenu') as { pointAnchor: (x: number, y: number) => DOMRect })
+    .pointAnchor
+)
+jest.mock('@/components/molecules/PondMenu', () => ({
+  ...(jest.requireActual('@/components/molecules/PondMenu') as object),
+  get pointAnchor() {
+    return pointAnchorSpy
+  },
+}))
+
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
   useSearchParams: () => ({ get: () => null }),
@@ -457,17 +476,52 @@ describe('⇧F10 / the ContextMenu key opens the menu on a selected row (KAN-485
     expect(await screen.findByRole('menu', { name: /block menu/i })).toBeInTheDocument()
   })
 
+  it('⇧F10 then Escape puts focus back on the row — the handle has nothing of its own to return it to', async () => {
+    const user = userEvent.setup()
+    renderCanvas([heading, shopping])
+    const row = document.getElementById('block-b-shop')!
+    act(() => {
+      row.focus()
+    })
+    fireEvent.keyDown(row, { key: 'F10', shiftKey: true })
+    const menu = await screen.findByRole('menu', { name: /block menu/i })
+    // Base UI's own open-time focus capture runs before this: move focus off
+    // the row ourselves (standing in for the real menu panel taking it) so
+    // Escape has somewhere other than the row to come back from.
+    act(() => {
+      menu.focus()
+    })
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+    expect(row).toHaveFocus()
+  })
+
+  it('⌘/ on the row, then Escape, puts focus back on the row', async () => {
+    const user = userEvent.setup()
+    renderCanvas([heading, shopping])
+    const row = document.getElementById('block-b-shop')!
+    act(() => {
+      row.focus()
+    })
+    fireEvent.keyDown(row, { key: '/', ctrlKey: true })
+    const menu = await screen.findByRole('menu', { name: /block menu/i })
+    act(() => {
+      menu.focus()
+    })
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+    expect(row).toHaveFocus()
+  })
+
   it('ignores a trailing native contextmenu after the ContextMenu key (Windows) — stays anchored at the row', async () => {
+    pointAnchorSpy.mockClear()
     renderCanvas([heading, shopping])
     const row = document.getElementById('block-b-shop')!
     act(() => {
       row.focus()
     })
     fireEvent.keyDown(row, { key: 'ContextMenu' })
-    const menu = await screen.findByRole('menu', { name: /block menu/i })
-    const positioner = menu.parentElement as HTMLElement
-    await waitFor(() => expect(positioner.style.transform).not.toBe(''))
-    const rowAnchoredTransform = positioner.style.transform
+    await screen.findByRole('menu', { name: /block menu/i })
 
     let event: Event | undefined
     const capture = (e: Event) => {
@@ -476,9 +530,9 @@ describe('⇧F10 / the ContextMenu key opens the menu on a selected row (KAN-485
     row.addEventListener('contextmenu', capture)
     fireEvent.contextMenu(row, { clientX: 500, clientY: 500 })
     row.removeEventListener('contextmenu', capture)
-    // Flush floating-ui's own async `computePosition` — a re-anchor to (500,
-    // 500) would otherwise not have landed on `positioner.style` yet, making
-    // the assertion below pass by timing accident rather than by the fix.
+    // Flush floating-ui's own async `computePosition` — a point anchor built
+    // from a re-anchor to (500, 500) is only read by it on a later microtask,
+    // not synchronously inside `fireEvent`.
     await act(async () => {
       await Promise.resolve()
       await Promise.resolve()
@@ -486,10 +540,13 @@ describe('⇧F10 / the ContextMenu key opens the menu on a selected row (KAN-485
 
     expect(event?.defaultPrevented).toBe(true)
     expect(screen.getByRole('menu', { name: /block menu/i })).toBeInTheDocument()
-    // Still anchored at the row (`MENU_PLACEMENT`), not re-anchored to (500, 500)
-    // (`POINT_MENU_PLACEMENT`) — the two placements' different offsets would
-    // otherwise move the computed transform even with jsdom's zero-sized rects.
-    expect(positioner.style.transform).toBe(rowAnchoredTransform)
+    // The real discriminator: a swallowed trailing contextmenu never builds a
+    // point anchor for (500, 500) at all — the menu stays on the row's own
+    // anchor. jsdom's positioner `transform` doesn't move when the anchor
+    // prop's identity changes mid-open (Base UI only measures a virtual
+    // anchor at open time), so asserting on `transform` here would pass even
+    // with the swallow removed.
+    expect(pointAnchorSpy).not.toHaveBeenCalledWith(500, 500)
   })
 
   it('a ctrl+click after ⇧F10 + Esc opens the block menu (macOS fires no trailing contextmenu for ⇧F10)', async () => {

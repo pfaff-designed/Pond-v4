@@ -3352,11 +3352,26 @@ function BlockEditor({
   // the same key press. Cleared by the next real pointerdown, so a stale
   // `true` never swallows a later genuine right-click.
   const keyboardMenuOpenRef = useRef(false)
+  // Was the ROW (not a nested field, not the handle) the active element when
+  // the menu's current open was requested — set synchronously inside
+  // `handleMenuOpenChange` below, never from an effect reacting to `menuOpen`:
+  // Base UI's own effect that moves focus onto the opened menu runs before a
+  // parent's passive effect would, so reading `document.activeElement` from
+  // an effect here would always see the menu itself, not what was focused
+  // right before it opened.
+  const rowWasFocusedAtOpenRef = useRef(false)
   const wasMenuOpenRef = useRef(menuOpen)
+  // Desktop's handle is a plain button, not a `Menu.Trigger` (KAN-485), so
+  // Base UI has nothing of its own to return focus to on close when the row
+  // itself (⇧F10, the ContextMenu key, ⌘/ on the row, or a right-click) was
+  // what opened it. A ⌘/ opened from inside a nested field (a text block's
+  // own editor) leaves this alone — Base UI's own restore already returns
+  // focus there, and the row was never focused to begin with.
   useEffect(() => {
-    if (wasMenuOpenRef.current && !menuOpen && contextPoint) {
+    if (wasMenuOpenRef.current && !menuOpen) {
+      const shouldRefocusRow = !!contextPoint || rowWasFocusedAtOpenRef.current
       setContextPoint(null)
-      rootRef.current?.focus()
+      if (shouldRefocusRow) rootRef.current?.focus()
     }
     wasMenuOpenRef.current = menuOpen
   }, [menuOpen, contextPoint])
@@ -3724,8 +3739,11 @@ function BlockEditor({
   // The ungated setter — ⌘/ (`handleKeyDown` above) calls this directly, never
   // `handlePointerOpenChange` below: a stuck pointer state from an earlier
   // drag must never block the keyboard. A close always passes through here
-  // regardless of caller.
+  // regardless of caller. Every open request also passes through here (a
+  // right-click, a keyboard chord, or the mobile trigger), so this is the one
+  // place to record whether the row itself was focused when it did.
   function handleMenuOpenChange(open: boolean) {
+    if (open) rowWasFocusedAtOpenRef.current = document.activeElement === rootRef.current
     onMenuOpenChange?.(open)
   }
 
