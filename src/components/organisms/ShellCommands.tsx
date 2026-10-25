@@ -54,6 +54,7 @@ import {
   isGoToParentChord,
   isMinimizeRailChord,
   isMovePageChord,
+  isRailFocusChord,
   isRedoChord,
   isUndoChord,
   onApplePlatform,
@@ -67,6 +68,7 @@ import { getRecord } from '@/lib/change-log/store'
 import { rememberStruckRow } from '@/lib/change-log/undo-strike'
 import { useCommandPath } from '@/lib/layout/command-path'
 import { setRailMinimized, toggleRail, useRailMinimized } from '@/lib/layout/rail-chrome'
+import { requestRailRowFocus } from '@/lib/layout/rail-focus'
 import { PLACEMENT } from '@/lib/layout/shell-placement'
 import { useZenCommands } from '@/lib/layout/use-zen-commands'
 import { openWorkspaceUrl, workspaceUrl } from '@/lib/pages/nav'
@@ -402,6 +404,15 @@ export function ShellCommands() {
         if (!e.repeat) toggleRail()
         return
       }
+      // ⌘⇧\ moves focus into the rail (KAN-476) — from anywhere, the editor
+      // included, that's the chord's whole point, so no `isEditableField` guard.
+      // No-op while the rail is minimized: there is no row to focus.
+      if (isRailFocusChord(e) && !railMinimized) {
+        e.preventDefault()
+        e.stopPropagation()
+        if (!e.repeat) requestRailRowFocus()
+        return
+      }
       // Undo/redo belongs to an editable field first — Tiptap's own undo, an
       // input, a select — so the shell never intercepts a keystroke they own.
       // Except: a text block whose own history the commit just closed
@@ -456,6 +467,7 @@ export function ShellCommands() {
     currentNodeId,
     path,
     router,
+    railMinimized,
   ])
 
   const handleOpenChange = useCallback(
