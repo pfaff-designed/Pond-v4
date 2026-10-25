@@ -545,5 +545,9 @@ export function blockFrame(block: Block): BlockFrame | null {
     // itself off `useSiblingBlocks()`.
     case 'toc':
       return { kind: 'list', heading: 'contents', headNote: '' }
+    // KAN-480: no board draws a `PondBlock` frame around it, as an unlabelled text
+    // block — the ▸ and the summary/body sit bare on the paper.
+    case 'toggle':
+      return null
   }
 }

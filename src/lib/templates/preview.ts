@@ -72,6 +72,8 @@ function outlineKind(block: Block): string {
       return 'page link'
     case 'toc':
       return 'contents'
+    case 'toggle':
+      return 'toggle'
   }
 }
 
@@ -102,6 +104,10 @@ function outlineIcon(block: Block): SlashIcon {
     // KAN-482: no board-drawn mark for this row yet (the `/` row item decides);
     // `list` reads closest to a quiet list of entries.
     case 'toc':
+      return ICON.list
+    // KAN-480: a stand-in until the `/toggle` row item adds its own hand-drawn
+    // mark (`ICON.toggle`) — `list` reads closest to a foldable line of entries.
+    case 'toggle':
       return ICON.list
   }
 }
