@@ -20,6 +20,7 @@ import { formatChord } from '@/lib/shell-commands'
 export type BlockMenuAction =
   | { type: 'turn-into'; conversion: Conversion }
   | { type: 'move-into-new-page' }
+  | { type: 'move-to'; block: Block }
   | { type: 'copy-link' }
   | { type: 'delete' }
   | { type: 'set-width'; width: BlockWidth }
@@ -41,6 +42,16 @@ const MOVE_INTO_NEW_PAGE: PondMenuItem<BlockMenuAction> = {
   label: 'move into a new page',
   action: { type: 'move-into-new-page' },
 }
+
+/** A view draws its host page's own rows, and a page-link's child wouldn't
+ *  follow it to a new parent — neither has anything to move (KAN-479). */
+const canMoveTo = (block: Block): boolean => block.type !== 'view' && block.type !== 'page-link'
+
+const moveToItem = (block: Block): PondMenuItem<BlockMenuAction> => ({
+  id: 'move-to',
+  label: 'move to…',
+  action: { type: 'move-to', block },
+})
 
 const FIT_HEIGHT: PondMenuItem<BlockMenuAction> = {
   id: 'fit-height',
@@ -106,6 +117,7 @@ export const blockMenuGroups = (
     items: [
       ...(block.height != null ? [FIT_HEIGHT] : []),
       ...(slots.moveIntoNewPage ? [MOVE_INTO_NEW_PAGE] : []),
+      ...(canMoveTo(block) ? [moveToItem(block)] : []),
       { id: 'copy-link', label: 'copy link to block', action: { type: 'copy-link' } },
       ...(size === 'mobile'
         ? [

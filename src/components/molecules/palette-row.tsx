@@ -75,7 +75,11 @@ export function PaletteRow({
       data-kind={item.kind}
       className={`${ROW} ${ink} ${wash}`}
       style={style}
-      onMouseEnter={onHover}
+      // pointermove, not mouseenter: a resting pointer fires no pointermove at
+      // all, so a row that appears under it (the block menu's `move to…` row
+      // landing where the palette's first row now sits) never steals the
+      // fresh selection — only a real move over the row does.
+      onPointerMove={onHover}
       onClick={onPick}
     >
       {glyph && <Icon name={glyph} />}
