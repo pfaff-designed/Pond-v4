@@ -602,7 +602,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
                         showPlus
                           ? 'opacity-100 pointer-events-auto'
                           : 'opacity-0 pointer-events-none'
-                      } ${hovered ? 'mr-5' : ''}`}
+                      } ${hovered || plusVisibleAtRest ? 'mr-5' : ''}`}
                     >
                       <NewPageMenu
                         parentTitle={label}
@@ -1501,7 +1501,7 @@ export function RailView({
                 className="mt-2 mr-2 ml-[26px] text-[12.5px] leading-[1.5] text-pretty text-mn-text-secondary"
                 role="status"
               >
-                no pages yet. the ＋ above makes one, or ask pond to start one.
+                no pages yet. the ＋ beside {rootLabel} makes one, or ask pond to start one.
               </p>
             )}
           </div>

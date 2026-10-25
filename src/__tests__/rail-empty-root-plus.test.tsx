@@ -76,10 +76,21 @@ describe('rail — the root row\'s ＋ while the pond has no pages (KAN-471)', (
     expect(className).toContain('pointer-events-none')
   })
 
-  it('names the now-visible ＋ in the "no pages yet" hint', () => {
+  it('names the root row\'s own label in the "no pages yet" hint', () => {
     renderRail([], true)
 
-    expect(screen.getByRole('status')).toHaveTextContent('no pages yet. the ＋ above makes one')
+    expect(screen.getByRole('status')).toHaveTextContent('no pages yet. the ＋ beside life makes one')
+  })
+
+  it('shifts the resting ＋ to its hover position, so it never moves under the cursor', () => {
+    renderRail([], true)
+
+    const rootRow = screen.getByRole('treeitem', { name: 'life' })
+    const className = plusWrapperClassName(rootRow)
+    // The class that moves the ＋ out from under the ×'s slot on hover
+    // ('mr-5') must already be present at rest, not added by hover alone —
+    // otherwise the visible resting ＋ sits in the ×'s box.
+    expect(className).toContain('mr-5')
   })
 
   it('hides the hint while the root row (and its ＋) is hidden, e.g. mid delete-undo', () => {
