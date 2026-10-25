@@ -62,6 +62,7 @@ import {
   applyAreaRoleOptimistic,
   type PageRow,
 } from '@/lib/pages/tree'
+import { duplicateAndOpen } from '@/lib/pages/duplicate'
 import { setPageGlyph, setAreaRole } from '@/lib/pages/mark-client'
 import { appendOwnEdit } from '@/lib/change-log/store'
 import { changeLogKey } from '@/lib/change-log/keys'
@@ -70,8 +71,9 @@ import { applyUndoOutcome } from '@/lib/change-log/undo-outcome'
 import { TrashRefusedError } from '@/lib/change-log/errors'
 import { readMoveSnapshot, moveParentLabel } from '@/lib/change-log/page-changes'
 import { jsonEqual } from '@/lib/json-equal'
-import { homeQueryKey, pagesKey } from '@/lib/pages/keys'
+import { homeQueryKey, pagesKey, resolveLinkParentId } from '@/lib/pages/keys'
 import { appendChildLinkUnder, trashPageUnlinked } from '@/lib/pages/child-links'
+import { flushPendingPageSave } from '@/lib/pages/page-flush'
 import { usePondId, usePond } from '@/lib/pond/context'
 import { useHomePage } from '@/lib/pages/use-home-page'
 import { pushRecentGlyphToPond } from '@/lib/pond/client'
@@ -94,6 +96,7 @@ import {
   DATABASES_ROOT_TITLE,
   getOrCreateDatabasesRoot,
   isDatabasesRoot,
+  isDuplicablePage,
 } from '@/lib/pages/databases-root'
 import { usePondName } from '@/lib/pond/name'
 import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
@@ -230,6 +233,8 @@ interface RowCapabilities {
   deletable: boolean
   /** Can be renamed from the rail: F2 and double-click. */
   renameable: boolean
+  /** Can be duplicated: ⌘D/Ctrl+D (KAN-468; the ⋯ menu entry waits on KAN-221). */
+  duplicable: boolean
 }
 
 const NO_CAPABILITIES: RowCapabilities = {
@@ -238,6 +243,7 @@ const NO_CAPABILITIES: RowCapabilities = {
   addable: false,
   deletable: false,
   renameable: false,
+  duplicable: false,
 }
 
 /**
@@ -259,14 +265,29 @@ const rowCapabilities = (id: string, node: RailNode): RowCapabilities => {
   // on a page with a parent, so dragging is disallowed outright rather than
   // special-cased at drop time.
   if (isExtraRootNode(node))
-    return { draggable: false, droppable: true, addable: true, deletable: true, renameable: true }
-  return { draggable: true, droppable: true, addable: true, deletable: true, renameable: true }
+    return {
+      draggable: false,
+      droppable: true,
+      addable: true,
+      deletable: true,
+      renameable: true,
+      duplicable: isDuplicablePage(node),
+    }
+  return {
+    draggable: true,
+    droppable: true,
+    addable: true,
+    deletable: true,
+    renameable: true,
+    duplicable: isDuplicablePage(node),
+  }
 }
 
 /** Does the row allow the tree command? Navigation commands are always allowed. */
 const allowsCommand = (cap: RowCapabilities, kind: TreeKeyCommand['kind']): boolean => {
   if (kind === 'addChild') return cap.addable
   if (kind === 'rename') return cap.renameable
+  if (kind === 'duplicate') return cap.duplicable
   return true
 }
 
@@ -740,6 +761,12 @@ export interface RailViewProps {
   onToggle: (id: string) => void
   onAddChild: (id: string, action?: NewPageMenuAction) => void
   onDelete: (id: string) => void
+  /** ⌘D/Ctrl+D on a focused row (KAN-468) — the same duplicate-and-open handler
+   *  ⌘K's "duplicate page" palette entry calls. Optional so the existing
+   *  `RailView` call sites (stories, unit tests predating this ticket) keep
+   *  compiling untouched; omit it and ⌘D no-ops, same convention as
+   *  `onPickColour`. */
+  onDuplicate?: (id: string) => void
   /** Commit a kept rename: a trimmed, non-empty title that differs from the old one. */
   onRename: (id: string, title: string) => void
   /** A glyph picker pick — `null` for `automatic`. Applies at once (KAN-248 6/8). */
@@ -920,6 +947,7 @@ export function RailView({
   onToggle,
   onAddChild,
   onDelete,
+  onDuplicate = () => {},
   onRename,
   onPickGlyph,
   onPickColour = () => {},
@@ -1173,9 +1201,21 @@ export function RailView({
 
   // ── Keyboard machine (pure rules; commands dispatched to the callbacks) ────
   function handleKeyDown(id: string, e: KeyboardEvent<HTMLDivElement>) {
-    const cmd = treeKeyCommand(e.key, id, flat, { expanded, lifeExpanded })
+    // AUDIT K1: ⌘D/Ctrl+D is the browser's own bookmark chord. Every press of
+    // it on a focused row — a repeat from holding it down, or one aimed at a
+    // row `treeKeyCommand`/`allowsCommand` refuses to dispatch — must still be
+    // prevented here, or the bookmark dialog opens underneath the row that
+    // silently ate the keystroke.
+    const isDuplicateChord = (e.key === 'd' || e.key === 'D') && (e.metaKey || e.ctrlKey)
+    const cmd = treeKeyCommand(e.key, id, flat, {
+      expanded,
+      lifeExpanded,
+      metaOrCtrl: e.metaKey || e.ctrlKey,
+      repeat: e.repeat,
+    })
+    if (isDuplicateChord) e.preventDefault()
     if (!cmd || !allowsCommand(capabilitiesOf(id), cmd.kind)) return
-    e.preventDefault()
+    if (!isDuplicateChord) e.preventDefault()
     switch (cmd.kind) {
       case 'focus':
         setFocusedId(cmd.id)
@@ -1195,6 +1235,9 @@ export function RailView({
         break
       case 'rename':
         handleRenameStart(cmd.id)
+        break
+      case 'duplicate':
+        onDuplicate(cmd.id)
         break
     }
   }
@@ -2300,6 +2343,28 @@ export function Rail() {
     })
   }
 
+  /** ⌘D/Ctrl+D on a focused row (KAN-468): the same `duplicateAndOpen` flow
+   *  ⌘K's "duplicate page" palette entry runs (AUDIT G9), off the FOCUSED
+   *  row's id rather than the open page's. */
+  async function handleDuplicate(id: string) {
+    const node = nodeById.get(id)
+    if (!node) return
+    setBusyId(id)
+    try {
+      await duplicateAndOpen(
+        queryClient,
+        router,
+        pondId,
+        id,
+        node.parentId,
+        { type: node.type, title: node.title },
+        notify
+      )
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   async function handleConfirmDelete() {
     const node = confirmTarget
     setConfirmTarget(null)
@@ -2524,6 +2589,11 @@ export function Rail() {
     const draggedRow = pages.find((r) => r.id === draggedId)
     const title = draggedRow?.title || 'Untitled'
 
+    // Resolved before the move so both sides can be flushed ahead of the RPC
+    // (below) and reused for the invalidate after it — one resolve, no drift.
+    const oldLinkParentId = draggedRow ? resolveLinkParentId(draggedRow.parent_id, home?.id) : undefined
+    const newLinkParentId = resolveLinkParentId(move.newParentId, home?.id)
+
     const snapshot = applyMoveOptimistic(
       queryClient,
       {
@@ -2540,10 +2610,12 @@ export function Rail() {
       else setExpanded((prev) => new Set(prev).add(targetId))
     }
 
-    // KAN-477: a reparent writes no link block of its own — the new parent's
-    // child links are derived at read time, so the move stays one undo step.
-
     try {
+      // The move's own RPC reads and rewrites both link-parents' `blocks` —
+      // flush either side's own debounced save first, or a save already in
+      // flight lands after the RPC and overwrites its edit with stale blocks
+      // (the same race `child-links.ts`'s own write seams guard against).
+      await Promise.all([flushPendingPageSave(oldLinkParentId), flushPendingPageSave(newLinkParentId)])
       const record = await withUser((sb) =>
         movePage(sb, {
           id: draggedId,
@@ -2558,12 +2630,21 @@ export function Rail() {
           recordIds: Promise.resolve([record.id]),
         })
         queryClient.invalidateQueries({ queryKey: changeLogKey() })
+        // The move's own RPC edits the old and new link-parents' `blocks` —
+        // rebase an open draft of either onto that write instead of waiting
+        // for a reload.
+        if (oldLinkParentId) queryClient.invalidateQueries({ queryKey: ['page', oldLinkParentId] })
+        if (newLinkParentId) queryClient.invalidateQueries({ queryKey: ['page', newLinkParentId] })
         stageUndo({
           message: `moved ${title} to ${moveParentLabel(after.parentTitle, home?.title ?? pondName)} ·`,
           undoLabel: 'undo',
           undo: () =>
-            sessionUndo
-              .undoHandle(pondId, handle)
+            // The undo RPC rewrites both link-parents' `blocks` just like the
+            // forward move did — flush either side's own debounced save
+            // first (mirrors the guard above), or a save still pending from
+            // typing on P/Q lands after undo and overwrites the restored link.
+            Promise.all([flushPendingPageSave(oldLinkParentId), flushPendingPageSave(newLinkParentId)])
+              .then(() => sessionUndo.undoHandle(pondId, handle))
               .then((outcome) => applyUndoOutcome('undo', outcome, queryClient)),
           action: () => navigateTo(draggedRow),
           actionLabel: 'open',
@@ -2598,6 +2679,7 @@ export function Rail() {
         onToggle={handleToggle}
         onAddChild={handleAddChild}
         onDelete={handleDelete}
+        onDuplicate={handleDuplicate}
         onRename={handleRename}
         onPickGlyph={handlePickGlyph}
         onPickColour={handlePickColour}

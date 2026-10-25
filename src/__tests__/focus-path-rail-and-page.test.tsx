@@ -129,6 +129,7 @@ function setupRail() {
     onDelete: jest.fn(),
     onAddChild: jest.fn(),
     onSelect: jest.fn(),
+    onDuplicate: jest.fn(),
   }
   const utils = render(
     <RailView
@@ -184,5 +185,22 @@ describe('PATH_STEPS D — rail keys move focus; Delete/Backspace never touch th
     expect(onDelete).not.toHaveBeenCalled()
     expect(row('books')).toBeInTheDocument()
     expect(screen.getByRole('treeitem', { name: 'books' })).toHaveTextContent('books')
+  })
+
+  it('⌘D/Ctrl+D duplicates the focused row; bare d and the Life root do nothing (KAN-468)', () => {
+    const { onDuplicate } = setupRail()
+
+    fireEvent.keyDown(row('books'), { key: 'd' })
+    expect(onDuplicate).not.toHaveBeenCalled()
+
+    fireEvent.keyDown(row('books'), { key: 'd', metaKey: true })
+    expect(onDuplicate).toHaveBeenCalledWith('books')
+
+    fireEvent.keyDown(row('recipes'), { key: 'D', ctrlKey: true })
+    expect(onDuplicate).toHaveBeenCalledWith('recipes')
+
+    // Life is the workspace root, not a page — never duplicable.
+    fireEvent.keyDown(row('life'), { key: 'd', metaKey: true })
+    expect(onDuplicate).toHaveBeenCalledTimes(2)
   })
 })

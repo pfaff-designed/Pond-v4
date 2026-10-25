@@ -27,3 +27,23 @@ export function pagesKey(pondId?: string | null) {
 export function homeQueryKey(pondId: string | null) {
   return ['home', pondId] as const
 }
+
+/**
+ * The page whose `blocks` jsonb carries the structural `page-link` row for a
+ * given parent — the client-side twin of `private.page_link_parent_id`
+ * (migration 0031): a non-null `parentId` names the row directly, `null`
+ * resolves to the pond's home row. One home for the rule (AGENTS.md DRY) so
+ * `Rail.tsx`'s own move and `undo-outcome.ts`'s undo/redo of one don't each
+ * spell `parentId ?? home.id` on their own. `undefined` when there's no home
+ * row to resolve to (not yet fetched, or none created) — the same tolerance
+ * `page_link_parent_id` has for a missing home row. Lives here, not in
+ * `./home`, for the reason this module itself already gives above: dozens of
+ * suites mock `@/lib/pages/home` with a partial factory, so an export added
+ * there reads as `undefined` at call time.
+ */
+export function resolveLinkParentId(
+  parentId: string | null,
+  homeId: string | undefined
+): string | undefined {
+  return parentId ?? homeId
+}
