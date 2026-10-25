@@ -331,14 +331,26 @@ describe('the / menu on an empty page makes pages', () => {
     // contention outrunning `waitFor`'s own poll budget, not a logic race —
     // signal from inside the mocks themselves instead, so the test waits
     // exactly as long as the apply actually takes, with no deadline to miss.
+    // KAN-556: KAN-550 keyed that signal on `contentOf(applied[0]) !== '/'`,
+    // which a leaked page-link write to this same page-1 (from an earlier
+    // test's unawaited `/page` flow, still in flight under parallel load)
+    // also satisfies — `contentOf` returns `undefined` for a non-text block,
+    // and `undefined !== '/'` is true. Match the template's own content
+    // instead, the way the failed-apply case below already does, and capture
+    // that call's blocks directly rather than re-deriving "the apply" from
+    // `.at(-1)` of every page-1 call afterward.
     let resolveApplyCommitted: () => void
+    let appliedBlocksAtApply: Block[] | undefined
     const applyCommitted = new Promise<void>((resolve) => {
       resolveApplyCommitted = resolve
     })
     mockCommitBlocks.mockImplementation(async (...args: unknown[]) => {
       const pageId = args[2] as string
       const applied = args[3] as Block[]
-      if (pageId === 'page-1' && contentOf(applied[0]) !== '/') resolveApplyCommitted()
+      if (pageId === 'page-1' && contentOf(applied[0]) === 'chickpeas, harissa') {
+        appliedBlocksAtApply = applied
+        resolveApplyCommitted()
+      }
       return undefined
     })
     let resolveSaveProps: () => void
@@ -364,11 +376,7 @@ describe('the / menu on an empty page makes pages', () => {
       await applyCommitted
     })
     expect(mockCreatePage).not.toHaveBeenCalled()
-    const appliedBlocks = mockCommitBlocks.mock.calls
-      .filter((c) => c[2] === 'page-1')
-      .map((c) => c[3] as Block[])
-      .at(-1)!
-    expect(appliedBlocks).toEqual([
+    expect(appliedBlocksAtApply).toEqual([
       { id: expect.not.stringMatching(/^old-1$/), type: 'text', content: 'chickpeas, harissa' },
     ])
     await act(async () => {
