@@ -86,18 +86,21 @@ export const enterSplit = (
 }
 
 /**
- * Whether ArrowUp at the caret should leave the block upward to the page
- * title (KAN-464), rather than move within it: the caret's textblock is the
- * doc's very first textblock — every ancestor index along `$from` is 0, so a
- * list item 2, a quote's second paragraph, and so on all stay inside the
- * block even though they share the doc's top-level index 0 — AND
- * ProseMirror's own layout says there is no visual line above it.
+ * Whether an arrow key at the caret should leave the block in direction
+ * `dir`, rather than move within it: the caret's textblock is the doc's very
+ * first (`'up'`) or very last (`'down'`) textblock — every ancestor index
+ * along `$from` is 0 (or, for `'down'`, matches the doc's last child at every
+ * depth), so a list item 2, a quote's second paragraph, and so on all stay
+ * inside the block even though they may share the doc's top-level index —
+ * AND ProseMirror's own layout says there is no visual line beyond it.
  */
-export const leavesUpToTitle = (view: EditorView): boolean => {
-  const { selection } = view.state
+export const leavesBlock = (view: EditorView, dir: 'up' | 'down'): boolean => {
+  const { selection, doc } = view.state
   if (!selection.empty) return false
-  return (
-    selection.$from.start() === Selection.atStart(view.state.doc).$from.start() &&
-    view.endOfTextblock('up')
-  )
+  const edge = dir === 'up' ? Selection.atStart(doc).$from.start() : Selection.atEnd(doc).$from.end()
+  const at = dir === 'up' ? selection.$from.start() : selection.$from.end()
+  return at === edge && view.endOfTextblock(dir)
 }
+
+/** ArrowUp at the caret leaving the block upward to the page title (KAN-464). */
+export const leavesUpToTitle = (view: EditorView): boolean => leavesBlock(view, 'up')
