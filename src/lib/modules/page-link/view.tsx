@@ -110,6 +110,8 @@ export function PageLinkView({ data }: ModuleViewProps<PageLinkBlock>) {
         'cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-mn-text',
         selectedRing
       )}
+      draggable={false}
+      onDragStart={(e) => e.preventDefault()}
       onClick={(e) => {
         if (isNewTabClick(e)) return
         e.preventDefault()

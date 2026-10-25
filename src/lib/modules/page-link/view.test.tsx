@@ -93,6 +93,19 @@ describe('PageLinkView — resolved', () => {
     expect(caps.navigateToPage).not.toHaveBeenCalled()
   })
 
+  it('is not natively draggable, so a dragstart on the row never reaches the block canvas\'s reorder handler', () => {
+    const caps = capabilities(ref)
+    render(
+      <PageLinkProvider value={caps}>
+        <PageLinkView data={block} />
+      </PageLinkProvider>
+    )
+    const row = screen.getByRole('link', { name: 'Open cabinets' })
+    expect(row).toHaveAttribute('draggable', 'false')
+    const notPrevented = fireEvent.dragStart(row)
+    expect(notPrevented).toBe(false)
+  })
+
   it('opens the page on Enter', () => {
     const caps = capabilities(ref)
     render(
