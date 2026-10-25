@@ -60,6 +60,7 @@ import {
   applyRenameOptimistic,
   applyGlyphOptimistic,
   applyAreaRoleOptimistic,
+  afterDuplicate,
   type PageRow,
 } from '@/lib/pages/tree'
 import { setPageGlyph, setAreaRole } from '@/lib/pages/mark-client'
@@ -2330,8 +2331,7 @@ export function Rail() {
       if (!record) return
       const copyId = record.targetPageId
       if (copyId) navigateTo({ id: copyId, type: node.type, title: node.title })
-      if (pondId) sessionUndo.remember({ pondId, recordIds: [record.id] })
-      await queryClient.invalidateQueries({ queryKey: changeLogKey() })
+      afterDuplicate(queryClient, record, pondId)
     } catch {
       notify("Couldn't duplicate the page")
     } finally {

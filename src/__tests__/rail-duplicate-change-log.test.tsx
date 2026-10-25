@@ -74,6 +74,7 @@ function mount() {
       </PondContext.Provider>
     </QueryClientProvider>
   )
+  return client
 }
 
 beforeEach(() => {
@@ -91,6 +92,19 @@ it('remembers a ⌘D duplicate as one undo step, keyed off the returned record i
   await waitFor(() => expect(duplicatePage).toHaveBeenCalledWith(expect.anything(), 'user-1', 'health'))
   await waitFor(() => expect(mockRemember).toHaveBeenCalledTimes(1))
   expect(mockRemember).toHaveBeenCalledWith({ pondId: 'pond-1', recordIds: ['record-1'] })
+})
+
+it('invalidates pagesKey(pondId) after a ⌘D duplicate, so the copy shows in the rail', async () => {
+  ;(duplicatePage as jest.Mock).mockResolvedValue({ id: 'record-1', targetPageId: 'health-2' })
+  const client = mount()
+  const invalidateSpy = jest.spyOn(client, 'invalidateQueries')
+
+  const row = screen.getByRole('treeitem', { name: /Health/ })
+  fireEvent.keyDown(row, { key: 'd', metaKey: true })
+
+  await waitFor(() =>
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: pagesKey('pond-1') })
+  )
 })
 
 it('never remembers an undo step when duplicatePage fails', async () => {

@@ -74,8 +74,7 @@ import { prefetchPageIfAbsent } from '@/lib/pages/use-page-prefetch'
 import { readRecentPageIds, writeRecent } from '@/lib/pages/recent-pages'
 import { usePaletteRecords } from '@/lib/pages/use-palette-records'
 import { createPage, duplicatePage } from '@/lib/pages/client'
-import { insertPageOptimistic } from '@/lib/pages/tree'
-import { changeLogKey } from '@/lib/change-log/keys'
+import { insertPageOptimistic, afterDuplicate } from '@/lib/pages/tree'
 import { pagesKey } from '@/lib/pages/keys'
 import { appendChildLinkUnder } from '@/lib/pages/child-links'
 import { usePagesRows } from '@/lib/pages/use-pages'
@@ -459,9 +458,7 @@ export function ShellCommands() {
       const record = await duplicatePage(supabase, user.id, currentNodeId)
       const copyId = record.targetPageId
       if (!copyId) return
-      void queryClient.invalidateQueries({ queryKey: pagesKey(pondId) })
-      if (pondId) sessionUndo.remember({ pondId, recordIds: [record.id] })
-      void queryClient.invalidateQueries({ queryKey: changeLogKey() })
+      afterDuplicate(queryClient, record, pondId)
       openWorkspaceUrl(
         workspaceUrl({ id: copyId, type: page?.type ?? 'page', title: page?.title ?? '' }),
         router

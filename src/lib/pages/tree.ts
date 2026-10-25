@@ -15,6 +15,9 @@ import { pagesKey } from './keys'
 import { HOME_TYPE } from '@/lib/pages/home'
 import { ROW_TYPE } from '@/lib/properties/schema'
 import type { AreaRole } from '@/lib/rail/glyph-library'
+import { changeLogKey } from '@/lib/change-log/keys'
+import { sessionUndo } from '@/lib/change-log/session-undo'
+import type { ChangeLogRecord } from '@/lib/change-log/types'
 
 export interface PageRow {
   id: string
@@ -142,6 +145,23 @@ export function insertPageOptimistic(
       },
     ]
   })
+}
+
+/**
+ * KAN-468: the one place both duplicate entry points (⌘K and ⌘D) land after
+ * `duplicatePage` resolves — invalidates the pages tree so the copy shows in
+ * the rail, remembers the step for ⌘Z, and invalidates the change log. Kept
+ * here rather than in `client.ts` since it only touches the query cache/undo
+ * stack, never the RPC.
+ */
+export function afterDuplicate(
+  queryClient: QueryClient,
+  record: ChangeLogRecord,
+  pondId: string | null
+): void {
+  void queryClient.invalidateQueries({ queryKey: pagesKey(pondId) })
+  if (pondId) sessionUndo.remember({ pondId, recordIds: [record.id] })
+  void queryClient.invalidateQueries({ queryKey: changeLogKey() })
 }
 
 /**
