@@ -257,6 +257,35 @@ describe('0018_ponds — last_page_id (KAN-16)', () => {
   })
 })
 
+describe('0036_pond_deleted_at — soft delete (KAN-493)', () => {
+  it('defaults to null and lets the owner set/clear it with a plain UPDATE', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pond = (
+      await db.query<{ id: string; deleted_at: string | null }>(
+        'select id, deleted_at from public.ponds where user_id = $1 order by "order" limit 1',
+        [USER]
+      )
+    ).rows[0]
+    expect(pond.deleted_at).toBeNull()
+
+    await db.query('update public.ponds set deleted_at = now() where id = $1', [pond.id])
+    const deleted = await db.query<{ deleted_at: string | null }>(
+      'select deleted_at from public.ponds where id = $1',
+      [pond.id]
+    )
+    expect(deleted.rows[0].deleted_at).not.toBeNull()
+
+    await db.query('update public.ponds set deleted_at = null where id = $1', [pond.id])
+    const restored = await db.query<{ deleted_at: string | null }>(
+      'select deleted_at from public.ponds where id = $1',
+      [pond.id]
+    )
+    expect(restored.rows[0].deleted_at).toBeNull()
+    await db.close()
+  })
+})
+
 describe('the unique indexes across 0018 and 0019', () => {
   it('0018 keeps the user-keyed pair, because re-keying would disable them', async () => {
     // Why the two-step. `pond_id` is nullable, and NULLs are distinct in a unique
