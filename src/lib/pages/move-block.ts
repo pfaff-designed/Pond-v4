@@ -50,6 +50,16 @@ export interface BlockMovePlan<T> {
   target: T[]
 }
 
+/** Drops `width` and `rowStart` from a layout snapshot without binding them
+ *  as unused destructured locals (ESLint's `no-unused-vars` here has no
+ *  underscore allowance to lean on instead). */
+function withoutLayout<T extends { width?: Block['width']; rowStart?: boolean }>(block: T): T {
+  const copy: T = { ...block }
+  delete copy.width
+  delete copy.rowStart
+  return copy
+}
+
 export function planBlockMove<
   T extends { id: string; width?: Block['width']; rowStart?: boolean },
 >(source: readonly T[], target: readonly T[], blockId: string): BlockMovePlan<T> | null {
@@ -58,8 +68,7 @@ export function planBlockMove<
   if (target.some((b) => b.id === blockId)) return null
 
   const { blocks: nextSource } = detachKeepingRows(source, index)
-  const { width: _width, rowStart: _rowStart, ...moved } = source[index]
-  return { source: nextSource, target: [...target, moved as T] }
+  return { source: nextSource, target: [...target, withoutLayout(source[index])] }
 }
 
 /** One move per block at a time — a second pick landing on the same block
@@ -92,24 +101,41 @@ export interface MoveBlockResult {
   handle: UndoHandle | null
 }
 
+/** Thrown instead of resolving `null` when a compensating write — after the
+ *  move's own physical writes already landed — itself fails. The block may
+ *  now sit on both pages with nothing left to undo, which is a worse state
+ *  than a plain "couldn't move": `moveBlockAndStageUndo` tells the two apart
+ *  so the notice stays honest. */
+export class MoveCompensationFailed extends Error {}
+
+/** The one home for the toast's "nothing happened" copy, so the honest
+ *  (`dataLoss: true`) and plain variants can never drift apart into two
+ *  separately-worded strings. */
+function couldNotMoveMessage(label: string, dataLoss: boolean): string {
+  return `Couldn't move ${label}${dataLoss ? ' — it may now be on both pages' : ''}`
+}
+
 /**
  * Best-effort write of `blocks` back onto `pageId` — for when one side of a
  * move landed but the step as a whole must be unwound. Never throws past
  * this function: the caller already has the real error to report (or, for a
  * move that landed but can't be remembered, there is no error at all, only
- * a log line).
+ * a log line). Resolves `false` rather than throwing so a caller unwinding
+ * BOTH pages can still attempt the other side's restore.
  */
 async function restoreBlocks(
   supabase: SupabaseClient<Database>,
   queryClient: QueryClient,
   pageId: string,
   blocks: Block[]
-): Promise<void> {
+): Promise<boolean> {
   try {
     await commitBlocks(supabase, queryClient, pageId, blocks)
     await queryClient.invalidateQueries({ queryKey: ['page', pageId] })
+    return true
   } catch (err) {
     console.error('[move-block] compensating write failed', pageId, err)
+    return false
   }
 }
 
@@ -161,10 +187,19 @@ export async function moveBlockToPage(
       handle = sessionUndo.rememberPending({ pondId, recordIds })
     }
 
+    // A holder, not two `let`s: each side's id is read back out through a
+    // normal `const` destructure (below) rather than past a cast, since TS's
+    // control-flow narrowing can't see either `onPending` closure's write
+    // and would otherwise narrow a bare `let x: string | null = null` read
+    // at this point to the literal `null`.
+    const landedRecordIds: { source: string | null; target: string | null } = {
+      source: null,
+      target: null,
+    }
+
     // Appended first: if this throws (the write never lands), the source
     // removal below never runs — the source page is left exactly as it was,
     // and the reserved slot resolves to nothing so ⌘Z drops it cleanly.
-    let targetRecordId: string | null = null
     try {
       const { remembered: targetRemembered } = await commitBlocks(
         supabase,
@@ -176,7 +211,7 @@ export async function moveBlockToPage(
           before: target.blocks,
           pondId,
           onPending: (ids) => {
-            targetRecordId = ids?.[0] ?? null
+            landedRecordIds.target = ids?.[0] ?? null
           },
         }
       )
@@ -187,7 +222,6 @@ export async function moveBlockToPage(
       throw err
     }
 
-    let sourceRecordId: string | null = null
     try {
       const { remembered: sourceRemembered } = await commitBlocks(
         supabase,
@@ -199,7 +233,7 @@ export async function moveBlockToPage(
           before: source.blocks,
           pondId,
           onPending: (ids) => {
-            sourceRecordId = ids?.[0] ?? null
+            landedRecordIds.source = ids?.[0] ?? null
           },
         }
       )
@@ -210,17 +244,14 @@ export async function moveBlockToPage(
       // `saveBlocks` call either lands whole or not at all, so the source
       // itself is untouched) — the block must not be left on both pages
       // with nothing to undo.
-      await restoreBlocks(supabase, queryClient, targetPageId, target.blocks)
+      const restored = await restoreBlocks(supabase, queryClient, targetPageId, target.blocks)
       resolveRecordIds(null)
+      if (!restored) throw new MoveCompensationFailed(String(err))
       throw err
     }
 
-    // Read after both `remembered` promises settle, so each `onPending`
-    // closure has already run — cast past TS's control-flow narrowing
-    // (it can't see a write inside a callback it doesn't trace) rather than
-    // widening the declared `string | null` with a cast at every read.
-    const ids = [sourceRecordId, targetRecordId] as (string | null)[]
-    if (ids.some((id) => id === null)) {
+    const { source: sourceRecordId, target: targetRecordId } = landedRecordIds
+    if (sourceRecordId === null || targetRecordId === null) {
       // Both physical writes landed, but one side's change-log record never
       // did — a one-sided step can never be undone correctly (⌘Z would only
       // reverse half the move), so the whole move is unwound rather than
@@ -232,15 +263,18 @@ export async function moveBlockToPage(
         sourceRecordId,
         targetRecordId,
       })
-      await Promise.all([
+      const [targetRestored, sourceRestored] = await Promise.all([
         restoreBlocks(supabase, queryClient, targetPageId, target.blocks),
         restoreBlocks(supabase, queryClient, sourcePageId, source.blocks),
       ])
       resolveRecordIds(null)
+      if (!targetRestored || !sourceRestored) {
+        throw new MoveCompensationFailed('move landed without a full undo record, and the unwind itself failed')
+      }
       return null
     }
 
-    const recordIds = ids as string[]
+    const recordIds = [sourceRecordId, targetRecordId]
     resolveRecordIds(recordIds)
     return { pondId, recordIds, handle }
   } finally {
@@ -274,12 +308,12 @@ export async function moveBlockAndStageUndo(
   let result: MoveBlockResult | null
   try {
     result = await moveBlockToPage(supabase, queryClient, input)
-  } catch {
-    notify(`Couldn't move ${input.label}`)
+  } catch (err) {
+    notify(couldNotMoveMessage(input.label, err instanceof MoveCompensationFailed))
     return
   }
   if (!result) {
-    notify(`Couldn't move ${input.label}`)
+    notify(couldNotMoveMessage(input.label, false))
     return
   }
 

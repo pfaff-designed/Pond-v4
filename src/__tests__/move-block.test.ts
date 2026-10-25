@@ -62,7 +62,7 @@ import type { QueryClient } from '@tanstack/react-query'
 import { appendOwnEdit } from '@/lib/change-log/store'
 import { getPage, saveBlocks } from '@/lib/pages/client'
 import type { PondPage } from '@/lib/pages/client'
-import { moveBlockToPage, planBlockMove } from '@/lib/pages/move-block'
+import { moveBlockAndStageUndo, moveBlockToPage, planBlockMove } from '@/lib/pages/move-block'
 import { sessionUndo } from '@/lib/change-log/session-undo'
 import { createClient } from '@/lib/supabase/client'
 import type { ChangeLogRecord } from '@/lib/change-log/types'
@@ -176,6 +176,87 @@ it('a failed source write leaves the target unchanged and nothing on the undo st
   expect(revertedId).toBe('house')
   expect(revertedBlocks).toEqual([EXISTING])
   await expect(sessionUndo.undo('pond-1')).resolves.toEqual({ outcome: 'empty' })
+})
+
+it('unwinds both pages when both writes land but the source record never does', async () => {
+  // Both physical writes succeed (default `saveBlocks`); the change-log
+  // append fails on its second call — the source's own-edit record.
+  mockedAppend
+    .mockImplementationOnce(async (_s, input) => ({ id: `rec-${input.targetPageId}` }) as ChangeLogRecord)
+    .mockRejectedValueOnce(new Error('append failed'))
+
+  const result = await moveBlockToPage(supabase, queryClient, {
+    blockId: 'block-1',
+    sourcePageId: 'verify',
+    targetPageId: 'house',
+    pondId: 'pond-1',
+  })
+
+  expect(result).toBeNull()
+  // Calls 0/1 are the move's own target/source writes; 2/3 are the unwind
+  // writing each page back to what it held before the move.
+  expect(mockedSaveBlocks).toHaveBeenCalledTimes(4)
+  const [, targetId, targetBlocks] = mockedSaveBlocks.mock.calls[2]
+  expect(targetId).toBe('house')
+  expect(targetBlocks).toEqual([EXISTING])
+  const [, sourceId, sourceBlocks] = mockedSaveBlocks.mock.calls[3]
+  expect(sourceId).toBe('verify')
+  expect(sourceBlocks).toEqual([KEPT, BLOCK])
+  await expect(sessionUndo.undo('pond-1')).resolves.toEqual({ outcome: 'empty' })
+})
+
+it('unwinds both pages when both writes land but the target record never does', async () => {
+  // The append fails on its FIRST call — the target's own-edit record.
+  mockedAppend
+    .mockRejectedValueOnce(new Error('append failed'))
+    .mockImplementationOnce(async (_s, input) => ({ id: `rec-${input.targetPageId}` }) as ChangeLogRecord)
+
+  const result = await moveBlockToPage(supabase, queryClient, {
+    blockId: 'block-1',
+    sourcePageId: 'verify',
+    targetPageId: 'house',
+    pondId: 'pond-1',
+  })
+
+  expect(result).toBeNull()
+  expect(mockedSaveBlocks).toHaveBeenCalledTimes(4)
+  const [, targetId, targetBlocks] = mockedSaveBlocks.mock.calls[2]
+  expect(targetId).toBe('house')
+  expect(targetBlocks).toEqual([EXISTING])
+  const [, sourceId, sourceBlocks] = mockedSaveBlocks.mock.calls[3]
+  expect(sourceId).toBe('verify')
+  expect(sourceBlocks).toEqual([KEPT, BLOCK])
+  await expect(sessionUndo.undo('pond-1')).resolves.toEqual({ outcome: 'empty' })
+})
+
+it('tells the honest "may now be on both pages" story when the compensating write itself fails', async () => {
+  mockedSaveBlocks
+    .mockResolvedValueOnce(undefined) // the target write lands
+    .mockRejectedValueOnce(new Error('network')) // the source write fails
+    .mockRejectedValueOnce(new Error('network')) // the compensating restore fails too
+
+  const notify = jest.fn()
+  const stageUndo = jest.fn()
+  const navigateTo = jest.fn()
+
+  await moveBlockAndStageUndo(
+    supabase,
+    queryClient,
+    {
+      blockId: 'block-1',
+      sourcePageId: 'verify',
+      targetPageId: 'house',
+      pondId: 'pond-1',
+      label: 'checklist',
+    },
+    { id: 'house', type: 'page', title: 'House' },
+    stageUndo,
+    notify,
+    navigateTo
+  )
+
+  expect(notify).toHaveBeenCalledWith("Couldn't move checklist — it may now be on both pages")
+  expect(stageUndo).not.toHaveBeenCalled()
 })
 
 it('⌘Z pressed while the move is in flight undoes the move, not the step before it', async () => {
