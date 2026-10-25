@@ -4,20 +4,31 @@
  * `/ nested page` row's effect end to end — not `PageLinkView` in isolation.
  * Steps 7–8 (new clears on open, trash/restore) are the pglite/unit tests in
  * the `openedAt` and rows-cache PLAN items, not re-asserted here.
+ *
+ * KAN-464 (user ruling 2026-10-24, following Notion over KAN-122): `/page`
+ * and `/nested page` now OPEN the made page themselves — the link is still
+ * left in the parent (asserted below), but the app navigates there at once
+ * with the title focused, rather than leaving a row to click later.
  */
 
 import React from 'react'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DocumentPanel } from '@/components/organisms/DocumentPanel'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import type { Block } from '@/lib/documents/types'
 import { writeInTextBlock } from './helpers/text-block'
 
+const mockRequestTitleFocus = jest.fn()
+jest.mock('@/lib/pages/title-focus', () => ({
+  requestTitleFocus: (...args: unknown[]) => mockRequestTitleFocus(...args),
+  consumeTitleFocus: () => false,
+}))
+
 const mockPush = jest.fn()
+let mockNodeId = 'page-1'
 jest.mock('next/navigation', () => ({
-  useSearchParams: () => ({ get: (key: string) => (key === 'nodeId' ? 'page-1' : null) }),
+  useSearchParams: () => ({ get: (key: string) => (key === 'nodeId' ? mockNodeId : null) }),
   useRouter: () => ({ push: mockPush }),
 }))
 
@@ -85,10 +96,18 @@ const blocks: Block[] = [
   { id: 'b-slash', type: 'text', content: '' },
 ]
 
-function renderPanel() {
-  mockGetPage.mockResolvedValue({ id: 'page-1', title: 'kitchen renovation', blocks })
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(
+// The new page's own `getPage` read, independent of `createPage`'s mocked
+// return — proves the opened page's title FIELD is blank, not just that the
+// mock was told to say so.
+const PAGES: Record<string, { id: string; title: string; blocks: Block[] }> = {
+  'page-1': { id: 'page-1', title: 'kitchen renovation', blocks },
+  'new-page': { id: 'new-page', title: '', blocks: [] },
+}
+
+let client: QueryClient
+
+function tree() {
+  return (
     <QueryClientProvider client={client}>
       <DeletionUndoProvider>
         <DocumentPanel />
@@ -97,16 +116,22 @@ function renderPanel() {
   )
 }
 
+function renderPanel() {
+  mockGetPage.mockImplementation(async (...args: unknown[]) => PAGES[args[1] as string])
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(tree())
+}
+
 beforeEach(() => {
   jest.clearAllMocks()
+  mockNodeId = 'page-1'
   mockFetchPages.mockResolvedValueOnce([PARENT_ROW]).mockImplementation(() => new Promise(() => {})) // the post-create refetch never resolves
   mockCreatePage.mockResolvedValue({ id: 'new-page', title: 'untitled', type: 'page' })
 })
 
 describe('`/ nested page` on the real page-hosting surface (KAN-122 path test)', () => {
-  it('leaves a page-link row in place, stays on the parent, and opens the child on click', async () => {
-    const user = userEvent.setup()
-    renderPanel()
+  it('leaves a page-link row in the parent AND navigates to the new page with its title focused (KAN-464)', async () => {
+    const { rerender } = renderPanel()
 
     await screen.findByLabelText('Page title')
     const field = await within(document.getElementById('block-b-slash')!).findByRole('textbox', {
@@ -127,13 +152,16 @@ describe('`/ nested page` on the real page-hosting surface (KAN-122 path test)',
       'user-1',
       expect.objectContaining({
         parentId: 'page-1',
+        // KAN-464: "untitled" is the premade template's stand-in name, never
+        // meant to land in the title field — the made page's own title is blank.
+        title: '',
         props: expect.objectContaining({ kind: 'nested page', nestedFrom: 'page-1' }),
       })
     )
 
-    // The `/` line is gone, replaced at the same index — no navigation away.
+    // The `/` line is gone, replaced by a page-link row at the same index —
+    // the link is still left in the parent (KAN-122's own rule holds).
     expect(document.getElementById('block-b-slash')).not.toBeInTheDocument()
-    expect(mockPush).not.toHaveBeenCalled()
 
     const row = await screen.findByRole('button', { name: 'Open untitled' })
     const blockEls = [...document.querySelectorAll('[id^="block-"]')]
@@ -145,8 +173,23 @@ describe('`/ nested page` on the real page-hosting surface (KAN-122 path test)',
     expect(within(row).getByText('0 blocks')).toBeInTheDocument()
     expect(within(row).getByText('untitled')).toBeInTheDocument()
 
-    await user.click(row)
+    // KAN-464 (superseding "stays on the parent"): the app opens the made
+    // page itself, with its title focused — not just a link to click later.
     expect(mockPush).toHaveBeenCalledTimes(1)
     expect(mockPush.mock.calls[0][0]).toEqual(expect.stringContaining('nodeId=new-page'))
+    expect(mockRequestTitleFocus).toHaveBeenCalledWith('new-page')
+
+    // Follow the navigation to the made page itself: its title FIELD is blank
+    // (its own `getPage` read, not `createPage`'s mocked return) — the "untitled"
+    // above is only the page-link row's own empty-title fallback. The pending
+    // shell paints first, straight off the optimistic row (still "untitled"),
+    // so wait past it for the real, editable field `getPage` settles into.
+    mockNodeId = 'new-page'
+    rerender(tree())
+    await waitFor(() => {
+      const field = screen.getByLabelText('Page title')
+      expect(field).not.toHaveAttribute('readonly')
+      expect(field).toHaveValue('')
+    })
   })
 })

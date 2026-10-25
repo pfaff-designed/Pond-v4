@@ -170,7 +170,7 @@ describe('ShellCommands — an empty page-title input has nothing of its own to 
   it('⌘Z runs the session undo when the marked title input is focused and empty', () => {
     onPlatform('MacIntel')
     const { container } = renderShell()
-    const title = document.createElement('input')
+    const title = document.createElement('textarea')
     title.setAttribute('data-pond-page-title', '')
     title.value = ''
     container.appendChild(title)
@@ -185,7 +185,7 @@ describe('ShellCommands — an empty page-title input has nothing of its own to 
   it('leaves the key alone when the marked title input is focused and has text', () => {
     onPlatform('MacIntel')
     const { container } = renderShell()
-    const title = document.createElement('input')
+    const title = document.createElement('textarea')
     title.setAttribute('data-pond-page-title', '')
     title.value = 'recipe name'
     container.appendChild(title)

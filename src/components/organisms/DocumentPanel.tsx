@@ -46,17 +46,11 @@ import {
   withValue,
 } from '@/lib/properties/schema'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
+import { PageTitleRow } from '@/components/organisms/PageTitleRow'
 import { ContentWidthHandle } from '@/components/molecules/ContentWidthHandle'
 import { useContentWidth } from '@/lib/layout/content-width'
-import { TEXT_BLOCK_INSET_PX, useSurfaceColumn } from '@/lib/layout/surface-column'
-import {
-  useZen,
-  zenColumn,
-  ZEN_BLOCK_LIST_STYLE,
-  ZEN_COLUMN_PX,
-  ZEN_TITLE_CLASS,
-  type Zen,
-} from '@/lib/layout/zen'
+import { useSurfaceColumn } from '@/lib/layout/surface-column'
+import { useZen, zenColumn, ZEN_BLOCK_LIST_STYLE, ZEN_COLUMN_PX } from '@/lib/layout/zen'
 import { usePublishCommandPath } from '@/lib/layout/command-path'
 import { commandPath, type CommandCrumbTarget } from '@/lib/pages/command-path'
 import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
@@ -87,53 +81,6 @@ import { requestTerminalFocus } from '@/lib/terminal-focus'
 import { writeRecent } from '@/lib/pages/recent-pages'
 import { FirstRunHints } from '@/components/organisms/FirstRunHints'
 import { useFirstRunPending } from '@/lib/first-run/use-first-run-pending'
-
-/**
- * The title row (`Pond 06.21` 6u.1): the page's name at left, one eyebrow at
- * right. Shared by the real page and the KAN-388 pending shell, so the frame
- * cannot drift between them — only `readOnly`/`onChange` and the computed
- * placeholder/eyebrow text tell the two apart.
- */
-function PageTitleRow({
-  zen,
-  value,
-  placeholder,
-  eyebrow,
-  readOnly,
-  onChange,
-}: {
-  zen: Zen | null
-  value: string
-  placeholder: string
-  eyebrow: string
-  readOnly?: boolean
-  onChange?: (value: string) => void
-}) {
-  return (
-    <div
-      className={`${zen ? 'mb-[var(--zen-gap)]' : 'mt-2 mb-4'} flex items-end justify-between gap-3`}
-      style={{ paddingInline: TEXT_BLOCK_INSET_PX }}
-    >
-      <input
-        className={`min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-mn-text-secondary ${zen ? ZEN_TITLE_CLASS : 'font-sans text-[38px] leading-[1.15] font-bold tracking-[-0.01em] uppercase'}`}
-        value={value}
-        onChange={onChange ? (e) => onChange(e.target.value) : undefined}
-        readOnly={readOnly}
-        placeholder={placeholder}
-        aria-label="Page title"
-        data-pond-page-title
-      />
-      <span
-        data-part="title-eyebrow"
-        className="flex-none text-[10.5px] font-medium tracking-[.1em] text-mn-text-secondary uppercase"
-        hidden={zen !== null}
-        aria-live="polite"
-      >
-        {eyebrow}
-      </span>
-    </div>
-  )
-}
 
 export function DocumentPanel() {
   const router = useRouter()
@@ -168,6 +115,10 @@ export function DocumentPanel() {
   // #96: the column's insets — 76 under the floating pill, the composer's
   // published clearance below (lib/layout/surface-column).
   const { column, handle } = useSurfaceColumn(zen ? ZEN_COLUMN_PX : contentWidth)
+  // KAN-369: Return/↓ leaving the title — BlockCanvas assigns its own
+  // `enterFromTitle` here, so this panel can hand the title row a callback
+  // without reaching into BlockCanvas's block state itself.
+  const titleExitRef = useRef<(() => void) | null>(null)
 
   // The root page (#234). Life's blocks live on the reserved home row, created on
   // first access; it is read for every page because the path's root (the
@@ -683,11 +634,13 @@ export function DocumentPanel() {
             one eyebrow — `{kind} — {save state}`. The save state lives here and
             nowhere else; no kind set, and the eyebrow is the state alone. */}
         <PageTitleRow
+          pageId={page.id}
           zen={zen}
           value={viewTitle}
           onChange={onTitle}
           placeholder={titlePlaceholder}
           eyebrow={previewName ? `preview — ${previewName}` : eyebrow}
+          onLeaveDown={() => titleExitRef.current?.()}
         />
 
         <div className={hiddenInZen}>
@@ -728,6 +681,7 @@ export function DocumentPanel() {
           untouched={untouched}
           openTemplatesFor={templatesTargetId}
           listStyle={zen ? ZEN_BLOCK_LIST_STYLE : undefined}
+          titleExitRef={titleExitRef}
           onPreviewNameChange={setPreviewName}
         />
 

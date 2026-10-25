@@ -239,7 +239,7 @@ describe('the / menu on an empty page makes pages', () => {
     expect(mockCreatePage).toHaveBeenCalledWith(
       expect.anything(),
       'user-1',
-      expect.objectContaining({ parentId: 'page-1', type: 'page', title: 'untitled' })
+      expect.objectContaining({ parentId: 'page-1', type: 'page', title: '' })
     )
     await waitFor(() => expect(screen.queryByText(/^\/page/)).not.toBeInTheDocument())
   })
@@ -253,7 +253,7 @@ describe('the / menu on an empty page makes pages', () => {
     expect(mockCreatePage).toHaveBeenCalledWith(
       expect.anything(),
       'user-1',
-      expect.objectContaining({ parentId: 'page-1', title: 'untitled' })
+      expect.objectContaining({ parentId: 'page-1', title: '' })
     )
   })
 
