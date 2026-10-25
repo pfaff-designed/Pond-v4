@@ -242,6 +242,13 @@ describe('paletteItems — favourite / unfavourite page', () => {
     expect(items).not.toContainEqual(FAVOURITE_PAGE_ACTION)
     expect(items).not.toContainEqual(UNFAVOURITE_PAGE_ACTION)
   })
+
+  it('offers neither row while the pond has not resolved yet, even for a duplicable open page', () => {
+    const items = paletteItems([ordinaryPage], [], 'some-page', [], false)
+
+    expect(items).not.toContainEqual(FAVOURITE_PAGE_ACTION)
+    expect(items).not.toContainEqual(UNFAVOURITE_PAGE_ACTION)
+  })
 })
 
 describe('movePickItems — the move picker’s candidate list', () => {

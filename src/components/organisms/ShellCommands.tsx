@@ -326,7 +326,7 @@ export function ShellCommands() {
     if (!paletteOpen) return []
     if (movePick) return movePickItems(pages, movePick.id, home?.title ?? pondName)
     return [
-      ...paletteItems(pages, recentPageIds, currentNodeId, pond?.favouritePageIds),
+      ...paletteItems(pages, recentPageIds, currentNodeId, pond?.favouritePageIds, pond != null),
       ...zenCommands.items,
       ...railItems(railMinimized),
       ...pondItems(ponds, pond?.id ?? null),

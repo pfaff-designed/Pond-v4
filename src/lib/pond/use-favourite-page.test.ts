@@ -53,4 +53,33 @@ describe('useFavouritePage', () => {
     expect(patchPond).toHaveBeenNthCalledWith(2, 'p-life', { favouritePageIds: ['a', 'b'] })
     expect(requestNotify).toHaveBeenCalledWith({ message: 'Could not update favourites' })
   })
+
+  it('keeps the newest intent when a second toggle lands while the first write is in flight', async () => {
+    let finishFirst: () => void = () => {}
+    setFavourites.mockImplementationOnce(() => new Promise<void>((resolve) => (finishFirst = resolve)))
+    setFavourites.mockImplementationOnce(() => Promise.resolve())
+    const { result } = renderHook(() => useFavouritePage())
+
+    let first: Promise<void> = Promise.resolve()
+    let second: Promise<void> = Promise.resolve()
+    act(() => {
+      first = result.current.toggle('c')
+      second = result.current.toggle('c')
+    })
+
+    // Both toggles already applied optimistically — nothing was dropped.
+    expect(patchPond).toHaveBeenNthCalledWith(1, 'p-life', { favouritePageIds: ['a', 'b', 'c'] })
+    expect(patchPond).toHaveBeenNthCalledWith(2, 'p-life', { favouritePageIds: ['a', 'b'] })
+
+    finishFirst()
+    await act(async () => {
+      await Promise.all([first, second])
+    })
+
+    expect(setFavourites).toHaveBeenCalledTimes(2)
+    expect(setFavourites).toHaveBeenNthCalledWith(1, 'p-life', ['a', 'b', 'c'])
+    expect(setFavourites).toHaveBeenNthCalledWith(2, 'p-life', ['a', 'b'])
+    expect(patchPond).toHaveBeenCalledTimes(2)
+    expect(requestNotify).not.toHaveBeenCalled()
+  })
 })

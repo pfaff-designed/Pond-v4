@@ -148,7 +148,10 @@ export const MOVE_PAGE_ACTION: PaletteItem = {
  * in the pond's favourites, "unfavourite this page" when it is. Gated like
  * `SAVE_AS_TEMPLATE_ACTION`/`DUPLICATE_PAGE_ACTION`: `isDuplicablePageRow`
  * already excludes home and the databases root, and trash/change-log never
- * resolve to a `PageRow` to begin with.
+ * resolve to a `PageRow` to begin with. Also gated on a resolved pond — while
+ * `pond` is still loading, `useFavouritePage`'s `toggle` is a no-op (it has
+ * no `pond.id` to write against), so the row would be offered and silently
+ * do nothing if shown then.
  */
 export const FAVOURITE_PAGE_ACTION: PaletteItem = {
   id: 'action:favourite-page',
@@ -173,7 +176,14 @@ export function paletteItems(
    */
   openPageId?: string | null,
   /** The pond's `favourite_page_ids` — picks which of the two favourite rows lists. */
-  favouritePageIds?: readonly string[]
+  favouritePageIds?: readonly string[],
+  /**
+   * Whether `favouritePageIds` reflects an actually-resolved pond. Defaults
+   * `true` (today's behaviour unchanged) — every existing caller already has
+   * its pond by the time it builds the palette; only a caller mid-load passes
+   * `false` to withhold the row rather than offer a toggle with nothing to act on.
+   */
+  pondResolved: boolean = true
 ): PaletteItem[] {
   const all = [...rows]
   const index = markIndex(all)
@@ -198,7 +208,7 @@ export function paletteItems(
     ...(openPageId ? [SAVE_AS_TEMPLATE_ACTION] : []),
     ...(openPage && isDuplicablePageRow(openPage) ? [DUPLICATE_PAGE_ACTION] : []),
     ...(openPage && isMovablePageRow(openPage) ? [MOVE_PAGE_ACTION] : []),
-    ...(openPage && isDuplicablePageRow(openPage)
+    ...(openPage && isDuplicablePageRow(openPage) && pondResolved
       ? [favouritePageIds?.includes(openPage.id) ? UNFAVOURITE_PAGE_ACTION : FAVOURITE_PAGE_ACTION]
       : []),
   ]
