@@ -141,8 +141,7 @@ import { blockName as changeBlockName } from '@/lib/change-log/summary'
 import { appendOwnEdit, listRecords } from '@/lib/change-log/store'
 import { changeLogKey } from '@/lib/change-log/keys'
 import { restorePage, trashPage } from '@/lib/change-log/trash'
-import { blockHoldsContent } from '@/lib/modules/block-holds-content'
-import { blockLabel } from '@/lib/modules/types'
+import { blockHoldsContent, removedOnExit } from '@/lib/modules/block-holds-content'
 import { ConfirmDialog } from '@/components/molecules/ConfirmDialog'
 import {
   blockMenuGroups,
@@ -1826,23 +1825,18 @@ export function BlockCanvas({
     }
   }
 
-  // Focus left the block. An empty one goes with it: an unlabelled empty line
-  // the same way Backspace takes it (nothing to undo), anything else through
-  // the delete that can be undone. The page's only block stays, and a block
-  // the person named stays. Focus is already where they went.
+  // Focus left the block. Only an unlabelled empty text line goes with it
+  // (KAN-558), the same way Backspace takes it: nothing to undo. Every other
+  // block — a checklist, a table, a toc — is a deliberate structure and
+  // stays until the person deletes it themselves. The page's only block
+  // stays too. Focus is already where they went.
   function removeEmptyOnExit(id: string) {
     const current = blocksRef.current
     if (current.length < 2) return
     const index = current.findIndex((block) => block.id === id)
     const block = current[index]
-    if (!block || blockLabel(block) || blockHoldsContent(block)) return
-    if (block.type === 'text') {
-      commitStructuralBlocks(detachKeepingRows(current, index).blocks)
-      return
-    }
-    const stateIndex = blocks.findIndex((item) => item.id === id)
-    if (stateIndex === -1) return
-    removeBlockAt(stateIndex, false)
+    if (!block || !removedOnExit(block)) return
+    commitStructuralBlocks(detachKeepingRows(current, index).blocks)
   }
 
   // A row is never split by landing a new block between its members (KAN-506):
