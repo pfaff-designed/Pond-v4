@@ -2524,9 +2524,6 @@ export function Rail() {
       else setExpanded((prev) => new Set(prev).add(targetId))
     }
 
-    // KAN-477: a reparent writes no link block of its own — the new parent's
-    // child links are derived at read time, so the move stays one undo step.
-
     try {
       const record = await withUser((sb) =>
         movePage(sb, {
@@ -2542,6 +2539,13 @@ export function Rail() {
           recordIds: Promise.resolve([record.id]),
         })
         queryClient.invalidateQueries({ queryKey: changeLogKey() })
+        // The move's own RPC edits the old and new link-parents' `blocks` —
+        // rebase an open draft of either onto that write instead of waiting
+        // for a reload.
+        const oldLinkParentId = draggedRow.parent_id ?? home?.id
+        const newLinkParentId = move.newParentId ?? home?.id
+        if (oldLinkParentId) queryClient.invalidateQueries({ queryKey: ['page', oldLinkParentId] })
+        if (newLinkParentId) queryClient.invalidateQueries({ queryKey: ['page', newLinkParentId] })
         stageUndo({
           message: `moved ${title} to ${moveParentLabel(after.parentTitle, home?.title ?? pondName)} ·`,
           undoLabel: 'undo',

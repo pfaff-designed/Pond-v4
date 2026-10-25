@@ -1,12 +1,13 @@
 /**
- * KAN-466/KAN-477: dragging a row to a new parent (drag-to-reparent) writes
- * no page-link block of its own — the new parent's child links are derived
- * at read time, so the move stays the session-undo stack's only new step.
+ * KAN-466/KAN-467: dragging a row to a new parent (drag-to-reparent) writes
+ * no link block of Rail's own — the edit now rides inside `movePage`'s own
+ * RPC, so the move stays the session-undo stack's only new step.
  */
 import { screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { appendChildLinkUnder } from '@/lib/pages/child-links'
 import { movePage } from '@/lib/pages/client'
 import { changeLogKey } from '@/lib/change-log/keys'
+import { homeQueryKey } from '@/lib/pages/keys'
 import { mountRail } from './helpers/rail-sweep-fixture'
 import type { PageRow } from '@/lib/pages/tree'
 import type { ChangeLogRecord } from '@/lib/change-log/types'
@@ -49,6 +50,10 @@ jest.mock('@/lib/pages/child-links', () => ({
   appendChildLinkUnder: jest.fn().mockResolvedValue(undefined),
 }))
 
+jest.mock('@/lib/pages/home', () => ({
+  getOrCreateHomePage: jest.fn().mockResolvedValue({ id: 'home-1', title: 'life', blocks: [] }),
+}))
+
 const AT = '2026-01-01T00:00:00Z'
 const ROOT_ROWS: PageRow[] = [
   { id: 'page-a', parent_id: null, type: 'page', title: 'Page A', order: 0, updated_at: AT },
@@ -76,7 +81,7 @@ function dropEvent(clientY: number) {
   return event
 }
 
-it('dropping a row into a new parent writes no link block of its own', async () => {
+it("dropping a row into a new parent doesn't call Rail's own link-append", async () => {
   mountRail(ROOT_ROWS)
 
   const dragged = screen.getByRole('treeitem', { name: 'Page A' })
@@ -164,4 +169,31 @@ it('invalidates the change log after a successful move', async () => {
   await waitFor(() =>
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: changeLogKey() })
   )
+})
+
+it("invalidates the old and new link-parents' own page caches, resolving a top-level parent to home", async () => {
+  const client = mountRail(ROOT_ROWS)
+  // Wait for the mocked home row to land in the cache before dragging, so
+  // `handleMove`'s closure reads the resolved `home.id`, not an in-flight one.
+  await waitFor(() =>
+    expect(client.getQueryData(homeQueryKey('pond-1'))).toEqual({
+      id: 'home-1',
+      title: 'life',
+      blocks: [],
+    })
+  )
+  const invalidateSpy = jest.spyOn(client, 'invalidateQueries')
+
+  // Page A's parent_id is null in ROOT_ROWS — the dragged row's old
+  // link-parent resolves to the mocked home row.
+  const dragged = screen.getByRole('treeitem', { name: 'Page A' })
+  const target = screen.getByRole('treeitem', { name: 'Page B' })
+
+  fireEvent(dragged, dragStartEvent())
+  fireEvent(target, dropEvent(0))
+
+  await waitFor(() =>
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['page', 'home-1'] })
+  )
+  expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['page', 'page-b'] })
 })
