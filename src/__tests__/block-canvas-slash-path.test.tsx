@@ -22,14 +22,19 @@
  */
 
 import React, { useState } from 'react'
-import { render, screen, within, waitFor } from '@testing-library/react'
+import { act, render, screen, within, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import type { Block } from '@/lib/documents/types'
 import { BLANK_TEXT_GROUP } from '@/components/molecules/slash-entries'
-import { findAllTextBlocks, findTextBlock, writeInTextBlock } from './helpers/text-block'
+import {
+  findAllTextBlocks,
+  findTextBlock,
+  textEditorOf,
+  writeInTextBlock,
+} from './helpers/text-block'
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
@@ -290,5 +295,49 @@ describe('the free-text path for an unmatched word (KAN-114)', () => {
     await user.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument())
     expect(editor.textContent).toBe('/wine')
+  })
+})
+
+describe('the `/quote` path lands empty and Return returns to prose (KAN-462)', () => {
+  it('`/quo` → ↵ opens an empty quote with the caret inside; typing fills it; Return twice leaves it for prose', async () => {
+    const user = userEvent.setup()
+    const emptyLine: Block = { id: 'b-empty', type: 'text', content: '' }
+    renderCanvas([emptyLine])
+
+    const editorAtStart = await findTextBlock()
+    writeInTextBlock(editorAtStart, '/')
+    await screen.findByRole('listbox', { name: 'blocks' })
+    writeInTextBlock(editorAtStart, '/quo')
+    const menu = await screen.findByRole('listbox', { name: 'blocks' })
+    expect(labelsOf(menu)).toEqual(['quote'])
+
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument())
+
+    const quoteField = await findTextBlock()
+    await waitFor(() => expect(quoteField).toHaveFocus())
+    expect(quoteField.querySelector('blockquote')).toBeInTheDocument()
+    expect(quoteField.textContent).toBe('')
+
+    act(() => {
+      textEditorOf(quoteField).commands.insertContent('words')
+    })
+    expect(quoteField.querySelector('blockquote')?.textContent).toBe('words')
+
+    await user.keyboard('{Enter}')
+    const freshLine = (await findAllTextBlocks()).at(-1)!
+    await waitFor(() => expect(freshLine).toHaveFocus())
+    expect(freshLine.querySelector('blockquote')).not.toBeInTheDocument()
+
+    // The fresh line is already an empty, unlabelled block, so a second Return
+    // does nothing further (`block-return.test.tsx`'s "one action, one write").
+    await user.keyboard('{Enter}')
+    const fields = await findAllTextBlocks()
+    expect(fields).toHaveLength(2)
+    const prose = fields.at(-1)!
+    expect(prose).toBe(freshLine)
+    await waitFor(() => expect(prose).toHaveFocus())
+    expect(prose.querySelector('blockquote')).not.toBeInTheDocument()
+    expect(fields[0].querySelector('blockquote')?.textContent).toBe('words')
   })
 })
