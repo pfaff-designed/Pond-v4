@@ -57,6 +57,21 @@ describe('removedOnExit (KAN-558)', () => {
     expect(removedOnExit(block)).toBe(true)
   })
 
+  it('an empty bulleted-list marker is removed', () => {
+    const block: Block = { id: 't', type: 'text', content: '- ' }
+    expect(removedOnExit(block)).toBe(true)
+  })
+
+  it('a bulleted-list item with words stays', () => {
+    const block: Block = { id: 't', type: 'text', content: '- milk' }
+    expect(removedOnExit(block)).toBe(false)
+  })
+
+  it('a plain-text leading dash the serializer escapes stays', () => {
+    const block: Block = { id: 't', type: 'text', content: '\\-' }
+    expect(removedOnExit(block)).toBe(false)
+  })
+
   it('an empty highlight stays — it is not a text block, by decision', () => {
     const block: Block = { id: 'h', type: 'highlight', content: '' }
     expect(removedOnExit(block)).toBe(false)

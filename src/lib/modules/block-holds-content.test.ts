@@ -37,6 +37,14 @@ describe('blockHoldsContent', () => {
     expect(blockHoldsContent(text('> '))).toBe(false)
   })
 
+  it('a bare bulleted-list marker holds nothing, so ⌘⌫ skips the confirm', () => {
+    expect(blockHoldsContent(text('- '))).toBe(false)
+  })
+
+  it('a bulleted-list item with words holds something', () => {
+    expect(blockHoldsContent(text('- milk'))).toBe(true)
+  })
+
   it('a blank log, an empty table and a toc do not', () => {
     expect(
       blockHoldsContent({
