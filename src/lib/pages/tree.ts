@@ -219,7 +219,13 @@ export function applyPagePropsOptimistic(
  */
 export function applyMoveOptimistic(
   queryClient: QueryClient,
-  move: { movedId: string; newParentId: string | null; siblingOrder: string[] },
+  move: {
+    movedId: string
+    newParentId: string | null
+    siblingOrder: string[]
+    /** KAN-470: a destination-clash suffix, written in this same optimistic pass so the rail never flashes the old, clashing title. */
+    newTitle?: string
+  },
   /**
    * #312: the pond whose cache to write. `setQueryData` is an EXACT key match,
    * unlike `invalidateQueries`, so writing `pagesKey()` while the reads
@@ -236,11 +242,14 @@ export function applyMoveOptimistic(
     return rows.map((r) => {
       const parent_id = r.id === move.movedId ? move.newParentId : r.parent_id
       const order = orderById.has(r.id) ? orderById.get(r.id)! : r.order
-      if (parent_id === r.parent_id && order === r.order) return r
+      const title = r.id === move.movedId && move.newTitle !== undefined ? move.newTitle : r.title
+      if (parent_id === r.parent_id && order === r.order && title === r.title) return r
       // A top-level page nested under another stops being an area, and the
       // database clears its role in the same write.
       const nested = r.parent_id === null && parent_id !== null
-      return nested ? { ...r, parent_id, order, area_role: null } : { ...r, parent_id, order }
+      return nested
+        ? { ...r, parent_id, order, title, area_role: null }
+        : { ...r, parent_id, order, title }
     })
   })
   return snapshot
