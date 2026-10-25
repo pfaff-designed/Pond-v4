@@ -105,6 +105,17 @@ describe('TocView', () => {
     expect(rows[2].style.paddingLeft).toBe('28px')
   })
 
+  it('each row paints its own hover wash and focus-visible ring', () => {
+    render(
+      <SiblingBlocksProvider value={{ blocks: threeHeadings }}>
+        <TocView />
+      </SiblingBlocksProvider>
+    )
+    const row = screen.getAllByRole('button')[0]
+    expect(row.className).toContain('hover:bg-mn-text/5')
+    expect(row.className).toContain('focus-visible:outline-mn-area-b')
+  })
+
   it('updates live when the siblings rerender with changed blocks', () => {
     const { rerender } = render(
       <SiblingBlocksProvider value={{ blocks: threeHeadings }}>

@@ -2,6 +2,7 @@
 
 import { PondMolecule } from '@/components/molecules/PondMolecule'
 import { PondBlockEmpty } from '@/components/organisms/PondBlock'
+import { FOCUS_VISIBLE_RING } from '@/components/atoms/focus-ring'
 import { useSiblingBlocks } from '../sibling-context'
 import { scrollToBlock } from '../block-dom'
 import { getHeadings } from './headings'
@@ -34,7 +35,7 @@ export function TocView() {
         <button
           key={heading.id}
           type="button"
-          className="w-full text-left"
+          className={`w-full rounded-mn-row text-left hover:bg-mn-text/5 ${FOCUS_VISIBLE_RING}`}
           style={{ paddingLeft: (heading.level - shallowest) * INDENT_STEP_PX }}
           onClick={() => scrollToBlock(heading.id, { block: 'start', highlight: false })}
         >
