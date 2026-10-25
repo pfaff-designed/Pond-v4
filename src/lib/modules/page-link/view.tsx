@@ -9,6 +9,7 @@ import { useBlockRow } from '../block-row-context'
 import type { PageLinkBlock } from './schema'
 import type { PageRow } from '@/lib/pages/tree'
 import { pagesKey } from '@/lib/pages/keys'
+import { workspaceUrl } from '@/lib/pages/nav'
 import { usePagePrefetchHandlers } from '@/lib/pages/use-page-prefetch'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { cn } from '@/lib/utils'
@@ -101,16 +102,19 @@ export function PageLinkView({ data }: ModuleViewProps<PageLinkBlock>) {
   }
 
   return (
-    <div
-      role="button"
-      tabIndex={0}
+    <a
+      href={workspaceUrl(ref)}
       aria-label={`Open ${ref.title}`}
       className={cn(
         ROW,
         'cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-mn-text',
         selectedRing
       )}
-      onClick={() => pageLinks!.navigateToPage(ref)}
+      onClick={(e) => {
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
+        e.preventDefault()
+        pageLinks!.navigateToPage(ref)
+      }}
       onKeyDown={(e) => {
         if (e.key !== 'Enter') return
         e.preventDefault()
@@ -132,6 +136,6 @@ export function PageLinkView({ data }: ModuleViewProps<PageLinkBlock>) {
       <span aria-hidden className="text-mn-text-meta">
         ›
       </span>
-    </div>
+    </a>
   )
 }

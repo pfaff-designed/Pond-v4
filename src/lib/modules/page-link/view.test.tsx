@@ -61,7 +61,7 @@ describe('PageLinkView — resolved', () => {
     expect(screen.getByText('›')).toBeInTheDocument()
     expect(screen.queryByText('page in trash')).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open cabinets' }))
+    fireEvent.click(screen.getByRole('link', { name: 'Open cabinets' }))
     expect(caps.navigateToPage).toHaveBeenCalledWith(ref)
   })
 
@@ -72,7 +72,7 @@ describe('PageLinkView — resolved', () => {
         <PageLinkView data={block} />
       </PageLinkProvider>
     )
-    fireEvent.keyDown(screen.getByRole('button', { name: 'Open cabinets' }), { key: 'Enter' })
+    fireEvent.keyDown(screen.getByRole('link', { name: 'Open cabinets' }), { key: 'Enter' })
     expect(caps.navigateToPage).toHaveBeenCalledWith(ref)
   })
 
@@ -150,7 +150,7 @@ describe('PageLinkView — selected', () => {
         </BlockRowProvider>
       </PageLinkProvider>
     )
-    const row = screen.getByRole('button', { name: 'Open cabinets' })
+    const row = screen.getByRole('link', { name: 'Open cabinets' })
     for (const cls of ringClasses) expect(row).toHaveClass(cls)
   })
 
@@ -163,7 +163,7 @@ describe('PageLinkView — selected', () => {
         </BlockRowProvider>
       </PageLinkProvider>
     )
-    const row = screen.getByRole('button', { name: 'Open cabinets' })
+    const row = screen.getByRole('link', { name: 'Open cabinets' })
     for (const cls of ringClasses) expect(row).not.toHaveClass(cls)
   })
 })
@@ -189,7 +189,7 @@ describe('PageLinkView — hover prefetch (KAN-388)', () => {
       </QueryClientProvider>
     )
 
-    fireEvent.pointerEnter(screen.getByRole('button', { name: 'Open cabinets' }))
+    fireEvent.pointerEnter(screen.getByRole('link', { name: 'Open cabinets' }))
     jest.advanceTimersByTime(60)
 
     expect(prefetchSpy).toHaveBeenCalledTimes(1)
@@ -208,7 +208,7 @@ describe('PageLinkView — hover prefetch (KAN-388)', () => {
       </QueryClientProvider>
     )
 
-    const row = screen.getByRole('button', { name: 'Open cabinets' })
+    const row = screen.getByRole('link', { name: 'Open cabinets' })
     fireEvent.pointerEnter(row)
     jest.advanceTimersByTime(20)
     fireEvent.pointerLeave(row)
