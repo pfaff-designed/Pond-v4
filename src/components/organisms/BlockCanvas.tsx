@@ -4190,10 +4190,17 @@ function BlockEditor({
   // the arrow to open the menu and keep it from reaching the block — but
   // desktop's handle (KAN-485) is a plain button, not a Menu.Trigger, so
   // there's no Base UI handler to suppress there; `preventBaseUIHandler` only
-  // exists on the mobile path's Base UI-wrapped event.
+  // exists on the mobile path's Base UI-wrapped event. ⌘⌫ on the handle
+  // deletes the block (board 8e) the same way a selected row's own ⌘⌫ does —
+  // the handle has no `onKeyDownCapture` of its own, so this is that chord's
+  // only path when the handle, not the row, holds focus.
   const handleTriggerKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
     if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
       ;(e as BaseUIEvent<typeof e>).preventBaseUIHandler?.()
+    }
+    if (isDeleteBlockChord(e.nativeEvent)) {
+      e.preventDefault()
+      onDeleteBlock()
     }
   }
 
@@ -4479,7 +4486,10 @@ function BlockEditor({
           it is always visible there; PondBlock's head row reserves the 40px
           this takes (`size="mobile"`, below). Press-and-drag reorders; a
           no-move release selects the row. Phone keeps a tap opening the
-          block menu (KAN-485), which is where `delete` lives. Inside the card
+          block menu (KAN-485); mobile's `delete` row lives there. Desktop has
+          no menu row for it (board 8e) — ⌘⌫ on the handle itself (focused via
+          Tab, below) deletes the block directly, same as a selected row's own
+          ⌘⌫ (`handleKeyDownCapture`). Inside the card
           it must stack ABOVE the body that follows it in the DOM (the card's
           paper, a text block's editor) or taps land on the body: `z-[1]`, the
           lowest lift that does it, under every floating surface (z ≥ 4).

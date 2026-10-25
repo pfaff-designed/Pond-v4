@@ -8,7 +8,6 @@
 
 import React from 'react'
 import { act, render, screen, fireEvent, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DocumentPanel } from '@/components/organisms/DocumentPanel'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
@@ -272,7 +271,7 @@ describe('A modified Backspace in an empty text block (KAN-307)', () => {
 // ── A block delete must leave focus on the page, never on `<body>` (KAN-275) ──
 // `removeBlockAt` and `removeEmptyLineAt` now share one neighbour-focus helper.
 describe('A block delete focuses the neighbour, or the title with none left', () => {
-  it('deletes the first of two blocks via the handle menu and focuses the one left', async () => {
+  it('deletes the first of two blocks via ⌘⌫ on the selected row and focuses the one left', async () => {
     // A table neighbour (not text) so the assertion exercises the wrapper's own
     // `.focus()` branch of the shared helper, not tiptap's — ProseMirror's own
     // focus command doesn't move `document.activeElement` under jsdom.
@@ -281,24 +280,27 @@ describe('A block delete focuses the neighbour, or the title with none left', ()
       { id: 'b2', type: 'table', columns: ['Tool'], rows: [{ id: 'r1', cells: ['Saw'] }] },
     ]
     renderWith({ id: 'page-1', title: 'Test', blocks })
-    const user = userEvent.setup()
 
-    const handles = await screen.findAllByRole('button', { name: 'drag to move' })
-    fireEvent.contextMenu(handles[0].closest('[id^="block-"]')!)
-    await user.click(await screen.findByRole('menuitem', { name: 'delete' }))
-    await user.click(await screen.findByRole('button', { name: 'Delete' }))
+    await findTextBlock()
+    const row = document.getElementById('block-b1')!
+    row.focus()
+    await waitFor(() => expect(row).toHaveFocus())
+    // jsdom's platform is not Mac, so the chord is Ctrl+⌫ here (`isCommandOnly`).
+    fireEvent.keyDown(row, { key: 'Backspace', ctrlKey: true })
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete' }))
 
     await waitFor(() => expect(document.getElementById('block-b2')).toBe(document.activeElement))
   })
 
-  it('deletes a page’s only block via the handle menu and focuses the title', async () => {
+  it('deletes a page’s only block via ⌘⌫ on the selected row and focuses the title', async () => {
     const blocks: Block[] = [{ id: 'b1', type: 'text', content: 'Only' }]
     renderWith({ id: 'page-1', title: 'Test', blocks })
 
     await findTextBlock()
-    const handles = await screen.findAllByRole('button', { name: 'drag to move' })
-    fireEvent.contextMenu(handles[0].closest('[id^="block-"]')!)
-    fireEvent.click(await screen.findByRole('menuitem', { name: 'delete' }))
+    const row = document.getElementById('block-b1')!
+    row.focus()
+    await waitFor(() => expect(row).toHaveFocus())
+    fireEvent.keyDown(row, { key: 'Backspace', ctrlKey: true })
     fireEvent.click(await screen.findByRole('button', { name: 'Delete' }))
 
     await waitFor(() => expect(queryAllTextBlocks()).toHaveLength(0))

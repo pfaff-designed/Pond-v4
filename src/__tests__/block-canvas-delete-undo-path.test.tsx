@@ -11,7 +11,7 @@
  */
 
 import React from 'react'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DocumentPanel } from '@/components/organisms/DocumentPanel'
@@ -44,6 +44,22 @@ jest.mock('@/lib/pages/tree', () => ({
 jest.mock('@/lib/templates/client', () => ({
   listTemplates: jest.fn().mockResolvedValue([]),
   getTemplate: jest.fn().mockResolvedValue(null),
+}))
+
+// The chart card row's own delete/undo test below never reads real
+// collection rows — only that the row selects and ⌘⌫ reaches it.
+jest.mock('@/lib/modules/view/use-collection-rows', () => ({
+  useCollectionRows: () => ({
+    schema: [],
+    rows: [],
+    isLoading: false,
+    isError: false,
+    setValue: jest.fn(),
+    addRow: jest.fn(),
+    removeRow: jest.fn(),
+    renameRow: jest.fn(),
+    updateSchema: jest.fn(),
+  }),
 }))
 
 const mockGetPage = jest.fn()
@@ -228,7 +244,7 @@ describe('⌘⌫ writes through persistBlocksAsOwnEdit, one ⌘Z step (KAN-368)'
     await waitFor(() => expect(undoStep).toHaveBeenCalledTimes(2))
   })
 
-  it('delete via the handle menu, then clicking the toast’s undo restores the block with one undo RPC', async () => {
+  it('⌘⌫ on the selected row, then clicking the toast’s undo restores the block with one undo RPC', async () => {
     const kept: Block = { id: 'b-kept', type: 'text', content: 'the only open cost' }
     const removed: Block = { id: 'b-removed', type: 'text', content: 'cabinets' }
     renderPath([kept, removed])
@@ -240,8 +256,11 @@ describe('⌘⌫ writes through persistBlocksAsOwnEdit, one ⌘Z step (KAN-368)'
     } as never)
 
     const user = userEvent.setup()
-    fireEvent.contextMenu(blockRoot('b-removed'))
-    await user.click(await screen.findByRole('menuitem', { name: 'delete' }))
+    const row = blockRoot('b-removed')
+    row.focus()
+    await waitFor(() => expect(row).toHaveFocus())
+
+    await user.keyboard('{Meta>}{Backspace}{/Meta}')
     await user.click(await screen.findByRole('button', { name: 'Delete' }))
 
     await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalledTimes(1))
@@ -294,5 +313,59 @@ describe('⌘⌫ writes through persistBlocksAsOwnEdit, one ⌘Z step (KAN-368)'
     await new Promise((resolve) => setTimeout(resolve, 10))
 
     expect(undoStep).toHaveBeenCalledTimes(1)
+  })
+
+  it('⌘⌫ on a selected chart card row, then confirm, deletes it; ⌘Z restores it', async () => {
+    const kept: Block = { id: 'b-kept', type: 'text', content: 'the only open cost' }
+    const chart: Block = {
+      id: 'b-chart',
+      type: 'view',
+      mode: 'chart',
+      label: 'weight',
+      chart: { kind: 'line', xProperty: 'p-date', series: [{ property: 'p-kg', agg: 'sum' }] },
+    }
+    renderPath([kept, chart])
+    await screen.findByLabelText('Page title')
+
+    const user = userEvent.setup()
+    const row = blockRoot('b-chart')
+    row.focus()
+    await waitFor(() => expect(row).toHaveFocus())
+
+    await user.keyboard('{Meta>}{Backspace}{/Meta}')
+    await user.click(await screen.findByRole('button', { name: 'Delete' }))
+
+    await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalledTimes(1))
+    expect(mockSaveBlocks.mock.calls[0][2].map((b: Block) => b.id)).toEqual(['b-kept'])
+    await waitFor(() => expect(mockAppendOwnEdit).toHaveBeenCalledTimes(1))
+    expect(screen.getByRole('button', { name: 'undo' })).toBeInTheDocument()
+
+    await user.keyboard('{Meta>}z{/Meta}')
+
+    await waitFor(() => expect(undoStep).toHaveBeenCalledTimes(1))
+    expect(undoStep).toHaveBeenCalledWith(expect.anything(), {
+      pondId: 'pond-1',
+      recordIds: ['record-1'],
+    })
+  })
+
+  it('⌘⌫ on a focused handle deletes that block', async () => {
+    const kept: Block = { id: 'b-kept', type: 'text', content: 'the only open cost' }
+    const removed: Block = { id: 'b-removed', type: 'text', content: 'cabinets' }
+    renderPath([kept, removed])
+    await screen.findByLabelText('Page title')
+
+    const user = userEvent.setup()
+    const handle = within(blockRoot('b-removed')).getByRole('button', { name: 'drag to move' })
+    handle.focus()
+    await waitFor(() => expect(handle).toHaveFocus())
+
+    await user.keyboard('{Meta>}{Backspace}{/Meta}')
+    await user.click(await screen.findByRole('button', { name: 'Delete' }))
+
+    await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalledTimes(1))
+    expect(mockSaveBlocks.mock.calls[0][2].map((b: Block) => b.id)).toEqual(['b-kept'])
+    await waitFor(() => expect(mockAppendOwnEdit).toHaveBeenCalledTimes(1))
+    expect(await screen.findByText('deleted text ·')).toBeInTheDocument()
   })
 })
