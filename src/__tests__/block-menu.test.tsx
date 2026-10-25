@@ -30,10 +30,20 @@ jest.mock('@/lib/supabase/client', () => ({
 
 const mockDeletePage = jest.fn().mockResolvedValue(undefined)
 const mockSaveBlocks = jest.fn().mockResolvedValue(undefined)
+const mockCreatePage = jest.fn().mockResolvedValue({
+  id: 'child-page-1',
+  parentId: 'page-1',
+  type: 'page',
+  title: 'walk the dog',
+  blocks: [],
+  order: 0,
+  props: {},
+})
 jest.mock('@/lib/pages/client', () => ({
   ...jest.requireActual('@/lib/pages/client'),
   deletePage: (...args: unknown[]) => mockDeletePage(...args),
   saveBlocks: (...args: unknown[]) => mockSaveBlocks(...args),
+  createPage: (...args: unknown[]) => mockCreatePage(...args),
 }))
 
 // The width row's keep (KAN-368) writes directly through `saveBlocks`/`appendOwnEdit`.
@@ -56,6 +66,7 @@ jest.mock('@/lib/pages/list-to-table', () => ({
 }))
 
 const heading: Block = { id: 'b-heading', type: 'text', content: '## ingredients' }
+const note: Block = { id: 'b-note', type: 'text', content: 'walk the dog' }
 const list: Block = {
   id: 'b-list',
   type: 'text',
@@ -619,6 +630,39 @@ describe('turn into — table', () => {
 
     await waitFor(() => expect(lastBlocks(onChange)).toEqual([heading, list]))
     await waitFor(() => expect(mockDeletePage).toHaveBeenCalledWith(expect.anything(), 'db-1'))
+  })
+})
+
+describe('turn into — page', () => {
+  it('moves the line into a new child page and leaves a page-link row in its place', async () => {
+    const user = userEvent.setup()
+    const { onChange } = renderCanvas([note])
+    await user.click(handleOf('b-note'))
+    await user.click(await screen.findByRole('menuitem', { name: 'page' }))
+
+    await waitFor(() => expect(mockCreatePage).toHaveBeenCalledTimes(1))
+    const [, , input] = mockCreatePage.mock.calls[0]
+    expect(input.blocks).toEqual([note])
+    expect(input.title).toBe('walk the dog')
+
+    await waitFor(() =>
+      expect(lastBlocks(onChange)[0]).toMatchObject({ type: 'page-link', pageId: 'child-page-1' })
+    )
+    expect(await screen.findByText(/turned into a page/i)).toBeInTheDocument()
+  })
+
+  it('undo puts the block back and deletes the page it made', async () => {
+    const user = userEvent.setup()
+    const { onChange } = renderCanvas([note])
+    await user.click(handleOf('b-note'))
+    await user.click(await screen.findByRole('menuitem', { name: 'page' }))
+    await waitFor(() => expect(mockCreatePage).toHaveBeenCalledTimes(1))
+    await user.click(await screen.findByRole('button', { name: /undo/i }))
+
+    await waitFor(() => expect(lastBlocks(onChange)).toEqual([note]))
+    await waitFor(() =>
+      expect(mockDeletePage).toHaveBeenCalledWith(expect.anything(), 'child-page-1')
+    )
   })
 })
 

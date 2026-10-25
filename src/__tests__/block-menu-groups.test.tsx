@@ -115,8 +115,7 @@ describe('blockMenuGroups delete label', () => {
 })
 
 describe('blockMenuGroups turn-into: heading, quote, code', () => {
-  const turnIntoItems = (apple: boolean) =>
-    blockMenuGroups(text, {}, apple)[0].items ?? []
+  const turnIntoItems = (apple: boolean) => blockMenuGroups(text, {}, apple)[0].items ?? []
 
   it('labels the new targets in the board’s lowercase, with heading 1–3’s chord hint pinned to Mac', () => {
     const items = turnIntoItems(true)
@@ -126,6 +125,7 @@ describe('blockMenuGroups turn-into: heading, quote, code', () => {
       ['heading 3', '⌥⌘3'],
       ['quote', undefined],
       ['code', undefined],
+      ['page', undefined],
       ['list', undefined],
       ['checklist', undefined],
     ])
@@ -139,6 +139,7 @@ describe('blockMenuGroups turn-into: heading, quote, code', () => {
       ['heading 3', 'Ctrl Alt 3'],
       ['quote', undefined],
       ['code', undefined],
+      ['page', undefined],
       ['list', undefined],
       ['checklist', undefined],
     ])

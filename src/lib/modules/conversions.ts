@@ -39,6 +39,7 @@ import {
   previewListTable,
   type DatabaseFromList,
 } from '@/lib/pages/list-to-table'
+import { createPage, type PondPage } from '@/lib/pages/client'
 import type { Block } from './content'
 import type { TextBlock } from './text/schema'
 import { retypeText, textKindOf, type TextKind } from './text/retype'
@@ -52,6 +53,7 @@ export const CONVERSION_TARGETS = [
   'heading-3',
   'quote',
   'code',
+  'page',
   'list',
   'checklist',
   'text',
@@ -97,7 +99,7 @@ const HEADING_LEVEL_OF_KIND: Partial<Record<TextKind, 1 | 2 | 3>> = {
 export const headingLevelOf = (target: ConversionTarget): 1 | 2 | 3 | null =>
   HEADING_LEVEL_OF_KIND[TEXT_KIND_OF_TARGET[target] ?? 'text'] ?? null
 
-type LineTarget = Exclude<ConversionTarget, 'table'>
+type LineTarget = Exclude<ConversionTarget, 'table' | 'page'>
 
 export interface TableConversionInput {
   title: string
@@ -122,7 +124,22 @@ export interface TableConversion {
   ) => Promise<DatabaseFromList>
 }
 
-export type Conversion = LineConversion | TableConversion
+export interface PageConversionInput {
+  userId: string
+  /** The page this line's block lives on — the new page is always its child. */
+  parentId: string | null
+  pondId: string | null
+  props?: Record<string, unknown>
+}
+
+export interface PageConversion {
+  target: 'page'
+  /** Nothing to count: the page is made, not previewed. */
+  preview: null
+  apply: (supabase: SupabaseClient<Database>, input: PageConversionInput) => Promise<PondPage>
+}
+
+export type Conversion = LineConversion | TableConversion | PageConversion
 
 /** The `[ ]` / `[x]` a list line's item may open with. */
 const TASK_MARK = /^\[([ xX])\]\s+(.*\S)$/
@@ -204,6 +221,27 @@ const tableConversion = (block: Block): TableConversion | null => {
   }
 }
 
+/** `block`'s content, read as the plain single line a new page would be titled from. */
+const pageTitleOf = (block: TextBlock): string =>
+  plainLine(retypeText(block.content, 'text').split('\n')[0] ?? '')
+
+const pageConversion = (block: TextBlock): PageConversion => {
+  const title = pageTitleOf(block)
+  return {
+    target: 'page',
+    preview: null,
+    apply: (supabase, { userId, parentId, pondId, props }) =>
+      createPage(supabase, userId, {
+        parentId,
+        type: 'page',
+        title,
+        blocks: [block],
+        ...(props ? { props } : {}),
+        pondId,
+      }),
+  }
+}
+
 const lineConversion = (
   block: TextBlock | TodoBlock,
   target: LineTarget,
@@ -242,6 +280,9 @@ export const conversionsFor = (
     if (target === 'table') {
       const table = tableConversion(block)
       return table ? [table] : []
+    }
+    if (target === 'page') {
+      return singleNode && block.type === 'text' ? [pageConversion(block)] : []
     }
     if (RETYPE_ONLY_TARGETS.has(target) && !singleNode) return []
     return [lineConversion(block, target, mintId)]

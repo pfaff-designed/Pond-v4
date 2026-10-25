@@ -7,7 +7,12 @@
 
 import type { ReactNode } from 'react'
 import type { PondMenuGroup, PondMenuItem } from '@/components/molecules/PondMenu'
-import { conversionsFor, headingLevelOf, type Conversion, type ConversionTarget } from '@/lib/modules/conversions'
+import {
+  conversionsFor,
+  headingLevelOf,
+  type Conversion,
+  type ConversionTarget,
+} from '@/lib/modules/conversions'
 import type { Block, BlockWidth } from '@/lib/modules/content'
 import { HEADING_CHORDS } from '@/lib/modules/text/markup'
 import { formatChord } from '@/lib/shell-commands'
@@ -51,6 +56,7 @@ const CONVERSION_LABELS: Record<ConversionTarget, string> = {
   'heading-3': 'heading 3',
   quote: 'quote',
   code: 'code',
+  page: 'page',
   list: 'list',
   checklist: 'checklist',
   text: 'text',
