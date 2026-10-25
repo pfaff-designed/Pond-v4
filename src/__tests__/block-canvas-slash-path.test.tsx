@@ -341,3 +341,54 @@ describe('the `/quote` path lands empty and Return returns to prose (KAN-462)', 
     expect(fields[0].querySelector('blockquote')?.textContent).toBe('words')
   })
 })
+
+describe('the `/divider` and `/numbered` paths land with the caret ready (KAN-462)', () => {
+  it('`/div` → ↵ opens a divider with the caret in the empty line after the rule', async () => {
+    const user = userEvent.setup()
+    const emptyLine: Block = { id: 'b-empty', type: 'text', content: '' }
+    renderCanvas([emptyLine])
+
+    const editorAtStart = await findTextBlock()
+    writeInTextBlock(editorAtStart, '/')
+    await screen.findByRole('listbox', { name: 'blocks' })
+    writeInTextBlock(editorAtStart, '/div')
+    const menu = await screen.findByRole('listbox', { name: 'blocks' })
+    expect(labelsOf(menu)).toEqual(['divider'])
+
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument())
+
+    const field = await findTextBlock()
+    await waitFor(() => expect(field).toHaveFocus())
+    expect(field.querySelector('hr')).toBeInTheDocument()
+
+    const { $from } = textEditorOf(field).state.selection
+    expect($from.parent.type.name).toBe('paragraph')
+    expect($from.parent.textContent).toBe('')
+  })
+
+  it('`/numbered` → ↵ opens a numbered list with the caret inside the empty item', async () => {
+    const user = userEvent.setup()
+    const emptyLine: Block = { id: 'b-empty', type: 'text', content: '' }
+    renderCanvas([emptyLine])
+
+    const editorAtStart = await findTextBlock()
+    writeInTextBlock(editorAtStart, '/')
+    await screen.findByRole('listbox', { name: 'blocks' })
+    writeInTextBlock(editorAtStart, '/numbered')
+    const menu = await screen.findByRole('listbox', { name: 'blocks' })
+    expect(labelsOf(menu)).toEqual(['numbered list'])
+
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument())
+
+    const field = await findTextBlock()
+    await waitFor(() => expect(field).toHaveFocus())
+    expect(field.querySelector('ol > li')).toBeInTheDocument()
+    expect(field.textContent).toBe('')
+
+    const { $from } = textEditorOf(field).state.selection
+    expect($from.parent.type.name).toBe('paragraph')
+    expect($from.parent.textContent).toBe('')
+  })
+})
