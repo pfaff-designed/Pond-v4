@@ -95,7 +95,13 @@ describe('rail row click — shallow nav on /workspace (KAN-449)', () => {
     const tree = screen.getByRole('tree', { name: 'Workspace' })
     const row = within(tree).getByRole('treeitem', { name: 'Health' })
     expect(row.tagName).toBe('A')
-    expect(row).toHaveAttribute('href', workspaceUrl({ id: 'health', type: 'page', title: 'Health' }))
+    // The pond comes from the pond context ('pond-1', `PROVIDER_VALUE` above), passed
+    // explicitly rather than read from `window.location` — so it is carried here even
+    // though the test's own URL (set in `beforeEach`) names no pond (KAN-474 fix).
+    expect(row).toHaveAttribute(
+      'href',
+      workspaceUrl({ id: 'health', type: 'page', title: 'Health' }, 'pond-1')
+    )
   })
 
   it('a metaKey click leaves the native new-tab behaviour unprevented and never pushes history', () => {

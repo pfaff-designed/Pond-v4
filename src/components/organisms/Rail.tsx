@@ -768,6 +768,16 @@ const RailRow = forwardRef<HTMLElement, RailRowProps>(function RailRow(
 export interface RailViewProps {
   tree: RailNode[]
   /**
+   * KAN-474: the active pond, for every row's `href` (`workspaceUrl(node, pondId)`).
+   * Read from the pond context, not `currentPondId()`'s `window.location` fallback —
+   * that read returns null during SSR while the client resolves the real id, so a
+   * row built from it carried a pond-less `href` on first paint and a `?pond=`-carrying
+   * one after hydration, a mismatch React won't patch up. Optional so the existing
+   * `RailView` call sites (stories, unit tests predating this ticket) keep compiling
+   * untouched; omit it and a row's href falls back to `workspaceUrl`'s own default.
+   */
+  pondId?: string | null
+  /**
    * The pond's name — the rail header's label (AUDIT C3). The switcher chevron
    * appears once the pond list is non-empty. Resolved by `usePondName`.
    */
@@ -978,6 +988,7 @@ interface OpenGlyphPicker {
 
 export function RailView({
   tree,
+  pondId = null,
   pondName,
   rootTitle,
   showHomeRoot = true,
@@ -1415,12 +1426,14 @@ export function RailView({
     // the Life root's is the workspace root (`workspaceUrl(null)`); the
     // databases root (placeholder or real) is a disclosure, not a page, and
     // has none (KAN-486), so it stays the plain non-link row it already was.
+    // `pondId` is passed explicitly (never `workspaceUrl`'s own `window.location`
+    // fallback) so a server-rendered row and its client hydration agree on `&pond=`.
     const href =
       id === LIFE_ID
-        ? workspaceUrl(null)
+        ? workspaceUrl(null, pondId)
         : id === DATABASES_PLACEHOLDER_ID || isDatabasesRoot(node)
           ? undefined
-          : workspaceUrl(node)
+          : workspaceUrl(node, pondId)
     return id === LIFE_ID || mark === null ? (
       <RailRow
         ref={setRowRef(id)}
@@ -2708,6 +2721,7 @@ export function Rail() {
     <>
       <RailView
         tree={tree}
+        pondId={pondId}
         pondName={pondName}
         rootTitle={home?.title ?? null}
         showHomeRoot={home !== null && !homeHidden}
