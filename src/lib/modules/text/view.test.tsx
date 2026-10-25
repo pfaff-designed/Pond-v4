@@ -272,6 +272,26 @@ describe('TextView — the text block edits in place as rendered prose', () => {
     expect(handleChange).not.toHaveBeenCalled()
   })
 
+  it('content changed from outside to a divider-only block gets the empty line after the rule too, and writes nothing back', async () => {
+    const handleChange = jest.fn()
+    const { rerender } = render(<TextView data={sample} editable onChange={handleChange} />)
+    const field = await findField()
+    rerender(
+      <TextView
+        data={{ ...sample, content: TEXT_MARKUP.divider }}
+        editable
+        onChange={handleChange}
+      />
+    )
+    await waitFor(() => expect(field.querySelector('hr')).toBeInTheDocument())
+    const { doc } = editorOf(field).state
+    expect(doc.childCount).toBe(2)
+    expect(doc.child(0).type.name).toBe('horizontalRule')
+    expect(doc.child(1).type.name).toBe('paragraph')
+    expect(doc.child(1).textContent).toBe('')
+    expect(handleChange).not.toHaveBeenCalled()
+  })
+
   it('undo is the editor’s own inside the field: ⌘Z takes the typing back', async () => {
     const handleChange = jest.fn()
     render(<StatefulText data={sample} onChange={handleChange} />)

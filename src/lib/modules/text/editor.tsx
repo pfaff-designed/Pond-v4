@@ -372,7 +372,7 @@ const TextEditor = ({
     editor
       .chain()
       .setMeta('addToHistory', false)
-      .setContent(parseMarkdown(data.content).toJSON(), { emitUpdate: false })
+      .setContent(openingDocFor(data.content).toJSON(), { emitUpdate: false })
       .run()
   }, [editor, data.content])
 
