@@ -8,6 +8,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createPage } from '@/lib/pages/client'
 import { ShellCommands } from '@/components/organisms/ShellCommands'
+import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { requestComposerNotice } from '@/lib/terminal-focus'
 import { pagesKey } from '@/lib/pages/keys'
 import { mountRail, ROWS } from './helpers/rail-sweep-fixture'
@@ -164,7 +165,9 @@ it('Path test C: ⌘K → new page "groceries" creates it directly through Shell
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
     >
-      <ShellCommands />
+      <DeletionUndoProvider>
+        <ShellCommands />
+      </DeletionUndoProvider>
     </QueryClientProvider>
   )
 
@@ -190,7 +193,9 @@ it('a bare ⌘K "new page" (no query) writes the rail\'s blank title, not "untit
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
     >
-      <ShellCommands />
+      <DeletionUndoProvider>
+        <ShellCommands />
+      </DeletionUndoProvider>
     </QueryClientProvider>
   )
 
@@ -221,7 +226,9 @@ it('a rejecting createPage shows the notice instead of leaving the palette silen
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
     >
-      <ShellCommands />
+      <DeletionUndoProvider>
+        <ShellCommands />
+      </DeletionUndoProvider>
     </QueryClientProvider>
   )
 

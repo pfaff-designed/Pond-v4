@@ -5,6 +5,7 @@
 import {
   countDescendants,
   subtreeIds,
+  subtreeIdsFromRows,
   needsConfirm,
   blastRadiusLabel,
 } from '@/lib/deletion/blast-radius'
@@ -39,6 +40,33 @@ describe('subtreeIds', () => {
 
   it('is just the node for a leaf', () => {
     expect(subtreeIds(n('solo'))).toEqual(new Set(['solo']))
+  })
+})
+
+describe('subtreeIdsFromRows', () => {
+  const rows = [
+    { id: 'life', parent_id: null },
+    { id: 'house', parent_id: 'life' },
+    { id: 'roof', parent_id: 'house' },
+    { id: 'tile', parent_id: 'roof' },
+    { id: 'garden', parent_id: 'life' },
+  ]
+
+  it('is just the node for a leaf', () => {
+    expect(subtreeIdsFromRows(rows, 'tile')).toEqual(new Set(['tile']))
+  })
+
+  it('includes one direct child', () => {
+    expect(subtreeIdsFromRows(rows, 'roof')).toEqual(new Set(['roof', 'tile']))
+  })
+
+  it('includes a grandchild', () => {
+    expect(subtreeIdsFromRows(rows, 'house')).toEqual(new Set(['house', 'roof', 'tile']))
+  })
+
+  it('does not include a sibling subtree', () => {
+    const ids = subtreeIdsFromRows(rows, 'house')
+    expect(ids.has('garden')).toBe(false)
   })
 })
 

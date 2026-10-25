@@ -7,6 +7,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ShellCommands } from '@/components/organisms/ShellCommands'
+import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { PondContext, type PondContextValue } from '@/lib/pond/context'
 import { appendChildLinkUnder } from '@/lib/pages/child-links'
 import type { Pond } from '@/lib/pond/client'
@@ -54,7 +55,9 @@ function renderShell() {
   render(
     <QueryClientProvider client={client}>
       <PondContext.Provider value={PROVIDER_VALUE}>
-        <ShellCommands />
+        <DeletionUndoProvider>
+          <ShellCommands />
+        </DeletionUndoProvider>
       </PondContext.Provider>
     </QueryClientProvider>
   )

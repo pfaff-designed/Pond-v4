@@ -48,6 +48,11 @@ const ROW_CHROME: Partial<
   todo: { group: 'blocks', icon: ICON.check, key: '[]', alias: 'todo' },
   table: { group: 'blocks', icon: ICON.table, label: 'grid' },
   entries: { group: 'blocks', icon: ICON.log, alias: 'dated table' },
+  // KAN-482: app-over-board, like KAN-462's rows — the board draws no mark for
+  // this row. `ICON.list` already reads as "a list of lines", the same shape
+  // this block is, and the registry's `highlight`/`quote` pair already shares
+  // one mark across two rows, so a second type sharing it is not new.
+  toc: { group: 'blocks', icon: ICON.list },
 }
 
 /**
@@ -177,6 +182,9 @@ export const BOARD_ORDER: readonly string[] = [
   'chart',
   'big-number',
   'entry-log',
+  // KAN-482: app-over-board, placed right after `entry-log` (the ticket's own
+  // order, not a board position — the board draws no row for this type).
+  'table-of-contents',
   'page-from-template',
   'page',
 ]
@@ -281,6 +289,10 @@ export function emptyBlockForType(type: string): Block | null {
     // first entry through `addEntry`, so nothing is minted blank here.
     case 'entries':
       return { id, type: 'entries', entries: [] }
+    // KAN-482: the block stores nothing but its id/type — headings are derived
+    // live from the page's own blocks, never minted into the block itself.
+    case 'toc':
+      return { id, type: 'toc' }
     default:
       return null
   }

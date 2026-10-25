@@ -32,6 +32,7 @@ jest.mock('@/lib/change-log/session-undo', () => ({
 }))
 
 import { ShellCommands } from '@/components/organisms/ShellCommands'
+import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { sessionUndo } from '@/lib/change-log/session-undo'
 import { closeBlockHistory } from '@/lib/modules/text/active-editor'
 import TextEditor, { type Press } from '@/lib/modules/text/editor'
@@ -41,7 +42,9 @@ import { findTextBlock, writeInTextBlock } from './helpers/text-block'
 const renderShellWithBlock = () => {
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <ShellCommands />
+      <DeletionUndoProvider>
+        <ShellCommands />
+      </DeletionUndoProvider>
       <TextEditor
         data={textSchema.parse({ id: 'b1', type: 'text', content: 'soak overnight' })}
         onChange={jest.fn()}

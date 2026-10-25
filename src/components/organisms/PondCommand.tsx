@@ -47,6 +47,7 @@ import { Icon } from '@/components/atoms/Icon'
 import { pageEyebrowClass } from '@/components/atoms/kicker'
 import {
   PALETTE_FOOT,
+  PALETTE_FOOT_ENTER,
   PALETTE_FOOT_MOBILE,
   paletteEntries,
   type PaletteItem,
@@ -100,6 +101,18 @@ export interface PondCommandProps {
   ask?: boolean
   /** Newest-first visited page ids (KAN-390) — `rankPages`'s recency boost for `pages` and `actions`. */
   visits?: readonly string[]
+  /** Overrides the input's rest placeholder when unscoped and sheet-less. @default 'jump to a page, or > for actions' */
+  placeholder?: string
+  /** Overrides the foot's `↵` hint (the move picker's `↵ move`, KAN-469). @default '↵ open' */
+  enterHint?: string
+  /**
+   * A value whose change clears the query/scope/selection the same way a fresh
+   * open does (KAN-469) — the move picker's own entry row switches the list
+   * into pick mode without the palette itself closing, so the `open` prop
+   * alone never flips to catch it. Absent: no such reset point, today's
+   * behaviour unchanged.
+   */
+  resetOn?: string | number | null
   /** The query as it changes — how the host learns what to search records for. */
   onQueryChange?: (query: string) => void
   /** The query it first opens with — stories draw the board's frames. */
@@ -111,6 +124,8 @@ export interface PondCommandProps {
   className?: string
   /** Fires when arrowing/typing lands on a new page row (KAN-388) — the host prefetches it. */
   onActiveItemChange?: (item: PaletteItem) => void
+  /** The move picker (KAN-469): a dead-end query shows a plain note, no `make page`/`did you mean`. @default false */
+  pickMode?: boolean
   /** A plain click on an ancestor breadcrumb link. A modified click opens a new tab instead. */
   onNavigate?: (to: Exclude<CommandCrumbTarget, null>) => void
 }
@@ -175,6 +190,9 @@ export function PondCommand({
   suggested,
   ask = true,
   visits,
+  placeholder,
+  enterHint,
+  resetOn = null,
   onQueryChange,
   defaultQuery = '',
   sheet = null,
@@ -182,6 +200,7 @@ export function PondCommand({
   className = 'relative w-max',
   onActiveItemChange,
   onNavigate,
+  pickMode = false,
 }: PondCommandProps) {
   const listId = useId()
   const currentId = useId()
@@ -202,9 +221,13 @@ export function PondCommand({
   const [sel, setSel] = useState({ query, scope, index: 0 })
 
   // Every opening starts clean: no query, the first row, the scope the host hands.
+  // `resetOn` catches a reset point the `open` flip alone can't — pick mode
+  // starting without the palette itself closing (KAN-469).
   const [openedAs, setOpenedAs] = useState(open)
-  if (openedAs !== open) {
+  const [resetOnAs, setResetOnAs] = useState(resetOn)
+  if (openedAs !== open || resetOnAs !== resetOn) {
     setOpenedAs(open)
+    setResetOnAs(resetOn)
     if (open) {
       setQuery('')
       setScope(initialScope)
@@ -226,6 +249,7 @@ export function PondCommand({
     suggested,
     ask,
     visits,
+    pickMode,
   })
   const rows = entries.filter((e): e is PaletteRowEntry => e.kind === 'row')
   const active = Math.min(
@@ -440,7 +464,7 @@ export function PondCommand({
                   ? (shownSheet.placeholder ?? '')
                   : scope
                     ? ''
-                    : 'jump to a page, or > for actions'
+                    : placeholder ?? 'jump to a page, or > for actions'
               }
               className={INPUT}
               // Sheet mode is a plain text field — there is no list to own, so the
@@ -540,7 +564,7 @@ export function PondCommand({
                       key={f}
                       className={PALETTE_FOOT_MOBILE.includes(f) ? undefined : 'max-md:hidden'}
                     >
-                      {f}
+                      {f === PALETTE_FOOT_ENTER ? enterHint ?? f : f}
                     </span>
                   ))}
                 </div>

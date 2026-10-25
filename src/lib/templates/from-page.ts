@@ -171,5 +171,9 @@ function emptied(block: Exclude<Block, PageLinkBlock>, mintId: () => string): Bl
       delete next.collectionId
       return next
     }
+
+    // KAN-482: stores nothing but its id/type — nothing to empty.
+    case 'toc':
+      return { ...block, id }
   }
 }

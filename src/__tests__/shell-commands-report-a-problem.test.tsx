@@ -22,11 +22,14 @@ jest.mock('@/lib/pages/tree', () => ({
 }))
 
 import { ShellCommands } from '@/components/organisms/ShellCommands'
+import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 
 const renderShell = () =>
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <ShellCommands />
+      <DeletionUndoProvider>
+        <ShellCommands />
+      </DeletionUndoProvider>
     </QueryClientProvider>
   )
 

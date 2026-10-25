@@ -49,6 +49,7 @@ jest.mock('@/lib/terminal-focus', () => ({
 }))
 
 import { ShellCommands } from '@/components/organisms/ShellCommands'
+import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { sessionUndo } from '@/lib/change-log/session-undo'
 import { getRecord } from '@/lib/change-log/store'
 import { clearUndoNotice } from '@/lib/terminal-focus'
@@ -56,7 +57,9 @@ import { clearUndoNotice } from '@/lib/terminal-focus'
 const renderShell = () =>
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <ShellCommands />
+      <DeletionUndoProvider>
+        <ShellCommands />
+      </DeletionUndoProvider>
     </QueryClientProvider>
   )
 
