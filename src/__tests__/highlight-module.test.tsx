@@ -192,6 +192,24 @@ describe('HighlightView — editable (click-to-edit, as text)', () => {
     expect(screen.getByRole('textbox')).toBeInTheDocument()
   })
 
+  it('autofocus unset on an empty block: edits and focuses, as today', () => {
+    render(<HighlightView data={{ ...kept, content: '' }} editable />)
+    expect(screen.getByRole('textbox')).toHaveFocus()
+  })
+
+  it('autofocus={true} on an empty block: edits and focuses, same as unset', () => {
+    render(<HighlightView data={{ ...kept, content: '' }} editable autofocus />)
+    expect(screen.getByRole('textbox')).toHaveFocus()
+  })
+
+  it('autofocus={false} on an empty block (KAN-499): a line that merely arrived with the page never grabs the caret', () => {
+    render(<HighlightView data={{ ...kept, content: '' }} editable autofocus={false} />)
+    expect(screen.queryByRole('textbox')).toBeNull()
+    const trigger = screen.getByRole('button', { name: 'Edit highlight block' })
+    expect(trigger).not.toHaveFocus()
+    expect(document.body).toHaveFocus()
+  })
+
   it('Escape leaves edit mode; Enter / Space on the trigger enter it', async () => {
     render(<Stateful data={kept} />)
     const trigger = screen.getByRole('button', { name: 'Edit highlight block' })
