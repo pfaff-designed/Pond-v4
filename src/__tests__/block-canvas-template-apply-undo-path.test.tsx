@@ -21,6 +21,8 @@ import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { sessionUndo } from '@/lib/change-log/session-undo'
 import { undoStep, redoStep } from '@/lib/change-log/undo'
 import type { Block } from '@/lib/documents/types'
+import { PREMADE_TEMPLATES } from '@/lib/templates/premade'
+import type { TemplateKind } from '@/lib/templates/types'
 import { findTextBlock, writeInTextBlock } from './helpers/text-block'
 
 jest.mock('next/navigation', () => ({
@@ -222,3 +224,38 @@ describe('⌘Z after applying `meeting notes` in place undoes the whole template
     expect(mockDefineSchema.mock.calls.length).toBe(definesAfterRedo)
   })
 })
+
+// Every premade whose page is a collection (`schema` present) — derived from
+// `premade.ts` itself rather than listed by hand, so a thirteenth template
+// with a schema is covered without touching this file.
+const KINDS_WITH_SCHEMA = (Object.keys(PREMADE_TEMPLATES) as TemplateKind[]).filter(
+  (kind) => PREMADE_TEMPLATES[kind].schema !== undefined
+)
+
+describe.each(KINDS_WITH_SCHEMA)(
+  '⌘Z after applying `%s` in place reverts its props too (KAN-557)',
+  (kind) => {
+    it("mockSaveProps is last called with the page's prior props", async () => {
+      renderCanvas([])
+
+      fireEvent.click(screen.getByTestId('trailing-block-gap'))
+      const editor = await findTextBlock()
+      writeInTextBlock(editor, '/')
+      const menu = await screen.findByRole('listbox', { name: 'blocks' })
+      const row = within(menu)
+        .getAllByRole('option')
+        .find((o) => o.querySelector('[data-part="label"]')?.textContent === kind)!
+      fireEvent.click(row)
+
+      await waitFor(() => expect(mockSaveProps).toHaveBeenCalled())
+      const savePropsAfterApply = mockSaveProps.mock.calls.length
+
+      await sessionUndo.undo('pond-1')
+
+      await waitFor(() =>
+        expect(mockSaveProps.mock.calls.length).toBeGreaterThan(savePropsAfterApply)
+      )
+      expect(mockSaveProps).toHaveBeenLastCalledWith(expect.anything(), 'page-1', PRIOR_PROPS)
+    })
+  }
+)
