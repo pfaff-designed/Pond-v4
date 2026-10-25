@@ -1,6 +1,6 @@
 import { EditorState, TextSelection } from '@tiptap/pm/state'
 import type { Node as ProseNode } from '@tiptap/pm/model'
-import { HEADING_PREFIX } from '@/lib/modules/palette'
+import { HEADING_PREFIX } from '@/lib/modules/text/markup'
 import { parseMarkdown, serializeMarkdown } from './markdown'
 
 const roundTrip = (markdown: string): string => serializeMarkdown(parseMarkdown(markdown))

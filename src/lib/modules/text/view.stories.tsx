@@ -9,7 +9,7 @@ import { BlockRowProvider, type BlockRowValue } from '../block-row-context'
 import { PondBlock } from '@/components/organisms/PondBlock'
 import { pageEyebrowClass } from '@/components/atoms/kicker'
 import { blockFrame } from '@/lib/modules/block-frame'
-import { HEADING_PREFIX } from '@/lib/modules/palette'
+import { HEADING_PREFIX } from '@/lib/modules/text/markup'
 import { onApplePlatform } from '@/lib/shell-commands'
 import { ZEN_BODY_PX, ZEN_PROSE_CLASS } from '@/lib/layout/zen'
 
