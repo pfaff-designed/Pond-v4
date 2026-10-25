@@ -27,7 +27,7 @@ Paths, given to every agent at launch: `HB=/tmp/ship-epics/<EPIC>/<role>[-<ticke
   1. Stop. Kill every process you started (`pkill -f` on its command line or worktree path).
   2. `$H reapproach HB "<the same step>" "<what you tried> → <why it did not converge> → <what you will do instead>"`. Instead means a different approach — a smaller slice, a different tool, a different layer — never the same command with different parameters.
   3. `$H beat HB "<the same step>"` and continue the new way.
-- **When told to stop**: kill your processes, write `RESULT` with `status: stopped`, the step, both approaches and why each failed; then `$H beat HB DONE`; then reply.
+- **When told to stop**: kill your processes. If `RESULT` already holds your return block, keep it and add `status: stopped`, the step, both approaches and why each failed below it; otherwise write `RESULT` with those lines. Then `$H beat HB DONE`; then reply.
 - **When you finish**: write your full return block to `RESULT`, then `$H beat HB DONE` as your very last action, then reply with the same block. Your supervisor reads the file — it cannot receive your reply while it is still working.
 
 ## If you supervise
@@ -50,6 +50,7 @@ The orchestrator supervises its build loop, reviewers and verifier; the conducto
    - `none` for more than 3 minutes after launch — the child is not beating: `NUDGE` it with "You have not written your heartbeat. Beat HB before every task, as failsafe.md says, starting now."
    - `stalled`, `reapproached 0` — `NUDGE` it with "Failsafe: '<step>' has run <age> on one approach. Reapproach now, as failsafe.md says." Poll on.
    - `stalled`, `reapproached 1` or more — the second approach stalled too. `NUDGE` it with "Failsafe: '<step>' stalled again after a reapproach. Stop now, as failsafe.md says." Wait up to 3 minutes for `done`; then `STOP` it and kill anything still running in its worktree (`pkill -f <worktree path>`), whether or not it answered. Treat the task as **stopped**, with the step and both approaches as the reason — never relaunch it unchanged.
+     **If `STOP` is refused with "owned by"** — observed on 2026-10-25, when an orchestrator's own `STOP` on its own verifier came back refused this way: the verifier is a grandchild, registered to the top-level session, not to you, so your `STOP` has no authority over it. Escalate instead of retrying `STOP`: message your own supervisor with the child's task description and ask it to stop the child; once it confirms, treat the task as **stopped** exactly as above.
    - `done` — read `RESULT`. That is the child's return.
 4. A child that is resumed with work (a fix round) gets a fresh `HB` run: its next beat starts the new step's clock.
 5. **A child may finish while you are between polls.** If your harness tells you a child has completed, read its `RESULT` — do not keep polling a heartbeat that already says `done`.
