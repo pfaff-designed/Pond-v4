@@ -25,7 +25,11 @@ export const textKindOf = (content: string): TextKind | null => {
     case 'paragraph':
       return 'text'
     case 'blockquote':
-      return 'quote'
+      // Anything but a single paragraph (another paragraph, a list) has no single
+      // inline run to carry across a retype, so it isn't a turn-into target.
+      return node.childCount === 1 && node.firstChild?.type.name === 'paragraph'
+        ? 'quote'
+        : null
     case 'codeBlock':
       return 'code'
     case 'heading': {
@@ -54,6 +58,22 @@ const inlineContentOf = (node: ProseNode): Fragment => {
   return node.content
 }
 
+/**
+ * A heading is one line in markdown, so a line break inside one becomes a
+ * space: a hard break node (already turned into a space by the serializer's
+ * own heading case) and a raw `\n` inside a text node (a code block's
+ * content, which the inline tokenizer never breaks into hard breaks) both
+ * collapse here, before the node is even built.
+ */
+const joinLines = (content: Fragment): Fragment =>
+  Fragment.from(
+    content.content.map((child) => {
+      if (child.type.name === 'hardBreak') return proseSchema.text(' ')
+      if (child.isText) return proseSchema.text((child.text ?? '').replace(/\n/g, ' '), child.marks)
+      return child
+    })
+  )
+
 const retypedNode = (node: ProseNode, kind: TextKind): ProseNode => {
   const inline = inlineContentOf(node)
   switch (kind) {
@@ -62,7 +82,7 @@ const retypedNode = (node: ProseNode, kind: TextKind): ProseNode => {
     case 'heading1':
     case 'heading2':
     case 'heading3':
-      return proseSchema.nodes.heading.create({ level: Number(kind.slice(-1)) }, inline)
+      return proseSchema.nodes.heading.create({ level: Number(kind.slice(-1)) }, joinLines(inline))
     case 'quote':
       return proseSchema.nodes.blockquote.create(
         null,

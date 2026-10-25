@@ -17,6 +17,8 @@ describe('textKindOf', () => {
     ['- a\n- b', 'a list'],
     ['a\n\nb', 'two paragraphs'],
     ['#### too small a heading', 'a heading past level 3'],
+    ['> a\n>\n> b', 'a blockquote of two paragraphs'],
+    ['> - x\n> - y', 'a blockquote holding a list'],
   ])('is null for %j (%s)', (content) => {
     expect(textKindOf(content)).toBeNull()
   })
@@ -50,5 +52,24 @@ describe('retypeText', () => {
     expect(retypeText('# hello', 'heading2')).toBe('## hello')
     expect(retypeText('## hello', 'heading3')).toBe('### hello')
     expect(retypeText('### hello', 'heading1')).toBe('# hello')
+  })
+
+  it('joins a multi-line code block into one line, with spaces, turning into a heading', () => {
+    const heading = retypeText('```\na\nb\n```', 'heading1')
+    expect(heading).toBe('# a b')
+    expect(textKindOf(heading)).toBe('heading1')
+  })
+
+  it.each<[TextKind, string]>([
+    ['quote', '> a\n> b'],
+    ['text', 'a\nb'],
+  ])('keeps every line of a multi-line code block turning into %s', (kind, expected) => {
+    const retyped = retypeText('```\na\nb\n```', kind)
+    expect(retyped).toBe(expected)
+    expect(textKindOf(retyped)).toBe(kind)
+  })
+
+  it('joins a hard line break into a space turning into a heading', () => {
+    expect(retypeText('a  \nb', 'heading1')).toBe('# a b')
   })
 })
