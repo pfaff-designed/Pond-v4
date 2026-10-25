@@ -136,7 +136,12 @@ import {
   type Landing,
   type SlashTarget,
 } from '@/components/organisms/use-slash-pick'
-import { sessionUndo, type UndoHandle } from '@/lib/change-log/session-undo'
+import {
+  sessionUndo,
+  withTimeout,
+  STEP_TIMEOUT_MS,
+  type UndoHandle,
+} from '@/lib/change-log/session-undo'
 import { applyUndoOutcome } from '@/lib/change-log/undo-outcome'
 import { blockName as changeBlockName } from '@/lib/change-log/summary'
 import { appendOwnEdit, listRecords } from '@/lib/change-log/store'
@@ -2390,32 +2395,53 @@ export function BlockCanvas({
     // A fast ⌘Z/⇧⌘Z can fire before the step it is undoing/redoing has
     // actually landed — `onUndone`/`onRedone` always await whatever is still
     // in flight first, so they act on the step that just finished, never on
-    // a `priorProps` that hasn't been set yet.
-    let pending: Promise<void> = Promise.resolve()
+    // a `priorProps` that hasn't been set yet. `pending` starts as a
+    // deferred gate created BEFORE `persistBlocksAsOwnEdit` is even called:
+    // the undo step it logs becomes available to the queue (`rememberPending`,
+    // inside `onStructuralWrite`) as soon as that write lands internally,
+    // which can be well before `persistBlocksAsOwnEdit` itself resolves (it
+    // may still be waiting on a page refetch) — so a fast ⌘Z/⇧⌘Z firing in
+    // that window must find a gate that's genuinely still open, never one
+    // that reads as already-settled. The gate resolves once this run's own
+    // schema/props write settles, or right away if the blocks write failed.
+    // Bounded by the same `STEP_TIMEOUT_MS` session-undo itself uses for its
+    // own RPCs — a hung write logs and lets ⌘Z act on whatever is known
+    // rather than hanging the queue.
+    let resolvePending!: () => void
+    let pending: Promise<void> = new Promise((resolve) => {
+      resolvePending = resolve
+    })
     const onUndone = async () => {
-      await pending
+      await withTimeout(pending, STEP_TIMEOUT_MS).catch((err) => {
+        console.error('Template apply: timed out waiting for its own write before reverting', err)
+      })
       pending = revertTemplateSchemaProps()
       await pending
     }
     const onRedone = async () => {
-      await pending
+      await withTimeout(pending, STEP_TIMEOUT_MS).catch((err) => {
+        console.error('Template apply: timed out waiting for its own write before redoing', err)
+      })
       pending = applyTemplateSchemaProps()
       await pending
     }
-    if (
-      !(await persistBlocksAsOwnEdit(applied.blocks, {
+    let blocksWritten = false
+    try {
+      blocksWritten = await persistBlocksAsOwnEdit(applied.blocks, {
         discardOnFailure: true,
         onUndone,
         onRedone,
-      }))
-    )
-      return
-    // KAN-138: applying a `yours` template retires its "just saved" lead — but
-    // only once the blocks write above actually landed; a failed apply keeps
-    // the lead so the person's retry still sees it first.
-    if (pick.origin === 'yours' && pondId) justSaved.clear(pondId, pick.id)
-    pending = applyTemplateSchemaProps()
-    await pending
+      })
+      if (!blocksWritten) return
+      // KAN-138: applying a `yours` template retires its "just saved" lead — but
+      // only once the blocks write above actually landed; a failed apply keeps
+      // the lead so the person's retry still sees it first.
+      if (pick.origin === 'yours' && pondId) justSaved.clear(pondId, pick.id)
+      await applyTemplateSchemaProps()
+    } finally {
+      resolvePending()
+    }
+    if (!blocksWritten) return
     // `onStructuralWrite`/`onChange` already ran inside `persistBlocksAsOwnEdit`,
     // ahead of the schema/props writes above — this apply's own blocks are
     // already the caller's baseline by the time those (independent) writes land.

@@ -92,6 +92,13 @@ type StructuralOpts = {
   onRedone?: () => Promise<void> | void
 }
 
+// Models the real gap, in `persistBlocksAsOwnEdit`, between the undo step
+// becoming available on the stack (`rememberPending`, run here right after
+// the blocks are set) and `persistBlocksAsOwnEdit` itself resolving (which
+// there waits on a page refetch) — resolved by default, held pending only by
+// the fast-⌘Z race test below.
+const mockStructuralSettle = jest.fn().mockResolvedValue(undefined)
+
 function Harness({ initial }: { initial: Block[] }) {
   const [blocks, setBlocks] = React.useState(initial)
 
@@ -104,6 +111,7 @@ function Harness({ initial }: { initial: Block[] }) {
       onUndone: opts?.onUndone,
       onRedone: opts?.onRedone,
     })
+    await mockStructuralSettle()
     return true
   }
 
@@ -140,6 +148,7 @@ beforeEach(() => {
   mockSaveProps.mockResolvedValue(undefined)
   mockSaveBlocks.mockResolvedValue(undefined)
   mockAppendOwnEdit.mockImplementation(async () => ({ id: `record-${++recordSeq}` }))
+  mockStructuralSettle.mockResolvedValue(undefined)
   jest.mocked(undoStep).mockResolvedValue({ outcome: 'done', records: [] })
   jest.mocked(redoStep).mockResolvedValue({ outcome: 'done', records: [] })
   sessionUndo.clear()
@@ -240,28 +249,38 @@ async function applyMeetingNotes() {
 }
 
 describe('⌘Z/⇧⌘Z race against the apply\'s own in-flight writes (KAN-557)', () => {
-  it('a fast ⌘Z waits for the in-flight snapshot read before reverting, keeping the pre-apply props and no _schema', async () => {
-    let releaseGetPage: ((page: { id: string; props: Record<string, unknown> }) => void) | undefined
-    mockGetPage.mockImplementationOnce(
+  it("a fast ⌘Z waits for this run's own write to settle before reverting, keeping the pre-apply props and no _schema", async () => {
+    let releaseSettle: (() => void) | undefined
+    mockStructuralSettle.mockImplementationOnce(
       () =>
-        new Promise((resolve) => {
-          releaseGetPage = resolve
+        new Promise<void>((resolve) => {
+          releaseSettle = resolve
         })
     )
 
     await applyMeetingNotes()
 
-    // The apply's own snapshot read (and so `defineSchema`/`saveProps`) is
-    // still pending when ⌘Z fires.
+    // The undo step is already on the stack (`rememberPending` ran before
+    // this point) — but `persistBlocksAsOwnEdit` itself, and so this run's
+    // own schema/props write (which only starts once it resolves), is still
+    // in flight when ⌘Z fires.
     const undonePromise = sessionUndo.undo('pond-1')
+
+    // Flush every microtask tick the queue would get in real use WITHOUT
+    // releasing `persistBlocksAsOwnEdit`'s own settle — a correct `onUndone`
+    // is still waiting on that write and must not have touched `saveProps`
+    // at all yet; one reverting off an already-resolved placeholder would
+    // have written the (wrong, premature) revert by now.
+    for (let i = 0; i < 20; i++) await Promise.resolve()
     expect(mockSaveProps).not.toHaveBeenCalled()
-    releaseGetPage?.({ id: 'page-1', props: PRIOR_PROPS })
+
+    releaseSettle?.()
     await undonePromise
 
     expect(mockSaveProps).toHaveBeenCalled()
     const lastProps = mockSaveProps.mock.calls.at(-1)?.[2]
     expect(lastProps).toEqual(PRIOR_PROPS)
-    expect(lastProps).not.toHaveProperty('_schema')
+    expect(lastProps).not.toHaveProperty(SCHEMA_KEY)
   })
 
   it('a snapshot read that rejects keeps the pre-existing props on revert and removes only the keys the apply added', async () => {
