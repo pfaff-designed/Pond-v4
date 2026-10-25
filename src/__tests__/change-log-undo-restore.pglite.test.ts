@@ -333,3 +333,41 @@ describe('0037_undo_restore part c — change_log_set_back restores again on red
     await db.close()
   })
 })
+
+// Schema tests for supabase/migrations/0037_undo_restore.sql part d (KAN-497).
+//
+// `restore_page`'s return type changes from `void` to `uuid` — the new
+// `restore` record's own id, the thing the client hands to
+// `sessionUndo.remember` so a restore becomes a session undo step.
+
+describe('0037_undo_restore part d — restore_page returns the new restore record id', () => {
+  it('returns one row with a non-null uuid equal to the new record own id', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pondId = await pondOf(db)
+    const pageId = await addPage(db, pondId, 'roof')
+
+    await actAs(db, USER)
+    await db.query('select public.trash_page($1)', [pageId])
+    const firstDelete = await db.query<{ id: string }>(
+      `select id from public.change_log where action = 'delete' and target_page_id = $1
+       order by created_at desc limit 1`,
+      [pageId]
+    )
+
+    const result = await db.query<{ restore_page: string }>('select public.restore_page($1)', [
+      firstDelete.rows[0].id,
+    ])
+
+    expect(result.rows).toHaveLength(1)
+    expect(result.rows[0].restore_page).toBeTruthy()
+
+    const restoreRecord = await db.query<{ id: string }>(
+      `select id from public.change_log where action = 'restore' and target_page_id = $1
+       order by created_at desc limit 1`,
+      [pageId]
+    )
+    expect(result.rows[0].restore_page).toBe(restoreRecord.rows[0].id)
+    await db.close()
+  })
+})
