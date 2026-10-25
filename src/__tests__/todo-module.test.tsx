@@ -1360,6 +1360,31 @@ describe('TodoView — editable (the molecule’s rows, made live by the host)',
     expect(leaveDown).toHaveBeenCalledTimes(1)
   })
 
+  it('↓ on the last item while composing does not call leaveDown (KAN-367)', () => {
+    const three: TodoBlock = {
+      id: 'e3',
+      type: 'todo',
+      items: [
+        { id: 'x1', label: 'eggs', checked: false },
+        { id: 'x2', label: 'milk', checked: false },
+        { id: 'x3', label: 'bread', checked: false },
+      ],
+    }
+    const leaveUp = jest.fn()
+    const leaveDown = jest.fn()
+    const { container } = render(
+      <BlockRowProvider value={{ selected: false, stepOut: () => {}, leaveUp, leaveDown }}>
+        <TodoView data={three} editable />
+      </BlockRowProvider>
+    )
+    const fields = container.querySelectorAll<HTMLInputElement>('input[type="text"]')
+
+    act(() => fields[2].focus())
+    fireEvent.keyDown(fields[2], { key: 'ArrowDown', isComposing: true })
+    expect(leaveDown).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(fields[2])
+  })
+
   it('a row is not draggable until a press starts on its handle (KAN-355)', () => {
     const three: TodoBlock = {
       id: 'e3',

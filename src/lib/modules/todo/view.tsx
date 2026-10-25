@@ -383,6 +383,10 @@ export function TodoView({ data, editable, onChange }: ModuleViewProps<TodoBlock
       !e.metaKey &&
       !e.ctrlKey
     ) {
+      // An IME candidate pick fires ArrowUp/ArrowDown to navigate its own
+      // candidate list, not to leave the field — same guard as Enter/Backspace
+      // above, but checked here too since it can't fall through to them.
+      if (e.nativeEvent.isComposing) return
       const target = index + (e.key === 'ArrowUp' ? -1 : 1)
       if (target < 0 || target >= data.items.length) {
         const leave = e.key === 'ArrowUp' ? leaveUp : leaveDown
