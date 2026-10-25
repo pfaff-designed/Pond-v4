@@ -189,6 +189,18 @@ describe('⌘Z and the toast undo a page move as ONE step (KAN-361)', () => {
     await waitFor(() => expect(trashPage).toHaveBeenCalledTimes(1))
     expect(trashPage).toHaveBeenCalledWith(expect.anything(), created.id)
     expect(restorePage).not.toHaveBeenCalled()
+
+    // ⇧⌘Z brings the page back, then ⌘Z must trash it again (KAN-496): the
+    // redo-rebuilt step on the undo stack has to keep carrying onUndone.
+    jest.mocked(listRecords).mockResolvedValueOnce([{ id: 'record-trash-1' } as never])
+    await sessionUndo.redo('pond-1')
+    await waitFor(() => expect(restorePage).toHaveBeenCalledTimes(1))
+    expect(restorePage).toHaveBeenCalledWith(expect.anything(), 'record-trash-1')
+
+    await sessionUndo.undo('pond-1')
+    await waitFor(() => expect(trashPage).toHaveBeenCalledTimes(2))
+    expect(trashPage).toHaveBeenLastCalledWith(expect.anything(), created.id)
+    expect(restorePage).toHaveBeenCalledTimes(1)
   })
 
   it('⇧⌘Z (redo) restores the trashed page', async () => {
