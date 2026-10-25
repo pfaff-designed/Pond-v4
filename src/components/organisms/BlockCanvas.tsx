@@ -1664,6 +1664,12 @@ export function BlockCanvas({
     }
   }
 
+  // Stub (KAN-479 slice 1): the pick request channel lands in a later pass,
+  // which replaces this body with a call to it.
+  const onMoveTo = (block: Block) => {
+    void block
+  }
+
   const handleMenuOpenChange = (index: number, open: boolean) => {
     setPreviewWidth(null)
     setMenuOpenAt((current) => {
@@ -1690,6 +1696,7 @@ export function BlockCanvas({
         convertBlock(block, conversion)
       },
       'move-into-new-page': () => void moveBlockIntoNewPage(index, MOVED_INTO_A_NEW_PAGE),
+      'move-to': ({ block: moved }) => onMoveTo(moved),
       'copy-link': () => void copyBlockLink(block.id),
       delete: () => requestDelete(index),
       'set-width': ({ width }) => setBlockWidth(block, width),
