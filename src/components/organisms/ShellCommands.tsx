@@ -98,6 +98,7 @@ import { usePondName } from '@/lib/pond/name'
 import { usePond, usePondId } from '@/lib/pond/context'
 import { pondHref } from '@/lib/pond/active'
 import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
+import { LIFE_ID } from '@/lib/rail/tree'
 import { useSaveAsTemplateSheet } from '@/components/organisms/use-save-as-template-sheet'
 import { ROW_TYPE } from '@/lib/properties/schema'
 
@@ -517,6 +518,19 @@ export function ShellCommands() {
       // row — is the move's target. Runs before every other branch below,
       // including the generic page-open fallback at the bottom.
       if (movePick) {
+        // A picker row is always a real page/database id or the synthetic
+        // root (`LIFE_ID`) — `movePickItems` mints nothing else, and pick
+        // mode's dead end is a `note`, never a `row` (`pickMode`,
+        // palette-entries.ts). Anything else is a stale item from a race with
+        // the list swap — crash early in dev rather than let a fake id reach
+        // `computeMove`, which doesn't verify an `into` target exists
+        // (`canMove`/`moveParent`, rail/tree.ts).
+        if (item.id !== LIFE_ID && !pages.some((p) => p.id === item.id)) {
+          if (process.env.NODE_ENV !== 'production') {
+            throw new Error(`move picker selected an unknown target: ${item.id}`)
+          }
+          return
+        }
         const pickedId = movePick.id
         setMovePick(null)
         setPaletteOpen(false)
@@ -669,6 +683,7 @@ export function ShellCommands() {
         }
         onActiveItemChange={handleActiveItemChange}
         ask={movePick ? false : !inZen}
+        pickMode={!!movePick}
         placeholder={movePick ? `move ${movePick.title || 'Untitled'} to…` : undefined}
         resetOn={movePick?.id ?? null}
         visits={recentPageIds}

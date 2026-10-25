@@ -121,6 +121,8 @@ export interface PondCommandProps {
   className?: string
   /** Fires when arrowing/typing lands on a new page row (KAN-388) — the host prefetches it. */
   onActiveItemChange?: (item: PaletteItem) => void
+  /** The move picker (KAN-469): a dead-end query shows a plain note, no `make page`/`did you mean`. @default false */
+  pickMode?: boolean
   /** A plain click on an ancestor breadcrumb link. A modified click opens a new tab instead. */
   onNavigate?: (to: Exclude<CommandCrumbTarget, null>) => void
 }
@@ -194,6 +196,7 @@ export function PondCommand({
   className = 'relative w-max',
   onActiveItemChange,
   onNavigate,
+  pickMode = false,
 }: PondCommandProps) {
   const listId = useId()
   const currentId = useId()
@@ -242,6 +245,7 @@ export function PondCommand({
     suggested,
     ask,
     visits,
+    pickMode,
   })
   const rows = entries.filter((e): e is PaletteRowEntry => e.kind === 'row')
   const active = Math.min(

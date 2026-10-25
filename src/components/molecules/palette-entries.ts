@@ -108,6 +108,14 @@ export interface PaletteOptions {
   ask?: boolean
   /** Newest-first visited page ids (KAN-390) — `rankPages`'s recency boost for `pages` and `actions`. */
   visits?: readonly string[]
+  /**
+   * The move picker (KAN-469): `items` is pages/databases only, so a dead end
+   * has nothing to make or ask about — the `make page` and `did you mean` rows
+   * assume a page the picker would then have to refuse (`canMove`/`computeMove`
+   * only resolve a real row id or `LIFE_ID`). `false` keeps today's dead-end
+   * recipe. @default false
+   */
+  pickMode?: boolean
 }
 
 /** The ids of the two rows the palette mints from the query — the host acts on them. */
@@ -221,6 +229,7 @@ export function paletteEntries(
     suggested = [],
     ask: canAsk = true,
     visits = [],
+    pickMode = false,
   }: PaletteOptions = {}
 ): PaletteEntry[] {
   const q = normalizeQuery(query)
@@ -292,6 +301,7 @@ export function paletteEntries(
 
   // A query that matches only an action is not empty: the `typing` frame lists it.
   if (!ponds.length && !pages.length && !records.length && !matched.length) {
+    if (pickMode) return [{ kind: 'note', text: `no page matches “${q}”` }]
     const make: PaletteItem = {
       id: NEW_PAGE_ID,
       label: `new page “${q}” under ${parentTitle}`,

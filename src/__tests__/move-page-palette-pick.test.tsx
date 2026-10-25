@@ -149,6 +149,26 @@ it('⌘⇧P on an untitled page reads "move Untitled to…", not "move  to…"',
   expect(input).toHaveAttribute('placeholder', 'move Untitled to…')
 })
 
+it('a non-matching query in pick mode shows a plain dead end, no make-page row, and ↵ does not move', async () => {
+  const user = userEvent.setup()
+  renderShell()
+
+  fireEvent.keyDown(document, { key: 'k', metaKey: true })
+  await screen.findByRole('combobox', { name: 'command palette' })
+  fireEvent.keyDown(document, { key: 'k', metaKey: true })
+
+  fireEvent.keyDown(document, { key: 'p', metaKey: true, shiftKey: true })
+  const input = await screen.findByRole('combobox', { name: 'command palette' })
+  await user.type(input, 'hosue')
+
+  await screen.findByText('no page matches “hosue”')
+  expect(screen.queryByRole('option', { name: /new page/ })).toBeNull()
+  expect(screen.queryByRole('option')).toBeNull()
+
+  await user.keyboard('{Enter}')
+  expect(movePage).not.toHaveBeenCalled()
+})
+
 it('picking "House" moves Roof into it and shows the undo toast', async () => {
   const user = userEvent.setup()
   renderShell()
