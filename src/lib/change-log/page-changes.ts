@@ -14,6 +14,7 @@
  */
 
 import { AREA_COLOUR_SWATCHES, GLYPH_LIBRARY, isAreaRole } from '@/lib/rail/glyph-library'
+import { blockSchema } from '@/lib/modules/content'
 import {
   summarizeAddedRow,
   summarizeBlockEdit,
@@ -63,19 +64,47 @@ const areaRoleChange = (role: unknown): string => {
   return label === undefined ? 'changed the colour' : `colour → ${label}`
 }
 
-/** A `move` record's `after`, typed — or `null` for a pre-KAN-466 record (no
- *  `MoveSnapshot` yet) or a malformed one. Exported so a caller that needs the
- *  structured snapshot itself (the Rail toast) reads it the same checked way,
- *  rather than an unchecked `as MoveSnapshot` cast of its own. */
+/** A `MoveSnapshot.removedLink`, read back off `before.removedLink` — or
+ *  `undefined` for a pre-KAN-467 record (no link fields yet) or a malformed
+ *  one, never thrown. Reuses `content.ts`'s own `blockSchema` for `block`
+ *  rather than re-describing a page-link block's shape a second time
+ *  (AGENTS.md DRY), the same way `child-links.ts`'s `removedLinkSchema` does. */
+const readRemovedLink = (value: unknown): MoveSnapshot['removedLink'] | undefined => {
+  if (typeof value !== 'object' || value === null) return undefined
+  const { block, index } = value as Record<string, unknown>
+  if (typeof index !== 'number') return undefined
+  const parsed = blockSchema.safeParse(block)
+  if (!parsed.success) return undefined
+  return { block: parsed.data, index }
+}
+
+/** A `move` record's `after` (or `before`), typed — or `null` for a
+ *  pre-KAN-466 record (no `MoveSnapshot` yet) or a malformed one. Exported
+ *  so a caller that needs the structured snapshot itself (the Rail toast)
+ *  reads it the same checked way, rather than an unchecked `as MoveSnapshot`
+ *  cast of its own. `removedLink`/`appendedLinkId` (KAN-467) are each
+ *  optional and read independently, so an old-shape record with neither
+ *  still parses, and a malformed `removedLink` alone doesn't fail the rest
+ *  of the snapshot. */
 export const readMoveSnapshot = (value: unknown): MoveSnapshot | null => {
   if (typeof value !== 'object' || value === null) return null
-  const { parentId, parentTitle, siblingOrder } = value as Record<string, unknown>
+  const { parentId, parentTitle, siblingOrder, removedLink, appendedLinkId } = value as Record<
+    string,
+    unknown
+  >
   if (typeof parentId !== 'string' && parentId !== null) return null
   if (typeof parentTitle !== 'string' && parentTitle !== null) return null
   if (!Array.isArray(siblingOrder) || !siblingOrder.every((id) => typeof id === 'string')) {
     return null
   }
-  return { parentId, parentTitle, siblingOrder }
+  const parsedRemovedLink = readRemovedLink(removedLink)
+  return {
+    parentId,
+    parentTitle,
+    siblingOrder,
+    ...(parsedRemovedLink !== undefined ? { removedLink: parsedRemovedLink } : {}),
+    ...(typeof appendedLinkId === 'string' ? { appendedLinkId } : {}),
+  }
 }
 
 /**
