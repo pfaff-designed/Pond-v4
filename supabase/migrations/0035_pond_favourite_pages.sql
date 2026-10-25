@@ -15,8 +15,9 @@
 -- `recent_glyphs`'s `not null default '{}'`, since there is no equivalent
 -- "always has a value" invariant here.
 --
--- Order matters (drag-to-reorder and "append at the end" land in a later
--- ticket) so this is a plain `uuid[]`, not a set.
+-- Order matters: a new favourite appends at the end (this ticket); drag-to-
+-- reorder within the band lands in a later ticket. So this is a plain
+-- `uuid[]`, not a set.
 --
 -- Ids that no longer resolve to a live page in this pond (trashed, deleted, or
 -- never existed) are filtered at read time by the client, not rewritten here

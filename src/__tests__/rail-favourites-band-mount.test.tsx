@@ -101,3 +101,47 @@ describe('rail — favourites band mount (KAN-475)', () => {
     expect(groceriesTreeRow).not.toBe(groceriesBandRow)
   })
 })
+
+describe('rail — every depth-1 row loses its top margin while the band shows (KAN-475)', () => {
+  const twoAreasTree = (): RailNode[] => [
+    node('scratch', 'Scratch', [node('groceries', 'groceries', [], 'scratch')]),
+    node('work', 'Work', [node('tasks', 'tasks', [], 'work')]),
+  ]
+
+  const renderTwoAreas = (favouritePageIds?: readonly string[]) =>
+    render(
+      <RailView
+        tree={twoAreasTree()}
+        pondName="life"
+        favouritePageIds={favouritePageIds}
+        selectedId={null}
+        expanded={new Set(['scratch', 'work'])}
+        lifeExpanded
+        busyId={null}
+        isLoading={false}
+        isEmpty={false}
+        onSelect={jest.fn()}
+        onToggle={jest.fn()}
+        onAddChild={jest.fn()}
+        onDelete={jest.fn()}
+        onRename={jest.fn()}
+        onPickGlyph={jest.fn()}
+        onLife={jest.fn()}
+        onToggleLife={jest.fn()}
+        onOpenDatabases={jest.fn()}
+        canDrop={() => true}
+        onMove={jest.fn()}
+      />
+    )
+
+  it('drops the mt-1 top-margin class from both area rows, not just the first, while the band shows', () => {
+    renderTwoAreas(['groceries'])
+    expect(screen.getByRole('treeitem', { name: 'Scratch' })).not.toHaveClass('mt-1')
+    expect(screen.getByRole('treeitem', { name: 'Work' })).not.toHaveClass('mt-1')
+  })
+
+  it('keeps the second area row carrying mt-1 when there is no band', () => {
+    renderTwoAreas()
+    expect(screen.getByRole('treeitem', { name: 'Work' })).toHaveClass('mt-1')
+  })
+})

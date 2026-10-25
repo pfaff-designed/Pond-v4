@@ -318,11 +318,12 @@ interface RailRowProps {
   /** An area row — the raised label voice + its accent dot. The caller decides
    *  with `isAreaRow` (a top-level page). */
   isArea?: boolean
-  /** KAN-475: the favourites band already closes the gap above the tree with
-   *  its own bottom shadow/padding, so the first area row's usual top margin
-   *  would double it — the caller passes this only for that one row, only
-   *  while the band is showing (`PondRail.dc.html`'s
-   *  `marginTop: d === 1 && i > 0 && !pinned.length ? 4 : 0`). */
+  /** KAN-475: the board's own formula is `marginTop: d === 1 && i > 0 &&
+   *  !pinned.length ? 4 : 0` (`PondRail.dc.html`) — `i` runs over ALL rows, so
+   *  once a pinned band exists every depth-1 row's `i > 0` lands on the
+   *  `!pinned.length` clause instead and loses its 4px, not just the row that
+   *  would otherwise be first. The caller passes this for every area row
+   *  while the band is showing. */
   noTopMargin?: boolean
   /** The databases root: the foot band's LAST row (KAN-486: it never moves —
    *  its own rows render above it), caret up when open, right when closed. */
@@ -1163,19 +1164,10 @@ export function RailView({
   )
   const hasFavouritesBand = liveFavouriteIds.length > 0
 
-  // The same rows the tree below renders (databases/trash excluded) — shared
-  // so the "first area row" the band's top margin defers to is the one
-  // actually drawn first, not just the first in the combined keyboard order.
+  // The same rows the tree below renders (databases/trash excluded).
   const treeRows = useMemo(
     () => flat.filter((f) => !databasesIds.has(f.id) && f.id !== TRASH_NODE_ID),
     [flat, databasesIds]
-  )
-  // `PondRail.dc.html`'s shared row recipe drops a depth-1 row's own top gap
-  // while a pinned band sits above it; only the FIRST area row ever carries
-  // that gap in the first place, so only it needs the override.
-  const firstAreaRowId = useMemo(
-    () => treeRows.find((f) => isAreaRow(f.node))?.id ?? null,
-    [treeRows]
   )
 
   const openAddChildMenu = useCallback(
@@ -1583,7 +1575,7 @@ export function RailView({
         // tree/ArrowLeft only — it never reads as an area's bigger label and
         // full ink the way a real top-level page does.
         isArea={isAreaRow(node) && id !== TRASH_NODE_ID}
-        noTopMargin={hasFavouritesBand && id === firstAreaRowId}
+        noTopMargin={hasFavouritesBand}
         isDbRoot={isDatabasesRoot(node)}
         posInSet={posInSet}
         setSize={setSize}
