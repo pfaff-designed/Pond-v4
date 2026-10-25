@@ -17,7 +17,11 @@ export const PROSE_LINE_PLACEHOLDER = 'type, or / for blocks'
  * the real line changes nothing about the type, only which element is real.
  * Carries its own line-height (rule 3 fix, KAN-345): without it, the ghost row's
  * ::before-less real element has nothing to match the ::before rules' inherited
- * `leading-[1.6]` against, and the two line boxes disagree by a few px.
+ * `leading-[var(--prose-line)]` against. The hint always takes the line it sits
+ * on's own `--prose-line` (set where that line's type is set: the prose root,
+ * a blockquote, zen's scaled prose) — never a px literal restating one line's
+ * height, which silently drifts whenever that line's size or ratio changes
+ * (KAN-535: it already had, in a quote and in zen).
  * `TrailingBlockGap` imports this directly (a real element takes bare utility
  * classes); the three `::before` rules below restate its six values against their
  * own selectors by hand — Tailwind's content scanner needs each variant+utility
@@ -25,7 +29,7 @@ export const PROSE_LINE_PLACEHOLDER = 'type, or / for blocks'
  * runtime would silently generate no CSS at all.
  */
 export const MACHINE_HINT_FRAGMENT =
-  'font-mono text-[13px] tracking-[0.02em] lowercase leading-[1.6] text-mn-text-secondary'
+  'font-mono text-[13px] tracking-[0.02em] lowercase leading-[var(--prose-line,calc(17.5px*1.6))] max-md:leading-[var(--prose-line,calc(17px*1.6))] text-mn-text-secondary'
 
 /**
  * What a blank text block's line reads: the block's own `placeholder`, or — when
@@ -72,7 +76,10 @@ const TEXT_STRUCTURE = [
  *               3 → 18/500, 4 → 16/500, 5 → 13.5/500, 6 → 11/500 upper .1em
  *   quote     — serif 200 italic 19 (18), −.01em
  *   code      — 12 (13)
- *   empty     — the line's own empty copy (`untitled`, `type, or / for blocks`), at ink .68.
+ *   empty     — the line's own empty copy (`untitled`, `type, or / for blocks`), at ink .68,
+ *               in that line's own `--prose-line` box (whatever line it's on: plain
+ *               prose, a quote, zen) so the hint neither grows nor shrinks the line
+ *               it sits on.
  *               A heading's `untitled` draws whether or not its editor has focus;
  *               every other empty line (KAN-345 rule 2) draws only while its own
  *               editor carries ProseMirror's `.ProseMirror-focused` class — never
@@ -80,7 +87,7 @@ const TEXT_STRUCTURE = [
  * Blocks inside one text block sit on the page's own 16px rhythm (`Pond 06.07`).
  */
 export const TEXT_PROSE_CLASS = [
-  'font-serif font-extralight text-mn-text text-[17.5px] leading-[1.6] text-pretty outline-none max-md:text-[17px]',
+  'font-serif font-extralight text-mn-text text-[17.5px] leading-[1.6] text-pretty outline-none max-md:text-[17px] [--prose-line:calc(17.5px*1.6)] max-md:[--prose-line:calc(17px*1.6)]',
   '[&>*+*]:mt-4',
   '[&_strong]:font-extrabold',
   '[&_h1]:font-sans [&_h1]:font-bold [&_h1]:uppercase [&_h1]:tracking-[-0.01em] [&_h1]:leading-none [&_h1]:text-[38px] max-md:[&_h1]:text-[30px]',
@@ -89,7 +96,7 @@ export const TEXT_PROSE_CLASS = [
   '[&_h4]:font-sans [&_h4]:font-medium [&_h4]:leading-[1.3] [&_h4]:text-[16px] max-md:[&_h4]:text-[15px]',
   '[&_h5]:font-sans [&_h5]:font-medium [&_h5]:leading-[1.4] [&_h5]:text-[13.5px]',
   '[&_h6]:font-sans [&_h6]:font-medium [&_h6]:uppercase [&_h6]:tracking-[0.1em] [&_h6]:leading-[1.4] [&_h6]:text-[11px]',
-  '[&_blockquote]:tracking-[-0.01em] [&_blockquote]:text-[19px] max-md:[&_blockquote]:text-[18px]',
+  '[&_blockquote]:tracking-[-0.01em] [&_blockquote]:text-[19px] max-md:[&_blockquote]:text-[18px] [&_blockquote]:[--prose-line:calc(19px*1.6)] max-md:[&_blockquote]:[--prose-line:calc(18px*1.6)]',
   '[&_code]:text-[12px] max-md:[&_code]:text-[13px]',
   '[&_:is(.is-editor-empty,.is-empty)]:before:pointer-events-none [&_:is(.is-editor-empty,.is-empty)]:before:float-left [&_:is(.is-editor-empty,.is-empty)]:before:h-0 [&_:is(.is-editor-empty,.is-empty)]:before:text-mn-text-secondary',
   // Tailwind's `before:` variant always injects `content: var(--tw-content)`
@@ -114,7 +121,7 @@ export const TEXT_PROSE_CLASS = [
   '[&.ProseMirror-focused_:is(.is-editor-empty,.is-empty):not(:is(h1,h2,h3,h4,h5,h6))]:before:text-[13px]',
   '[&.ProseMirror-focused_:is(.is-editor-empty,.is-empty):not(:is(h1,h2,h3,h4,h5,h6))]:before:tracking-[0.02em]',
   '[&.ProseMirror-focused_:is(.is-editor-empty,.is-empty):not(:is(h1,h2,h3,h4,h5,h6))]:before:lowercase',
-  '[&.ProseMirror-focused_:is(.is-editor-empty,.is-empty):not(:is(h1,h2,h3,h4,h5,h6))]:before:leading-[1.6]',
+  '[&.ProseMirror-focused_:is(.is-editor-empty,.is-empty):not(:is(h1,h2,h3,h4,h5,h6))]:before:leading-[var(--prose-line)]',
   '[&.ProseMirror-focused_:is(.is-editor-empty,.is-empty):not(:is(h1,h2,h3,h4,h5,h6))]:before:text-mn-text-secondary',
   TEXT_STRUCTURE,
 ].join(' ')
@@ -143,7 +150,7 @@ export const UNTOUCHED_HINT_CLASS = [
   '[&_:is([data-text-prose],.ProseMirror)_.is-editor-empty]:before:text-[13px]',
   '[&_:is([data-text-prose],.ProseMirror)_.is-editor-empty]:before:tracking-[0.02em]',
   '[&_:is([data-text-prose],.ProseMirror)_.is-editor-empty]:before:lowercase',
-  '[&_:is([data-text-prose],.ProseMirror)_.is-editor-empty]:before:leading-[1.6]',
+  '[&_:is([data-text-prose],.ProseMirror)_.is-editor-empty]:before:leading-[var(--prose-line)]',
   '[&_:is([data-text-prose],.ProseMirror)_.is-editor-empty]:before:text-mn-text-secondary',
   '[&_:is([data-text-prose],.ProseMirror)_.is-editor-empty]:before:ml-[6px]',
 ].join(' ')
@@ -167,7 +174,7 @@ export const HOVER_GHOST_CLASS = [
   '[&_.ProseMirror_.is-editor-empty]:before:text-[13px]',
   '[&_.ProseMirror_.is-editor-empty]:before:tracking-[0.02em]',
   '[&_.ProseMirror_.is-editor-empty]:before:lowercase',
-  '[&_.ProseMirror_.is-editor-empty]:before:leading-[1.6]',
+  '[&_.ProseMirror_.is-editor-empty]:before:leading-[var(--prose-line)]',
   '[&_.ProseMirror_.is-editor-empty]:before:text-mn-text-secondary',
 ].join(' ')
 

@@ -121,6 +121,9 @@ export const ZEN_TITLE_CLASS =
 export const ZEN_PROSE_CLASS = [
   '[&_:is([data-text-prose],.ProseMirror)]:text-[length:var(--zen-prose)]',
   '[&_:is([data-text-prose],.ProseMirror)]:leading-[1.7]',
+  // The empty-line hint's `::before` (`prose.ts`'s `--prose-line`) reads this
+  // instead of a restated px number, so it keeps zen's own scaled line box.
+  '[&_:is([data-text-prose],.ProseMirror)]:[--prose-line:calc(var(--zen-prose)*1.7)]',
   '[&_:is([data-text-prose],.ProseMirror)>*+*]:mt-[var(--zen-gap)]',
   '[&_:is([data-text-prose],.ProseMirror)_h1]:text-[length:var(--zen-h1)]',
   '[&_:is([data-text-prose],.ProseMirror)_h2]:text-[length:var(--zen-h2)]',

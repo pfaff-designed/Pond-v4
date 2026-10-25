@@ -658,6 +658,38 @@ export function BlockCanvas({
     maxHeight: number
   } | null>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
+  // Whether a text editor inside this canvas has focus (KAN-535) — gates both
+  // hover ghosts (`hoverGhost` below, `TrailingBlockGap`'s own ghost row) so
+  // hovering the trailing gap never draws a second hint beside a line that's
+  // already showing its own via focus. `focusin`/`focusout` on the canvas
+  // root, not each editor's own handler, since a line's ProseMirror instance
+  // mounts and unmounts as lines are added/removed — this watches the one
+  // DOM node that's always there instead of ones that come and go.
+  const [editingText, setEditingText] = useState(false)
+  useEffect(() => {
+    const el = canvasRef.current
+    if (!el) return
+    const isEditorWithin = (node: EventTarget | null) => {
+      const editor = node instanceof Element ? node.closest('.ProseMirror') : null
+      return editor != null && el.contains(editor)
+    }
+    // Seeded once on attach: an editor can autofocus (`autofocus` prop below)
+    // before this effect runs, and the first focus/focusout pair would
+    // otherwise never fire to tell us about it.
+    setEditingText(isEditorWithin(document.activeElement))
+    const handleFocusIn = (e: FocusEvent) => setEditingText(isEditorWithin(e.target))
+    // `relatedTarget` is the element GAINING focus — reading
+    // `document.activeElement` here is unreliable, since on a plain blur
+    // (focus going nowhere) it already reads `body` while this event is
+    // still in flight.
+    const handleFocusOut = (e: FocusEvent) => setEditingText(isEditorWithin(e.relatedTarget))
+    el.addEventListener('focusin', handleFocusIn)
+    el.addEventListener('focusout', handleFocusOut)
+    return () => {
+      el.removeEventListener('focusin', handleFocusIn)
+      el.removeEventListener('focusout', handleFocusOut)
+    }
+  }, [])
   // While previewing, `canvasRef` collapses to zero height (6f frame 3's
   // outline swap, `hiddenCanvasListStyle` above) rather than going
   // `display:none` — so its own rect, and every block's inside it, is a real
@@ -2031,7 +2063,8 @@ export function BlockCanvas({
           i === blocks.length - 1 &&
           trailingLineIsEmptyText &&
           trailingGapVisible &&
-          trailingGapHovered
+          trailingGapHovered &&
+          !editingText
         }
         onChange={(next) => setBlockAt(i, next)}
         writeBlock={writeBlock}
@@ -2543,11 +2576,13 @@ export function BlockCanvas({
         <TrailingBlockGap
           onClick={handleTrailingGapClick}
           hidden={draggingIndex !== null || !!previewing}
-          // Rule 3's fix (KAN-345): when the last block is already an empty
-          // text line, that line's own placeholder paints in place (via
-          // `hoverGhost` above) — drawing a second ghost row here too would
-          // put the text in two places at once.
-          showGhostText={!trailingLineIsEmptyText}
+          // Rule 3 (KAN-345): when the last block is already an empty text
+          // line, that line's own placeholder paints in place (via
+          // `hoverGhost` above) instead — a second ghost row here would put
+          // the text in two places at once. And (KAN-535) while any editor
+          // in the canvas has focus, that line already shows its own hint
+          // from its own focus, so this one must not draw a second.
+          showGhostText={!trailingLineIsEmptyText && !editingText}
           onHoverChange={setTrailingGapHovered}
         />
       )}

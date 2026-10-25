@@ -24,10 +24,12 @@ export function TrailingBlockGap({
 }: {
   onClick: () => void
   hidden?: boolean
-  /** False when the last block is already an empty text line: that line's own
-   *  `::before` paints the same placeholder at its own position instead (fix,
-   *  KAN-345 rule 3) — drawing a ghost row here too would show the text twice,
-   *  in two different places, for one line. */
+  /** False when the last block is already an empty text line (its own
+   *  `::before` paints the same placeholder at its own position instead,
+   *  KAN-345 rule 3) or while any editor in the canvas has focus (that
+   *  line already draws its own hint from its own focus, KAN-535) — either
+   *  way, a ghost row here too would show the text twice at once. The gap
+   *  stays clickable either way; only this row's own ghost text is gated. */
   showGhostText?: boolean
   /** Lets the caller paint the last empty line's own placeholder while this
    *  area is hovered, instead of (or as well as) this row's own ghost text. */
