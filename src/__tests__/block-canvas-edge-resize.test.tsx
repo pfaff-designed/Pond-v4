@@ -12,7 +12,7 @@
  */
 
 import React from 'react'
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BlockCanvas, type BlockCanvasProps } from '@/components/organisms/BlockCanvas'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
@@ -511,6 +511,34 @@ describe('an alone-on-line edge drag (KAN-441)', () => {
         expect(readoutText('b-b', 'shared')).toBeNull()
 
         fireEvent.pointerUp(boundary1, { clientX: 50 })
+      } finally {
+        ro.restore()
+      }
+    })
+
+    it("the right block's grip stacks above the shared strip it overlaps, so a press there arms a drag, not a resize", () => {
+      const ro = mockResizeObserver()
+      try {
+        const left: Block = { id: 'b-left', type: 'text', content: 'left', width: '1/2' }
+        const right: Block = { id: 'b-right', type: 'text', content: 'right', width: '1/2' }
+        renderCanvas([left, right], () => {})
+        setColumnWidth('b-left', 1000, ro)
+
+        // The shared strip (carried by the left member) is an explicit `z-[1]` — a
+        // positioned element with no z-index (`auto`) loses to it regardless of DOM
+        // order, so the right member's own grip needs an explicit z-index HIGHER
+        // than the strip's to win the overlap.
+        const strip = edgeHandle('b-left', 'shared')!
+        const stripZ = Number(strip.className.match(/z-\[(\d+)\]/)?.[1])
+        const handle = blockRoot('b-right').querySelector('[data-part="handle"]')!
+        const handleZ = Number(handle.className.match(/z-\[(\d+)\]/)?.[1] ?? '0')
+        expect(handleZ).toBeGreaterThan(stripZ)
+
+        const grip = within(blockRoot('b-right')).getByRole('button', { name: 'drag to move' })
+        fireEvent.pointerDown(grip, { clientX: 0, clientY: 0 })
+
+        expect(blockRoot('b-right')).toHaveAttribute('draggable', 'true')
+        expect(strip.getAttribute('data-dragging')).toBeNull()
       } finally {
         ro.restore()
       }

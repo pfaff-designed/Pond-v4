@@ -4462,7 +4462,12 @@ function BlockEditor({
           block menu (KAN-485), which is where `delete` lives. Inside the card
           it must stack ABOVE the body that follows it in the DOM (the card's
           paper, a text block's editor) or taps land on the body: `z-[1]`, the
-          lowest lift that does it, under every floating surface (z ≥ 4). */}
+          lowest lift that does it, under every floating surface (z ≥ 4).
+          Desktop's own grip sits further out (`-left-3.5`), where a row-mate's
+          shared edge strip (KAN-505, `z-[1]`) reaches into the same pixels —
+          an explicit z-index beats a positioned-but-`auto` one regardless of
+          DOM order, so without `z-[2]` here the strip, not the grip, took
+          every press over that overlap. */}
       <div
         data-part="handle"
         hidden={!chrome}
@@ -4471,7 +4476,7 @@ function BlockEditor({
           menuSize === 'mobile'
             ? 'right-0.5 top-0.5 z-[1]'
             : [
-                '-left-3.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
+                '-left-3.5 z-[2] opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
                 // A card centres the 24px handle on its head row; bare prose has no head
                 // row, so it centres on the first line (2px inset + half the 28px line).
                 !frame && block.type === 'text' ? 'top-1' : 'top-3',
