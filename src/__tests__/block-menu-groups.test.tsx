@@ -30,14 +30,20 @@ const list: TodoBlock = {
 
 const text: TextBlock = { id: 'b-text', type: 'text', content: 'hello' }
 
-const OpenMenu = ({ slots }: { slots?: BlockMenuSlots }) => {
+const OpenMenu = ({
+  slots,
+  size,
+}: {
+  slots?: BlockMenuSlots
+  size?: 'desktop' | 'mobile'
+}) => {
   const anchorRef = useRef<HTMLDivElement>(null)
   return (
     <div ref={anchorRef}>
       <PondMenu
         kind="block"
         label="block menu"
-        groups={blockMenuGroups(list, slots)}
+        groups={blockMenuGroups(list, slots, true, size)}
         open
         onOpenChange={() => {}}
         onSelect={() => {}}
@@ -51,12 +57,21 @@ const OpenMenu = ({ slots }: { slots?: BlockMenuSlots }) => {
 const menu = () => screen.getByRole('menu', { name: 'block menu' })
 
 describe('blockMenuGroups slots', () => {
-  it('without slots: turn into, then the block’s own actions — one rule between them', () => {
+  it('without slots, on desktop: turn into, then the block’s own actions, no delete — one rule between them', () => {
     render(<OpenMenu />)
     const groups = within(menu()).getAllByRole('group')
     expect(groups).toHaveLength(2)
     expect(within(menu()).queryByRole('group', { name: 'width' })).not.toBeInTheDocument()
     expect(within(menu()).getAllByRole('separator')).toHaveLength(1)
+    expect(
+      within(within(menu()).getByRole('group', { name: 'block' }))
+        .getAllByRole('menuitem')
+        .map((item) => item.textContent)
+    ).toEqual(['copy link to block'])
+  })
+
+  it('on mobile: the block group keeps `delete`, since a phone has no ⌘⌫', () => {
+    render(<OpenMenu size="mobile" />)
     expect(
       within(within(menu()).getByRole('group', { name: 'block' }))
         .getAllByRole('menuitem')
@@ -82,7 +97,7 @@ describe('blockMenuGroups slots', () => {
       within(groups[2])
         .getAllByRole('menuitem')
         .map((item) => item.textContent)
-    ).toEqual(['move into a new page', 'copy link to block', 'delete'])
+    ).toEqual(['move into a new page', 'copy link to block'])
   })
 
   it('a rule sits between each pair of drawn groups and nowhere else', () => {
@@ -100,17 +115,22 @@ describe('blockMenuGroups slots', () => {
   })
 })
 
-describe('blockMenuGroups delete label', () => {
+describe('blockMenuGroups delete label (mobile only — desktop drops the row)', () => {
   const pageLink: PageLinkBlock = { id: 'b-link', type: 'page-link', pageId: 'p-1' }
 
   it('reads `remove link` for a page-link block', () => {
-    const group = blockMenuGroups(pageLink).find((g) => g.id === 'block')
+    const group = blockMenuGroups(pageLink, {}, true, 'mobile').find((g) => g.id === 'block')
     expect(group?.items?.find((item) => item.id === 'delete')?.label).toBe('remove link')
   })
 
   it('reads `delete` for every other block type', () => {
-    const group = blockMenuGroups(list).find((g) => g.id === 'block')
+    const group = blockMenuGroups(list, {}, true, 'mobile').find((g) => g.id === 'block')
     expect(group?.items?.find((item) => item.id === 'delete')?.label).toBe('delete')
+  })
+
+  it('on desktop, no block type gets a delete row', () => {
+    const group = blockMenuGroups(list).find((g) => g.id === 'block')
+    expect(group?.items?.find((item) => item.id === 'delete')).toBeUndefined()
   })
 })
 

@@ -2670,7 +2670,8 @@ export function BlockCanvas({
                     />
                   ),
                 },
-                apple
+                apple,
+                slashSize
               )
             : undefined
         }

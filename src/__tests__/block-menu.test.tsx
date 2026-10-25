@@ -457,7 +457,7 @@ describe('the block menu rings the block while open, and offers moving it into a
       within(block)
         .getAllByRole('menuitem')
         .map((i) => i.textContent)
-    ).toEqual(['move into a new page', 'copy link to block', 'delete'])
+    ).toEqual(['move into a new page', 'copy link to block'])
     await user.click(within(block).getByRole('menuitem', { name: 'move into a new page' }))
     expect(onMoveIntoNewPage).toHaveBeenCalledWith(list)
   })
