@@ -581,7 +581,7 @@ export function TodoView({ data, editable, onChange }: ModuleViewProps<TodoBlock
       {editable && data.items.length > 0 && (
         <button
           type="button"
-          className="font-mono lowercase text-[10.5px] text-mn-text-secondary"
+          className="font-mono lowercase text-[10.5px] text-mn-text-secondary opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100"
           onClick={() => {
             const next = addTodoItem(data)
             pendingFocus.current = { id: next.items[next.items.length - 1].id, caret: 'start' }

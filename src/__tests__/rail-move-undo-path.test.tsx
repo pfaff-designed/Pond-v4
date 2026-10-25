@@ -28,6 +28,7 @@ import { fetchPages, type PageRow } from '@/lib/pages/tree'
 import { movePage } from '@/lib/pages/client'
 import { createClient } from '@/lib/supabase/client'
 import { undoStep, redoStep } from '@/lib/change-log/undo'
+import { writeExpandedIds } from '@/lib/rail/expanded-store'
 import { describeChange } from '@/lib/change-log/page-changes'
 import type { ChangeLogRecord, MoveSnapshot } from '@/lib/change-log/types'
 import type { Block } from '@/lib/modules/content'
@@ -119,6 +120,40 @@ function applySnapshot(pageId: string, snap: MoveSnapshot) {
   })
 }
 
+/**
+ * KAN-467 — mirrors `apply_page_move`/`change_log_set_back`'s link-edit halves
+ * (migration 0031) so the fakes below carry the same link edit the real RPC
+ * now does: `from` is always the side a block is REMOVED from, `to` is always
+ * the side one is PUT BACK onto (undo/redo pre-swap `before`/`after` into
+ * `from`/`to` the same way `change_log_step` does for the SQL branch).
+ */
+function applyLinkEdit(pageId: string, from: MoveSnapshot, to: MoveSnapshot) {
+  if (from.appendedLinkId || from.removedLinks) {
+    const row = from.parentId ? table.find((r) => r.id === from.parentId) : undefined
+    if (row) {
+      const removeIds = from.appendedLinkId
+        ? [from.appendedLinkId]
+        : (from.removedLinks ?? []).map((entry) => entry.block.id)
+      row.blocks = row.blocks.filter((b) => !removeIds.includes(b.id))
+    }
+  }
+  if (to.removedLinks || to.appendedLinkId) {
+    const row = to.parentId ? table.find((r) => r.id === to.parentId) : undefined
+    if (row) {
+      if (to.removedLinks) {
+        for (const { block, index } of [...to.removedLinks].sort((a, b) => a.index - b.index)) {
+          row.blocks = [...row.blocks.slice(0, index), block, ...row.blocks.slice(index)]
+        }
+      } else if (
+        to.appendedLinkId &&
+        !row.blocks.some((b) => b.type === 'page-link' && b.pageId === pageId)
+      ) {
+        row.blocks = [...row.blocks, { id: to.appendedLinkId, type: 'page-link', pageId }]
+      }
+    }
+  }
+}
+
 interface MoveLogEntry {
   pageId: string
   before: MoveSnapshot
@@ -156,21 +191,49 @@ beforeEach(() => {
     async (_sb: unknown, input: { id: string; newParentId: string | null; siblingOrder: string[] }) => {
       const page = table.find((r) => r.id === input.id)
       if (!page) throw new Error(`move_page: moving page ${input.id} returned no record`)
+      const oldParentId = page.parent_id
       const before: MoveSnapshot = {
-        parentId: page.parent_id,
-        parentTitle: titleOf(page.parent_id),
-        siblingOrder: table.filter((r) => r.parent_id === page.parent_id).map((r) => r.id),
+        parentId: oldParentId,
+        parentTitle: titleOf(oldParentId),
+        siblingOrder: table.filter((r) => r.parent_id === oldParentId).map((r) => r.id),
+      }
+      // Migration 0031 part A/B: a reparent (not a same-parent reorder) strips
+      // the moved page's own page-link block off the old parent and appends
+      // one onto the new parent, unless it already carries one.
+      let removedLinks: MoveSnapshot['removedLinks']
+      let appendedLinkId: string | undefined
+      if (oldParentId !== input.newParentId) {
+        const oldParent = oldParentId ? table.find((r) => r.id === oldParentId) : undefined
+        if (oldParent) {
+          const index = oldParent.blocks.findIndex(
+            (b) => b.type === 'page-link' && b.pageId === input.id
+          )
+          if (index !== -1) {
+            removedLinks = [{ block: oldParent.blocks[index], index }]
+            oldParent.blocks = oldParent.blocks.filter((_, i) => i !== index)
+          }
+        }
+        const newParent = input.newParentId ? table.find((r) => r.id === input.newParentId) : undefined
+        if (newParent && !newParent.blocks.some((b) => b.type === 'page-link' && b.pageId === input.id)) {
+          appendedLinkId = `link-${input.id}-${newParent.id}`
+          newParent.blocks = [
+            ...newParent.blocks,
+            { id: appendedLinkId, type: 'page-link', pageId: input.id },
+          ]
+        }
       }
       applySnapshot(input.id, { parentId: input.newParentId, parentTitle: '', siblingOrder: input.siblingOrder })
       const after: MoveSnapshot = {
         parentId: input.newParentId,
         parentTitle: titleOf(input.newParentId),
         siblingOrder: input.siblingOrder,
+        ...(appendedLinkId ? { appendedLinkId } : {}),
       }
+      const fullBefore: MoveSnapshot = { ...before, ...(removedLinks ? { removedLinks } : {}) }
       const id = `record-${++recordSeq}`
-      moveLog.set(id, { pageId: input.id, before, after })
+      moveLog.set(id, { pageId: input.id, before: fullBefore, after })
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return { id, before, after } as any
+      return { id, before: fullBefore, after } as any
     }
   )
 
@@ -178,12 +241,14 @@ beforeEach(() => {
     const entry = moveLog.get(step.recordIds[0])
     if (!entry) throw new Error(`no move record for ${step.recordIds[0]}`)
     applySnapshot(entry.pageId, entry.before)
+    applyLinkEdit(entry.pageId, entry.after, entry.before)
     return { outcome: 'done', records: [] }
   })
   jest.mocked(redoStep).mockImplementation(async (_sb: unknown, step: { recordIds: readonly string[] }) => {
     const entry = moveLog.get(step.recordIds[0])
     if (!entry) throw new Error(`no move record for ${step.recordIds[0]}`)
     applySnapshot(entry.pageId, entry.after)
+    applyLinkEdit(entry.pageId, entry.before, entry.after)
     return { outcome: 'done', records: [] }
   })
 
@@ -402,5 +467,60 @@ describe('KAN-466 regression: a reparent writes no link block of its own', () =>
 
     await waitFor(() => expect(parentIdOfRoof()).toBe(null))
     expect(table.find((r) => r.id === 'house')?.blocks ?? []).toEqual([])
+  })
+})
+
+/**
+ * KAN-467 — PATH_STEPS' own walk for the link edit: P already links C in its
+ * `blocks` → drag C under Q → P's row loses the C link and Q's gains one →
+ * the undo toast restores both → ⇧⌘Z (redo) reapplies both. Same fakes as
+ * the suite above (`movePage`/`undoStep`/`redoStep`), now exercising the
+ * link-edit halves migration 0031 added to `apply_page_move` and
+ * `change_log_set_back`'s `move` branch (see `applyLinkEdit` above).
+ */
+describe('rail drag-move carries its link edit with it (KAN-467)', () => {
+  it('walks PATH_STEPS: P links C, drag C under Q, undo restores both, redo reapplies both', async () => {
+    table = [
+      {
+        id: 'P', parent_id: null, type: 'page', title: 'P', order: 0, updated_at: AT,
+        blocks: [{ id: 'link-c', type: 'page-link', pageId: 'C' }],
+      },
+      { id: 'Q', parent_id: null, type: 'page', title: 'Q', order: 1, updated_at: AT, blocks: [] },
+      { id: 'C', parent_id: 'P', type: 'page', title: 'C', order: 0, updated_at: AT, blocks: [] },
+    ]
+    writeExpandedIds(POND_ID, ['P', 'Q'])
+
+    const linksTo = (pageId: string, linkedTo: string) =>
+      (table.find((r) => r.id === pageId)?.blocks ?? []).filter(
+        (b) => b.type === 'page-link' && b.pageId === linkedTo
+      )
+
+    renderPath()
+
+    expect(linksTo('P', 'C')).toHaveLength(1)
+    expect(linksTo('Q', 'C')).toHaveLength(0)
+
+    const dragged = screen.getByRole('treeitem', { name: 'C' })
+    const target = screen.getByRole('treeitem', { name: 'Q' })
+    fireEvent(dragged, dragStartEvent())
+    fireEvent(target, dropEvent(0))
+
+    await waitFor(() => expect(movePage).toHaveBeenCalledTimes(1))
+    await screen.findByText('moved C to Q ·')
+    await waitFor(() => expect(table.find((r) => r.id === 'C')?.parent_id).toBe('Q'))
+    expect(linksTo('P', 'C')).toHaveLength(0)
+    expect(linksTo('Q', 'C')).toHaveLength(1)
+
+    await userEvent.click(screen.getByRole('button', { name: 'undo' }))
+    await waitFor(() => expect(table.find((r) => r.id === 'C')?.parent_id).toBe('P'))
+    expect(linksTo('P', 'C')).toHaveLength(1)
+    expect(linksTo('Q', 'C')).toHaveLength(0)
+
+    const user = userEvent.setup()
+    await user.click(document.body)
+    await user.keyboard('{Meta>}{Shift>}z{/Shift}{/Meta}')
+    await waitFor(() => expect(table.find((r) => r.id === 'C')?.parent_id).toBe('Q'))
+    expect(linksTo('P', 'C')).toHaveLength(0)
+    expect(linksTo('Q', 'C')).toHaveLength(1)
   })
 })

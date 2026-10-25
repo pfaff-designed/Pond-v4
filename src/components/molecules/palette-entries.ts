@@ -41,6 +41,7 @@ export type PaletteAction =
   | 'ask-pond'
   | 'deep-research'
   | 'save-as-template'
+  | 'duplicate-page'
   | 'import-a-page'
   | 'report-a-problem'
   | 'minimize-rail'

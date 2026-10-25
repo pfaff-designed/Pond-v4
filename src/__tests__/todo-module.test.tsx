@@ -497,6 +497,32 @@ describe('TodoView — editable (the molecule’s rows, made live by the host)',
     expect(b.querySelector<HTMLInputElement>('input[type="text"]')!.placeholder).toBe('add an item')
   })
 
+  it('a blank check-row field’s placeholder is hidden at rest, shown on row hover or field focus (KAN-499)', () => {
+    const blankCheck: TodoBlock = {
+      id: 'e',
+      type: 'todo',
+      items: [{ id: '1', label: '', checked: false }],
+    }
+    const { container } = render(<Stateful data={blankCheck} />)
+    const [row] = rowsOf(container)
+    const field = row.querySelector<HTMLInputElement>('input[type="text"]')!
+    has(field, 'placeholder:opacity-0', 'focus:placeholder:opacity-100')
+    lacks(field, 'placeholder:opacity-100')
+
+    fireEvent.mouseEnter(row)
+    has(field, 'placeholder:opacity-100')
+    fireEvent.mouseLeave(row)
+    lacks(field, 'placeholder:opacity-100')
+
+    // A `list-row`'s field is unaffected — this hides the check-row's blank
+    // field only.
+    const { container: listContainer } = render(<Stateful data={groceries} />)
+    const listField = rowsOf(listContainer)[0].querySelector<HTMLInputElement>(
+      'input[type="text"]'
+    )!
+    lacks(listField, 'placeholder:opacity-0')
+  })
+
   it('an item’s own placeholder is the field’s placeholder attribute, not the generic copy', () => {
     const withPlaceholder: TodoBlock = {
       id: 'e',
@@ -694,6 +720,17 @@ describe('TodoView — editable (the molecule’s rows, made live by the host)',
     expect(screen.getByRole('button', { name: '＋ add a step' })).toBeInTheDocument()
     render(<Stateful data={groceries} />)
     expect(screen.getByRole('button', { name: '＋ add an item' })).toBeInTheDocument()
+  })
+
+  it('the quiet add-item row is hidden at rest, shown on hover or focus-within (KAN-499)', () => {
+    render(<Stateful data={legacy} />)
+    has(
+      screen.getByRole('button', { name: '＋ add a step' }),
+      'opacity-0',
+      'group-hover:opacity-100',
+      'group-focus-within:opacity-100',
+      'focus-visible:opacity-100'
+    )
   })
 
   it('clicking the quiet add-item row appends one item and focuses it (KAN-355)', async () => {

@@ -51,6 +51,34 @@ function isDatabasesRootRow(row: { parent_id: string | null; title: string }): b
 }
 
 /**
+ * Is this page duplicable (KAN-468)? False for the pond root (`type = 'home'`)
+ * and the databases root — each a pond's one-per-kind row, the same two rows
+ * `trash_page` (0027) already refuses and `duplicate_page` (0032) now refuses
+ * too. Rail's ⌘D capability (`rowCapabilities`'s `duplicable`) and ⌘K's
+ * "duplicate page" palette entry both read this one rule rather than two
+ * copies of it. Shape-typed like {@link isDatabasesRoot}, so a `RailNode` fits.
+ */
+export function isDuplicablePage(node: {
+  parentId: string | null
+  title: string
+  type: string
+}): boolean {
+  return node.type !== 'home' && !isDatabasesRoot(node)
+}
+
+/**
+ * {@link isDuplicablePage} over a flat `['pages']` row (snake_case `parent_id`) —
+ * same adapter shape as {@link isDatabasesRootRow}.
+ */
+export function isDuplicablePageRow(row: {
+  parent_id: string | null
+  title: string
+  type: string
+}): boolean {
+  return isDuplicablePage({ parentId: row.parent_id, title: row.title, type: row.type })
+}
+
+/**
  * Life's own rows: every page EXCEPT the databases root and its whole subtree.
  *
  * 3c's "one root beside life" means the databases root is a PEER of life, not one

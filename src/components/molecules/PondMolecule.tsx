@@ -370,7 +370,12 @@ export function PondMolecule({
           // The mark sits 10px after the row's TEXT (board 6c f4), not 10px
           // after a flex-1 input stretched to the row's width — so once a mark
           // is present the input hugs its typed value instead of the row.
-          hugTitle && '[field-sizing:content] min-w-[3ch]'
+          hugTitle && '[field-sizing:content] min-w-[3ch]',
+          // KAN-499: a blank check-row's "add a step" reads at rest otherwise
+          // (no prompts at rest); `hover` is the host's controlled row-hover
+          // state (not CSS), `focus:` covers the field itself.
+          kind === 'check-row' &&
+            cn('placeholder:opacity-0 focus:placeholder:opacity-100', hover && 'placeholder:opacity-100')
         )}
         value={title ?? ''}
         placeholder={emptyCopy}

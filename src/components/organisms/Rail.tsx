@@ -62,6 +62,7 @@ import {
   applyAreaRoleOptimistic,
   type PageRow,
 } from '@/lib/pages/tree'
+import { duplicateAndOpen } from '@/lib/pages/duplicate'
 import { setPageGlyph, setAreaRole } from '@/lib/pages/mark-client'
 import { appendOwnEdit } from '@/lib/change-log/store'
 import { changeLogKey } from '@/lib/change-log/keys'
@@ -70,8 +71,9 @@ import { applyUndoOutcome } from '@/lib/change-log/undo-outcome'
 import { TrashRefusedError } from '@/lib/change-log/errors'
 import { readMoveSnapshot, moveParentLabel } from '@/lib/change-log/page-changes'
 import { jsonEqual } from '@/lib/json-equal'
-import { homeQueryKey, pagesKey } from '@/lib/pages/keys'
+import { homeQueryKey, pagesKey, resolveLinkParentId } from '@/lib/pages/keys'
 import { appendChildLinkUnder, trashPageUnlinked } from '@/lib/pages/child-links'
+import { flushPendingPageSave } from '@/lib/pages/page-flush'
 import { usePondId, usePond } from '@/lib/pond/context'
 import { useHomePage } from '@/lib/pages/use-home-page'
 import { pushRecentGlyphToPond } from '@/lib/pond/client'
@@ -94,6 +96,7 @@ import {
   DATABASES_ROOT_TITLE,
   getOrCreateDatabasesRoot,
   isDatabasesRoot,
+  isDuplicablePage,
 } from '@/lib/pages/databases-root'
 import { usePondName } from '@/lib/pond/name'
 import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
@@ -230,6 +233,8 @@ interface RowCapabilities {
   deletable: boolean
   /** Can be renamed from the rail: F2 and double-click. */
   renameable: boolean
+  /** Can be duplicated: ⌘D/Ctrl+D (KAN-468; the ⋯ menu entry waits on KAN-221). */
+  duplicable: boolean
 }
 
 const NO_CAPABILITIES: RowCapabilities = {
@@ -238,13 +243,15 @@ const NO_CAPABILITIES: RowCapabilities = {
   addable: false,
   deletable: false,
   renameable: false,
+  duplicable: false,
 }
 
 /**
  * The pond root is a drop target and the one row a page is added under when the
- * pond is empty — but not while it is, since an empty pond's root draws no ＋. The
- * placeholder is no page at all. The databases root is a foot row: it can be moved
- * and dropped on, never added to, deleted or renamed.
+ * pond is empty — and while it is, its ＋ is visible at rest (KAN-471): the hover
+ * rule returns once a first page exists. The placeholder is no page at all. The
+ * databases root is a foot row: it can be moved and dropped on, never added to,
+ * deleted or renamed.
  */
 const rowCapabilities = (id: string, node: RailNode): RowCapabilities => {
   // KAN-491: the home root renames and deletes like any other row. It still
@@ -258,14 +265,29 @@ const rowCapabilities = (id: string, node: RailNode): RowCapabilities => {
   // on a page with a parent, so dragging is disallowed outright rather than
   // special-cased at drop time.
   if (isExtraRootNode(node))
-    return { draggable: false, droppable: true, addable: true, deletable: true, renameable: true }
-  return { draggable: true, droppable: true, addable: true, deletable: true, renameable: true }
+    return {
+      draggable: false,
+      droppable: true,
+      addable: true,
+      deletable: true,
+      renameable: true,
+      duplicable: isDuplicablePage(node),
+    }
+  return {
+    draggable: true,
+    droppable: true,
+    addable: true,
+    deletable: true,
+    renameable: true,
+    duplicable: isDuplicablePage(node),
+  }
 }
 
 /** Does the row allow the tree command? Navigation commands are always allowed. */
 const allowsCommand = (cap: RowCapabilities, kind: TreeKeyCommand['kind']): boolean => {
   if (kind === 'addChild') return cap.addable
   if (kind === 'rename') return cap.renameable
+  if (kind === 'duplicate') return cap.duplicable
   return true
 }
 
@@ -303,6 +325,11 @@ interface RailRowProps {
   /** A leading mark slot (an area's glyph, the Life root's waves — #91) —
    *  replaces the dot. */
   leading?: ReactNode
+  /** KAN-471: the root row's ＋ while the pond has no pages — Notion/Linear
+   *  show their create affordance at rest in an empty list; the board's own
+   *  hover-only rule returns once a page exists. Reuses the existing hover
+   *  opacity class, no new value. */
+  plusVisibleAtRest?: boolean
   /** KAN-122: a non-shared row note (`new`, for a nested page not yet
    *  opened) — mono, ink .68, `flex:none`. Rides alongside `row-tools`, never
    *  replaces it. Absent once the page has been opened. KAN-75's shared row
@@ -360,6 +387,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
     accent,
     settleOnMount = false,
     leading,
+    plusVisibleAtRest = false,
     rowNote,
     onSelect,
     onToggle,
@@ -411,14 +439,20 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
   // colour of its own in the board, so it is full at rest.
   const isFullInk = isSelected || hovered || isAreaRow || isDbRoot
   // `PondRail.dc.html`: the selected row draws ＋ alone, a hovered one ＋ and ×.
-  const showPlus = isSelected || hovered
+  // KAN-471: an empty pond's root row also draws it at rest (Notion/Linear).
+  const showPlus = isSelected || hovered || plusVisibleAtRest
   // The tools sit out of flow (absolutely, over the row's own right padding —
   // KAN-314), so they take no flow width at rest and the label needs no extra
   // clearance. Only while a control is actually drawn does the label give up
   // the width it would overlap: the row's own 7px gap plus ＋ alone (7+12=19),
   // or plus ＋ · gap 8 · × together (7+12+8+12=39). `group-focus-within` covers
   // the keyboard case, where both draw regardless of `hovered`/`showPlus`.
-  const toolsPad = hovered ? 'pr-[39px]' : showPlus ? 'pr-[19px]' : ''
+  // Whenever ＋ carries the `mr-5` shift that clears ×'s slot (`hovered` or
+  // `plusVisibleAtRest`), it sits 20px further from the edge than the ＋-alone
+  // math above assumes — the label needs the same 39px it gives a hovered row,
+  // even though × itself isn't drawn yet.
+  const toolsPad =
+    hovered || plusVisibleAtRest ? 'pr-[39px]' : showPlus ? 'pr-[19px]' : ''
 
   return (
     <div
@@ -595,7 +629,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
                         showPlus
                           ? 'opacity-100 pointer-events-auto'
                           : 'opacity-0 pointer-events-none'
-                      } ${hovered ? 'mr-5' : ''}`}
+                      } ${hovered || plusVisibleAtRest ? 'mr-5' : ''}`}
                     >
                       <NewPageMenu
                         parentTitle={label}
@@ -613,6 +647,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
                             aria-label={`Add sub-page to ${label}`}
                             disabled={isBusy}
                             onClick={(e) => e.stopPropagation()}
+                            onDoubleClick={(e) => e.stopPropagation()}
                           >
                             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
                               <path
@@ -726,6 +761,12 @@ export interface RailViewProps {
   onToggle: (id: string) => void
   onAddChild: (id: string, action?: NewPageMenuAction) => void
   onDelete: (id: string) => void
+  /** ⌘D/Ctrl+D on a focused row (KAN-468) — the same duplicate-and-open handler
+   *  ⌘K's "duplicate page" palette entry calls. Optional so the existing
+   *  `RailView` call sites (stories, unit tests predating this ticket) keep
+   *  compiling untouched; omit it and ⌘D no-ops, same convention as
+   *  `onPickColour`. */
+  onDuplicate?: (id: string) => void
   /** Commit a kept rename: a trimmed, non-empty title that differs from the old one. */
   onRename: (id: string, title: string) => void
   /** A glyph picker pick — `null` for `automatic`. Applies at once (KAN-248 6/8). */
@@ -906,6 +947,7 @@ export function RailView({
   onToggle,
   onAddChild,
   onDelete,
+  onDuplicate = () => {},
   onRename,
   onPickGlyph,
   onPickColour = () => {},
@@ -1159,9 +1201,21 @@ export function RailView({
 
   // ── Keyboard machine (pure rules; commands dispatched to the callbacks) ────
   function handleKeyDown(id: string, e: KeyboardEvent<HTMLDivElement>) {
-    const cmd = treeKeyCommand(e.key, id, flat, { expanded, lifeExpanded })
+    // AUDIT K1: ⌘D/Ctrl+D is the browser's own bookmark chord. Every press of
+    // it on a focused row — a repeat from holding it down, or one aimed at a
+    // row `treeKeyCommand`/`allowsCommand` refuses to dispatch — must still be
+    // prevented here, or the bookmark dialog opens underneath the row that
+    // silently ate the keystroke.
+    const isDuplicateChord = (e.key === 'd' || e.key === 'D') && (e.metaKey || e.ctrlKey)
+    const cmd = treeKeyCommand(e.key, id, flat, {
+      expanded,
+      lifeExpanded,
+      metaOrCtrl: e.metaKey || e.ctrlKey,
+      repeat: e.repeat,
+    })
+    if (isDuplicateChord) e.preventDefault()
     if (!cmd || !allowsCommand(capabilitiesOf(id), cmd.kind)) return
-    e.preventDefault()
+    if (!isDuplicateChord) e.preventDefault()
     switch (cmd.kind) {
       case 'focus':
         setFocusedId(cmd.id)
@@ -1181,6 +1235,9 @@ export function RailView({
         break
       case 'rename':
         handleRenameStart(cmd.id)
+        break
+      case 'duplicate':
+        onDuplicate(cmd.id)
         break
     }
   }
@@ -1294,8 +1351,9 @@ export function RailView({
         depth={0}
         isFolder={isFolder}
         isExpanded={lifeExpanded}
-        // `PondRail` `empty`: the lone root is not selected, so it draws no resting ＋;
-        // hovered, it shows its tools like any row (`hasTools: hov`).
+        // `PondRail` `empty`: the lone root is not selected, so it draws no `isSelected`
+        // wash; but its ＋ shows at rest while the pond is empty (KAN-471, below), then
+        // goes back to hover-only (`hasTools: hov`) once a first page exists.
         isSelected={selectedId === null && !isEmpty}
         isFocused={rovingId === id}
         isBusy={false}
@@ -1303,6 +1361,7 @@ export function RailView({
         posInSet={posInSet}
         setSize={setSize}
         leading={<PondMark glyph={pondGlyph} />}
+        plusVisibleAtRest={isEmpty}
         onSelect={onLife}
         onToggle={onToggleLife}
         newPageMenuOpen={newPageMenu?.id === id}
@@ -1487,12 +1546,12 @@ export function RailView({
                 </div>
               </div>
             )}
-            {!isLoading && isEmpty && (
+            {isEmpty && showHomeRoot && (
               <p
                 className="mt-2 mr-2 ml-[26px] text-[12.5px] leading-[1.5] text-pretty text-mn-text-secondary"
                 role="status"
               >
-                no pages yet. ＋ new page, or ask pond to start one.
+                no pages yet. the ＋ beside {rootLabel} makes one, or ask pond to start one.
               </p>
             )}
           </div>
@@ -2284,6 +2343,28 @@ export function Rail() {
     })
   }
 
+  /** ⌘D/Ctrl+D on a focused row (KAN-468): the same `duplicateAndOpen` flow
+   *  ⌘K's "duplicate page" palette entry runs (AUDIT G9), off the FOCUSED
+   *  row's id rather than the open page's. */
+  async function handleDuplicate(id: string) {
+    const node = nodeById.get(id)
+    if (!node) return
+    setBusyId(id)
+    try {
+      await duplicateAndOpen(
+        queryClient,
+        router,
+        pondId,
+        id,
+        node.parentId,
+        { type: node.type, title: node.title },
+        notify
+      )
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   async function handleConfirmDelete() {
     const node = confirmTarget
     setConfirmTarget(null)
@@ -2508,6 +2589,11 @@ export function Rail() {
     const draggedRow = pages.find((r) => r.id === draggedId)
     const title = draggedRow?.title || 'Untitled'
 
+    // Resolved before the move so both sides can be flushed ahead of the RPC
+    // (below) and reused for the invalidate after it — one resolve, no drift.
+    const oldLinkParentId = draggedRow ? resolveLinkParentId(draggedRow.parent_id, home?.id) : undefined
+    const newLinkParentId = resolveLinkParentId(move.newParentId, home?.id)
+
     const snapshot = applyMoveOptimistic(
       queryClient,
       {
@@ -2524,10 +2610,12 @@ export function Rail() {
       else setExpanded((prev) => new Set(prev).add(targetId))
     }
 
-    // KAN-477: a reparent writes no link block of its own — the new parent's
-    // child links are derived at read time, so the move stays one undo step.
-
     try {
+      // The move's own RPC reads and rewrites both link-parents' `blocks` —
+      // flush either side's own debounced save first, or a save already in
+      // flight lands after the RPC and overwrites its edit with stale blocks
+      // (the same race `child-links.ts`'s own write seams guard against).
+      await Promise.all([flushPendingPageSave(oldLinkParentId), flushPendingPageSave(newLinkParentId)])
       const record = await withUser((sb) =>
         movePage(sb, {
           id: draggedId,
@@ -2542,12 +2630,21 @@ export function Rail() {
           recordIds: Promise.resolve([record.id]),
         })
         queryClient.invalidateQueries({ queryKey: changeLogKey() })
+        // The move's own RPC edits the old and new link-parents' `blocks` —
+        // rebase an open draft of either onto that write instead of waiting
+        // for a reload.
+        if (oldLinkParentId) queryClient.invalidateQueries({ queryKey: ['page', oldLinkParentId] })
+        if (newLinkParentId) queryClient.invalidateQueries({ queryKey: ['page', newLinkParentId] })
         stageUndo({
           message: `moved ${title} to ${moveParentLabel(after.parentTitle, home?.title ?? pondName)} ·`,
           undoLabel: 'undo',
           undo: () =>
-            sessionUndo
-              .undoHandle(pondId, handle)
+            // The undo RPC rewrites both link-parents' `blocks` just like the
+            // forward move did — flush either side's own debounced save
+            // first (mirrors the guard above), or a save still pending from
+            // typing on P/Q lands after undo and overwrites the restored link.
+            Promise.all([flushPendingPageSave(oldLinkParentId), flushPendingPageSave(newLinkParentId)])
+              .then(() => sessionUndo.undoHandle(pondId, handle))
               .then((outcome) => applyUndoOutcome('undo', outcome, queryClient)),
           action: () => navigateTo(draggedRow),
           actionLabel: 'open',
@@ -2582,6 +2679,7 @@ export function Rail() {
         onToggle={handleToggle}
         onAddChild={handleAddChild}
         onDelete={handleDelete}
+        onDuplicate={handleDuplicate}
         onRename={handleRename}
         onPickGlyph={handlePickGlyph}
         onPickColour={handlePickColour}

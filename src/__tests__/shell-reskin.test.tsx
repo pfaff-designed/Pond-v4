@@ -374,7 +374,7 @@ describe('RailView — loading and empty states (G6 / 7f)', () => {
   it('empty shows the PondRail hint', () => {
     renderRail({ tree: [], isEmpty: true })
     expect(screen.getByRole('status')).toHaveTextContent(
-      'no pages yet. ＋ new page, or ask pond to start one.'
+      'no pages yet. the ＋ beside Life makes one, or ask pond to start one.'
     )
   })
 
