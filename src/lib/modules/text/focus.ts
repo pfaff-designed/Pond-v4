@@ -1,11 +1,15 @@
 import type { TiptapEditorHTMLElement } from '@tiptap/core'
 
+/** The text block's own editor field drawn inside `root`, if it has mounted. */
+const editorFieldIn = (root: Element | null) =>
+  root?.querySelector<TiptapEditorHTMLElement>('[role="textbox"][contenteditable]') ?? null
+
 /**
  * Puts the caret at the `start` or `end` of the text block drawn inside `root`.
  * False when there is no editor there yet: it may still be drawing its stand-in.
  */
 export const focusTextBlock = (root: Element | null, at: 'start' | 'end'): boolean => {
-  const field = root?.querySelector<TiptapEditorHTMLElement>('[role="textbox"][contenteditable]')
+  const field = editorFieldIn(root)
   if (!field?.editor) return false
   field.editor.commands.focus(at)
   return true
@@ -25,7 +29,7 @@ export const focusTextBlockAt = (
   x: number,
   at: 'top' | 'bottom'
 ): boolean => {
-  const field = root?.querySelector<TiptapEditorHTMLElement>('[role="textbox"][contenteditable]')
+  const field = editorFieldIn(root)
   if (!field?.editor) return false
   const rect = field.getBoundingClientRect()
   const y = at === 'top' ? rect.top + 1 : rect.bottom - 1
@@ -48,7 +52,7 @@ export interface TextSelectionSnapshot {
  * block's DOM node and blurs it).
  */
 export const captureTextSelection = (root: Element | null): TextSelectionSnapshot | null => {
-  const field = root?.querySelector<TiptapEditorHTMLElement>('[role="textbox"][contenteditable]')
+  const field = editorFieldIn(root)
   if (!field?.editor?.isFocused) return null
   const { anchor, head } = field.editor.state.selection
   return { anchor, head }
@@ -63,7 +67,7 @@ export const restoreTextSelection = (
   root: Element | null,
   selection: TextSelectionSnapshot
 ): boolean => {
-  const field = root?.querySelector<TiptapEditorHTMLElement>('[role="textbox"][contenteditable]')
+  const field = editorFieldIn(root)
   if (!field?.editor) return false
   field.editor.commands.setTextSelection({ from: selection.anchor, to: selection.head })
   field.editor.commands.focus()
@@ -77,7 +81,7 @@ export const restoreTextSelection = (
  * contenteditable delete-to-line-start wins over deleting the block.
  */
 export const hasTextBeforeCaret = (root: Element | null): boolean => {
-  const field = root?.querySelector<TiptapEditorHTMLElement>('[role="textbox"][contenteditable]')
+  const field = editorFieldIn(root)
   if (!field?.editor) return false
   const { selection } = field.editor.state
   // A non-empty selection (e.g. select-all) has its own content to delete —
