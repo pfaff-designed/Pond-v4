@@ -19,6 +19,13 @@ const fakeSupabase = (error: unknown = null, data: unknown = null) => {
   return { client: { rpc } as unknown as SupabaseClient<Database>, rpc }
 }
 
+/** `NODE_ENV` is typed read-only (`@types/node`); this is the one deliberate
+ *  exception, matching `trash-page.test.tsx`'s own helper — needed to
+ *  exercise `restorePage`'s production fallback for an invalid record id. */
+const setNodeEnv = (value: string | undefined): void => {
+  (process.env as { NODE_ENV: string | undefined }).NODE_ENV = value
+}
+
 describe('trashPage', () => {
   it('calls trash_page with the page id', async () => {
     const { client, rpc } = fakeSupabase()
@@ -58,9 +65,11 @@ describe('trashPage', () => {
   })
 })
 
+const RESTORE_RECORD_ID = '11111111-1111-4111-8111-111111111111'
+
 describe('restorePage', () => {
   it('calls restore_page with the record id', async () => {
-    const { client, rpc } = fakeSupabase()
+    const { client, rpc } = fakeSupabase(null, RESTORE_RECORD_ID)
 
     await restorePage(client, 'record-1')
 
@@ -68,9 +77,30 @@ describe('restorePage', () => {
   })
 
   it('resolves to the new restore record’s id (0037), for session undo to remember', async () => {
-    const { client } = fakeSupabase(null, 'restore-1')
+    const { client } = fakeSupabase(null, RESTORE_RECORD_ID)
 
-    await expect(restorePage(client, 'record-1')).resolves.toBe('restore-1')
+    await expect(restorePage(client, 'record-1')).resolves.toBe(RESTORE_RECORD_ID)
+  })
+
+  it('throws in development when restore_page returns something that is not a uuid (KAN-497)', async () => {
+    const { client } = fakeSupabase(null, 'not-a-uuid')
+
+    await expect(restorePage(client, 'record-1')).rejects.toThrow(/invalid record id/)
+  })
+
+  it('logs and resolves to null in production, rather than pushing an invalid id onto session undo', async () => {
+    const original = process.env.NODE_ENV
+    setNodeEnv('production')
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const { client } = fakeSupabase(null, 'not-a-uuid')
+
+      await expect(restorePage(client, 'record-1')).resolves.toBeNull()
+      expect(consoleError).toHaveBeenCalled()
+    } finally {
+      setNodeEnv(original)
+      consoleError.mockRestore()
+    }
   })
 
   it.each([

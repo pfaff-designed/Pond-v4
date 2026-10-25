@@ -70,9 +70,11 @@ commit;
 -- snapshot), `p_to is not null` is redo (part c, not yet built here).
 --
 -- Undo re-trashes the page via `public.trash_page` — the SAME call the
--- `page` kind's own branch (above) already makes for create/duplicate undo,
--- so this gets KAN-448's parent page-link removal for free, since that lives
--- inside `trash_page` itself, not duplicated here.
+-- `page` kind's own branch (above) already makes for create/duplicate undo.
+-- `trash_page` touches no blocks: the parent's page-link edit (KAN-448) is
+-- CLIENT-side (`child-links.ts`'s `unlinkTrashedSubtree` /
+-- `relinkRestoredSubtree`, run by the restore/trash callers around this RPC),
+-- not replayed or duplicated in SQL here.
 --
 -- `trash_page` inserts its own `delete` record in the same statement; this
 -- branch looks it up afterward (`order by created_at desc limit 1`) rather
@@ -452,8 +454,9 @@ begin
     end if;
 
     -- Same call the `page` kind's own branch (above) makes for create/
-    -- duplicate undo — reuses KAN-448's parent page-link removal for free,
-    -- since that lives inside `trash_page` itself.
+    -- duplicate undo. `trash_page` touches no blocks: the parent's
+    -- page-link edit (KAN-448) is CLIENT-side (`child-links.ts`), not
+    -- replayed here.
     begin
       perform public.trash_page(p_record.target_page_id);
     exception
@@ -976,8 +979,9 @@ begin
     end if;
 
     -- Same call the `page` kind's own branch (above) makes for create/
-    -- duplicate undo — reuses KAN-448's parent page-link removal for free,
-    -- since that lives inside `trash_page` itself.
+    -- duplicate undo. `trash_page` touches no blocks: the parent's
+    -- page-link edit (KAN-448) is CLIENT-side (`child-links.ts`), not
+    -- replayed here.
     begin
       perform public.trash_page(p_record.target_page_id);
     exception

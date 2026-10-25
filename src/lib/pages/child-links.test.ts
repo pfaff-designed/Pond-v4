@@ -843,7 +843,16 @@ describe('relinkRestoredSubtree', () => {
 
   beforeEach(() => {
     jest.clearAllMocks()
-    mockCommitBlocks.mockResolvedValue(undefined)
+    // Default: a commit that logs one record and hands it back through the
+    // `onPending` seam (KAN-497) — the shape `relinkRestoredSubtree` now
+    // destructures (`{ remembered }`) and folds into its own return value.
+    mockCommitBlocks.mockImplementation(
+      async (..._args: unknown[]) => {
+        const opts = _args[4] as { onPending?: (ids: readonly string[]) => void } | undefined
+        opts?.onPending?.(['relink-record-1'])
+        return { remembered: Promise.resolve() }
+      }
+    )
     mockFlushPendingPageSave.mockResolvedValue(undefined)
     invalidateQueries = jest.fn().mockResolvedValue(undefined)
     queryClient = { invalidateQueries } as never
@@ -873,7 +882,7 @@ describe('relinkRestoredSubtree', () => {
     expect(supabase._chain.update).not.toHaveBeenCalled()
   })
 
-  it('restores a link to its parent, commits, invalidates, and clears the field', async () => {
+  it('restores a link to its parent, commits, invalidates, and resolves to the relink record id', async () => {
     const link1 = link('b1', 'child-1')
     const text1 = text('b2')
     const entry: RemovedLink = { parentId: 'parent-a', block: link1, index: 0, beforeId: null }
@@ -882,7 +891,7 @@ describe('relinkRestoredSubtree', () => {
     })
     mockGetPage.mockResolvedValue(pageWith('parent-a', [text1]))
 
-    await relinkRestoredSubtree(supabase as never, queryClient, {
+    const result = await relinkRestoredSubtree(supabase as never, queryClient, {
       pondId: 'pond-1',
       rootPageId: 'root-1',
     })
@@ -895,27 +904,28 @@ describe('relinkRestoredSubtree', () => {
     expect(opts).toMatchObject({ ownEdit: true, before: [text1], pondId: 'pond-1' })
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['page', 'parent-a'] })
 
-    expect(supabase._chain.update).toHaveBeenCalledTimes(1)
-    const [payload] = supabase.update.mock.calls[0]
-    expect(payload.props).toEqual({ other: 'kept' })
+    // KAN-497: never clears `unlinkedLinks` — a restore that's later undone
+    // (⌘Z re-trashes the page) must still find this entry so a LATER manual
+    // restore can relink again.
+    expect(supabase._chain.update).not.toHaveBeenCalled()
+    expect(result).toEqual(['relink-record-1'])
   })
 
-  it('skips an entry whose parent no longer exists but still clears the field', async () => {
+  it('skips an entry whose parent no longer exists, and never touches root props', async () => {
     const link1 = link('b1', 'child-1')
     const entry: RemovedLink = { parentId: 'gone', block: link1, index: 0, beforeId: null }
     const supabase = makeSupabase({ rootProps: { props: { unlinkedLinks: [entry] } } })
     mockGetPage.mockResolvedValue(null)
 
-    await relinkRestoredSubtree(supabase as never, queryClient, {
+    const result = await relinkRestoredSubtree(supabase as never, queryClient, {
       pondId: 'pond-1',
       rootPageId: 'root-1',
     })
 
     expect(mockCommitBlocks).not.toHaveBeenCalled()
     expect(invalidateQueries).not.toHaveBeenCalled()
-    expect(supabase._chain.update).toHaveBeenCalledTimes(1)
-    const [payload] = supabase.update.mock.calls[0]
-    expect(payload.props.unlinkedLinks).toBeUndefined()
+    expect(supabase._chain.update).not.toHaveBeenCalled()
+    expect(result).toEqual([])
   })
 
   it('groups two entries for the same parent into a single commit, in order', async () => {
@@ -939,7 +949,7 @@ describe('relinkRestoredSubtree', () => {
     expect(blocks).toEqual([link1, link2])
   })
 
-  it('never throws — logs and returns when a commit fails, leaving the field unwritten', async () => {
+  it('never throws — logs and returns what was logged so far when a commit fails', async () => {
     const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
     const link1 = link('b1', 'child-1')
     const entry: RemovedLink = { parentId: 'parent-a', block: link1, index: 0, beforeId: null }
@@ -952,14 +962,14 @@ describe('relinkRestoredSubtree', () => {
         pondId: 'pond-1',
         rootPageId: 'root-1',
       })
-    ).resolves.toBeUndefined()
+    ).resolves.toEqual([])
 
     expect(consoleError).toHaveBeenCalled()
     expect(supabase._chain.update).not.toHaveBeenCalled()
     consoleError.mockRestore()
   })
 
-  it('does nothing — never reads a parent or writes — when the root-props read errors, rather than wiping existing props', async () => {
+  it('does nothing — never reads a parent or writes — when the root-props read errors', async () => {
     const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
     const supabase = makeSupabase()
     supabase._chain.maybeSingle.mockResolvedValue({ data: null, error: { message: 'boom' } })
@@ -969,7 +979,7 @@ describe('relinkRestoredSubtree', () => {
         pondId: 'pond-1',
         rootPageId: 'root-1',
       })
-    ).resolves.toBeUndefined()
+    ).resolves.toEqual([])
 
     expect(mockGetPage).not.toHaveBeenCalled()
     expect(supabase._chain.update).not.toHaveBeenCalled()
@@ -977,7 +987,7 @@ describe('relinkRestoredSubtree', () => {
     consoleError.mockRestore()
   })
 
-  it('restores entries for two different parents, each committed separately at its saved position', async () => {
+  it('restores entries for two different parents, each committed separately, and resolves to both record ids in commit order', async () => {
     const linkA = link('bA', 'child-1')
     const linkB = link('bB', 'child-2')
     const anchor = text('anchor')
@@ -993,8 +1003,14 @@ describe('relinkRestoredSubtree', () => {
         ? pageWith('parent-a', [other1])
         : pageWith('parent-b', [other1, anchor, other2])
     )
+    mockCommitBlocks.mockImplementation(async (..._args: unknown[]) => {
+      const pageId = _args[2] as string
+      const opts = _args[4] as { onPending?: (ids: readonly string[]) => void } | undefined
+      opts?.onPending?.([`relink-${pageId}`])
+      return { remembered: Promise.resolve() }
+    })
 
-    await relinkRestoredSubtree(supabase as never, queryClient, {
+    const result = await relinkRestoredSubtree(supabase as never, queryClient, {
       pondId: 'pond-1',
       rootPageId: 'root-1',
     })
@@ -1003,6 +1019,7 @@ describe('relinkRestoredSubtree', () => {
     const callForParent = (id: string) => mockCommitBlocks.mock.calls.find((call) => call[2] === id)
     expect(callForParent('parent-a')?.[3]).toEqual([linkA, other1])
     expect(callForParent('parent-b')?.[3]).toEqual([other1, anchor, linkB, other2])
+    expect(result).toEqual(['relink-parent-a', 'relink-parent-b'])
   })
 
   it('drops a malformed unlinkedLinks entry at the read boundary instead of throwing', async () => {
@@ -1069,7 +1086,7 @@ describe('trashPageUnlinked', () => {
 
   beforeEach(() => {
     jest.clearAllMocks()
-    mockCommitBlocks.mockResolvedValue(undefined)
+    mockCommitBlocks.mockResolvedValue({ remembered: Promise.resolve() })
     mockFlushPendingPageSave.mockResolvedValue(undefined)
     invalidateQueries = jest.fn().mockResolvedValue(undefined)
     queryClient = { invalidateQueries } as never
@@ -1151,12 +1168,11 @@ describe('trashPageUnlinked', () => {
     expect(relinkPageId).toBe('parent-a')
     expect(relinkedBlocks).toEqual([link1])
 
-    // The root's props carried `unlinkedLinks` long enough for the relink to
-    // read it, then the relink cleared it — never left dangling for a
-    // caller that doesn't know to look.
-    expect(supabase._chain.update).toHaveBeenCalledTimes(2)
-    const [relinkPayload] = supabase.update.mock.calls[1]
-    expect(relinkPayload.props.unlinkedLinks).toBeUndefined()
+    // KAN-497: the root's props keep `unlinkedLinks` even after a successful
+    // relink — only the unlink phase's append write touches root props; a
+    // later ⌘Z that re-trashes this page must still find the entry so a
+    // subsequent manual restore can relink again.
+    expect(supabase._chain.update).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -1193,5 +1209,60 @@ describe('restorePageRelinked', () => {
     })
 
     expect(mockRemember).not.toHaveBeenCalled()
+  })
+
+  it('skips remembering when restorePage resolves to null (an invalid id in production)', async () => {
+    mockRestorePage.mockResolvedValue(null)
+
+    await restorePageRelinked({} as never, queryClient, {
+      pondId: 'pond-1',
+      recordId: 'delete-record-1',
+      rootPageId: null,
+    })
+
+    expect(mockRemember).not.toHaveBeenCalled()
+  })
+
+  it('folds the restore record and every relink record into ONE session-undo step (KAN-497)', async () => {
+    mockRestorePage.mockResolvedValue('restore-record-1')
+    mockFlushPendingPageSave.mockResolvedValue(undefined)
+    mockGetPage.mockResolvedValue({
+      id: 'parent-a',
+      parentId: null,
+      type: 'page',
+      title: 'parent-a',
+      blocks: [],
+      order: 0,
+      props: {},
+    })
+    const link1 = link('b1', 'roof')
+    const removed: RemovedLink = { parentId: 'parent-a', block: link1, index: 0, beforeId: null }
+    const chain = {
+      select: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      maybeSingle: jest.fn().mockResolvedValue({ data: { props: { unlinkedLinks: [removed] } } }),
+    }
+    const supabase = { from: jest.fn().mockReturnValue(chain) }
+    mockCommitBlocks.mockImplementation(async (..._args: unknown[]) => {
+      const opts = _args[4] as { onPending?: (ids: readonly string[]) => void } | undefined
+      opts?.onPending?.(['relink-record-1'])
+      return { remembered: Promise.resolve() }
+    })
+
+    await restorePageRelinked(supabase as never, queryClient, {
+      pondId: 'pond-1',
+      recordId: 'delete-record-1',
+      rootPageId: 'roof',
+    })
+
+    // ONE step covering both: undo order (⌘Z) takes them back in reverse —
+    // the relink's blocks-undo removes the parent's link, then the SQL
+    // restore-undo re-trashes — and redo (⇧⌘Z) replays forward: restore
+    // again, then the link back.
+    expect(mockRemember).toHaveBeenCalledTimes(1)
+    expect(mockRemember).toHaveBeenCalledWith({
+      pondId: 'pond-1',
+      recordIds: ['restore-record-1', 'relink-record-1'],
+    })
   })
 })
