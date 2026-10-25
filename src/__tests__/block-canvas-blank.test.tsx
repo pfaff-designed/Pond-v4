@@ -138,7 +138,6 @@ let blankPageId = 'page-1'
 beforeEach(() => {
   jest.clearAllMocks()
   mockFetchPages.mockResolvedValue(pageRows)
-  mockGetPage.mockResolvedValue(null)
   mockSaveProps.mockResolvedValue(undefined)
   mockSaveBlocks.mockResolvedValue(undefined)
   mockAppendOwnEdit.mockResolvedValue({ id: 'record-1' })
@@ -147,6 +146,9 @@ beforeEach(() => {
   justSaved.reset()
   global.fetch = jest.fn().mockResolvedValue({ ok: true } as Response)
   blankPageId = `blank-page-${++blankPageIdCounter}`
+  // A known, empty prior — not `null` (KAN-557's "unknown snapshot" case,
+  // which now skips the template's props write entirely).
+  mockGetPage.mockResolvedValue({ id: blankPageId, props: {} })
 })
 
 describe('the `/` menu on an empty page leads with templates (KAN-276)', () => {
@@ -534,7 +536,7 @@ describe('a template pick on a blank page applies in place (KAN-124)', () => {
     mockGetPage.mockImplementationOnce(
       () =>
         new Promise((resolve) => {
-          resolveGetPage = () => resolve(null)
+          resolveGetPage = () => resolve({ id: blankPageId, props: {} })
         })
     )
     renderBlankPageHarness()
@@ -562,7 +564,7 @@ describe('a template pick on a blank page applies in place (KAN-124)', () => {
     mockGetPage.mockImplementationOnce(
       () =>
         new Promise((resolve) => {
-          resolveGetPage = () => resolve(null)
+          resolveGetPage = () => resolve({ id: blankPageId, props: {} })
         })
     )
     renderBlankPageHarness()
@@ -597,7 +599,7 @@ describe('a template pick on a blank page applies in place (KAN-124)', () => {
     mockGetPage.mockImplementationOnce(
       () =>
         new Promise((resolve) => {
-          resolveGetPage = () => resolve(null)
+          resolveGetPage = () => resolve({ id: blankPageId, props: {} })
         })
     )
     renderBlankPageHarness()

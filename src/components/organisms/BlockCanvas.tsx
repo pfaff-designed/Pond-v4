@@ -2361,7 +2361,10 @@ export function BlockCanvas({
     // network hop never gates the apply's own first-line focus (KAN-499).
     const applyTemplateSchemaProps = async () => {
       const current = await getPage(supabase, pageId).catch(() => null)
-      priorProps = current?.props ?? null
+      // A missing page (the read failed, or the page itself is gone) is the
+      // only "unknown" case — a page that was read fine but simply has no
+      // `props` yet is a known, empty prior, not an unknown one.
+      priorProps = current ? current.props ?? {} : null
       if (applied.schema) {
         try {
           await defineSchema(supabase, pageId, applied.schema)
@@ -2369,7 +2372,16 @@ export function BlockCanvas({
           console.error('Failed to define the template schema', err)
         }
       }
-      const base = applied.schema ? withSchema(priorProps ?? {}, applied.schema) : priorProps ?? {}
+      // An unknown prior (the snapshot read failed or returned null) must
+      // never feed a full-replace `saveProps` — that would stomp whatever
+      // props the page actually carries (glyph, area, made-from) with just
+      // the template's own. No write is safer than a lossy one; the revert
+      // side already tells "unknown" apart from "no props" the same way.
+      if (priorProps === null) {
+        console.error('Template apply: skipping the props write — the prior snapshot is unknown')
+        return
+      }
+      const base = applied.schema ? withSchema(priorProps, applied.schema) : priorProps
       await writePageProps({ ...base, ...applied.props })
     }
     // ⌘Z's half. A known `priorProps` is a full replace — a page with no

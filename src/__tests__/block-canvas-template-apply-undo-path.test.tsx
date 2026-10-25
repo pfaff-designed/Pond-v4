@@ -283,19 +283,23 @@ describe('⌘Z/⇧⌘Z race against the apply\'s own in-flight writes (KAN-557)'
     expect(lastProps).not.toHaveProperty(SCHEMA_KEY)
   })
 
-  it('a snapshot read that rejects keeps the pre-existing props on revert and removes only the keys the apply added', async () => {
+  it('a snapshot read that rejects skips the props write at apply, then reverts cleanly', async () => {
     mockGetPage.mockImplementationOnce(() => Promise.reject(new Error('network down')))
-    // The revert's own fallback read (current page state, template keys included).
-    const afterApplyProps = {
-      ...PRIOR_PROPS,
-      kind: 'meeting notes',
-      [SCHEMA_KEY]: [{ name: 'date', type: 'date' }],
-    }
-    mockGetPage.mockImplementationOnce(() =>
-      Promise.resolve({ id: 'page-1', props: afterApplyProps })
-    )
+    // The revert's own fallback read sees exactly what the apply actually left
+    // behind: since the apply skipped its props write (the snapshot was
+    // unknown), the page's props are still the pre-apply ones — no kind, no
+    // schema ever landed.
+    mockGetPage.mockImplementationOnce(() => Promise.resolve({ id: 'page-1', props: PRIOR_PROPS }))
 
     await applyMeetingNotes()
+
+    // `defineSchema` still runs (it does its own safe read-modify-write), but
+    // no write is safer than a lossy one for the bundled props+template write —
+    // the apply must not touch `saveProps` when it cannot snapshot what the
+    // page carried before.
+    await waitFor(() => expect(mockDefineSchema).toHaveBeenCalledTimes(1))
+    expect(mockSaveProps).not.toHaveBeenCalled()
+
     await sessionUndo.undo('pond-1')
 
     await waitFor(() => expect(mockSaveProps).toHaveBeenCalled())
