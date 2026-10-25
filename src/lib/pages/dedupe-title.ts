@@ -34,6 +34,22 @@ export function nextAvailableTitle(desired: string, siblingTitles: Iterable<stri
 }
 
 /**
+ * Decide whether a move needs to rename the dragged page (KAN-470): only when
+ * its title actually clashes (case/whitespace-insensitively) with a
+ * destination sibling — `undefined` otherwise, even if `nextAvailableTitle`'s
+ * trimmed base would differ from the raw, untrimmed title. Comparing a
+ * normalized value against a raw one is what renamed every move of a
+ * leading/trailing-space title, clash or not.
+ */
+export function moveTitle(draggedTitle: string, destinationTitles: Iterable<string>): string | undefined {
+  const normalizedDragged = normalizeTitle(draggedTitle)
+  if (normalizedDragged === '') return undefined
+  const taken = new Set([...destinationTitles].map(normalizeTitle))
+  if (!taken.has(normalizedDragged)) return undefined
+  return nextAvailableTitle(draggedTitle, destinationTitles)
+}
+
+/**
  * Thrown by a manual rename when the new title collides with an existing sibling.
  * The UI catches it and shows the message inline instead of persisting.
  */

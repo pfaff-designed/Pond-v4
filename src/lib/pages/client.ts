@@ -470,17 +470,29 @@ export async function deletePage(supabase: SupabaseClient<Database>, id: string)
  */
 export async function movePage(
   supabase: SupabaseClient<Database>,
-  input: { id: string; newParentId: string | null; siblingOrder: string[] }
+  input: {
+    id: string
+    newParentId: string | null
+    siblingOrder: string[]
+    newTitle?: string
+  }
 ): Promise<ChangeLogRecord> {
   // KAN-273: see createPage's comment — the caller's computed `siblingOrder`
   // must not include a row that is mid-delete.
   await flushStagedDeletes()
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any).rpc('move_page', {
+  // KAN-470: `p_new_title` is only sent when the caller is renaming the moved
+  // page to dodge a sibling-title clash — omitted keeps today's exact call
+  // shape (reversibility, AGENTS.md).
+  const params: Record<string, unknown> = {
     p_page_id: input.id,
     p_new_parent_id: input.newParentId,
     p_sibling_order: input.siblingOrder,
-  })
+  }
+  if (input.newTitle !== undefined) {
+    params.p_new_title = input.newTitle
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any).rpc('move_page', params)
 
   if (error) throw new Error(error.message)
 
