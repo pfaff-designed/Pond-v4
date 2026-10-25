@@ -21,6 +21,7 @@ import { imageSchema } from './image/schema'
 import { highlightSchema } from './highlight/schema'
 import { entriesSchema } from './entries/schema'
 import { pageLinkSchema } from './page-link/schema'
+import { tocSchema } from './toc/schema'
 
 /**
  * A block's width (6x), set from its handle. `'1/4' | '1/3' | '1/2' | '2/3' | '3/4'
@@ -85,6 +86,8 @@ export const blockSchema = z.discriminatedUnion('type', [
   entriesSchema.extend(blockWidthFields),
   // KAN-122: the row `/ nested page` leaves behind at the `/` line's own index.
   pageLinkSchema.extend(blockWidthFields),
+  // KAN-482: the page's own headings, derived live — nothing persisted beyond id/type.
+  tocSchema.extend(blockWidthFields),
 ])
 
 /** A content module persisted in a page's `blocks` array. */

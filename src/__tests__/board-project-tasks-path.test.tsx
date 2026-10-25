@@ -19,6 +19,7 @@ import { TASKS_ROLE } from '@/lib/pages/tasks-database'
 import type { PageRow } from '@/lib/pages/tree'
 import { findTextBlock, writeInTextBlock } from './helpers/text-block'
 import { makeFakeSupabase } from './helpers/fake-supabase'
+import { rowByLabel } from './helpers/slash-menu'
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
@@ -114,7 +115,7 @@ async function openBoardSource() {
 
 async function openTableSource() {
   const menu = await openBlockMenu('/table')
-  fireEvent.click(within(menu).getByText('table'))
+  fireEvent.click(rowByLabel(menu, 'table'))
   return screen.findByRole('listbox', { name: '/table' })
 }
 
