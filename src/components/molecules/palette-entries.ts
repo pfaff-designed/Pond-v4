@@ -123,11 +123,20 @@ export const ASK_POND_ID = 'palette:ask-pond'
 export const NEW_PAGE_ID = 'palette:new-page'
 export const NEW_POND_ID = 'palette:new-pond'
 
+/** The board's own `↵` hint — the one literal a mode override (the move picker's
+ * `↵ move`, KAN-469) replaces, so the override and the default never drift apart. */
+export const PALETTE_FOOT_ENTER = '↵ open'
+
 /** The board's foot legend — one for every state. */
-export const PALETTE_FOOT: readonly string[] = ['↑↓ move', '↵ open', '> actions only', 'esc close']
+export const PALETTE_FOOT: readonly string[] = [
+  '↑↓ move',
+  PALETTE_FOOT_ENTER,
+  '> actions only',
+  'esc close',
+]
 
 /** The foot below `md` — the board's `mob` branch drops the two hints a touch screen has no key for. */
-export const PALETTE_FOOT_MOBILE: readonly string[] = ['↵ open', '> actions only']
+export const PALETTE_FOOT_MOBILE: readonly string[] = [PALETTE_FOOT_ENTER, '> actions only']
 
 /** How many close spellings `did you mean` offers. */
 const DID_YOU_MEAN_MAX = 3

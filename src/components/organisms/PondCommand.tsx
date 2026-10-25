@@ -47,6 +47,7 @@ import { Icon } from '@/components/atoms/Icon'
 import { pageEyebrowClass } from '@/components/atoms/kicker'
 import {
   PALETTE_FOOT,
+  PALETTE_FOOT_ENTER,
   PALETTE_FOOT_MOBILE,
   paletteEntries,
   type PaletteItem,
@@ -102,6 +103,8 @@ export interface PondCommandProps {
   visits?: readonly string[]
   /** Overrides the input's rest placeholder when unscoped and sheet-less. @default 'jump to a page, or > for actions' */
   placeholder?: string
+  /** Overrides the foot's `↵` hint (the move picker's `↵ move`, KAN-469). @default '↵ open' */
+  enterHint?: string
   /**
    * A value whose change clears the query/scope/selection the same way a fresh
    * open does (KAN-469) — the move picker's own entry row switches the list
@@ -188,6 +191,7 @@ export function PondCommand({
   ask = true,
   visits,
   placeholder,
+  enterHint,
   resetOn = null,
   onQueryChange,
   defaultQuery = '',
@@ -560,7 +564,7 @@ export function PondCommand({
                       key={f}
                       className={PALETTE_FOOT_MOBILE.includes(f) ? undefined : 'max-md:hidden'}
                     >
-                      {f}
+                      {f === PALETTE_FOOT_ENTER ? enterHint ?? f : f}
                     </span>
                   ))}
                 </div>

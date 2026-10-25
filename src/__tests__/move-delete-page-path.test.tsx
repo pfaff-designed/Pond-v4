@@ -197,6 +197,12 @@ describe('⌘⇧P opens the move picker for the open page and commits through it
     await screen.findByRole('treeitem', { name: 'Roof' })
     expect(roofLevel()).toBe('2')
 
+    // Roof's own row holds real DOM focus before the picker opens — the
+    // common case (an arrow-key nav, or the open page's own row), and the
+    // one the live finding's "unrelated rail row" steal needs: `focusedId`
+    // has to be set to the row that is about to move.
+    screen.getByRole('treeitem', { name: 'Roof' }).focus()
+
     fireEvent.keyDown(document, { key: 'p', metaKey: true, shiftKey: true })
 
     const input = await screen.findByRole('combobox', { name: 'command palette' })
@@ -222,6 +228,14 @@ describe('⌘⇧P opens the move picker for the open page and commits through it
     )
 
     await waitForRoofLevel('3')
+
+    // KAN-469 live finding: closing the palette normally only blurs its own
+    // input (`PondCommand`'s open-effect never refocuses anything else), so
+    // focus should settle back on `<body>` — not on "House"'s row, which the
+    // reveal/vanish effects raced to steal once Roof reparented out from
+    // under its old level, momentarily hiding the row Roof's own focus
+    // (set above) was still pinned to.
+    expect(document.activeElement).toBe(document.body)
 
     await user.click(screen.getByRole('button', { name: 'undo' }))
     expect(screen.queryByText('moved Roof to House ·')).not.toBeInTheDocument()

@@ -230,12 +230,18 @@ export function ShellCommands() {
     role: null,
   }
 
-  // KAN-388: the active row arrowed/typed to in ⌘K warms its page before ↵.
+  // KAN-388: the active row arrowed/typed to in ⌘K warms its page before ↵ —
+  // but only a REAL page row. The move picker's synthetic root row
+  // (`LIFE_ID`, `movePickItems`) carries `kind: 'page'` too, so `PondCommand`'s
+  // own page/database gate (KAN-469 live finding) still lets it through; one
+  // rule catches it and any future synthetic id the same way, rather than a
+  // special case for `LIFE_ID` alone.
   const handleActiveItemChange = useCallback(
     (item: PaletteItem) => {
+      if (!pages.some((p) => p.id === item.id)) return
       prefetchPageIfAbsent(queryClient, createClient, item.id)
     },
-    [queryClient]
+    [queryClient, pages]
   )
 
   const closePalette = useCallback(() => setPaletteOpen(false), [])
@@ -685,6 +691,7 @@ export function ShellCommands() {
         ask={movePick ? false : !inZen}
         pickMode={!!movePick}
         placeholder={movePick ? `move ${movePick.title || 'Untitled'} to…` : undefined}
+        enterHint={movePick ? '↵ move' : undefined}
         resetOn={movePick?.id ?? null}
         visits={recentPageIds}
         onQueryChange={setQuery}

@@ -1123,6 +1123,19 @@ export function RailView({
 
   // ── Roving focus (view-owned: focus is a view concern) ─────────────────────
   const [focusedId, setFocusedId] = useState<string | null>(null)
+  // Whether the rail itself still logically owns focus — true from a row's own
+  // onFocus, flipped false the instant focus leaves `bodyRef` for anywhere else
+  // (the ⌘K palette, the editor). `document.activeElement === document.body` alone
+  // can't tell "this row's own removal dropped focus to body" (the case the
+  // effect below exists for) apart from "something unrelated closed and left body
+  // focused for a tick" (KAN-469 live finding: a ⌘⇧P move reparented the open row
+  // out of view while the palette itself was blurring to body, and the row-vanish
+  // effect read that as its own cue and stole focus onto an unrelated rail row).
+  const focusInRailRef = useRef(false)
+  const handleRowFocus = useCallback((id: string) => {
+    focusInRailRef.current = true
+    setFocusedId(id)
+  }, [])
 
   // The effective roving tab stop: the focused row if it's still visible, else
   // the selection, else the Life root — always exactly one tabbable row.
@@ -1136,8 +1149,10 @@ export function RailView({
   // When the focused row vanishes (deleted, or hidden by an ancestor collapse),
   // keep focus in the tree like VS Code: fall to the nearest surviving neighbor
   // in the previous order (else the nearest before it, else Life). Only re-grab
-  // DOM focus if the removal actually dropped it to <body> — never steal focus
-  // the user has moved elsewhere (e.g. into the editor).
+  // DOM focus if the removal actually dropped it to <body> AND the rail still
+  // owned focus when it did — never steal focus the user has moved elsewhere
+  // (e.g. into the editor, or the palette — even once the palette itself has
+  // let go of it).
   const prevOrderRef = useRef<string[]>([])
   useEffect(() => {
     const prev = prevOrderRef.current
@@ -1145,7 +1160,8 @@ export function RailView({
     if (!focusedId || visibleIds.has(focusedId)) return
     const fallback = focusFallback(prev, focusedId, visibleIds)
     setFocusedId(fallback)
-    if (document.activeElement === document.body) rowRefs.current.get(fallback)?.focus()
+    if (focusInRailRef.current && document.activeElement === document.body)
+      rowRefs.current.get(fallback)?.focus()
   }, [flat, focusedId, visibleIds])
 
   const handleSelect = (id: string) => {
@@ -1244,6 +1260,18 @@ export function RailView({
   // The ghost chip's pointer-follow Y, relative to the scroll body's wrapper.
   const [ghostY, setGhostY] = useState(0)
   const bodyRef = useRef<HTMLDivElement>(null)
+  // `focusInRailRef`'s other half: the rail stops owning focus the instant it
+  // moves to anything outside this body (the ⌘K palette's own input, the page
+  // editor) — capture phase, so it sees the move before a handler further down
+  // could stop the event.
+  useEffect(() => {
+    const onFocusIn = (e: FocusEvent) => {
+      if (!(e.target instanceof Node) || !bodyRef.current?.contains(e.target))
+        focusInRailRef.current = false
+    }
+    document.addEventListener('focusin', onFocusIn, { capture: true })
+    return () => document.removeEventListener('focusin', onFocusIn, { capture: true })
+  }, [])
   const trackGhost = (clientY: number) => {
     const top = bodyRef.current?.getBoundingClientRect().top ?? 0
     setGhostY(clientY - top)
@@ -1364,7 +1392,7 @@ export function RailView({
         newPageMenuOpen={newPageMenu?.id === id}
         onNewPageMenuOpenChange={cap.addable ? handleNewPageMenuOpenChange : undefined}
         onNewPageMenuSelect={cap.addable ? handleNewPageMenuSelect : undefined}
-        onFocus={setFocusedId}
+        onFocus={handleRowFocus}
         onKeyDown={handleKeyDown}
         dropZone={dropZoneFor(id)}
         isDropRejected={isDropRejected(id)}
@@ -1436,7 +1464,7 @@ export function RailView({
         isRenaming={renamingId === id}
         onRenameKeep={handleRenameKeep}
         onRenameCancel={handleRenameCancel}
-        onFocus={setFocusedId}
+        onFocus={handleRowFocus}
         onKeyDown={handleKeyDown}
         draggable={cap.draggable}
         isDragging={draggingId === id}
