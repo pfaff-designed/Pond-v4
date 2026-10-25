@@ -36,6 +36,10 @@ export interface CreateDatabaseInput {
   mode?: ViewMode
   /** Chart mode's config, when the picker chose a kind. */
   chart?: ViewBlock['chart']
+  /** Marks the page as a role database (`props._role`, KAN-536) — e.g. the one
+   *  shared `tasks` database per pond. Absent means an ordinary database, so
+   *  every existing database reads unchanged. */
+  role?: string
 }
 
 export interface CreatedDatabase {
@@ -95,7 +99,9 @@ export async function createDatabase(
       parentId: root.id,
       type: 'page',
       title: input.title,
-      props: withSchema({}, input.schema),
+      props: input.role
+        ? { ...withSchema({}, input.schema), _role: input.role }
+        : withSchema({}, input.schema),
       pondId: input.pondId,
       // The picker names the database after the page it started on, so it
       // collides with an earlier database from the same page every time —

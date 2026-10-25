@@ -77,6 +77,7 @@ import { useHomePage } from '@/lib/pages/use-home-page'
 import { pushRecentGlyphToPond } from '@/lib/pond/client'
 import { PondSwitcher } from './PondSwitcher'
 import { openWorkspaceUrl, workspaceUrl } from '@/lib/pages/nav'
+import { requestTitleFocus } from '@/lib/pages/title-focus'
 import { withTemplatesParam } from '@/lib/pages/templates-param'
 import { markIndex, resolveMark, type MarkSource, type PageMark } from '@/lib/pages/mark'
 import { isNewNestedPage } from '@/lib/pages/nested-page'
@@ -2041,6 +2042,7 @@ export function Rail() {
           },
           pondId
         )
+        requestTitleFocus(created.id)
         navigateTo(
           { id: created.id, type: 'page', title: created.title },
           { openTemplates: action === 'template' }

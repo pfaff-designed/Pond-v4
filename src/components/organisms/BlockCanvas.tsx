@@ -34,6 +34,7 @@ import { createPortal } from 'react-dom'
 import { SiblingBlocksProvider } from '@/lib/modules/sibling-context'
 import { BlockRowProvider } from '@/lib/modules/block-row-context'
 import { blockDomId, focusPageTitle, scrollToBlock } from '@/lib/modules/block-dom'
+import { requestTitleFocus } from '@/lib/pages/title-focus'
 import { blockLinkUrl, useBlockLinkArrival } from '@/lib/modules/block-link'
 import { ModuleView } from '@/lib/modules/renderers'
 import {
@@ -93,6 +94,7 @@ import {
   drawnWidthPercent,
   planBesideDrop,
   planOwnLineDrop,
+  rowZeroZone,
   zoneWhenDrawnStacked,
   rowStacks,
   widthTenths,
@@ -122,7 +124,8 @@ import {
 import { sessionUndo, type UndoHandle } from '@/lib/change-log/session-undo'
 import { applyUndoOutcome } from '@/lib/change-log/undo-outcome'
 import { blockName as changeBlockName } from '@/lib/change-log/summary'
-import { listRecords } from '@/lib/change-log/store'
+import { appendOwnEdit, listRecords } from '@/lib/change-log/store'
+import { changeLogKey } from '@/lib/change-log/keys'
 import { restorePage, trashPage } from '@/lib/change-log/trash'
 import { blockHoldsContent } from '@/lib/modules/block-holds-content'
 import { blockLabel } from '@/lib/modules/types'
@@ -163,12 +166,17 @@ import {
   type PondPage,
 } from '@/lib/pages/client'
 import { createDatabase } from '@/lib/pages/create-database'
+import {
+  getOrCreateTasksDatabase,
+  pickTasksDatabase,
+  projectFieldOf,
+} from '@/lib/pages/tasks-database'
 import { fetchRecordCounts, sourceDatabases } from '@/lib/pages/source-databases'
 import { insertPageOptimistic } from '@/lib/pages/tree'
 import { pagesKey } from '@/lib/pages/keys'
 import { usePagesRows } from '@/lib/pages/use-pages'
 import { flushPendingPageSave } from '@/lib/pages/page-flush'
-import { readSchema } from '@/lib/properties/schema'
+import { addOption, readSchema, withSchema } from '@/lib/properties/schema'
 import type { ViewBlock } from '@/lib/modules/view/schema'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { usePondId } from '@/lib/pond/context'
@@ -483,6 +491,13 @@ export interface BlockCanvasProps {
   /** The block list's own layout, where a host spaces blocks its way. */
   listStyle?: CSSProperties
   /**
+   * KAN-369: the host's handle to Return/↓ leaving the title — assigned
+   * `enterFromTitle` in an effect, so a host with a title (DocumentPanel)
+   * can call it without BlockCanvas reaching up into title DOM/state. A
+   * host with no title (Storybook, the blank-page harness) omits it.
+   */
+  titleExitRef?: RefObject<(() => void) | null>
+  /**
    * The previewed template's name (6f frame 3) — the premade kind label or a
    * `yours` template's own name — so the host's title-row eyebrow can read
    * `preview — {name}` in place of its own. Called with `null` once the
@@ -509,6 +524,7 @@ export function BlockCanvas({
   untouched = false,
   openTemplatesFor = null,
   listStyle,
+  titleExitRef,
   onPreviewNameChange,
 }: BlockCanvasProps) {
   const { stageUndo, notify } = useDeletionUndo()
@@ -558,8 +574,11 @@ export function BlockCanvas({
     onChange,
     markInserted,
     openSourcePicker,
+    // The bare `/page` row is not a user template — its "untitled" is a stand-in
+    // name, never meant to land in the title field (KAN-464). Blank it so the
+    // opened page shows its placeholder instead of "untitledwhatever you type".
     makePageFromRow: (placement, target) =>
-      void makePage(instantiateTemplate(PREMADE_TEMPLATES.page), placement, target),
+      void makePage({ ...instantiateTemplate(PREMADE_TEMPLATES.page), title: '' }, placement, target),
     makePageFromTemplate: (pick, target, index) => void makePageFromTemplate(pick, target, index),
     // Only `todo` (list/checklist) has no editor of its own to keep focus in
     // (KAN-355) — every other landed type keeps today's behaviour.
@@ -753,6 +772,40 @@ export function BlockCanvas({
     () => sourceDatabases(pageRows, recordCounts ?? new Map()),
     [pageRows, recordCounts]
   )
+
+  /**
+   * The board's `project` step (KAN-536) offers the shared tasks database's
+   * existing `project` options, read off the SAME `['pages']` rows `databases`
+   * derives from — no second fetch. `created_at` falls back to `updated_at`
+   * only for a row a fixture built by hand without it; `pickTasksDatabase`'s
+   * oldest-wins tie-break is the one reader that cares. Undefined (not `[]`)
+   * while no role database exists yet, so the picker still opens, offering
+   * only `new project — <title>`. `pickTasksDatabase` throws in development
+   * on more than one role row (an impossible, restore-only state) — caught
+   * here, not let through, so that state degrades to "no projects yet"
+   * instead of crashing every canvas render.
+   */
+  const projects = useMemo(() => {
+    try {
+      const picked = pickTasksDatabase(
+        pageRows.map((r) => ({
+          id: r.id,
+          props: r.props ?? {},
+          created_at: r.created_at ?? r.updated_at,
+        }))
+      )
+      if (!picked) return undefined
+      const schema = readSchema(picked.props) ?? []
+      const projectField = projectFieldOf(schema)
+      return {
+        options: (projectField?.options ?? []).map((o) => ({ id: o.id, label: o.label })),
+        pageTitle: pageTitle || 'untitled',
+      }
+    } catch (err) {
+      console.error(err)
+      return undefined
+    }
+  }, [pageRows, pageTitle])
 
   // The person's own templates, read only while a `/` menu is open — the pane's
   // `yours` group. Refetched on each open, so one saved a moment ago is there.
@@ -1271,14 +1324,30 @@ export function BlockCanvas({
 
   /**
    * Backspace in an empty text block takes the line away and leaves focus on the
-   * block before it, at the end of its text — or on the block after it when it
-   * was the first. An unlabelled empty line holds nothing to undo, so removing it
-   * is not a deletion; the page's only block stays.
+   * block before it, at the end of its text — or, when it was the first block,
+   * at the end of the title (KAN-369). An unlabelled empty line holds nothing
+   * to undo, so removing it is not a deletion; the page's only block stays,
+   * and Backspace there still returns focus to the title.
    */
   function removeEmptyLineAt(index: number) {
     const line = blocks[index]
     const neighbour = blocks[index - 1] ?? blocks[index + 1]
-    if (!line || !neighbour) return
+    if (!line) return
+    if (index === 0) {
+      if (neighbour && line.type === 'text' && !line.label) {
+        commitStructuralBlocks(detachKeepingRows(blocks, index).blocks)
+      } else if (neighbour) {
+        // Not `requestDelete`: it defaults `focusNeighbour` to true, and
+        // `focusBlockNeighbour`'s own `setTimeout(0)` would steal focus from
+        // the title a tick after this. An empty block never holds content
+        // (`blockHoldsContent`), so this never needed the confirm dialog
+        // `requestDelete` would open for a block that does.
+        removeBlockAt(index, false)
+      }
+      focusPageTitle('end')
+      return
+    }
+    if (!neighbour) return
     if (line.type === 'text' && !line.label) {
       // Via `detachKeepingRows` (KAN-440): an empty line can carry `rowStart`
       // the same as any other block, so taking it out must hand that off to
@@ -1460,6 +1529,80 @@ export function BlockCanvas({
     const open = sourcePicker
     setSourcePicker(null)
     if (!open) return
+    if (pick.kind === 'tasks') {
+      // One shared tasks database per pond (KAN-536) — never a database of this
+      // page's own. `getOrCreateTasksDatabase` always finds or makes it; a new
+      // `project` option is written as its own `edit_schema` change-log record
+      // (one `/board` gesture, two writes) rather than through `createDatabase`,
+      // which mints a fresh collection every time. Undo removes the inserted
+      // block only — the shared database, and the option, are never trashed.
+      try {
+        const supabase = getSupabase()
+        const { id: tasksId, schema } = await getOrCreateTasksDatabase(supabase, pondId)
+        // `projectFieldOf` (not a bare name match): a `project` field retyped to
+        // `text` cannot hold an option, so it is impossible here, never a path
+        // to an unfiltered board (KAN-536) — `getOrCreateTasksDatabase` already
+        // guarantees a real one.
+        const projectField = projectFieldOf(schema)
+        if (!projectField) throw new Error('The tasks database has no project field')
+        let optionId = pick.project.id ?? null
+        let finalSchema = schema
+        if (!optionId) {
+          // Never add a blank option (KAN-536): the picker already carries the
+          // trimmed label (`newProjectLabel`), and the host refuses one too
+          // rather than trust the picker alone.
+          const label = pick.project.label.trim()
+          if (!label) throw new Error('A project needs a name')
+          const minted = addOption(schema, projectField.id, label)
+          optionId = minted.optionId
+          if (!optionId) throw new Error('Could not add the project option')
+          finalSchema = minted.schema
+          await defineSchema(supabase, tasksId, minted.schema)
+          const {
+            data: { user },
+          } = await supabase.auth.getUser()
+          if (user) {
+            try {
+              await appendOwnEdit(supabase, {
+                userId: user.id,
+                pondId,
+                action: 'edit_schema',
+                targetPageId: tasksId,
+                before: schema,
+                after: minted.schema,
+              })
+              queryClient.invalidateQueries({ queryKey: changeLogKey() })
+            } catch (err) {
+              console.error('[change-log] schema edit not logged', tasksId, err)
+            }
+          }
+        }
+        // `defineSchema` (here, and inside `getOrCreateTasksDatabase` re-adding a
+        // missing `project` field) writes straight to Supabase and never touches
+        // the `['page', tasksId]` cache the view reads its schema from — a second
+        // board made within the app-wide 30s staleTime would otherwise mount
+        // against the schema as it stood before this pick's write (KAN-536).
+        queryClient.setQueryData<PondPage | null>(['page', tasksId], (prev) =>
+          prev ? { ...prev, props: withSchema(prev.props, finalSchema) } : prev
+        )
+        const statusField = finalSchema.find((f) => f.type === 'status')
+        const view: ViewBlock = {
+          id: crypto.randomUUID(),
+          type: 'view',
+          mode: 'board',
+          collectionId: tasksId,
+          ...(statusField ? { groupBy: statusField.id } : {}),
+          ...(optionId ? { filter: { property: projectField.id, op: 'eq', value: optionId } } : {}),
+        }
+        const landing = placeView(view, open.target)
+        queryClient.invalidateQueries({ queryKey: pagesKey() })
+        void persistBlocksAsOwnEdit(landing.next)
+      } catch (err) {
+        console.error('Failed to make the tasks board', err)
+        notify("Couldn't make the tasks board")
+      }
+      return
+    }
     // The kind the person chose, over the two fields the row promised. An empty
     // `property` with `agg: 'count'` would plot 1 per record, and a config with no
     // `xProperty` buckets by record TITLE — `resolveChartConfig` infers an x axis
@@ -1553,10 +1696,10 @@ export function BlockCanvas({
   //
   // `child` (the `/ nested page` row and `makePageFromTemplate`'s child path alike —
   // both read as "does the same with nothing to move" under KAN-122's board) swaps
-  // the `/` line for a page-link block at the same index and stays on the parent;
-  // the made page is stamped nested-under-this-page once, read later by the rail's
-  // `new` row note and the link row's own chip. `sibling` keeps the pre-KAN-122
-  // behaviour: the `/` line is dropped and the person is taken to the new page.
+  // the `/` line for a page-link block at the same index; the made page is stamped
+  // nested-under-this-page once, read later by the rail's `new` row note and the
+  // link row's own chip. Both placements then open the made page with the caret
+  // in its title (KAN-464, superseding KAN-122's "stays on the parent" for `child`).
   // Read against the blocks as they are then, since the awaits below outlive any
   // snapshot. A failure leaves the `/` line. Returns whether the page actually got
   // made — KAN-138's nested-page apply path needs this to know its write landed
@@ -1608,14 +1751,17 @@ export function BlockCanvas({
         pondId
       )
       void queryClient.invalidateQueries({ queryKey: pagesKey() })
-      if (placement === 'sibling') {
-        pageLinks.navigateToPage({
-          id: created.id,
-          title: created.title,
-          type: created.type,
-          isNew: false,
-        })
-      }
+      // KAN-464 (superseding KAN-122's "stays on the parent" for `child`):
+      // every new-page path opens the made page with the caret in its
+      // title, `/page`/`/nested page` included — the link above is still
+      // left in the parent either way.
+      requestTitleFocus(created.id)
+      pageLinks.navigateToPage({
+        id: created.id,
+        title: created.title,
+        type: created.type,
+        isNew: false,
+      })
       return true
     } catch (err) {
       console.error('Failed to make the page', err)
@@ -1780,6 +1926,30 @@ export function BlockCanvas({
     markInserted(nb.id)
     onChange([...blocks, nb])
   }
+
+  // KAN-369: Return/↓ leaving the title lands on the page's first block — its
+  // own start when that block is already text, or a fresh empty line above
+  // whatever it is otherwise (a card gets a line to type above it, never
+  // text forced into its own fields). The fresh line's autofocus-on-mount
+  // (rule 2, `markInserted`) is what actually puts the caret there.
+  function enterFromTitle() {
+    if (blocks[0]?.type === 'text') {
+      focusTextBlockSoon(blocks[0].id, 'start')
+      return
+    }
+    const nb = emptyBlockForType('text')
+    if (!nb) return
+    markInserted(nb.id)
+    onChange([nb, ...blocks])
+  }
+
+  useEffect(() => {
+    if (!titleExitRef) return
+    titleExitRef.current = enterFromTitle
+    return () => {
+      titleExitRef.current = null
+    }
+  })
 
   // Rule 3's trailing gap (KAN-345): `focusEmptyLineOrInsert`'s shared G9 guard
   // — a fresh block's autofocus (above) covers the add branch; only the
@@ -2072,6 +2242,7 @@ export function BlockCanvas({
         onExitEmpty={() => removeEmptyOnExit(block.id)}
         onDeleteBlock={() => requestDelete(i)}
         onReturn={(patch, content, where) => insertLineAfter(i, patch, content, where)}
+        onLeaveUp={i === 0 ? () => focusPageTitle('end') : undefined}
         onMoveUp={() => moveBlockAt(i, 'up')}
         onMoveDown={() => moveBlockAt(i, 'down')}
         onSlashKey={() => openSlashMenuAt(i)}
@@ -2166,12 +2337,18 @@ export function BlockCanvas({
             sticky.index === i &&
             isWithinPaddedZone(rect, point, sticky.zone) &&
             !(drawnStacked && (sticky.zone === 'left' || sticky.zone === 'right'))
-          const zone = zoneWhenDrawnStacked(
-            stickyHolds && sticky ? sticky.zone : classifyDropZone(rect, point),
-            rect,
-            point,
-            drawnStacked
-          )
+          // Row 0's own-line band overrides a held beside zone (KAN-548): a
+          // short first block's sticky left/right would otherwise survive
+          // into its top corner, where the drop line shown is `above`.
+          const isRowZero = blockRows[0]?.some((b) => b.id === block.id) ?? false
+          const zone =
+            rowZeroZone(rect, point, isRowZero) ??
+            zoneWhenDrawnStacked(
+              stickyHolds && sticky ? sticky.zone : classifyDropZone(rect, point),
+              rect,
+              point,
+              drawnStacked
+            )
           // Nothing classified differently from what's already shown for this
           // block: `planned`/`changed` below are pure functions of
           // (blocks, draggingIndex, target id, zone), none of which moved, so
@@ -2594,6 +2771,7 @@ export function BlockCanvas({
           /* Lowercase on the machine surface — see `sourceDatabases`. */
           pageTitle={pageTitle || 'untitled'}
           databases={databases}
+          projects={projects}
           loadFields={loadFields}
           /* ONE expression decides both: the step is `type` exactly when there IS
              a source to open it on. Deriving them separately opened the chart step
@@ -2793,6 +2971,7 @@ function BlockEditor({
   onExitEmpty,
   onDeleteBlock,
   onReturn,
+  onLeaveUp,
   onMoveUp,
   onMoveDown,
   onSlashKey,
@@ -2858,6 +3037,8 @@ function BlockEditor({
    *  (default) is today's "after this block"; `'above'` is Enter at the start
    *  of a non-empty block. */
   onReturn: (patch?: Block, content?: string, where?: 'above' | 'below') => void
+  /** ↑ on this block's first visual line, text blocks only — only block 0's wiring is ever set. */
+  onLeaveUp?: () => void
   onMoveUp?: () => void
   onMoveDown?: () => void
   onSlashKey?: () => void
@@ -3120,7 +3301,9 @@ function BlockEditor({
   }
 
   const view = (
-    <BlockRowProvider value={{ selected: state === 'selected', stepOut: onReturn, commitStep }}>
+    <BlockRowProvider
+      value={{ selected: state === 'selected', stepOut: onReturn, commitStep, leaveUp: onLeaveUp }}
+    >
       <SlashLineContext.Provider value={slash.handleSlashLine}>
         <ActiveViewSelectionContext.Provider value={setActiveViewId}>
           <SavedViewHostContext.Provider value={savedViewHost}>

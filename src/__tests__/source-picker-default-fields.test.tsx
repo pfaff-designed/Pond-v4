@@ -84,27 +84,97 @@ describe('SourcePicker — the `new` step opens prefilled per view kind (KAN-351
     })
   }
 
-  it('picking `new tasks` creates the tasks database without a field step', async () => {
+  it('picking `new tasks` opens the `project` step, not the field step (KAN-536)', async () => {
     const { container, onPick } = renderPicker({ block: 'board', defaultStep: 'source' })
-    expect(labelOf(rowsOf(container)[0])).toBe('new tasks')
+    expect(labelOf(rowsOf(container)[0])).toBe('tasks')
     await userEvent.click(rowsOf(container)[0])
-    expect(onPick).toHaveBeenCalledWith({
-      kind: 'new',
-      title: 'tasks',
-      fields: [
-        {
-          name: 'status',
-          type: 'status',
-          options: DEFAULT_STATUS_OPTIONS.map((label) => ({ label })),
-        },
-        { name: 'done', type: 'checkbox' },
-        { name: 'due', type: 'date' },
-        { name: 'repeats', type: 'text' },
-        { name: 'assignee', type: 'text' },
-      ],
-      recordsAre: 'pages',
-      mode: 'board',
+    expect(onPick).not.toHaveBeenCalled()
+    expect(container.querySelector('[data-part="glass"]')!.getAttribute('data-step')).toBe(
+      'project'
+    )
+  })
+})
+
+describe('SourcePicker — the `project` step (KAN-536)', () => {
+  const headTextOf = (root: HTMLElement) => root.querySelector('[data-part="head-text"]')!.textContent
+
+  it('heads `/board — tasks`, `new project — <page>` preselected, narrows as typed, and a double ↵ picks once', async () => {
+    const { container, onPick } = renderPicker({
+      block: 'board',
+      defaultStep: 'source',
+      pageTitle: 'Home Reno',
     })
+    await userEvent.click(rowsOf(container)[0])
+    expect(headTextOf(container)).toBe('/board — tasks')
+    expect(labelOf(rowsOf(container)[0])).toBe('new project — Home Reno')
+    expect(rowsOf(container)[0].getAttribute('aria-selected')).toBe('true')
+
+    await userEvent.keyboard('web')
+    expect(headTextOf(container)).toBe('/board — tasks › web')
+    expect(rowsOf(container)).toHaveLength(1)
+    expect(labelOf(rowsOf(container)[0])).toBe('new project — web')
+
+    await userEvent.keyboard('{Enter}{Enter}')
+    expect(onPick).toHaveBeenCalledTimes(1)
+    expect(onPick).toHaveBeenCalledWith({ kind: 'tasks', project: { label: 'web' } })
+  })
+
+  it('narrows to an existing option and picks it by id, not a new one', async () => {
+    const { container, onPick } = renderPicker({
+      block: 'board',
+      defaultStep: 'source',
+      pageTitle: 'Home Reno',
+      projects: {
+        pageTitle: 'Home Reno',
+        options: [
+          { id: 'opt-web', label: 'Web design' },
+          { id: 'opt-home', label: 'Home Reno' },
+        ],
+      },
+    })
+    await userEvent.click(rowsOf(container)[0])
+    // An option already carries the page's title, so it leads, preselected,
+    // with no `new project — Home Reno` row alongside it.
+    expect(labelOf(rowsOf(container)[0])).toBe('Home Reno')
+    expect(rowsOf(container)).toHaveLength(2)
+
+    await userEvent.keyboard('web')
+    expect(rowsOf(container)).toHaveLength(1)
+    expect(labelOf(rowsOf(container)[0])).toBe('Web design')
+
+    await userEvent.keyboard('{Enter}')
+    expect(onPick).toHaveBeenCalledTimes(1)
+    expect(onPick).toHaveBeenCalledWith({ kind: 'tasks', project: { id: 'opt-web', label: 'Web design' } })
+  })
+
+  it('a whitespace-only query still picks the page title, never a blank option (KAN-536)', async () => {
+    const { container, onPick } = renderPicker({
+      block: 'board',
+      defaultStep: 'source',
+      pageTitle: 'Home Reno',
+    })
+    await userEvent.click(rowsOf(container)[0])
+    await userEvent.keyboard(' ')
+    // The row already reads the trimmed label (`projectEntries`) — the bug was
+    // in `pick()` carrying the raw, untrimmed query instead.
+    expect(labelOf(rowsOf(container)[0])).toBe('new project — Home Reno')
+
+    await userEvent.keyboard('{Enter}')
+    expect(onPick).toHaveBeenCalledWith({ kind: 'tasks', project: { label: 'Home Reno' } })
+  })
+
+  it('a query with trailing spaces picks the trimmed label, not a stale one (KAN-536)', async () => {
+    const { container, onPick } = renderPicker({
+      block: 'board',
+      defaultStep: 'source',
+      pageTitle: 'Home Reno',
+    })
+    await userEvent.click(rowsOf(container)[0])
+    await userEvent.keyboard('web  ')
+    expect(labelOf(rowsOf(container)[0])).toBe('new project — web')
+
+    await userEvent.keyboard('{Enter}')
+    expect(onPick).toHaveBeenCalledWith({ kind: 'tasks', project: { label: 'web' } })
   })
 })
 

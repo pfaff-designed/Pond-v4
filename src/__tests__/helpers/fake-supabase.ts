@@ -24,6 +24,7 @@ export type Row = {
   props: Record<string, unknown>
   order: number
   deleted_at?: string | null
+  created_at?: string
 }
 
 type AnyRow = Record<string, unknown>
@@ -117,6 +118,9 @@ export function makeFakeSupabase(
           blocks: insertPayload?.blocks ?? [],
           props: (insertPayload?.props as Record<string, unknown>) ?? {},
           order: 0,
+          // Monotonic per fake, so a caller sorting by `created_at` sees insert
+          // order even within the same millisecond.
+          created_at: new Date(seq * 1000).toISOString(),
         }
         pages.set(id, row)
         return Promise.resolve({ data: { id }, error: null })

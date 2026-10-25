@@ -85,10 +85,15 @@ describe('`/board` with no databases yet lands real lanes, and a card lands in o
     // the exact `board` block row is picked by name, not by ↵ on the top match.
     fireEvent.click(within(menu).getByRole('option', { name: 'board' }))
 
-    // `source`: no databases, so `new tasks` is the only row and is preselected.
-    // ↵ creates the tasks database — there is no field step.
+    // `source`: no databases, so `tasks` is the only row and is preselected.
+    // ↵ opens the `project` step (KAN-536), where `new project — <page>` leads
+    // and is preselected — a second ↵ picks it and creates the shared database.
     const source = await screen.findByRole('listbox', { name: '/board' })
-    expect(within(source).getByText('new tasks')).toBeInTheDocument()
+    expect(within(source).getByText('tasks')).toBeInTheDocument()
+    fireEvent.keyDown(document, { key: 'Enter' })
+
+    const projectStep = await screen.findByRole('listbox', { name: '/board — tasks' })
+    expect(within(projectStep).getByText('new project — trip planning')).toBeInTheDocument()
     fireEvent.keyDown(document, { key: 'Enter' })
 
     expect(await screen.findByText('to do')).toBeInTheDocument()

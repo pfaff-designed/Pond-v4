@@ -318,3 +318,136 @@ describe('CollectionBoard — ＋ task double-click guard (KAN-377, AUDIT G9)', 
     expect(addRowSpy).toHaveBeenCalledTimes(2)
   })
 })
+
+describe('CollectionView — a new row inherits an eq filter\'s value (KAN-536)', () => {
+  const projectSchema: PropertySchema = [
+    ...titleOnly,
+    {
+      id: 'p-status',
+      name: 'status',
+      type: 'status',
+      options: [
+        { id: 'o-todo', label: 'to do' },
+        { id: 'o-doing', label: 'doing' },
+        { id: 'o-done', label: 'done' },
+      ],
+    },
+    {
+      id: 'p-project',
+      name: 'project',
+      type: 'select',
+      options: [
+        { id: 'o-homereno', label: 'Home Reno' },
+        { id: 'o-webdesign', label: 'Web design' },
+      ],
+    },
+  ]
+  const filter = { property: 'p-project', op: 'eq' as const, value: 'o-homereno' }
+
+  it('a board filtered to a project seeds ＋ task with the project AND its lane\'s status', async () => {
+    const user = userEvent.setup()
+    const addRowSpy = jest.fn(async () => 'row-1')
+    const boardConfig: ViewBlock = {
+      id: 'v-board-filtered',
+      type: 'view',
+      mode: 'board',
+      groupBy: 'p-status',
+      filter,
+    }
+
+    const { container } = render(
+      <CollectionView
+        config={boardConfig}
+        schema={projectSchema}
+        rows={[]}
+        editable
+        onAddRow={addRowSpy}
+        onRenameRow={jest.fn()}
+      />
+    )
+
+    const doingLane = container.querySelector<HTMLElement>('[data-lane="doing"]')!
+    await user.click(within(doingLane).getByRole('button', { name: '＋ task' }))
+
+    expect(addRowSpy).toHaveBeenCalledWith({ 'p-project': 'o-homereno', 'p-status': 'o-doing' })
+  })
+
+  it('a table filtered to a project seeds "+ Add row" with the project', async () => {
+    const user = userEvent.setup()
+    const addRowSpy = jest.fn(async () => 'row-1')
+    const tableConfig: ViewBlock = {
+      id: 'v-table-filtered',
+      type: 'view',
+      mode: 'table',
+      filter,
+    }
+
+    render(
+      <CollectionView
+        config={tableConfig}
+        schema={projectSchema}
+        rows={[]}
+        editable
+        onAddRow={addRowSpy}
+        onRenameRow={jest.fn()}
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: '+ Add row' }))
+
+    expect(addRowSpy).toHaveBeenCalledWith({ 'p-project': 'o-homereno' })
+  })
+
+  it('the head reads "tasks · Home Reno"', () => {
+    const boardConfig: ViewBlock = {
+      id: 'v-board-head',
+      type: 'view',
+      mode: 'board',
+      groupBy: 'p-status',
+      filter,
+    }
+
+    render(
+      <CollectionView
+        config={boardConfig}
+        schema={projectSchema}
+        rows={[]}
+        collectionName="tasks"
+        editable
+        onAddRow={jest.fn()}
+        onRenameRow={jest.fn()}
+      />
+    )
+
+    expect(screen.getByText('tasks · Home Reno')).toBeInTheDocument()
+  })
+
+  it('the head count reads the filtered rows, not the whole database', () => {
+    const boardConfig: ViewBlock = {
+      id: 'v-board-count',
+      type: 'view',
+      mode: 'board',
+      groupBy: 'p-status',
+      filter,
+    }
+    const rows: CollectionRow[] = [
+      { id: 'r-1', title: 'buy tiles', values: { 'p-project': 'o-homereno' } },
+      { id: 'r-2', title: 'paint walls', values: { 'p-project': 'o-homereno' } },
+      { id: 'r-3', title: 'wireframes', values: { 'p-project': 'o-webdesign' } },
+    ]
+
+    const { container } = render(
+      <CollectionView
+        config={boardConfig}
+        schema={projectSchema}
+        rows={rows}
+        collectionName="tasks"
+        editable
+        onAddRow={jest.fn()}
+        onRenameRow={jest.fn()}
+      />
+    )
+
+    expect(container.querySelector('[data-part="db-count"]')).toHaveTextContent('2 records')
+  })
+})

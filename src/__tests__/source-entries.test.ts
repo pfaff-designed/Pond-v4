@@ -17,6 +17,9 @@ import {
   footFor,
   headFor,
   newEntries,
+  NEW_PROJECT_ID,
+  newProjectLabel,
+  projectEntries,
   RECORDS_ARE,
   recordsWord,
   SOURCE_BLOCKS,
@@ -29,7 +32,7 @@ import {
 } from '@/components/molecules/source-entries'
 import { ICON } from '@/components/molecules/slash-entries'
 import { CHART_KINDS } from '@/lib/modules/view/aggregate'
-import { DEFAULT_STATUS_OPTIONS, PROPERTY_TYPES } from '@/lib/properties/schema'
+import { DEFAULT_STATUS_OPTIONS, PROPERTY_TYPES, type PropertyOption } from '@/lib/properties/schema'
 import { boardChartKinds, readHandoff } from './helpers/handoff'
 
 /** `Pond 03` 3a — the 18px/500 term column, straight off the board. */
@@ -136,7 +139,7 @@ describe('source — pick or create a database', () => {
 
   it('a pond with no database yet offers only the new row — no empty group', () => {
     expect(shape(sourceEntries([], 'recipes'))).toEqual(['G:new', 'new database — recipes'])
-    expect(shape(sourceEntries([], 'recipes', 'board'))).toEqual(['G:new', 'new tasks'])
+    expect(shape(sourceEntries([], 'recipes', 'board'))).toEqual(['G:new', 'tasks'])
   })
 
   it('the sub says `records` for a database whose records are pages and `rows` for rows only — the seg’s own distinction, one owner', () => {
@@ -292,6 +295,90 @@ describe('defaultFieldsFor — the fields a new database starts with, per view k
   })
 })
 
+// ── project ────────────────────────────────────────────────────────────────────
+
+describe('projectEntries — pick the board’s project (KAN-536)', () => {
+  const HOME_RENO: PropertyOption = { id: 'opt-home', label: 'Home Reno' }
+  const WEB: PropertyOption = { id: 'opt-web', label: 'Web design' }
+
+  it.each<[string, readonly PropertyOption[], string, string, string[]]>([
+    ['no options, no query — just the new row', [], 'Home Reno', '', ['new project — Home Reno']],
+    [
+      'options with no match — the new row leads, then the options',
+      [WEB],
+      'Home Reno',
+      '',
+      ['new project — Home Reno', 'Web design'],
+    ],
+    [
+      'an option already named for the page — it leads instead, no new row',
+      [WEB, HOME_RENO],
+      'Home Reno',
+      '',
+      ['Home Reno', 'Web design'],
+    ],
+    [
+      'the match is case-insensitive and trimmed',
+      [{ id: 'opt-home', label: '  home reno  ' }],
+      'Home Reno',
+      '',
+      ['  home reno  '],
+    ],
+    [
+      'a query narrows by label — a match hides the new row even without an exact match',
+      [HOME_RENO, WEB],
+      'Home Reno',
+      'web',
+      ['Web design'],
+    ],
+    [
+      'a query matching nothing offers `new project — <query>`, in place of the options',
+      [HOME_RENO, WEB],
+      'Home Reno',
+      'xyz',
+      ['new project — xyz'],
+    ],
+    [
+      'a whitespace-only query is read as no query at all — the page title, not a blank label',
+      [],
+      'Home Reno',
+      '   ',
+      ['new project — Home Reno'],
+    ],
+    [
+      'a query matching nothing is trimmed in the new row’s label — no trailing spaces',
+      [HOME_RENO, WEB],
+      'Home Reno',
+      'Foo  ',
+      ['new project — Foo'],
+    ],
+  ])('%s', (_name, options, pageTitle, query, expected) => {
+    expect(labels(projectEntries(options, pageTitle, query))).toEqual(expected)
+  })
+
+  it('the new row’s id is NEW_PROJECT_ID, never a real option id', () => {
+    const entries = projectEntries([], 'Home Reno', '')
+    expect(entries[0]).toMatchObject({ kind: 'row', id: NEW_PROJECT_ID })
+  })
+
+  it('an existing option’s row id is its own option id — the host applies the pick by id', () => {
+    const entries = projectEntries([WEB], 'Home Reno', '')
+    const webRow = entries.find((e) => e.kind === 'row' && e.label === 'Web design')
+    expect(webRow).toMatchObject({ id: 'opt-web' })
+  })
+})
+
+describe('newProjectLabel — the one home for the new row’s label (KAN-536)', () => {
+  it.each<[string, string, string, string]>([
+    ['no query — the trimmed page title', 'Home Reno', '', 'Home Reno'],
+    ['a whitespace-only query — the trimmed page title, never a blank label', 'Home Reno', '   ', 'Home Reno'],
+    ['a typed query — trimmed, not the page title', 'Home Reno', 'web', 'web'],
+    ['a typed query with trailing spaces — trimmed', 'Home Reno', 'Foo  ', 'Foo'],
+  ])('%s', (_name, pageTitle, query, expected) => {
+    expect(newProjectLabel(pageTitle, query)).toBe(expected)
+  })
+})
+
 // ── field-type ─────────────────────────────────────────────────────────────────
 
 describe('field-type — the ＋ field row’s own step', () => {
@@ -319,6 +406,13 @@ describe('head and foot — the board’s copy, per step', () => {
       '/chart › calories'
     )
     expect(headFor('new', { block: 'table', pageTitle: 'recipes' })).toBe('new database — recipes')
+  })
+
+  it('the project step heads `/board — tasks`, narrowed by a typed query', () => {
+    expect(headFor('project', { block: 'board', pageTitle: 'Home Reno' })).toBe('/board — tasks')
+    expect(headFor('project', { block: 'board', pageTitle: 'Home Reno', query: 'web' })).toBe(
+      '/board — tasks › web'
+    )
   })
 
   it('feet are the board’s three, verbatim — all three states draw one', () => {

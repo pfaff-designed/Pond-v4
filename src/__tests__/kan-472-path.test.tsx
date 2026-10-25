@@ -137,7 +137,9 @@ describe('KAN-472 path test — ancestor crumbs navigate, the current crumb open
     expect(screen.queryByRole('combobox', { name: 'command palette' })).toBeNull()
 
     // Clicking the current crumb opens the palette instead of navigating.
-    const currentCrumb = screen.getByText('gutters')
+    // `getByRole('button', …)`, not `getByText`: the page title is now a
+    // textarea whose value is also `gutters`, and `getByText` matches that too.
+    const currentCrumb = screen.getByRole('button', { name: 'gutters' })
     await user.click(currentCrumb)
     await screen.findByRole('combobox', { name: 'command palette' })
   })

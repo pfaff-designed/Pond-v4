@@ -162,8 +162,21 @@ beforeEach(() => {
   sessionUndo.clear()
 })
 
-/** Opens `/board` on an empty page. `new tasks` is preselected when no
- *  databases exist; the caller picks that row or an existing one. */
+/** Opens `/table` on an empty page. `new database — <page>` is preselected
+ *  when no databases exist; the caller picks that row or an existing one. */
+async function openTableSource(): Promise<HTMLElement> {
+  fireEvent.click(screen.getByTestId('trailing-block-gap'))
+  const editor = await findTextBlock()
+  writeInTextBlock(editor, '/')
+  await screen.findByRole('listbox', { name: 'blocks' })
+  writeInTextBlock(editor, '/table')
+  const menu = await screen.findByRole('listbox', { name: 'blocks' })
+  fireEvent.click(within(menu).getByText('table'))
+  return screen.findByRole('listbox', { name: '/table' })
+}
+
+/** Opens `/board` on an empty page. `tasks` is preselected when no databases
+ *  exist; ↵ there opens the `project` step (KAN-536). */
 async function openBoardSource(): Promise<HTMLElement> {
   fireEvent.click(screen.getByTestId('trailing-block-gap'))
   const editor = await findTextBlock()
@@ -181,7 +194,11 @@ describe('a view insert writes one ⌘Z step whose side effects match its databa
     mockCreateClient.mockReturnValue(sb)
 
     renderCanvas([])
-    await openBoardSource()
+    await openTableSource()
+    // `new database — <page>` leads the `source` step; ↵ opens the `new`
+    // (field) step, prefilled but unfinished — a second ↵ there creates it.
+    fireEvent.keyDown(document, { key: 'Enter' })
+    await screen.findByRole('listbox', { name: 'new database — trip planning' })
     fireEvent.keyDown(document, { key: 'Enter' })
 
     await waitFor(() => expect(mockAppendOwnEdit).toHaveBeenCalledTimes(1))
@@ -220,9 +237,34 @@ describe('a view insert writes one ⌘Z step whose side effects match its databa
 
     renderCanvas([])
     const source = await openBoardSource()
-    fireEvent.click(within(source).getByRole('option', { name: /^tasks/ }))
+    // The board's own `new` row also reads `tasks` (KAN-536) — the existing
+    // database named `tasks` is the one under "or view an existing one",
+    // the LAST of the two matches rather than the leading `new` row.
+    const tasksOptions = within(source).getAllByRole('option', { name: /^tasks/ })
+    fireEvent.click(tasksOptions[tasksOptions.length - 1])
 
     await waitFor(() => expect(mockAppendOwnEdit).toHaveBeenCalledTimes(1))
+
+    await sessionUndo.undo('pond-1')
+
+    await waitFor(() => expect(undoStep).toHaveBeenCalledTimes(1))
+    expect(trashPage).not.toHaveBeenCalled()
+    expect(restorePage).not.toHaveBeenCalled()
+  })
+
+  it('undoing a view onto the shared TASKS database removes the block, never trashes it (KAN-536)', async () => {
+    const sb = makeFakeSupabase([])
+    mockCreateClient.mockReturnValue(sb)
+
+    renderCanvas([])
+    const source = await openBoardSource()
+    fireEvent.click(within(source).getByRole('option', { name: /^tasks/ }))
+    const projectStep = await screen.findByRole('listbox', { name: '/board — tasks' })
+    fireEvent.click(within(projectStep).getByText('new project — trip planning'))
+
+    await waitFor(() => expect(mockAppendOwnEdit).toHaveBeenCalled())
+    const database = [...sb._pages.values()].find((p) => p.props._role === 'tasks')
+    expect(database).toBeDefined()
 
     await sessionUndo.undo('pond-1')
 

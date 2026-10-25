@@ -17,6 +17,7 @@
  */
 
 import { recordProposedToolCalls } from '@/lib/change-log/propose'
+import { toBlocks } from '@/lib/pages/to-blocks'
 
 const USER = 'user-1'
 const PAGE = 'page-1'
@@ -98,6 +99,32 @@ describe('recordProposedToolCalls — criterion 2', () => {
     // …and `after` is what the page WOULD read, not a copy of the tool arguments.
     expect(JSON.stringify(rec.after)).toContain('the new line')
     expect(JSON.stringify(rec.after)).not.toContain('the old line')
+  })
+
+  it('snapshots `before` already split, so an edit to an unrelated block on the same stored row is not mistaken for the split moving the page (KAN-552)', async () => {
+    const storedRow = [
+      { id: 'x', type: 'text', content: 'alpha\n\n## heading\n\n- one\n- two\n\n---' },
+      { id: 'y', type: 'text', content: 'untouched' },
+    ]
+    const { supabase, inserts } = makeSupabase({ blocks: storedRow })
+
+    await recordProposedToolCalls(supabase, {
+      userId: USER,
+      pondId: 'pond-1',
+      openPageId: PAGE,
+      toolCalls: [
+        proposeChangesCall({
+          changes: [{ op: 'edit', blockId: 'y', data: { type: 'text', content: 'edited y' } }],
+        }),
+      ],
+    })
+
+    // `before` is read through the SAME `toBlocks` seam the page itself opens
+    // with — split into x, x-2, x-3, x-4, y — never the raw single stored row.
+    // A raw `before` here is exactly what made `accept.ts`'s split guard fire
+    // for every diff, even one touching only the untouched block `y`.
+    expect(inserts[0].before).toEqual(toBlocks(storedRow))
+    expect(inserts[0].before).not.toEqual(storedRow)
   })
 
   it('carries sourceThreadId and read onto the written record (KAN-152 record-page chips)', async () => {

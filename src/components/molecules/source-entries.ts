@@ -23,7 +23,12 @@ import { CHART_TYPE_TAG } from '@/lib/modules/chart/chrome'
 import { plural } from '@/lib/modules/block-frame'
 import type { ViewMode } from '@/lib/modules/view/schema'
 import { VIEW_KINDS } from '@/lib/modules/view/kinds'
-import { DEFAULT_STATUS_OPTIONS, PROPERTY_TYPES, type PropertyType } from '@/lib/properties/schema'
+import {
+  DEFAULT_STATUS_OPTIONS,
+  PROPERTY_TYPES,
+  type PropertyOption,
+  type PropertyType,
+} from '@/lib/properties/schema'
 
 import { BOX_HEIGHT, LIST_MAX_VH, SLASH_SIZES } from './picker-chrome'
 import { ICON, type SlashEntry, type SlashIcon } from './slash-entries'
@@ -53,7 +58,7 @@ export type SourceBlock = (typeof SOURCE_BLOCKS)[number]
 export function sourceBlockOf(rowId: string): SourceBlock | null {
   return (SOURCE_BLOCKS as readonly string[]).includes(rowId) ? (rowId as SourceBlock) : null
 }
-export type SourceStep = 'source' | 'type' | 'new' | 'field-type'
+export type SourceStep = 'source' | 'type' | 'new' | 'field-type' | 'project'
 /** 3a `record`: "either a page of its own or a row only." */
 export type RecordsAre = 'pages' | 'rows'
 
@@ -147,21 +152,24 @@ const row = (
 export const NEW_DATABASE_ID = 'new'
 export const ALL_CHARTS_ID = 'all'
 export const ADD_FIELD_ID = 'add-field'
+/** The project step's new-option row — never a real option id (minted ids never collide). */
+export const NEW_PROJECT_ID = 'new-project'
 const kindId = (kind: ChartKind) => `kind:${kind}`
 
 // ── source ─────────────────────────────────────────────────────────────────────
 
 /**
- * Pick or create. A board's new database is tasks — the row says so, and
- * picking it creates that database. Every other block offers
- * `new database — <page>`, then the field step.
+ * Pick or create. A board's one new row reads `tasks` — picking it opens the
+ * `project` step (KAN-536: one shared tasks database per pond, each board
+ * filtered to a project). Every other block offers `new database — <page>`,
+ * then the field step.
  */
 export function sourceEntries(
   databases: readonly SourceDatabase[],
   pageTitle: string,
   block?: SourceBlock
 ): SourceEntry[] {
-  const creating = block === 'board' ? 'new tasks' : `new database — ${pageTitle}`
+  const creating = block === 'board' ? 'tasks' : `new database — ${pageTitle}`
   const out: SourceEntry[] = [
     { kind: 'group', label: 'new' },
     row(NEW_DATABASE_ID, creating, { icon: ICON.plus }),
@@ -375,15 +383,65 @@ export function fieldTypeEntries(): SourceEntry[] {
   return PROPERTY_TYPES.filter((t) => t !== 'relation' && t !== 'rollup').map((t) => row(t, t))
 }
 
+// ── project ────────────────────────────────────────────────────────────────────
+
+/**
+ * The `new project — …` row's label: the typed query, trimmed, or the page
+ * title (also trimmed) while the query is empty or all whitespace. One home
+ * for this so `projectEntries` (the row) and `SourcePicker.tsx`'s `pick()`
+ * (the chosen value) never compute two different strings for the same row —
+ * a raw, untrimmed query would otherwise mint a blank or trailing-space
+ * option (KAN-536).
+ */
+export function newProjectLabel(pageTitle: string, query: string): string {
+  const trimmed = query.trim()
+  return trimmed === '' ? pageTitle.trim() : trimmed
+}
+
+/**
+ * Pick the board's project (KAN-536). `new project — <page title>` leads and
+ * is preselected, unless an option already carries that label (case-
+ * insensitive, trimmed) — then that option leads instead and no new row
+ * shows; the rest of the field's options follow. A query narrows the options
+ * by label; matching nothing offers `new project — <query>` in their place —
+ * a query that matches something never shows a new row at all. Same recipe
+ * as `TagValueEditor.tsx`'s `buildTagRows()`, read for this one-shot step.
+ */
+export function projectEntries(
+  options: readonly PropertyOption[],
+  pageTitle: string,
+  query: string
+): SourceEntry[] {
+  const q = query.trim().toLowerCase()
+  if (q === '') {
+    const title = pageTitle.trim().toLowerCase()
+    const match = options.find((o) => o.label.trim().toLowerCase() === title)
+    if (match)
+      return [match, ...options.filter((o) => o.id !== match.id)].map((o) => row(o.id, o.label))
+    return [
+      row(NEW_PROJECT_ID, `new project — ${newProjectLabel(pageTitle, query)}`),
+      ...options.map((o) => row(o.id, o.label)),
+    ]
+  }
+  const matches = options.filter((o) => o.label.toLowerCase().includes(q))
+  if (!matches.length)
+    return [row(NEW_PROJECT_ID, `new project — ${newProjectLabel(pageTitle, query)}`)]
+  return matches.map((o) => row(o.id, o.label))
+}
+
 // ── head and foot ──────────────────────────────────────────────────────────────
 
-/** `/table` · `/chart › calories` · `new database — recipes` — the head per step. */
+/** `/table` · `/chart › calories` · `new database — recipes` · `/board — tasks › web` — the head per step. */
 export function headFor(
   step: SourceStep,
-  ctx: { block: SourceBlock; pageTitle: string; source?: string }
+  ctx: { block: SourceBlock; pageTitle: string; source?: string; query?: string }
 ): string {
   if (step === 'field-type') return `new database — ${ctx.pageTitle} › field`
   if (step === 'new') return `new database — ${ctx.pageTitle}`
+  if (step === 'project') {
+    const head = `/${VIEW_KINDS[ctx.block].label} — tasks`
+    return ctx.query ? `${head} › ${ctx.query}` : head
+  }
   const command = `/${VIEW_KINDS[ctx.block].label}`
   return ctx.source ? `${command} › ${ctx.source}` : command
 }
