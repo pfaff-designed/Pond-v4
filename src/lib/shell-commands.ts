@@ -101,6 +101,22 @@ export const isRedoChord = (e: KeyboardEvent) => {
   return isCommandOnly(e)
 }
 
+/**
+ * ⌘⇧↑ on a Mac, Ctrl+Shift+↑ everywhere else: open the open page's parent (none at the
+ * root). Left alone inside an editable field (`isEditableField`) — there the key keeps
+ * its native "select to paragraph start" meaning, as in Linear and Notion.
+ */
+export const isGoToParentChord = (e: KeyboardEvent) => {
+  if (e.altKey || !e.shiftKey || e.key !== 'ArrowUp') return false
+  return isCommandOnly(e)
+}
+
+/** Whether `el` is a plain text field whose own keys (not Pond's) should win —
+ *  narrower than `isEditable` above, which carries undo-specific exceptions that
+ *  answer a different question ("does the browser or Pond own undo here"). */
+export const isEditableField = (el: Element | null): boolean =>
+  el !== null && el.matches('input, textarea, [contenteditable]')
+
 const APPLE_KEY_GLYPHS: Record<string, string> = { backspace: '⌫', enter: '↵' }
 const OTHER_KEY_WORDS: Record<string, string> = { backspace: 'Backspace', enter: 'Enter' }
 
