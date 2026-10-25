@@ -1,5 +1,5 @@
 /**
- * KAN-474: the ⌘K footer's `⌘↵ new tab` hint (Ctrl Enter off Apple) joins `↵ open`
+ * KAN-474: the ⌘K footer's `⌘↵ new tab` hint (`ctrl enter new tab` off Apple) joins `↵ open`
  * only while a page row is actually on screen to open that way — hidden in
  * actions-only `>` mode (no page rows ever list there) and in any state whose
  * `enterHint` already overrides `↵ open` to something else (the move picker's
@@ -50,10 +50,10 @@ describe('⌘K footer: the `new tab` hint', () => {
     expect(foot().textContent).toContain('⌘↵ new tab')
   })
 
-  it('reads Ctrl Enter new tab off a Mac', () => {
+  it('reads ctrl enter new tab off a Mac — the machine surface stays lowercase (PROJECT_RULES)', () => {
     onPlatform('Win32')
     renderPalette()
-    expect(foot().textContent).toContain('Ctrl Enter new tab')
+    expect(foot().textContent).toContain('ctrl enter new tab')
   })
 
   it('is absent in actions-only `>` mode — no page row ever lists there', () => {

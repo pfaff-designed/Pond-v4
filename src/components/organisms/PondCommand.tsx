@@ -58,7 +58,12 @@ import type { CommandCrumbTarget, CommandPath } from '@/lib/pages/command-path'
 import { isNewTabClick, workspaceRenderHref } from '@/lib/pages/nav'
 import { markAccent } from '@/lib/rail/glyph-library'
 import { useMorph } from '@/lib/motion/use-morph'
-import { ariaKeyshortcuts, formatChord, useApplePlatform } from '@/lib/shell-commands'
+import {
+  ariaKeyshortcuts,
+  formatChord,
+  formatChordMachine,
+  useApplePlatform,
+} from '@/lib/shell-commands'
 import { useMode } from '@/lib/theme/mode'
 
 export type { PaletteItem, PaletteKind, PaletteScope } from '@/components/molecules/palette-entries'
@@ -401,7 +406,7 @@ export function PondCommand({
   // row is actually on screen to open; `enterHint` overriding `↵ open` (the move
   // picker's `↵ move`) means ⏎ no longer opens anything, so the hint is wrong there.
   const showNewTabHint = !enterHint && rows.some((r) => r.item.kind === 'page')
-  const newTabHint = `${formatChord('mod+enter', apple)} new tab`
+  const newTabHint = `${formatChordMachine('mod+enter', apple)} new tab`
   return (
     <div className={`${className} ${live ? 'z-[100]' : 'z-20'}`}>
       <div

@@ -3,7 +3,7 @@ import type { Meta, StoryObj } from '@storybook/nextjs-vite'
 import { expect, fn, userEvent, waitFor } from 'storybook/test'
 
 import { PondCommand, type PondCommandProps } from './PondCommand'
-import { formatChord, isPaletteChord } from '@/lib/shell-commands'
+import { formatChord, formatChordMachine, isPaletteChord } from '@/lib/shell-commands'
 import {
   PALETTE_FOOT,
   PALETTE_FOOT_ENTER,
@@ -404,7 +404,7 @@ async function assertChrome(root: HTMLElement, p: Palette, m: Metrics = DESKTOP)
     m === DESKTOP && hasPageRow
       ? [
           ...m.foot.slice(0, enterIndex + 1),
-          `${formatChord('mod+enter')} new tab`,
+          `${formatChordMachine('mod+enter')} new tab`,
           ...m.foot.slice(enterIndex + 1),
         ]
       : [...m.foot]
