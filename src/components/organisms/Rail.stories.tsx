@@ -1088,8 +1088,8 @@ export const Loading: Story = {
 }
 
 /**
- * `PondRail` `empty`: the root row alone — not selected, no resting ＋, its ＋ and
- * × on hover like any row (`hasTools: hov`) — and the hint, verbatim, at
+ * `PondRail` `empty`: the root row alone — not selected, its ＋ visible at rest
+ * (KAN-471: the hint points at it), × on hover — and the hint, naming the root, at
  * `margin 8px 16px 0 34px` measured from the CARD edge, 12.5 / 1.5.
  */
 export const Empty: Story = {
@@ -1098,7 +1098,9 @@ export const Empty: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     const hint = canvas.getByRole('status')
-    await expect(hint.textContent).toBe('no pages yet. ＋ new page, or ask pond to start one.')
+    await expect(hint.textContent).toBe(
+      'no pages yet. the ＋ beside life makes one, or ask pond to start one.'
+    )
 
     const root = canvas.getByRole('treeitem', { name: /life/ })
     await expect(
@@ -1120,11 +1122,14 @@ export const Empty: Story = {
     const tools = root.querySelector<HTMLElement>('[data-part="row-tools"]')
     await expect(tools).not.toBeNull()
     const add = within(root).getByRole('button', { name: /^Add sub-page to/ })
-    await expect(getComputedStyle(add.parentElement!).opacity).toBe('0')
+    // KAN-471: an empty pond's root ＋ is visible at rest, not only on hover
+    await expect(getComputedStyle(add.parentElement!).opacity).toBe('1')
     await userEvent.hover(root)
-    await waitFor(() => expect(getComputedStyle(add.parentElement!).opacity).toBe('1'))
+    // the ＋ already shows at rest, so wait on × — the one tool hover adds
+    const del = within(root).getByRole('button', { name: /^Delete/ })
+    await waitFor(() => expect(getComputedStyle(del.parentElement!).opacity).toBe('1'))
     await expect(add).toBeVisible()
-    await expect(within(root).getByRole('button', { name: /^Delete/ })).toBeVisible()
+    await expect(del).toBeVisible()
   },
 }
 
@@ -2137,11 +2142,11 @@ export const EmptyRootHasNoChevron: Story = {
     const life = canvas.getByRole('treeitem', { name: /life/ })
     await expect(life).not.toHaveAttribute('aria-expanded')
     await expect(life.querySelector('button[aria-hidden="true"]')).toBeNull()
-    // the board selects nothing here, so the root draws no resting ＋ — only its hover tools
+    // KAN-471: nothing is selected, but an empty pond's root draws its ＋ at rest
     const tools = life.querySelector<HTMLElement>('[data-part="row-tools"]')
     await expect(tools).not.toBeNull()
     const add = within(life).getByRole('button', { name: /^Add sub-page to/ })
-    await expect(getComputedStyle(add.parentElement!).opacity).toBe('0')
+    await expect(getComputedStyle(add.parentElement!).opacity).toBe('1')
   },
 }
 
