@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { EditorView } from '@tiptap/pm/view'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { HEADING_PREFIX, TEXT_MARKUP } from '@/lib/modules/palette'
+import { HEADING_PREFIX, TEXT_MARKUP } from '@/lib/modules/text/markup'
 import { COMPOSER_CLEARANCE_VAR } from '@/lib/layout/composer-clearance'
 import {
   findTextBlock as findField,

@@ -28,6 +28,7 @@ import type { SlashIcon, SlashRow } from '@/components/molecules/SlashMenu'
 import type { Block } from '@/lib/documents/types'
 import { viewModeSchema, type ViewMode } from '@/lib/modules/view/schema'
 import { VIEW_KINDS } from '@/lib/modules/view/kinds'
+import { isTextMarkupId, TEXT_MARKUP } from '@/lib/modules/text/markup'
 
 /**
  * Per-type chrome for a descriptor's OWN row. Anything absent takes the fallback.
@@ -78,28 +79,6 @@ const VIEW_ROWS = [
   viewRow('chart', 'graph'),
   viewRow('big-number'),
 ]
-
-/**
- * What `/heading` types for you — the second markdown level, with its trailing
- * space, so the caret lands on the words. One owner, read by `mintPreset` and by
- * the guard that holds the row to it.
- */
-export const HEADING_PREFIX = '## '
-
-/**
- * What `/numbered list`, `/quote`, `/code` and `/divider` type for you — each the
- * markdown that opens its node EMPTY with the caret inside it. `divider` is the
- * rule alone: CommonMark has no empty-paragraph syntax, so a trailing paragraph
- * for the caret to land in after the rule is a live-doc concern, not a markdown
- * one (KAN-462's caret-placement item). One owner, read by `mintPreset` and
- * proved by `palette-markup.test.ts`.
- */
-export const TEXT_MARKUP: Record<'numbered-list' | 'quote' | 'code' | 'divider', string> = {
-  'numbered-list': '1. ',
-  quote: '> ',
-  code: '```\n\n```',
-  divider: '---',
-}
 
 /** A type's other faces — the same block at another marker or mode. */
 const VARIANT_ROWS: Partial<Record<DescriptorType, readonly SlashRow[]>> = {
@@ -317,10 +296,7 @@ export function mintPreset(rowId: string): Block | null {
   if (!row?.type) return null
   const block = emptyBlockForType(row.type)
   if (!block) return null
-  if (block.type === 'text' && rowId === 'heading') return { ...block, content: HEADING_PREFIX }
-  if (block.type === 'text' && Object.hasOwn(TEXT_MARKUP, rowId)) {
-    return { ...block, content: TEXT_MARKUP[rowId as keyof typeof TEXT_MARKUP] }
-  }
+  if (block.type === 'text' && isTextMarkupId(rowId)) return { ...block, content: TEXT_MARKUP[rowId] }
   if (block.type === 'todo' && rowId === 'bulleted-list') return { ...block, marker: 'dot' }
   if (block.type === 'view') {
     const mode = viewModeSchema.safeParse(rowId)

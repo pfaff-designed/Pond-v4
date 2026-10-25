@@ -13,14 +13,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { render, screen, fireEvent, within } from '@testing-library/react'
 import { SlashMenu } from '@/components/molecules/SlashMenu'
-import {
-  slashRows,
-  mintPreset,
-  BOARD_ORDER,
-  HEADING_PREFIX,
-  WITHHELD,
-  TEXT_MARKUP,
-} from '@/lib/modules/palette'
+import { slashRows, mintPreset, BOARD_ORDER, WITHHELD } from '@/lib/modules/palette'
+import { HEADING_PREFIX, TEXT_MARKUP } from '@/lib/modules/text/markup'
 import { moduleDescriptors } from '@/lib/modules/registry'
 import { TEMPLATE_KINDS } from '@/lib/templates/types'
 import { VIEW_KINDS } from '@/lib/modules/view/kinds'

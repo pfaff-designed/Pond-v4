@@ -1,5 +1,5 @@
 import type { Node as ProseNode } from '@tiptap/pm/model'
-import { TEXT_MARKUP } from './palette'
+import { TEXT_MARKUP } from './text/markup'
 import { parseMarkdown, serializeMarkdown } from './text/markdown'
 
 const childTypes = (node: ProseNode): string[] => {

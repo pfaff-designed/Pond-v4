@@ -9,12 +9,12 @@ import { Plugin, TextSelection } from '@tiptap/pm/state'
 import type { EditorView } from '@tiptap/pm/view'
 import { COMPOSER_TOP_CLEARANCE, composerClearanceMarginPx } from '@/lib/layout/composer-clearance'
 import { isRedoChord, isUndoChord } from '@/lib/shell-commands'
-import { TEXT_MARKUP } from '../palette'
 import type { ModuleViewProps } from '../types'
 import { useBlockRow, type BlockRowValue } from '../block-row-context'
 import { registerTextEditor } from './active-editor'
 import { proseExtensions } from './extensions'
 import { parseMarkdown, serializeMarkdown } from './markdown'
+import { TEXT_MARKUP } from './markup'
 import { enterSplit, leavesUpToTitle } from './next-block'
 import { TEXT_PROSE_CLASS, textPlaceholderFor } from './prose'
 import { markdownHandlePaste } from './paste'
@@ -28,7 +28,7 @@ export interface Press {
   top: number
 }
 
-const TEXT_MARKUP_VALUES = new Set(Object.values(TEXT_MARKUP))
+const TEXT_MARKUP_VALUES: Set<string> = new Set(Object.values(TEXT_MARKUP))
 
 /**
  * Has nothing been written here yet? Blank, or only markdown scaffolding the row
