@@ -546,9 +546,18 @@ export async function trashPageUnlinked(
  * first, removing the parent's link, then the SQL restore-undo re-trashes;
  * redo order: restore again, then the link back — the same reverse/forward
  * order `change_log_set_back`'s own multi-step kinds already rely on).
+ *
+ * The step is pushed via `sessionUndo.rememberPending` the INSTANT
+ * `restorePage` resolves, not after the relink's own flush/commit as well —
+ * the relink's `getPage`/`commitBlocks` round trip is another await, and a
+ * ⌘Z pressed in that window must already find this step on top (mirrors
+ * `move.ts`'s `moveAndStageUndo`, the same `rememberPending`-before-the-rest-
+ * of-the-write shape). Its `recordIds` resolves once the relink settles.
+ *
  * Skipped entirely when `pondId` is `null` (`HistoryStep.pondId` isn't
  * nullable — the same guard `move.ts` uses) or when `restorePage` itself
- * resolved to `null` (an invalid id in production — never pushed).
+ * resolved to `null` (an invalid id in production — never pushed); the
+ * relink still runs in that case, just with no undo step remembered for it.
  */
 export async function restorePageRelinked(
   supabase: SupabaseClient<Database>,
@@ -556,12 +565,18 @@ export async function restorePageRelinked(
   { pondId, recordId, rootPageId }: { pondId: string | null; recordId: string; rootPageId: string | null }
 ): Promise<void> {
   const restoreRecordId = await restorePage(supabase, recordId)
-  const relinkRecordIds = rootPageId
-    ? await relinkRestoredSubtree(supabase, queryClient, { pondId, rootPageId })
-    : []
+  const relinked = rootPageId
+    ? relinkRestoredSubtree(supabase, queryClient, { pondId, rootPageId })
+    : Promise.resolve<readonly string[]>([])
+
   if (pondId && restoreRecordId) {
-    sessionUndo.remember({ pondId, recordIds: [restoreRecordId, ...relinkRecordIds] })
+    sessionUndo.rememberPending({
+      pondId,
+      recordIds: relinked.then((relinkRecordIds) => [restoreRecordId, ...relinkRecordIds]),
+    })
   }
+
+  await relinked
 }
 
 /**

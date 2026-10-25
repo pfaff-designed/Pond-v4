@@ -50,8 +50,12 @@ jest.mock('@/lib/change-log/trash', () => ({
 }))
 
 const mockRemember = jest.fn()
+const mockRememberPending = jest.fn((...args: unknown[]) => args[0])
 jest.mock('@/lib/change-log/session-undo', () => ({
-  sessionUndo: { remember: (...args: unknown[]) => mockRemember(...args) },
+  sessionUndo: {
+    remember: (...args: unknown[]) => mockRemember(...args),
+    rememberPending: (...args: unknown[]) => mockRememberPending(...args),
+  },
 }))
 
 describe('appendChildLink', () => {
@@ -1258,7 +1262,9 @@ describe('restorePageRelinked', () => {
     })
 
     expect(mockRestorePage).toHaveBeenCalledWith({}, 'delete-record-1')
-    expect(mockRemember).toHaveBeenCalledWith({ pondId: 'pond-1', recordIds: ['restore-record-1'] })
+    expect(mockRememberPending).toHaveBeenCalledWith(expect.objectContaining({ pondId: 'pond-1' }))
+    const step = mockRememberPending.mock.calls[0][0] as { recordIds: Promise<readonly string[]> }
+    await expect(step.recordIds).resolves.toEqual(['restore-record-1'])
   })
 
   it('skips remembering when pondId is null', async () => {
@@ -1270,7 +1276,7 @@ describe('restorePageRelinked', () => {
       rootPageId: null,
     })
 
-    expect(mockRemember).not.toHaveBeenCalled()
+    expect(mockRememberPending).not.toHaveBeenCalled()
   })
 
   it('skips remembering when restorePage resolves to null (an invalid id in production)', async () => {
@@ -1282,7 +1288,7 @@ describe('restorePageRelinked', () => {
       rootPageId: null,
     })
 
-    expect(mockRemember).not.toHaveBeenCalled()
+    expect(mockRememberPending).not.toHaveBeenCalled()
   })
 
   it('folds the restore record and every relink record into ONE session-undo step (KAN-497)', async () => {
@@ -1321,10 +1327,12 @@ describe('restorePageRelinked', () => {
     // the relink's blocks-undo removes the parent's link, then the SQL
     // restore-undo re-trashes — and redo (⇧⌘Z) replays forward: restore
     // again, then the link back.
-    expect(mockRemember).toHaveBeenCalledTimes(1)
-    expect(mockRemember).toHaveBeenCalledWith({
-      pondId: 'pond-1',
-      recordIds: ['restore-record-1', 'relink-record-1'],
-    })
+    expect(mockRememberPending).toHaveBeenCalledTimes(1)
+    const step = mockRememberPending.mock.calls[0][0] as {
+      pondId: string
+      recordIds: Promise<readonly string[]>
+    }
+    expect(step.pondId).toBe('pond-1')
+    await expect(step.recordIds).resolves.toEqual(['restore-record-1', 'relink-record-1'])
   })
 })
