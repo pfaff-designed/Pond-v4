@@ -61,7 +61,7 @@ import { CHART_EMPTY_LINE } from '@/lib/modules/chart/card'
 import { addTodoItem } from '@/lib/modules/todo/view'
 import { addTableRow } from '@/lib/modules/table/view'
 import { addEntryFocused } from '@/lib/modules/entries/view'
-import { PondBlock, POND_BLOCK_SELECTED_RING } from '@/components/organisms/PondBlock'
+import { PondBlock, POND_BLOCK_SELECTED_RING_ROUNDED } from '@/components/organisms/PondBlock'
 import {
   SlashMenu,
   type SlashRow,
@@ -353,18 +353,20 @@ function selectBlockAt(blocks: Block[], index: number) {
 }
 
 /**
- * ↑/↓ leaving a text block's own editor at its first/last visual line
- * (KAN-367): lands in the neighbour's own editable field, at column `x` — a
- * text neighbour's editor (nearest the caret's column), a checklist's last
- * (↑) / first (↓) item, or (any other card, which has no field of its own)
- * its row, selected. Only wired where a neighbour exists; block 0's own
- * ArrowUp goes to the page title instead (`renderBlockEditor`), never here.
+ * ↑/↓ leaving a block's edge (KAN-367): a text editor's first/last visual line, or
+ * (now) a checklist's first/last item. Lands in the neighbour's own editable field,
+ * at column `x` — a text neighbour's editor (nearest the caret's column), a
+ * checklist's last (↑) / first (↓) item, or (any other card, which has no field of
+ * its own) its row, selected via `selectBlockAt`. Only wired where a neighbour
+ * exists; block 0's own ArrowUp goes to the page title instead (`renderBlockEditor`),
+ * never here.
  */
-function leaveTextBlockEdge(blocks: Block[], index: number, dir: 'up' | 'down', x: number) {
-  const neighbour = blocks[dir === 'up' ? index - 1 : index + 1]
+function leaveBlockEdge(blocks: Block[], index: number, dir: 'up' | 'down', x: number) {
+  const neighbourIndex = dir === 'up' ? index - 1 : index + 1
+  const neighbour = blocks[neighbourIndex]
   if (!neighbour) return
-  const element = document.getElementById(blockDomId(neighbour.id))
   if (neighbour.type === 'text') {
+    const element = document.getElementById(blockDomId(neighbour.id))
     focusTextBlockAt(element, x, dir === 'up' ? 'bottom' : 'top')
     return
   }
@@ -373,7 +375,7 @@ function leaveTextBlockEdge(blocks: Block[], index: number, dir: 'up' | 'down', 
     focusTodoItem(neighbour.id, dir === 'up' ? 'end' : 'start', item.id)
     return
   }
-  if (element instanceof HTMLElement) element.focus()
+  selectBlockAt(blocks, neighbourIndex)
 }
 
 /**
@@ -2413,10 +2415,10 @@ export function BlockCanvas({
         onDeleteBlock={() => requestDelete(i)}
         onReturn={(patch, content, where) => insertLineAfter(i, patch, content, where)}
         onLeaveUp={
-          i === 0 ? () => focusPageTitle('end') : (x) => leaveTextBlockEdge(blocks, i, 'up', x)
+          i === 0 ? () => focusPageTitle('end') : (x) => leaveBlockEdge(blocks, i, 'up', x)
         }
         onLeaveDown={
-          i === blocks.length - 1 ? undefined : (x) => leaveTextBlockEdge(blocks, i, 'down', x)
+          i === blocks.length - 1 ? undefined : (x) => leaveBlockEdge(blocks, i, 'down', x)
         }
         onSelectPrev={i === 0 ? () => focusPageTitle('end') : () => selectBlockAt(blocks, i - 1)}
         onSelectNext={i === blocks.length - 1 ? undefined : () => selectBlockAt(blocks, i + 1)}
@@ -3222,11 +3224,13 @@ function BlockEditor({
    *  (default) is today's "after this block"; `'above'` is Enter at the start
    *  of a non-empty block. */
   onReturn: (patch?: Block, content?: string, where?: 'above' | 'below') => void
-  /** ↑ on this block's first visual line, text blocks only (KAN-367): lands in the
-   *  previous block's own field at the caret's column, or (block 0) the page title. */
+  /** ↑ at this block's own edge — a text editor's first visual line, or a checklist's
+   *  first item (KAN-367): lands in the previous block's own field at the caret's
+   *  column, or (block 0) the page title. */
   onLeaveUp?: (x: number) => void
-  /** ↓ on this block's last visual line, text blocks only (KAN-367): lands in the
-   *  next block's own field at the caret's column. Undefined on the LAST block. */
+  /** ↓ at this block's own edge — a text editor's last visual line, or a checklist's
+   *  last item (KAN-367): lands in the next block's own field at the caret's column.
+   *  Undefined on the LAST block. */
   onLeaveDown?: (x: number) => void
   /** ↑ on this block's row while SELECTED (KAN-367): selects the previous block's row, or
    *  (block 0) the page title. Always set — unlike `onLeaveUp`, every row can be selected. */
@@ -3842,7 +3846,7 @@ function BlockEditor({
       className={cn(
         untouched && UNTOUCHED_HINT_CLASS,
         hoverGhost && HOVER_GHOST_CLASS,
-        state === 'selected' && cn(POND_BLOCK_SELECTED_RING, 'rounded-[20px]')
+        state === 'selected' && POND_BLOCK_SELECTED_RING_ROUNDED
       )}
       data-hover-ghost={hoverGhost || undefined}
       style={{ paddingBlock: TEXT_BLOCK_TOP_INSET_PX, paddingInline: TEXT_BLOCK_INSET_PX }}
@@ -3875,10 +3879,7 @@ function BlockEditor({
         // A calendar sits in a card, so selecting it draws the card's ring.
         // A board draws its own lanes and has no card, so the same ring goes
         // on the row itself — otherwise a click selects it and nothing shows.
-        state === 'selected' &&
-          !frame &&
-          block.type !== 'text' &&
-          cn(POND_BLOCK_SELECTED_RING, 'rounded-[20px]'),
+        state === 'selected' && !frame && block.type !== 'text' && POND_BLOCK_SELECTED_RING_ROUNDED,
         settleOnMount && 'motion-settle-in',
         // `origin` (old place) from `PondBlock.dc.html` is opacity .4 ONLY — the
         // tilt and stepped-up shadow belong to the separate `lifted` copy, built

@@ -107,6 +107,8 @@ const textBlockIn = (blockId: string) =>
   within(blockRoot(blockId)).findByRole('textbox', { name: 'text block' })
 
 beforeEach(() => jest.clearAllMocks())
+// So a failing assertion mid-test can't leak `posAtCoords`'s spy into the next test.
+afterEach(() => jest.restoreAllMocks())
 
 describe('PATH_STEPS — Esc selects, ↑/↓ walk the blocks, Return re-enters (KAN-367)', () => {
   it('↑ walks omega → checklist → alpha; Esc selects alpha with the ring; ↓ walks back to omega; Return re-enters it', async () => {
@@ -114,9 +116,7 @@ describe('PATH_STEPS — Esc selects, ↑/↓ walk the blocks, Return re-enters 
     // jsdom has no layout: `posAtCoords` (the checklist → alpha landing) needs
     // a real one, same caveat `view.test.tsx:~404` stubs around for the press
     // landing, and `block-return.test.tsx`'s own text↔text ↑/↓ tests stub it.
-    const posAtCoords = jest
-      .spyOn(EditorView.prototype, 'posAtCoords')
-      .mockReturnValue({ pos: 3, inside: -1 })
+    jest.spyOn(EditorView.prototype, 'posAtCoords').mockReturnValue({ pos: 3, inside: -1 })
     renderCanvas([alpha, checklist, omega])
 
     // The caret is in omega, its only line.
@@ -171,6 +171,5 @@ describe('PATH_STEPS — Esc selects, ↑/↓ walk the blocks, Return re-enters 
     await waitFor(() => expect(omegaField).toHaveFocus())
     const { state } = textEditorOf(omegaField)
     expect(state.selection.from).toBe(state.doc.content.size - 1)
-    posAtCoords.mockRestore()
   })
 })

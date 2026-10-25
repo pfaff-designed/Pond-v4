@@ -179,6 +179,8 @@ beforeEach(() => {
   mockSaveBlocks.mockResolvedValue(undefined)
   mockAppendOwnEdit.mockResolvedValue({ id: 'record-1' })
 })
+// So a failing assertion mid-test can't leak `posAtCoords`'s spy into the next test.
+afterEach(() => jest.restoreAllMocks())
 
 describe('Return after a block opens a line for `/`', () => {
   it('Return after the table, then `/`', async () => {
@@ -468,7 +470,7 @@ describe('↑/↓ out of an editor land in the neighbouring block (KAN-367)', ()
   it('↑ from text into text above lands the caret in it', async () => {
     // jsdom has no layout: `posAtCoords` (the landing) needs a real one, same
     // caveat `view.test.tsx:~404` stubs around for the press landing.
-    const posAtCoords = jest.spyOn(EditorView.prototype, 'posAtCoords').mockReturnValue({
+    jest.spyOn(EditorView.prototype, 'posAtCoords').mockReturnValue({
       pos: 3,
       inside: -1,
     })
@@ -486,11 +488,10 @@ describe('↑/↓ out of an editor land in the neighbouring block (KAN-367)', ()
     const upper = await textBlockIn('b-alpha')
     await waitFor(() => expect(upper).toHaveFocus())
     expect(textEditorOf(upper).state.selection.from).toBe(3)
-    posAtCoords.mockRestore()
   })
 
   it('↓ from text into text below', async () => {
-    const posAtCoords = jest.spyOn(EditorView.prototype, 'posAtCoords').mockReturnValue({
+    jest.spyOn(EditorView.prototype, 'posAtCoords').mockReturnValue({
       pos: 1,
       inside: -1,
     })
@@ -506,7 +507,6 @@ describe('↑/↓ out of an editor land in the neighbouring block (KAN-367)', ()
 
     const lower = await textBlockIn('b-omega')
     await waitFor(() => expect(lower).toHaveFocus())
-    posAtCoords.mockRestore()
   })
 
   it('↑ into an image card selects it, instead of landing in a field', async () => {
@@ -589,6 +589,18 @@ describe('↑/↓ on a selected row move the selection across blocks (KAN-367)',
     await user.keyboard('{ArrowUp}')
 
     await waitFor(() => expect(blockRoot('b-image')).toHaveFocus())
+  })
+
+  it('↑ on a selected FIRST block focuses the page title', async () => {
+    const user = userEvent.setup()
+    renderCanvas([image, note])
+    blockRoot('b-image').focus()
+    await waitFor(() => expect(blockRoot('b-image')).toHaveFocus())
+
+    await user.keyboard('{ArrowUp}')
+
+    const title = screen.getByLabelText('title') as HTMLTextAreaElement
+    await waitFor(() => expect(title).toHaveFocus())
   })
 })
 

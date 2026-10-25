@@ -136,6 +136,9 @@ export const BLOCK_LOADING_NOTE = 'loading…'
  *   disabled  `opacity: .4` is the only pixel change; the consumer also sets `inert`.
  */
 export const POND_BLOCK_SELECTED_RING = 'ring-2 ring-mn-text'
+/** The selected ring on a card-less surface (bare prose, a lane-drawing board): there is
+ *  no card edge for the ring to follow, so it carries its own `rounded-[20px]` (KAN-367). */
+export const POND_BLOCK_SELECTED_RING_ROUNDED = cn(POND_BLOCK_SELECTED_RING, 'rounded-[20px]')
 export const POND_BLOCK_DISABLED = 'opacity-40'
 
 /**
