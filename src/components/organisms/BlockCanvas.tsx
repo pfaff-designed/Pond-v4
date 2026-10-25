@@ -3884,17 +3884,26 @@ function BlockEditor({
   // inside the row already existed, before the browser's own right-click
   // word-select (its `pointerdown` default action, which runs after this
   // bubbling listener) can create one. `handleContextMenu` reads this
-  // recorded fact instead of the live selection.
+  // recorded fact instead of the live selection. macOS ctrl+click is a
+  // button-0 pointerdown followed by a `contextmenu`, same as a real
+  // right-press, so it needs the same recorded selection.
+  //
+  // `keyboardMenuOpenRef` clears on ANY pointerdown on the row, not just a
+  // right-press: ⇧F10 opens the menu from the keyboard without a trailing
+  // `contextmenu` on macOS, so a later left-click elsewhere on the row (which
+  // only fires a plain pointerdown) must still drop the stale flag before a
+  // ctrl+click's own `contextmenu` arrives.
   function handleRowPointerDown(e: React.PointerEvent) {
-    if (e.button !== 2) return
     if (!e.currentTarget.contains(e.target as Node)) return
-    const sel = window.getSelection()
-    rightPressSelectionRef.current = !!(
-      sel &&
-      !sel.isCollapsed &&
-      sel.rangeCount > 0 &&
-      rootRef.current?.contains(sel.anchorNode)
-    )
+    if (e.button === 2 || (e.button === 0 && e.ctrlKey)) {
+      const sel = window.getSelection()
+      rightPressSelectionRef.current = !!(
+        sel &&
+        !sel.isCollapsed &&
+        sel.rangeCount > 0 &&
+        rootRef.current?.contains(sel.anchorNode)
+      )
+    }
     keyboardMenuOpenRef.current = false
   }
 

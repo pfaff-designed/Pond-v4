@@ -491,6 +491,46 @@ describe('⇧F10 / the ContextMenu key opens the menu on a selected row (KAN-485
     // otherwise move the computed transform even with jsdom's zero-sized rects.
     expect(positioner.style.transform).toBe(rowAnchoredTransform)
   })
+
+  it('a ctrl+click after ⇧F10 + Esc opens the block menu (macOS fires no trailing contextmenu for ⇧F10)', async () => {
+    const user = userEvent.setup()
+    renderCanvas([heading, shopping])
+    const row = document.getElementById('block-b-shop')!
+    act(() => {
+      row.focus()
+    })
+    fireEvent.keyDown(row, { key: 'F10', shiftKey: true })
+    await screen.findByRole('menu', { name: /block menu/i })
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+
+    // macOS ctrl+click: a button-0 pointerdown with `ctrlKey`, then `contextmenu`.
+    fireEvent.pointerDown(row, { button: 0, ctrlKey: true })
+    fireEvent.contextMenu(row, { ctrlKey: true, clientX: 10, clientY: 10 })
+    expect(await screen.findByRole('menu', { name: /block menu/i })).toBeInTheDocument()
+  })
+
+  it('a stale selection recorded by an earlier right-press does not keep the native menu on a later ctrl+click', async () => {
+    renderCanvas([line])
+    const field = screen.getByRole('textbox', { name: 'text block' })
+    selectText(field)
+    fireEvent.pointerDown(field, { button: 2 })
+    fireEvent.contextMenu(field, { clientX: 10, clientY: 10 })
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+
+    window.getSelection()?.removeAllRanges()
+    fireEvent.pointerDown(field, { button: 0, ctrlKey: true })
+    let event: Event | undefined
+    const capture = (e: Event) => {
+      event = e
+    }
+    field.addEventListener('contextmenu', capture)
+    fireEvent.contextMenu(field, { ctrlKey: true, clientX: 10, clientY: 10 })
+    field.removeEventListener('contextmenu', capture)
+
+    expect(event?.defaultPrevented).toBe(true)
+    expect(await screen.findByRole('menu', { name: /block menu/i })).toBeInTheDocument()
+  })
 })
 
 describe('phone: tapping a block reveals the handle and opens the same menu (frame 6)', () => {
