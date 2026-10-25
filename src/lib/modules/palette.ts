@@ -86,6 +86,21 @@ const VIEW_ROWS = [
  */
 export const HEADING_PREFIX = '## '
 
+/**
+ * What `/numbered list`, `/quote`, `/code` and `/divider` type for you — each the
+ * markdown that opens its node EMPTY with the caret inside it. `divider` is the
+ * rule alone: CommonMark has no empty-paragraph syntax, so a trailing paragraph
+ * for the caret to land in after the rule is a live-doc concern, not a markdown
+ * one (KAN-462's caret-placement item). One owner, read by `mintPreset` and
+ * proved by `palette-markup.test.ts`.
+ */
+export const TEXT_MARKUP: Record<'numbered-list' | 'quote' | 'code' | 'divider', string> = {
+  'numbered-list': '1. ',
+  quote: '> ',
+  code: '```\n\n```',
+  divider: '---',
+}
+
 /** A type's other faces — the same block at another marker or mode. */
 const VARIANT_ROWS: Partial<Record<DescriptorType, readonly SlashRow[]>> = {
   // `heading` is the `text` block opened on a markdown heading, not a block kind:
