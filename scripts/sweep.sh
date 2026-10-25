@@ -1,36 +1,84 @@
 #!/usr/bin/env bash
 # Post-merge sweep. Run after a PR lands: closes the loop so nothing accumulates.
+# Never checks out a branch in the main checkout — a dirty non-main checkout must survive untouched.
 set -euo pipefail
+
+DRY_RUN=0
+for arg in "$@"; do
+  case "$arg" in
+    --dry-run) DRY_RUN=1 ;;
+  esac
+done
+
 cd "$(git rev-parse --show-toplevel)"
-git checkout main -q && git pull -q --ff-only 2>/dev/null || true
+
+if git fetch -q origin main; then
+  :
+else
+  echo "— fetch failed, continuing offline —"
+fi
 
 echo "— worktrees —"
-git worktree prune -v
+if [ "$DRY_RUN" = "1" ]; then
+  git worktree prune --dry-run -v
+else
+  git worktree prune -v
+fi
 git worktree list
 
-echo "— branches fully merged into main —"
+# Branches checked out anywhere (main checkout or any worktree) are never touched.
+checked_out_branches="$(git worktree list --porcelain | awk '/^branch /{sub("refs/heads/", "", $2); print $2}')"
+
+echo "— branches compared against origin/main —"
 gone=0
-for b in $(git branch --format='%(refname:short)' | grep -v '^main$' || true); do
-  if [ "$(git rev-list --count main.."$b")" = "0" ]; then
-    git branch -d "$b" && gone=$((gone+1))
-  else
-    pr=$(gh pr list --state merged --head "$b" --json number --jq '.[0].number' 2>/dev/null || true)
-    if [ -n "$pr" ]; then
+for b in $(git branch --format='%(refname:short)'); do
+  if grep -qxF "$b" <<<"$checked_out_branches"; then
+    echo "  KEPT (checked out): $b"
+    continue
+  fi
+
+  ahead="$(git rev-list --count origin/main.."$b" 2>/dev/null || echo "")"
+  if [ "$ahead" = "0" ]; then
+    if [ "$DRY_RUN" = "1" ]; then
+      echo "  would delete (merged into origin/main): $b"
+    else
+      git branch -d "$b" && gone=$((gone+1))
+    fi
+    continue
+  fi
+
+  pr=$(gh pr list --state merged --head "$b" --json number --jq '.[0].number' 2>/dev/null || true)
+  if [ -n "$pr" ]; then
+    if [ "$DRY_RUN" = "1" ]; then
+      echo "  would delete (squash-merged as PR #$pr): $b"
+    else
       echo "  $b -> squash-merged as PR #$pr"
       git branch -D "$b" && gone=$((gone+1))
-    else
-      echo "  KEPT (unmerged, no PR): $b"
     fi
+  else
+    echo "  KEPT (unmerged, no PR): $b"
   fi
 done
-echo "deleted $gone branch(es)"
-
-echo "— dirty state check —"
-if [ -n "$(git status --porcelain)" ]; then
-  echo "  WARNING: working tree dirty — land it or discard it before ending the session"
-  git status --short
+if [ "$DRY_RUN" = "1" ]; then
+  echo "would delete $gone branch(es)"
 else
-  echo "  clean"
+  echo "deleted $gone branch(es)"
+fi
+
+echo "— main checkout —"
+main_worktree="$(git worktree list --porcelain | awk '/^worktree /{print $2; exit}')"
+main_dirty="$(git -C "$main_worktree" status --porcelain)"
+main_head="$(git -C "$main_worktree" rev-parse --abbrev-ref HEAD)"
+main_behind="$(git -C "$main_worktree" rev-list --count HEAD..origin/main 2>/dev/null || echo "")"
+
+if [ -z "$main_dirty" ] && [ "$main_head" = "main" ] && [ -n "$main_behind" ] && [ "$main_behind" != "0" ]; then
+  if [ "$DRY_RUN" = "1" ]; then
+    echo "  would fast-forward main checkout to origin/main"
+  else
+    git -C "$main_worktree" merge --ff-only origin/main
+  fi
+else
+  echo "  left alone (dirty, not on main, or already up to date)"
 fi
 
 echo "— queue (Jira) —"
