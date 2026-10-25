@@ -74,7 +74,8 @@ import { prefetchPageIfAbsent } from '@/lib/pages/use-page-prefetch'
 import { readRecentPageIds, writeRecent } from '@/lib/pages/recent-pages'
 import { usePaletteRecords } from '@/lib/pages/use-palette-records'
 import { createPage } from '@/lib/pages/client'
-import { insertPageOptimistic, duplicateAndOpen } from '@/lib/pages/tree'
+import { insertPageOptimistic } from '@/lib/pages/tree'
+import { duplicateAndOpen } from '@/lib/pages/duplicate'
 import { pagesKey } from '@/lib/pages/keys'
 import { appendChildLinkUnder } from '@/lib/pages/child-links'
 import { usePagesRows } from '@/lib/pages/use-pages'
@@ -451,6 +452,7 @@ export function ShellCommands() {
       router,
       pondId,
       currentNodeId,
+      page?.parent_id ?? null,
       { type: page?.type ?? 'page', title: page?.title ?? '' },
       requestComposerNotice
     )

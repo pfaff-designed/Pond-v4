@@ -171,6 +171,21 @@ export interface MoveSnapshot {
 }
 
 /**
+ * A `duplicate_page` record's `after` (KAN-468, migration 0032): the copy's
+ * root id, and — when the (unchanged) parent gained a page-link for it —
+ * that block's id and the row it landed on. `before` is always null, so
+ * there is nothing to snapshot on that side. An undo/redo record's own
+ * `after` carries this same shape (`change_log_step` copies it through
+ * unchanged), so `readDuplicatePageSnapshot` (next to `readMoveSnapshot`)
+ * reads either one the same way.
+ */
+export interface DuplicatePageSnapshot {
+  pageId: string
+  appendedLinkId?: string
+  linkParentId?: string
+}
+
+/**
  * Who acted. Single-user ponds today, so in practice `you` or `pond`; the column
  * is free text so a sharer's identity fits without a migration.
  */

@@ -23,7 +23,7 @@ import {
   summarizeSchemaEdit,
   summarizeTrash,
 } from './summary'
-import type { ChangeLogRecord, MoveSnapshot } from './types'
+import type { ChangeLogRecord, DuplicatePageSnapshot, MoveSnapshot } from './types'
 
 /** `09:31` for a raw ISO timestamp — split out from {@link clockTime} so a
  *  surface naming a moment that isn't a record's own `createdAt` (a
@@ -119,6 +119,22 @@ export const readMoveSnapshot = (value: unknown): MoveSnapshot | null => {
     siblingOrder,
     ...(parsedRemovedLinks !== undefined ? { removedLinks: parsedRemovedLinks } : {}),
     ...(typeof appendedLinkId === 'string' ? { appendedLinkId } : {}),
+  }
+}
+
+/** A `duplicate_page` record's `after` (KAN-468), typed — or `null` for a
+ *  malformed value or a different action's own. Read the same checked way
+ *  `readMoveSnapshot` reads a move's, so `afterDuplicate` and
+ *  `applyUndoOutcome` share one reader for the link the RPC appended,
+ *  instead of each casting `record.after` on its own. */
+export const readDuplicatePageSnapshot = (value: unknown): DuplicatePageSnapshot | null => {
+  if (typeof value !== 'object' || value === null) return null
+  const { pageId, appendedLinkId, linkParentId } = value as Record<string, unknown>
+  if (typeof pageId !== 'string') return null
+  return {
+    pageId,
+    ...(typeof appendedLinkId === 'string' ? { appendedLinkId } : {}),
+    ...(typeof linkParentId === 'string' ? { linkParentId } : {}),
   }
 }
 

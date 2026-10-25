@@ -15,7 +15,7 @@ import type { BlockedReason, RefusedReason, StaleReason } from './undo'
 import type { SessionUndoOutcome } from './session-undo'
 import { changeLogKey } from './keys'
 import { removeByRecordId } from './accept-marks'
-import { readMoveSnapshot } from './page-changes'
+import { readDuplicatePageSnapshot, readMoveSnapshot } from './page-changes'
 
 /** One line for a stale/blocked/refused ⌘Z or ⇧⌘Z, in the direction it was pressed. */
 export function noticeForReason(
@@ -103,6 +103,14 @@ export function applyUndoOutcome(
         }
         const linkParentId = resolveLinkParentId(snapshot.parentId, homeId)
         if (linkParentId) void queryClient.invalidateQueries({ queryKey: ['page', linkParentId] })
+      }
+      // A `duplicate_page` undo/redo record's own `after` carries the SAME
+      // link info the original record did (`change_log_step` copies it
+      // through unchanged) — already an absolute page id, unlike a move's
+      // `parentId`, so no `resolveLinkParentId` is needed here.
+      const duplicate = readDuplicatePageSnapshot(record.after)
+      if (duplicate?.linkParentId) {
+        void queryClient.invalidateQueries({ queryKey: ['page', duplicate.linkParentId] })
       }
     }
     // `result.records` are the NEW undo/redo records the RPC just logged, never

@@ -95,7 +95,7 @@ const openPaletteAndSelectDuplicate = async (user: ReturnType<typeof userEvent.s
 }
 
 it('⌘K "duplicate page" calls the client wrapper and navigates to the copy', async () => {
-  ;(duplicatePage as jest.Mock).mockResolvedValue({ targetPageId: 'recipes-2' })
+  ;(duplicatePage as jest.Mock).mockResolvedValue({ targetPageId: 'recipes-2', title: 'Recipes' })
   const user = userEvent.setup()
   renderShell()
 

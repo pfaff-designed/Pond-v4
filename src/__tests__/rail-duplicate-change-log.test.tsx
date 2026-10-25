@@ -129,3 +129,13 @@ it('never remembers an undo step when duplicatePage fails', async () => {
   await waitFor(() => expect(duplicatePage).toHaveBeenCalledTimes(1))
   expect(mockRemember).not.toHaveBeenCalled()
 })
+
+it('a repeat ⌘D is prevented (AUDIT K1 — no browser bookmark dialog) but not dispatched', () => {
+  mount()
+
+  const row = screen.getByRole('treeitem', { name: /Health/ })
+  const notPrevented = fireEvent.keyDown(row, { key: 'd', metaKey: true, repeat: true })
+
+  expect(notPrevented).toBe(false)
+  expect(duplicatePage).not.toHaveBeenCalled()
+})

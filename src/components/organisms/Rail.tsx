@@ -60,9 +60,9 @@ import {
   applyRenameOptimistic,
   applyGlyphOptimistic,
   applyAreaRoleOptimistic,
-  duplicateAndOpen,
   type PageRow,
 } from '@/lib/pages/tree'
+import { duplicateAndOpen } from '@/lib/pages/duplicate'
 import { setPageGlyph, setAreaRole } from '@/lib/pages/mark-client'
 import { appendOwnEdit } from '@/lib/change-log/store'
 import { changeLogKey } from '@/lib/change-log/keys'
@@ -1187,14 +1187,21 @@ export function RailView({
 
   // ── Keyboard machine (pure rules; commands dispatched to the callbacks) ────
   function handleKeyDown(id: string, e: KeyboardEvent<HTMLDivElement>) {
+    // AUDIT K1: ⌘D/Ctrl+D is the browser's own bookmark chord. Every press of
+    // it on a focused row — a repeat from holding it down, or one aimed at a
+    // row `treeKeyCommand`/`allowsCommand` refuses to dispatch — must still be
+    // prevented here, or the bookmark dialog opens underneath the row that
+    // silently ate the keystroke.
+    const isDuplicateChord = (e.key === 'd' || e.key === 'D') && (e.metaKey || e.ctrlKey)
     const cmd = treeKeyCommand(e.key, id, flat, {
       expanded,
       lifeExpanded,
       metaOrCtrl: e.metaKey || e.ctrlKey,
       repeat: e.repeat,
     })
+    if (isDuplicateChord) e.preventDefault()
     if (!cmd || !allowsCommand(capabilitiesOf(id), cmd.kind)) return
-    e.preventDefault()
+    if (!isDuplicateChord) e.preventDefault()
     switch (cmd.kind) {
       case 'focus':
         setFocusedId(cmd.id)
@@ -2333,6 +2340,7 @@ export function Rail() {
         router,
         pondId,
         id,
+        node.parentId,
         { type: node.type, title: node.title },
         notify
       )

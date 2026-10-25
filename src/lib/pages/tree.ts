@@ -17,9 +17,8 @@ import { ROW_TYPE } from '@/lib/properties/schema'
 import type { AreaRole } from '@/lib/rail/glyph-library'
 import { changeLogKey } from '@/lib/change-log/keys'
 import { sessionUndo } from '@/lib/change-log/session-undo'
+import { readDuplicatePageSnapshot } from '@/lib/change-log/page-changes'
 import type { ChangeLogRecord } from '@/lib/change-log/types'
-import { duplicatePage } from './client'
-import { openWorkspaceUrl, workspaceUrl, type WorkspaceNavRouter } from './nav'
 
 export interface PageRow {
   id: string
@@ -152,9 +151,13 @@ export function insertPageOptimistic(
 /**
  * KAN-468: the one place both duplicate entry points (⌘K and ⌘D) land after
  * `duplicatePage` resolves — invalidates the pages tree so the copy shows in
- * the rail, remembers the step for ⌘Z, and invalidates the change log. Kept
- * here rather than in `client.ts` since it only touches the query cache/undo
- * stack, never the RPC.
+ * the rail, remembers the step for ⌘Z, invalidates the change log, and (KAN-468
+ * follow-up) invalidates the link parent's own `['page', id]` key when the RPC
+ * appended a page-link block to it, so that page's open draft redraws with the
+ * new link instead of missing it until an unrelated refetch. Kept here rather
+ * than in `client.ts` since it only touches the query cache/undo stack, never
+ * the RPC; kept here rather than in `duplicate.ts` since `duplicateAndOpen`
+ * (the RPC-calling flow) is the one caller, not the one doing cache work.
  */
 export function afterDuplicate(
   queryClient: QueryClient,
@@ -164,53 +167,8 @@ export function afterDuplicate(
   void queryClient.invalidateQueries({ queryKey: pagesKey(pondId) })
   if (pondId) sessionUndo.remember({ pondId, recordIds: [record.id] })
   void queryClient.invalidateQueries({ queryKey: changeLogKey() })
-}
-
-/** AUDIT G9: one duplicate in flight at a time per pond — a second call for
- *  the same pond (a held ⌘D that slips past the `repeat` guard on some
- *  platform, or a fast double ↵ on ⌘K's "duplicate page" row) is dropped
- *  rather than racing a second `duplicatePage` against the same siblings. */
-const duplicatesInFlight = new Set<string>()
-
-/**
- * KAN-468 / AUDIT G9: the one flow both ⌘K's "duplicate page" and ⌘D on a
- * focused rail row run — get the user, call `duplicatePage`, run
- * `afterDuplicate`, then open the copy under ITS OWN title (falling back to
- * the source's only if the caller's `duplicatePage` mock doesn't carry one).
- * A failure is logged, then reported through the caller's own notice
- * mechanism (Rail's toast vs. the composer's), with one shared message.
- */
-export async function duplicateAndOpen(
-  queryClient: QueryClient,
-  router: WorkspaceNavRouter,
-  pondId: string | null,
-  id: string,
-  fallback: { type: string; title: string },
-  notify: (message: string) => void
-): Promise<void> {
-  const lockKey = pondId ?? ''
-  if (duplicatesInFlight.has(lockKey)) return
-  duplicatesInFlight.add(lockKey)
-  try {
-    const supabase = createClient()
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-    if (!user) return
-    const record = await duplicatePage(supabase, user.id, id)
-    const copyId = record.targetPageId
-    if (!copyId) return
-    afterDuplicate(queryClient, record, pondId)
-    openWorkspaceUrl(
-      workspaceUrl({ id: copyId, type: fallback.type, title: record.title ?? fallback.title }),
-      router
-    )
-  } catch (err) {
-    console.error(err)
-    notify("can't duplicate the page — try again.")
-  } finally {
-    duplicatesInFlight.delete(lockKey)
-  }
+  const linkParentId = readDuplicatePageSnapshot(record.after)?.linkParentId
+  if (linkParentId) void queryClient.invalidateQueries({ queryKey: ['page', linkParentId] })
 }
 
 /**
