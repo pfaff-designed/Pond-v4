@@ -6,17 +6,37 @@
  */
 
 import type { Block } from './content'
+import { TEXT_MARKUP, type TextMarkupId } from './text/markup'
 import { blockLabel } from './types'
 
 const written = (value: string | undefined) => (value ?? '').trim() !== ''
 
 /**
- * A text block still waiting for the person: blank, or only the bare `#` run
- * a heading row mints before anything is typed after it (KAN-558, commit
- * 21dd357d). Either one is empty — nothing a delete or an exit would throw away.
+ * A line-prefix marker from `TEXT_MARKUP` (markup.ts, the one home for these
+ * strings), generalised to strip any run of its syntax so a retyped or
+ * renumbered line (any heading level, not just the `##` `/heading` mints) is
+ * still caught. `code` and `divider` aren't here: a fence wraps its content
+ * rather than prefixing it (handled separately below), and `---` *is*
+ * the divider's whole content — it has no "written" state to detect.
  */
-const textIsVacant = (value: string | undefined) =>
-  (value ?? '').replace(/^#{1,6}\s*/, '').trim() === ''
+const MARKER_PATTERNS: Partial<Record<TextMarkupId, RegExp>> = {
+  heading: /^#{1,6}\s*/,
+  quote: /^>\s*/,
+  'numbered-list': /^\d+\.\s*/,
+}
+
+/**
+ * A text block still waiting for the person: blank, or only the bare
+ * scaffolding a markup row (`TEXT_MARKUP`) mints before anything is typed
+ * after it — a heading, quote or numbered-list marker (KAN-558, commit
+ * 21dd357d started this with the heading case) or an empty code fence.
+ * Either is empty — nothing a delete or an exit would throw away.
+ */
+const textIsVacant = (value: string | undefined) => {
+  const content = value ?? ''
+  if (content === TEXT_MARKUP.code) return true
+  return Object.values(MARKER_PATTERNS).some((marker) => content.replace(marker, '').trim() === '')
+}
 
 export function blockHoldsContent(block: Block): boolean {
   switch (block.type) {

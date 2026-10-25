@@ -17,6 +17,51 @@ describe('removedOnExit (KAN-558)', () => {
     expect(removedOnExit(block)).toBe(true)
   })
 
+  it('whitespace-only text is removed', () => {
+    const block: Block = { id: 't', type: 'text', content: '   ' }
+    expect(removedOnExit(block)).toBe(true)
+  })
+
+  it('a bare `#` with nothing after it is removed', () => {
+    const block: Block = { id: 't', type: 'text', content: '#' }
+    expect(removedOnExit(block)).toBe(true)
+  })
+
+  it('a heading with a word stuck to the `#` stays', () => {
+    const block: Block = { id: 't', type: 'text', content: '#tag' }
+    expect(removedOnExit(block)).toBe(false)
+  })
+
+  it('a labelled heading stays', () => {
+    const block: Block = { id: 't', type: 'text', content: '## labelled text' }
+    expect(removedOnExit(block)).toBe(false)
+  })
+
+  it('an empty quote marker is removed', () => {
+    const block: Block = { id: 't', type: 'text', content: '> ' }
+    expect(removedOnExit(block)).toBe(true)
+  })
+
+  it('a quote with words stays', () => {
+    const block: Block = { id: 't', type: 'text', content: '> quoted words' }
+    expect(removedOnExit(block)).toBe(false)
+  })
+
+  it('an empty numbered-list marker is removed', () => {
+    const block: Block = { id: 't', type: 'text', content: '1. ' }
+    expect(removedOnExit(block)).toBe(true)
+  })
+
+  it('an empty code fence is removed', () => {
+    const block: Block = { id: 't', type: 'text', content: '```\n\n```' }
+    expect(removedOnExit(block)).toBe(true)
+  })
+
+  it('an empty highlight stays — it is not a text block, by decision', () => {
+    const block: Block = { id: 'h', type: 'highlight', content: '' }
+    expect(removedOnExit(block)).toBe(false)
+  })
+
   it('a text block the person labelled stays, even empty', () => {
     const block: Block = { id: 't', type: 'text', content: '', label: 'goal' }
     expect(removedOnExit(block)).toBe(false)

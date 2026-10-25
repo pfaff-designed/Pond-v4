@@ -32,6 +32,11 @@ describe('blockHoldsContent', () => {
     expect(blockHoldsContent({ id: 'p', type: 'page-link', pageId: 'child' })).toBe(true)
   })
 
+  it('a bare heading or quote marker holds nothing, so ⌘⌫ skips the confirm', () => {
+    expect(blockHoldsContent(text('## '))).toBe(false)
+    expect(blockHoldsContent(text('> '))).toBe(false)
+  })
+
   it('a blank log, an empty table and a toc do not', () => {
     expect(
       blockHoldsContent({
