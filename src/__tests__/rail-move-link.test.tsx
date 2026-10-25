@@ -1,12 +1,15 @@
 /**
- * KAN-466/KAN-477: dragging a row to a new parent (drag-to-reparent) writes
- * no page-link block of its own — the new parent's child links are derived
- * at read time, so the move stays the session-undo stack's only new step.
+ * KAN-466/KAN-467: dragging a row to a new parent (drag-to-reparent) writes
+ * no link block of Rail's own — the edit now rides inside `movePage`'s own
+ * RPC, so the move stays the session-undo stack's only new step.
  */
 import { screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { appendChildLinkUnder } from '@/lib/pages/child-links'
 import { movePage } from '@/lib/pages/client'
+import { flushPendingPageSave } from '@/lib/pages/page-flush'
+import { undoStep } from '@/lib/change-log/undo'
 import { changeLogKey } from '@/lib/change-log/keys'
+import { homeQueryKey } from '@/lib/pages/keys'
 import { mountRail } from './helpers/rail-sweep-fixture'
 import type { PageRow } from '@/lib/pages/tree'
 import type { ChangeLogRecord } from '@/lib/change-log/types'
@@ -32,6 +35,17 @@ jest.mock('@/lib/pages/client', () => ({
   updateTitle: jest.fn().mockResolvedValue(undefined),
 }))
 
+jest.mock('@/lib/pages/page-flush', () => ({ flushPendingPageSave: jest.fn() }))
+
+// The toast's own undo (`sessionUndo.undoHandle`) shares Rail's real
+// `sessionUndo` stack — only the RPC boundary underneath it is mocked, same
+// pattern `rail-move-undo-path.test.tsx` uses.
+jest.mock('@/lib/change-log/undo', () => ({
+  ...jest.requireActual('@/lib/change-log/undo'),
+  undoStep: jest.fn(),
+  redoStep: jest.fn(),
+}))
+
 jest.mock('@/lib/pages/mark-client', () => ({
   setPageGlyph: jest.fn().mockResolvedValue(undefined),
   setAreaRole: jest.fn().mockResolvedValue(undefined),
@@ -47,6 +61,10 @@ jest.mock('@/lib/change-log/store', () => ({
 
 jest.mock('@/lib/pages/child-links', () => ({
   appendChildLinkUnder: jest.fn().mockResolvedValue(undefined),
+}))
+
+jest.mock('@/lib/pages/home', () => ({
+  getOrCreateHomePage: jest.fn().mockResolvedValue({ id: 'home-1', title: 'life', blocks: [] }),
 }))
 
 const AT = '2026-01-01T00:00:00Z'
@@ -76,7 +94,7 @@ function dropEvent(clientY: number) {
   return event
 }
 
-it('dropping a row into a new parent writes no link block of its own', async () => {
+it("dropping a row into a new parent doesn't call Rail's own link-append", async () => {
   mountRail(ROOT_ROWS)
 
   const dragged = screen.getByRole('treeitem', { name: 'Page A' })
@@ -164,4 +182,110 @@ it('invalidates the change log after a successful move', async () => {
   await waitFor(() =>
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: changeLogKey() })
   )
+})
+
+it("invalidates the old and new link-parents' own page caches, resolving a top-level parent to home", async () => {
+  const client = mountRail(ROOT_ROWS)
+  // Wait for the mocked home row to land in the cache before dragging, so
+  // `handleMove`'s closure reads the resolved `home.id`, not an in-flight one.
+  await waitFor(() =>
+    expect(client.getQueryData(homeQueryKey('pond-1'))).toEqual({
+      id: 'home-1',
+      title: 'life',
+      blocks: [],
+    })
+  )
+  const invalidateSpy = jest.spyOn(client, 'invalidateQueries')
+
+  // Page A's parent_id is null in ROOT_ROWS — the dragged row's old
+  // link-parent resolves to the mocked home row.
+  const dragged = screen.getByRole('treeitem', { name: 'Page A' })
+  const target = screen.getByRole('treeitem', { name: 'Page B' })
+
+  fireEvent(dragged, dragStartEvent())
+  fireEvent(target, dropEvent(0))
+
+  await waitFor(() =>
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['page', 'home-1'] })
+  )
+  expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['page', 'page-b'] })
+})
+
+it("flushes the old and new link-parents' own pending saves before calling movePage", async () => {
+  const client = mountRail(ROOT_ROWS)
+  // Page A's parent_id is null — its old link-parent resolves to home, so
+  // wait for the mocked home row before dragging, same as the test above.
+  await waitFor(() =>
+    expect(client.getQueryData(homeQueryKey('pond-1'))).toEqual({
+      id: 'home-1',
+      title: 'life',
+      blocks: [],
+    })
+  )
+
+  const order: string[] = []
+  jest.mocked(flushPendingPageSave).mockImplementation((id) => {
+    order.push(`flush:${id}`)
+    return undefined
+  })
+  jest.mocked(movePage).mockImplementationOnce(async () => {
+    order.push('movePage')
+    return {
+      id: 'record-1',
+      after: { parentId: 'page-b', parentTitle: 'Page B', siblingOrder: [] },
+    } as ChangeLogRecord
+  })
+
+  const dragged = screen.getByRole('treeitem', { name: 'Page A' })
+  const target = screen.getByRole('treeitem', { name: 'Page B' })
+
+  fireEvent(dragged, dragStartEvent())
+  fireEvent(target, dropEvent(0))
+
+  await waitFor(() => expect(order).toContain('movePage'))
+  expect(order.indexOf('flush:home-1')).toBeGreaterThanOrEqual(0)
+  expect(order.indexOf('flush:home-1')).toBeLessThan(order.indexOf('movePage'))
+  expect(order.indexOf('flush:page-b')).toBeGreaterThanOrEqual(0)
+  expect(order.indexOf('flush:page-b')).toBeLessThan(order.indexOf('movePage'))
+})
+
+it("the toast's undo flushes the old and new link-parents' own pending saves before undoHandle runs", async () => {
+  const client = mountRail(ROOT_ROWS)
+  // Page A's parent_id is null — its old link-parent resolves to home, so
+  // wait for the mocked home row before dragging, same as the tests above.
+  await waitFor(() =>
+    expect(client.getQueryData(homeQueryKey('pond-1'))).toEqual({
+      id: 'home-1',
+      title: 'life',
+      blocks: [],
+    })
+  )
+
+  const dragged = screen.getByRole('treeitem', { name: 'Page A' })
+  const target = screen.getByRole('treeitem', { name: 'Page B' })
+
+  fireEvent(dragged, dragStartEvent())
+  fireEvent(target, dropEvent(0))
+
+  const undoButton = await screen.findByRole('button', { name: 'undo' })
+
+  // Only the UNDO press's own ordering is under test here, not the forward
+  // move's own flush (already covered above) — tracked from a clean slate.
+  const order: string[] = []
+  jest.mocked(flushPendingPageSave).mockImplementation((id) => {
+    order.push(`flush:${id}`)
+    return undefined
+  })
+  jest.mocked(undoStep).mockImplementation(async () => {
+    order.push('undoStep')
+    return { outcome: 'done', records: [] }
+  })
+
+  fireEvent.click(undoButton)
+
+  await waitFor(() => expect(order).toContain('undoStep'))
+  expect(order.indexOf('flush:home-1')).toBeGreaterThanOrEqual(0)
+  expect(order.indexOf('flush:home-1')).toBeLessThan(order.indexOf('undoStep'))
+  expect(order.indexOf('flush:page-b')).toBeGreaterThanOrEqual(0)
+  expect(order.indexOf('flush:page-b')).toBeLessThan(order.indexOf('undoStep'))
 })

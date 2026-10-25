@@ -2,7 +2,7 @@
  * The "changes to this page" view model — src/lib/change-log/page-changes.ts.
  */
 
-import { describeChange, platformShortcutLabel } from '@/lib/change-log/page-changes'
+import { describeChange, platformShortcutLabel, readMoveSnapshot } from '@/lib/change-log/page-changes'
 import type { ChangeLogRecord } from '@/lib/change-log/types'
 
 const BEFORE = [{ id: 'a', type: 'text', content: 'one' }]
@@ -129,6 +129,63 @@ describe('describeChange', () => {
     expect(
       describeChange(record({ action: 'move', before: null, after: untitledParent }), null)
     ).toBe('moved to Untitled')
+  })
+})
+
+describe('readMoveSnapshot', () => {
+  it('parses an old-shape record with no link fields', () => {
+    const snapshot = { parentId: 'page-b', parentTitle: 'Page B', siblingOrder: ['page-1'] }
+    expect(readMoveSnapshot(snapshot)).toEqual(snapshot)
+  })
+
+  it('parses a new-shape record carrying its link fields (KAN-467)', () => {
+    const removedLinkBlock = { id: 'link-1', type: 'page-link', pageId: 'page-1' }
+    const before = {
+      parentId: 'page-a',
+      parentTitle: 'Page A',
+      siblingOrder: [],
+      removedLinks: [{ block: removedLinkBlock, index: 2 }],
+    }
+    const after = {
+      parentId: 'page-b',
+      parentTitle: 'Page B',
+      siblingOrder: ['page-1'],
+      appendedLinkId: 'link-2',
+    }
+    expect(readMoveSnapshot(before)).toEqual(before)
+    expect(readMoveSnapshot(after)).toEqual(after)
+  })
+
+  it('parses every entry of a multi-link removedLinks array', () => {
+    const before = {
+      parentId: 'page-a',
+      parentTitle: 'Page A',
+      siblingOrder: [],
+      removedLinks: [
+        { block: { id: 'link-1', type: 'page-link', pageId: 'page-1' }, index: 1 },
+        { block: { id: 'link-2', type: 'page-link', pageId: 'page-1' }, index: 3 },
+      ],
+    }
+    expect(readMoveSnapshot(before)).toEqual(before)
+  })
+
+  it('drops a malformed removedLinks entry rather than failing the whole snapshot', () => {
+    const snapshot = {
+      parentId: 'page-a',
+      parentTitle: 'Page A',
+      siblingOrder: [],
+      removedLinks: [{ block: { id: 'link-1', type: 'not-a-real-block' }, index: 2 }],
+    }
+    expect(readMoveSnapshot(snapshot)).toEqual({
+      parentId: 'page-a',
+      parentTitle: 'Page A',
+      siblingOrder: [],
+    })
+  })
+
+  it('still rejects a malformed record outright', () => {
+    expect(readMoveSnapshot(null)).toBeNull()
+    expect(readMoveSnapshot({ parentId: 'page-b' })).toBeNull()
   })
 })
 

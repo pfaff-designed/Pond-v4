@@ -16,6 +16,8 @@
  * Pure types + constants — no Supabase, no React, server- and client-safe.
  */
 
+import type { Block } from '@/lib/modules/content'
+
 /**
  * THE EIGHT. The design names exactly these, and the DB CHECK in migration 0011
  * mirrors the list — a ninth status is a migration, not a typo.
@@ -142,11 +144,24 @@ export interface TrashSnapshot {
  * parent that is itself untitled — a reader must fall back for both, never render
  * either bare. `siblingOrder` is the full dense order of the group named by
  * `parentId`, the moved page included.
+ *
+ * `removedLinks` and `appendedLinkId` (KAN-467) are the link-row edit that
+ * rides inside the same record: `before.removedLinks` is every one of the
+ * moved page's own `page-link` blocks as they sat on the OLD parent, each
+ * with the index it sat at, so undo can put them all back exactly where they
+ * were (restored in ascending index order); `after.appendedLinkId` is the id
+ * of the `page-link` block appended to the NEW parent, so undo knows which
+ * block to remove. Both are absent on a pre-KAN-467 record (nothing to undo)
+ * and either can be absent on its own side when that side had nothing to
+ * edit (no stored link to remove on the old parent, or the new parent
+ * already carried a link and `apply_page_move` wrote no duplicate).
  */
 export interface MoveSnapshot {
   parentId: string | null
   parentTitle: string | null
   siblingOrder: string[]
+  removedLinks?: { block: Block; index: number }[]
+  appendedLinkId?: string
 }
 
 /**

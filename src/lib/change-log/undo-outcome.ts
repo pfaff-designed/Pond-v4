@@ -8,12 +8,14 @@
 
 import type { QueryClient } from '@tanstack/react-query'
 import { requestComposerNotice } from '@/lib/terminal-focus'
-import { pagesKey } from '@/lib/pages/keys'
+import { homeQueryKey, pagesKey, resolveLinkParentId } from '@/lib/pages/keys'
+import type { HomePage } from '@/lib/pages/home'
 import { rowsKey } from '@/lib/modules/view/rows-key'
 import type { BlockedReason, RefusedReason, StaleReason } from './undo'
 import type { SessionUndoOutcome } from './session-undo'
 import { changeLogKey } from './keys'
 import { removeByRecordId } from './accept-marks'
+import { readMoveSnapshot } from './page-changes'
 
 /** One line for a stale/blocked/refused ⌘Z or ⇧⌘Z, in the direction it was pressed. */
 export function noticeForReason(
@@ -79,6 +81,29 @@ export function applyUndoOutcome(
     for (const id of pageIds) {
       void queryClient.invalidateQueries({ queryKey: ['page', id] })
       void queryClient.invalidateQueries({ queryKey: rowsKey(id) })
+    }
+    // A settled `move`'s before/after double as its link edit's before/after
+    // (KAN-467, migration 0031 part C): undo/redo rewrites the OLD and NEW
+    // link parents' `blocks`, not just the moved page's own `['page', C]`
+    // key the loop above already covers — an open draft of either parent
+    // must rebase onto that write too, the same way Rail.tsx's own move
+    // already invalidates both sides. `readMoveSnapshot` returns null for
+    // any other action's before/after, so this stays a no-op outside a move
+    // — `homeId` is read from the cache lazily, only once a move snapshot
+    // actually turns up, so a caller's minimal `invalidateQueries`-only fake
+    // queryClient (no `getQueryData`) still works for every other action.
+    let homeId: string | undefined
+    let homeIdRead = false
+    for (const record of result.records) {
+      for (const snapshot of [readMoveSnapshot(record.before), readMoveSnapshot(record.after)]) {
+        if (snapshot === null) continue
+        if (!homeIdRead) {
+          homeId = queryClient.getQueryData<HomePage>(homeQueryKey(result.step.pondId))?.id
+          homeIdRead = true
+        }
+        const linkParentId = resolveLinkParentId(snapshot.parentId, homeId)
+        if (linkParentId) void queryClient.invalidateQueries({ queryKey: ['page', linkParentId] })
+      }
     }
     // `result.records` are the NEW undo/redo records the RPC just logged, never
     // the original accept's record id `recordAccept` stored a mark under

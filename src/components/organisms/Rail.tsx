@@ -70,8 +70,9 @@ import { applyUndoOutcome } from '@/lib/change-log/undo-outcome'
 import { TrashRefusedError } from '@/lib/change-log/errors'
 import { readMoveSnapshot, moveParentLabel } from '@/lib/change-log/page-changes'
 import { jsonEqual } from '@/lib/json-equal'
-import { homeQueryKey, pagesKey } from '@/lib/pages/keys'
+import { homeQueryKey, pagesKey, resolveLinkParentId } from '@/lib/pages/keys'
 import { appendChildLinkUnder, trashPageUnlinked } from '@/lib/pages/child-links'
+import { flushPendingPageSave } from '@/lib/pages/page-flush'
 import { usePondId, usePond } from '@/lib/pond/context'
 import { useHomePage } from '@/lib/pages/use-home-page'
 import { pushRecentGlyphToPond } from '@/lib/pond/client'
@@ -2524,6 +2525,11 @@ export function Rail() {
     const draggedRow = pages.find((r) => r.id === draggedId)
     const title = draggedRow?.title || 'Untitled'
 
+    // Resolved before the move so both sides can be flushed ahead of the RPC
+    // (below) and reused for the invalidate after it — one resolve, no drift.
+    const oldLinkParentId = draggedRow ? resolveLinkParentId(draggedRow.parent_id, home?.id) : undefined
+    const newLinkParentId = resolveLinkParentId(move.newParentId, home?.id)
+
     const snapshot = applyMoveOptimistic(
       queryClient,
       {
@@ -2540,10 +2546,12 @@ export function Rail() {
       else setExpanded((prev) => new Set(prev).add(targetId))
     }
 
-    // KAN-477: a reparent writes no link block of its own — the new parent's
-    // child links are derived at read time, so the move stays one undo step.
-
     try {
+      // The move's own RPC reads and rewrites both link-parents' `blocks` —
+      // flush either side's own debounced save first, or a save already in
+      // flight lands after the RPC and overwrites its edit with stale blocks
+      // (the same race `child-links.ts`'s own write seams guard against).
+      await Promise.all([flushPendingPageSave(oldLinkParentId), flushPendingPageSave(newLinkParentId)])
       const record = await withUser((sb) =>
         movePage(sb, {
           id: draggedId,
@@ -2558,12 +2566,21 @@ export function Rail() {
           recordIds: Promise.resolve([record.id]),
         })
         queryClient.invalidateQueries({ queryKey: changeLogKey() })
+        // The move's own RPC edits the old and new link-parents' `blocks` —
+        // rebase an open draft of either onto that write instead of waiting
+        // for a reload.
+        if (oldLinkParentId) queryClient.invalidateQueries({ queryKey: ['page', oldLinkParentId] })
+        if (newLinkParentId) queryClient.invalidateQueries({ queryKey: ['page', newLinkParentId] })
         stageUndo({
           message: `moved ${title} to ${moveParentLabel(after.parentTitle, home?.title ?? pondName)} ·`,
           undoLabel: 'undo',
           undo: () =>
-            sessionUndo
-              .undoHandle(pondId, handle)
+            // The undo RPC rewrites both link-parents' `blocks` just like the
+            // forward move did — flush either side's own debounced save
+            // first (mirrors the guard above), or a save still pending from
+            // typing on P/Q lands after undo and overwrites the restored link.
+            Promise.all([flushPendingPageSave(oldLinkParentId), flushPendingPageSave(newLinkParentId)])
+              .then(() => sessionUndo.undoHandle(pondId, handle))
               .then((outcome) => applyUndoOutcome('undo', outcome, queryClient)),
           action: () => navigateTo(draggedRow),
           actionLabel: 'open',
