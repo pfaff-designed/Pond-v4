@@ -202,9 +202,7 @@ export function planBesideDrop<
     if (!plannedRowIds.has(b.id)) return b
     const widthPatch = nextWidth.has(b.id) ? { width: nextWidth.get(b.id) } : {}
     if (b.id === rowStartId) return { ...b, ...widthPatch, rowStart: true }
-    const withoutRowStart: T = { ...b, ...widthPatch }
-    delete (withoutRowStart as { rowStart?: boolean }).rowStart
-    return withoutRowStart
+    return withoutRowStart({ ...b, ...widthPatch })
   })
 
   const keptTogether = layoutRows(next).some(
@@ -275,6 +273,10 @@ export function detachKeepingRows<
  * lines the person already sees stay lines. A row that actually holds inserts
  * before or after the whole row and keeps the widths already there.
  * `columnWidthPx` 0 never counts as stacked (the column isn't measured yet).
+ *
+ * `options.widenLoneMate` (default `true`, today's drag behaviour) widens a
+ * single row-mate left behind to `full`. `planStepMove` (KAN-376) passes
+ * `false`: an ⌥↓ step out of a row leaves the mate at its own width.
  */
 export function planOwnLineDrop<
   T extends { id: string; width?: BlockWidth | number; rowStart?: boolean },
@@ -283,8 +285,10 @@ export function planOwnLineDrop<
   fromIndex: number,
   targetId: string,
   zone: 'above' | 'below',
-  columnWidthPx: number
+  columnWidthPx: number,
+  options?: { widenLoneMate?: boolean }
 ): T[] | null {
+  const widenLoneMate = options?.widenLoneMate ?? true
   const draggedId = blocks[fromIndex].id
   const originalRow = layoutRows(blocks).find((row) => row.some((block) => block.id === draggedId))
   const dragged = { ...blocks[fromIndex], width: 'full' as BlockWidth, rowStart: true as const }
@@ -298,7 +302,7 @@ export function planOwnLineDrop<
       : undefined
   const matesLeft = mateRow?.filter((block) => mateIds.has(block.id)) ?? []
   const withoutDragged =
-    matesLeft.length === 1 && mateRow?.length === 1
+    widenLoneMate && matesLeft.length === 1 && mateRow?.length === 1
       ? detached.map((block) =>
           block.id === matesLeft[0].id ? { ...block, width: 'full' as BlockWidth } : block
         )
@@ -331,6 +335,141 @@ export function planOwnLineDrop<
   const spliced = [...withoutDragged]
   spliced.splice(insertAt, 0, dragged)
   return spliced
+}
+
+/**
+ * Plans an ⌥↑/⌥↓ step (KAN-376), over STORED rows (`layoutRows`) only —
+ * never over how a row happens to be drawn. Whether a row renders side by
+ * side or stacked (`rowStacks`, narrow column) is a canvas concern this
+ * planner never sees, so it takes no `columnWidthPx`.
+ *
+ * A block sharing a stored row of 2+ members (drawn stacked or not) leaves
+ * it onto its own full-width line directly above/below —
+ * `planOwnLineDrop` with `widenLoneMate: false` so the mate left behind
+ * keeps its width, and a `columnWidthPx` of 0 (always "holds") so
+ * `planOwnLineDrop`'s own drawn-stacked branch — meant for dropping a
+ * dragged block into a *different* stacked row — never fires here. When a
+ * stored row precedes this one, its own first member (`ownRow[0]`) is
+ * forced `rowStart: true` on `blocks` before that call (applied before, not
+ * patched onto the result after, since `planOwnLineDrop` packs the mate
+ * against whatever follows it by width sum before the drop is even
+ * planned): whichever of the mover or the mate ends up occupying that
+ * position — via `detachKeepingRows`'s handoff if the mover is `ownRow[0]`,
+ * or directly if it is not — can then never re-pack into the stored row
+ * above.
+ *
+ * Otherwise the block is alone in its stored row, and the step jumps the
+ * WHOLE adjacent stored row: removed via `detachKeepingRows`, reinserted
+ * just before the neighbour row's first block (up) or just after its last
+ * (down), keeping its own width. The moved block always gets
+ * `rowStart: true`, and so does whichever block now follows it, so
+ * `layoutRows` can't re-pack either into the other's row.
+ *
+ * Either path can also open a seam AFTER the moved block's old row: the
+ * mate (or row) left behind keeps its stored width, so it may have room,
+ * and the block that follows it in `blocks` may have relied on THAT width
+ * being full to start a line of its own. In the solo path that follower
+ * keeps `rowStart: true` — never written `false` — only if it already
+ * started its own row before the move; a follower that shared a row with
+ * others is untouched. In the 2+ row path the follower is always the first
+ * member of the next stored row (rows partition `blocks` contiguously), so
+ * it is guarded unconditionally rather than checked.
+ *
+ * `null` when there is no row in that direction (the first/last block, or
+ * already alone at the page's edge).
+ */
+export function planStepMove<
+  T extends { id: string; width?: BlockWidth | number; rowStart?: boolean },
+>(blocks: readonly T[], index: number, dir: 'up' | 'down'): T[] | null {
+  const block = blocks[index]
+  const rows = layoutRows(blocks)
+  const ownRowIndex = rows.findIndex((row) => row.some((b) => b.id === block.id))
+  const ownRow = rows[ownRowIndex]
+
+  if (ownRow.length > 1) {
+    const mateId = ownRow.find((b) => b.id !== block.id)!.id
+
+    const lastMemberId = ownRow[ownRow.length - 1].id
+    const lastMemberIndex = blocks.findIndex((b) => b.id === lastMemberId)
+    const rowFollower = blocks[lastMemberIndex + 1]
+    const guardIds = new Set<string>()
+    if (rowFollower !== undefined) guardIds.add(rowFollower.id)
+    if (ownRowIndex > 0) guardIds.add(ownRow[0].id)
+    const guardedBlocks = blocks.map((b) => (guardIds.has(b.id) ? withRowStartValue(b, true) : b))
+
+    return planOwnLineDrop(guardedBlocks, index, mateId, dir === 'up' ? 'above' : 'below', 0, {
+      widenLoneMate: false,
+    })
+  }
+
+  const neighbourRow = rows[ownRowIndex + (dir === 'up' ? -1 : 1)]
+  if (!neighbourRow) return null
+
+  const follower = blocks[index + 1]
+  const followerStartsOwnRow = follower !== undefined && rows.some((row) => row[0].id === follower.id)
+  const followerId = follower?.id
+
+  const { blocks: detached } = detachKeepingRows(blocks, index)
+  const guarded = followerStartsOwnRow
+    ? detached.map((b) => (b.id === followerId ? withRowStartValue(b, true) : b))
+    : detached
+  const moved = { ...block, rowStart: true as const }
+  const anchorId = dir === 'up' ? neighbourRow[0].id : neighbourRow[neighbourRow.length - 1].id
+  const anchorAt = guarded.findIndex((b) => b.id === anchorId)
+  const insertAt = dir === 'up' ? anchorAt : anchorAt + 1
+
+  const spliced = [...guarded]
+  spliced.splice(insertAt, 0, moved)
+
+  const followingAt = insertAt + 1
+  if (followingAt >= spliced.length) return spliced
+  spliced[followingAt] = { ...spliced[followingAt], rowStart: true }
+  return spliced
+}
+
+/**
+ * Plans an ⌥←/⌥→ step (KAN-376): swaps `blocks[index]` with its adjacent
+ * row-mate. `rowStart` stays with the array slot, not the block, so a swap
+ * can never hand a row's `rowStart` to the wrong block. When a stored row
+ * precedes this one, the slot at the row's own first position is forced
+ * `rowStart: true` regardless of which block the swap leaves there — that
+ * slot used to start the row by width overflow alone, and a narrower block
+ * swapped into it would otherwise have room to re-pack into the row above.
+ * `null` when there is no row-mate on that side (the row holds one block, or
+ * the block is already at that edge of its row).
+ */
+export function planRowSwap<
+  T extends { id: string; width?: BlockWidth | number; rowStart?: boolean },
+>(blocks: readonly T[], index: number, dir: 'left' | 'right'): T[] | null {
+  const rows = layoutRows(blocks)
+  const ownRowIndex = rows.findIndex((r) => r.some((b) => b.id === blocks[index].id))
+  const row = rows[ownRowIndex]
+  const posInRow = row.findIndex((b) => b.id === blocks[index].id)
+  const neighbourPosInRow = posInRow + (dir === 'left' ? -1 : 1)
+  if (neighbourPosInRow < 0 || neighbourPosInRow >= row.length) return null
+
+  const targetIndex = index + (dir === 'left' ? -1 : 1)
+  const atIndex = blocks[index]
+  const atTarget = blocks[targetIndex]
+  const next = [...blocks]
+  next[index] = withRowStartValue(atTarget, atIndex.rowStart)
+  next[targetIndex] = withRowStartValue(atIndex, atTarget.rowStart)
+
+  if (ownRowIndex > 0) {
+    const rowStartIndex = blocks.findIndex((b) => b.id === row[0].id)
+    next[rowStartIndex] = withRowStartValue(next[rowStartIndex], true)
+  }
+
+  return next
+}
+
+/** Sets or omits `rowStart` on `block` to exactly `rowStart` — `planRowSwap`'s
+ *  "the slot keeps its own rowStart" swap. */
+function withRowStartValue<T extends { rowStart?: boolean }>(
+  block: T,
+  rowStart: boolean | undefined
+): T {
+  return rowStart === true ? { ...block, rowStart: true } : withoutRowStart(block)
 }
 
 /** Omits `rowStart` from a block — the field's own "absent means today's packing"
