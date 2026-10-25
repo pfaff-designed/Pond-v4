@@ -13,6 +13,7 @@ import { moduleRenderers } from '@/lib/modules/renderers'
 import { moduleDataSchema, createPageBlockSchema } from '@/lib/modules/ai-composition'
 import { blockFrame } from '@/lib/modules/block-frame'
 import { blockHoldsContent } from '@/lib/modules/block-holds-content'
+import { emptyBlockForType, mintPreset } from '@/lib/modules/palette'
 import type { Block } from '@/lib/modules/content'
 
 const toc: TocBlock = { id: 'c1', type: 'toc' }
@@ -70,5 +71,12 @@ describe('toc schema + registry facets', () => {
 
   it('holds no content of its own, so deleting it never asks first', () => {
     expect(blockHoldsContent(toc)).toBe(false)
+  })
+
+  it('mints a bare id/type block from the `/` row (item 3)', () => {
+    const block = emptyBlockForType('toc')
+    expect(block).toMatchObject({ type: 'toc' })
+    expect(typeof (block as TocBlock).id).toBe('string')
+    expect(mintPreset('table-of-contents')).toMatchObject({ type: 'toc' })
   })
 })

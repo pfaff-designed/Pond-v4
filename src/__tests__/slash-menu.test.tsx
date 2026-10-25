@@ -64,6 +64,9 @@ const ALLOWED = new Set([
   'code',
   'divider',
   'numbered list',
+  // KAN-482: Notion's own row (Mobbin b8778e0e) — the board draws no row for
+  // this type either.
+  'table of contents',
 ])
 
 function renderMenu(overrides: Partial<React.ComponentProps<typeof SlashMenu>> = {}) {
@@ -267,6 +270,7 @@ describe('a row is a preset, and every registered type reaches the menu', () => 
       'blocks/chart',
       'blocks/big number',
       'blocks/entry log',
+      'blocks/table of contents',
       'templates/page from template',
       'pages/page',
     ])
@@ -333,8 +337,12 @@ describe('filtered', () => {
     expect(table.querySelector('[data-part="post"]')!.textContent).toBe('ble')
     // (The board's fixture also lists `page from template` here with its hit at
     // index 13 — "pl" — which is fixture noise: that label contains no "ta".)
-    expect(options().map((o) => labelOf(o as HTMLElement))).toEqual(['table', 'entry log'])
-    expect(glass().querySelector('[data-part="foot"]')!.textContent).toBe('/ ta — 2 matches')
+    expect(options().map((o) => labelOf(o as HTMLElement))).toEqual([
+      'table',
+      'table of contents',
+      'entry log',
+    ])
+    expect(glass().querySelector('[data-part="foot"]')!.textContent).toBe('/ ta — 3 matches')
     expect(labelOf(selected())).toBe('table')
   })
 
