@@ -348,7 +348,15 @@ export function planOwnLineDrop<
  * `planOwnLineDrop` with `widenLoneMate: false` so the mate left behind
  * keeps its width, and a `columnWidthPx` of 0 (always "holds") so
  * `planOwnLineDrop`'s own drawn-stacked branch — meant for dropping a
- * dragged block into a *different* stacked row — never fires here.
+ * dragged block into a *different* stacked row — never fires here. When a
+ * stored row precedes this one, its own first member (`ownRow[0]`) is
+ * forced `rowStart: true` on `blocks` before that call (applied before, not
+ * patched onto the result after, since `planOwnLineDrop` packs the mate
+ * against whatever follows it by width sum before the drop is even
+ * planned): whichever of the mover or the mate ends up occupying that
+ * position — via `detachKeepingRows`'s handoff if the mover is `ownRow[0]`,
+ * or directly if it is not — can then never re-pack into the stored row
+ * above.
  *
  * Otherwise the block is alone in its stored row, and the step jumps the
  * WHOLE adjacent stored row: removed via `detachKeepingRows`, reinserted
@@ -357,22 +365,15 @@ export function planOwnLineDrop<
  * `rowStart: true`, and so does whichever block now follows it, so
  * `layoutRows` can't re-pack either into the other's row.
  *
- * Either path can open a SEAM further down the array: the mate (or row)
- * left behind keeps its stored width, so it may have room, and the block
- * that comes after it in `blocks` may have relied on THAT width being full
- * (or on the removed block's own row) to start a line of its own. If that
- * follower started its own row before the move (first member of its row in
- * `layoutRows(blocks)`), it keeps `rowStart: true` — never written `false`
- * — so `layoutRows` can't re-pack it into whatever now precedes it. A
- * follower that already shared a row with others (not a row of its own)
- * is untouched, so the guard never splits a row it should leave alone.
- * In the 2+ row branch the guard is applied to `blocks` BEFORE calling
- * `planOwnLineDrop`, not patched onto its result afterward: `planOwnLineDrop`
- * packs the mate against whatever follows it by plain width sum, so an
- * unguarded follower can merge INTO the mate's row before the drop is even
- * planned, and patching the result afterward only splits that already-wrong
- * merge at the wrong seam instead of keeping the mate and the follower's row
- * apart from the start.
+ * Either path can also open a seam AFTER the moved block's old row: the
+ * mate (or row) left behind keeps its stored width, so it may have room,
+ * and the block that follows it in `blocks` may have relied on THAT width
+ * being full to start a line of its own. In the solo path that follower
+ * keeps `rowStart: true` — never written `false` — only if it already
+ * started its own row before the move; a follower that shared a row with
+ * others is untouched. In the 2+ row path the follower is always the first
+ * member of the next stored row (rows partition `blocks` contiguously), so
+ * it is guarded unconditionally rather than checked.
  *
  * `null` when there is no row in that direction (the first/last block, or
  * already alone at the page's edge).
@@ -391,11 +392,10 @@ export function planStepMove<
     const lastMemberId = ownRow[ownRow.length - 1].id
     const lastMemberIndex = blocks.findIndex((b) => b.id === lastMemberId)
     const rowFollower = blocks[lastMemberIndex + 1]
-    const rowFollowerStartsOwnRow =
-      rowFollower !== undefined && rows.some((row) => row[0].id === rowFollower.id)
-    const guardedBlocks = rowFollowerStartsOwnRow
-      ? blocks.map((b) => (b.id === rowFollower.id ? withRowStartValue(b, true) : b))
-      : blocks
+    const guardIds = new Set<string>()
+    if (rowFollower !== undefined) guardIds.add(rowFollower.id)
+    if (ownRowIndex > 0) guardIds.add(ownRow[0].id)
+    const guardedBlocks = blocks.map((b) => (guardIds.has(b.id) ? withRowStartValue(b, true) : b))
 
     return planOwnLineDrop(guardedBlocks, index, mateId, dir === 'up' ? 'above' : 'below', 0, {
       widenLoneMate: false,
@@ -430,14 +430,20 @@ export function planStepMove<
 /**
  * Plans an ⌥←/⌥→ step (KAN-376): swaps `blocks[index]` with its adjacent
  * row-mate. `rowStart` stays with the array slot, not the block, so a swap
- * can never hand a row's `rowStart` to the wrong block.
+ * can never hand a row's `rowStart` to the wrong block. When a stored row
+ * precedes this one, the slot at the row's own first position is forced
+ * `rowStart: true` regardless of which block the swap leaves there — that
+ * slot used to start the row by width overflow alone, and a narrower block
+ * swapped into it would otherwise have room to re-pack into the row above.
  * `null` when there is no row-mate on that side (the row holds one block, or
  * the block is already at that edge of its row).
  */
 export function planRowSwap<
   T extends { id: string; width?: BlockWidth | number; rowStart?: boolean },
 >(blocks: readonly T[], index: number, dir: 'left' | 'right'): T[] | null {
-  const row = layoutRows(blocks).find((r) => r.some((b) => b.id === blocks[index].id))!
+  const rows = layoutRows(blocks)
+  const ownRowIndex = rows.findIndex((r) => r.some((b) => b.id === blocks[index].id))
+  const row = rows[ownRowIndex]
   const posInRow = row.findIndex((b) => b.id === blocks[index].id)
   const neighbourPosInRow = posInRow + (dir === 'left' ? -1 : 1)
   if (neighbourPosInRow < 0 || neighbourPosInRow >= row.length) return null
@@ -448,6 +454,12 @@ export function planRowSwap<
   const next = [...blocks]
   next[index] = withRowStartValue(atTarget, atIndex.rowStart)
   next[targetIndex] = withRowStartValue(atIndex, atTarget.rowStart)
+
+  if (ownRowIndex > 0) {
+    const rowStartIndex = blocks.findIndex((b) => b.id === row[0].id)
+    next[rowStartIndex] = withRowStartValue(next[rowStartIndex], true)
+  }
+
   return next
 }
 

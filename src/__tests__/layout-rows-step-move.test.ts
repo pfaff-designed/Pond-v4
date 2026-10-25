@@ -300,13 +300,9 @@ describe('planStepMove', () => {
     })
   })
 
-  // Round 3's guard ran AFTER `planOwnLineDrop`, by which point `planOwnLineDrop`
-  // had already packed the mate together with the next stored row's own members
-  // (nothing yet stopped that natural width-sum packing), so the splice point was
-  // computed against the wrong row. Forcing the follower's `rowStart` onto the
-  // ALREADY-MERGED result only split the merged row at the wrong seam — it never
-  // un-merged the mate from the row-mate it should never have joined (KAN-376
-  // regression, round 4).
+  // The follower guard must be applied to `blocks` before `planOwnLineDrop`
+  // runs, not patched onto its result afterward — that function packs the
+  // mate against whatever follows it before the drop is even planned.
   describe('the row-member seam guard must run BEFORE planOwnLineDrop, not after (KAN-376 regression, round 4)', () => {
     it('⌥↓ on the left half of a ½+½ row, followed by another ½+½ row: the right half stays alone and the row below stays one row', () => {
       const left = blk('left', '1/2')
@@ -332,6 +328,49 @@ describe('planStepMove', () => {
       const blocks = [left, right, n]
 
       const result = planStepMove(blocks, 0, 'down')!
+      expect(result).toEqual([
+        { id: 'right', width: '1/2' },
+        { id: 'left', width: 'full', rowStart: true },
+        { id: 'n', width: '1/2', rowStart: true },
+      ])
+      expect(layoutRows(result)).toEqual([[result[0]], [result[1]], [result[2]]])
+    })
+  })
+
+  // The round-4 guard closes the seam AFTER the row, but a seam can also sit
+  // BEFORE it: when the row's first stored member carries no `rowStart` (rows
+  // saved before KAN-440, or written by anything but these planners) and the
+  // line above it is partial-width, whichever block the move leaves at the
+  // row's own first position has room to re-pack backward into that line
+  // (KAN-376 regression, round 5).
+  describe('a row whose first member carries no stored rowStart must not re-pack into the line above it (KAN-376 regression, round 5)', () => {
+    it('⌥↓ on the first member of a row with no stored rowStart leaves the line above it alone', () => {
+      const a = blk('a', '1/2')
+      const b = blk('b', '2/3')
+      const c = blk('c', '1/3')
+      const blocks = [a, b, c]
+
+      const result = planStepMove(blocks, 1, 'down')!
+      expect(result).toEqual([
+        { id: 'a', width: '1/2' },
+        { id: 'c', width: '1/3', rowStart: true },
+        { id: 'b', width: 'full', rowStart: true },
+      ])
+      expect(layoutRows(result)).toEqual([[result[0]], [result[1]], [result[2]]])
+    })
+
+    it('⌥↑ on the same block leaves the line above it alone the other way', () => {
+      const a = blk('a', '1/2')
+      const b = blk('b', '2/3')
+      const c = blk('c', '1/3')
+      const blocks = [a, b, c]
+
+      const result = planStepMove(blocks, 1, 'up')!
+      expect(result).toEqual([
+        { id: 'a', width: '1/2' },
+        { id: 'b', width: 'full', rowStart: true },
+        { id: 'c', width: '1/3', rowStart: true },
+      ])
       expect(layoutRows(result)).toEqual([[result[0]], [result[1]], [result[2]]])
     })
   })
@@ -387,5 +426,20 @@ describe('planRowSwap', () => {
 
     expect(planRowSwap(blocks, 0, 'left')).toBeNull()
     expect(planRowSwap(blocks, 0, 'right')).toBeNull()
+  })
+
+  it('a swap into a row with no stored rowStart does not let the row re-pack into the line above it (KAN-376 regression, round 5)', () => {
+    const a = blk('a', '1/2')
+    const b = blk('b', '2/3')
+    const c = blk('c', '1/3')
+    const blocks = [a, b, c]
+
+    const result = planRowSwap(blocks, 1, 'right')!
+    expect(result).toEqual([
+      { id: 'a', width: '1/2' },
+      { id: 'c', width: '1/3', rowStart: true },
+      { id: 'b', width: '2/3' },
+    ])
+    expect(layoutRows(result)).toEqual([[result[0]], [result[1], result[2]]])
   })
 })
