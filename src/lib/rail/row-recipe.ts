@@ -22,6 +22,14 @@ export const ROW_SELECTED_FILL = 'bg-mn-hover-fill'
  *  its own `hovered` state; the band applies it via the `hover:` variant. */
 export const ROW_HOVER_FILL = 'bg-mn-rail-hover'
 
+/** `hover:bg-mn-rail-hover` — the band's CSS-only hover fill, as the FULL
+ *  literal Tailwind class. Tailwind only generates a `hover:` rule for a
+ *  class it sees as a complete literal string in source — composing it at
+ *  runtime (`` `hover:${ROW_HOVER_FILL}` ``) produces a string Tailwind never
+ *  scanned, so no `.hover\:bg-mn-rail-hover` rule exists in the built
+ *  stylesheet and the hover fill silently does nothing. */
+export const ROW_HOVER_FILL_ON_HOVER = 'hover:bg-mn-rail-hover'
+
 /** `text-[13px]` — the non-area-row label size (an area row stays at the
  *  board's 13.5px default, carried by `PondMolecule` itself). */
 export const ROW_LABEL_SIZE_NOT_EMPHASISED = 'text-[13px]'

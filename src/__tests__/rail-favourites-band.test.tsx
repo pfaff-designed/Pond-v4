@@ -65,7 +65,7 @@ describe('RailFavouritesBand', () => {
     expect(container).toBeEmptyDOMElement()
   })
 
-  it('a non-area favourite reads 13px/400/ink .68 at rest, 500/full ink when selected', () => {
+  it('a non-area favourite reads 13px/400/ink .68 at rest, 13px/500/full ink when selected', () => {
     const nodeById = new Map([['groceries', node('groceries', 'groceries')]])
     const { rerender } = render(
       <RailFavouritesBand ids={['groceries']} nodeById={nodeById} marks={NO_MARKS} />
@@ -84,9 +84,18 @@ describe('RailFavouritesBand', () => {
       />
     )
     const selected = document.querySelector('[data-kind="list-row"]') as HTMLElement
-    expect(selected.className).not.toContain('text-[13px]')
+    // Board: `fontSize areaRow ? 13.5 : 13` — selection changes only weight
+    // and ink, never size, so a selected non-area row stays 13px.
+    expect(selected.className).toContain('text-[13px]')
     expect(selected.className).not.toContain('text-mn-text-secondary')
     expect(selected.querySelector('[data-part="title"]')?.className).toContain('font-medium')
+  })
+
+  it('a non-selected band row carries the full literal hover-fill class (no runtime-composed Tailwind variant)', () => {
+    const nodeById = new Map([['groceries', node('groceries', 'groceries')]])
+    render(<RailFavouritesBand ids={['groceries']} nodeById={nodeById} marks={NO_MARKS} />)
+    const row = screen.getByRole('listitem')
+    expect(row.className).toContain('hover:bg-mn-rail-hover')
   })
 
   it('a meta-click leaves the row unprevented (new tab); a plain click opens in-app', () => {

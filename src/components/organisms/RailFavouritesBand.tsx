@@ -28,7 +28,7 @@ import { markGlyph, rowMark } from '@/lib/rail/row-mark'
 import {
   ROW_FOCUS_RING,
   ROW_GAP_PY_PR,
-  ROW_HOVER_FILL,
+  ROW_HOVER_FILL_ON_HOVER,
   ROW_LABEL_HOVER_INK_CSS,
   ROW_LABEL_INK_NOT_FULL,
   ROW_LABEL_SIZE_NOT_EMPHASISED,
@@ -75,7 +75,12 @@ export function RailFavouritesBand({
     >
       {rows.map((node) => {
         const isSelected = node.id === selectedId
-        const isEmphasised = isAreaRow(node) || isSelected
+        const isArea = isAreaRow(node)
+        // Size follows the AREA state alone; weight/ink follow area OR
+        // selected — the tree row's own split (Rail.tsx's `isAreaRow` size
+        // guard vs. its `isFullInk`/`emphasis` checks), so a selected
+        // non-area row stays 13px/500, never jumping to the area's 13.5px.
+        const isEmphasised = isArea || isSelected
         const mark = rowMark(node, marks)
         const accent = markAccent(mark.role)
         const label = node.title || 'Untitled'
@@ -95,7 +100,7 @@ export function RailFavouritesBand({
             aria-current={isSelected ? 'true' : undefined}
             onClick={handleClick}
             className={`group relative mx-2 flex w-[calc(100%-16px)] items-center rounded-mn-row ${ROW_GAP_PY_PR} pl-1 text-left outline-none ${ROW_FOCUS_RING} ${
-              isSelected ? ROW_SELECTED_FILL : `hover:${ROW_HOVER_FILL}`
+              isSelected ? ROW_SELECTED_FILL : ROW_HOVER_FILL_ON_HOVER
             }`}
           >
             <span className="w-[9px] flex-shrink-0" aria-hidden />
@@ -110,9 +115,9 @@ export function RailFavouritesBand({
               emphasis={isEmphasised}
               leading={markGlyph(mark, accent, isSelected)}
               className={`min-h-0 w-full min-w-0 flex-1 gap-[7px] bg-transparent p-0${
-                isEmphasised
-                  ? ''
-                  : ` ${ROW_LABEL_SIZE_NOT_EMPHASISED} ${ROW_LABEL_INK_NOT_FULL} ${ROW_LABEL_HOVER_INK_CSS}`
+                isArea ? '' : ` ${ROW_LABEL_SIZE_NOT_EMPHASISED}`
+              }${
+                isEmphasised ? '' : ` ${ROW_LABEL_INK_NOT_FULL} ${ROW_LABEL_HOVER_INK_CSS}`
               } leading-[normal]`}
             />
           </a>
