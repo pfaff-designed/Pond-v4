@@ -2559,8 +2559,12 @@ export function Rail() {
           message: `moved ${title} to ${moveParentLabel(after.parentTitle, home?.title ?? pondName)} ·`,
           undoLabel: 'undo',
           undo: () =>
-            sessionUndo
-              .undoHandle(pondId, handle)
+            // The undo RPC rewrites both link-parents' `blocks` just like the
+            // forward move did — flush either side's own debounced save
+            // first (mirrors the guard above), or a save still pending from
+            // typing on P/Q lands after undo and overwrites the restored link.
+            Promise.all([flushPendingPageSave(oldLinkParentId), flushPendingPageSave(newLinkParentId)])
+              .then(() => sessionUndo.undoHandle(pondId, handle))
               .then((outcome) => applyUndoOutcome('undo', outcome, queryClient)),
           action: () => navigateTo(draggedRow),
           actionLabel: 'open',

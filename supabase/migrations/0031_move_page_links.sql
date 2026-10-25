@@ -451,7 +451,7 @@ begin
              set blocks = (
                    select coalesce(jsonb_agg(elem order by ord), '[]'::jsonb)
                      from jsonb_array_elements(v_link_blocks) with ordinality as t(elem, ord)
-                    where (elem ->> 'id') <> all(v_link_removed_ids)
+                    where coalesce((elem ->> 'id') = any(v_link_removed_ids), false) = false
                  ),
                  updated_at = now()
            where id = v_link_parent_id;

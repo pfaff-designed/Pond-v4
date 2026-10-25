@@ -492,6 +492,58 @@ describe('0031_move_page_links — undo/redo carry the link edit with the move (
     await db.close()
   })
 
+  it("a block with no id on either parent survives both undo's and redo's own link-removal filter", async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pond = await lifePondId(db)
+
+    const parentA = await addPage(db, pond, { title: 'parent a' })
+    const parentB = await addPage(db, pond, { title: 'parent b' })
+    const child = await addPage(db, pond, { parentId: parentA, title: 'child' })
+    // Neither block below carries an `id` — hand-editable jsonb, same
+    // tolerance the rest of this migration gives a malformed shape. The
+    // null-unsafe `<> all(...)` this regression guards against would drop
+    // BOTH of these, not just skip restoring the link, the moment either
+    // parent's own link-removal filter runs over them.
+    await db.query('update public.pages set blocks = $1 where id = $2', [
+      JSON.stringify([{ type: 'text', value: 'no-id-a' }, pageLink(child), { id: 'after', type: 'text', value: 'y' }]),
+      parentA,
+    ])
+    await db.query('update public.pages set blocks = $1 where id = $2', [
+      JSON.stringify([{ type: 'text', value: 'no-id-b' }]),
+      parentB,
+    ])
+
+    await actAs(db, USER)
+    await db.query('select public.move_page($1, $2, $3)', [child, parentB, [child]])
+    await db.exec('reset role;')
+    const record = await lastMoveRecordFor(db, child)
+    const appendedLinkId = record.after.appendedLinkId
+
+    // Undo removes the forward append from parentB — the step whose filter
+    // is null-unsafe — before putting the link back on parentA.
+    await undo(db, [record.id], pond)
+    expect(await blocksOf(db, parentA)).toEqual([
+      { type: 'text', value: 'no-id-a' },
+      pageLink(child),
+      { id: 'after', type: 'text', value: 'y' },
+    ])
+    expect(await blocksOf(db, parentB)).toEqual([{ type: 'text', value: 'no-id-b' }])
+
+    // Redo removes the just-restored link from parentA — the same filter,
+    // now over parentA's own id-less block — before re-appending it to parentB.
+    await redo(db, [record.id], pond)
+    expect(await blocksOf(db, parentA)).toEqual([
+      { type: 'text', value: 'no-id-a' },
+      { id: 'after', type: 'text', value: 'y' },
+    ])
+    expect(await blocksOf(db, parentB)).toEqual([
+      { type: 'text', value: 'no-id-b' },
+      pageLink(child, appendedLinkId),
+    ])
+    await db.close()
+  })
+
   it('changes no link rows undoing or redoing a same-parent reorder', async () => {
     const db = await makeDb()
     await seedUser(db, USER)

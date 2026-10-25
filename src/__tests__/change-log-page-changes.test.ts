@@ -169,22 +169,6 @@ describe('readMoveSnapshot', () => {
     expect(readMoveSnapshot(before)).toEqual(before)
   })
 
-  it('normalizes a pre-this-fix record\'s singular removedLink into a one-entry array', () => {
-    const removedLinkBlock = { id: 'link-1', type: 'page-link', pageId: 'page-1' }
-    const legacy = {
-      parentId: 'page-a',
-      parentTitle: 'Page A',
-      siblingOrder: [],
-      removedLink: { block: removedLinkBlock, index: 2 },
-    }
-    expect(readMoveSnapshot(legacy)).toEqual({
-      parentId: 'page-a',
-      parentTitle: 'Page A',
-      siblingOrder: [],
-      removedLinks: [{ block: removedLinkBlock, index: 2 }],
-    })
-  })
-
   it('drops a malformed removedLinks entry rather than failing the whole snapshot', () => {
     const snapshot = {
       parentId: 'page-a',

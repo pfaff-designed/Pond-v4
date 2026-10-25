@@ -64,11 +64,10 @@ const areaRoleChange = (role: unknown): string => {
   return label === undefined ? 'changed the colour' : `colour → ${label}`
 }
 
-/** One `MoveSnapshot.removedLinks` entry, read back off one array element (or
- *  off the whole value, for a pre-this-fix record's singular `removedLink`
- *  object) — `undefined` for a malformed entry, never thrown. Reuses
- *  `content.ts`'s own `blockSchema` for `block` rather than re-describing a
- *  page-link block's shape a second time (AGENTS.md DRY), the same way
+/** One `MoveSnapshot.removedLinks` entry, read back off one array element —
+ *  `undefined` for a malformed entry, never thrown. Reuses `content.ts`'s
+ *  own `blockSchema` for `block` rather than re-describing a page-link
+ *  block's shape a second time (AGENTS.md DRY), the same way
  *  `child-links.ts`'s `removedLinkSchema` does. */
 const readRemovedLinkEntry = (
   value: unknown
@@ -81,24 +80,19 @@ const readRemovedLinkEntry = (
   return { block: parsed.data, index }
 }
 
-/** A `MoveSnapshot.removedLinks`, read back off `before.removedLinks` — an
- *  array of entries for a record this fix wrote, or a single object for a
- *  pre-this-fix record (normalized into a one-entry array so every caller
- *  reads one shape). `undefined` for a pre-KAN-467 record (no link fields
- *  yet), an empty/all-malformed array, or a malformed singular object,
- *  never thrown. Drops any one malformed array entry rather than failing
- *  the whole snapshot — the same per-entry tolerance `child-links.ts`'s
- *  `parseUnlinkedLinks` has for hand-editable jsonb. */
+/** A `MoveSnapshot.removedLinks`, read back off `before.removedLinks` —
+ *  `undefined` for a pre-KAN-467 record (no `removedLinks` yet) or an
+ *  empty/all-malformed array, never thrown. Drops any one malformed array
+ *  entry rather than failing the whole snapshot — the same per-entry
+ *  tolerance `child-links.ts`'s `parseUnlinkedLinks` has for hand-editable
+ *  jsonb. */
 const readRemovedLinks = (value: unknown): MoveSnapshot['removedLinks'] | undefined => {
-  if (Array.isArray(value)) {
-    const parsed = value.flatMap((entry) => {
-      const one = readRemovedLinkEntry(entry)
-      return one ? [one] : []
-    })
-    return parsed.length > 0 ? parsed : undefined
-  }
-  const single = readRemovedLinkEntry(value)
-  return single ? [single] : undefined
+  if (!Array.isArray(value)) return undefined
+  const parsed = value.flatMap((entry) => {
+    const one = readRemovedLinkEntry(entry)
+    return one ? [one] : []
+  })
+  return parsed.length > 0 ? parsed : undefined
 }
 
 /** A `move` record's `after` (or `before`), typed — or `null` for a
@@ -108,18 +102,17 @@ const readRemovedLinks = (value: unknown): MoveSnapshot['removedLinks'] | undefi
  *  cast of its own. `removedLinks`/`appendedLinkId` (KAN-467) are each
  *  optional and read independently, so an old-shape record with neither
  *  still parses, and a malformed `removedLinks` alone doesn't fail the rest
- *  of the snapshot. A pre-this-fix record's singular `removedLink` reads the
- *  same way, via `readRemovedLinks`'s own fallback. */
+ *  of the snapshot. */
 export const readMoveSnapshot = (value: unknown): MoveSnapshot | null => {
   if (typeof value !== 'object' || value === null) return null
-  const { parentId, parentTitle, siblingOrder, removedLinks, removedLink, appendedLinkId } =
+  const { parentId, parentTitle, siblingOrder, removedLinks, appendedLinkId } =
     value as Record<string, unknown>
   if (typeof parentId !== 'string' && parentId !== null) return null
   if (typeof parentTitle !== 'string' && parentTitle !== null) return null
   if (!Array.isArray(siblingOrder) || !siblingOrder.every((id) => typeof id === 'string')) {
     return null
   }
-  const parsedRemovedLinks = readRemovedLinks(removedLinks ?? removedLink)
+  const parsedRemovedLinks = readRemovedLinks(removedLinks)
   return {
     parentId,
     parentTitle,

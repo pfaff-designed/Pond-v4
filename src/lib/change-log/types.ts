@@ -155,10 +155,6 @@ export interface TrashSnapshot {
  * and either can be absent on its own side when that side had nothing to
  * edit (no stored link to remove on the old parent, or the new parent
  * already carried a link and `apply_page_move` wrote no duplicate).
- * `readMoveSnapshot` also accepts a pre-this-fix record's singular
- * `removedLink` object and normalizes it into a one-entry `removedLinks`
- * array, so an older record (written before the old parent could carry more
- * than one matching link) still reads.
  */
 export interface MoveSnapshot {
   parentId: string | null

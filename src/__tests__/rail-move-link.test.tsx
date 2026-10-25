@@ -7,6 +7,7 @@ import { screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { appendChildLinkUnder } from '@/lib/pages/child-links'
 import { movePage } from '@/lib/pages/client'
 import { flushPendingPageSave } from '@/lib/pages/page-flush'
+import { undoStep } from '@/lib/change-log/undo'
 import { changeLogKey } from '@/lib/change-log/keys'
 import { homeQueryKey } from '@/lib/pages/keys'
 import { mountRail } from './helpers/rail-sweep-fixture'
@@ -35,6 +36,15 @@ jest.mock('@/lib/pages/client', () => ({
 }))
 
 jest.mock('@/lib/pages/page-flush', () => ({ flushPendingPageSave: jest.fn() }))
+
+// The toast's own undo (`sessionUndo.undoHandle`) shares Rail's real
+// `sessionUndo` stack — only the RPC boundary underneath it is mocked, same
+// pattern `rail-move-undo-path.test.tsx` uses.
+jest.mock('@/lib/change-log/undo', () => ({
+  ...jest.requireActual('@/lib/change-log/undo'),
+  undoStep: jest.fn(),
+  redoStep: jest.fn(),
+}))
 
 jest.mock('@/lib/pages/mark-client', () => ({
   setPageGlyph: jest.fn().mockResolvedValue(undefined),
@@ -237,4 +247,45 @@ it("flushes the old and new link-parents' own pending saves before calling moveP
   expect(order.indexOf('flush:home-1')).toBeLessThan(order.indexOf('movePage'))
   expect(order.indexOf('flush:page-b')).toBeGreaterThanOrEqual(0)
   expect(order.indexOf('flush:page-b')).toBeLessThan(order.indexOf('movePage'))
+})
+
+it("the toast's undo flushes the old and new link-parents' own pending saves before undoHandle runs", async () => {
+  const client = mountRail(ROOT_ROWS)
+  // Page A's parent_id is null — its old link-parent resolves to home, so
+  // wait for the mocked home row before dragging, same as the tests above.
+  await waitFor(() =>
+    expect(client.getQueryData(homeQueryKey('pond-1'))).toEqual({
+      id: 'home-1',
+      title: 'life',
+      blocks: [],
+    })
+  )
+
+  const dragged = screen.getByRole('treeitem', { name: 'Page A' })
+  const target = screen.getByRole('treeitem', { name: 'Page B' })
+
+  fireEvent(dragged, dragStartEvent())
+  fireEvent(target, dropEvent(0))
+
+  const undoButton = await screen.findByRole('button', { name: 'undo' })
+
+  // Only the UNDO press's own ordering is under test here, not the forward
+  // move's own flush (already covered above) — tracked from a clean slate.
+  const order: string[] = []
+  jest.mocked(flushPendingPageSave).mockImplementation((id) => {
+    order.push(`flush:${id}`)
+    return undefined
+  })
+  jest.mocked(undoStep).mockImplementation(async () => {
+    order.push('undoStep')
+    return { outcome: 'done', records: [] }
+  })
+
+  fireEvent.click(undoButton)
+
+  await waitFor(() => expect(order).toContain('undoStep'))
+  expect(order.indexOf('flush:home-1')).toBeGreaterThanOrEqual(0)
+  expect(order.indexOf('flush:home-1')).toBeLessThan(order.indexOf('undoStep'))
+  expect(order.indexOf('flush:page-b')).toBeGreaterThanOrEqual(0)
+  expect(order.indexOf('flush:page-b')).toBeLessThan(order.indexOf('undoStep'))
 })
