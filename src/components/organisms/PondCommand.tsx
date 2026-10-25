@@ -388,6 +388,11 @@ export function PondCommand({
 
   const indexOf = new Map(rows.map((r, i) => [r, i]))
   const pointer = half ? '' : 'pointer-events-none'
+  // Notion's footer reads "↵ Open · ⌘↵ Open in new tab" — shown only where a page
+  // row is actually on screen to open; `enterHint` overriding `↵ open` (the move
+  // picker's `↵ move`) means ⏎ no longer opens anything, so the hint is wrong there.
+  const showNewTabHint = !enterHint && rows.some((r) => r.item.kind === 'page')
+  const newTabHint = `${formatChord('mod+enter', apple)} new tab`
   return (
     <div className={`${className} ${live ? 'z-[100]' : 'z-20'}`}>
       <div
@@ -568,12 +573,16 @@ export function PondCommand({
                 </div>
                 <div data-part="foot" style={MORPH.keys} className={FOOT}>
                   {PALETTE_FOOT.map((f) => (
-                    <span
-                      key={f}
-                      className={PALETTE_FOOT_MOBILE.includes(f) ? undefined : 'max-md:hidden'}
-                    >
-                      {f === PALETTE_FOOT_ENTER ? enterHint ?? f : f}
-                    </span>
+                    <Fragment key={f}>
+                      <span
+                        className={PALETTE_FOOT_MOBILE.includes(f) ? undefined : 'max-md:hidden'}
+                      >
+                        {f === PALETTE_FOOT_ENTER ? enterHint ?? f : f}
+                      </span>
+                      {f === PALETTE_FOOT_ENTER && showNewTabHint && (
+                        <span className="max-md:hidden">{newTabHint}</span>
+                      )}
+                    </Fragment>
                   ))}
                 </div>
               </>
