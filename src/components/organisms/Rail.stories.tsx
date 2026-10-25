@@ -147,10 +147,11 @@ export const Expanded: Story = {
     await expect(canvas.queryByText('Recipes')).not.toBeInTheDocument()
 
     // life + 4 top-level + Health's 2 + Personal's 2 = 9 visible rows, plus the
-    // foot's databases row and its own trash row (KAN-504).
+    // foot's databases row, its own trash row (KAN-504) and its own settings
+    // row (KAN-493).
     const items = canvas.getAllByRole('treeitem')
     const rows = [...canvasElement.querySelectorAll<HTMLElement>('[data-kind="list-row"]')]
-    await expect(items).toHaveLength(11)
+    await expect(items).toHaveLength(12)
     await expect(rows).toHaveLength(items.length)
     for (const [i, row] of rows.entries()) {
       await expect(row.closest('[role="treeitem"]')).toBe(items[i])

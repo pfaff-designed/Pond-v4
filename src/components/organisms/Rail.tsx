@@ -498,10 +498,17 @@ const RailRow = forwardRef<HTMLElement, RailRowProps>(function RailRow(
    *  an area row carry 13.5 type, everything deeper 13. Read off the node, not the
    *  depth, because the databases tree is flattened from its own root. */
   const isAreaRow = isRoot || isArea
+  // `newRow` (`PondRail.dc.html`): settings' own static recipe — no
+  // hover/selected state at all, unlike every other row's. The wrapping
+  // `role="tree"` div (Rail.tsx) carries the 12.5px/ink-68/padding-6-8 values
+  // themselves (padding and border-radius don't inherit, so they must live on
+  // the element the test — and a sighted reader — actually measures); this
+  // row stays unpadded and defers entirely to it.
+  const isSettingsRow = id === SETTINGS_NODE_ID
   // Ink tiers on the label: root, area rows, the selected row and the hovered row
   // are full ink; every other page row is the .68 tier. The databases root has no
-  // colour of its own in the board, so it is full at rest.
-  const isFullInk = isSelected || hovered || isAreaRow || isDbRoot
+  // colour of its own in the board, so it is full at rest. `newRow` never lifts.
+  const isFullInk = !isSettingsRow && (isSelected || hovered || isAreaRow || isDbRoot)
   // `PondRail.dc.html`: the selected row draws ＋ alone, a hovered one ＋ and ×.
   // KAN-471: an empty pond's root row also draws it at rest (Notion/Linear).
   const showPlus = isSelected || hovered || plusVisibleAtRest
@@ -612,15 +619,15 @@ const RailRow = forwardRef<HTMLElement, RailRowProps>(function RailRow(
         // already clicks it; it must not also bubble into an "open" command.
         if (e.target === e.currentTarget) onKeyDown(id, e)
       }}
-      className={`group relative flex items-center rounded-mn-row outline-none
-        ${isDbRoot ? 'gap-[9px] px-2 py-[6px]' : ROW_GAP_PY_PR}
+      className={`group relative ${isSettingsRow ? 'inline-flex' : 'flex'} items-center rounded-mn-row outline-none
+        ${isSettingsRow ? 'gap-2' : isDbRoot ? 'gap-[9px] px-2 py-[6px]' : ROW_GAP_PY_PR}
         ${ROW_FOCUS_RING} focus-visible:ring-offset-0
         ${isArea && !isDbRoot && !noTopMargin ? 'mt-1' : ''}
-        ${isSelected ? ROW_SELECTED_FILL : hovered ? ROW_HOVER_FILL : ''}
+        ${isSettingsRow ? '' : isSelected ? ROW_SELECTED_FILL : hovered ? ROW_HOVER_FILL : ''}
         ${isDropRejected ? 'cursor-not-allowed' : 'cursor-pointer'}
         ${isDragging ? 'opacity-[.35]' : ''}
         ${dropZone === 'into' ? 'ring-2 ring-inset ring-mn-text/50 ' : ''}${settleOnMount && !settled ? 'motion-settle-in ' : ''}`}
-      style={isDbRoot ? undefined : { paddingLeft: padLeft }}
+      style={isDbRoot || isSettingsRow ? undefined : { paddingLeft: padLeft }}
     >
       {/* Drop-line for a before/after reorder — a calm rule at the row's
           top/bottom edge; pointer-events-none so it never eats a drag event.
@@ -813,9 +820,9 @@ const RailRow = forwardRef<HTMLElement, RailRowProps>(function RailRow(
         // child left once the tools are absolute) clearance only while ＋/×
         // actually draw over it — at rest they add nothing, so the label runs
         // to the row's own 8px right padding, per the board.
-        className={`min-h-0 w-full min-w-0 flex-1 bg-transparent ${isDbRoot ? 'gap-[9px]' : 'gap-[7px]'} p-0${
+        className={`min-h-0 w-full min-w-0 flex-1 bg-transparent ${isSettingsRow ? 'gap-2' : isDbRoot ? 'gap-[9px]' : 'gap-[7px]'} p-0${
           toolsPad ? ` ${toolsPad}` : ''
-        } group-focus-within:pr-[39px]${isAreaRow ? '' : ` ${ROW_LABEL_SIZE_NOT_EMPHASISED}`}${
+        } group-focus-within:pr-[39px]${isAreaRow ? '' : ` ${isSettingsRow ? 'text-[12.5px]' : ROW_LABEL_SIZE_NOT_EMPHASISED}`}${
           isFullInk ? '' : ` ${ROW_LABEL_INK_NOT_FULL}`
         } leading-[normal]`}
       />
@@ -1846,7 +1853,17 @@ export function RailView({
           <div role="tree" aria-label="Trash" aria-multiselectable={false}>
             {renderRow(TRASH_ROW)}
           </div>
-          <div role="tree" aria-label="Settings" aria-multiselectable={false}>
+          {/* `newRow` (`PondRail.dc.html`): 12.5px / ink .68 / padding 6px 8px,
+            static — no hover, no selected wash. Padding and border-radius
+            never inherit, so they (and the colour/size that do) sit on this
+            landmark itself rather than the treeitem it wraps, which stays
+            unpadded and defers to it (`isSettingsRow` in `RailRow`, above). */}
+          <div
+            role="tree"
+            aria-label="Settings"
+            aria-multiselectable={false}
+            className="px-2 py-[6px] text-[12.5px] text-mn-text-secondary"
+          >
             {renderRow(SETTINGS_ROW)}
           </div>
         </div>
