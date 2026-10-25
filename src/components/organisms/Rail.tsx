@@ -469,6 +469,18 @@ const RailRow = forwardRef<HTMLElement, RailRowProps>(function RailRow(
     e.preventDefault()
     onSelect(id)
   }
+  // The row's interactive descendants (caret, ＋, ×, the mark button, the rename
+  // field) stop the click's propagation so it never reaches `handleRowClick` above —
+  // but `stopPropagation` alone leaves the anchor's own default action armed, and a
+  // click anywhere inside an `<a href>` navigates unless something calls
+  // `preventDefault`. Capture phase runs before those descendants' own bubble
+  // handlers, so this is the one place that can disarm it for all of them at once.
+  const handleRowClickCapture = (e: MouseEvent<HTMLElement>) => {
+    const interactive = (e.target as HTMLElement).closest(
+      'button, input, textarea, select, [role="menuitem"], [contenteditable]'
+    )
+    if (interactive && e.currentTarget.contains(interactive)) e.preventDefault()
+  }
   // A plain callback (not the forwarded ref object/callback itself) so its type
   // — `(el: HTMLElement | null) => void` — fits both `<a>`'s and `<div>`'s own
   // narrower ref slot; `ref` only ever arrives as a callback from `setRowRef`,
@@ -510,6 +522,7 @@ const RailRow = forwardRef<HTMLElement, RailRowProps>(function RailRow(
       onPointerLeave={pagePrefetch.onPointerLeave}
       // The whole row opens the page (the caret and ＋/× stop propagation) —
       // strictly navigation; expansion belongs to the caret alone.
+      onClickCapture={handleRowClickCapture}
       onClick={handleRowClick}
       onDoubleClick={onRenameStart ? () => onRenameStart(id) : undefined}
       onFocus={(e) => {
