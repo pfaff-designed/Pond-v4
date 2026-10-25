@@ -23,7 +23,7 @@ import {
   summarizeSchemaEdit,
   summarizeTrash,
 } from './summary'
-import type { ChangeLogRecord, MoveSnapshot } from './types'
+import type { ChangeLogRecord, DuplicatePageSnapshot, MoveSnapshot } from './types'
 
 /** `09:31` for a raw ISO timestamp — split out from {@link clockTime} so a
  *  surface naming a moment that isn't a record's own `createdAt` (a
@@ -122,6 +122,22 @@ export const readMoveSnapshot = (value: unknown): MoveSnapshot | null => {
   }
 }
 
+/** A `duplicate_page` record's `after` (KAN-468), typed — or `null` for a
+ *  malformed value or a different action's own. Read the same checked way
+ *  `readMoveSnapshot` reads a move's, so `afterDuplicate` and
+ *  `applyUndoOutcome` share one reader for the link the RPC appended,
+ *  instead of each casting `record.after` on its own. */
+export const readDuplicatePageSnapshot = (value: unknown): DuplicatePageSnapshot | null => {
+  if (typeof value !== 'object' || value === null) return null
+  const { pageId, appendedLinkId, linkParentId } = value as Record<string, unknown>
+  if (typeof pageId !== 'string') return null
+  return {
+    pageId,
+    ...(typeof appendedLinkId === 'string' ? { appendedLinkId } : {}),
+    ...(typeof linkParentId === 'string' ? { linkParentId } : {}),
+  }
+}
+
 /**
  * A `MoveSnapshot.parentTitle` is never rendered bare — `null` (no home row to
  * name the top level) falls back to `rootFallback` (the caller's own root
@@ -192,6 +208,8 @@ export function describeChange(
     }
     case 'create_page':
       return 'created this page'
+    case 'duplicate_page':
+      return 'duplicated this page'
     case 'define_schema':
       return 'set up the fields'
     case 'edit_schema':

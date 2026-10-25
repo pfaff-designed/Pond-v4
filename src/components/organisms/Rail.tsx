@@ -62,6 +62,7 @@ import {
   applyAreaRoleOptimistic,
   type PageRow,
 } from '@/lib/pages/tree'
+import { duplicateAndOpen } from '@/lib/pages/duplicate'
 import { setPageGlyph, setAreaRole } from '@/lib/pages/mark-client'
 import { appendOwnEdit } from '@/lib/change-log/store'
 import { changeLogKey } from '@/lib/change-log/keys'
@@ -95,6 +96,7 @@ import {
   DATABASES_ROOT_TITLE,
   getOrCreateDatabasesRoot,
   isDatabasesRoot,
+  isDuplicablePage,
 } from '@/lib/pages/databases-root'
 import { usePondName } from '@/lib/pond/name'
 import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
@@ -231,6 +233,8 @@ interface RowCapabilities {
   deletable: boolean
   /** Can be renamed from the rail: F2 and double-click. */
   renameable: boolean
+  /** Can be duplicated: ⌘D/Ctrl+D (KAN-468; the ⋯ menu entry waits on KAN-221). */
+  duplicable: boolean
 }
 
 const NO_CAPABILITIES: RowCapabilities = {
@@ -239,6 +243,7 @@ const NO_CAPABILITIES: RowCapabilities = {
   addable: false,
   deletable: false,
   renameable: false,
+  duplicable: false,
 }
 
 /**
@@ -260,14 +265,29 @@ const rowCapabilities = (id: string, node: RailNode): RowCapabilities => {
   // on a page with a parent, so dragging is disallowed outright rather than
   // special-cased at drop time.
   if (isExtraRootNode(node))
-    return { draggable: false, droppable: true, addable: true, deletable: true, renameable: true }
-  return { draggable: true, droppable: true, addable: true, deletable: true, renameable: true }
+    return {
+      draggable: false,
+      droppable: true,
+      addable: true,
+      deletable: true,
+      renameable: true,
+      duplicable: isDuplicablePage(node),
+    }
+  return {
+    draggable: true,
+    droppable: true,
+    addable: true,
+    deletable: true,
+    renameable: true,
+    duplicable: isDuplicablePage(node),
+  }
 }
 
 /** Does the row allow the tree command? Navigation commands are always allowed. */
 const allowsCommand = (cap: RowCapabilities, kind: TreeKeyCommand['kind']): boolean => {
   if (kind === 'addChild') return cap.addable
   if (kind === 'rename') return cap.renameable
+  if (kind === 'duplicate') return cap.duplicable
   return true
 }
 
@@ -741,6 +761,12 @@ export interface RailViewProps {
   onToggle: (id: string) => void
   onAddChild: (id: string, action?: NewPageMenuAction) => void
   onDelete: (id: string) => void
+  /** ⌘D/Ctrl+D on a focused row (KAN-468) — the same duplicate-and-open handler
+   *  ⌘K's "duplicate page" palette entry calls. Optional so the existing
+   *  `RailView` call sites (stories, unit tests predating this ticket) keep
+   *  compiling untouched; omit it and ⌘D no-ops, same convention as
+   *  `onPickColour`. */
+  onDuplicate?: (id: string) => void
   /** Commit a kept rename: a trimmed, non-empty title that differs from the old one. */
   onRename: (id: string, title: string) => void
   /** A glyph picker pick — `null` for `automatic`. Applies at once (KAN-248 6/8). */
@@ -921,6 +947,7 @@ export function RailView({
   onToggle,
   onAddChild,
   onDelete,
+  onDuplicate = () => {},
   onRename,
   onPickGlyph,
   onPickColour = () => {},
@@ -1174,9 +1201,21 @@ export function RailView({
 
   // ── Keyboard machine (pure rules; commands dispatched to the callbacks) ────
   function handleKeyDown(id: string, e: KeyboardEvent<HTMLDivElement>) {
-    const cmd = treeKeyCommand(e.key, id, flat, { expanded, lifeExpanded })
+    // AUDIT K1: ⌘D/Ctrl+D is the browser's own bookmark chord. Every press of
+    // it on a focused row — a repeat from holding it down, or one aimed at a
+    // row `treeKeyCommand`/`allowsCommand` refuses to dispatch — must still be
+    // prevented here, or the bookmark dialog opens underneath the row that
+    // silently ate the keystroke.
+    const isDuplicateChord = (e.key === 'd' || e.key === 'D') && (e.metaKey || e.ctrlKey)
+    const cmd = treeKeyCommand(e.key, id, flat, {
+      expanded,
+      lifeExpanded,
+      metaOrCtrl: e.metaKey || e.ctrlKey,
+      repeat: e.repeat,
+    })
+    if (isDuplicateChord) e.preventDefault()
     if (!cmd || !allowsCommand(capabilitiesOf(id), cmd.kind)) return
-    e.preventDefault()
+    if (!isDuplicateChord) e.preventDefault()
     switch (cmd.kind) {
       case 'focus':
         setFocusedId(cmd.id)
@@ -1196,6 +1235,9 @@ export function RailView({
         break
       case 'rename':
         handleRenameStart(cmd.id)
+        break
+      case 'duplicate':
+        onDuplicate(cmd.id)
         break
     }
   }
@@ -2301,6 +2343,28 @@ export function Rail() {
     })
   }
 
+  /** ⌘D/Ctrl+D on a focused row (KAN-468): the same `duplicateAndOpen` flow
+   *  ⌘K's "duplicate page" palette entry runs (AUDIT G9), off the FOCUSED
+   *  row's id rather than the open page's. */
+  async function handleDuplicate(id: string) {
+    const node = nodeById.get(id)
+    if (!node) return
+    setBusyId(id)
+    try {
+      await duplicateAndOpen(
+        queryClient,
+        router,
+        pondId,
+        id,
+        node.parentId,
+        { type: node.type, title: node.title },
+        notify
+      )
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   async function handleConfirmDelete() {
     const node = confirmTarget
     setConfirmTarget(null)
@@ -2615,6 +2679,7 @@ export function Rail() {
         onToggle={handleToggle}
         onAddChild={handleAddChild}
         onDelete={handleDelete}
+        onDuplicate={handleDuplicate}
         onRename={handleRename}
         onPickGlyph={handlePickGlyph}
         onPickColour={handlePickColour}

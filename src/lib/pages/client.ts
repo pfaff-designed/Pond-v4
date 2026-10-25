@@ -230,9 +230,13 @@ export async function listPages(
 // ── Writes ───────────────────────────────────────────────────────────────────
 
 /**
- * The `{id, title}` of every sibling under `parentId` (root when null) in a
- * pond — the scope `pages_sibling_title_pond_uniq` guards (#84, re-keyed by
- * 0019). Used to auto-suffix new titles and to detect rename collisions.
+ * The `{id, title}` of every LIVE sibling under `parentId` (root when null)
+ * in a pond — the scope `pages_sibling_title_pond_uniq` guards (#84, re-keyed
+ * by 0019, made partial on `deleted_at is null` by 0027/KAN-97). Used to
+ * auto-suffix new titles and to detect rename collisions: a trashed sibling
+ * no longer blocks the index, so it must not count here either, or a dedupe
+ * run after a trash (⌘Z on a duplicate, say) skips past the freed name and
+ * suffixes one further than the DB would ever require.
  */
 async function siblingRows(
   supabase: SupabaseClient<Database>,
@@ -242,7 +246,11 @@ async function siblingRows(
   pond: string | null
 ): Promise<{ id: string; title: string }[]> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let q: any = (supabase as any).from('pages').select('id, title').eq('user_id', userId)
+  let q: any = (supabase as any)
+    .from('pages')
+    .select('id, title')
+    .eq('user_id', userId)
+    .is('deleted_at', null)
   // #312: 0018's `pages_sibling_title_pond_uniq` is keyed per pond, so the
   // auto-suffix must read THIS pond's siblings — otherwise it renames around a
   // name that does not collide.
@@ -479,6 +487,52 @@ export async function movePage(
   const row = Array.isArray(data) ? data[0] : data
   if (!row) throw new Error(`move_page: moving page ${input.id} returned no record`)
   return mapChangeLogRow(row as ChangeLogRow)
+}
+
+/**
+ * Duplicate a page and everything inside it (KAN-468): the deduped root
+ * title is computed here, same `dedupedTitle`/`siblingRows` pattern
+ * {@link createPage} uses, so the RPC (migration 0032) never has to read
+ * siblings itself — it just commits the copy atomically with the title this
+ * call already resolved, mirroring `movePage`'s own client-computes/RPC-
+ * commits split. The resolved title rides along on the return value (AUDIT
+ * G9) so a caller can navigate to the copy by its OWN title ("Recipes 2"),
+ * not the source's — the RPC's own change-log `after` only carries the new
+ * root's id, never its title.
+ */
+export async function duplicatePage(
+  supabase: SupabaseClient<Database>,
+  userId: string,
+  id: string
+): Promise<ChangeLogRecord & { title: string }> {
+  // KAN-273: see createPage's comment — the sibling read just below must not
+  // see a row that is mid-delete.
+  await flushStagedDeletes()
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: self } = await (supabase as any)
+    .from('pages')
+    .select('title, parent_id, pond_id')
+    .eq('id', id)
+    .maybeSingle()
+
+  // A missing/foreign page has no siblings to dedupe against — the RPC's own
+  // ownership check (`user_id = auth.uid()`) is what actually rejects it.
+  const title = self
+    ? await dedupedTitle(supabase, userId, self.parent_id ?? null, self.pond_id ?? null, self.title ?? '')
+    : ''
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any).rpc('duplicate_page', {
+    p_page_id: id,
+    p_title: title,
+  })
+
+  if (error) throw new Error(error.message)
+
+  const row = Array.isArray(data) ? data[0] : data
+  if (!row) throw new Error(`duplicate_page: duplicating page ${id} returned no record`)
+  return { ...mapChangeLogRow(row as ChangeLogRow), title }
 }
 
 /**
