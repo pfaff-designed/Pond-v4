@@ -96,15 +96,15 @@ function DeletedPondRow({
       className="grid grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-x-3 rounded-[12px] px-[10px] py-3"
     >
       <PondMark glyph={pond.glyph ?? LIFE_GLYPH} size={14} />
-      <span className="min-w-0 truncate text-[15px] font-medium text-mn-text">
-        {pond.name}{' '}
+      <div className="flex min-w-0 items-baseline gap-1">
+        <span className="min-w-0 truncate text-[15px] font-medium text-mn-text">{pond.name}</span>
         <span
           data-testid="settings-deleted-countdown"
-          className="font-mono text-[10.5px] lowercase text-mn-text-secondary"
+          className="shrink-0 font-mono text-[10.5px] lowercase text-mn-text-secondary"
         >
           · {pondGoesLabel(pond.deletedAt, new Date())}
         </span>
-      </span>
+      </div>
       <PondControl kind="button" variant="ghost" disabled={busy} onClick={onRestore}>
         {busy ? 'restoring…' : 'restore'}
       </PondControl>
