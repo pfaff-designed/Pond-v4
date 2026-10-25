@@ -19,7 +19,7 @@ import { createPageWriteQueue } from '@/lib/pages/page-write-queue'
 import type { Block } from '@/lib/documents/types'
 import type { PondPage } from '@/lib/pages/client'
 import type { PondTemplate } from '@/lib/templates/types'
-import { findTextBlock, writeInTextBlock } from './helpers/text-block'
+import { findTextBlock, textEditorOf, writeInTextBlock } from './helpers/text-block'
 import { TEMPLATE_KINDS } from '@/lib/templates/types'
 import { justSaved } from '@/lib/templates/just-saved'
 
@@ -589,6 +589,41 @@ describe('a template pick on a blank page applies in place (KAN-124)', () => {
     // call (KAN-499) before asserting it did NOT move the caret.
     await act(() => new Promise(requestAnimationFrame))
     expect(title).toHaveFocus()
+  })
+
+  it("KAN-499 regression: typing into the applied, still-focused first line while the template's props read/write (getPage/saveProps) is still in flight keeps what was typed and the caret after it — the apply's own first-line focus doesn't reset the selection to 'start'", async () => {
+    const user = userEvent.setup()
+    let resolveGetPage: (() => void) | undefined
+    mockGetPage.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveGetPage = () => resolve(null)
+        })
+    )
+    renderBlankPageHarness()
+
+    writeInTextBlock(await findTextBlock(), '/')
+    await screen.findByRole('listbox', { name: 'blocks' })
+    // The blank list leads with `notes`. The premade page shape stays in the templates pane.
+    await user.keyboard('{Enter}')
+
+    // The applied line's own mount-time autofocus (rule 2, KAN-345) already
+    // has the caret — `getPage` (held pending above) hasn't resolved yet.
+    const field = await findTextBlock()
+    await waitFor(() => expect(field).toHaveFocus())
+    writeInTextBlock(field, 'hello')
+    expect(field).toHaveTextContent('hello')
+
+    resolveGetPage?.()
+    await waitFor(() => expect(mockSaveProps).toHaveBeenCalledTimes(1))
+    // One flushed animation frame settles the apply's own first-line focus
+    // call (KAN-499) before asserting it did NOT reset the selection.
+    await act(() => new Promise(requestAnimationFrame))
+    expect(field).toHaveTextContent('hello')
+    // `editor.commands.focus('start')` (what `focusTextBlockSoon` calls) would
+    // leave the caret at the doc's start (position 1) even though the field
+    // already had focus — this asserts the caret stayed after what was typed.
+    expect(textEditorOf(field).state.selection.from).toBe('hello'.length + 1)
   })
 
   it("writes the kind label and provenance stamp onto the page, preserving its existing props, and reflects them in the ['page', id] cache", async () => {

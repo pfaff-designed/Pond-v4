@@ -1903,31 +1903,33 @@ export function BlockCanvas({
     // The caret belongs in the template's first line, not the title (KAN-499) —
     // `focusTextBlockSoon` for text, else the same direct-focus fallback
     // `focusBlockNeighbour` uses for a non-text neighbour. The props write just
-    // above is awaited, so a person who has already clicked into another line
-    // or the title while it was in flight must keep the caret there — read
-    // `activeElement` right before focusing, not before the await, since that's
-    // the only moment that matters.
+    // above is awaited, so a person who has already moved the caret while it
+    // was in flight must keep it there — read `activeElement` right before
+    // focusing, not before the await, since that's the only moment that
+    // matters. No "already inside the first block" exemption: `focusTextBlock`
+    // (`src/lib/modules/text/focus.ts`) calls `editor.commands.focus('start')`,
+    // which resets the selection even on an editor that already has focus, so
+    // a person who typed into the (mount-autofocused) first line while this
+    // was in flight would otherwise have their own caret position overwritten.
+    // An unwritten first line's mount-time autofocus has already run by now,
+    // so `document.body` still holding focus means nobody has touched the
+    // page at all — the only case this call needs to cover.
     const first = applied.blocks[0]
     const activeElement = document.activeElement
+    const caretMovedElsewhere = activeElement !== null && activeElement !== document.body
     // `templateBlocksFrom` can strip every block (a `yours` template that is
     // only a page-link, never carried) — there is no first line to land in, so
     // fall back to the title, the safest state (AGENTS.md, crash early).
     if (!first) {
-      const caretMovedElsewhere = activeElement !== null && activeElement !== document.body
       if (!caretMovedElsewhere) focusPageTitle()
       return
     }
-    const firstBlockHost = document.getElementById(blockDomId(first.id))
-    const caretMovedElsewhere =
-      activeElement !== null &&
-      activeElement !== document.body &&
-      !firstBlockHost?.contains(activeElement)
     if (caretMovedElsewhere) return
     if (first.type === 'text') {
       focusTextBlockSoon(first.id, 'start')
       return
     }
-    firstBlockHost?.focus()
+    document.getElementById(blockDomId(first.id))?.focus()
   }
 
   const makePageFromTemplate = async (pick: TemplatePick, target: SlashTarget, index: number) => {
