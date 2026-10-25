@@ -474,6 +474,23 @@ describe('Esc in a text block selects its row (KAN-367)', () => {
 
     await waitFor(() => expect(blockRoot('b-note')).toHaveFocus())
   })
+
+  it('a selected text row’s prose wrapper carries the selected ring; unfocused does not', async () => {
+    const user = userEvent.setup()
+    renderCanvas([note, table])
+    const prose = blockRoot('b-note').querySelector('[data-part="prose"]')!
+    expect(prose).not.toHaveClass('ring-2')
+
+    const line = await textBlockIn('b-note')
+    act(() => {
+      textEditorOf(line).commands.focus('end')
+    })
+    await waitFor(() => expect(line).toHaveFocus())
+    await user.keyboard('{Escape}')
+
+    await waitFor(() => expect(blockRoot('b-note')).toHaveFocus())
+    expect(prose).toHaveClass('ring-2', 'ring-mn-text', 'rounded-[20px]')
+  })
 })
 
 describe('↓ on a selected row steps out, same as Return (KAN-344)', () => {

@@ -3758,9 +3758,16 @@ function BlockEditor({
       {changedMark}
     </PondBlock>
   ) : block.type === 'text' ? (
-    // Bare prose: `padding 2px 4px`, no card.
+    // Bare prose: `padding 2px 4px`, no card. Selected draws the library's
+    // ring here instead of on the row (the row excludes text, ~:3699) since
+    // there is no card for that ring to sit on.
     <div
-      className={cn(untouched && UNTOUCHED_HINT_CLASS, hoverGhost && HOVER_GHOST_CLASS)}
+      data-part="prose"
+      className={cn(
+        untouched && UNTOUCHED_HINT_CLASS,
+        hoverGhost && HOVER_GHOST_CLASS,
+        state === 'selected' && cn(POND_BLOCK_SELECTED_RING, 'rounded-[20px]')
+      )}
       data-hover-ghost={hoverGhost || undefined}
       style={{ paddingBlock: TEXT_BLOCK_TOP_INSET_PX, paddingInline: TEXT_BLOCK_INSET_PX }}
     >
