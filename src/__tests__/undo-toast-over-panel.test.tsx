@@ -5,7 +5,7 @@
  */
 
 import { act, render, screen } from '@testing-library/react'
-import { UndoNotice } from '@/components/molecules/UndoNotice'
+import { UndoNotice, useUndoPanelBottom } from '@/components/molecules/UndoNotice'
 import { UndoToastViewport } from '@/components/molecules/UndoToast'
 import { LAYER } from '@/lib/layout/layers'
 import { clearUndoNotice, requestUndoNotice, type UndoNotice as UndoNoticeData } from '@/lib/terminal-focus'
@@ -56,18 +56,21 @@ describe('the toast stack stays clear of the open panel (KAN-553)', () => {
       openedPageTitle: null,
       previousPageTitle: 'kitchen renovation',
     }
-    // The panel publishes its BOTTOM edge as offsetTop + offsetHeight — mock
-    // both, so the expectation below derives the offset the same way the
-    // component does, with no copy of the panel's own top-[28px] anywhere.
+    // The panel publishes its BOTTOM edge as offsetTop + the measured rect
+    // height (not offsetHeight, which rounds) — mock both sources, so the
+    // expectation below derives the offset the same way the component does,
+    // with no copy of the panel's own top-[28px] anywhere. The fractional
+    // height (99.5) is the KAN-553 round-trip bug: offsetHeight would have
+    // rounded it to 100 and landed the toast 0.5px off the 10px gap.
     const mockPanelTop = 28
-    const mockPanelHeight = 140
+    const mockPanelHeight = 99.5
     const mockGap = 10
     const offsetTop = jest
       .spyOn(window.HTMLElement.prototype, 'offsetTop', 'get')
       .mockReturnValue(mockPanelTop)
-    const offsetHeight = jest
-      .spyOn(window.HTMLElement.prototype, 'offsetHeight', 'get')
-      .mockReturnValue(mockPanelHeight)
+    const getBoundingClientRect = jest
+      .spyOn(window.HTMLElement.prototype, 'getBoundingClientRect')
+      .mockReturnValue({ height: mockPanelHeight } as DOMRect)
     // Mirrors `ShellCommands`: the panel's prop and the toast viewport's open
     // signal (`useUndoNotice`) are the same global notice, not two sources.
     requestUndoNotice(notice)
@@ -86,7 +89,46 @@ describe('the toast stack stays clear of the open panel (KAN-553)', () => {
     expect(viewport.className).not.toMatch(/\btop-4\b/)
 
     offsetTop.mockRestore()
-    offsetHeight.mockRestore()
+    getBoundingClientRect.mockRestore()
+  })
+
+  it('publishes a null bottom edge once the panel unmounts', () => {
+    const notice: UndoNoticeData = {
+      direction: 'undo',
+      pastTense: 'removed chickpeas, harissa',
+      openedPageTitle: null,
+      previousPageTitle: 'kitchen renovation',
+    }
+    const offsetTop = jest.spyOn(window.HTMLElement.prototype, 'offsetTop', 'get').mockReturnValue(28)
+    const getBoundingClientRect = jest
+      .spyOn(window.HTMLElement.prototype, 'getBoundingClientRect')
+      .mockReturnValue({ height: 99.5 } as DOMRect)
+
+    function PanelBottomProbe() {
+      const bottom = useUndoPanelBottom()
+      return <div data-testid="panel-bottom">{String(bottom)}</div>
+    }
+
+    const { rerender } = render(
+      <>
+        <UndoNotice notice={notice} />
+        <PanelBottomProbe />
+      </>
+    )
+    expect(screen.getByTestId('panel-bottom').textContent).toBe('127.5')
+
+    act(() => {
+      rerender(
+        <>
+          <UndoNotice notice={null} />
+          <PanelBottomProbe />
+        </>
+      )
+    })
+    expect(screen.getByTestId('panel-bottom').textContent).toBe('null')
+
+    offsetTop.mockRestore()
+    getBoundingClientRect.mockRestore()
   })
 
   it('returns to top-4 once the panel closes', () => {

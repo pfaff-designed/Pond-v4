@@ -70,7 +70,12 @@ export function UndoNotice({ notice }: UndoNoticeProps) {
       setPanelBottom(null)
       return
     }
-    const read = () => setPanelBottom(el.offsetTop + el.offsetHeight)
+    // `offsetHeight` rounds to the nearest integer, so a 99.5px panel would
+    // read 100 and the toast stack would land half a pixel past the gap —
+    // `getBoundingClientRect().height` keeps the fraction. `offsetTop` stays
+    // (it's already an integer, and `getBoundingClientRect().top` is in
+    // viewport coordinates, not this element's offset parent).
+    const read = () => setPanelBottom(el.offsetTop + el.getBoundingClientRect().height)
     read()
     if (typeof ResizeObserver === 'undefined') return
     const ro = new ResizeObserver(read)
