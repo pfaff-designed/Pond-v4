@@ -51,7 +51,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { usePagePrefetchHandlers } from '@/lib/pages/use-page-prefetch'
-import { createPage, movePage, updateTitle } from '@/lib/pages/client'
+import { createPage, duplicatePage, movePage, updateTitle } from '@/lib/pages/client'
 import { DuplicateTitleError, nextAvailableTitle } from '@/lib/pages/dedupe-title'
 import {
   fetchPages,
@@ -231,6 +231,8 @@ interface RowCapabilities {
   deletable: boolean
   /** Can be renamed from the rail: F2 and double-click. */
   renameable: boolean
+  /** Can be duplicated: ⌘D/Ctrl+D (KAN-468; the ⋯ menu entry waits on KAN-221). */
+  duplicable: boolean
 }
 
 const NO_CAPABILITIES: RowCapabilities = {
@@ -239,6 +241,7 @@ const NO_CAPABILITIES: RowCapabilities = {
   addable: false,
   deletable: false,
   renameable: false,
+  duplicable: false,
 }
 
 /**
@@ -259,14 +262,29 @@ const rowCapabilities = (id: string, node: RailNode): RowCapabilities => {
   // on a page with a parent, so dragging is disallowed outright rather than
   // special-cased at drop time.
   if (isExtraRootNode(node))
-    return { draggable: false, droppable: true, addable: true, deletable: true, renameable: true }
-  return { draggable: true, droppable: true, addable: true, deletable: true, renameable: true }
+    return {
+      draggable: false,
+      droppable: true,
+      addable: true,
+      deletable: true,
+      renameable: true,
+      duplicable: true,
+    }
+  return {
+    draggable: true,
+    droppable: true,
+    addable: true,
+    deletable: true,
+    renameable: true,
+    duplicable: true,
+  }
 }
 
 /** Does the row allow the tree command? Navigation commands are always allowed. */
 const allowsCommand = (cap: RowCapabilities, kind: TreeKeyCommand['kind']): boolean => {
   if (kind === 'addChild') return cap.addable
   if (kind === 'rename') return cap.renameable
+  if (kind === 'duplicate') return cap.duplicable
   return true
 }
 
@@ -727,6 +745,12 @@ export interface RailViewProps {
   onToggle: (id: string) => void
   onAddChild: (id: string, action?: NewPageMenuAction) => void
   onDelete: (id: string) => void
+  /** ⌘D/Ctrl+D on a focused row (KAN-468) — the same duplicate-and-open handler
+   *  ⌘K's "duplicate page" palette entry calls. Optional so the existing
+   *  `RailView` call sites (stories, unit tests predating this ticket) keep
+   *  compiling untouched; omit it and ⌘D no-ops, same convention as
+   *  `onPickColour`. */
+  onDuplicate?: (id: string) => void
   /** Commit a kept rename: a trimmed, non-empty title that differs from the old one. */
   onRename: (id: string, title: string) => void
   /** A glyph picker pick — `null` for `automatic`. Applies at once (KAN-248 6/8). */
@@ -907,6 +931,7 @@ export function RailView({
   onToggle,
   onAddChild,
   onDelete,
+  onDuplicate = () => {},
   onRename,
   onPickGlyph,
   onPickColour = () => {},
@@ -1160,7 +1185,11 @@ export function RailView({
 
   // ── Keyboard machine (pure rules; commands dispatched to the callbacks) ────
   function handleKeyDown(id: string, e: KeyboardEvent<HTMLDivElement>) {
-    const cmd = treeKeyCommand(e.key, id, flat, { expanded, lifeExpanded })
+    const cmd = treeKeyCommand(e.key, id, flat, {
+      expanded,
+      lifeExpanded,
+      metaOrCtrl: e.metaKey || e.ctrlKey,
+    })
     if (!cmd || !allowsCommand(capabilitiesOf(id), cmd.kind)) return
     e.preventDefault()
     switch (cmd.kind) {
@@ -1182,6 +1211,9 @@ export function RailView({
         break
       case 'rename':
         handleRenameStart(cmd.id)
+        break
+      case 'duplicate':
+        onDuplicate(cmd.id)
         break
     }
   }
@@ -2285,6 +2317,25 @@ export function Rail() {
     })
   }
 
+  /** ⌘D/Ctrl+D on a focused row (KAN-468): the same duplicate-and-open flow
+   *  ⌘K's "duplicate page" palette entry runs, off the FOCUSED row's id rather
+   *  than the open page's. `duplicatePage` owns the dedup/copy/undo-record;
+   *  this only navigates to the id it hands back. */
+  async function handleDuplicate(id: string) {
+    const node = nodeById.get(id)
+    if (!node) return
+    setBusyId(id)
+    try {
+      const record = await withUser((sb, uid) => duplicatePage(sb, uid, id))
+      const copyId = record?.targetPageId
+      if (copyId) navigateTo({ id: copyId, type: node.type, title: node.title })
+    } catch {
+      notify("Couldn't duplicate the page")
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   async function handleConfirmDelete() {
     const node = confirmTarget
     setConfirmTarget(null)
@@ -2599,6 +2650,7 @@ export function Rail() {
         onToggle={handleToggle}
         onAddChild={handleAddChild}
         onDelete={handleDelete}
+        onDuplicate={handleDuplicate}
         onRename={handleRename}
         onPickGlyph={handlePickGlyph}
         onPickColour={handlePickColour}
