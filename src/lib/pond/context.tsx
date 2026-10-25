@@ -18,6 +18,7 @@ import { useSearchParams } from 'next/navigation'
 import { listPonds, setPondLastPage, type Pond } from './client'
 import { resolveActivePond, useActivePondId } from './active'
 import { nextLastPageWrite, type LastPageRender } from './last-page'
+import { applyPondTheme } from '@/lib/theme/mode'
 
 export interface PondContextValue {
   /** The active pond, or null before the list has loaded. */
@@ -74,6 +75,12 @@ export function PondProvider({ children }: { children: React.ReactNode }) {
   // pond switch. Null across remounts (tests, story swaps) is correct: that
   // reads as "no snapshot yet", never a write.
   const previousRenderRef = useRef<LastPageRender | null>(null)
+  // The pond id from the render before this one, for telling an in-session
+  // switch from the first resolved pond (mount / page load). Null across
+  // remounts is correct here too: it reads as "no previous pond", never a
+  // switch, so the first pond a fresh mount resolves to never applies its
+  // theme — only a later change away from a non-null id does.
+  const previousPondIdRef = useRef<string | null>(null)
 
   const reload = useCallback(() => setNonce((n) => n + 1), [])
 
@@ -141,6 +148,23 @@ export function PondProvider({ children }: { children: React.ReactNode }) {
       console.error('[pond/last-page] write not persisted', targetPondId, toWrite, error)
     })
   }, [pond?.id, pond?.lastPageId, nodeId])
+
+  // Applies the pond's theme only when `pond.id` actually changed from a
+  // previously resolved (non-null) id — an in-session switch, never the first
+  // pond a mount resolves to. The ref only ever advances to a non-null id, so
+  // a stale `?pond=` that resolves to null (between two real ponds) can't
+  // erase the last real one and make the next real switch read as a first
+  // load. `applyPondTheme` restores the person's own stored mode for a pond
+  // with no chosen theme, and applies the explicit one otherwise.
+  useEffect(() => {
+    const currentId = pond?.id ?? null
+    const currentTheme = pond?.theme ?? null
+    const previousId = previousPondIdRef.current
+    if (currentId !== null) previousPondIdRef.current = currentId
+    if (previousId !== null && currentId !== null && previousId !== currentId && currentTheme !== null) {
+      applyPondTheme(currentTheme)
+    }
+  }, [pond?.id, pond?.theme])
 
   const value = useMemo(
     () => ({ pond, ponds, loading, reload, addPond, patchPond, removePond }),

@@ -8,6 +8,10 @@ import React from 'react'
 import { render, screen } from '@testing-library/react'
 import { RailView, type RailNode } from '@/components/organisms/Rail'
 
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({ push: jest.fn() }),
+  useSearchParams: () => ({ get: () => null }),
+}))
 jest.mock('@/lib/supabase/client', () => ({ createClient: () => ({}) }))
 
 function renderRail(tree: RailNode[]) {
