@@ -97,19 +97,13 @@ export async function listPonds(): Promise<Pond[]> {
   return ((data ?? []) as unknown as PondRow[]).map(mapPondRow)
 }
 
-export interface DeletedPond {
-  id: string
-  name: string
-  glyph: string | null
+/** The full `Pond` shape (KAN-493's `restore` hands it straight to `addPond`,
+ *  which takes nothing less) plus the one extra fact the deleted list needs. */
+export interface DeletedPond extends Pond {
   deletedAt: string
 }
 
-interface DeletedPondRow {
-  id: string
-  name: string
-  glyph: string | null
-  deleted_at: string | null
-}
+type DeletedPondRow = PondRow & { deleted_at: string | null }
 
 /** Soft-delete a pond (KAN-493): `s6m7`'s `delete…`, after its typed-name
  *  confirm. Owner-scoped by RLS (0018's "ponds: update own" policy). */
@@ -150,7 +144,7 @@ export async function listDeletedPonds(): Promise<DeletedPond[]> {
 
   const { data, error } = await supabase
     .from('ponds')
-    .select('id, name, glyph, deleted_at')
+    .select(`${COLUMNS}, deleted_at`)
     .eq('user_id', user.id)
     .not('deleted_at', 'is', null)
     .order('deleted_at', { ascending: false })
@@ -160,9 +154,7 @@ export async function listDeletedPonds(): Promise<DeletedPond[]> {
     throw error
   }
   return ((data ?? []) as unknown as DeletedPondRow[]).map((row) => ({
-    id: row.id,
-    name: row.name,
-    glyph: row.glyph,
+    ...mapPondRow(row),
     // Non-null by the `not(...).is(null)` filter above — the cast only
     // narrows a type PostgREST's own `select` leaves as nullable.
     deletedAt: row.deleted_at as string,

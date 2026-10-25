@@ -24,6 +24,8 @@ jest.mock('next/navigation', () => ({
 jest.mock('@/lib/pond/client', () => ({
   listPonds: jest.fn(),
   softDeletePond: jest.fn(),
+  restorePond: jest.fn(),
+  listDeletedPonds: jest.fn(),
   createPond: jest.fn(),
   setPondLastPage: jest.fn(),
 }))
@@ -33,10 +35,19 @@ jest.mock('@/lib/deletion/notify-bridge', () => ({
   requestNotify: (...args: unknown[]) => requestNotify(...args),
 }))
 
-import { listPonds, softDeletePond, setPondLastPage } from '@/lib/pond/client'
+import { listPonds, softDeletePond, restorePond, listDeletedPonds, setPondLastPage } from '@/lib/pond/client'
+import { pondGoesLabel } from '@/lib/pond/deleted'
 
 const LIFE = { id: 'p-life', name: 'life', glyph: 'waves-02', theme: 'paper', order: 0 }
 const STUDIO = { id: 'p-studio', name: 'Studio', glyph: 'star-01', theme: 'paper', order: 1 }
+const ARCHIVE = {
+  id: 'p-archive',
+  name: 'Archive',
+  glyph: 'star-01',
+  theme: 'paper',
+  order: 2,
+  deletedAt: '2026-10-15T00:00:00.000Z',
+}
 
 function renderPage() {
   return render(
@@ -60,6 +71,8 @@ beforeEach(() => {
   requestNotify.mockClear()
   ;(listPonds as jest.Mock).mockResolvedValue([LIFE, STUDIO])
   ;(softDeletePond as jest.Mock).mockReset().mockResolvedValue(undefined)
+  ;(restorePond as jest.Mock).mockReset().mockResolvedValue(undefined)
+  ;(listDeletedPonds as jest.Mock).mockReset().mockResolvedValue([])
   ;(setPondLastPage as jest.Mock).mockReset().mockResolvedValue(undefined)
 })
 
@@ -130,5 +143,35 @@ describe('PondSettingsPage', () => {
     await waitFor(() =>
       expect(push).toHaveBeenCalledWith(expect.stringContaining('pond=p-studio'))
     )
+  })
+
+  it('renders no deleted section when there is nothing deleted', async () => {
+    renderPage()
+    await screen.findByText('Studio')
+    expect(screen.queryByTestId('settings-deleted-row')).not.toBeInTheDocument()
+  })
+
+  it('shows a deleted pond\'s goes-in-N-days label and restore control', async () => {
+    ;(listDeletedPonds as jest.Mock).mockResolvedValue([ARCHIVE])
+    renderPage()
+
+    const row = await screen.findByTestId('settings-deleted-row')
+    const label = pondGoesLabel(ARCHIVE.deletedAt, new Date())
+    expect(within(row).getByText(`Archive · ${label}`)).toBeInTheDocument()
+    expect(within(row).getByRole('button', { name: 'restore' })).toBeInTheDocument()
+  })
+
+  it('restore calls restorePond, drops the deleted row, and the pond reappears live', async () => {
+    const user = userEvent.setup()
+    ;(listDeletedPonds as jest.Mock).mockResolvedValue([ARCHIVE])
+    renderPage()
+    await screen.findByText('Studio')
+
+    const row = await screen.findByTestId('settings-deleted-row')
+    await user.click(within(row).getByRole('button', { name: 'restore' }))
+
+    await waitFor(() => expect(restorePond).toHaveBeenCalledWith('p-archive'))
+    await waitFor(() => expect(screen.queryByTestId('settings-deleted-row')).not.toBeInTheDocument())
+    expect(within(rowFor('Archive')).getByRole('button', { name: 'delete…' })).toBeInTheDocument()
   })
 })
