@@ -102,6 +102,14 @@ export interface PondCommandProps {
   visits?: readonly string[]
   /** Overrides the input's rest placeholder when unscoped and sheet-less. @default 'jump to a page, or > for actions' */
   placeholder?: string
+  /**
+   * A value whose change clears the query/scope/selection the same way a fresh
+   * open does (KAN-469) — the move picker's own entry row switches the list
+   * into pick mode without the palette itself closing, so the `open` prop
+   * alone never flips to catch it. Absent: no such reset point, today's
+   * behaviour unchanged.
+   */
+  resetOn?: string | number | null
   /** The query as it changes — how the host learns what to search records for. */
   onQueryChange?: (query: string) => void
   /** The query it first opens with — stories draw the board's frames. */
@@ -178,6 +186,7 @@ export function PondCommand({
   ask = true,
   visits,
   placeholder,
+  resetOn = null,
   onQueryChange,
   defaultQuery = '',
   sheet = null,
@@ -205,9 +214,13 @@ export function PondCommand({
   const [sel, setSel] = useState({ query, scope, index: 0 })
 
   // Every opening starts clean: no query, the first row, the scope the host hands.
+  // `resetOn` catches a reset point the `open` flip alone can't — pick mode
+  // starting without the palette itself closing (KAN-469).
   const [openedAs, setOpenedAs] = useState(open)
-  if (openedAs !== open) {
+  const [resetOnAs, setResetOnAs] = useState(resetOn)
+  if (openedAs !== open || resetOnAs !== resetOn) {
     setOpenedAs(open)
+    setResetOnAs(resetOn)
     if (open) {
       setQuery('')
       setScope(initialScope)

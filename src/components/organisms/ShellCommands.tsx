@@ -670,6 +670,7 @@ export function ShellCommands() {
         onActiveItemChange={handleActiveItemChange}
         ask={movePick ? false : !inZen}
         placeholder={movePick ? `move ${movePick.title} to…` : undefined}
+        resetOn={movePick?.id ?? null}
         visits={recentPageIds}
         onQueryChange={setQuery}
         sheet={templateSheet.sheet}

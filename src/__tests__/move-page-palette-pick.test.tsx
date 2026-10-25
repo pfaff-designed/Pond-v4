@@ -6,7 +6,7 @@
  * the same `moveAndStageUndo` the rail's own drag-move calls, same toast.
  */
 
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClientProvider, QueryClient } from '@tanstack/react-query'
 import { ShellCommands } from '@/components/organisms/ShellCommands'
@@ -125,5 +125,9 @@ it('picking "House" moves Roof into it and shows the undo toast', async () => {
     expect.objectContaining({ id: 'roof', newParentId: 'house', siblingOrder: ['roof'] })
   )
   await screen.findByText('moved Roof to House ·')
-  expect(screen.queryByRole('combobox', { name: 'command palette' })).not.toBeInTheDocument()
+  // The combobox unmounts once the close morph settles (150ms, real time) —
+  // `waitFor` rather than an immediate assert, or this reads as flaky.
+  await waitFor(() =>
+    expect(screen.queryByRole('combobox', { name: 'command palette' })).not.toBeInTheDocument()
+  )
 })

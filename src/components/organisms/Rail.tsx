@@ -1828,16 +1828,15 @@ export function Rail() {
   // When the selection changes — via a rail click, a children-grid card, the
   // breadcrumb, or a page created through chat / ＋ — auto-expand every folder on
   // the path to the current node (and Life itself) so it's revealed and its
-  // ancestors highlight. We reveal a given selection exactly once (tracked by
-  // ref) so a manual re-collapse afterward isn't fought. `revealedForRef`
-  // itself is declared above, alongside the pond-switch clear (KAN-393) that
-  // also resets it on a real pond switch.
+  // ancestors highlight. We reveal a given (id, ancestor chain) exactly once
+  // (tracked by ref) so a manual re-collapse afterward isn't fought.
+  // `revealedForRef` itself is declared above, alongside the pond-switch
+  // clear (KAN-393) that also resets it on a real pond switch.
   useEffect(() => {
     if (!selectedNodeId) {
       revealedForRef.current = null
       return
     }
-    if (selectedNodeId === revealedForRef.current) return
     // Wait until the node itself is present so its ancestor chain is resolvable.
     if (!pages.some((r) => r.id === selectedNodeId)) return
     // The databases root is excluded: it is a disclosure the person toggles
@@ -1845,7 +1844,14 @@ export function Rail() {
     const ancestors = ancestorPath(pages, selectedNodeId)
       .map((c) => c.id)
       .filter((id) => id !== databasesRootId)
-    revealedForRef.current = selectedNodeId
+    // KAN-469: keyed on the resolved ancestor chain, not just the id — a
+    // reparent of the already-open node (⌘K's "move page to…", which has no
+    // drop target of its own to expand, unlike a drag) changes that chain
+    // without changing the selection, and must re-reveal rather than read as
+    // already-handled.
+    const revealKey = `${selectedNodeId}:${ancestors.join(',')}`
+    if (revealKey === revealedForRef.current) return
+    revealedForRef.current = revealKey
     // The two reveals below respond to an external navigation (URL ?nodeId, incl.
     // chat/＋ creation) — open Life and every ancestor folder so the current node
     // shows. Guarded to fire once per selection; not a derived-state computation.
