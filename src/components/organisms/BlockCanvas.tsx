@@ -117,7 +117,14 @@ import {
 } from '@/lib/modules/block-resize'
 import { SlashLineContext, type SlashLineAt } from '@/lib/modules/text/slash-line'
 import { useSlashLine } from '@/components/organisms/use-slash-line'
-import { focusTextBlock, focusTextBlockAt, hasTextBeforeCaret } from '@/lib/modules/text/focus'
+import {
+  captureTextSelection,
+  focusTextBlock,
+  focusTextBlockAt,
+  hasTextBeforeCaret,
+  restoreTextSelection,
+  type TextSelectionSnapshot,
+} from '@/lib/modules/text/focus'
 import { HOVER_GHOST_CLASS, UNTOUCHED_HINT_CLASS } from '@/lib/modules/text/prose'
 import { useAcceptMarks } from '@/lib/change-log/accept-marks'
 import { markTarget } from '@/lib/change-log/accept-marks-diff'
@@ -151,7 +158,12 @@ import type {
   PageConversion,
   TableConversion,
 } from '@/lib/modules/conversions'
-import { isBlockMenuChord, isContextMenuKey, isDeleteBlockChord, useApplePlatform } from '@/lib/shell-commands'
+import {
+  isBlockMenuChord,
+  isContextMenuKey,
+  isDeleteBlockChord,
+  useApplePlatform,
+} from '@/lib/shell-commands'
 import { slashRows, emptyBlockForType } from '@/lib/modules/palette'
 import { descriptorFor } from '@/lib/modules/registry'
 import { useBelowMd } from '@/lib/layout/use-below-md'
@@ -463,6 +475,25 @@ function focusTextBlockSoon(id: string, at: 'start' | 'end') {
 }
 
 /**
+ * Restores a selection a structural move captured (KAN-376: moving a block
+ * past its row re-inserts its own DOM node, blurring the editor it was
+ * focused in). Runs once in the commit and once more on the next frame, unless
+ * focus is by then somewhere else: in development React 19's StrictMode
+ * re-runs a moved fiber's effects after the commit, and tiptap's EditorContent
+ * unmounts and remounts around the same editor DOM, blurring it again after
+ * the first restore (seen live, KAN-376 re-verify). The frame pass also covers
+ * an editor that is still drawing its stand-in.
+ */
+function restoreTextSelectionSoon(id: string, selection: TextSelectionSnapshot) {
+  restoreTextSelection(document.getElementById(blockDomId(id)), selection)
+  requestAnimationFrame(() => {
+    // Focus kept, or the person has moved it on: nothing to restore.
+    if (document.activeElement && document.activeElement !== document.body) return
+    restoreTextSelection(document.getElementById(blockDomId(id)), selection)
+  })
+}
+
+/**
  * Same mount-race retry as `focusTextBlockSoon`, for a non-text block: its
  * frame only takes a tabIndex, never typed keys, so the caret belongs on its
  * first editable descendant (an `input`/`textarea`/`contenteditable`, e.g. a
@@ -615,6 +646,18 @@ export function BlockCanvas({
   useEffect(() => {
     blocksRef.current = blocks
   }, [blocks])
+  // ⌥↑/⌥↓ from the caret (KAN-376, live verify): a structural move re-inserts
+  // the moved block's own DOM node, blurring whatever editor was focused in
+  // it, before this effect's own render commits — so the restore can only run
+  // AFTER that DOM mutation lands, never synchronously inside `moveBlockAt`
+  // itself (the node it would restore onto there is the one about to move).
+  const pendingCaretFocusRef = useRef<{ id: string; selection: TextSelectionSnapshot } | null>(null)
+  useLayoutEffect(() => {
+    const pending = pendingCaretFocusRef.current
+    if (!pending) return
+    pendingCaretFocusRef.current = null
+    restoreTextSelectionSoon(pending.id, pending.selection)
+  }, [blocks])
   // G9: guards `applyTemplateInPlace` itself against a double ↵ — a ref, not
   // state, since the second pick can land mid-await, before a state update
   // guarding on a render would have committed.
@@ -657,7 +700,11 @@ export function BlockCanvas({
     // name, never meant to land in the title field (KAN-464). Blank it so the
     // opened page shows its placeholder instead of "untitledwhatever you type".
     makePageFromRow: (placement, target) =>
-      void makePage({ ...instantiateTemplate(PREMADE_TEMPLATES.page), title: '' }, placement, target),
+      void makePage(
+        { ...instantiateTemplate(PREMADE_TEMPLATES.page), title: '' },
+        placement,
+        target
+      ),
     makePageFromTemplate: (pick, target, index) => void makePageFromTemplate(pick, target, index),
     // Only `todo` (list/checklist) has no editor of its own to keep focus in
     // (KAN-355) — every other landed type keeps today's behaviour.
@@ -1734,8 +1781,11 @@ export function BlockCanvas({
     atIndex: number,
     where: 'above' | 'below'
   ): { insertAt: number; inRow: boolean } {
-    const row = layoutRows(base).find((member) => member.some((block) => block.id === base[atIndex].id))
-    if (!row || row.length < 2) return { insertAt: where === 'above' ? atIndex : atIndex + 1, inRow: false }
+    const row = layoutRows(base).find((member) =>
+      member.some((block) => block.id === base[atIndex].id)
+    )
+    if (!row || row.length < 2)
+      return { insertAt: where === 'above' ? atIndex : atIndex + 1, inRow: false }
     const insertAt =
       where === 'above'
         ? base.findIndex((b) => b.id === row[0].id)
@@ -2331,10 +2381,18 @@ export function BlockCanvas({
   // ⌥↑/⌥↓ steps a block past a whole STORED row, or out of a stored row onto
   // its own line, never splitting a row (KAN-376) — `planStepMove` carries
   // the row-aware rules and never looks at how a row is drawn; `null` means
-  // there is nowhere to go (e.g. the first block, ⌥↑).
+  // there is nowhere to go (e.g. the first block, ⌥↑). Fired from inside the
+  // block's own text editor (not a selected row, which keeps its own focus):
+  // the commit re-inserts the moved block's DOM node and blurs its editor, so
+  // a second ⌥↓/⌥↑ would have nowhere to fire from — the caret's own
+  // selection is captured here and left for `pendingCaretFocusRef`'s layout
+  // effect (above) to restore once the move's own re-render has landed.
   function moveBlockAt(index: number, dir: 'up' | 'down') {
     const next = planStepMove(blocks, index, dir)
     if (!next) return
+    const moved = blocks[index]
+    const selection = captureTextSelection(document.getElementById(blockDomId(moved.id)))
+    if (selection) pendingCaretFocusRef.current = { id: moved.id, selection }
     commitStructuralBlocks(next)
   }
 
@@ -2488,7 +2546,9 @@ export function BlockCanvas({
       index,
       zone,
       span:
-        columnRect && rect ? { left: columnRect.left - rect.left, width: columnRect.width } : undefined,
+        columnRect && rect
+          ? { left: columnRect.left - rect.left, width: columnRect.width }
+          : undefined,
     })
   }
 
@@ -3183,7 +3243,9 @@ export function BlockCanvas({
                         // member of THIS boundary carries its pill and readout — the
                         // right mate is also the left member of a DIFFERENT boundary,
                         // whose own strip must stay dark while this one drags.
-                        dragging={sharedEdgePreview !== null && sharedEdgePreview.leftId === item.id}
+                        dragging={
+                          sharedEdgePreview !== null && sharedEdgePreview.leftId === item.id
+                        }
                         readout={
                           sharedEdgePreview !== null &&
                           sharedEdgePreview.leftId === item.id &&
@@ -3672,7 +3734,10 @@ function BlockEditor({
   // identity changes, so a fresh object every render would re-run it for no
   // reason.
   const contextAnchor = useMemo(
-    () => (contextPoint ? { getBoundingClientRect: () => pointAnchor(contextPoint.x, contextPoint.y) } : null),
+    () =>
+      contextPoint
+        ? { getBoundingClientRect: () => pointAnchor(contextPoint.x, contextPoint.y) }
+        : null,
     [contextPoint]
   )
   // macOS Chrome/Safari select the word under the pointer as the right

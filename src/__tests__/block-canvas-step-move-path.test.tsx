@@ -11,7 +11,7 @@
  * jsdom cannot compute.
  */
 
-import React from 'react'
+import React, { StrictMode } from 'react'
 import { act, render, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -21,7 +21,7 @@ import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { sessionUndo } from '@/lib/change-log/session-undo'
 import { resetPageWriteRegistry } from '@/lib/pages/page-flush'
 import { undoStep } from '@/lib/change-log/undo'
-import { findTextBlock } from '@/__tests__/helpers/text-block'
+import { findAllTextBlocks, findTextBlock } from '@/__tests__/helpers/text-block'
 import type { Block } from '@/lib/documents/types'
 
 jest.mock('next/navigation', () => ({
@@ -92,10 +92,10 @@ beforeEach(() => {
 
 afterEach(() => jest.restoreAllMocks())
 
-function renderPath(blocks: Block[]) {
+function renderPath(blocks: Block[], { strict = false }: { strict?: boolean } = {}) {
   mockGetPage.mockResolvedValue({ id: 'page-1', title: 'Workshop', blocks })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(
+  const tree = (
     <QueryClientProvider client={client}>
       <DeletionUndoProvider>
         <ShellCommands />
@@ -103,6 +103,7 @@ function renderPath(blocks: Block[]) {
       </DeletionUndoProvider>
     </QueryClientProvider>
   )
+  return render(strict ? <StrictMode>{tree}</StrictMode> : tree)
 }
 
 const blockRoot = (id: string) => document.getElementById(`block-${id}`)!
@@ -240,5 +241,77 @@ describe('break: ⌥→ with the caret in text jumps a word, never reaching the 
     expect(mockSaveBlocks).not.toHaveBeenCalled()
     expect(blockOrder()).toEqual(['b-text', 'b-b'])
     expect(rowIndexOf('b-text')).toBe(rowIndexOf('b-b'))
+  })
+})
+
+// Live in the dev app, ⌥↓ from the caret re-inserts the moved block's node,
+// and React 19's StrictMode then re-runs the moved fiber's effects: tiptap's
+// EditorContent unmounts and remounts around the same editor DOM and blurs it
+// after the commit (KAN-376 re-verify, measured). Next runs StrictMode in dev,
+// so these tests render inside it, which is what makes them fail without the
+// restore that runs after that remount.
+describe('⌥↓/⌥↑ from the caret keeps focus in the moved block’s own editor (KAN-376 live verify)', () => {
+  it('two ⌥↓ presses from the caret each find focus still in the moved block, and two ⌘Z steps undo one move each', async () => {
+    const blocks: Block[] = [
+      { id: 'b-1', type: 'text', content: 'one' },
+      { id: 'b-2', type: 'text', content: 'two' },
+      { id: 'b-3', type: 'text', content: 'three' },
+    ]
+    renderPath(blocks, { strict: true })
+    const [first] = await findAllTextBlocks()
+    const user = userEvent.setup()
+
+    // Caret entry, same as the other caret-origin tests here: jsdom has no
+    // `elementFromPoint` for a real click to place it.
+    act(() => first.focus())
+    await user.keyboard('{Alt>}{ArrowDown}{/Alt}')
+
+    await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(blockOrder()).toEqual(['b-2', 'b-1', 'b-3']))
+    // The commit re-inserts b-1's own DOM node; without the fix (and the
+    // StrictMode remount this suite renders in) focus falls to <body>
+    // here, and the second ⌥↓ below has nowhere to fire from.
+    await waitFor(() => expect(blockRoot('b-1').contains(document.activeElement)).toBe(true))
+
+    // `user.keyboard` with no explicit target fires on `document.activeElement`
+    // — exactly what a second real keypress would reach.
+    await user.keyboard('{Alt>}{ArrowDown}{/Alt}')
+
+    await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(blockOrder()).toEqual(['b-2', 'b-3', 'b-1']))
+    await waitFor(() => expect(blockRoot('b-1').contains(document.activeElement)).toBe(true))
+
+    await user.click(document.body)
+    await user.keyboard('{Meta>}z{/Meta}')
+    await waitFor(() => expect(undoStep).toHaveBeenCalledTimes(1))
+    expect(undoStep).toHaveBeenCalledWith(expect.anything(), {
+      pondId: 'pond-1',
+      recordIds: ['record-2'],
+    })
+
+    await user.keyboard('{Meta>}z{/Meta}')
+    await waitFor(() => expect(undoStep).toHaveBeenCalledTimes(2))
+    expect(undoStep).toHaveBeenLastCalledWith(expect.anything(), {
+      pondId: 'pond-1',
+      recordIds: ['record-1'],
+    })
+  })
+
+  it('⌥↑ from the caret also keeps focus in the moved block', async () => {
+    const blocks: Block[] = [
+      { id: 'b-1', type: 'text', content: 'one' },
+      { id: 'b-2', type: 'text', content: 'two' },
+    ]
+    renderPath(blocks, { strict: true })
+    const fields = await findAllTextBlocks()
+    const second = fields[1]
+    const user = userEvent.setup()
+
+    act(() => second.focus())
+    await user.keyboard('{Alt>}{ArrowUp}{/Alt}')
+
+    await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(blockOrder()).toEqual(['b-2', 'b-1']))
+    await waitFor(() => expect(blockRoot('b-2').contains(document.activeElement)).toBe(true))
   })
 })
