@@ -20,7 +20,7 @@
 import type { PaletteItem, PaletteScope } from '@/components/molecules/palette-entries'
 import { subtreeIdsFromRows } from '@/lib/deletion/blast-radius'
 import { ancestorPath, crumbTrail } from '@/lib/pages/crumbs'
-import { isDuplicablePageRow } from '@/lib/pages/databases-root'
+import { isDuplicablePageRow, isMovablePageRow } from '@/lib/pages/databases-root'
 import { markIndex, type MarkSource, resolveMark } from '@/lib/pages/mark'
 import { RECENT_SHOWN } from '@/lib/pages/recent-pages'
 import type { PageRow } from '@/lib/pages/tree'
@@ -130,7 +130,10 @@ export const DUPLICATE_PAGE_ACTION: PaletteItem = {
 /**
  * KAN-469: Notion's page-menu "Move to" (⌘⇧P), moved into the palette rather
  * than an undesigned header menu. A page action like `duplicate page` just
- * above, so it lists only under the same `isDuplicablePageRow` open page.
+ * above, so it lists under a duplicable open page too — but NOT the same
+ * `isDuplicablePageRow` gate: an extra root is duplicable but the rail
+ * refuses to drag one (KAN-490/491), so this row reads `isMovablePageRow`
+ * instead (duplicable minus an extra root).
  */
 export const MOVE_PAGE_ACTION: PaletteItem = {
   id: 'action:move-page',
@@ -171,7 +174,8 @@ export function paletteItems(
     { ...ASK_POND_ACTION, key: formatChord('mod+j') },
     DEEP_RESEARCH_ACTION,
     ...(openPageId ? [SAVE_AS_TEMPLATE_ACTION] : []),
-    ...(openPage && isDuplicablePageRow(openPage) ? [DUPLICATE_PAGE_ACTION, MOVE_PAGE_ACTION] : []),
+    ...(openPage && isDuplicablePageRow(openPage) ? [DUPLICATE_PAGE_ACTION] : []),
+    ...(openPage && isMovablePageRow(openPage) ? [MOVE_PAGE_ACTION] : []),
   ]
 }
 

@@ -15,9 +15,13 @@ import { movePage } from '@/lib/pages/client'
 import { PondContext, type PondContextValue } from '@/lib/pond/context'
 import type { Pond } from '@/lib/pond/client'
 
+// A `mock`-prefixed name so jest's out-of-scope check allows a per-test override
+// (the extra-root regression test below opens "work" rather than "Roof").
+let mockCurrentNodeId = 'roof'
+
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
-  useSearchParams: () => ({ get: (key: string) => (key === 'nodeId' ? 'roof' : null) }),
+  useSearchParams: () => ({ get: (key: string) => (key === 'nodeId' ? mockCurrentNodeId : null) }),
 }))
 
 jest.mock('@/lib/supabase/client', () => ({
@@ -50,6 +54,16 @@ jest.mock('@/lib/pages/tree', () => ({
       order: 0,
       updated_at: '',
     },
+    {
+      id: 'work',
+      parent_id: null,
+      type: 'page',
+      title: 'Work',
+      order: 2,
+      updated_at: '',
+      props: { root: true },
+    },
+    { id: 'blank', parent_id: null, type: 'page', title: '', order: 3, updated_at: '' },
   ]),
 }))
 
@@ -75,6 +89,7 @@ const renderShell = () =>
   )
 
 beforeEach(() => {
+  mockCurrentNodeId = 'roof'
   jest.spyOn(window.navigator, 'platform', 'get').mockReturnValue('MacIntel')
   jest.mocked(movePage).mockResolvedValue({
     id: 'rec-1',
@@ -104,6 +119,34 @@ it('⌘⇧P with "Roof" open shows the picker — House and the root list, Roof 
   expect(await screen.findByRole('option', { name: /Life/ })).toBeInTheDocument()
   expect(screen.queryByRole('option', { name: /^Roof$/ })).toBeNull()
   expect(screen.queryByRole('option', { name: /Shingle/ })).toBeNull()
+})
+
+// KAN-490/491: the rail refuses to drag an extra root (`props.root` with no
+// parent) — ⌘K's move row/chord must agree, or a ⌘K move reparents it with
+// `props.root` still set.
+it('⌘⇧P on an extra root opens no picker — the row\'s own chord is refused', async () => {
+  mockCurrentNodeId = 'work'
+  renderShell()
+
+  fireEvent.keyDown(document, { key: 'p', metaKey: true, shiftKey: true })
+
+  expect(screen.queryByRole('combobox', { name: 'command palette' })).not.toBeInTheDocument()
+})
+
+it('⌘⇧P on an untitled page reads "move Untitled to…", not "move  to…"', async () => {
+  mockCurrentNodeId = 'blank'
+  renderShell()
+
+  // ⌘K first, so `pages` has settled by the time ⌘⇧P reads it (see the
+  // entry test above for why).
+  fireEvent.keyDown(document, { key: 'k', metaKey: true })
+  await screen.findByRole('combobox', { name: 'command palette' })
+  fireEvent.keyDown(document, { key: 'k', metaKey: true })
+
+  fireEvent.keyDown(document, { key: 'p', metaKey: true, shiftKey: true })
+
+  const input = await screen.findByRole('combobox', { name: 'command palette' })
+  expect(input).toHaveAttribute('placeholder', 'move Untitled to…')
 })
 
 it('picking "House" moves Roof into it and shows the undo toast', async () => {

@@ -107,9 +107,22 @@ export function isAreaRow(node: RailNode): boolean {
  * be an extra root at depth 0, so a non-null `parentId` always wins over the
  * flag (defensive — a reparented page must lose its root status, not carry it
  * on by mistake).
+ *
+ * Shape-generic (not `RailNode`-typed) so `isMovablePageRow`
+ * (`lib/pages/databases-root.ts`) reads this one rule too, rather than a
+ * second copy of the `props.root` check over a flat `PageRow` (KAN-490/491 vs
+ * KAN-469: a page the rail refuses to drag must also be refused by ⌘K's
+ * move-page gate).
  */
-export function isExtraRootNode(node: RailNode): boolean {
+export function isExtraRoot(node: {
+  parentId: string | null
+  props?: Record<string, unknown> | null
+}): boolean {
   return node.parentId === null && node.props?.root === true
+}
+
+export function isExtraRootNode(node: RailNode): boolean {
+  return isExtraRoot(node)
 }
 
 /**

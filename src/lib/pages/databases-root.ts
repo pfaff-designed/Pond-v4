@@ -22,6 +22,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
 import { createPage } from '@/lib/pages/client'
 import { inPond, resolvePond } from '@/lib/pond/scope'
+import { isExtraRoot } from '@/lib/rail/tree'
 
 /**
  * The reserved title of the databases root page — lowercase, as 3c draws it
@@ -76,6 +77,37 @@ export function isDuplicablePageRow(row: {
   type: string
 }): boolean {
   return isDuplicablePage({ parentId: row.parent_id, title: row.title, type: row.type })
+}
+
+/**
+ * Is this page movable — ⌘K's "move page to…" row/chord AND the rail's own
+ * drag capability, one rule rather than two (KAN-490/491 found them split:
+ * `isDuplicablePageRow` alone said yes for an extra root — `props.root` with
+ * no parent — while the rail refuses to drag one, so a ⌘K move reparented it
+ * with `props.root` still set). Duplicable minus an extra root: everything
+ * `isDuplicablePage` already refuses (home, the databases root) stays
+ * refused, and an extra root is refused too.
+ */
+export function isMovablePage(node: {
+  parentId: string | null
+  title: string
+  type: string
+  props?: Record<string, unknown> | null
+}): boolean {
+  return isDuplicablePage(node) && !isExtraRoot(node)
+}
+
+/**
+ * {@link isMovablePage} over a flat `['pages']` row — same adapter shape as
+ * {@link isDuplicablePageRow}.
+ */
+export function isMovablePageRow(row: {
+  parent_id: string | null
+  title: string
+  type: string
+  props?: Record<string, unknown> | null
+}): boolean {
+  return isMovablePage({ parentId: row.parent_id, title: row.title, type: row.type, props: row.props })
 }
 
 /**

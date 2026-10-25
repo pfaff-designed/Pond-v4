@@ -174,6 +174,16 @@ describe('paletteItems — move page', () => {
 
     expect(withNoOpenPage).not.toContainEqual(MOVE_PAGE_ACTION)
   })
+
+  // KAN-490/491: an extra root is duplicable but the rail refuses to drag
+  // it — this row must agree, or ⌘K reparents it with `props.root` still set.
+  it('does not list for an extra root, even though duplicate page still does', () => {
+    const extraRoot = { ...ordinaryPage, id: 'extra-root', title: 'Work', props: { root: true } }
+    const withExtraRootOpen = paletteItems([extraRoot], [], 'extra-root')
+
+    expect(withExtraRootOpen).not.toContainEqual(MOVE_PAGE_ACTION)
+    expect(withExtraRootOpen).toContainEqual(DUPLICATE_PAGE_ACTION)
+  })
 })
 
 describe('movePickItems — the move picker’s candidate list', () => {

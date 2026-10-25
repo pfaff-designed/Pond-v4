@@ -80,7 +80,7 @@ import {
   pondItems,
   railItems,
 } from '@/lib/pages/palette-items'
-import { isDuplicablePageRow } from '@/lib/pages/databases-root'
+import { isMovablePageRow } from '@/lib/pages/databases-root'
 import { prefetchPageIfAbsent } from '@/lib/pages/use-page-prefetch'
 import { readRecentPageIds, writeRecent } from '@/lib/pages/recent-pages'
 import { useHomePage } from '@/lib/pages/use-home-page'
@@ -353,7 +353,7 @@ export function ShellCommands() {
       // the palette is closed; an open palette has its own `move-page` row for this.
       if (isMovePageChord(e) && !paletteOpen) {
         const openPage = currentNodeId ? pages.find((p) => p.id === currentNodeId) : undefined
-        if (openPage && isDuplicablePageRow(openPage)) {
+        if (openPage && isMovablePageRow(openPage)) {
           e.preventDefault()
           e.stopPropagation()
           setMovePick({ id: openPage.id, title: openPage.title })
@@ -669,7 +669,7 @@ export function ShellCommands() {
         }
         onActiveItemChange={handleActiveItemChange}
         ask={movePick ? false : !inZen}
-        placeholder={movePick ? `move ${movePick.title} to…` : undefined}
+        placeholder={movePick ? `move ${movePick.title || 'Untitled'} to…` : undefined}
         resetOn={movePick?.id ?? null}
         visits={recentPageIds}
         onQueryChange={setQuery}
