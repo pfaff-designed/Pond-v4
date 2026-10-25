@@ -84,8 +84,8 @@ describe('toc schema + registry facets', () => {
     expect(blockFrame(toc)).toEqual({ kind: 'list', heading: 'contents', headNote: '' })
   })
 
-  it('holds no content of its own, so deleting it never asks first', () => {
-    expect(blockHoldsContent(toc)).toBe(false)
+  it('derives its content from the page, so it never counts as empty on exit', () => {
+    expect(blockHoldsContent(toc)).toBe(true)
   })
 
   it('mints a bare id/type block from the `/` row (item 3)', () => {
