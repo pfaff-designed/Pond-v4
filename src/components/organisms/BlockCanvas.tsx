@@ -99,6 +99,7 @@ import {
   rowZeroZone,
   zoneWhenDrawnStacked,
   rowStacks,
+  widthPercent,
   widthTenths,
   withoutRowStart,
   type DropZone,
@@ -106,8 +107,10 @@ import {
 } from '@/lib/modules/layout-rows'
 import {
   KEY_WIDTHS,
+  commitSharedEdgeWidths,
   handOffRowStartOnResize,
   resizeAlone,
+  resizeSharedEdge,
   roundFreePercent,
 } from '@/lib/modules/block-resize'
 import { SlashLineContext, type SlashLineAt } from '@/lib/modules/text/slash-line'
@@ -1203,6 +1206,44 @@ export function BlockCanvas({
   }
 
   /**
+   * A shared-edge drag's release (KAN-505): the same in-place-swap-by-id
+   * route as `setBlockWidth`, but for both row-mates at once — their pair
+   * sum never changes, so no `rowStart` handoff is possible (a shared-edge
+   * resize never changes which blocks share a row, unlike an outer-edge
+   * shrink). One write, one undo step; the fallback toast's undo restores
+   * BOTH blocks' previous widths together.
+   */
+  const setRowWidths = (
+    leftBefore: Block,
+    rightBefore: Block,
+    leftWidth: BlockWidth | number,
+    rightWidth: BlockWidth | number
+  ) => {
+    const after = blocks.map((b) => {
+      if (b.id === leftBefore.id) return { ...b, width: leftWidth }
+      if (b.id === rightBefore.id) return { ...b, width: rightWidth }
+      return b
+    })
+    if (onStructuralWrite) {
+      commitStructuralBlocks(after)
+      return
+    }
+    onChange(after)
+    stageUndo({
+      message: 'Set the row widths',
+      scope: 'block',
+      undo: () =>
+        onChange(
+          blocksRef.current.map((b) => {
+            if (b.id === leftBefore.id) return leftBefore
+            if (b.id === rightBefore.id) return rightBefore
+            return b
+          })
+        ),
+    })
+  }
+
+  /**
    * One edge-drag, or one "fit height": the same in-place swap as
    * `setBlockWidth`, so the undo toast restores the block's previous height
    * (absent means fit). A drag previews locally and calls this once, on release.
@@ -1218,26 +1259,69 @@ export function BlockCanvas({
   }
 
   /**
-   * An alone-on-line edge drag (KAN-441): a ref, not state, for the live
-   * pointer math — `resizeAlone`'s own hysteresis (`lockedPercent`) threads
-   * call to call, and a drag fires many moves per gesture that only need to
-   * update the rendered preview, not re-run an effect. `edgePreview` is that
-   * preview: the live percent and lock state for whichever block (`index`) is
-   * mid-drag, read by the sizing div below to override its width and by the
-   * handle's readout chip. `null` off a drag.
+   * An alone-on-line edge drag (KAN-441), now shared with a row's own outer
+   * edges (KAN-505): a ref, not state, for the live pointer math —
+   * `resizeAlone`'s own hysteresis (`lockedPercent`) threads call to call,
+   * and a drag fires many moves per gesture that only need to update the
+   * rendered preview, not re-run an effect. `edgePreview` is that preview:
+   * the live percent, lock state and dragged `side` for whichever block
+   * (`id`) is mid-drag, read by the sizing div below to override its
+   * width and by the handle's readout chip. `side` is kept so only the strip
+   * actually grabbed lights its pill — a mirrored block's other edge stays
+   * unlit even though the same `id` is mid-drag. `maxPercent` is `100` for
+   * an alone block and `100 - sum(the row's other members)` for a row's
+   * outer edge, so growing it can never push the row's total past 100 and
+   * split it — the row's own other members never move. `null` off a drag.
+   * The dragged block's `id`, not its `blocks` index, is what the ref holds —
+   * the index is resolved fresh at move/release time, so a concurrent
+   * `blocks` change mid-drag (another tab's edit landing, an accepted diff)
+   * can't leave this drag writing to whatever block now sits at a stale index.
    */
   const edgeDragRef = useRef<{
     pointerId: number
-    index: number
+    id: string
     side: 'left' | 'right'
     startClientX: number
     startPercent: number
     lockedPercent: number | null
     livePercent: number
+    maxPercent: number
   } | null>(null)
   const [edgePreview, setEdgePreview] = useState<{
-    index: number
+    id: string
     percent: number
+    locked: boolean
+    side: 'left' | 'right'
+  } | null>(null)
+
+  /**
+   * A shared-edge drag (KAN-505): the same ref-for-live-math, state-for-render
+   * shape as `edgeDragRef`/`edgePreview` above, but for the pair at once —
+   * `resizeSharedEdge`'s own hysteresis threads through `lockedPercent` the
+   * same way, and `locked` is kept on the ref too (not just read off each
+   * move's return) so release can commit the named widths without redoing
+   * the snap math. `leftId`/`rightId` are the pair's own `blocks` ids, not
+   * indices — resolved to indices only at release, so a concurrent `blocks`
+   * change mid-drag can't write the wrong pair (same reasoning as
+   * `edgeDragRef`'s own `id` above).
+   */
+  const sharedEdgeDragRef = useRef<{
+    pointerId: number
+    leftId: string
+    rightId: string
+    startClientX: number
+    startLeftPercent: number
+    pairSumPercent: number
+    lockedPercent: number | null
+    liveLeft: number
+    liveRight: number
+    locked: boolean
+  } | null>(null)
+  const [sharedEdgePreview, setSharedEdgePreview] = useState<{
+    leftId: string
+    rightId: string
+    leftPercent: number
+    rightPercent: number
     locked: boolean
   } | null>(null)
   const [edgeDragActive, setEdgeDragActive] = useState(false)
@@ -1245,13 +1329,17 @@ export function BlockCanvas({
   // Esc cancels with no write, and the whole gesture shows the resize cursor
   // even where the pointer leaves the 8px strip (pointer capture keeps the
   // move/up events, not the OS cursor) — both acquired and released in this
-  // one effect, which also covers an unmount mid-drag for free.
+  // one effect, which also covers an unmount mid-drag for free. Shared with
+  // the shared-edge drag below: only one of the two refs is ever armed at a
+  // time (each pointer-down refuses to start while the other is active).
   useEffect(() => {
     if (!edgeDragActive) return
     function handleEdgeResizeKeyDown(e: KeyboardEvent) {
       if (e.key !== 'Escape') return
       edgeDragRef.current = null
       setEdgePreview(null)
+      sharedEdgeDragRef.current = null
+      setSharedEdgePreview(null)
       setEdgeDragActive(false)
     }
     document.body.style.userSelect = 'none'
@@ -1266,8 +1354,9 @@ export function BlockCanvas({
 
   function handleEdgeResizePointerDown(
     e: React.PointerEvent<HTMLDivElement>,
-    index: number,
-    side: 'left' | 'right'
+    id: string,
+    side: 'left' | 'right',
+    maxPercent = 100
   ) {
     if (edgeDragRef.current) return
     e.preventDefault()
@@ -1276,19 +1365,21 @@ export function BlockCanvas({
     } catch {
       /* capture can fail for an already-released pointer; the drag still works while over the strip */
     }
+    const block = blocks.find((b) => b.id === id)
     // The drawn width, not the stored one: a width that stacks is drawn full,
     // and the drag must begin from what the person sees.
-    const startPercent = drawnWidthPercent(columnWidth, blocks[index]?.width)
+    const startPercent = drawnWidthPercent(columnWidth, block?.width)
     edgeDragRef.current = {
       pointerId: e.pointerId,
-      index,
+      id,
       side,
       startClientX: e.clientX,
       startPercent,
       lockedPercent: null,
       livePercent: startPercent,
+      maxPercent,
     }
-    setEdgePreview({ index, percent: startPercent, locked: false })
+    setEdgePreview({ id, percent: startPercent, locked: false, side })
     setEdgeDragActive(true)
   }
 
@@ -1296,10 +1387,16 @@ export function BlockCanvas({
     const st = edgeDragRef.current
     if (!st || e.pointerId !== st.pointerId) return
     const deltaPx = st.side === 'right' ? e.clientX - st.startClientX : st.startClientX - e.clientX
-    const { percent, locked } = resizeAlone(columnWidth, st.startPercent, deltaPx, st.lockedPercent)
+    const { percent, locked } = resizeAlone(
+      columnWidth,
+      st.startPercent,
+      deltaPx,
+      st.lockedPercent,
+      st.maxPercent
+    )
     st.lockedPercent = locked ? percent : null
     st.livePercent = percent
-    setEdgePreview({ index: st.index, percent, locked })
+    setEdgePreview({ id: st.id, percent, locked, side: st.side })
   }
 
   function handleEdgeResizePointerUp(e: React.PointerEvent<HTMLDivElement>) {
@@ -1308,7 +1405,9 @@ export function BlockCanvas({
     edgeDragRef.current = null
     setEdgePreview(null)
     setEdgeDragActive(false)
-    const before = blocks[st.index]
+    // Resolved by id, now, not the index read at press: a concurrent `blocks`
+    // change mid-drag can't make this write land on the wrong block.
+    const before = blocks.find((b) => b.id === st.id)
     if (!before) return
     // Locked commits the named width (KEY_WIDTHS is the one home for the
     // glyph→named mapping), not the number its position happens to round to —
@@ -1332,6 +1431,105 @@ export function BlockCanvas({
     if (!st || e.pointerId !== st.pointerId) return
     edgeDragRef.current = null
     setEdgePreview(null)
+    setEdgeDragActive(false)
+  }
+
+  function handleSharedEdgeResizePointerDown(
+    e: React.PointerEvent<HTMLDivElement>,
+    leftId: string,
+    rightId: string
+  ) {
+    if (edgeDragRef.current || sharedEdgeDragRef.current) return
+    const leftBlock = blocks.find((b) => b.id === leftId)
+    const rightBlock = blocks.find((b) => b.id === rightId)
+    if (!leftBlock || !rightBlock) return
+    e.preventDefault()
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId)
+    } catch {
+      /* capture can fail for an already-released pointer; the drag still works while over the strip */
+    }
+    // The row already holds both members side by side (a shared strip only
+    // mounts when `!stacks`), so each one's drawn percent IS its stored
+    // percent — unlike `handleEdgeResizePointerDown`'s `drawnWidthPercent`,
+    // which exists only for a lone block stacked past the floor.
+    const startLeftPercent = widthPercent(leftBlock.width)
+    const pairSumPercent = startLeftPercent + widthPercent(rightBlock.width)
+    sharedEdgeDragRef.current = {
+      pointerId: e.pointerId,
+      leftId,
+      rightId,
+      startClientX: e.clientX,
+      startLeftPercent,
+      pairSumPercent,
+      lockedPercent: null,
+      liveLeft: startLeftPercent,
+      liveRight: pairSumPercent - startLeftPercent,
+      locked: false,
+    }
+    setSharedEdgePreview({
+      leftId,
+      rightId,
+      leftPercent: startLeftPercent,
+      rightPercent: pairSumPercent - startLeftPercent,
+      locked: false,
+    })
+    setEdgeDragActive(true)
+  }
+
+  function handleSharedEdgeResizePointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    const st = sharedEdgeDragRef.current
+    if (!st || e.pointerId !== st.pointerId) return
+    const deltaPx = e.clientX - st.startClientX
+    const { left, right, locked } = resizeSharedEdge(
+      columnWidth,
+      st.startLeftPercent,
+      st.pairSumPercent,
+      deltaPx,
+      st.lockedPercent
+    )
+    st.lockedPercent = locked ? left : null
+    st.liveLeft = left
+    st.liveRight = right
+    st.locked = locked
+    setSharedEdgePreview({
+      leftId: st.leftId,
+      rightId: st.rightId,
+      leftPercent: left,
+      rightPercent: right,
+      locked,
+    })
+  }
+
+  function handleSharedEdgeResizePointerUp(e: React.PointerEvent<HTMLDivElement>) {
+    const st = sharedEdgeDragRef.current
+    if (!st || e.pointerId !== st.pointerId) return
+    sharedEdgeDragRef.current = null
+    setSharedEdgePreview(null)
+    setEdgeDragActive(false)
+    // Resolved by id, now, not the indices read at press — see `edgeDragRef`'s
+    // own `id` field above for why.
+    const leftBefore = blocks.find((b) => b.id === st.leftId)
+    const rightBefore = blocks.find((b) => b.id === st.rightId)
+    if (!leftBefore || !rightBefore) return
+    const committed = commitSharedEdgeWidths(columnWidth, st.pairSumPercent, {
+      left: st.liveLeft,
+      right: st.liveRight,
+      locked: st.locked,
+    })
+    // Unchanged from the stored widths: no write (mirrors `handleEdgeResizePointerUp`'s own check).
+    const unchanged =
+      widthTenths(committed.left) === widthTenths(leftBefore.width) &&
+      widthTenths(committed.right) === widthTenths(rightBefore.width)
+    if (unchanged) return
+    setRowWidths(leftBefore, rightBefore, committed.left, committed.right)
+  }
+
+  function handleSharedEdgeResizePointerCancel(e: React.PointerEvent<HTMLDivElement>) {
+    const st = sharedEdgeDragRef.current
+    if (!st || e.pointerId !== st.pointerId) return
+    sharedEdgeDragRef.current = null
+    setSharedEdgePreview(null)
     setEdgeDragActive(false)
   }
 
@@ -2809,6 +3007,15 @@ export function BlockCanvas({
                 // `blockRows` without touching any ancestor element, and a
                 // remount is impossible rather than untested.
                 const stacks = rowStacks(columnWidth, widths)
+                // The shared strip (KAN-505) is an 8px (`w-2`) strip centred in
+                // the row's own gap, not hugging either block's border: its
+                // `right` offset is half the gap plus half the strip's own
+                // width, so a 16px gap (the default) gives -12px, matching the
+                // SPEC's own "-12px-ish". Read from `rowGapValue`, not the
+                // BLOCK_ROW_GAP_PX constant, so a host override (zen's wider
+                // gap) keeps the strip centred too.
+                const rowGapPx = rowGapValue(listStyle)
+                const sharedOffsetPx = typeof rowGapPx === 'number' ? -(rowGapPx / 2 + 4) : -12
                 // Every sizing div starts its own flex line EXCEPT the page's
                 // very first block, and (within row 0, non-stacking) the rest of
                 // that one shared line: those stay at the top with no gap above
@@ -2819,10 +3026,54 @@ export function BlockCanvas({
                 const entries = row.map((item, itemIndex) => ({
                   item,
                   stacks,
-                  // Alone on its line (no row-mate): both edges render a resize
-                  // handle (KAN-441). A row-sharing block renders none in this
-                  // slice — the shared divider is the split-off child ticket.
-                  aloneOnLine: row.length === 1,
+                  // A row of MULTIPLE members that stacks (each wraps to its
+                  // own line, too narrow to hold side by side) draws no strip
+                  // at all — there is no row left to resize against. A block
+                  // alone on its line (row.length === 1) is never gated on
+                  // `stacks`: `stacks` there only means ITS OWN stored width
+                  // underflows the floor and is drawn full (KAN-441, the
+                  // "narrower than the stack floor" case) — both its edges
+                  // still resize it. Else: the row's first member gets its
+                  // own left edge, the row's last gets its own right edge,
+                  // and every boundary between members (KAN-505) gets ONE
+                  // shared strip, carried by the boundary's LEFT member so a
+                  // 2-block row renders exactly 3 strips, not 4 (its own
+                  // right edge and the next block's left edge would
+                  // otherwise double up the same boundary).
+                  showLeftEdge: itemIndex === 0 && (row.length === 1 || !stacks),
+                  showSharedEdge: row.length > 1 && !stacks && itemIndex < row.length - 1,
+                  // The shared strip's drag needs its row-mate's own `blocks`
+                  // id (resolved to an index once, on press) — carried here
+                  // rather than recomputed from `i + 1` below, since a ghost
+                  // mid-row (a block-drag reorder, KAN-440) would otherwise
+                  // throw that index off; chrome hides every strip during
+                  // that drag anyway (`draggingIndex !== null`), so this id
+                  // is only ever read while it's actually safe to use.
+                  sharedRightId: itemIndex < row.length - 1 ? row[itemIndex + 1].id : undefined,
+                  showRightEdge: itemIndex === row.length - 1 && (row.length === 1 || !stacks),
+                  sharedOffsetPx,
+                  // The right member of every boundary (KAN-505): its own sizing
+                  // div — NOT the card inside it — needs an explicit z-index
+                  // above the shared strip's `z-[1]` (carried by the LEFT
+                  // member), because the card can gain its own stacking context
+                  // mid-session (`motion-settle-in`'s transform, left `both`)
+                  // that would otherwise trap any z-index set inside it. This
+                  // wrapper sits outside any card transform, so it stacks the
+                  // whole subtree — grip included — above the strip regardless.
+                  liftAboveSharedStrip: itemIndex > 0 && row.length > 1 && !stacks,
+                  // A row-sharing block's outer edge (KAN-505) resizes only
+                  // itself — its row-mates never move — so growing it is
+                  // capped at `100 - sum(the row's other members)`: the
+                  // complement of whatever share they already hold, which is
+                  // exactly how far this one can grow before the row's total
+                  // would pass 100 and split. An alone block has no row-mates
+                  // to cap against, so its own edges keep the default (100).
+                  outerMaxPercent:
+                    row.length > 1 && !stacks
+                      ? 100 -
+                        (widths.reduce<number>((sum, w) => sum + widthPercent(w), 0) -
+                          widthPercent(item.width))
+                      : 100,
                   marginTop:
                     rowIndex === 0 && (!stacks || itemIndex === 0) ? 0 : rowGapValue(listStyle),
                 }))
@@ -2838,19 +3089,43 @@ export function BlockCanvas({
                     />
                   )
                 }
-                const { item, stacks, aloneOnLine, marginTop } = entry
+                const {
+                  item,
+                  stacks,
+                  showLeftEdge,
+                  showSharedEdge,
+                  sharedRightId,
+                  showRightEdge,
+                  outerMaxPercent,
+                  sharedOffsetPx,
+                  liftAboveSharedStrip,
+                  marginTop,
+                } = entry
                 // A live edge drag previews this block's width locally — never
                 // written to `blocks` until release — so it overrides the
                 // committed width here rather than going through `stacks`.
                 const resizing =
-                  !item.ghost && edgePreview && blocks[edgePreview.index]?.id === item.id
-                    ? edgePreview
-                    : null
+                  !item.ghost && edgePreview && edgePreview.id === item.id ? edgePreview : null
+                // A shared-edge drag previews BOTH row-mates at once: this
+                // item reads whichever side of the pair it is, by id (not
+                // index — the dragged pair's own ids are fixed for the
+                // gesture, `sharedEdgePreview` doesn't track `i`).
+                const sharedResizing =
+                  !item.ghost && sharedEdgePreview && sharedEdgePreview.leftId === item.id
+                    ? { percent: sharedEdgePreview.leftPercent, locked: sharedEdgePreview.locked }
+                    : !item.ghost && sharedEdgePreview && sharedEdgePreview.rightId === item.id
+                      ? {
+                          percent: sharedEdgePreview.rightPercent,
+                          locked: sharedEdgePreview.locked,
+                        }
+                      : null
                 const sizingWidth = resizing
                   ? blockWidthStyle(resizing.percent)
-                  : stacks || item.width === 'full'
-                    ? '100%'
-                    : blockWidthStyle(item.width)
+                  : sharedResizing
+                    ? blockWidthStyle(sharedResizing.percent)
+                    : stacks || item.width === 'full'
+                      ? '100%'
+                      : blockWidthStyle(item.width)
                 const i = blocks.findIndex((b) => b.id === item.id)
                 // Measured by `itemSizingRefs` (above) so the row-boundary
                 // line below — rendered once per ROW, not here — can anchor
@@ -2862,54 +3137,113 @@ export function BlockCanvas({
                       if (node) itemSizingRefs.current.set(item.id, node)
                       else itemSizingRefs.current.delete(item.id)
                     }}
-                    className="relative min-w-0 transition-[width] duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none"
+                    className={cn(
+                      'relative min-w-0 transition-[width] duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none',
+                      liftAboveSharedStrip && 'z-[2]'
+                    )}
                     style={{ width: sizingWidth, marginTop }}
                   >
                     {renderBlockEditor(blocks[i], i)}
-                    {aloneOnLine && (
-                      <>
-                        <BlockEdgeHandle
-                          side="left"
-                          hidden={!chrome || draggingIndex !== null}
-                          dragging={resizing !== null}
-                          readout={
-                            resizing
-                              ? edgeResizeReadout(resizing.percent, resizing.locked)
-                              : undefined
-                          }
-                          valueNow={
-                            resizing ? resizing.percent : drawnWidthPercent(columnWidth, item.width)
-                          }
-                          // A toggle's own fold button sits in this edge's gutter (its
-                          // first 28px row) and is lifted above this strip by z-index
-                          // (KAN-480, bounded round-3 fix) — clip the strip's own top
-                          // short of that row so the two never contest the same
-                          // pointer-down; every other block type's left edge is
-                          // untouched (prop left unset, full height).
-                          topInsetPx={blocks[i]?.type === 'toggle' ? TOGGLE_FOLD_ROW_PX : undefined}
-                          onPointerDown={(e) => handleEdgeResizePointerDown(e, i, 'left')}
-                          onPointerMove={handleEdgeResizePointerMove}
-                          onPointerUp={handleEdgeResizePointerUp}
-                          onPointerCancel={handleEdgeResizePointerCancel}
-                        />
-                        <BlockEdgeHandle
-                          side="right"
-                          hidden={!chrome || draggingIndex !== null}
-                          dragging={resizing !== null}
-                          readout={
-                            resizing
-                              ? edgeResizeReadout(resizing.percent, resizing.locked)
-                              : undefined
-                          }
-                          valueNow={
-                            resizing ? resizing.percent : drawnWidthPercent(columnWidth, item.width)
-                          }
-                          onPointerDown={(e) => handleEdgeResizePointerDown(e, i, 'right')}
-                          onPointerMove={handleEdgeResizePointerMove}
-                          onPointerUp={handleEdgeResizePointerUp}
-                          onPointerCancel={handleEdgeResizePointerCancel}
-                        />
-                      </>
+                    {showLeftEdge && (
+                      <BlockEdgeHandle
+                        side="left"
+                        hidden={!chrome || draggingIndex !== null}
+                        // Only the strip actually grabbed lights its pill: an
+                        // alone block's mirrored right edge stays unlit while
+                        // its left is mid-drag, even though both share `resizing`.
+                        dragging={resizing !== null && resizing.side === 'left'}
+                        readout={
+                          resizing && resizing.side === 'left'
+                            ? edgeResizeReadout(resizing.percent, resizing.locked)
+                            : undefined
+                        }
+                        valueNow={
+                          resizing ? resizing.percent : drawnWidthPercent(columnWidth, item.width)
+                        }
+                        // A toggle's own fold button sits in this edge's gutter (its
+                        // first 28px row) and is lifted above this strip by z-index
+                        // (KAN-480, bounded round-3 fix) — clip the strip's own top
+                        // short of that row so the two never contest the same
+                        // pointer-down; every other block type's left edge is
+                        // untouched (prop left unset, full height).
+                        topInsetPx={blocks[i]?.type === 'toggle' ? TOGGLE_FOLD_ROW_PX : undefined}
+                        // This strip only ever mounts on a row's first member
+                        // (`showLeftEdge`'s own gate) — alone or sharing a row,
+                        // it's always that row's own left edge, so both wire
+                        // the same handler; `outerMaxPercent` is the row's
+                        // other members' complement for a shared row, and 100
+                        // (no cap) for an alone block.
+                        onPointerDown={(e) =>
+                          handleEdgeResizePointerDown(e, item.id, 'left', outerMaxPercent)
+                        }
+                        onPointerMove={handleEdgeResizePointerMove}
+                        onPointerUp={handleEdgeResizePointerUp}
+                        onPointerCancel={handleEdgeResizePointerCancel}
+                      />
+                    )}
+                    {showSharedEdge && (
+                      // The boundary strip between this block and its row-mate
+                      // to the right: mounted here (carried by the boundary's
+                      // left member) so a row renders one strip per boundary,
+                      // not two.
+                      <BlockEdgeHandle
+                        side="shared"
+                        hidden={!chrome || draggingIndex !== null}
+                        // This boundary's own drag, not just its width changing: the
+                        // right row-mate's width previews too (`sharedResizing` matches
+                        // either side, for `sizingWidth` above), but only the LEFT
+                        // member of THIS boundary carries its pill and readout — the
+                        // right mate is also the left member of a DIFFERENT boundary,
+                        // whose own strip must stay dark while this one drags.
+                        dragging={sharedEdgePreview !== null && sharedEdgePreview.leftId === item.id}
+                        readout={
+                          sharedEdgePreview !== null &&
+                          sharedEdgePreview.leftId === item.id &&
+                          sharedResizing
+                            ? edgeResizeReadout(sharedResizing.percent, sharedResizing.locked)
+                            : undefined
+                        }
+                        valueNow={
+                          sharedResizing ? sharedResizing.percent : widthPercent(item.width)
+                        }
+                        sharedOffsetPx={sharedOffsetPx}
+                        onPointerDown={
+                          sharedRightId !== undefined
+                            ? (e) => handleSharedEdgeResizePointerDown(e, item.id, sharedRightId)
+                            : undefined
+                        }
+                        onPointerMove={handleSharedEdgeResizePointerMove}
+                        onPointerUp={handleSharedEdgeResizePointerUp}
+                        onPointerCancel={handleSharedEdgeResizePointerCancel}
+                      />
+                    )}
+                    {showRightEdge && (
+                      <BlockEdgeHandle
+                        side="right"
+                        hidden={!chrome || draggingIndex !== null}
+                        dragging={resizing !== null && resizing.side === 'right'}
+                        readout={
+                          resizing && resizing.side === 'right'
+                            ? edgeResizeReadout(resizing.percent, resizing.locked)
+                            : undefined
+                        }
+                        valueNow={
+                          resizing ? resizing.percent : drawnWidthPercent(columnWidth, item.width)
+                        }
+                        // This strip only ever mounts on a row's last member
+                        // (`showRightEdge`'s own gate) — alone or sharing a
+                        // row, it's always that row's own right edge, so both
+                        // wire the same handler; `outerMaxPercent` caps a
+                        // shared row's growth at its other members'
+                        // complement, so this edge resizes only itself and
+                        // the row never splits.
+                        onPointerDown={(e) =>
+                          handleEdgeResizePointerDown(e, item.id, 'right', outerMaxPercent)
+                        }
+                        onPointerMove={handleEdgeResizePointerMove}
+                        onPointerUp={handleEdgeResizePointerUp}
+                        onPointerCancel={handleEdgeResizePointerCancel}
+                      />
                     )}
                   </div>
                 )
@@ -4141,7 +4475,15 @@ function BlockEditor({
           block menu (KAN-485), which is where `delete` lives. Inside the card
           it must stack ABOVE the body that follows it in the DOM (the card's
           paper, a text block's editor) or taps land on the body: `z-[1]`, the
-          lowest lift that does it, under every floating surface (z ≥ 4). */}
+          lowest lift that does it, under every floating surface (z ≥ 4).
+          Desktop's own grip sits further out (`-left-3.5`), where a row-mate's
+          shared edge strip (KAN-505, `z-[1]`) reaches into the same pixels —
+          but that fight is won one level up, on the sizing div outside this
+          card (`liftAboveSharedStrip`, above): a card with `motion-settle-in`
+          keeps a `transform` (fill-mode `both`) long after it finishes,
+          which makes the card its own stacking context and would trap any
+          z-index raised in here instead. This `z-[1]` only has to clear the
+          body beside it, same as before KAN-505. */}
       <div
         data-part="handle"
         hidden={!chrome}
@@ -4150,7 +4492,7 @@ function BlockEditor({
           menuSize === 'mobile'
             ? 'right-0.5 top-0.5 z-[1]'
             : [
-                '-left-3.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
+                '-left-3.5 z-[1] opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
                 // A card centres the 24px handle on its head row; bare prose has no head
                 // row, so it centres on the first line (2px inset + half the 28px line).
                 !frame && block.type === 'text' ? 'top-1' : 'top-3',

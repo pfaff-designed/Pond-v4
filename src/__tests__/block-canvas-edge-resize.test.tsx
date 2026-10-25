@@ -4,12 +4,15 @@
  * preview overrides the block's rendered width with no write, release commits
  * once through `setBlockWidth`'s numeric route (one undo entry restores the
  * old width), and Esc cancels with no write. Hidden during a `⋮⋮` block drag
- * (KAN-440) or with `chrome={false}`; a row-sharing block renders no edge
- * handle in this slice (the shared divider is the split-off child ticket).
+ * (KAN-440) or with `chrome={false}`; a row-sharing block mounts a shared
+ * strip at its boundary and the row's two outer strips instead of its own
+ * left/right pair (KAN-505) — the outer strips resize only their own block,
+ * through the same `setBlockWidth` route, capped at the row's max so the row
+ * never splits.
  */
 
 import React from 'react'
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BlockCanvas, type BlockCanvasProps } from '@/components/organisms/BlockCanvas'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
@@ -46,11 +49,11 @@ function renderCanvas(
 const blockRoot = (blockId: string) => document.getElementById(`block-${blockId}`)!
 const sizingDiv = (blockId: string) => blockRoot(blockId).parentElement as HTMLElement
 
-function edgeHandle(blockId: string, side: 'left' | 'right'): HTMLElement | null {
+function edgeHandle(blockId: string, side: 'left' | 'right' | 'shared'): HTMLElement | null {
   return sizingDiv(blockId).querySelector(`[data-testid="block-edge-handle"][data-side="${side}"]`)
 }
 
-function readoutText(blockId: string, side: 'left' | 'right'): string | null {
+function readoutText(blockId: string, side: 'left' | 'right' | 'shared'): string | null {
   const handle = edgeHandle(blockId, side)
   return handle?.querySelector('[data-testid="block-edge-handle-readout"]')?.textContent ?? null
 }
@@ -89,6 +92,11 @@ function setColumnWidth(
 /** A right-edge drag: `clientX` is the pointer's raw position, so `clientX` itself is the delta off a `0` pointer-down. */
 function dragRightEdge(blockId: string, clientX: number) {
   fireEvent.pointerMove(edgeHandle(blockId, 'right')!, { clientX })
+}
+
+/** A shared-edge drag (carried by the boundary's left member): same `clientX`-is-the-delta convention as `dragRightEdge`. */
+function dragSharedEdge(leftBlockId: string, clientX: number) {
+  fireEvent.pointerMove(edgeHandle(leftBlockId, 'shared')!, { clientX })
 }
 
 describe('an alone-on-line edge drag (KAN-441)', () => {
@@ -388,15 +396,202 @@ describe('an alone-on-line edge drag (KAN-441)', () => {
     }
   })
 
-  it('renders no edge handle on blocks that share a row (the divider is a split-off child ticket)', () => {
+  it('a ½/½ row mounts one shared strip at the boundary and the row\'s two outer strips (KAN-505)', () => {
     const left: Block = { id: 'b-left', type: 'text', content: 'left', width: '1/2' }
     const right: Block = { id: 'b-right', type: 'text', content: 'right', width: '1/2' }
     renderCanvas([left, right], () => {})
 
-    expect(edgeHandle('b-left', 'left')).toBeNull()
-    expect(edgeHandle('b-left', 'right')).toBeNull()
-    expect(edgeHandle('b-right', 'left')).toBeNull()
-    expect(edgeHandle('b-right', 'right')).toBeNull()
+    expect(edgeHandle('b-left', 'left')).not.toBeNull() // the row's own left edge
+    expect(edgeHandle('b-left', 'shared')).not.toBeNull() // the boundary, carried by the left member
+    expect(edgeHandle('b-left', 'right')).toBeNull() // no separate strip: the shared strip covers it
+    expect(edgeHandle('b-right', 'left')).toBeNull() // covered by b-left's shared strip
+    expect(edgeHandle('b-right', 'shared')).toBeNull() // the row's last member has no boundary after it
+    expect(edgeHandle('b-right', 'right')).not.toBeNull() // the row's own right edge
+  })
+
+  describe('a shared-edge drag (KAN-505)', () => {
+    // 1016 = columnPx(1000) + the 16px row gap `percentToRenderedPx` folds in — the
+    // delta that lands the raw left percent at exactly 67%, 3px (in the lock's own
+    // naive percent*columnPx metric) past ⅔'s own 667px, inside the 8px lock band.
+    const PAST_TWO_THIRDS_CLIENT_X = 1016 * 0.67 - 16 - (1016 * 0.5 - 16)
+
+    it('drag right past the ⅔ lock, release: ⅔/⅓ as one write', () => {
+      const ro = mockResizeObserver()
+      try {
+        const left: Block = { id: 'b-left', type: 'text', content: 'left', width: '1/2' }
+        const right: Block = { id: 'b-right', type: 'text', content: 'right', width: '1/2' }
+        const onChange = jest.fn()
+        renderCanvas([left, right], onChange)
+        setColumnWidth('b-left', 1000, ro)
+
+        const shared = edgeHandle('b-left', 'shared')!
+        fireEvent.pointerDown(shared, { clientX: 0 })
+        dragSharedEdge('b-left', PAST_TWO_THIRDS_CLIENT_X)
+        expect(readoutText('b-left', 'shared')).toBe('⅔')
+
+        fireEvent.pointerUp(shared, { clientX: PAST_TWO_THIRDS_CLIENT_X })
+
+        expect(onChange).toHaveBeenCalledTimes(1)
+        expect(onChange).toHaveBeenCalledWith([
+          { ...left, width: '2/3' },
+          { ...right, width: '1/3' },
+        ])
+      } finally {
+        ro.restore()
+      }
+    })
+
+    it('Esc mid-drag restores both widths and writes nothing', () => {
+      const ro = mockResizeObserver()
+      try {
+        const left: Block = { id: 'b-left', type: 'text', content: 'left', width: '1/2' }
+        const right: Block = { id: 'b-right', type: 'text', content: 'right', width: '1/2' }
+        const onChange = jest.fn()
+        renderCanvas([left, right], onChange)
+        setColumnWidth('b-left', 1000, ro)
+
+        const shared = edgeHandle('b-left', 'shared')!
+        fireEvent.pointerDown(shared, { clientX: 0 })
+        dragSharedEdge('b-left', PAST_TWO_THIRDS_CLIENT_X)
+        expect(readoutText('b-left', 'shared')).toBe('⅔')
+
+        fireEvent.keyDown(document.body, { key: 'Escape' })
+
+        expect(readoutText('b-left', 'shared')).toBeNull()
+        expect(onChange).not.toHaveBeenCalled()
+
+        // The drag is over: a further move does nothing (the ref was cleared).
+        dragSharedEdge('b-left', 500)
+        expect(onChange).not.toHaveBeenCalled()
+      } finally {
+        ro.restore()
+      }
+    })
+
+    it('a pointerdown/pointerup with no movement writes nothing', () => {
+      const ro = mockResizeObserver()
+      try {
+        const left: Block = { id: 'b-left', type: 'text', content: 'left', width: '1/2' }
+        const right: Block = { id: 'b-right', type: 'text', content: 'right', width: '1/2' }
+        const onChange = jest.fn()
+        renderCanvas([left, right], onChange)
+        setColumnWidth('b-left', 1000, ro)
+
+        const shared = edgeHandle('b-left', 'shared')!
+        fireEvent.pointerDown(shared, { clientX: 0 })
+        fireEvent.pointerUp(shared, { clientX: 0 })
+
+        expect(onChange).not.toHaveBeenCalled()
+      } finally {
+        ro.restore()
+      }
+    })
+
+    it("in a ⅓/⅓/⅓ row, dragging boundary 1 leaves boundary 2's strip unlit", () => {
+      const ro = mockResizeObserver()
+      try {
+        const a: Block = { id: 'b-a', type: 'text', content: 'a', width: '1/3' }
+        const b: Block = { id: 'b-b', type: 'text', content: 'b', width: '1/3' }
+        const c: Block = { id: 'b-c', type: 'text', content: 'c', width: '1/3' }
+        renderCanvas([a, b, c], () => {})
+        setColumnWidth('b-a', 1200, ro)
+
+        // Boundary 1 (carried by a) is the one actually grabbed.
+        const boundary1 = edgeHandle('b-a', 'shared')!
+        fireEvent.pointerDown(boundary1, { clientX: 0 })
+        dragSharedEdge('b-a', 50)
+        expect(boundary1.getAttribute('data-dragging')).toBe('true')
+        expect(readoutText('b-a', 'shared')).not.toBeNull()
+
+        // Boundary 2 (carried by b) must stay dark: b's own width previews
+        // too, as boundary 1's right mate, but b carries a DIFFERENT
+        // boundary's strip — nobody is dragging it.
+        const boundary2 = edgeHandle('b-b', 'shared')!
+        expect(boundary2.getAttribute('data-dragging')).toBeNull()
+        expect(readoutText('b-b', 'shared')).toBeNull()
+
+        fireEvent.pointerUp(boundary1, { clientX: 50 })
+      } finally {
+        ro.restore()
+      }
+    })
+
+    it("the right block's own sizing div (not its card) stacks above the shared strip it overlaps, so a press on its grip arms a drag, not a resize", () => {
+      const ro = mockResizeObserver()
+      try {
+        const left: Block = { id: 'b-left', type: 'text', content: 'left', width: '1/2' }
+        const right: Block = { id: 'b-right', type: 'text', content: 'right', width: '1/2' }
+        renderCanvas([left, right], () => {})
+        setColumnWidth('b-left', 1000, ro)
+
+        // The shared strip (carried by the left member) is an explicit `z-[1]`.
+        // The right member's CARD can gain its own stacking context mid-session
+        // (`motion-settle-in`'s transform, left `both`), which would trap any
+        // z-index raised inside it — so the lift has to sit on the right
+        // member's SIZING DIV, outside the card, where no transform reaches.
+        const strip = edgeHandle('b-left', 'shared')!
+        expect(strip.className).toMatch(/z-\[1\]/)
+        expect(sizingDiv('b-right').className).toMatch(/\brelative\b/)
+        expect(sizingDiv('b-right').className).toMatch(/z-\[2\]/)
+        // The left member's own sizing div carries no such lift — it isn't the
+        // right mate of any boundary.
+        expect(sizingDiv('b-left').className).not.toMatch(/z-\[2\]/)
+
+        const grip = within(blockRoot('b-right')).getByRole('button', { name: 'drag to move' })
+        fireEvent.pointerDown(grip, { clientX: 0, clientY: 0 })
+
+        expect(blockRoot('b-right')).toHaveAttribute('draggable', 'true')
+        expect(strip.getAttribute('data-dragging')).toBeNull()
+      } finally {
+        ro.restore()
+      }
+    })
+
+    it('an in-session-inserted right row-mate (carrying motion-settle-in) still gets the lift above the shared strip', () => {
+      const ro = mockResizeObserver()
+      try {
+        const left: Block = { id: 'b-left', type: 'text', content: 'left', width: '1/2' }
+        const right: Block = { id: 'b-right', type: 'text', content: 'right', width: '1/2' }
+        renderCanvas([left, right], () => {}, { insertedIds: new Set(['b-right']) })
+        setColumnWidth('b-left', 1000, ro)
+
+        expect(blockRoot('b-right').className).toMatch(/motion-settle-in/)
+        expect(sizingDiv('b-right').className).toMatch(/z-\[2\]/)
+      } finally {
+        ro.restore()
+      }
+    })
+  })
+
+  describe('a row\'s outer-edge drag (KAN-505)', () => {
+    it('dragging the right outer edge of a ½/½ row left to ⅓ resizes only that block; the row stays one row', () => {
+      const ro = mockResizeObserver()
+      try {
+        const left: Block = { id: 'b-left', type: 'text', content: 'left', width: '1/2' }
+        const right: Block = { id: 'b-right', type: 'text', content: 'right', width: '1/2' }
+        const onChange = jest.fn()
+        renderCanvas([left, right], onChange)
+        setColumnWidth('b-left', 1000, ro)
+
+        const rightEdge = edgeHandle('b-right', 'right')!
+        fireEvent.pointerDown(rightEdge, { clientX: 0 })
+
+        // 1016 = columnPx(1000) + the row gap; the delta that moves the
+        // rendered right edge from ½'s own 492px down to ⅓'s own 322.67px —
+        // landing exactly on the key, same `percentToRenderedPx` formula as
+        // the shared-edge test's own `PAST_TWO_THIRDS_CLIENT_X` above.
+        const TO_ONE_THIRD_CLIENT_X = 1016 * (1 / 3) - 16 - (1016 * 0.5 - 16)
+        dragRightEdge('b-right', TO_ONE_THIRD_CLIENT_X)
+        expect(readoutText('b-right', 'right')).toBe('⅓')
+
+        fireEvent.pointerUp(rightEdge, { clientX: TO_ONE_THIRD_CLIENT_X })
+
+        expect(onChange).toHaveBeenCalledTimes(1)
+        expect(onChange).toHaveBeenCalledWith([left, { ...right, width: '1/3' }])
+      } finally {
+        ro.restore()
+      }
+    })
   })
 
   it('a toggle\'s left edge strip starts short of its own fold button\'s 28px row (KAN-480, bounded round-3 fix)', () => {
