@@ -99,6 +99,13 @@ function renderPanel() {
   )
 }
 
+// A slash row's hit highlight can substring-match another row's full label
+// (`table` inside `table of contents`) — pick the row by its exact label.
+const rowByLabel = (menu: HTMLElement, label: string) =>
+  within(menu)
+    .getAllByRole('option')
+    .find((row) => row.querySelector('[data-part="label"]')!.textContent === label)!
+
 beforeEach(() => {
   jest.clearAllMocks()
   currentNodeId = null
@@ -184,7 +191,7 @@ describe('Life is a page (#234)', () => {
       await screen.findByRole('listbox', { name: 'blocks' })
       writeInTextBlock(editor, `/${c.name}`)
       const menu = await screen.findByRole('listbox', { name: 'blocks' })
-      fireEvent.click(within(menu).getByText(c.name))
+      fireEvent.click(rowByLabel(menu, c.name))
       // The pick persists to the HOME row (id 'home-1'), not any area. Matched on
       // the picked block, not "the first save": the panel's debounced save is not
       // cancelled by unmount (a typed edit must still land), so an earlier test's
@@ -222,7 +229,7 @@ describe('Life is a page (#234)', () => {
       await screen.findByRole('listbox', { name: 'blocks' })
       writeInTextBlock(editor, `/${name}`)
       const menu = await screen.findByRole('listbox', { name: 'blocks' })
-      fireEvent.click(within(menu).getByText(name))
+      fireEvent.click(rowByLabel(menu, name))
 
       await waitFor(() => {
         const glass = document.querySelector('[data-part="glass"][data-kind="source"]')
