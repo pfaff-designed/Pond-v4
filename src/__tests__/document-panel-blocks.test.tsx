@@ -9,10 +9,11 @@
  */
 
 import React from 'react'
-import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react'
+import { act, cleanup, render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DocumentPanel } from '@/components/organisms/DocumentPanel'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
+import { resetPageWriteRegistry } from '@/lib/pages/page-flush'
 import type { Block } from '@/lib/documents/types'
 import { justSaved } from '@/lib/templates/just-saved'
 import {
@@ -129,6 +130,16 @@ beforeEach(() => {
   mockSaveProps.mockResolvedValue(undefined)
 })
 
+// KAN-550: the page-write registry is module-level and outlives any one
+// test's render. Under parallel load, an earlier test's still-pending queued
+// write to `page-1` (e.g. the `/page` tests' page-link flush) landed inside a
+// later test's `commitBlocks` calls for the same page id. Clear it only after
+// `cleanup()` unmounts this test's own panel, so nothing it started outlives it.
+afterEach(() => {
+  cleanup()
+  resetPageWriteRegistry()
+})
+
 describe('DocumentPanel block rendering (via the module registry)', () => {
   it('renders a text block in place as typeset prose — editable, with no source field', async () => {
     renderPanel()
@@ -230,6 +241,21 @@ describe('the / menu on an empty page makes pages', () => {
     fireEvent.click(row)
   }
 
+  // KAN-556: the page-link write that replaces the `/page` block is
+  // fire-and-forget from `BlockCanvas`'s own `onChange` (`void
+  // writeStructural(next)`) — unawaited, its `commitBlocks` call can still be
+  // in flight when this test's `cleanup()`/`resetPageWriteRegistry()` run,
+  // landing instead inside the NEXT test's `mockCommitBlocks` calls. Wait for
+  // it to land before the test ends so no write crosses a test boundary.
+  const waitForPageLinkWrite = () =>
+    waitFor(() =>
+      expect(
+        mockCommitBlocks.mock.calls.some(
+          (c) => c[2] === 'page-1' && (c[3] as Block[]).some((b) => b.type === 'page-link')
+        )
+      ).toBe(true)
+    )
+
   it('`page` makes a child of this page and removes the `/…` line', async () => {
     renderWith({ id: 'page-1', parentId: 'root-1', type: 'page', title: 'Health', blocks: [] })
     const { editor } = await openSlash('page')
@@ -239,9 +265,10 @@ describe('the / menu on an empty page makes pages', () => {
     expect(mockCreatePage).toHaveBeenCalledWith(
       expect.anything(),
       'user-1',
-      expect.objectContaining({ parentId: 'page-1', type: 'page', title: 'untitled' })
+      expect.objectContaining({ parentId: 'page-1', type: 'page', title: '' })
     )
     await waitFor(() => expect(screen.queryByText(/^\/page/)).not.toBeInTheDocument())
+    await waitForPageLinkWrite()
   })
 
   it('`page` makes a child of this page, not a sibling beside it', async () => {
@@ -253,8 +280,9 @@ describe('the / menu on an empty page makes pages', () => {
     expect(mockCreatePage).toHaveBeenCalledWith(
       expect.anything(),
       'user-1',
-      expect.objectContaining({ parentId: 'page-1', title: 'untitled' })
+      expect.objectContaining({ parentId: 'page-1', title: '' })
     )
+    await waitForPageLinkWrite()
   })
 
   it('removes the `/…` block by id, so a block inserted above it during the awaits survives', async () => {
@@ -289,6 +317,7 @@ describe('the / menu on an empty page makes pages', () => {
     await waitFor(() => expect(screen.queryByText('/page')).not.toBeInTheDocument())
     const [survivor] = queryAllTextBlocks()
     expect(survivor).toHaveTextContent('')
+    await waitForPageLinkWrite()
   })
 
   it('a template of yours is listed under `yours` and applied whole, stamped once with where it came from', async () => {
@@ -314,6 +343,43 @@ describe('the / menu on an empty page makes pages', () => {
     mockUsePondId.mockReturnValue('pond-1')
     justSaved.set('pond-1', 't1')
     renderWith({ id: 'page-1', parentId: null, type: 'page', title: 'Health', blocks: [] })
+
+    // KAN-550: nothing on this path is on a timer (`writeStructural`'s own
+    // flush runs synchronously), so the apply's real-time risk is pure CPU
+    // contention outrunning `waitFor`'s own poll budget, not a logic race —
+    // signal from inside the mocks themselves instead, so the test waits
+    // exactly as long as the apply actually takes, with no deadline to miss.
+    // KAN-556: KAN-550 keyed that signal on `contentOf(applied[0]) !== '/'`,
+    // which a leaked page-link write to this same page-1 (from an earlier
+    // test's unawaited `/page` flow, still in flight under parallel load)
+    // also satisfies — `contentOf` returns `undefined` for a non-text block,
+    // and `undefined !== '/'` is true. Match the template's own content
+    // instead, the way the failed-apply case below already does, and capture
+    // that call's blocks directly rather than re-deriving "the apply" from
+    // `.at(-1)` of every page-1 call afterward.
+    let resolveApplyCommitted: () => void
+    let appliedBlocksAtApply: Block[] | undefined
+    const applyCommitted = new Promise<void>((resolve) => {
+      resolveApplyCommitted = resolve
+    })
+    mockCommitBlocks.mockImplementation(async (...args: unknown[]) => {
+      const pageId = args[2] as string
+      const applied = args[3] as Block[]
+      if (pageId === 'page-1' && contentOf(applied[0]) === 'chickpeas, harissa') {
+        appliedBlocksAtApply = applied
+        resolveApplyCommitted()
+      }
+      return undefined
+    })
+    let resolveSaveProps: () => void
+    const savePropsCalled = new Promise<void>((resolve) => {
+      resolveSaveProps = resolve
+    })
+    mockSaveProps.mockImplementation(async () => {
+      resolveSaveProps()
+      return undefined
+    })
+
     const { editor } = await openSlash('')
     expect(editor).toBeInTheDocument()
     fireEvent.click(await screen.findByText('weeknight recipe'))
@@ -324,26 +390,39 @@ describe('the / menu on an empty page makes pages', () => {
     // direct `saveBlocks` call — and `writeStructural`'s own flush lands the
     // pending typed save of the stale `/` content first, so the apply itself
     // is the LAST commit for this page, not necessarily the first.
-    await waitFor(() =>
-      expect(
-        mockCommitBlocks.mock.calls.some(
-          (c) => c[2] === 'page-1' && contentOf((c[3] as Block[])[0]) !== '/'
-        )
-      ).toBe(true)
-    )
+    await act(async () => {
+      await applyCommitted
+    })
     expect(mockCreatePage).not.toHaveBeenCalled()
-    const appliedBlocks = mockCommitBlocks.mock.calls
-      .filter((c) => c[2] === 'page-1')
-      .map((c) => c[3] as Block[])
-      .at(-1)!
-    expect(appliedBlocks).toEqual([
+    expect(appliedBlocksAtApply).toEqual([
       { id: expect.not.stringMatching(/^old-1$/), type: 'text', content: 'chickpeas, harissa' },
     ])
-    await waitFor(() => expect(mockSaveProps).toHaveBeenCalled())
+    await act(async () => {
+      await savePropsCalled
+    })
     expect(mockSaveProps.mock.calls[0][2]).toMatchObject({
       madeFromTemplate: { templateId: 't1', name: 'weeknight recipe' },
     })
     expect(justSaved.get('pond-1')).toBeNull()
+    // KAN-556: the content match above only proves the apply itself landed —
+    // not that it was the LAST page-1 write, which is what the comment above
+    // (`the apply itself is the LAST commit for this page`) promises. Find the
+    // apply's own call by reference among every page-1 call, then prove
+    // nothing after it carries a text block (a leaked page-link from another
+    // test is still tolerated — it isn't the stale `/` save this guards
+    // against).
+    const page1Calls = mockCommitBlocks.mock.calls
+      .filter((c) => c[2] === 'page-1')
+      .map((c) => c[3] as Block[])
+    const applyIndex = page1Calls.indexOf(appliedBlocksAtApply!)
+    expect(applyIndex).toBeGreaterThan(-1)
+    expect(
+      page1Calls.slice(applyIndex + 1).filter((call) => call[0]?.type === 'text')
+    ).toEqual([])
+    // Hand `commitBlocks` back to its plain default — the next test (a failed
+    // apply) sets its own implementation, but a test added after it shouldn't
+    // inherit this one's resolve-signalling wrapper.
+    mockCommitBlocks.mockResolvedValue(undefined)
   })
 
   it('a failed in-place apply leaves `yours · just saved` in place for a retry', async () => {
@@ -408,7 +487,7 @@ describe('Return after a block, then `/`, lists what the `/` menu does', () => {
   }
 
   const returnAfterTheTableThenSlash = async () => {
-    await screen.findAllByRole('button', { name: 'Block menu' })
+    await screen.findAllByRole('button', { name: 'drag to move' })
     const table = document.getElementById('block-b-table')!
     table.focus()
     fireEvent.keyDown(table, { key: 'Enter' })

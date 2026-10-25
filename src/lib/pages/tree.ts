@@ -15,6 +15,10 @@ import { pagesKey } from './keys'
 import { HOME_TYPE } from '@/lib/pages/home'
 import { ROW_TYPE } from '@/lib/properties/schema'
 import type { AreaRole } from '@/lib/rail/glyph-library'
+import { changeLogKey } from '@/lib/change-log/keys'
+import { sessionUndo } from '@/lib/change-log/session-undo'
+import { readDuplicatePageSnapshot } from '@/lib/change-log/page-changes'
+import type { ChangeLogRecord } from '@/lib/change-log/types'
 
 export interface PageRow {
   id: string
@@ -23,6 +27,14 @@ export interface PageRow {
   title: string
   order: number
   updated_at: string
+  /**
+   * KAN-536: the real insert time, for `pickTasksDatabase`'s oldest-wins
+   * tie-break only — every other reader of `PageRow` keeps using
+   * `updated_at`. Optional because it predates every fixture/mock that
+   * builds a `PageRow` by hand; absent falls back to `updated_at` at the
+   * one call site that reads it.
+   */
+  created_at?: string
   /**
    * #134: the page's own mark. OPTIONAL rather than `| null` because a row
    * synthesised in code (the Life home row) or a fixture testing rail ordering
@@ -62,7 +74,7 @@ export async function fetchPages(pondId: string | null): Promise<PageRow[]> {
     // mark — no surface fetches anything extra to draw one.
     // KAN-122: props rides along too (small write-once stamps only), so the same
     // cache resolves isNewNestedPage per row with no second fetch.
-    .select('id, parent_id, type, title, "order", updated_at, glyph, area_role, props')
+    .select('id, parent_id, type, title, "order", updated_at, created_at, glyph, area_role, props')
     .eq('user_id', user.id)
     // #312: scoped by POND, not by workspace. The sandbox pond holds exactly the
     // `workspace='sandbox'` rows, so the pond filter already says everything the
@@ -134,6 +146,29 @@ export function insertPageOptimistic(
       },
     ]
   })
+}
+
+/**
+ * KAN-468: the one place both duplicate entry points (⌘K and ⌘D) land after
+ * `duplicatePage` resolves — invalidates the pages tree so the copy shows in
+ * the rail, remembers the step for ⌘Z, invalidates the change log, and (KAN-468
+ * follow-up) invalidates the link parent's own `['page', id]` key when the RPC
+ * appended a page-link block to it, so that page's open draft redraws with the
+ * new link instead of missing it until an unrelated refetch. Kept here rather
+ * than in `client.ts` since it only touches the query cache/undo stack, never
+ * the RPC; kept here rather than in `duplicate.ts` since `duplicateAndOpen`
+ * (the RPC-calling flow) is the one caller, not the one doing cache work.
+ */
+export function afterDuplicate(
+  queryClient: QueryClient,
+  record: ChangeLogRecord,
+  pondId: string | null
+): void {
+  void queryClient.invalidateQueries({ queryKey: pagesKey(pondId) })
+  if (pondId) sessionUndo.remember({ pondId, recordIds: [record.id] })
+  void queryClient.invalidateQueries({ queryKey: changeLogKey() })
+  const linkParentId = readDuplicatePageSnapshot(record.after)?.linkParentId
+  if (linkParentId) void queryClient.invalidateQueries({ queryKey: ['page', linkParentId] })
 }
 
 /**
@@ -211,7 +246,13 @@ export function applyPagePropsOptimistic(
  */
 export function applyMoveOptimistic(
   queryClient: QueryClient,
-  move: { movedId: string; newParentId: string | null; siblingOrder: string[] },
+  move: {
+    movedId: string
+    newParentId: string | null
+    siblingOrder: string[]
+    /** KAN-470: a destination-clash suffix, written in this same optimistic pass so the rail never flashes the old, clashing title. */
+    newTitle?: string
+  },
   /**
    * #312: the pond whose cache to write. `setQueryData` is an EXACT key match,
    * unlike `invalidateQueries`, so writing `pagesKey()` while the reads
@@ -228,11 +269,14 @@ export function applyMoveOptimistic(
     return rows.map((r) => {
       const parent_id = r.id === move.movedId ? move.newParentId : r.parent_id
       const order = orderById.has(r.id) ? orderById.get(r.id)! : r.order
-      if (parent_id === r.parent_id && order === r.order) return r
+      const title = r.id === move.movedId && move.newTitle !== undefined ? move.newTitle : r.title
+      if (parent_id === r.parent_id && order === r.order && title === r.title) return r
       // A top-level page nested under another stops being an area, and the
       // database clears its role in the same write.
       const nested = r.parent_id === null && parent_id !== null
-      return nested ? { ...r, parent_id, order, area_role: null } : { ...r, parent_id, order }
+      return nested
+        ? { ...r, parent_id, order, title, area_role: null }
+        : { ...r, parent_id, order, title }
     })
   })
   return snapshot

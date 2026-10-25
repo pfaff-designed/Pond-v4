@@ -11,7 +11,7 @@
  */
 
 import React from 'react'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DocumentPanel } from '@/components/organisms/DocumentPanel'
@@ -104,7 +104,6 @@ function renderPath(blocks: Block[]) {
 const blockRoot = (id: string) => document.getElementById(`block-${id}`)!
 const textBlockIn = (id: string) =>
   within(blockRoot(id)).findByRole('textbox', { name: 'text block' })
-const handleOf = (id: string) => within(blockRoot(id)).getByRole('button', { name: /block menu/i })
 
 const deferred = <T,>() => {
   let resolve: (value: T) => void = () => {}
@@ -241,7 +240,7 @@ describe('⌘⌫ writes through persistBlocksAsOwnEdit, one ⌘Z step (KAN-368)'
     } as never)
 
     const user = userEvent.setup()
-    await user.click(handleOf('b-removed'))
+    fireEvent.contextMenu(blockRoot('b-removed'))
     await user.click(await screen.findByRole('menuitem', { name: 'delete' }))
     await user.click(await screen.findByRole('button', { name: 'Delete' }))
 

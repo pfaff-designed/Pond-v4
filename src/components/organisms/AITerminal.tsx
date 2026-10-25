@@ -76,7 +76,7 @@ import { AnswerActions } from '@/components/molecules/AnswerActions'
 import { PageProposalCard } from '@/components/molecules/PageProposalCard'
 import { MadePageActions } from '@/components/molecules/MadePageActions'
 import { toParentOptions, ancestorPathLabel } from '@/lib/pages/parent-options'
-import { openWorkspaceUrl, workspaceHref, workspaceUrl } from '@/lib/pages/nav'
+import { openWorkspaceUrl, workspaceUrl } from '@/lib/pages/nav'
 import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
 import { isVirtualNodeId } from '@/lib/change-log/trash-view'
 import { insertPageOptimistic, type PageRow } from '@/lib/pages/tree'
@@ -1745,7 +1745,7 @@ export function AITerminal() {
           continue
         openedChangeLogRef.current.add(call.toolCallId)
         openWorkspaceUrl(
-          workspaceHref({ id: CHANGE_LOG_NODE_ID, type: 'page', title: 'change log' }),
+          workspaceUrl({ id: CHANGE_LOG_NODE_ID, type: 'page', title: 'change log' }),
           router
         )
       }
@@ -2536,7 +2536,7 @@ export function AITerminal() {
           action: openTarget
             ? () =>
                 openWorkspaceUrl(
-                  workspaceHref({
+                  workspaceUrl({
                     id: openTarget,
                     type: allPages.find((p) => p.id === openTarget)?.type ?? 'page',
                     title: targetName,
@@ -2831,7 +2831,7 @@ export function AITerminal() {
           pondId
         )
         openWorkspaceUrl(
-          workspaceHref({ id: created.id, type: part.type, title: part.title }),
+          workspaceUrl({ id: created.id, type: part.type, title: part.title }),
           router
         )
         void queryClient.invalidateQueries({ queryKey: pagesKey() })
@@ -3279,7 +3279,7 @@ export function AITerminal() {
           pondId
         )
         void queryClient.invalidateQueries({ queryKey: pagesKey() })
-        openWorkspaceUrl(workspaceHref({ id: made.id, type: 'page', title: made.title }), router)
+        openWorkspaceUrl(workspaceUrl({ id: made.id, type: 'page', title: made.title }), router)
         // KAN-415: a failed link append is not a failed page creation — the
         // page above has already landed and been navigated to.
         void appendChildLinkUnder(
@@ -4331,7 +4331,7 @@ export function AITerminal() {
       proposal.askedFromPageId !== undefined ? proposal.askedFromPageId : proposal.parentId
     const askedFrom = askedFromId ? allPages.find((p) => p.id === askedFromId) : null
     return askedFrom
-      ? workspaceHref({ id: askedFrom.id, type: 'page', title: askedFrom.title })
+      ? workspaceUrl({ id: askedFrom.id, type: 'page', title: askedFrom.title })
       : workspaceUrl(null)
   }
   // The made record can leave the undo stack by a route this composer never
@@ -4387,7 +4387,7 @@ export function AITerminal() {
     if (!proposal?.parentId) return
     const parent = allPages.find((p) => p.id === proposal.parentId)
     if (!parent) return
-    openWorkspaceUrl(workspaceHref({ id: parent.id, type: 'page', title: parent.title }), router)
+    openWorkspaceUrl(workspaceUrl({ id: parent.id, type: 'page', title: parent.title }), router)
   }
   const madePageActionsNode = showMadePageActions && (
     <MadePageActions

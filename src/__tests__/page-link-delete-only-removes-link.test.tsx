@@ -119,7 +119,7 @@ describe('removing a page-link block removes only the link (KAN-415)', () => {
     setPlatform('MacIntel')
     const { onChange, client } = renderCanvas()
     // Resolves via the rows cache first, proving the link is live before the delete.
-    await screen.findByRole('button', { name: 'Open professional' })
+    await screen.findByRole('link', { name: 'Open professional' })
 
     const root = document.getElementById('block-b-link')!
     root.focus()
@@ -138,12 +138,9 @@ describe('removing a page-link block removes only the link (KAN-415)', () => {
   it('the handle menu reads `remove link` and does the same', async () => {
     const user = userEvent.setup()
     const { onChange, client } = renderCanvas()
-    await screen.findByRole('button', { name: 'Open professional' })
+    await screen.findByRole('link', { name: 'Open professional' })
 
-    const handle = within(document.getElementById('block-b-link')!).getByRole('button', {
-      name: /block menu/i,
-    })
-    await user.click(handle)
+    fireEvent.contextMenu(document.getElementById('block-b-link')!)
     const item = await screen.findByRole('menuitem', { name: 'remove link' })
     expect(screen.queryByRole('menuitem', { name: 'delete' })).not.toBeInTheDocument()
     await user.click(item)

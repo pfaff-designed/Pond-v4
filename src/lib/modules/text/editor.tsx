@@ -5,7 +5,7 @@ import { Extension } from '@tiptap/core'
 import { EditorContent, useEditor, type Editor } from '@tiptap/react'
 import { Placeholder } from '@tiptap/extensions'
 import { redo, undo } from '@tiptap/pm/history'
-import { Plugin } from '@tiptap/pm/state'
+import { Plugin, TextSelection } from '@tiptap/pm/state'
 import type { EditorView } from '@tiptap/pm/view'
 import { COMPOSER_TOP_CLEARANCE, composerClearanceMarginPx } from '@/lib/layout/composer-clearance'
 import { isRedoChord, isUndoChord } from '@/lib/shell-commands'
@@ -14,7 +14,8 @@ import { useBlockRow, type BlockRowValue } from '../block-row-context'
 import { registerTextEditor } from './active-editor'
 import { proseExtensions } from './extensions'
 import { parseMarkdown, serializeMarkdown } from './markdown'
-import { enterSplit } from './next-block'
+import { TEXT_MARKUP } from './markup'
+import { enterSplit, leavesBlock } from './next-block'
 import { TEXT_PROSE_CLASS, textPlaceholderFor } from './prose'
 import { markdownHandlePaste } from './paste'
 import { ReferenceHighlight } from './reference-highlight'
@@ -27,22 +28,43 @@ export interface Press {
   top: number
 }
 
+const TEXT_MARKUP_VALUES: Set<string> = new Set(Object.values(TEXT_MARKUP))
+
 /**
  * Has nothing been written here yet? Blank, or only markdown scaffolding the row
- * that minted the block typed for you — today a heading's `#` run. Both open with
- * the caret in them.
+ * that minted the block typed for you — a heading's `#` run, or one of
+ * `TEXT_MARKUP`'s exact strings. All open with the caret in them.
  */
-const isUnwritten = (content: string): boolean => content.replace(/^#{1,6}\s*/, '').trim() === ''
+const isUnwritten = (content: string): boolean =>
+  TEXT_MARKUP_VALUES.has(content) || content.replace(/^#{1,6}\s*/, '').trim() === ''
+
+/**
+ * The divider row's markdown parses to a bare `horizontalRule` — CommonMark has no
+ * empty-paragraph syntax, so there is no node after it for the caret to open on.
+ * An empty paragraph is appended to the opening document only (never written back:
+ * the stored markdown stays `TEXT_MARKUP.divider`), so `autofocus: 'end'` below has
+ * somewhere real to land.
+ */
+const openingDocFor = (content: string): ReturnType<typeof parseMarkdown> => {
+  const doc = parseMarkdown(content)
+  if (content !== TEXT_MARKUP.divider) return doc
+  const { schema } = doc.type
+  return schema.nodes.doc.create(null, [...doc.content.content, schema.nodes.paragraph.create()])
+}
 
 // A fresh array literal in `useEditor`'s options changes identity every render,
 // which (per the comment on `opening` below) makes `useEditor` re-apply it over
 // keystrokes not yet read — this must stay a stable, module-level reference.
 const ENABLED_PASTE_RULES = ['link']
 
-/** What the split-on-Enter plugin reads at the moment a key is actually pressed. */
+/** What the split-on-Enter and leave-up-to-title plugins read at the moment a key is actually pressed. */
 interface LatestForSplit {
   data: TextBlock
   stepOut?: BlockRowValue['stepOut']
+  leaveUp?: BlockRowValue['leaveUp']
+  leaveDown?: BlockRowValue['leaveDown']
+  select?: BlockRowValue['select']
+  ownEnter?: BlockRowValue['ownEnter']
 }
 
 /**
@@ -50,6 +72,11 @@ interface LatestForSplit {
  * StarterKit's own Enter (a new paragraph INSIDE this block) — priority above
  * StarterKit's default (100) puts this plugin's `handleKeyDown` first, so a
  * split never also runs ProseMirror's default handling for the same key.
+ *
+ * `ownEnter` (KAN-480) opts a row OUT of the split entirely: returning `false`
+ * here, before `enterSplit` even runs, hands the key straight to StarterKit's
+ * own Enter — a toggle's body field wants a new paragraph inside itself, not
+ * a sibling page block.
  */
 const createSplitOnEnter = (latest: RefObject<LatestForSplit>) =>
   Extension.create({
@@ -69,9 +96,20 @@ const createSplitOnEnter = (latest: RefObject<LatestForSplit>) =>
               view.composing
             )
               return false
+            if (latest.current.ownEnter) return false
             const split = enterSplit(view.state)
             if (split === 'own') return false
             if (split === 'stay') return true
+            if (split === 'lift') {
+              // The whole doc is this one empty quote/list item: replacing it
+              // with a plain paragraph in place is the lift — no sibling block
+              // is created, and the ordinary `onUpdate` below writes the now-
+              // empty content back, same as any other edit.
+              const paragraph = view.state.schema.nodes.paragraph.create()
+              const tr = view.state.tr.replaceWith(0, view.state.doc.content.size, paragraph)
+              view.dispatch(tr.setSelection(TextSelection.create(tr.doc, 1)))
+              return true
+            }
             const { data, stepOut } = latest.current
             // Nothing before the caret: the empty block goes ABOVE this one
             // (Enter at the start of a non-empty block; an empty FIRST list
@@ -92,6 +130,80 @@ const createSplitOnEnter = (latest: RefObject<LatestForSplit>) =>
     ],
   })
 
+/**
+ * Bare ArrowUp/ArrowDown at the block's first/last visual line hands focus to
+ * the row's own `leaveUp`/`leaveDown` (KAN-367) instead of running
+ * ProseMirror's own handling — which, at the very top/bottom of the doc,
+ * would otherwise just leave the caret where it is. `x` is the caret's own
+ * column, read fresh off the view at the moment the key is pressed (not
+ * memoised — a wrapped line's column moves as the editor reflows), so the
+ * neighbour it lands in keeps the same column rather than snapping to its
+ * start. Block 0's `leaveUp` is wired to the page title instead of a
+ * neighbour (KAN-464); the last block has no `leaveDown` at all, so ArrowDown
+ * there falls through to ProseMirror's default below.
+ */
+const createLeaveBlockEdge = (latest: RefObject<LatestForSplit>) =>
+  Extension.create({
+    name: 'leaveBlockEdge',
+    priority: 1000,
+    addProseMirrorPlugins: () => [
+      new Plugin({
+        props: {
+          handleKeyDown: (view, event) => {
+            const dir = event.key === 'ArrowUp' ? 'up' : event.key === 'ArrowDown' ? 'down' : null
+            if (!dir) return false
+            const { leaveUp, leaveDown } = latest.current
+            const leave = dir === 'up' ? leaveUp : leaveDown
+            if (!leave) return false
+            if (
+              event.shiftKey ||
+              event.altKey ||
+              event.metaKey ||
+              event.ctrlKey ||
+              event.isComposing ||
+              view.composing
+            )
+              return false
+            if (!leavesBlock(view, dir)) return false
+            leave(view.coordsAtPos(view.state.selection.from).left)
+            return true
+          },
+        },
+      }),
+    ],
+  })
+
+/**
+ * Esc selects this block's row (KAN-367) instead of blurring to the page
+ * body — read via `latest`, the same idiom as `leaveUp`. A plugin, not the
+ * shared `handleKeyDown` below: that object is one reference used by every
+ * text block's editor, with no per-block `latest` to read `select` off. With
+ * no row to select (a standalone `TextEditor` outside a `BlockCanvas` host),
+ * falls back to the editor's own blur — unchanged from today. The selection
+ * bar claims an Esc pressed while it is up (`defaultPrevented`, the editor
+ * keeps focus).
+ */
+const createEscapeSelectsRow = (latest: RefObject<LatestForSplit>) =>
+  Extension.create({
+    name: 'escapeSelectsRow',
+    priority: 1000,
+    addProseMirrorPlugins: () => [
+      new Plugin({
+        props: {
+          handleKeyDown: (view, event) => {
+            if (event.key !== 'Escape' || event.isComposing || view.composing) return false
+            if (!event.defaultPrevented) {
+              const { select } = latest.current
+              if (select) select()
+              else view.dom.blur()
+            }
+            return true
+          },
+        },
+      }),
+    ],
+  })
+
 /** The block's own placeholder and id, fixed at mount — neither is ever typed over. */
 const buildExtensions = (
   placeholder: string | undefined,
@@ -104,6 +216,8 @@ const buildExtensions = (
   }),
   ReferenceHighlight.configure({ blockId }),
   createSplitOnEnter(latest),
+  createLeaveBlockEdge(latest),
+  createEscapeSelectsRow(latest),
 ]
 
 /** A bare Tab over a selection — Shift-Tab and chorded Tab keep their meaning. */
@@ -139,13 +253,14 @@ const focusSelectionBar = (): boolean => {
  * native undo from ever seeing the key, whether or not there was anything to do
  * — also true of `@tiptap/extensions`' own `Mod-y`/`Mod-я`/`Shift-Mod-я` undo
  * keymap bindings, which this predicate matches too (KAN-268).
+ *
+ * Escape is NOT handled here: this object is shared, by reference, across
+ * every text block's editor (`editorProps` below), so it has no per-block
+ * `latest` to read a row's `select` off. `createEscapeSelectsRow` (above)
+ * owns Escape instead, as a plugin built per-instance alongside
+ * `createLeaveBlockEdge`.
  */
 const handleKeyDown = (view: EditorView, event: KeyboardEvent): boolean => {
-  if (event.key === 'Escape') {
-    // The selection bar claims an Esc pressed while it is up (it is dismissed, the editor keeps focus).
-    if (!event.defaultPrevented) view.dom.blur()
-    return true
-  }
   if (isTabIntoSelectionBar(view, event)) return focusSelectionBar()
   if (isUndoChord(event)) {
     undo(view.state, (tr) => view.dispatch(tr))
@@ -239,10 +354,19 @@ const TextEditor = ({
   pressRef: RefObject<Press | null>
 }) => {
   const onSlashLine = useContext(SlashLineContext)
-  const { stepOut } = useBlockRow()
-  const latest = useRef({ data, onChange, onSlashLine, stepOut })
+  const { stepOut, leaveUp, leaveDown, select, ownEnter } = useBlockRow()
+  const latest = useRef({
+    data,
+    onChange,
+    onSlashLine,
+    stepOut,
+    leaveUp,
+    leaveDown,
+    select,
+    ownEnter,
+  })
   useEffect(() => {
-    latest.current = { data, onChange, onSlashLine, stepOut }
+    latest.current = { data, onChange, onSlashLine, stepOut, leaveUp, leaveDown, select, ownEnter }
   })
 
   // Options must be the same values on every render: any change makes `useEditor`
@@ -251,7 +375,7 @@ const TextEditor = ({
   // never during render.
   // eslint-disable-next-line react-hooks/refs -- latest-ref idiom, see comment above
   const [opening] = useState(() => ({
-    content: parseMarkdown(data.content).toJSON(),
+    content: openingDocFor(data.content).toJSON(),
     autofocus: autofocus && isUnwritten(data.content) ? ('end' as const) : false,
     extensions: buildExtensions(data.placeholder, data.id, latest),
   }))
@@ -306,7 +430,7 @@ const TextEditor = ({
     editor
       .chain()
       .setMeta('addToHistory', false)
-      .setContent(parseMarkdown(data.content).toJSON(), { emitUpdate: false })
+      .setContent(openingDocFor(data.content).toJSON(), { emitUpdate: false })
       .run()
   }, [editor, data.content])
 

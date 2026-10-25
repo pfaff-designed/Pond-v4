@@ -28,6 +28,7 @@ import type { SlashIcon, SlashRow } from '@/components/molecules/SlashMenu'
 import type { Block } from '@/lib/documents/types'
 import { viewModeSchema, type ViewMode } from '@/lib/modules/view/schema'
 import { VIEW_KINDS } from '@/lib/modules/view/kinds'
+import { isTextMarkupId, TEXT_MARKUP } from '@/lib/modules/text/markup'
 
 /**
  * Per-type chrome for a descriptor's OWN row. Anything absent takes the fallback.
@@ -47,6 +48,15 @@ const ROW_CHROME: Partial<
   todo: { group: 'blocks', icon: ICON.check, key: '[]', alias: 'todo' },
   table: { group: 'blocks', icon: ICON.table, label: 'grid' },
   entries: { group: 'blocks', icon: ICON.log, alias: 'dated table' },
+  // KAN-482: app-over-board, like KAN-462's rows — the board draws no mark for
+  // this row. `ICON.list` already reads as "a list of lines", the same shape
+  // this block is, and the registry's `highlight`/`quote` pair already shares
+  // one mark across two rows, so a second type sharing it is not new.
+  toc: { group: 'blocks', icon: ICON.list },
+  // KAN-480: app-over-board, grouped with the other text-markup rows (KAN-462)
+  // since a toggle starts as one line of prose. No key in this slice — `> `
+  // (Notion's own key) is slice 2's, once the quote row's own `>` hint is gone.
+  toggle: { group: 'text', icon: ICON.toggle },
 }
 
 /**
@@ -79,13 +89,6 @@ const VIEW_ROWS = [
   viewRow('big-number'),
 ]
 
-/**
- * What `/heading` types for you — the second markdown level, with its trailing
- * space, so the caret lands on the words. One owner, read by `mintPreset` and by
- * the guard that holds the row to it.
- */
-export const HEADING_PREFIX = '## '
-
 /** A type's other faces — the same block at another marker or mode. */
 const VARIANT_ROWS: Partial<Record<DescriptorType, readonly SlashRow[]>> = {
   // `heading` is the `text` block opened on a markdown heading, not a block kind:
@@ -104,6 +107,26 @@ const VARIANT_ROWS: Partial<Record<DescriptorType, readonly SlashRow[]>> = {
       label: 'heading',
       key: '#',
       icon: ICON.heading,
+    },
+    // KAN-462: markup inside the current text block, not new block types — Linear
+    // and Notion both list these with their markdown key as the hint.
+    { id: 'quote', type: 'text', group: 'text', label: 'quote', key: '>', icon: ICON.quote },
+    { id: 'code', type: 'text', group: 'text', label: 'code', key: '```', icon: ICON.code },
+    {
+      id: 'divider',
+      type: 'text',
+      group: 'text',
+      label: 'divider',
+      key: '---',
+      icon: ICON.divider,
+    },
+    {
+      id: 'numbered-list',
+      type: 'text',
+      group: 'text',
+      label: 'numbered list',
+      key: '1.',
+      icon: ICON.numbered,
     },
   ],
   todo: [
@@ -142,6 +165,17 @@ export const BOARD_ORDER: readonly string[] = [
   'text',
   'heading',
   'highlight',
+  // KAN-462: markup rows, ranked right after `highlight` and ahead of `embed-file`
+  // so the app-over-board additions sit together; `numbered-list` is markup in a
+  // text block too (not `bulleted-list`'s own `todo` kind), so it stays in this
+  // group rather than beside `bulleted-list` in `blocks`.
+  'quote',
+  'code',
+  'divider',
+  'numbered-list',
+  // KAN-480: the ticket's own order (app-over-board, no board position), right
+  // after `numbered-list` — the last of the text-markup rows before the block rows.
+  'toggle',
   'embed-file',
   'bulleted-list',
   'checklist',
@@ -155,6 +189,9 @@ export const BOARD_ORDER: readonly string[] = [
   'chart',
   'big-number',
   'entry-log',
+  // KAN-482: app-over-board, placed right after `entry-log` (the ticket's own
+  // order, not a board position — the board draws no row for this type).
+  'table-of-contents',
   'page-from-template',
   'page',
 ]
@@ -259,6 +296,14 @@ export function emptyBlockForType(type: string): Block | null {
     // first entry through `addEntry`, so nothing is minted blank here.
     case 'entries':
       return { id, type: 'entries', entries: [] }
+    // KAN-482: the block stores nothing but its id/type — headings are derived
+    // live from the page's own blocks, never minted into the block itself.
+    case 'toc':
+      return { id, type: 'toc' }
+    // KAN-480: lands with an empty summary and no body/folded keys at all —
+    // absent means unfolded, empty body, same as a page written before this type.
+    case 'toggle':
+      return { id, type: 'toggle', content: '' }
     default:
       return null
   }
@@ -274,7 +319,7 @@ export function mintPreset(rowId: string): Block | null {
   if (!row?.type) return null
   const block = emptyBlockForType(row.type)
   if (!block) return null
-  if (block.type === 'text' && rowId === 'heading') return { ...block, content: HEADING_PREFIX }
+  if (block.type === 'text' && isTextMarkupId(rowId)) return { ...block, content: TEXT_MARKUP[rowId] }
   if (block.type === 'todo' && rowId === 'bulleted-list') return { ...block, marker: 'dot' }
   if (block.type === 'view') {
     const mode = viewModeSchema.safeParse(rowId)

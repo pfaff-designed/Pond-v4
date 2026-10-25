@@ -70,3 +70,21 @@ describe('listPonds — lastPageId from the embedded page', () => {
     expect(pond.lastPageId).toBeNull()
   })
 })
+
+describe('listPonds — favouritePageIds (KAN-475, migration 0035)', () => {
+  it('maps a null favourite_page_ids column to undefined', async () => {
+    mockRows([{ ...BASE, lastPage: null, favouritePageIds: null }])
+
+    const [pond] = await listPonds()
+
+    expect(pond.favouritePageIds).toBeUndefined()
+  })
+
+  it('round-trips a populated favourite_page_ids column in order', async () => {
+    mockRows([{ ...BASE, lastPage: null, favouritePageIds: ['page-b', 'page-a'] }])
+
+    const [pond] = await listPonds()
+
+    expect(pond.favouritePageIds).toEqual(['page-b', 'page-a'])
+  })
+})

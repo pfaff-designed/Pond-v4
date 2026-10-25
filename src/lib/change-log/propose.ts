@@ -38,6 +38,7 @@ import type { Database } from '@/lib/supabase/types'
 import type { Block } from '@/lib/documents/types'
 import type { ModuleChange } from '@/lib/modules/ai-composition'
 import { applyProposedChanges } from '@/lib/pages/edits'
+import { toBlocks } from '@/lib/pages/to-blocks'
 import { createDeterministicMintId } from './mint-id'
 import { advanceStatus, appendProposal, getRecordByToolCall, reviseRecord } from './store'
 import { canRevise, isOpen } from './status'
@@ -109,14 +110,15 @@ function targetPageOf(toolName: string, input: unknown, openPageId: string | nul
   return openPageId
 }
 
-/** The target page's blocks as they stand right now, or null if unreadable. */
+/** The target page's blocks as they stand right now (read-time split, KAN-552,
+ *  so `before` matches the page the person actually sees), or null if unreadable. */
 async function loadBlocks(
   supabase: SupabaseClient<Database>,
   pageId: string
 ): Promise<Block[] | null> {
   const { data } = await supabase.from('pages').select('blocks').eq('id', pageId).maybeSingle()
   const blocks = (data as { blocks?: unknown } | null)?.blocks
-  return Array.isArray(blocks) ? (blocks as Block[]) : null
+  return Array.isArray(blocks) ? toBlocks(blocks) : null
 }
 
 /**

@@ -669,6 +669,115 @@ export const BoardGeometryInk: Story = {
   },
 }
 
+// ── KAN-536: a board over the shared tasks database, filtered to its project ─
+
+const projectSchema: PropertySchema = [
+  ...schema,
+  {
+    id: 'p-project',
+    name: 'Project',
+    type: 'select',
+    options: [
+      { id: 'proj-home', label: 'Home Reno', color: 'sky' },
+      { id: 'proj-web', label: 'Web design', color: 'violet' },
+    ],
+  },
+]
+
+/** Two projects' tasks in the same database — the filter keeps only one. */
+const twoProjectRows: CollectionRow[] = [
+  {
+    id: 'home-1',
+    title: 'Trim the rim',
+    values: { 'p-status': 'o-doing', 'p-project': 'proj-home' },
+  },
+  {
+    id: 'home-2',
+    title: 'Celadon glaze test',
+    values: { 'p-status': 'o-done', 'p-project': 'proj-home' },
+  },
+  {
+    id: 'web-1',
+    title: 'Wedge stoneware',
+    values: { 'p-status': 'o-todo', 'p-project': 'proj-web' },
+  },
+]
+
+const boardFilteredToProjectConfig: ViewBlock = {
+  id: 'v-board-project',
+  type: 'view',
+  mode: 'board',
+  groupBy: 'p-status',
+  filter: { property: 'p-project', op: 'eq', value: 'proj-home' },
+}
+
+/** `onAddRow`/`onRenameRow` need live state — the KAN-536 path proof is that a
+ *  card minted from this filtered board stays on screen (the filter keeps
+ *  matching it) and its peek shows the seeded `Project` chip. */
+function BoardFilteredToProjectHarness() {
+  const [data, setData] = useState<CollectionRow[]>(twoProjectRows)
+  const handleAddRow = async (values?: Record<string, PropertyValue>) => {
+    const id = `home-new-${data.length}`
+    setData((prev) => [...prev, { id, title: '', values: values ?? {} }])
+    return id
+  }
+  const handleRenameRow = (rowId: string, title: string) => {
+    setData((prev) => prev.map((row) => (row.id === rowId ? { ...row, title } : row)))
+  }
+  return (
+    <CollectionView
+      config={boardFilteredToProjectConfig}
+      schema={projectSchema}
+      rows={data}
+      collectionName="tasks"
+      editable
+      onAddRow={handleAddRow}
+      onRenameRow={handleRenameRow}
+    />
+  )
+}
+
+async function assertBoardFilteredToProject(canvasElement: HTMLElement) {
+  const canvas = within(canvasElement)
+  await expect(canvas.getByText('tasks · Home Reno')).toBeInTheDocument()
+  // Card titles are inputs (editable, with `onRenameRow`) — their value, not text content.
+  await expect(canvas.getByDisplayValue('Trim the rim')).toBeInTheDocument()
+  await expect(canvas.getByDisplayValue('Celadon glaze test')).toBeInTheDocument()
+  // The other project's task never renders on this board.
+  await expect(canvas.queryByDisplayValue('Wedge stoneware')).not.toBeInTheDocument()
+
+  const toDoLane = canvasElement.querySelector<HTMLElement>('[data-lane="To do"]')!
+  await userEvent.click(within(toDoLane).getByText('＋ task'))
+
+  const peek = await within(document.body).findByLabelText('Record: Untitled')
+  // The seeded `project` value — the filter's own clause, not a lane value —
+  // shows as the Project field's tag chip the instant the card is minted.
+  await expect(within(peek).getByText('Home Reno')).toBeInTheDocument()
+}
+
+export const BoardFilteredToProject: Story = {
+  args: { config: boardFilteredToProjectConfig, schema: projectSchema, rows: twoProjectRows },
+  render: () => <BoardFilteredToProjectHarness />,
+  play: async ({ canvasElement }) => {
+    await assertBoardFilteredToProject(canvasElement)
+  },
+}
+
+export const BoardFilteredToProjectInk: Story = {
+  args: { config: boardFilteredToProjectConfig, schema: projectSchema, rows: twoProjectRows },
+  render: () => <BoardFilteredToProjectHarness />,
+  decorators: [
+    (Story) => (
+      <div className="dark bg-raw-ink p-mn-4">
+        <Story />
+      </div>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    await assertBoardFilteredToProject(canvasElement)
+  },
+}
+
 /**
  * What the board does not draw is not there, on an editable board with every
  * handler wired: no lane name input, no lane arrows, no `＋ lane`, no card `⠿`

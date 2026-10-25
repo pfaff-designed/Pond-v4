@@ -104,14 +104,14 @@ describe('Return after a block', () => {
       { id: 'b2', type: 'text', content: 'Second' },
     ]
     renderWith({ id: 'page-1', title: 'Test', blocks })
-    await screen.findAllByRole('button', { name: 'Block menu' })
+    await screen.findAllByRole('button', { name: 'drag to move' })
     expect(screen.queryByRole('button', { name: 'Insert block' })).not.toBeInTheDocument()
   })
 
   it('opens an empty line after the block, and the page saves it like any edit', async () => {
     const blocks: Block[] = [table, { id: 'b2', type: 'text', content: 'Second' }]
     renderWith({ id: 'page-1', title: 'Test', blocks })
-    await screen.findAllByRole('button', { name: 'Block menu' })
+    await screen.findAllByRole('button', { name: 'drag to move' })
     const root = document.getElementById('block-b-table')!
     root.focus()
     fireEvent.keyDown(root, { key: 'Enter' })
@@ -134,7 +134,7 @@ describe('Keyboard reorder (⌥↑ / ⌥↓)', () => {
     renderWith({ id: 'page-1', title: 'Test', blocks })
     // Find the gutter handle for block b1 (it's in the group/relative container);
     // the keydown goes to the wrapping block div.
-    const handles = await screen.findAllByRole('button', { name: 'Block menu' })
+    const handles = await screen.findAllByRole('button', { name: 'drag to move' })
     // The first handle is associated with b1
     const blockDiv = handles[0].closest('[id^="block-"]')
     expect(blockDiv).toBeTruthy()
@@ -152,7 +152,7 @@ describe('Keyboard reorder (⌥↑ / ⌥↓)', () => {
       { id: 'b2', type: 'text', content: 'Second' },
     ]
     renderWith({ id: 'page-1', title: 'Test', blocks })
-    const handles = await screen.findAllByRole('button', { name: 'Block menu' })
+    const handles = await screen.findAllByRole('button', { name: 'drag to move' })
     // The second handle is for b2
     const blockDiv = handles[1].closest('[id^="block-"]')
     expect(blockDiv).toBeTruthy()
@@ -170,7 +170,7 @@ describe('Keyboard reorder (⌥↑ / ⌥↓)', () => {
       { id: 'b2', type: 'text', content: 'Second' },
     ]
     renderWith({ id: 'page-1', title: 'Test', blocks })
-    const handles = await screen.findAllByRole('button', { name: 'Block menu' })
+    const handles = await screen.findAllByRole('button', { name: 'drag to move' })
     const blockDiv = handles[0].closest('[id^="block-"]')
     fireEvent.keyDown(blockDiv!, { key: 'ArrowUp', altKey: true })
     // No write should be made — order didn't change
@@ -184,7 +184,7 @@ describe('Keyboard reorder (⌥↑ / ⌥↓)', () => {
       { id: 'b2', type: 'text', content: 'Second' },
     ]
     renderWith({ id: 'page-1', title: 'Test', blocks })
-    const handles = await screen.findAllByRole('button', { name: 'Block menu' })
+    const handles = await screen.findAllByRole('button', { name: 'drag to move' })
     const blockDiv = handles[1].closest('[id^="block-"]')
     fireEvent.keyDown(blockDiv!, { key: 'ArrowDown', altKey: true })
     await new Promise((r) => setTimeout(r, 100))
@@ -196,11 +196,11 @@ describe('Drag handle', () => {
   it('renders a drag handle for each block', async () => {
     const blocks: Block[] = [{ id: 'b1', type: 'text', content: 'Hello' }]
     renderWith({ id: 'page-1', title: 'Test', blocks })
-    // #101: the handle is also the block-menu trigger (press-and-drag reorders,
-    // a click opens the menu), so its accessible name is the menu's.
-    const handles = await screen.findAllByRole('button', { name: 'Block menu' })
+    // #101: the handle is the drag trigger only (right-click opens the menu),
+    // so its accessible name is `drag to move`.
+    const handles = await screen.findAllByRole('button', { name: 'drag to move' })
     expect(handles.length).toBeGreaterThanOrEqual(1)
-    expect(handles[0]).toHaveAttribute('title', expect.stringMatching(/drag to reorder/i))
+    expect(handles[0]).toHaveAttribute('title', expect.stringMatching(/drag to move/i))
   })
 })
 
@@ -283,8 +283,8 @@ describe('A block delete focuses the neighbour, or the title with none left', ()
     renderWith({ id: 'page-1', title: 'Test', blocks })
     const user = userEvent.setup()
 
-    const handles = await screen.findAllByRole('button', { name: 'Block menu' })
-    await user.click(handles[0])
+    const handles = await screen.findAllByRole('button', { name: 'drag to move' })
+    fireEvent.contextMenu(handles[0].closest('[id^="block-"]')!)
     await user.click(await screen.findByRole('menuitem', { name: 'delete' }))
     await user.click(await screen.findByRole('button', { name: 'Delete' }))
 
@@ -296,8 +296,8 @@ describe('A block delete focuses the neighbour, or the title with none left', ()
     renderWith({ id: 'page-1', title: 'Test', blocks })
 
     await findTextBlock()
-    const handles = await screen.findAllByRole('button', { name: 'Block menu' })
-    fireEvent.click(handles[0])
+    const handles = await screen.findAllByRole('button', { name: 'drag to move' })
+    fireEvent.contextMenu(handles[0].closest('[id^="block-"]')!)
     fireEvent.click(await screen.findByRole('menuitem', { name: 'delete' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Delete' }))
 

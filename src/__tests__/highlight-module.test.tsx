@@ -146,6 +146,8 @@ describe('HighlightView — read-only', () => {
     expect(passage.dataset.empty).toBe('')
     expect(screen.queryByRole('textbox')).toBeNull()
     expect(screen.queryByRole('button')).toBeNull()
+    // Read-only path is unchanged by KAN-499's hidden-at-rest hint (editable only).
+    lacks(passage, 'opacity-0', 'group-hover:opacity-100', 'group-focus-within:opacity-100')
   })
 
   it('whitespace-only content is empty too', () => {
@@ -190,6 +192,30 @@ describe('HighlightView — editable (click-to-edit, as text)', () => {
     lacks(line, 'bg-mn-signal-highlight')
     fireEvent.click(trigger)
     expect(screen.getByRole('textbox')).toBeInTheDocument()
+  })
+
+  it('autofocus unset on an empty block: edits and focuses, as today', () => {
+    render(<HighlightView data={{ ...kept, content: '' }} editable />)
+    expect(screen.getByRole('textbox')).toHaveFocus()
+  })
+
+  it('autofocus={true} on an empty block: edits and focuses, same as unset', () => {
+    render(<HighlightView data={{ ...kept, content: '' }} editable autofocus />)
+    expect(screen.getByRole('textbox')).toHaveFocus()
+  })
+
+  it('autofocus={false} on an empty block (KAN-499): a line that merely arrived with the page never grabs the caret', () => {
+    render(<HighlightView data={{ ...kept, content: '' }} editable autofocus={false} />)
+    expect(screen.queryByRole('textbox')).toBeNull()
+    const trigger = screen.getByRole('button', { name: 'Edit highlight block' })
+    expect(trigger).not.toHaveFocus()
+    expect(document.body).toHaveFocus()
+  })
+
+  it('the editable empty line is hidden at rest, shown on hover or focus-within (KAN-499)', () => {
+    render(<HighlightView data={{ ...kept, content: '' }} editable autofocus={false} />)
+    const line = screen.getByText(HIGHLIGHT_EMPTY_LINE)
+    has(line, 'opacity-0', 'group-hover:opacity-100', 'group-focus-within:opacity-100')
   })
 
   it('Escape leaves edit mode; Enter / Space on the trigger enter it', async () => {

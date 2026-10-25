@@ -36,6 +36,7 @@ const PROVIDER_VALUE: PondContextValue = {
   loading: false,
   reload: () => {},
   addPond: () => {},
+  patchPond: () => {},
 }
 
 export function mountRail(rows: PageRow[] = ROWS, seedCache = true) {

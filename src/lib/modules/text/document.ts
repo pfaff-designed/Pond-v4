@@ -48,12 +48,6 @@ export const proseSchema = new Schema({
       linebreakReplacement: true,
       leafText: () => '\n',
     },
-    heading: {
-      content: 'inline*',
-      group: 'block',
-      defining: true,
-      attrs: { level: { default: 1 } },
-    },
     horizontalRule: { group: 'block' },
     listItem: { content: 'paragraph block*', defining: true },
     orderedList: {
@@ -62,6 +56,16 @@ export const proseSchema = new Schema({
       attrs: { tight: { default: true }, start: { default: 1 }, type: { default: null } },
     },
     text: { group: 'inline' },
+    // Last because the editor's extension list adds Heading after StarterKit's own
+    // nodes (`heading: false` pulls it out of StarterKit; `extensions.ts` appends it
+    // separately so its shortcuts can read `HEADING_CHORDS`), which is where tiptap's
+    // stable extension sort places it.
+    heading: {
+      content: 'inline*',
+      group: 'block',
+      defining: true,
+      attrs: { level: { default: 1 } },
+    },
   },
   marks: proseMarks,
   topNode: 'doc',

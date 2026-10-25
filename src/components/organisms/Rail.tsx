@@ -44,6 +44,7 @@ import {
   useState,
   type DragEvent,
   type KeyboardEvent,
+  type MouseEvent,
   type ReactNode,
 } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -51,17 +52,18 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { usePagePrefetchHandlers } from '@/lib/pages/use-page-prefetch'
-import { createPage, movePage, updateTitle } from '@/lib/pages/client'
+import { createPage, updateTitle } from '@/lib/pages/client'
 import { DuplicateTitleError, nextAvailableTitle } from '@/lib/pages/dedupe-title'
 import {
   fetchPages,
   insertPageOptimistic,
-  applyMoveOptimistic,
   applyRenameOptimistic,
   applyGlyphOptimistic,
   applyAreaRoleOptimistic,
   type PageRow,
 } from '@/lib/pages/tree'
+import { duplicateAndOpen } from '@/lib/pages/duplicate'
+import { moveAndStageUndo } from '@/lib/pages/move'
 import { setPageGlyph, setAreaRole } from '@/lib/pages/mark-client'
 import { appendOwnEdit } from '@/lib/change-log/store'
 import { changeLogKey } from '@/lib/change-log/keys'
@@ -74,12 +76,24 @@ import { usePondId, usePond } from '@/lib/pond/context'
 import { useHomePage } from '@/lib/pages/use-home-page'
 import { pushRecentGlyphToPond } from '@/lib/pond/client'
 import { PondSwitcher } from './PondSwitcher'
-import { openWorkspaceUrl, workspaceUrl } from '@/lib/pages/nav'
+import { RailFavouritesBand } from './RailFavouritesBand'
+import { rowMark, markGlyph } from '@/lib/rail/row-mark'
+import {
+  ROW_FOCUS_RING,
+  ROW_GAP_PY_PR,
+  ROW_HOVER_FILL,
+  ROW_LABEL_INK_NOT_FULL,
+  ROW_LABEL_SIZE_NOT_EMPHASISED,
+  ROW_SELECTED_FILL,
+} from '@/lib/rail/row-recipe'
+import { isNewTabClick, openWorkspaceUrl, workspaceRenderHref, workspaceUrl } from '@/lib/pages/nav'
+import { requestTitleFocus } from '@/lib/pages/title-focus'
 import { withTemplatesParam } from '@/lib/pages/templates-param'
 import { markIndex, resolveMark, type MarkSource, type PageMark } from '@/lib/pages/mark'
 import { isNewNestedPage } from '@/lib/pages/nested-page'
 import { markAccent, pushRecentGlyph, isAreaRole, type AreaRole } from '@/lib/rail/glyph-library'
 import { ancestorPath, areaOf } from '@/lib/pages/crumbs'
+import { FOCUS_RAIL_ROW_EVENT } from '@/lib/layout/rail-focus'
 import { GlyphPicker, glyphPickerHeight } from '@/components/molecules/GlyphPicker'
 import { GlyphPickerSheet } from '@/components/molecules/GlyphPickerSheet'
 import type { PickerSide } from '@/components/molecules/use-anchored-box'
@@ -91,6 +105,7 @@ import {
   DATABASES_ROOT_TITLE,
   getOrCreateDatabasesRoot,
   isDatabasesRoot,
+  isDuplicablePage,
 } from '@/lib/pages/databases-root'
 import { usePondName } from '@/lib/pond/name'
 import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
@@ -104,6 +119,7 @@ import {
   flattenVisible,
   isAreaRow,
   isExtraRootNode,
+  nodeIndex,
   splitExtraRoots,
   treeKeyCommand,
   focusFallback,
@@ -126,9 +142,7 @@ import { isStaged, priorLifeIds, unstageId } from '@/lib/deletion/staged-ids'
 import type { CommitReason } from '@/lib/deletion/deferred-commit'
 import { ConfirmDialog } from '@/components/molecules/ConfirmDialog'
 import { PondMolecule } from '@/components/molecules/PondMolecule'
-import { AreaMark } from '@/components/atoms/AreaMark'
 import { PondMark } from '@/components/atoms/PondMark'
-import { KindDot } from '@/components/atoms/PondAtom'
 import { Caret } from '@/components/atoms/Caret'
 import { RailRenameField } from './RailRenameField'
 import { instantiateTemplate } from '@/lib/templates/instantiate'
@@ -227,6 +241,8 @@ interface RowCapabilities {
   deletable: boolean
   /** Can be renamed from the rail: F2 and double-click. */
   renameable: boolean
+  /** Can be duplicated: ⌘D/Ctrl+D (KAN-468; the ⋯ menu entry waits on KAN-221). */
+  duplicable: boolean
 }
 
 const NO_CAPABILITIES: RowCapabilities = {
@@ -235,13 +251,15 @@ const NO_CAPABILITIES: RowCapabilities = {
   addable: false,
   deletable: false,
   renameable: false,
+  duplicable: false,
 }
 
 /**
  * The pond root is a drop target and the one row a page is added under when the
- * pond is empty — but not while it is, since an empty pond's root draws no ＋. The
- * placeholder is no page at all. The databases root is a foot row: it can be moved
- * and dropped on, never added to, deleted or renamed.
+ * pond is empty — and while it is, its ＋ is visible at rest (KAN-471): the hover
+ * rule returns once a first page exists. The placeholder is no page at all. The
+ * databases root is a foot row: it can be moved and dropped on, never added to,
+ * deleted or renamed.
  */
 const rowCapabilities = (id: string, node: RailNode): RowCapabilities => {
   // KAN-491: the home root renames and deletes like any other row. It still
@@ -255,14 +273,29 @@ const rowCapabilities = (id: string, node: RailNode): RowCapabilities => {
   // on a page with a parent, so dragging is disallowed outright rather than
   // special-cased at drop time.
   if (isExtraRootNode(node))
-    return { draggable: false, droppable: true, addable: true, deletable: true, renameable: true }
-  return { draggable: true, droppable: true, addable: true, deletable: true, renameable: true }
+    return {
+      draggable: false,
+      droppable: true,
+      addable: true,
+      deletable: true,
+      renameable: true,
+      duplicable: isDuplicablePage(node),
+    }
+  return {
+    draggable: true,
+    droppable: true,
+    addable: true,
+    deletable: true,
+    renameable: true,
+    duplicable: isDuplicablePage(node),
+  }
 }
 
 /** Does the row allow the tree command? Navigation commands are always allowed. */
 const allowsCommand = (cap: RowCapabilities, kind: TreeKeyCommand['kind']): boolean => {
   if (kind === 'addChild') return cap.addable
   if (kind === 'rename') return cap.renameable
+  if (kind === 'duplicate') return cap.duplicable
   return true
 }
 
@@ -275,6 +308,11 @@ const GUIDE_OFFSET = 4
 interface RailRowProps {
   id: string
   title: string
+  /** The row's real workspace URL, so a modified/middle click opens it the
+   *  browser's own way (KAN-474). Absent for a row with no destination of its
+   *  own (the databases root, which is a disclosure, not a page) — the row
+   *  then stays a plain `<div>`, toggle-only, unaffected by modifier keys. */
+  href?: string
   depth: number
   isFolder: boolean
   isExpanded: boolean
@@ -288,6 +326,13 @@ interface RailRowProps {
   /** An area row — the raised label voice + its accent dot. The caller decides
    *  with `isAreaRow` (a top-level page). */
   isArea?: boolean
+  /** KAN-475: the board's own formula is `marginTop: d === 1 && i > 0 &&
+   *  !pinned.length ? 4 : 0` (`PondRail.dc.html`) — `i` runs over ALL rows, so
+   *  once a pinned band exists every depth-1 row's `i > 0` lands on the
+   *  `!pinned.length` clause instead and loses its 4px, not just the row that
+   *  would otherwise be first. The caller passes this for every area row
+   *  while the band is showing. */
+  noTopMargin?: boolean
   /** The databases root: the foot band's LAST row (KAN-486: it never moves —
    *  its own rows render above it), caret up when open, right when closed. */
   isDbRoot?: boolean
@@ -300,6 +345,11 @@ interface RailRowProps {
   /** A leading mark slot (an area's glyph, the Life root's waves — #91) —
    *  replaces the dot. */
   leading?: ReactNode
+  /** KAN-471: the root row's ＋ while the pond has no pages — Notion/Linear
+   *  show their create affordance at rest in an empty list; the board's own
+   *  hover-only rule returns once a page exists. Reuses the existing hover
+   *  opacity class, no new value. */
+  plusVisibleAtRest?: boolean
   /** KAN-122: a non-shared row note (`new`, for a nested page not yet
    *  opened) — mono, ink .68, `flex:none`. Rides alongside `row-tools`, never
    *  replaces it. Absent once the page has been opened. KAN-75's shared row
@@ -323,7 +373,7 @@ interface RailRowProps {
   onRenameKeep?: (id: string, value: string, refocus: boolean) => void
   onRenameCancel?: (id: string) => void
   onFocus: (id: string) => void
-  onKeyDown: (id: string, e: KeyboardEvent<HTMLDivElement>) => void
+  onKeyDown: (id: string, e: KeyboardEvent<HTMLElement>) => void
 
   // ── Drag-to-reparent/reorder (F25) ────────────────────────────────────────
   draggable?: boolean
@@ -332,17 +382,18 @@ interface RailRowProps {
   isDragging?: boolean
   dropZone?: DropZone | null
   isDropRejected?: boolean
-  onDragStart?: (id: string, e: DragEvent<HTMLDivElement>) => void
-  onDragOver?: (id: string, e: DragEvent<HTMLDivElement>) => void
-  onDragLeave?: (id: string, e: DragEvent<HTMLDivElement>) => void
-  onDrop?: (id: string, e: DragEvent<HTMLDivElement>) => void
-  onDragEnd?: (id: string, e: DragEvent<HTMLDivElement>) => void
+  onDragStart?: (id: string, e: DragEvent<HTMLElement>) => void
+  onDragOver?: (id: string, e: DragEvent<HTMLElement>) => void
+  onDragLeave?: (id: string, e: DragEvent<HTMLElement>) => void
+  onDrop?: (id: string, e: DragEvent<HTMLElement>) => void
+  onDragEnd?: (id: string, e: DragEvent<HTMLElement>) => void
 }
 
-const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
+const RailRow = forwardRef<HTMLElement, RailRowProps>(function RailRow(
   {
     id,
     title,
+    href,
     depth,
     isFolder,
     isExpanded,
@@ -351,12 +402,14 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
     isBusy,
     isRoot = false,
     isArea = false,
+    noTopMargin = false,
     isDbRoot = false,
     posInSet,
     setSize,
     accent,
     settleOnMount = false,
     leading,
+    plusVisibleAtRest = false,
     rowNote,
     onSelect,
     onToggle,
@@ -408,18 +461,65 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
   // colour of its own in the board, so it is full at rest.
   const isFullInk = isSelected || hovered || isAreaRow || isDbRoot
   // `PondRail.dc.html`: the selected row draws ＋ alone, a hovered one ＋ and ×.
-  const showPlus = isSelected || hovered
+  // KAN-471: an empty pond's root row also draws it at rest (Notion/Linear).
+  const showPlus = isSelected || hovered || plusVisibleAtRest
   // The tools sit out of flow (absolutely, over the row's own right padding —
   // KAN-314), so they take no flow width at rest and the label needs no extra
   // clearance. Only while a control is actually drawn does the label give up
   // the width it would overlap: the row's own 7px gap plus ＋ alone (7+12=19),
   // or plus ＋ · gap 8 · × together (7+12+8+12=39). `group-focus-within` covers
   // the keyboard case, where both draw regardless of `hovered`/`showPlus`.
-  const toolsPad = hovered ? 'pr-[39px]' : showPlus ? 'pr-[19px]' : ''
+  // Whenever ＋ carries the `mr-5` shift that clears ×'s slot (`hovered` or
+  // `plusVisibleAtRest`), it sits 20px further from the edge than the ＋-alone
+  // math above assumes — the label needs the same 39px it gives a hovered row,
+  // even though × itself isn't drawn yet.
+  const toolsPad =
+    hovered || plusVisibleAtRest ? 'pr-[39px]' : showPlus ? 'pr-[19px]' : ''
+
+  // A real `<a href>` when the row has a destination of its own (KAN-474) —
+  // a plain click still shallow-navigates in-app, while a modified click or
+  // middle-click is left unprevented for the browser's own new-tab/window.
+  // The databases root has no destination (it's a disclosure, not a page) and
+  // stays the plain `<div>` it always was, unaffected by modifier keys.
+  const Tag = href ? 'a' : 'div'
+  const handleRowClick = (e: MouseEvent<HTMLElement>) => {
+    if (href && isNewTabClick(e)) return
+    e.preventDefault()
+    onSelect(id)
+  }
+  // The row's interactive descendants (caret, ＋, ×, the mark button, the rename
+  // field) stop the click's propagation so it never reaches `handleRowClick` above —
+  // but `stopPropagation` alone leaves the anchor's own default action armed, and a
+  // click anywhere inside an `<a href>` navigates unless something calls
+  // `preventDefault`. Capture phase runs before those descendants' own bubble
+  // handlers, so this is the one place that can disarm it for all of them at once.
+  // `auxclick` (middle-click) fires the same native navigation the anchor would
+  // otherwise open in a new tab, so it needs the identical guard.
+  const targetsInteractiveDescendant = (e: MouseEvent<HTMLElement>) => {
+    const interactive = (e.target as HTMLElement).closest(
+      'button, input, textarea, select, [role="menuitem"], [contenteditable]'
+    )
+    return Boolean(interactive && e.currentTarget.contains(interactive))
+  }
+  const handleRowClickCapture = (e: MouseEvent<HTMLElement>) => {
+    if (targetsInteractiveDescendant(e)) e.preventDefault()
+  }
+  const handleRowAuxClickCapture = (e: MouseEvent<HTMLElement>) => {
+    if (targetsInteractiveDescendant(e)) e.preventDefault()
+  }
+  // A plain callback (not the forwarded ref object/callback itself) so its type
+  // — `(el: HTMLElement | null) => void` — fits both `<a>`'s and `<div>`'s own
+  // narrower ref slot; `ref` only ever arrives as a callback from `setRowRef`,
+  // never a ref object, so this is a safe forward, not a cast.
+  const setTagRef = (el: HTMLElement | null) => {
+    if (typeof ref === 'function') ref(el)
+    else if (ref) ref.current = el
+  }
 
   return (
-    <div
-      ref={ref}
+    <Tag
+      ref={setTagRef}
+      href={href}
       role="treeitem"
       aria-level={depth + 1}
       aria-selected={isSelected}
@@ -448,7 +548,9 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
       onPointerLeave={pagePrefetch.onPointerLeave}
       // The whole row opens the page (the caret and ＋/× stop propagation) —
       // strictly navigation; expansion belongs to the caret alone.
-      onClick={() => onSelect(id)}
+      onClickCapture={handleRowClickCapture}
+      onAuxClickCapture={handleRowAuxClickCapture}
+      onClick={handleRowClick}
       onDoubleClick={onRenameStart ? () => onRenameStart(id) : undefined}
       onFocus={(e) => {
         // Only the row itself — focusing an inner control (＋/×) must not yank
@@ -469,10 +571,10 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
         if (e.target === e.currentTarget) onKeyDown(id, e)
       }}
       className={`group relative flex items-center rounded-mn-row outline-none
-        ${isDbRoot ? 'gap-[9px] px-2 py-[6px]' : 'gap-[7px] py-[5px] pr-2'}
-        focus-visible:ring-2 focus-visible:ring-mn-text/50 focus-visible:ring-offset-0
-        ${isArea && !isDbRoot ? 'mt-1' : ''}
-        ${isSelected ? 'bg-mn-hover-fill' : hovered ? 'bg-mn-rail-hover' : ''}
+        ${isDbRoot ? 'gap-[9px] px-2 py-[6px]' : ROW_GAP_PY_PR}
+        ${ROW_FOCUS_RING} focus-visible:ring-offset-0
+        ${isArea && !isDbRoot && !noTopMargin ? 'mt-1' : ''}
+        ${isSelected ? ROW_SELECTED_FILL : hovered ? ROW_HOVER_FILL : ''}
         ${isDropRejected ? 'cursor-not-allowed' : 'cursor-pointer'}
         ${isDragging ? 'opacity-[.35]' : ''}
         ${dropZone === 'into' ? 'ring-2 ring-inset ring-mn-text/50 ' : ''}${settleOnMount && !settled ? 'motion-settle-in ' : ''}`}
@@ -592,7 +694,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
                         showPlus
                           ? 'opacity-100 pointer-events-auto'
                           : 'opacity-0 pointer-events-none'
-                      } ${hovered ? 'mr-5' : ''}`}
+                      } ${hovered || plusVisibleAtRest ? 'mr-5' : ''}`}
                     >
                       <NewPageMenu
                         parentTitle={label}
@@ -610,6 +712,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
                             aria-label={`Add sub-page to ${label}`}
                             disabled={isBusy}
                             onClick={(e) => e.stopPropagation()}
+                            onDoubleClick={(e) => e.stopPropagation()}
                           >
                             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
                               <path
@@ -670,11 +773,11 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
         // to the row's own 8px right padding, per the board.
         className={`min-h-0 w-full min-w-0 flex-1 bg-transparent ${isDbRoot ? 'gap-[9px]' : 'gap-[7px]'} p-0${
           toolsPad ? ` ${toolsPad}` : ''
-        } group-focus-within:pr-[39px]${isAreaRow ? '' : ' text-[13px]'}${
-          isFullInk ? '' : ' text-mn-text-secondary'
+        } group-focus-within:pr-[39px]${isAreaRow ? '' : ` ${ROW_LABEL_SIZE_NOT_EMPHASISED}`}${
+          isFullInk ? '' : ` ${ROW_LABEL_INK_NOT_FULL}`
         } leading-[normal]`}
       />
-    </div>
+    </Tag>
   )
 })
 
@@ -682,6 +785,16 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
 
 export interface RailViewProps {
   tree: RailNode[]
+  /**
+   * KAN-474: the active pond, for every row's `href` (`workspaceUrl(node, pondId)`).
+   * Read from the pond context, not `currentPondId()`'s `window.location` fallback —
+   * that read returns null during SSR while the client resolves the real id, so a
+   * row built from it carried a pond-less `href` on first paint and a `?pond=`-carrying
+   * one after hydration, a mismatch React won't patch up. Optional so the existing
+   * `RailView` call sites (stories, unit tests predating this ticket) keep compiling
+   * untouched; omit it and a row's href falls back to `workspaceUrl`'s own default.
+   */
+  pondId?: string | null
   /**
    * The pond's name — the rail header's label (AUDIT C3). The switcher chevron
    * appears once the pond list is non-empty. Resolved by `usePondName`.
@@ -712,6 +825,11 @@ export interface RailViewProps {
    * before a mark could be chosen.
    */
   marks?: ReadonlyMap<string, MarkSource>
+  /** KAN-475: the open page's favourite ids, in order — a band above the tree
+   *  renders the ones that still resolve to a live page in this pond; absent
+   *  or every id dead draws no band at all. Omit in Storybook/older call
+   *  sites and the rail draws exactly as it did before favourites existed. */
+  favouritePageIds?: readonly string[]
   selectedId: string | null
   expanded: Set<string>
   /** Whether the Life root is expanded (reveals the whole tree). */
@@ -723,6 +841,12 @@ export interface RailViewProps {
   onToggle: (id: string) => void
   onAddChild: (id: string, action?: NewPageMenuAction) => void
   onDelete: (id: string) => void
+  /** ⌘D/Ctrl+D on a focused row (KAN-468) — the same duplicate-and-open handler
+   *  ⌘K's "duplicate page" palette entry calls. Optional so the existing
+   *  `RailView` call sites (stories, unit tests predating this ticket) keep
+   *  compiling untouched; omit it and ⌘D no-ops, same convention as
+   *  `onPickColour`. */
+  onDuplicate?: (id: string) => void
   /** Commit a kept rename: a trimmed, non-empty title that differs from the old one. */
   onRename: (id: string, title: string) => void
   /** A glyph picker pick — `null` for `automatic`. Applies at once (KAN-248 6/8). */
@@ -745,6 +869,14 @@ export interface RailViewProps {
    *  rename on it with its name selected — once per id (KAN-490: the row is
    *  never navigated into, unlike an ordinary child add). */
   autoRenameId?: string | null
+  /** A one-shot "focus this row" request from the rail-focus key (KAN-476,
+   *  `requestRailRowFocus`/`FOCUS_RAIL_ROW_EVENT`). `Rail()` already expanded
+   *  every ancestor of `id` by the same render; `RailView` only has to move
+   *  focus once the row is visible. `token` makes repeat presses on the same
+   *  already-open row distinct requests — an id-only value wouldn't re-fire
+   *  the effect below on a second press. Optional so existing `RailView` call
+   *  sites (stories, unit tests predating this ticket) keep compiling. */
+  focusRequest?: { id: string; token: number } | null
   /** Would a drop offer a landing? (valid, non-cyclic target — F25.) A false
    *  return paints the not-allowed affordance instead of a drop-line. */
   canDrop: (draggedId: string, targetId: string, zone: DropZone) => boolean
@@ -798,35 +930,8 @@ function hideNativeDragImage(dataTransfer: DataTransfer) {
 /** PondRail's loading skeleton: eight bars, widths in %, indented in a repeating 0 / 14 / 28px staircase. */
 const SKELETON_WIDTHS = [40, 62, 54, 70, 48, 66, 58, 44]
 
-/**
- * A row's mark, resolved through `resolveMark` so the rail agrees with the
- * breadcrumb, the palette and the cards about every page. `marks` comes from the
- * shared `['pages']` cache, so the rail needs no read of its own. The node itself
- * is the fallback: a rail rendered without a pond (Storybook, a unit test) still
- * shows every area's automatic glyph.
- */
-const rowMark = (node: RailNode, marks: ReadonlyMap<string, MarkSource>): PageMark =>
-  resolveMark(node.id, marks, {
-    id: node.id,
-    parentId: node.parentId,
-    type: node.type,
-    title: node.title,
-  })
-
 /** The mark button's accessible name — a page and an area read the same (6y frame 1). */
 const changeIconLabel = (title: string) => `change icon for ${title || 'Untitled'}`
-
-/** The glyph or dot a row's mark draws, shared by the interactive button and the
- *  reserved rows' static (non-interactive) leading mark. */
-const markGlyph = (mark: PageMark, accent: string | undefined, isSelected: boolean): ReactNode =>
-  mark.glyph ? (
-    <AreaMark glyph={mark.glyph} color={accent} />
-  ) : (
-    <KindDot
-      accent={accent}
-      className={!accent ? (isSelected ? 'bg-mn-text' : 'bg-mn-text/50') : undefined}
-    />
-  )
 
 /**
  * A row's mark, as a real control (KAN-248 2/4, wired to the glyph picker in
@@ -887,12 +992,14 @@ interface OpenGlyphPicker {
 
 export function RailView({
   tree,
+  pondId = null,
   pondName,
   rootTitle,
   showHomeRoot = true,
   pondGlyph = LIFE_GLYPH,
   recentGlyphs = [],
   marks,
+  favouritePageIds = [],
   selectedId,
   expanded,
   lifeExpanded,
@@ -903,6 +1010,7 @@ export function RailView({
   onToggle,
   onAddChild,
   onDelete,
+  onDuplicate = () => {},
   onRename,
   onPickGlyph,
   onPickColour = () => {},
@@ -912,6 +1020,7 @@ export function RailView({
   onOpenDatabases,
   onAddRoot,
   autoRenameId = null,
+  focusRequest = null,
   canDrop,
   onMove,
 }: RailViewProps) {
@@ -923,9 +1032,9 @@ export function RailView({
   // Empty when the caller supplies none (Storybook): every row then resolves to
   // its derived mark, which is what the rail showed before marks were choosable.
   const markMap = useMemo(() => marks ?? new Map<string, MarkSource>(), [marks])
-  const rowRefs = useRef(new Map<string, HTMLDivElement>())
+  const rowRefs = useRef(new Map<string, HTMLElement>())
   const setRowRef = useCallback(
-    (id: string) => (el: HTMLDivElement | null) => {
+    (id: string) => (el: HTMLElement | null) => {
       if (el) rowRefs.current.set(id, el)
       else rowRefs.current.delete(id)
     },
@@ -1052,6 +1161,23 @@ export function RailView({
   )
   const visibleIds = useMemo(() => new Set(flat.map((f) => f.id)), [flat])
 
+  // KAN-475: every node by id, so a favourite resolves without walking the
+  // tree again — the same lookup `Rail()`'s own CRUD handlers use.
+  const nodeById = useMemo(() => nodeIndex(tree), [tree])
+  // Dropped at read, never rewritten back to the pond: a trashed/moved page's
+  // id simply stops resolving.
+  const liveFavouriteIds = useMemo(
+    () => favouritePageIds.filter((id) => nodeById.has(id)),
+    [favouritePageIds, nodeById]
+  )
+  const hasFavouritesBand = liveFavouriteIds.length > 0
+
+  // The same rows the tree below renders (databases/trash excluded).
+  const treeRows = useMemo(
+    () => flat.filter((f) => !databasesIds.has(f.id) && f.id !== TRASH_NODE_ID),
+    [flat, databasesIds]
+  )
+
   const openAddChildMenu = useCallback(
     (id: string) => {
       const title = id === LIFE_ID ? rootLabel : (flat.find((f) => f.id === id)?.node.title ?? '')
@@ -1081,6 +1207,19 @@ export function RailView({
 
   // ── Roving focus (view-owned: focus is a view concern) ─────────────────────
   const [focusedId, setFocusedId] = useState<string | null>(null)
+  // Whether the rail itself still logically owns focus — true from a row's own
+  // onFocus, flipped false the instant focus leaves `bodyRef` for anywhere else
+  // (the ⌘K palette, the editor). `document.activeElement === document.body` alone
+  // can't tell "this row's own removal dropped focus to body" (the case the
+  // effect below exists for) apart from "something unrelated closed and left body
+  // focused for a tick" (KAN-469 live finding: a ⌘⇧P move reparented the open row
+  // out of view while the palette itself was blurring to body, and the row-vanish
+  // effect read that as its own cue and stole focus onto an unrelated rail row).
+  const focusInRailRef = useRef(false)
+  const handleRowFocus = useCallback((id: string) => {
+    focusInRailRef.current = true
+    setFocusedId(id)
+  }, [])
 
   // The effective roving tab stop: the focused row if it's still visible, else
   // the selection, else the Life root — always exactly one tabbable row.
@@ -1094,8 +1233,10 @@ export function RailView({
   // When the focused row vanishes (deleted, or hidden by an ancestor collapse),
   // keep focus in the tree like VS Code: fall to the nearest surviving neighbor
   // in the previous order (else the nearest before it, else Life). Only re-grab
-  // DOM focus if the removal actually dropped it to <body> — never steal focus
-  // the user has moved elsewhere (e.g. into the editor).
+  // DOM focus if the removal actually dropped it to <body> AND the rail still
+  // owned focus when it did — never steal focus the user has moved elsewhere
+  // (e.g. into the editor, or the palette — even once the palette itself has
+  // let go of it).
   const prevOrderRef = useRef<string[]>([])
   useEffect(() => {
     const prev = prevOrderRef.current
@@ -1103,8 +1244,39 @@ export function RailView({
     if (!focusedId || visibleIds.has(focusedId)) return
     const fallback = focusFallback(prev, focusedId, visibleIds)
     setFocusedId(fallback)
-    if (document.activeElement === document.body) rowRefs.current.get(fallback)?.focus()
+    if (focusInRailRef.current && document.activeElement === document.body)
+      rowRefs.current.get(fallback)?.focus()
   }, [flat, focusedId, visibleIds])
+
+  // ── Rail-focus key (KAN-476) ────────────────────────────────────────────────
+  // `Rail()` expands every ancestor of `focusRequest.id` in the same render
+  // that sets `focusRequest`, so the row is already visible by the time this
+  // effect runs. `handledFocusTokenRef` keeps a later, unrelated re-render
+  // from refocusing the same request again.
+  const handledFocusTokenRef = useRef<number | null>(null)
+  // What had focus right before the rail-focus key moved it here — restored on
+  // Esc below, then cleared so a later, unrelated Esc has nothing to restore.
+  const preRailFocusRef = useRef<HTMLElement | null>(null)
+  useEffect(() => {
+    if (!focusRequest || handledFocusTokenRef.current === focusRequest.token) return
+    if (!visibleIds.has(focusRequest.id)) return
+    handledFocusTokenRef.current = focusRequest.token
+    // Only capture when focus is currently OUTSIDE the rail — a repeat press
+    // of the chord while a row already holds focus must not overwrite the
+    // remembered target with the row itself, or Esc would "restore" focus to
+    // where it already is instead of back to the editor.
+    const active = document.activeElement
+    const activeIsOutsideRail = !(active instanceof Node) || !bodyRef.current?.contains(active)
+    if (activeIsOutsideRail) {
+      preRailFocusRef.current = active instanceof HTMLElement ? active : null
+    }
+    // Responds to an external request (the rail-focus key), not a derived
+    // value — same justification as the reveal effects above.
+    /* eslint-disable react-hooks/set-state-in-effect */
+    setFocusedId(focusRequest.id)
+    /* eslint-enable react-hooks/set-state-in-effect */
+    rowRefs.current.get(focusRequest.id)?.focus()
+  }, [focusRequest, visibleIds])
 
   const handleSelect = (id: string) => {
     if (id === DATABASES_PLACEHOLDER_ID) onOpenDatabases()
@@ -1155,10 +1327,49 @@ export function RailView({
   const handleRenameCancel = (id: string) => endRename(id, true)
 
   // ── Keyboard machine (pure rules; commands dispatched to the callbacks) ────
-  function handleKeyDown(id: string, e: KeyboardEvent<HTMLDivElement>) {
-    const cmd = treeKeyCommand(e.key, id, flat, { expanded, lifeExpanded })
+  function handleKeyDown(id: string, e: KeyboardEvent<HTMLElement>) {
+    // KAN-476: Esc undoes the rail-focus key, returning focus to whatever had
+    // it before — but only while that request is still the whole story: the
+    // rail still owns focus, and no row-local UI (rename, the new-page menu,
+    // the glyph picker) has its own Esc meaning to keep. Outside those
+    // conditions this falls through untouched, same as today.
+    if (e.key === 'Escape') {
+      if (
+        focusInRailRef.current &&
+        !renamingId &&
+        !newPageMenu &&
+        !picker &&
+        preRailFocusRef.current
+      ) {
+        const target = preRailFocusRef.current
+        preRailFocusRef.current = null
+        // A ↵-navigation since the chord can unmount the remembered element
+        // without DOM focus ever leaving the row — fall back to doing
+        // nothing (Esc keeps its normal, unhandled meaning) rather than
+        // swallowing the keystroke on a target that can no longer take focus.
+        if (target.isConnected) {
+          e.preventDefault()
+          e.stopPropagation()
+          target.focus()
+        }
+      }
+      return
+    }
+    // AUDIT K1: ⌘D/Ctrl+D is the browser's own bookmark chord. Every press of
+    // it on a focused row — a repeat from holding it down, or one aimed at a
+    // row `treeKeyCommand`/`allowsCommand` refuses to dispatch — must still be
+    // prevented here, or the bookmark dialog opens underneath the row that
+    // silently ate the keystroke.
+    const isDuplicateChord = (e.key === 'd' || e.key === 'D') && (e.metaKey || e.ctrlKey)
+    const cmd = treeKeyCommand(e.key, id, flat, {
+      expanded,
+      lifeExpanded,
+      metaOrCtrl: e.metaKey || e.ctrlKey,
+      repeat: e.repeat,
+    })
+    if (isDuplicateChord) e.preventDefault()
     if (!cmd || !allowsCommand(capabilitiesOf(id), cmd.kind)) return
-    e.preventDefault()
+    if (!isDuplicateChord) e.preventDefault()
     switch (cmd.kind) {
       case 'focus':
         setFocusedId(cmd.id)
@@ -1179,6 +1390,9 @@ export function RailView({
       case 'rename':
         handleRenameStart(cmd.id)
         break
+      case 'duplicate':
+        onDuplicate(cmd.id)
+        break
     }
   }
 
@@ -1187,6 +1401,24 @@ export function RailView({
   // The ghost chip's pointer-follow Y, relative to the scroll body's wrapper.
   const [ghostY, setGhostY] = useState(0)
   const bodyRef = useRef<HTMLDivElement>(null)
+  // `focusInRailRef`'s other half: the rail stops owning focus the instant it
+  // moves to anything outside this body (the ⌘K palette's own input, the page
+  // editor) — capture phase, so it sees the move before a handler further down
+  // could stop the event. The KAN-476 chord's remembered pre-focus target is
+  // only meaningful while that stretch holds, so a real Tab/click move out of
+  // the rail (unlike a ↵-navigation that leaves DOM focus on the row itself)
+  // clears it too — otherwise a later, unrelated click straight into a row
+  // would inherit a stale Esc target that was never this visit's own.
+  useEffect(() => {
+    const onFocusIn = (e: FocusEvent) => {
+      if (!(e.target instanceof Node) || !bodyRef.current?.contains(e.target)) {
+        focusInRailRef.current = false
+        preRailFocusRef.current = null
+      }
+    }
+    document.addEventListener('focusin', onFocusIn, { capture: true })
+    return () => document.removeEventListener('focusin', onFocusIn, { capture: true })
+  }, [])
   const trackGhost = (clientY: number) => {
     const top = bodyRef.current?.getBoundingClientRect().top ?? 0
     setGhostY(clientY - top)
@@ -1207,7 +1439,7 @@ export function RailView({
 
   /** Three-zone hit-test from the pointer's Y within the row: top ¼ before,
    *  bottom ¼ after, middle into. The Life root is an into-only target. */
-  function zoneFor(id: string, e: DragEvent<HTMLDivElement>): DropZone {
+  function zoneFor(id: string, e: DragEvent<HTMLElement>): DropZone {
     if (id === LIFE_ID) return 'into'
     const rect = e.currentTarget.getBoundingClientRect()
     const frac = (e.clientY - rect.top) / rect.height
@@ -1216,7 +1448,7 @@ export function RailView({
     return 'into'
   }
 
-  function handleDragStart(id: string, e: DragEvent<HTMLDivElement>) {
+  function handleDragStart(id: string, e: DragEvent<HTMLElement>) {
     setDraggingId(id)
     trackGhost(e.clientY)
     e.dataTransfer.effectAllowed = 'move'
@@ -1225,7 +1457,7 @@ export function RailView({
     hideNativeDragImage(e.dataTransfer)
   }
 
-  function handleDragOver(id: string, e: DragEvent<HTMLDivElement>) {
+  function handleDragOver(id: string, e: DragEvent<HTMLElement>) {
     if (!draggingId || draggingId === id) return // no indicator over the dragged row itself
     const zone = zoneFor(id, e)
     if (canDrop(draggingId, id, zone)) {
@@ -1241,14 +1473,14 @@ export function RailView({
     }
   }
 
-  function handleDragLeave(id: string, e: DragEvent<HTMLDivElement>) {
+  function handleDragLeave(id: string, e: DragEvent<HTMLElement>) {
     // Only clear when the pointer actually leaves this row (not on entering a
     // child element); dragover on the next row re-sets the target immediately.
     if (e.currentTarget.contains(e.relatedTarget as Node | null)) return
     setDropTarget((prev) => (prev?.id === id ? null : prev))
   }
 
-  function handleDrop(id: string, e: DragEvent<HTMLDivElement>) {
+  function handleDrop(id: string, e: DragEvent<HTMLElement>) {
     e.preventDefault()
     const dragged = draggingId
     const zone = dropTarget?.id === id ? dropTarget.zone : zoneFor(id, e)
@@ -1276,11 +1508,25 @@ export function RailView({
     // the synthetic Life row, which is no `pages` row and carries `LIFE_MARK`.
     const mark = id === LIFE_ID ? null : rowMark(node, markMap)
     const cap = rowCapabilities(id, node)
+    // KAN-474: every row's real destination, so it can be a true `<a href>` —
+    // the Life root's is the workspace root (`workspaceRenderHref(null)`); the
+    // databases root (placeholder or real) is a disclosure, not a page, and
+    // has none (KAN-486), so it stays the plain non-link row it already was.
+    // `workspaceRenderHref` (never `workspaceUrl`'s `window.location` fallback)
+    // so a server-rendered row and its client hydration agree on `&pond=` even
+    // while `pondId` is still null (KAN-474 follow-up).
+    const href =
+      id === LIFE_ID
+        ? workspaceRenderHref(null, pondId)
+        : id === DATABASES_PLACEHOLDER_ID || isDatabasesRoot(node)
+          ? undefined
+          : workspaceRenderHref(node, pondId)
     return id === LIFE_ID || mark === null ? (
       <RailRow
         ref={setRowRef(id)}
         key={id}
         id={id}
+        href={href}
         // KAN-490: the root row is the home page, so its label is the home
         // row's OWN title, not the word "life" or the pond's name — the data
         // model point that the home row IS the first root. This was a
@@ -1291,8 +1537,9 @@ export function RailView({
         depth={0}
         isFolder={isFolder}
         isExpanded={lifeExpanded}
-        // `PondRail` `empty`: the lone root is not selected, so it draws no resting ＋;
-        // hovered, it shows its tools like any row (`hasTools: hov`).
+        // `PondRail` `empty`: the lone root is not selected, so it draws no `isSelected`
+        // wash; but its ＋ shows at rest while the pond is empty (KAN-471, below), then
+        // goes back to hover-only (`hasTools: hov`) once a first page exists.
         isSelected={selectedId === null && !isEmpty}
         isFocused={rovingId === id}
         isBusy={false}
@@ -1300,12 +1547,13 @@ export function RailView({
         posInSet={posInSet}
         setSize={setSize}
         leading={<PondMark glyph={pondGlyph} />}
+        plusVisibleAtRest={isEmpty}
         onSelect={onLife}
         onToggle={onToggleLife}
         newPageMenuOpen={newPageMenu?.id === id}
         onNewPageMenuOpenChange={cap.addable ? handleNewPageMenuOpenChange : undefined}
         onNewPageMenuSelect={cap.addable ? handleNewPageMenuSelect : undefined}
-        onFocus={setFocusedId}
+        onFocus={handleRowFocus}
         onKeyDown={handleKeyDown}
         dropZone={dropZoneFor(id)}
         isDropRejected={isDropRejected(id)}
@@ -1323,6 +1571,7 @@ export function RailView({
         ref={setRowRef(id)}
         key={id}
         id={id}
+        href={href}
         title={node.title}
         depth={depth}
         isFolder={isFolder}
@@ -1334,6 +1583,7 @@ export function RailView({
         // tree/ArrowLeft only — it never reads as an area's bigger label and
         // full ink the way a real top-level page does.
         isArea={isAreaRow(node) && id !== TRASH_NODE_ID}
+        noTopMargin={hasFavouritesBand}
         isDbRoot={isDatabasesRoot(node)}
         posInSet={posInSet}
         setSize={setSize}
@@ -1377,7 +1627,7 @@ export function RailView({
         isRenaming={renamingId === id}
         onRenameKeep={handleRenameKeep}
         onRenameCancel={handleRenameCancel}
-        onFocus={setFocusedId}
+        onFocus={handleRowFocus}
         onKeyDown={handleKeyDown}
         draggable={cap.draggable}
         isDragging={draggingId === id}
@@ -1428,12 +1678,24 @@ export function RailView({
           onDragOver={handleBodyDragOver}
           className="relative flex min-h-0 flex-1 flex-col"
         >
+          {/* KAN-475: outside the scroller below (no horizontal padding here),
+            same as `PondRail.dc.html`'s `pinned`/`list` siblings — its own
+            `mx-2` rows then land at the same inset the tree rows get from the
+            scroller's `px-2` plus their own left padding. Never shown loading
+            or empty: `liveFavouriteIds` is empty until `pages` has loaded. */}
+          {!isLoading && hasFavouritesBand && (
+            <RailFavouritesBand
+              ids={liveFavouriteIds}
+              nodeById={nodeById}
+              marks={markMap}
+              pondId={pondId}
+              selectedId={selectedId}
+              onSelect={onSelect}
+            />
+          )}
           <div className="min-h-0 flex-1 overflow-y-auto px-2">
             <div role="tree" aria-label="Workspace" aria-multiselectable={false}>
-              {!isLoading &&
-                flat
-                  .filter((f) => !databasesIds.has(f.id) && f.id !== TRASH_NODE_ID)
-                  .map(renderRow)}
+              {!isLoading && treeRows.map(renderRow)}
             </div>
 
             {/* KAN-490: a real `<button>`, not a treeitem — `role="tree"` only
@@ -1484,12 +1746,12 @@ export function RailView({
                 </div>
               </div>
             )}
-            {!isLoading && isEmpty && (
+            {isEmpty && showHomeRoot && (
               <p
                 className="mt-2 mr-2 ml-[26px] text-[12.5px] leading-[1.5] text-pretty text-mn-text-secondary"
                 role="status"
               >
-                no pages yet. ＋ new page, or ask pond to start one.
+                no pages yet. the ＋ beside {rootLabel} makes one, or ask pond to start one.
               </p>
             )}
           </div>
@@ -1648,10 +1910,13 @@ export function Rail() {
   // visible on load (collapsing Life is the "collapse everything").
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [lifeExpanded, setLifeExpanded] = useState(true)
+  // The rail-focus key's one-shot request down to `RailView` — see the
+  // listener effect below and `RailViewProps.focusRequest`'s doc comment.
+  const [focusRequest, setFocusRequest] = useState<{ id: string; token: number } | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   // The subtree-delete confirm (blast-radius modal); null when closed.
   const [confirmTarget, setConfirmTarget] = useState<RailNode | null>(null)
-  const { stageDeletion, notify } = useDeletionUndo()
+  const { stageDeletion, stageUndo, notify } = useDeletionUndo()
 
   const {
     data: pages = [],
@@ -1666,16 +1931,7 @@ export function Rail() {
   // #134: the same rows the tree is built from, indexed for mark resolution — so
   // the rail agrees with the breadcrumb and the kicker about every page.
   const marks = useMemo(() => markIndex(pages), [pages])
-  const nodeById = useMemo(() => {
-    const map = new Map<string, RailNode>()
-    const walk = (nodes: RailNode[]) =>
-      nodes.forEach((n) => {
-        map.set(n.id, n)
-        walk(n.children)
-      })
-    walk(tree)
-    return map
-  }, [tree])
+  const nodeById = useMemo(() => nodeIndex(tree), [tree])
   const databasesRootId = useMemo(() => tree.find(isDatabasesRoot)?.id ?? null, [tree])
   const selectedNodeId = searchParams.get('nodeId')
 
@@ -1765,41 +2021,82 @@ export function Rail() {
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [pondId, isSuccess, pages, setExpanded])
 
+  // The databases root is excluded from any ancestor chain: it is a
+  // disclosure the person toggles themselves (KAN-486), not one a folder
+  // navigation should force open.
+  const ancestorIdsFor = useCallback(
+    (nodeId: string) =>
+      ancestorPath(pages, nodeId)
+        .map((c) => c.id)
+        .filter((id) => id !== databasesRootId),
+    [pages, databasesRootId]
+  )
+  // One home for "expand Life and every ancestor folder of `nodeId`" — the
+  // ticket-25 reveal effect and the KAN-476 rail-focus key both want exactly
+  // this, differing only in whether a once-per-selection gate guards the call.
+  const revealAncestors = useCallback(
+    (nodeId: string) => {
+      const ancestors = ancestorIdsFor(nodeId)
+      setLifeExpanded(true)
+      if (ancestors.length > 0) {
+        setExpanded((prev) => {
+          const next = new Set(prev)
+          for (const id of ancestors) next.add(id)
+          return next
+        })
+      }
+      return ancestors
+    },
+    [ancestorIdsFor]
+  )
+
   // ── Rail follows you (ticket-25) ────────────────────────────────────────────
   // When the selection changes — via a rail click, a children-grid card, the
   // breadcrumb, or a page created through chat / ＋ — auto-expand every folder on
   // the path to the current node (and Life itself) so it's revealed and its
-  // ancestors highlight. We reveal a given selection exactly once (tracked by
-  // ref) so a manual re-collapse afterward isn't fought. `revealedForRef`
-  // itself is declared above, alongside the pond-switch clear (KAN-393) that
-  // also resets it on a real pond switch.
+  // ancestors highlight. We reveal a given (id, ancestor chain) exactly once
+  // (tracked by ref) so a manual re-collapse afterward isn't fought.
+  // `revealedForRef` itself is declared above, alongside the pond-switch
+  // clear (KAN-393) that also resets it on a real pond switch.
   useEffect(() => {
     if (!selectedNodeId) {
       revealedForRef.current = null
       return
     }
-    if (selectedNodeId === revealedForRef.current) return
     // Wait until the node itself is present so its ancestor chain is resolvable.
     if (!pages.some((r) => r.id === selectedNodeId)) return
-    // The databases root is excluded: it is a disclosure the person toggles
-    // themselves (KAN-486), not a folder navigation should force open.
-    const ancestors = ancestorPath(pages, selectedNodeId)
-      .map((c) => c.id)
-      .filter((id) => id !== databasesRootId)
-    revealedForRef.current = selectedNodeId
-    // The two reveals below respond to an external navigation (URL ?nodeId, incl.
-    // chat/＋ creation) — open Life and every ancestor folder so the current node
-    // shows. Guarded to fire once per selection; not a derived-state computation.
-    /* eslint-disable react-hooks/set-state-in-effect */
-    setLifeExpanded(true)
-    if (ancestors.length === 0) return
-    setExpanded((prev) => {
-      const next = new Set(prev)
-      for (const id of ancestors) next.add(id)
-      return next
-    })
-    /* eslint-enable react-hooks/set-state-in-effect */
-  }, [selectedNodeId, pages, databasesRootId])
+    const ancestors = ancestorIdsFor(selectedNodeId)
+    // KAN-469: keyed on the resolved ancestor chain, not just the id — a
+    // reparent of the already-open node (⌘K's "move page to…", which has no
+    // drop target of its own to expand, unlike a drag) changes that chain
+    // without changing the selection, and must re-reveal rather than read as
+    // already-handled.
+    const revealKey = `${selectedNodeId}:${ancestors.join(',')}`
+    if (revealKey === revealedForRef.current) return
+    revealedForRef.current = revealKey
+    // Responds to an external navigation (URL ?nodeId, incl. chat/＋ creation)
+    // — open Life and every ancestor folder so the current node shows.
+    // Guarded to fire once per selection; not a derived-state computation.
+    revealAncestors(selectedNodeId)
+  }, [selectedNodeId, pages, databasesRootId, ancestorIdsFor, revealAncestors])
+
+  // ── Rail-focus key (KAN-476) ────────────────────────────────────────────────
+  // `requestRailRowFocus` (⌘⇧\) asks the rail to reveal and focus the open
+  // page's row. Unlike the reveal effect above, this expands every ancestor
+  // unconditionally — NOT gated by `revealedForRef` — since a person who
+  // hand-collapsed an ancestor after opening the page must still have it
+  // reopened by this key; the whole point of the key is "show me where I am
+  // right now", not "show me once".
+  useEffect(() => {
+    const handleFocusRequest = () => {
+      if (!selectedNodeId) return
+      if (!pages.some((r) => r.id === selectedNodeId)) return
+      revealAncestors(selectedNodeId)
+      setFocusRequest((prev) => ({ id: selectedNodeId, token: (prev?.token ?? 0) + 1 }))
+    }
+    window.addEventListener(FOCUS_RAIL_ROW_EVENT, handleFocusRequest)
+    return () => window.removeEventListener(FOCUS_RAIL_ROW_EVENT, handleFocusRequest)
+  }, [selectedNodeId, pages, revealAncestors])
 
   // ── Rail reveals a new child without leaving the parent (KAN-122) ──────────
   // The `/ nested page` swap stays on the parent, so selection never changes
@@ -2023,6 +2320,7 @@ export function Rail() {
           },
           pondId
         )
+        requestTitleFocus(created.id)
         navigateTo(
           { id: created.id, type: 'page', title: created.title },
           { openTemplates: action === 'template' }
@@ -2280,6 +2578,28 @@ export function Rail() {
     })
   }
 
+  /** ⌘D/Ctrl+D on a focused row (KAN-468): the same `duplicateAndOpen` flow
+   *  ⌘K's "duplicate page" palette entry runs (AUDIT G9), off the FOCUSED
+   *  row's id rather than the open page's. */
+  async function handleDuplicate(id: string) {
+    const node = nodeById.get(id)
+    if (!node) return
+    setBusyId(id)
+    try {
+      await duplicateAndOpen(
+        queryClient,
+        router,
+        pondId,
+        id,
+        node.parentId,
+        { type: node.type, title: node.title },
+        notify
+      )
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   async function handleConfirmDelete() {
     const node = confirmTarget
     setConfirmTarget(null)
@@ -2492,29 +2812,16 @@ export function Rail() {
   }
 
   /**
-   * Commit a move: resolve it (computeMove absorbs self / cycle / no-op → null),
-   * apply it optimistically so the rail restructures instantly, auto-expand the
-   * target on an *into* so the moved child is visible, then persist. On failure,
-   * restore the pre-move snapshot, surface the miss, and reconcile.
+   * Commit a move: auto-expand the target on an *into* so the moved child is
+   * visible (view-layer state `moveAndStageUndo` has no access to), then run
+   * the actual resolve/optimistic-apply/persist/undo through the shared
+   * `moveAndStageUndo` the rail and ⌘K's "move page to…" row both call.
+   * `computeMove` is resolved twice (here and inside `moveAndStageUndo`) —
+   * it's pure, so the duplicate call costs nothing and keeps the expand gated
+   * on the same self/cycle/no-op check the move itself uses.
    */
   async function handleMove(draggedId: string, targetId: string, zone: DropZone) {
-    const move = computeMove(pages, draggedId, targetId, zone)
-    if (!move) return
-
-    // A re-parent (not a same-parent reorder) gets a link on its new parent;
-    // the old parent's link, if any, is left for the person to remove.
-    const draggedRow = pages.find((r) => r.id === draggedId)
-    const isReparent = (draggedRow?.parent_id ?? null) !== move.newParentId
-
-    const snapshot = applyMoveOptimistic(
-      queryClient,
-      {
-        movedId: draggedId,
-        newParentId: move.newParentId,
-        siblingOrder: move.siblingOrder,
-      },
-      pondId
-    )
+    if (!computeMove(pages, draggedId, targetId, zone)) return
 
     // Expand-on-drop: an into-drop reveals the moved child under its new parent.
     if (zone === 'into') {
@@ -2522,31 +2829,19 @@ export function Rail() {
       else setExpanded((prev) => new Set(prev).add(targetId))
     }
 
-    // KAN-415: a failed link append is not a failed move — fired alongside it.
-    if (isReparent) {
-      void appendChildLinkUnder(
-        createClient(),
-        queryClient,
-        move.newParentId,
-        draggedId,
-        pondId,
-        pondName
-      )
-    }
-
-    try {
-      await withUser((sb) =>
-        movePage(sb, {
-          id: draggedId,
-          newParentId: move.newParentId,
-          siblingOrder: move.siblingOrder,
-        })
-      )
-    } catch {
-      if (snapshot) queryClient.setQueryData<PageRow[]>(pagesKey(pondId), snapshot)
-      notify(`Couldn't move "${nodeById.get(draggedId)?.title || 'Untitled'}"`)
-      queryClient.invalidateQueries({ queryKey: pagesKey() })
-    }
+    await moveAndStageUndo(
+      queryClient,
+      pondId,
+      pages,
+      draggedId,
+      targetId,
+      zone,
+      home,
+      pondName,
+      stageUndo,
+      notify,
+      navigateTo
+    )
   }
 
   const confirmCount = confirmTarget ? countDescendants(confirmTarget) : 0
@@ -2555,12 +2850,14 @@ export function Rail() {
     <>
       <RailView
         tree={tree}
+        pondId={pondId}
         pondName={pondName}
         rootTitle={home?.title ?? null}
         showHomeRoot={home !== null && !homeHidden}
         pondGlyph={pondGlyph}
         recentGlyphs={recentGlyphs}
         marks={marks}
+        favouritePageIds={pond?.favouritePageIds}
         selectedId={selectedNodeId}
         expanded={expanded}
         lifeExpanded={lifeExpanded}
@@ -2571,6 +2868,7 @@ export function Rail() {
         onToggle={handleToggle}
         onAddChild={handleAddChild}
         onDelete={handleDelete}
+        onDuplicate={handleDuplicate}
         onRename={handleRename}
         onPickGlyph={handlePickGlyph}
         onPickColour={handlePickColour}
@@ -2580,6 +2878,7 @@ export function Rail() {
         onOpenDatabases={handleOpenDatabases}
         onAddRoot={handleAddRoot}
         autoRenameId={pendingRootRenameId}
+        focusRequest={focusRequest}
         canDrop={canDrop}
         onMove={handleMove}
       />

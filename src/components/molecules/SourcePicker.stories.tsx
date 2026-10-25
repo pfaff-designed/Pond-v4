@@ -450,6 +450,54 @@ export const NewInk: Story = {
   },
 }
 
+// ── project ────────────────────────────────────────────────────────────────────
+
+// Lowercase, like every other fixture here — `assertChrome`'s lowercase guard
+// (below) reads the whole glass, project options included.
+const PROJECTS = { pageTitle: 'home reno', options: [{ id: 'opt-web', label: 'web design' }] }
+
+/**
+ * A board's `/board` ↵ on `new` (KAN-536): the `project` step, not the field
+ * step — `new project — <page>` leads, preselected, then the tasks database's
+ * existing options; typing narrows, and a match drops the new row entirely.
+ */
+async function assertProject(root: HTMLElement, p: Palette) {
+  const glass = glassOf(root)
+  await userEvent.keyboard('{Enter}')
+  await waitFor(async () => expect(glass.dataset.step).toBe('project'))
+  await assertChrome(root, p)
+  await expect(glass.querySelector('[data-part="head-text"]')!.textContent).toBe('/board — tasks')
+  await expect(groups(root)).toEqual([])
+  await expect(labels(root)).toEqual(['new project — home reno', 'web design'])
+  const rows = glass.querySelectorAll<HTMLElement>('[role="option"]')
+  await expect(rows[0].getAttribute('aria-selected')).toBe('true')
+
+  await userEvent.keyboard('web')
+  await expect(glass.querySelector('[data-part="head-text"]')!.textContent).toBe(
+    '/board — tasks › web'
+  )
+  await expect(labels(root)).toEqual(['web design'])
+}
+
+/** `/board` ↵: `new project — home reno` leads the `project` step, preselected; typing narrows. */
+export const Project: Story = {
+  name: 'project',
+  args: { block: 'board', pageTitle: 'home reno', projects: PROJECTS },
+  play: async ({ canvasElement }) => {
+    within(canvasElement).getByLabelText('page').focus()
+    await assertProject(canvasElement, PAPER)
+  },
+}
+
+export const ProjectInk: Story = {
+  name: 'project · ink',
+  args: { block: 'board', pageTitle: 'home reno', projects: PROJECTS, ink: true },
+  play: async ({ canvasElement }) => {
+    within(canvasElement).getByLabelText('page').focus()
+    await assertProject(canvasElement, INK)
+  },
+}
+
 // ── the keys ───────────────────────────────────────────────────────────────────
 
 /** From the field: ↓ then ↵ views `recipes`; esc only closes and keeps the text; `field` adds a field. */

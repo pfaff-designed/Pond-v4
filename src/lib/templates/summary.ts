@@ -34,6 +34,7 @@ import type { Block } from '@/lib/modules/content'
 import { blockFrame } from '@/lib/modules/block-frame'
 import type { PondBlockKind } from '@/lib/modules/block-frame'
 import { viewKind } from '@/lib/modules/view/kinds'
+import { opensOnAHeading } from '@/lib/modules/text/heading-line'
 
 /**
  * The two frame kinds whose slug is not how the board says it. Everything else in
@@ -45,8 +46,13 @@ const KIND_WORD: Partial<Record<PondBlockKind, string>> = {
   log: 'entry log',
 }
 
-/** A markdown heading at any level — `#` through `######`, per `HEADING_PREFIX`. */
-export const OPENS_ON_A_HEADING = /^\s*#{1,6}\s+\S/
+/**
+ * A markdown heading at any level — `#` through `######`, per `HEADING_PREFIX`,
+ * tested against a block's first line only. The one matcher `toc/headings.ts`
+ * and `change-log/summary.ts` also read, so a heading can't count on one page
+ * and not the other (KAN-482).
+ */
+export const OPENS_ON_A_HEADING = opensOnAHeading
 
 /** What one block is called in the summary line. */
 export function blockWord(block: Block): string {
@@ -56,7 +62,7 @@ export function blockWord(block: Block): string {
   // card — named by its kind.
   if (block.type === 'view') return viewKind(block).label
   if (block.type === 'text') {
-    return OPENS_ON_A_HEADING.test(block.content) ? 'heading' : 'text'
+    return OPENS_ON_A_HEADING(block.content) ? 'heading' : 'text'
   }
   // Defensive: a future block type with no frame and no prose still gets a word
   // rather than an empty slot in the line.

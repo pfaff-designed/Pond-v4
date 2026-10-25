@@ -25,7 +25,12 @@ import { HIGHLIGHT_EMPTY_LINE, type HighlightBlock } from './schema'
  * Editing mirrors `text`'s click-to-edit loop: rendered by default, one click drops
  * into a textarea with the passage intact (same serif register, no wheat — the
  * ground belongs to the KEPT passage, not to its source), blur or Escape returns.
- * An empty editable block starts in edit mode so a freshly-added block is typeable.
+ * An empty editable block starts in edit mode so a freshly-added block is typeable —
+ * but only when `autofocus !== false` (KAN-345/499): a line that merely arrived with
+ * the page never grabs the caret, only one a person just inserted this session. When
+ * it isn't editing, the empty line's hint is hidden at rest (KAN-499: "the page shows
+ * nothing until you point at where you can type") and shown on hover or focus-within
+ * of the block row's `group` (`BlockCanvas.tsx`); the read-only path stays visible.
  */
 
 /**
@@ -37,9 +42,14 @@ import { HIGHLIGHT_EMPTY_LINE, type HighlightBlock } from './schema'
  */
 const REGISTER = 'font-serif font-extralight text-mn-16'
 
-export function HighlightView({ data, editable, onChange }: ModuleViewProps<HighlightBlock>) {
+export function HighlightView({
+  data,
+  editable,
+  onChange,
+  autofocus,
+}: ModuleViewProps<HighlightBlock>) {
   const isEmpty = data.content.trim() === ''
-  const [editing, setEditing] = useState(() => editable === true && isEmpty)
+  const [editing, setEditing] = useState(() => editable === true && isEmpty && autofocus !== false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
@@ -51,7 +61,13 @@ export function HighlightView({ data, editable, onChange }: ModuleViewProps<High
   }, [editing])
 
   const passage = isEmpty ? (
-    <p data-part="passage" data-empty="" className={`${REGISTER} text-mn-text-secondary`}>
+    <p
+      data-part="passage"
+      data-empty=""
+      className={`${REGISTER} text-mn-text-secondary${
+        editable ? ' opacity-0 group-hover:opacity-100 group-focus-within:opacity-100' : ''
+      }`}
+    >
       {HIGHLIGHT_EMPTY_LINE}
     </p>
   ) : (

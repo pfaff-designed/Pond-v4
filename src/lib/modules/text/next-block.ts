@@ -1,5 +1,6 @@
 import type { Node as ProseNode, ResolvedPos } from '@tiptap/pm/model'
-import { NodeSelection, type EditorState } from '@tiptap/pm/state'
+import { NodeSelection, Selection, type EditorState } from '@tiptap/pm/state'
+import type { EditorView } from '@tiptap/pm/view'
 import { serializeMarkdown } from './markdown'
 
 /** The depth of the nearest ancestor (caret outward) of type `typeName`, or null. */
@@ -47,13 +48,19 @@ const trimCutArtifact = (doc: ProseNode, edge: 'leading' | 'trailing'): ProseNod
  * What a plain Enter does to a text block's doc at the caret, as the markdown
  * either side of it. `'own'` lets ProseMirror's own Enter handling run instead
  * (a code block's newline, the next item in a non-empty list, a selected node
- * like a horizontal rule); `'stay'` does nothing (an empty block — one write,
- * not two. This holds even for a labelled empty block, matching KAN-345's
- * one-empty-line rule).
+ * like a horizontal rule); `'stay'` does nothing (an empty, unwrapped block —
+ * one write, not two. This holds even for a labelled empty block, matching
+ * KAN-345's one-empty-line rule). `'lift'` turns a lone empty quote or list
+ * item back to plain prose, as Notion does (KAN-462): the wrapper (blockquote
+ * or listItem) is the doc's ENTIRE content once it's cut away, so there is
+ * nothing to split and no reason to trap the person inside it. A wrapper
+ * that merely sits beside other content (a horizontal rule, say) does not
+ * lift — the markdown either side of it is non-empty, so it steps out like
+ * any other split instead, and that sibling survives.
  */
 export const enterSplit = (
   state: EditorState
-): { before: string; after: string } | 'own' | 'stay' => {
+): { before: string; after: string } | 'own' | 'stay' | 'lift' => {
   const { doc, selection } = state
   const { $from, from, to } = selection
   if (selection instanceof NodeSelection) return 'own'
@@ -61,17 +68,39 @@ export const enterSplit = (
   const listItemDepth = ancestorDepth($from, 'listItem')
   if (listItemDepth !== null) {
     if ($from.node(listItemDepth).textContent !== '') return 'own'
-    const beforeDoc = doc.cut(0, $from.before(listItemDepth))
-    const afterDoc = doc.cut($from.after(listItemDepth))
-    if (beforeDoc.textContent === '' && afterDoc.textContent === '') return 'stay'
-    return {
-      before: serializeMarkdown(beforeDoc),
-      after: serializeMarkdown(afterDoc),
-    }
+    const before = serializeMarkdown(doc.cut(0, $from.before(listItemDepth)))
+    const after = serializeMarkdown(doc.cut($from.after(listItemDepth)))
+    return before === '' && after === '' ? 'lift' : { before, after }
   }
-  if (doc.textContent === '') return 'stay'
+  const blockquoteDepth = ancestorDepth($from, 'blockquote')
+  if (doc.textContent === '') {
+    if (blockquoteDepth === null) return 'stay'
+    const before = serializeMarkdown(doc.cut(0, $from.before(blockquoteDepth)))
+    const after = serializeMarkdown(doc.cut($from.after(blockquoteDepth)))
+    return before === '' && after === '' ? 'lift' : { before, after }
+  }
   return {
     before: serializeMarkdown(trimCutArtifact(doc.cut(0, from), 'trailing')),
     after: serializeMarkdown(trimCutArtifact(doc.cut(to), 'leading')),
   }
 }
+
+/**
+ * Whether an arrow key at the caret should leave the block in direction
+ * `dir`, rather than move within it: the caret's textblock is the doc's very
+ * first (`'up'`) or very last (`'down'`) textblock — every ancestor index
+ * along `$from` is 0 (or, for `'down'`, matches the doc's last child at every
+ * depth), so a list item 2, a quote's second paragraph, and so on all stay
+ * inside the block even though they may share the doc's top-level index —
+ * AND ProseMirror's own layout says there is no visual line beyond it.
+ */
+export const leavesBlock = (view: EditorView, dir: 'up' | 'down'): boolean => {
+  const { selection, doc } = view.state
+  if (!selection.empty) return false
+  const edge = dir === 'up' ? Selection.atStart(doc).$from.start() : Selection.atEnd(doc).$from.end()
+  const at = dir === 'up' ? selection.$from.start() : selection.$from.end()
+  return at === edge && view.endOfTextblock(dir)
+}
+
+/** ArrowUp at the caret leaving the block upward to the page title (KAN-464). */
+export const leavesUpToTitle = (view: EditorView): boolean => leavesBlock(view, 'up')

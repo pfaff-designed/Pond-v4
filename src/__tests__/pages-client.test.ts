@@ -22,6 +22,7 @@ import {
   updateTitle,
   deletePage,
   movePage,
+  duplicatePage,
   matchPages,
   setProperty,
   defineSchema,
@@ -459,10 +460,33 @@ describe('deletePage', () => {
 
 // ── movePage ─────────────────────────────────────────────────────────────────
 
+function moveChangeLogRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'record-1',
+    user_id: 'user-1',
+    pond_id: 'pond-1',
+    status: 'accepted',
+    action: 'move',
+    actor: 'you',
+    target_page_id: 'x',
+    target_block_id: null,
+    before: { parentId: 'old-parent', parentTitle: 'Old parent', siblingOrder: ['x'] },
+    after: { parentId: 'health', parentTitle: 'Health', siblingOrder: ['a', 'x', 'b'] },
+    source_thread_id: null,
+    tool_call_id: null,
+    read: null,
+    links: {},
+    transitions: [],
+    created_at: '2026-10-20T00:00:00.000Z',
+    status_at: '2026-10-20T00:00:00.000Z',
+    ...overrides,
+  }
+}
+
 describe('movePage', () => {
-  it('sets parent_id on the moved row then reindexes the sibling group order', async () => {
-    const chain = makeChain({ eq: jest.fn().mockResolvedValue({ data: null, error: null }) })
-    const sb = makeSupabase(chain)
+  it('calls the move_page RPC with the reparent and the full sibling order', async () => {
+    const rpc = jest.fn().mockResolvedValue({ data: moveChangeLogRow(), error: null })
+    const sb = { rpc }
 
     await movePage(sb as never, {
       id: 'x',
@@ -470,36 +494,240 @@ describe('movePage', () => {
       siblingOrder: ['a', 'x', 'b'],
     })
 
-    // first update = the moved row's parent
-    const parentUpdate = chain.update.mock.calls[0][0]
-    expect(parentUpdate.parent_id).toBe('health')
-    expect(typeof parentUpdate.updated_at).toBe('string')
-    expect(chain.eq).toHaveBeenCalledWith('id', 'x')
-
-    // then one order update per id, dense 0..N-1
-    const orderUpdates = chain.update.mock.calls.slice(1).map((c) => c[0])
-    expect(orderUpdates).toEqual([{ order: 0 }, { order: 1 }, { order: 2 }])
-    expect(chain.eq).toHaveBeenCalledWith('id', 'a')
-    expect(chain.eq).toHaveBeenCalledWith('id', 'b')
+    expect(rpc).toHaveBeenCalledWith('move_page', {
+      p_page_id: 'x',
+      p_new_parent_id: 'health',
+      p_sibling_order: ['a', 'x', 'b'],
+    })
   })
 
-  it('moves a page to top-level with a null parent_id', async () => {
-    const chain = makeChain({ eq: jest.fn().mockResolvedValue({ data: null, error: null }) })
-    const sb = makeSupabase(chain)
+  it('moves a page to top-level with a null parent id', async () => {
+    const rpc = jest
+      .fn()
+      .mockResolvedValue({ data: moveChangeLogRow({ target_page_id: 'x' }), error: null })
+    const sb = { rpc }
 
     await movePage(sb as never, { id: 'x', newParentId: null, siblingOrder: ['x'] })
 
-    expect(chain.update.mock.calls[0][0].parent_id).toBeNull()
+    expect(rpc).toHaveBeenCalledWith('move_page', {
+      p_page_id: 'x',
+      p_new_parent_id: null,
+      p_sibling_order: ['x'],
+    })
   })
 
-  it('throws when the parent update fails', async () => {
-    const chain = makeChain({
-      eq: jest.fn().mockResolvedValue({ data: null, error: { message: 'move boom' } }),
+  it('returns the RPC row mapped through mapChangeLogRow', async () => {
+    const sb = { rpc: jest.fn().mockResolvedValue({ data: moveChangeLogRow(), error: null }) }
+
+    const record = await movePage(sb as never, {
+      id: 'x',
+      newParentId: 'health',
+      siblingOrder: ['a', 'x', 'b'],
     })
-    const sb = makeSupabase(chain)
+
+    expect(record).toEqual({
+      id: 'record-1',
+      userId: 'user-1',
+      pondId: 'pond-1',
+      status: 'accepted',
+      action: 'move',
+      actor: 'you',
+      targetPageId: 'x',
+      targetBlockId: null,
+      before: { parentId: 'old-parent', parentTitle: 'Old parent', siblingOrder: ['x'] },
+      after: { parentId: 'health', parentTitle: 'Health', siblingOrder: ['a', 'x', 'b'] },
+      sourceThreadId: null,
+      toolCallId: null,
+      read: null,
+      links: {},
+      transitions: [],
+      createdAt: '2026-10-20T00:00:00.000Z',
+      statusAt: '2026-10-20T00:00:00.000Z',
+    })
+  })
+
+  it('throws when the RPC errors', async () => {
+    const sb = { rpc: jest.fn().mockResolvedValue({ data: null, error: { message: 'move boom' } }) }
     await expect(
       movePage(sb as never, { id: 'x', newParentId: null, siblingOrder: ['x'] })
     ).rejects.toThrow(/move boom/)
+  })
+
+  it('throws when the RPC returns no record', async () => {
+    const sb = { rpc: jest.fn().mockResolvedValue({ data: null, error: null }) }
+    await expect(
+      movePage(sb as never, { id: 'x', newParentId: null, siblingOrder: ['x'] })
+    ).rejects.toThrow(/no record/)
+  })
+
+  it('forwards newTitle as p_new_title when a rename is needed (KAN-470)', async () => {
+    const rpc = jest.fn().mockResolvedValue({ data: moveChangeLogRow(), error: null })
+    const sb = { rpc }
+
+    await movePage(sb as never, {
+      id: 'x',
+      newParentId: 'health',
+      siblingOrder: ['a', 'x', 'b'],
+      newTitle: 'Notes 2',
+    })
+
+    expect(rpc).toHaveBeenCalledWith('move_page', {
+      p_page_id: 'x',
+      p_new_parent_id: 'health',
+      p_sibling_order: ['a', 'x', 'b'],
+      p_new_title: 'Notes 2',
+    })
+  })
+
+  it('omits p_new_title when newTitle is not passed', async () => {
+    const rpc = jest.fn().mockResolvedValue({ data: moveChangeLogRow(), error: null })
+    const sb = { rpc }
+
+    await movePage(sb as never, { id: 'x', newParentId: 'health', siblingOrder: ['a', 'x', 'b'] })
+
+    expect(rpc).toHaveBeenCalledWith('move_page', {
+      p_page_id: 'x',
+      p_new_parent_id: 'health',
+      p_sibling_order: ['a', 'x', 'b'],
+    })
+  })
+})
+
+// ── duplicatePage ────────────────────────────────────────────────────────────
+
+function duplicateChangeLogRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'record-1',
+    user_id: 'user-1',
+    pond_id: 'pond-1',
+    status: 'accepted',
+    action: 'duplicate_page',
+    actor: 'you',
+    target_page_id: 'copy-1',
+    target_block_id: null,
+    before: null,
+    after: { pageId: 'copy-1' },
+    source_thread_id: null,
+    tool_call_id: null,
+    read: null,
+    links: {},
+    transitions: [],
+    created_at: '2026-10-24T00:00:00.000Z',
+    status_at: '2026-10-24T00:00:00.000Z',
+    ...overrides,
+  }
+}
+
+describe('duplicatePage', () => {
+  it('dedupes the root title against its siblings, then calls the RPC with the deduped title', async () => {
+    const chain = makeChain({
+      maybeSingle: jest.fn().mockResolvedValue({
+        data: { title: 'Recipes', parent_id: 'root-1', pond_id: 'pond-1' },
+        error: null,
+      }),
+      then: (resolve: (v: unknown) => void) =>
+        resolve({
+          data: [
+            { id: 'page-1', title: 'Recipes' },
+            { id: 'page-2', title: 'Shopping' },
+          ],
+          error: null,
+        }),
+    })
+    const rpc = jest.fn().mockResolvedValue({ data: duplicateChangeLogRow(), error: null })
+    const sb = { ...makeSupabase(chain), rpc }
+
+    await duplicatePage(sb as never, 'user-1', 'page-1')
+
+    expect(rpc).toHaveBeenCalledWith('duplicate_page', {
+      p_page_id: 'page-1',
+      p_title: 'Recipes 2',
+    })
+  })
+
+  it('maps the returned row through mapChangeLogRow', async () => {
+    const chain = makeChain({
+      maybeSingle: jest.fn().mockResolvedValue({
+        data: { title: 'Recipes', parent_id: null, pond_id: 'pond-1' },
+        error: null,
+      }),
+      then: (resolve: (v: unknown) => void) => resolve({ data: [], error: null }),
+    })
+    const rpc = jest.fn().mockResolvedValue({ data: duplicateChangeLogRow(), error: null })
+    const sb = { ...makeSupabase(chain), rpc }
+
+    const record = await duplicatePage(sb as never, 'user-1', 'page-1')
+
+    expect(record).toMatchObject({
+      id: 'record-1',
+      action: 'duplicate_page',
+      targetPageId: 'copy-1',
+      after: { pageId: 'copy-1' },
+    })
+  })
+
+  it('skips the sibling read for a page that no longer exists — the RPC rejects it instead', async () => {
+    const chain = makeChain({
+      maybeSingle: jest.fn().mockResolvedValue({ data: null, error: null }),
+    })
+    const rpc = jest.fn().mockResolvedValue({ data: null, error: { message: 'page not found' } })
+    const sb = { ...makeSupabase(chain), rpc }
+
+    await expect(duplicatePage(sb as never, 'user-1', 'missing')).rejects.toThrow(/not found/)
+    expect(rpc).toHaveBeenCalledWith('duplicate_page', { p_page_id: 'missing', p_title: '' })
+  })
+
+  it('excludes trashed rows from the sibling dedupe, so a freed name is reused (KAN-468)', async () => {
+    // A trashed "Recipes 2" (⌘Z'd copy) no longer blocks `pages_sibling_title_pond_uniq`
+    // (0027's partial index is `where deleted_at is null`) — so the next duplicate must
+    // dedupe back to "Recipes 2", not skip to "Recipes 3". The query must filter
+    // `deleted_at is null` itself; a live DB would never hand back the trashed row.
+    const chain = makeChain({
+      maybeSingle: jest.fn().mockResolvedValue({
+        data: { title: 'Recipes', parent_id: 'root-1', pond_id: 'pond-1' },
+        error: null,
+      }),
+      then: (resolve: (v: unknown) => void) =>
+        resolve({ data: [{ id: 'page-1', title: 'Recipes' }], error: null }),
+    })
+    const rpc = jest.fn().mockResolvedValue({ data: duplicateChangeLogRow(), error: null })
+    const sb = { ...makeSupabase(chain), rpc }
+
+    await duplicatePage(sb as never, 'user-1', 'page-1')
+
+    expect(chain.is).toHaveBeenCalledWith('deleted_at', null)
+    expect(rpc).toHaveBeenCalledWith('duplicate_page', {
+      p_page_id: 'page-1',
+      p_title: 'Recipes 2',
+    })
+  })
+
+  it('throws when the RPC errors', async () => {
+    const chain = makeChain({
+      maybeSingle: jest.fn().mockResolvedValue({
+        data: { title: 'Recipes', parent_id: null, pond_id: 'pond-1' },
+        error: null,
+      }),
+      then: (resolve: (v: unknown) => void) => resolve({ data: [], error: null }),
+    })
+    const rpc = jest.fn().mockResolvedValue({ data: null, error: { message: 'dup boom' } })
+    const sb = { ...makeSupabase(chain), rpc }
+
+    await expect(duplicatePage(sb as never, 'user-1', 'page-1')).rejects.toThrow(/dup boom/)
+  })
+
+  it('throws when the RPC returns no record', async () => {
+    const chain = makeChain({
+      maybeSingle: jest.fn().mockResolvedValue({
+        data: { title: 'Recipes', parent_id: null, pond_id: 'pond-1' },
+        error: null,
+      }),
+      then: (resolve: (v: unknown) => void) => resolve({ data: [], error: null }),
+    })
+    const rpc = jest.fn().mockResolvedValue({ data: null, error: null })
+    const sb = { ...makeSupabase(chain), rpc }
+
+    await expect(duplicatePage(sb as never, 'user-1', 'page-1')).rejects.toThrow(/no record/)
   })
 })
 

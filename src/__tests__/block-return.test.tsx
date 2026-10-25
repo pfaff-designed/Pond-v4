@@ -9,6 +9,7 @@
 import React from 'react'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { EditorView } from '@tiptap/pm/view'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
@@ -117,28 +118,44 @@ const databaseRows = [
   },
 ]
 
-function Harness({ initial, onChange }: { initial: Block[]; onChange: jest.Mock }) {
+function Harness({
+  initial,
+  onChange,
+  titleExitRef,
+}: {
+  initial: Block[]
+  onChange: jest.Mock
+  titleExitRef?: React.RefObject<(() => void) | null>
+}) {
   const [blocks, setBlocks] = React.useState(initial)
   return (
-    <BlockCanvas
-      blocks={blocks}
-      pageId="page-1"
-      pageTitle="sourdough, 78%"
-      onChange={(next) => {
-        onChange(next)
-        setBlocks(next)
-      }}
-    />
+    <>
+      {/* KAN-369: the title itself lives in DocumentPanel, outside BlockCanvas —
+          stood in here, as `block-canvas-blank.test.tsx` does, only so a test
+          has something real on the page; these tests drive `titleExitRef`
+          directly rather than this stand-in's own (unwired) keydown. */}
+      <textarea aria-label="title" data-pond-page-title />
+      <BlockCanvas
+        blocks={blocks}
+        pageId="page-1"
+        pageTitle="sourdough, 78%"
+        onChange={(next) => {
+          onChange(next)
+          setBlocks(next)
+        }}
+        titleExitRef={titleExitRef}
+      />
+    </>
   )
 }
 
-function renderCanvas(initial: Block[]) {
+function renderCanvas(initial: Block[], opts: { titleExitRef?: React.RefObject<(() => void) | null> } = {}) {
   const onChange = jest.fn()
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={client}>
       <DeletionUndoProvider>
-        <Harness initial={initial} onChange={onChange} />
+        <Harness initial={initial} onChange={onChange} titleExitRef={opts.titleExitRef} />
       </DeletionUndoProvider>
     </QueryClientProvider>
   )
@@ -147,7 +164,7 @@ function renderCanvas(initial: Block[]) {
 
 const blockRoot = (blockId: string) => document.getElementById(`block-${blockId}`)!
 const handleOf = (blockId: string) =>
-  within(blockRoot(blockId)).getByRole('button', { name: /block menu/i })
+  within(blockRoot(blockId)).getByRole('button', { name: /drag to move/i })
 const textBlockIn = (blockId: string) =>
   within(blockRoot(blockId)).findByRole('textbox', { name: 'text block' })
 const lastBlocks = (onChange: jest.Mock) => onChange.mock.calls.at(-1)![0] as Block[]
@@ -162,6 +179,8 @@ beforeEach(() => {
   mockSaveBlocks.mockResolvedValue(undefined)
   mockAppendOwnEdit.mockResolvedValue({ id: 'record-1' })
 })
+// So a failing assertion mid-test can't leak `posAtCoords`'s spy into the next test.
+afterEach(() => jest.restoreAllMocks())
 
 describe('Return after a block opens a line for `/`', () => {
   it('Return after the table, then `/`', async () => {
@@ -242,7 +261,7 @@ describe('Return after a block opens a line for `/`', () => {
     expect(screen.queryByText(/deleted/i)).not.toBeInTheDocument()
   })
 
-  it('Backspace in an empty first line hands focus to the block after it, never the page', async () => {
+  it('Backspace in an empty first line removes it and goes to the end of the title (KAN-369)', async () => {
     const user = userEvent.setup()
     const { onChange } = renderCanvas([emptyLine, table])
     const line = await textBlockIn('b-empty')
@@ -255,7 +274,44 @@ describe('Return after a block opens a line for `/`', () => {
 
     await user.keyboard('{Backspace}')
     await waitFor(() => expect(lastBlocks(onChange)).toEqual([table]))
-    await waitFor(() => expect(blockRoot('b-table')).toHaveFocus())
+    await waitFor(() => expect(screen.getByLabelText('title')).toHaveFocus())
+  })
+
+  it('Backspace in an empty LABELLED first line also goes to the title, not the neighbour (KAN-369)', async () => {
+    const user = userEvent.setup()
+    const labelledEmpty: Block = { id: 'b-empty-labelled', type: 'text', content: '', label: 'intro' }
+    const { onChange } = renderCanvas([labelledEmpty, table])
+    const line = await textBlockIn('b-empty-labelled')
+    act(() => {
+      textEditorOf(line).commands.focus('end')
+    })
+    await waitFor(() => expect(line).toHaveFocus())
+
+    await user.keyboard('{Backspace}')
+    await waitFor(() => expect(lastBlocks(onChange)).toEqual([table]))
+    await waitFor(() => expect(screen.getByLabelText('title')).toHaveFocus())
+    // A stale `focusNeighbour=true` lands here a tick later, via
+    // `focusBlockNeighbour`'s own `setTimeout(0)` — give it that tick and
+    // confirm the title still holds focus.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(screen.getByLabelText('title')).toHaveFocus()
+    expect(screen.queryByText('Delete this block?')).not.toBeInTheDocument()
+  })
+
+  it('Backspace in the only, empty block goes to the end of the title and keeps the block', async () => {
+    const user = userEvent.setup()
+    const { onChange } = renderCanvas([emptyLine])
+    const line = await textBlockIn('b-empty')
+    act(() => {
+      textEditorOf(line).commands.focus('end')
+    })
+    await waitFor(() => expect(line).toHaveFocus())
+
+    await user.keyboard('{Backspace}')
+    expect(onChange).not.toHaveBeenCalled()
+    await waitFor(() => expect(screen.getByLabelText('title')).toHaveFocus())
   })
 
   it('leaving an empty block removes it and leaves focus where the person went', async () => {
@@ -347,7 +403,7 @@ describe('Return after a block opens a line for `/`', () => {
     renderCanvas([table, note])
     const group = screen.getByRole('group', { name: 'table' })
     expect(group).toBe(blockRoot('b-table'))
-    expect(group).toHaveAttribute('aria-keyshortcuts', 'Enter')
+    expect(group).toHaveAttribute('aria-keyshortcuts', 'Enter Shift+F10 ContextMenu')
     expect(group.querySelector('[data-block-state]')).toHaveAttribute('data-block-state', 'rest')
     act(() => group.focus())
     expect(group.querySelector('[data-block-state]')).toHaveAttribute(
@@ -405,30 +461,199 @@ describe('pointer selection draws PondBlock’s own `selected` state (07.05)', (
     expect(group).not.toHaveFocus()
     expect(document.querySelector('[data-part="record-peek"]')).not.toBeNull()
   })
+
+  it('a right-click inside RecordPeek — portaled outside the row’s own DOM — does not open this row’s menu (KAN-485)', async () => {
+    const user = userEvent.setup()
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <DeletionUndoProvider>
+          <PageCanvas>
+            <Harness initial={[board]} onChange={jest.fn()} />
+          </PageCanvas>
+        </DeletionUndoProvider>
+      </QueryClientProvider>
+    )
+    const group = blockRoot('b-board')
+
+    screen.getByRole('article', { name: 'Trim the rim' }).focus()
+    await user.keyboard('{Enter}')
+    const peek = document.querySelector('[data-part="record-peek"]') as HTMLElement
+    expect(group.contains(peek)).toBe(false)
+
+    const statusField = within(peek).getByText('status')
+    let event: Event | undefined
+    const capture = (e: Event) => {
+      event = e
+    }
+    peek.addEventListener('contextmenu', capture)
+    fireEvent.contextMenu(statusField, { clientX: 10, clientY: 10 })
+    peek.removeEventListener('contextmenu', capture)
+
+    expect(event?.defaultPrevented).toBe(false)
+    expect(screen.queryByRole('menu', { name: /block menu/i })).not.toBeInTheDocument()
+  })
 })
 
-describe('↓ on a selected row steps out, same as Return (KAN-344)', () => {
-  it('↓ on a focused image block opens a new line after it', async () => {
+describe('↑/↓ out of an editor land in the neighbouring block (KAN-367)', () => {
+  const alpha: Block = { id: 'b-alpha', type: 'text', content: 'alpha' }
+  const omega: Block = { id: 'b-omega', type: 'text', content: 'omega' }
+
+  it('↑ from text into text above lands the caret in it', async () => {
+    // jsdom has no layout: `posAtCoords` (the landing) needs a real one, same
+    // caveat `view.test.tsx:~404` stubs around for the press landing.
+    jest.spyOn(EditorView.prototype, 'posAtCoords').mockReturnValue({
+      pos: 3,
+      inside: -1,
+    })
+    renderCanvas([alpha, omega])
+    const lower = await textBlockIn('b-omega')
+    act(() => {
+      textEditorOf(lower).commands.focus('start')
+    })
+    await waitFor(() => expect(lower).toHaveFocus())
+    // jsdom has no layout, so `endOfTextblock` is stubbed true — same as `next-block.test.ts`.
+    textEditorOf(lower).view.endOfTextblock = () => true
+
+    fireEvent.keyDown(lower, { key: 'ArrowUp' })
+
+    const upper = await textBlockIn('b-alpha')
+    await waitFor(() => expect(upper).toHaveFocus())
+    expect(textEditorOf(upper).state.selection.from).toBe(3)
+  })
+
+  it('↓ from text into text below', async () => {
+    jest.spyOn(EditorView.prototype, 'posAtCoords').mockReturnValue({
+      pos: 1,
+      inside: -1,
+    })
+    renderCanvas([alpha, omega])
+    const upper = await textBlockIn('b-alpha')
+    act(() => {
+      textEditorOf(upper).commands.focus('end')
+    })
+    await waitFor(() => expect(upper).toHaveFocus())
+    textEditorOf(upper).view.endOfTextblock = () => true
+
+    fireEvent.keyDown(upper, { key: 'ArrowDown' })
+
+    const lower = await textBlockIn('b-omega')
+    await waitFor(() => expect(lower).toHaveFocus())
+  })
+
+  it('↑ into an image card selects it, instead of landing in a field', async () => {
+    const line: Block = { id: 'b-line', type: 'text', content: 'simmer' }
+    renderCanvas([image, line])
+    const field = await textBlockIn('b-line')
+    act(() => {
+      textEditorOf(field).commands.focus('start')
+    })
+    await waitFor(() => expect(field).toHaveFocus())
+    textEditorOf(field).view.endOfTextblock = () => true
+
+    fireEvent.keyDown(field, { key: 'ArrowUp' })
+
+    await waitFor(() => expect(blockRoot('b-image')).toHaveFocus())
+  })
+})
+
+describe('Esc in a text block selects its row (KAN-367)', () => {
+  it('Esc with the caret in text focuses the row, selected', async () => {
+    const user = userEvent.setup()
+    renderCanvas([note, table])
+    const line = await textBlockIn('b-note')
+    act(() => {
+      textEditorOf(line).commands.focus('end')
+    })
+    await waitFor(() => expect(line).toHaveFocus())
+
+    await user.keyboard('{Escape}')
+
+    await waitFor(() => expect(blockRoot('b-note')).toHaveFocus())
+  })
+
+  it('a selected text row’s prose wrapper carries the selected ring; unfocused does not', async () => {
+    const user = userEvent.setup()
+    renderCanvas([note, table])
+    const prose = blockRoot('b-note').querySelector('[data-part="prose"]')!
+    expect(prose).not.toHaveClass('ring-2')
+
+    const line = await textBlockIn('b-note')
+    act(() => {
+      textEditorOf(line).commands.focus('end')
+    })
+    await waitFor(() => expect(line).toHaveFocus())
+    await user.keyboard('{Escape}')
+
+    await waitFor(() => expect(blockRoot('b-note')).toHaveFocus())
+    expect(prose).toHaveClass('ring-2', 'ring-mn-text', 'rounded-[20px]')
+  })
+})
+
+describe('↑/↓ on a selected row move the selection across blocks (KAN-367)', () => {
+  it('↓ on a selected non-last card selects the next block', async () => {
     const user = userEvent.setup()
     const { onChange } = renderCanvas([image, note])
     blockRoot('b-image').focus()
     await user.keyboard('{ArrowDown}')
 
+    await waitFor(() => expect(blockRoot('b-note')).toHaveFocus())
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('↓ on the last block still opens a line, same as Return (KAN-344)', async () => {
+    const user = userEvent.setup()
+    const { onChange } = renderCanvas([image])
+    blockRoot('b-image').focus()
+    await user.keyboard('{ArrowDown}')
+
     const opened = lastBlocks(onChange)
-    expect(opened.map((b) => b.id)).toEqual(['b-image', expect.any(String), 'b-note'])
+    expect(opened.map((b) => b.id)).toEqual(['b-image', expect.any(String)])
     expect(opened[1]).toMatchObject({ type: 'text', content: '' })
   })
 
-  it('↓ on a focused table row does nothing: the table reads ↓ itself', async () => {
-    const { onChange } = renderCanvas([table, note])
-    fireEvent.keyDown(blockRoot('b-table'), { key: 'ArrowDown' })
-    expect(onChange).not.toHaveBeenCalled()
+  it('↑ from a selected second block selects the first', async () => {
+    const user = userEvent.setup()
+    renderCanvas([image, note])
+    blockRoot('b-note').focus()
+    await waitFor(() => expect(blockRoot('b-note')).toHaveFocus())
+
+    await user.keyboard('{ArrowUp}')
+
+    await waitFor(() => expect(blockRoot('b-image')).toHaveFocus())
   })
 
-  it('↓ on a focused checklist row does nothing: the checklist reads ↓ itself', async () => {
-    const { onChange } = renderCanvas([checklist, note])
-    fireEvent.keyDown(blockRoot('b-checklist'), { key: 'ArrowDown' })
-    expect(onChange).not.toHaveBeenCalled()
+  it('↑ on a selected FIRST block focuses the page title', async () => {
+    const user = userEvent.setup()
+    renderCanvas([image, note])
+    blockRoot('b-image').focus()
+    await waitFor(() => expect(blockRoot('b-image')).toHaveFocus())
+
+    await user.keyboard('{ArrowUp}')
+
+    const title = screen.getByLabelText('title') as HTMLTextAreaElement
+    await waitFor(() => expect(title).toHaveFocus())
+  })
+})
+
+describe('Return on a selected row (KAN-367/KAN-344)', () => {
+  it('Return on a selected text row puts the caret at its end', async () => {
+    const user = userEvent.setup()
+    renderCanvas([note, table])
+    const line = await textBlockIn('b-note')
+    act(() => {
+      textEditorOf(line).commands.focus('end')
+    })
+    await waitFor(() => expect(line).toHaveFocus())
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(blockRoot('b-note')).toHaveFocus())
+
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => expect(line).toHaveFocus())
+    const { state } = textEditorOf(line)
+    expect(state.selection.from).toBe(state.doc.content.size - 1)
   })
 })
 
@@ -557,9 +782,8 @@ describe('the handle is the only block chrome (07.05)', () => {
   })
 
   it('open, it is ink 100 on the hover wash and stays shown', async () => {
-    const user = userEvent.setup()
     renderCanvas([table])
-    await user.click(handleOf('b-table'))
+    fireEvent.contextMenu(blockRoot('b-table'))
     await screen.findByRole('menu', { name: /block menu/i })
     expect(handleOf('b-table')).toHaveClass('text-mn-text', 'bg-mn-hover-fill')
     expect(handleOf('b-table')).not.toHaveClass('text-mn-text-secondary')
@@ -954,5 +1178,59 @@ describe('Enter in a text block makes the next block', () => {
     await waitFor(() => expect(above).toHaveFocus())
     const { state } = textEditorOf(above)
     expect(state.selection.from).toBe(state.doc.content.size - 1)
+  })
+})
+
+describe('Return/↓ from the title goes to the body (KAN-369)', () => {
+  it('a text-first page focuses the start', async () => {
+    const titleExitRef = React.createRef<(() => void) | null>()
+    const { onChange } = renderCanvas([note, table], { titleExitRef })
+    const field = await textBlockIn('b-note')
+
+    act(() => {
+      titleExitRef.current?.()
+    })
+
+    await waitFor(() => expect(field).toHaveFocus())
+    expect(textEditorOf(field).state.selection.from).toBe(1)
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('a card-first page gets [empty, table] and the line has focus', async () => {
+    const titleExitRef = React.createRef<(() => void) | null>()
+    const { onChange } = renderCanvas([table], { titleExitRef })
+
+    act(() => {
+      titleExitRef.current?.()
+    })
+
+    const saved = lastBlocks(onChange)
+    expect(saved.map((b) => b.type)).toEqual(['text', 'table'])
+    expect(saved[1]).toEqual(table)
+    const line = await textBlockIn(saved[0].id)
+    await waitFor(() => expect(line).toHaveFocus())
+  })
+
+  it('an untouched inserted line, then blur, is removed (existing removeEmptyOnExit)', async () => {
+    const titleExitRef = React.createRef<(() => void) | null>()
+    const { onChange } = renderCanvas([table], { titleExitRef })
+
+    act(() => {
+      titleExitRef.current?.()
+    })
+    const line = await textBlockIn(lastBlocks(onChange)[0].id)
+    await waitFor(() => expect(line).toHaveFocus())
+
+    const outside = document.createElement('button')
+    document.body.appendChild(outside)
+    act(() => {
+      outside.focus()
+    })
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    await waitFor(() => expect(lastBlocks(onChange)).toEqual([table]))
+    outside.remove()
   })
 })

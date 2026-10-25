@@ -4,7 +4,12 @@
 
 import { act, renderHook } from '@testing-library/react'
 
-import { ariaKeyshortcuts, formatChord, useApplePlatform } from '@/lib/shell-commands'
+import {
+  ariaKeyshortcuts,
+  formatChord,
+  formatChordMachine,
+  useApplePlatform,
+} from '@/lib/shell-commands'
 
 const onPlatform = (platform: string) =>
   jest.spyOn(window.navigator, 'platform', 'get').mockReturnValue(platform)
@@ -85,6 +90,19 @@ describe('formatChord — Apple glyphs on a Mac, Ctrl words elsewhere', () => {
   it('an explicit non-apple param wins over the mocked platform', () => {
     onPlatform('MacIntel')
     expect(formatChord('mod+k', false)).toBe('Ctrl K')
+  })
+})
+
+describe('formatChordMachine — the machine surface stays lowercase off Apple (PROJECT_RULES)', () => {
+  it.each([
+    ['mod+enter', true, '⌘↵'],
+    ['mod+enter', false, 'ctrl enter'],
+    ['mod+shift+p', true, '⇧⌘P'],
+    ['mod+shift+p', false, 'ctrl shift p'],
+    ['mod+j', true, '⌘J'],
+    ['mod+j', false, 'ctrl j'],
+  ])('formats %s on apple=%s as %p', (chord, apple, expected) => {
+    expect(formatChordMachine(chord, apple)).toBe(expected)
   })
 })
 

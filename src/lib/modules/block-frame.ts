@@ -538,5 +538,16 @@ export function blockFrame(block: Block): BlockFrame | null {
     // no board draws a `PondBlock` frame around it, as an unlabelled text block.
     case 'page-link':
       return null
+    // KAN-482: the board's `list` card, eyebrow `contents`. The true heading count
+    // lives with the SIBLINGS (#19's `view` row count hits the same wall) —
+    // `blockFrame` takes only this block, so the note can't name it from here
+    // without guessing; it stays empty, and the live count renders in the view
+    // itself off `useSiblingBlocks()`.
+    case 'toc':
+      return { kind: 'list', heading: 'contents', headNote: '' }
+    // KAN-480: no board draws a `PondBlock` frame around it, as an unlabelled text
+    // block — the ▸ and the summary/body sit bare on the paper.
+    case 'toggle':
+      return null
   }
 }

@@ -98,6 +98,19 @@ export function isAreaRow(node: RailNode): boolean {
   return node.parentId === null
 }
 
+/** Every node in `tree`, by id, for resolving an id the rail doesn't already
+ *  have a row for in hand (KAN-475: a favourite, looked up off its id alone). */
+export function nodeIndex(tree: RailNode[]): Map<string, RailNode> {
+  const map = new Map<string, RailNode>()
+  const walk = (nodes: RailNode[]) =>
+    nodes.forEach((n) => {
+      map.set(n.id, n)
+      walk(n.children)
+    })
+  walk(tree)
+  return map
+}
+
 // ── Extra roots (KAN-490/491) ────────────────────────────────────────────────
 
 /**
@@ -107,9 +120,22 @@ export function isAreaRow(node: RailNode): boolean {
  * be an extra root at depth 0, so a non-null `parentId` always wins over the
  * flag (defensive — a reparented page must lose its root status, not carry it
  * on by mistake).
+ *
+ * Shape-generic (not `RailNode`-typed) so `isMovablePageRow`
+ * (`lib/pages/databases-root.ts`) reads this one rule too, rather than a
+ * second copy of the `props.root` check over a flat `PageRow` (KAN-490/491 vs
+ * KAN-469: a page the rail refuses to drag must also be refused by ⌘K's
+ * move-page gate).
  */
-export function isExtraRootNode(node: RailNode): boolean {
+export function isExtraRoot(node: {
+  parentId: string | null
+  props?: Record<string, unknown> | null
+}): boolean {
   return node.parentId === null && node.props?.root === true
+}
+
+export function isExtraRootNode(node: RailNode): boolean {
+  return isExtraRoot(node)
 }
 
 /**
@@ -303,6 +329,7 @@ export type TreeKeyCommand =
   | { kind: 'open'; id: string }
   | { kind: 'addChild'; id: string }
   | { kind: 'rename'; id: string }
+  | { kind: 'duplicate'; id: string }
 
 /**
  * The pure keyboard rules: given a key pressed on row `id` within the visible
@@ -315,6 +342,8 @@ export type TreeKeyCommand =
  *   Enter/␣    open the row's page
  *   +          add a child page
  *   F2         rename the row in place (the databases foot is not renameable)
+ *   ⌘D/Ctrl+D  duplicate the row's page (KAN-468) — never bare `d`, which is
+ *              the browser's own bookmark chord outside a focused row
  *
  * A stale `id` (row no longer visible — e.g. a deferred update) returns null
  * rather than jumping focus anywhere.
@@ -323,7 +352,14 @@ export function treeKeyCommand(
   key: string,
   id: string,
   flat: readonly FlatRow[],
-  opts: { expanded: ReadonlySet<string>; lifeExpanded: boolean }
+  opts: {
+    expanded: ReadonlySet<string>
+    lifeExpanded: boolean
+    metaOrCtrl?: boolean
+    /** AUDIT G9: a held ⌘D auto-repeats `keydown` — ignored so it can't fire
+     *  more than one duplicate. */
+    repeat?: boolean
+  }
 ): TreeKeyCommand | null {
   const idx = flat.findIndex((f) => f.id === id)
   if (idx === -1) return null
@@ -366,6 +402,9 @@ export function treeKeyCommand(
       return { kind: 'addChild', id }
     case 'F2':
       return { kind: 'rename', id }
+    case 'd':
+    case 'D':
+      return opts.metaOrCtrl && !opts.repeat ? { kind: 'duplicate', id } : null
     default:
       return null
   }

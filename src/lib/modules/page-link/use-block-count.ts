@@ -11,6 +11,7 @@
  */
 import { useQuery } from '@tanstack/react-query'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
+import { toBlocks } from '@/lib/pages/to-blocks'
 
 /**
  * A text block with no content to type into is furniture, not a block a
@@ -23,10 +24,11 @@ function isEmptyTextBlock(block: unknown): boolean {
   return type === 'text' && typeof content === 'string' && content.trim() === ''
 }
 
-/** Pure: a page's live block count from its raw `blocks` column value, counting only blocks with content. */
+/** Pure: a page's live block count from its raw `blocks` column value, counting
+ *  only blocks with content — read-time split first (KAN-552), so a stored
+ *  multi-paragraph text block counts as the several handles it actually opens as. */
 export function blockCount(blocks: unknown): number {
-  if (!Array.isArray(blocks)) return 0
-  return blocks.filter((block) => !isEmptyTextBlock(block)).length
+  return toBlocks(blocks).filter((block) => !isEmptyTextBlock(block)).length
 }
 
 /** Live block count for `pageId`, or 0 while unresolved/loading. */

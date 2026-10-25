@@ -37,6 +37,7 @@ jest.mock('@/lib/terminal-focus', () => ({
 jest.mock('@/lib/pages/page-flush', () => ({ flushPendingPageSave: jest.fn() }))
 
 import { ShellCommands } from '@/components/organisms/ShellCommands'
+import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { SESSION_UNDO_SCOPE_ATTR } from '@/lib/shell-commands'
 import { sessionUndo } from '@/lib/change-log/session-undo'
 import { requestComposerNotice } from '@/lib/terminal-focus'
@@ -47,8 +48,10 @@ import { pagesKey } from '@/lib/pages/keys'
 const renderShell = () =>
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <ShellCommands />
-      <input aria-label="a text field" />
+      <DeletionUndoProvider>
+        <ShellCommands />
+        <input aria-label="a text field" />
+      </DeletionUndoProvider>
     </QueryClientProvider>
   )
 
@@ -170,7 +173,7 @@ describe('ShellCommands — an empty page-title input has nothing of its own to 
   it('⌘Z runs the session undo when the marked title input is focused and empty', () => {
     onPlatform('MacIntel')
     const { container } = renderShell()
-    const title = document.createElement('input')
+    const title = document.createElement('textarea')
     title.setAttribute('data-pond-page-title', '')
     title.value = ''
     container.appendChild(title)
@@ -185,7 +188,7 @@ describe('ShellCommands — an empty page-title input has nothing of its own to 
   it('leaves the key alone when the marked title input is focused and has text', () => {
     onPlatform('MacIntel')
     const { container } = renderShell()
-    const title = document.createElement('input')
+    const title = document.createElement('textarea')
     title.setAttribute('data-pond-page-title', '')
     title.value = 'recipe name'
     container.appendChild(title)
@@ -253,7 +256,9 @@ describe('ShellCommands — a landed step redraws the page, rail and change log'
     const invalidateQueries = jest.spyOn(client, 'invalidateQueries')
     render(
       <QueryClientProvider client={client}>
-        <ShellCommands />
+        <DeletionUndoProvider>
+          <ShellCommands />
+        </DeletionUndoProvider>
       </QueryClientProvider>
     )
     return invalidateQueries

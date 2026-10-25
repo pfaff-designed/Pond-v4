@@ -9,7 +9,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { PageMentioned } from '@/components/organisms/PageProvenance'
 import { RelationValueField } from '@/components/organisms/RelationValueField'
 import { BacklinksPanel } from '@/components/organisms/BacklinksPanel'
-import { workspaceUrl, workspaceHref, WORKSPACE_PATH } from '@/lib/pages/nav'
+import { workspaceUrl, WORKSPACE_PATH } from '@/lib/pages/nav'
 import type { PropertyDef } from '@/lib/properties/schema'
 import type { BacklinkGroup } from '@/lib/modules/view/compute-backlinks'
 
@@ -75,7 +75,7 @@ describe('RelationValueField — open sites shallow nav (KAN-449)', () => {
     expect(pushStateSpy).toHaveBeenCalledWith(
       null,
       '',
-      workspaceHref({ id: 'r1', type: 'page', title: 'Apollo' })
+      workspaceUrl({ id: 'r1', type: 'page', title: 'Apollo' })
     )
     expect(push).not.toHaveBeenCalled()
     pushStateSpy.mockRestore()
@@ -91,7 +91,7 @@ describe('BacklinksPanel — open sites shallow nav (KAN-449)', () => {
     expect(pushStateSpy).toHaveBeenCalledWith(
       null,
       '',
-      workspaceHref({ id: 'row-bench', type: 'page', title: 'Sand the bench' })
+      workspaceUrl({ id: 'row-bench', type: 'page', title: 'Sand the bench' })
     )
     expect(push).not.toHaveBeenCalled()
     pushStateSpy.mockRestore()

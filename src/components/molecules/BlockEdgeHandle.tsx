@@ -10,18 +10,45 @@
  * `ContentWidthHandle.tsx`'s column handle (`h-10 w-1 rounded-full`), 2px
  * wide here to match this ticket's spec.
  *
- * Presentational only — pointer wiring (arming a drag, committing a width)
- * is the next item's job; this component just renders the three states and
+ * `side="shared"` (KAN-505) is the same strip straddling a row's shared
+ * boundary instead of one block's own edge — centred in the row gap via
+ * `sharedOffsetPx`, so it draws between two blocks rather than at either
+ * one's border.
+ *
+ * Presentational only — pointer wiring (arming a drag, committing widths) is
+ * the caller's job; this component just renders the strip's states and
  * forwards whatever pointer handlers the caller passes.
  */
 
 import { cn } from '@/lib/utils'
 
 export interface BlockEdgeHandleProps {
-  /** Which edge of the block this strip sits on. */
-  side: 'left' | 'right'
+  /**
+   * Which edge this strip sits on: `left`/`right` for a row's own outer
+   * edge (resizes one block), `shared` for the boundary between two
+   * row-mates (KAN-505) — centred in the row gap via `sharedOffsetPx`
+   * rather than hugging one block's border.
+   */
+  side: 'left' | 'right' | 'shared'
   /** Chrome off (zen/read-only) or another block mid-drag (KAN-440) — renders nothing. */
   hidden?: boolean
+  /**
+   * Starts the strip this many px down instead of the block's own top
+   * (KAN-480): a toggle's own fold button sits in that gutter on its left
+   * edge, lifted above this strip by z-index for its own 28px-tall row —
+   * this keeps the strip out of that row entirely so the two never fight
+   * over the same pointer-down, while the rest of the block's true left
+   * edge still starts a resize. Every other call site leaves this unset and
+   * keeps the strip's full height.
+   */
+  topInsetPx?: number
+  /**
+   * `side="shared"` only: `right`, in px (negative — the strip sits outside
+   * the block it's attached to), that centres the 8px strip in the row's
+   * own gap. The caller computes this from the row's live gap (16px
+   * default, overridable) so the strip stays centred under a host override.
+   */
+  sharedOffsetPx?: number
   /** A resize is in progress from this edge: pill goes ink 100, readout shows. */
   dragging?: boolean
   /** The live value while dragging: a key glyph (`½`) when snapped, a free percent (`47%`) otherwise. */
@@ -40,6 +67,8 @@ export function BlockEdgeHandle({
   dragging = false,
   readout,
   valueNow,
+  topInsetPx,
+  sharedOffsetPx,
   onPointerDown,
   onPointerMove,
   onPointerUp,
@@ -51,15 +80,22 @@ export function BlockEdgeHandle({
     <div
       role="separator"
       aria-orientation="vertical"
-      aria-label={`Resize block ${side === 'left' ? 'left' : 'right'} edge`}
+      aria-label={
+        side === 'shared' ? 'Resize the shared edge between blocks' : `Resize block ${side} edge`
+      }
       aria-valuenow={valueNow}
       data-testid="block-edge-handle"
       data-side={side}
       data-dragging={dragging || undefined}
       className={cn(
-        'group absolute inset-y-0 z-[1] flex w-2 cursor-ew-resize touch-none items-center justify-center',
-        side === 'left' ? '-left-1' : '-right-1'
+        'group absolute bottom-0 z-[1] flex w-2 cursor-ew-resize touch-none items-center justify-center',
+        topInsetPx === undefined ? 'top-0' : undefined,
+        side === 'left' ? '-left-1' : side === 'right' ? '-right-1' : undefined
       )}
+      style={{
+        ...(topInsetPx === undefined ? undefined : { top: topInsetPx }),
+        ...(side === 'shared' ? { right: sharedOffsetPx } : undefined),
+      }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}

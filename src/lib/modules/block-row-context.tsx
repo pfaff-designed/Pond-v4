@@ -41,6 +41,35 @@ export interface BlockRowValue {
    * back to its own `onChange` rather than silently dropping the edit.
    */
   commitStep?: (patch: Block) => void
+  /**
+   * ↑ at this row's first visual line (KAN-367/KAN-464): every row gets one.
+   * `x` is the caret's own column (`view.coordsAtPos(selection.from).left`),
+   * carried over so the neighbour lands at the same column, not always its
+   * start. Block 0's is wired to the page title instead of a neighbour.
+   */
+  leaveUp?: (x: number) => void
+  /**
+   * ↓ at this row's last visual line (KAN-367) — the same contract as
+   * `leaveUp`, downward. Absent on the LAST block: there is no row below to
+   * land in, so the key is left to ProseMirror's own handling.
+   */
+  leaveDown?: (x: number) => void
+  /**
+   * Esc in a text editor selects this row instead of blurring to the page
+   * body (KAN-367) — focuses the row's own element, the same focus
+   * `handleFocus`/`handleBlur` already read `selected` off. Absent outside a
+   * `BlockCanvas` host (Storybook, the AI terminal reference): a view falls
+   * back to its own blur.
+   */
+  select?: () => void
+  /**
+   * Plain Enter stays inside this field as ProseMirror's own Enter (a new
+   * paragraph), rather than splitting through `stepOut` (KAN-480): a
+   * toggle's body is one hosted `TextEditor` whose Enter adds a body line,
+   * never a new page block. Absent is today's behaviour — every other row's
+   * Enter still splits.
+   */
+  ownEnter?: boolean
 }
 
 const BlockRowContext = createContext<BlockRowValue>({

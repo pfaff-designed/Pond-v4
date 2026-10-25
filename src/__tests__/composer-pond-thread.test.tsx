@@ -84,6 +84,7 @@ const pondContext = (
   loading,
   reload: () => {},
   addPond: () => {},
+  patchPond: () => {},
 })
 
 const queryClient = () => new QueryClient({ defaultOptions: { queries: { retry: false } } })

@@ -33,7 +33,14 @@ const wrapperWith = (client: QueryClient) => {
   const Wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={client}>
       <PondContext.Provider
-        value={{ pond: POND, ponds: [POND], loading: false, reload: () => {}, addPond: () => {} }}
+        value={{
+          pond: POND,
+          ponds: [POND],
+          loading: false,
+          reload: () => {},
+          addPond: () => {},
+          patchPond: () => {},
+        }}
       >
         {children}
       </PondContext.Provider>

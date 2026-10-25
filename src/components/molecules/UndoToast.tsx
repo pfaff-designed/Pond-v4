@@ -52,22 +52,26 @@ export function UndoToast({
       className="motion-toast pointer-events-auto relative flex items-center gap-3 overflow-hidden rounded-mn-card bg-mn-text px-4 py-2.5 text-sm text-mn-surface shadow-mn-lg"
     >
       <span className="truncate">{message}</span>
-      {onUndo && (
-        <button
-          type="button"
-          onClick={onUndo}
-          className="ml-1 flex-shrink-0 rounded-mn-chrome px-2 py-0.5 font-medium text-mn-surface underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-mn-surface/60"
-        >
-          {undoLabel}
-        </button>
-      )}
+      {/* KAN-466: the action (e.g. "open") reads before "undo" in the house
+          pattern (`moved roof to house · open · undo`) — no caller today
+          passes both in the other order, so this is a fixed render order,
+          not a prop. */}
       {onAction && (
         <button
           type="button"
           onClick={onAction}
-          className="flex-shrink-0 rounded-mn-chrome px-2 py-0.5 font-medium text-mn-surface underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-mn-surface/60"
+          className="ml-1 flex-shrink-0 rounded-mn-chrome px-2 py-0.5 font-medium text-mn-surface underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-mn-surface/60"
         >
           {actionLabel}
+        </button>
+      )}
+      {onUndo && (
+        <button
+          type="button"
+          onClick={onUndo}
+          className="flex-shrink-0 rounded-mn-chrome px-2 py-0.5 font-medium text-mn-surface underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-mn-surface/60"
+        >
+          {undoLabel}
         </button>
       )}
       {/* Fixed square + grid centering so the ✕ glyph sits optically centered on

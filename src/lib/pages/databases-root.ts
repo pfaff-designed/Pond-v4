@@ -22,6 +22,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
 import { createPage } from '@/lib/pages/client'
 import { inPond, resolvePond } from '@/lib/pond/scope'
+import { isExtraRoot } from '@/lib/rail/tree'
 
 /**
  * The reserved title of the databases root page — lowercase, as 3c draws it
@@ -48,6 +49,65 @@ export function isDatabasesRoot(node: { parentId: string | null; title: string }
  */
 function isDatabasesRootRow(row: { parent_id: string | null; title: string }): boolean {
   return isDatabasesRoot({ parentId: row.parent_id, title: row.title })
+}
+
+/**
+ * Is this page duplicable (KAN-468)? False for the pond root (`type = 'home'`)
+ * and the databases root — each a pond's one-per-kind row, the same two rows
+ * `trash_page` (0027) already refuses and `duplicate_page` (0032) now refuses
+ * too. Rail's ⌘D capability (`rowCapabilities`'s `duplicable`) and ⌘K's
+ * "duplicate page" palette entry both read this one rule rather than two
+ * copies of it. Shape-typed like {@link isDatabasesRoot}, so a `RailNode` fits.
+ */
+export function isDuplicablePage(node: {
+  parentId: string | null
+  title: string
+  type: string
+}): boolean {
+  return node.type !== 'home' && !isDatabasesRoot(node)
+}
+
+/**
+ * {@link isDuplicablePage} over a flat `['pages']` row (snake_case `parent_id`) —
+ * same adapter shape as {@link isDatabasesRootRow}.
+ */
+export function isDuplicablePageRow(row: {
+  parent_id: string | null
+  title: string
+  type: string
+}): boolean {
+  return isDuplicablePage({ parentId: row.parent_id, title: row.title, type: row.type })
+}
+
+/**
+ * Is this page movable — ⌘K's "move page to…" row/chord AND the rail's own
+ * drag capability, one rule rather than two (KAN-490/491 found them split:
+ * `isDuplicablePageRow` alone said yes for an extra root — `props.root` with
+ * no parent — while the rail refuses to drag one, so a ⌘K move reparented it
+ * with `props.root` still set). Duplicable minus an extra root: everything
+ * `isDuplicablePage` already refuses (home, the databases root) stays
+ * refused, and an extra root is refused too.
+ */
+export function isMovablePage(node: {
+  parentId: string | null
+  title: string
+  type: string
+  props?: Record<string, unknown> | null
+}): boolean {
+  return isDuplicablePage(node) && !isExtraRoot(node)
+}
+
+/**
+ * {@link isMovablePage} over a flat `['pages']` row — same adapter shape as
+ * {@link isDuplicablePageRow}.
+ */
+export function isMovablePageRow(row: {
+  parent_id: string | null
+  title: string
+  type: string
+  props?: Record<string, unknown> | null
+}): boolean {
+  return isMovablePage({ parentId: row.parent_id, title: row.title, type: row.type, props: row.props })
 }
 
 /**

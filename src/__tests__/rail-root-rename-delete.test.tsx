@@ -55,6 +55,7 @@ const PROVIDER_VALUE: PondContextValue = {
   loading: false,
   reload: () => {},
   addPond: () => {},
+  patchPond: () => {},
 }
 
 function viewProps(overrides: Partial<React.ComponentProps<typeof RailView>> = {}) {
@@ -100,7 +101,9 @@ describe('KAN-491 home root', () => {
 
     rerender(<RailView {...viewProps({ showHomeRoot: false })} />)
     expect(screen.queryByRole('treeitem', { name: /Untitled/ })).not.toBeInTheDocument()
-    expect(screen.getByRole('status')).toHaveTextContent('no pages yet')
+    // KAN-471: the hint names the root row's own ＋, so it hides along with
+    // that row rather than pointing at a ＋ that is no longer there.
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'new root folder' })).toBeInTheDocument()
   })
 
@@ -151,7 +154,10 @@ describe('KAN-491 home root', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }))
 
     expect(root).not.toBeInTheDocument()
-    expect(screen.getByText(/no pages yet/)).toBeInTheDocument()
+    // KAN-471: the hint names the root row's own ＋, so it hides along with
+    // that row during the undo window rather than pointing at a ＋ that is
+    // no longer there.
+    expect(screen.queryByText(/no pages yet/)).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'new root folder' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
     expect(await screen.findByRole('treeitem', { name: /Untitled/ })).toBeInTheDocument()

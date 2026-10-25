@@ -1,8 +1,38 @@
 import { Extension, type Extensions } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
+import { Heading } from '@tiptap/extension-heading'
+import { HEADING_CHORDS } from './markup'
 
 /** What the autolinker may turn into a link — the same shapes the markdown parser links. */
 const AUTOLINKABLE = /^https?:\/\/|^[^\s@]+@[^\s@]+\.[^\s@]+$/i
+
+/** `'mod+alt+1'` (this module's and the menu's chord spelling) as prosemirror-keymap
+ * reads it (`'Mod-Alt-1'`). */
+const toKeymapName = (chord: string) =>
+  chord
+    .split('+')
+    .map((token) => token[0].toUpperCase() + token.slice(1))
+    .join('-')
+
+/**
+ * Heading 1–3 bound from `HEADING_CHORDS`, not StarterKit's own default
+ * (which happens to use the same `Mod-Alt-N` shape) — so the chord the block
+ * menu shows as a hint is the same string that actually fires the command,
+ * never two copies that could drift apart.
+ */
+const HeadingWithChords = Heading.extend({
+  addKeyboardShortcuts() {
+    return {
+      ...this.parent?.(),
+      ...Object.fromEntries(
+        (Object.entries(HEADING_CHORDS) as [`${1 | 2 | 3}`, string][]).map(([level, chord]) => [
+          toKeymapName(chord),
+          () => this.editor.commands.toggleHeading({ level: Number(level) as 1 | 2 | 3 }),
+        ])
+      ),
+    }
+  },
+})
 
 /**
  * List markup the editor has no visible use for but markdown does: whether a list
@@ -32,6 +62,7 @@ const MarkdownListAttributes = Extension.create({
  */
 export const proseExtensions: Extensions = [
   StarterKit.configure({
+    heading: false,
     underline: false,
     trailingNode: false,
     link: {
@@ -42,5 +73,6 @@ export const proseExtensions: Extensions = [
       HTMLAttributes: { target: '_blank', rel: 'noopener noreferrer', class: null },
     },
   }),
+  HeadingWithChords,
   MarkdownListAttributes,
 ]

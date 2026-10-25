@@ -19,6 +19,8 @@ import { ImageView } from './image/view'
 import { HighlightView } from './highlight/view'
 import { EntriesView } from './entries/view'
 import { PageLinkView } from './page-link/view'
+import { TocView } from './toc/view'
+import { ToggleView } from './toggle/view'
 
 /**
  * `type → { view, editor?, differ? }`. A plain keyed object literal — no framework,
@@ -46,6 +48,9 @@ export const moduleRenderers = {
   // KAN-122: the row `/ nested page` leaves behind. No editor facet — nothing on
   // the row is edited in place; it only links out.
   'page-link': { view: PageLinkView },
+  // KAN-482: the heading list. Read-only — nothing on the row is edited in place.
+  toc: { view: TocView },
+  toggle: { view: ToggleView },
 }
 // Correctness is enforced at each view's definition (every view is typed as a
 // ModuleRenderer for its own data). A homogeneous `satisfies Record<…>` can't be

@@ -166,7 +166,7 @@ export function TodoView({ data, editable, onChange }: ModuleViewProps<TodoBlock
   const pendingFocus = useRef<{ id: string; caret: 'start' | 'end' | number } | null>(null)
   const marker = todoMarker(data)
   const spec = TODO_ROW[marker]
-  const { stepOut, commitStep } = useBlockRow()
+  const { stepOut, commitStep, leaveUp, leaveDown } = useBlockRow()
   // No `BlockRowProvider` above this view (page/view.tsx, a Storybook host) —
   // KAN-355's save-flush has nothing to flush, so a structural edit falls
   // back to the view's own `onChange` rather than the context's absent default.
@@ -311,9 +311,13 @@ export function TodoView({ data, editable, onChange }: ModuleViewProps<TodoBlock
    *
    * Plain ↑/↓ (no modifier — ⌥↑/⌥↓ is the reorder above) moves the caret to
    * the same offset, clamped, in the previous/next item's field (KAN-355).
-   * At the first/last item it is left alone: no items change, so there is
-   * no `onChange` to ride the focus effect on — the input is focused
-   * directly.
+   * At the first/last item it hands off to the row's own `leaveUp`/
+   * `leaveDown` (KAN-367) — the same edge a text block's editor calls, so ↑
+   * out of this checklist's first item or ↓ out of its last reaches the
+   * neighbouring block exactly as a text block's own edge would. No items
+   * change here, so there is no `onChange` to ride a focus effect on, and
+   * with no row above to provide one (Storybook, a bare `ModuleView` host)
+   * the key is left alone, same as before KAN-367.
    */
   function handleItemKeyDown(index: number, e: React.KeyboardEvent<HTMLInputElement>) {
     // An IME commit fires Enter/Backspace to close its own composition, not to
@@ -379,8 +383,18 @@ export function TodoView({ data, editable, onChange }: ModuleViewProps<TodoBlock
       !e.metaKey &&
       !e.ctrlKey
     ) {
+      // An IME candidate pick fires ArrowUp/ArrowDown to navigate its own
+      // candidate list, not to leave the field — same guard as Enter/Backspace
+      // above, but checked here too since it can't fall through to them.
+      if (e.nativeEvent.isComposing) return
       const target = index + (e.key === 'ArrowUp' ? -1 : 1)
-      if (target < 0 || target >= data.items.length) return
+      if (target < 0 || target >= data.items.length) {
+        const leave = e.key === 'ArrowUp' ? leaveUp : leaveDown
+        if (!leave) return
+        e.preventDefault()
+        leave(e.currentTarget.getBoundingClientRect().left)
+        return
+      }
       e.preventDefault()
       const caret = Math.min(e.currentTarget.selectionStart ?? 0, data.items[target].label.length)
       const input = rowsRef.current?.querySelector<HTMLInputElement>(
@@ -581,7 +595,7 @@ export function TodoView({ data, editable, onChange }: ModuleViewProps<TodoBlock
       {editable && data.items.length > 0 && (
         <button
           type="button"
-          className="font-mono lowercase text-[10.5px] text-mn-text-secondary"
+          className="font-mono lowercase text-[10.5px] text-mn-text-secondary opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100"
           onClick={() => {
             const next = addTodoItem(data)
             pendingFocus.current = { id: next.items[next.items.length - 1].id, caret: 'start' }

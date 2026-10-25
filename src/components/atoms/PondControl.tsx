@@ -99,6 +99,14 @@ export interface PondControlProps extends Omit<
   label?: string | null
   /** field — the typed value (controlled when `onValueChange` is given). */
   value?: string
+  /**
+   * field only — fills the field's container (`w-full`) instead of the
+   * board's fixed 240/280px. No board draws a narrower-than-240px editing
+   * surface for the field, so this is an escape hatch for a host whose own
+   * card is narrower than that (KAN-492's switcher menu), not a board value.
+   * @default false
+   */
+  fullWidth?: boolean
   /** field — the mono hint under the card · menu — the trailing hint. */
   hint?: string
   /** toggle/checkbox — checked · menu — show the ↵ glyph. `selected` also sets it. */
@@ -180,6 +188,7 @@ export function PondControl({
   size = 'desktop',
   label,
   value,
+  fullWidth = false,
   hint,
   on,
   disabled,
@@ -229,11 +238,11 @@ export function PondControl({
         {...data}
         invalid={error}
         disabled={inert}
-        className={`inline-flex flex-col gap-1.5 ${className}`}
+        className={`${fullWidth ? 'flex w-full' : 'inline-flex'} flex-col gap-1.5 ${className}`}
       >
         <span
           data-part="field"
-          className={`box-border flex items-center gap-0.5 rounded-mn-inner bg-mn-card px-[14px] font-sans text-mn-text ${s.fieldShadow ?? 'shadow-mn-card'} ${mobile ? 'h-[48px] w-[280px] text-[15px]' : 'h-[38px] w-[240px] text-[13.5px]'} ${FOCUS_WITHIN_RING} ${ring} ${off}`}
+          className={`box-border flex items-center gap-0.5 rounded-mn-inner bg-mn-card px-[14px] font-sans text-mn-text ${s.fieldShadow ?? 'shadow-mn-card'} ${mobile ? 'h-[48px] text-[15px]' : 'h-[38px] text-[13.5px]'} ${fullWidth ? 'w-full min-w-0' : mobile ? 'w-[280px]' : 'w-[240px]'} ${FOCUS_WITHIN_RING} ${ring} ${off}`}
         >
           <Input
             placeholder={s.copy ? s.copy.field : text}

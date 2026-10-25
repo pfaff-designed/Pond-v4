@@ -18,13 +18,39 @@
  */
 
 import type { PaletteItem, PaletteScope } from '@/components/molecules/palette-entries'
+import { subtreeIdsFromRows } from '@/lib/deletion/blast-radius'
 import { ancestorPath, crumbTrail } from '@/lib/pages/crumbs'
-import { markIndex, resolveMark } from '@/lib/pages/mark'
+import { isDuplicablePageRow, isMovablePageRow } from '@/lib/pages/databases-root'
+import { markIndex, type MarkSource, resolveMark } from '@/lib/pages/mark'
 import { RECENT_SHOWN } from '@/lib/pages/recent-pages'
 import type { PageRow } from '@/lib/pages/tree'
 import type { Pond } from '@/lib/pond/client'
 import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
+import { LIFE_ID } from '@/lib/rail/tree'
 import { formatChord } from '@/lib/shell-commands'
+
+/**
+ * One page row as a palette row — the shared fact behind both the full list
+ * (`paletteItems`) and the move picker's candidate list (`movePickItems`), so
+ * a page's kind/sub/glyph/path is computed once, not twice (AGENTS.md DRY).
+ */
+function pageRowItem(
+  rows: PageRow[],
+  byId: Map<string, PageRow>,
+  index: Map<string, MarkSource>,
+  r: PageRow
+): PaletteItem {
+  const path = ancestorPath(rows, r.id, byId)
+  const { root } = crumbTrail(rows, r.id, byId)
+  return {
+    id: r.id,
+    label: r.title || 'Untitled',
+    kind: root && root.id !== r.id ? 'database' : 'page',
+    sub: path[0]?.title,
+    glyph: resolveMark(r.id, index).glyph ?? undefined,
+    path: path.map((c) => c.id),
+  }
+}
 
 /** The shell's two standing actions, in Pond's words; `action` is the job the host reads. */
 export const NEW_PAGE_ACTION: PaletteItem = {
@@ -87,6 +113,59 @@ export const SAVE_AS_TEMPLATE_ACTION: PaletteItem = {
   action: 'save-as-template',
 }
 
+/**
+ * KAN-468: no board draws this — "No board draws it; the app's flow applies"
+ * (Notion's page-menu Duplicate, ⌘D). A page action like `save-as-template`
+ * just above, so it lists only when there is a page open to duplicate — AND
+ * that page passes `isDuplicablePageRow`, the same rule Rail's own ⌘D
+ * capability reads, which refuses the pond root and the databases root.
+ */
+export const DUPLICATE_PAGE_ACTION: PaletteItem = {
+  id: 'action:duplicate-page',
+  label: 'duplicate page',
+  kind: 'action',
+  action: 'duplicate-page',
+}
+
+/**
+ * KAN-469: Notion's page-menu "Move to" (⌘⇧P), moved into the palette rather
+ * than an undesigned header menu. A page action like `duplicate page` just
+ * above, so it lists under a duplicable open page too — but NOT the same
+ * `isDuplicablePageRow` gate: an extra root is duplicable but the rail
+ * refuses to drag one (KAN-490/491), so this row reads `isMovablePageRow`
+ * instead (duplicable minus an extra root).
+ */
+export const MOVE_PAGE_ACTION: PaletteItem = {
+  id: 'action:move-page',
+  label: 'move page to…',
+  kind: 'action',
+  action: 'move-page',
+  key: formatChord('mod+shift+p'),
+}
+
+/**
+ * KAN-475: one row never both — "favourite this page" when the open page isn't
+ * in the pond's favourites, "unfavourite this page" when it is. Gated like
+ * `SAVE_AS_TEMPLATE_ACTION`/`DUPLICATE_PAGE_ACTION`: `isDuplicablePageRow`
+ * already excludes home and the databases root, and trash/change-log never
+ * resolve to a `PageRow` to begin with. Also gated on a resolved pond — while
+ * `pond` is still loading, `useFavouritePage`'s `toggle` is a no-op (it has
+ * no `pond.id` to write against), so the row would be offered and silently
+ * do nothing if shown then.
+ */
+export const FAVOURITE_PAGE_ACTION: PaletteItem = {
+  id: 'action:favourite-page',
+  label: 'favourite this page',
+  kind: 'action',
+  action: 'favourite-page',
+}
+export const UNFAVOURITE_PAGE_ACTION: PaletteItem = {
+  id: 'action:unfavourite-page',
+  label: 'unfavourite this page',
+  kind: 'action',
+  action: 'unfavourite-page',
+}
+
 export function paletteItems(
   rows: readonly PageRow[],
   /** Newest first, up to the store's own 20-entry cap — not pre-sliced by the caller. */
@@ -95,27 +174,29 @@ export function paletteItems(
    * The page open right now, if any. Page actions list only when there is a page
    * for them to act on (board `6i` frame 3).
    */
-  openPageId?: string | null
+  openPageId?: string | null,
+  /** The pond's `favourite_page_ids` — picks which of the two favourite rows lists. */
+  favouritePageIds?: readonly string[],
+  /**
+   * Whether `favouritePageIds` reflects an actually-resolved pond. Defaults
+   * `true` (today's behaviour unchanged) — every existing caller already has
+   * its pond by the time it builds the palette; only a caller mid-load passes
+   * `false` to withhold the row rather than offer a toggle with nothing to act on.
+   */
+  pondResolved: boolean = true
 ): PaletteItem[] {
   const all = [...rows]
   const index = markIndex(all)
   const byId = new Map(all.map((r) => [r.id, r]))
-  const item = (r: PageRow): PaletteItem => {
-    const path = ancestorPath(all, r.id, byId)
-    const { root } = crumbTrail(all, r.id, byId)
-    return {
-      id: r.id,
-      label: r.title || 'Untitled',
-      kind: root && root.id !== r.id ? 'database' : 'page',
-      sub: path[0]?.title,
-      glyph: resolveMark(r.id, index).glyph ?? undefined,
-      path: path.map((c) => c.id),
-    }
-  }
+  const item = (r: PageRow): PaletteItem => pageRowItem(all, byId, index, r)
   // Capped after the existence filter above, so a trashed page in the newest
   // slots doesn't shrink the visible group below RECENT_SHOWN.
   const recent = recentIds.flatMap((id) => byId.get(id) ?? []).slice(0, RECENT_SHOWN)
   const recentSet = new Set(recent.map((r) => r.id))
+  // The home page is never in `rows` (fetchPages excludes `type = 'home'`), so
+  // a missing lookup is itself a reason not to offer duplicate — the rule
+  // defaults closed, not open, on an id it can't resolve.
+  const openPage = openPageId ? byId.get(openPageId) : undefined
   return [
     ...recent.map((r) => ({ ...item(r), recent: true })),
     ...all.filter((r) => !recentSet.has(r.id)).map(item),
@@ -125,6 +206,35 @@ export function paletteItems(
     { ...ASK_POND_ACTION, key: formatChord('mod+j') },
     DEEP_RESEARCH_ACTION,
     ...(openPageId ? [SAVE_AS_TEMPLATE_ACTION] : []),
+    ...(openPage && isDuplicablePageRow(openPage) ? [DUPLICATE_PAGE_ACTION] : []),
+    ...(openPage && isMovablePageRow(openPage) ? [MOVE_PAGE_ACTION] : []),
+    ...(openPage && isDuplicablePageRow(openPage) && pondResolved
+      ? [favouritePageIds?.includes(openPage.id) ? UNFAVOURITE_PAGE_ACTION : FAVOURITE_PAGE_ACTION]
+      : []),
+  ]
+}
+
+/**
+ * `move page to…`'s candidate list: every page/database row except the one
+ * moving and its own descendants (a move there is refused by the RPC anyway,
+ * so the picker doesn't offer it), plus one synthetic row standing for the
+ * pond's root — `computeMove`/`moveParent` already resolve `LIFE_ID` with zone
+ * `'into'` to `newParentId: null`, so no new move-resolution logic is needed,
+ * only this one extra entry.
+ */
+export function movePickItems(
+  rows: readonly PageRow[],
+  movingId: string,
+  rootLabel: string
+): PaletteItem[] {
+  const all = [...rows]
+  const excluded = subtreeIdsFromRows(all, movingId)
+  const index = markIndex(all)
+  const byId = new Map(all.map((r) => [r.id, r]))
+  const rootRow: PaletteItem = { id: LIFE_ID, label: rootLabel, kind: 'page' }
+  return [
+    rootRow,
+    ...all.filter((r) => !excluded.has(r.id)).map((r) => pageRowItem(all, byId, index, r)),
   ]
 }
 

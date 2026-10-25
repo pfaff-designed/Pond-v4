@@ -8,12 +8,14 @@ import {
   classifyDropZone,
   detachKeepingRows,
   drawnWidthPercent,
+  EDGE_FRACTION,
   isWithinPaddedZone,
   layoutRows,
   planBesideDrop,
   planOwnLineDrop,
   rowHolds,
   rowStacks,
+  rowZeroZone,
   widthPercent,
   widthsForDropBeside,
   withoutRowStart,
@@ -629,6 +631,65 @@ describe('zoneWhenDrawnStacked', () => {
 
   it('leaves a beside point alone when the row is actually side by side', () => {
     expect(zoneWhenDrawnStacked('right', rect, { x: 360, y: 30 }, false)).toBe('right')
+  })
+})
+
+describe('rowZeroZone (KAN-548)', () => {
+  // Same two heights as classifyDropZone's own tall/short cases above.
+  const tall: Rect = { left: 0, right: 400, top: 0, bottom: 743 }
+  const short: Rect = { left: 0, right: 400, top: 0, bottom: 24 }
+
+  // Each corner, and whether it falls inside the above band (y < top + EDGE_FRACTION * height) —
+  // the top corners do, the bottom corners don't, on either height.
+  const corners = (rect: Rect): [string, Point, boolean][] => [
+    ['top-left corner', { x: rect.left, y: rect.top }, true],
+    ['top-right corner', { x: rect.right, y: rect.top }, true],
+    ['bottom-left corner', { x: rect.left, y: rect.bottom }, false],
+    ['bottom-right corner', { x: rect.right, y: rect.bottom }, false],
+  ]
+
+  // Full cross product: tall/short × each corner × isRowZero true/false.
+  const cases: [string, Rect, Point, boolean, DropZone | null][] = []
+  for (const [rectLabel, rect] of [
+    ['tall', tall],
+    ['short', short],
+  ] as [string, Rect][]) {
+    for (const [cornerLabel, point, inAboveBand] of corners(rect)) {
+      for (const isRowZero of [true, false]) {
+        const expected = isRowZero && inAboveBand ? 'above' : null
+        cases.push([`${rectLabel} block, ${cornerLabel}, isRowZero ${isRowZero}`, rect, point, isRowZero, expected])
+      }
+    }
+  }
+
+  it.each(cases)('%s', (_label, rect, point, isRowZero, expected) => {
+    expect(rowZeroZone(rect, point, isRowZero)).toBe(expected)
+  })
+
+  it('leaves a row-0 mid-height left point beside', () => {
+    expect(rowZeroZone(tall, { x: 20, y: 371.5 }, true)).toBeNull()
+  })
+
+  it('leaves a row-0 mid-height right point beside', () => {
+    expect(rowZeroZone(tall, { x: 380, y: 371.5 }, true)).toBeNull()
+  })
+
+  it('overrides to above for a point above the block entirely, row 0', () => {
+    expect(rowZeroZone(short, { x: 200, y: -10 }, true)).toBe('above')
+  })
+
+  it('overrides to above exactly on the above band edge, row 0 (the band is inclusive)', () => {
+    const topEdge = short.top + EDGE_FRACTION * (short.bottom - short.top)
+    expect(rowZeroZone(short, { x: 20, y: topEdge }, true)).toBe('above')
+  })
+
+  it('overrides to above away from the corners, inside the band, row 0', () => {
+    const midX = (short.left + short.right) / 2
+    expect(rowZeroZone(short, { x: midX, y: short.top + 1 }, true)).toBe('above')
+  })
+
+  it('leaves a non-row-0 point in the above band alone (rows ≥1 keep KAN-440 hysteresis)', () => {
+    expect(rowZeroZone(short, { x: 20, y: short.top }, false)).toBeNull()
   })
 })
 

@@ -13,7 +13,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { render, screen, fireEvent, within } from '@testing-library/react'
 import { SlashMenu } from '@/components/molecules/SlashMenu'
-import { slashRows, mintPreset, BOARD_ORDER, HEADING_PREFIX, WITHHELD } from '@/lib/modules/palette'
+import { slashRows, mintPreset, BOARD_ORDER, WITHHELD } from '@/lib/modules/palette'
+import { HEADING_PREFIX, TEXT_MARKUP } from '@/lib/modules/text/markup'
 import { moduleDescriptors } from '@/lib/modules/registry'
 import { TEMPLATE_KINDS } from '@/lib/templates/types'
 import { VIEW_KINDS } from '@/lib/modules/view/kinds'
@@ -56,6 +57,19 @@ const ALLOWED = new Set([
   // KAN-240: an undrawn row — the list view's own row, labelled distinctly from
   // the bulleted list's `list` so `/list` never reads as a second copy.
   'list view',
+  // KAN-462: four rows the board omits — Linear and Notion both list them
+  // (Mobbin f63a07dd, 3c855d1d); added under the app-over-board flow rule, so
+  // they are no board or glossary word to read back.
+  'quote',
+  'code',
+  'divider',
+  'numbered list',
+  // KAN-482: Notion's own row (Mobbin b8778e0e) — the board draws no row for
+  // this type either.
+  'table of contents',
+  // KAN-480: Notion's own row (Mobbin 8cbe99a8, b8778e0e) — the board draws no
+  // row for this type either.
+  'toggle',
 ])
 
 function renderMenu(overrides: Partial<React.ComponentProps<typeof SlashMenu>> = {}) {
@@ -178,6 +192,16 @@ describe('a row is a preset, and every registered type reaches the menu', () => 
     expect(mintPreset('nope')).toBeNull()
   })
 
+  // KAN-480: lands with an empty summary and no `body`/`folded` keys at all.
+  it('`/toggle` mints a toggle with an empty summary', () => {
+    expect(mintPreset('toggle')).toEqual({ id: expect.any(String), type: 'toggle', content: '' })
+    expect(slashRows.find((r) => r.id === 'toggle')).toMatchObject({
+      type: 'toggle',
+      group: 'text',
+      key: undefined,
+    })
+  })
+
   // #281: `heading` is a face of `text`, not a ninth block kind — the one of the
   // board's five factory-less rows that needed no new type. It opens the block on
   // the second markdown level, which `Markdown.tsx` already typesets.
@@ -242,6 +266,11 @@ describe('a row is a preset, and every registered type reaches the menu', () => 
       'text/text',
       'text/heading',
       'text/highlight',
+      'text/quote',
+      'text/code',
+      'text/divider',
+      'text/numbered list',
+      'text/toggle',
       'text/embed / file',
       'blocks/list',
       'blocks/checklist',
@@ -255,6 +284,7 @@ describe('a row is a preset, and every registered type reaches the menu', () => 
       'blocks/chart',
       'blocks/big number',
       'blocks/entry log',
+      'blocks/table of contents',
       'templates/page from template',
       'pages/page',
     ])
@@ -321,8 +351,12 @@ describe('filtered', () => {
     expect(table.querySelector('[data-part="post"]')!.textContent).toBe('ble')
     // (The board's fixture also lists `page from template` here with its hit at
     // index 13 — "pl" — which is fixture noise: that label contains no "ta".)
-    expect(options().map((o) => labelOf(o as HTMLElement))).toEqual(['table', 'entry log'])
-    expect(glass().querySelector('[data-part="foot"]')!.textContent).toBe('/ ta — 2 matches')
+    expect(options().map((o) => labelOf(o as HTMLElement))).toEqual([
+      'table',
+      'table of contents',
+      'entry log',
+    ])
+    expect(glass().querySelector('[data-part="foot"]')!.textContent).toBe('/ ta — 3 matches')
     expect(labelOf(selected())).toBe('table')
   })
 
@@ -369,6 +403,49 @@ describe('filtered', () => {
   it('matching is case-insensitive and ignores surrounding space', () => {
     renderMenu({ query: ' CHECK ' })
     expect(options().map((o) => labelOf(o as HTMLElement))).toEqual(['checklist'])
+  })
+})
+
+// ── KAN-462: numbered list, quote, code, divider ────────────────────────────────
+
+describe('numbered list, quote, code and divider are markup in the current text block, not new block types', () => {
+  it('each query lists only that one row', () => {
+    for (const [query, label] of [
+      ['quo', 'quote'],
+      // not `num`: that is also a substring of `big number`'s own label.
+      ['numbered', 'numbered list'],
+      ['code', 'code'],
+      ['div', 'divider'],
+    ] as const) {
+      const { unmount } = renderMenu({ query })
+      expect(options().map((o) => labelOf(o as HTMLElement))).toEqual([label])
+      unmount()
+    }
+  })
+
+  it('at rest, unselected, each shows the board’s markdown key as its hint', () => {
+    const { unmount } = renderMenu()
+    for (const [label, hint] of [
+      ['quote', '>'],
+      ['numbered list', '1.'],
+      ['code', '```'],
+      ['divider', '---'],
+    ] as const) {
+      const row = options().find((o) => labelOf(o as HTMLElement) === label)!
+      expect(row).not.toHaveAttribute('aria-selected', 'true')
+      expect(within(row).getByText(hint)).toBeInTheDocument()
+    }
+    unmount()
+  })
+
+  it('mints a text block already opened on the row’s markup, empty, caret-ready', () => {
+    for (const id of ['numbered-list', 'quote', 'code', 'divider'] as const) {
+      expect(mintPreset(id)).toEqual({
+        id: expect.any(String),
+        type: 'text',
+        content: TEXT_MARKUP[id],
+      })
+    }
   })
 })
 
@@ -436,11 +513,14 @@ describe('mobile', () => {
       'text',
       'blocks',
     ])
+    // KAN-462 pushed four more rows into the `text` group and KAN-480 a fifth
+    // (`toggle`), so the mobile cap of 12 (group heads counted) now runs out
+    // inside `blocks` two rows sooner than its original `checklist`.
     expect(
       options()
         .map((o) => labelOf(o as HTMLElement))
         .at(-1)
-    ).toBe('calendar')
+    ).toBe('list')
   })
 
   it('does not cap a query', () => {

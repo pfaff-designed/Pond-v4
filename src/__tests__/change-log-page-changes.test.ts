@@ -2,7 +2,7 @@
  * The "changes to this page" view model — src/lib/change-log/page-changes.ts.
  */
 
-import { describeChange, platformShortcutLabel } from '@/lib/change-log/page-changes'
+import { describeChange, platformShortcutLabel, readMoveSnapshot } from '@/lib/change-log/page-changes'
 import type { ChangeLogRecord } from '@/lib/change-log/types'
 
 const BEFORE = [{ id: 'a', type: 'text', content: 'one' }]
@@ -41,6 +41,20 @@ describe('describeChange', () => {
     )
     expect(describeChange(record({ action: 'create_page' }), null)).toBe('created this page')
     expect(describeChange(record({ action: 'memory_note' }), null)).toBe('recorded a memory note')
+  })
+
+  it('names a duplicate, including its own undo row', () => {
+    const duplicate = record({
+      id: 'dup-1',
+      action: 'duplicate_page',
+      before: null,
+      after: { pageId: 'copy-1' },
+    })
+    expect(describeChange(duplicate, null)).toBe('duplicated this page')
+
+    const undo = record({ action: 'undo', links: { undoOf: 'dup-1' } })
+    const byId = new Map([[duplicate.id, duplicate]])
+    expect(describeChange(undo, null, byId)).toBe('undo · duplicated this page')
   })
 
   it('names a glyph pick as a mark change, in Pond\'s words', () => {
@@ -101,6 +115,104 @@ describe('describeChange', () => {
     expect(describeChange(record({ action: 'restore', before: null, after: null }), null)).toBe(
       'restored'
     )
+  })
+
+  it('names a move from its move snapshot\'s parent title', () => {
+    const snapshot = { parentId: 'page-b', parentTitle: 'Page B', siblingOrder: ['page-1'] }
+    expect(describeChange(record({ action: 'move', before: null, after: snapshot }), null)).toBe(
+      'moved to Page B'
+    )
+  })
+
+  it('falls back to the bare verb when a move carries no usable snapshot', () => {
+    expect(describeChange(record({ action: 'move', before: null, after: null }), null)).toBe(
+      'moved'
+    )
+    expect(
+      describeChange(record({ action: 'move', before: null, after: { parentId: 'page-b' } }), null)
+    ).toBe('moved')
+  })
+
+  it('never reads "moved to " bare — a null or untitled parent falls back to Untitled', () => {
+    const noHomeRow = { parentId: null, parentTitle: null, siblingOrder: [] }
+    expect(
+      describeChange(record({ action: 'move', before: null, after: noHomeRow }), null)
+    ).toBe('moved to Untitled')
+
+    const untitledParent = { parentId: 'page-b', parentTitle: '', siblingOrder: [] }
+    expect(
+      describeChange(record({ action: 'move', before: null, after: untitledParent }), null)
+    ).toBe('moved to Untitled')
+  })
+})
+
+describe('readMoveSnapshot', () => {
+  it('parses an old-shape record with no link fields', () => {
+    const snapshot = { parentId: 'page-b', parentTitle: 'Page B', siblingOrder: ['page-1'] }
+    expect(readMoveSnapshot(snapshot)).toEqual(snapshot)
+  })
+
+  it('parses a new-shape record carrying its link fields (KAN-467)', () => {
+    const removedLinkBlock = { id: 'link-1', type: 'page-link', pageId: 'page-1' }
+    const before = {
+      parentId: 'page-a',
+      parentTitle: 'Page A',
+      siblingOrder: [],
+      removedLinks: [{ block: removedLinkBlock, index: 2 }],
+    }
+    const after = {
+      parentId: 'page-b',
+      parentTitle: 'Page B',
+      siblingOrder: ['page-1'],
+      appendedLinkId: 'link-2',
+    }
+    expect(readMoveSnapshot(before)).toEqual(before)
+    expect(readMoveSnapshot(after)).toEqual(after)
+  })
+
+  it('parses every entry of a multi-link removedLinks array', () => {
+    const before = {
+      parentId: 'page-a',
+      parentTitle: 'Page A',
+      siblingOrder: [],
+      removedLinks: [
+        { block: { id: 'link-1', type: 'page-link', pageId: 'page-1' }, index: 1 },
+        { block: { id: 'link-2', type: 'page-link', pageId: 'page-1' }, index: 3 },
+      ],
+    }
+    expect(readMoveSnapshot(before)).toEqual(before)
+  })
+
+  it('drops a malformed removedLinks entry rather than failing the whole snapshot', () => {
+    const snapshot = {
+      parentId: 'page-a',
+      parentTitle: 'Page A',
+      siblingOrder: [],
+      removedLinks: [{ block: { id: 'link-1', type: 'not-a-real-block' }, index: 2 }],
+    }
+    expect(readMoveSnapshot(snapshot)).toEqual({
+      parentId: 'page-a',
+      parentTitle: 'Page A',
+      siblingOrder: [],
+    })
+  })
+
+  it('still rejects a malformed record outright', () => {
+    expect(readMoveSnapshot(null)).toBeNull()
+    expect(readMoveSnapshot({ parentId: 'page-b' })).toBeNull()
+  })
+
+  it('parses a renamed move\'s title (KAN-470), and still parses without one', () => {
+    const after = {
+      parentId: 'page-b',
+      parentTitle: 'Page B',
+      siblingOrder: ['page-1'],
+      title: 'Notes 2',
+    }
+    expect(readMoveSnapshot(after)).toEqual(after)
+
+    const unrenamed = { parentId: 'page-b', parentTitle: 'Page B', siblingOrder: ['page-1'] }
+    expect(readMoveSnapshot(unrenamed)).toEqual(unrenamed)
   })
 })
 

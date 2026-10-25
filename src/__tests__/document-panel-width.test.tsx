@@ -74,6 +74,13 @@ describe('DocumentPanel resizable content column (#58)', () => {
     expect(getColumn()).toContainElement(getHandle())
   })
 
+  it('the page-column is a flex column at least the canvas height, so the trailing gap can fill it (KAN-498)', async () => {
+    renderPanel()
+    await screen.findByLabelText('Page title')
+    const classes = getColumn().className.split(' ')
+    expect(classes).toEqual(expect.arrayContaining(['flex', 'flex-col', 'min-h-full']))
+  })
+
   it('adopts a persisted width on load — the reload half of "survives reload"', async () => {
     window.localStorage.setItem(CONTENT_WIDTH_KEY, '900')
     renderPanel()

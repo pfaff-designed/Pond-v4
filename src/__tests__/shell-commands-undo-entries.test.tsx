@@ -34,6 +34,7 @@ jest.mock('@/lib/change-log/session-undo', () => ({
 }))
 
 import { ShellCommands } from '@/components/organisms/ShellCommands'
+import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { sessionUndo } from '@/lib/change-log/session-undo'
 import { EntriesView } from '@/lib/modules/entries/view'
 import type { EntriesBlock } from '@/lib/modules/entries/schema'
@@ -56,8 +57,10 @@ function StatefulEntries({ data }: { data: EntriesBlock }) {
 const renderShellWithEntries = (data: EntriesBlock) => {
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <ShellCommands />
-      <StatefulEntries data={data} />
+      <DeletionUndoProvider>
+        <ShellCommands />
+        <StatefulEntries data={data} />
+      </DeletionUndoProvider>
     </QueryClientProvider>
   )
 }

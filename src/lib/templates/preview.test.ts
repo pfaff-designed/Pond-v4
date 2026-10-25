@@ -81,6 +81,20 @@ describe('templateOutlineRows', () => {
     ])
   })
 
+  it('reads a bare text block opening on a heading as `heading`, body lines included', () => {
+    const block: Block = { id: 'h2', type: 'text', content: '# Title\nbody' }
+    expect(templateOutlineRows([block])).toEqual([
+      { kind: 'heading', label: '', height: 44, icon: ICON.heading },
+    ])
+  })
+
+  it('reads a toggle by its own kind and mark, not the list it stands beside', () => {
+    const block: Block = { id: 'tg', type: 'toggle', content: 'packing list' }
+    expect(templateOutlineRows([block])).toEqual([
+      { kind: 'toggle', label: '', height: 110, icon: ICON.toggle },
+    ])
+  })
+
   it('previews every premade template without throwing', () => {
     for (const kind of Object.keys(PREMADE_TEMPLATES) as (keyof typeof PREMADE_TEMPLATES)[]) {
       const { blocks } = instantiateTemplate(PREMADE_TEMPLATES[kind])

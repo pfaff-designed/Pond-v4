@@ -10,6 +10,7 @@ import React from 'react'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ShellCommands } from '@/components/organisms/ShellCommands'
+import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { workspaceUrl, WORKSPACE_PATH } from '@/lib/pages/nav'
 import { sessionUndo } from '@/lib/change-log/session-undo'
 import { createPage } from '@/lib/pages/client'
@@ -66,7 +67,9 @@ jest.mock('@/lib/terminal-focus', () => ({
 const renderShell = () =>
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <ShellCommands />
+      <DeletionUndoProvider>
+        <ShellCommands />
+      </DeletionUndoProvider>
     </QueryClientProvider>
   )
 

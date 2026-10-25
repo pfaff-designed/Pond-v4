@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { EditorView } from '@tiptap/pm/view'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { HEADING_PREFIX } from '@/lib/modules/palette'
+import { HEADING_PREFIX, TEXT_MARKUP } from '@/lib/modules/text/markup'
 import { COMPOSER_CLEARANCE_VAR } from '@/lib/layout/composer-clearance'
 import {
   findTextBlock as findField,
@@ -272,6 +272,26 @@ describe('TextView — the text block edits in place as rendered prose', () => {
     expect(handleChange).not.toHaveBeenCalled()
   })
 
+  it('content changed from outside to a divider-only block gets the empty line after the rule too, and writes nothing back', async () => {
+    const handleChange = jest.fn()
+    const { rerender } = render(<TextView data={sample} editable onChange={handleChange} />)
+    const field = await findField()
+    rerender(
+      <TextView
+        data={{ ...sample, content: TEXT_MARKUP.divider }}
+        editable
+        onChange={handleChange}
+      />
+    )
+    await waitFor(() => expect(field.querySelector('hr')).toBeInTheDocument())
+    const { doc } = editorOf(field).state
+    expect(doc.childCount).toBe(2)
+    expect(doc.child(0).type.name).toBe('horizontalRule')
+    expect(doc.child(1).type.name).toBe('paragraph')
+    expect(doc.child(1).textContent).toBe('')
+    expect(handleChange).not.toHaveBeenCalled()
+  })
+
   it('undo is the editor’s own inside the field: ⌘Z takes the typing back', async () => {
     const handleChange = jest.fn()
     render(<StatefulText data={sample} onChange={handleChange} />)
@@ -464,6 +484,79 @@ describe('TextView — the text block edits in place as rendered prose', () => {
     expect(handleChange).toHaveBeenLastCalledWith({ id: 't', type: 'text', content: '## warm-up' })
   })
 
+  it('a minted quote opens focused on an empty quote, and typing fills it', async () => {
+    const handleChange = jest.fn()
+    render(
+      <StatefulText data={{ id: 't', type: 'text', content: TEXT_MARKUP.quote }} onChange={handleChange} />
+    )
+    const field = await findField()
+    await waitFor(() => expect(field).toHaveFocus())
+    expect(field.querySelector('blockquote')).toBeInTheDocument()
+    expect(field.textContent).toBe('')
+    act(() => {
+      editorOf(field).commands.insertContent('words')
+    })
+    expect(handleChange).toHaveBeenLastCalledWith({ id: 't', type: 'text', content: '> words' })
+  })
+
+  it('a minted numbered list opens focused on an empty item, and typing fills it', async () => {
+    const handleChange = jest.fn()
+    render(
+      <StatefulText
+        data={{ id: 't', type: 'text', content: TEXT_MARKUP['numbered-list'] }}
+        onChange={handleChange}
+      />
+    )
+    const field = await findField()
+    await waitFor(() => expect(field).toHaveFocus())
+    expect(field.querySelector('ol > li')).toBeInTheDocument()
+    expect(field.textContent).toBe('')
+    act(() => {
+      editorOf(field).commands.insertContent('words')
+    })
+    expect(handleChange).toHaveBeenLastCalledWith({ id: 't', type: 'text', content: '1. words' })
+  })
+
+  it('a minted code block opens focused on an empty block, and typing fills it', async () => {
+    const handleChange = jest.fn()
+    render(
+      <StatefulText data={{ id: 't', type: 'text', content: TEXT_MARKUP.code }} onChange={handleChange} />
+    )
+    const field = await findField()
+    await waitFor(() => expect(field).toHaveFocus())
+    expect(field.querySelector('pre')).toBeInTheDocument()
+    expect(field.textContent).toBe('')
+    act(() => {
+      editorOf(field).commands.insertContent('const x = 1')
+    })
+    expect(handleChange).toHaveBeenLastCalledWith({
+      id: 't',
+      type: 'text',
+      content: '```\nconst x = 1\n```',
+    })
+  })
+
+  it('a minted divider opens focused on the empty line after the rule, and typing fills that line', async () => {
+    const handleChange = jest.fn()
+    render(
+      <StatefulText
+        data={{ id: 't', type: 'text', content: TEXT_MARKUP.divider }}
+        onChange={handleChange}
+      />
+    )
+    const field = await findField()
+    await waitFor(() => expect(field).toHaveFocus())
+    expect(field.querySelector('hr')).toBeInTheDocument()
+    const editor = editorOf(field)
+    const { $from } = editor.state.selection
+    expect($from.parent.type.name).toBe('paragraph')
+    expect($from.parent.textContent).toBe('')
+    act(() => {
+      editor.commands.insertContent('words')
+    })
+    expect(handleChange).toHaveBeenLastCalledWith({ id: 't', type: 'text', content: '---\n\nwords' })
+  })
+
   it('a written block does not take focus on its own', async () => {
     render(<TextView data={sample} editable onChange={() => {}} />)
     const field = await findField()
@@ -476,6 +569,27 @@ describe('TextView — the text block edits in place as rendered prose', () => {
     await waitFor(() => expect(field).toHaveFocus())
     fireEvent.keyDown(field, { key: 'Escape' })
     expect(field).not.toHaveFocus()
+  })
+
+  it('Escape while composing (IME) does not select the row', async () => {
+    const select = jest.fn()
+    render(
+      <BlockRowProvider value={{ selected: false, stepOut: jest.fn(), select }}>
+        <TextEditor
+          data={{ id: 't', type: 'text', content: 'hello' }}
+          standIn={null}
+          pressRef={{ current: null }}
+        />
+      </BlockRowProvider>
+    )
+    const field = await findField()
+    act(() => {
+      editorOf(field).commands.focus('end')
+    })
+    await waitFor(() => expect(field).toHaveFocus())
+    fireEvent.keyDown(field, { key: 'Escape', isComposing: true })
+    expect(select).not.toHaveBeenCalled()
+    expect(field).toHaveFocus()
   })
 
   it('read-only is the same typeset document, drawn at once with no editor, in the same type', () => {
@@ -803,6 +917,51 @@ describe('TextView — the text block edits in place as rendered prose', () => {
       })
       fireEvent.keyDown(field, { key: 'Enter', isComposing: true })
       expect(stepOut).not.toHaveBeenCalled()
+    })
+
+    it('`ownEnter` (KAN-480) keeps Enter inside the block — stepOut is never called', async () => {
+      const stepOut = jest.fn()
+      render(
+        <BlockRowProvider value={{ selected: false, stepOut, ownEnter: true }}>
+          <TextEditor
+            data={{ id: 't', type: 'text', content: 'hello' }}
+            standIn={null}
+            pressRef={{ current: null }}
+          />
+        </BlockRowProvider>
+      )
+      const field = await findField()
+      act(() => {
+        editorOf(field).commands.focus('end')
+      })
+      fireEvent.keyDown(field, { key: 'Enter' })
+      expect(stepOut).not.toHaveBeenCalled()
+      expect(field.querySelectorAll('p')).toHaveLength(2)
+    })
+
+    it('a rule then an empty quote: Return keeps the rule, stepping out instead of lifting the whole doc (KAN-462)', async () => {
+      const stepOut = jest.fn()
+      render(
+        <BlockRowProvider value={{ selected: false, stepOut }}>
+          <TextEditor
+            data={{ id: 't', type: 'text', content: `${TEXT_MARKUP.divider}\n\n> ` }}
+            standIn={null}
+            pressRef={{ current: null }}
+          />
+        </BlockRowProvider>
+      )
+      const field = await findField()
+      act(() => {
+        editorOf(field).commands.focus('end')
+      })
+      fireEvent.keyDown(field, { key: 'Enter' })
+      expect(field.querySelector('hr')).toBeInTheDocument()
+      expect(stepOut).toHaveBeenCalledTimes(1)
+      expect(stepOut).toHaveBeenCalledWith(
+        { id: 't', type: 'text', content: TEXT_MARKUP.divider },
+        '',
+        'below'
+      )
     })
   })
 })

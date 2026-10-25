@@ -19,7 +19,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { EDIT_PAUSE_MS } from '@/lib/change-log/pause'
 import { sessionUndo, type PendingHistoryStep, type UndoHandle } from '@/lib/change-log/session-undo'
 import type { Block } from '@/lib/documents/types'
-import { closeBlockHistory } from '@/lib/modules/text/active-editor'
+import { closeHistoryForBlock } from '@/lib/modules/close-history-for-block'
 import { withoutRowStart } from '@/lib/modules/layout-rows'
 import { setProperty, type PondPage } from '@/lib/pages/client'
 import {
@@ -546,7 +546,11 @@ export function usePageDraft({
       // is that typed work even when the queue is idle, so it is not rebased
       // away either.
       const stored = drafts.current.get(page.id)
-      if (queue.idle() && !stored && JSON.stringify(queue.head().blocks) !== JSON.stringify(page.blocks)) {
+      if (
+        queue.idle() &&
+        !stored &&
+        (queue.head().title !== page.title || JSON.stringify(queue.head().blocks) !== JSON.stringify(page.blocks))
+      ) {
         queue.rebase({ title: page.title, blocks: page.blocks })
       }
       setSeededId(page.id)
@@ -568,13 +572,17 @@ export function usePageDraft({
       setPendingDebounce(false)
       setSavedAt(null)
     } else if (page && page.id === loadedId.current && saved) {
-      // Same page, no unsaved edits: adopt server blocks only when they
-      // differ from what the queue holds — i.e. an external write (accepted
-      // proposal, undo/redo landing) — via `rebase`, which also moves the
-      // queue's own `head()` so it never sees a later op's `before` as the
-      // pre-adopt value. `rebase` keeps the REAL (undecorated) blocks as the
-      // queue's head — only what's rendered gets the derived links (KAN-477)
-      // — so a later edit's `before` matches what the DB actually holds.
+      // Same page, no unsaved edits: adopt the server's title/blocks only when
+      // they differ from what the queue holds — i.e. an external write (accepted
+      // proposal, undo/redo landing, a renaming move, a rail rename) — via
+      // `rebase`, which also moves the queue's own `head()` so it never sees a
+      // later op's `before` as the pre-adopt value. `rebase` keeps the REAL
+      // (undecorated) blocks as the queue's head — only what's rendered gets the
+      // derived links (KAN-477) — so a later edit's `before` matches what the DB
+      // actually holds. The title half matters just as much: without it the
+      // rendered title/breadcrumb keep the stale title, and the next typed save
+      // sends that stale title into `updateTitle`, colliding with whatever now
+      // holds the real one.
       const queue = queueFor(page.id, { title: page.title, blocks: page.blocks })
       const next = { title: page.title, blocks: page.blocks }
       if (JSON.stringify(next) !== JSON.stringify(queue.head())) {
@@ -584,6 +592,9 @@ export function usePageDraft({
             ? withDerivedChildLinks(page.blocks, rows, parentId, page.props)
             : page.blocks
         )
+        if (page.title !== title) {
+          setTitle(page.title)
+        }
         queue.rebase(next)
       }
     }
@@ -730,9 +741,7 @@ export function usePageDraft({
       // durable. A structural edit flushes this save and moves focus; ⌘Z
       // right after must fall through to the session step. The slot above
       // was reserved in the same turn, so the shell has something to take.
-      for (const block of p.blocks) {
-        if ('content' in block) closeBlockHistory(block.id, block.content)
-      }
+      for (const block of p.blocks) closeHistoryForBlock(block)
     }
     if (!id) return undefined
     return queueFor(id, { title: viewTitle, blocks: viewBlocks }).drained()
@@ -879,9 +888,7 @@ export function usePageDraft({
     // The slot is already on the stack. Close these fields now so a ⌘Z in
     // the same turn falls through to it instead of the editor's own history
     // (KAN-368). The record still fills the slot when the write lands.
-    for (const block of next) {
-      if ('content' in block) closeBlockHistory(block.id, block.content)
-    }
+    for (const block of next) closeHistoryForBlock(block)
     const queue = queueFor(id, { title: viewTitle, blocks: next })
     rebaseDerivedLinksBeforeEnqueue(id, queue)
     // The cache is what a return trip reads. Write the in-flight blocks now,

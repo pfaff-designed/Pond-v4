@@ -141,6 +141,7 @@ global.fetch = jest.fn().mockResolvedValue({
 import { AITerminal } from '@/components/organisms/AITerminal'
 import { openComposerIfClosed } from './helpers/open-composer'
 import { ShellCommands } from '@/components/organisms/ShellCommands'
+import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { undoStep, redoStep } from '@/lib/change-log/undo'
 import { pagesKey } from '@/lib/pages/keys'
 import { changeLogKey } from '@/lib/change-log/keys'
@@ -152,8 +153,10 @@ function renderApp() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={queryClient}>
-      <ShellCommands />
-      <AITerminal />
+      <DeletionUndoProvider>
+        <ShellCommands />
+        <AITerminal />
+      </DeletionUndoProvider>
     </QueryClientProvider>
   )
   return queryClient

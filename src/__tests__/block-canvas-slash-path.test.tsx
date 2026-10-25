@@ -22,14 +22,19 @@
  */
 
 import React, { useState } from 'react'
-import { render, screen, within, waitFor } from '@testing-library/react'
+import { act, render, screen, within, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import type { Block } from '@/lib/documents/types'
 import { BLANK_TEXT_GROUP } from '@/components/molecules/slash-entries'
-import { findAllTextBlocks, findTextBlock, writeInTextBlock } from './helpers/text-block'
+import {
+  findAllTextBlocks,
+  findTextBlock,
+  textEditorOf,
+  writeInTextBlock,
+} from './helpers/text-block'
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
@@ -290,5 +295,225 @@ describe('the free-text path for an unmatched word (KAN-114)', () => {
     await user.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument())
     expect(editor.textContent).toBe('/wine')
+  })
+})
+
+describe('the `/quote` path lands empty and Return returns to prose (KAN-462)', () => {
+  it('`/quo` → ↵ opens an empty quote with the caret inside; typing fills it; Return twice leaves it for prose', async () => {
+    const user = userEvent.setup()
+    const emptyLine: Block = { id: 'b-empty', type: 'text', content: '' }
+    renderCanvas([emptyLine])
+
+    const editorAtStart = await findTextBlock()
+    writeInTextBlock(editorAtStart, '/')
+    await screen.findByRole('listbox', { name: 'blocks' })
+    writeInTextBlock(editorAtStart, '/quo')
+    const menu = await screen.findByRole('listbox', { name: 'blocks' })
+    expect(labelsOf(menu)).toEqual(['quote'])
+
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument())
+
+    const quoteField = await findTextBlock()
+    await waitFor(() => expect(quoteField).toHaveFocus())
+    expect(quoteField.querySelector('blockquote')).toBeInTheDocument()
+    expect(quoteField.textContent).toBe('')
+
+    act(() => {
+      textEditorOf(quoteField).commands.insertContent('words')
+    })
+    expect(quoteField.querySelector('blockquote')?.textContent).toBe('words')
+
+    await user.keyboard('{Enter}')
+    const freshLine = (await findAllTextBlocks()).at(-1)!
+    await waitFor(() => expect(freshLine).toHaveFocus())
+    expect(freshLine.querySelector('blockquote')).not.toBeInTheDocument()
+
+    // The fresh line is already an empty, unlabelled block, so a second Return
+    // does nothing further (`block-return.test.tsx`'s "one action, one write").
+    await user.keyboard('{Enter}')
+    const fields = await findAllTextBlocks()
+    expect(fields).toHaveLength(2)
+    const prose = fields.at(-1)!
+    expect(prose).toBe(freshLine)
+    await waitFor(() => expect(prose).toHaveFocus())
+    expect(prose.querySelector('blockquote')).not.toBeInTheDocument()
+    expect(fields[0].querySelector('blockquote')?.textContent).toBe('words')
+  })
+
+  it('`/quo` → ↵ on the still-empty quote: Return lifts it back to prose, not a new block', async () => {
+    const user = userEvent.setup()
+    const emptyLine: Block = { id: 'b-empty', type: 'text', content: '' }
+    renderCanvas([emptyLine])
+
+    const editorAtStart = await findTextBlock()
+    writeInTextBlock(editorAtStart, '/')
+    await screen.findByRole('listbox', { name: 'blocks' })
+    writeInTextBlock(editorAtStart, '/quo')
+    await screen.findByRole('listbox', { name: 'blocks' })
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument())
+
+    const quoteField = await findTextBlock()
+    await waitFor(() => expect(quoteField).toHaveFocus())
+    expect(quoteField.querySelector('blockquote')).toBeInTheDocument()
+
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(quoteField.querySelector('blockquote')).not.toBeInTheDocument())
+    expect((await findAllTextBlocks())).toHaveLength(1)
+    expect(quoteField).toHaveFocus()
+    expect(quoteField.textContent).toBe('')
+  })
+})
+
+describe('the `/divider` and `/numbered` paths land with the caret ready (KAN-462)', () => {
+  it('`/div` → ↵ opens a divider with the caret in the empty line after the rule', async () => {
+    const user = userEvent.setup()
+    const emptyLine: Block = { id: 'b-empty', type: 'text', content: '' }
+    renderCanvas([emptyLine])
+
+    const editorAtStart = await findTextBlock()
+    writeInTextBlock(editorAtStart, '/')
+    await screen.findByRole('listbox', { name: 'blocks' })
+    writeInTextBlock(editorAtStart, '/div')
+    const menu = await screen.findByRole('listbox', { name: 'blocks' })
+    expect(labelsOf(menu)).toEqual(['divider'])
+
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument())
+
+    const field = await findTextBlock()
+    await waitFor(() => expect(field).toHaveFocus())
+    expect(field.querySelector('hr')).toBeInTheDocument()
+
+    const { $from } = textEditorOf(field).state.selection
+    expect($from.parent.type.name).toBe('paragraph')
+    expect($from.parent.textContent).toBe('')
+  })
+
+  it('`/numbered` → ↵ opens a numbered list with the caret inside the empty item', async () => {
+    const user = userEvent.setup()
+    const emptyLine: Block = { id: 'b-empty', type: 'text', content: '' }
+    renderCanvas([emptyLine])
+
+    const editorAtStart = await findTextBlock()
+    writeInTextBlock(editorAtStart, '/')
+    await screen.findByRole('listbox', { name: 'blocks' })
+    writeInTextBlock(editorAtStart, '/numbered')
+    const menu = await screen.findByRole('listbox', { name: 'blocks' })
+    expect(labelsOf(menu)).toEqual(['numbered list'])
+
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument())
+
+    const field = await findTextBlock()
+    await waitFor(() => expect(field).toHaveFocus())
+    expect(field.querySelector('ol > li')).toBeInTheDocument()
+    expect(field.textContent).toBe('')
+
+    const { $from } = textEditorOf(field).state.selection
+    expect($from.parent.type.name).toBe('paragraph')
+    expect($from.parent.textContent).toBe('')
+  })
+})
+
+describe('`/table of contents` lists the page\'s headings and jumps to them (KAN-482)', () => {
+  it('`/table of contents` → ↵ lands a block listing three headings; clicking the third scrolls to it', async () => {
+    const user = userEvent.setup()
+    const h1: Block = { id: 'h1', type: 'text', content: '# one' }
+    const h2: Block = { id: 'h2', type: 'text', content: '## two' }
+    const h3: Block = { id: 'h3', type: 'text', content: '### three' }
+    const emptyLine: Block = { id: 'b-empty', type: 'text', content: '' }
+    renderCanvas([h1, h2, h3, emptyLine])
+
+    const host = () =>
+      within(document.getElementById('block-b-empty')!).getByRole('textbox', {
+        name: 'text block',
+      })
+    writeInTextBlock(host(), '/')
+    await screen.findByRole('listbox', { name: 'blocks' })
+    writeInTextBlock(host(), '/table of contents')
+    const menu = await screen.findByRole('listbox', { name: 'blocks' })
+    expect(labelsOf(menu)).toEqual(['table of contents'])
+
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument())
+
+    const rows = screen.getAllByRole('button', { name: /^(one|two|three)$/ })
+    expect(rows.map((row) => row.textContent)).toEqual(['one', 'two', 'three'])
+
+    const headingThree = document.getElementById('block-h3')!
+    const scrollIntoView = jest.fn()
+    headingThree.scrollIntoView = scrollIntoView
+    await user.click(rows[2])
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' })
+  })
+
+  it('focusing an entry then leaving the block keeps the table of contents (KAN-482)', async () => {
+    const user = userEvent.setup()
+    const h1: Block = { id: 'h1', type: 'text', content: '# one' }
+    const toc: Block = { id: 'b-toc', type: 'toc' }
+    renderCanvas([h1, toc])
+
+    const row = screen.getByRole('button', { name: 'one' })
+    await user.click(row)
+    const outside = document.createElement('button')
+    document.body.appendChild(outside)
+    await user.click(outside)
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(document.getElementById('block-b-toc')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'one' })).toBeInTheDocument()
+    outside.remove()
+  })
+})
+
+// The row also hosts `BlockHandleMenu`'s own popup-trigger button, which also
+// carries `aria-expanded` — told apart by its accessible name (`fold`/`unfold`),
+// which only the ▸ button has (`toggle-fold-persist.test.tsx`'s own helper).
+const foldButtonIn = (row: HTMLElement) => within(row).getByRole('button', { name: /^(fold|unfold)$/ })
+
+describe('the `/toggle` path lands a fold with the caret in its summary (KAN-480)', () => {
+  it('/toggle ↵ → type the summary → ↵ → type the body → ▸ folds and unfolds it', async () => {
+    const user = userEvent.setup()
+    const emptyLine: Block = { id: 'b-empty', type: 'text', content: '' }
+    renderCanvas([emptyLine])
+
+    const editorAtStart = await findTextBlock()
+    writeInTextBlock(editorAtStart, '/')
+    await screen.findByRole('listbox', { name: 'blocks' })
+    writeInTextBlock(editorAtStart, '/toggle')
+    const menu = await screen.findByRole('listbox', { name: 'blocks' })
+    expect(labelsOf(menu)).toEqual(['toggle'])
+
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument())
+
+    // The toggle lands unfolded, so both its summary and body fields are
+    // already mounted — the summary (the first one) takes the caret.
+    const [summary] = await findAllTextBlocks()
+    await waitFor(() => expect(summary).toHaveFocus())
+
+    writeInTextBlock(summary, 'packing list')
+    await user.keyboard('{Enter}')
+
+    const body = (await findAllTextBlocks())[1]
+    await waitFor(() => expect(body).toHaveFocus())
+    writeInTextBlock(body, 'passport')
+    await waitFor(() => expect(body.textContent).toBe('passport'))
+
+    const row = document.querySelector<HTMLElement>('[data-block-id]')!
+    const foldButton = foldButtonIn(row)
+    expect(foldButton).toHaveAttribute('aria-expanded', 'true')
+
+    await user.click(foldButton)
+    expect(foldButton).toHaveAttribute('aria-expanded', 'false')
+    expect(within(row).queryByText('passport')).not.toBeInTheDocument()
+
+    await user.click(foldButton)
+    expect(foldButton).toHaveAttribute('aria-expanded', 'true')
+    expect(within(row).getByText('passport')).toBeInTheDocument()
   })
 })

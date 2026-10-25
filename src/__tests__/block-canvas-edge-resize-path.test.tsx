@@ -8,7 +8,6 @@
 
 import React from 'react'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BlockCanvas, type BlockCanvasProps } from '@/components/organisms/BlockCanvas'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
@@ -78,14 +77,12 @@ function renderCanvas(
 
 const blockRoot = (blockId: string) => document.getElementById(`block-${blockId}`)!
 const sizingDiv = (blockId: string) => blockRoot(blockId).parentElement as HTMLElement
-const handleOf = (blockId: string) =>
-  within(blockRoot(blockId)).getByRole('button', { name: /block menu/i })
 
-function edgeHandle(blockId: string, side: 'left' | 'right'): HTMLElement | null {
+function edgeHandle(blockId: string, side: 'left' | 'right' | 'shared'): HTMLElement | null {
   return sizingDiv(blockId).querySelector(`[data-testid="block-edge-handle"][data-side="${side}"]`)
 }
 
-function readoutText(blockId: string, side: 'left' | 'right'): string | null {
+function readoutText(blockId: string, side: 'left' | 'right' | 'shared'): string | null {
   return edgeHandle(blockId, side)?.querySelector('[data-testid="block-edge-handle-readout"]')?.textContent ?? null
 }
 
@@ -238,18 +235,17 @@ describe('PATH_STEP 9: Esc mid-drag cancels with no write', () => {
 
 describe('PATH_STEP 11: the width menu shows "custom · N%" for the resized calendar block', () => {
   it('reads the custom note once a free width is set', async () => {
-    const user = userEvent.setup()
     const resized: Block = { ...calendar, width: 46 }
     renderCanvas([resized, text], () => {})
 
-    await user.click(handleOf('b-cal'))
+    fireEvent.contextMenu(blockRoot('b-cal'))
 
     const menu = await screen.findByRole('menu', { name: /block menu/i })
     expect(within(menu).getByText('custom · 46%')).toBeInTheDocument()
   })
 })
 
-describe('PATH_STEP 12: no edge handle during a ⋮⋮ block drag, with chrome={false}, or on blocks that share a row', () => {
+describe('PATH_STEP 12: no edge handle during a ⋮⋮ block drag, with chrome={false}; a shared row gets the new strips (KAN-505)', () => {
   it('hides every edge handle during a block drag (KAN-440)', () => {
     renderCanvas([calendar, text], () => {})
     expect(edgeHandle('b-cal', 'right')).not.toBeNull()
@@ -270,13 +266,15 @@ describe('PATH_STEP 12: no edge handle during a ⋮⋮ block drag, with chrome={
     expect(edgeHandle('b-text', 'right')).toBeNull()
   })
 
-  it('renders no edge handle on blocks that share a row', () => {
+  it('a shared row mounts one shared strip at the boundary and the row\'s two outer strips', () => {
     const left: Block = { ...calendar, width: '1/2' }
     const sharing: Block = { ...text, width: '1/2' }
     renderCanvas([left, sharing], () => {})
-    expect(edgeHandle('b-cal', 'left')).toBeNull()
-    expect(edgeHandle('b-cal', 'right')).toBeNull()
-    expect(edgeHandle('b-text', 'left')).toBeNull()
-    expect(edgeHandle('b-text', 'right')).toBeNull()
+    expect(edgeHandle('b-cal', 'left')).not.toBeNull() // the row's own left edge
+    expect(edgeHandle('b-cal', 'shared')).not.toBeNull() // the boundary, carried by the left member
+    expect(edgeHandle('b-cal', 'right')).toBeNull() // no separate strip: the shared strip covers it
+    expect(edgeHandle('b-text', 'left')).toBeNull() // covered by b-cal's shared strip
+    expect(edgeHandle('b-text', 'shared')).toBeNull() // the row's last member has no boundary after it
+    expect(edgeHandle('b-text', 'right')).not.toBeNull() // the row's own right edge
   })
 })

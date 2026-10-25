@@ -1,8 +1,9 @@
 import { EditorState, NodeSelection, Selection, TextSelection } from '@tiptap/pm/state'
 import type { Node as ProseNode } from '@tiptap/pm/model'
+import type { EditorView } from '@tiptap/pm/view'
 import { proseSchema } from './document'
 import { parseMarkdown } from './markdown'
-import { enterSplit } from './next-block'
+import { enterSplit, leavesBlock, leavesUpToTitle } from './next-block'
 
 /** A position inside the doc's top-level child at `index`, offset by `into` characters from its start. */
 const inside = (doc: ProseNode, index: number, into = 0): number => {
@@ -92,13 +93,51 @@ describe('enterSplit — what a plain Enter does to a text block’s doc at the 
     expect(enterSplit(stateAt(doc, inside(doc, 0)))).toBe('stay')
   })
 
-  it('a doc with only one empty list item: `stay`, nothing on either side', () => {
+  it('a doc with only one empty bullet item: `lift`, back to plain prose', () => {
     const doc = proseSchema.node('doc', null, [
       proseSchema.node('bulletList', { tight: true, bullet: '-' }, [
         proseSchema.node('listItem', null, [proseSchema.node('paragraph', null, [])]),
       ]),
     ])
-    expect(enterSplit(stateAtEnd(doc))).toBe('stay')
+    expect(enterSplit(stateAtEnd(doc))).toBe('lift')
+  })
+
+  it('a doc with only one empty ordered item: `lift`, back to plain prose', () => {
+    const doc = proseSchema.node('doc', null, [
+      proseSchema.node('orderedList', { tight: true, start: 1 }, [
+        proseSchema.node('listItem', null, [proseSchema.node('paragraph', null, [])]),
+      ]),
+    ])
+    expect(enterSplit(stateAtEnd(doc))).toBe('lift')
+  })
+
+  it('an empty blockquote: `lift`, back to plain prose', () => {
+    const doc = parseMarkdown('> ')
+    expect(enterSplit(stateAt(doc, 2))).toBe('lift')
+  })
+
+  it('a rule then an empty blockquote: the rule is not the lift’s doc, split instead', () => {
+    const doc = parseMarkdown('---\n\n> ')
+    expect(enterSplit(stateAtEnd(doc))).toEqual({
+      before: '---',
+      after: '',
+    })
+  })
+
+  it('a rule then a lone empty ordered item: the rule is not the lift’s doc, split instead', () => {
+    const doc = parseMarkdown('---\n\n1. ')
+    expect(enterSplit(stateAtEnd(doc))).toEqual({
+      before: '---',
+      after: '',
+    })
+  })
+
+  it('a rule then a lone empty bullet item: the rule is not the lift’s doc, split instead', () => {
+    const doc = parseMarkdown('---\n\n- ')
+    expect(enterSplit(stateAtEnd(doc))).toEqual({
+      before: '---',
+      after: '',
+    })
   })
 
   it('two paragraphs, caret at the end of the first: after is the second paragraph', () => {
@@ -204,5 +243,199 @@ describe('enterSplit — what a plain Enter does to a text block’s doc at the 
       before: '- one',
       after: '- three',
     })
+  })
+})
+
+/** A stand-in `EditorView`: real state, `endOfTextblock('up')` stubbed since jsdom has no layout. */
+const viewAt = (doc: ProseNode, from: number, atTopVisualLine: boolean): EditorView =>
+  ({
+    state: stateAt(doc, from),
+    endOfTextblock: (dir: string) => dir === 'up' && atTopVisualLine,
+  }) as unknown as EditorView
+
+describe('leavesUpToTitle — whether ArrowUp at the caret leaves the block for the title', () => {
+  it('top of the first paragraph, nothing above it in the view: leaves', () => {
+    const doc = parseMarkdown('alpha')
+    expect(leavesUpToTitle(viewAt(doc, inside(doc, 0), true))).toBe(true)
+  })
+
+  it('a wrapped second visual line of the first paragraph: stays, even in index 0', () => {
+    const doc = parseMarkdown('alpha')
+    expect(leavesUpToTitle(viewAt(doc, inside(doc, 0, 'alpha'.length), false))).toBe(false)
+  })
+
+  it('the second paragraph, even if the view reports no line above it: stays', () => {
+    const doc = parseMarkdown('alpha\n\nbeta')
+    expect(leavesUpToTitle(viewAt(doc, inside(doc, 1), true))).toBe(false)
+  })
+
+  it('bullet list, item 2 start: stays, even though it shares top-level index 0', () => {
+    const doc = proseSchema.node('doc', null, [
+      proseSchema.node('bulletList', { tight: true, bullet: '-' }, [
+        proseSchema.node('listItem', null, [
+          proseSchema.node('paragraph', null, [proseSchema.text('a')]),
+        ]),
+        proseSchema.node('listItem', null, [
+          proseSchema.node('paragraph', null, [proseSchema.text('b')]),
+        ]),
+      ]),
+    ])
+    let itemTwoStart = -1
+    doc.descendants((node, pos) => {
+      if (node.type.name === 'paragraph' && node.textContent === 'b') itemTwoStart = pos + 1
+    })
+    expect(leavesUpToTitle(viewAt(doc, itemTwoStart, true))).toBe(false)
+  })
+
+  it('ordered list, item 2 start: stays', () => {
+    const doc = proseSchema.node('doc', null, [
+      proseSchema.node('orderedList', { tight: true, start: 1 }, [
+        proseSchema.node('listItem', null, [
+          proseSchema.node('paragraph', null, [proseSchema.text('a')]),
+        ]),
+        proseSchema.node('listItem', null, [
+          proseSchema.node('paragraph', null, [proseSchema.text('b')]),
+        ]),
+      ]),
+    ])
+    let itemTwoStart = -1
+    doc.descendants((node, pos) => {
+      if (node.type.name === 'paragraph' && node.textContent === 'b') itemTwoStart = pos + 1
+    })
+    expect(leavesUpToTitle(viewAt(doc, itemTwoStart, true))).toBe(false)
+  })
+
+  it('blockquote, second paragraph: stays', () => {
+    const doc = proseSchema.node('doc', null, [
+      proseSchema.node('blockquote', null, [
+        proseSchema.node('paragraph', null, [proseSchema.text('alpha')]),
+        proseSchema.node('paragraph', null, [proseSchema.text('beta')]),
+      ]),
+    ])
+    let secondParagraphStart = -1
+    doc.descendants((node, pos) => {
+      if (node.type.name === 'paragraph' && node.textContent === 'beta') secondParagraphStart = pos + 1
+    })
+    expect(leavesUpToTitle(viewAt(doc, secondParagraphStart, true))).toBe(false)
+  })
+
+  it('bullet list, item 1 start, top visual line: leaves — it is the doc’s first textblock', () => {
+    const doc = proseSchema.node('doc', null, [
+      proseSchema.node('bulletList', { tight: true, bullet: '-' }, [
+        proseSchema.node('listItem', null, [
+          proseSchema.node('paragraph', null, [proseSchema.text('a')]),
+        ]),
+        proseSchema.node('listItem', null, [
+          proseSchema.node('paragraph', null, [proseSchema.text('b')]),
+        ]),
+      ]),
+    ])
+    let itemOneStart = -1
+    doc.descendants((node, pos) => {
+      if (node.type.name === 'paragraph' && node.textContent === 'a') itemOneStart = pos + 1
+    })
+    expect(leavesUpToTitle(viewAt(doc, itemOneStart, true))).toBe(true)
+  })
+
+  it('a non-empty selection: stays, never leaves on a range', () => {
+    const doc = parseMarkdown('alpha')
+    const view = {
+      state: stateAt(doc, inside(doc, 0), inside(doc, 0, 'alpha'.length)),
+      endOfTextblock: (dir: string) => dir === 'up',
+    } as unknown as EditorView
+    expect(leavesUpToTitle(view)).toBe(false)
+  })
+})
+
+/** A stand-in `EditorView` for either direction: `endOfTextblock(dir)` stubbed since jsdom has no layout. */
+const viewAtEdge = (doc: ProseNode, from: number, dir: 'up' | 'down', atEdgeVisualLine: boolean): EditorView =>
+  ({
+    state: stateAt(doc, from),
+    endOfTextblock: (d: string) => d === dir && atEdgeVisualLine,
+  }) as unknown as EditorView
+
+describe('leavesBlock — whether an arrow key at the caret leaves the block', () => {
+  it('up: top of the first paragraph, nothing above it in the view: leaves', () => {
+    const doc = parseMarkdown('alpha')
+    expect(leavesBlock(viewAtEdge(doc, inside(doc, 0), 'up', true), 'up')).toBe(true)
+  })
+
+  it('down: end of the last paragraph, nothing below it in the view: leaves', () => {
+    const doc = parseMarkdown('alpha')
+    expect(leavesBlock(viewAtEdge(doc, inside(doc, 0, 'alpha'.length), 'down', true), 'down')).toBe(
+      true
+    )
+  })
+
+  it('down: a wrapped non-last visual line of the last paragraph: stays', () => {
+    const doc = parseMarkdown('alpha')
+    expect(leavesBlock(viewAtEdge(doc, inside(doc, 0), 'down', false), 'down')).toBe(false)
+  })
+
+  it('down: the first of two paragraphs, even if the view reports no line below it: stays', () => {
+    const doc = parseMarkdown('alpha\n\nbeta')
+    expect(
+      leavesBlock(viewAtEdge(doc, inside(doc, 0, 'alpha'.length), 'down', true), 'down')
+    ).toBe(false)
+  })
+
+  it('down: bullet list, item 1 end: stays, even though it is not the doc’s last textblock', () => {
+    const doc = proseSchema.node('doc', null, [
+      proseSchema.node('bulletList', { tight: true, bullet: '-' }, [
+        proseSchema.node('listItem', null, [
+          proseSchema.node('paragraph', null, [proseSchema.text('a')]),
+        ]),
+        proseSchema.node('listItem', null, [
+          proseSchema.node('paragraph', null, [proseSchema.text('b')]),
+        ]),
+      ]),
+    ])
+    let itemOneEnd = -1
+    doc.descendants((node, pos) => {
+      if (node.type.name === 'paragraph' && node.textContent === 'a') itemOneEnd = pos + 1 + 'a'.length
+    })
+    expect(leavesBlock(viewAtEdge(doc, itemOneEnd, 'down', true), 'down')).toBe(false)
+  })
+
+  it('down: bullet list, item 2 end (the doc’s last textblock), top of view: leaves', () => {
+    const doc = proseSchema.node('doc', null, [
+      proseSchema.node('bulletList', { tight: true, bullet: '-' }, [
+        proseSchema.node('listItem', null, [
+          proseSchema.node('paragraph', null, [proseSchema.text('a')]),
+        ]),
+        proseSchema.node('listItem', null, [
+          proseSchema.node('paragraph', null, [proseSchema.text('b')]),
+        ]),
+      ]),
+    ])
+    let itemTwoEnd = -1
+    doc.descendants((node, pos) => {
+      if (node.type.name === 'paragraph' && node.textContent === 'b') itemTwoEnd = pos + 1 + 'b'.length
+    })
+    expect(leavesBlock(viewAtEdge(doc, itemTwoEnd, 'down', true), 'down')).toBe(true)
+  })
+
+  it('down: blockquote, second (last) paragraph end: leaves', () => {
+    const doc = proseSchema.node('doc', null, [
+      proseSchema.node('blockquote', null, [
+        proseSchema.node('paragraph', null, [proseSchema.text('alpha')]),
+        proseSchema.node('paragraph', null, [proseSchema.text('beta')]),
+      ]),
+    ])
+    let secondParagraphEnd = -1
+    doc.descendants((node, pos) => {
+      if (node.type.name === 'paragraph' && node.textContent === 'beta')
+        secondParagraphEnd = pos + 1 + 'beta'.length
+    })
+    expect(leavesBlock(viewAtEdge(doc, secondParagraphEnd, 'down', true), 'down')).toBe(true)
+  })
+
+  it('down: a non-empty selection: stays, never leaves on a range', () => {
+    const doc = parseMarkdown('alpha')
+    const view = {
+      state: stateAt(doc, inside(doc, 0), inside(doc, 0, 'alpha'.length)),
+      endOfTextblock: (dir: string) => dir === 'down',
+    } as unknown as EditorView
+    expect(leavesBlock(view, 'down')).toBe(false)
   })
 })

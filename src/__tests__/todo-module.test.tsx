@@ -497,6 +497,32 @@ describe('TodoView — editable (the molecule’s rows, made live by the host)',
     expect(b.querySelector<HTMLInputElement>('input[type="text"]')!.placeholder).toBe('add an item')
   })
 
+  it('a blank check-row field’s placeholder is hidden at rest, shown on row hover or field focus (KAN-499)', () => {
+    const blankCheck: TodoBlock = {
+      id: 'e',
+      type: 'todo',
+      items: [{ id: '1', label: '', checked: false }],
+    }
+    const { container } = render(<Stateful data={blankCheck} />)
+    const [row] = rowsOf(container)
+    const field = row.querySelector<HTMLInputElement>('input[type="text"]')!
+    has(field, 'placeholder:opacity-0', 'focus:placeholder:opacity-100')
+    lacks(field, 'placeholder:opacity-100')
+
+    fireEvent.mouseEnter(row)
+    has(field, 'placeholder:opacity-100')
+    fireEvent.mouseLeave(row)
+    lacks(field, 'placeholder:opacity-100')
+
+    // A `list-row`'s field is unaffected — this hides the check-row's blank
+    // field only.
+    const { container: listContainer } = render(<Stateful data={groceries} />)
+    const listField = rowsOf(listContainer)[0].querySelector<HTMLInputElement>(
+      'input[type="text"]'
+    )!
+    lacks(listField, 'placeholder:opacity-0')
+  })
+
   it('an item’s own placeholder is the field’s placeholder attribute, not the generic copy', () => {
     const withPlaceholder: TodoBlock = {
       id: 'e',
@@ -694,6 +720,17 @@ describe('TodoView — editable (the molecule’s rows, made live by the host)',
     expect(screen.getByRole('button', { name: '＋ add a step' })).toBeInTheDocument()
     render(<Stateful data={groceries} />)
     expect(screen.getByRole('button', { name: '＋ add an item' })).toBeInTheDocument()
+  })
+
+  it('the quiet add-item row is hidden at rest, shown on hover or focus-within (KAN-499)', () => {
+    render(<Stateful data={legacy} />)
+    has(
+      screen.getByRole('button', { name: '＋ add a step' }),
+      'opacity-0',
+      'group-hover:opacity-100',
+      'group-focus-within:opacity-100',
+      'focus-visible:opacity-100'
+    )
   })
 
   it('clicking the quiet add-item row appends one item and focuses it (KAN-355)', async () => {
@@ -1280,6 +1317,72 @@ describe('TodoView — editable (the molecule’s rows, made live by the host)',
     fireEvent.keyDown(fields[1], { key: 'ArrowDown' })
     expect(document.activeElement).toBe(fields[1])
     expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('↑ on the first item calls the row’s leaveUp, ↓ on the last item calls leaveDown (KAN-367)', () => {
+    const three: TodoBlock = {
+      id: 'e3',
+      type: 'todo',
+      items: [
+        { id: 'x1', label: 'eggs', checked: false },
+        { id: 'x2', label: 'milk', checked: false },
+        { id: 'x3', label: 'bread', checked: false },
+      ],
+    }
+    const leaveUp = jest.fn()
+    const leaveDown = jest.fn()
+    const { container } = render(
+      <BlockRowProvider value={{ selected: false, stepOut: () => {}, leaveUp, leaveDown }}>
+        <TodoView data={three} editable />
+      </BlockRowProvider>
+    )
+    const fields = container.querySelectorAll<HTMLInputElement>('input[type="text"]')
+
+    act(() => fields[0].focus())
+    fireEvent.keyDown(fields[0], { key: 'ArrowUp' })
+    expect(leaveUp).toHaveBeenCalledTimes(1)
+    expect(typeof leaveUp.mock.calls[0][0]).toBe('number')
+    expect(leaveDown).not.toHaveBeenCalled()
+    // The first item itself stays focused — only the neighbouring block moves.
+    expect(document.activeElement).toBe(fields[0])
+
+    act(() => fields[2].focus())
+    fireEvent.keyDown(fields[2], { key: 'ArrowDown' })
+    expect(leaveDown).toHaveBeenCalledTimes(1)
+    expect(typeof leaveDown.mock.calls[0][0]).toBe('number')
+    expect(document.activeElement).toBe(fields[2])
+
+    // The middle item still steps within the list, never reaching leaveUp/leaveDown.
+    act(() => fields[1].focus())
+    fireEvent.keyDown(fields[1], { key: 'ArrowUp' })
+    fireEvent.keyDown(fields[1], { key: 'ArrowDown' })
+    expect(leaveUp).toHaveBeenCalledTimes(1)
+    expect(leaveDown).toHaveBeenCalledTimes(1)
+  })
+
+  it('↓ on the last item while composing does not call leaveDown (KAN-367)', () => {
+    const three: TodoBlock = {
+      id: 'e3',
+      type: 'todo',
+      items: [
+        { id: 'x1', label: 'eggs', checked: false },
+        { id: 'x2', label: 'milk', checked: false },
+        { id: 'x3', label: 'bread', checked: false },
+      ],
+    }
+    const leaveUp = jest.fn()
+    const leaveDown = jest.fn()
+    const { container } = render(
+      <BlockRowProvider value={{ selected: false, stepOut: () => {}, leaveUp, leaveDown }}>
+        <TodoView data={three} editable />
+      </BlockRowProvider>
+    )
+    const fields = container.querySelectorAll<HTMLInputElement>('input[type="text"]')
+
+    act(() => fields[2].focus())
+    fireEvent.keyDown(fields[2], { key: 'ArrowDown', isComposing: true })
+    expect(leaveDown).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(fields[2])
   })
 
   it('a row is not draggable until a press starts on its handle (KAN-355)', () => {

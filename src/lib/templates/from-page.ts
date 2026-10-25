@@ -171,5 +171,20 @@ function emptied(block: Exclude<Block, PageLinkBlock>, mintId: () => string): Bl
       delete next.collectionId
       return next
     }
+
+    // KAN-482: stores nothing but its id/type — nothing to empty.
+    case 'toc':
+      return { ...block, id }
+
+    // KAN-480: content-only, like text/highlight — but `body` and `folded` go
+    // too (deleted off a copy, as `view`'s `collectionId`): a template is a
+    // shape you copy, and the fold state and the tucked-away body are this
+    // page's own writing, not a shape to carry forward.
+    case 'toggle': {
+      const next = { ...block, id, content: '' }
+      delete next.body
+      delete next.folded
+      return next
+    }
   }
 }

@@ -14,6 +14,7 @@
  */
 
 import { AREA_COLOUR_SWATCHES, GLYPH_LIBRARY, isAreaRole } from '@/lib/rail/glyph-library'
+import { blockSchema } from '@/lib/modules/content'
 import {
   summarizeAddedRow,
   summarizeBlockEdit,
@@ -22,7 +23,7 @@ import {
   summarizeSchemaEdit,
   summarizeTrash,
 } from './summary'
-import type { ChangeLogRecord } from './types'
+import type { ChangeLogRecord, DuplicatePageSnapshot, MoveSnapshot } from './types'
 
 /** `09:31` for a raw ISO timestamp — split out from {@link clockTime} so a
  *  surface naming a moment that isn't a record's own `createdAt` (a
@@ -61,6 +62,100 @@ const areaRoleChange = (role: unknown): string => {
   if (!isAreaRole(role)) return 'changed the colour'
   const label = AREA_COLOUR_SWATCHES.find((s) => s.role === role)?.label
   return label === undefined ? 'changed the colour' : `colour → ${label}`
+}
+
+/** One `MoveSnapshot.removedLinks` entry, read back off one array element —
+ *  `undefined` for a malformed entry, never thrown. Reuses `content.ts`'s
+ *  own `blockSchema` for `block` rather than re-describing a page-link
+ *  block's shape a second time (AGENTS.md DRY), the same way
+ *  `child-links.ts`'s `removedLinkSchema` does. */
+const readRemovedLinkEntry = (
+  value: unknown
+): NonNullable<MoveSnapshot['removedLinks']>[number] | undefined => {
+  if (typeof value !== 'object' || value === null) return undefined
+  const { block, index } = value as Record<string, unknown>
+  if (typeof index !== 'number') return undefined
+  const parsed = blockSchema.safeParse(block)
+  if (!parsed.success) return undefined
+  return { block: parsed.data, index }
+}
+
+/** A `MoveSnapshot.removedLinks`, read back off `before.removedLinks` —
+ *  `undefined` for a pre-KAN-467 record (no `removedLinks` yet) or an
+ *  empty/all-malformed array, never thrown. Drops any one malformed array
+ *  entry rather than failing the whole snapshot — the same per-entry
+ *  tolerance `child-links.ts`'s `parseUnlinkedLinks` has for hand-editable
+ *  jsonb. */
+const readRemovedLinks = (value: unknown): MoveSnapshot['removedLinks'] | undefined => {
+  if (!Array.isArray(value)) return undefined
+  const parsed = value.flatMap((entry) => {
+    const one = readRemovedLinkEntry(entry)
+    return one ? [one] : []
+  })
+  return parsed.length > 0 ? parsed : undefined
+}
+
+/** A `move` record's `after` (or `before`), typed — or `null` for a
+ *  pre-KAN-466 record (no `MoveSnapshot` yet) or a malformed one. Exported
+ *  so a caller that needs the structured snapshot itself (the Rail toast)
+ *  reads it the same checked way, rather than an unchecked `as MoveSnapshot`
+ *  cast of its own. `removedLinks`/`appendedLinkId` (KAN-467) are each
+ *  optional and read independently, so an old-shape record with neither
+ *  still parses, and a malformed `removedLinks` alone doesn't fail the rest
+ *  of the snapshot. `title` (KAN-470) is read the same optional way. */
+export const readMoveSnapshot = (value: unknown): MoveSnapshot | null => {
+  if (typeof value !== 'object' || value === null) return null
+  const { parentId, parentTitle, siblingOrder, removedLinks, appendedLinkId, title } =
+    value as Record<string, unknown>
+  if (typeof parentId !== 'string' && parentId !== null) return null
+  if (typeof parentTitle !== 'string' && parentTitle !== null) return null
+  if (!Array.isArray(siblingOrder) || !siblingOrder.every((id) => typeof id === 'string')) {
+    return null
+  }
+  const parsedRemovedLinks = readRemovedLinks(removedLinks)
+  return {
+    parentId,
+    parentTitle,
+    siblingOrder,
+    ...(parsedRemovedLinks !== undefined ? { removedLinks: parsedRemovedLinks } : {}),
+    ...(typeof appendedLinkId === 'string' ? { appendedLinkId } : {}),
+    ...(typeof title === 'string' ? { title } : {}),
+  }
+}
+
+/** A `duplicate_page` record's `after` (KAN-468), typed — or `null` for a
+ *  malformed value or a different action's own. Read the same checked way
+ *  `readMoveSnapshot` reads a move's, so `afterDuplicate` and
+ *  `applyUndoOutcome` share one reader for the link the RPC appended,
+ *  instead of each casting `record.after` on its own. */
+export const readDuplicatePageSnapshot = (value: unknown): DuplicatePageSnapshot | null => {
+  if (typeof value !== 'object' || value === null) return null
+  const { pageId, appendedLinkId, linkParentId } = value as Record<string, unknown>
+  if (typeof pageId !== 'string') return null
+  return {
+    pageId,
+    ...(typeof appendedLinkId === 'string' ? { appendedLinkId } : {}),
+    ...(typeof linkParentId === 'string' ? { linkParentId } : {}),
+  }
+}
+
+/**
+ * A `MoveSnapshot.parentTitle` is never rendered bare — `null` (no home row to
+ * name the top level) falls back to `rootFallback` (the caller's own root
+ * label; the change log has none, so its default is `'Untitled'` same as the
+ * other case), and `''` (a live but untitled parent) always falls back to
+ * `'Untitled'`, matching the dragged title's own 'Untitled' fallback.
+ */
+export const moveParentLabel = (parentTitle: string | null, rootFallback = 'Untitled'): string => {
+  if (parentTitle === null) return rootFallback
+  return parentTitle === '' ? 'Untitled' : parentTitle
+}
+
+/** `moved to <parent title>`, or the bare `moved` when `after` isn't a
+ *  `MoveSnapshot` (a pre-KAN-466 record, or malformed). */
+const moveTarget = (after: unknown): string => {
+  const snapshot = readMoveSnapshot(after)
+  return snapshot === null ? 'moved' : `moved to ${moveParentLabel(snapshot.parentTitle)}`
 }
 
 /**
@@ -114,6 +209,8 @@ export function describeChange(
     }
     case 'create_page':
       return 'created this page'
+    case 'duplicate_page':
+      return 'duplicated this page'
     case 'define_schema':
       return 'set up the fields'
     case 'edit_schema':
@@ -142,7 +239,7 @@ export function describeChange(
     case 'restore':
       return summarizeTrash(record.after, 'restored')
     case 'move':
-      return 'moved'
+      return moveTarget(record.after)
     case 'undo': {
       const original = resolveUndoRedoTarget(record, byId)
       return original === undefined ? 'undo' : `undo · ${describeChange(original, null, byId)}`

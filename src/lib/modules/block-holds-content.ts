@@ -25,6 +25,14 @@ export function blockHoldsContent(block: Block): boolean {
     case 'page-link':
     case 'view':
       return true
+    // KAN-482: derives its content from the page's own headings, so it is
+    // never "empty" the way a blank line or an unfilled table is.
+    case 'toc':
+      return true
+    // KAN-480: a summary with no body yet still holds something once either
+    // line is written.
+    case 'toggle':
+      return written(block.content) || written(block.body)
     default: {
       const unreachable: never = block
       return unreachable

@@ -499,7 +499,7 @@ export interface Point {
 }
 
 /** Fraction of a rect's width/height given to the own-line (above/below) edges and the beside edges (6x). */
-const EDGE_FRACTION = 0.25
+export const EDGE_FRACTION = 0.25
 
 /**
  * The rects that make up `zone`'s own region of `rect` — the single home for drop-zone
@@ -615,6 +615,23 @@ function distanceToRect(rect: Rect, point: Point): number {
 export function isWithinPaddedZone(rect: Rect, point: Point, zone: DropZone): boolean {
   const distance = Math.min(...dropZoneRects(rect, zone).map((r) => distanceToRect(r, point)))
   return distance <= DROP_ZONE_HYSTERESIS_PX
+}
+
+/**
+ * Row 0's own-line override (KAN-548): on the first row, the above band wins over
+ * whatever beside zone is already held — `isWithinPaddedZone`'s 8px hysteresis would
+ * otherwise keep a short first block's held `left`/`right` all the way into its top
+ * corner, where a person releasing at the corner sees the above line but a beside
+ * drop commits. Delegates to `classifyDropZone` itself rather than restating the
+ * above band, so this can never disagree with it about where above ends or starts
+ * (classifyDropZone's above band is inclusive of its bottom edge). Rows ≥1 keep
+ * KAN-440's hysteresis untouched: this returns `null` (no override) for any row but
+ * the first, and for a row-0 point outside the above band (mid-height left/right
+ * stay beside) — regardless of which beside zone is currently held.
+ */
+export function rowZeroZone(rect: Rect, point: Point, isRowZero: boolean): DropZone | null {
+  if (!isRowZero) return null
+  return classifyDropZone(rect, point) === 'above' ? 'above' : null
 }
 
 /** Below this, a block in a row is too narrow to be useful, so the row stacks (6x). */

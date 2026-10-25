@@ -12,7 +12,7 @@
  */
 
 import React from 'react'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DocumentPanel } from '@/components/organisms/DocumentPanel'
@@ -21,9 +21,10 @@ import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import type { Block } from '@/lib/documents/types'
 import { findTextBlock, queryAllTextBlocks, writeInTextBlock } from './helpers/text-block'
 
+let mockNodeId = 'page-1'
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
-  useSearchParams: () => ({ get: (key: string) => (key === 'nodeId' ? 'page-1' : null) }),
+  useSearchParams: () => ({ get: (key: string) => (key === 'nodeId' ? mockNodeId : null) }),
 }))
 jest.mock('@/lib/supabase/client', () => ({ createClient: () => ({}) }))
 
@@ -75,6 +76,7 @@ function renderPage(blocks: Block[]) {
 beforeEach(() => {
   jest.clearAllMocks()
   mockFetchPages.mockResolvedValue([])
+  mockNodeId = 'page-1'
 })
 
 afterEach(() => {
@@ -188,5 +190,68 @@ describe('KAN-345 — the no-prompts-at-rest path, on the real page surface', ()
 
     expect(screen.getByTestId('trailing-block-gap')).toBeInTheDocument()
     expect(screen.getByTestId('block-gap-line')).toBeInTheDocument()
+  })
+
+  it('an empty highlight and an empty checklist show no hints at rest, and a page switch away and back leaves the highlight unfocused (KAN-499)', async () => {
+    const highlightBlock: Block = { id: 'b-highlight', type: 'highlight', content: '' }
+    const todoBlock: Block = {
+      id: 'b-todo',
+      type: 'todo',
+      items: [{ id: 'item-1', label: '', checked: false }],
+    }
+    const pagesById: Record<
+      string,
+      { id: string; parentId: null; title: string; blocks: Block[]; props: Record<string, never> }
+    > = {
+      'page-1': { id: 'page-1', parentId: null, title: '', blocks: [highlightBlock, todoBlock], props: {} },
+      'page-2': { id: 'page-2', parentId: null, title: '', blocks: [tableA], props: {} },
+    }
+    mockGetPage.mockImplementation((_supabase: unknown, id: string) =>
+      Promise.resolve(pagesById[id])
+    )
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const tree = () => (
+      <QueryClientProvider client={client}>
+        <DeletionUndoProvider>
+          <DocumentPanel />
+        </DeletionUndoProvider>
+      </QueryClientProvider>
+    )
+    const { rerender } = render(tree())
+
+    await screen.findByLabelText('Page title')
+    const highlightContainer = document.getElementById('block-b-highlight')!
+    const trigger = within(highlightContainer).getByRole('button', { name: 'Edit highlight block' })
+    expect(trigger.querySelector('p')).toHaveClass(
+      'opacity-0',
+      'group-hover:opacity-100',
+      'group-focus-within:opacity-100'
+    )
+
+    const addStep = screen.getByRole('button', { name: '＋ add a step' })
+    expect(addStep).toHaveClass(
+      'opacity-0',
+      'group-hover:opacity-100',
+      'group-focus-within:opacity-100'
+    )
+    const stepField = screen.getByRole('textbox', { name: 'Step' })
+    expect(stepField).toHaveClass('placeholder:opacity-0')
+
+    // Navigate away, then back — the SAME highlight id remounts fresh.
+    mockNodeId = 'page-2'
+    rerender(tree())
+    await screen.findAllByText('Power Tools')
+
+    mockNodeId = 'page-1'
+    rerender(tree())
+
+    const remountedContainer = await waitFor(() => {
+      const found = document.getElementById('block-b-highlight')
+      expect(found).not.toBeNull()
+      return found!
+    })
+    within(remountedContainer).getByRole('button', { name: 'Edit highlight block' })
+    expect(remountedContainer.querySelector('textarea')).not.toBeInTheDocument()
+    expect(remountedContainer.contains(document.activeElement)).toBe(false)
   })
 })

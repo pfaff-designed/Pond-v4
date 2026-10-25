@@ -16,6 +16,8 @@
  * Pure types + constants — no Supabase, no React, server- and client-safe.
  */
 
+import type { Block } from '@/lib/modules/content'
+
 /**
  * THE EIGHT. The design names exactly these, and the DB CHECK in migration 0011
  * mirrors the list — a ninth status is a migration, not a typo.
@@ -85,6 +87,12 @@ export type ChangeLogAction =
    *  other collection tools (`define_schema`, `add_row`, `edit_row`). Written
    *  as one atomic record per commit, never grouped by pause like a row edit. */
   | 'edit_schema'
+  /** A page (and its subtree) copied below the original (KAN-468); `after`
+   *  carries `{pageId}` (the copy's root) and, when the parent gained a
+   *  page-link for it, `appendedLinkId`/`linkParentId` — never a title, so
+   *  this reads generic like {@link ChangeLogAction}'s other page-structural
+   *  actions (`create_page`), not by name. */
+  | 'duplicate_page'
 
 /**
  * The actions whose before/after IS a page's `Block[]` — the ones a block write
@@ -130,6 +138,61 @@ export interface TrashSnapshot {
   nestedPageCount: number
   /** The parent chain's titles, root first — "was in creativity › kitchen renovation". */
   parentPath: string[]
+}
+
+/**
+ * A page's parent and sibling order as `move` stores it (KAN-466): enough to put
+ * the page back exactly where it was. `parentTitle` is resolved at move time (the
+ * pond's home page title when `parentId` is null) and frozen in the snapshot, the
+ * same way `TrashSnapshot.parentPath` is — a later rename or trash of that parent
+ * must not change what an old record reads. `null` when `parentId` is null and no
+ * home row exists to name (`private.page_move_parent_title`); `''` for a live
+ * parent that is itself untitled — a reader must fall back for both, never render
+ * either bare. `siblingOrder` is the full dense order of the group named by
+ * `parentId`, the moved page included.
+ *
+ * `removedLinks` and `appendedLinkId` (KAN-467) are the link-row edit that
+ * rides inside the same record: `before.removedLinks` is every one of the
+ * moved page's own `page-link` blocks as they sat on the OLD parent, each
+ * with the index it sat at, so undo can put them all back exactly where they
+ * were (restored in ascending index order); `after.appendedLinkId` is the id
+ * of the `page-link` block appended to the NEW parent, so undo knows which
+ * block to remove. Both are absent on a pre-KAN-467 record (nothing to undo)
+ * and either can be absent on its own side when that side had nothing to
+ * edit (no stored link to remove on the old parent, or the new parent
+ * already carried a link and `apply_page_move` wrote no duplicate).
+ *
+ * `title` (KAN-470) is the moved page's title on that side, present only
+ * when the move renamed it to dodge a sibling-title clash: `before.title`
+ * is the title going in, `after.title` the suffixed one it became. Absent
+ * on a pre-KAN-470 record and on every move that didn't clash.
+ */
+export interface MoveSnapshot {
+  parentId: string | null
+  parentTitle: string | null
+  siblingOrder: string[]
+  removedLinks?: { block: Block; index: number }[]
+  appendedLinkId?: string
+  title?: string
+}
+
+/**
+ * A `duplicate_page` record's `after` (KAN-468, migration 0032): the copy's
+ * root id, and — when the (unchanged) parent gained a page-link for it —
+ * that block's id and the row it landed on. `before` is always null on the
+ * original record, so there is nothing to snapshot on that side there.
+ * `change_log_step` (0030) undoes by swapping before/after, so the undo
+ * record it logs carries this same shape on its OWN `before` (the original's
+ * `after`), with `after` null (the original's `before`) — `readDuplicatePageSnapshot`
+ * (next to `readMoveSnapshot`) must be tried against both sides, same as a
+ * move's. Redo of a `page`-kind record (which `duplicate_page` reuses) is
+ * refused outright by `change_log_set_back` when `before` is null (0030, part
+ * 2b), so a redo never reaches this snapshot at all.
+ */
+export interface DuplicatePageSnapshot {
+  pageId: string
+  appendedLinkId?: string
+  linkParentId?: string
 }
 
 /**

@@ -34,6 +34,7 @@ import { createPortal } from 'react-dom'
 import { SiblingBlocksProvider } from '@/lib/modules/sibling-context'
 import { BlockRowProvider } from '@/lib/modules/block-row-context'
 import { blockDomId, focusPageTitle, scrollToBlock } from '@/lib/modules/block-dom'
+import { requestTitleFocus } from '@/lib/pages/title-focus'
 import { blockLinkUrl, useBlockLinkArrival } from '@/lib/modules/block-link'
 import { ModuleView } from '@/lib/modules/renderers'
 import {
@@ -46,7 +47,7 @@ import {
   type PondBlockState,
 } from '@/lib/modules/block-frame'
 import { readCachedSchema, useCollectionRows } from '@/lib/modules/view/use-collection-rows'
-import { shouldSelectCardFromClick } from '@/lib/modules/view/card-click'
+import { isContextMenuField, shouldSelectCardFromClick } from '@/lib/modules/view/card-click'
 import { applyView } from '@/lib/modules/view/apply'
 import { activeSavedView } from '@/lib/modules/view/schema'
 import {
@@ -60,7 +61,8 @@ import { CHART_EMPTY_LINE } from '@/lib/modules/chart/card'
 import { addTodoItem } from '@/lib/modules/todo/view'
 import { addTableRow } from '@/lib/modules/table/view'
 import { addEntryFocused } from '@/lib/modules/entries/view'
-import { PondBlock, POND_BLOCK_SELECTED_RING } from '@/components/organisms/PondBlock'
+import { TOGGLE_FOLD_ROW_PX } from '@/lib/modules/toggle/view'
+import { PondBlock, POND_BLOCK_SELECTED_RING_ROUNDED } from '@/components/organisms/PondBlock'
 import {
   SlashMenu,
   type SlashRow,
@@ -75,6 +77,7 @@ import { caretRect, roomTowardSide, sideTowardFreeSpace } from '@/lib/layout/car
 import { composerBottomBound } from '@/lib/layout/composer-clearance'
 import {
   PondMenu,
+  pointAnchor,
   type PondMenuGroup,
   type PondMenuPlacement,
   type PondMenuSize,
@@ -95,8 +98,10 @@ import {
   planOwnLineDrop,
   planRowSwap,
   planStepMove,
+  rowZeroZone,
   zoneWhenDrawnStacked,
   rowStacks,
+  widthPercent,
   widthTenths,
   withoutRowStart,
   type DropZone,
@@ -104,13 +109,15 @@ import {
 } from '@/lib/modules/layout-rows'
 import {
   KEY_WIDTHS,
+  commitSharedEdgeWidths,
   handOffRowStartOnResize,
   resizeAlone,
+  resizeSharedEdge,
   roundFreePercent,
 } from '@/lib/modules/block-resize'
 import { SlashLineContext, type SlashLineAt } from '@/lib/modules/text/slash-line'
 import { useSlashLine } from '@/components/organisms/use-slash-line'
-import { focusTextBlock, hasTextBeforeCaret } from '@/lib/modules/text/focus'
+import { focusTextBlock, focusTextBlockAt, hasTextBeforeCaret } from '@/lib/modules/text/focus'
 import { HOVER_GHOST_CLASS, UNTOUCHED_HINT_CLASS } from '@/lib/modules/text/prose'
 import { useAcceptMarks } from '@/lib/change-log/accept-marks'
 import { markTarget } from '@/lib/change-log/accept-marks-diff'
@@ -124,7 +131,8 @@ import {
 import { sessionUndo, type UndoHandle } from '@/lib/change-log/session-undo'
 import { applyUndoOutcome } from '@/lib/change-log/undo-outcome'
 import { blockName as changeBlockName } from '@/lib/change-log/summary'
-import { listRecords } from '@/lib/change-log/store'
+import { appendOwnEdit, listRecords } from '@/lib/change-log/store'
+import { changeLogKey } from '@/lib/change-log/keys'
 import { restorePage, trashPage } from '@/lib/change-log/trash'
 import { blockHoldsContent } from '@/lib/modules/block-holds-content'
 import { blockLabel } from '@/lib/modules/types'
@@ -137,8 +145,13 @@ import {
 import { BlockHeightHandles } from '@/components/organisms/BlockHeightHandles'
 import { BlockHeightProvider } from '@/components/organisms/block-height-context'
 import { blockAcceptsHeight, blockWithoutHeight } from '@/lib/modules/block-height'
-import type { ConversionTarget, LineConversion, TableConversion } from '@/lib/modules/conversions'
-import { isBlockMenuChord, isDeleteBlockChord } from '@/lib/shell-commands'
+import type {
+  ConversionTarget,
+  LineConversion,
+  PageConversion,
+  TableConversion,
+} from '@/lib/modules/conversions'
+import { isBlockMenuChord, isContextMenuKey, isDeleteBlockChord, useApplePlatform } from '@/lib/shell-commands'
 import { slashRows, emptyBlockForType } from '@/lib/modules/palette'
 import { descriptorFor } from '@/lib/modules/registry'
 import { useBelowMd } from '@/lib/layout/use-below-md'
@@ -165,12 +178,17 @@ import {
   type PondPage,
 } from '@/lib/pages/client'
 import { createDatabase } from '@/lib/pages/create-database'
+import {
+  getOrCreateTasksDatabase,
+  pickTasksDatabase,
+  projectFieldOf,
+} from '@/lib/pages/tasks-database'
 import { fetchRecordCounts, sourceDatabases } from '@/lib/pages/source-databases'
 import { insertPageOptimistic } from '@/lib/pages/tree'
 import { pagesKey } from '@/lib/pages/keys'
 import { usePagesRows } from '@/lib/pages/use-pages'
 import { flushPendingPageSave } from '@/lib/pages/page-flush'
-import { readSchema } from '@/lib/properties/schema'
+import { addOption, readSchema, withSchema } from '@/lib/properties/schema'
 import type { ViewBlock } from '@/lib/modules/view/schema'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { usePondId } from '@/lib/pond/context'
@@ -189,14 +207,29 @@ const blockName = (block: Block, frame: BlockFrame | null): string =>
   frame?.heading ?? descriptorFor(block.type)?.label ?? block.type
 
 const TURNED_INTO: Record<Exclude<ConversionTarget, 'table'>, string> = {
+  'heading-1': 'Turned into heading 1',
+  'heading-2': 'Turned into heading 2',
+  'heading-3': 'Turned into heading 3',
+  quote: 'Turned into a quote',
+  code: 'Turned into code',
   list: 'Turned into a list',
   checklist: 'Turned into a checklist',
   text: 'Turned into text',
+  page: 'Turned into a page',
 }
 
 const MENU_PLACEMENT: Record<PondMenuSize, Omit<PondMenuPlacement, 'anchor'>> = {
   desktop: { align: 'start', top: 40, alignOffset: -8 },
   mobile: { align: 'end', top: 48, alignOffset: 0 },
+}
+
+/** A right-click's point (KAN-485): `align: 'start'` and `top: 0` line the
+ *  popup's top-left up with it, and PondMenu's own `sideOffset` math copes
+ *  with the zero height (plain subtraction). */
+const POINT_MENU_PLACEMENT: Omit<PondMenuPlacement, 'anchor'> = {
+  align: 'start',
+  top: 0,
+  alignOffset: 0,
 }
 
 /** The page a `/` pick makes: a template's shape, or a person's own copied whole. */
@@ -312,15 +345,54 @@ function focusBlockNeighbour(blocks: Block[], index: number) {
 }
 
 /**
+ * ↑/↓ on a SELECTED block (KAN-367): moves the selection to the block at
+ * `index`, by focusing its row directly — selection never enters a field,
+ * only Return does that.
+ */
+function selectBlockAt(blocks: Block[], index: number) {
+  const target = blocks[index]
+  if (!target) return
+  document.getElementById(blockDomId(target.id))?.focus()
+}
+
+/**
+ * ↑/↓ leaving a block's edge (KAN-367): a text editor's first/last visual line, or
+ * (now) a checklist's first/last item. Lands in the neighbour's own editable field,
+ * at column `x` — a text neighbour's editor (nearest the caret's column), a
+ * checklist's last (↑) / first (↓) item, or (any other card, which has no field of
+ * its own) its row, selected via `selectBlockAt`. Only wired where a neighbour
+ * exists; block 0's own ArrowUp goes to the page title instead (`renderBlockEditor`),
+ * never here.
+ */
+function leaveBlockEdge(blocks: Block[], index: number, dir: 'up' | 'down', x: number) {
+  const neighbourIndex = dir === 'up' ? index - 1 : index + 1
+  const neighbour = blocks[neighbourIndex]
+  if (!neighbour) return
+  if (neighbour.type === 'text') {
+    const element = document.getElementById(blockDomId(neighbour.id))
+    focusTextBlockAt(element, x, dir === 'up' ? 'bottom' : 'top')
+    return
+  }
+  if (neighbour.type === 'todo' && neighbour.items.length > 0) {
+    const item = dir === 'up' ? neighbour.items[neighbour.items.length - 1] : neighbour.items[0]
+    focusTodoItem(neighbour.id, dir === 'up' ? 'end' : 'start', item.id)
+    return
+  }
+  selectBlockAt(blocks, neighbourIndex)
+}
+
+/**
  * Focus a todo block's item field after it lands (KAN-355 fix): a `/list`/
  * `/checklist` pick mints the block and lands it via `onChange` alone — a text
  * landing keeps the host editor's focus, but a todo block has no editor of its
  * own, so focus fell to `<body>` and the next keystroke was lost. Deferred a
  * tick for the same reason as `focusBlockNeighbour` — the row that will hold
  * `itemId` only exists once this render commits. Without `itemId`, the first
- * item (a freshly minted list's only one).
+ * item (a freshly minted list's only one). `caret`: 'end' when ↑ lands in the
+ * checklist's last item from the text block below it (KAN-367); every other
+ * caller keeps today's 'start'.
  */
-function focusTodoItem(blockId: string, itemId?: string) {
+function focusTodoItem(blockId: string, caret: 'start' | 'end', itemId?: string) {
   setTimeout(() => {
     const host = document.getElementById(blockDomId(blockId))
     const row = itemId
@@ -328,7 +400,8 @@ function focusTodoItem(blockId: string, itemId?: string) {
       : host?.querySelector<HTMLElement>('[data-item-id]')
     const input = row?.querySelector<HTMLInputElement>('input')
     input?.focus()
-    input?.setSelectionRange(0, 0)
+    const pos = caret === 'end' ? (input?.value.length ?? 0) : 0
+    input?.setSelectionRange(pos, pos)
   }, 0)
 }
 
@@ -387,6 +460,27 @@ function focusTextBlockSoon(id: string, at: 'start' | 'end') {
   requestAnimationFrame(() => {
     focusTextBlock(document.getElementById(blockDomId(id)), at)
   })
+}
+
+/**
+ * Same mount-race retry as `focusTextBlockSoon`, for a non-text block: its
+ * frame only takes a tabIndex, never typed keys, so the caret belongs on its
+ * first editable descendant (an `input`/`textarea`/`contenteditable`, e.g. a
+ * `list` template's lone todo item) — falling back to the frame only when it
+ * has none.
+ */
+function focusBlockFieldSoon(id: string) {
+  const focusOnce = () => {
+    const frame = document.getElementById(blockDomId(id))
+    const editableField = frame?.querySelector<HTMLElement>(
+      'input, textarea, [contenteditable="true"]'
+    )
+    const target = editableField ?? frame
+    target?.focus()
+    return target !== null && target !== undefined
+  }
+  if (focusOnce()) return
+  requestAnimationFrame(focusOnce)
 }
 
 export interface BlockCanvasProps {
@@ -472,6 +566,13 @@ export interface BlockCanvasProps {
   /** The block list's own layout, where a host spaces blocks its way. */
   listStyle?: CSSProperties
   /**
+   * KAN-369: the host's handle to Return/↓ leaving the title — assigned
+   * `enterFromTitle` in an effect, so a host with a title (DocumentPanel)
+   * can call it without BlockCanvas reaching up into title DOM/state. A
+   * host with no title (Storybook, the blank-page harness) omits it.
+   */
+  titleExitRef?: RefObject<(() => void) | null>
+  /**
    * The previewed template's name (6f frame 3) — the premade kind label or a
    * `yours` template's own name — so the host's title-row eyebrow can read
    * `preview — {name}` in place of its own. Called with `null` once the
@@ -498,12 +599,14 @@ export function BlockCanvas({
   untouched = false,
   openTemplatesFor = null,
   listStyle,
+  titleExitRef,
   onPreviewNameChange,
 }: BlockCanvasProps) {
   const { stageUndo, notify } = useDeletionUndo()
   const getSupabase = useLazySupabase()
   const queryClient = useQueryClient()
   const pondId = usePondId()
+  const apple = useApplePlatform()
   // The LATEST blocks, for the async paths below (the list→table write and its
   // undo). They run after awaits / from a toast, when the `blocks` their closure
   // captured may be stale — re-basing an edit on that snapshot would drop
@@ -521,6 +624,9 @@ export function BlockCanvas({
   // once is fine, only the same one twice (before `createPage` resolves) is
   // the double-submit.
   const makePageInFlightRef = useRef<Set<string>>(new Set())
+  // G9: guards `turnIntoPage` against a double pick on the same block, keyed
+  // by the block's id — the same guard shape as `makePageInFlightRef` above.
+  const turnIntoPageInFlightRef = useRef<Set<string>>(new Set())
   // Rule 2's fix (KAN-345): ids `markInserted` has minted THIS session, so a
   // fresh empty line autofocuses on mount while one that merely arrived with
   // the page never does — BlockCanvas is the one place that knows which ids
@@ -547,13 +653,16 @@ export function BlockCanvas({
     onChange,
     markInserted,
     openSourcePicker,
+    // The bare `/page` row is not a user template — its "untitled" is a stand-in
+    // name, never meant to land in the title field (KAN-464). Blank it so the
+    // opened page shows its placeholder instead of "untitledwhatever you type".
     makePageFromRow: (placement, target) =>
-      void makePage(instantiateTemplate(PREMADE_TEMPLATES.page), placement, target),
+      void makePage({ ...instantiateTemplate(PREMADE_TEMPLATES.page), title: '' }, placement, target),
     makePageFromTemplate: (pick, target, index) => void makePageFromTemplate(pick, target, index),
     // Only `todo` (list/checklist) has no editor of its own to keep focus in
     // (KAN-355) — every other landed type keeps today's behaviour.
     onLanded: (landed) => {
-      if (landed.type === 'todo') focusTodoItem(landed.id)
+      if (landed.type === 'todo') focusTodoItem(landed.id, 'start')
     },
   })
   // KAN-198: the carried `?templates=1` names a page by id, not a boolean, so
@@ -647,6 +756,38 @@ export function BlockCanvas({
     maxHeight: number
   } | null>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
+  // Whether a text editor inside this canvas has focus (KAN-535) — gates both
+  // hover ghosts (`hoverGhost` below, `TrailingBlockGap`'s own ghost row) so
+  // hovering the trailing gap never draws a second hint beside a line that's
+  // already showing its own via focus. `focusin`/`focusout` on the canvas
+  // root, not each editor's own handler, since a line's ProseMirror instance
+  // mounts and unmounts as lines are added/removed — this watches the one
+  // DOM node that's always there instead of ones that come and go.
+  const [editingText, setEditingText] = useState(false)
+  useEffect(() => {
+    const el = canvasRef.current
+    if (!el) return
+    const isEditorWithin = (node: EventTarget | null) => {
+      const editor = node instanceof Element ? node.closest('.ProseMirror') : null
+      return editor != null && el.contains(editor)
+    }
+    // Seeded once on attach: an editor can autofocus (`autofocus` prop below)
+    // before this effect runs, and the first focus/focusout pair would
+    // otherwise never fire to tell us about it.
+    setEditingText(isEditorWithin(document.activeElement))
+    const handleFocusIn = (e: FocusEvent) => setEditingText(isEditorWithin(e.target))
+    // `relatedTarget` is the element GAINING focus — reading
+    // `document.activeElement` here is unreliable, since on a plain blur
+    // (focus going nowhere) it already reads `body` while this event is
+    // still in flight.
+    const handleFocusOut = (e: FocusEvent) => setEditingText(isEditorWithin(e.relatedTarget))
+    el.addEventListener('focusin', handleFocusIn)
+    el.addEventListener('focusout', handleFocusOut)
+    return () => {
+      el.removeEventListener('focusin', handleFocusIn)
+      el.removeEventListener('focusout', handleFocusOut)
+    }
+  }, [])
   // While previewing, `canvasRef` collapses to zero height (6f frame 3's
   // outline swap, `hiddenCanvasListStyle` above) rather than going
   // `display:none` — so its own rect, and every block's inside it, is a real
@@ -710,6 +851,40 @@ export function BlockCanvas({
     () => sourceDatabases(pageRows, recordCounts ?? new Map()),
     [pageRows, recordCounts]
   )
+
+  /**
+   * The board's `project` step (KAN-536) offers the shared tasks database's
+   * existing `project` options, read off the SAME `['pages']` rows `databases`
+   * derives from — no second fetch. `created_at` falls back to `updated_at`
+   * only for a row a fixture built by hand without it; `pickTasksDatabase`'s
+   * oldest-wins tie-break is the one reader that cares. Undefined (not `[]`)
+   * while no role database exists yet, so the picker still opens, offering
+   * only `new project — <title>`. `pickTasksDatabase` throws in development
+   * on more than one role row (an impossible, restore-only state) — caught
+   * here, not let through, so that state degrades to "no projects yet"
+   * instead of crashing every canvas render.
+   */
+  const projects = useMemo(() => {
+    try {
+      const picked = pickTasksDatabase(
+        pageRows.map((r) => ({
+          id: r.id,
+          props: r.props ?? {},
+          created_at: r.created_at ?? r.updated_at,
+        }))
+      )
+      if (!picked) return undefined
+      const schema = readSchema(picked.props) ?? []
+      const projectField = projectFieldOf(schema)
+      return {
+        options: (projectField?.options ?? []).map((o) => ({ id: o.id, label: o.label })),
+        pageTitle: pageTitle || 'untitled',
+      }
+    } catch (err) {
+      console.error(err)
+      return undefined
+    }
+  }, [pageRows, pageTitle])
 
   // The person's own templates, read only while a `/` menu is open — the pane's
   // `yours` group. Refetched on each open, so one saved a moment ago is there.
@@ -900,6 +1075,69 @@ export function BlockCanvas({
   }
 
   /**
+   * The block menu's "turn into › page": moves the line into a new CHILD page
+   * (as `/page` does in `makePage`, above) and leaves a page-link row in its
+   * place, swapped in by id rather than landed at a slash target — and with NO
+   * navigation, since leaving the page would blow past the undo toast before
+   * anyone could reach it. Undo puts the block back and removes the page it
+   * made, as `turnIntoTable`'s undo removes the database it made. Guarded
+   * against a second pick on the same block while the first is still in
+   * flight (G9).
+   */
+  const turnIntoPage = async (index: number, conversion: PageConversion) => {
+    const block = blocks[index]
+    if (!block) return
+    if (turnIntoPageInFlightRef.current.has(block.id)) return
+    turnIntoPageInFlightRef.current.add(block.id)
+    try {
+      const supabase = getSupabase()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) return
+      const created = await conversion.apply(supabase, {
+        userId: user.id,
+        parentId: pageId,
+        pondId,
+        props: stampNestedPage({}, pageId),
+      })
+      const pageLink: Block = { id: crypto.randomUUID(), type: 'page-link', pageId: created.id }
+      onChange(blocksRef.current.map((b) => (b.id === block.id ? pageLink : b)))
+      insertPageOptimistic(
+        queryClient,
+        {
+          id: created.id,
+          parentId: pageId,
+          type: created.type,
+          title: created.title,
+          props: created.props,
+        },
+        pondId
+      )
+      queryClient.invalidateQueries({ queryKey: pagesKey() })
+      stageUndo({
+        message: TURNED_INTO.page,
+        scope: 'block',
+        undo: async () => {
+          onChange(blocksRef.current.map((b) => (b.id === pageLink.id ? block : b)))
+          try {
+            // Removes its own blocks too (parent_id cascade).
+            await deletePage(getSupabase(), created.id)
+          } catch (err) {
+            console.error('Failed to remove the page after undo', err)
+          }
+          queryClient.invalidateQueries({ queryKey: pagesKey() })
+        },
+      })
+    } catch (err) {
+      console.error('Failed to turn the block into a page', err)
+      notify("Couldn't turn the block into a page")
+    } finally {
+      turnIntoPageInFlightRef.current.delete(block.id)
+    }
+  }
+
+  /**
    * list ⇄ checklist ⇄ text: the same block, drawn another way. It keeps its id,
    * so it swaps in place by id, and the undo swaps the original back against the
    * LATEST blocks, so an edit made in between elsewhere on the page survives.
@@ -957,6 +1195,44 @@ export function BlockCanvas({
   }
 
   /**
+   * A shared-edge drag's release (KAN-505): the same in-place-swap-by-id
+   * route as `setBlockWidth`, but for both row-mates at once — their pair
+   * sum never changes, so no `rowStart` handoff is possible (a shared-edge
+   * resize never changes which blocks share a row, unlike an outer-edge
+   * shrink). One write, one undo step; the fallback toast's undo restores
+   * BOTH blocks' previous widths together.
+   */
+  const setRowWidths = (
+    leftBefore: Block,
+    rightBefore: Block,
+    leftWidth: BlockWidth | number,
+    rightWidth: BlockWidth | number
+  ) => {
+    const after = blocks.map((b) => {
+      if (b.id === leftBefore.id) return { ...b, width: leftWidth }
+      if (b.id === rightBefore.id) return { ...b, width: rightWidth }
+      return b
+    })
+    if (onStructuralWrite) {
+      commitStructuralBlocks(after)
+      return
+    }
+    onChange(after)
+    stageUndo({
+      message: 'Set the row widths',
+      scope: 'block',
+      undo: () =>
+        onChange(
+          blocksRef.current.map((b) => {
+            if (b.id === leftBefore.id) return leftBefore
+            if (b.id === rightBefore.id) return rightBefore
+            return b
+          })
+        ),
+    })
+  }
+
+  /**
    * One edge-drag, or one "fit height": the same in-place swap as
    * `setBlockWidth`, so the undo toast restores the block's previous height
    * (absent means fit). A drag previews locally and calls this once, on release.
@@ -972,26 +1248,69 @@ export function BlockCanvas({
   }
 
   /**
-   * An alone-on-line edge drag (KAN-441): a ref, not state, for the live
-   * pointer math — `resizeAlone`'s own hysteresis (`lockedPercent`) threads
-   * call to call, and a drag fires many moves per gesture that only need to
-   * update the rendered preview, not re-run an effect. `edgePreview` is that
-   * preview: the live percent and lock state for whichever block (`index`) is
-   * mid-drag, read by the sizing div below to override its width and by the
-   * handle's readout chip. `null` off a drag.
+   * An alone-on-line edge drag (KAN-441), now shared with a row's own outer
+   * edges (KAN-505): a ref, not state, for the live pointer math —
+   * `resizeAlone`'s own hysteresis (`lockedPercent`) threads call to call,
+   * and a drag fires many moves per gesture that only need to update the
+   * rendered preview, not re-run an effect. `edgePreview` is that preview:
+   * the live percent, lock state and dragged `side` for whichever block
+   * (`id`) is mid-drag, read by the sizing div below to override its
+   * width and by the handle's readout chip. `side` is kept so only the strip
+   * actually grabbed lights its pill — a mirrored block's other edge stays
+   * unlit even though the same `id` is mid-drag. `maxPercent` is `100` for
+   * an alone block and `100 - sum(the row's other members)` for a row's
+   * outer edge, so growing it can never push the row's total past 100 and
+   * split it — the row's own other members never move. `null` off a drag.
+   * The dragged block's `id`, not its `blocks` index, is what the ref holds —
+   * the index is resolved fresh at move/release time, so a concurrent
+   * `blocks` change mid-drag (another tab's edit landing, an accepted diff)
+   * can't leave this drag writing to whatever block now sits at a stale index.
    */
   const edgeDragRef = useRef<{
     pointerId: number
-    index: number
+    id: string
     side: 'left' | 'right'
     startClientX: number
     startPercent: number
     lockedPercent: number | null
     livePercent: number
+    maxPercent: number
   } | null>(null)
   const [edgePreview, setEdgePreview] = useState<{
-    index: number
+    id: string
     percent: number
+    locked: boolean
+    side: 'left' | 'right'
+  } | null>(null)
+
+  /**
+   * A shared-edge drag (KAN-505): the same ref-for-live-math, state-for-render
+   * shape as `edgeDragRef`/`edgePreview` above, but for the pair at once —
+   * `resizeSharedEdge`'s own hysteresis threads through `lockedPercent` the
+   * same way, and `locked` is kept on the ref too (not just read off each
+   * move's return) so release can commit the named widths without redoing
+   * the snap math. `leftId`/`rightId` are the pair's own `blocks` ids, not
+   * indices — resolved to indices only at release, so a concurrent `blocks`
+   * change mid-drag can't write the wrong pair (same reasoning as
+   * `edgeDragRef`'s own `id` above).
+   */
+  const sharedEdgeDragRef = useRef<{
+    pointerId: number
+    leftId: string
+    rightId: string
+    startClientX: number
+    startLeftPercent: number
+    pairSumPercent: number
+    lockedPercent: number | null
+    liveLeft: number
+    liveRight: number
+    locked: boolean
+  } | null>(null)
+  const [sharedEdgePreview, setSharedEdgePreview] = useState<{
+    leftId: string
+    rightId: string
+    leftPercent: number
+    rightPercent: number
     locked: boolean
   } | null>(null)
   const [edgeDragActive, setEdgeDragActive] = useState(false)
@@ -999,13 +1318,17 @@ export function BlockCanvas({
   // Esc cancels with no write, and the whole gesture shows the resize cursor
   // even where the pointer leaves the 8px strip (pointer capture keeps the
   // move/up events, not the OS cursor) — both acquired and released in this
-  // one effect, which also covers an unmount mid-drag for free.
+  // one effect, which also covers an unmount mid-drag for free. Shared with
+  // the shared-edge drag below: only one of the two refs is ever armed at a
+  // time (each pointer-down refuses to start while the other is active).
   useEffect(() => {
     if (!edgeDragActive) return
     function handleEdgeResizeKeyDown(e: KeyboardEvent) {
       if (e.key !== 'Escape') return
       edgeDragRef.current = null
       setEdgePreview(null)
+      sharedEdgeDragRef.current = null
+      setSharedEdgePreview(null)
       setEdgeDragActive(false)
     }
     document.body.style.userSelect = 'none'
@@ -1020,8 +1343,9 @@ export function BlockCanvas({
 
   function handleEdgeResizePointerDown(
     e: React.PointerEvent<HTMLDivElement>,
-    index: number,
-    side: 'left' | 'right'
+    id: string,
+    side: 'left' | 'right',
+    maxPercent = 100
   ) {
     if (edgeDragRef.current) return
     e.preventDefault()
@@ -1030,19 +1354,21 @@ export function BlockCanvas({
     } catch {
       /* capture can fail for an already-released pointer; the drag still works while over the strip */
     }
+    const block = blocks.find((b) => b.id === id)
     // The drawn width, not the stored one: a width that stacks is drawn full,
     // and the drag must begin from what the person sees.
-    const startPercent = drawnWidthPercent(columnWidth, blocks[index]?.width)
+    const startPercent = drawnWidthPercent(columnWidth, block?.width)
     edgeDragRef.current = {
       pointerId: e.pointerId,
-      index,
+      id,
       side,
       startClientX: e.clientX,
       startPercent,
       lockedPercent: null,
       livePercent: startPercent,
+      maxPercent,
     }
-    setEdgePreview({ index, percent: startPercent, locked: false })
+    setEdgePreview({ id, percent: startPercent, locked: false, side })
     setEdgeDragActive(true)
   }
 
@@ -1050,10 +1376,16 @@ export function BlockCanvas({
     const st = edgeDragRef.current
     if (!st || e.pointerId !== st.pointerId) return
     const deltaPx = st.side === 'right' ? e.clientX - st.startClientX : st.startClientX - e.clientX
-    const { percent, locked } = resizeAlone(columnWidth, st.startPercent, deltaPx, st.lockedPercent)
+    const { percent, locked } = resizeAlone(
+      columnWidth,
+      st.startPercent,
+      deltaPx,
+      st.lockedPercent,
+      st.maxPercent
+    )
     st.lockedPercent = locked ? percent : null
     st.livePercent = percent
-    setEdgePreview({ index: st.index, percent, locked })
+    setEdgePreview({ id: st.id, percent, locked, side: st.side })
   }
 
   function handleEdgeResizePointerUp(e: React.PointerEvent<HTMLDivElement>) {
@@ -1062,7 +1394,9 @@ export function BlockCanvas({
     edgeDragRef.current = null
     setEdgePreview(null)
     setEdgeDragActive(false)
-    const before = blocks[st.index]
+    // Resolved by id, now, not the index read at press: a concurrent `blocks`
+    // change mid-drag can't make this write land on the wrong block.
+    const before = blocks.find((b) => b.id === st.id)
     if (!before) return
     // Locked commits the named width (KEY_WIDTHS is the one home for the
     // glyph→named mapping), not the number its position happens to round to —
@@ -1086,6 +1420,105 @@ export function BlockCanvas({
     if (!st || e.pointerId !== st.pointerId) return
     edgeDragRef.current = null
     setEdgePreview(null)
+    setEdgeDragActive(false)
+  }
+
+  function handleSharedEdgeResizePointerDown(
+    e: React.PointerEvent<HTMLDivElement>,
+    leftId: string,
+    rightId: string
+  ) {
+    if (edgeDragRef.current || sharedEdgeDragRef.current) return
+    const leftBlock = blocks.find((b) => b.id === leftId)
+    const rightBlock = blocks.find((b) => b.id === rightId)
+    if (!leftBlock || !rightBlock) return
+    e.preventDefault()
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId)
+    } catch {
+      /* capture can fail for an already-released pointer; the drag still works while over the strip */
+    }
+    // The row already holds both members side by side (a shared strip only
+    // mounts when `!stacks`), so each one's drawn percent IS its stored
+    // percent — unlike `handleEdgeResizePointerDown`'s `drawnWidthPercent`,
+    // which exists only for a lone block stacked past the floor.
+    const startLeftPercent = widthPercent(leftBlock.width)
+    const pairSumPercent = startLeftPercent + widthPercent(rightBlock.width)
+    sharedEdgeDragRef.current = {
+      pointerId: e.pointerId,
+      leftId,
+      rightId,
+      startClientX: e.clientX,
+      startLeftPercent,
+      pairSumPercent,
+      lockedPercent: null,
+      liveLeft: startLeftPercent,
+      liveRight: pairSumPercent - startLeftPercent,
+      locked: false,
+    }
+    setSharedEdgePreview({
+      leftId,
+      rightId,
+      leftPercent: startLeftPercent,
+      rightPercent: pairSumPercent - startLeftPercent,
+      locked: false,
+    })
+    setEdgeDragActive(true)
+  }
+
+  function handleSharedEdgeResizePointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    const st = sharedEdgeDragRef.current
+    if (!st || e.pointerId !== st.pointerId) return
+    const deltaPx = e.clientX - st.startClientX
+    const { left, right, locked } = resizeSharedEdge(
+      columnWidth,
+      st.startLeftPercent,
+      st.pairSumPercent,
+      deltaPx,
+      st.lockedPercent
+    )
+    st.lockedPercent = locked ? left : null
+    st.liveLeft = left
+    st.liveRight = right
+    st.locked = locked
+    setSharedEdgePreview({
+      leftId: st.leftId,
+      rightId: st.rightId,
+      leftPercent: left,
+      rightPercent: right,
+      locked,
+    })
+  }
+
+  function handleSharedEdgeResizePointerUp(e: React.PointerEvent<HTMLDivElement>) {
+    const st = sharedEdgeDragRef.current
+    if (!st || e.pointerId !== st.pointerId) return
+    sharedEdgeDragRef.current = null
+    setSharedEdgePreview(null)
+    setEdgeDragActive(false)
+    // Resolved by id, now, not the indices read at press — see `edgeDragRef`'s
+    // own `id` field above for why.
+    const leftBefore = blocks.find((b) => b.id === st.leftId)
+    const rightBefore = blocks.find((b) => b.id === st.rightId)
+    if (!leftBefore || !rightBefore) return
+    const committed = commitSharedEdgeWidths(columnWidth, st.pairSumPercent, {
+      left: st.liveLeft,
+      right: st.liveRight,
+      locked: st.locked,
+    })
+    // Unchanged from the stored widths: no write (mirrors `handleEdgeResizePointerUp`'s own check).
+    const unchanged =
+      widthTenths(committed.left) === widthTenths(leftBefore.width) &&
+      widthTenths(committed.right) === widthTenths(rightBefore.width)
+    if (unchanged) return
+    setRowWidths(leftBefore, rightBefore, committed.left, committed.right)
+  }
+
+  function handleSharedEdgeResizePointerCancel(e: React.PointerEvent<HTMLDivElement>) {
+    const st = sharedEdgeDragRef.current
+    if (!st || e.pointerId !== st.pointerId) return
+    sharedEdgeDragRef.current = null
+    setSharedEdgePreview(null)
     setEdgeDragActive(false)
   }
 
@@ -1123,6 +1556,10 @@ export function BlockCanvas({
       'turn-into': ({ conversion }) => {
         if (conversion.target === 'table') {
           void turnIntoTable(index, conversion)
+          return
+        }
+        if (conversion.target === 'page') {
+          void turnIntoPage(index, conversion)
           return
         }
         convertBlock(block, conversion)
@@ -1228,14 +1665,30 @@ export function BlockCanvas({
 
   /**
    * Backspace in an empty text block takes the line away and leaves focus on the
-   * block before it, at the end of its text — or on the block after it when it
-   * was the first. An unlabelled empty line holds nothing to undo, so removing it
-   * is not a deletion; the page's only block stays.
+   * block before it, at the end of its text — or, when it was the first block,
+   * at the end of the title (KAN-369). An unlabelled empty line holds nothing
+   * to undo, so removing it is not a deletion; the page's only block stays,
+   * and Backspace there still returns focus to the title.
    */
   function removeEmptyLineAt(index: number) {
     const line = blocks[index]
     const neighbour = blocks[index - 1] ?? blocks[index + 1]
-    if (!line || !neighbour) return
+    if (!line) return
+    if (index === 0) {
+      if (neighbour && line.type === 'text' && !line.label) {
+        commitStructuralBlocks(detachKeepingRows(blocks, index).blocks)
+      } else if (neighbour) {
+        // Not `requestDelete`: it defaults `focusNeighbour` to true, and
+        // `focusBlockNeighbour`'s own `setTimeout(0)` would steal focus from
+        // the title a tick after this. An empty block never holds content
+        // (`blockHoldsContent`), so this never needed the confirm dialog
+        // `requestDelete` would open for a block that does.
+        removeBlockAt(index, false)
+      }
+      focusPageTitle('end')
+      return
+    }
+    if (!neighbour) return
     if (line.type === 'text' && !line.label) {
       // Via `detachKeepingRows` (KAN-440): an empty line can carry `rowStart`
       // the same as any other block, so taking it out must hand that off to
@@ -1417,6 +1870,80 @@ export function BlockCanvas({
     const open = sourcePicker
     setSourcePicker(null)
     if (!open) return
+    if (pick.kind === 'tasks') {
+      // One shared tasks database per pond (KAN-536) — never a database of this
+      // page's own. `getOrCreateTasksDatabase` always finds or makes it; a new
+      // `project` option is written as its own `edit_schema` change-log record
+      // (one `/board` gesture, two writes) rather than through `createDatabase`,
+      // which mints a fresh collection every time. Undo removes the inserted
+      // block only — the shared database, and the option, are never trashed.
+      try {
+        const supabase = getSupabase()
+        const { id: tasksId, schema } = await getOrCreateTasksDatabase(supabase, pondId)
+        // `projectFieldOf` (not a bare name match): a `project` field retyped to
+        // `text` cannot hold an option, so it is impossible here, never a path
+        // to an unfiltered board (KAN-536) — `getOrCreateTasksDatabase` already
+        // guarantees a real one.
+        const projectField = projectFieldOf(schema)
+        if (!projectField) throw new Error('The tasks database has no project field')
+        let optionId = pick.project.id ?? null
+        let finalSchema = schema
+        if (!optionId) {
+          // Never add a blank option (KAN-536): the picker already carries the
+          // trimmed label (`newProjectLabel`), and the host refuses one too
+          // rather than trust the picker alone.
+          const label = pick.project.label.trim()
+          if (!label) throw new Error('A project needs a name')
+          const minted = addOption(schema, projectField.id, label)
+          optionId = minted.optionId
+          if (!optionId) throw new Error('Could not add the project option')
+          finalSchema = minted.schema
+          await defineSchema(supabase, tasksId, minted.schema)
+          const {
+            data: { user },
+          } = await supabase.auth.getUser()
+          if (user) {
+            try {
+              await appendOwnEdit(supabase, {
+                userId: user.id,
+                pondId,
+                action: 'edit_schema',
+                targetPageId: tasksId,
+                before: schema,
+                after: minted.schema,
+              })
+              queryClient.invalidateQueries({ queryKey: changeLogKey() })
+            } catch (err) {
+              console.error('[change-log] schema edit not logged', tasksId, err)
+            }
+          }
+        }
+        // `defineSchema` (here, and inside `getOrCreateTasksDatabase` re-adding a
+        // missing `project` field) writes straight to Supabase and never touches
+        // the `['page', tasksId]` cache the view reads its schema from — a second
+        // board made within the app-wide 30s staleTime would otherwise mount
+        // against the schema as it stood before this pick's write (KAN-536).
+        queryClient.setQueryData<PondPage | null>(['page', tasksId], (prev) =>
+          prev ? { ...prev, props: withSchema(prev.props, finalSchema) } : prev
+        )
+        const statusField = finalSchema.find((f) => f.type === 'status')
+        const view: ViewBlock = {
+          id: crypto.randomUUID(),
+          type: 'view',
+          mode: 'board',
+          collectionId: tasksId,
+          ...(statusField ? { groupBy: statusField.id } : {}),
+          ...(optionId ? { filter: { property: projectField.id, op: 'eq', value: optionId } } : {}),
+        }
+        const landing = placeView(view, open.target)
+        queryClient.invalidateQueries({ queryKey: pagesKey() })
+        void persistBlocksAsOwnEdit(landing.next)
+      } catch (err) {
+        console.error('Failed to make the tasks board', err)
+        notify("Couldn't make the tasks board")
+      }
+      return
+    }
     // The kind the person chose, over the two fields the row promised. An empty
     // `property` with `agg: 'count'` would plot 1 per record, and a config with no
     // `xProperty` buckets by record TITLE — `resolveChartConfig` infers an x axis
@@ -1510,10 +2037,10 @@ export function BlockCanvas({
   //
   // `child` (the `/ nested page` row and `makePageFromTemplate`'s child path alike —
   // both read as "does the same with nothing to move" under KAN-122's board) swaps
-  // the `/` line for a page-link block at the same index and stays on the parent;
-  // the made page is stamped nested-under-this-page once, read later by the rail's
-  // `new` row note and the link row's own chip. `sibling` keeps the pre-KAN-122
-  // behaviour: the `/` line is dropped and the person is taken to the new page.
+  // the `/` line for a page-link block at the same index; the made page is stamped
+  // nested-under-this-page once, read later by the rail's `new` row note and the
+  // link row's own chip. Both placements then open the made page with the caret
+  // in its title (KAN-464, superseding KAN-122's "stays on the parent" for `child`).
   // Read against the blocks as they are then, since the awaits below outlive any
   // snapshot. A failure leaves the `/` line. Returns whether the page actually got
   // made — KAN-138's nested-page apply path needs this to know its write landed
@@ -1565,14 +2092,17 @@ export function BlockCanvas({
         pondId
       )
       void queryClient.invalidateQueries({ queryKey: pagesKey() })
-      if (placement === 'sibling') {
-        pageLinks.navigateToPage({
-          id: created.id,
-          title: created.title,
-          type: created.type,
-          isNew: false,
-        })
-      }
+      // KAN-464 (superseding KAN-122's "stays on the parent" for `child`):
+      // every new-page path opens the made page with the caret in its
+      // title, `/page`/`/nested page` included — the link above is still
+      // left in the parent either way.
+      requestTitleFocus(created.id)
+      pageLinks.navigateToPage({
+        id: created.id,
+        title: created.title,
+        type: created.type,
+        isNew: false,
+      })
       return true
     } catch (err) {
       console.error('Failed to make the page', err)
@@ -1711,7 +2241,36 @@ export function BlockCanvas({
     // `onStructuralWrite`/`onChange` already ran inside `persistBlocksAsOwnEdit`,
     // ahead of the schema/props writes above — this apply's own blocks are
     // already the caller's baseline by the time those (independent) writes land.
-    focusPageTitle()
+    // The caret belongs in the template's first line, not the title (KAN-499) —
+    // `focusTextBlockSoon` for text, else `focusBlockFieldSoon` for a non-text
+    // block (the frame itself only takes a tabIndex, not typed keys — a
+    // `list` template's lone todo item needs its own input). The props write
+    // just above is awaited, so a person who has already moved the caret while it
+    // focusing, not before the await, since that's the only moment that
+    // matters. No "already inside the first block" exemption: `focusTextBlock`
+    // (`src/lib/modules/text/focus.ts`) calls `editor.commands.focus('start')`,
+    // which resets the selection even on an editor that already has focus, so
+    // a person who typed into the (mount-autofocused) first line while this
+    // was in flight would otherwise have their own caret position overwritten.
+    // An unwritten first line's mount-time autofocus has already run by now,
+    // so `document.body` still holding focus means nobody has touched the
+    // page at all — the only case this call needs to cover.
+    const first = applied.blocks[0]
+    const activeElement = document.activeElement
+    const caretMovedElsewhere = activeElement !== null && activeElement !== document.body
+    // `templateBlocksFrom` can strip every block (a `yours` template that is
+    // only a page-link, never carried) — there is no first line to land in, so
+    // fall back to the title, the safest state (AGENTS.md, crash early).
+    if (!first) {
+      if (!caretMovedElsewhere) focusPageTitle()
+      return
+    }
+    if (caretMovedElsewhere) return
+    if (first.type === 'text') {
+      focusTextBlockSoon(first.id, 'start')
+      return
+    }
+    focusBlockFieldSoon(first.id)
   }
 
   const makePageFromTemplate = async (pick: TemplatePick, target: SlashTarget, index: number) => {
@@ -1737,6 +2296,30 @@ export function BlockCanvas({
     markInserted(nb.id)
     onChange([...blocks, nb])
   }
+
+  // KAN-369: Return/↓ leaving the title lands on the page's first block — its
+  // own start when that block is already text, or a fresh empty line above
+  // whatever it is otherwise (a card gets a line to type above it, never
+  // text forced into its own fields). The fresh line's autofocus-on-mount
+  // (rule 2, `markInserted`) is what actually puts the caret there.
+  function enterFromTitle() {
+    if (blocks[0]?.type === 'text') {
+      focusTextBlockSoon(blocks[0].id, 'start')
+      return
+    }
+    const nb = emptyBlockForType('text')
+    if (!nb) return
+    markInserted(nb.id)
+    onChange([nb, ...blocks])
+  }
+
+  useEffect(() => {
+    if (!titleExitRef) return
+    titleExitRef.current = enterFromTitle
+    return () => {
+      titleExitRef.current = null
+    }
+  })
 
   // Rule 3's trailing gap (KAN-345): `focusEmptyLineOrInsert`'s shared G9 guard
   // — a fresh block's autofocus (above) covers the add branch; only the
@@ -2017,7 +2600,8 @@ export function BlockCanvas({
           i === blocks.length - 1 &&
           trailingLineIsEmptyText &&
           trailingGapVisible &&
-          trailingGapHovered
+          trailingGapHovered &&
+          !editingText
         }
         onChange={(next) => setBlockAt(i, next)}
         writeBlock={writeBlock}
@@ -2025,6 +2609,14 @@ export function BlockCanvas({
         onExitEmpty={() => removeEmptyOnExit(block.id)}
         onDeleteBlock={() => requestDelete(i)}
         onReturn={(patch, content, where) => insertLineAfter(i, patch, content, where)}
+        onLeaveUp={
+          i === 0 ? () => focusPageTitle('end') : (x) => leaveBlockEdge(blocks, i, 'up', x)
+        }
+        onLeaveDown={
+          i === blocks.length - 1 ? undefined : (x) => leaveBlockEdge(blocks, i, 'down', x)
+        }
+        onSelectPrev={i === 0 ? () => focusPageTitle('end') : () => selectBlockAt(blocks, i - 1)}
+        onSelectNext={i === blocks.length - 1 ? undefined : () => selectBlockAt(blocks, i + 1)}
         onMoveUp={() => moveBlockAt(i, 'up')}
         onMoveDown={() => moveBlockAt(i, 'down')}
         onSwapLeft={() => swapInRowAt(i, 'left')}
@@ -2051,19 +2643,23 @@ export function BlockCanvas({
         // keystroke anywhere on the page.
         menuGroups={
           menuOpenAt === i
-            ? blockMenuGroups(block, {
-                moveIntoNewPage: onMoveIntoNewPage !== undefined,
-                width: (
-                  <BlockWidthRow
-                    width={block.width}
-                    size={slashSize}
-                    onSelect={(width) => handleMenuSelect(i, { type: 'set-width', width })}
-                    onPreview={(width) =>
-                      setPreviewWidth(width === null ? null : [{ blockId: block.id, width }])
-                    }
-                  />
-                ),
-              })
+            ? blockMenuGroups(
+                block,
+                {
+                  moveIntoNewPage: onMoveIntoNewPage !== undefined,
+                  width: (
+                    <BlockWidthRow
+                      width={block.width}
+                      size={slashSize}
+                      onSelect={(width) => handleMenuSelect(i, { type: 'set-width', width })}
+                      onPreview={(width) =>
+                        setPreviewWidth(width === null ? null : [{ blockId: block.id, width }])
+                      }
+                    />
+                  ),
+                },
+                apple
+              )
             : undefined
         }
         menuSize={slashSize}
@@ -2121,12 +2717,18 @@ export function BlockCanvas({
             sticky.index === i &&
             isWithinPaddedZone(rect, point, sticky.zone) &&
             !(drawnStacked && (sticky.zone === 'left' || sticky.zone === 'right'))
-          const zone = zoneWhenDrawnStacked(
-            stickyHolds && sticky ? sticky.zone : classifyDropZone(rect, point),
-            rect,
-            point,
-            drawnStacked
-          )
+          // Row 0's own-line band overrides a held beside zone (KAN-548): a
+          // short first block's sticky left/right would otherwise survive
+          // into its top corner, where the drop line shown is `above`.
+          const isRowZero = blockRows[0]?.some((b) => b.id === block.id) ?? false
+          const zone =
+            rowZeroZone(rect, point, isRowZero) ??
+            zoneWhenDrawnStacked(
+              stickyHolds && sticky ? sticky.zone : classifyDropZone(rect, point),
+              rect,
+              point,
+              drawnStacked
+            )
           // Nothing classified differently from what's already shown for this
           // block: `planned`/`changed` below are pure functions of
           // (blocks, draggingIndex, target id, zone), none of which moved, so
@@ -2393,6 +2995,15 @@ export function BlockCanvas({
                 // `blockRows` without touching any ancestor element, and a
                 // remount is impossible rather than untested.
                 const stacks = rowStacks(columnWidth, widths)
+                // The shared strip (KAN-505) is an 8px (`w-2`) strip centred in
+                // the row's own gap, not hugging either block's border: its
+                // `right` offset is half the gap plus half the strip's own
+                // width, so a 16px gap (the default) gives -12px, matching the
+                // SPEC's own "-12px-ish". Read from `rowGapValue`, not the
+                // BLOCK_ROW_GAP_PX constant, so a host override (zen's wider
+                // gap) keeps the strip centred too.
+                const rowGapPx = rowGapValue(listStyle)
+                const sharedOffsetPx = typeof rowGapPx === 'number' ? -(rowGapPx / 2 + 4) : -12
                 // Every sizing div starts its own flex line EXCEPT the page's
                 // very first block, and (within row 0, non-stacking) the rest of
                 // that one shared line: those stay at the top with no gap above
@@ -2403,10 +3014,54 @@ export function BlockCanvas({
                 const entries = row.map((item, itemIndex) => ({
                   item,
                   stacks,
-                  // Alone on its line (no row-mate): both edges render a resize
-                  // handle (KAN-441). A row-sharing block renders none in this
-                  // slice — the shared divider is the split-off child ticket.
-                  aloneOnLine: row.length === 1,
+                  // A row of MULTIPLE members that stacks (each wraps to its
+                  // own line, too narrow to hold side by side) draws no strip
+                  // at all — there is no row left to resize against. A block
+                  // alone on its line (row.length === 1) is never gated on
+                  // `stacks`: `stacks` there only means ITS OWN stored width
+                  // underflows the floor and is drawn full (KAN-441, the
+                  // "narrower than the stack floor" case) — both its edges
+                  // still resize it. Else: the row's first member gets its
+                  // own left edge, the row's last gets its own right edge,
+                  // and every boundary between members (KAN-505) gets ONE
+                  // shared strip, carried by the boundary's LEFT member so a
+                  // 2-block row renders exactly 3 strips, not 4 (its own
+                  // right edge and the next block's left edge would
+                  // otherwise double up the same boundary).
+                  showLeftEdge: itemIndex === 0 && (row.length === 1 || !stacks),
+                  showSharedEdge: row.length > 1 && !stacks && itemIndex < row.length - 1,
+                  // The shared strip's drag needs its row-mate's own `blocks`
+                  // id (resolved to an index once, on press) — carried here
+                  // rather than recomputed from `i + 1` below, since a ghost
+                  // mid-row (a block-drag reorder, KAN-440) would otherwise
+                  // throw that index off; chrome hides every strip during
+                  // that drag anyway (`draggingIndex !== null`), so this id
+                  // is only ever read while it's actually safe to use.
+                  sharedRightId: itemIndex < row.length - 1 ? row[itemIndex + 1].id : undefined,
+                  showRightEdge: itemIndex === row.length - 1 && (row.length === 1 || !stacks),
+                  sharedOffsetPx,
+                  // The right member of every boundary (KAN-505): its own sizing
+                  // div — NOT the card inside it — needs an explicit z-index
+                  // above the shared strip's `z-[1]` (carried by the LEFT
+                  // member), because the card can gain its own stacking context
+                  // mid-session (`motion-settle-in`'s transform, left `both`)
+                  // that would otherwise trap any z-index set inside it. This
+                  // wrapper sits outside any card transform, so it stacks the
+                  // whole subtree — grip included — above the strip regardless.
+                  liftAboveSharedStrip: itemIndex > 0 && row.length > 1 && !stacks,
+                  // A row-sharing block's outer edge (KAN-505) resizes only
+                  // itself — its row-mates never move — so growing it is
+                  // capped at `100 - sum(the row's other members)`: the
+                  // complement of whatever share they already hold, which is
+                  // exactly how far this one can grow before the row's total
+                  // would pass 100 and split. An alone block has no row-mates
+                  // to cap against, so its own edges keep the default (100).
+                  outerMaxPercent:
+                    row.length > 1 && !stacks
+                      ? 100 -
+                        (widths.reduce<number>((sum, w) => sum + widthPercent(w), 0) -
+                          widthPercent(item.width))
+                      : 100,
                   marginTop:
                     rowIndex === 0 && (!stacks || itemIndex === 0) ? 0 : rowGapValue(listStyle),
                 }))
@@ -2422,19 +3077,43 @@ export function BlockCanvas({
                     />
                   )
                 }
-                const { item, stacks, aloneOnLine, marginTop } = entry
+                const {
+                  item,
+                  stacks,
+                  showLeftEdge,
+                  showSharedEdge,
+                  sharedRightId,
+                  showRightEdge,
+                  outerMaxPercent,
+                  sharedOffsetPx,
+                  liftAboveSharedStrip,
+                  marginTop,
+                } = entry
                 // A live edge drag previews this block's width locally — never
                 // written to `blocks` until release — so it overrides the
                 // committed width here rather than going through `stacks`.
                 const resizing =
-                  !item.ghost && edgePreview && blocks[edgePreview.index]?.id === item.id
-                    ? edgePreview
-                    : null
+                  !item.ghost && edgePreview && edgePreview.id === item.id ? edgePreview : null
+                // A shared-edge drag previews BOTH row-mates at once: this
+                // item reads whichever side of the pair it is, by id (not
+                // index — the dragged pair's own ids are fixed for the
+                // gesture, `sharedEdgePreview` doesn't track `i`).
+                const sharedResizing =
+                  !item.ghost && sharedEdgePreview && sharedEdgePreview.leftId === item.id
+                    ? { percent: sharedEdgePreview.leftPercent, locked: sharedEdgePreview.locked }
+                    : !item.ghost && sharedEdgePreview && sharedEdgePreview.rightId === item.id
+                      ? {
+                          percent: sharedEdgePreview.rightPercent,
+                          locked: sharedEdgePreview.locked,
+                        }
+                      : null
                 const sizingWidth = resizing
                   ? blockWidthStyle(resizing.percent)
-                  : stacks || item.width === 'full'
-                    ? '100%'
-                    : blockWidthStyle(item.width)
+                  : sharedResizing
+                    ? blockWidthStyle(sharedResizing.percent)
+                    : stacks || item.width === 'full'
+                      ? '100%'
+                      : blockWidthStyle(item.width)
                 const i = blocks.findIndex((b) => b.id === item.id)
                 // Measured by `itemSizingRefs` (above) so the row-boundary
                 // line below — rendered once per ROW, not here — can anchor
@@ -2446,47 +3125,113 @@ export function BlockCanvas({
                       if (node) itemSizingRefs.current.set(item.id, node)
                       else itemSizingRefs.current.delete(item.id)
                     }}
-                    className="relative min-w-0 transition-[width] duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none"
+                    className={cn(
+                      'relative min-w-0 transition-[width] duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none',
+                      liftAboveSharedStrip && 'z-[2]'
+                    )}
                     style={{ width: sizingWidth, marginTop }}
                   >
                     {renderBlockEditor(blocks[i], i)}
-                    {aloneOnLine && (
-                      <>
-                        <BlockEdgeHandle
-                          side="left"
-                          hidden={!chrome || draggingIndex !== null}
-                          dragging={resizing !== null}
-                          readout={
-                            resizing
-                              ? edgeResizeReadout(resizing.percent, resizing.locked)
-                              : undefined
-                          }
-                          valueNow={
-                            resizing ? resizing.percent : drawnWidthPercent(columnWidth, item.width)
-                          }
-                          onPointerDown={(e) => handleEdgeResizePointerDown(e, i, 'left')}
-                          onPointerMove={handleEdgeResizePointerMove}
-                          onPointerUp={handleEdgeResizePointerUp}
-                          onPointerCancel={handleEdgeResizePointerCancel}
-                        />
-                        <BlockEdgeHandle
-                          side="right"
-                          hidden={!chrome || draggingIndex !== null}
-                          dragging={resizing !== null}
-                          readout={
-                            resizing
-                              ? edgeResizeReadout(resizing.percent, resizing.locked)
-                              : undefined
-                          }
-                          valueNow={
-                            resizing ? resizing.percent : drawnWidthPercent(columnWidth, item.width)
-                          }
-                          onPointerDown={(e) => handleEdgeResizePointerDown(e, i, 'right')}
-                          onPointerMove={handleEdgeResizePointerMove}
-                          onPointerUp={handleEdgeResizePointerUp}
-                          onPointerCancel={handleEdgeResizePointerCancel}
-                        />
-                      </>
+                    {showLeftEdge && (
+                      <BlockEdgeHandle
+                        side="left"
+                        hidden={!chrome || draggingIndex !== null}
+                        // Only the strip actually grabbed lights its pill: an
+                        // alone block's mirrored right edge stays unlit while
+                        // its left is mid-drag, even though both share `resizing`.
+                        dragging={resizing !== null && resizing.side === 'left'}
+                        readout={
+                          resizing && resizing.side === 'left'
+                            ? edgeResizeReadout(resizing.percent, resizing.locked)
+                            : undefined
+                        }
+                        valueNow={
+                          resizing ? resizing.percent : drawnWidthPercent(columnWidth, item.width)
+                        }
+                        // A toggle's own fold button sits in this edge's gutter (its
+                        // first 28px row) and is lifted above this strip by z-index
+                        // (KAN-480, bounded round-3 fix) — clip the strip's own top
+                        // short of that row so the two never contest the same
+                        // pointer-down; every other block type's left edge is
+                        // untouched (prop left unset, full height).
+                        topInsetPx={blocks[i]?.type === 'toggle' ? TOGGLE_FOLD_ROW_PX : undefined}
+                        // This strip only ever mounts on a row's first member
+                        // (`showLeftEdge`'s own gate) — alone or sharing a row,
+                        // it's always that row's own left edge, so both wire
+                        // the same handler; `outerMaxPercent` is the row's
+                        // other members' complement for a shared row, and 100
+                        // (no cap) for an alone block.
+                        onPointerDown={(e) =>
+                          handleEdgeResizePointerDown(e, item.id, 'left', outerMaxPercent)
+                        }
+                        onPointerMove={handleEdgeResizePointerMove}
+                        onPointerUp={handleEdgeResizePointerUp}
+                        onPointerCancel={handleEdgeResizePointerCancel}
+                      />
+                    )}
+                    {showSharedEdge && (
+                      // The boundary strip between this block and its row-mate
+                      // to the right: mounted here (carried by the boundary's
+                      // left member) so a row renders one strip per boundary,
+                      // not two.
+                      <BlockEdgeHandle
+                        side="shared"
+                        hidden={!chrome || draggingIndex !== null}
+                        // This boundary's own drag, not just its width changing: the
+                        // right row-mate's width previews too (`sharedResizing` matches
+                        // either side, for `sizingWidth` above), but only the LEFT
+                        // member of THIS boundary carries its pill and readout — the
+                        // right mate is also the left member of a DIFFERENT boundary,
+                        // whose own strip must stay dark while this one drags.
+                        dragging={sharedEdgePreview !== null && sharedEdgePreview.leftId === item.id}
+                        readout={
+                          sharedEdgePreview !== null &&
+                          sharedEdgePreview.leftId === item.id &&
+                          sharedResizing
+                            ? edgeResizeReadout(sharedResizing.percent, sharedResizing.locked)
+                            : undefined
+                        }
+                        valueNow={
+                          sharedResizing ? sharedResizing.percent : widthPercent(item.width)
+                        }
+                        sharedOffsetPx={sharedOffsetPx}
+                        onPointerDown={
+                          sharedRightId !== undefined
+                            ? (e) => handleSharedEdgeResizePointerDown(e, item.id, sharedRightId)
+                            : undefined
+                        }
+                        onPointerMove={handleSharedEdgeResizePointerMove}
+                        onPointerUp={handleSharedEdgeResizePointerUp}
+                        onPointerCancel={handleSharedEdgeResizePointerCancel}
+                      />
+                    )}
+                    {showRightEdge && (
+                      <BlockEdgeHandle
+                        side="right"
+                        hidden={!chrome || draggingIndex !== null}
+                        dragging={resizing !== null && resizing.side === 'right'}
+                        readout={
+                          resizing && resizing.side === 'right'
+                            ? edgeResizeReadout(resizing.percent, resizing.locked)
+                            : undefined
+                        }
+                        valueNow={
+                          resizing ? resizing.percent : drawnWidthPercent(columnWidth, item.width)
+                        }
+                        // This strip only ever mounts on a row's last member
+                        // (`showRightEdge`'s own gate) — alone or sharing a
+                        // row, it's always that row's own right edge, so both
+                        // wire the same handler; `outerMaxPercent` caps a
+                        // shared row's growth at its other members'
+                        // complement, so this edge resizes only itself and
+                        // the row never splits.
+                        onPointerDown={(e) =>
+                          handleEdgeResizePointerDown(e, item.id, 'right', outerMaxPercent)
+                        }
+                        onPointerMove={handleEdgeResizePointerMove}
+                        onPointerUp={handleEdgeResizePointerUp}
+                        onPointerCancel={handleEdgeResizePointerCancel}
+                      />
                     )}
                   </div>
                 )
@@ -2531,12 +3276,15 @@ export function BlockCanvas({
         <TrailingBlockGap
           onClick={handleTrailingGapClick}
           hidden={draggingIndex !== null || !!previewing}
-          // Rule 3's fix (KAN-345): when the last block is already an empty
-          // text line, that line's own placeholder paints in place (via
-          // `hoverGhost` above) — drawing a second ghost row here too would
-          // put the text in two places at once.
-          showGhostText={!trailingLineIsEmptyText}
+          // Rule 3 (KAN-345): when the last block is already an empty text
+          // line, that line's own placeholder paints in place (via
+          // `hoverGhost` above) instead — a second ghost row here would put
+          // the text in two places at once. And (KAN-535) while any editor
+          // in the canvas has focus, that line already shows its own hint
+          // from its own focus, so this one must not draw a second.
+          showGhostText={!trailingLineIsEmptyText && !editingText}
           onHoverChange={setTrailingGapHovered}
+          leadGap={blocks.length > 0}
         />
       )}
 
@@ -2547,6 +3295,7 @@ export function BlockCanvas({
           /* Lowercase on the machine surface — see `sourceDatabases`. */
           pageTitle={pageTitle || 'untitled'}
           databases={databases}
+          projects={projects}
           loadFields={loadFields}
           /* ONE expression decides both: the step is `type` exactly when there IS
              a source to open it on. Deriving them separately opened the chart step
@@ -2666,7 +3415,7 @@ function useBlockEmptyState(
                 commitStructural(pageId, () => {
                   const next = addTodoItem(block)
                   onChange(next)
-                  focusTodoItem(block.id, next.items[next.items.length - 1].id)
+                  focusTodoItem(block.id, 'start', next.items[next.items.length - 1].id)
                 })
               },
             }
@@ -2722,14 +3471,19 @@ function useBlockEmptyState(
  * Return on the block itself — not on anything inside it — opens a line after a
  * block that is not text. A text block's Return is its editor's.
  *
- * A click on the handle — a press that ends in pointerup within
- * `HANDLE_PRESS_MOVE_THRESHOLD_PX` of where it started — or ⌘/ (Ctrl+/ off
- * Apple) anywhere in the block, opens the block menu (`PondMenu` kind
- * `block`), and the block wears the open ring while it is open. Base UI's own
- * trigger opens on pointerdown; `handlePointerOpenChange` below drops that and
- * any open that arrives after the press has moved past the threshold, so a
- * press that becomes a drag never opens it (KAN-440 comment 1) — ⌘/ is never
- * gated by this, so a stuck press state from an earlier drag can't block it.
+ * The handle is drag-only on desktop (KAN-485): a press that ends in
+ * pointerup within `HANDLE_PRESS_MOVE_THRESHOLD_PX` of where it started, or
+ * Enter/Space on the focused handle, selects the row — it never opens the
+ * menu. A press that moves past the threshold still drags, unchanged. The
+ * menu opens from right-click on the block, ⌘/ (Ctrl+/ off Apple) anywhere in
+ * it, or ⇧F10/the ContextMenu key on a selected row, and the block wears the
+ * open ring while it is open. Phone (`size="mobile"`) keeps the old
+ * tap-opens-the-menu path on the handle itself — iOS Safari fires no
+ * `contextmenu` on a long-press. Base UI's own trigger opens on pointerdown;
+ * `handlePointerOpenChange` below drops that and any open that arrives after
+ * the press has moved past the threshold, so a press that becomes a drag
+ * never opens it (KAN-440 comment 1) — ⌘/ is never gated by this, so a stuck
+ * press state from an earlier drag can't block it.
  */
 const HANDLE_PRESS_MOVE_THRESHOLD_PX = 4
 function BlockEditor({
@@ -2746,6 +3500,10 @@ function BlockEditor({
   onExitEmpty,
   onDeleteBlock,
   onReturn,
+  onLeaveUp,
+  onLeaveDown,
+  onSelectPrev,
+  onSelectNext,
   onMoveUp,
   onMoveDown,
   onSwapLeft,
@@ -2813,6 +3571,20 @@ function BlockEditor({
    *  (default) is today's "after this block"; `'above'` is Enter at the start
    *  of a non-empty block. */
   onReturn: (patch?: Block, content?: string, where?: 'above' | 'below') => void
+  /** ↑ at this block's own edge — a text editor's first visual line, or a checklist's
+   *  first item (KAN-367): lands in the previous block's own field at the caret's
+   *  column, or (block 0) the page title. */
+  onLeaveUp?: (x: number) => void
+  /** ↓ at this block's own edge — a text editor's last visual line, or a checklist's
+   *  last item (KAN-367): lands in the next block's own field at the caret's column.
+   *  Undefined on the LAST block. */
+  onLeaveDown?: (x: number) => void
+  /** ↑ on this block's row while SELECTED (KAN-367): selects the previous block's row, or
+   *  (block 0) the page title. Always set — unlike `onLeaveUp`, every row can be selected. */
+  onSelectPrev?: () => void
+  /** ↓ on this block's row while SELECTED (KAN-367): selects the next block's row. Undefined
+   *  on the last block — its row handler falls back to KAN-344's step-out instead. */
+  onSelectNext?: () => void
   onMoveUp?: () => void
   onMoveDown?: () => void
   /** ⌥←/⌥→ on the selected row — never from inside a text editor or field,
@@ -2862,31 +3634,75 @@ function BlockEditor({
   onDrop?: (e: React.DragEvent) => void
 }) {
   const [dragArmed, setDragArmed] = useState(false)
-  // Gate for the handle's menu (KAN-440 comment 1): Base UI's `Menu.Trigger`
-  // opens on native `mousedown`, before a press is known to be a click or the
-  // start of a drag. `pressRef` tracks whether the handle's press is still
-  // down, whether it has moved past the drag threshold since `onPointerDown`,
-  // and (for the toggle-click fix below) whether the menu was already open
-  // when this press started. `handlePointerOpenChange` drops any
-  // `open === true` while `down` or `moved` is true, so only a genuine click
-  // (pointerup with no movement past the threshold) opens the menu from the
-  // handle — a drag never does. An HTML5 drag ends in `pointercancel`/the
-  // row's `dragend`, never `pointerup`, so both reset `pressRef` too —
-  // otherwise `down` stays true forever and blocks every later open from
-  // this handle, ⌘/ and Enter included.
+  // Gate for the handle's menu — PHONE ONLY (KAN-440 comment 1; desktop drops
+  // this trigger-open path entirely, KAN-485, `handlePointerOpenChange`
+  // below): Base UI's `Menu.Trigger` opens on native `mousedown`, before a
+  // press is known to be a click or the start of a drag. `pressRef` tracks
+  // whether the handle's press is still down, whether it has moved past the
+  // drag threshold since `onPointerDown`, and (for the toggle-click fix
+  // below) whether the menu was already open when this press started. On
+  // phone, `handlePointerOpenChange` drops any `open === true` while `down`
+  // or `moved` is true, so only a genuine click (pointerup with no movement
+  // past the threshold) opens the menu from the handle — a drag never does.
+  // An HTML5 drag ends in `pointercancel`/the row's `dragend`, never
+  // `pointerup`, so both reset `pressRef` too — otherwise `down` stays true
+  // forever and blocks every later open from this handle (phone) or select
+  // (desktop, Enter/Space included); ⌘/ is never gated by this either way.
   const pressRef = useRef({ down: false, moved: false, startX: 0, startY: 0, openAtDown: false })
   // A press that drifts off the handle before releasing never fires the
   // handle's own `pointerup` — without `setPointerCapture`, the browser
   // delivers `pointerup` to whatever element is under the pointer at release,
   // not the one that started the press (KAN-440). `down` then stays stuck
-  // true forever, which blocks a later Enter/Space open the same way a stuck
-  // drag does. A document-level listener, armed on this handle's own
+  // true forever, which blocks a later Enter/Space OPEN on phone the same way
+  // a stuck drag does (desktop's Enter/Space only reads `moved`, so it still
+  // selects the row). A document-level listener, armed on this handle's own
   // `pointerdown`, catches the release wherever it lands. Torn down on the
   // next `pointerdown` (so only one is ever live) and on unmount (AGENTS.md
   // "finish what you start").
   const pressEndCleanupRef = useRef<(() => void) | null>(null)
   useEffect(() => () => pressEndCleanupRef.current?.(), [])
   const rootRef = useRef<HTMLDivElement>(null)
+  // Set by a right-click that opens the menu (below); null for every other
+  // open path, which keeps the handle's own anchor (`rootRef`). Cleared on
+  // close so a later handle-opened menu never inherits a stale point.
+  const [contextPoint, setContextPoint] = useState<{ x: number; y: number } | null>(null)
+  // Memoised on `contextPoint` alone, so a right-click's anchor object is
+  // stable across the row's other re-renders while the menu stays open —
+  // Base UI's positioner effect re-measures whenever the `anchor` prop's
+  // identity changes, so a fresh object every render would re-run it for no
+  // reason.
+  const contextAnchor = useMemo(
+    () => (contextPoint ? { getBoundingClientRect: () => pointAnchor(contextPoint.x, contextPoint.y) } : null),
+    [contextPoint]
+  )
+  // macOS Chrome/Safari select the word under the pointer as the right
+  // button's own default action, which runs after bubbling listeners but
+  // before `contextmenu` fires — so a `window.getSelection()` read inside
+  // `handleContextMenu` itself sees a selection the right-press just made,
+  // not one that predates it, and the native-menu check below it is true on
+  // almost every right-click on prose. Recorded here, on the row's own
+  // `pointerdown`, before that default action runs.
+  const rightPressSelectionRef = useRef(false)
+  // Set when ⇧F10/ContextMenu (`handleKeyDown` below) opens this row's menu
+  // from the keyboard; Windows then fires a trailing native `contextmenu` for
+  // the same key press. Cleared by the next real pointerdown, so a stale
+  // `true` never swallows a later genuine right-click.
+  const keyboardMenuOpenRef = useRef(false)
+  const wasMenuOpenRef = useRef(menuOpen)
+  // Desktop's handle is a plain button, not a `Menu.Trigger` (KAN-485), so
+  // Base UI has nothing of its own to return focus to on close when a
+  // right-click opened the menu. ⇧F10/ContextMenu/⌘/ already land focus back
+  // on the row via Base UI's own restore (the row was the active element
+  // when the menu opened), so this only needs to cover the point-anchored
+  // path.
+  useEffect(() => {
+    if (wasMenuOpenRef.current && !menuOpen) {
+      const shouldRefocusRow = !!contextPoint
+      setContextPoint(null)
+      if (shouldRefocusRow) rootRef.current?.focus()
+    }
+    wasMenuOpenRef.current = menuOpen
+  }, [menuOpen, contextPoint])
   // Read in the exit timeout, which runs after the render that opened a menu
   // or a template preview. A `/` menu and the block menu portal outside this
   // row, so their focus looks like leaving.
@@ -3079,7 +3895,16 @@ function BlockEditor({
   }
 
   const view = (
-    <BlockRowProvider value={{ selected: state === 'selected', stepOut: onReturn, commitStep }}>
+    <BlockRowProvider
+      value={{
+        selected: state === 'selected',
+        stepOut: onReturn,
+        commitStep,
+        leaveUp: onLeaveUp,
+        leaveDown: onLeaveDown,
+        select: selectRow,
+      }}
+    >
       <SlashLineContext.Provider value={slash.handleSlashLine}>
         <ActiveViewSelectionContext.Provider value={setActiveViewId}>
           <SavedViewHostContext.Provider value={savedViewHost}>
@@ -3126,37 +3951,65 @@ function BlockEditor({
       handleMenuOpenChange(true)
       return
     }
+    // ⇧F10 / the ContextMenu key (KAN-485): only on the row itself, so a field
+    // the block hosts (a table cell, a todo label) keeps its own native menu.
+    // `contextPoint` stays null, so the menu opens at the row's own anchor.
+    if (isContextMenuKey(e.nativeEvent) && e.target === e.currentTarget) {
+      e.preventDefault()
+      // Windows follows this keydown with a native `contextmenu` for the same
+      // key press (`handleContextMenu` below swallows it).
+      keyboardMenuOpenRef.current = true
+      handleMenuOpenChange(true)
+      return
+    }
+    // Return on a selected row (KAN-367/KAN-344): a text row goes back into
+    // editing, caret at the end; any other kind opens a line below it.
     if (
       e.key === 'Enter' &&
       e.target === e.currentTarget &&
-      block.type !== 'text' &&
       !e.shiftKey &&
       !e.altKey &&
       !e.metaKey &&
       !e.ctrlKey
     ) {
       e.preventDefault()
-      onReturn()
+      if (block.type === 'text') {
+        focusTextBlockSoon(block.id, 'end')
+      } else {
+        onReturn()
+      }
       return
     }
-    // ↓ steps out of a selected row the same as Return (KAN-344) — but only for
-    // kinds with no in-field meaning for ↓. `table` and `todo` read it inside
-    // their own last-cell / empty-last-item rules instead (BlockRowContext's
-    // `stepOut`, wired at the module level); this generic branch would otherwise
-    // race theirs.
+    // ↑/↓ on a selected row (KAN-367) move the selection, in array order —
+    // `onSelectPrev` always lands somewhere (the previous row, or block 0's
+    // title); `onSelectNext` is only unset on the LAST block, where ↓ instead
+    // keeps KAN-344's step-out (opens a line below it).
+    if (
+      e.key === 'ArrowUp' &&
+      e.target === e.currentTarget &&
+      !e.shiftKey &&
+      !e.altKey &&
+      !e.metaKey &&
+      !e.ctrlKey
+    ) {
+      e.preventDefault()
+      onSelectPrev?.()
+      return
+    }
     if (
       e.key === 'ArrowDown' &&
       e.target === e.currentTarget &&
-      block.type !== 'text' &&
-      block.type !== 'table' &&
-      block.type !== 'todo' &&
       !e.shiftKey &&
       !e.altKey &&
       !e.metaKey &&
       !e.ctrlKey
     ) {
       e.preventDefault()
-      onReturn()
+      if (onSelectNext) {
+        onSelectNext()
+      } else {
+        onReturn()
+      }
       return
     }
     if (e.altKey && e.key === 'ArrowUp') {
@@ -3229,12 +4082,17 @@ function BlockEditor({
     onMenuOpenChange?.(open)
   }
 
-  // The gate (see `pressRef` above): a POINTER-originated open — Base UI's own
-  // pointerdown-driven request (routed here via `PondMenu`'s `onOpenChange`)
-  // and the handle's own click below — is dropped while the press is still
-  // down or has moved past the drag threshold, so only a genuine click opens
-  // the menu from the handle and a drag never does.
+  // Every open request the TRIGGER itself makes — Base UI opens it on
+  // pointerdown and on a keyboard Enter/Space keydown, neither of which
+  // touches `pressRef` — arrives here, never `handleMenuOpenChange` directly.
+  // Desktop (KAN-485): the trigger never opens the menu, full stop — the
+  // handle only drags, so every `open` request from it is dropped regardless
+  // of how it was made; a close (Escape, outside click, picking an item)
+  // still passes through. Phone keeps the tap-opens-the-menu path, gated the
+  // old way: dropped while the press is still down or has moved past the
+  // drag threshold, so a drag never opens it.
   function handlePointerOpenChange(open: boolean) {
+    if (open && menuSize !== 'mobile') return
     if (open && (pressRef.current.down || pressRef.current.moved)) return
     handleMenuOpenChange(open)
   }
@@ -3291,31 +4149,49 @@ function BlockEditor({
   function handleTriggerPointerUp() {
     pressRef.current.down = false
     setDragArmed(false)
+    // The click that follows this release (`handleTriggerClick` below) is
+    // what selects the row on a no-move desktop release — doing it here too
+    // would run `selectRow()` twice per press (KAN-485).
   }
   // An HTML5 drag never fires `pointerup` on the handle — it ends in
   // `pointercancel` (here) or the row's `dragend` below — so without this,
-  // `down` stays true forever and every later open from this handle (the
-  // click, ⌘/'s own gate-free path never minds, but the trigger's click does)
-  // stays blocked.
+  // `down`/`moved` stay stuck true forever: on phone that blocks every later
+  // open from this handle (`handlePointerOpenChange` gates the trigger's
+  // click on both; ⌘/'s own gate-free path never minds), on desktop a stuck
+  // `moved` blocks the trigger's click from selecting the row instead.
   function handleTriggerPointerCancel() {
     pressRef.current.down = false
     pressRef.current.moved = false
     setDragArmed(false)
   }
-  // The click that ends an unmoved press. Toggle against the open state the
-  // PRESS saw at pointerdown, not the live prop: Base UI's own trigger closes
-  // an already-open menu on this same press's mousedown (before this click
-  // fires), so a click that started on an open menu is that close's trailing
-  // click, not a new open request, and must not reopen it.
+  // Phone (KAN-485) keeps the old click-opens-the-menu path: toggle against
+  // the open state the PRESS saw at pointerdown, not the live prop — Base
+  // UI's own trigger closes an already-open menu on this same press's
+  // mousedown (before this click fires), so a click that started on an open
+  // menu is that close's trailing click, not a new open request, and must
+  // not reopen it. Desktop drops that path entirely (the handle only drags);
+  // its own click — the one that follows a no-move mouse release, or
+  // Enter/Space, which never sets `pressRef` at all — selects the row
+  // instead, unless a drag past the threshold is what produced this click.
   function handleTriggerClick() {
-    if (pressRef.current.openAtDown) return
-    handlePointerOpenChange(true)
+    if (menuSize === 'mobile') {
+      if (pressRef.current.openAtDown) return
+      handlePointerOpenChange(true)
+      return
+    }
+    if (pressRef.current.moved) return
+    selectRow()
   }
 
-  // ⌥↑/⌥↓ on the handle reorder the block: the menu's trigger would otherwise
-  // take the arrow to open the menu and keep it from reaching the block.
-  const handleTriggerKeyDown = (e: BaseUIEvent<React.KeyboardEvent<HTMLButtonElement>>) => {
-    if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) e.preventBaseUIHandler()
+  // ⌥↑/⌥↓ on the handle reorder the block: Menu.Trigger would otherwise take
+  // the arrow to open the menu and keep it from reaching the block — but
+  // desktop's handle (KAN-485) is a plain button, not a Menu.Trigger, so
+  // there's no Base UI handler to suppress there; `preventBaseUIHandler` only
+  // exists on the mobile path's Base UI-wrapped event.
+  const handleTriggerKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      ;(e as BaseUIEvent<typeof e>).preventBaseUIHandler?.()
+    }
   }
 
   // The row itself is "selected", never a bubbled focus from a field it hosts
@@ -3357,6 +4233,67 @@ function BlockEditor({
     rootRef.current?.focus()
   }
 
+  // Right-button press (KAN-485): record whether a non-collapsed selection
+  // inside the row already existed, before the browser's own right-click
+  // word-select (its `pointerdown` default action, which runs after this
+  // bubbling listener) can create one. `handleContextMenu` reads this
+  // recorded fact instead of the live selection. macOS ctrl+click is a
+  // button-0 pointerdown followed by a `contextmenu`, same as a real
+  // right-press, so it needs the same recorded selection.
+  //
+  // `keyboardMenuOpenRef` clears on ANY pointerdown on the row, not just a
+  // right-press: ⇧F10 opens the menu from the keyboard without a trailing
+  // `contextmenu` on macOS, so a later left-click elsewhere on the row (which
+  // only fires a plain pointerdown) must still drop the stale flag before a
+  // ctrl+click's own `contextmenu` arrives.
+  function handleRowPointerDown(e: React.PointerEvent) {
+    if (!e.currentTarget.contains(e.target as Node)) return
+    if (e.button === 2 || (e.button === 0 && e.ctrlKey)) {
+      const sel = window.getSelection()
+      rightPressSelectionRef.current = !!(
+        sel &&
+        !sel.isCollapsed &&
+        sel.rangeCount > 0 &&
+        rootRef.current?.contains(sel.anchorNode)
+      )
+    }
+    keyboardMenuOpenRef.current = false
+  }
+
+  // Right-click opens the block menu at the pointer (KAN-485), replacing the
+  // browser's own menu. `chrome=false` (zen) leaves the native menu, same as
+  // the hidden handle. `isContextMenuField` is narrower than the plain-click
+  // guard `shouldSelectCardFromClick` (whose `INTERACTIVE` list is a whole
+  // `td`/`role="button"` card, not just a field) — a right-click only needs
+  // to leave the native menu for an actual text field (a table cell's input,
+  // a todo item's own field), so a page-link card, a highlight passage or a
+  // table cell itself still open the block menu. A non-collapsed selection
+  // that already existed at the right-button press is a copy/paste in
+  // progress: the native menu stays for that, whatever the block type.
+  function handleContextMenu(e: React.MouseEvent) {
+    if (!e.currentTarget.contains(e.target as Node)) return
+    if (!chrome) return
+    if (isContextMenuField(e.target)) return
+    if (keyboardMenuOpenRef.current) {
+      keyboardMenuOpenRef.current = false
+      e.preventDefault()
+      e.stopPropagation()
+      return
+    }
+    if (rightPressSelectionRef.current) return
+    e.preventDefault()
+    e.stopPropagation()
+    setContextPoint({ x: e.clientX, y: e.clientY })
+    handleMenuOpenChange(true)
+  }
+
+  // Esc inside a text editor (KAN-367): focusing the row's own element is
+  // what `handleFocus` above already reads `rowSelected` off, same as a
+  // card's own click-to-select.
+  function selectRow() {
+    rootRef.current?.focus()
+  }
+
   function handleHeightPreview(next: number) {
     setPreviewHeight(next)
   }
@@ -3394,9 +4331,16 @@ function BlockEditor({
       {changedMark}
     </PondBlock>
   ) : block.type === 'text' ? (
-    // Bare prose: `padding 2px 4px`, no card.
+    // Bare prose: `padding 2px 4px`, no card. Selected draws the library's
+    // ring here instead of on the row (the row excludes text, ~:3699) since
+    // there is no card for that ring to sit on.
     <div
-      className={cn(untouched && UNTOUCHED_HINT_CLASS, hoverGhost && HOVER_GHOST_CLASS)}
+      data-part="prose"
+      className={cn(
+        untouched && UNTOUCHED_HINT_CLASS,
+        hoverGhost && HOVER_GHOST_CLASS,
+        state === 'selected' && POND_BLOCK_SELECTED_RING_ROUNDED
+      )}
       data-hover-ghost={hoverGhost || undefined}
       style={{ paddingBlock: TEXT_BLOCK_TOP_INSET_PX, paddingInline: TEXT_BLOCK_INSET_PX }}
     >
@@ -3419,6 +4363,38 @@ function BlockEditor({
     </>
   )
 
+  // Desktop (KAN-485): a plain button, never Base UI's `Menu.Trigger` — the
+  // handle only drags/selects here, so wiring it as the trigger would wear
+  // `aria-haspopup`/`aria-expanded` for a popup this element never opens.
+  // Phone still passes it as PondMenu's `trigger` (the old tap-opens path).
+  const handleButton = (
+    <button
+      type="button"
+      className={cn(
+        'flex cursor-grab items-center justify-center outline-none focus-visible:ring-2 focus-visible:ring-mn-text',
+        menuSize === 'mobile' ? 'h-11 w-11 rounded-[14px]' : 'h-6 w-3 rounded-[6px]',
+        menuOpen ? 'bg-mn-hover-fill text-mn-text' : 'text-mn-text-secondary'
+      )}
+      title="drag to move"
+      aria-label="drag to move"
+      onPointerDown={handleTriggerPointerDown}
+      onPointerMove={handleTriggerPointerMove}
+      onPointerUp={handleTriggerPointerUp}
+      onPointerCancel={handleTriggerPointerCancel}
+      onClick={handleTriggerClick}
+      onKeyDown={handleTriggerKeyDown}
+    >
+      <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor" aria-hidden>
+        <circle cx="3" cy="3" r="1.1" />
+        <circle cx="7" cy="3" r="1.1" />
+        <circle cx="3" cy="7" r="1.1" />
+        <circle cx="7" cy="7" r="1.1" />
+        <circle cx="3" cy="11" r="1.1" />
+        <circle cx="7" cy="11" r="1.1" />
+      </svg>
+    </button>
+  )
+
   return (
     <div
       ref={rootRef}
@@ -3428,10 +4404,7 @@ function BlockEditor({
         // A calendar sits in a card, so selecting it draws the card's ring.
         // A board draws its own lanes and has no card, so the same ring goes
         // on the row itself — otherwise a click selects it and nothing shows.
-        state === 'selected' &&
-          !frame &&
-          block.type !== 'text' &&
-          cn(POND_BLOCK_SELECTED_RING, 'rounded-[20px]'),
+        state === 'selected' && !frame && block.type !== 'text' && POND_BLOCK_SELECTED_RING_ROUNDED,
         settleOnMount && 'motion-settle-in',
         // `origin` (old place) from `PondBlock.dc.html` is opacity .4 ONLY — the
         // tilt and stepped-up shadow belong to the separate `lifted` copy, built
@@ -3447,7 +4420,11 @@ function BlockEditor({
       tabIndex={block.type === 'text' ? -1 : 0}
       {...(block.type === 'text'
         ? {}
-        : { role: 'group', 'aria-label': blockName(block, frame), 'aria-keyshortcuts': 'Enter' })}
+        : {
+            role: 'group',
+            'aria-label': blockName(block, frame),
+            'aria-keyshortcuts': 'Enter Shift+F10 ContextMenu',
+          })}
       draggable={dragArmed}
       onDragStart={onDragStart}
       onDragEnd={() => {
@@ -3466,6 +4443,8 @@ function BlockEditor({
       onFocus={handleFocus}
       onBlur={handleBlur}
       onClick={handleClick}
+      onPointerDown={handleRowPointerDown}
+      onContextMenu={handleContextMenu}
     >
       {/* The drop line (6x `PondBlock.dc.html`'s `dropBar`): beside is a 2px bar
           9px into the gap off this block's near edge; above/below is a 2px bar
@@ -3495,11 +4474,20 @@ function BlockEditor({
           (KAN-259) sits INSIDE the card at `right 2 · top 2 · 44x44` — a touch
           target can't float off-card or wait on a hover that never fires — so
           it is always visible there; PondBlock's head row reserves the 40px
-          this takes (`size="mobile"`, below). Press-and-drag reorders, a click
-          opens the block menu, which is where `delete` lives. Inside the card
+          this takes (`size="mobile"`, below). Press-and-drag reorders; a
+          no-move release selects the row. Phone keeps a tap opening the
+          block menu (KAN-485), which is where `delete` lives. Inside the card
           it must stack ABOVE the body that follows it in the DOM (the card's
           paper, a text block's editor) or taps land on the body: `z-[1]`, the
-          lowest lift that does it, under every floating surface (z ≥ 4). */}
+          lowest lift that does it, under every floating surface (z ≥ 4).
+          Desktop's own grip sits further out (`-left-3.5`), where a row-mate's
+          shared edge strip (KAN-505, `z-[1]`) reaches into the same pixels —
+          but that fight is won one level up, on the sizing div outside this
+          card (`liftAboveSharedStrip`, above): a card with `motion-settle-in`
+          keeps a `transform` (fill-mode `both`) long after it finishes,
+          which makes the card its own stacking context and would trap any
+          z-index raised in here instead. This `z-[1]` only has to clear the
+          body beside it, same as before KAN-505. */}
       <div
         data-part="handle"
         hidden={!chrome}
@@ -3508,7 +4496,7 @@ function BlockEditor({
           menuSize === 'mobile'
             ? 'right-0.5 top-0.5 z-[1]'
             : [
-                '-left-3.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
+                '-left-3.5 z-[1] opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
                 // A card centres the 24px handle on its head row; bare prose has no head
                 // row, so it centres on the first line (2px inset + half the 28px line).
                 !frame && block.type === 'text' ? 'top-1' : 'top-3',
@@ -3524,35 +4512,14 @@ function BlockEditor({
           open={menuOpen ?? false}
           onOpenChange={handlePointerOpenChange}
           onSelect={onMenuSelect ?? (() => {})}
-          placement={{ anchor: rootRef, ...MENU_PLACEMENT[menuSize] }}
-          trigger={
-            <button
-              type="button"
-              className={cn(
-                'flex cursor-grab items-center justify-center outline-none focus-visible:ring-2 focus-visible:ring-mn-text',
-                menuSize === 'mobile' ? 'h-11 w-11 rounded-[14px]' : 'h-6 w-3 rounded-[6px]',
-                menuOpen ? 'bg-mn-hover-fill text-mn-text' : 'text-mn-text-secondary'
-              )}
-              title="Block menu · drag to reorder"
-              aria-label="Block menu"
-              onPointerDown={handleTriggerPointerDown}
-              onPointerMove={handleTriggerPointerMove}
-              onPointerUp={handleTriggerPointerUp}
-              onPointerCancel={handleTriggerPointerCancel}
-              onClick={handleTriggerClick}
-              onKeyDown={handleTriggerKeyDown}
-            >
-              <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor" aria-hidden>
-                <circle cx="3" cy="3" r="1.1" />
-                <circle cx="7" cy="3" r="1.1" />
-                <circle cx="3" cy="7" r="1.1" />
-                <circle cx="7" cy="7" r="1.1" />
-                <circle cx="3" cy="11" r="1.1" />
-                <circle cx="7" cy="11" r="1.1" />
-              </svg>
-            </button>
+          placement={
+            contextAnchor
+              ? { anchor: contextAnchor, ...POINT_MENU_PLACEMENT }
+              : { anchor: rootRef, ...MENU_PLACEMENT[menuSize] }
           }
+          trigger={menuSize === 'mobile' ? handleButton : undefined}
         />
+        {menuSize !== 'mobile' && handleButton}
       </div>
 
       {/* The `/` menu hangs at the caret. */}
