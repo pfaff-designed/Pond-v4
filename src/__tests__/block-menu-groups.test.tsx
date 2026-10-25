@@ -16,6 +16,7 @@ import {
 } from '@/components/organisms/block-menu'
 import type { TodoBlock } from '@/lib/modules/todo/schema'
 import type { PageLinkBlock } from '@/lib/modules/page-link/schema'
+import type { TextBlock } from '@/lib/modules/text/schema'
 
 const list: TodoBlock = {
   id: 'b-list',
@@ -26,6 +27,8 @@ const list: TodoBlock = {
     { id: 'i2', label: '1 lemon', checked: false },
   ],
 }
+
+const text: TextBlock = { id: 'b-text', type: 'text', content: 'hello' }
 
 const OpenMenu = ({ slots }: { slots?: BlockMenuSlots }) => {
   const anchorRef = useRef<HTMLDivElement>(null)
@@ -108,6 +111,37 @@ describe('blockMenuGroups delete label', () => {
   it('reads `delete` for every other block type', () => {
     const group = blockMenuGroups(list).find((g) => g.id === 'block')
     expect(group?.items?.find((item) => item.id === 'delete')?.label).toBe('delete')
+  })
+})
+
+describe('blockMenuGroups turn-into: heading, quote, code', () => {
+  const turnIntoItems = (apple: boolean) =>
+    blockMenuGroups(text, {}, apple)[0].items ?? []
+
+  it('labels the new targets in the board’s lowercase, with heading 1–3’s chord hint pinned to Mac', () => {
+    const items = turnIntoItems(true)
+    expect(items.map((item) => [item.label, item.value])).toEqual([
+      ['heading 1', '⌥⌘1'],
+      ['heading 2', '⌥⌘2'],
+      ['heading 3', '⌥⌘3'],
+      ['quote', undefined],
+      ['code', undefined],
+      ['list', undefined],
+      ['checklist', undefined],
+    ])
+  })
+
+  it('reads the same hints spelled out for a non-Mac platform, pinned', () => {
+    const items = turnIntoItems(false)
+    expect(items.map((item) => [item.label, item.value])).toEqual([
+      ['heading 1', 'Ctrl Alt 1'],
+      ['heading 2', 'Ctrl Alt 2'],
+      ['heading 3', 'Ctrl Alt 3'],
+      ['quote', undefined],
+      ['code', undefined],
+      ['list', undefined],
+      ['checklist', undefined],
+    ])
   })
 })
 

@@ -139,7 +139,7 @@ import { BlockHeightHandles } from '@/components/organisms/BlockHeightHandles'
 import { BlockHeightProvider } from '@/components/organisms/block-height-context'
 import { blockAcceptsHeight, blockWithoutHeight } from '@/lib/modules/block-height'
 import type { ConversionTarget, LineConversion, TableConversion } from '@/lib/modules/conversions'
-import { isBlockMenuChord, isDeleteBlockChord } from '@/lib/shell-commands'
+import { isBlockMenuChord, isDeleteBlockChord, useApplePlatform } from '@/lib/shell-commands'
 import { slashRows, emptyBlockForType } from '@/lib/modules/palette'
 import { descriptorFor } from '@/lib/modules/registry'
 import { useBelowMd } from '@/lib/layout/use-below-md'
@@ -195,6 +195,11 @@ const blockName = (block: Block, frame: BlockFrame | null): string =>
   frame?.heading ?? descriptorFor(block.type)?.label ?? block.type
 
 const TURNED_INTO: Record<Exclude<ConversionTarget, 'table'>, string> = {
+  'heading-1': 'Turned into heading 1',
+  'heading-2': 'Turned into heading 2',
+  'heading-3': 'Turned into heading 3',
+  quote: 'Turned into a quote',
+  code: 'Turned into code',
   list: 'Turned into a list',
   checklist: 'Turned into a checklist',
   text: 'Turned into text',
@@ -552,6 +557,7 @@ export function BlockCanvas({
   const getSupabase = useLazySupabase()
   const queryClient = useQueryClient()
   const pondId = usePondId()
+  const apple = useApplePlatform()
   // The LATEST blocks, for the async paths below (the list→table write and its
   // undo). They run after awaits / from a toast, when the `blocks` their closure
   // captured may be stale — re-basing an edit on that snapshot would drop
@@ -2317,19 +2323,23 @@ export function BlockCanvas({
         // keystroke anywhere on the page.
         menuGroups={
           menuOpenAt === i
-            ? blockMenuGroups(block, {
-                moveIntoNewPage: onMoveIntoNewPage !== undefined,
-                width: (
-                  <BlockWidthRow
-                    width={block.width}
-                    size={slashSize}
-                    onSelect={(width) => handleMenuSelect(i, { type: 'set-width', width })}
-                    onPreview={(width) =>
-                      setPreviewWidth(width === null ? null : [{ blockId: block.id, width }])
-                    }
-                  />
-                ),
-              })
+            ? blockMenuGroups(
+                block,
+                {
+                  moveIntoNewPage: onMoveIntoNewPage !== undefined,
+                  width: (
+                    <BlockWidthRow
+                      width={block.width}
+                      size={slashSize}
+                      onSelect={(width) => handleMenuSelect(i, { type: 'set-width', width })}
+                      onPreview={(width) =>
+                        setPreviewWidth(width === null ? null : [{ blockId: block.id, width }])
+                      }
+                    />
+                  ),
+                },
+                apple
+              )
             : undefined
         }
         menuSize={slashSize}

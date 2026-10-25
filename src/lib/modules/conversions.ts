@@ -86,6 +86,17 @@ const RETYPE_ONLY_TARGETS = new Set<ConversionTarget>([
   'code',
 ])
 
+const HEADING_LEVEL_OF_KIND: Partial<Record<TextKind, 1 | 2 | 3>> = {
+  heading1: 1,
+  heading2: 2,
+  heading3: 3,
+}
+
+/** `target`'s heading level, read off the one target↔kind map above — null for
+ * every target that isn't a heading (so the menu knows which rows get a chord hint). */
+export const headingLevelOf = (target: ConversionTarget): 1 | 2 | 3 | null =>
+  HEADING_LEVEL_OF_KIND[TEXT_KIND_OF_TARGET[target] ?? 'text'] ?? null
+
 type LineTarget = Exclude<ConversionTarget, 'table'>
 
 export interface TableConversionInput {
