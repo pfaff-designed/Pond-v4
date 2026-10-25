@@ -72,6 +72,7 @@ import { requestTitleFocus } from '@/lib/pages/title-focus'
 import { flushPendingPageSave } from '@/lib/pages/page-flush'
 import { moveAndStageUndo } from '@/lib/pages/move'
 import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
+import { useFavouritePage } from '@/lib/pond/use-favourite-page'
 import {
   movePickItems,
   newPageParent,
@@ -148,6 +149,7 @@ export function ShellCommands() {
   // rail's drag-move already stages through; ShellCommands sits inside the
   // one `DeletionUndoProvider` the workspace shell mounts.
   const { stageUndo, notify } = useDeletionUndo()
+  const { toggle: toggleFavouritePage } = useFavouritePage()
 
   // A step's notice is only good for AS LONG AS NOTHING ELSE HAPPENED — a
   // key/click (via `clearShownNotice`) or a second step (via `runUndoStep`)
@@ -315,7 +317,7 @@ export function ShellCommands() {
     if (!paletteOpen) return []
     if (movePick) return movePickItems(pages, movePick.id, home?.title ?? pondName)
     return [
-      ...paletteItems(pages, recentPageIds, currentNodeId),
+      ...paletteItems(pages, recentPageIds, currentNodeId, pond?.favouritePageIds),
       ...zenCommands.items,
       ...railItems(railMinimized),
       ...pondItems(ponds, pond?.id ?? null),
@@ -592,6 +594,11 @@ export function ShellCommands() {
         void handleDuplicatePage()
         return
       }
+      if (item.action === 'favourite-page' || item.action === 'unfavourite-page') {
+        if (!currentNodeId) return
+        void toggleFavouritePage(currentNodeId)
+        return
+      }
       if (item.action === 'new-pond') {
         setNaming(item.query ?? '')
         return
@@ -640,6 +647,7 @@ export function ShellCommands() {
       startTemplateSheet,
       handleCreatePage,
       handleDuplicatePage,
+      toggleFavouritePage,
       movePick,
       queryClient,
       pondId,
