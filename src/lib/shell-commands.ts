@@ -31,6 +31,16 @@ export const isBlockMenuChord = (e: KeyboardEvent) => {
 }
 
 /**
+ * ⇧F10, or the keyboard's own ContextMenu key: a selected block's menu, at the row
+ * (KAN-485). Neither needs the command key, so `isCommandOnly` doesn't apply here —
+ * both are the same on every platform.
+ */
+export const isContextMenuKey = (e: KeyboardEvent) => {
+  if (e.key === 'ContextMenu') return !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey
+  return e.key === 'F10' && e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey
+}
+
+/**
  * ⌘. on a Mac, Ctrl+. everywhere else: zen (`Pond 06.17` 6q frame 1). Mid-composition
  * it is the IME's — macOS cancels a composition with ⌘. — so it is left alone then.
  */
@@ -98,6 +108,68 @@ export const isRedoChord = (e: KeyboardEvent) => {
   const key = e.key.toLowerCase()
   const matchesKey = e.shiftKey ? key === 'z' || key === 'я' : key === 'y'
   if (!matchesKey) return false
+  return isCommandOnly(e)
+}
+
+/**
+ * ⌘⇧↑ on a Mac, Ctrl+Shift+↑ everywhere else: open the open page's parent (none at the
+ * root). Left alone inside an editable field (`isEditableField`) — there the key keeps
+ * its native "select to paragraph start" meaning, as in Linear and Notion.
+ */
+export const isGoToParentChord = (e: KeyboardEvent) => {
+  if (e.altKey || !e.shiftKey || e.key !== 'ArrowUp') return false
+  return isCommandOnly(e)
+}
+
+/** Whether `el` is a plain text field whose own keys (not Pond's) should win —
+ *  narrower than `isEditable` above, which carries undo-specific exceptions that
+ *  answer a different question ("does the browser or Pond own undo here"). Reads
+ *  the nearest `contenteditable` ancestor's value directly rather than the
+ *  `[contenteditable]` selector (which also matches `contenteditable="false"`) or
+ *  `isContentEditable` (which jsdom — this repo's test DOM — never implements, so
+ *  it reads as `undefined` in every test regardless of markup). */
+export const isEditableField = (el: Element | null): boolean => {
+  if (el === null) return false
+  if (el.matches('input, textarea')) return true
+  const value = el.closest('[contenteditable]')?.getAttribute('contenteditable')
+  return value === '' || value === 'true'
+}
+
+/** Whether a modal dialog or alertdialog — a confirm dialog (`ConfirmDialog`), the
+ *  new-pond sheet, the report-problem box, or anything else built on base-ui's
+ *  `Dialog`/`AlertDialog` — is open anywhere in the document. `⌘K`'s own palette
+ *  carries no `role="dialog"` (it's a combobox/listbox, not a base-ui `Dialog`), so
+ *  a caller also checks the palette's own open state; this covers every OTHER
+ *  overlay without threading its open state in from wherever it actually lives
+ *  (`BlockCanvas`, `Rail`), which a chord that fires globally or navigates must not
+ *  act underneath. */
+export const isOverlayOpen = (): boolean =>
+  document.querySelector('[role="dialog"], [role="alertdialog"]') !== null
+
+/**
+ * ⌘⇧\ on a Mac, Ctrl+Shift+\ everywhere else: focus the open page's row in the rail.
+ * Global, including inside the editor — that is the chord's whole point. Shares its
+ * base key with `isMinimizeRailChord` (⌘\, no shift) — same physical key, shift as
+ * "the stronger action: focus into it" — and nothing else in this file uses shift+\.
+ *
+ * Matches on `e.code` (the physical key), not `e.key`: with Shift held, a real
+ * browser reports the shifted character in `e.key` (`'|'` on a US layout), not `'\\'`,
+ * so a `key`-based check never matches for anyone despite passing a test that
+ * synthesizes `{ key: '\\', shiftKey: true }` — a fixture no real keydown produces.
+ *
+ * Rejected ⌘⇧E (the spec's preferred candidate): Firefox binds Ctrl+Shift+E to the
+ * devtools Network panel at the browser-chrome level, a reservation a page's own
+ * `preventDefault` cannot reach (AUDIT K1–K4), so the chord could silently fail to
+ * reach Pond on Windows/Linux Firefox. Rejected ⌥⌘↑ and its family: Chrome and Safari
+ * bind ⌥⌘-arrows to tab switching.
+ *
+ * Known gap: Safari on macOS binds ⇧⌘\ to View ▸ Show Tab Overview at the
+ * browser-chrome level, the same class of reservation as the Firefox ⌘⇧E case above —
+ * `preventDefault` cannot win there, so this chord may be unavailable in Safari. Tab
+ * into the rail remains the fallback.
+ */
+export const isRailFocusChord = (e: KeyboardEvent) => {
+  if (e.altKey || !e.shiftKey || e.code !== 'Backslash') return false
   return isCommandOnly(e)
 }
 

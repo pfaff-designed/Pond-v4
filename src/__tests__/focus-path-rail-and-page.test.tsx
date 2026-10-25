@@ -91,8 +91,8 @@ describe('PATH_STEPS A — delete a block from its handle menu', () => {
     writeInTextBlock(fields[1], 'second')
     writeInTextBlock(fields[2], 'third')
 
-    const handles = await screen.findAllByRole('button', { name: 'Block menu' })
-    await user.click(handles[1])
+    const handles = await screen.findAllByRole('button', { name: 'drag to move' })
+    fireEvent.contextMenu(handles[1].closest('[id^="block-"]')!)
     await user.click(await screen.findByRole('menuitem', { name: 'delete' }))
     await user.click(await screen.findByRole('button', { name: 'Delete' }))
 

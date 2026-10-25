@@ -164,7 +164,7 @@ function renderCanvas(initial: Block[], opts: { titleExitRef?: React.RefObject<(
 
 const blockRoot = (blockId: string) => document.getElementById(`block-${blockId}`)!
 const handleOf = (blockId: string) =>
-  within(blockRoot(blockId)).getByRole('button', { name: /block menu/i })
+  within(blockRoot(blockId)).getByRole('button', { name: /drag to move/i })
 const textBlockIn = (blockId: string) =>
   within(blockRoot(blockId)).findByRole('textbox', { name: 'text block' })
 const lastBlocks = (onChange: jest.Mock) => onChange.mock.calls.at(-1)![0] as Block[]
@@ -403,7 +403,7 @@ describe('Return after a block opens a line for `/`', () => {
     renderCanvas([table, note])
     const group = screen.getByRole('group', { name: 'table' })
     expect(group).toBe(blockRoot('b-table'))
-    expect(group).toHaveAttribute('aria-keyshortcuts', 'Enter')
+    expect(group).toHaveAttribute('aria-keyshortcuts', 'Enter Shift+F10 ContextMenu')
     expect(group.querySelector('[data-block-state]')).toHaveAttribute('data-block-state', 'rest')
     act(() => group.focus())
     expect(group.querySelector('[data-block-state]')).toHaveAttribute(
@@ -460,6 +460,39 @@ describe('pointer selection draws PondBlock’s own `selected` state (07.05)', (
 
     expect(group).not.toHaveFocus()
     expect(document.querySelector('[data-part="record-peek"]')).not.toBeNull()
+  })
+
+  it('a right-click inside RecordPeek — portaled outside the row’s own DOM — does not open this row’s menu (KAN-485)', async () => {
+    const user = userEvent.setup()
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <DeletionUndoProvider>
+          <PageCanvas>
+            <Harness initial={[board]} onChange={jest.fn()} />
+          </PageCanvas>
+        </DeletionUndoProvider>
+      </QueryClientProvider>
+    )
+    const group = blockRoot('b-board')
+
+    screen.getByRole('article', { name: 'Trim the rim' }).focus()
+    await user.keyboard('{Enter}')
+    const peek = document.querySelector('[data-part="record-peek"]') as HTMLElement
+    expect(group.contains(peek)).toBe(false)
+
+    const statusField = within(peek).getByText('status')
+    let event: Event | undefined
+    const capture = (e: Event) => {
+      event = e
+    }
+    peek.addEventListener('contextmenu', capture)
+    fireEvent.contextMenu(statusField, { clientX: 10, clientY: 10 })
+    peek.removeEventListener('contextmenu', capture)
+
+    expect(event?.defaultPrevented).toBe(false)
+    expect(screen.queryByRole('menu', { name: /block menu/i })).not.toBeInTheDocument()
   })
 })
 
@@ -749,9 +782,8 @@ describe('the handle is the only block chrome (07.05)', () => {
   })
 
   it('open, it is ink 100 on the hover wash and stays shown', async () => {
-    const user = userEvent.setup()
     renderCanvas([table])
-    await user.click(handleOf('b-table'))
+    fireEvent.contextMenu(blockRoot('b-table'))
     await screen.findByRole('menu', { name: /block menu/i })
     expect(handleOf('b-table')).toHaveClass('text-mn-text', 'bg-mn-hover-fill')
     expect(handleOf('b-table')).not.toHaveClass('text-mn-text-secondary')

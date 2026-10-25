@@ -114,7 +114,7 @@ function renderPath() {
 const blockRoot = (id: string) => document.getElementById(`block-${id}`)!
 const textBlockIn = (id: string) =>
   within(blockRoot(id)).findByRole('textbox', { name: 'text block' })
-const handleOf = (id: string) => within(blockRoot(id)).getByRole('button', { name: /block menu/i })
+const handleOf = (id: string) => within(blockRoot(id)).getByRole('button', { name: /drag to move/i })
 const blockOrder = () =>
   Array.from(document.querySelectorAll<HTMLElement>('[data-block-id]')).map((el) =>
     el.getAttribute('data-block-id')

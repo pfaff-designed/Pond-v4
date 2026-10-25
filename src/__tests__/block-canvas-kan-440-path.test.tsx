@@ -5,7 +5,6 @@
 
 import React from 'react'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
@@ -93,7 +92,7 @@ function renderCanvas(initial: Block[]) {
 
 const handleOf = (blockId: string) =>
   within(document.getElementById(`block-${blockId}`)!).getByRole('button', {
-    name: /block menu/i,
+    name: /drag to move/i,
   })
 
 const blockRoot = (blockId: string) => document.getElementById(`block-${blockId}`)!
@@ -138,7 +137,7 @@ beforeEach(() => {
   window.history.replaceState(null, '', '/')
 })
 
-describe('PATH_STEPS 2, 9: pressing the handle opens no menu and moves nothing; a click opens it', () => {
+describe('PATH_STEPS 2, 9: pressing the handle opens no menu and moves nothing; right-click opens it', () => {
   it('a bare pointerdown on the handle opens no menu', () => {
     renderCanvas([block1, block2, block3])
     const handle = handleOf('b-1')
@@ -148,15 +147,14 @@ describe('PATH_STEPS 2, 9: pressing the handle opens no menu and moves nothing; 
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 
-  it('a click opens the menu, with block 1’s row wrapper untouched', async () => {
-    const user = userEvent.setup()
+  it('a right-click opens the menu, with block 1’s row wrapper untouched', async () => {
     renderCanvas([block1, block2, block3])
     const root = document.getElementById('block-b-1')!
     const rowWrapper = root.parentElement!
     const widthBefore = rowWrapper.style.width
     const classNameBefore = rowWrapper.className
 
-    await user.click(handleOf('b-1'))
+    fireEvent.contextMenu(blockRoot('b-1'))
 
     expect(await screen.findByRole('menu', { name: /block menu/i })).toBeInTheDocument()
     expect(rowWrapper.style.width).toBe(widthBefore)

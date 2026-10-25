@@ -47,7 +47,7 @@ import {
   type PondBlockState,
 } from '@/lib/modules/block-frame'
 import { readCachedSchema, useCollectionRows } from '@/lib/modules/view/use-collection-rows'
-import { shouldSelectCardFromClick } from '@/lib/modules/view/card-click'
+import { isContextMenuField, shouldSelectCardFromClick } from '@/lib/modules/view/card-click'
 import { applyView } from '@/lib/modules/view/apply'
 import { activeSavedView } from '@/lib/modules/view/schema'
 import {
@@ -77,6 +77,7 @@ import { caretRect, roomTowardSide, sideTowardFreeSpace } from '@/lib/layout/car
 import { composerBottomBound } from '@/lib/layout/composer-clearance'
 import {
   PondMenu,
+  pointAnchor,
   type PondMenuGroup,
   type PondMenuPlacement,
   type PondMenuSize,
@@ -145,7 +146,7 @@ import type {
   PageConversion,
   TableConversion,
 } from '@/lib/modules/conversions'
-import { isBlockMenuChord, isDeleteBlockChord, useApplePlatform } from '@/lib/shell-commands'
+import { isBlockMenuChord, isContextMenuKey, isDeleteBlockChord, useApplePlatform } from '@/lib/shell-commands'
 import { slashRows, emptyBlockForType } from '@/lib/modules/palette'
 import { descriptorFor } from '@/lib/modules/registry'
 import { useBelowMd } from '@/lib/layout/use-below-md'
@@ -215,6 +216,15 @@ const TURNED_INTO: Record<Exclude<ConversionTarget, 'table'>, string> = {
 const MENU_PLACEMENT: Record<PondMenuSize, Omit<PondMenuPlacement, 'anchor'>> = {
   desktop: { align: 'start', top: 40, alignOffset: -8 },
   mobile: { align: 'end', top: 48, alignOffset: 0 },
+}
+
+/** A right-click's point (KAN-485): `align: 'start'` and `top: 0` line the
+ *  popup's top-left up with it, and PondMenu's own `sideOffset` math copes
+ *  with the zero height (plain subtraction). */
+const POINT_MENU_PLACEMENT: Omit<PondMenuPlacement, 'anchor'> = {
+  align: 'start',
+  top: 0,
+  alignOffset: 0,
 }
 
 /** The page a `/` pick makes: a template's shape, or a person's own copied whole. */
@@ -3139,14 +3149,19 @@ function useBlockEmptyState(
  * Return on the block itself — not on anything inside it — opens a line after a
  * block that is not text. A text block's Return is its editor's.
  *
- * A click on the handle — a press that ends in pointerup within
- * `HANDLE_PRESS_MOVE_THRESHOLD_PX` of where it started — or ⌘/ (Ctrl+/ off
- * Apple) anywhere in the block, opens the block menu (`PondMenu` kind
- * `block`), and the block wears the open ring while it is open. Base UI's own
- * trigger opens on pointerdown; `handlePointerOpenChange` below drops that and
- * any open that arrives after the press has moved past the threshold, so a
- * press that becomes a drag never opens it (KAN-440 comment 1) — ⌘/ is never
- * gated by this, so a stuck press state from an earlier drag can't block it.
+ * The handle is drag-only on desktop (KAN-485): a press that ends in
+ * pointerup within `HANDLE_PRESS_MOVE_THRESHOLD_PX` of where it started, or
+ * Enter/Space on the focused handle, selects the row — it never opens the
+ * menu. A press that moves past the threshold still drags, unchanged. The
+ * menu opens from right-click on the block, ⌘/ (Ctrl+/ off Apple) anywhere in
+ * it, or ⇧F10/the ContextMenu key on a selected row, and the block wears the
+ * open ring while it is open. Phone (`size="mobile"`) keeps the old
+ * tap-opens-the-menu path on the handle itself — iOS Safari fires no
+ * `contextmenu` on a long-press. Base UI's own trigger opens on pointerdown;
+ * `handlePointerOpenChange` below drops that and any open that arrives after
+ * the press has moved past the threshold, so a press that becomes a drag
+ * never opens it (KAN-440 comment 1) — ⌘/ is never gated by this, so a stuck
+ * press state from an earlier drag can't block it.
  */
 const HANDLE_PRESS_MOVE_THRESHOLD_PX = 4
 function BlockEditor({
@@ -3291,31 +3306,75 @@ function BlockEditor({
   onDrop?: (e: React.DragEvent) => void
 }) {
   const [dragArmed, setDragArmed] = useState(false)
-  // Gate for the handle's menu (KAN-440 comment 1): Base UI's `Menu.Trigger`
-  // opens on native `mousedown`, before a press is known to be a click or the
-  // start of a drag. `pressRef` tracks whether the handle's press is still
-  // down, whether it has moved past the drag threshold since `onPointerDown`,
-  // and (for the toggle-click fix below) whether the menu was already open
-  // when this press started. `handlePointerOpenChange` drops any
-  // `open === true` while `down` or `moved` is true, so only a genuine click
-  // (pointerup with no movement past the threshold) opens the menu from the
-  // handle — a drag never does. An HTML5 drag ends in `pointercancel`/the
-  // row's `dragend`, never `pointerup`, so both reset `pressRef` too —
-  // otherwise `down` stays true forever and blocks every later open from
-  // this handle, ⌘/ and Enter included.
+  // Gate for the handle's menu — PHONE ONLY (KAN-440 comment 1; desktop drops
+  // this trigger-open path entirely, KAN-485, `handlePointerOpenChange`
+  // below): Base UI's `Menu.Trigger` opens on native `mousedown`, before a
+  // press is known to be a click or the start of a drag. `pressRef` tracks
+  // whether the handle's press is still down, whether it has moved past the
+  // drag threshold since `onPointerDown`, and (for the toggle-click fix
+  // below) whether the menu was already open when this press started. On
+  // phone, `handlePointerOpenChange` drops any `open === true` while `down`
+  // or `moved` is true, so only a genuine click (pointerup with no movement
+  // past the threshold) opens the menu from the handle — a drag never does.
+  // An HTML5 drag ends in `pointercancel`/the row's `dragend`, never
+  // `pointerup`, so both reset `pressRef` too — otherwise `down` stays true
+  // forever and blocks every later open from this handle (phone) or select
+  // (desktop, Enter/Space included); ⌘/ is never gated by this either way.
   const pressRef = useRef({ down: false, moved: false, startX: 0, startY: 0, openAtDown: false })
   // A press that drifts off the handle before releasing never fires the
   // handle's own `pointerup` — without `setPointerCapture`, the browser
   // delivers `pointerup` to whatever element is under the pointer at release,
   // not the one that started the press (KAN-440). `down` then stays stuck
-  // true forever, which blocks a later Enter/Space open the same way a stuck
-  // drag does. A document-level listener, armed on this handle's own
+  // true forever, which blocks a later Enter/Space OPEN on phone the same way
+  // a stuck drag does (desktop's Enter/Space only reads `moved`, so it still
+  // selects the row). A document-level listener, armed on this handle's own
   // `pointerdown`, catches the release wherever it lands. Torn down on the
   // next `pointerdown` (so only one is ever live) and on unmount (AGENTS.md
   // "finish what you start").
   const pressEndCleanupRef = useRef<(() => void) | null>(null)
   useEffect(() => () => pressEndCleanupRef.current?.(), [])
   const rootRef = useRef<HTMLDivElement>(null)
+  // Set by a right-click that opens the menu (below); null for every other
+  // open path, which keeps the handle's own anchor (`rootRef`). Cleared on
+  // close so a later handle-opened menu never inherits a stale point.
+  const [contextPoint, setContextPoint] = useState<{ x: number; y: number } | null>(null)
+  // Memoised on `contextPoint` alone, so a right-click's anchor object is
+  // stable across the row's other re-renders while the menu stays open —
+  // Base UI's positioner effect re-measures whenever the `anchor` prop's
+  // identity changes, so a fresh object every render would re-run it for no
+  // reason.
+  const contextAnchor = useMemo(
+    () => (contextPoint ? { getBoundingClientRect: () => pointAnchor(contextPoint.x, contextPoint.y) } : null),
+    [contextPoint]
+  )
+  // macOS Chrome/Safari select the word under the pointer as the right
+  // button's own default action, which runs after bubbling listeners but
+  // before `contextmenu` fires — so a `window.getSelection()` read inside
+  // `handleContextMenu` itself sees a selection the right-press just made,
+  // not one that predates it, and the native-menu check below it is true on
+  // almost every right-click on prose. Recorded here, on the row's own
+  // `pointerdown`, before that default action runs.
+  const rightPressSelectionRef = useRef(false)
+  // Set when ⇧F10/ContextMenu (`handleKeyDown` below) opens this row's menu
+  // from the keyboard; Windows then fires a trailing native `contextmenu` for
+  // the same key press. Cleared by the next real pointerdown, so a stale
+  // `true` never swallows a later genuine right-click.
+  const keyboardMenuOpenRef = useRef(false)
+  const wasMenuOpenRef = useRef(menuOpen)
+  // Desktop's handle is a plain button, not a `Menu.Trigger` (KAN-485), so
+  // Base UI has nothing of its own to return focus to on close when a
+  // right-click opened the menu. ⇧F10/ContextMenu/⌘/ already land focus back
+  // on the row via Base UI's own restore (the row was the active element
+  // when the menu opened), so this only needs to cover the point-anchored
+  // path.
+  useEffect(() => {
+    if (wasMenuOpenRef.current && !menuOpen) {
+      const shouldRefocusRow = !!contextPoint
+      setContextPoint(null)
+      if (shouldRefocusRow) rootRef.current?.focus()
+    }
+    wasMenuOpenRef.current = menuOpen
+  }, [menuOpen, contextPoint])
   // Read in the exit timeout, which runs after the render that opened a menu
   // or a template preview. A `/` menu and the block menu portal outside this
   // row, so their focus looks like leaving.
@@ -3564,6 +3623,17 @@ function BlockEditor({
       handleMenuOpenChange(true)
       return
     }
+    // ⇧F10 / the ContextMenu key (KAN-485): only on the row itself, so a field
+    // the block hosts (a table cell, a todo label) keeps its own native menu.
+    // `contextPoint` stays null, so the menu opens at the row's own anchor.
+    if (isContextMenuKey(e.nativeEvent) && e.target === e.currentTarget) {
+      e.preventDefault()
+      // Windows follows this keydown with a native `contextmenu` for the same
+      // key press (`handleContextMenu` below swallows it).
+      keyboardMenuOpenRef.current = true
+      handleMenuOpenChange(true)
+      return
+    }
     // Return on a selected row (KAN-367/KAN-344): a text row goes back into
     // editing, caret at the end; any other kind opens a line below it.
     if (
@@ -3674,12 +3744,17 @@ function BlockEditor({
     onMenuOpenChange?.(open)
   }
 
-  // The gate (see `pressRef` above): a POINTER-originated open — Base UI's own
-  // pointerdown-driven request (routed here via `PondMenu`'s `onOpenChange`)
-  // and the handle's own click below — is dropped while the press is still
-  // down or has moved past the drag threshold, so only a genuine click opens
-  // the menu from the handle and a drag never does.
+  // Every open request the TRIGGER itself makes — Base UI opens it on
+  // pointerdown and on a keyboard Enter/Space keydown, neither of which
+  // touches `pressRef` — arrives here, never `handleMenuOpenChange` directly.
+  // Desktop (KAN-485): the trigger never opens the menu, full stop — the
+  // handle only drags, so every `open` request from it is dropped regardless
+  // of how it was made; a close (Escape, outside click, picking an item)
+  // still passes through. Phone keeps the tap-opens-the-menu path, gated the
+  // old way: dropped while the press is still down or has moved past the
+  // drag threshold, so a drag never opens it.
   function handlePointerOpenChange(open: boolean) {
+    if (open && menuSize !== 'mobile') return
     if (open && (pressRef.current.down || pressRef.current.moved)) return
     handleMenuOpenChange(open)
   }
@@ -3736,31 +3811,49 @@ function BlockEditor({
   function handleTriggerPointerUp() {
     pressRef.current.down = false
     setDragArmed(false)
+    // The click that follows this release (`handleTriggerClick` below) is
+    // what selects the row on a no-move desktop release — doing it here too
+    // would run `selectRow()` twice per press (KAN-485).
   }
   // An HTML5 drag never fires `pointerup` on the handle — it ends in
   // `pointercancel` (here) or the row's `dragend` below — so without this,
-  // `down` stays true forever and every later open from this handle (the
-  // click, ⌘/'s own gate-free path never minds, but the trigger's click does)
-  // stays blocked.
+  // `down`/`moved` stay stuck true forever: on phone that blocks every later
+  // open from this handle (`handlePointerOpenChange` gates the trigger's
+  // click on both; ⌘/'s own gate-free path never minds), on desktop a stuck
+  // `moved` blocks the trigger's click from selecting the row instead.
   function handleTriggerPointerCancel() {
     pressRef.current.down = false
     pressRef.current.moved = false
     setDragArmed(false)
   }
-  // The click that ends an unmoved press. Toggle against the open state the
-  // PRESS saw at pointerdown, not the live prop: Base UI's own trigger closes
-  // an already-open menu on this same press's mousedown (before this click
-  // fires), so a click that started on an open menu is that close's trailing
-  // click, not a new open request, and must not reopen it.
+  // Phone (KAN-485) keeps the old click-opens-the-menu path: toggle against
+  // the open state the PRESS saw at pointerdown, not the live prop — Base
+  // UI's own trigger closes an already-open menu on this same press's
+  // mousedown (before this click fires), so a click that started on an open
+  // menu is that close's trailing click, not a new open request, and must
+  // not reopen it. Desktop drops that path entirely (the handle only drags);
+  // its own click — the one that follows a no-move mouse release, or
+  // Enter/Space, which never sets `pressRef` at all — selects the row
+  // instead, unless a drag past the threshold is what produced this click.
   function handleTriggerClick() {
-    if (pressRef.current.openAtDown) return
-    handlePointerOpenChange(true)
+    if (menuSize === 'mobile') {
+      if (pressRef.current.openAtDown) return
+      handlePointerOpenChange(true)
+      return
+    }
+    if (pressRef.current.moved) return
+    selectRow()
   }
 
-  // ⌥↑/⌥↓ on the handle reorder the block: the menu's trigger would otherwise
-  // take the arrow to open the menu and keep it from reaching the block.
-  const handleTriggerKeyDown = (e: BaseUIEvent<React.KeyboardEvent<HTMLButtonElement>>) => {
-    if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) e.preventBaseUIHandler()
+  // ⌥↑/⌥↓ on the handle reorder the block: Menu.Trigger would otherwise take
+  // the arrow to open the menu and keep it from reaching the block — but
+  // desktop's handle (KAN-485) is a plain button, not a Menu.Trigger, so
+  // there's no Base UI handler to suppress there; `preventBaseUIHandler` only
+  // exists on the mobile path's Base UI-wrapped event.
+  const handleTriggerKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      ;(e as BaseUIEvent<typeof e>).preventBaseUIHandler?.()
+    }
   }
 
   // The row itself is "selected", never a bubbled focus from a field it hosts
@@ -3800,6 +3893,60 @@ function BlockEditor({
     if (!e.currentTarget.contains(e.target as Node)) return
     if (!shouldSelectCardFromClick(e.target)) return
     rootRef.current?.focus()
+  }
+
+  // Right-button press (KAN-485): record whether a non-collapsed selection
+  // inside the row already existed, before the browser's own right-click
+  // word-select (its `pointerdown` default action, which runs after this
+  // bubbling listener) can create one. `handleContextMenu` reads this
+  // recorded fact instead of the live selection. macOS ctrl+click is a
+  // button-0 pointerdown followed by a `contextmenu`, same as a real
+  // right-press, so it needs the same recorded selection.
+  //
+  // `keyboardMenuOpenRef` clears on ANY pointerdown on the row, not just a
+  // right-press: ⇧F10 opens the menu from the keyboard without a trailing
+  // `contextmenu` on macOS, so a later left-click elsewhere on the row (which
+  // only fires a plain pointerdown) must still drop the stale flag before a
+  // ctrl+click's own `contextmenu` arrives.
+  function handleRowPointerDown(e: React.PointerEvent) {
+    if (!e.currentTarget.contains(e.target as Node)) return
+    if (e.button === 2 || (e.button === 0 && e.ctrlKey)) {
+      const sel = window.getSelection()
+      rightPressSelectionRef.current = !!(
+        sel &&
+        !sel.isCollapsed &&
+        sel.rangeCount > 0 &&
+        rootRef.current?.contains(sel.anchorNode)
+      )
+    }
+    keyboardMenuOpenRef.current = false
+  }
+
+  // Right-click opens the block menu at the pointer (KAN-485), replacing the
+  // browser's own menu. `chrome=false` (zen) leaves the native menu, same as
+  // the hidden handle. `isContextMenuField` is narrower than the plain-click
+  // guard `shouldSelectCardFromClick` (whose `INTERACTIVE` list is a whole
+  // `td`/`role="button"` card, not just a field) — a right-click only needs
+  // to leave the native menu for an actual text field (a table cell's input,
+  // a todo item's own field), so a page-link card, a highlight passage or a
+  // table cell itself still open the block menu. A non-collapsed selection
+  // that already existed at the right-button press is a copy/paste in
+  // progress: the native menu stays for that, whatever the block type.
+  function handleContextMenu(e: React.MouseEvent) {
+    if (!e.currentTarget.contains(e.target as Node)) return
+    if (!chrome) return
+    if (isContextMenuField(e.target)) return
+    if (keyboardMenuOpenRef.current) {
+      keyboardMenuOpenRef.current = false
+      e.preventDefault()
+      e.stopPropagation()
+      return
+    }
+    if (rightPressSelectionRef.current) return
+    e.preventDefault()
+    e.stopPropagation()
+    setContextPoint({ x: e.clientX, y: e.clientY })
+    handleMenuOpenChange(true)
   }
 
   // Esc inside a text editor (KAN-367): focusing the row's own element is
@@ -3878,6 +4025,38 @@ function BlockEditor({
     </>
   )
 
+  // Desktop (KAN-485): a plain button, never Base UI's `Menu.Trigger` — the
+  // handle only drags/selects here, so wiring it as the trigger would wear
+  // `aria-haspopup`/`aria-expanded` for a popup this element never opens.
+  // Phone still passes it as PondMenu's `trigger` (the old tap-opens path).
+  const handleButton = (
+    <button
+      type="button"
+      className={cn(
+        'flex cursor-grab items-center justify-center outline-none focus-visible:ring-2 focus-visible:ring-mn-text',
+        menuSize === 'mobile' ? 'h-11 w-11 rounded-[14px]' : 'h-6 w-3 rounded-[6px]',
+        menuOpen ? 'bg-mn-hover-fill text-mn-text' : 'text-mn-text-secondary'
+      )}
+      title="drag to move"
+      aria-label="drag to move"
+      onPointerDown={handleTriggerPointerDown}
+      onPointerMove={handleTriggerPointerMove}
+      onPointerUp={handleTriggerPointerUp}
+      onPointerCancel={handleTriggerPointerCancel}
+      onClick={handleTriggerClick}
+      onKeyDown={handleTriggerKeyDown}
+    >
+      <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor" aria-hidden>
+        <circle cx="3" cy="3" r="1.1" />
+        <circle cx="7" cy="3" r="1.1" />
+        <circle cx="3" cy="7" r="1.1" />
+        <circle cx="7" cy="7" r="1.1" />
+        <circle cx="3" cy="11" r="1.1" />
+        <circle cx="7" cy="11" r="1.1" />
+      </svg>
+    </button>
+  )
+
   return (
     <div
       ref={rootRef}
@@ -3903,7 +4082,11 @@ function BlockEditor({
       tabIndex={block.type === 'text' ? -1 : 0}
       {...(block.type === 'text'
         ? {}
-        : { role: 'group', 'aria-label': blockName(block, frame), 'aria-keyshortcuts': 'Enter' })}
+        : {
+            role: 'group',
+            'aria-label': blockName(block, frame),
+            'aria-keyshortcuts': 'Enter Shift+F10 ContextMenu',
+          })}
       draggable={dragArmed}
       onDragStart={onDragStart}
       onDragEnd={() => {
@@ -3922,6 +4105,8 @@ function BlockEditor({
       onFocus={handleFocus}
       onBlur={handleBlur}
       onClick={handleClick}
+      onPointerDown={handleRowPointerDown}
+      onContextMenu={handleContextMenu}
     >
       {/* The drop line (6x `PondBlock.dc.html`'s `dropBar`): beside is a 2px bar
           9px into the gap off this block's near edge; above/below is a 2px bar
@@ -3951,8 +4136,9 @@ function BlockEditor({
           (KAN-259) sits INSIDE the card at `right 2 · top 2 · 44x44` — a touch
           target can't float off-card or wait on a hover that never fires — so
           it is always visible there; PondBlock's head row reserves the 40px
-          this takes (`size="mobile"`, below). Press-and-drag reorders, a click
-          opens the block menu, which is where `delete` lives. Inside the card
+          this takes (`size="mobile"`, below). Press-and-drag reorders; a
+          no-move release selects the row. Phone keeps a tap opening the
+          block menu (KAN-485), which is where `delete` lives. Inside the card
           it must stack ABOVE the body that follows it in the DOM (the card's
           paper, a text block's editor) or taps land on the body: `z-[1]`, the
           lowest lift that does it, under every floating surface (z ≥ 4). */}
@@ -3980,35 +4166,14 @@ function BlockEditor({
           open={menuOpen ?? false}
           onOpenChange={handlePointerOpenChange}
           onSelect={onMenuSelect ?? (() => {})}
-          placement={{ anchor: rootRef, ...MENU_PLACEMENT[menuSize] }}
-          trigger={
-            <button
-              type="button"
-              className={cn(
-                'flex cursor-grab items-center justify-center outline-none focus-visible:ring-2 focus-visible:ring-mn-text',
-                menuSize === 'mobile' ? 'h-11 w-11 rounded-[14px]' : 'h-6 w-3 rounded-[6px]',
-                menuOpen ? 'bg-mn-hover-fill text-mn-text' : 'text-mn-text-secondary'
-              )}
-              title="Block menu · drag to reorder"
-              aria-label="Block menu"
-              onPointerDown={handleTriggerPointerDown}
-              onPointerMove={handleTriggerPointerMove}
-              onPointerUp={handleTriggerPointerUp}
-              onPointerCancel={handleTriggerPointerCancel}
-              onClick={handleTriggerClick}
-              onKeyDown={handleTriggerKeyDown}
-            >
-              <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor" aria-hidden>
-                <circle cx="3" cy="3" r="1.1" />
-                <circle cx="7" cy="3" r="1.1" />
-                <circle cx="3" cy="7" r="1.1" />
-                <circle cx="7" cy="7" r="1.1" />
-                <circle cx="3" cy="11" r="1.1" />
-                <circle cx="7" cy="11" r="1.1" />
-              </svg>
-            </button>
+          placement={
+            contextAnchor
+              ? { anchor: contextAnchor, ...POINT_MENU_PLACEMENT }
+              : { anchor: rootRef, ...MENU_PLACEMENT[menuSize] }
           }
+          trigger={menuSize === 'mobile' ? handleButton : undefined}
         />
+        {menuSize !== 'mobile' && handleButton}
       </div>
 
       {/* The `/` menu hangs at the caret. */}

@@ -1,0 +1,242 @@
+/**
+ * KAN-476 — `Rail` listens for `FOCUS_RAIL_ROW_EVENT` and focuses the open
+ * page's row, re-expanding any ancestor the person hand-collapsed after
+ * opening the page (NOT gated by the ticket-25 `revealedForRef` guard, unlike
+ * the ordinary navigation reveal). No open page is a no-op. Esc then returns
+ * focus to whatever had it before — unless a row-local control (rename, the
+ * glyph picker) already owns Esc, where existing behaviour is unchanged.
+ */
+import React from 'react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { Rail } from '@/components/organisms/Rail'
+import { PondContext, type PondContextValue } from '@/lib/pond/context'
+import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
+import { pagesKey } from '@/lib/pages/keys'
+import { requestRailRowFocus } from '@/lib/layout/rail-focus'
+import type { PageRow } from '@/lib/pages/tree'
+import type { Pond } from '@/lib/pond/client'
+
+let nodeId: string | null = null
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({ push: jest.fn() }),
+  useSearchParams: () => ({ get: (key: string) => (key === 'nodeId' ? nodeId : null) }),
+}))
+
+const AT = '2026-01-01T00:00:00Z'
+const OFFICE: PageRow = {
+  id: 'office',
+  parent_id: null,
+  type: 'page',
+  title: 'Office',
+  order: 0,
+  updated_at: AT,
+}
+const DESK: PageRow = {
+  id: 'desk',
+  parent_id: 'office',
+  type: 'page',
+  title: 'Desk',
+  order: 0,
+  updated_at: AT,
+}
+const ALL_ROWS = [OFFICE, DESK]
+
+const POND: Pond = {
+  id: 'pond-1',
+  name: 'life',
+  glyph: null,
+  theme: 'light',
+  order: 0,
+  recentGlyphs: [],
+}
+const PROVIDER_VALUE: PondContextValue = {
+  pond: POND,
+  ponds: [POND],
+  loading: false,
+  reload: () => {},
+  addPond: () => {},
+  patchPond: () => {},
+}
+
+function mountRail(rows: PageRow[]) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  })
+  client.setQueryData(pagesKey('pond-1'), rows)
+  return render(
+    <QueryClientProvider client={client}>
+      <PondContext.Provider value={PROVIDER_VALUE}>
+        <DeletionUndoProvider>
+          <Rail />
+        </DeletionUndoProvider>
+      </PondContext.Provider>
+    </QueryClientProvider>
+  )
+}
+
+/** A stub "editor" element standing in for wherever focus was before the
+ *  rail-focus key — the page editor, in the real app. */
+function mountRailWithEditor(rows: PageRow[]) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  })
+  client.setQueryData(pagesKey('pond-1'), rows)
+  render(
+    <QueryClientProvider client={client}>
+      <PondContext.Provider value={PROVIDER_VALUE}>
+        <DeletionUndoProvider>
+          <input aria-label="editor" />
+          <Rail />
+        </DeletionUndoProvider>
+      </PondContext.Provider>
+    </QueryClientProvider>
+  )
+  return screen.getByRole('textbox', { name: 'editor' })
+}
+
+describe('KAN-476 — the rail-focus key focuses the open row', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+    nodeId = null
+  })
+
+  it("re-expands a hand-collapsed ancestor and focuses the open page's row", async () => {
+    nodeId = 'desk'
+    mountRail(ALL_ROWS)
+    expect(screen.getByRole('treeitem', { name: 'Desk' })).toBeInTheDocument()
+
+    const officeChevron = screen.getByRole('treeitem', { name: 'Office' }).querySelector('button')!
+    await userEvent.click(officeChevron)
+    expect(screen.queryByRole('treeitem', { name: 'Desk' })).not.toBeInTheDocument()
+
+    act(() => requestRailRowFocus())
+
+    expect(screen.getByRole('treeitem', { name: 'Desk' })).toHaveFocus()
+  })
+
+  it('does nothing when no page is open', () => {
+    nodeId = null
+    mountRail(ALL_ROWS)
+
+    expect(() => act(() => requestRailRowFocus())).not.toThrow()
+    expect(document.activeElement).toBe(document.body)
+  })
+
+  it('Esc returns focus to what had it before the focus-row chord', async () => {
+    nodeId = 'desk'
+    const editor = mountRailWithEditor(ALL_ROWS)
+    editor.focus()
+    expect(editor).toHaveFocus()
+
+    act(() => requestRailRowFocus())
+    expect(screen.getByRole('treeitem', { name: 'Desk' })).toHaveFocus()
+
+    await userEvent.keyboard('{Escape}')
+    expect(editor).toHaveFocus()
+  })
+
+  it('Esc while renaming leaves rail focus alone (existing behaviour)', async () => {
+    nodeId = 'desk'
+    const editor = mountRailWithEditor(ALL_ROWS)
+    editor.focus()
+
+    act(() => requestRailRowFocus())
+    const row = screen.getByRole('treeitem', { name: 'Desk' })
+    expect(row).toHaveFocus()
+
+    await userEvent.keyboard('{F2}')
+    expect(screen.getByRole('textbox', { name: 'rename Desk' })).toHaveFocus()
+
+    await userEvent.keyboard('{Escape}')
+    expect(editor).not.toHaveFocus()
+    expect(row).toHaveFocus()
+  })
+
+  it('Esc while the glyph picker is open leaves rail focus alone (existing behaviour)', async () => {
+    nodeId = 'desk'
+    const editor = mountRailWithEditor(ALL_ROWS)
+    editor.focus()
+
+    act(() => requestRailRowFocus())
+    const row = screen.getByRole('treeitem', { name: 'Desk' })
+    const mark = within(row).getByRole('button', { name: 'change icon for Desk' })
+
+    await userEvent.click(mark)
+    await userEvent.keyboard('{Escape}')
+
+    expect(editor).not.toHaveFocus()
+    expect(mark).toHaveFocus()
+  })
+
+  it('a repeat chord press does not overwrite the remembered target with the rail row itself', async () => {
+    nodeId = 'desk'
+    const editor = mountRailWithEditor(ALL_ROWS)
+    editor.focus()
+
+    act(() => requestRailRowFocus())
+    const row = screen.getByRole('treeitem', { name: 'Desk' })
+    expect(row).toHaveFocus()
+
+    // A second press while the row already has focus must not re-capture
+    // `document.activeElement` (now the row) over the original editor.
+    act(() => requestRailRowFocus())
+    expect(row).toHaveFocus()
+
+    await userEvent.keyboard('{Escape}')
+    expect(editor).toHaveFocus()
+  })
+
+  it('falls back to doing nothing on Esc when the remembered target is no longer connected (↵-navigation unmounted it)', async () => {
+    nodeId = 'desk'
+    mountRail(ALL_ROWS)
+    // A plain DOM node (not React-managed), standing in for the open page's
+    // editor — created and torn down directly so removing it mid-test can't
+    // fight React's own unmount bookkeeping on cleanup.
+    const editor = document.createElement('input')
+    document.body.appendChild(editor)
+    editor.focus()
+
+    act(() => requestRailRowFocus())
+    const row = screen.getByRole('treeitem', { name: 'Desk' })
+    expect(row).toHaveFocus()
+
+    // A ↵-navigation to another page can unmount the editor the chord
+    // remembered without DOM focus ever leaving the row itself.
+    editor.remove()
+    expect(editor.isConnected).toBe(false)
+
+    const notPrevented = fireEvent.keyDown(row, { key: 'Escape' })
+    expect(notPrevented).toBe(true)
+    expect(row).toHaveFocus()
+  })
+
+  it('clears the remembered target when focus leaves the rail by click, so a later plain click into the row does not inherit a stale Esc target', async () => {
+    nodeId = 'desk'
+    const editor = mountRailWithEditor(ALL_ROWS)
+    editor.focus()
+
+    act(() => requestRailRowFocus())
+    const row = screen.getByRole('treeitem', { name: 'Desk' })
+    expect(row).toHaveFocus()
+
+    // Leave the rail for something else entirely (not the remembered editor)
+    // — the real-world trigger for the KAN-469 focusInRailRef listener.
+    const elsewhere = document.createElement('button')
+    document.body.appendChild(elsewhere)
+    elsewhere.focus()
+
+    // A later, unrelated click straight into the row (not through the chord)
+    // must not inherit the earlier chord's remembered target.
+    await userEvent.click(row)
+    expect(row).toHaveFocus()
+
+    const notPrevented = fireEvent.keyDown(row, { key: 'Escape' })
+    expect(notPrevented).toBe(true)
+    expect(row).toHaveFocus()
+    expect(editor).not.toHaveFocus()
+
+    elsewhere.remove()
+  })
+})
