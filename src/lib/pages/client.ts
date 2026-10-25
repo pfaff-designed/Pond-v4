@@ -482,6 +482,49 @@ export async function movePage(
 }
 
 /**
+ * Duplicate a page and everything inside it (KAN-468): the deduped root
+ * title is computed here, same `dedupedTitle`/`siblingRows` pattern
+ * {@link createPage} uses, so the RPC (migration 0032) never has to read
+ * siblings itself — it just commits the copy atomically with the title this
+ * call already resolved, mirroring `movePage`'s own client-computes/RPC-
+ * commits split.
+ */
+export async function duplicatePage(
+  supabase: SupabaseClient<Database>,
+  userId: string,
+  id: string
+): Promise<ChangeLogRecord> {
+  // KAN-273: see createPage's comment — the sibling read just below must not
+  // see a row that is mid-delete.
+  await flushStagedDeletes()
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: self } = await (supabase as any)
+    .from('pages')
+    .select('title, parent_id, pond_id')
+    .eq('id', id)
+    .maybeSingle()
+
+  // A missing/foreign page has no siblings to dedupe against — the RPC's own
+  // ownership check (`user_id = auth.uid()`) is what actually rejects it.
+  const title = self
+    ? await dedupedTitle(supabase, userId, self.parent_id ?? null, self.pond_id ?? null, self.title ?? '')
+    : ''
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any).rpc('duplicate_page', {
+    p_page_id: id,
+    p_title: title,
+  })
+
+  if (error) throw new Error(error.message)
+
+  const row = Array.isArray(data) ? data[0] : data
+  if (!row) throw new Error(`duplicate_page: duplicating page ${id} returned no record`)
+  return mapChangeLogRow(row as ChangeLogRow)
+}
+
+/**
  * Semantic search across all of a user's pages (Track D). Delegates the
  * cosine-similarity ranking to the match_pages pgvector RPC; the caller supplies
  * an already-computed query embedding (see embeddings/retrieve.ts). Returns
