@@ -1,11 +1,12 @@
-// Schema tests for 0031_move_page_links.sql parts A and B (KAN-467):
+// Schema tests for 0031_move_page_links.sql parts A, B and C (KAN-467):
 // `move_page` strips the moved page's own `page-link` block off its old
 // parent's (or the pond's home row's) `blocks`, recording the removed block
 // and its index on the `move` record's `before.removedLink` (part A), and
 // appends one onto the new parent's (or home row's) `blocks`, unless one is
 // already there, recording the appended block's id on `after.appendedLinkId`
 // (part B) — a page moved into a new parent still shows up where it used to
-// live, and doesn't show up where it moved to, until this runs.
+// live, and doesn't show up where it moved to, until this runs. Part C
+// teaches undo/redo to carry that same link edit with the move.
 
 import type { PGlite } from '@electric-sql/pglite'
 import { makeDb, seedUser } from './helpers/pglite-harness'
@@ -62,13 +63,14 @@ const blocksOf = async (db: PGlite, pageId: string): Promise<unknown[]> => {
 }
 
 interface MoveRecord {
+  id: string
   before: { removedLink?: { block: unknown; index: number } }
   after: { appendedLinkId?: string }
 }
 
 const lastMoveRecordFor = async (db: PGlite, pageId: string): Promise<MoveRecord> => {
   const res = await db.query<MoveRecord>(
-    `select before, after from public.change_log
+    `select id, before, after from public.change_log
       where action = 'move' and target_page_id = $1
       order by created_at desc
       limit 1`,
@@ -280,6 +282,119 @@ describe("0031_move_page_links — apply_page_move appends the moved page's link
     const record = await lastMoveRecordFor(db, childTwo)
     expect(record.before.removedLink).toBeUndefined()
     expect(record.after.appendedLinkId).toBeUndefined()
+    await db.close()
+  })
+})
+
+const undo = (db: PGlite, ids: string[], pondId: string) =>
+  db.query(`select * from public.undo_change_log_record($1::uuid[], $2, 'you')`, [ids, pondId])
+
+const redo = (db: PGlite, ids: string[], pondId: string) =>
+  db.query(`select * from public.redo_change_log_record($1::uuid[], $2, 'you')`, [ids, pondId])
+
+describe('0031_move_page_links — undo/redo carry the link edit with the move (part C)', () => {
+  it('undo puts the removed link back on the old parent at its index, and removes the appended link from the new parent', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pond = await lifePondId(db)
+
+    const parentA = await addPage(db, pond, { title: 'parent a' })
+    const parentB = await addPage(db, pond, {
+      title: 'parent b',
+      blocks: [{ id: 'before', type: 'text', value: 'x' }],
+    })
+    const child = await addPage(db, pond, { parentId: parentA, title: 'child' })
+    await db.query('update public.pages set blocks = $1 where id = $2', [
+      JSON.stringify([
+        { id: 'before', type: 'text', value: 'x' },
+        pageLink(child),
+        { id: 'after', type: 'text', value: 'y' },
+      ]),
+      parentA,
+    ])
+
+    await actAs(db, USER)
+    await db.query('select public.move_page($1, $2, $3)', [child, parentB, [child]])
+    await db.exec('reset role;')
+    const record = await lastMoveRecordFor(db, child)
+
+    await undo(db, [record.id], pond)
+
+    expect(await blocksOf(db, parentA)).toEqual([
+      { id: 'before', type: 'text', value: 'x' },
+      pageLink(child),
+      { id: 'after', type: 'text', value: 'y' },
+    ])
+    expect(await blocksOf(db, parentB)).toEqual([{ id: 'before', type: 'text', value: 'x' }])
+    await db.close()
+  })
+
+  it('redo re-removes the link from the old parent and re-appends it to the new parent', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pond = await lifePondId(db)
+
+    const parentA = await addPage(db, pond, { title: 'parent a' })
+    const parentB = await addPage(db, pond, {
+      title: 'parent b',
+      blocks: [{ id: 'before', type: 'text', value: 'x' }],
+    })
+    const child = await addPage(db, pond, { parentId: parentA, title: 'child' })
+    await db.query('update public.pages set blocks = $1 where id = $2', [
+      JSON.stringify([
+        { id: 'before', type: 'text', value: 'x' },
+        pageLink(child),
+        { id: 'after', type: 'text', value: 'y' },
+      ]),
+      parentA,
+    ])
+
+    await actAs(db, USER)
+    await db.query('select public.move_page($1, $2, $3)', [child, parentB, [child]])
+    await db.exec('reset role;')
+    const record = await lastMoveRecordFor(db, child)
+    const appendedLinkId = record.after.appendedLinkId
+
+    await undo(db, [record.id], pond)
+    await redo(db, [record.id], pond)
+
+    expect(await blocksOf(db, parentA)).toEqual([
+      { id: 'before', type: 'text', value: 'x' },
+      { id: 'after', type: 'text', value: 'y' },
+    ])
+    expect(await blocksOf(db, parentB)).toEqual([
+      { id: 'before', type: 'text', value: 'x' },
+      pageLink(child, appendedLinkId),
+    ])
+    await db.close()
+  })
+
+  it('changes no link rows undoing or redoing a same-parent reorder', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pond = await lifePondId(db)
+    const parentA = await addPage(db, pond, { title: 'parent a' })
+    const childOne = await addPage(db, pond, { parentId: parentA, title: 'one', order: 0 })
+    const childTwo = await addPage(db, pond, { parentId: parentA, title: 'two', order: 1 })
+    await db.query('update public.pages set blocks = $1 where id = $2', [
+      JSON.stringify([pageLink(childOne)]),
+      parentA,
+    ])
+
+    await actAs(db, USER)
+    await db.query('select public.move_page($1, $2, $3)', [
+      childTwo,
+      parentA,
+      [childTwo, childOne],
+    ])
+    await db.exec('reset role;')
+    const record = await lastMoveRecordFor(db, childTwo)
+
+    await undo(db, [record.id], pond)
+    expect(await blocksOf(db, parentA)).toEqual([pageLink(childOne)])
+
+    await redo(db, [record.id], pond)
+    expect(await blocksOf(db, parentA)).toEqual([pageLink(childOne)])
     await db.close()
   })
 })
