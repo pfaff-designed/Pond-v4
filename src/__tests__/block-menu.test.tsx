@@ -290,6 +290,28 @@ describe('right-click opens the block menu at the pointer (KAN-485)', () => {
   })
 })
 
+describe('⇧F10 / the ContextMenu key opens the menu on a selected row (KAN-485)', () => {
+  it('⇧F10 opens the menu at the row', async () => {
+    renderCanvas([heading, shopping])
+    const row = document.getElementById('block-b-shop')!
+    act(() => {
+      row.focus()
+    })
+    fireEvent.keyDown(row, { key: 'F10', shiftKey: true })
+    expect(await screen.findByRole('menu', { name: /block menu/i })).toBeInTheDocument()
+  })
+
+  it('the ContextMenu key opens the menu at the row', async () => {
+    renderCanvas([heading, shopping])
+    const row = document.getElementById('block-b-shop')!
+    act(() => {
+      row.focus()
+    })
+    fireEvent.keyDown(row, { key: 'ContextMenu' })
+    expect(await screen.findByRole('menu', { name: /block menu/i })).toBeInTheDocument()
+  })
+})
+
 describe('phone: tapping a block reveals the handle and opens the same menu (frame 6)', () => {
   const originalMatchMedia = window.matchMedia
   beforeEach(() => {

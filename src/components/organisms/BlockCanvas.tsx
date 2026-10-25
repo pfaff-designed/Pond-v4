@@ -144,7 +144,7 @@ import type {
   PageConversion,
   TableConversion,
 } from '@/lib/modules/conversions'
-import { isBlockMenuChord, isDeleteBlockChord, useApplePlatform } from '@/lib/shell-commands'
+import { isBlockMenuChord, isContextMenuKey, isDeleteBlockChord, useApplePlatform } from '@/lib/shell-commands'
 import { slashRows, emptyBlockForType } from '@/lib/modules/palette'
 import { descriptorFor } from '@/lib/modules/registry'
 import { useBelowMd } from '@/lib/layout/use-below-md'
@@ -3594,6 +3594,14 @@ function BlockEditor({
       handleMenuOpenChange(true)
       return
     }
+    // ⇧F10 / the ContextMenu key (KAN-485): only on the row itself, so a field
+    // the block hosts (a table cell, a todo label) keeps its own native menu.
+    // `contextPoint` stays null, so the menu opens at the row's own anchor.
+    if (isContextMenuKey(e.nativeEvent) && e.target === e.currentTarget) {
+      e.preventDefault()
+      handleMenuOpenChange(true)
+      return
+    }
     // Return on a selected row (KAN-367/KAN-344): a text row goes back into
     // editing, caret at the end; any other kind opens a line below it.
     if (
@@ -3974,7 +3982,11 @@ function BlockEditor({
       tabIndex={block.type === 'text' ? -1 : 0}
       {...(block.type === 'text'
         ? {}
-        : { role: 'group', 'aria-label': blockName(block, frame), 'aria-keyshortcuts': 'Enter' })}
+        : {
+            role: 'group',
+            'aria-label': blockName(block, frame),
+            'aria-keyshortcuts': 'Enter Shift+F10 ContextMenu',
+          })}
       draggable={dragArmed}
       onDragStart={onDragStart}
       onDragEnd={() => {

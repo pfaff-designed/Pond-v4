@@ -31,6 +31,16 @@ export const isBlockMenuChord = (e: KeyboardEvent) => {
 }
 
 /**
+ * ⇧F10, or the keyboard's own ContextMenu key: a selected block's menu, at the row
+ * (KAN-485). Neither needs the command key, so `isCommandOnly` doesn't apply here —
+ * both are the same on every platform.
+ */
+export const isContextMenuKey = (e: KeyboardEvent) => {
+  if (e.key === 'ContextMenu') return !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey
+  return e.key === 'F10' && e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey
+}
+
+/**
  * ⌘. on a Mac, Ctrl+. everywhere else: zen (`Pond 06.17` 6q frame 1). Mid-composition
  * it is the IME's — macOS cancels a composition with ⌘. — so it is left alone then.
  */

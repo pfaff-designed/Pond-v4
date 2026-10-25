@@ -1,9 +1,9 @@
 /**
- * `isDeleteBlockChord` (⌘⌫ / Ctrl+⌫) and `isMovePageChord` (⌘⇧P / Ctrl+Shift+P) as
- * pure units, independent of any call site.
+ * `isDeleteBlockChord` (⌘⌫ / Ctrl+⌫), `isMovePageChord` (⌘⇧P / Ctrl+Shift+P) and
+ * `isContextMenuKey` (⇧F10 / ContextMenu) as pure units, independent of any call site.
  */
 
-import { isDeleteBlockChord, isMovePageChord } from '@/lib/shell-commands'
+import { isContextMenuKey, isDeleteBlockChord, isMovePageChord } from '@/lib/shell-commands'
 
 const onPlatform = (platform: string) =>
   jest.spyOn(window.navigator, 'platform', 'get').mockReturnValue(platform)
@@ -96,5 +96,35 @@ describe('isMovePageChord — ⌘⇧P on a Mac, Ctrl+Shift+P everywhere else', (
   it('does not match with Alt held', () => {
     onPlatform('MacIntel')
     expect(isMovePageChord(pKeyDown({ metaKey: true, shiftKey: true, altKey: true }))).toBe(false)
+  })
+})
+
+const f10KeyDown = (init: Partial<KeyboardEventInit>) => new KeyboardEvent('keydown', { key: 'F10', ...init })
+const contextMenuKeyDown = (init: Partial<KeyboardEventInit>) =>
+  new KeyboardEvent('keydown', { key: 'ContextMenu', ...init })
+
+describe('isContextMenuKey — ⇧F10 or the ContextMenu key, same on every platform', () => {
+  it('matches ⇧F10', () => {
+    expect(isContextMenuKey(f10KeyDown({ shiftKey: true }))).toBe(true)
+  })
+
+  it('does not match a bare F10, with no Shift', () => {
+    expect(isContextMenuKey(f10KeyDown({}))).toBe(false)
+  })
+
+  it('matches a bare ContextMenu key press', () => {
+    expect(isContextMenuKey(contextMenuKeyDown({}))).toBe(true)
+  })
+
+  it('does not match ContextMenu with Shift held', () => {
+    expect(isContextMenuKey(contextMenuKeyDown({ shiftKey: true }))).toBe(false)
+  })
+
+  it('does not match ⇧F10 with Alt also held', () => {
+    expect(isContextMenuKey(f10KeyDown({ shiftKey: true, altKey: true }))).toBe(false)
+  })
+
+  it('does not match a key other than F10 or ContextMenu', () => {
+    expect(isContextMenuKey(new KeyboardEvent('keydown', { key: 'F9', shiftKey: true }))).toBe(false)
   })
 })
