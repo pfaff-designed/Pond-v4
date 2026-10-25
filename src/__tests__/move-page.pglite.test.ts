@@ -528,3 +528,29 @@ describe('0030_move_page — a pre-existing cycle in the data terminates instead
     await db.close()
   }, 15000)
 })
+
+describe('0030_move_page — private.page_is_self_or_descendant is scoped to the caller, not a parameter (KAN-466 fix)', () => {
+  it("as another user, never reports user A's own page as a descendant of another of user A's pages", async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    await seedUser(db, OTHER)
+    const pond = await lifePondId(db)
+    const parentA = await addPage(db, pond, { title: 'parent a' })
+    const roof = await addPage(db, pond, { parentId: parentA, title: 'roof' })
+
+    // `roof` really is a descendant of `parentA`, for user A. If this helper
+    // still took `p_user_id` as a parameter, user B could pass user A's id
+    // and the `security definer` walk would report `true`, revealing user
+    // A's tree shape to a user who owns neither page. Scoped to `auth.uid()`
+    // instead, user B's own call can only ever see user B's subtree.
+    await actAs(db, OTHER)
+    const result = await db.query<{ result: boolean }>(
+      'select private.page_is_self_or_descendant($1, $2) as result',
+      [parentA, roof]
+    )
+    await db.exec('reset role;')
+
+    expect(result.rows[0].result).toBe(false)
+    await db.close()
+  })
+})

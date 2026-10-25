@@ -98,7 +98,7 @@
 --   drop function if exists public.move_page(uuid, uuid, uuid[]);
 --   drop function if exists private.apply_page_move(uuid, uuid, uuid[], text);
 --   drop function if exists private.page_move_parent_title(uuid, uuid, uuid);
---   drop function if exists private.page_is_self_or_descendant(uuid, uuid, uuid);
+--   drop function if exists private.page_is_self_or_descendant(uuid, uuid);
 
 begin;
 
@@ -135,14 +135,27 @@ grant execute on function private.page_move_parent_title(uuid, uuid, uuid) to au
 -- refuse a reparent that would hide a page under its own subtree. `union`
 -- (not `union all`): a cycle already present in the data must make the walk
 -- terminate by revisiting an id already in the CTE's result, not recurse
--- forever. `security definer`, scoped explicitly by `p_user_id` rather than
--- `auth.uid()`, so both an `apply_page_move` caller (itself definer) and a
--- `change_log_set_back` caller (invoker) see the same subtree regardless of
--- which role is current when they call it.
+-- forever.
+--
+-- HARDENING (KAN-466 fix). This used to take the owning `p_user_id` as a
+-- parameter rather than reading `auth.uid()` itself, on the theory that a
+-- `security definer` function needed it to see the same subtree regardless
+-- of whether the caller (`apply_page_move`, itself definer, vs
+-- `change_log_set_back`, invoker) was running as the function owner or the
+-- authenticated user. That theory doesn't hold: `auth.uid()` reads the
+-- request's JWT claim, which is identical under either security mode — it
+-- never needed the parameter. Taking it as a parameter instead let any
+-- caller who could reach this `security definer` function pass ANY user id
+-- and walk that user's subtree, bypassing `pages` RLS entirely; schema
+-- `private` is already `grant usage ... to authenticated` (0021), so this
+-- was one step away from a cross-user probe. Fixed by reading `auth.uid()`
+-- directly and dropping the parameter — both call sites below already only
+-- ever passed the caller's own id (`v_page.user_id`, looked up `where
+-- user_id = auth.uid()`; `p_record.user_id`, read under `change_log`'s own
+-- RLS), so this changes no legitimate call's result.
 create or replace function private.page_is_self_or_descendant(
   p_root_id uuid,
-  p_candidate_id uuid,
-  p_user_id uuid
+  p_candidate_id uuid
 )
 returns boolean
 language sql
@@ -155,13 +168,16 @@ as $$
     union
     select p.id from public.pages p
       join subtree s on p.parent_id = s.id
-     where p.user_id = p_user_id
+     where p.user_id = auth.uid()
   )
   select exists (select 1 from subtree where id = p_candidate_id)
 $$;
 
-revoke all on function private.page_is_self_or_descendant(uuid, uuid, uuid) from public;
-grant execute on function private.page_is_self_or_descendant(uuid, uuid, uuid) to authenticated;
+-- `change_log_set_back`'s `move` branch (part 2b, below) is `security
+-- invoker` and calls this helper as the authenticated caller, not as this
+-- function's owner — that nested call still needs its own EXECUTE grant.
+revoke all on function private.page_is_self_or_descendant(uuid, uuid) from public;
+grant execute on function private.page_is_self_or_descendant(uuid, uuid) to authenticated;
 
 create or replace function private.apply_page_move(
   p_page_id uuid,
@@ -213,7 +229,7 @@ begin
   -- subtree underneath). The subtree walk's base case (`id = p_page_id`)
   -- catches the first; the recursive step catches the second.
   if p_new_parent_id is not null
-     and private.page_is_self_or_descendant(p_page_id, p_new_parent_id, v_page.user_id)
+     and private.page_is_self_or_descendant(p_page_id, p_new_parent_id)
   then
     raise exception 'page % is a descendant of %, and cannot become its parent', p_new_parent_id, p_page_id
       using errcode = 'invalid_parameter_value', detail = 'invalid-new-parent';
@@ -468,7 +484,7 @@ begin
     -- above found nothing stale.
     if p_to ->> 'parentId' is not null
        and private.page_is_self_or_descendant(
-             p_record.target_page_id, (p_to ->> 'parentId')::uuid, p_record.user_id
+             p_record.target_page_id, (p_to ->> 'parentId')::uuid
            )
     then
       raise exception 'page % changed since change_log record %', p_record.target_page_id, p_record.id
