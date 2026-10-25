@@ -7,6 +7,7 @@ import {
   unlinkTrashedSubtree,
   relinkRestoredSubtree,
   trashPageUnlinked,
+  restorePageRelinked,
   withDerivedChildLinks,
   type RemovedLink,
 } from './child-links'
@@ -42,8 +43,15 @@ jest.mock('./page-flush', () => ({
 }))
 
 const mockTrashPage = jest.fn()
+const mockRestorePage = jest.fn()
 jest.mock('@/lib/change-log/trash', () => ({
   trashPage: (...args: unknown[]) => mockTrashPage(...args),
+  restorePage: (...args: unknown[]) => mockRestorePage(...args),
+}))
+
+const mockRemember = jest.fn()
+jest.mock('@/lib/change-log/session-undo', () => ({
+  sessionUndo: { remember: (...args: unknown[]) => mockRemember(...args) },
 }))
 
 describe('appendChildLink', () => {
@@ -1149,5 +1157,41 @@ describe('trashPageUnlinked', () => {
     expect(supabase._chain.update).toHaveBeenCalledTimes(2)
     const [relinkPayload] = supabase.update.mock.calls[1]
     expect(relinkPayload.props.unlinkedLinks).toBeUndefined()
+  })
+})
+
+describe('restorePageRelinked', () => {
+  let invalidateQueries: jest.Mock
+  let queryClient: never
+
+  beforeEach(() => {
+    jest.clearAllMocks()
+    invalidateQueries = jest.fn().mockResolvedValue(undefined)
+    queryClient = { invalidateQueries } as never
+  })
+
+  it('remembers the restore record with session undo, in the restore\'s own pond', async () => {
+    mockRestorePage.mockResolvedValue('restore-record-1')
+
+    await restorePageRelinked({} as never, queryClient, {
+      pondId: 'pond-1',
+      recordId: 'delete-record-1',
+      rootPageId: null,
+    })
+
+    expect(mockRestorePage).toHaveBeenCalledWith({}, 'delete-record-1')
+    expect(mockRemember).toHaveBeenCalledWith({ pondId: 'pond-1', recordIds: ['restore-record-1'] })
+  })
+
+  it('skips remembering when pondId is null', async () => {
+    mockRestorePage.mockResolvedValue('restore-record-1')
+
+    await restorePageRelinked({} as never, queryClient, {
+      pondId: null,
+      recordId: 'delete-record-1',
+      rootPageId: null,
+    })
+
+    expect(mockRemember).not.toHaveBeenCalled()
   })
 })

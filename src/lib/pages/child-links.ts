@@ -25,6 +25,7 @@ import {
 } from './client'
 import { commitBlocks } from './commit'
 import { restorePage, trashPage } from '@/lib/change-log/trash'
+import { sessionUndo } from '@/lib/change-log/session-undo'
 import type { PageRow } from './tree'
 import { withoutDatabasesRoot } from './databases-root'
 import { flushPendingPageSave } from './page-flush'
@@ -490,13 +491,19 @@ export async function trashPageUnlinked(
  * had drifted once already (TrashPage shipped without the relink step).
  * `rootPageId` is `null` when the restored record never had a target page;
  * relink is then a no-op rather than a call with nothing to relink.
+ *
+ * Remembers the new `restore` record with session undo (KAN-497) so ⌘Z
+ * re-trashes it, same as `relinkRestoredSubtree`: one call, not each caller
+ * wiring `sessionUndo.remember` itself. Skipped when `pondId` is `null`
+ * (`HistoryStep.pondId` isn't nullable — the same guard `move.ts` uses).
  */
 export async function restorePageRelinked(
   supabase: SupabaseClient<Database>,
   queryClient: QueryClient,
   { pondId, recordId, rootPageId }: { pondId: string | null; recordId: string; rootPageId: string | null }
 ): Promise<void> {
-  await restorePage(supabase, recordId)
+  const restoreRecordId = await restorePage(supabase, recordId)
+  if (pondId) sessionUndo.remember({ pondId, recordIds: [restoreRecordId] })
   if (rootPageId) {
     await relinkRestoredSubtree(supabase, queryClient, { pondId, rootPageId })
   }
