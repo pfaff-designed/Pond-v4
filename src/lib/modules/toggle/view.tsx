@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { Caret } from '@/components/atoms/Caret'
 import type { ModuleViewProps } from '../types'
-import type { ToggleBlock } from './schema'
+import { toggleFieldIds, type ToggleBlock } from './schema'
 import { StaticProse } from '../text/static-prose'
 import { TextView } from '../text/view'
 import type { TextBlock } from '../text/schema'
@@ -90,10 +90,11 @@ export function ToggleView({ data, editable, onChange, autofocus }: ModuleViewPr
   // view's own `onChange` rather than the context's absent default.
   const commit = (patch: ToggleBlock) => (commitStep ?? onChange)?.(patch)
   const [focusBodyToken, setFocusBodyToken] = useState(0)
+  const fieldIds = toggleFieldIds(data.id)
 
   useEffect(() => {
     if (focusBodyToken === 0) return
-    editorForBlock(`${data.id}-body`)?.commands.focus('start')
+    editorForBlock(fieldIds.body)?.commands.focus('start')
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fires once per token, not per id
   }, [focusBodyToken])
 
@@ -131,7 +132,7 @@ export function ToggleView({ data, editable, onChange, autofocus }: ModuleViewPr
         <div className="min-w-0 flex-1">
           {editable ? (
             <ToggleField
-              block={{ id: `${data.id}-summary`, type: 'text', content: data.content }}
+              block={{ id: fieldIds.summary, type: 'text', content: data.content }}
               onChange={(next) => onChange?.({ ...data, content: next.content })}
               autofocus={autofocus}
               row={summaryRow}
@@ -145,7 +146,7 @@ export function ToggleView({ data, editable, onChange, autofocus }: ModuleViewPr
         (editable ? (
           <div style={{ paddingLeft: TOGGLE_BODY_INDENT }}>
             <ToggleField
-              block={{ id: `${data.id}-body`, type: 'text', content: data.body ?? '' }}
+              block={{ id: fieldIds.body, type: 'text', content: data.body ?? '' }}
               onChange={(next) => onChange?.({ ...data, body: next.content })}
               autofocus={false}
               row={TOGGLE_BODY_ROW}

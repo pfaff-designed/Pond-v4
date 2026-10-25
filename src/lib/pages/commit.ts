@@ -6,7 +6,7 @@ import { saveBlocks, updateTitle } from './client'
 import { recordOwnEdit } from '@/lib/change-log/own-edit'
 import { changeLogKey } from '@/lib/change-log/keys'
 import { pagesKey } from '@/lib/pages/keys'
-import { closeBlockHistory } from '@/lib/modules/text/active-editor'
+import { closeHistoryForBlock } from '@/lib/modules/close-history-for-block'
 import { sessionUndo } from '@/lib/change-log/session-undo'
 import type { PageWriteOp, PageWriter } from './page-write-queue'
 
@@ -115,9 +115,7 @@ export async function commitBlocks(
         // record, where the block reports no undo depth but the shell has
         // nothing to fall through to either, so ⌘Z silently undoes nothing.
         if (record) {
-          for (const block of blocks) {
-            if ('content' in block) closeBlockHistory(block.id, block.content)
-          }
+          for (const block of blocks) closeHistoryForBlock(block)
         }
         return queryClient.invalidateQueries({ queryKey: changeLogKey() })
       })

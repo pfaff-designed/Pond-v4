@@ -24,6 +24,19 @@ export const toggleSchema = z.object({
 })
 export type ToggleBlock = z.infer<typeof toggleSchema>
 
+/**
+ * The stand-in `TextBlock` ids a toggle's two hosted editors register under
+ * (`view.tsx`'s `ToggleField`s) — never the toggle's own id, since one block
+ * hosts two editors. The one home for that mapping: a saved block's history
+ * close (KAN-139/KAN-480) looks a toggle's editors up by these same ids, not
+ * `block.id`, or it closes nothing and a field's own ⌘Z never falls through
+ * to the shell's.
+ */
+export const toggleFieldIds = (id: string): { summary: string; body: string } => ({
+  summary: `${id}-summary`,
+  body: `${id}-body`,
+})
+
 export const toggleDescriptor: ModuleDescriptor<ToggleBlock> = {
   type: 'toggle',
   label: 'toggle',
