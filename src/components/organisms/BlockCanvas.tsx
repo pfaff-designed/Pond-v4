@@ -93,6 +93,8 @@ import {
   drawnWidthPercent,
   planBesideDrop,
   planOwnLineDrop,
+  planRowSwap,
+  planStepMove,
   zoneWhenDrawnStacked,
   rowStacks,
   widthTenths,
@@ -240,19 +242,6 @@ function canvasListStyle(listStyle: CSSProperties | undefined): CSSProperties {
  * in sync at every read site by construction. */
 function rowGapValue(listStyle: CSSProperties | undefined): NonNullable<CSSProperties['rowGap']> {
   return listStyle?.rowGap ?? BLOCK_ROW_GAP_PX
-}
-
-/** Sets `rowStart` on a copy of `block`, omitting the key rather than writing
- * `false` (KAN-440) — matches `rowStart`'s own "absent means today's packing"
- * convention everywhere else it's set. */
-function withRowStart<T extends { rowStart?: boolean }>(
-  block: T,
-  rowStart: boolean | undefined
-): T {
-  if (rowStart === true) return { ...block, rowStart: true }
-  const next = { ...block }
-  delete (next as { rowStart?: boolean }).rowStart
-  return next
 }
 
 /**
@@ -1756,24 +1745,21 @@ export function BlockCanvas({
     focusEmptyLineOrInsert(blocks[blocks.length - 1], addTextBlock)
   }
 
-  // ⌥↑/⌥↓ swaps the two adjacent SLOTS, not the two blocks (KAN-440):
-  // `detachKeepingRows` hands `rowStart` to the row-mate a block leaves
-  // behind, which is right for a drop or a delete, but a swap never leaves
-  // either slot — each one is immediately refilled by the other block. Using
-  // `detachKeepingRows` here let the moved block arrive still carrying its
-  // OWN `rowStart`, splitting a row in two it used to swap within. Instead,
-  // `rowStart` stays with the position: whichever block now sits at `index`
-  // gets the flag `index` held before the swap, and likewise for `target` —
-  // so an in-row swap stays in its row, and a swap across a row boundary
-  // keeps both rows' boundaries, just with the two blocks at the seam traded.
+  // ⌥↑/⌥↓ steps a block past a whole STORED row, or out of a stored row onto
+  // its own line, never splitting a row (KAN-376) — `planStepMove` carries
+  // the row-aware rules and never looks at how a row is drawn; `null` means
+  // there is nowhere to go (e.g. the first block, ⌥↑).
   function moveBlockAt(index: number, dir: 'up' | 'down') {
-    const target = dir === 'up' ? index - 1 : index + 1
-    if (target < 0 || target >= blocks.length) return
-    const atIndex = blocks[index]
-    const atTarget = blocks[target]
-    const next = [...blocks]
-    next[index] = withRowStart(atTarget, atIndex.rowStart)
-    next[target] = withRowStart(atIndex, atTarget.rowStart)
+    const next = planStepMove(blocks, index, dir)
+    if (!next) return
+    commitStructuralBlocks(next)
+  }
+
+  // ⌥←/⌥→ swaps a block with its row-mate on that side (KAN-376); `null`
+  // means there is no row-mate there (a solo block, or already at that edge).
+  function swapInRowAt(index: number, dir: 'left' | 'right') {
+    const next = planRowSwap(blocks, index, dir)
+    if (!next) return
     commitStructuralBlocks(next)
   }
 
@@ -2041,6 +2027,8 @@ export function BlockCanvas({
         onReturn={(patch, content, where) => insertLineAfter(i, patch, content, where)}
         onMoveUp={() => moveBlockAt(i, 'up')}
         onMoveDown={() => moveBlockAt(i, 'down')}
+        onSwapLeft={() => swapInRowAt(i, 'left')}
+        onSwapRight={() => swapInRowAt(i, 'right')}
         onSlashKey={() => openSlashMenuAt(i)}
         slashMenuOpen={slashMenuOpenAt === i}
         blank={blank}
@@ -2760,6 +2748,8 @@ function BlockEditor({
   onReturn,
   onMoveUp,
   onMoveDown,
+  onSwapLeft,
+  onSwapRight,
   onSlashKey,
   onSlashPickTemplate,
   onPreviewTemplate,
@@ -2825,6 +2815,10 @@ function BlockEditor({
   onReturn: (patch?: Block, content?: string, where?: 'above' | 'below') => void
   onMoveUp?: () => void
   onMoveDown?: () => void
+  /** ⌥←/⌥→ on the selected row — never from inside a text editor or field,
+   *  where ⌥←/→ jump words (KAN-376). */
+  onSwapLeft?: () => void
+  onSwapRight?: () => void
   onSlashKey?: () => void
   slashMenuOpen?: boolean
   /** A page with nothing on it yet besides this block (6f): `/` leads with templates. */
@@ -3172,6 +3166,16 @@ function BlockEditor({
     if (e.altKey && e.key === 'ArrowDown') {
       e.preventDefault()
       onMoveDown?.()
+    }
+    // ⌥←/⌥→ only on the selected row itself (`e.target === e.currentTarget`):
+    // inside a text editor or field, ⌥←/→ jump a word, and must keep doing so.
+    if (e.altKey && e.key === 'ArrowLeft' && e.target === e.currentTarget) {
+      e.preventDefault()
+      onSwapLeft?.()
+    }
+    if (e.altKey && e.key === 'ArrowRight' && e.target === e.currentTarget) {
+      e.preventDefault()
+      onSwapRight?.()
     }
     // Esc clears the pointer-selected row (07.05) — the row itself does not blur
     // on Escape by default, so this blurs it explicitly; `handleBlur` below then
