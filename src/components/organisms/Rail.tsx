@@ -51,7 +51,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
-import { usePagePrefetchHandlers } from '@/lib/pages/use-page-prefetch'
+import { usePagePrefetchHandlers, isPseudoPageId } from '@/lib/pages/use-page-prefetch'
 import { createPage, updateTitle } from '@/lib/pages/client'
 import { DuplicateTitleError, nextAvailableTitle } from '@/lib/pages/dedupe-title'
 import {
@@ -115,6 +115,7 @@ import { setRailMinimized } from '@/lib/layout/rail-chrome'
 import { RAIL_WIDTH_PX } from '@/lib/layout/rail-width'
 import {
   LIFE_ID,
+  DATABASES_PLACEHOLDER_ID,
   buildTree,
   flattenVisible,
   isAreaRow,
@@ -171,7 +172,6 @@ export type { RailNode, FlatRow } from '@/lib/rail/tree'
 // the label body only: no padding, no wash.
 
 /** The foot's databases row while the pond has no databases root: the board always draws it. */
-const DATABASES_PLACEHOLDER_ID = '__databases__'
 const DATABASES_PLACEHOLDER_ROW: FlatRow = {
   id: DATABASES_PLACEHOLDER_ID,
   node: {
@@ -303,13 +303,7 @@ const rowCapabilities = (id: string, node: RailNode): RowCapabilities => {
   // does not drag — it is the workspace root, not a page you reparent.
   if (id === LIFE_ID)
     return { ...NO_CAPABILITIES, droppable: true, addable: true, deletable: true, renameable: true }
-  if (
-    id === DATABASES_PLACEHOLDER_ID ||
-    id === CHANGE_LOG_NODE_ID ||
-    id === TRASH_NODE_ID ||
-    id === SETTINGS_NODE_ID
-  )
-    return NO_CAPABILITIES
+  if (isPseudoPageId(id)) return NO_CAPABILITIES
   if (isDatabasesRoot(node)) return { ...NO_CAPABILITIES, draggable: true, droppable: true }
   // KAN-490/491: an extra root never drags — a drop must not leave `props.root`
   // on a page with a parent, so dragging is disallowed outright rather than

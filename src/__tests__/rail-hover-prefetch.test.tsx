@@ -109,4 +109,22 @@ describe('Rail row hover prefetch (KAN-388)', () => {
 
     expect(prefetchSpy).not.toHaveBeenCalled()
   })
+
+  it('hovering or focusing a pseudo row (settings, trash, life) fires no prefetch (KAN-493)', () => {
+    mount(queryClient)
+    const settingsRow = screen.getByRole('treeitem', { name: 'settings' })
+    const trashRow = screen.getByRole('treeitem', { name: 'trash' })
+    const lifeRow = screen.getByRole('treeitem', { name: 'life' })
+
+    for (const row of [settingsRow, trashRow, lifeRow]) {
+      fireEvent.pointerEnter(row)
+      jest.advanceTimersByTime(60)
+      fireEvent.pointerLeave(row)
+      fireEvent.focus(row)
+      jest.advanceTimersByTime(60)
+      fireEvent.blur(row)
+    }
+
+    expect(prefetchSpy).not.toHaveBeenCalled()
+  })
 })
