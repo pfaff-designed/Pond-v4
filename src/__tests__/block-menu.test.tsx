@@ -665,6 +665,56 @@ describe('turn into — page', () => {
       expect(mockDeletePage).toHaveBeenCalledWith(expect.anything(), 'child-page-1')
     )
   })
+
+  it('picking page twice before createPage resolves calls it once and leaves one page-link (G9)', async () => {
+    const user = userEvent.setup()
+    let resolveCreate!: (value: Awaited<ReturnType<typeof mockCreatePage>>) => void
+    mockCreatePage.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveCreate = resolve
+        })
+    )
+    const { onChange } = renderCanvas([note])
+
+    await user.click(handleOf('b-note'))
+    await user.click(await screen.findByRole('menuitem', { name: 'page' }))
+    // createPage hasn't resolved yet, so the block is still text under its own
+    // id — reopening the menu and picking `page` again must hit the in-flight
+    // guard rather than firing a second create.
+    await user.click(handleOf('b-note'))
+    await user.click(await screen.findByRole('menuitem', { name: 'page' }))
+
+    expect(mockCreatePage).toHaveBeenCalledTimes(1)
+    resolveCreate({
+      id: 'child-page-1',
+      parentId: 'page-1',
+      type: 'page',
+      title: 'walk the dog',
+      blocks: [],
+      order: 0,
+      props: {},
+    })
+
+    await waitFor(() =>
+      expect(lastBlocks(onChange).filter((b) => b.type === 'page-link')).toHaveLength(1)
+    )
+    expect(mockCreatePage).toHaveBeenCalledTimes(1)
+  })
+
+  it('createPage rejecting leaves the block unchanged, with no page-link, and tells the person', async () => {
+    const user = userEvent.setup()
+    mockCreatePage.mockRejectedValueOnce(new Error('network'))
+    const { onChange } = renderCanvas([note])
+
+    await user.click(handleOf('b-note'))
+    await user.click(await screen.findByRole('menuitem', { name: 'page' }))
+
+    expect(await screen.findByText("Couldn't turn the block into a page")).toBeInTheDocument()
+    expect(onChange).not.toHaveBeenCalled()
+    expect(document.getElementById('block-b-note')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /undo/i })).not.toBeInTheDocument()
+  })
 })
 
 describe('turn into — heading (PATH_STEPS: handle to heading, toast undo back to text)', () => {
