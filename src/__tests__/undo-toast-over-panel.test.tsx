@@ -4,11 +4,11 @@
  * numbers that happen to agree.
  */
 
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import { UndoNotice } from '@/components/molecules/UndoNotice'
 import { UndoToastViewport } from '@/components/molecules/UndoToast'
 import { LAYER } from '@/lib/layout/layers'
-import type { UndoNotice as UndoNoticeData } from '@/lib/terminal-focus'
+import { clearUndoNotice, requestUndoNotice, type UndoNotice as UndoNoticeData } from '@/lib/terminal-focus'
 
 function cssVarOf(el: HTMLElement, name: string): number {
   const value = el.style.getPropertyValue(name)
@@ -39,5 +39,55 @@ describe('the toast stack over the undo panel', () => {
     expect(panelZ).toBe(LAYER.undoPanel)
     expect(toastZ).toBe(LAYER.toastStack)
     expect(toastZ).toBeGreaterThan(panelZ)
+  })
+})
+
+describe('the toast stack stays clear of the open panel (KAN-553)', () => {
+  afterEach(() => {
+    // Still mounted at this point — this inner `afterEach` runs before RTL's
+    // own cleanup (an outer, module-scope `afterEach`) unmounts it.
+    act(() => clearUndoNotice())
+  })
+
+  it("drops its top below the panel's measured bottom edge while the panel is open", () => {
+    const notice: UndoNoticeData = {
+      direction: 'undo',
+      pastTense: 'removed chickpeas, harissa',
+      openedPageTitle: null,
+      previousPageTitle: 'kitchen renovation',
+    }
+    const getRect = jest
+      .spyOn(window.HTMLElement.prototype, 'getBoundingClientRect')
+      .mockReturnValue({ height: 140 } as DOMRect)
+    // Mirrors `ShellCommands`: the panel's prop and the toast viewport's open
+    // signal (`useUndoNotice`) are the same global notice, not two sources.
+    requestUndoNotice(notice)
+
+    render(
+      <>
+        <UndoNotice notice={notice} />
+        <UndoToastViewport>
+          <div>a toast</div>
+        </UndoToastViewport>
+      </>
+    )
+
+    const viewport = screen.getByTestId('undo-toast-viewport')
+    expect(viewport.style.top).toBe(`${28 + 140 + 10}px`)
+    expect(viewport.className).not.toMatch(/\btop-4\b/)
+
+    getRect.mockRestore()
+  })
+
+  it('returns to top-4 once the panel closes', () => {
+    render(
+      <UndoToastViewport>
+        <div>a toast</div>
+      </UndoToastViewport>
+    )
+
+    const viewport = screen.getByTestId('undo-toast-viewport')
+    expect(viewport.className).toMatch(/\btop-4\b/)
+    expect(viewport.style.top).toBe('')
   })
 })
