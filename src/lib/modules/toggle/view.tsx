@@ -31,13 +31,23 @@ const TOGGLE_BODY_ROW: BlockRowValue = { selected: false, stepOut: () => {}, own
 /**
  * `after`, followed by the existing body — the shape a `stepOut` split from
  * the summary leaves behind. Either half absent collapses to the other, so
- * splitting at the summary's own end (`after` is `''`) leaves the body
- * untouched rather than gaining a blank line above it.
+ * splitting at the summary's own end (`after` is `''`) leaves the stored body
+ * untouched. CommonMark has no empty-paragraph syntax, so an empty `after`
+ * can't be written into the body as a line of its own; the focus effect below
+ * opens that line directly in the live editor instead (Notion's own "Enter
+ * opens a new empty first child line").
  */
 const joinBody = (after: string, body: string | undefined): string => {
   const rest = body ?? ''
   if (after === '') return rest
   return rest === '' ? after : `${after}\n\n${rest}`
+}
+
+/** What the focus effect does once the body editor exists. */
+interface FocusBody {
+  token: number
+  /** `after` was empty and the body already held text: open a new, empty first line. */
+  insertEmptyLine: boolean
 }
 
 /**
@@ -89,21 +99,31 @@ export function ToggleView({ data, editable, onChange, autofocus }: ModuleViewPr
   // KAN-355's save-flush has nothing to flush, so the fold falls back to the
   // view's own `onChange` rather than the context's absent default.
   const commit = (patch: ToggleBlock) => (commitStep ?? onChange)?.(patch)
-  const [focusBodyToken, setFocusBodyToken] = useState(0)
+  const [focusBody, setFocusBody] = useState<FocusBody | null>(null)
   const fieldIds = toggleFieldIds(data.id)
 
   useEffect(() => {
-    if (focusBodyToken === 0) return
+    if (!focusBody) return
+    const { insertEmptyLine } = focusBody
     // On a FOLDED toggle, this effect fires in the SAME commit the body first
     // mounts in — `immediatelyRender: false` (`editor.tsx`) defers the body's
     // own tiptap editor to a later effect, so it may not be registered yet.
     // One retry on the next frame, as `focusTextBlockSoon` (`BlockCanvas.tsx`).
-    const focusBody = () => Boolean(editorForBlock(fieldIds.body)?.commands.focus('start'))
-    if (focusBody()) return
-    const frame = requestAnimationFrame(focusBody)
+    const attempt = (): boolean => {
+      const editor = editorForBlock(fieldIds.body)
+      if (!editor) return false
+      if (!insertEmptyLine) return Boolean(editor.commands.focus('start'))
+      // A node inserted straight into the live document, never through the
+      // markdown round trip: an empty leading paragraph has no markdown
+      // spelling, so it only exists here until the person types into it —
+      // at which point the next `onUpdate` writes it into `body` for real.
+      return editor.chain().insertContentAt(0, { type: 'paragraph' }).focus(1).run()
+    }
+    if (attempt()) return
+    const frame = requestAnimationFrame(attempt)
     return () => cancelAnimationFrame(frame)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fires once per token, not per id
-  }, [focusBodyToken])
+  }, [focusBody])
 
   const summaryRow: BlockRowValue = {
     selected: false,
@@ -114,13 +134,18 @@ export function ToggleView({ data, editable, onChange, autofocus }: ModuleViewPr
         return
       }
       if (patch?.type !== 'text') return
+      const after = content ?? ''
+      const hadBody = Boolean(data.body && data.body.trim() !== '')
       onChange?.({
         ...data,
         content: patch.content,
-        body: joinBody(content ?? '', data.body),
+        body: joinBody(after, data.body),
         folded: false,
       })
-      setFocusBodyToken((token) => token + 1)
+      setFocusBody((prev) => ({
+        token: (prev?.token ?? 0) + 1,
+        insertEmptyLine: after === '' && hadBody,
+      }))
     },
   }
 

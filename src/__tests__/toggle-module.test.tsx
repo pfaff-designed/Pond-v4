@@ -201,6 +201,61 @@ describe('ToggleView — Enter (KAN-480 build item 5)', () => {
     expect(screen.getByRole('button')).toHaveAttribute('aria-expanded', 'true')
   })
 
+  it('at the end of the summary, with an existing body, opens a new empty first body line instead of merging into it', async () => {
+    render(
+      <StatefulToggle
+        data={{
+          id: 't1',
+          type: 'toggle',
+          content: 'packing list',
+          body: 'passport\n\ntickets',
+        }}
+      />
+    )
+    const [summary] = await findAllTextBlocks()
+    act(() => {
+      textEditorOf(summary).commands.focus('end')
+    })
+    fireEvent.keyDown(summary, { key: 'Enter' })
+    const [, body] = await findAllTextBlocks()
+    await waitFor(() => expect(textEditorOf(body).isFocused).toBe(true))
+    act(() => {
+      textEditorOf(body).commands.insertContent('visa')
+    })
+    await waitFor(() => expect(screen.getByText('visa')).toBeInTheDocument())
+    expect(screen.getByText('passport')).toBeInTheDocument()
+    expect(screen.getByText('tickets')).toBeInTheDocument()
+    expect(body.querySelectorAll('p')).toHaveLength(3)
+  })
+
+  it('same from a FOLDED toggle with an existing body', async () => {
+    render(
+      <StatefulToggle
+        data={{
+          id: 't1',
+          type: 'toggle',
+          content: 'packing list',
+          body: 'passport\n\ntickets',
+          folded: true,
+        }}
+      />
+    )
+    const [summary] = await findAllTextBlocks()
+    act(() => {
+      textEditorOf(summary).commands.focus('end')
+    })
+    fireEvent.keyDown(summary, { key: 'Enter' })
+    const [, body] = await findAllTextBlocks()
+    await waitFor(() => expect(textEditorOf(body).isFocused).toBe(true))
+    act(() => {
+      textEditorOf(body).commands.insertContent('visa')
+    })
+    await waitFor(() => expect(screen.getByText('visa')).toBeInTheDocument())
+    expect(screen.getByText('passport')).toBeInTheDocument()
+    expect(screen.getByText('tickets')).toBeInTheDocument()
+    expect(body.querySelectorAll('p')).toHaveLength(3)
+  })
+
   it('in the body adds a second body line — one block on the page, not a new one', async () => {
     const outerStepOut = jest.fn()
     render(
