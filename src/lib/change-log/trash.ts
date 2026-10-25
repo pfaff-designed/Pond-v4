@@ -15,6 +15,7 @@
  * Framework-agnostic — takes a SupabaseClient, no Next.js and no React.
  */
 
+import { z } from 'zod'
 import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
 import { TrashRefusedError, type TrashRefusalReason } from './errors'
@@ -46,21 +47,40 @@ const run = async (
   supabase: SupabaseClient<Database>,
   fn: 'trash_page' | 'restore_page',
   args: Record<string, unknown>
-): Promise<void> => {
-  const { error } = await rpc(supabase, fn, args)
-  if (error === null) return
+): Promise<unknown> => {
+  const { data, error } = await rpc(supabase, fn, args)
+  if (error === null) return data
   const reason = error.details ?? ''
   if (isTrashRefusalReason(reason)) throw new TrashRefusedError(reason, error.message)
   throw error
 }
 
 /** Trash a page and its whole subtree in one stamp, logging one `delete` record. */
-export const trashPage = (supabase: SupabaseClient<Database>, pageId: string): Promise<void> =>
-  run(supabase, 'trash_page', { p_page_id: pageId })
+export const trashPage = async (supabase: SupabaseClient<Database>, pageId: string): Promise<void> => {
+  await run(supabase, 'trash_page', { p_page_id: pageId })
+}
 
-/** Restore the subtree a `delete` record trashed, logging one `restore` record. */
-export const restorePage = (supabase: SupabaseClient<Database>, recordId: string): Promise<void> =>
-  run(supabase, 'restore_page', { p_record_id: recordId })
+const restoreRecordIdSchema = z.string().uuid()
+
+/** Restore the subtree a `delete` record trashed, logging one `restore` record —
+ *  resolves to the new `restore` record's own id (0037), for session undo to
+ *  remember. Parsed at this boundary: `restore_page` always returns a uuid,
+ *  so anything else is an impossible state — thrown in development, logged
+ *  and resolved to `null` in production, so a caller never pushes
+ *  `recordIds: [null]` onto session undo. */
+export const restorePage = async (
+  supabase: SupabaseClient<Database>,
+  recordId: string
+): Promise<string | null> => {
+  const data = await run(supabase, 'restore_page', { p_record_id: recordId })
+  const parsed = restoreRecordIdSchema.safeParse(data)
+  if (parsed.success) return parsed.data
+  if (process.env.NODE_ENV !== 'production') {
+    throw new Error(`restore_page returned an invalid record id: ${JSON.stringify(data)}`)
+  }
+  console.error('[trash] restore_page returned an invalid record id', data)
+  return null
+}
 
 /** Which of `pageIds` still exist as rows at all (trashed or live) — the deleted
  *  view's only way to tell "still in trash" from "emptied" now that part 2's

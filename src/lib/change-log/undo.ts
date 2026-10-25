@@ -56,6 +56,10 @@ export const REFUSED_REASONS = [
   'other-pond',
   'not-found',
   'page-gone',
+  /** `restore_page`'s own "restoring a record twice" refusal (0027) — a stale
+   *  redo of a `restore` record lands here, the same not-retryable family as
+   *  `already-undone`, rather than being thrown as an unrecognized reason. */
+  'already-restored',
 ] as const
 
 export type StaleReason = (typeof STALE_REASONS)[number]
