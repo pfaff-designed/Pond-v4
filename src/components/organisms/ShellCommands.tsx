@@ -50,8 +50,12 @@ import {
 } from '@/lib/terminal-focus'
 import {
   isPaletteChord,
+  isEditableField,
+  isGoToParentChord,
   isMinimizeRailChord,
   isMovePageChord,
+  isOverlayOpen,
+  isRailFocusChord,
   isRedoChord,
   isUndoChord,
   onApplePlatform,
@@ -65,6 +69,7 @@ import { getRecord } from '@/lib/change-log/store'
 import { rememberStruckRow } from '@/lib/change-log/undo-strike'
 import { useCommandPath } from '@/lib/layout/command-path'
 import { setRailMinimized, toggleRail, useRailMinimized } from '@/lib/layout/rail-chrome'
+import { requestRailRowFocus } from '@/lib/layout/rail-focus'
 import { PLACEMENT } from '@/lib/layout/shell-placement'
 import { useZenCommands } from '@/lib/layout/use-zen-commands'
 import { openWorkspaceUrl, workspaceUrl } from '@/lib/pages/nav'
@@ -109,7 +114,7 @@ import { ROW_TYPE } from '@/lib/properties/schema'
  * so the chord falls through to the session step instead. */
 const isEditable = (el: Element | null): boolean =>
   el !== null &&
-  el.matches('input, textarea, select, [contenteditable]') &&
+  (isEditableField(el) || el.matches('select')) &&
   !isEmptyPageTitleInput(el) &&
   !el.closest(`[${SESSION_UNDO_SCOPE_ATTR}]`)
 
@@ -223,12 +228,12 @@ export function ShellCommands() {
   )
 
   // Before the open page has published its path, the pill reads the pond's root.
-  const path = published ?? {
-    glyph: pond?.glyph ?? LIFE_GLYPH,
-    trail: [],
-    current: pondName,
-    role: null,
-  }
+  // Memoized so the keydown effect below (KAN-476) can depend on it without
+  // re-subscribing on every render while nothing has actually changed.
+  const path = useMemo(
+    () => published ?? { glyph: pond?.glyph ?? LIFE_GLYPH, trail: [], current: pondName, role: null },
+    [published, pond?.glyph, pondName]
+  )
 
   // KAN-388: the active row arrowed/typed to in ⌘K warms its page before ↵ —
   // but only a REAL page row. The move picker's synthetic root row
@@ -297,6 +302,10 @@ export function ShellCommands() {
   // open then, so a toggle would raise it behind the sheet). Capture phase on the
   // document, so it fires before a focused editor/input can swallow it.
   const pondSheetOpen = naming !== null
+  // The palette dialog's own open state (KAN-476's `shellKeysLive` reads this
+  // directly — PondCommand is a combobox/listbox, not a base-ui `Dialog`, so it
+  // carries no `role="dialog"` for `isOverlayOpen` to find).
+  const commandOpen = paletteOpen || templateSheetOpen
   const zenCommands = useZenCommands({
     blocked: templateSheetOpen || pondSheetOpen || reportOpen,
     onEnter: closePalette,
@@ -368,6 +377,31 @@ export function ShellCommands() {
         }
         return
       }
+      // Shared gate for the two chords below (KAN-476): a chord that fires
+      // globally (the rail-focus key) or navigates (⌘⇧↑) must do nothing while
+      // a modal owns focus, or it acts behind that modal's own focus trap
+      // instead of inside it. `commandOpen` covers the palette/template-sheet
+      // dialog (no `role="dialog"` for `isOverlayOpen` to find); `isOverlayOpen`
+      // covers everything else (a confirm dialog, the new-pond sheet, the
+      // report box) without threading each one's open state in here.
+      const shellKeysLive = !commandOpen && !isOverlayOpen()
+      // ⌘⇧↑ opens the open page's parent (KAN-476), the same ancestor crumb
+      // the breadcrumb's own last link navigates to. Left alone inside an
+      // editable field — there the key keeps its native "select to
+      // paragraph start" meaning, as in Linear and Notion.
+      if (isGoToParentChord(e) && shellKeysLive) {
+        const targetEl = e.target instanceof Element ? e.target : null
+        if (!isEditableField(targetEl) && !isEditableField(document.activeElement)) {
+          const parent = path.trail[path.trail.length - 1]
+          if (parent?.to) {
+            e.preventDefault()
+            e.stopPropagation()
+            if (parent.to.kind === 'home') openWorkspaceUrl(workspaceUrl(null), router)
+            else openWorkspaceUrl(workspaceUrl(parent.to.node), router)
+          }
+        }
+        return
+      }
       // "From anywhere" (2f), text fields included — the composer's own input is
       // where ⌘J is most often pressed. Capture phase so an editor cannot swallow it.
       if (isComposerToggleKey(e)) {
@@ -381,6 +415,16 @@ export function ShellCommands() {
         e.preventDefault()
         e.stopPropagation()
         if (!e.repeat) toggleRail()
+        return
+      }
+      // ⌘⇧\ moves focus into the rail (KAN-476) — from anywhere, the editor
+      // included, that's the chord's whole point, so no `isEditableField` guard.
+      // No-op while the rail is minimized: there is no row to focus. Gated by
+      // `shellKeysLive` too — it must not steal focus from behind a modal.
+      if (isRailFocusChord(e) && !railMinimized && shellKeysLive) {
+        e.preventDefault()
+        e.stopPropagation()
+        if (!e.repeat) requestRailRowFocus()
         return
       }
       // Undo/redo belongs to an editable field first — Tiptap's own undo, an
@@ -426,6 +470,7 @@ export function ShellCommands() {
     templateSheetOpen,
     pondSheetOpen,
     reportOpen,
+    commandOpen,
     closeTemplateSheet,
     closeNewPondSheet,
     closeReport,
@@ -435,6 +480,9 @@ export function ShellCommands() {
     paletteOpen,
     pages,
     currentNodeId,
+    path,
+    router,
+    railMinimized,
   ])
 
   const handleOpenChange = useCallback(
@@ -650,8 +698,6 @@ export function ShellCommands() {
       navigateTo,
     ]
   )
-
-  const commandOpen = paletteOpen || templateSheetOpen
 
   return (
     <>
