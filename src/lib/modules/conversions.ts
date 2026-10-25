@@ -39,7 +39,7 @@ import {
   previewListTable,
   type DatabaseFromList,
 } from '@/lib/pages/list-to-table'
-import { createPage, type PondPage } from '@/lib/pages/client'
+import { viewCollectionId } from './block-frame'
 import type { Block } from './content'
 import type { TextBlock } from './text/schema'
 import { retypeText, textKindOf, type TextKind } from './text/retype'
@@ -129,19 +129,11 @@ export interface TableConversion {
   ) => Promise<DatabaseFromList>
 }
 
-export interface PageConversionInput {
-  userId: string
-  /** The page this line's block lives on — the new page is always its child. */
-  parentId: string | null
-  pondId: string | null
-  props?: Record<string, unknown>
-}
-
+/** The menu's "turn into › page" row: `moveBlockIntoNewPage` is the one engine
+ * that makes the page, so there is nothing left for this target to apply. */
 export interface PageConversion {
   target: 'page'
-  /** Nothing to count: the page is made, not previewed. */
   preview: null
-  apply: (supabase: SupabaseClient<Database>, input: PageConversionInput) => Promise<PondPage>
 }
 
 export type Conversion = LineConversion | TableConversion | PageConversion
@@ -227,25 +219,10 @@ const tableConversion = (block: Block): TableConversion | null => {
 }
 
 /** `block`'s content, read as the plain single line a new page would be titled from. */
-export const pageTitleOf = (block: TextBlock): string =>
+const pageTitleOf = (block: TextBlock): string =>
   plainLine(retypeText(block.content, 'text').split('\n')[0] ?? '')
 
-const pageConversion = (block: TextBlock): PageConversion => {
-  const title = pageTitleOf(block)
-  return {
-    target: 'page',
-    preview: null,
-    apply: (supabase, { userId, parentId, pondId, props }) =>
-      createPage(supabase, userId, {
-        parentId,
-        type: 'page',
-        title,
-        blocks: [block],
-        ...(props ? { props } : {}),
-        pondId,
-      }),
-  }
-}
+const PAGE_CONVERSION: PageConversion = { target: 'page', preview: null }
 
 /** `block` plus the title its page gets, as `moveIntoPagePrep` moves it. */
 export interface MovedBlock {
@@ -269,9 +246,7 @@ export function moveIntoPagePrep(block: Block, hostPageId: string): MovedBlock |
   if (block.type === 'page-link') return null
   const { rowStart: _rowStart, ...rest } = block
   const moved: Block =
-    rest.type === 'view' && rest.collectionId === undefined
-      ? { ...rest, collectionId: hostPageId }
-      : rest
+    rest.type === 'view' ? { ...rest, collectionId: viewCollectionId(rest, hostPageId) } : rest
   const title =
     moved.type === 'text'
       ? pageTitleOf(moved)
@@ -326,7 +301,7 @@ export const conversionsFor = (
       return table ? [table] : []
     }
     if (target === 'page') {
-      return singleNode && block.type === 'text' ? [pageConversion(block)] : []
+      return singleNode && block.type === 'text' ? [PAGE_CONVERSION] : []
     }
     if (RETYPE_ONLY_TARGETS.has(target) && !singleNode) return []
     return [lineConversion(block, target, mintId)]
