@@ -2646,6 +2646,12 @@ export function Rail() {
         // for a reload.
         if (oldLinkParentId) queryClient.invalidateQueries({ queryKey: ['page', oldLinkParentId] })
         if (newLinkParentId) queryClient.invalidateQueries({ queryKey: ['page', newLinkParentId] })
+        // KAN-470: a renaming move changes the moved page's own title — an
+        // open DocumentPanel's draft only rebases when ['page', id]
+        // refreshes (use-page-draft.ts), so without this the open page keeps
+        // showing its pre-move title and a later edit's updateTitle clashes
+        // with the destination's sibling again.
+        if (after.title) queryClient.invalidateQueries({ queryKey: ['page', draggedId] })
         // KAN-470: `after.title` is only present on the RPC's own record when
         // the move clashed and the RPC actually renamed it — the toast and
         // the "open" action read that back rather than trusting the

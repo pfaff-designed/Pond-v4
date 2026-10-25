@@ -182,3 +182,33 @@ it('a clashing drop\'s toast names the suffixed title and "open" navigates to it
   fireEvent.click(screen.getByRole('button', { name: 'open' }))
   expect(routerPush).toHaveBeenCalledWith(expect.stringContaining('nodeName=Notes+2'))
 })
+
+// KAN-470 regression: an open page's own ['page', id] query must refresh
+// after a RENAMING move, or its cached draft keeps showing the pre-move
+// title (use-page-draft.ts only rebases when that query refetches).
+it('a renaming move invalidates the moved page\'s own ["page", id] query', async () => {
+  jest.mocked(movePage).mockResolvedValueOnce({
+    id: 'record-1',
+    after: { parentId: 'house', parentTitle: 'house', siblingOrder: [], title: 'Notes 2' },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } as any)
+  const client = mountRail(CLASH_ROWS)
+  client.setQueryData(['page', 'notes-top'], { id: 'notes-top', title: 'Notes' })
+  const invalidateSpy = jest.spyOn(client, 'invalidateQueries')
+
+  dragNotesOntoHouse()
+
+  await screen.findByText('moved Notes to house as "Notes 2" ·')
+  expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['page', 'notes-top'] })
+})
+
+it("a non-renaming move does not invalidate the moved page's own [\"page\", id] query", async () => {
+  const client = mountRail(NO_CLASH_ROWS)
+  client.setQueryData(['page', 'notes-top'], { id: 'notes-top', title: 'Notes' })
+  const invalidateSpy = jest.spyOn(client, 'invalidateQueries')
+
+  dragNotesOntoHouse()
+
+  await screen.findByText('moved Notes to house ·')
+  expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['page', 'notes-top'] })
+})
