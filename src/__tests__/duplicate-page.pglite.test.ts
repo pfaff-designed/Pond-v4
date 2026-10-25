@@ -2,7 +2,10 @@
 // a page's whole subtree (itself + every live descendant, any depth) in one
 // atomic write, places the copy directly below the original, and logs exactly
 // one accepted `duplicate_page` record whose undo reuses 0029's `page` kind —
-// `trash_page` cascades the whole copy in one call.
+// `trash_page` cascades the whole copy in one call. It also appends a
+// `page-link` block for the copy onto the subtree's parent (or the pond's
+// home row, for a top-level page), right after the original's own link if
+// there is one, else at the end — undo takes that link off too.
 
 import type { PGlite } from '@electric-sql/pglite'
 import { makeDb, seedUser } from './helpers/pglite-harness'
@@ -63,6 +66,16 @@ const pageRow = async (db: PGlite, pageId: string) => {
   return res.rows[0]
 }
 
+const pageLink = (pageId: string, id = `link-${pageId}`) => ({ id, type: 'page-link', pageId })
+
+const blocksOf = async (db: PGlite, pageId: string): Promise<unknown[]> => {
+  const res = await db.query<{ blocks: unknown[] }>(
+    'select blocks from public.pages where id = $1',
+    [pageId]
+  )
+  return res.rows[0].blocks
+}
+
 const childrenOf = async (db: PGlite, parentId: string | null, pondId: string) => {
   const res = await db.query<{ id: string; title: string; order: number }>(
     `select id, title, "order" from public.pages
@@ -82,7 +95,7 @@ interface DuplicateRecord {
   action: string
   target_page_id: string
   before: null
-  after: { pageId: string }
+  after: { pageId: string; appendedLinkId?: string; linkParentId?: string }
 }
 
 const duplicateRecordFor = async (db: PGlite, newRootId: string): Promise<DuplicateRecord> => {
@@ -359,6 +372,99 @@ describe('0032_duplicate_page — undo reuses the `page` kind, cascading the who
     // The original subtree is untouched by the undo.
     expect((await pageRow(db, roof)).deleted_at).toBeNull()
     expect((await pageRow(db, child)).deleted_at).toBeNull()
+
+    await db.close()
+  })
+})
+
+describe('0032_duplicate_page — the copy gets a page-link on its parent, mirroring a move', () => {
+  it("appends a page-link for the copy right after the original's own link on the parent", async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pond = await lifePondId(db)
+    const kitchen = await addPage(db, pond, { title: 'Kitchen' })
+    const roof = await addPage(db, pond, { parentId: kitchen, title: 'Recipes' })
+    await db.query('update public.pages set blocks = $1 where id = $2', [
+      JSON.stringify([
+        { id: 'before', type: 'text', value: 'x' },
+        pageLink(roof),
+        { id: 'after', type: 'text', value: 'y' },
+      ]),
+      kitchen,
+    ])
+
+    await actAs(db, USER)
+    const result = await db.query<DuplicateRecord>(
+      `select * from public.duplicate_page($1, $2)`,
+      [roof, 'Recipes 2']
+    )
+    await db.exec('reset role;')
+
+    const record = result.rows[0]
+    const newRootId = record.target_page_id
+    expect(record.after.appendedLinkId).toEqual(expect.any(String))
+    expect(record.after.linkParentId).toBe(kitchen)
+
+    expect(await blocksOf(db, kitchen)).toEqual([
+      { id: 'before', type: 'text', value: 'x' },
+      pageLink(roof),
+      pageLink(newRootId, record.after.appendedLinkId),
+      { id: 'after', type: 'text', value: 'y' },
+    ])
+
+    await db.close()
+  })
+
+  it('appends at the end when the parent carries no link to the original', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pond = await lifePondId(db)
+    const kitchen = await addPage(db, pond, {
+      title: 'Kitchen',
+      blocks: [{ id: 'only', type: 'text', value: 'x' }],
+    })
+    const roof = await addPage(db, pond, { parentId: kitchen, title: 'Recipes' })
+
+    await actAs(db, USER)
+    const result = await db.query<DuplicateRecord>(
+      `select * from public.duplicate_page($1, $2)`,
+      [roof, 'Recipes 2']
+    )
+    await db.exec('reset role;')
+
+    const record = result.rows[0]
+    const newRootId = record.target_page_id
+
+    expect(await blocksOf(db, kitchen)).toEqual([
+      { id: 'only', type: 'text', value: 'x' },
+      pageLink(newRootId, record.after.appendedLinkId),
+    ])
+
+    await db.close()
+  })
+
+  it('undo removes the appended link, leaving the original one untouched', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pond = await lifePondId(db)
+    const kitchen = await addPage(db, pond, { title: 'Kitchen' })
+    const roof = await addPage(db, pond, { parentId: kitchen, title: 'Recipes' })
+    await db.query('update public.pages set blocks = $1 where id = $2', [
+      JSON.stringify([pageLink(roof)]),
+      kitchen,
+    ])
+
+    await actAs(db, USER)
+    const result = await db.query<DuplicateRecord>(
+      `select * from public.duplicate_page($1, $2)`,
+      [roof, 'Recipes 2']
+    )
+    await db.exec('reset role;')
+    const record = result.rows[0]
+
+    await undo(db, [record.id], pond)
+
+    expect(await blocksOf(db, kitchen)).toEqual([pageLink(roof)])
 
     await db.close()
   })
