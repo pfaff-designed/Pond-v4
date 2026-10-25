@@ -92,6 +92,11 @@ function dragRightEdge(blockId: string, clientX: number) {
   fireEvent.pointerMove(edgeHandle(blockId, 'right')!, { clientX })
 }
 
+/** A shared-edge drag (carried by the boundary's left member): same `clientX`-is-the-delta convention as `dragRightEdge`. */
+function dragSharedEdge(leftBlockId: string, clientX: number) {
+  fireEvent.pointerMove(edgeHandle(leftBlockId, 'shared')!, { clientX })
+}
+
 describe('an alone-on-line edge drag (KAN-441)', () => {
   it('snaps through ¾ → ⅔ → ½, breaks out to a free 46%, and release writes one numeric width with one undo entry', async () => {
     const ro = mockResizeObserver()
@@ -400,6 +405,85 @@ describe('an alone-on-line edge drag (KAN-441)', () => {
     expect(edgeHandle('b-right', 'left')).toBeNull() // covered by b-left's shared strip
     expect(edgeHandle('b-right', 'shared')).toBeNull() // the row's last member has no boundary after it
     expect(edgeHandle('b-right', 'right')).not.toBeNull() // the row's own right edge
+  })
+
+  describe('a shared-edge drag (KAN-505)', () => {
+    // 1016 = columnPx(1000) + the 16px row gap `percentToRenderedPx` folds in — the
+    // delta that lands the raw left percent at exactly 67%, 3px (in the lock's own
+    // naive percent*columnPx metric) past ⅔'s own 667px, inside the 8px lock band.
+    const PAST_TWO_THIRDS_CLIENT_X = 1016 * 0.67 - 16 - (1016 * 0.5 - 16)
+
+    it('drag right past the ⅔ lock, release: ⅔/⅓ as one write', () => {
+      const ro = mockResizeObserver()
+      try {
+        const left: Block = { id: 'b-left', type: 'text', content: 'left', width: '1/2' }
+        const right: Block = { id: 'b-right', type: 'text', content: 'right', width: '1/2' }
+        const onChange = jest.fn()
+        renderCanvas([left, right], onChange)
+        setColumnWidth('b-left', 1000, ro)
+
+        const shared = edgeHandle('b-left', 'shared')!
+        fireEvent.pointerDown(shared, { clientX: 0 })
+        dragSharedEdge('b-left', PAST_TWO_THIRDS_CLIENT_X)
+        expect(readoutText('b-left', 'shared')).toBe('⅔')
+
+        fireEvent.pointerUp(shared, { clientX: PAST_TWO_THIRDS_CLIENT_X })
+
+        expect(onChange).toHaveBeenCalledTimes(1)
+        expect(onChange).toHaveBeenCalledWith([
+          { ...left, width: '2/3' },
+          { ...right, width: '1/3' },
+        ])
+      } finally {
+        ro.restore()
+      }
+    })
+
+    it('Esc mid-drag restores both widths and writes nothing', () => {
+      const ro = mockResizeObserver()
+      try {
+        const left: Block = { id: 'b-left', type: 'text', content: 'left', width: '1/2' }
+        const right: Block = { id: 'b-right', type: 'text', content: 'right', width: '1/2' }
+        const onChange = jest.fn()
+        renderCanvas([left, right], onChange)
+        setColumnWidth('b-left', 1000, ro)
+
+        const shared = edgeHandle('b-left', 'shared')!
+        fireEvent.pointerDown(shared, { clientX: 0 })
+        dragSharedEdge('b-left', PAST_TWO_THIRDS_CLIENT_X)
+        expect(readoutText('b-left', 'shared')).toBe('⅔')
+
+        fireEvent.keyDown(document.body, { key: 'Escape' })
+
+        expect(readoutText('b-left', 'shared')).toBeNull()
+        expect(onChange).not.toHaveBeenCalled()
+
+        // The drag is over: a further move does nothing (the ref was cleared).
+        dragSharedEdge('b-left', 500)
+        expect(onChange).not.toHaveBeenCalled()
+      } finally {
+        ro.restore()
+      }
+    })
+
+    it('a pointerdown/pointerup with no movement writes nothing', () => {
+      const ro = mockResizeObserver()
+      try {
+        const left: Block = { id: 'b-left', type: 'text', content: 'left', width: '1/2' }
+        const right: Block = { id: 'b-right', type: 'text', content: 'right', width: '1/2' }
+        const onChange = jest.fn()
+        renderCanvas([left, right], onChange)
+        setColumnWidth('b-left', 1000, ro)
+
+        const shared = edgeHandle('b-left', 'shared')!
+        fireEvent.pointerDown(shared, { clientX: 0 })
+        fireEvent.pointerUp(shared, { clientX: 0 })
+
+        expect(onChange).not.toHaveBeenCalled()
+      } finally {
+        ro.restore()
+      }
+    })
   })
 
   it('a toggle\'s left edge strip starts short of its own fold button\'s 28px row (KAN-480, bounded round-3 fix)', () => {
