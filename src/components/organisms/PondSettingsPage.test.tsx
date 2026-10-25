@@ -84,6 +84,22 @@ describe('PondSettingsPage', () => {
     expect(screen.getAllByRole('button', { name: 'delete…' })).toHaveLength(2)
   })
 
+  it("matches s6m7's 12px row radius, 18px column gap, and lowercase mono 'deleted' label", async () => {
+    ;(listDeletedPonds as jest.Mock).mockResolvedValue([ARCHIVE])
+    renderPage()
+    await screen.findByText('Studio')
+    const deletedRow = await screen.findByTestId('settings-deleted-row')
+
+    expect(rowFor('Studio').className).toContain('rounded-[12px]')
+    expect(deletedRow.className).toContain('rounded-[12px]')
+    expect(screen.getByTestId('settings-column').className).toContain('gap-[18px]')
+
+    const deletedLabel = screen.getByText('deleted')
+    expect(deletedLabel.className).toContain('font-mono')
+    expect(deletedLabel.className).toContain('lowercase')
+    expect(deletedLabel.textContent).toBe('deleted')
+  })
+
   it('opens the typed-name dialog and keeps confirm disabled until it matches', async () => {
     const user = userEvent.setup()
     renderPage()

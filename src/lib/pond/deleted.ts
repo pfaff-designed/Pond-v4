@@ -4,26 +4,19 @@
  * `deletedAt`.
  */
 
-import { TRASH_RETENTION_DAYS } from '@/lib/change-log/deleted-view'
+import { daysBetween } from '@/lib/change-log/log-page'
 
-const DAY_MS = 24 * 60 * 60 * 1000
+/** AUDIT 6m's own grace period — a pond's own fact, not trash's. It reads the
+ *  same as `TRASH_RETENTION_DAYS` (`deleted-view.ts`) today only by
+ *  coincidence; the two have separate owners and are free to diverge. */
+export const POND_DELETE_GRACE_DAYS = 30
 
-/** Calendar days elapsed between `deletedAt` and `now`, local midnight to
- *  local midnight — same boundary rule as `daysBetween` (`log-page.ts`),
- *  reimplemented here rather than imported since that module's export is
- *  change-log-record-shaped, not a bare ISO-to-Date pair. */
-function startOfDay(d: Date): number {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
-}
-
-function daysElapsed(deletedAt: string, now: Date): number {
-  return Math.round((startOfDay(now) - startOfDay(new Date(deletedAt))) / DAY_MS)
-}
-
-/** `goes in 30 days` / `goes in 1 day` — N = the retention window minus days
- *  elapsed, floored at 0 (a pond sitting past its own window, since the purge
- *  job isn't built yet, reads `goes in 0 days` rather than a negative count). */
+/** `goes in 30 days` / `goes in 1 day` — N = the grace period minus days
+ *  elapsed since `deletedAt` (`daysBetween`, `log-page.ts` — the one home for
+ *  this local-midnight-to-local-midnight boundary rule), floored at 0 (a pond
+ *  sitting past its own window, since the purge job isn't built yet, reads
+ *  `goes in 0 days` rather than a negative count). */
 export function pondGoesLabel(deletedAt: string, now: Date): string {
-  const daysLeft = Math.max(0, TRASH_RETENTION_DAYS - daysElapsed(deletedAt, now))
+  const daysLeft = Math.max(0, POND_DELETE_GRACE_DAYS - daysBetween(now, deletedAt))
   return `goes in ${daysLeft} ${daysLeft === 1 ? 'day' : 'days'}`
 }

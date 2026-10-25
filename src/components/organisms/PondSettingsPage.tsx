@@ -34,7 +34,7 @@ import { useRouter } from 'next/navigation'
 import { usePond } from '@/lib/pond/context'
 import { pondHref } from '@/lib/pond/active'
 import { softDeletePond, restorePond, listDeletedPonds, type Pond, type DeletedPond } from '@/lib/pond/client'
-import { pondGoesLabel } from '@/lib/pond/deleted'
+import { pondGoesLabel, POND_DELETE_GRACE_DAYS } from '@/lib/pond/deleted'
 import { requestNotify } from '@/lib/deletion/notify-bridge'
 import { useSurfaceColumn } from '@/lib/layout/surface-column'
 import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
@@ -52,7 +52,8 @@ const SETTINGS_COLUMN_PX = 780
  *  handle, theme chip, "this pond" label and `⋯` menu columns this ticket
  *  doesn't build. Hover tint is the board's own `rgba(100,143,123,.07)`
  *  (sage), inlined rather than `--mn-rail-hover` since that token is
- *  documented rail-only and this row is not the rail. */
+ *  documented rail-only and this row is not the rail. Radius is `s6m7`'s own
+ *  row literal (`border-radius:12px`) — `rounded-xl` resolves to 14px here. */
 function PondRow({
   pond,
   busy,
@@ -65,7 +66,7 @@ function PondRow({
   return (
     <div
       data-testid="settings-pond-row"
-      className="grid grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-x-3 rounded-xl px-[10px] py-3 hover:bg-[rgba(100,143,123,.07)]"
+      className="grid grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-x-3 rounded-[12px] px-[10px] py-3 hover:bg-[rgba(100,143,123,.07)]"
     >
       <PondMark glyph={pond.glyph ?? LIFE_GLYPH} size={14} />
       <span className="min-w-0 truncate text-[15px] font-medium text-mn-text">{pond.name}</span>
@@ -92,7 +93,7 @@ function DeletedPondRow({
   return (
     <div
       data-testid="settings-deleted-row"
-      className="grid grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-x-3 rounded-xl px-[10px] py-3"
+      className="grid grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-x-3 rounded-[12px] px-[10px] py-3"
     >
       <PondMark glyph={pond.glyph ?? LIFE_GLYPH} size={14} />
       <span className="min-w-0 truncate text-[15px] font-medium text-mn-text">
@@ -195,7 +196,7 @@ export function PondSettingsPage() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div {...column} data-testid="settings-column" className={`${column.className} flex flex-col gap-4`}>
+      <div {...column} data-testid="settings-column" className={`${column.className} flex flex-col gap-[18px]`}>
         <span className="font-serif text-[52px] leading-none font-extralight tracking-[-0.01em] text-mn-text">
           ponds
         </span>
@@ -211,7 +212,7 @@ export function PondSettingsPage() {
         </div>
         {deletedPonds.length > 0 && (
           <div className="flex flex-col gap-2 pt-4">
-            <span className="text-[10.5px] font-medium tracking-[.1em] text-mn-text-secondary uppercase">
+            <span className="font-mono text-[10.5px] lowercase text-mn-text-secondary">
               deleted
             </span>
             <div className="flex flex-col border-t border-mn-line pt-2">
@@ -233,7 +234,7 @@ export function PondSettingsPage() {
           if (!open) setConfirmTarget(null)
         }}
         title={`Delete "${confirmTarget?.name ?? ''}"?`}
-        consequence="It waits 30 days under deleted, then goes. Restore it from here."
+        consequence={`It waits ${POND_DELETE_GRACE_DAYS} days under deleted, then goes. Restore it from here.`}
         requiredText={confirmTarget?.name}
         onConfirm={handleConfirmDelete}
       />
