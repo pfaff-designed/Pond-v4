@@ -45,6 +45,7 @@ import { useEffect, useRef, useState } from 'react'
 import { FOCUS_VISIBLE_RING } from '@/components/atoms/focus-ring'
 import { PondControl } from '@/components/atoms/PondControl'
 import { GLYPHS, GlyphRow } from '@/components/molecules/GlyphRow'
+import { LAYER } from '@/lib/layout/layers'
 import { clampPondName } from '@/lib/pond/name-cap'
 import { holdInkGround, holdPaperGround } from '@/lib/theme/mode'
 
@@ -199,7 +200,8 @@ export function NewPondSheet({
     <>
       {/* `s6m2`: the scrim is PAPER at .62 — not the ink dialog backdrop. */}
       <div
-        className="fixed inset-0 z-[40] bg-raw-paper/[0.62] dark:bg-raw-ink/[0.62]"
+        className="fixed inset-0 bg-raw-paper/[0.62] dark:bg-raw-ink/[0.62]"
+        style={{ zIndex: LAYER.newPondBackdrop }}
         aria-hidden
         onClick={() => {
           if (pending) return
@@ -210,7 +212,10 @@ export function NewPondSheet({
         role="dialog"
         aria-modal="true"
         aria-label="New pond"
-        className={`fixed top-[120px] left-1/2 z-[41] box-border flex w-[540px] -translate-x-1/2 flex-col gap-[18px] rounded-[20px] p-[22px_24px] text-mn-text ${SHEET_GLASS}`}
+        // KAN-553: the shell's layer scale (src/lib/layout/layers.ts), one
+        // above the backdrop above — not a bare z-[41].
+        style={{ zIndex: LAYER.newPondSheet }}
+        className={`fixed top-[120px] left-1/2 box-border flex w-[540px] -translate-x-1/2 flex-col gap-[18px] rounded-[20px] p-[22px_24px] text-mn-text ${SHEET_GLASS}`}
       >
         <div className="flex items-baseline justify-end font-mono text-[11px] leading-[normal] text-mn-text-secondary">
           <span>{step} of 2</span>

@@ -13,6 +13,11 @@
  * plain notice (e.g. "Couldn't delete …") with only the dismiss affordance.
  */
 
+import { layerVars } from '@/lib/layout/layers'
+import { useUndoNotice } from '@/lib/terminal-focus'
+
+import { useUndoPanelBottom } from './UndoNotice'
+
 export interface UndoToastProps {
   /** The removed thing, e.g. `Deleted "Scratchpad"` or `deleted text ·` (paired with `undoLabel: 'undo'`). */
   message: string
@@ -100,16 +105,40 @@ export function UndoToast({
   )
 }
 
+// The gap below the undo panel's measured bottom edge (UndoNotice.tsx's
+// `useUndoPanelBottom`) the toast stack keeps, in the same right column
+// (KAN-553) — the nearest precedent is `PagesPicker`'s own anchor gap
+// (`POPOVER_GAP_PX`, also 10).
+const PANEL_TOAST_GAP_PX = 10
+
 /**
  * The stack for active toasts — TOP-right of its nearest `relative` ancestor.
  * There must be exactly ONE viewport (the DeletionUndoProvider renders it inside
  * the workspace's content row). Top-right keeps receipts in the eye-line and
  * clear of the AI terminal at the bottom. Kept separate so the toast itself
  * stays layout-free.
+ *
+ * While the undo panel (`UndoNotice`) is open, the stack drops below it
+ * instead of overlapping (KAN-553): `notice !== null` is the open signal
+ * ShellCommands itself reads (`useUndoNotice`), and the panel's own measured
+ * bottom edge (`useUndoPanelBottom`) — never a DOM query — gives the offset.
  */
 export function UndoToastViewport({ children }: { children: React.ReactNode }) {
+  const notice = useUndoNotice()
+  const panelBottom = useUndoPanelBottom()
+  const stackedBelowPanel = notice !== null && panelBottom !== null
   return (
-    <div className="pointer-events-none absolute top-4 right-4 z-40 flex flex-col items-end gap-2">
+    <div
+      data-testid="undo-toast-viewport"
+      className={`pointer-events-none absolute right-4 z-[var(--z-toast-stack)] flex flex-col items-end gap-2 ${
+        stackedBelowPanel ? '' : 'top-4'
+      }`}
+      style={
+        stackedBelowPanel
+          ? { ...layerVars('toastStack'), top: `${panelBottom + PANEL_TOAST_GAP_PX}px` }
+          : layerVars('toastStack')
+      }
+    >
       {children}
     </div>
   )
