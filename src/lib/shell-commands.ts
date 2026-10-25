@@ -51,8 +51,12 @@ export const isMinimizeRailChord = (e: KeyboardEvent) => {
 
 /**
  * ⌘⇧P on a Mac, Ctrl+Shift+P everywhere else: move the open page to… (KAN-469), as in
- * Notion. Chrome, Safari and Firefox bind no Mac system shortcut to ⌘⇧P, so there is
- * nothing here to collide with (AUDIT K1–K4).
+ * Notion. Kept despite two real browser collisions (AUDIT K1–K4): Firefox reserves this
+ * chord for New Private Window and ignores `preventDefault` on it entirely, so the chord
+ * never reaches this handler there; Safari binds it to File ▸ Page Setup. Chrome has no
+ * conflicting binding. Both collisions fall back to the same destination: the `move page
+ * to…` row in ⌘K, which this chord is just a shortcut onto (`ShellCommands.tsx`'s
+ * `isMovePageChord` handler opens the identical pick mode).
  */
 export const isMovePageChord = (e: KeyboardEvent) => {
   if (e.altKey || !e.shiftKey || e.key.toLowerCase() !== 'p') return false
