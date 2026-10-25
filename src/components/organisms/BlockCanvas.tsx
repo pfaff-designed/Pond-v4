@@ -4078,8 +4078,8 @@ function BlockEditor({
                 menuSize === 'mobile' ? 'h-11 w-11 rounded-[14px]' : 'h-6 w-3 rounded-[6px]',
                 menuOpen ? 'bg-mn-hover-fill text-mn-text' : 'text-mn-text-secondary'
               )}
-              title="Block menu · drag to reorder"
-              aria-label="Block menu"
+              title="drag to move"
+              aria-label="drag to move"
               onPointerDown={handleTriggerPointerDown}
               onPointerMove={handleTriggerPointerMove}
               onPointerUp={handleTriggerPointerUp}

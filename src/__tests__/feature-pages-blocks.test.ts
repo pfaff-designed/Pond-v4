@@ -187,7 +187,7 @@ beforeEach(() => {
 
 /** "Return after the table, then /": the `/` menu, on a new line after the block. */
 async function returnAfterThenSlash(blockId: string) {
-  await screen.findAllByRole('button', { name: /block menu/i })
+  await screen.findAllByRole('button', { name: /drag to move/i })
   const block = document.getElementById(`block-${blockId}`)!
   block.focus()
   fireEvent.keyDown(block, { key: 'Enter' })
@@ -390,8 +390,8 @@ describe('the / menu inserts a block', () => {
 describe('turn into › table makes a database, never a freeform table (06.10)', () => {
   it('writes a real database with records under `databases`, and leaves the page a view over it', async () => {
     mount([heading, ingredients])
-    const handles = await screen.findAllByRole('button', { name: /block menu/i })
-    fireEvent.click(handles[1])
+    const handles = await screen.findAllByRole('button', { name: /drag to move/i })
+    fireEvent.contextMenu(handles[1].closest('[id^="block-"]')!)
     fireEvent.click(await screen.findByRole('menuitem', { name: /table/i }))
 
     // The host page: the list is gone, a `view` sits exactly where it was.

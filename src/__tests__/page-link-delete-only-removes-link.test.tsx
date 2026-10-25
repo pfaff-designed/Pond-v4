@@ -140,10 +140,7 @@ describe('removing a page-link block removes only the link (KAN-415)', () => {
     const { onChange, client } = renderCanvas()
     await screen.findByRole('button', { name: 'Open professional' })
 
-    const handle = within(document.getElementById('block-b-link')!).getByRole('button', {
-      name: /block menu/i,
-    })
-    await user.click(handle)
+    fireEvent.contextMenu(document.getElementById('block-b-link')!)
     const item = await screen.findByRole('menuitem', { name: 'remove link' })
     expect(screen.queryByRole('menuitem', { name: 'delete' })).not.toBeInTheDocument()
     await user.click(item)

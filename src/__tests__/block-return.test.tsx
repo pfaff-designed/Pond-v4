@@ -164,7 +164,7 @@ function renderCanvas(initial: Block[], opts: { titleExitRef?: React.RefObject<(
 
 const blockRoot = (blockId: string) => document.getElementById(`block-${blockId}`)!
 const handleOf = (blockId: string) =>
-  within(blockRoot(blockId)).getByRole('button', { name: /block menu/i })
+  within(blockRoot(blockId)).getByRole('button', { name: /drag to move/i })
 const textBlockIn = (blockId: string) =>
   within(blockRoot(blockId)).findByRole('textbox', { name: 'text block' })
 const lastBlocks = (onChange: jest.Mock) => onChange.mock.calls.at(-1)![0] as Block[]
@@ -403,7 +403,7 @@ describe('Return after a block opens a line for `/`', () => {
     renderCanvas([table, note])
     const group = screen.getByRole('group', { name: 'table' })
     expect(group).toBe(blockRoot('b-table'))
-    expect(group).toHaveAttribute('aria-keyshortcuts', 'Enter')
+    expect(group).toHaveAttribute('aria-keyshortcuts', 'Enter Shift+F10 ContextMenu')
     expect(group.querySelector('[data-block-state]')).toHaveAttribute('data-block-state', 'rest')
     act(() => group.focus())
     expect(group.querySelector('[data-block-state]')).toHaveAttribute(
@@ -749,9 +749,8 @@ describe('the handle is the only block chrome (07.05)', () => {
   })
 
   it('open, it is ink 100 on the hover wash and stays shown', async () => {
-    const user = userEvent.setup()
     renderCanvas([table])
-    await user.click(handleOf('b-table'))
+    fireEvent.contextMenu(blockRoot('b-table'))
     await screen.findByRole('menu', { name: /block menu/i })
     expect(handleOf('b-table')).toHaveClass('text-mn-text', 'bg-mn-hover-fill')
     expect(handleOf('b-table')).not.toHaveClass('text-mn-text-secondary')

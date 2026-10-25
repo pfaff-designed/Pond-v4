@@ -129,8 +129,13 @@ function renderCanvas(initial: Block[], onMoveIntoNewPage?: (block: Block) => vo
 
 const handleOf = (blockId: string) =>
   within(document.getElementById(`block-${blockId}`)!).getByRole('button', {
-    name: /block menu/i,
+    name: /drag to move/i,
   })
+
+const rowOf = (blockId: string) => document.getElementById(`block-${blockId}`)!
+
+/** On desktop the handle only drags — right-click (or ⇧F10) opens the menu. */
+const openMenuOf = (blockId: string) => fireEvent.contextMenu(rowOf(blockId))
 
 const lastBlocks = (onChange: jest.Mock) => onChange.mock.calls.at(-1)![0] as Block[]
 
@@ -455,7 +460,7 @@ describe('turn into — list, checklist, text', () => {
   it('turns a list into a checklist in place, keeping the block and its items', async () => {
     const user = userEvent.setup()
     const { onChange } = renderCanvas([shopping])
-    await user.click(handleOf('b-shop'))
+    openMenuOf('b-shop')
     await user.click(await screen.findByRole('menuitem', { name: 'checklist' }))
 
     const next = lastBlocks(onChange)
@@ -466,7 +471,7 @@ describe('turn into — list, checklist, text', () => {
   it('undo puts the block back as it was', async () => {
     const user = userEvent.setup()
     const { onChange } = renderCanvas([heading, shopping])
-    await user.click(handleOf('b-shop'))
+    openMenuOf('b-shop')
     await user.click(await screen.findByRole('menuitem', { name: 'text' }))
     expect(lastBlocks(onChange)[1]).toMatchObject({ id: 'b-shop', type: 'text' })
 
@@ -479,7 +484,7 @@ describe('turn into — table', () => {
   it('creates the database and swaps the list for a view of it in place, with no proposal card', async () => {
     const user = userEvent.setup()
     const { onChange } = renderCanvas([heading, list])
-    await user.click(handleOf('b-list'))
+    openMenuOf('b-list')
     await user.click(await screen.findByRole('menuitem', { name: /table/i }))
 
     await waitFor(() => expect(mockCreateDatabaseFromList).toHaveBeenCalledTimes(1))
@@ -497,7 +502,7 @@ describe('turn into — table', () => {
   it('names the database after a labelled list’s own label', async () => {
     const user = userEvent.setup()
     renderCanvas([heading, shopping])
-    await user.click(handleOf('b-shop'))
+    openMenuOf('b-shop')
     const tableItem = await screen.findByRole('menuitem', { name: /table/i })
     expect(tableItem).toHaveTextContent('3 rows · 2 columns')
     await user.click(tableItem)
@@ -511,7 +516,7 @@ describe('turn into — table', () => {
   it('undo restores the list in place and removes the database it made', async () => {
     const user = userEvent.setup()
     const { onChange } = renderCanvas([heading, list])
-    await user.click(handleOf('b-list'))
+    openMenuOf('b-list')
     await user.click(await screen.findByRole('menuitem', { name: /table/i }))
     await user.click(await screen.findByRole('button', { name: /undo/i }))
 
@@ -524,7 +529,7 @@ describe('turn into — page', () => {
   it('moves the line into a new child page and leaves a page-link row in its place', async () => {
     const user = userEvent.setup()
     const { onChange } = renderCanvas([note])
-    await user.click(handleOf('b-note'))
+    openMenuOf('b-note')
     await user.click(await screen.findByRole('menuitem', { name: 'page' }))
 
     await waitFor(() => expect(mockCreatePage).toHaveBeenCalledTimes(1))
@@ -541,7 +546,7 @@ describe('turn into — page', () => {
   it('undo puts the block back and deletes the page it made', async () => {
     const user = userEvent.setup()
     const { onChange } = renderCanvas([note])
-    await user.click(handleOf('b-note'))
+    openMenuOf('b-note')
     await user.click(await screen.findByRole('menuitem', { name: 'page' }))
     await waitFor(() => expect(mockCreatePage).toHaveBeenCalledTimes(1))
     await user.click(await screen.findByRole('button', { name: /undo/i }))
@@ -563,12 +568,12 @@ describe('turn into — page', () => {
     )
     const { onChange } = renderCanvas([note])
 
-    await user.click(handleOf('b-note'))
+    openMenuOf('b-note')
     await user.click(await screen.findByRole('menuitem', { name: 'page' }))
     // createPage hasn't resolved yet, so the block is still text under its own
     // id — reopening the menu and picking `page` again must hit the in-flight
     // guard rather than firing a second create.
-    await user.click(handleOf('b-note'))
+    openMenuOf('b-note')
     await user.click(await screen.findByRole('menuitem', { name: 'page' }))
 
     expect(mockCreatePage).toHaveBeenCalledTimes(1)
@@ -593,7 +598,7 @@ describe('turn into — page', () => {
     mockCreatePage.mockRejectedValueOnce(new Error('network'))
     const { onChange } = renderCanvas([note])
 
-    await user.click(handleOf('b-note'))
+    openMenuOf('b-note')
     await user.click(await screen.findByRole('menuitem', { name: 'page' }))
 
     expect(await screen.findByText("Couldn't turn the block into a page")).toBeInTheDocument()
@@ -607,7 +612,7 @@ describe('turn into — heading (PATH_STEPS: handle to heading, toast undo back 
   it('a text line becomes a heading 2 in place, same block id, and undo puts it back as text', async () => {
     const user = userEvent.setup()
     const { onChange } = renderCanvas([line])
-    await user.click(handleOf('b-line'))
+    openMenuOf('b-line')
     await user.click(await screen.findByRole('menuitem', { name: /^heading 2/ }))
 
     const headed = await screen.findByRole('heading', { level: 2, name: 'hello' })
@@ -625,10 +630,9 @@ describe('turn into — heading (PATH_STEPS: handle to heading, toast undo back 
   })
 
   it('a heading’s turn into offers text, heading 1 and heading 3, not heading 2', async () => {
-    const user = userEvent.setup()
     const heading2: Block = { id: 'b-h2', type: 'text', content: '## hello' }
     renderCanvas([heading2])
-    await user.click(handleOf('b-h2'))
+    openMenuOf('b-h2')
 
     const menu = await screen.findByRole('menu', { name: /block menu/i })
     const turnInto = within(menu).getByRole('group', { name: 'turn into' })
@@ -645,7 +649,7 @@ describe('the width row — the block menu’s `width` group', () => {
   it('keeps the picked width in place, closes the menu, and logs one change-log record (KAN-368: ⌘Z restores it, proved in block-canvas-width-undo-path.test.tsx)', async () => {
     const user = userEvent.setup()
     const { onChange } = renderCanvas([heading, list])
-    await user.click(handleOf('b-list'))
+    openMenuOf('b-list')
     await user.click(await screen.findByRole('menuitem', { name: '½' }))
 
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
@@ -657,7 +661,7 @@ describe('the width row — the block menu’s `width` group', () => {
     const user = userEvent.setup()
     const marked: Block = { ...list, rowStart: true }
     const { onChange } = renderCanvas([heading, marked])
-    await user.click(handleOf('b-list'))
+    openMenuOf('b-list')
     await user.click(await screen.findByRole('menuitem', { name: '½' }))
 
     expect(lastBlocks(onChange)).toEqual([heading, { ...marked, width: '1/2' }])
@@ -667,7 +671,7 @@ describe('the width row — the block menu’s `width` group', () => {
     const user = userEvent.setup()
     renderCanvas([heading, list])
 
-    await user.click(handleOf('b-heading'))
+    openMenuOf('b-heading')
     await user.click(await screen.findByRole('menuitem', { name: '½' }))
     await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
 
@@ -675,7 +679,7 @@ describe('the width row — the block menu’s `width` group', () => {
     const halfWidth = normalizedWidth(blockWidthStyle('1/2'))
     await waitFor(() => expect(rootA.parentElement!.style.width).toBe(halfWidth))
 
-    await user.click(handleOf('b-list'))
+    openMenuOf('b-list')
     await user.click(await screen.findByRole('menuitem', { name: '½' }))
     await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
 
@@ -694,7 +698,7 @@ describe('the width row — the block menu’s `width` group', () => {
     const user = userEvent.setup()
     const { onChange } = renderCanvas([heading, list])
 
-    await user.click(handleOf('b-heading'))
+    openMenuOf('b-heading')
     await user.click(await screen.findByRole('menuitem', { name: '½' }))
     await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
 
@@ -703,7 +707,7 @@ describe('the width row — the block menu’s `width` group', () => {
     await waitFor(() => expect(rootA.parentElement!.style.width).toBe(halfWidth))
     await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1))
 
-    await user.click(handleOf('b-list'))
+    openMenuOf('b-list')
     await user.hover(await screen.findByRole('menuitem', { name: '½' }))
 
     const rootB = document.getElementById('block-b-list')!
@@ -718,7 +722,7 @@ describe('the width row — the block menu’s `width` group', () => {
     const user = userEvent.setup()
     const { onChange } = renderCanvas([heading, list])
 
-    await user.click(handleOf('b-list'))
+    openMenuOf('b-list')
     await user.hover(await screen.findByRole('menuitem', { name: '⅔' }))
 
     const root = document.getElementById('block-b-list')!
@@ -740,7 +744,7 @@ describe('PATH_STEPS: the full walk — handle to kept width, then the phone var
     const { onChange } = renderCanvas([heading, list])
 
     // Step 2: the handle opens the menu, width row between `turn into` and `block`.
-    await user.click(handleOf('b-heading'))
+    openMenuOf('b-heading')
     let menu = await screen.findByRole('menu', { name: /block menu/i })
     const order = menu.textContent ?? ''
     expect(order.indexOf('turn into')).toBeGreaterThanOrEqual(0)
@@ -756,7 +760,7 @@ describe('PATH_STEPS: the full walk — handle to kept width, then the phone var
     const halfWidth = normalizedWidth(blockWidthStyle('1/2'))
     await waitFor(() => expect(rootHeading.parentElement!.style.width).toBe(halfWidth))
 
-    await user.click(handleOf('b-list'))
+    openMenuOf('b-list')
     menu = await screen.findByRole('menu', { name: /block menu/i })
     const rootList = document.getElementById('block-b-list')!
     expect(rootList.parentElement!.style.width).toBe('100%')
@@ -778,7 +782,7 @@ describe('PATH_STEPS: the full walk — handle to kept width, then the phone var
 
     // Step 5: reopen, click ½ — kept, one change-log record (KAN-368: ⌘Z
     // restores it, proved in block-canvas-width-undo-path.test.tsx).
-    await user.click(handleOf('b-list'))
+    openMenuOf('b-list')
     menu = await screen.findByRole('menu', { name: /block menu/i })
     await user.click(within(menu).getByRole('menuitem', { name: '½' }))
     await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
@@ -823,7 +827,7 @@ describe('copy link to block', () => {
     const user = userEvent.setup()
     window.history.replaceState(null, '', '/pages?nodeId=page-1#somewhere')
     renderCanvas([heading, list])
-    await user.click(handleOf('b-list'))
+    openMenuOf('b-list')
     await user.click(await screen.findByRole('menuitem', { name: 'copy link to block' }))
 
     await waitFor(async () =>

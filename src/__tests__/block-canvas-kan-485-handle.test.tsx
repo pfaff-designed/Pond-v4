@@ -63,7 +63,7 @@ function renderCanvas(initial: Block[]) {
 
 const handleOf = (blockId: string) =>
   within(document.getElementById(`block-${blockId}`)!).getByRole('button', {
-    name: /block menu/i,
+    name: /drag to move/i,
   })
 
 beforeEach(() => {
