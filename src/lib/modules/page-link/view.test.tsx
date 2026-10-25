@@ -65,6 +65,34 @@ describe('PageLinkView — resolved', () => {
     expect(caps.navigateToPage).toHaveBeenCalledWith(ref)
   })
 
+  it('leaves a ⌘-click unprevented for the browser\'s own new-tab handling', () => {
+    const caps = capabilities(ref)
+    render(
+      <PageLinkProvider value={caps}>
+        <PageLinkView data={block} />
+      </PageLinkProvider>
+    )
+    const notPrevented = fireEvent.click(screen.getByRole('link', { name: 'Open cabinets' }), {
+      metaKey: true,
+    })
+    expect(notPrevented).toBe(true)
+    expect(caps.navigateToPage).not.toHaveBeenCalled()
+  })
+
+  it('leaves a Ctrl-click unprevented for the browser\'s own new-tab handling', () => {
+    const caps = capabilities(ref)
+    render(
+      <PageLinkProvider value={caps}>
+        <PageLinkView data={block} />
+      </PageLinkProvider>
+    )
+    const notPrevented = fireEvent.click(screen.getByRole('link', { name: 'Open cabinets' }), {
+      ctrlKey: true,
+    })
+    expect(notPrevented).toBe(true)
+    expect(caps.navigateToPage).not.toHaveBeenCalled()
+  })
+
   it('opens the page on Enter', () => {
     const caps = capabilities(ref)
     render(

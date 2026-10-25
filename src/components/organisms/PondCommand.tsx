@@ -55,7 +55,7 @@ import {
 } from '@/components/molecules/palette-entries'
 import { PaletteRow, type PaletteRowEntry } from '@/components/molecules/palette-row'
 import type { CommandCrumbTarget, CommandPath } from '@/lib/pages/command-path'
-import { workspaceUrl } from '@/lib/pages/nav'
+import { isNewTabClick, workspaceUrl } from '@/lib/pages/nav'
 import { markAccent } from '@/lib/rail/glyph-library'
 import { useMorph } from '@/lib/motion/use-morph'
 import { ariaKeyshortcuts, formatChord, useApplePlatform } from '@/lib/shell-commands'
@@ -337,14 +337,14 @@ export function PondCommand({
     if (!open && atRest) onOpenChange(true)
   }
 
-  // A modified click (⌘/Ctrl/Shift/Alt) is left unprevented so the browser's
-  // native new-tab/new-window/download behaviour fires instead of a navigate.
+  // A modified click (⌘/Ctrl/Shift) or middle-click is left unprevented so the
+  // browser's own new-tab/new-window behaviour fires instead of a navigate.
   const handleCrumbClick = (
     e: React.MouseEvent<HTMLAnchorElement>,
     to: Exclude<CommandCrumbTarget, null>
   ) => {
     e.stopPropagation()
-    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
+    if (isNewTabClick(e)) return
     e.preventDefault()
     onNavigate?.(to)
   }

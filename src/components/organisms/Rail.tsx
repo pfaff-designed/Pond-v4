@@ -76,7 +76,7 @@ import { usePondId, usePond } from '@/lib/pond/context'
 import { useHomePage } from '@/lib/pages/use-home-page'
 import { pushRecentGlyphToPond } from '@/lib/pond/client'
 import { PondSwitcher } from './PondSwitcher'
-import { openWorkspaceUrl, workspaceUrl } from '@/lib/pages/nav'
+import { isNewTabClick, openWorkspaceUrl, workspaceUrl } from '@/lib/pages/nav'
 import { requestTitleFocus } from '@/lib/pages/title-focus'
 import { withTemplatesParam } from '@/lib/pages/templates-param'
 import { markIndex, resolveMark, type MarkSource, type PageMark } from '@/lib/pages/mark'
@@ -465,7 +465,7 @@ const RailRow = forwardRef<HTMLElement, RailRowProps>(function RailRow(
   // stays the plain `<div>` it always was, unaffected by modifier keys.
   const Tag = href ? 'a' : 'div'
   const handleRowClick = (e: MouseEvent<HTMLElement>) => {
-    if (href && (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0)) return
+    if (href && isNewTabClick(e)) return
     e.preventDefault()
     onSelect(id)
   }

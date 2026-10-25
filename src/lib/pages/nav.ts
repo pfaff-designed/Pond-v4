@@ -65,6 +65,30 @@ export function workspaceUrl(node: WorkspaceNodeRef | null, pondId?: string | nu
 export const workspaceHref = (node: WorkspaceNodeRef, pondId?: string | null): string =>
   workspaceUrl(node, pondId)
 
+/** The click-event fields `isNewTabClick` reads — matches a React MouseEvent of any target. */
+export interface NewTabClickEvent {
+  metaKey: boolean
+  ctrlKey: boolean
+  shiftKey: boolean
+  button: number
+}
+
+/**
+ * Whether a click on an `<a href>` should be left to the browser's own
+ * new-tab/window handling (⌘/Ctrl-click, ⇧-click, or a non-primary button —
+ * i.e. middle-click) rather than intercepted for in-app navigation (KAN-474).
+ *
+ * The rail row, the page-link row and the breadcrumb crumb each used to carry
+ * their own copy of this predicate, which let them drift (KAN-396) — one home.
+ *
+ * Alt/⌥-click is deliberately NOT included: it downloads the link's target in
+ * Chrome (Win/Linux) and Safari, which the spec never asks for, so an
+ * Alt-click falls through to plain in-app navigation instead.
+ */
+export function isNewTabClick(e: NewTabClickEvent): boolean {
+  return e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0
+}
+
 /** The subset of `useRouter()` a page open needs — just enough to mock in tests. */
 export interface WorkspaceNavRouter {
   push: (url: string) => void
