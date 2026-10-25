@@ -97,7 +97,7 @@ function DeletedPondRow({
     >
       <PondMark glyph={pond.glyph ?? LIFE_GLYPH} size={14} />
       <div className="flex min-w-0 items-baseline gap-1">
-        <span className="min-w-0 truncate text-[15px] font-medium text-mn-text">{pond.name}</span>
+        <span className="min-w-0 truncate text-[15px] font-medium text-mn-text">{pond.name}</span>{' '}
         <span
           data-testid="settings-deleted-countdown"
           className="shrink-0 font-mono text-[10.5px] lowercase text-mn-text-secondary"
