@@ -9,7 +9,7 @@ import { useBlockRow } from '../block-row-context'
 import type { PageLinkBlock } from './schema'
 import type { PageRow } from '@/lib/pages/tree'
 import { pagesKey } from '@/lib/pages/keys'
-import { isNewTabClick, workspaceUrl } from '@/lib/pages/nav'
+import { isNewTabClick, workspaceHref } from '@/lib/pages/nav'
 import { usePagePrefetchHandlers } from '@/lib/pages/use-page-prefetch'
 import { usePondId } from '@/lib/pond/context'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
@@ -59,9 +59,10 @@ function findCachedPageRow(queryClient: QueryClient, pageId: string): PageRow | 
 export function PageLinkView({ data }: ModuleViewProps<PageLinkBlock>) {
   const pageLinks = usePageLinks()
   const ref = pageLinks?.resolvePage(data.pageId) ?? null
-  // KAN-474: passed explicitly, never `workspaceUrl`'s own `window.location`
-  // fallback — that read returns null during SSR and a real id after hydration,
-  // a mismatch React won't patch up.
+  // KAN-474: `workspaceHref` never reads `window.location` itself, so the href
+  // below agrees on the server, the first client render (pondId still null)
+  // and every render after — `workspaceUrl`'s own fallback disagreed between
+  // those passes whenever the address already carried a `?pond=`.
   const pondId = usePondId()
   // Read via the raw context (not `useQueryClient()`, which throws without a
   // provider) — a host with no `PageLinkProvider` (the change-log diff card)
@@ -108,7 +109,7 @@ export function PageLinkView({ data }: ModuleViewProps<PageLinkBlock>) {
 
   return (
     <a
-      href={workspaceUrl(ref, pondId)}
+      href={workspaceHref(ref, pondId)}
       aria-label={`Open ${ref.title}`}
       className={cn(
         ROW,

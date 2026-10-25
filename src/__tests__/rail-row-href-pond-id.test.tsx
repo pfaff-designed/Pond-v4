@@ -92,3 +92,65 @@ describe('rail row href — the pond id is passed explicitly, never read from wi
     expect(trashRow.getAttribute('href')).not.toContain('pond=')
   })
 })
+
+describe('rail row href — never read from window during render, even while the pond context is unresolved (KAN-474 follow-up)', () => {
+  it('a window URL carrying ?pond=p2 is ignored while pondId is still null, matching the pond-less server render, then updates once the pond resolves', () => {
+    // Simulates the real cold-load condition the bug needed: the address
+    // already carries `?pond=p2` (e.g. a direct link into a second pond),
+    // but `usePondId()` hasn't resolved it yet — `null`, same as the server.
+    window.history.replaceState({}, '', '/workspace?pond=p2')
+    const { rerender } = render(
+      <RailView
+        tree={[health]}
+        pondId={null}
+        pondName="life"
+        selectedId={null}
+        expanded={new Set()}
+        lifeExpanded
+        busyId={null}
+        isLoading={false}
+        isEmpty={false}
+        onSelect={jest.fn()}
+        onToggle={jest.fn()}
+        onAddChild={jest.fn()}
+        onDelete={jest.fn()}
+        onRename={jest.fn()}
+        onPickGlyph={jest.fn()}
+        onLife={jest.fn()}
+        onToggleLife={jest.fn()}
+        onOpenDatabases={jest.fn()}
+        canDrop={() => true}
+        onMove={jest.fn()}
+      />
+    )
+
+    const trashRow = screen.getByRole('treeitem', { name: 'trash' })
+    expect(trashRow.getAttribute('href')).not.toContain('pond=')
+
+    rerender(
+      <RailView
+        tree={[health]}
+        pondId="p2"
+        pondName="life"
+        selectedId={null}
+        expanded={new Set()}
+        lifeExpanded
+        busyId={null}
+        isLoading={false}
+        isEmpty={false}
+        onSelect={jest.fn()}
+        onToggle={jest.fn()}
+        onAddChild={jest.fn()}
+        onDelete={jest.fn()}
+        onRename={jest.fn()}
+        onPickGlyph={jest.fn()}
+        onLife={jest.fn()}
+        onToggleLife={jest.fn()}
+        onOpenDatabases={jest.fn()}
+        canDrop={() => true}
+        onMove={jest.fn()}
+      />
+    )
+    expect(trashRow.getAttribute('href')).toContain('pond=p2')
+  })
+})

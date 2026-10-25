@@ -14,6 +14,8 @@ import { pagesKey } from '@/lib/pages/keys'
 import type { PageRow } from '@/lib/pages/tree'
 import { BlockRowProvider } from '../block-row-context'
 import { POND_BLOCK_SELECTED_RING } from '@/components/organisms/PondBlock'
+import { PondContext, type PondContextValue } from '@/lib/pond/context'
+import type { Pond } from '@/lib/pond/client'
 
 // The real hook talks to Supabase through react-query; mocked here (mirrors
 // `view/view.test.tsx`'s `use-collection-rows` mock) so this file can assert
@@ -256,6 +258,45 @@ describe('PageLinkView — hover prefetch (KAN-388)', () => {
     jest.advanceTimersByTime(1000)
 
     expect(prefetchSpy).not.toHaveBeenCalled()
+  })
+})
+
+describe('PageLinkView — href never read from window during render, even while the pond context is unresolved (KAN-474 follow-up)', () => {
+  const pondContextValue = (pond: Pond | null): PondContextValue => ({
+    pond,
+    ponds: pond ? [pond] : [],
+    loading: pond === null,
+    reload: jest.fn(),
+    addPond: jest.fn(),
+    patchPond: jest.fn(),
+  })
+
+  it('a window URL carrying ?pond=p2 is ignored while the pond context is still unresolved, then the href updates once the pond resolves', () => {
+    // Simulates the real cold-load condition the bug needed: the address
+    // already carries `?pond=p2` (e.g. a direct link into a second pond),
+    // but `usePondId()` hasn't resolved it yet — `null`, same as the server.
+    window.history.replaceState({}, '', '/workspace?pond=p2')
+    const caps = capabilities(ref)
+    const { rerender } = render(
+      <PondContext.Provider value={pondContextValue(null)}>
+        <PageLinkProvider value={caps}>
+          <PageLinkView data={block} />
+        </PageLinkProvider>
+      </PondContext.Provider>
+    )
+    const row = screen.getByRole('link', { name: 'Open cabinets' })
+    expect(row.getAttribute('href')).not.toContain('pond=')
+
+    rerender(
+      <PondContext.Provider
+        value={pondContextValue({ id: 'p2', name: 'p2', glyph: null, theme: 'default', order: 0 })}
+      >
+        <PageLinkProvider value={caps}>
+          <PageLinkView data={block} />
+        </PageLinkProvider>
+      </PondContext.Provider>
+    )
+    expect(row.getAttribute('href')).toContain('pond=p2')
   })
 })
 

@@ -56,11 +56,31 @@ describe('workspaceUrl', () => {
 })
 
 describe('workspaceHref', () => {
-  it('mirrors workspaceUrl, pond and all', () => {
-    expect(workspaceHref(node)).toBe(workspaceUrl(node))
+  // KAN-474 follow-up: `workspaceHref` is the one render-safe builder — it must
+  // NEVER read `window`, even when the address already carries a `?pond=`.
+  // `workspaceUrl` is the only one of the two allowed to fall back to the live
+  // address, which is why it delegates to `workspaceHref` rather than the
+  // other way around.
+  it('ignores the address entirely — no pond id given means no &pond=, regardless of what the address carries', () => {
+    expect(workspaceHref(node)).toBe('/workspace?nodeType=page&nodeId=n1&nodeName=Notes')
     addressIs('?pond=p-second')
-    expect(workspaceHref(node)).toBe(workspaceUrl(node))
-    expect(workspaceHref(node, 'p-third')).toBe(workspaceUrl(node, 'p-third'))
+    expect(workspaceHref(node)).toBe('/workspace?nodeType=page&nodeId=n1&nodeName=Notes')
+    expect(workspaceHref(null)).toBe('/workspace')
+  })
+
+  it('carries exactly the pond id handed to it, never the address', () => {
+    addressIs('?pond=p-second')
+    expect(workspaceHref(node, 'p-third')).toBe(
+      '/workspace?nodeType=page&nodeId=n1&nodeName=Notes&pond=p-third'
+    )
+    expect(workspaceHref(null, 'p-third')).toBe('/workspace?pond=p-third')
+  })
+
+  it('workspaceUrl delegates to it, adding only the window fallback workspaceHref deliberately lacks', () => {
+    addressIs('?pond=p-second')
+    expect(workspaceUrl(node)).toBe(workspaceHref(node, 'p-second'))
+    expect(workspaceHref(node)).not.toBe(workspaceUrl(node)) // workspaceHref never reads the address
+    expect(workspaceUrl(node, 'p-third')).toBe(workspaceHref(node, 'p-third'))
   })
 })
 

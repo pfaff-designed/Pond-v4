@@ -685,6 +685,7 @@ export function ShellCommands() {
         scope={movePick ? null : scope}
         pondName={pondName}
         parentTitle={parent.title}
+        pondId={pondId}
         onSelect={handlePaletteSelect}
         onNavigate={(to) =>
           openWorkspaceUrl(workspaceUrl(to.kind === 'page' ? to.node : null), router)
