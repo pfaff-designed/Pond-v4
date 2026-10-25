@@ -9,9 +9,9 @@
 
 import React, { useState } from 'react'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
+import { POND_BLOCK_SELECTED_RING } from '@/components/organisms/PondBlock'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { pagesKey } from '@/lib/pages/keys'
 import type { PageRow } from '@/lib/pages/tree'
@@ -135,15 +135,16 @@ describe('removing a page-link block removes only the link (KAN-415)', () => {
     expect(rows?.some((r) => r.id === 'child-professional')).toBe(true)
   })
 
-  it('the handle menu reads `remove link` and does the same', async () => {
-    const user = userEvent.setup()
+  it('⌘⌫ on the focused handle does the same', async () => {
+    setPlatform('MacIntel')
     const { onChange, client } = renderCanvas()
     await screen.findByRole('link', { name: 'Open professional' })
 
-    fireEvent.contextMenu(document.getElementById('block-b-link')!)
-    const item = await screen.findByRole('menuitem', { name: 'remove link' })
-    expect(screen.queryByRole('menuitem', { name: 'delete' })).not.toBeInTheDocument()
-    await user.click(item)
+    const handles = screen.getAllByRole('button', { name: 'drag to move' })
+    const handle = handles[1]
+    handle.focus()
+    await waitFor(() => expect(handle).toHaveFocus())
+    fireEvent.keyDown(handle, { key: 'Backspace', metaKey: true })
     await confirmBlockDelete()
 
     await waitFor(() => expect(lastBlocks(onChange).map((b) => b.id)).toEqual(['b-note']))
@@ -151,5 +152,17 @@ describe('removing a page-link block removes only the link (KAN-415)', () => {
     expect(mockMovePage).not.toHaveBeenCalled()
     const rows = client.getQueryData<PageRow[]>(pagesKey(null))
     expect(rows?.some((r) => r.id === 'child-professional')).toBe(true)
+  })
+
+  it('selecting the row rings the link itself, not the block wrapper (KAN-361)', async () => {
+    renderCanvas()
+    const link = await screen.findByRole('link', { name: 'Open professional' })
+    const root = document.getElementById('block-b-link')!
+    expect(root.className).not.toContain(POND_BLOCK_SELECTED_RING)
+
+    root.focus()
+    await waitFor(() => expect(root).toHaveFocus())
+    expect(root.className).not.toContain(POND_BLOCK_SELECTED_RING)
+    expect(link.className).toContain(POND_BLOCK_SELECTED_RING)
   })
 })

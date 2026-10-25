@@ -55,7 +55,7 @@ import {
   SavedViewHostContext,
 } from '@/lib/modules/view/active-view-context'
 import { SavedViewBar } from '@/lib/modules/view/saved-view-bar'
-import { compactChartMark } from '@/lib/modules/view/chart-compact'
+import { compactChartMark, isChartCard } from '@/lib/modules/view/chart-compact'
 import type { PropertySchema } from '@/lib/properties/schema'
 import { CHART_EMPTY_LINE } from '@/lib/modules/chart/card'
 import { addTodoItem } from '@/lib/modules/todo/view'
@@ -152,12 +152,8 @@ import {
 import { BlockHeightHandles } from '@/components/organisms/BlockHeightHandles'
 import { BlockHeightProvider } from '@/components/organisms/block-height-context'
 import { blockAcceptsHeight, blockWithoutHeight } from '@/lib/modules/block-height'
-import type {
-  ConversionTarget,
-  LineConversion,
-  PageConversion,
-  TableConversion,
-} from '@/lib/modules/conversions'
+import type { ConversionTarget, LineConversion, TableConversion } from '@/lib/modules/conversions'
+import { moveIntoPagePrep } from '@/lib/modules/conversions'
 import {
   isBlockMenuChord,
   isContextMenuKey,
@@ -229,6 +225,10 @@ const TURNED_INTO: Record<Exclude<ConversionTarget, 'table'>, string> = {
   text: 'Turned into text',
   page: 'Turned into a page',
 }
+
+/** The block menu's own `move into a new page` row — distinct from `turn
+ * into: page`'s `TURNED_INTO.page`, which names a conversion, not a move. */
+const MOVED_INTO_A_NEW_PAGE = 'Moved into a new page'
 
 const MENU_PLACEMENT: Record<PondMenuSize, Omit<PondMenuPlacement, 'anchor'>> = {
   desktop: { align: 'start', top: 40, alignOffset: -8 },
@@ -575,8 +575,6 @@ export interface BlockCanvasProps {
    * Optional — a surface that doesn't track it passes nothing and no block animates.
    */
   insertedIds?: Set<string>
-  /** Move a block into a page of its own. Without it the block menu does not offer the move. */
-  onMoveIntoNewPage?: (block: Block) => void
   /** False hides the editing chrome — every block's handle and the trailing gap — mounted (zen: the page and nothing else). */
   chrome?: boolean
   /**
@@ -625,7 +623,6 @@ export function BlockCanvas({
   onChange,
   onStructuralWrite,
   insertedIds,
-  onMoveIntoNewPage,
   chrome = true,
   untouched = false,
   openTemplatesFor = null,
@@ -667,9 +664,10 @@ export function BlockCanvas({
   // once is fine, only the same one twice (before `createPage` resolves) is
   // the double-submit.
   const makePageInFlightRef = useRef<Set<string>>(new Set())
-  // G9: guards `turnIntoPage` against a double pick on the same block, keyed
-  // by the block's id — the same guard shape as `makePageInFlightRef` above.
-  const turnIntoPageInFlightRef = useRef<Set<string>>(new Set())
+  // G9: guards `moveBlockIntoNewPage` against a double pick on the same
+  // block, keyed by the block's id — the same guard shape as
+  // `makePageInFlightRef` above.
+  const moveInFlightRef = useRef<Set<string>>(new Set())
   // Rule 2's fix (KAN-345): ids `markInserted` has minted THIS session, so a
   // fresh empty line autofocuses on mount while one that merely arrived with
   // the page never does — BlockCanvas is the one place that knows which ids
@@ -1121,35 +1119,86 @@ export function BlockCanvas({
     }
   }
 
+  // A page or database a block action made (a view's new database, a moved
+  // block's new page) leaves with that action's ⌘Z and returns with ⇧⌘Z:
+  // trashed, never deleted, so redo can find it in the change log again.
+  const trashMadePage = async (id: string) => {
+    try {
+      await trashPage(getSupabase(), id)
+    } catch (err) {
+      console.error('Failed to trash the page this block action made', id, err)
+    }
+    queryClient.invalidateQueries({ queryKey: pagesKey() })
+  }
+  const restoreMadePage = async (id: string) => {
+    try {
+      const supabase = getSupabase()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user || !pondId) return
+      const [deleted] = await listRecords(supabase, {
+        userId: user.id,
+        pondId,
+        targetPageId: id,
+        action: 'delete',
+        limit: 1,
+      })
+      if (deleted) await restorePage(supabase, deleted.id)
+    } catch (err) {
+      console.error('Failed to restore the page this block action made', id, err)
+    }
+    queryClient.invalidateQueries({ queryKey: pagesKey() })
+  }
+
   /**
-   * The block menu's "turn into › page": moves the line into a new CHILD page
+   * The engine under both "turn into › page" and the block menu's "move into
+   * a new page": moves `moveIntoPagePrep`'s prepared copy of the block (ANY
+   * type but a page-link, which has nothing to move) into a new CHILD page
    * (as `/page` does in `makePage`, above) and leaves a page-link row in its
-   * place, swapped in by id rather than landed at a slash target — and with NO
-   * navigation, since leaving the page would blow past the undo toast before
-   * anyone could reach it. Undo puts the block back and removes the page it
-   * made, as `turnIntoTable`'s undo removes the database it made. Guarded
-   * against a second pick on the same block while the first is still in
-   * flight (G9).
+   * place, swapped in by id rather than landed at a slash target — and with
+   * NO navigation, since leaving the page would blow past the undo toast
+   * before anyone could reach it. The swap writes through
+   * `persistBlocksAsOwnEdit` with `onUndone`/`onRedone` (as the view's
+   * made-database path does, above), so ⌘Z and the toast's undo are the
+   * SAME step: either trashes the page it made (never just the blocks
+   * record alone, which would leave an orphan in the rail), and ⇧⌘Z restores
+   * it. Guarded against a second pick on the same block while the first is
+   * still in flight (G9). `message` is the undo toast's copy: the menu's own
+   * "move into a new page" row and "turn into › page" read differently, even
+   * though they share this one engine.
    */
-  const turnIntoPage = async (index: number, conversion: PageConversion) => {
+  const moveBlockIntoNewPage = async (index: number, message: string) => {
     const block = blocks[index]
     if (!block) return
-    if (turnIntoPageInFlightRef.current.has(block.id)) return
-    turnIntoPageInFlightRef.current.add(block.id)
+    const prepared = moveIntoPagePrep(block, pageId)
+    if (!prepared) return
+    if (moveInFlightRef.current.has(block.id)) return
+    moveInFlightRef.current.add(block.id)
     try {
       const supabase = getSupabase()
       const {
         data: { user },
       } = await supabase.auth.getUser()
       if (!user) return
-      const created = await conversion.apply(supabase, {
-        userId: user.id,
+      const created = await createPage(supabase, user.id, {
         parentId: pageId,
         pondId,
+        type: 'page',
+        title: prepared.title,
+        blocks: [prepared.block],
         props: stampNestedPage({}, pageId),
       })
-      const pageLink: Block = { id: crypto.randomUUID(), type: 'page-link', pageId: created.id }
-      onChange(blocksRef.current.map((b) => (b.id === block.id ? pageLink : b)))
+      // The link takes the moved block's own width and its rowStart (which
+      // `prepared.block` drops: it names a row on this page, not the new one),
+      // so a ½ block moved out of a side-by-side row leaves a ½ link in its place.
+      const pageLink: Block = {
+        id: crypto.randomUUID(),
+        type: 'page-link',
+        pageId: created.id,
+        ...(block.width !== undefined ? { width: block.width } : {}),
+        ...(block.rowStart !== undefined ? { rowStart: block.rowStart } : {}),
+      }
       insertPageOptimistic(
         queryClient,
         {
@@ -1162,25 +1211,54 @@ export function BlockCanvas({
         pondId
       )
       queryClient.invalidateQueries({ queryKey: pagesKey() })
+      // ⌘Z and the toast's undo are the same step (KAN-368, as the view's
+      // made-database path above): the handle `onStructuralWrite` reserves
+      // here is what the toast calls through `sessionUndo.undoHandle`, so
+      // either one trashes the made page (never `deletePage` — redo must be
+      // able to bring it back) rather than leaving it orphaned in the rail.
+      let handle: UndoHandle | undefined
+      void persistBlocksAsOwnEdit(
+        blocksRef.current.map((b) => (b.id === block.id ? pageLink : b)),
+        {
+          onUndoHandle: (next) => {
+            handle = next
+          },
+          onUndone: () => trashMadePage(created.id),
+          onRedone: () => restoreMadePage(created.id),
+        }
+      )
       stageUndo({
-        message: TURNED_INTO.page,
+        message,
         scope: 'block',
-        undo: async () => {
-          onChange(blocksRef.current.map((b) => (b.id === pageLink.id ? block : b)))
-          try {
-            // Removes its own blocks too (parent_id cascade).
-            await deletePage(getSupabase(), created.id)
-          } catch (err) {
-            console.error('Failed to remove the page after undo', err)
-          }
-          queryClient.invalidateQueries({ queryKey: pagesKey() })
-        },
+        // With a write queue, `handle` is the step ⌘Z already takes — the
+        // toast must run THAT, not a second revert, or ⌘Z and the toast
+        // would race to undo the same move twice. A host with no queue
+        // (Storybook, this canvas rendered bare) never reserves a handle,
+        // so the toast stays its own undo, exactly as before.
+        undo:
+          onStructuralWrite && pondId
+            ? () => {
+                if (!handle) return
+                return sessionUndo
+                  .undoHandle(pondId, handle)
+                  .then((result) => applyUndoOutcome('undo', result, queryClient))
+              }
+            : async () => {
+                onChange(blocksRef.current.map((b) => (b.id === pageLink.id ? block : b)))
+                try {
+                  // Removes its own blocks too (parent_id cascade).
+                  await deletePage(getSupabase(), created.id)
+                } catch (err) {
+                  console.error('Failed to remove the page after undo', err)
+                }
+                queryClient.invalidateQueries({ queryKey: pagesKey() })
+              },
       })
     } catch (err) {
-      console.error('Failed to turn the block into a page', err)
-      notify("Couldn't turn the block into a page")
+      console.error('Failed to move the block into a page', err)
+      notify("Couldn't move the block into a page")
     } finally {
-      turnIntoPageInFlightRef.current.delete(block.id)
+      moveInFlightRef.current.delete(block.id)
     }
   }
 
@@ -1606,12 +1684,12 @@ export function BlockCanvas({
           return
         }
         if (conversion.target === 'page') {
-          void turnIntoPage(index, conversion)
+          void moveBlockIntoNewPage(index, TURNED_INTO.page)
           return
         }
         convertBlock(block, conversion)
       },
-      'move-into-new-page': () => onMoveIntoNewPage?.(block),
+      'move-into-new-page': () => void moveBlockIntoNewPage(index, MOVED_INTO_A_NEW_PAGE),
       'copy-link': () => void copyBlockLink(block.id),
       delete: () => requestDelete(index),
       'set-width': ({ width }) => setBlockWidth(block, width),
@@ -2046,34 +2124,8 @@ export function BlockCanvas({
       queryClient.invalidateQueries({ queryKey: pagesKey() })
       queryClient.invalidateQueries({ queryKey: ['record-counts', pondId] })
       void persistBlocksAsOwnEdit(landing.next, {
-        onUndone: async () => {
-          try {
-            await trashPage(getSupabase(), made.databaseId)
-          } catch (err) {
-            console.error('Failed to trash the database this view made', made.databaseId, err)
-          }
-          queryClient.invalidateQueries({ queryKey: pagesKey() })
-        },
-        onRedone: async () => {
-          try {
-            const supabase = getSupabase()
-            const {
-              data: { user },
-            } = await supabase.auth.getUser()
-            if (!user || !pondId) return
-            const [deleted] = await listRecords(supabase, {
-              userId: user.id,
-              pondId,
-              targetPageId: made.databaseId,
-              action: 'delete',
-              limit: 1,
-            })
-            if (deleted) await restorePage(supabase, deleted.id)
-          } catch (err) {
-            console.error('Failed to restore the database this view made', made.databaseId, err)
-          }
-          queryClient.invalidateQueries({ queryKey: pagesKey() })
-        },
+        onUndone: () => trashMadePage(made.databaseId),
+        onRedone: () => restoreMadePage(made.databaseId),
       })
     } catch (err) {
       console.error('Failed to make the database', err)
@@ -2706,7 +2758,9 @@ export function BlockCanvas({
             ? blockMenuGroups(
                 block,
                 {
-                  moveIntoNewPage: onMoveIntoNewPage !== undefined,
+                  // Every block but a page-link has something to move — it has
+                  // nothing of its own, so the row is dropped for it.
+                  moveIntoNewPage: block.type !== 'page-link',
                   width: (
                     <BlockWidthRow
                       width={block.width}
@@ -2718,7 +2772,8 @@ export function BlockCanvas({
                     />
                   ),
                 },
-                apple
+                apple,
+                slashSize
               )
             : undefined
         }
@@ -3538,8 +3593,9 @@ function useBlockEmptyState(
  * Enter/Space on the focused handle, selects the row — it never opens the
  * menu. A press that moves past the threshold still drags, unchanged. The
  * menu opens from right-click on the block, ⌘/ (Ctrl+/ off Apple) anywhere in
- * it, or ⇧F10/the ContextMenu key on a selected row, and the block wears the
- * open ring while it is open. Phone (`size="mobile"`) keeps the old
+ * it, or ⇧F10/the ContextMenu key on a selected row; the handle itself shows
+ * its own open fill (`PondBlock.dc.html`), no ring on the block. Phone
+ * (`size="mobile"`) keeps the old
  * tap-opens-the-menu path on the handle itself — iOS Safari fires no
  * `contextmenu` on a long-press. Base UI's own trigger opens on pointerdown;
  * `handlePointerOpenChange` below drops that and any open that arrives after
@@ -4252,10 +4308,17 @@ function BlockEditor({
   // the arrow to open the menu and keep it from reaching the block — but
   // desktop's handle (KAN-485) is a plain button, not a Menu.Trigger, so
   // there's no Base UI handler to suppress there; `preventBaseUIHandler` only
-  // exists on the mobile path's Base UI-wrapped event.
+  // exists on the mobile path's Base UI-wrapped event. ⌘⌫ on the handle
+  // deletes the block (board 8e) the same way a selected row's own ⌘⌫ does —
+  // the handle has no `onKeyDownCapture` of its own, so this is that chord's
+  // only path when the handle, not the row, holds focus.
   const handleTriggerKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
     if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
       ;(e as BaseUIEvent<typeof e>).preventBaseUIHandler?.()
+    }
+    if (isDeleteBlockChord(e.nativeEvent)) {
+      e.preventDefault()
+      onDeleteBlock()
     }
   }
 
@@ -4469,14 +4532,22 @@ function BlockEditor({
         // A calendar sits in a card, so selecting it draws the card's ring.
         // A board draws its own lanes and has no card, so the same ring goes
         // on the row itself — otherwise a click selects it and nothing shows.
-        state === 'selected' && !frame && block.type !== 'text' && POND_BLOCK_SELECTED_RING_ROUNDED,
+        // A chart card and a page-link draw no `frame` either, but each rings
+        // ITS OWN card via `useBlockRow().selected`
+        // (`src/lib/modules/chart/card.tsx`, `src/lib/modules/page-link/view.tsx`),
+        // so the row excludes both here too.
+        state === 'selected' &&
+          !frame &&
+          block.type !== 'text' &&
+          block.type !== 'page-link' &&
+          !(block.type === 'view' && isChartCard(block)) &&
+          POND_BLOCK_SELECTED_RING_ROUNDED,
         settleOnMount && 'motion-settle-in',
         // `origin` (old place) from `PondBlock.dc.html` is opacity .4 ONLY — the
         // tilt and stepped-up shadow belong to the separate `lifted` copy, built
         // where the drag preview is drawn (not this node).
         isDragging &&
-          'opacity-40 transition-opacity duration-[var(--motion-quick)] ease-[var(--ease-mn)] motion-reduce:transition-none',
-        menuOpen && 'rounded-[20px] [box-shadow:0_0_0_2px_rgb(from_var(--mn-text)_r_g_b/0.18)]'
+          'opacity-40 transition-opacity duration-[var(--motion-quick)] ease-[var(--ease-mn)] motion-reduce:transition-none'
       )}
       id={blockDomId(block.id)}
       data-block-id={block.id}
@@ -4541,7 +4612,10 @@ function BlockEditor({
           it is always visible there; PondBlock's head row reserves the 40px
           this takes (`size="mobile"`, below). Press-and-drag reorders; a
           no-move release selects the row. Phone keeps a tap opening the
-          block menu (KAN-485), which is where `delete` lives. Inside the card
+          block menu (KAN-485); mobile's `delete` row lives there. Desktop has
+          no menu row for it (board 8e) — ⌘⌫ on the handle itself (focused via
+          Tab, below) deletes the block directly, same as a selected row's own
+          ⌘⌫ (`handleKeyDownCapture`). Inside the card
           it must stack ABOVE the body that follows it in the DOM (the card's
           paper, a text block's editor) or taps land on the body: `z-[1]`, the
           lowest lift that does it, under every floating surface (z ≥ 4).

@@ -39,11 +39,12 @@ import {
   previewListTable,
   type DatabaseFromList,
 } from '@/lib/pages/list-to-table'
-import { createPage, type PondPage } from '@/lib/pages/client'
+import { viewCollectionId } from './block-frame'
 import type { Block } from './content'
 import type { TextBlock } from './text/schema'
 import { retypeText, textKindOf, type TextKind } from './text/retype'
 import { todoMarker, type TodoBlock, type TodoItem } from './todo/schema'
+import { blockLabel, trimmedOrNone } from './types'
 
 /** In the menu's order. */
 export const CONVERSION_TARGETS = [
@@ -128,19 +129,11 @@ export interface TableConversion {
   ) => Promise<DatabaseFromList>
 }
 
-export interface PageConversionInput {
-  userId: string
-  /** The page this line's block lives on — the new page is always its child. */
-  parentId: string | null
-  pondId: string | null
-  props?: Record<string, unknown>
-}
-
+/** The menu's "turn into › page" row: `moveBlockIntoNewPage` is the one engine
+ * that makes the page, so there is nothing left for this target to apply. */
 export interface PageConversion {
   target: 'page'
-  /** Nothing to count: the page is made, not previewed. */
   preview: null
-  apply: (supabase: SupabaseClient<Database>, input: PageConversionInput) => Promise<PondPage>
 }
 
 export type Conversion = LineConversion | TableConversion | PageConversion
@@ -229,21 +222,38 @@ const tableConversion = (block: Block): TableConversion | null => {
 const pageTitleOf = (block: TextBlock): string =>
   plainLine(retypeText(block.content, 'text').split('\n')[0] ?? '')
 
-const pageConversion = (block: TextBlock): PageConversion => {
-  const title = pageTitleOf(block)
-  return {
-    target: 'page',
-    preview: null,
-    apply: (supabase, { userId, parentId, pondId, props }) =>
-      createPage(supabase, userId, {
-        parentId,
-        type: 'page',
-        title,
-        blocks: [block],
-        ...(props ? { props } : {}),
-        pondId,
-      }),
-  }
+const PAGE_CONVERSION: PageConversion = { target: 'page', preview: null }
+
+/** `block` plus the title its page gets, as `moveIntoPagePrep` moves it. */
+export interface MovedBlock {
+  block: Block
+  title: string
+}
+
+/**
+ * `block` as it would move into a new child page — via the menu's `move into
+ * a new page`, or `turn into: page` for a text line — leaving `hostPageId`.
+ * `null` for a page-link: there is nothing left to move.
+ *
+ * A view with no `collectionId` of its own is drawing `hostPageId`'s rows, so
+ * the moved copy is stamped with it to keep drawing the same ones; `rowStart`
+ * named a row on the page being left, so the moved copy drops it (it keeps
+ * its width). The title is a text block's first plain line, a table's own
+ * title, or another block's label — '' when none apply, which the app then
+ * shows as "untitled".
+ */
+export function moveIntoPagePrep(block: Block, hostPageId: string): MovedBlock | null {
+  if (block.type === 'page-link') return null
+  const { rowStart: _rowStart, ...rest } = block
+  const moved: Block =
+    rest.type === 'view' ? { ...rest, collectionId: viewCollectionId(rest, hostPageId) } : rest
+  const title =
+    moved.type === 'text'
+      ? pageTitleOf(moved)
+      : moved.type === 'table'
+        ? trimmedOrNone(moved.title) ?? ''
+        : blockLabel(moved) ?? ''
+  return { block: moved, title }
 }
 
 const lineConversion = (
@@ -291,7 +301,7 @@ export const conversionsFor = (
       return table ? [table] : []
     }
     if (target === 'page') {
-      return singleNode && block.type === 'text' ? [pageConversion(block)] : []
+      return singleNode && block.type === 'text' ? [PAGE_CONVERSION] : []
     }
     if (RETYPE_ONLY_TARGETS.has(target) && !singleNode) return []
     return [lineConversion(block, target, mintId)]

@@ -1,13 +1,13 @@
 /**
  * The block menu on the page: the handle — or ⌘/ (Ctrl+/ off Apple) on a
  * focused block — opens `PondMenu` kind `block`, which offers the conversions
- * that keep the content, `copy link to block` and `delete`. While it is open the
- * block wears the open ring; closing it puts focus back where the person was —
- * on the handle, or inside the block for ⌘/. Every conversion is
- * the person's own edit: it applies in place at once, with an undo. Turning a
- * list into a table writes a real database (mocked here; the pure list helpers
- * stay real so the preview count is genuine). Arriving at a block's link
- * scrolls to and focuses that block.
+ * that keep the content, `copy link to block` and `delete`. While it is open
+ * the handle itself shows its open fill — no ring on the block; closing it
+ * puts focus back where the person was — on the handle, or inside the block
+ * for ⌘/. Every conversion is the person's own edit: it applies in place at
+ * once, with an undo. Turning a list into a table writes a real database
+ * (mocked here; the pure list helpers stay real so the preview count is
+ * genuine). Arriving at a block's link scrolls to and focuses that block.
  */
 
 import React from 'react'
@@ -137,11 +137,10 @@ const OPEN_RING = '[box-shadow:0_0_0_2px_rgb(from_var(--mn-text)_r_g_b/0.18)]'
 interface HarnessProps {
   initial: Block[]
   onChange: jest.Mock
-  onMoveIntoNewPage?: (block: Block) => void
   chrome?: boolean
 }
 
-function Harness({ initial, onChange, onMoveIntoNewPage, chrome }: HarnessProps) {
+function Harness({ initial, onChange, chrome }: HarnessProps) {
   const [blocks, setBlocks] = React.useState(initial)
   return (
     <BlockCanvas
@@ -152,28 +151,18 @@ function Harness({ initial, onChange, onMoveIntoNewPage, chrome }: HarnessProps)
         onChange(next)
         setBlocks(next)
       }}
-      onMoveIntoNewPage={onMoveIntoNewPage}
       chrome={chrome}
     />
   )
 }
 
-function renderCanvas(
-  initial: Block[],
-  onMoveIntoNewPage?: (block: Block) => void,
-  chrome?: boolean
-) {
+function renderCanvas(initial: Block[], chrome?: boolean) {
   const onChange = jest.fn()
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={client}>
       <DeletionUndoProvider>
-        <Harness
-          initial={initial}
-          onChange={onChange}
-          onMoveIntoNewPage={onMoveIntoNewPage}
-          chrome={chrome}
-        />
+        <Harness initial={initial} onChange={onChange} chrome={chrome} />
       </DeletionUndoProvider>
     </QueryClientProvider>
   )
@@ -387,7 +376,7 @@ describe('right-click opens the block menu at the pointer (KAN-485)', () => {
   })
 
   it('chrome=false (zen) opens nothing, and leaves the native menu', () => {
-    renderCanvas([heading], undefined, false)
+    renderCanvas([heading], false)
     const row = document.getElementById('block-b-heading')!
     let event: Event | undefined
     const capture = (e: Event) => {
@@ -426,28 +415,29 @@ describe('closing a right-click-opened menu focuses the row (KAN-485)', () => {
   })
 })
 
-describe('the block menu rings the block while open, and offers moving it into a page (KAN-485)', () => {
-  it('rings the block while the menu is open, and drops the ring when it closes', async () => {
+describe('the block menu opens with no ring on the block, and offers moving it into a page (KAN-485)', () => {
+  it('draws no ring on the block while the menu is open — the handle shows its open fill instead', async () => {
     const user = userEvent.setup()
     renderCanvas([heading, list])
     const root = document.getElementById('block-b-list')!
+    const handle = handleOf('b-list')
     expect(root.className).not.toContain(OPEN_RING)
+    expect(handle.className).not.toContain('bg-mn-hover-fill')
 
     openMenuOf('b-list')
     await screen.findByRole('menu', { name: /block menu/i })
-    expect(root.className).toContain(OPEN_RING)
-    expect(root.className).toContain('rounded-[20px]')
-    expect(root.className).not.toMatch(/dark:/)
+    expect(root.className).not.toContain(OPEN_RING)
+    expect(root.className).not.toMatch(/box-shadow/)
+    expect(handle.className).toContain('bg-mn-hover-fill')
 
     await user.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
-    expect(root.className).not.toContain(OPEN_RING)
+    expect(handle.className).not.toContain('bg-mn-hover-fill')
   })
 
-  it('offers `move into a new page` only where the canvas can do it, and hands it the block', async () => {
+  it('offers `move into a new page`, and picking it moves the block into one', async () => {
     const user = userEvent.setup()
-    const onMoveIntoNewPage = jest.fn()
-    renderCanvas([heading, list], onMoveIntoNewPage)
+    const { onChange } = renderCanvas([heading, list])
     openMenuOf('b-list')
     const block = within(await screen.findByRole('menu', { name: /block menu/i })).getByRole(
       'group',
@@ -457,9 +447,54 @@ describe('the block menu rings the block while open, and offers moving it into a
       within(block)
         .getAllByRole('menuitem')
         .map((i) => i.textContent)
-    ).toEqual(['move into a new page', 'copy link to block', 'delete'])
+    ).toEqual(['move into a new page', 'copy link to block'])
     await user.click(within(block).getByRole('menuitem', { name: 'move into a new page' }))
-    expect(onMoveIntoNewPage).toHaveBeenCalledWith(list)
+
+    await waitFor(() => expect(mockCreatePage).toHaveBeenCalledTimes(1))
+    const [, , input] = mockCreatePage.mock.calls[0]
+    expect(input.blocks).toEqual([list])
+    await waitFor(() =>
+      expect(lastBlocks(onChange)[1]).toMatchObject({ type: 'page-link', pageId: 'child-page-1' })
+    )
+    expect(await screen.findByText('Moved into a new page')).toBeInTheDocument()
+  })
+
+  it('moving a ½ block out of a side-by-side row leaves a ½ page-link with its rowStart, the row-mate untouched', async () => {
+    const user = userEvent.setup()
+    const left: Block = { ...list, width: '1/2', rowStart: true }
+    const right: Block = { ...note, width: '1/2' }
+    const { onChange } = renderCanvas([left, right])
+    openMenuOf('b-list')
+    const block = within(await screen.findByRole('menu', { name: /block menu/i })).getByRole(
+      'group',
+      { name: 'block' }
+    )
+    await user.click(within(block).getByRole('menuitem', { name: 'move into a new page' }))
+
+    await waitFor(() => expect(mockCreatePage).toHaveBeenCalledTimes(1))
+    await waitFor(() =>
+      expect(lastBlocks(onChange)[0]).toMatchObject({
+        type: 'page-link',
+        width: '1/2',
+        rowStart: true,
+      })
+    )
+    expect(lastBlocks(onChange)[1]).toEqual(right)
+  })
+
+  it('offers nothing to move for a page-link — it has nothing of its own', async () => {
+    renderCanvas([pageLink])
+    await screen.findByRole('link', { name: 'Open brioche' })
+    openMenuOf('b-link')
+    const block = within(await screen.findByRole('menu', { name: /block menu/i })).getByRole(
+      'group',
+      { name: 'block' }
+    )
+    expect(
+      within(block)
+        .getAllByRole('menuitem')
+        .map((i) => i.textContent)
+    ).not.toContain('move into a new page')
   })
 })
 
@@ -916,7 +951,7 @@ describe('turn into — page', () => {
     openMenuOf('b-note')
     await user.click(await screen.findByRole('menuitem', { name: 'page' }))
 
-    expect(await screen.findByText("Couldn't turn the block into a page")).toBeInTheDocument()
+    expect(await screen.findByText("Couldn't move the block into a page")).toBeInTheDocument()
     expect(onChange).not.toHaveBeenCalled()
     expect(document.getElementById('block-b-note')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /undo/i })).not.toBeInTheDocument()

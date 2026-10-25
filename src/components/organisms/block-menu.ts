@@ -6,7 +6,7 @@
  */
 
 import type { ReactNode } from 'react'
-import type { PondMenuGroup, PondMenuItem } from '@/components/molecules/PondMenu'
+import type { PondMenuGroup, PondMenuItem, PondMenuSize } from '@/components/molecules/PondMenu'
 import {
   conversionsFor,
   headingLevelOf,
@@ -75,12 +75,15 @@ const hintFor = (target: ConversionTarget, apple: boolean): string | undefined =
  * Derive only for a block whose menu is open: the table preview scans the
  * block's whole content. `apple` is the platform the hint is shown for
  * (`useApplePlatform()`, read at the call site — this module stays a pure
- * function of its arguments).
+ * function of its arguments). `size` gates `delete`: a phone has no ⌘⌫ and
+ * no other delete path, so `mobile` keeps the row; `desktop` deletes only
+ * via ⌘⌫ (board 8e), so the row is dropped there.
  */
 export const blockMenuGroups = (
   block: Block,
   slots: BlockMenuSlots = {},
-  apple = true
+  apple = true,
+  size: PondMenuSize = 'desktop'
 ): PondMenuGroup<BlockMenuAction>[] => [
   {
     id: 'turn-into',
@@ -104,11 +107,15 @@ export const blockMenuGroups = (
       ...(block.height != null ? [FIT_HEIGHT] : []),
       ...(slots.moveIntoNewPage ? [MOVE_INTO_NEW_PAGE] : []),
       { id: 'copy-link', label: 'copy link to block', action: { type: 'copy-link' } },
-      {
-        id: 'delete',
-        label: block.type === 'page-link' ? 'remove link' : 'delete',
-        action: { type: 'delete' },
-      },
+      ...(size === 'mobile'
+        ? [
+            {
+              id: 'delete',
+              label: block.type === 'page-link' ? 'remove link' : 'delete',
+              action: { type: 'delete' as const },
+            },
+          ]
+        : []),
     ],
   },
 ]

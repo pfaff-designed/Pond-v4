@@ -19,7 +19,10 @@ import { ShellCommands } from '@/components/organisms/ShellCommands'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { sessionUndo } from '@/lib/change-log/session-undo'
 import { undoStep } from '@/lib/change-log/undo'
+import { POND_BLOCK_SELECTED_RING } from '@/components/organisms/PondBlock'
 import type { Block } from '@/lib/documents/types'
+import type { PropertySchema } from '@/lib/properties/schema'
+import type { CollectionRow } from '@/lib/modules/view/apply'
 
 jest.mock('next/navigation', () => ({
   useSearchParams: () => ({ get: (key: string) => (key === 'nodeId' ? 'page-1' : null) }),
@@ -46,12 +49,32 @@ jest.mock('@/lib/templates/client', () => ({
   getTemplate: jest.fn().mockResolvedValue(null),
 }))
 
+// Most of this file's chart-card tests never read real collection rows —
+// only that the row selects and ⌘⌫ reaches it. The PATH_STEPS test below
+// sets `collection.schema`/`rows` so the chart clears its own `empty` state
+// and reaches `rest`, the only base state `selected` renders on top of.
+const collection = { schema: [] as PropertySchema, rows: [] as CollectionRow[] }
+jest.mock('@/lib/modules/view/use-collection-rows', () => ({
+  useCollectionRows: () => ({
+    schema: collection.schema,
+    rows: collection.rows,
+    isLoading: false,
+    isError: false,
+    setValue: jest.fn(),
+    addRow: jest.fn(),
+    removeRow: jest.fn(),
+    renameRow: jest.fn(),
+    updateSchema: jest.fn(),
+  }),
+}))
+
 const mockGetPage = jest.fn()
 const mockSaveBlocks = jest.fn().mockResolvedValue(undefined)
+const mockCreatePage = jest.fn()
 jest.mock('@/lib/pages/client', () => ({
   getPage: (...args: unknown[]) => mockGetPage(...args),
   updateTitle: jest.fn().mockResolvedValue(undefined),
-  createPage: jest.fn(),
+  createPage: (...args: unknown[]) => mockCreatePage(...args),
   saveBlocks: (...args: unknown[]) => mockSaveBlocks(...args),
   saveProps: jest.fn().mockResolvedValue(undefined),
   defineSchema: jest.fn().mockResolvedValue(undefined),
@@ -79,7 +102,18 @@ let recordSeq = 0
 beforeEach(() => {
   jest.clearAllMocks()
   recordSeq = 0
+  collection.schema = []
+  collection.rows = []
   mockSaveBlocks.mockResolvedValue(undefined)
+  mockCreatePage.mockResolvedValue({
+    id: 'child-page-1',
+    parentId: 'page-1',
+    type: 'page',
+    title: 'groceries',
+    blocks: [],
+    order: 0,
+    props: {},
+  })
   mockAppendOwnEdit.mockImplementation(async () => ({ id: `record-${++recordSeq}` }))
   jest.mocked(undoStep).mockResolvedValue({ outcome: 'done', records: [] })
   onPlatform('MacIntel')
@@ -104,6 +138,8 @@ function renderPath(blocks: Block[]) {
 const blockRoot = (id: string) => document.getElementById(`block-${id}`)!
 const textBlockIn = (id: string) =>
   within(blockRoot(id)).findByRole('textbox', { name: 'text block' })
+/** On desktop the handle only drags — right-click (or ⇧F10) opens the menu. */
+const openMenuOf = (id: string) => fireEvent.contextMenu(blockRoot(id))
 
 const deferred = <T,>() => {
   let resolve: (value: T) => void = () => {}
@@ -228,7 +264,7 @@ describe('⌘⌫ writes through persistBlocksAsOwnEdit, one ⌘Z step (KAN-368)'
     await waitFor(() => expect(undoStep).toHaveBeenCalledTimes(2))
   })
 
-  it('delete via the handle menu, then clicking the toast’s undo restores the block with one undo RPC', async () => {
+  it('⌘⌫ on the selected row, then clicking the toast’s undo restores the block with one undo RPC', async () => {
     const kept: Block = { id: 'b-kept', type: 'text', content: 'the only open cost' }
     const removed: Block = { id: 'b-removed', type: 'text', content: 'cabinets' }
     renderPath([kept, removed])
@@ -240,8 +276,11 @@ describe('⌘⌫ writes through persistBlocksAsOwnEdit, one ⌘Z step (KAN-368)'
     } as never)
 
     const user = userEvent.setup()
-    fireEvent.contextMenu(blockRoot('b-removed'))
-    await user.click(await screen.findByRole('menuitem', { name: 'delete' }))
+    const row = blockRoot('b-removed')
+    row.focus()
+    await waitFor(() => expect(row).toHaveFocus())
+
+    await user.keyboard('{Meta>}{Backspace}{/Meta}')
     await user.click(await screen.findByRole('button', { name: 'Delete' }))
 
     await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalledTimes(1))
@@ -294,5 +333,145 @@ describe('⌘⌫ writes through persistBlocksAsOwnEdit, one ⌘Z step (KAN-368)'
     await new Promise((resolve) => setTimeout(resolve, 10))
 
     expect(undoStep).toHaveBeenCalledTimes(1)
+  })
+
+  it('⌘⌫ on a selected chart card row, then confirm, deletes it; ⌘Z restores it', async () => {
+    const kept: Block = { id: 'b-kept', type: 'text', content: 'the only open cost' }
+    const chart: Block = {
+      id: 'b-chart',
+      type: 'view',
+      mode: 'chart',
+      label: 'weight',
+      chart: { kind: 'line', xProperty: 'p-date', series: [{ property: 'p-kg', agg: 'sum' }] },
+    }
+    renderPath([kept, chart])
+    await screen.findByLabelText('Page title')
+
+    const user = userEvent.setup()
+    const row = blockRoot('b-chart')
+    row.focus()
+    await waitFor(() => expect(row).toHaveFocus())
+
+    await user.keyboard('{Meta>}{Backspace}{/Meta}')
+    await user.click(await screen.findByRole('button', { name: 'Delete' }))
+
+    await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalledTimes(1))
+    expect(mockSaveBlocks.mock.calls[0][2].map((b: Block) => b.id)).toEqual(['b-kept'])
+    await waitFor(() => expect(mockAppendOwnEdit).toHaveBeenCalledTimes(1))
+    expect(screen.getByRole('button', { name: 'undo' })).toBeInTheDocument()
+
+    await user.keyboard('{Meta>}z{/Meta}')
+
+    await waitFor(() => expect(undoStep).toHaveBeenCalledTimes(1))
+    expect(undoStep).toHaveBeenCalledWith(expect.anything(), {
+      pondId: 'pond-1',
+      recordIds: ['record-1'],
+    })
+  })
+
+  it('⌘⌫ on a focused handle deletes that block', async () => {
+    const kept: Block = { id: 'b-kept', type: 'text', content: 'the only open cost' }
+    const removed: Block = { id: 'b-removed', type: 'text', content: 'cabinets' }
+    renderPath([kept, removed])
+    await screen.findByLabelText('Page title')
+
+    const user = userEvent.setup()
+    const handle = within(blockRoot('b-removed')).getByRole('button', { name: 'drag to move' })
+    handle.focus()
+    await waitFor(() => expect(handle).toHaveFocus())
+
+    await user.keyboard('{Meta>}{Backspace}{/Meta}')
+    await user.click(await screen.findByRole('button', { name: 'Delete' }))
+
+    await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalledTimes(1))
+    expect(mockSaveBlocks.mock.calls[0][2].map((b: Block) => b.id)).toEqual(['b-kept'])
+    await waitFor(() => expect(mockAppendOwnEdit).toHaveBeenCalledTimes(1))
+    expect(await screen.findByText('deleted text ·')).toBeInTheDocument()
+  })
+})
+
+describe('PATH_STEPS: the block menu, a page-making move, and a chart card’s own ring (KAN-361)', () => {
+  it('right-click a checklist → the board’s rows, no delete → move into a new page; a chart card rings itself, not its row, and ⌘⌫/⌘Z reach it', async () => {
+    const checklist: Block = {
+      id: 'b-checklist',
+      type: 'todo',
+      marker: 'check',
+      label: 'groceries',
+      items: [
+        { id: 'i1', label: 'milk', checked: false },
+        { id: 'i2', label: 'eggs', checked: false },
+      ],
+    }
+    const chart: Block = {
+      id: 'b-chart',
+      type: 'view',
+      mode: 'chart',
+      label: 'weight',
+      chart: { kind: 'line', xProperty: 'p-date', series: [{ property: 'p-kg', agg: 'sum' }] },
+    }
+    // The chart's row only reaches PondBlock's `rest` state (what `selected`
+    // renders on top of) once it has rows to draw — an empty chart stays
+    // in its own `empty` state and never rings.
+    collection.schema = [
+      { id: 'p-date', name: 'date', type: 'date' },
+      { id: 'p-kg', name: 'kg', type: 'number' },
+    ]
+    collection.rows = [{ id: 'r1', title: 'r1', values: { 'p-date': '2026-09-01', 'p-kg': 80.4 } }]
+    renderPath([checklist, chart])
+    await screen.findByLabelText('Page title')
+
+    const user = userEvent.setup()
+
+    // Right-click opens the menu at the board's rows: turn into, width, then
+    // the block group's own two rows — no `delete` on desktop.
+    openMenuOf('b-checklist')
+    const menu = await screen.findByRole('menu', { name: /block menu/i })
+    expect(within(menu).getByRole('group', { name: 'turn into' })).toBeInTheDocument()
+    expect(within(menu).getByRole('group', { name: 'width' })).toBeInTheDocument()
+    const blockGroup = within(menu).getByRole('group', { name: 'block' })
+    expect(
+      within(blockGroup)
+        .getAllByRole('menuitem')
+        .map((item) => item.textContent)
+    ).toEqual(['move into a new page', 'copy link to block'])
+
+    await user.click(within(blockGroup).getByRole('menuitem', { name: 'move into a new page' }))
+
+    await waitFor(() => expect(mockCreatePage).toHaveBeenCalledTimes(1))
+    expect(mockCreatePage.mock.calls[0][2].blocks).toEqual([checklist])
+    expect(screen.queryByText('milk')).not.toBeInTheDocument()
+    // No `fetchPages`/cache seed in this file's mocks resolves the new page,
+    // so the row that replaced the checklist is an unresolved page-link —
+    // proof enough that a page-link, not the checklist, now sits there.
+    expect(await screen.findByText('page in trash')).toBeInTheDocument()
+
+    // The move's own debounced typed-edit write (EDIT_PAUSE_MS, 600ms) can
+    // land mid-test and would otherwise pollute the chart phase's call
+    // counts below — settle it, then start that phase's counts from zero.
+    await new Promise((resolve) => setTimeout(resolve, 700))
+    mockSaveBlocks.mockClear()
+    mockAppendOwnEdit.mockClear()
+
+    const chartRow = blockRoot('b-chart')
+    const card = chartRow.querySelector<HTMLElement>('[data-chart-kind]')!
+    await user.click(chartRow)
+    await waitFor(() => expect(chartRow).toHaveFocus())
+    expect(card.className).toContain(POND_BLOCK_SELECTED_RING)
+    expect(chartRow.className).not.toContain(POND_BLOCK_SELECTED_RING)
+
+    await user.keyboard('{Meta>}{Backspace}{/Meta}')
+    await user.click(await screen.findByRole('button', { name: 'Delete' }))
+
+    await waitFor(() => expect(document.getElementById('block-b-chart')).not.toBeInTheDocument())
+    await waitFor(() => expect(mockAppendOwnEdit).toHaveBeenCalledTimes(1))
+    expect(screen.getByRole('button', { name: 'undo' })).toBeInTheDocument()
+
+    await user.keyboard('{Meta>}z{/Meta}')
+
+    await waitFor(() => expect(undoStep).toHaveBeenCalledTimes(1))
+    expect(undoStep).toHaveBeenCalledWith(expect.anything(), {
+      pondId: 'pond-1',
+      recordIds: [expect.any(String)],
+    })
   })
 })

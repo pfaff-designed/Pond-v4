@@ -11,7 +11,6 @@
 
 import React from 'react'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DocumentPanel } from '@/components/organisms/DocumentPanel'
 import { RailView, type RailNode } from '@/components/organisms/Rail'
@@ -76,9 +75,8 @@ function renderPage(page: Record<string, unknown>) {
   )
 }
 
-describe('PATH_STEPS A — delete a block from its handle menu', () => {
+describe('PATH_STEPS A — delete a block via ⌘⌫ on the selected row', () => {
   it('shows the undo toast, keeps the other blocks, and never deletes the page', async () => {
-    const user = userEvent.setup()
     const blocks: Block[] = [
       { id: 'b1', type: 'text', content: 'first' },
       { id: 'b2', type: 'text', content: 'second' },
@@ -91,10 +89,12 @@ describe('PATH_STEPS A — delete a block from its handle menu', () => {
     writeInTextBlock(fields[1], 'second')
     writeInTextBlock(fields[2], 'third')
 
-    const handles = await screen.findAllByRole('button', { name: 'drag to move' })
-    fireEvent.contextMenu(handles[1].closest('[id^="block-"]')!)
-    await user.click(await screen.findByRole('menuitem', { name: 'delete' }))
-    await user.click(await screen.findByRole('button', { name: 'Delete' }))
+    const row = document.getElementById('block-b2')!
+    row.focus()
+    await waitFor(() => expect(row).toHaveFocus())
+    // jsdom's platform is not Mac, so the chord is Ctrl+⌫ here (`isCommandOnly`).
+    fireEvent.keyDown(row, { key: 'Backspace', ctrlKey: true })
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete' }))
 
     expect(await screen.findByText('deleted text ·')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'undo' })).toBeInTheDocument()

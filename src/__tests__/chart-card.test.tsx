@@ -537,7 +537,7 @@ describe('BlockCanvas — a card chart is its own card; it is not wrapped in a b
 // through `BlockRowContext` rather than the `state` prop `PondBlock` threads for
 // every other kind — pinned separately from KAN-106's own row suite.
 describe('BlockCanvas — a click on the chart card’s own padding selects it, same ring as PondBlock (KAN-344)', () => {
-  it('draws PondBlock’s own `selected` ring on the chart card itself', async () => {
+  it('draws PondBlock’s own `selected` ring on the chart card itself, not the row', async () => {
     collection.rows = [weighIn('r1', '2026-09-01', 80.4), weighIn('r2', '2026-09-08', 80.1)]
     const user = userEvent.setup()
     renderCanvas([config])
@@ -548,5 +548,6 @@ describe('BlockCanvas — a click on the chart card’s own padding selects it, 
     await user.click(group)
     expect(card.dataset.chartState).toBe('selected')
     expect(card.className).toContain(POND_BLOCK_SELECTED_RING)
+    expect(group.className).not.toContain(POND_BLOCK_SELECTED_RING)
   })
 })
