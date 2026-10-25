@@ -51,6 +51,7 @@ import {
 import {
   isPaletteChord,
   isMinimizeRailChord,
+  isMovePageChord,
   isRedoChord,
   isUndoChord,
   onApplePlatform,
@@ -69,9 +70,18 @@ import { useZenCommands } from '@/lib/layout/use-zen-commands'
 import { openWorkspaceUrl, workspaceUrl } from '@/lib/pages/nav'
 import { requestTitleFocus } from '@/lib/pages/title-focus'
 import { flushPendingPageSave } from '@/lib/pages/page-flush'
-import { newPageParent, paletteItems, paletteScope, pondItems, railItems } from '@/lib/pages/palette-items'
+import {
+  movePickItems,
+  newPageParent,
+  paletteItems,
+  paletteScope,
+  pondItems,
+  railItems,
+} from '@/lib/pages/palette-items'
+import { isDuplicablePageRow } from '@/lib/pages/databases-root'
 import { prefetchPageIfAbsent } from '@/lib/pages/use-page-prefetch'
 import { readRecentPageIds, writeRecent } from '@/lib/pages/recent-pages'
+import { useHomePage } from '@/lib/pages/use-home-page'
 import { usePaletteRecords } from '@/lib/pages/use-palette-records'
 import { createPage } from '@/lib/pages/client'
 import { insertPageOptimistic } from '@/lib/pages/tree'
@@ -108,6 +118,9 @@ export function ShellCommands() {
   const router = useRouter()
   const currentNodeId = searchParams.get('nodeId')
   const [paletteOpen, setPaletteOpen] = useState(false)
+  // `move page to…`'s pick mode (KAN-469): set while picking, cleared on close
+  // so a reopen always starts fresh — the same rule scope/query already follow.
+  const [movePick, setMovePick] = useState<{ id: string; title: string } | null>(null)
   const [query, setQuery] = useState('')
   // `new pond “q”`: the sheet is open, holding the name the palette handed over.
   const [naming, setNaming] = useState<string | null>(null)
@@ -118,12 +131,14 @@ export function ShellCommands() {
   const [reportError, setReportError] = useState<string | null>(null)
   const pondId = usePondId()
   const pondName = usePondName()
-  const { pond, ponds } = usePond()
+  const { pond, ponds, loading: pondLoading } = usePond()
   const published = useCommandPath()
   const queryClient = useQueryClient()
   // `usePagesRows` (KAN-310 gap 1) drops a staged-for-delete id at once, so a
   // page mid-delete is gone from the palette's listing, not just the rail.
   const { data: pages } = usePagesRows(pondId)
+  // The move picker's root row (same source Rail reads for its own root label).
+  const { data: home } = useHomePage(pondId, pondName, !pondLoading)
   const records = usePaletteRecords(normalizeQuery(query))
   const undoNotice = useUndoNotice()
 
@@ -283,29 +298,30 @@ export function ShellCommands() {
     () => (paletteOpen ? readRecentPageIds(pondId) : []),
     [paletteOpen, pondId]
   )
-  const items = useMemo(
-    () =>
-      paletteOpen
-        ? [
-            ...paletteItems(pages, recentPageIds, currentNodeId),
-            ...zenCommands.items,
-            ...railItems(railMinimized),
-            ...pondItems(ponds, pond?.id ?? null),
-            ...records,
-          ]
-        : [],
-    [
-      pages,
-      paletteOpen,
-      currentNodeId,
-      zenCommands.items,
-      railMinimized,
-      ponds,
-      pond,
-      records,
-      recentPageIds,
+  const items = useMemo(() => {
+    if (!paletteOpen) return []
+    if (movePick) return movePickItems(pages, movePick.id, home?.title ?? pondName)
+    return [
+      ...paletteItems(pages, recentPageIds, currentNodeId),
+      ...zenCommands.items,
+      ...railItems(railMinimized),
+      ...pondItems(ponds, pond?.id ?? null),
+      ...records,
     ]
-  )
+  }, [
+    pages,
+    paletteOpen,
+    currentNodeId,
+    zenCommands.items,
+    railMinimized,
+    ponds,
+    pond,
+    records,
+    recentPageIds,
+    movePick,
+    home,
+    pondName,
+  ])
   const scope = useMemo(() => paletteScope(pages, currentNodeId), [pages, currentNodeId])
 
   useEffect(() => {
@@ -320,7 +336,23 @@ export function ShellCommands() {
         if (templateSheetOpen) closeTemplateSheet()
         else if (pondSheetOpen) closeNewPondSheet()
         else if (reportOpen) closeReport()
-        else setPaletteOpen((prev) => !prev)
+        else
+          setPaletteOpen((prev) => {
+            if (prev) setMovePick(null)
+            return !prev
+          })
+        return
+      }
+      // ⌘⇧P opens `move page to…` directly (KAN-469), as in Notion — only while
+      // the palette is closed; an open palette has its own `move-page` row for this.
+      if (isMovePageChord(e) && !paletteOpen) {
+        const openPage = currentNodeId ? pages.find((p) => p.id === currentNodeId) : undefined
+        if (openPage && isDuplicablePageRow(openPage)) {
+          e.preventDefault()
+          e.stopPropagation()
+          setMovePick({ id: openPage.id, title: openPage.title })
+          setPaletteOpen(true)
+        }
         return
       }
       // "From anywhere" (2f), text fields included — the composer's own input is
@@ -387,13 +419,19 @@ export function ShellCommands() {
     pondId,
     runUndoStep,
     clearShownNotice,
+    paletteOpen,
+    pages,
+    currentNodeId,
   ])
 
   const handleOpenChange = useCallback(
     (next: boolean) => {
       if (next) setPaletteOpen(true)
-      else if (templateSheetOpen) closeTemplateSheet()
-      else setPaletteOpen(false)
+      else {
+        setMovePick(null)
+        if (templateSheetOpen) closeTemplateSheet()
+        else setPaletteOpen(false)
+      }
     },
     [templateSheetOpen, closeTemplateSheet]
   )
@@ -467,6 +505,16 @@ export function ShellCommands() {
           currentNodeId,
           pages.find((p) => p.id === currentNodeId)?.title || 'Untitled'
         )
+        return
+      }
+      if (item.action === 'move-page') {
+        // The row lists only with a page open, so `currentNodeId` is set here.
+        // Pick mode is a filter on the same palette, not a new surface — it
+        // stays open rather than closing like every other row below.
+        if (!currentNodeId) return
+        const page = pages.find((p) => p.id === currentNodeId)
+        if (!page) return
+        setMovePick({ id: page.id, title: page.title })
         return
       }
       setPaletteOpen(false)
@@ -564,7 +612,10 @@ export function ShellCommands() {
         open={commandOpen}
         onOpenChange={handleOpenChange}
         items={items}
-        scope={scope}
+        // Pick mode is its own filter on the list (`movePickItems` already
+        // swapped `items` above) — the rail-scope filter would otherwise
+        // apply on top of it, against a page `scope` no longer describes.
+        scope={movePick ? null : scope}
         pondName={pondName}
         parentTitle={parent.title}
         onSelect={handlePaletteSelect}
@@ -572,7 +623,8 @@ export function ShellCommands() {
           openWorkspaceUrl(workspaceUrl(to.kind === 'page' ? to.node : null), router)
         }
         onActiveItemChange={handleActiveItemChange}
-        ask={!inZen}
+        ask={movePick ? false : !inZen}
+        placeholder={movePick ? `move ${movePick.title} to…` : undefined}
         visits={recentPageIds}
         onQueryChange={setQuery}
         sheet={templateSheet.sheet}

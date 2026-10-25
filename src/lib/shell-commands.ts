@@ -50,6 +50,16 @@ export const isMinimizeRailChord = (e: KeyboardEvent) => {
 }
 
 /**
+ * ⌘⇧P on a Mac, Ctrl+Shift+P everywhere else: move the open page to… (KAN-469), as in
+ * Notion. Chrome, Safari and Firefox bind no Mac system shortcut to ⌘⇧P, so there is
+ * nothing here to collide with (AUDIT K1–K4).
+ */
+export const isMovePageChord = (e: KeyboardEvent) => {
+  if (e.altKey || !e.shiftKey || e.key.toLowerCase() !== 'p') return false
+  return isCommandOnly(e)
+}
+
+/**
  * ⌘⌫ on a Mac, Ctrl+⌫ everywhere else: delete the focused block (`Pond 08 Edges` 8e).
  * Inside a text block with text before the caret, the editor's own delete-to-line-start
  * wins instead (AUDIT K1–K4) — that collision is decided at the call site, not here.
