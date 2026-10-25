@@ -7,8 +7,15 @@
 
 import type { ReactNode } from 'react'
 import type { PondMenuGroup, PondMenuItem } from '@/components/molecules/PondMenu'
-import { conversionsFor, type Conversion } from '@/lib/modules/conversions'
+import {
+  conversionsFor,
+  headingLevelOf,
+  type Conversion,
+  type ConversionTarget,
+} from '@/lib/modules/conversions'
 import type { Block, BlockWidth } from '@/lib/modules/content'
+import { HEADING_CHORDS } from '@/lib/modules/text/markup'
+import { formatChord } from '@/lib/shell-commands'
 
 export type BlockMenuAction =
   | { type: 'turn-into'; conversion: Conversion }
@@ -41,24 +48,53 @@ const FIT_HEIGHT: PondMenuItem<BlockMenuAction> = {
   action: { type: 'fit-height' },
 }
 
+/** In the board's lowercase words — never the dashed target id itself. */
+const CONVERSION_LABELS: Record<ConversionTarget, string> = {
+  table: 'table',
+  'heading-1': 'heading 1',
+  'heading-2': 'heading 2',
+  'heading-3': 'heading 3',
+  quote: 'quote',
+  code: 'code',
+  page: 'page',
+  list: 'list',
+  checklist: 'checklist',
+  text: 'text',
+}
+
+/** A heading row's chord hint — Notion's, shown because the editor really
+ * binds it (`extensions.ts` reads the same `HEADING_CHORDS`). Every other
+ * target shows none: Pond binds no chord for quote/code, so Notion's would
+ * be invented. */
+const hintFor = (target: ConversionTarget, apple: boolean): string | undefined => {
+  const level = headingLevelOf(target)
+  return level ? formatChord(HEADING_CHORDS[level], apple) : undefined
+}
+
 /**
  * Derive only for a block whose menu is open: the table preview scans the
- * block's whole content.
+ * block's whole content. `apple` is the platform the hint is shown for
+ * (`useApplePlatform()`, read at the call site — this module stays a pure
+ * function of its arguments).
  */
 export const blockMenuGroups = (
   block: Block,
-  slots: BlockMenuSlots = {}
+  slots: BlockMenuSlots = {},
+  apple = true
 ): PondMenuGroup<BlockMenuAction>[] => [
   {
     id: 'turn-into',
     label: 'turn into',
     heading: true,
-    items: conversionsFor(block).map((conversion) => ({
-      id: `turn-into:${conversion.target}`,
-      label: conversion.target,
-      ...(conversion.preview ? { value: conversion.preview } : {}),
-      action: { type: 'turn-into', conversion },
-    })),
+    items: conversionsFor(block).map((conversion) => {
+      const value = conversion.preview ?? hintFor(conversion.target, apple)
+      return {
+        id: `turn-into:${conversion.target}`,
+        label: CONVERSION_LABELS[conversion.target],
+        ...(value ? { value } : {}),
+        action: { type: 'turn-into', conversion },
+      }
+    }),
   },
   { id: 'width', label: 'width', heading: true, content: slots.width },
   {
