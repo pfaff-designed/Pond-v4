@@ -9,13 +9,19 @@
 -- next available title and passes it as `p_new_title`; this function only
 -- writes it, atomically, alongside the reparent it already does.
 --
--- `p_new_title` is optional and defaults to `null` — every existing caller
--- (`public.move_page`, still 4 args) keeps writing exactly what it wrote
--- before, byte-identical. A stale client's `p_new_title` that still clashes
--- needs no new raise: folding `title` into the SAME reparent `update` means
--- `pages_sibling_title_pond_uniq` fires its own 23505 for it, the identical
--- error class a plain clashing move already raises today, which `movePage`'s
--- caller already turns into "Couldn't move".
+-- `p_new_title` is optional and defaults to `null` — a call that omits it
+-- keeps writing exactly what it wrote before, byte-identical. A stale
+-- client's `p_new_title` that still clashes needs no new raise: folding
+-- `title` into the SAME reparent `update` means `pages_sibling_title_pond_uniq`
+-- fires its own 23505 for it, the identical error class a plain clashing move
+-- already raises today, which `movePage`'s caller already turns into
+-- "Couldn't move".
+--
+-- `public.move_page` (part C, below) is widened to the same 4-arg shape
+-- (`p_new_title text default null`, forwarding it here) — without that, the
+-- client's `movePage` call reaches PostgREST with a `p_new_title` key no
+-- deployed function declares, and PostgREST finds no matching overload at
+-- all: every renaming move would fail live, not just a clashing one.
 --
 -- The move record's `before`/`after` each gain an optional `title` key, only
 -- when a rename actually happened (`p_new_title is not null`) — the same
@@ -31,7 +37,9 @@
 -- two conditional `title` keys on the change_log insert.
 --
 -- Down (manual): re-run 0031's `create or replace function
---   private.apply_page_move` (drops the 5th parameter and the title writes).
+--   private.apply_page_move` (drops the 5th parameter and the title writes),
+--   and 0030's `create or replace function public.move_page` (drops its 4th
+--   parameter — see part C, below).
 
 begin;
 
@@ -714,5 +722,58 @@ begin
   return null;
 end;
 $$;
+
+commit;
+
+-- ─── `public.move_page` forwards `p_new_title` (KAN-470 part C) ──
+--
+-- Why: part A gave `private.apply_page_move` an optional 5th parameter, but
+-- the PostgREST-facing wrapper the client actually calls — `public.move_page`
+-- — was still 0030's 3-arg signature, with no way to carry a title through
+-- at all. `movePage` (src/lib/pages/client.ts) sends `p_new_title` to
+-- `rpc('move_page', …)` whenever a rename is needed; PostgREST resolves an
+-- RPC call by matching the named arguments against a function's declared
+-- parameters, so a `p_new_title` key with no 4-arg `move_page` to match
+-- means NO function matches at all (not a silent ignore) — every renaming
+-- move fails live with "Couldn't move", even though part A's own SQL is
+-- correct. Widening this wrapper is the only remaining step.
+--
+-- `create or replace function` identifies a function by its argument TYPE
+-- list, the same reason part A above had to `drop function` first: adding a
+-- trailing parameter to the existing 3-arg `move_page` would create a SECOND,
+-- overloaded function rather than replacing it, and a 3-arg call (a stale
+-- client, or any call that omits the new argument) would then be ambiguous
+-- between the two. Drop the old signature first so there is exactly one
+-- `move_page` again.
+--
+-- `p_new_title` defaults to `null` and is forwarded straight through to
+-- `private.apply_page_move`'s own 5th parameter — identical
+-- language/security/search_path to 0030's wrapper (`language sql`, no
+-- `security definer` here; the privilege boundary is `apply_page_move`'s
+-- own), so a call that omits it is byte-identical to today.
+--
+-- Down (manual): re-run 0030's `create or replace function public.move_page`
+--   (drops the 4th parameter) — and see part A's own down note above for
+--   `private.apply_page_move`.
+
+begin;
+
+drop function if exists public.move_page(uuid, uuid, uuid[]);
+
+create or replace function public.move_page(
+  p_page_id uuid,
+  p_new_parent_id uuid,
+  p_sibling_order uuid[],
+  p_new_title text default null
+)
+returns public.change_log
+language sql
+set search_path = public, pg_temp
+as $$
+  select * from private.apply_page_move(p_page_id, p_new_parent_id, p_sibling_order, 'you', p_new_title)
+$$;
+
+revoke all on function public.move_page(uuid, uuid, uuid[], text) from public;
+grant execute on function public.move_page(uuid, uuid, uuid[], text) to authenticated;
 
 commit;

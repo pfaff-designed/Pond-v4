@@ -1,11 +1,13 @@
 // Schema tests for 0034_move_page_rename.sql (KAN-470): part A's
 // `apply_page_move` gains an optional `p_new_title` that renames the moved
 // page atomically with the reparent, and records both titles on the `move`
-// record's before/after only when a rename actually happened. Called
-// directly against `private.apply_page_move` — `public.move_page` doesn't
-// forward this argument yet. Part B's `undo_change_log_record` /
-// `redo_change_log_record` restore/re-apply that title in the same single
-// step they already restore/re-apply the parent.
+// record's before/after only when a rename actually happened. Part B's
+// `undo_change_log_record` / `redo_change_log_record` restore/re-apply that
+// title in the same single step they already restore/re-apply the parent.
+// Part C widens `public.move_page` (the PostgREST-facing wrapper the client
+// actually calls) to the same 4-arg shape — the "fix:" describe block below
+// calls it the way PostgREST does, with named arguments, which is the only
+// way the missing overload actually surfaced live.
 
 import type { PGlite } from '@electric-sql/pglite'
 import { makeDb, seedUser } from './helpers/pglite-harness'
@@ -213,6 +215,53 @@ describe('0034_move_page_rename — change_log_set_back restores/re-applies the 
       refusal('P0001', 'page-changed')
     )
     expect(await pageOf(db, moved)).toEqual({ parent_id: house, title: 'Notes 2 renamed' })
+    await db.close()
+  })
+})
+
+describe('0034_move_page_rename — fix: public.move_page forwards p_new_title', () => {
+  it('renames and moves atomically through PUBLIC.move_page called with named args, as PostgREST does', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pond = await lifePondId(db)
+    const house = await addPage(db, pond, { title: 'house' })
+    const moved = await addPage(db, pond, { title: 'Notes' })
+
+    await actAs(db, USER)
+    await db.query(
+      `select * from public.move_page(
+         p_page_id := $1,
+         p_new_parent_id := $2,
+         p_sibling_order := $3,
+         p_new_title := $4
+       )`,
+      [moved, house, [moved], 'Notes 2']
+    )
+    await db.exec('reset role;')
+
+    expect(await pageOf(db, moved)).toEqual({ parent_id: house, title: 'Notes 2' })
+    await db.close()
+  })
+
+  it('still resolves a 3-named-arg call with no ambiguous overload', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pond = await lifePondId(db)
+    const house = await addPage(db, pond, { title: 'house' })
+    const moved = await addPage(db, pond, { title: 'Notes' })
+
+    await actAs(db, USER)
+    await db.query(
+      `select * from public.move_page(
+         p_page_id := $1,
+         p_new_parent_id := $2,
+         p_sibling_order := $3
+       )`,
+      [moved, house, [moved]]
+    )
+    await db.exec('reset role;')
+
+    expect(await pageOf(db, moved)).toEqual({ parent_id: house, title: 'Notes' })
     await db.close()
   })
 })
