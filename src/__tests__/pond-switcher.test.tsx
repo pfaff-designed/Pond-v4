@@ -242,6 +242,18 @@ describe('the pond switcher', () => {
     expect(nameField.closest('[data-kind="field"]')).toBeInTheDocument()
   })
 
+  it('renders the field fullWidth so it fits inside the 186px-wide menu card, not the fixed 240px (KAN-492)', async () => {
+    const user = userEvent.setup()
+    renderSwitcher()
+    await user.click(await screen.findByRole('button', { name: /life/ }))
+    await user.click(screen.getByRole('menuitem', { name: /rename & icon/ }))
+
+    const nameField = screen.getByRole('textbox', { name: 'pond name' })
+    const fieldPart = nameField.closest('[data-part="field"]')
+    expect(fieldPart).toHaveClass('w-full')
+    expect(fieldPart).not.toHaveClass('w-[240px]')
+  })
+
   it('caps the name field at POND_NAME_MAX on a long paste (KAN-492)', async () => {
     const user = userEvent.setup()
     renderSwitcher()

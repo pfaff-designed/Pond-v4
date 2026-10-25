@@ -287,6 +287,7 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
               >
                 <PondControl
                   kind="field"
+                  fullWidth
                   ref={nameInputRef}
                   label={null}
                   aria-label="pond name"
