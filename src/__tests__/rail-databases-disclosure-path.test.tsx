@@ -70,6 +70,7 @@ const PROVIDER_VALUE: PondContextValue = {
   loading: false,
   reload: () => {},
   addPond: () => {},
+  patchPond: () => {},
 }
 
 /** A fresh `QueryClient` per mount — the pages cache, not the rail's own

@@ -86,6 +86,7 @@ const PROVIDER_VALUE: PondContextValue = {
   loading: false,
   reload: () => {},
   addPond: () => {},
+  patchPond: () => {},
 }
 
 /** Re-renders on `push()`, the one thing Next's real router does that the mock above cannot. */
