@@ -446,7 +446,7 @@ describe('Return after a block, then `/`, lists what the `/` menu does', () => {
   }
 
   const returnAfterTheTableThenSlash = async () => {
-    await screen.findAllByRole('button', { name: 'Block menu' })
+    await screen.findAllByRole('button', { name: 'drag to move' })
     const table = document.getElementById('block-b-table')!
     table.focus()
     fireEvent.keyDown(table, { key: 'Enter' })
