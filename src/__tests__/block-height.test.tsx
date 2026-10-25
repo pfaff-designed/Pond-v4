@@ -239,7 +239,7 @@ describe('height strips', () => {
   it('a reorder drag takes the strips off the page', () => {
     renderCanvas([table])
     const handle = within(document.getElementById('block-b-table')!).getByRole('button', {
-      name: /block menu/i,
+      name: /drag to move/i,
     })
     fireEvent.pointerDown(handle, { clientX: 0, clientY: 0, pointerId: 1 })
     fireEvent.dragStart(document.getElementById('block-b-table')!)
@@ -251,9 +251,7 @@ describe('height strips', () => {
   it('the block menu offers fit height only once a height is set, and clears it', async () => {
     const user = userEvent.setup()
     const { onChange } = renderCanvas([{ ...table, height: 280 }])
-    await user.click(
-      within(document.getElementById('block-b-table')!).getByRole('button', { name: /block menu/i })
-    )
+    fireEvent.contextMenu(document.getElementById('block-b-table')!)
     const menu = await screen.findByRole('menu', { name: /block menu/i })
     await user.click(within(menu).getByRole('menuitem', { name: 'fit height' }))
     expect(onChange.mock.calls[0][0][0]).not.toHaveProperty('height')

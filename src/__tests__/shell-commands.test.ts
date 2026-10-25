@@ -1,10 +1,12 @@
 /**
  * `isDeleteBlockChord` (⌘⌫ / Ctrl+⌫), `isMovePageChord` (⌘⇧P / Ctrl+Shift+P),
- * `isGoToParentChord` (⌘⇧↑ / Ctrl+Shift+↑), `isRailFocusChord` (⌘⇧\ / Ctrl+Shift+\)
- * and `isEditableField` as pure units, independent of any call site.
+ * `isGoToParentChord` (⌘⇧↑ / Ctrl+Shift+↑), `isRailFocusChord` (⌘⇧\ / Ctrl+Shift+\),
+ * `isContextMenuKey` (⇧F10 / ContextMenu) and `isEditableField` as pure units,
+ * independent of any call site.
  */
 
 import {
+  isContextMenuKey,
   isDeleteBlockChord,
   isEditableField,
   isGoToParentChord,
@@ -67,7 +69,8 @@ describe('isDeleteBlockChord — ⌘⌫ on a Mac, Ctrl+⌫ everywhere else', () 
   })
 })
 
-const pKeyDown = (init: Partial<KeyboardEventInit>) => new KeyboardEvent('keydown', { key: 'p', ...init })
+const pKeyDown = (init: Partial<KeyboardEventInit>) =>
+  new KeyboardEvent('keydown', { key: 'p', ...init })
 
 describe('isMovePageChord — ⌘⇧P on a Mac, Ctrl+Shift+P everywhere else', () => {
   it('does not match a plain p', () => {
@@ -106,6 +109,39 @@ describe('isMovePageChord — ⌘⇧P on a Mac, Ctrl+Shift+P everywhere else', (
   })
 })
 
+const f10KeyDown = (init: Partial<KeyboardEventInit>) =>
+  new KeyboardEvent('keydown', { key: 'F10', ...init })
+const contextMenuKeyDown = (init: Partial<KeyboardEventInit>) =>
+  new KeyboardEvent('keydown', { key: 'ContextMenu', ...init })
+
+describe('isContextMenuKey — ⇧F10 or the ContextMenu key, same on every platform', () => {
+  it('matches ⇧F10', () => {
+    expect(isContextMenuKey(f10KeyDown({ shiftKey: true }))).toBe(true)
+  })
+
+  it('does not match a bare F10, with no Shift', () => {
+    expect(isContextMenuKey(f10KeyDown({}))).toBe(false)
+  })
+
+  it('matches a bare ContextMenu key press', () => {
+    expect(isContextMenuKey(contextMenuKeyDown({}))).toBe(true)
+  })
+
+  it('does not match ContextMenu with Shift held', () => {
+    expect(isContextMenuKey(contextMenuKeyDown({ shiftKey: true }))).toBe(false)
+  })
+
+  it('does not match ⇧F10 with Alt also held', () => {
+    expect(isContextMenuKey(f10KeyDown({ shiftKey: true, altKey: true }))).toBe(false)
+  })
+
+  it('does not match a key other than F10 or ContextMenu', () => {
+    expect(isContextMenuKey(new KeyboardEvent('keydown', { key: 'F9', shiftKey: true }))).toBe(
+      false
+    )
+  })
+})
+
 const upKeyDown = (init: Partial<KeyboardEventInit>) =>
   new KeyboardEvent('keydown', { key: 'ArrowUp', ...init })
 
@@ -122,7 +158,9 @@ describe('isGoToParentChord — ⌘⇧↑ on a Mac, Ctrl+Shift+↑ everywhere el
 
   it('does not match with Alt held', () => {
     onPlatform('MacIntel')
-    expect(isGoToParentChord(upKeyDown({ metaKey: true, shiftKey: true, altKey: true }))).toBe(false)
+    expect(isGoToParentChord(upKeyDown({ metaKey: true, shiftKey: true, altKey: true }))).toBe(
+      false
+    )
   })
 
   it('does not match ⌘↑ alone, with no shift', () => {
@@ -160,16 +198,16 @@ describe('isRailFocusChord — ⌘⇧\\ on a Mac, Ctrl+Shift+\\ everywhere else'
 
   it('does not match ⌘\\ alone, with no shift (already isMinimizeRailChord)', () => {
     onPlatform('MacIntel')
-    expect(
-      isRailFocusChord(backslashKeyDown({ metaKey: true, key: '\\', shiftKey: false }))
-    ).toBe(false)
+    expect(isRailFocusChord(backslashKeyDown({ metaKey: true, key: '\\', shiftKey: false }))).toBe(
+      false
+    )
   })
 
   it('does not match with Alt held', () => {
     onPlatform('MacIntel')
-    expect(isRailFocusChord(backslashKeyDown({ metaKey: true, shiftKey: true, altKey: true }))).toBe(
-      false
-    )
+    expect(
+      isRailFocusChord(backslashKeyDown({ metaKey: true, shiftKey: true, altKey: true }))
+    ).toBe(false)
   })
 
   it('does not match Ctrl+Shift+\\ on a Mac (off-platform modifier)', () => {

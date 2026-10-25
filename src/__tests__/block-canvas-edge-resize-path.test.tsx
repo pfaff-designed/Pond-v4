@@ -8,7 +8,6 @@
 
 import React from 'react'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BlockCanvas, type BlockCanvasProps } from '@/components/organisms/BlockCanvas'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
@@ -78,8 +77,6 @@ function renderCanvas(
 
 const blockRoot = (blockId: string) => document.getElementById(`block-${blockId}`)!
 const sizingDiv = (blockId: string) => blockRoot(blockId).parentElement as HTMLElement
-const handleOf = (blockId: string) =>
-  within(blockRoot(blockId)).getByRole('button', { name: /block menu/i })
 
 function edgeHandle(blockId: string, side: 'left' | 'right'): HTMLElement | null {
   return sizingDiv(blockId).querySelector(`[data-testid="block-edge-handle"][data-side="${side}"]`)
@@ -238,11 +235,10 @@ describe('PATH_STEP 9: Esc mid-drag cancels with no write', () => {
 
 describe('PATH_STEP 11: the width menu shows "custom · N%" for the resized calendar block', () => {
   it('reads the custom note once a free width is set', async () => {
-    const user = userEvent.setup()
     const resized: Block = { ...calendar, width: 46 }
     renderCanvas([resized, text], () => {})
 
-    await user.click(handleOf('b-cal'))
+    fireEvent.contextMenu(blockRoot('b-cal'))
 
     const menu = await screen.findByRole('menu', { name: /block menu/i })
     expect(within(menu).getByText('custom · 46%')).toBeInTheDocument()
