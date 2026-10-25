@@ -408,6 +408,27 @@ function focusTextBlockSoon(id: string, at: 'start' | 'end') {
   })
 }
 
+/**
+ * Same mount-race retry as `focusTextBlockSoon`, for a non-text block: its
+ * frame only takes a tabIndex, never typed keys, so the caret belongs on its
+ * first editable descendant (an `input`/`textarea`/`contenteditable`, e.g. a
+ * `list` template's lone todo item) — falling back to the frame only when it
+ * has none.
+ */
+function focusBlockFieldSoon(id: string) {
+  const focusOnce = () => {
+    const frame = document.getElementById(blockDomId(id))
+    const editableField = frame?.querySelector<HTMLElement>(
+      'input, textarea, [contenteditable="true"]'
+    )
+    const target = editableField ?? frame
+    target?.focus()
+    return target !== null && target !== undefined
+  }
+  if (focusOnce()) return
+  requestAnimationFrame(focusOnce)
+}
+
 export interface BlockCanvasProps {
   /** The blocks to render — controlled by the caller. */
   blocks: Block[]
@@ -1900,7 +1921,36 @@ export function BlockCanvas({
     // `onStructuralWrite`/`onChange` already ran inside `persistBlocksAsOwnEdit`,
     // ahead of the schema/props writes above — this apply's own blocks are
     // already the caller's baseline by the time those (independent) writes land.
-    focusPageTitle()
+    // The caret belongs in the template's first line, not the title (KAN-499) —
+    // `focusTextBlockSoon` for text, else `focusBlockFieldSoon` for a non-text
+    // block (the frame itself only takes a tabIndex, not typed keys — a
+    // `list` template's lone todo item needs its own input). The props write
+    // just above is awaited, so a person who has already moved the caret while it
+    // focusing, not before the await, since that's the only moment that
+    // matters. No "already inside the first block" exemption: `focusTextBlock`
+    // (`src/lib/modules/text/focus.ts`) calls `editor.commands.focus('start')`,
+    // which resets the selection even on an editor that already has focus, so
+    // a person who typed into the (mount-autofocused) first line while this
+    // was in flight would otherwise have their own caret position overwritten.
+    // An unwritten first line's mount-time autofocus has already run by now,
+    // so `document.body` still holding focus means nobody has touched the
+    // page at all — the only case this call needs to cover.
+    const first = applied.blocks[0]
+    const activeElement = document.activeElement
+    const caretMovedElsewhere = activeElement !== null && activeElement !== document.body
+    // `templateBlocksFrom` can strip every block (a `yours` template that is
+    // only a page-link, never carried) — there is no first line to land in, so
+    // fall back to the title, the safest state (AGENTS.md, crash early).
+    if (!first) {
+      if (!caretMovedElsewhere) focusPageTitle()
+      return
+    }
+    if (caretMovedElsewhere) return
+    if (first.type === 'text') {
+      focusTextBlockSoon(first.id, 'start')
+      return
+    }
+    focusBlockFieldSoon(first.id)
   }
 
   const makePageFromTemplate = async (pick: TemplatePick, target: SlashTarget, index: number) => {
@@ -2761,6 +2811,7 @@ export function BlockCanvas({
           // from its own focus, so this one must not draw a second.
           showGhostText={!trailingLineIsEmptyText && !editingText}
           onHoverChange={setTrailingGapHovered}
+          leadGap={blocks.length > 0}
         />
       )}
 
