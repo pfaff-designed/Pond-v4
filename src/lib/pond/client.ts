@@ -104,30 +104,41 @@ export interface DeletedPond extends Pond {
 type DeletedPondRow = PondRow & { deleted_at: string | null }
 
 /** Soft-delete a pond (KAN-493): `s6m7`'s `delete…`, after its typed-name
- *  confirm. Owner-scoped by RLS (0018's "ponds: update own" policy). */
+ *  confirm. Owner-scoped by RLS (0018's "ponds: update own" policy) — an
+ *  update RLS filters out touches zero rows and reports no error, so (like
+ *  `updatePond`) this reads the row back with `.select('id').single()` and
+ *  throws when none comes back, rather than the caller reporting success
+ *  for a write that never happened. */
 export async function softDeletePond(pondId: string): Promise<void> {
   const supabase = createClient()
   // Cast as `createPond` does above: `Database` can't infer an Update shape
   // for a quoted-identifier table either.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase as any)
+  const { data, error } = await (supabase as any)
     .from('ponds')
     .update({ deleted_at: new Date().toISOString() })
     .eq('id', pondId)
+    .select('id')
+    .single()
   if (error) throw error
+  if (!data) throw new Error('softDeletePond: no row changed')
 }
 
 /** Clear a pond's `deleted_at` (KAN-493): settings › ponds › deleted's
  *  `restore`. Keeps `order`, unchanged by the soft delete, so the pond
- *  reappears in the switcher at its old position. */
+ *  reappears in the switcher at its old position. Same zero-rows-changed
+ *  check as `softDeletePond`, above. */
 export async function restorePond(pondId: string): Promise<void> {
   const supabase = createClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase as any)
+  const { data, error } = await (supabase as any)
     .from('ponds')
     .update({ deleted_at: null })
     .eq('id', pondId)
+    .select('id')
+    .single()
   if (error) throw error
+  if (!data) throw new Error('restorePond: no row changed')
 }
 
 /** Every soft-deleted pond the signed-in person owns, newest-deleted first —

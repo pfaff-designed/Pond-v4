@@ -8,7 +8,7 @@
  */
 
 import React from 'react'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor, within, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { PondSettingsPage } from '@/components/organisms/PondSettingsPage'
 import { PondProvider } from '@/lib/pond/context'
@@ -159,6 +159,39 @@ describe('PondSettingsPage', () => {
     const label = pondGoesLabel(ARCHIVE.deletedAt, new Date())
     expect(within(row).getByText(`Archive · ${label}`)).toBeInTheDocument()
     expect(within(row).getByRole('button', { name: 'restore' })).toBeInTheDocument()
+  })
+
+  it('the double-click guard sends exactly one softDeletePond write (AUDIT G9)', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByText('Studio')
+
+    await user.click(within(rowFor('Studio')).getByRole('button', { name: 'delete…' }))
+    await user.type(screen.getByRole('textbox'), 'Studio')
+    const confirm = screen.getByRole('button', { name: 'Delete' })
+    // Two rapid clicks on the SAME dialog render, before the `deletingId`
+    // state that disables it has a chance to re-render — the synchronous
+    // `inFlight` ref is what actually blocks the second one.
+    fireEvent.click(confirm)
+    fireEvent.click(confirm)
+
+    await waitFor(() => expect(screen.queryByText('Studio')).not.toBeInTheDocument())
+    expect(softDeletePond).toHaveBeenCalledTimes(1)
+  })
+
+  it('deleting the last live pond opens the new-pond window', async () => {
+    const user = userEvent.setup()
+    ;(listPonds as jest.Mock).mockResolvedValue([STUDIO])
+    renderPage()
+    await screen.findByText('Studio')
+
+    await user.click(within(rowFor('Studio')).getByRole('button', { name: 'delete…' }))
+    await user.type(screen.getByRole('textbox'), 'Studio')
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
+
+    await waitFor(() => expect(softDeletePond).toHaveBeenCalledWith('p-studio'))
+    expect(await screen.findByRole('dialog', { name: 'New pond' })).toBeInTheDocument()
+    expect(push).not.toHaveBeenCalled()
   })
 
   it('restore calls restorePond, drops the deleted row, and the pond reappears live', async () => {

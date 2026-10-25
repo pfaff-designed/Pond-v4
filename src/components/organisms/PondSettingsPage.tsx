@@ -128,8 +128,16 @@ export function PondSettingsPage() {
       .then((rows) => {
         if (!cancelled) setDeletedPonds(rows)
       })
-      .catch(() => {
-        if (!cancelled) setDeletedPonds([])
+      .catch((err) => {
+        // A failed fetch here used to settle on an empty list with no other
+        // signal — read as "nothing is deleted" when it might mean "a pond
+        // IS waiting out its 30 days and this page just can't say so right
+        // now". Notify, so the person doesn't conclude it's gone for good.
+        console.error(err)
+        if (!cancelled) {
+          setDeletedPonds([])
+          requestNotify({ message: 'Could not load deleted ponds' })
+        }
       })
     return () => {
       cancelled = true

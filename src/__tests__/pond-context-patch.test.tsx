@@ -29,7 +29,7 @@ const NOISE = { id: 'p-noise', name: 'make noise', glyph: null, theme: 'ink', or
 let capturedPatchPond: PondContextValue['patchPond'] | null = null
 
 function Probe() {
-  const { pond, ponds, patchPond, removePond } = usePond()
+  const { pond, ponds, patchPond, removePond, addPond } = usePond()
   useEffect(() => {
     capturedPatchPond = patchPond
   }, [patchPond])
@@ -39,12 +39,20 @@ function Probe() {
       <div data-testid="active">{pond ? `${pond.name}:${pond.glyph ?? ''}` : 'none'}</div>
       <div data-testid="other">{other ? `${other.name}:${other.glyph ?? ''}` : 'none'}</div>
       <div data-testid="count">{ponds.length}</div>
+      <div data-testid="order">{ponds.map((p) => p.name).join(',')}</div>
       <button
         onClick={() => pond && patchPond(pond.id, { name: 'Studio', glyph: 'studio-01' })}
       >
         patch
       </button>
       <button onClick={() => other && removePond(other.id)}>remove</button>
+      <button
+        onClick={() =>
+          addPond({ id: 'p-studio', name: 'Studio', glyph: null, theme: 'paper', order: 1 })
+        }
+      >
+        restore-studio
+      </button>
     </div>
   )
 }
@@ -101,5 +109,27 @@ describe('PondProvider patchPond', () => {
     await waitFor(() => expect(screen.getByTestId('count')).toHaveTextContent('1'))
     expect(screen.getByTestId('active')).toHaveTextContent('life:waves-02')
     expect(screen.getByTestId('other')).toHaveTextContent('none')
+  })
+
+  it('addPond reinserts a restored pond at its old order, not appended at the end (KAN-493)', async () => {
+    const STUDIO = { id: 'p-studio', name: 'Studio', glyph: null, theme: 'paper', order: 1 }
+    const WORK = { id: 'p-work', name: 'Work', glyph: null, theme: 'paper', order: 2 }
+    ;(listPonds as jest.Mock).mockResolvedValueOnce([LIFE, STUDIO, WORK])
+
+    render(
+      <PondProvider>
+        <Probe />
+      </PondProvider>
+    )
+    await waitFor(() => expect(screen.getByTestId('order')).toHaveTextContent('life,Studio,Work'))
+
+    // Middle delete: drops Studio (order 1), leaving life, Work.
+    fireEvent.click(screen.getByText('remove'))
+    await waitFor(() => expect(screen.getByTestId('order')).toHaveTextContent('life,Work'))
+
+    // Restore hands the pond's ORIGINAL order (1) straight to `addPond` — a
+    // plain append would read `life,Work,Studio` until the next refetch.
+    fireEvent.click(screen.getByText('restore-studio'))
+    await waitFor(() => expect(screen.getByTestId('order')).toHaveTextContent('life,Studio,Work'))
   })
 })

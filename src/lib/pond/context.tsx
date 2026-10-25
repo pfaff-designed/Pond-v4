@@ -85,7 +85,17 @@ export function PondProvider({ children }: { children: React.ReactNode }) {
   const reload = useCallback(() => setNonce((n) => n + 1), [])
 
   const addPond = useCallback((pond: Pond) => {
-    setPonds((rows) => (rows.some((r) => r.id === pond.id) ? rows : [...rows, pond]))
+    // Sorted insert, not append: a restore (KAN-493) hands back a pond whose
+    // `order` sits BEFORE rows already in the list, and the switcher must show
+    // it at that old position, not at the end — the same ascending-by-`order`
+    // rule `listPonds`' own `.order('order')` already applies server-side. A
+    // freshly created pond's `order` is already the list's max (`createPond`),
+    // so for that caller a sorted insert and an append land in the same place.
+    setPonds((rows) =>
+      rows.some((r) => r.id === pond.id)
+        ? rows
+        : [...rows, pond].sort((a, b) => a.order - b.order)
+    )
   }, [])
 
   const patchPond = useCallback((pondId: string, patch: Partial<Pick<Pond, 'name' | 'glyph' | 'favouritePageIds'>>) => {
