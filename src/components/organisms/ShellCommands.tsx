@@ -50,6 +50,8 @@ import {
 } from '@/lib/terminal-focus'
 import {
   isPaletteChord,
+  isEditableField,
+  isGoToParentChord,
   isMinimizeRailChord,
   isMovePageChord,
   isRedoChord,
@@ -223,12 +225,12 @@ export function ShellCommands() {
   )
 
   // Before the open page has published its path, the pill reads the pond's root.
-  const path = published ?? {
-    glyph: pond?.glyph ?? LIFE_GLYPH,
-    trail: [],
-    current: pondName,
-    role: null,
-  }
+  // Memoized so the keydown effect below (KAN-476) can depend on it without
+  // re-subscribing on every render while nothing has actually changed.
+  const path = useMemo(
+    () => published ?? { glyph: pond?.glyph ?? LIFE_GLYPH, trail: [], current: pondName, role: null },
+    [published, pond?.glyph, pondName]
+  )
 
   // KAN-388: the active row arrowed/typed to in ⌘K warms its page before ↵ —
   // but only a REAL page row. The move picker's synthetic root row
@@ -368,6 +370,23 @@ export function ShellCommands() {
         }
         return
       }
+      // ⌘⇧↑ opens the open page's parent (KAN-476), the same ancestor crumb
+      // the breadcrumb's own last link navigates to. Left alone inside an
+      // editable field — there the key keeps its native "select to
+      // paragraph start" meaning, as in Linear and Notion.
+      if (isGoToParentChord(e)) {
+        const targetEl = e.target instanceof Element ? e.target : null
+        if (!isEditableField(targetEl) && !isEditableField(document.activeElement)) {
+          const parent = path.trail[path.trail.length - 1]
+          if (parent?.to) {
+            e.preventDefault()
+            e.stopPropagation()
+            if (parent.to.kind === 'home') openWorkspaceUrl(workspaceUrl(null), router)
+            else openWorkspaceUrl(workspaceUrl(parent.to.node), router)
+          }
+        }
+        return
+      }
       // "From anywhere" (2f), text fields included — the composer's own input is
       // where ⌘J is most often pressed. Capture phase so an editor cannot swallow it.
       if (isComposerToggleKey(e)) {
@@ -435,6 +454,8 @@ export function ShellCommands() {
     paletteOpen,
     pages,
     currentNodeId,
+    path,
+    router,
   ])
 
   const handleOpenChange = useCallback(
