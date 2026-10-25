@@ -32,7 +32,7 @@ checked_out_branches="$(git worktree list --porcelain | awk '/^branch /{sub("ref
 echo "— branches compared against origin/main —"
 gone=0
 for b in $(git branch --format='%(refname:short)'); do
-  if grep -qxF "$b" <<<"$checked_out_branches"; then
+  if [ "$b" = "main" ] || grep -qxF "$b" <<<"$checked_out_branches"; then
     echo "  KEPT (checked out): $b"
     continue
   fi
@@ -41,6 +41,7 @@ for b in $(git branch --format='%(refname:short)'); do
   if [ "$ahead" = "0" ]; then
     if [ "$DRY_RUN" = "1" ]; then
       echo "  would delete (merged into origin/main): $b"
+      gone=$((gone+1))
     else
       git branch -d "$b" && gone=$((gone+1))
     fi
@@ -51,6 +52,7 @@ for b in $(git branch --format='%(refname:short)'); do
   if [ -n "$pr" ]; then
     if [ "$DRY_RUN" = "1" ]; then
       echo "  would delete (squash-merged as PR #$pr): $b"
+      gone=$((gone+1))
     else
       echo "  $b -> squash-merged as PR #$pr"
       git branch -D "$b" && gone=$((gone+1))

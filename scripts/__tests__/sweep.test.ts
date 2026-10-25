@@ -102,7 +102,13 @@ describe('scripts/sweep.sh', () => {
     expect(dirtyContent()).toBe(originalContent)
     expect(hasBranch('merged-branch')).toBe(true)
     expect(hasBranch('unmerged-branch')).toBe(true)
+    expect(hasBranch('main')).toBe(true)
     expect(result.stdout).toMatch(/would delete.*merged-branch/)
+
+    const listedCount = (result.stdout.match(/^\s*would delete \(/gm) ?? []).length
+    const summaryMatch = result.stdout.match(/would delete (\d+) branch\(es\)/)
+    expect(summaryMatch).not.toBeNull()
+    expect(Number(summaryMatch?.[1])).toBe(listedCount)
   })
 
   it('a real run deletes the merged branch, keeps the unmerged one, and leaves the dirty checkout untouched', () => {
@@ -116,5 +122,6 @@ describe('scripts/sweep.sh', () => {
     expect(dirtyContent()).toBe(originalContent)
     expect(hasBranch('merged-branch')).toBe(false)
     expect(hasBranch('unmerged-branch')).toBe(true)
+    expect(hasBranch('main')).toBe(true)
   })
 })
