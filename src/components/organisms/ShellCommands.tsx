@@ -664,7 +664,7 @@ export function ShellCommands() {
         return
       }
       if (item.kind === 'pond') {
-        router.push(pondHref(item.id, ponds.find((p) => p.id === item.id)?.lastPageId))
+        openWorkspaceUrl(pondHref(item.id, ponds.find((p) => p.id === item.id)?.lastPageId), router)
         return
       }
       if (item.kind === 'record') {
