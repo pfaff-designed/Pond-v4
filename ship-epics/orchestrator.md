@@ -154,6 +154,8 @@ pkill -f "next dev -p PORT"; pkill -f "serve wayfinder/design_handoff_pond -l $(
 
 A failed verification is a fix round (step 6), then verify again. A verifier that reports `signed out` is not a fix round: return `stopped` with `reason: browser slot N signed out`, so the conductor can sign the slot in.
 
+A verifier that stalls twice is stopped, not retried (`failsafe.md`, "If you supervise"): follow `harness.md`'s `STOP` route for a verifier — if your own `STOP` is refused `owned by`, escalate to your supervisor and let it stop the child. A stopped verifier is not a verification with no result: `verifier.md` writes `RESULT`'s verdict before any cleanup, so read `RESULT` for the verdict it already wrote rather than treating `stopped` as `fail` or re-running it blind. That verdict drives the next step exactly as a normal one would — `fail` is a fix round (6), `pass` needs no re-verify. For the re-verify after that fix round, if your slot's browser is still held by the stopped verifier's process, fall back to a free slot per `harness.md` rather than wait on it.
+
 ### 8. Migrations
 
 If the branch adds anything under `supabase/migrations/`: run `npm run test:pglite` from the worktree, push the branch, open the PR (step 9), move the ticket to In Review — and **stop before merging**. Return `needs-user` with the migration file name and its dry-run risk notes. Only the user's "push NNNN" in the conductor's chat moves it on.
