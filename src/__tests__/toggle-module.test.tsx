@@ -119,13 +119,13 @@ describe('ToggleView', () => {
   })
 })
 
-describe('ToggleView — editable: summary and body as two hosted text editors', () => {
-  /** A host that keeps the block's state, as the page does. */
-  const StatefulToggle = ({ data }: { data: ToggleBlock }) => {
-    const [state, setState] = useState(data)
-    return <ToggleView data={state} editable onChange={setState} />
-  }
+/** A host that keeps the block's state, as the page does. */
+const StatefulToggle = ({ data }: { data: ToggleBlock }) => {
+  const [state, setState] = useState(data)
+  return <ToggleView data={state} editable onChange={setState} />
+}
 
+describe('ToggleView — editable: summary and body as two hosted text editors', () => {
   it('typing in the summary updates content', async () => {
     render(<StatefulToggle data={{ ...full, folded: false }} />)
     const [summary] = await findAllTextBlocks()
@@ -169,5 +169,42 @@ describe('ToggleView — editable: summary and body as two hosted text editors',
     const [summary, body] = await findAllTextBlocks()
     await waitFor(() => expect(textEditorOf(summary).isFocused).toBe(true))
     expect(textEditorOf(body).isFocused).toBe(false)
+  })
+})
+
+describe('ToggleView — Enter (KAN-480 build item 5)', () => {
+  it('at the end of the summary opens the body, caret there, the summary unchanged', async () => {
+    render(<StatefulToggle data={{ id: 't1', type: 'toggle', content: 'packing list' }} />)
+    const [summary] = await findAllTextBlocks()
+    act(() => {
+      textEditorOf(summary).commands.focus('end')
+    })
+    fireEvent.keyDown(summary, { key: 'Enter' })
+    const [, body] = await findAllTextBlocks()
+    await waitFor(() => expect(textEditorOf(body).isFocused).toBe(true))
+    expect(screen.getByText('packing list')).toBeInTheDocument()
+  })
+
+  it('in the body adds a second body line — one block on the page, not a new one', async () => {
+    const outerStepOut = jest.fn()
+    render(
+      <BlockRowProvider value={{ selected: false, stepOut: outerStepOut }}>
+        <StatefulToggle
+          data={{ id: 't1', type: 'toggle', content: 'packing list', body: 'passport' }}
+        />
+      </BlockRowProvider>
+    )
+    const [, body] = await findAllTextBlocks()
+    act(() => {
+      textEditorOf(body).commands.focus('end')
+    })
+    fireEvent.keyDown(body, { key: 'Enter' })
+    act(() => {
+      textEditorOf(body).commands.insertContent('visa')
+    })
+    await waitFor(() => expect(screen.getByText('visa')).toBeInTheDocument())
+    expect(screen.getByText('passport')).toBeInTheDocument()
+    expect(body.querySelectorAll('p')).toHaveLength(2)
+    expect(outerStepOut).not.toHaveBeenCalled()
   })
 })

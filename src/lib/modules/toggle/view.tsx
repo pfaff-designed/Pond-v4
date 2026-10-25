@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { Caret } from '@/components/atoms/Caret'
 import type { ModuleViewProps } from '../types'
@@ -7,7 +8,8 @@ import type { ToggleBlock } from './schema'
 import { StaticProse } from '../text/static-prose'
 import { TextView } from '../text/view'
 import type { TextBlock } from '../text/schema'
-import { BlockRowProvider, type BlockRowValue } from '../block-row-context'
+import { editorForBlock } from '../text/active-editor'
+import { BlockRowProvider, useBlockRow, type BlockRowValue } from '../block-row-context'
 import { SlashLineContext } from '../text/slash-line'
 
 /**
@@ -19,14 +21,24 @@ import { SlashLineContext } from '../text/slash-line'
 const TOGGLE_BODY_INDENT = 15
 
 /**
- * The summary and body editors' own row context (KAN-480, build item 4 of 7):
- * every `stepOut` call from a `TextEditor`'s Enter key stops HERE, not at the
- * outer canvas row it is nested inside — `/toggle`'s summary/body are the
- * block's own content, not two more page blocks. Enter's real behaviour
- * (split the summary into the body, add a body line) is build item 5's job;
- * until then it is simply absorbed.
+ * The body's own row (KAN-480, build item 5): `ownEnter` makes its Enter
+ * ProseMirror's own (a new paragraph inside the body), never a `stepOut`
+ * split — a toggle's body is one field of several lines, not a run of page
+ * blocks. `stepOut` is never reached with `ownEnter` set, so it stays a no-op.
  */
-const TOGGLE_FIELD_ROW: BlockRowValue = { selected: false, stepOut: () => {} }
+const TOGGLE_BODY_ROW: BlockRowValue = { selected: false, stepOut: () => {}, ownEnter: true }
+
+/**
+ * `after`, followed by the existing body — the shape a `stepOut` split from
+ * the summary leaves behind. Either half absent collapses to the other, so
+ * splitting at the summary's own end (`after` is `''`) leaves the body
+ * untouched rather than gaining a blank line above it.
+ */
+const joinBody = (after: string, body: string | undefined): string => {
+  const rest = body ?? ''
+  if (after === '') return rest
+  return rest === '' ? after : `${after}\n\n${rest}`
+}
 
 /**
  * A hosted `TextView`, isolated from the page's own row/slash plumbing: its own
@@ -39,14 +51,16 @@ function ToggleField({
   block,
   onChange,
   autofocus,
+  row,
 }: {
   block: TextBlock
   onChange: (next: TextBlock) => void
   autofocus?: boolean
+  row: BlockRowValue
 }) {
   return (
     <SlashLineContext.Provider value={null}>
-      <BlockRowProvider value={TOGGLE_FIELD_ROW}>
+      <BlockRowProvider value={row}>
         <TextView data={block} editable onChange={onChange} autofocus={autofocus} />
       </BlockRowProvider>
     </SlashLineContext.Provider>
@@ -57,11 +71,47 @@ function ToggleField({
  * The toggle block (KAN-480 slice 1). Read-only (`editable` absent/false) is
  * static prose both ways, folded by `data.folded` alone (build item 3). Editable
  * hosts the summary and body as two `TextView`s (build item 4) — their
- * `onChange` maps straight back into this block's `content`/`body`; the ▸ click
- * and Enter's split/continue behaviour land in later items of this ticket.
+ * `onChange` maps straight back into this block's `content`/`body`.
+ *
+ * Enter on the summary (build item 5) splits it through its own `stepOut`:
+ * 'below' (the caret anywhere but the start) commits the text before the
+ * caret as the summary, joins the text after it onto the body, unfolds, and
+ * focuses the body — Notion's own "Enter opens the child line" — while
+ * 'above' (nothing before the caret) passes straight to the OUTER row's
+ * `stepOut`, the same empty-block-above every other row's Enter makes. The
+ * body's own Enter never reaches here at all: `TOGGLE_BODY_ROW`'s `ownEnter`
+ * keeps it ProseMirror's, a new line in the one body field.
  */
 export function ToggleView({ data, editable, onChange, autofocus }: ModuleViewProps<ToggleBlock>) {
   const folded = data.folded ?? false
+  const { stepOut: outerStepOut } = useBlockRow()
+  const [focusBodyToken, setFocusBodyToken] = useState(0)
+
+  useEffect(() => {
+    if (focusBodyToken === 0) return
+    editorForBlock(`${data.id}-body`)?.commands.focus('start')
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fires once per token, not per id
+  }, [focusBodyToken])
+
+  const summaryRow: BlockRowValue = {
+    selected: false,
+    stepOut: (patch, content, where = 'below') => {
+      if (where === 'above') {
+        const summary = patch as TextBlock | undefined
+        outerStepOut(summary ? { ...data, content: summary.content } : undefined, content, where)
+        return
+      }
+      const summary = patch as TextBlock
+      onChange?.({
+        ...data,
+        content: summary.content,
+        body: joinBody(content ?? '', data.body),
+        folded: false,
+      })
+      setFocusBodyToken((token) => token + 1)
+    },
+  }
+
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-start gap-1.5">
@@ -78,6 +128,7 @@ export function ToggleView({ data, editable, onChange, autofocus }: ModuleViewPr
               block={{ id: `${data.id}-summary`, type: 'text', content: data.content }}
               onChange={(next) => onChange?.({ ...data, content: next.content })}
               autofocus={autofocus}
+              row={summaryRow}
             />
           ) : (
             <StaticProse content={data.content} />
@@ -91,6 +142,7 @@ export function ToggleView({ data, editable, onChange, autofocus }: ModuleViewPr
               block={{ id: `${data.id}-body`, type: 'text', content: data.body ?? '' }}
               onChange={(next) => onChange?.({ ...data, body: next.content })}
               autofocus={false}
+              row={TOGGLE_BODY_ROW}
             />
           </div>
         ) : (
