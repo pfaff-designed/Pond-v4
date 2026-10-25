@@ -65,6 +65,14 @@ type StackStep = HistoryStep | PendingHistoryStep
 
 const isPending = (step: StackStep): step is PendingHistoryStep => !Array.isArray(step.recordIds)
 
+/** A step's settled shape: `onUndone`/`onRedone` travel with it, `attemptFailed` never does. */
+const settledStep = (step: StackStep, recordIds: readonly string[]): HistoryStep => ({
+  pondId: step.pondId,
+  recordIds,
+  onUndone: step.onUndone,
+  onRedone: step.onRedone,
+})
+
 /**
  * Whether a pending step's `recordIds` had already resolved before THIS press
  * started popping it, set by a `.then()` attached the moment `rememberPending`
@@ -271,12 +279,7 @@ export const createSessionUndo = (
             if (targetHandle === undefined && settledBeforePress) continue
             return { outcome: 'empty' }
           }
-          step = {
-            pondId: taken.pondId,
-            recordIds,
-            onUndone: taken.onUndone,
-            onRedone: taken.onRedone,
-          }
+          step = settledStep(taken, recordIds)
         } else {
           step = taken
         }
@@ -316,12 +319,10 @@ export const createSessionUndo = (
           }
           if (direction === 'redo') {
             // Beneath anything remembered while it ran: those happened after it.
-            const redone: HistoryStep = {
-              pondId,
-              recordIds: result.records.map((r) => r.id),
-              onUndone: step.onUndone,
-              onRedone: step.onRedone,
-            }
+            const redone = settledStep(
+              step,
+              result.records.map((r) => r.id)
+            )
             history.undo.splice(Math.min(undoDepth, history.undo.length), 0, redone)
           }
           notify(history)
