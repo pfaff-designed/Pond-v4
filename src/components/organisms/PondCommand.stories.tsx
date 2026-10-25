@@ -650,6 +650,26 @@ export const ScopedInk: Story = {
   play: async ({ canvasElement }) => assertScoped(canvasElement, INK),
 }
 
+/** Unscoped, no sheet: the `placeholder` prop overrides the input's rest text (KAN-469 pick mode). */
+export const PlaceholderOverride: Story = {
+  name: 'placeholder override',
+  args: { open: true, placeholder: 'move roof to…' },
+  play: async ({ canvasElement }) => {
+    const input = boxOf(canvasElement).querySelector<HTMLInputElement>('input')!
+    await expect(input.placeholder).toBe('move roof to…')
+  },
+}
+
+/** Absent: today's behaviour, unchanged. */
+export const PlaceholderDefault: Story = {
+  name: 'placeholder default',
+  args: { open: true },
+  play: async ({ canvasElement }) => {
+    const input = boxOf(canvasElement).querySelector<HTMLInputElement>('input')!
+    await expect(input.placeholder).toBe('jump to a page, or > for actions')
+  },
+}
+
 // ── ponds ──────────────────────────────────────────────────────────────────────
 
 async function assertPonds(root: HTMLElement, p: Palette) {

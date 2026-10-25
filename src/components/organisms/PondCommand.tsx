@@ -100,6 +100,8 @@ export interface PondCommandProps {
   ask?: boolean
   /** Newest-first visited page ids (KAN-390) — `rankPages`'s recency boost for `pages` and `actions`. */
   visits?: readonly string[]
+  /** Overrides the input's rest placeholder when unscoped and sheet-less. @default 'jump to a page, or > for actions' */
+  placeholder?: string
   /** The query as it changes — how the host learns what to search records for. */
   onQueryChange?: (query: string) => void
   /** The query it first opens with — stories draw the board's frames. */
@@ -175,6 +177,7 @@ export function PondCommand({
   suggested,
   ask = true,
   visits,
+  placeholder,
   onQueryChange,
   defaultQuery = '',
   sheet = null,
@@ -440,7 +443,7 @@ export function PondCommand({
                   ? (shownSheet.placeholder ?? '')
                   : scope
                     ? ''
-                    : 'jump to a page, or > for actions'
+                    : placeholder ?? 'jump to a page, or > for actions'
               }
               className={INPUT}
               // Sheet mode is a plain text field — there is no list to own, so the
