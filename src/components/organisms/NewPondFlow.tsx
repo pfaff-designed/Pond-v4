@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react'
 import { useCreatePond } from '@/lib/pond/use-create-pond'
-import { setMode } from '@/lib/theme/mode'
+import { pondThemeMode, setMode } from '@/lib/theme/mode'
 import { NewPondSheet } from './NewPondSheet'
 
 /**
@@ -43,7 +43,7 @@ export function NewPondFlow({
       onCreate={(name, options) =>
         void create(name, options).then((made) => {
           if (!made) return
-          if (options.theme) setMode(options.theme === 'ink' ? 'dark' : 'light')
+          if (options.theme) setMode(pondThemeMode(options.theme) ?? 'light')
           onClose(true)
         })
       }

@@ -7,10 +7,12 @@
  * and two fixture ponds: PAPER (`theme: 'paper'`, the column default — no
  * chosen theme) and INK (`theme: 'ink'`, explicit).
  *
- * Walks PATH_STEPS from the paper pond: switch to ink via the switcher →
- * dark; switch to paper via the switcher → stays dark (paper has no chosen
- * theme, so the person's mode stands); toggle light via `useMode`; switch to
- * ink again via ⌘K → dark (⌘K applies it too, not just the switcher). Also
+ * Walks PATH_STEPS from the paper pond, as the ticket itself words it: switch
+ * to ink via the switcher → dark; switch to paper (no chosen theme) via the
+ * switcher → the person's own mode, unchanged (their stored light, not
+ * standing on the ink switch) → toggle dark via `useMode` → switch to ink
+ * again via ⌘K → dark (⌘K applies it too, not just the switcher); switch back
+ * to paper → the person's own mode, unchanged (their stored dark). Also
  * confirms `listPonds` never refetches across any switch — a full reload
  * would.
  */
@@ -231,7 +233,7 @@ describe('switching into a pond applies its theme (KAN-503 PATH_STEPS, path test
     jest.mocked(listPonds).mockResolvedValue([PAPER, INK])
   })
 
-  it('switcher: ink → dark; paper → stands dark; toggle → light; ⌘K ink → dark; one listPonds call throughout', async () => {
+  it('switcher: ink → dark; paper → the person\'s own mode, unchanged; toggle; ⌘K ink → dark; paper again → own mode, unchanged; one listPonds call throughout', async () => {
     const user = userEvent.setup()
     renderShell()
 
@@ -244,15 +246,17 @@ describe('switching into a pond applies its theme (KAN-503 PATH_STEPS, path test
     await screen.findByRole('button', { name: /studio/ })
     await waitFor(() => expect(isDark()).toBe(true))
 
-    // Step 2: switch to paper (no chosen theme) via the switcher — stands dark.
+    // Step 2: switch to paper (no chosen theme) via the switcher — the
+    // person's own mode (their stored light) comes back, not standing on
+    // the ink switch.
     await user.click(await screen.findByRole('button', { name: /studio/ }))
     await user.click(await screen.findByRole('menuitem', { name: /life/ }))
     await screen.findByRole('button', { name: /life/ })
-    expect(isDark()).toBe(true)
-
-    // Step 3: the person's own mode toggle — light.
-    await user.click(screen.getByRole('button', { name: /mode: dark/ }))
     await waitFor(() => expect(isDark()).toBe(false))
+
+    // Step 3: the person's own mode toggle — dark, and stored as their choice.
+    await user.click(screen.getByRole('button', { name: /mode: light/ }))
+    await waitFor(() => expect(isDark()).toBe(true))
 
     // Step 4: switch to ink again, this time via ⌘K — proves it applies too.
     fireEvent.keyDown(document, { key: 'k', ctrlKey: true })
@@ -262,6 +266,13 @@ describe('switching into a pond applies its theme (KAN-503 PATH_STEPS, path test
     fireEvent.keyDown(input, { key: 'Enter' })
 
     await screen.findByRole('button', { name: /studio/ })
+    await waitFor(() => expect(isDark()).toBe(true))
+
+    // Step 5: switch back to paper via the switcher — the person's own mode
+    // (now their stored dark, from step 3) comes back again.
+    await user.click(await screen.findByRole('button', { name: /studio/ }))
+    await user.click(await screen.findByRole('menuitem', { name: /life/ }))
+    await screen.findByRole('button', { name: /life/ })
     await waitFor(() => expect(isDark()).toBe(true))
 
     // No full reload anywhere in the walk: the provider fetched ponds once.

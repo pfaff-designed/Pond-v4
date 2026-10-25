@@ -137,15 +137,18 @@ export function PondProvider({ children }: { children: React.ReactNode }) {
     })
   }, [pond?.id, pond?.lastPageId, nodeId])
 
-  // Applies the new pond's theme only when `pond.id` actually changed from a
+  // Applies the pond's theme only when `pond.id` actually changed from a
   // previously resolved (non-null) id — an in-session switch, never the first
-  // pond a mount resolves to. `applyPondTheme` itself is the no-op for every
-  // theme but `'ink'`.
+  // pond a mount resolves to. The ref only ever advances to a non-null id, so
+  // a stale `?pond=` that resolves to null (between two real ponds) can't
+  // erase the last real one and make the next real switch read as a first
+  // load. `applyPondTheme` restores the person's own stored mode for a pond
+  // with no chosen theme, and applies the explicit one otherwise.
   useEffect(() => {
     const currentId = pond?.id ?? null
     const currentTheme = pond?.theme ?? null
     const previousId = previousPondIdRef.current
-    previousPondIdRef.current = currentId
+    if (currentId !== null) previousPondIdRef.current = currentId
     if (previousId !== null && currentId !== null && previousId !== currentId && currentTheme !== null) {
       applyPondTheme(currentTheme)
     }
