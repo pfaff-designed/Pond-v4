@@ -1,11 +1,13 @@
 /**
- * The `toggle` block (KAN-480 slice 1, build item 1) — registration: schema round
- * trip (absent `body`/`folded` read as today's behaviour), both halves of the
+ * The `toggle` block (KAN-480 slice 1, build items 1 and 3) — registration: schema
+ * round trip (absent `body`/`folded` read as today's behaviour), both halves of the
  * two-map contract, serialize, AI-composability (without `folded`), and
- * `blockHoldsContent`. The ▸ fold control, the hosted editors and the path test
- * land in later build items of this ticket.
+ * `blockHoldsContent`; plus `ToggleView`'s read-only render (fold hides the body,
+ * `aria-expanded` tracks `folded`). The ▸ click, the hosted editors and the path
+ * test land in later build items of this ticket.
  */
 
+import { render, screen } from '@testing-library/react'
 import { toggleSchema, toggleDescriptor, type ToggleBlock } from '@/lib/modules/toggle/schema'
 import { ToggleView } from '@/lib/modules/toggle/view'
 import { blockSchema } from '@/lib/modules/content'
@@ -83,5 +85,26 @@ describe('toggle schema + registry facets', () => {
       blockHoldsContent({ id: 't1', type: 'toggle', content: '', body: 'Passport' })
     ).toBe(true)
     expect(blockHoldsContent({ id: 't1', type: 'toggle', content: '', body: '  ' })).toBe(false)
+  })
+})
+
+describe('ToggleView', () => {
+  it('shows the summary and the body when unfolded, aria-expanded true', () => {
+    render(<ToggleView data={{ ...full, folded: false }} />)
+    expect(screen.getByText('Packing list')).toBeInTheDocument()
+    expect(screen.getByText('Passport')).toBeInTheDocument()
+    expect(screen.getByRole('button')).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  it('hides the body when folded, aria-expanded false', () => {
+    render(<ToggleView data={{ ...full, folded: true }} />)
+    expect(screen.getByText('Packing list')).toBeInTheDocument()
+    expect(screen.queryByText('Passport')).not.toBeInTheDocument()
+    expect(screen.getByRole('button')).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('reads an absent folded as unfolded', () => {
+    render(<ToggleView data={bare} />)
+    expect(screen.getByRole('button')).toHaveAttribute('aria-expanded', 'true')
   })
 })
