@@ -4,8 +4,9 @@
  * preview overrides the block's rendered width with no write, release commits
  * once through `setBlockWidth`'s numeric route (one undo entry restores the
  * old width), and Esc cancels with no write. Hidden during a `⋮⋮` block drag
- * (KAN-440) or with `chrome={false}`; a row-sharing block renders no edge
- * handle in this slice (the shared divider is the split-off child ticket).
+ * (KAN-440) or with `chrome={false}`; a row-sharing block mounts a shared
+ * strip at its boundary and the row's two outer strips instead of its own
+ * left/right pair (KAN-505) — pointer wiring for those is a later ticket.
  */
 
 import React from 'react'
@@ -46,11 +47,11 @@ function renderCanvas(
 const blockRoot = (blockId: string) => document.getElementById(`block-${blockId}`)!
 const sizingDiv = (blockId: string) => blockRoot(blockId).parentElement as HTMLElement
 
-function edgeHandle(blockId: string, side: 'left' | 'right'): HTMLElement | null {
+function edgeHandle(blockId: string, side: 'left' | 'right' | 'shared'): HTMLElement | null {
   return sizingDiv(blockId).querySelector(`[data-testid="block-edge-handle"][data-side="${side}"]`)
 }
 
-function readoutText(blockId: string, side: 'left' | 'right'): string | null {
+function readoutText(blockId: string, side: 'left' | 'right' | 'shared'): string | null {
   const handle = edgeHandle(blockId, side)
   return handle?.querySelector('[data-testid="block-edge-handle-readout"]')?.textContent ?? null
 }
@@ -388,15 +389,17 @@ describe('an alone-on-line edge drag (KAN-441)', () => {
     }
   })
 
-  it('renders no edge handle on blocks that share a row (the divider is a split-off child ticket)', () => {
+  it('a ½/½ row mounts one shared strip at the boundary and the row\'s two outer strips (KAN-505)', () => {
     const left: Block = { id: 'b-left', type: 'text', content: 'left', width: '1/2' }
     const right: Block = { id: 'b-right', type: 'text', content: 'right', width: '1/2' }
     renderCanvas([left, right], () => {})
 
-    expect(edgeHandle('b-left', 'left')).toBeNull()
-    expect(edgeHandle('b-left', 'right')).toBeNull()
-    expect(edgeHandle('b-right', 'left')).toBeNull()
-    expect(edgeHandle('b-right', 'right')).toBeNull()
+    expect(edgeHandle('b-left', 'left')).not.toBeNull() // the row's own left edge
+    expect(edgeHandle('b-left', 'shared')).not.toBeNull() // the boundary, carried by the left member
+    expect(edgeHandle('b-left', 'right')).toBeNull() // no separate strip: the shared strip covers it
+    expect(edgeHandle('b-right', 'left')).toBeNull() // covered by b-left's shared strip
+    expect(edgeHandle('b-right', 'shared')).toBeNull() // the row's last member has no boundary after it
+    expect(edgeHandle('b-right', 'right')).not.toBeNull() // the row's own right edge
   })
 
   it('a toggle\'s left edge strip starts short of its own fold button\'s 28px row (KAN-480, bounded round-3 fix)', () => {

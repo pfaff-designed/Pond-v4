@@ -1222,9 +1222,11 @@ export function BlockCanvas({
    * pointer math — `resizeAlone`'s own hysteresis (`lockedPercent`) threads
    * call to call, and a drag fires many moves per gesture that only need to
    * update the rendered preview, not re-run an effect. `edgePreview` is that
-   * preview: the live percent and lock state for whichever block (`index`) is
-   * mid-drag, read by the sizing div below to override its width and by the
-   * handle's readout chip. `null` off a drag.
+   * preview: the live percent, lock state and dragged `side` for whichever
+   * block (`index`) is mid-drag, read by the sizing div below to override its
+   * width and by the handle's readout chip. `side` is kept so only the strip
+   * actually grabbed lights its pill — a mirrored block's other edge stays
+   * unlit even though the same `index` is mid-drag. `null` off a drag.
    */
   const edgeDragRef = useRef<{
     pointerId: number
@@ -1239,6 +1241,7 @@ export function BlockCanvas({
     index: number
     percent: number
     locked: boolean
+    side: 'left' | 'right'
   } | null>(null)
   const [edgeDragActive, setEdgeDragActive] = useState(false)
 
@@ -1288,7 +1291,7 @@ export function BlockCanvas({
       lockedPercent: null,
       livePercent: startPercent,
     }
-    setEdgePreview({ index, percent: startPercent, locked: false })
+    setEdgePreview({ index, percent: startPercent, locked: false, side })
     setEdgeDragActive(true)
   }
 
@@ -1299,7 +1302,7 @@ export function BlockCanvas({
     const { percent, locked } = resizeAlone(columnWidth, st.startPercent, deltaPx, st.lockedPercent)
     st.lockedPercent = locked ? percent : null
     st.livePercent = percent
-    setEdgePreview({ index: st.index, percent, locked })
+    setEdgePreview({ index: st.index, percent, locked, side: st.side })
   }
 
   function handleEdgeResizePointerUp(e: React.PointerEvent<HTMLDivElement>) {
@@ -2809,6 +2812,15 @@ export function BlockCanvas({
                 // `blockRows` without touching any ancestor element, and a
                 // remount is impossible rather than untested.
                 const stacks = rowStacks(columnWidth, widths)
+                // The shared strip (KAN-505) is an 8px (`w-2`) strip centred in
+                // the row's own gap, not hugging either block's border: its
+                // `right` offset is half the gap plus half the strip's own
+                // width, so a 16px gap (the default) gives -12px, matching the
+                // SPEC's own "-12px-ish". Read from `rowGapValue`, not the
+                // BLOCK_ROW_GAP_PX constant, so a host override (zen's wider
+                // gap) keeps the strip centred too.
+                const rowGapPx = rowGapValue(listStyle)
+                const sharedOffsetPx = typeof rowGapPx === 'number' ? -(rowGapPx / 2 + 4) : -12
                 // Every sizing div starts its own flex line EXCEPT the page's
                 // very first block, and (within row 0, non-stacking) the rest of
                 // that one shared line: those stay at the top with no gap above
@@ -2819,9 +2831,28 @@ export function BlockCanvas({
                 const entries = row.map((item, itemIndex) => ({
                   item,
                   stacks,
-                  // Alone on its line (no row-mate): both edges render a resize
-                  // handle (KAN-441). A row-sharing block renders none in this
-                  // slice — the shared divider is the split-off child ticket.
+                  // A row of MULTIPLE members that stacks (each wraps to its
+                  // own line, too narrow to hold side by side) draws no strip
+                  // at all — there is no row left to resize against. A block
+                  // alone on its line (row.length === 1) is never gated on
+                  // `stacks`: `stacks` there only means ITS OWN stored width
+                  // underflows the floor and is drawn full (KAN-441, the
+                  // "narrower than the stack floor" case) — both its edges
+                  // still resize it. Else: the row's first member gets its
+                  // own left edge, the row's last gets its own right edge,
+                  // and every boundary between members (KAN-505) gets ONE
+                  // shared strip, carried by the boundary's LEFT member so a
+                  // 2-block row renders exactly 3 strips, not 4 (its own
+                  // right edge and the next block's left edge would
+                  // otherwise double up the same boundary).
+                  showLeftEdge: itemIndex === 0 && (row.length === 1 || !stacks),
+                  showSharedEdge: row.length > 1 && !stacks && itemIndex < row.length - 1,
+                  showRightEdge: itemIndex === row.length - 1 && (row.length === 1 || !stacks),
+                  sharedOffsetPx,
+                  // Only an alone block's outer edges are wired to a live
+                  // drag here: a row-sharing block's outer edge needs the
+                  // row's max cap, and the shared strip needs the two-block
+                  // preview — both a later item's job. This item only mounts.
                   aloneOnLine: row.length === 1,
                   marginTop:
                     rowIndex === 0 && (!stacks || itemIndex === 0) ? 0 : rowGapValue(listStyle),
@@ -2838,7 +2869,16 @@ export function BlockCanvas({
                     />
                   )
                 }
-                const { item, stacks, aloneOnLine, marginTop } = entry
+                const {
+                  item,
+                  stacks,
+                  aloneOnLine,
+                  showLeftEdge,
+                  showSharedEdge,
+                  showRightEdge,
+                  sharedOffsetPx,
+                  marginTop,
+                } = entry
                 // A live edge drag previews this block's width locally — never
                 // written to `blocks` until release — so it overrides the
                 // committed width here rather than going through `stacks`.
@@ -2866,50 +2906,79 @@ export function BlockCanvas({
                     style={{ width: sizingWidth, marginTop }}
                   >
                     {renderBlockEditor(blocks[i], i)}
-                    {aloneOnLine && (
-                      <>
-                        <BlockEdgeHandle
-                          side="left"
-                          hidden={!chrome || draggingIndex !== null}
-                          dragging={resizing !== null}
-                          readout={
-                            resizing
-                              ? edgeResizeReadout(resizing.percent, resizing.locked)
-                              : undefined
-                          }
-                          valueNow={
-                            resizing ? resizing.percent : drawnWidthPercent(columnWidth, item.width)
-                          }
-                          // A toggle's own fold button sits in this edge's gutter (its
-                          // first 28px row) and is lifted above this strip by z-index
-                          // (KAN-480, bounded round-3 fix) — clip the strip's own top
-                          // short of that row so the two never contest the same
-                          // pointer-down; every other block type's left edge is
-                          // untouched (prop left unset, full height).
-                          topInsetPx={blocks[i]?.type === 'toggle' ? TOGGLE_FOLD_ROW_PX : undefined}
-                          onPointerDown={(e) => handleEdgeResizePointerDown(e, i, 'left')}
-                          onPointerMove={handleEdgeResizePointerMove}
-                          onPointerUp={handleEdgeResizePointerUp}
-                          onPointerCancel={handleEdgeResizePointerCancel}
-                        />
-                        <BlockEdgeHandle
-                          side="right"
-                          hidden={!chrome || draggingIndex !== null}
-                          dragging={resizing !== null}
-                          readout={
-                            resizing
-                              ? edgeResizeReadout(resizing.percent, resizing.locked)
-                              : undefined
-                          }
-                          valueNow={
-                            resizing ? resizing.percent : drawnWidthPercent(columnWidth, item.width)
-                          }
-                          onPointerDown={(e) => handleEdgeResizePointerDown(e, i, 'right')}
-                          onPointerMove={handleEdgeResizePointerMove}
-                          onPointerUp={handleEdgeResizePointerUp}
-                          onPointerCancel={handleEdgeResizePointerCancel}
-                        />
-                      </>
+                    {showLeftEdge && (
+                      <BlockEdgeHandle
+                        side="left"
+                        hidden={!chrome || draggingIndex !== null}
+                        // Only the strip actually grabbed lights its pill: an
+                        // alone block's mirrored right edge stays unlit while
+                        // its left is mid-drag, even though both share `resizing`.
+                        dragging={resizing !== null && resizing.side === 'left'}
+                        readout={
+                          resizing && resizing.side === 'left'
+                            ? edgeResizeReadout(resizing.percent, resizing.locked)
+                            : undefined
+                        }
+                        valueNow={
+                          resizing ? resizing.percent : drawnWidthPercent(columnWidth, item.width)
+                        }
+                        // A toggle's own fold button sits in this edge's gutter (its
+                        // first 28px row) and is lifted above this strip by z-index
+                        // (KAN-480, bounded round-3 fix) — clip the strip's own top
+                        // short of that row so the two never contest the same
+                        // pointer-down; every other block type's left edge is
+                        // untouched (prop left unset, full height).
+                        topInsetPx={blocks[i]?.type === 'toggle' ? TOGGLE_FOLD_ROW_PX : undefined}
+                        // A row-sharing block's left edge is never its row's
+                        // first (it's covered by the previous block's shared
+                        // strip, below) — only an alone block wires this one;
+                        // the row's own left edge, when shared, is the next
+                        // item's job (SPEC: "Outer-edge drag").
+                        onPointerDown={
+                          aloneOnLine ? (e) => handleEdgeResizePointerDown(e, i, 'left') : undefined
+                        }
+                        onPointerMove={aloneOnLine ? handleEdgeResizePointerMove : undefined}
+                        onPointerUp={aloneOnLine ? handleEdgeResizePointerUp : undefined}
+                        onPointerCancel={aloneOnLine ? handleEdgeResizePointerCancel : undefined}
+                      />
+                    )}
+                    {showSharedEdge && (
+                      // The boundary strip between this block and its row-mate
+                      // to the right: mounted here (carried by the boundary's
+                      // left member) so a row renders one strip per boundary,
+                      // not two. Pointer wiring (the two-block preview) is the
+                      // next item's job — this item only mounts it.
+                      <BlockEdgeHandle
+                        side="shared"
+                        hidden={!chrome || draggingIndex !== null}
+                        dragging={false}
+                        sharedOffsetPx={sharedOffsetPx}
+                      />
+                    )}
+                    {showRightEdge && (
+                      <BlockEdgeHandle
+                        side="right"
+                        hidden={!chrome || draggingIndex !== null}
+                        dragging={resizing !== null && resizing.side === 'right'}
+                        readout={
+                          resizing && resizing.side === 'right'
+                            ? edgeResizeReadout(resizing.percent, resizing.locked)
+                            : undefined
+                        }
+                        valueNow={
+                          resizing ? resizing.percent : drawnWidthPercent(columnWidth, item.width)
+                        }
+                        // A row-sharing block's right edge, when it's also the
+                        // row's last, is the row's own outer edge — resizing
+                        // it with the row's max cap is the next item's job
+                        // ("Outer-edge drag"); only an alone block wires it here.
+                        onPointerDown={
+                          aloneOnLine ? (e) => handleEdgeResizePointerDown(e, i, 'right') : undefined
+                        }
+                        onPointerMove={aloneOnLine ? handleEdgeResizePointerMove : undefined}
+                        onPointerUp={aloneOnLine ? handleEdgeResizePointerUp : undefined}
+                        onPointerCancel={aloneOnLine ? handleEdgeResizePointerCancel : undefined}
+                      />
                     )}
                   </div>
                 )
