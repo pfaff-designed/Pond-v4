@@ -36,10 +36,12 @@
 -- parameter, the `title` assignment on the existing reparent `update`, and the
 -- two conditional `title` keys on the change_log insert.
 --
--- Down (manual): re-run 0031's `create or replace function
---   private.apply_page_move` (drops the 5th parameter and the title writes),
---   and 0030's `create or replace function public.move_page` (drops its 4th
---   parameter — see part C, below).
+-- Down (manual): `drop function private.apply_page_move(uuid, uuid, uuid[],
+--   text, text);` (this migration's 5-arg signature) before re-running 0031's
+--   `create or replace function private.apply_page_move` body — otherwise the
+--   5-arg function survives alongside 0031's 4-arg one, the same ambiguity
+--   this migration's own forward step drops first, above. Then do the same
+--   for `public.move_page` — see part C, below.
 
 begin;
 
@@ -280,8 +282,8 @@ commit;
 -- reason. Skipped entirely when `p_from` carries no `title` key at all.
 --
 -- Re-created from 0032's `change_log_set_back` body verbatim (0032 is on
--- PRODUCTION, not yet on main — see this ticket's SPEC.md; its `move` branch
--- is itself byte-identical to 0031's, so basing this on 0032 drops nothing).
+-- main; its `move` branch is itself byte-identical to 0031's, so basing this
+-- on 0032 drops nothing).
 -- The only changes: `v_title` is now also selected alongside `v_parent_id`,
 -- the new staleness check sits right after the `parentId` one, and the
 -- reparent `update` gains `title = coalesce(p_to ->> 'title', title)`.
@@ -752,9 +754,11 @@ commit;
 -- `security definer` here; the privilege boundary is `apply_page_move`'s
 -- own), so a call that omits it is byte-identical to today.
 --
--- Down (manual): re-run 0030's `create or replace function public.move_page`
---   (drops the 4th parameter) — and see part A's own down note above for
---   `private.apply_page_move`.
+-- Down (manual): `drop function public.move_page(uuid, uuid, uuid[], text);`
+--   (this migration's 4-arg signature) before re-running 0030's
+--   `create or replace function public.move_page` body and its grants —
+--   otherwise the 4-arg function survives alongside 0030's 3-arg one. And
+--   see part A's own down note above for `private.apply_page_move`.
 
 begin;
 
