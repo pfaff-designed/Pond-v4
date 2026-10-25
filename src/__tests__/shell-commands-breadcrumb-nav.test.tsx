@@ -48,6 +48,7 @@ jest.mock('@/lib/layout/command-path', () => ({
 }))
 
 import { ShellCommands } from '@/components/organisms/ShellCommands'
+import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { workspaceUrl } from '@/lib/pages/nav'
 
 const renderShell = () =>
@@ -55,7 +56,9 @@ const renderShell = () =>
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
     >
-      <ShellCommands />
+      <DeletionUndoProvider>
+        <ShellCommands />
+      </DeletionUndoProvider>
     </QueryClientProvider>
   )
 

@@ -10,6 +10,7 @@ import React from 'react'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ShellCommands } from '@/components/organisms/ShellCommands'
+import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { stageId, unstageId } from '@/lib/deletion/staged-ids'
 
 jest.mock('next/navigation', () => ({
@@ -32,7 +33,9 @@ function renderShell() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <ShellCommands />
+      <DeletionUndoProvider>
+        <ShellCommands />
+      </DeletionUndoProvider>
     </QueryClientProvider>
   )
 }

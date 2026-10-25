@@ -70,6 +70,8 @@ import { useZenCommands } from '@/lib/layout/use-zen-commands'
 import { openWorkspaceUrl, workspaceUrl } from '@/lib/pages/nav'
 import { requestTitleFocus } from '@/lib/pages/title-focus'
 import { flushPendingPageSave } from '@/lib/pages/page-flush'
+import { moveAndStageUndo } from '@/lib/pages/move'
+import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import {
   movePickItems,
   newPageParent,
@@ -141,6 +143,10 @@ export function ShellCommands() {
   const { data: home } = useHomePage(pondId, pondName, !pondLoading)
   const records = usePaletteRecords(normalizeQuery(query))
   const undoNotice = useUndoNotice()
+  // `move page to…`'s own commit (KAN-469) — the same `stageUndo`/`notify` the
+  // rail's drag-move already stages through; ShellCommands sits inside the
+  // one `DeletionUndoProvider` the workspace shell mounts.
+  const { stageUndo, notify } = useDeletionUndo()
 
   // A step's notice is only good for AS LONG AS NOTHING ELSE HAPPENED — a
   // key/click (via `clearShownNotice`) or a second step (via `runUndoStep`)
@@ -496,8 +502,39 @@ export function ShellCommands() {
     )
   }, [currentNodeId, pages, pondId, queryClient, router])
 
+  // `move page to…`'s own navigate-to-"open" (KAN-469) — same shape as Rail's
+  // own `navigateTo`, the toast's "open" action after a drag-move.
+  const navigateTo = useCallback(
+    (node: { id: string; type: string; title: string }) => {
+      openWorkspaceUrl(workspaceUrl(node), router)
+    },
+    [router]
+  )
+
   const handlePaletteSelect = useCallback(
     (item: PaletteItem) => {
+      // Pick mode (KAN-469): any picked row — including the synthetic root
+      // row — is the move's target. Runs before every other branch below,
+      // including the generic page-open fallback at the bottom.
+      if (movePick) {
+        const pickedId = movePick.id
+        setMovePick(null)
+        setPaletteOpen(false)
+        void moveAndStageUndo(
+          queryClient,
+          pondId,
+          pages,
+          pickedId,
+          item.id,
+          'into',
+          home,
+          pondName,
+          stageUndo,
+          notify,
+          navigateTo
+        )
+        return
+      }
       if (item.action === 'save-as-template') {
         // The row lists only with a page open, so `currentNodeId` is set here.
         if (!currentNodeId) return
@@ -581,6 +618,14 @@ export function ShellCommands() {
       startTemplateSheet,
       handleCreatePage,
       handleDuplicatePage,
+      movePick,
+      queryClient,
+      pondId,
+      home,
+      pondName,
+      stageUndo,
+      notify,
+      navigateTo,
     ]
   )
 

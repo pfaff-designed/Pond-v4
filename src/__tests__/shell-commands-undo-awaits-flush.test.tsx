@@ -32,13 +32,16 @@ jest.mock('@/lib/change-log/session-undo', () => ({
 jest.mock('@/lib/pages/page-flush', () => ({ flushPendingPageSave: jest.fn() }))
 
 import { ShellCommands } from '@/components/organisms/ShellCommands'
+import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { sessionUndo } from '@/lib/change-log/session-undo'
 import { flushPendingPageSave } from '@/lib/pages/page-flush'
 
 const renderShell = () =>
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <ShellCommands />
+      <DeletionUndoProvider>
+        <ShellCommands />
+      </DeletionUndoProvider>
     </QueryClientProvider>
   )
 

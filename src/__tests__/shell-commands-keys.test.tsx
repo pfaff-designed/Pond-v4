@@ -39,6 +39,7 @@ jest.mock('@/lib/pond/client', () => ({
 }))
 
 import { ShellCommands } from '@/components/organisms/ShellCommands'
+import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { createPond } from '@/lib/pond/client'
 import { PondContext } from '@/lib/pond/context'
 
@@ -50,7 +51,9 @@ const renderShell = () =>
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
     >
-      <ShellCommands />
+      <DeletionUndoProvider>
+        <ShellCommands />
+      </DeletionUndoProvider>
     </QueryClientProvider>
   )
 
@@ -134,7 +137,9 @@ describe('ShellCommands — ⌘K while a pond is being made', () => {
             patchPond: jest.fn(),
           }}
         >
-          <ShellCommands />
+          <DeletionUndoProvider>
+            <ShellCommands />
+          </DeletionUndoProvider>
         </PondContext.Provider>
       </QueryClientProvider>
     )

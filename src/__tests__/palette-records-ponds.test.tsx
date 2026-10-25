@@ -53,6 +53,7 @@ jest.mock('@/lib/pond/context', () => ({
 jest.mock('@/lib/pond/client', () => ({ createPond: jest.fn(), listPonds: jest.fn() }))
 
 import { ShellCommands } from '@/components/organisms/ShellCommands'
+import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { searchRecords } from '@/lib/pages/palette-records'
 
 const search = searchRecords as jest.Mock
@@ -68,7 +69,9 @@ const renderShell = () =>
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
     >
-      <ShellCommands />
+      <DeletionUndoProvider>
+        <ShellCommands />
+      </DeletionUndoProvider>
     </QueryClientProvider>
   )
 
@@ -210,7 +213,9 @@ it('records never enter the page tree’s cache', async () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={client}>
-      <ShellCommands />
+      <DeletionUndoProvider>
+        <ShellCommands />
+      </DeletionUndoProvider>
     </QueryClientProvider>
   )
   await openAndType('cab')

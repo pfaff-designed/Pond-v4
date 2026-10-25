@@ -11,6 +11,7 @@ import React from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ShellCommands } from '@/components/organisms/ShellCommands'
+import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
@@ -38,7 +39,9 @@ describe('ShellCommands — ⌘K’s active row warms its page', () => {
 
     render(
       <QueryClientProvider client={queryClient}>
-        <ShellCommands />
+        <DeletionUndoProvider>
+          <ShellCommands />
+        </DeletionUndoProvider>
       </QueryClientProvider>
     )
 
@@ -63,7 +66,9 @@ describe('ShellCommands — ⌘K’s active row warms its page', () => {
 
     render(
       <QueryClientProvider client={queryClient}>
-        <ShellCommands />
+        <DeletionUndoProvider>
+          <ShellCommands />
+        </DeletionUndoProvider>
       </QueryClientProvider>
     )
 

@@ -29,6 +29,7 @@ jest.mock('@/lib/pages/tree', () => ({
 }))
 
 import { ShellCommands } from '@/components/organisms/ShellCommands'
+import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { TerminalDrawer } from '@/components/molecules/TerminalDrawer'
 import { ariaKeyshortcuts, formatChord } from '@/lib/shell-commands'
 
@@ -42,7 +43,9 @@ const renderShell = () =>
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
     >
-      <ShellCommands />
+      <DeletionUndoProvider>
+        <ShellCommands />
+      </DeletionUndoProvider>
     </QueryClientProvider>
   )
 
