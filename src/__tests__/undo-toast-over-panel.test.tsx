@@ -56,9 +56,18 @@ describe('the toast stack stays clear of the open panel (KAN-553)', () => {
       openedPageTitle: null,
       previousPageTitle: 'kitchen renovation',
     }
-    const getRect = jest
-      .spyOn(window.HTMLElement.prototype, 'getBoundingClientRect')
-      .mockReturnValue({ height: 140 } as DOMRect)
+    // The panel publishes its BOTTOM edge as offsetTop + offsetHeight — mock
+    // both, so the expectation below derives the offset the same way the
+    // component does, with no copy of the panel's own top-[28px] anywhere.
+    const mockPanelTop = 28
+    const mockPanelHeight = 140
+    const mockGap = 10
+    const offsetTop = jest
+      .spyOn(window.HTMLElement.prototype, 'offsetTop', 'get')
+      .mockReturnValue(mockPanelTop)
+    const offsetHeight = jest
+      .spyOn(window.HTMLElement.prototype, 'offsetHeight', 'get')
+      .mockReturnValue(mockPanelHeight)
     // Mirrors `ShellCommands`: the panel's prop and the toast viewport's open
     // signal (`useUndoNotice`) are the same global notice, not two sources.
     requestUndoNotice(notice)
@@ -73,10 +82,11 @@ describe('the toast stack stays clear of the open panel (KAN-553)', () => {
     )
 
     const viewport = screen.getByTestId('undo-toast-viewport')
-    expect(viewport.style.top).toBe(`${28 + 140 + 10}px`)
+    expect(viewport.style.top).toBe(`${mockPanelTop + mockPanelHeight + mockGap}px`)
     expect(viewport.className).not.toMatch(/\btop-4\b/)
 
-    getRect.mockRestore()
+    offsetTop.mockRestore()
+    offsetHeight.mockRestore()
   })
 
   it('returns to top-4 once the panel closes', () => {

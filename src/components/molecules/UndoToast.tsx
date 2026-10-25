@@ -16,7 +16,7 @@
 import { layerVars } from '@/lib/layout/layers'
 import { useUndoNotice } from '@/lib/terminal-focus'
 
-import { useUndoPanelHeight } from './UndoNotice'
+import { useUndoPanelBottom } from './UndoNotice'
 
 export interface UndoToastProps {
   /** The removed thing, e.g. `Deleted "Scratchpad"` or `deleted text ·` (paired with `undoLabel: 'undo'`). */
@@ -105,11 +105,10 @@ export function UndoToast({
   )
 }
 
-// The undo panel sits at `top-[28px]` (UndoNotice.tsx); this is the gap below
-// its measured bottom edge the toast stack keeps, in the same right column
+// The gap below the undo panel's measured bottom edge (UndoNotice.tsx's
+// `useUndoPanelBottom`) the toast stack keeps, in the same right column
 // (KAN-553) — the nearest precedent is `PagesPicker`'s own anchor gap
 // (`POPOVER_GAP_PX`, also 10).
-const PANEL_TOP_PX = 28
 const PANEL_TOAST_GAP_PX = 10
 
 /**
@@ -122,12 +121,12 @@ const PANEL_TOAST_GAP_PX = 10
  * While the undo panel (`UndoNotice`) is open, the stack drops below it
  * instead of overlapping (KAN-553): `notice !== null` is the open signal
  * ShellCommands itself reads (`useUndoNotice`), and the panel's own measured
- * height (`useUndoPanelHeight`) — never a DOM query — gives the offset.
+ * bottom edge (`useUndoPanelBottom`) — never a DOM query — gives the offset.
  */
 export function UndoToastViewport({ children }: { children: React.ReactNode }) {
   const notice = useUndoNotice()
-  const panelHeight = useUndoPanelHeight()
-  const stackedBelowPanel = notice !== null && panelHeight !== null
+  const panelBottom = useUndoPanelBottom()
+  const stackedBelowPanel = notice !== null && panelBottom !== null
   return (
     <div
       data-testid="undo-toast-viewport"
@@ -136,7 +135,7 @@ export function UndoToastViewport({ children }: { children: React.ReactNode }) {
       }`}
       style={
         stackedBelowPanel
-          ? { ...layerVars('toastStack'), top: `${PANEL_TOP_PX + panelHeight + PANEL_TOAST_GAP_PX}px` }
+          ? { ...layerVars('toastStack'), top: `${panelBottom + PANEL_TOAST_GAP_PX}px` }
           : layerVars('toastStack')
       }
     >

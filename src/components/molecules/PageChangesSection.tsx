@@ -13,6 +13,7 @@
  */
 
 import { FOCUS_VISIBLE_RING } from '@/components/atoms/focus-ring'
+import { LAYER } from '@/lib/layout/layers'
 import { cn } from '@/lib/utils'
 import type { PageChangeRow } from '@/lib/change-log/page-change-rows'
 import { labelForStatus } from '@/lib/change-log/status'
@@ -51,7 +52,10 @@ export function PageChangesSection({
   return (
     <aside
       aria-label="Changes to this page"
-      className={cn('fixed top-6 right-6 bottom-6 z-40 flex w-[300px] flex-col', PANEL, className)}
+      // KAN-553: the shell's layer scale (src/lib/layout/layers.ts), not a
+      // bare z-40 — the undo panel reads this same layer to outrank it.
+      style={{ zIndex: LAYER.pageChangesPanel }}
+      className={cn('fixed top-6 right-6 bottom-6 flex w-[300px] flex-col', PANEL, className)}
     >
       <div className="flex items-baseline justify-between px-2">
         <span className="text-[15px] font-medium">changes to this page</span>

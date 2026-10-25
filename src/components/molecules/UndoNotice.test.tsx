@@ -9,19 +9,24 @@ import { PageChangesSection } from '@/components/molecules/PageChangesSection'
 import type { UndoNotice as UndoNoticeData } from '@/lib/terminal-focus'
 
 /**
- * Pulls the arbitrary z-index out of a Tailwind `z-[N]` / `z-N` class, or —
- * for a `z-[var(--z-…)]` class (KAN-553's layer scale) — out of the matching
- * CSS custom property on the element itself.
+ * Pulls the arbitrary z-index out of a Tailwind `z-[N]` / `z-N` class, out of
+ * a `z-[var(--z-…)]` class's matching CSS custom property (KAN-553's layer
+ * scale), or — for a component that reads the scale with a plain inline
+ * `style={{ zIndex: LAYER.x }}` instead (`PageChangesSection`) — the
+ * element's own inline `style.zIndex`.
  */
 function zIndexOf(el: HTMLElement): number {
   const { className } = el
   const literal = className.match(/z-\[(\d+)\]|z-(\d+)/)
   if (literal !== null) return Number(literal[1] ?? literal[2])
   const varName = className.match(/z-\[var\((--z-[\w-]+)\)\]/)
-  if (varName === null) throw new Error(`no z-index class in "${className}"`)
-  const value = el.style.getPropertyValue(varName[1])
-  if (value === '') throw new Error(`no ${varName[1]} on "${className}"`)
-  return Number(value)
+  if (varName !== null) {
+    const value = el.style.getPropertyValue(varName[1])
+    if (value === '') throw new Error(`no ${varName[1]} on "${className}"`)
+    return Number(value)
+  }
+  if (el.style.zIndex !== '') return Number(el.style.zIndex)
+  throw new Error(`no z-index class or inline style on "${className}"`)
 }
 
 const onPlatform = (platform: string) =>
