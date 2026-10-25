@@ -120,6 +120,13 @@ export const ICON = {
   heat: {
     d: 'M2.5 2.5h2v2h-2zM6 2.5h2v2H6zM9.5 2.5h2v2h-2zM2.5 6h2v2h-2zM6 6h2v2H6zM9.5 6h2v2h-2zM2.5 9.5h2v2h-2zM6 9.5h2v2H6z',
   },
+  // KAN-462: the three marks the board draws no row for — `/numbered list`, `/code`,
+  // `/divider` (`/quote` reuses `ICON.quote`).
+  numbered: {
+    d: 'M6 4h5.5M6 7h5.5M6 10h5.5M2.7 3.2v1.6M2.2 6.2h1l-1 1.6h1M2.2 9.2h1v.8h-1v.8h1',
+  },
+  code: { d: 'M5.3 3.8 2.3 7l3 3.2M8.7 3.8 11.7 7l-3 3.2' },
+  divider: { d: 'M2.5 7h9' },
 } as const satisfies Record<string, SlashIcon>
 
 const PAGE_ICON: SlashIcon = ICON.page
