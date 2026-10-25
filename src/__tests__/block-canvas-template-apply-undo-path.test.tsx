@@ -24,6 +24,7 @@ import type { Block } from '@/lib/documents/types'
 import { PREMADE_TEMPLATES } from '@/lib/templates/premade'
 import type { TemplateKind } from '@/lib/templates/types'
 import { findTextBlock, writeInTextBlock } from './helpers/text-block'
+import { SCHEMA_KEY } from '@/lib/properties/schema'
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
@@ -225,6 +226,89 @@ describe('⌘Z after applying `meeting notes` in place undoes the whole template
   })
 })
 
+async function applyMeetingNotes() {
+  renderCanvas([])
+  fireEvent.click(screen.getByTestId('trailing-block-gap'))
+  const editor = await findTextBlock()
+  writeInTextBlock(editor, '/')
+  const menu = await screen.findByRole('listbox', { name: 'blocks' })
+  const meetingNotesRow = within(menu)
+    .getAllByRole('option')
+    .find((o) => o.querySelector('[data-part="label"]')?.textContent === 'meeting notes')!
+  fireEvent.click(meetingNotesRow)
+  await waitFor(() => expect(mockAppendOwnEdit).toHaveBeenCalledTimes(1))
+}
+
+describe('⌘Z/⇧⌘Z race against the apply\'s own in-flight writes (KAN-557)', () => {
+  it('a fast ⌘Z waits for the in-flight snapshot read before reverting, keeping the pre-apply props and no _schema', async () => {
+    let releaseGetPage: ((page: { id: string; props: Record<string, unknown> }) => void) | undefined
+    mockGetPage.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseGetPage = resolve
+        })
+    )
+
+    await applyMeetingNotes()
+
+    // The apply's own snapshot read (and so `defineSchema`/`saveProps`) is
+    // still pending when ⌘Z fires.
+    const undonePromise = sessionUndo.undo('pond-1')
+    expect(mockSaveProps).not.toHaveBeenCalled()
+    releaseGetPage?.({ id: 'page-1', props: PRIOR_PROPS })
+    await undonePromise
+
+    expect(mockSaveProps).toHaveBeenCalled()
+    const lastProps = mockSaveProps.mock.calls.at(-1)?.[2]
+    expect(lastProps).toEqual(PRIOR_PROPS)
+    expect(lastProps).not.toHaveProperty('_schema')
+  })
+
+  it('a snapshot read that rejects keeps the pre-existing props on revert and removes only the keys the apply added', async () => {
+    mockGetPage.mockImplementationOnce(() => Promise.reject(new Error('network down')))
+    // The revert's own fallback read (current page state, template keys included).
+    const afterApplyProps = {
+      ...PRIOR_PROPS,
+      kind: 'meeting notes',
+      [SCHEMA_KEY]: [{ name: 'date', type: 'date' }],
+    }
+    mockGetPage.mockImplementationOnce(() =>
+      Promise.resolve({ id: 'page-1', props: afterApplyProps })
+    )
+
+    await applyMeetingNotes()
+    await sessionUndo.undo('pond-1')
+
+    await waitFor(() => expect(mockSaveProps).toHaveBeenCalled())
+    const lastProps = mockSaveProps.mock.calls.at(-1)?.[2]
+    expect(lastProps).toEqual(PRIOR_PROPS)
+  })
+
+  it('props changed between undo and redo survive the next undo', async () => {
+    await applyMeetingNotes()
+    await sessionUndo.undo('pond-1')
+    await waitFor(() => expect(mockSaveProps).toHaveBeenLastCalledWith(expect.anything(), 'page-1', PRIOR_PROPS))
+
+    // Someone else edited the page while it sat reverted.
+    const editedProps = { glyph: 'moon' }
+    mockGetPage.mockResolvedValue({ id: 'page-1', props: editedProps })
+
+    await sessionUndo.redo('pond-1')
+    await waitFor(() =>
+      expect(mockSaveProps).toHaveBeenLastCalledWith(
+        expect.anything(),
+        'page-1',
+        expect.objectContaining(editedProps)
+      )
+    )
+
+    await sessionUndo.undo('pond-1')
+    await waitFor(() =>
+      expect(mockSaveProps).toHaveBeenLastCalledWith(expect.anything(), 'page-1', editedProps)
+    )
+  })
+})
+
 // Every premade whose page is a collection (`schema` present) — derived from
 // `premade.ts` itself rather than listed by hand, so a thirteenth template
 // with a schema is covered without touching this file.
@@ -256,6 +340,25 @@ describe.each(KINDS_WITH_SCHEMA)(
         expect(mockSaveProps.mock.calls.length).toBeGreaterThan(savePropsAfterApply)
       )
       expect(mockSaveProps).toHaveBeenLastCalledWith(expect.anything(), 'page-1', PRIOR_PROPS)
+
+      const definesAfterUndo = mockDefineSchema.mock.calls.length
+      const savePropsAfterUndo = mockSaveProps.mock.calls.length
+
+      // ⇧⌘Z re-applies the whole step — schema and props land again too, not
+      // only the blocks.
+      await sessionUndo.redo('pond-1')
+
+      await waitFor(() =>
+        expect(mockDefineSchema.mock.calls.length).toBeGreaterThan(definesAfterUndo)
+      )
+      await waitFor(() =>
+        expect(mockSaveProps.mock.calls.length).toBeGreaterThan(savePropsAfterUndo)
+      )
+      expect(mockSaveProps).toHaveBeenLastCalledWith(
+        expect.anything(),
+        'page-1',
+        expect.objectContaining({ ...PRIOR_PROPS, kind })
+      )
     })
   }
 )

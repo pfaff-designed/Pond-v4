@@ -197,7 +197,7 @@ import { insertPageOptimistic } from '@/lib/pages/tree'
 import { pagesKey } from '@/lib/pages/keys'
 import { usePagesRows } from '@/lib/pages/use-pages'
 import { flushPendingPageSave } from '@/lib/pages/page-flush'
-import { addOption, readSchema, withSchema } from '@/lib/properties/schema'
+import { addOption, readSchema, withSchema, SCHEMA_KEY } from '@/lib/properties/schema'
 import type { ViewBlock } from '@/lib/modules/view/schema'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { usePondId } from '@/lib/pond/context'
@@ -2328,27 +2328,35 @@ export function BlockCanvas({
     // stale ids left in the set are harmless.
     for (const block of applied.blocks) markInserted(block.id)
     // The schema (board 8e's reserved `_schema` key) lives inside `props`.
-    // A template with no schema never calls `defineSchema` below, so the one
-    // read-modify-write inside `applyTemplateSchemaProps` is already "prior"
-    // — nothing runs ahead of it to change `props`. A template WITH a schema
-    // needs its prior snapshot taken before `defineSchema` runs (it writes
-    // `props` too, so reading after it would snapshot the schema this very
-    // apply just wrote) — kicked off here, not awaited, so this extra read
-    // can't gate `persistBlocksAsOwnEdit` (and so the apply's own first-line
-    // focus, KAN-499) on a network hop that has nothing to do with the
-    // blocks themselves.
-    const priorSchemaPropsPromise = applied.schema
-      ? getPage(supabase, pageId).then((p) => p?.props ?? {})
-      : null
-    // Set inside `applyTemplateSchemaProps` below, before its own
-    // `saveProps` — the state right before THIS run's write, so a later
-    // ⌘Z always reverts to the step it is undoing, apply or redo alike.
-    let priorProps: Record<string, unknown> = {}
+    // `priorProps` is this run's (apply or redo's) snapshot of what the page
+    // carried right before it wrote — `null` means the snapshot read itself
+    // failed, not "no props": `revertTemplateSchemaProps` tells the two apart
+    // (full replace vs. remove-only-the-added-keys) so a failed read can
+    // never wipe props this apply never saw.
+    let priorProps: Record<string, unknown> | null = null
+    // One home for the saveProps + query-cache pair, shared by apply, redo
+    // and revert alike.
+    const writePageProps = async (next: Record<string, unknown>) => {
+      try {
+        await saveProps(supabase, pageId, next)
+        queryClient.setQueryData<PondPage | null>(['page', pageId], (prev) =>
+          prev ? { ...prev, props: next } : prev
+        )
+      } catch (err) {
+        console.error('Failed to write the template props', err)
+      }
+    }
     // Applies the template's schema (if it has one) and props on top of
     // whatever the page carries right now — shared by the first apply and
     // ⇧⌘Z's redo, which both run against a page that may have changed
-    // underneath (undo put `priorProps` back first).
+    // underneath (undo put `priorProps` back first, or someone else edited
+    // it) — so this reads fresh every time it runs, never a stale snapshot
+    // from an earlier call. Read ONCE, at this call's own start — after the
+    // blocks write already landed via `persistBlocksAsOwnEdit`, so this
+    // network hop never gates the apply's own first-line focus (KAN-499).
     const applyTemplateSchemaProps = async () => {
+      const current = await getPage(supabase, pageId).catch(() => null)
+      priorProps = current?.props ?? null
       if (applied.schema) {
         try {
           await defineSchema(supabase, pageId, applied.schema)
@@ -2356,40 +2364,49 @@ export function BlockCanvas({
           console.error('Failed to define the template schema', err)
         }
       }
-      // Read-modify-write against whatever this page's props already carry (a
-      // glyph, an area role, …) rather than overwriting them with just the
-      // kind/stamp the template adds.
-      try {
-        const current = await getPage(supabase, pageId)
-        priorProps = priorSchemaPropsPromise ? await priorSchemaPropsPromise : current?.props ?? {}
-        const nextProps = { ...(current?.props ?? {}), ...applied.props }
-        await saveProps(supabase, pageId, nextProps)
-        queryClient.setQueryData<PondPage | null>(['page', pageId], (prev) =>
-          prev ? { ...prev, props: nextProps } : prev
-        )
-      } catch (err) {
-        console.error('Failed to write the template props', err)
-      }
+      const base = applied.schema ? withSchema(priorProps ?? {}, applied.schema) : priorProps ?? {}
+      await writePageProps({ ...base, ...applied.props })
     }
-    // ⌘Z's half: a full replace back to `priorProps`, never a merge — a page
-    // with no schema before must have none after, which `defineSchema`'s
-    // own read-modify-write (it only adds/replaces `_schema`, never removes
-    // it) can't do.
+    // ⌘Z's half. A known `priorProps` is a full replace — a page with no
+    // schema before must have none after, which `defineSchema`'s own
+    // read-modify-write (it only adds/replaces `_schema`, never removes it)
+    // can't do. An unknown `priorProps` (the snapshot read failed or
+    // returned null) instead removes only the keys this apply added — never
+    // a full replace with `{}`, which would wipe props this apply never saw.
     const revertTemplateSchemaProps = async () => {
-      try {
-        await saveProps(supabase, pageId, priorProps)
-        queryClient.setQueryData<PondPage | null>(['page', pageId], (prev) =>
-          prev ? { ...prev, props: priorProps } : prev
-        )
-      } catch (err) {
-        console.error('Failed to revert the template props', err)
+      if (priorProps !== null) {
+        await writePageProps(priorProps)
+        return
       }
+      const current = await getPage(supabase, pageId).catch(() => null)
+      if (!current) return
+      const addedKeys = new Set(Object.keys(applied.props))
+      if (applied.schema) addedKeys.add(SCHEMA_KEY)
+      const next = Object.fromEntries(
+        Object.entries(current.props ?? {}).filter(([key]) => !addedKeys.has(key))
+      )
+      await writePageProps(next)
+    }
+    // A fast ⌘Z/⇧⌘Z can fire before the step it is undoing/redoing has
+    // actually landed — `onUndone`/`onRedone` always await whatever is still
+    // in flight first, so they act on the step that just finished, never on
+    // a `priorProps` that hasn't been set yet.
+    let pending: Promise<void> = Promise.resolve()
+    const onUndone = async () => {
+      await pending
+      pending = revertTemplateSchemaProps()
+      await pending
+    }
+    const onRedone = async () => {
+      await pending
+      pending = applyTemplateSchemaProps()
+      await pending
     }
     if (
       !(await persistBlocksAsOwnEdit(applied.blocks, {
         discardOnFailure: true,
-        onUndone: revertTemplateSchemaProps,
-        onRedone: applyTemplateSchemaProps,
+        onUndone,
+        onRedone,
       }))
     )
       return
@@ -2397,7 +2414,8 @@ export function BlockCanvas({
     // only once the blocks write above actually landed; a failed apply keeps
     // the lead so the person's retry still sees it first.
     if (pick.origin === 'yours' && pondId) justSaved.clear(pondId, pick.id)
-    await applyTemplateSchemaProps()
+    pending = applyTemplateSchemaProps()
+    await pending
     // `onStructuralWrite`/`onChange` already ran inside `persistBlocksAsOwnEdit`,
     // ahead of the schema/props writes above — this apply's own blocks are
     // already the caller's baseline by the time those (independent) writes land.
