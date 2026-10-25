@@ -67,6 +67,7 @@ jest.mock('@/lib/pages/list-to-table', () => ({
 
 const heading: Block = { id: 'b-heading', type: 'text', content: '## ingredients' }
 const note: Block = { id: 'b-note', type: 'text', content: 'walk the dog' }
+const line: Block = { id: 'b-line', type: 'text', content: 'hello' }
 const list: Block = {
   id: 'b-list',
   type: 'text',
@@ -663,6 +664,44 @@ describe('turn into — page', () => {
     await waitFor(() =>
       expect(mockDeletePage).toHaveBeenCalledWith(expect.anything(), 'child-page-1')
     )
+  })
+})
+
+describe('turn into — heading (PATH_STEPS: handle to heading, toast undo back to text)', () => {
+  it('a text line becomes a heading 2 in place, same block id, and undo puts it back as text', async () => {
+    const user = userEvent.setup()
+    const { onChange } = renderCanvas([line])
+    await user.click(handleOf('b-line'))
+    await user.click(await screen.findByRole('menuitem', { name: /^heading 2/ }))
+
+    const headed = await screen.findByRole('heading', { level: 2, name: 'hello' })
+    expect(within(document.getElementById('block-b-line')!).getByRole('heading')).toBe(headed)
+    expect(lastBlocks(onChange)).toEqual([{ ...line, content: '## hello' }])
+    expect(await screen.findByText(/turned into heading 2/i)).toBeInTheDocument()
+
+    await user.click(await screen.findByRole('button', { name: /undo/i }))
+    await waitFor(() => expect(lastBlocks(onChange)).toEqual([line]))
+    await waitFor(() =>
+      expect(
+        within(document.getElementById('block-b-line')!).queryByRole('heading')
+      ).not.toBeInTheDocument()
+    )
+  })
+
+  it('a heading’s turn into offers text, heading 1 and heading 3, not heading 2', async () => {
+    const user = userEvent.setup()
+    const heading2: Block = { id: 'b-h2', type: 'text', content: '## hello' }
+    renderCanvas([heading2])
+    await user.click(handleOf('b-h2'))
+
+    const menu = await screen.findByRole('menu', { name: /block menu/i })
+    const turnInto = within(menu).getByRole('group', { name: 'turn into' })
+    expect(
+      within(turnInto).queryByRole('menuitem', { name: /^heading 2/ })
+    ).not.toBeInTheDocument()
+    expect(within(turnInto).getByRole('menuitem', { name: 'text' })).toBeInTheDocument()
+    expect(within(turnInto).getByRole('menuitem', { name: /^heading 1/ })).toBeInTheDocument()
+    expect(within(turnInto).getByRole('menuitem', { name: /^heading 3/ })).toBeInTheDocument()
   })
 })
 
