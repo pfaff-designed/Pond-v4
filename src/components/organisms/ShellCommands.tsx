@@ -78,6 +78,8 @@ import { openWorkspaceUrl, workspaceUrl } from '@/lib/pages/nav'
 import { requestTitleFocus } from '@/lib/pages/title-focus'
 import { flushPendingPageSave } from '@/lib/pages/page-flush'
 import { moveAndStageUndo } from '@/lib/pages/move'
+import { moveBlockToPage } from '@/lib/pages/move-block'
+import { changeLogKey } from '@/lib/change-log/keys'
 import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import { useFavouritePage } from '@/lib/pond/use-favourite-page'
 import {
@@ -629,12 +631,47 @@ export function ShellCommands() {
         )
         return
       }
-      // Block `move to…` pick mode (KAN-479 slice 1): a later pass replaces
-      // this stub with the write + toast (`moveBlockToPage`). For now the
-      // picker closes with no write — selection isn't wired yet.
+      // Block `move to…` pick mode (KAN-479 slice 1): `item.id` is always a
+      // real page row (`blockMovePickItems` mints no synthetic root, unlike
+      // `movePickItems` above), so the target is always in `pages`.
       if (blockMovePick) {
+        const pick = blockMovePick
+        const targetPage = pages.find((p) => p.id === item.id)
         setBlockMovePick(null)
         setPaletteOpen(false)
+        if (!targetPage) return
+        void (async () => {
+          let result: Awaited<ReturnType<typeof moveBlockToPage>>
+          try {
+            result = await moveBlockToPage(createClient(), queryClient, {
+              blockId: pick.blockId,
+              sourcePageId: pick.sourcePageId,
+              targetPageId: targetPage.id,
+              pondId,
+            })
+          } catch {
+            notify(`Couldn't move ${pick.label}`)
+            return
+          }
+          // `null` means nothing moved (the block was already gone from the
+          // source) — there is nothing to undo and nothing to tell.
+          if (!result || pondId === null) return
+          const handle = sessionUndo.rememberPending({
+            pondId,
+            recordIds: Promise.resolve(result.recordIds),
+          })
+          queryClient.invalidateQueries({ queryKey: changeLogKey() })
+          stageUndo({
+            message: `moved 1 block to ${targetPage.title || 'Untitled'} ·`,
+            undoLabel: 'undo',
+            actionLabel: 'open',
+            action: () => navigateTo(targetPage),
+            undo: () =>
+              sessionUndo
+                .undoHandle(pondId, handle)
+                .then((outcome) => applyUndoOutcome('undo', outcome, queryClient)),
+          })
+        })()
         return
       }
       if (item.action === 'save-as-template') {
