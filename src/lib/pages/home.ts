@@ -21,6 +21,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
 import type { Block } from '@/lib/documents/types'
 import { inPond, resolvePond } from '@/lib/pond/scope'
+import { toBlocks } from './to-blocks'
 
 /** The reserved page type that marks the Life home row. */
 export const HOME_TYPE = 'home' as const
@@ -30,11 +31,6 @@ export interface HomePage {
   id: string
   title: string
   blocks: Block[]
-}
-
-/** Blocks are stored as jsonb; coerce anything non-array to []. */
-function toBlocks(value: unknown): Block[] {
-  return Array.isArray(value) ? (value as Block[]) : []
 }
 
 /**

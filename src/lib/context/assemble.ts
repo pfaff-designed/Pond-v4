@@ -23,6 +23,7 @@ import { getChildPages } from '@/lib/pages/client'
 import { inPond, resolvePond } from '@/lib/pond/scope'
 import { resolveDescriptor } from '@/lib/modules/registry'
 import type { Block } from '@/lib/documents/types'
+import { toBlocks } from '@/lib/pages/to-blocks'
 import { ROW_TYPE, readSchema, readValues } from '@/lib/properties/schema'
 import type { PropertySchema } from '@/lib/properties/schema'
 import type { ViewRow } from '@/lib/modules/view/schema'
@@ -277,7 +278,10 @@ export async function fetchNodeContext(
   // types) is left out — same as an id that never resolved.
   if (row.deleted_at) return null
 
-  const rawBlocks: Block[] = Array.isArray(row.blocks) ? (row.blocks as Block[]) : []
+  // KAN-552: read through `toBlocks` so the model sees the same split ids the
+  // page actually opens with — a `propose_changes` call naming a raw unsplit
+  // id would never match a page the person has since read-time split.
+  const rawBlocks: Block[] = toBlocks(row.blocks)
   // #19 read-hydration seam (decision 16): a `view` block draws this page's
   // `type='row'` children, but serialize is sync and gets page-mates, not children.
   // Fetch the rows once (only when a view is present) and attach them to each view

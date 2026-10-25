@@ -19,14 +19,17 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { QueryClient } from '@tanstack/react-query'
 import type { Database } from '@/lib/supabase/types'
 import type { ModuleChange } from '@/lib/modules/ai-composition'
+import type { Block } from '@/lib/documents/types'
 import { resolveAcceptTarget, type ConversationResolutions } from '@/lib/conversation/resolutions'
-import { commitAcceptedEdit, readProposalForAccept } from '@/lib/change-log/resolve'
+import { commitAcceptedEdit, readProposalForAccept, refusalForAccept } from '@/lib/change-log/resolve'
 import { createDeterministicMintId } from '@/lib/change-log/mint-id'
 import { changeLogKey } from '@/lib/change-log/keys'
-import { BLOCK_ACTIONS } from '@/lib/change-log/types'
+import { advanceStatus } from '@/lib/change-log/store'
+import { ACTOR_YOU, BLOCK_ACTIONS } from '@/lib/change-log/types'
 import { touchedMarks } from '@/lib/change-log/accept-marks-diff'
 import { recordAccept } from '@/lib/change-log/accept-marks'
 import { jsonEqual } from '@/lib/json-equal'
+import { splitStoredText } from '@/lib/modules/text/split-stored'
 import { applyProposedChanges } from './edits'
 import { getPage } from './client'
 import { commitBlocks, propagateBlockWrite } from './commit'
@@ -178,6 +181,48 @@ async function writeToTarget(
   })
   if (proposal.staleReason !== null) {
     const reason = proposal.staleReason
+    return {
+      applied: 0,
+      skipped: changes.length,
+      skippedReasons: changes.map(() => reason),
+      targetId: null,
+      recordId: null,
+    }
+  }
+
+  // KAN-552: `propose.ts` and `assemble.ts` now read through `toBlocks`, so a
+  // record's `before` is ALREADY the split shape for every diff proposed going
+  // forward — `splitStoredText(before)` is then a no-op (`jsonEqual` below is
+  // true) and this branch never fires for them. It is a backstop for a `before`
+  // that is still raw (a record written before that read seam existed, or a
+  // caller that bypasses it): nothing ever writes between propose and accept
+  // here (the split is read-only), so `markOutdated`'s push-based sweep never
+  // fires for this move either — splitting `before` and finding it STILL
+  // matches the page as it reads now means nothing else moved, only the split
+  // did, and a blockId-keyed edit would then land against just the FIRST split
+  // part while the rest of the old content sits untouched beside it, a
+  // duplicated page rather than a diff. Scoped to a live `proposed` record: an
+  // already-`accepted`/`rejected` one is being re-processed for a later change
+  // index (resolve.ts), not a first write, and an unrelated drift (a real edit
+  // landed in between) already went `outdated` through that push-based sweep
+  // before this record was read above.
+  const record = proposal.record
+  const before = record?.before
+  const splitBefore = Array.isArray(before) ? splitStoredText(before as Block[]) : null
+  if (
+    record !== null &&
+    record.status === 'proposed' &&
+    BLOCK_ACTIONS.includes(record.action) &&
+    splitBefore !== null &&
+    !jsonEqual(before, splitBefore) &&
+    jsonEqual(splitBefore, page.blocks)
+  ) {
+    try {
+      await advanceStatus(supabase, record.id, 'outdated', ACTOR_YOU)
+    } catch (err) {
+      console.error('[change-log] could not mark split-stale record outdated', record.id, err)
+    }
+    const reason = refusalForAccept('outdated') ?? 'this proposal is out of date'
     return {
       applied: 0,
       skipped: changes.length,

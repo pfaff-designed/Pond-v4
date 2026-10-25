@@ -26,6 +26,7 @@ import { inPond, resolvePond } from '@/lib/pond/scope'
 import { flushStagedDeletes } from '@/lib/deletion/staged-ids'
 import { mapChangeLogRow } from '@/lib/change-log/store'
 import type { ChangeLogRecord, ChangeLogRow } from '@/lib/change-log/types'
+import { toBlocks } from './to-blocks'
 import {
   ROW_TYPE,
   withSchema,
@@ -108,11 +109,6 @@ export type PageRow = {
 export const PAGE_COLUMNS = 'id, parent_id, type, title, blocks, props, "order"'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
-
-/** Blocks are stored as jsonb; coerce anything non-array to []. */
-function toBlocks(value: unknown): Block[] {
-  return Array.isArray(value) ? (value as Block[]) : []
-}
 
 /** Props are stored as jsonb; coerce anything non-object (or array/null) to {}. */
 function toProps(value: unknown): Record<string, unknown> {
