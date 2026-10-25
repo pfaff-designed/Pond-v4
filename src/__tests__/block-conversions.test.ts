@@ -234,28 +234,17 @@ describe('heading, quote, code', () => {
     ])
   })
 
-  it('a quote offers every heading level, code and text, plus list/checklist — never itself', () => {
-    expect(targets(quote)).toEqual([
-      'heading-1',
-      'heading-2',
-      'heading-3',
-      'code',
-      'page',
-      'list',
-      'checklist',
-      'text',
-    ])
+  it('a quote offers every heading level, code and text — never itself, and never list/checklist/table (its lines are markdown, not list items)', () => {
+    expect(targets(quote)).toEqual(['heading-1', 'heading-2', 'heading-3', 'code', 'page', 'text'])
   })
 
-  it('a code block offers every heading level, quote and text, plus list/checklist — never itself', () => {
+  it('a code block offers every heading level, quote and text — never itself, and never list/checklist/table (its lines are markdown, not list items)', () => {
     expect(targets(code)).toEqual([
       'heading-1',
       'heading-2',
       'heading-3',
       'quote',
       'page',
-      'list',
-      'checklist',
       'text',
     ])
   })

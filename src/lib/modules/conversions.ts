@@ -88,6 +88,9 @@ const RETYPE_ONLY_TARGETS = new Set<ConversionTarget>([
   'code',
 ])
 
+/** A quote or code block's lines are markdown syntax, not list items — `toTodo`/`tableSource` would read `>`/fences as list items, so these targets never apply to either. */
+const LINE_TARGETS_OF_QUOTE_OR_CODE = new Set<ConversionTarget>(['table', 'list', 'checklist'])
+
 const HEADING_LEVEL_OF_KIND: Partial<Record<TextKind, 1 | 2 | 3>> = {
   heading1: 1,
   heading2: 2,
@@ -277,6 +280,9 @@ export const conversionsFor = (
 
   return CONVERSION_TARGETS.flatMap((target): Conversion[] => {
     if (target === kind) return []
+    if ((kind === 'quote' || kind === 'code') && LINE_TARGETS_OF_QUOTE_OR_CODE.has(target)) {
+      return []
+    }
     if (target === 'table') {
       const table = tableConversion(block)
       return table ? [table] : []
