@@ -1,7 +1,7 @@
 /**
  * `isDeleteBlockChord` (⌘⌫ / Ctrl+⌫), `isMovePageChord` (⌘⇧P / Ctrl+Shift+P),
- * `isGoToParentChord` (⌘⇧↑ / Ctrl+Shift+↑) and `isEditableField` as pure units,
- * independent of any call site.
+ * `isGoToParentChord` (⌘⇧↑ / Ctrl+Shift+↑), `isRailFocusChord` (⌘⇧\ / Ctrl+Shift+\)
+ * and `isEditableField` as pure units, independent of any call site.
  */
 
 import {
@@ -9,6 +9,7 @@ import {
   isEditableField,
   isGoToParentChord,
   isMovePageChord,
+  isRailFocusChord,
 } from '@/lib/shell-commands'
 
 const onPlatform = (platform: string) =>
@@ -137,6 +138,43 @@ describe('isGoToParentChord — ⌘⇧↑ on a Mac, Ctrl+Shift+↑ everywhere el
   it('does not match ⌘⇧↑ off a Mac (off-platform modifier)', () => {
     onPlatform('Win32')
     expect(isGoToParentChord(upKeyDown({ metaKey: true, shiftKey: true }))).toBe(false)
+  })
+})
+
+const backslashKeyDown = (init: Partial<KeyboardEventInit>) =>
+  new KeyboardEvent('keydown', { key: '\\', ...init })
+
+describe('isRailFocusChord — ⌘⇧\\ on a Mac, Ctrl+Shift+\\ everywhere else', () => {
+  it('matches ⌘⇧\\ on a Mac', () => {
+    onPlatform('MacIntel')
+    expect(isRailFocusChord(backslashKeyDown({ metaKey: true, shiftKey: true }))).toBe(true)
+  })
+
+  it('matches Ctrl+Shift+\\ off a Mac', () => {
+    onPlatform('Win32')
+    expect(isRailFocusChord(backslashKeyDown({ ctrlKey: true, shiftKey: true }))).toBe(true)
+  })
+
+  it('does not match ⌘\\ alone, with no shift (already isMinimizeRailChord)', () => {
+    onPlatform('MacIntel')
+    expect(isRailFocusChord(backslashKeyDown({ metaKey: true }))).toBe(false)
+  })
+
+  it('does not match with Alt held', () => {
+    onPlatform('MacIntel')
+    expect(isRailFocusChord(backslashKeyDown({ metaKey: true, shiftKey: true, altKey: true }))).toBe(
+      false
+    )
+  })
+
+  it('does not match Ctrl+Shift+\\ on a Mac (off-platform modifier)', () => {
+    onPlatform('MacIntel')
+    expect(isRailFocusChord(backslashKeyDown({ ctrlKey: true, shiftKey: true }))).toBe(false)
+  })
+
+  it('does not match ⌘⇧\\ off a Mac (off-platform modifier)', () => {
+    onPlatform('Win32')
+    expect(isRailFocusChord(backslashKeyDown({ metaKey: true, shiftKey: true }))).toBe(false)
   })
 })
 

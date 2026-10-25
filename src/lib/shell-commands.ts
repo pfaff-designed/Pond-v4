@@ -117,6 +117,28 @@ export const isGoToParentChord = (e: KeyboardEvent) => {
 export const isEditableField = (el: Element | null): boolean =>
   el !== null && el.matches('input, textarea, [contenteditable]')
 
+/**
+ * ⌘⇧\ on a Mac, Ctrl+Shift+\ everywhere else: focus the open page's row in the rail.
+ * Global, including inside the editor — that is the chord's whole point. Shares its
+ * base key with `isMinimizeRailChord` (⌘\, no shift) — same physical key, shift as
+ * "the stronger action: focus into it" — and nothing else in this file uses shift+\.
+ *
+ * Rejected ⌘⇧E (the spec's preferred candidate): Firefox binds Ctrl+Shift+E to the
+ * devtools Network panel at the browser-chrome level, a reservation a page's own
+ * `preventDefault` cannot reach (AUDIT K1–K4), so the chord could silently fail to
+ * reach Pond on Windows/Linux Firefox. Rejected ⌥⌘↑ and its family: Chrome and Safari
+ * bind ⌥⌘-arrows to tab switching.
+ *
+ * Known gap: Safari on macOS binds ⇧⌘\ to View ▸ Show Tab Overview at the
+ * browser-chrome level, the same class of reservation as the Firefox ⌘⇧E case above —
+ * `preventDefault` cannot win there, so this chord may be unavailable in Safari. Tab
+ * into the rail remains the fallback.
+ */
+export const isRailFocusChord = (e: KeyboardEvent) => {
+  if (e.altKey || !e.shiftKey || e.key !== '\\') return false
+  return isCommandOnly(e)
+}
+
 const APPLE_KEY_GLYPHS: Record<string, string> = { backspace: '⌫', enter: '↵' }
 const OTHER_KEY_WORDS: Record<string, string> = { backspace: 'Backspace', enter: 'Enter' }
 
