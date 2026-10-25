@@ -570,121 +570,130 @@ describe('KAN-495 path test', () => {
   // earlier typed save in flight, a second typed edit queues behind it, and
   // ⌘Z is pressed before any of the three has landed.
   it('SPEC.md Tests (b): ⌘Z pressed while a flushed save is still in flight waits for the queue, then undoes each of the three writes in order', async () => {
-    activeNodeId = 'page-midflight'
-    fakePage.id = 'page-midflight'
-    const a: Block = { id: 'b-a', type: 'text', content: 'A text' }
-    const b: Block = { id: 'b-b', type: 'text', content: 'B text' }
-    renderPath([a, b])
-    await screen.findByLabelText('Page title')
+    // Fake timers so the 600ms EDIT_PAUSE_MS debounce (use-page-draft.ts)
+    // never fires on its own under load — ⌘⌫ and ⌘Z below flush it
+    // explicitly, and real wall-clock drift must not race that flush.
+    jest.useFakeTimers()
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    try {
+      activeNodeId = 'page-midflight'
+      fakePage.id = 'page-midflight'
+      const a: Block = { id: 'b-a', type: 'text', content: 'A text' }
+      const b: Block = { id: 'b-b', type: 'text', content: 'B text' }
+      renderPath([a, b])
+      await screen.findByLabelText('Page title')
 
-    const fieldA = await textBlockIn('b-a')
-    act(() => {
-      textEditorOf(fieldA).commands.focus('end')
-    })
-    await waitFor(() => expect(fieldA).toHaveFocus())
+      const fieldA = await textBlockIn('b-a')
+      act(() => {
+        textEditorOf(fieldA).commands.focus('end')
+      })
+      await waitFor(() => expect(fieldA).toHaveFocus())
 
-    // Hold save X (the first word's save) in flight — ⌘⌫ below flushes it
-    // immediately (bypassing the 600ms pause), but it won't resolve until
-    // released.
-    const mockedCommitBlocks = commitBlocks as jest.MockedFunction<typeof commitBlocks>
-    const realImpl = mockedCommitBlocks.getMockImplementation()!
-    let releaseSaveX: () => void = () => {}
-    const gate = new Promise<void>((resolve) => {
-      releaseSaveX = resolve
-    })
-    mockedCommitBlocks.mockImplementationOnce(async (...callArgs) => {
-      await gate
-      return realImpl(...callArgs)
-    })
+      // Hold save X (the first word's save) in flight — ⌘⌫ below flushes it
+      // immediately (bypassing the 600ms pause), but it won't resolve until
+      // released.
+      const mockedCommitBlocks = commitBlocks as jest.MockedFunction<typeof commitBlocks>
+      const realImpl = mockedCommitBlocks.getMockImplementation()!
+      let releaseSaveX: () => void = () => {}
+      const gate = new Promise<void>((resolve) => {
+        releaseSaveX = resolve
+      })
+      mockedCommitBlocks.mockImplementationOnce(async (...callArgs) => {
+        await gate
+        return realImpl(...callArgs)
+      })
 
-    await userEvent.type(fieldA, ' one', { skipClick: true })
-    await waitFor(() => expect(fieldA.textContent).toBe('A text one'))
+      await user.type(fieldA, ' one', { skipClick: true })
+      await waitFor(() => expect(fieldA.textContent).toBe('A text one'))
 
-    // ⌘⌫ on B flushes save X (gated, now in flight) and enqueues the delete
-    // as its own structural op, queued behind X.
-    const fieldB = await textBlockIn('b-b')
-    fieldB.focus()
-    await waitFor(() => expect(fieldB).toHaveFocus())
-    fireEvent.keyDown(fieldB, { key: 'Backspace', metaKey: true })
-    await confirmBlockDelete()
-    await waitFor(() => expect(screen.queryByText('B text')).not.toBeInTheDocument())
-    expect(fakeChangeLog.length).toBe(0)
+      // ⌘⌫ on B flushes save X (gated, now in flight) and enqueues the delete
+      // as its own structural op, queued behind X.
+      const fieldB = await textBlockIn('b-b')
+      fieldB.focus()
+      await waitFor(() => expect(fieldB).toHaveFocus())
+      fireEvent.keyDown(fieldB, { key: 'Backspace', metaKey: true })
+      await confirmBlockDelete()
+      await waitFor(() => expect(screen.queryByText('B text')).not.toBeInTheDocument())
+      expect(fakeChangeLog.length).toBe(0)
 
-    // Type a second word. Its debounced save queues behind the delete —
-    // nothing has applied yet, X is still gated.
-    act(() => {
-      textEditorOf(fieldA).commands.focus('end')
-    })
-    await waitFor(() => expect(fieldA).toHaveFocus())
-    await userEvent.type(fieldA, ' two', { skipClick: true })
-    await waitFor(() => expect(fieldA.textContent).toBe('A text one two'))
-    expect(fakeChangeLog.length).toBe(0)
+      // Type a second word. Its debounced save queues behind the delete —
+      // nothing has applied yet, X is still gated.
+      act(() => {
+        textEditorOf(fieldA).commands.focus('end')
+      })
+      await waitFor(() => expect(fieldA).toHaveFocus())
+      await user.type(fieldA, ' two', { skipClick: true })
+      await waitFor(() => expect(fieldA.textContent).toBe('A text one two'))
+      expect(fakeChangeLog.length).toBe(0)
 
-    // Move focus off the still-focused editor before ⌘Z: field A's own
-    // Tiptap history isn't empty yet (its commit hasn't closed it — none of
-    // the three writes has applied), so a ⌘Z while it still has focus is
-    // its OWN undo chord to keep (KAN-139: "an input, a select, and a text
-    // block that still has history all keep theirs"), not the session step.
-    // Every other sequence in this file gets this for free because its
-    // last focused editable element (B) is the one that gets unmounted.
-    act(() => {
-      fieldA.blur()
-    })
+      // Move focus off the still-focused editor before ⌘Z: field A's own
+      // Tiptap history isn't empty yet (its commit hasn't closed it — none of
+      // the three writes has applied), so a ⌘Z while it still has focus is
+      // its OWN undo chord to keep (KAN-139: "an input, a select, and a text
+      // block that still has history all keep theirs"), not the session step.
+      // Every other sequence in this file gets this for free because its
+      // last focused editable element (B) is the one that gets unmounted.
+      act(() => {
+        fieldA.blur()
+      })
 
-    // ⌘Z while X is still in flight: `runUndoStep` flushes the pending typed
-    // save (queuing it third) and awaits the queue's drain before picking an
-    // undo target — so once X is released, all three apply, in order, before
-    // the undo itself runs.
-    fireEvent.keyDown(document.body, { key: 'z', metaKey: true })
-    expect(fakeChangeLog.length).toBe(0)
-    releaseSaveX()
-    // All 3 writes must apply before the chord's own undo can target the
-    // last of them — but the undo's own RPC (a 4th change-log record, action
-    // `undo`) may land before this check gets a chance to observe exactly 3,
-    // since both ride the same `drained()`-then-`undo()` chain. `>=` instead
-    // of `===` so the check isn't racing the very thing it unblocks.
-    await waitFor(() => expect(fakeChangeLog.length).toBeGreaterThanOrEqual(3))
+      // ⌘Z while X is still in flight: `runUndoStep` flushes the pending typed
+      // save (queuing it third) and awaits the queue's drain before picking an
+      // undo target — so once X is released, all three apply, in order, before
+      // the undo itself runs.
+      fireEvent.keyDown(document.body, { key: 'z', metaKey: true })
+      expect(fakeChangeLog.length).toBe(0)
+      releaseSaveX()
+      // All 3 writes must apply before the chord's own undo can target the
+      // last of them — but the undo's own RPC (a 4th change-log record, action
+      // `undo`) may land before this check gets a chance to observe exactly 3,
+      // since both ride the same `drained()`-then-`undo()` chain. `>=` instead
+      // of `===` so the check isn't racing the very thing it unblocks.
+      await waitFor(() => expect(fakeChangeLog.length).toBeGreaterThanOrEqual(3))
 
-    const [record1, record2, record3] = fakeChangeLog
-    expect(record1.before).toEqual([a, b])
-    expect(record1.after).toEqual([{ ...a, content: 'A text one' }, b])
-    expect(record2.before).toEqual([{ ...a, content: 'A text one' }, b])
-    expect(record2.after).toEqual([{ ...a, content: 'A text one' }])
-    expect(record3.before).toEqual([{ ...a, content: 'A text one' }])
-    expect(record3.after).toEqual([{ ...a, content: 'A text one two' }])
+      const [record1, record2, record3] = fakeChangeLog
+      expect(record1.before).toEqual([a, b])
+      expect(record1.after).toEqual([{ ...a, content: 'A text one' }, b])
+      expect(record2.before).toEqual([{ ...a, content: 'A text one' }, b])
+      expect(record2.after).toEqual([{ ...a, content: 'A text one' }])
+      expect(record3.before).toEqual([{ ...a, content: 'A text one' }])
+      expect(record3.after).toEqual([{ ...a, content: 'A text one two' }])
 
-    // ⌘Z #1 takes back only " two" — the shell's flush enqueued it third, so
-    // it's the most recently remembered step. Neither the delete nor the
-    // first word is touched: B stays gone.
-    await waitFor(() => expect(screen.queryByText('A text one two')).not.toBeInTheDocument())
-    expect(screen.getByText('A text one')).toBeInTheDocument()
-    expect(screen.queryByText('B text')).not.toBeInTheDocument()
+      // ⌘Z #1 takes back only " two" — the shell's flush enqueued it third, so
+      // it's the most recently remembered step. Neither the delete nor the
+      // first word is touched: B stays gone.
+      await waitFor(() => expect(screen.queryByText('A text one two')).not.toBeInTheDocument())
+      expect(screen.getByText('A text one')).toBeInTheDocument()
+      expect(screen.queryByText('B text')).not.toBeInTheDocument()
 
-    // ⌘Z #2 brings B back.
-    fireEvent.keyDown(document.body, { key: 'z', metaKey: true })
-    await waitFor(() => expect(screen.getByText('B text')).toBeInTheDocument())
-    expect(screen.getByText('A text one')).toBeInTheDocument()
+      // ⌘Z #2 brings B back.
+      fireEvent.keyDown(document.body, { key: 'z', metaKey: true })
+      await waitFor(() => expect(screen.getByText('B text')).toBeInTheDocument())
+      expect(screen.getByText('A text one')).toBeInTheDocument()
 
-    // ⌘Z #3 takes back " one" — never blocked `page-changed`: each step
-    // landed on the state the one before it actually left, so this third
-    // step finds its own record exactly where it expects it.
-    fireEvent.keyDown(document.body, { key: 'z', metaKey: true })
-    await waitFor(() => expect(screen.queryByText('A text one')).not.toBeInTheDocument())
-    expect(screen.getByText('A text')).toBeInTheDocument()
-    expect(screen.getByText('B text')).toBeInTheDocument()
+      // ⌘Z #3 takes back " one" — never blocked `page-changed`: each step
+      // landed on the state the one before it actually left, so this third
+      // step finds its own record exactly where it expects it.
+      fireEvent.keyDown(document.body, { key: 'z', metaKey: true })
+      await waitFor(() => expect(screen.queryByText('A text one')).not.toBeInTheDocument())
+      expect(screen.getByText('A text')).toBeInTheDocument()
+      expect(screen.getByText('B text')).toBeInTheDocument()
 
-    // ⇧⌘Z ×3 re-applies all three in order.
-    fireEvent.keyDown(document.body, { key: 'z', metaKey: true, shiftKey: true })
-    await waitFor(() => expect(screen.getByText('A text one')).toBeInTheDocument())
-    expect(screen.getByText('B text')).toBeInTheDocument()
+      // ⇧⌘Z ×3 re-applies all three in order.
+      fireEvent.keyDown(document.body, { key: 'z', metaKey: true, shiftKey: true })
+      await waitFor(() => expect(screen.getByText('A text one')).toBeInTheDocument())
+      expect(screen.getByText('B text')).toBeInTheDocument()
 
-    fireEvent.keyDown(document.body, { key: 'z', metaKey: true, shiftKey: true })
-    await waitFor(() => expect(screen.queryByText('B text')).not.toBeInTheDocument())
-    expect(screen.getByText('A text one')).toBeInTheDocument()
+      fireEvent.keyDown(document.body, { key: 'z', metaKey: true, shiftKey: true })
+      await waitFor(() => expect(screen.queryByText('B text')).not.toBeInTheDocument())
+      expect(screen.getByText('A text one')).toBeInTheDocument()
 
-    fireEvent.keyDown(document.body, { key: 'z', metaKey: true, shiftKey: true })
-    await waitFor(() => expect(screen.getByText('A text one two')).toBeInTheDocument())
-    expect(screen.queryByText('B text')).not.toBeInTheDocument()
+      fireEvent.keyDown(document.body, { key: 'z', metaKey: true, shiftKey: true })
+      await waitFor(() => expect(screen.getByText('A text one two')).toBeInTheDocument())
+      expect(screen.queryByText('B text')).not.toBeInTheDocument()
+    } finally {
+      jest.useRealTimers()
+    }
   })
 
   it('reload (PATH_STEPS step 7): remounting for the same page shows exactly the last applied state', async () => {

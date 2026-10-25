@@ -1,7 +1,9 @@
 /**
  * `/ nested page` (KAN-122): `makePage`'s `child` placement swaps the `/` line
- * for a page-link block at the same index, stamps the made page nested-under
- * this one, and stays on the parent — never navigating away, unlike `sibling`.
+ * for a page-link block at the same index and stamps the made page
+ * nested-under this one. KAN-464 (user ruling 2026-10-24, following Notion
+ * over KAN-122): it then navigates to the made page and requests its title
+ * be focused, the same as `sibling` — the link stays in the parent either way.
  */
 
 import React, { useState } from 'react'
@@ -39,6 +41,10 @@ jest.mock('@/lib/pages/client', () => ({
   ...jest.requireActual('@/lib/pages/client'),
   createPage: jest.fn().mockResolvedValue({ id: 'new-page', title: '', type: 'page' }),
 }))
+const mockRequestTitleFocus = jest.fn()
+jest.mock('@/lib/pages/title-focus', () => ({
+  requestTitleFocus: (...args: unknown[]) => mockRequestTitleFocus(...args),
+}))
 
 function Harness({ initialBlocks }: { initialBlocks: Block[] }) {
   const [blocks, setBlocks] = useState(initialBlocks)
@@ -69,7 +75,7 @@ beforeEach(() => {
 })
 
 describe('`/ nested page` leaves a page-link block where the `/` line was (KAN-122)', () => {
-  it('swaps the `/` line for a page-link block at the same index, stamps the page nested-under-this-one, and stays on the parent', async () => {
+  it('swaps the `/` line for a page-link block at the same index, stamps the page nested-under-this-one, and opens it with the title focused (KAN-464)', async () => {
     const user = userEvent.setup()
     const note: Block = { id: 'b-note', type: 'text', content: 'Cabinets are the only open cost.' }
     const slashLine: Block = { id: 'b-slash', type: 'text', content: '' }
@@ -115,6 +121,8 @@ describe('`/ nested page` leaves a page-link block where the `/` line was (KAN-1
       }),
       null
     )
-    expect(mockPush).not.toHaveBeenCalled()
+    expect(mockPush).toHaveBeenCalledTimes(1)
+    expect(mockPush.mock.calls[0][0]).toEqual(expect.stringContaining('nodeId=new-page'))
+    expect(mockRequestTitleFocus).toHaveBeenCalledWith('new-page')
   })
 })

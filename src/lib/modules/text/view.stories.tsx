@@ -247,9 +247,12 @@ export const EmptyStartsEditing: Story = {
     await expect(line).toHaveClass('is-editor-empty')
     await expect(getComputedStyle(line, '::before').content).toBe('none')
     await expect(field.getBoundingClientRect().height).toBeGreaterThan(0)
-    // Clicking the empty line puts the caret — and the placeholder — back in it.
+    // Clicking the empty line puts the caret — and the placeholder — back in it. The
+    // placeholder's `::before` is gated on `.ProseMirror-focused`, which ProseMirror
+    // adds to the field asynchronously after the native focus event, so wait for that
+    // class — not just DOM focus — before reading the pseudo-element.
     await userEvent.click(line)
-    await expect(field).toHaveFocus()
+    await waitFor(() => expect(field).toHaveClass('ProseMirror-focused'))
     await expect(getComputedStyle(line, '::before').content).toBe('"type, or / for blocks"')
   },
 }
@@ -275,8 +278,19 @@ export const TwoEmptyLinesOneHint: Story = {
     const firstP = firstField.querySelector<HTMLElement>('p')!
     const secondP = secondField.querySelector<HTMLElement>('p')!
 
+    // Both blocks are empty, so both editors carry Tiptap's own autofocus — mounted
+    // via a `setTimeout(0)` in `Editor.mount` — and the later one to fire wins the
+    // focus race regardless of what the test has already clicked. Let that settle
+    // (either field picks it up) before this test's own clicks are the only thing
+    // moving focus; otherwise a click can be stolen back by the other editor's own
+    // deferred autofocus a tick later, which is the source of the CI flake.
+    await waitFor(() => expect(canvasElement.querySelector('.ProseMirror-focused')).not.toBeNull())
+
+    // The hint's `::before` is gated on `.ProseMirror-focused`, which ProseMirror
+    // adds to the field asynchronously after the native focus event — wait for that
+    // class before reading the pseudo-element, not just for DOM focus.
     await userEvent.click(firstP)
-    await waitFor(() => expect(firstField).toHaveFocus())
+    await waitFor(() => expect(firstField).toHaveClass('ProseMirror-focused'))
     await expect(getComputedStyle(firstP, '::before').content).toBe('"type, or / for blocks"')
     await expect(getComputedStyle(secondP, '::before').content).toBe('none')
     await expect(parseFloat(getComputedStyle(firstP, '::before').lineHeight)).toBe(
@@ -284,7 +298,7 @@ export const TwoEmptyLinesOneHint: Story = {
     )
 
     await userEvent.click(secondP)
-    await waitFor(() => expect(secondField).toHaveFocus())
+    await waitFor(() => expect(secondField).toHaveClass('ProseMirror-focused'))
     await expect(getComputedStyle(secondP, '::before').content).toBe('"type, or / for blocks"')
     await expect(getComputedStyle(firstP, '::before').content).toBe('none')
     await expect(parseFloat(getComputedStyle(secondP, '::before').lineHeight)).toBe(

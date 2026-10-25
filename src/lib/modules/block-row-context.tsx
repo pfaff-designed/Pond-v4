@@ -41,6 +41,12 @@ export interface BlockRowValue {
    * back to its own `onChange` rather than silently dropping the edit.
    */
   commitStep?: (patch: Block) => void
+  /**
+   * ↑ at this row's first visual line hands focus to the page title (KAN-464).
+   * Only block 0's row gets one — every other row leaves ArrowUp to its own
+   * handling, so absent is "not the first block", not "not yet supported".
+   */
+  leaveUp?: () => void
 }
 
 const BlockRowContext = createContext<BlockRowValue>({
