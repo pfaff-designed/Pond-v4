@@ -408,6 +408,27 @@ function focusTextBlockSoon(id: string, at: 'start' | 'end') {
   })
 }
 
+/**
+ * Same mount-race retry as `focusTextBlockSoon`, for a non-text block: its
+ * frame only takes a tabIndex, never typed keys, so the caret belongs on its
+ * first editable descendant (an `input`/`textarea`/`contenteditable`, e.g. a
+ * `list` template's lone todo item) — falling back to the frame only when it
+ * has none.
+ */
+function focusBlockFieldSoon(id: string) {
+  const focusOnce = () => {
+    const frame = document.getElementById(blockDomId(id))
+    const editableField = frame?.querySelector<HTMLElement>(
+      'input, textarea, [contenteditable="true"]'
+    )
+    const target = editableField ?? frame
+    target?.focus()
+    return target !== null && target !== undefined
+  }
+  if (focusOnce()) return
+  requestAnimationFrame(focusOnce)
+}
+
 export interface BlockCanvasProps {
   /** The blocks to render — controlled by the caller. */
   blocks: Block[]
@@ -1901,10 +1922,10 @@ export function BlockCanvas({
     // ahead of the schema/props writes above — this apply's own blocks are
     // already the caller's baseline by the time those (independent) writes land.
     // The caret belongs in the template's first line, not the title (KAN-499) —
-    // `focusTextBlockSoon` for text, else the same direct-focus fallback
-    // `focusBlockNeighbour` uses for a non-text neighbour. The props write just
-    // above is awaited, so a person who has already moved the caret while it
-    // was in flight must keep it there — read `activeElement` right before
+    // `focusTextBlockSoon` for text, else `focusBlockFieldSoon` for a non-text
+    // block (the frame itself only takes a tabIndex, not typed keys — a
+    // `list` template's lone todo item needs its own input). The props write
+    // just above is awaited, so a person who has already moved the caret while it
     // focusing, not before the await, since that's the only moment that
     // matters. No "already inside the first block" exemption: `focusTextBlock`
     // (`src/lib/modules/text/focus.ts`) calls `editor.commands.focus('start')`,
@@ -1929,7 +1950,7 @@ export function BlockCanvas({
       focusTextBlockSoon(first.id, 'start')
       return
     }
-    document.getElementById(blockDomId(first.id))?.focus()
+    focusBlockFieldSoon(first.id)
   }
 
   const makePageFromTemplate = async (pick: TemplatePick, target: SlashTarget, index: number) => {

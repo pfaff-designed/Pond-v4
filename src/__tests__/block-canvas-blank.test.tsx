@@ -855,6 +855,37 @@ describe('a template pick on a blank page applies in place (KAN-124)', () => {
 
     await waitFor(() => expect(screen.getByLabelText('title')).toHaveFocus())
   })
+
+  it("a premade `list` template's first (non-text) block focuses its first item's field, not the frame's own tabIndex wrapper (KAN-499)", async () => {
+    const user = userEvent.setup()
+    renderBlankPageHarness()
+
+    writeInTextBlock(await findTextBlock(), '/')
+    await screen.findByRole('listbox', { name: 'blocks' })
+    // `notes`(0), `list`(1) — the premade page shape is not in this list.
+    await user.keyboard('{ArrowDown}')
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalledTimes(1))
+    const appliedBlocks = mockSaveBlocks.mock.calls[0][2] as Block[]
+    expect(appliedBlocks.map((b) => b.type)).toEqual(['todo'])
+
+    const todoBlockId = appliedBlocks[0].id
+    const field = await waitFor(() => {
+      const input = blockRoot(todoBlockId).querySelector<HTMLInputElement>(
+        '[data-item-id] input'
+      )
+      expect(input).toBeInTheDocument()
+      return input as HTMLInputElement
+    })
+    await waitFor(() => expect(field).toHaveFocus())
+    // The frame itself only takes a tabIndex, never typed keys — without the
+    // fix this focus call lands here instead, and the key below is dropped.
+    expect(blockRoot(todoBlockId)).not.toHaveFocus()
+
+    await user.keyboard('milk')
+    expect(field).toHaveValue('milk')
+  })
 })
 
 describe('→ on a template row previews it, writing nothing (KAN-131)', () => {
