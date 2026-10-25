@@ -66,6 +66,25 @@ jest.mock('@/lib/pages/list-to-table', () => ({
   createDatabaseFromList: (...args: unknown[]) => mockCreateDatabaseFromList(...args),
 }))
 
+// The page-link card's own capabilities (`usePageLinkCapabilities`) read the
+// same `['pages']` rows cache the rail populates, via this fetch.
+const mockFetchPages = jest
+  .fn()
+  .mockResolvedValue([
+    {
+      id: 'child-brioche',
+      parent_id: null,
+      type: 'page',
+      title: 'brioche',
+      order: 0,
+      updated_at: '2026-01-01',
+    },
+  ])
+jest.mock('@/lib/pages/tree', () => ({
+  ...jest.requireActual('@/lib/pages/tree'),
+  fetchPages: (...args: unknown[]) => mockFetchPages(...args),
+}))
+
 const heading: Block = { id: 'b-heading', type: 'text', content: '## ingredients' }
 const note: Block = { id: 'b-note', type: 'text', content: 'walk the dog' }
 const line: Block = { id: 'b-line', type: 'text', content: 'hello' }
@@ -91,6 +110,7 @@ const table: Block = {
   columns: ['Tool', 'Location'],
   rows: [{ id: 'r1', cells: ['Saw', 'Wall'] }],
 }
+const pageLink: Block = { id: 'b-link', type: 'page-link', pageId: 'child-brioche' }
 
 interface HarnessProps {
   initial: Block[]
@@ -251,7 +271,6 @@ describe('the block menu opens from the handle', () => {
     const next = lastBlocks(onChange)
     expect(next).toEqual([p, { ...r, rowStart: undefined }, { ...q, rowStart: true }, s])
   })
-
 })
 
 describe('right-click opens the block menu at the pointer (KAN-485)', () => {
@@ -292,6 +311,21 @@ describe('right-click opens the block menu at the pointer (KAN-485)', () => {
     const cell = screen.getByRole('textbox', { name: 'Tool, row 1' })
     fireEvent.contextMenu(cell, { clientX: 10, clientY: 10 })
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+  })
+
+  it('opens on the table cell itself, not just the input inside it', async () => {
+    renderCanvas([table])
+    const td = screen.getByRole('textbox', { name: 'Tool, row 1' }).closest('td')!
+    fireEvent.contextMenu(td, { clientX: 10, clientY: 10 })
+    expect(await screen.findByRole('menu', { name: /block menu/i })).toBeInTheDocument()
+  })
+
+  it('opens from an inner element of a page-link card (its whole card is role="button")', async () => {
+    renderCanvas([pageLink])
+    const card = await screen.findByRole('button', { name: 'Open brioche' })
+    const title = within(card).getByText('brioche')
+    fireEvent.contextMenu(title, { clientX: 10, clientY: 10 })
+    expect(await screen.findByRole('menu', { name: /block menu/i })).toBeInTheDocument()
   })
 })
 
@@ -636,9 +670,7 @@ describe('turn into — heading (PATH_STEPS: handle to heading, toast undo back 
 
     const menu = await screen.findByRole('menu', { name: /block menu/i })
     const turnInto = within(menu).getByRole('group', { name: 'turn into' })
-    expect(
-      within(turnInto).queryByRole('menuitem', { name: /^heading 2/ })
-    ).not.toBeInTheDocument()
+    expect(within(turnInto).queryByRole('menuitem', { name: /^heading 2/ })).not.toBeInTheDocument()
     expect(within(turnInto).getByRole('menuitem', { name: 'text' })).toBeInTheDocument()
     expect(within(turnInto).getByRole('menuitem', { name: /^heading 1/ })).toBeInTheDocument()
     expect(within(turnInto).getByRole('menuitem', { name: /^heading 3/ })).toBeInTheDocument()

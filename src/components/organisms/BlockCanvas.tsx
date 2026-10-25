@@ -47,7 +47,7 @@ import {
   type PondBlockState,
 } from '@/lib/modules/block-frame'
 import { readCachedSchema, useCollectionRows } from '@/lib/modules/view/use-collection-rows'
-import { shouldSelectCardFromClick } from '@/lib/modules/view/card-click'
+import { isContextMenuField, shouldSelectCardFromClick } from '@/lib/modules/view/card-click'
 import { applyView } from '@/lib/modules/view/apply'
 import { activeSavedView } from '@/lib/modules/view/schema'
 import {
@@ -3861,16 +3861,18 @@ function BlockEditor({
 
   // Right-click opens the block menu at the pointer (KAN-485), replacing the
   // browser's own menu. `chrome=false` (zen) leaves the native menu, same as
-  // the hidden handle. A text block's own prose is `[contenteditable]`, which
-  // `shouldSelectCardFromClick` (built for card fields, not prose) would
-  // treat as interactive — so that guard only applies to every OTHER kind's
-  // own fields (a table cell, a todo item's input). A non-collapsed window
+  // the hidden handle. `isContextMenuField` is narrower than the plain-click
+  // guard `shouldSelectCardFromClick` (whose `INTERACTIVE` list is a whole
+  // `td`/`role="button"` card, not just a field) — a right-click only needs
+  // to leave the native menu for an actual text field (a table cell's input,
+  // a todo item's own field), so a page-link card, a highlight passage or a
+  // table cell itself still open the block menu. A non-collapsed window
   // selection inside the row is a copy/paste in progress: the native menu
   // stays for that, whatever the block type.
   function handleContextMenu(e: React.MouseEvent) {
     if (!e.currentTarget.contains(e.target as Node)) return
     if (!chrome) return
-    if (block.type !== 'text' && !shouldSelectCardFromClick(e.target)) return
+    if (isContextMenuField(e.target)) return
     const sel = window.getSelection()
     if (sel && !sel.isCollapsed && sel.rangeCount > 0 && rootRef.current?.contains(sel.anchorNode)) {
       return
