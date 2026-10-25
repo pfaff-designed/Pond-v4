@@ -138,3 +138,22 @@ it('⌘K "duplicate page" shows the copy below the original, and ⌘Z removes it
     expect(screen.queryByRole('treeitem', { name: /Recipes 2/ })).not.toBeInTheDocument()
   )
 })
+
+it('⌘D on a focused rail row shows the copy below the original, and ⌘Z removes it', async () => {
+  const user = userEvent.setup()
+  mount()
+
+  const row = await screen.findByRole('treeitem', { name: 'Recipes' })
+  await user.click(row)
+  await waitFor(() => expect(row).toHaveFocus())
+
+  await user.keyboard('{Meta>}d{/Meta}')
+
+  await screen.findByRole('treeitem', { name: /Recipes 2/ })
+
+  await user.keyboard('{Meta>}z{/Meta}')
+
+  await waitFor(() =>
+    expect(screen.queryByRole('treeitem', { name: /Recipes 2/ })).not.toBeInTheDocument()
+  )
+})
