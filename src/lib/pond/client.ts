@@ -14,6 +14,7 @@
 import { createClient } from '@/lib/supabase/client'
 import { pushRecentGlyph } from '@/lib/rail/glyph-library'
 import { clampPondName } from './name-cap'
+import { liveOnly } from './first'
 import type { PondTheme } from '@/lib/supabase/types'
 
 export interface Pond {
@@ -80,12 +81,9 @@ export async function listPonds(): Promise<Pond[]> {
   } = await supabase.auth.getUser()
   if (!user) return []
 
-  const { data, error } = await supabase
-    .from('ponds')
-    .select(COLUMNS)
-    .eq('user_id', user.id)
-    .is('deleted_at', null)
-    .order('order')
+  const { data, error } = await liveOnly(
+    supabase.from('ponds').select(COLUMNS).eq('user_id', user.id)
+  ).order('order')
 
   // The table arrives with migration 0018. Until it is applied, PostgREST answers
   // PGRST205 ("Could not find the table") — the rail then shows its name with no
@@ -187,7 +185,19 @@ export async function createPond(name: string, options?: CreatePondOptions): Pro
   } = await supabase.auth.getUser()
   if (!user) throw new Error('not signed in')
 
-  const existing = await listPonds()
+  // ALL the user's ponds, deleted included — a soft-deleted pond keeps its
+  // `order` (so a restore lands back where it was, KAN-493), and a new pond
+  // must not collide with one still waiting out its 30 days. `existing.length`
+  // over LIVE ponds only would reuse a deleted row's order the moment it was
+  // the only pond deleted.
+  const { data: orderRows, error: orderError } = await supabase
+    .from('ponds')
+    .select('"order"')
+    .eq('user_id', user.id)
+    .order('order', { ascending: false })
+    .limit(1)
+  if (orderError) throw orderError
+  const nextOrder = ((orderRows?.[0] as { order: number } | undefined)?.order ?? -1) + 1
 
   // Cast as the rest of the repo does for writes (see templates/client.ts:162):
   // `Database` is hand-authored, and supabase-js cannot infer an Insert shape from
@@ -198,7 +208,7 @@ export async function createPond(name: string, options?: CreatePondOptions): Pro
     .insert({
       user_id: user.id,
       name: trimmed,
-      order: existing.length,
+      order: nextOrder,
       ...(options?.glyph !== undefined ? { glyph: options.glyph } : {}),
       ...(options?.theme !== undefined ? { theme: options.theme } : {}),
     })

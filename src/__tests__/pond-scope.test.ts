@@ -49,6 +49,7 @@ describe('fetchPages scope isolation', () => {
     const ponds: Record<string, jest.Mock> = {
       select: jest.fn(() => ponds),
       eq: jest.fn(() => ponds),
+      is: jest.fn(() => ponds),
       order: jest.fn(() => ponds),
       limit: jest.fn(() => ponds),
       maybeSingle: jest.fn(() =>
