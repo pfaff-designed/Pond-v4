@@ -469,3 +469,54 @@ describe('`/table of contents` lists the page\'s headings and jumps to them (KAN
     outside.remove()
   })
 })
+
+// The row also hosts `BlockHandleMenu`'s own popup-trigger button, which also
+// carries `aria-expanded` — told apart by `aria-haspopup`, which only it has
+// (`toggle-fold-persist.test.tsx`'s own helper).
+const foldButtonIn = (row: HTMLElement) =>
+  within(row)
+    .getAllByRole('button')
+    .find((b) => !b.hasAttribute('aria-haspopup'))!
+
+describe('the `/toggle` path lands a fold with the caret in its summary (KAN-480)', () => {
+  it('/toggle ↵ → type the summary → ↵ → type the body → ▸ folds and unfolds it', async () => {
+    const user = userEvent.setup()
+    const emptyLine: Block = { id: 'b-empty', type: 'text', content: '' }
+    renderCanvas([emptyLine])
+
+    const editorAtStart = await findTextBlock()
+    writeInTextBlock(editorAtStart, '/')
+    await screen.findByRole('listbox', { name: 'blocks' })
+    writeInTextBlock(editorAtStart, '/toggle')
+    const menu = await screen.findByRole('listbox', { name: 'blocks' })
+    expect(labelsOf(menu)).toEqual(['toggle'])
+
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument())
+
+    // The toggle lands unfolded, so both its summary and body fields are
+    // already mounted — the summary (the first one) takes the caret.
+    const [summary] = await findAllTextBlocks()
+    await waitFor(() => expect(summary).toHaveFocus())
+
+    writeInTextBlock(summary, 'packing list')
+    await user.keyboard('{Enter}')
+
+    const body = (await findAllTextBlocks())[1]
+    await waitFor(() => expect(body).toHaveFocus())
+    writeInTextBlock(body, 'passport')
+    await waitFor(() => expect(body.textContent).toBe('passport'))
+
+    const row = document.querySelector<HTMLElement>('[data-block-id]')!
+    const foldButton = foldButtonIn(row)
+    expect(foldButton).toHaveAttribute('aria-expanded', 'true')
+
+    await user.click(foldButton)
+    expect(foldButton).toHaveAttribute('aria-expanded', 'false')
+    expect(within(row).queryByText('passport')).not.toBeInTheDocument()
+
+    await user.click(foldButton)
+    expect(foldButton).toHaveAttribute('aria-expanded', 'true')
+    expect(within(row).getByText('passport')).toBeInTheDocument()
+  })
+})
