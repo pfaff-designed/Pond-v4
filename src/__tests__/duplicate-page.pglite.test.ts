@@ -315,6 +315,66 @@ describe('0032_duplicate_page — duplicate_page()', () => {
     await db.close()
   })
 
+  it('sorts the copy directly after the original among siblings tied on "order" (0033)', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pond = await lifePondId(db)
+
+    // `createPage`'s own default leaves every new page at "order" = 0 — the
+    // normal, tied case 0032 alone left unhandled.
+    const recipes = await addPage(db, pond, { title: 'Recipes', order: 0 })
+    const zeta = await addPage(db, pond, { title: 'Zeta', order: 0 })
+
+    await actAs(db, USER)
+    const result = await db.query<DuplicateRecord>(
+      `select * from public.duplicate_page($1, $2)`,
+      [recipes, 'Recipes 2']
+    )
+    await db.exec('reset role;')
+
+    const newRootId = result.rows[0].target_page_id
+    const siblings = await childrenOf(db, null, pond)
+    expect(siblings.map((s) => s.id)).toEqual([recipes, newRootId, zeta])
+
+    await db.close()
+  })
+
+  it('renumbers three tied siblings so the copy always lands right after whichever one was duplicated (0033)', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pond = await lifePondId(db)
+
+    const a = await addPage(db, pond, { title: 'A', order: 0 })
+    const b = await addPage(db, pond, { title: 'B', order: 0 })
+    const c = await addPage(db, pond, { title: 'C', order: 0 })
+
+    await actAs(db, USER)
+    const firstResult = await db.query<DuplicateRecord>(
+      `select * from public.duplicate_page($1, $2)`,
+      [a, 'A 2']
+    )
+    await db.exec('reset role;')
+    const copyOfA = firstResult.rows[0].target_page_id
+
+    // Original first among three tied siblings: the copy lands right after it.
+    expect((await childrenOf(db, null, pond)).map((s) => s.id)).toEqual([a, copyOfA, b, c])
+
+    await actAs(db, USER)
+    const secondResult = await db.query<DuplicateRecord>(
+      `select * from public.duplicate_page($1, $2)`,
+      [c, 'C 2']
+    )
+    await db.exec('reset role;')
+    const copyOfC = secondResult.rows[0].target_page_id
+
+    // Original last: the copy lands right after it too — i.e. last overall.
+    expect((await childrenOf(db, null, pond)).map((s) => s.id)).toEqual([
+      a, copyOfA, b, c, copyOfC,
+    ])
+
+    await db.close()
+  })
+
   it('refuses to duplicate the databases root, writing nothing', async () => {
     const db = await makeDb()
     await seedUser(db, USER)
