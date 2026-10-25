@@ -76,6 +76,7 @@ import { caretRect, roomTowardSide, sideTowardFreeSpace } from '@/lib/layout/car
 import { composerBottomBound } from '@/lib/layout/composer-clearance'
 import {
   PondMenu,
+  pointAnchor,
   type PondMenuGroup,
   type PondMenuPlacement,
   type PondMenuSize,
@@ -216,21 +217,9 @@ const MENU_PLACEMENT: Record<PondMenuSize, Omit<PondMenuPlacement, 'anchor'>> = 
   mobile: { align: 'end', top: 48, alignOffset: 0 },
 }
 
-/** A right-click's point as a zero-size anchor rect (KAN-485): `align: 'start'`
- *  and `top: 0` line the popup's top-left up with it, and PondMenu's own
- *  `sideOffset` math copes with the zero height (plain subtraction). */
-const pointAnchorRect = (point: { x: number; y: number }): DOMRect =>
-  ({
-    x: point.x,
-    y: point.y,
-    width: 0,
-    height: 0,
-    top: point.y,
-    left: point.x,
-    right: point.x,
-    bottom: point.y,
-    toJSON: () => ({}),
-  }) as DOMRect
+/** A right-click's point (KAN-485): `align: 'start'` and `top: 0` line the
+ *  popup's top-left up with it, and PondMenu's own `sideOffset` math copes
+ *  with the zero height (plain subtraction). */
 const POINT_MENU_PLACEMENT: Omit<PondMenuPlacement, 'anchor'> = {
   align: 'start',
   top: 0,
@@ -3341,6 +3330,15 @@ function BlockEditor({
   // open path, which keeps the handle's own anchor (`rootRef`). Cleared on
   // close so a later handle-opened menu never inherits a stale point.
   const [contextPoint, setContextPoint] = useState<{ x: number; y: number } | null>(null)
+  // Memoised on `contextPoint` alone, so a right-click's anchor object is
+  // stable across the row's other re-renders while the menu stays open —
+  // Base UI's positioner effect re-measures whenever the `anchor` prop's
+  // identity changes, so a fresh object every render would re-run it for no
+  // reason.
+  const contextAnchor = useMemo(
+    () => (contextPoint ? { getBoundingClientRect: () => pointAnchor(contextPoint.x, contextPoint.y) } : null),
+    [contextPoint]
+  )
   // macOS Chrome/Safari select the word under the pointer as the right
   // button's own default action, which runs after bubbling listeners but
   // before `contextmenu` fires — so a `window.getSelection()` read inside
@@ -3796,12 +3794,11 @@ function BlockEditor({
     }
   }
   function handleTriggerPointerUp() {
-    const noMove = !pressRef.current.moved
     pressRef.current.down = false
     setDragArmed(false)
-    // Desktop: a no-move release selects the row instead of opening the menu
-    // (KAN-485). Phone keeps the tap-opens-the-menu path below instead.
-    if (menuSize !== 'mobile' && noMove) selectRow()
+    // The click that follows this release (`handleTriggerClick` below) is
+    // what selects the row on a no-move desktop release — doing it here too
+    // would run `selectRow()` twice per press (KAN-485).
   }
   // An HTML5 drag never fires `pointerup` on the handle — it ends in
   // `pointercancel` (here) or the row's `dragend` below — so without this,
@@ -3820,10 +3817,9 @@ function BlockEditor({
   // mousedown (before this click fires), so a click that started on an open
   // menu is that close's trailing click, not a new open request, and must
   // not reopen it. Desktop drops that path entirely (the handle only drags);
-  // its own click — from a mouse release `handleTriggerPointerUp` above
-  // already selected, or from Enter/Space, which never sets `pressRef` at
-  // all — selects the row instead, unless a drag past the threshold is what
-  // produced this click.
+  // its own click — the one that follows a no-move mouse release, or
+  // Enter/Space, which never sets `pressRef` at all — selects the row
+  // instead, unless a drag past the threshold is what produced this click.
   function handleTriggerClick() {
     if (menuSize === 'mobile') {
       if (pressRef.current.openAtDown) return
@@ -3834,10 +3830,15 @@ function BlockEditor({
     selectRow()
   }
 
-  // ⌥↑/⌥↓ on the handle reorder the block: the menu's trigger would otherwise
-  // take the arrow to open the menu and keep it from reaching the block.
-  const handleTriggerKeyDown = (e: BaseUIEvent<React.KeyboardEvent<HTMLButtonElement>>) => {
-    if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) e.preventBaseUIHandler()
+  // ⌥↑/⌥↓ on the handle reorder the block: Menu.Trigger would otherwise take
+  // the arrow to open the menu and keep it from reaching the block — but
+  // desktop's handle (KAN-485) is a plain button, not a Menu.Trigger, so
+  // there's no Base UI handler to suppress there; `preventBaseUIHandler` only
+  // exists on the mobile path's Base UI-wrapped event.
+  const handleTriggerKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      ;(e as BaseUIEvent<typeof e>).preventBaseUIHandler?.()
+    }
   }
 
   // The row itself is "selected", never a bubbled focus from a field it hosts
@@ -4000,6 +4001,38 @@ function BlockEditor({
     </>
   )
 
+  // Desktop (KAN-485): a plain button, never Base UI's `Menu.Trigger` — the
+  // handle only drags/selects here, so wiring it as the trigger would wear
+  // `aria-haspopup`/`aria-expanded` for a popup this element never opens.
+  // Phone still passes it as PondMenu's `trigger` (the old tap-opens path).
+  const handleButton = (
+    <button
+      type="button"
+      className={cn(
+        'flex cursor-grab items-center justify-center outline-none focus-visible:ring-2 focus-visible:ring-mn-text',
+        menuSize === 'mobile' ? 'h-11 w-11 rounded-[14px]' : 'h-6 w-3 rounded-[6px]',
+        menuOpen ? 'bg-mn-hover-fill text-mn-text' : 'text-mn-text-secondary'
+      )}
+      title="drag to move"
+      aria-label="drag to move"
+      onPointerDown={handleTriggerPointerDown}
+      onPointerMove={handleTriggerPointerMove}
+      onPointerUp={handleTriggerPointerUp}
+      onPointerCancel={handleTriggerPointerCancel}
+      onClick={handleTriggerClick}
+      onKeyDown={handleTriggerKeyDown}
+    >
+      <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor" aria-hidden>
+        <circle cx="3" cy="3" r="1.1" />
+        <circle cx="7" cy="3" r="1.1" />
+        <circle cx="3" cy="7" r="1.1" />
+        <circle cx="7" cy="7" r="1.1" />
+        <circle cx="3" cy="11" r="1.1" />
+        <circle cx="7" cy="11" r="1.1" />
+      </svg>
+    </button>
+  )
+
   return (
     <div
       ref={rootRef}
@@ -4110,38 +4143,13 @@ function BlockEditor({
           onOpenChange={handlePointerOpenChange}
           onSelect={onMenuSelect ?? (() => {})}
           placement={
-            contextPoint
-              ? { anchor: { getBoundingClientRect: () => pointAnchorRect(contextPoint) }, ...POINT_MENU_PLACEMENT }
+            contextAnchor
+              ? { anchor: contextAnchor, ...POINT_MENU_PLACEMENT }
               : { anchor: rootRef, ...MENU_PLACEMENT[menuSize] }
           }
-          trigger={
-            <button
-              type="button"
-              className={cn(
-                'flex cursor-grab items-center justify-center outline-none focus-visible:ring-2 focus-visible:ring-mn-text',
-                menuSize === 'mobile' ? 'h-11 w-11 rounded-[14px]' : 'h-6 w-3 rounded-[6px]',
-                menuOpen ? 'bg-mn-hover-fill text-mn-text' : 'text-mn-text-secondary'
-              )}
-              title="drag to move"
-              aria-label="drag to move"
-              onPointerDown={handleTriggerPointerDown}
-              onPointerMove={handleTriggerPointerMove}
-              onPointerUp={handleTriggerPointerUp}
-              onPointerCancel={handleTriggerPointerCancel}
-              onClick={handleTriggerClick}
-              onKeyDown={handleTriggerKeyDown}
-            >
-              <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor" aria-hidden>
-                <circle cx="3" cy="3" r="1.1" />
-                <circle cx="7" cy="3" r="1.1" />
-                <circle cx="3" cy="7" r="1.1" />
-                <circle cx="7" cy="7" r="1.1" />
-                <circle cx="3" cy="11" r="1.1" />
-                <circle cx="7" cy="11" r="1.1" />
-              </svg>
-            </button>
-          }
+          trigger={menuSize === 'mobile' ? handleButton : undefined}
         />
+        {menuSize !== 'mobile' && handleButton}
       </div>
 
       {/* The `/` menu hangs at the caret. */}

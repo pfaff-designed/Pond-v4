@@ -63,6 +63,9 @@ export interface PondMenuVirtualAnchor {
   getBoundingClientRect: () => DOMRect
 }
 
+/** A zero-size rect at `(x, y)` — the host's shared way to build a {@link PondMenuVirtualAnchor}'s rect. */
+export const pointAnchor = (x: number, y: number): DOMRect => new DOMRect(x, y, 0, 0)
+
 export interface PondMenuPlacement {
   anchor: RefObject<Element | null> | PondMenuVirtualAnchor
   /** Which of the anchor's edges the popup lines up with. */
@@ -83,8 +86,11 @@ export interface PondMenuProps<Action> {
   open: boolean
   onOpenChange: (open: boolean) => void
   onSelect: (action: Action) => void
-  /** The element that opens the menu; it gets the trigger's ARIA and press handling. */
-  trigger: ReactElement
+  /** The element that opens the menu; it gets the trigger's ARIA and press handling.
+   *  Omit it for a host that opens the menu only through the controlled `open`
+   *  prop (a right-click, a keyboard chord) — its own element then carries no
+   *  `aria-haspopup`/`aria-expanded` for a popup it never opens. */
+  trigger?: ReactElement
   placement: PondMenuPlacement
   /** Where the popup is portaled. @default document.body */
   container?: Menu.Portal.Props['container']
@@ -184,7 +190,7 @@ export const PondMenu = <Action,>({
 
   return (
     <Menu.Root open={open} onOpenChange={(next) => onOpenChange(next)} modal={false}>
-      <Menu.Trigger render={trigger} />
+      {trigger && <Menu.Trigger render={trigger} />}
       <Menu.Portal container={container}>
         <Menu.Positioner
           anchor={placement.anchor}

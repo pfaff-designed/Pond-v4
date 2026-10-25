@@ -8,10 +8,7 @@
 
 import { useRef, useState } from 'react'
 import { render, screen, waitFor, within } from '@testing-library/react'
-import { PondMenu, type PondMenuGroup } from '@/components/molecules/PondMenu'
-
-const pointRect = (x: number, y: number): DOMRect =>
-  ({ x, y, width: 0, height: 0, top: y, left: x, right: x, bottom: y, toJSON: () => ({}) }) as DOMRect
+import { PondMenu, pointAnchor, type PondMenuGroup } from '@/components/molecules/PondMenu'
 
 type ModeAction = 'ask' | 'deep-research'
 
@@ -125,7 +122,7 @@ describe('PondMenu kind="mode" selection changes', () => {
 
 describe('PondMenu placement.anchor accepts a point (a right-click, with no element behind it)', () => {
   it('opens at a virtual anchor with no click on the trigger, and the positioner measures that anchor', async () => {
-    const getBoundingClientRect = jest.fn(() => pointRect(120, 240))
+    const getBoundingClientRect = jest.fn(() => pointAnchor(120, 240))
 
     render(
       <PondMenu
@@ -145,7 +142,7 @@ describe('PondMenu placement.anchor accepts a point (a right-click, with no elem
   })
 
   it('still copes with a zero-height anchor through the sideOffset math', async () => {
-    const getBoundingClientRect = jest.fn(() => pointRect(10, 20))
+    const getBoundingClientRect = jest.fn(() => pointAnchor(10, 20))
 
     render(
       <PondMenu

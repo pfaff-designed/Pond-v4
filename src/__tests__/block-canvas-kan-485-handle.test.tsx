@@ -94,6 +94,12 @@ describe('the handle is drag-only on desktop (KAN-485)', () => {
     expect(document.getElementById('block-b-list')).toHaveFocus()
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
+
+  it('the handle is a plain button — no aria-haspopup for a menu it never opens (KAN-485)', () => {
+    renderCanvas([heading, list])
+
+    expect(handleOf('b-list')).not.toHaveAttribute('aria-haspopup')
+  })
 })
 
 describe('phone keeps the tap-opens-the-menu path on the handle (frame 6)', () => {
@@ -117,5 +123,11 @@ describe('phone keeps the tap-opens-the-menu path on the handle (frame 6)', () =
     await user.click(handleOf('b-list'))
 
     expect(await screen.findByRole('menu', { name: /block menu/i })).toBeInTheDocument()
+  })
+
+  it('the handle keeps aria-haspopup — it still opens the menu here (KAN-485)', () => {
+    renderCanvas([heading, list])
+
+    expect(handleOf('b-list')).toHaveAttribute('aria-haspopup', 'menu')
   })
 })
