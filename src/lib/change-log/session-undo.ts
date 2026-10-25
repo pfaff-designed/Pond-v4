@@ -316,7 +316,12 @@ export const createSessionUndo = (
           }
           if (direction === 'redo') {
             // Beneath anything remembered while it ran: those happened after it.
-            const redone = { pondId, recordIds: result.records.map((r) => r.id) }
+            const redone: HistoryStep = {
+              pondId,
+              recordIds: result.records.map((r) => r.id),
+              onUndone: step.onUndone,
+              onRedone: step.onRedone,
+            }
             history.undo.splice(Math.min(undoDepth, history.undo.length), 0, redone)
           }
           notify(history)

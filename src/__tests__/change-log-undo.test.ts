@@ -864,6 +864,21 @@ describe('createSessionUndo', () => {
       })
       consoleError.mockRestore()
     })
+
+    it('keeps onUndone/onRedone across repeated cycles — a redo re-remembered on undo must still carry them', async () => {
+      const { store } = makeStore()
+      const onUndone = jest.fn()
+      const onRedone = jest.fn()
+      store.remember({ pondId: POND, recordIds: ['edit-1'], onUndone, onRedone })
+
+      await store.undo(POND)
+      await store.redo(POND)
+      await store.undo(POND)
+      await store.redo(POND)
+
+      expect(onUndone).toHaveBeenCalledTimes(2)
+      expect(onRedone).toHaveBeenCalledTimes(2)
+    })
   })
 
   it('clears every pond', () => {
