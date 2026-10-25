@@ -145,7 +145,12 @@ import { BlockHeightProvider } from '@/components/organisms/block-height-context
 import { blockAcceptsHeight, blockWithoutHeight } from '@/lib/modules/block-height'
 import type { ConversionTarget, LineConversion, TableConversion } from '@/lib/modules/conversions'
 import { moveIntoPagePrep } from '@/lib/modules/conversions'
-import { isBlockMenuChord, isContextMenuKey, isDeleteBlockChord, useApplePlatform } from '@/lib/shell-commands'
+import {
+  isBlockMenuChord,
+  isContextMenuKey,
+  isDeleteBlockChord,
+  useApplePlatform,
+} from '@/lib/shell-commands'
 import { slashRows, emptyBlockForType } from '@/lib/modules/palette'
 import { descriptorFor } from '@/lib/modules/registry'
 import { useBelowMd } from '@/lib/layout/use-below-md'
@@ -666,7 +671,11 @@ export function BlockCanvas({
     // name, never meant to land in the title field (KAN-464). Blank it so the
     // opened page shows its placeholder instead of "untitledwhatever you type".
     makePageFromRow: (placement, target) =>
-      void makePage({ ...instantiateTemplate(PREMADE_TEMPLATES.page), title: '' }, placement, target),
+      void makePage(
+        { ...instantiateTemplate(PREMADE_TEMPLATES.page), title: '' },
+        placement,
+        target
+      ),
     makePageFromTemplate: (pick, target, index) => void makePageFromTemplate(pick, target, index),
     // Only `todo` (list/checklist) has no editor of its own to keep focus in
     // (KAN-355) — every other landed type keeps today's behaviour.
@@ -1083,6 +1092,38 @@ export function BlockCanvas({
     }
   }
 
+  // A page or database a block action made (a view's new database, a moved
+  // block's new page) leaves with that action's ⌘Z and returns with ⇧⌘Z:
+  // trashed, never deleted, so redo can find it in the change log again.
+  const trashMadePage = async (id: string) => {
+    try {
+      await trashPage(getSupabase(), id)
+    } catch (err) {
+      console.error('Failed to trash the page this block action made', id, err)
+    }
+    queryClient.invalidateQueries({ queryKey: pagesKey() })
+  }
+  const restoreMadePage = async (id: string) => {
+    try {
+      const supabase = getSupabase()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user || !pondId) return
+      const [deleted] = await listRecords(supabase, {
+        userId: user.id,
+        pondId,
+        targetPageId: id,
+        action: 'delete',
+        limit: 1,
+      })
+      if (deleted) await restorePage(supabase, deleted.id)
+    } catch (err) {
+      console.error('Failed to restore the page this block action made', id, err)
+    }
+    queryClient.invalidateQueries({ queryKey: pagesKey() })
+  }
+
   /**
    * The engine under both "turn into › page" and the block menu's "move into
    * a new page": moves `moveIntoPagePrep`'s prepared copy of the block (ANY
@@ -1121,15 +1162,15 @@ export function BlockCanvas({
         blocks: [prepared.block],
         props: stampNestedPage({}, pageId),
       })
-      // The link takes the moved block's own width and rowStart (dropped from
-      // `prepared.block`, which draws inside the new page, not this row) so a
-      // ½ block moved out of a side-by-side row leaves a ½ link in its place.
+      // The link takes the moved block's own width and its rowStart (which
+      // `prepared.block` drops: it names a row on this page, not the new one),
+      // so a ½ block moved out of a side-by-side row leaves a ½ link in its place.
       const pageLink: Block = {
         id: crypto.randomUUID(),
         type: 'page-link',
         pageId: created.id,
-        width: block.width,
-        rowStart: block.rowStart,
+        ...(block.width !== undefined ? { width: block.width } : {}),
+        ...(block.rowStart !== undefined ? { rowStart: block.rowStart } : {}),
       }
       insertPageOptimistic(
         queryClient,
@@ -1155,34 +1196,8 @@ export function BlockCanvas({
           onUndoHandle: (next) => {
             handle = next
           },
-          onUndone: async () => {
-            try {
-              await trashPage(getSupabase(), created.id)
-            } catch (err) {
-              console.error('Failed to trash the page this move made', created.id, err)
-            }
-            queryClient.invalidateQueries({ queryKey: pagesKey() })
-          },
-          onRedone: async () => {
-            try {
-              const supabase = getSupabase()
-              const {
-                data: { user },
-              } = await supabase.auth.getUser()
-              if (!user || !pondId) return
-              const [deleted] = await listRecords(supabase, {
-                userId: user.id,
-                pondId,
-                targetPageId: created.id,
-                action: 'delete',
-                limit: 1,
-              })
-              if (deleted) await restorePage(supabase, deleted.id)
-            } catch (err) {
-              console.error('Failed to restore the page this move made', created.id, err)
-            }
-            queryClient.invalidateQueries({ queryKey: pagesKey() })
-          },
+          onUndone: () => trashMadePage(created.id),
+          onRedone: () => restoreMadePage(created.id),
         }
       )
       stageUndo({
@@ -1817,8 +1832,11 @@ export function BlockCanvas({
     atIndex: number,
     where: 'above' | 'below'
   ): { insertAt: number; inRow: boolean } {
-    const row = layoutRows(base).find((member) => member.some((block) => block.id === base[atIndex].id))
-    if (!row || row.length < 2) return { insertAt: where === 'above' ? atIndex : atIndex + 1, inRow: false }
+    const row = layoutRows(base).find((member) =>
+      member.some((block) => block.id === base[atIndex].id)
+    )
+    if (!row || row.length < 2)
+      return { insertAt: where === 'above' ? atIndex : atIndex + 1, inRow: false }
     const insertAt =
       where === 'above'
         ? base.findIndex((b) => b.id === row[0].id)
@@ -2079,34 +2097,8 @@ export function BlockCanvas({
       queryClient.invalidateQueries({ queryKey: pagesKey() })
       queryClient.invalidateQueries({ queryKey: ['record-counts', pondId] })
       void persistBlocksAsOwnEdit(landing.next, {
-        onUndone: async () => {
-          try {
-            await trashPage(getSupabase(), made.databaseId)
-          } catch (err) {
-            console.error('Failed to trash the database this view made', made.databaseId, err)
-          }
-          queryClient.invalidateQueries({ queryKey: pagesKey() })
-        },
-        onRedone: async () => {
-          try {
-            const supabase = getSupabase()
-            const {
-              data: { user },
-            } = await supabase.auth.getUser()
-            if (!user || !pondId) return
-            const [deleted] = await listRecords(supabase, {
-              userId: user.id,
-              pondId,
-              targetPageId: made.databaseId,
-              action: 'delete',
-              limit: 1,
-            })
-            if (deleted) await restorePage(supabase, deleted.id)
-          } catch (err) {
-            console.error('Failed to restore the database this view made', made.databaseId, err)
-          }
-          queryClient.invalidateQueries({ queryKey: pagesKey() })
-        },
+        onUndone: () => trashMadePage(made.databaseId),
+        onRedone: () => restoreMadePage(made.databaseId),
       })
     } catch (err) {
       console.error('Failed to make the database', err)
@@ -2574,7 +2566,9 @@ export function BlockCanvas({
       index,
       zone,
       span:
-        columnRect && rect ? { left: columnRect.left - rect.left, width: columnRect.width } : undefined,
+        columnRect && rect
+          ? { left: columnRect.left - rect.left, width: columnRect.width }
+          : undefined,
     })
   }
 
@@ -3270,7 +3264,9 @@ export function BlockCanvas({
                         // member of THIS boundary carries its pill and readout — the
                         // right mate is also the left member of a DIFFERENT boundary,
                         // whose own strip must stay dark while this one drags.
-                        dragging={sharedEdgePreview !== null && sharedEdgePreview.leftId === item.id}
+                        dragging={
+                          sharedEdgePreview !== null && sharedEdgePreview.leftId === item.id
+                        }
                         readout={
                           sharedEdgePreview !== null &&
                           sharedEdgePreview.leftId === item.id &&
@@ -3754,7 +3750,10 @@ function BlockEditor({
   // identity changes, so a fresh object every render would re-run it for no
   // reason.
   const contextAnchor = useMemo(
-    () => (contextPoint ? { getBoundingClientRect: () => pointAnchor(contextPoint.x, contextPoint.y) } : null),
+    () =>
+      contextPoint
+        ? { getBoundingClientRect: () => pointAnchor(contextPoint.x, contextPoint.y) }
+        : null,
     [contextPoint]
   )
   // macOS Chrome/Safari select the word under the pointer as the right
