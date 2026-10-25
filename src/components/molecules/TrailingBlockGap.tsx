@@ -9,9 +9,10 @@ import { MACHINE_HINT_FRAGMENT, PROSE_LINE_PLACEHOLDER } from '@/lib/modules/tex
  * the title, on an empty body) down to where the canvas lets off. At rest it
  * draws nothing; a hover fades in a ghost row reading the same copy the
  * focused empty line itself shows, one line below the last block — offset by
- * `BLOCK_ROW_GAP_PX` (the gap an appended block lands below the last one) plus
- * `TEXT_BLOCK_TOP_INSET_PX` (the real line's own wrapper top inset), so a click
- * swaps which element is real without moving anything. The click itself
+ * `BLOCK_ROW_GAP_PX` (the gap an appended block lands below the last one,
+ * only when there is a last block to land below) plus `TEXT_BLOCK_TOP_INSET_PX`
+ * (the real line's own wrapper top inset), so a click swaps which element is
+ * real without moving anything. The click itself
  * decides nothing here — the caller (`BlockCanvas`, which alone knows whether
  * the last block is already an empty text line) passes the one `onClick` this
  * component fires.
@@ -21,6 +22,7 @@ export function TrailingBlockGap({
   hidden,
   showGhostText = true,
   onHoverChange,
+  leadGap = true,
 }: {
   onClick: () => void
   hidden?: boolean
@@ -34,6 +36,10 @@ export function TrailingBlockGap({
   /** Lets the caller paint the last empty line's own placeholder while this
    *  area is hovered, instead of (or as well as) this row's own ghost text. */
   onHoverChange?: (hovered: boolean) => void
+  /** False when there is no last block to land below (a blank body) — the
+   *  real first line there sits at `marginTop: 0`, so the ghost drops
+   *  `BLOCK_ROW_GAP_PX` too so a click doesn't move anything. */
+  leadGap?: boolean
 }) {
   return (
     <div
@@ -44,7 +50,10 @@ export function TrailingBlockGap({
       onMouseLeave={() => onHoverChange?.(false)}
       data-testid="trailing-block-gap"
       className="group/trailing-gap min-h-20 cursor-text"
-      style={{ paddingTop: BLOCK_ROW_GAP_PX + TEXT_BLOCK_TOP_INSET_PX, paddingInline: TEXT_BLOCK_INSET_PX }}
+      style={{
+        paddingTop: (leadGap ? BLOCK_ROW_GAP_PX : 0) + TEXT_BLOCK_TOP_INSET_PX,
+        paddingInline: TEXT_BLOCK_INSET_PX,
+      }}
     >
       {/* float-left/h-0/pointer-events-none: the exact box model
           `TEXT_PROSE_CLASS`'s own `::before` uses, so the text sits at this

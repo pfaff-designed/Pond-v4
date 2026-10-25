@@ -2770,6 +2770,7 @@ export function BlockCanvas({
           // from its own focus, so this one must not draw a second.
           showGhostText={!trailingLineIsEmptyText && !editingText}
           onHoverChange={setTrailingGapHovered}
+          leadGap={blocks.length > 0}
         />
       )}
 
