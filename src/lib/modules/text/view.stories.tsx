@@ -278,13 +278,20 @@ export const TwoEmptyLinesOneHint: Story = {
     const firstP = firstField.querySelector<HTMLElement>('p')!
     const secondP = secondField.querySelector<HTMLElement>('p')!
 
-    // Both blocks are empty, so both editors carry Tiptap's own autofocus — mounted
-    // via a `setTimeout(0)` in `Editor.mount` — and the later one to fire wins the
-    // focus race regardless of what the test has already clicked. Let that settle
-    // (either field picks it up) before this test's own clicks are the only thing
-    // moving focus; otherwise a click can be stolen back by the other editor's own
-    // deferred autofocus a tick later, which is the source of the CI flake.
-    await waitFor(() => expect(canvasElement.querySelector('.ProseMirror-focused')).not.toBeNull())
+    // Both blocks are empty, so both editors carry Tiptap's own autofocus, each
+    // mounted via its own `setTimeout(0)` in `Editor.mount` (`useEditor`'s mount
+    // effect runs after render, in render order — first field's editor commits
+    // before second's). Equal-delay timers run FIFO, so the second field's
+    // callback is always the one that fires last and wins the focus it steals:
+    // not a coin flip, a fixed order. KAN-550 waited for "some field is focused",
+    // which the FIRST field's own transient autofocus satisfies on its own,
+    // before the second field's still-queued callback has run — so the test's
+    // click could land in that window and the second field's callback could
+    // still fire afterward and steal focus back mid-assertion, which is why that
+    // patch still raced. Wait for the specific field guaranteed to fire last
+    // instead of "any", so no autofocus callback is left pending once this test's
+    // own clicks start.
+    await waitFor(() => expect(secondField).toHaveClass('ProseMirror-focused'))
 
     // The hint's `::before` is gated on `.ProseMirror-focused`, which ProseMirror
     // adds to the field asynchronously after the native focus event — wait for that
