@@ -160,6 +160,16 @@ describe('the trailing gap below the last block (KAN-345 rule 3)', () => {
     expect(screen.queryByTestId('trailing-block-gap')).toBeNull()
   })
 
+  it('grows to fill the column (flex-1) with an 80px floor (min-h-20) for short pages', async () => {
+    const note: Block = { id: 'b-note', type: 'text', content: 'Cabinets are the only open cost.' }
+    renderHarness([note])
+    await findTextBlock()
+
+    const gap = screen.getByTestId('trailing-block-gap')
+    expect(gap.className).toContain('flex-1')
+    expect(gap.className).toContain('min-h-20')
+  })
+
   it("offsets its ghost row by BLOCK_ROW_GAP_PX plus the text wrapper's own top inset, not a restated value — so the real line it opens sits where the ghost text sat", async () => {
     const note: Block = { id: 'b-note', type: 'text', content: 'Cabinets are the only open cost.' }
     renderHarness([note])

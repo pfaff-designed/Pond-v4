@@ -102,10 +102,10 @@ const readRemovedLinks = (value: unknown): MoveSnapshot['removedLinks'] | undefi
  *  cast of its own. `removedLinks`/`appendedLinkId` (KAN-467) are each
  *  optional and read independently, so an old-shape record with neither
  *  still parses, and a malformed `removedLinks` alone doesn't fail the rest
- *  of the snapshot. */
+ *  of the snapshot. `title` (KAN-470) is read the same optional way. */
 export const readMoveSnapshot = (value: unknown): MoveSnapshot | null => {
   if (typeof value !== 'object' || value === null) return null
-  const { parentId, parentTitle, siblingOrder, removedLinks, appendedLinkId } =
+  const { parentId, parentTitle, siblingOrder, removedLinks, appendedLinkId, title } =
     value as Record<string, unknown>
   if (typeof parentId !== 'string' && parentId !== null) return null
   if (typeof parentTitle !== 'string' && parentTitle !== null) return null
@@ -119,6 +119,7 @@ export const readMoveSnapshot = (value: unknown): MoveSnapshot | null => {
     siblingOrder,
     ...(parsedRemovedLinks !== undefined ? { removedLinks: parsedRemovedLinks } : {}),
     ...(typeof appendedLinkId === 'string' ? { appendedLinkId } : {}),
+    ...(typeof title === 'string' ? { title } : {}),
   }
 }
 

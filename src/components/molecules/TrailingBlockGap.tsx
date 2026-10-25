@@ -49,7 +49,7 @@ export function TrailingBlockGap({
       onMouseEnter={() => onHoverChange?.(true)}
       onMouseLeave={() => onHoverChange?.(false)}
       data-testid="trailing-block-gap"
-      className="group/trailing-gap min-h-20 cursor-text"
+      className="group/trailing-gap flex-1 min-h-20 cursor-text"
       style={{
         paddingTop: (leadGap ? BLOCK_ROW_GAP_PX : 0) + TEXT_BLOCK_TOP_INSET_PX,
         paddingInline: TEXT_BLOCK_INSET_PX,

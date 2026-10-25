@@ -52,7 +52,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { usePagePrefetchHandlers } from '@/lib/pages/use-page-prefetch'
 import { createPage, movePage, updateTitle } from '@/lib/pages/client'
-import { DuplicateTitleError, nextAvailableTitle } from '@/lib/pages/dedupe-title'
+import { DuplicateTitleError, nextAvailableTitle, moveTitle } from '@/lib/pages/dedupe-title'
 import {
   fetchPages,
   insertPageOptimistic,
@@ -2589,6 +2589,15 @@ export function Rail() {
     const draggedRow = pages.find((r) => r.id === draggedId)
     const title = draggedRow?.title || 'Untitled'
 
+    // KAN-470: the destination's other children (the new sibling group minus
+    // the moved page itself) — if the dragged title collides with one of
+    // them, suffix it the same way `createPage` already would.
+    const destinationSiblingTitles = move.siblingOrder
+      .filter((id) => id !== draggedId)
+      .map((id) => pages.find((r) => r.id === id)?.title)
+      .filter((t): t is string => t !== undefined)
+    const newTitle = draggedRow ? moveTitle(draggedRow.title, destinationSiblingTitles) : undefined
+
     // Resolved before the move so both sides can be flushed ahead of the RPC
     // (below) and reused for the invalidate after it — one resolve, no drift.
     const oldLinkParentId = draggedRow ? resolveLinkParentId(draggedRow.parent_id, home?.id) : undefined
@@ -2600,6 +2609,7 @@ export function Rail() {
         movedId: draggedId,
         newParentId: move.newParentId,
         siblingOrder: move.siblingOrder,
+        ...(newTitle !== undefined ? { newTitle } : {}),
       },
       pondId
     )
@@ -2621,6 +2631,7 @@ export function Rail() {
           id: draggedId,
           newParentId: move.newParentId,
           siblingOrder: move.siblingOrder,
+          ...(newTitle !== undefined ? { newTitle } : {}),
         })
       )
       const after = record ? readMoveSnapshot(record.after) : null
@@ -2635,8 +2646,23 @@ export function Rail() {
         // for a reload.
         if (oldLinkParentId) queryClient.invalidateQueries({ queryKey: ['page', oldLinkParentId] })
         if (newLinkParentId) queryClient.invalidateQueries({ queryKey: ['page', newLinkParentId] })
+        // KAN-470: a renaming move changes the moved page's own title — an
+        // open DocumentPanel's draft only rebases when ['page', id]
+        // refreshes (use-page-draft.ts), so without this the open page keeps
+        // showing its pre-move title and a later edit's updateTitle clashes
+        // with the destination's sibling again.
+        if (after.title) queryClient.invalidateQueries({ queryKey: ['page', draggedId] })
+        // KAN-470: `after.title` is only present on the RPC's own record when
+        // the move clashed and the RPC actually renamed it — the toast and
+        // the "open" action read that back rather than trusting the
+        // pre-move `draggedRow.title`, so both match what the move really
+        // did, not what the client hoped it would.
+        const destinationLabel = moveParentLabel(after.parentTitle, home?.title ?? pondName)
+        const message = after.title
+          ? `moved ${title} to ${destinationLabel} as "${after.title}" ·`
+          : `moved ${title} to ${destinationLabel} ·`
         stageUndo({
-          message: `moved ${title} to ${moveParentLabel(after.parentTitle, home?.title ?? pondName)} ·`,
+          message,
           undoLabel: 'undo',
           undo: () =>
             // The undo RPC rewrites both link-parents' `blocks` just like the
@@ -2646,7 +2672,7 @@ export function Rail() {
             Promise.all([flushPendingPageSave(oldLinkParentId), flushPendingPageSave(newLinkParentId)])
               .then(() => sessionUndo.undoHandle(pondId, handle))
               .then((outcome) => applyUndoOutcome('undo', outcome, queryClient)),
-          action: () => navigateTo(draggedRow),
+          action: () => navigateTo(after.title ? { ...draggedRow, title: after.title } : draggedRow),
           actionLabel: 'open',
         })
       }
