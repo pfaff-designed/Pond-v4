@@ -77,6 +77,7 @@ import { useHomePage } from '@/lib/pages/use-home-page'
 import { pushRecentGlyphToPond } from '@/lib/pond/client'
 import { PondSwitcher } from './PondSwitcher'
 import { RailFavouritesBand } from './RailFavouritesBand'
+import { rowMark, markGlyph } from '@/lib/rail/row-mark'
 import { isNewTabClick, openWorkspaceUrl, workspaceRenderHref, workspaceUrl } from '@/lib/pages/nav'
 import { requestTitleFocus } from '@/lib/pages/title-focus'
 import { withTemplatesParam } from '@/lib/pages/templates-param'
@@ -133,9 +134,7 @@ import { isStaged, priorLifeIds, unstageId } from '@/lib/deletion/staged-ids'
 import type { CommitReason } from '@/lib/deletion/deferred-commit'
 import { ConfirmDialog } from '@/components/molecules/ConfirmDialog'
 import { PondMolecule } from '@/components/molecules/PondMolecule'
-import { AreaMark } from '@/components/atoms/AreaMark'
 import { PondMark } from '@/components/atoms/PondMark'
-import { KindDot } from '@/components/atoms/PondAtom'
 import { Caret } from '@/components/atoms/Caret'
 import { RailRenameField } from './RailRenameField'
 import { instantiateTemplate } from '@/lib/templates/instantiate'
@@ -922,35 +921,8 @@ function hideNativeDragImage(dataTransfer: DataTransfer) {
 /** PondRail's loading skeleton: eight bars, widths in %, indented in a repeating 0 / 14 / 28px staircase. */
 const SKELETON_WIDTHS = [40, 62, 54, 70, 48, 66, 58, 44]
 
-/**
- * A row's mark, resolved through `resolveMark` so the rail agrees with the
- * breadcrumb, the palette and the cards about every page. `marks` comes from the
- * shared `['pages']` cache, so the rail needs no read of its own. The node itself
- * is the fallback: a rail rendered without a pond (Storybook, a unit test) still
- * shows every area's automatic glyph.
- */
-const rowMark = (node: RailNode, marks: ReadonlyMap<string, MarkSource>): PageMark =>
-  resolveMark(node.id, marks, {
-    id: node.id,
-    parentId: node.parentId,
-    type: node.type,
-    title: node.title,
-  })
-
 /** The mark button's accessible name — a page and an area read the same (6y frame 1). */
 const changeIconLabel = (title: string) => `change icon for ${title || 'Untitled'}`
-
-/** The glyph or dot a row's mark draws, shared by the interactive button and the
- *  reserved rows' static (non-interactive) leading mark. */
-const markGlyph = (mark: PageMark, accent: string | undefined, isSelected: boolean): ReactNode =>
-  mark.glyph ? (
-    <AreaMark glyph={mark.glyph} color={accent} />
-  ) : (
-    <KindDot
-      accent={accent}
-      className={!accent ? (isSelected ? 'bg-mn-text' : 'bg-mn-text/50') : undefined}
-    />
-  )
 
 /**
  * A row's mark, as a real control (KAN-248 2/4, wired to the glyph picker in
@@ -1716,6 +1688,7 @@ export function RailView({
               ids={liveFavouriteIds}
               nodeById={nodeById}
               marks={markMap}
+              pondId={pondId}
               selectedId={selectedId}
               onSelect={onSelect}
             />

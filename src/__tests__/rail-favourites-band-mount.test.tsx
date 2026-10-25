@@ -59,7 +59,7 @@ const band = () => document.querySelector('[data-part="favourites-band"]')
 describe('rail — favourites band mount (KAN-475)', () => {
   it('appears only once a favourite resolves to a live page, dropping a dead id', () => {
     renderRail({ favouritePageIds: ['groceries', 'ghost-id'] })
-    const rows = within(band() as HTMLElement).getAllByRole('button')
+    const rows = within(band() as HTMLElement).getAllByRole('listitem')
     expect(rows.map((r) => r.textContent)).toEqual(['groceries'])
   })
 
@@ -76,7 +76,7 @@ describe('rail — favourites band mount (KAN-475)', () => {
   it('clicking a band row opens that page through the existing open path', () => {
     const onSelect = jest.fn()
     renderRail({ favouritePageIds: ['groceries', 'budget'], onSelect })
-    const rows = within(band() as HTMLElement).getAllByRole('button')
+    const rows = within(band() as HTMLElement).getAllByRole('listitem')
     const budgetRow = rows.find((r) => r.textContent === 'budget')
     budgetRow?.click()
     expect(onSelect).toHaveBeenCalledWith('budget')
@@ -86,11 +86,11 @@ describe('rail — favourites band mount (KAN-475)', () => {
     renderRail({ favouritePageIds: ['groceries', 'budget'], selectedId: 'groceries' })
 
     const groceriesBandRow = within(band() as HTMLElement)
-      .getAllByRole('button')
+      .getAllByRole('listitem')
       .find((r) => r.textContent === 'groceries')
     expect(groceriesBandRow).toHaveAttribute('aria-current', 'true')
     const budgetBandRow = within(band() as HTMLElement)
-      .getAllByRole('button')
+      .getAllByRole('listitem')
       .find((r) => r.textContent === 'budget')
     expect(budgetBandRow).not.toHaveAttribute('aria-current')
 

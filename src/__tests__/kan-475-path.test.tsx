@@ -173,7 +173,7 @@ describe("KAN-475's PATH_STEPS, end to end", () => {
     await waitFor(() => expect(setPondFavourites).toHaveBeenCalledWith(POND_ID, [GROCERIES_ID]))
     await waitFor(() => expect(favouritesBand(container)).not.toBeNull())
     const bandRow = () =>
-      within(favouritesBand(container)!).getByRole('button', { name: 'groceries' })
+      within(favouritesBand(container)!).getByRole('listitem', { name: 'groceries' })
     expect(bandRow()).toHaveAttribute('aria-current', 'true')
 
     // Open a different page — the band survives the navigation.
