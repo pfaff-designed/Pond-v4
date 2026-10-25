@@ -333,13 +333,21 @@ export async function findPagesLinkingTo(
  * before the flush and may already be stale), write only if the fresh read
  * still has the link, invalidate.
  *
- * Each parent's removal is append-merged onto `rootPageId`'s own
+ * Each parent's removal is recorded onto `rootPageId`'s own
  * `props.unlinkedLinks` BEFORE that parent is committed, not collected and
  * written once at the end — so an earlier parent's already-landed removal is
  * never lost if a LATER parent's commit (or the root write itself) throws.
  * `restoreLinks` already refuses to double-apply an entry whose link is
  * still present, so recording a parent that then fails to commit is
  * harmless over-recording, not a correctness bug.
+ *
+ * The write REPLACES `unlinkedLinks` with exactly this call's own removals —
+ * it never merges onto whatever a PRIOR trash of this same subtree left
+ * there (KAN-497). A stale entry (a link that's since moved to a different
+ * parent, or that the person deliberately removed before trashing again)
+ * must not outlive the trash that actually produced it, or a later restore
+ * replays it unasked. When this call finds nothing to unlink at all, any
+ * stale entry left by an earlier trash is cleared for the same reason.
  *
  * Never throws: a failed unlink must not fail the trash it rides with
  * (`appendChildLinkUnder`'s rule) — log and return.
@@ -358,6 +366,14 @@ export async function unlinkTrashedSubtree(
       (parent) => !subtreeIds.has(parent.id)
     )
 
+    // Accumulated across this call only — REPLACES whatever a PRIOR trash
+    // left in `props.unlinkedLinks`, never merged onto it, so a stale entry
+    // (a link that's since moved to a different parent, or that the person
+    // deliberately removed) can't outlive the trash that actually produced
+    // it and replay on a later restore (KAN-497).
+    const allRemoved: RemovedLink[] = []
+    let wroteThisCall = false
+
     for (const parent of parents) {
       await flushPendingPageSave(parent.id)
       const fresh = await getPage(supabase, parent.id)
@@ -371,10 +387,12 @@ export async function unlinkTrashedSubtree(
       if (nextBlocks === fresh.blocks) continue
 
       if (parentRemoved.length > 0) {
+        allRemoved.push(...parentRemoved)
         await readMergeWriteProps(supabase, rootPageId, (props) => ({
           ...props,
-          unlinkedLinks: [...parseUnlinkedLinks(props.unlinkedLinks), ...parentRemoved],
+          unlinkedLinks: [...allRemoved],
         }))
+        wroteThisCall = true
       }
 
       await commitBlocks(supabase, queryClient, parent.id, nextBlocks, {
@@ -383,6 +401,18 @@ export async function unlinkTrashedSubtree(
         pondId,
       })
       await queryClient.invalidateQueries({ queryKey: ['page', parent.id] })
+    }
+
+    // No parent needed unlinking this time, so the loop above never wrote —
+    // but a PRIOR trash may have left an entry here that no longer applies
+    // (its link already moved, or was removed by the person on purpose).
+    // Clear it so a restore can't replay it; skip the write when there's
+    // nothing to clear.
+    if (!wroteThisCall) {
+      const props = await readPageProps(supabase, rootPageId)
+      if (parseUnlinkedLinks(props.unlinkedLinks).length > 0) {
+        await saveProps(supabase, rootPageId, { ...props, unlinkedLinks: [] })
+      }
     }
   } catch (err) {
     console.error('[page-link] trashed subtree not unlinked', rootPageId, err)

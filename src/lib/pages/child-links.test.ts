@@ -809,6 +809,68 @@ describe('unlinkTrashedSubtree', () => {
     expect(consoleError).toHaveBeenCalled()
     consoleError.mockRestore()
   })
+
+  it("replaces the root's unlinkedLinks with only THIS trash's own removals, dropping a stale entry an earlier trash left for a different parent (KAN-497)", async () => {
+    // roof moved from home to house between two trashes: home's old removal
+    // entry is still sitting in props.unlinkedLinks from the first trash,
+    // but home no longer links roof, so this trash only unlinks house.
+    const linkHouse = link('bH', 'child-1')
+    const staleHomeEntry: RemovedLink = {
+      parentId: 'home',
+      block: link('bOld', 'child-1'),
+      index: 0,
+      beforeId: null,
+    }
+    const supabase = makeSupabase({
+      containsResults: { 'child-1': [parentPage('house', [linkHouse])] },
+      propsRow: { props: { unlinkedLinks: [staleHomeEntry] } },
+    })
+    mockGetPage.mockResolvedValue({
+      id: 'house',
+      parentId: null,
+      type: 'page',
+      title: 'house',
+      blocks: [linkHouse],
+      order: 0,
+      props: {},
+    })
+
+    await unlinkTrashedSubtree(supabase as never, queryClient, {
+      pondId: 'pond-1',
+      rootPageId: 'root-1',
+      subtreeIds: new Set(['child-1']),
+    })
+
+    expect(supabase._chain.update).toHaveBeenCalledTimes(1)
+    const [payload] = supabase.update.mock.calls[0]
+    expect(payload.props.unlinkedLinks).toEqual([
+      { parentId: 'house', block: linkHouse, index: 0, beforeId: null },
+    ])
+  })
+
+  it("clears a stale unlinkedLinks entry when this trash finds no live parent to unlink, so a link the person deliberately removed doesn't come back on a later restore (KAN-497)", async () => {
+    const staleEntry: RemovedLink = {
+      parentId: 'home',
+      block: link('bOld', 'child-1'),
+      index: 0,
+      beforeId: null,
+    }
+    const supabase = makeSupabase({
+      containsResults: {},
+      propsRow: { props: { unlinkedLinks: [staleEntry] } },
+    })
+
+    await unlinkTrashedSubtree(supabase as never, queryClient, {
+      pondId: 'pond-1',
+      rootPageId: 'root-1',
+      subtreeIds: new Set(['child-1']),
+    })
+
+    expect(mockCommitBlocks).not.toHaveBeenCalled()
+    expect(supabase._chain.update).toHaveBeenCalledTimes(1)
+    const [payload] = supabase.update.mock.calls[0]
+    expect(payload.props.unlinkedLinks).toEqual([])
+  })
 })
 
 describe('relinkRestoredSubtree', () => {
