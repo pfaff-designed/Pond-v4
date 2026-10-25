@@ -30,10 +30,20 @@ jest.mock('@/lib/supabase/client', () => ({
 
 const mockDeletePage = jest.fn().mockResolvedValue(undefined)
 const mockSaveBlocks = jest.fn().mockResolvedValue(undefined)
+const mockCreatePage = jest.fn().mockResolvedValue({
+  id: 'child-page-1',
+  parentId: 'page-1',
+  type: 'page',
+  title: 'walk the dog',
+  blocks: [],
+  order: 0,
+  props: {},
+})
 jest.mock('@/lib/pages/client', () => ({
   ...jest.requireActual('@/lib/pages/client'),
   deletePage: (...args: unknown[]) => mockDeletePage(...args),
   saveBlocks: (...args: unknown[]) => mockSaveBlocks(...args),
+  createPage: (...args: unknown[]) => mockCreatePage(...args),
 }))
 
 // The width row's keep (KAN-368) writes directly through `saveBlocks`/`appendOwnEdit`.
@@ -56,6 +66,8 @@ jest.mock('@/lib/pages/list-to-table', () => ({
 }))
 
 const heading: Block = { id: 'b-heading', type: 'text', content: '## ingredients' }
+const note: Block = { id: 'b-note', type: 'text', content: 'walk the dog' }
+const line: Block = { id: 'b-line', type: 'text', content: 'hello' }
 const list: Block = {
   id: 'b-list',
   type: 'text',
@@ -619,6 +631,127 @@ describe('turn into — table', () => {
 
     await waitFor(() => expect(lastBlocks(onChange)).toEqual([heading, list]))
     await waitFor(() => expect(mockDeletePage).toHaveBeenCalledWith(expect.anything(), 'db-1'))
+  })
+})
+
+describe('turn into — page', () => {
+  it('moves the line into a new child page and leaves a page-link row in its place', async () => {
+    const user = userEvent.setup()
+    const { onChange } = renderCanvas([note])
+    await user.click(handleOf('b-note'))
+    await user.click(await screen.findByRole('menuitem', { name: 'page' }))
+
+    await waitFor(() => expect(mockCreatePage).toHaveBeenCalledTimes(1))
+    const [, , input] = mockCreatePage.mock.calls[0]
+    expect(input.blocks).toEqual([note])
+    expect(input.title).toBe('walk the dog')
+
+    await waitFor(() =>
+      expect(lastBlocks(onChange)[0]).toMatchObject({ type: 'page-link', pageId: 'child-page-1' })
+    )
+    expect(await screen.findByText(/turned into a page/i)).toBeInTheDocument()
+  })
+
+  it('undo puts the block back and deletes the page it made', async () => {
+    const user = userEvent.setup()
+    const { onChange } = renderCanvas([note])
+    await user.click(handleOf('b-note'))
+    await user.click(await screen.findByRole('menuitem', { name: 'page' }))
+    await waitFor(() => expect(mockCreatePage).toHaveBeenCalledTimes(1))
+    await user.click(await screen.findByRole('button', { name: /undo/i }))
+
+    await waitFor(() => expect(lastBlocks(onChange)).toEqual([note]))
+    await waitFor(() =>
+      expect(mockDeletePage).toHaveBeenCalledWith(expect.anything(), 'child-page-1')
+    )
+  })
+
+  it('picking page twice before createPage resolves calls it once and leaves one page-link (G9)', async () => {
+    const user = userEvent.setup()
+    let resolveCreate!: (value: Awaited<ReturnType<typeof mockCreatePage>>) => void
+    mockCreatePage.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveCreate = resolve
+        })
+    )
+    const { onChange } = renderCanvas([note])
+
+    await user.click(handleOf('b-note'))
+    await user.click(await screen.findByRole('menuitem', { name: 'page' }))
+    // createPage hasn't resolved yet, so the block is still text under its own
+    // id — reopening the menu and picking `page` again must hit the in-flight
+    // guard rather than firing a second create.
+    await user.click(handleOf('b-note'))
+    await user.click(await screen.findByRole('menuitem', { name: 'page' }))
+
+    expect(mockCreatePage).toHaveBeenCalledTimes(1)
+    resolveCreate({
+      id: 'child-page-1',
+      parentId: 'page-1',
+      type: 'page',
+      title: 'walk the dog',
+      blocks: [],
+      order: 0,
+      props: {},
+    })
+
+    await waitFor(() =>
+      expect(lastBlocks(onChange).filter((b) => b.type === 'page-link')).toHaveLength(1)
+    )
+    expect(mockCreatePage).toHaveBeenCalledTimes(1)
+  })
+
+  it('createPage rejecting leaves the block unchanged, with no page-link, and tells the person', async () => {
+    const user = userEvent.setup()
+    mockCreatePage.mockRejectedValueOnce(new Error('network'))
+    const { onChange } = renderCanvas([note])
+
+    await user.click(handleOf('b-note'))
+    await user.click(await screen.findByRole('menuitem', { name: 'page' }))
+
+    expect(await screen.findByText("Couldn't turn the block into a page")).toBeInTheDocument()
+    expect(onChange).not.toHaveBeenCalled()
+    expect(document.getElementById('block-b-note')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /undo/i })).not.toBeInTheDocument()
+  })
+})
+
+describe('turn into — heading (PATH_STEPS: handle to heading, toast undo back to text)', () => {
+  it('a text line becomes a heading 2 in place, same block id, and undo puts it back as text', async () => {
+    const user = userEvent.setup()
+    const { onChange } = renderCanvas([line])
+    await user.click(handleOf('b-line'))
+    await user.click(await screen.findByRole('menuitem', { name: /^heading 2/ }))
+
+    const headed = await screen.findByRole('heading', { level: 2, name: 'hello' })
+    expect(within(document.getElementById('block-b-line')!).getByRole('heading')).toBe(headed)
+    expect(lastBlocks(onChange)).toEqual([{ ...line, content: '## hello' }])
+    expect(await screen.findByText(/turned into heading 2/i)).toBeInTheDocument()
+
+    await user.click(await screen.findByRole('button', { name: /undo/i }))
+    await waitFor(() => expect(lastBlocks(onChange)).toEqual([line]))
+    await waitFor(() =>
+      expect(
+        within(document.getElementById('block-b-line')!).queryByRole('heading')
+      ).not.toBeInTheDocument()
+    )
+  })
+
+  it('a heading’s turn into offers text, heading 1 and heading 3, not heading 2', async () => {
+    const user = userEvent.setup()
+    const heading2: Block = { id: 'b-h2', type: 'text', content: '## hello' }
+    renderCanvas([heading2])
+    await user.click(handleOf('b-h2'))
+
+    const menu = await screen.findByRole('menu', { name: /block menu/i })
+    const turnInto = within(menu).getByRole('group', { name: 'turn into' })
+    expect(
+      within(turnInto).queryByRole('menuitem', { name: /^heading 2/ })
+    ).not.toBeInTheDocument()
+    expect(within(turnInto).getByRole('menuitem', { name: 'text' })).toBeInTheDocument()
+    expect(within(turnInto).getByRole('menuitem', { name: /^heading 1/ })).toBeInTheDocument()
+    expect(within(turnInto).getByRole('menuitem', { name: /^heading 3/ })).toBeInTheDocument()
   })
 })
 

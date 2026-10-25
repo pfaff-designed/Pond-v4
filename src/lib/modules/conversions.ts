@@ -19,6 +19,11 @@
  * the list → database writer in `list-to-table.ts`, which reads a text block of
  * list lines. A `todo` list is handed over as exactly those lines.
  *
+ * `heading-1`/`heading-2`/`heading-3`/`quote`/`code` are a single-node text
+ * block retyped by `retype.ts` (text ⇄ heading ⇄ quote ⇄ code). They are
+ * offered only when the block is one of those shapes — a multi-line or list
+ * text block gets none of the five, same as it gets no table.
+ *
  * Only targets that keep the content are offered: a checklist has no table (its
  * checked state has no column to go to), prose has no table (its lines are not a
  * list), and a block with nothing in it has nothing to keep.
@@ -34,15 +39,71 @@ import {
   previewListTable,
   type DatabaseFromList,
 } from '@/lib/pages/list-to-table'
+import { createPage, type PondPage } from '@/lib/pages/client'
 import type { Block } from './content'
 import type { TextBlock } from './text/schema'
+import { retypeText, textKindOf, type TextKind } from './text/retype'
 import { todoMarker, type TodoBlock, type TodoItem } from './todo/schema'
 
 /** In the menu's order. */
-export const CONVERSION_TARGETS = ['table', 'list', 'checklist', 'text'] as const
+export const CONVERSION_TARGETS = [
+  'table',
+  'heading-1',
+  'heading-2',
+  'heading-3',
+  'quote',
+  'code',
+  'page',
+  'list',
+  'checklist',
+  'text',
+] as const
 export type ConversionTarget = (typeof CONVERSION_TARGETS)[number]
 
-type LineTarget = Exclude<ConversionTarget, 'table'>
+/** `conversions.ts`'s target ids are dashed (`heading-1`); `retype.ts`'s `TextKind` isn't (`heading1`) — this is their one map. */
+const TEXT_KIND_OF_TARGET: Partial<Record<ConversionTarget, TextKind>> = {
+  text: 'text',
+  'heading-1': 'heading1',
+  'heading-2': 'heading2',
+  'heading-3': 'heading3',
+  quote: 'quote',
+  code: 'code',
+}
+
+/** Only levels 1-3 have a dashed target; a heading 4-6 has none, so it has no "own kind" to exclude. */
+const TARGET_OF_TEXT_KIND: Partial<Record<TextKind, LineTarget>> = {
+  text: 'text',
+  heading1: 'heading-1',
+  heading2: 'heading-2',
+  heading3: 'heading-3',
+  quote: 'quote',
+  code: 'code',
+}
+
+/** Offered only for a single-node text block (never for a multi-node one, and never for a list/table). */
+const RETYPE_ONLY_TARGETS = new Set<ConversionTarget>([
+  'heading-1',
+  'heading-2',
+  'heading-3',
+  'quote',
+  'code',
+])
+
+/** A quote or code block's lines are markdown syntax, not list items — `toTodo`/`tableSource` would read `>`/fences as list items, so these targets never apply to either. */
+const LINE_TARGETS_OF_QUOTE_OR_CODE = new Set<ConversionTarget>(['table', 'list', 'checklist'])
+
+const HEADING_LEVEL_OF_KIND: Partial<Record<TextKind, 1 | 2 | 3>> = {
+  heading1: 1,
+  heading2: 2,
+  heading3: 3,
+}
+
+/** `target`'s heading level, read off the one target↔kind map above — null for
+ * every target that isn't a heading (so the menu knows which rows get a chord hint). */
+export const headingLevelOf = (target: ConversionTarget): 1 | 2 | 3 | null =>
+  HEADING_LEVEL_OF_KIND[TEXT_KIND_OF_TARGET[target] ?? 'text'] ?? null
+
+type LineTarget = Exclude<ConversionTarget, 'table' | 'page'>
 
 export interface TableConversionInput {
   title: string
@@ -67,7 +128,22 @@ export interface TableConversion {
   ) => Promise<DatabaseFromList>
 }
 
-export type Conversion = LineConversion | TableConversion
+export interface PageConversionInput {
+  userId: string
+  /** The page this line's block lives on — the new page is always its child. */
+  parentId: string | null
+  pondId: string | null
+  props?: Record<string, unknown>
+}
+
+export interface PageConversion {
+  target: 'page'
+  /** Nothing to count: the page is made, not previewed. */
+  preview: null
+  apply: (supabase: SupabaseClient<Database>, input: PageConversionInput) => Promise<PondPage>
+}
+
+export type Conversion = LineConversion | TableConversion | PageConversion
 
 /** The `[ ]` / `[x]` a list line's item may open with. */
 const TASK_MARK = /^\[([ xX])\]\s+(.*\S)$/
@@ -78,7 +154,7 @@ interface Line {
 }
 
 const kindOf = (block: Block): LineTarget | null => {
-  if (block.type === 'text') return 'text'
+  if (block.type === 'text') return TARGET_OF_TEXT_KIND[textKindOf(block.content) ?? 'text'] ?? null
   if (block.type === 'todo') return todoMarker(block) === 'check' ? 'checklist' : 'list'
   return null
 }
@@ -149,12 +225,37 @@ const tableConversion = (block: Block): TableConversion | null => {
   }
 }
 
+/** `block`'s content, read as the plain single line a new page would be titled from. */
+const pageTitleOf = (block: TextBlock): string =>
+  plainLine(retypeText(block.content, 'text').split('\n')[0] ?? '')
+
+const pageConversion = (block: TextBlock): PageConversion => {
+  const title = pageTitleOf(block)
+  return {
+    target: 'page',
+    preview: null,
+    apply: (supabase, { userId, parentId, pondId, props }) =>
+      createPage(supabase, userId, {
+        parentId,
+        type: 'page',
+        title,
+        blocks: [block],
+        ...(props ? { props } : {}),
+        pondId,
+      }),
+  }
+}
+
 const lineConversion = (
   block: TextBlock | TodoBlock,
   target: LineTarget,
   mintId: () => string
 ): LineConversion => {
   const line = (apply: () => Block): LineConversion => ({ target, preview: null, apply })
+  const kind = TEXT_KIND_OF_TARGET[target]
+  if (block.type === 'text' && kind) {
+    return line(() => ({ ...block, content: retypeText(block.content, kind) }))
+  }
   if (block.type === 'text') {
     return line(() => toTodo(block, target === 'checklist' ? 'check' : 'dot', mintId))
   }
@@ -171,17 +272,28 @@ export const conversionsFor = (
   block: Block,
   mintId: () => string = () => crypto.randomUUID()
 ): Conversion[] => {
-  const kind = kindOf(block)
-  if (kind === null || (block.type !== 'text' && block.type !== 'todo')) return []
+  if (block.type !== 'text' && block.type !== 'todo') return []
   if (block.type === 'text' && linesOf(block.content).length === 0) return []
   if (block.type === 'todo' && block.items.length === 0) return []
 
+  // null for a heading 4-6: it is a single node (so the five retype targets and page
+  // apply below) but has no dashed target of its own to exclude.
+  const kind = kindOf(block)
+  const singleNode = block.type === 'text' && textKindOf(block.content) !== null
+
   return CONVERSION_TARGETS.flatMap((target): Conversion[] => {
     if (target === kind) return []
+    if ((kind === 'quote' || kind === 'code') && LINE_TARGETS_OF_QUOTE_OR_CODE.has(target)) {
+      return []
+    }
     if (target === 'table') {
       const table = tableConversion(block)
       return table ? [table] : []
     }
+    if (target === 'page') {
+      return singleNode && block.type === 'text' ? [pageConversion(block)] : []
+    }
+    if (RETYPE_ONLY_TARGETS.has(target) && !singleNode) return []
     return [lineConversion(block, target, mintId)]
   })
 }

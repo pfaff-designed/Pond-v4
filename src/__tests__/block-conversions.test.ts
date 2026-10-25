@@ -215,6 +215,91 @@ describe('from text', () => {
   })
 })
 
+describe('heading, quote, code', () => {
+  const heading: TextBlock = { id: 'b-heading', type: 'text', content: '## ingredients' }
+  const quote: TextBlock = { id: 'b-quote', type: 'text', content: '> keep it simple' }
+  const code: TextBlock = { id: 'b-code', type: 'text', content: '```\nconst x = 1\n```' }
+  const line: TextBlock = { id: 'b-line', type: 'text', content: 'hello' }
+
+  it('a heading offers every other shape and list/checklist — never itself or table', () => {
+    expect(targets(heading)).toEqual([
+      'heading-1',
+      'heading-3',
+      'quote',
+      'code',
+      'page',
+      'list',
+      'checklist',
+      'text',
+    ])
+  })
+
+  it('a heading past level 3 offers text, heading 1-3, quote, code and page, same as a heading 1-3 — it has no target of its own to exclude', () => {
+    const h5: TextBlock = { id: 'b-h5', type: 'text', content: '##### too deep' }
+    expect(targets(h5)).toEqual([
+      'heading-1',
+      'heading-2',
+      'heading-3',
+      'quote',
+      'code',
+      'page',
+      'list',
+      'checklist',
+      'text',
+    ])
+  })
+
+  it('a quote offers every heading level, code and text — never itself, and never list/checklist/table (its lines are markdown, not list items)', () => {
+    expect(targets(quote)).toEqual(['heading-1', 'heading-2', 'heading-3', 'code', 'page', 'text'])
+  })
+
+  it('a code block offers every heading level, quote and text — never itself, and never list/checklist/table (its lines are markdown, not list items)', () => {
+    expect(targets(code)).toEqual([
+      'heading-1',
+      'heading-2',
+      'heading-3',
+      'quote',
+      'page',
+      'text',
+    ])
+  })
+
+  it('a single-line text block, being one node, now offers heading, quote and code too', () => {
+    expect(targets(line)).toEqual([
+      'heading-1',
+      'heading-2',
+      'heading-3',
+      'quote',
+      'code',
+      'page',
+      'list',
+      'checklist',
+    ])
+  })
+
+  it('a multi-line text block is not a single node, so it offers none of the five', () => {
+    expect(targets(prose)).toEqual(['list', 'checklist'])
+  })
+
+  it('retypes the content, keeping the block’s id and label', () => {
+    expect(pick(heading, 'text').apply()).toEqual({
+      id: 'b-heading',
+      type: 'text',
+      content: 'ingredients',
+    })
+    expect(pick(quote, 'heading-2').apply()).toEqual({
+      id: 'b-quote',
+      type: 'text',
+      content: '## keep it simple',
+    })
+    expect(pick(code, 'quote').apply()).toEqual({
+      id: 'b-code',
+      type: 'text',
+      content: '> const x = 1',
+    })
+  })
+})
+
 describe('→ table delegates to the list → database writer', () => {
   it('previews a list’s table — 3 rows · 2 columns for the board’s fixture shape', () => {
     expect(pick(list, 'table').preview).toBe('3 rows · 2 columns')
