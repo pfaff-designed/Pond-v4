@@ -28,6 +28,7 @@ import { createPageWriteQueue } from '@/lib/pages/page-write-queue'
 import type { PageRow } from '@/lib/pages/tree'
 import { findTextBlock, writeInTextBlock } from './helpers/text-block'
 import { makeFakeSupabase } from './helpers/fake-supabase'
+import { rowByLabel } from './helpers/slash-menu'
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
@@ -171,7 +172,7 @@ async function openTableSource(): Promise<HTMLElement> {
   await screen.findByRole('listbox', { name: 'blocks' })
   writeInTextBlock(editor, '/table')
   const menu = await screen.findByRole('listbox', { name: 'blocks' })
-  fireEvent.click(within(menu).getByText('table'))
+  fireEvent.click(rowByLabel(menu, 'table'))
   return screen.findByRole('listbox', { name: '/table' })
 }
 

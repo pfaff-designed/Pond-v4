@@ -81,6 +81,7 @@ describe('blockWord — each block’s name', () => {
     ['a chilled white, nothing oaked', 'text'],
     ['#hashtag is not a heading — no space', 'text'],
     ['  ## indented still opens on one', 'heading'],
+    ['# Title\nbody', 'heading'],
   ])('bare prose %j → %s', (content, word) => {
     expect(blockWord(text(content))).toBe(word)
   })

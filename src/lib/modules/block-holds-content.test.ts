@@ -30,6 +30,7 @@ describe('blockHoldsContent', () => {
       true
     )
     expect(blockHoldsContent({ id: 'p', type: 'page-link', pageId: 'child' })).toBe(true)
+    expect(blockHoldsContent({ id: 'toc', type: 'toc' })).toBe(true)
   })
 
   it('a blank log and an empty table do not', () => {

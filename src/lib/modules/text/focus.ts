@@ -12,6 +12,25 @@ export const focusTextBlock = (root: Element | null, at: 'start' | 'end'): boole
 }
 
 /**
+ * Puts the caret at the column nearest `x` on the first (`'top'`) or last
+ * (`'bottom'`) visual line of the text block drawn inside `root` (KAN-367):
+ * an arrow key leaving a neighbouring block lands at the same column it left
+ * from, not always the block's own start/end. `posAtCoords` reads the exact
+ * line box only in a real layout (jsdom has none, same caveat as the press
+ * landing in `editor.tsx`); when it can't resolve a position there, this
+ * falls back to the block's own start/end, same as a plain arrow-key leave.
+ */
+export const focusTextBlockAt = (root: Element | null, x: number, at: 'top' | 'bottom'): boolean => {
+  const field = root?.querySelector<TiptapEditorHTMLElement>('[role="textbox"][contenteditable]')
+  if (!field?.editor) return false
+  const rect = field.getBoundingClientRect()
+  const y = at === 'top' ? rect.top + 1 : rect.bottom - 1
+  const found = field.editor.view.posAtCoords({ left: x, top: y })
+  field.editor.commands.focus(found ? found.pos : at === 'top' ? 'start' : 'end')
+  return true
+}
+
+/**
  * Whether the text block drawn inside `root` has any text between the start
  * of the document and the caret — read-only, moves nothing. Decides the
  * ⌘⌫ collision (AUDIT K1–K4): with text before the caret, the browser's own

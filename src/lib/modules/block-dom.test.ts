@@ -1,4 +1,4 @@
-import { focusPageTitle } from './block-dom'
+import { blockDomId, focusPageTitle, scrollToBlock } from './block-dom'
 
 describe('focusPageTitle', () => {
   afterEach(() => {
@@ -38,5 +38,41 @@ describe('focusPageTitle', () => {
 
   it('no-ops when no title element is mounted', () => {
     expect(() => focusPageTitle()).not.toThrow()
+  })
+})
+
+describe('scrollToBlock', () => {
+  afterEach(() => {
+    document.body.innerHTML = ''
+    jest.useRealTimers()
+  })
+
+  function mountBlock(id: string) {
+    const el = document.createElement('div')
+    el.id = blockDomId(id)
+    el.scrollIntoView = jest.fn()
+    document.body.appendChild(el)
+    return el
+  }
+
+  it('defaults to centered and highlighted', () => {
+    jest.useFakeTimers()
+    const el = mountBlock('b1')
+    scrollToBlock('b1')
+    expect(el.scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'center' })
+    expect(el.classList.contains('ring-2')).toBe(true)
+    jest.advanceTimersByTime(1200)
+    expect(el.classList.contains('ring-2')).toBe(false)
+  })
+
+  it("scrolls to 'start' with no highlight when asked (the TOC's entries)", () => {
+    const el = mountBlock('b2')
+    scrollToBlock('b2', { block: 'start', highlight: false })
+    expect(el.scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' })
+    expect(el.classList.contains('ring-2')).toBe(false)
+  })
+
+  it('no-ops when the block is not mounted', () => {
+    expect(() => scrollToBlock('missing')).not.toThrow()
   })
 })

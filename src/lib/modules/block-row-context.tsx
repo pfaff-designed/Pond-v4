@@ -42,11 +42,26 @@ export interface BlockRowValue {
    */
   commitStep?: (patch: Block) => void
   /**
-   * ↑ at this row's first visual line hands focus to the page title (KAN-464).
-   * Only block 0's row gets one — every other row leaves ArrowUp to its own
-   * handling, so absent is "not the first block", not "not yet supported".
+   * ↑ at this row's first visual line (KAN-367/KAN-464): every row gets one.
+   * `x` is the caret's own column (`view.coordsAtPos(selection.from).left`),
+   * carried over so the neighbour lands at the same column, not always its
+   * start. Block 0's is wired to the page title instead of a neighbour.
    */
-  leaveUp?: () => void
+  leaveUp?: (x: number) => void
+  /**
+   * ↓ at this row's last visual line (KAN-367) — the same contract as
+   * `leaveUp`, downward. Absent on the LAST block: there is no row below to
+   * land in, so the key is left to ProseMirror's own handling.
+   */
+  leaveDown?: (x: number) => void
+  /**
+   * Esc in a text editor selects this row instead of blurring to the page
+   * body (KAN-367) — focuses the row's own element, the same focus
+   * `handleFocus`/`handleBlur` already read `selected` off. Absent outside a
+   * `BlockCanvas` host (Storybook, the AI terminal reference): a view falls
+   * back to its own blur.
+   */
+  select?: () => void
 }
 
 const BlockRowContext = createContext<BlockRowValue>({

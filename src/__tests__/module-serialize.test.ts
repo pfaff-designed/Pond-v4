@@ -65,6 +65,9 @@ const samples: Record<string, Block> = {
   // KAN-122: no hydrated title in reach here, so serialize falls back to the
   // generic name rather than the raw pageId.
   'page-link': { id: 'b1', type: 'page-link', pageId: 'p1' },
+  // KAN-482: no siblings passed here (bare serialize(block) call below), so
+  // serialize says it has no page in reach rather than guessing a heading list.
+  toc: { id: 'b1', type: 'toc' },
 }
 
 function serialize(block: Block): string {

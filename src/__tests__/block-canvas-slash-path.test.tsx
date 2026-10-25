@@ -416,3 +416,56 @@ describe('the `/divider` and `/numbered` paths land with the caret ready (KAN-46
     expect($from.parent.textContent).toBe('')
   })
 })
+
+describe('`/table of contents` lists the page\'s headings and jumps to them (KAN-482)', () => {
+  it('`/table of contents` → ↵ lands a block listing three headings; clicking the third scrolls to it', async () => {
+    const user = userEvent.setup()
+    const h1: Block = { id: 'h1', type: 'text', content: '# one' }
+    const h2: Block = { id: 'h2', type: 'text', content: '## two' }
+    const h3: Block = { id: 'h3', type: 'text', content: '### three' }
+    const emptyLine: Block = { id: 'b-empty', type: 'text', content: '' }
+    renderCanvas([h1, h2, h3, emptyLine])
+
+    const host = () =>
+      within(document.getElementById('block-b-empty')!).getByRole('textbox', {
+        name: 'text block',
+      })
+    writeInTextBlock(host(), '/')
+    await screen.findByRole('listbox', { name: 'blocks' })
+    writeInTextBlock(host(), '/table of contents')
+    const menu = await screen.findByRole('listbox', { name: 'blocks' })
+    expect(labelsOf(menu)).toEqual(['table of contents'])
+
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument())
+
+    const rows = screen.getAllByRole('button', { name: /^(one|two|three)$/ })
+    expect(rows.map((row) => row.textContent)).toEqual(['one', 'two', 'three'])
+
+    const headingThree = document.getElementById('block-h3')!
+    const scrollIntoView = jest.fn()
+    headingThree.scrollIntoView = scrollIntoView
+    await user.click(rows[2])
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' })
+  })
+
+  it('focusing an entry then leaving the block keeps the table of contents (KAN-482)', async () => {
+    const user = userEvent.setup()
+    const h1: Block = { id: 'h1', type: 'text', content: '# one' }
+    const toc: Block = { id: 'b-toc', type: 'toc' }
+    renderCanvas([h1, toc])
+
+    const row = screen.getByRole('button', { name: 'one' })
+    await user.click(row)
+    const outside = document.createElement('button')
+    document.body.appendChild(outside)
+    await user.click(outside)
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(document.getElementById('block-b-toc')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'one' })).toBeInTheDocument()
+    outside.remove()
+  })
+})
