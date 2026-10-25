@@ -185,6 +185,22 @@ describe('ToggleView — Enter (KAN-480 build item 5)', () => {
     expect(screen.getByText('packing list')).toBeInTheDocument()
   })
 
+  it('on a FOLDED toggle, unfolds and lands the caret in the body — the lazily created body editor', async () => {
+    render(
+      <StatefulToggle
+        data={{ id: 't1', type: 'toggle', content: 'packing list', folded: true }}
+      />
+    )
+    const [summary] = await findAllTextBlocks()
+    act(() => {
+      textEditorOf(summary).commands.focus('end')
+    })
+    fireEvent.keyDown(summary, { key: 'Enter' })
+    const [, body] = await findAllTextBlocks()
+    await waitFor(() => expect(textEditorOf(body).isFocused).toBe(true))
+    expect(screen.getByRole('button')).toHaveAttribute('aria-expanded', 'true')
+  })
+
   it('in the body adds a second body line — one block on the page, not a new one', async () => {
     const outerStepOut = jest.fn()
     render(

@@ -101,11 +101,9 @@ function renderPath(blocks: Block[]) {
 }
 
 // The row also hosts `BlockHandleMenu`'s own popup-trigger button, which also
-// carries `aria-expanded` — told apart by `aria-haspopup`, which only it has.
-const foldButtonIn = (row: HTMLElement) =>
-  within(row)
-    .getAllByRole('button')
-    .find((b) => !b.hasAttribute('aria-haspopup'))!
+// carries `aria-expanded` — told apart by its accessible name (`fold`/`unfold`),
+// which only the ▸ button has.
+const foldButtonIn = (row: HTMLElement) => within(row).getByRole('button', { name: /^(fold|unfold)$/ })
 
 const undoRecord = (id: string): ChangeLogRecord => ({
   id,

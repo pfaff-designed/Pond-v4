@@ -471,12 +471,9 @@ describe('`/table of contents` lists the page\'s headings and jumps to them (KAN
 })
 
 // The row also hosts `BlockHandleMenu`'s own popup-trigger button, which also
-// carries `aria-expanded` — told apart by `aria-haspopup`, which only it has
-// (`toggle-fold-persist.test.tsx`'s own helper).
-const foldButtonIn = (row: HTMLElement) =>
-  within(row)
-    .getAllByRole('button')
-    .find((b) => !b.hasAttribute('aria-haspopup'))!
+// carries `aria-expanded` — told apart by its accessible name (`fold`/`unfold`),
+// which only the ▸ button has (`toggle-fold-persist.test.tsx`'s own helper).
+const foldButtonIn = (row: HTMLElement) => within(row).getByRole('button', { name: /^(fold|unfold)$/ })
 
 describe('the `/toggle` path lands a fold with the caret in its summary (KAN-480)', () => {
   it('/toggle ↵ → type the summary → ↵ → type the body → ▸ folds and unfolds it', async () => {

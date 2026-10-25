@@ -88,6 +88,13 @@ describe('templateOutlineRows', () => {
     ])
   })
 
+  it('reads a toggle by its own kind and mark, not the list it stands beside', () => {
+    const block: Block = { id: 'tg', type: 'toggle', content: 'packing list' }
+    expect(templateOutlineRows([block])).toEqual([
+      { kind: 'toggle', label: '', height: 110, icon: ICON.toggle },
+    ])
+  })
+
   it('previews every premade template without throwing', () => {
     for (const kind of Object.keys(PREMADE_TEMPLATES) as (keyof typeof PREMADE_TEMPLATES)[]) {
       const { blocks } = instantiateTemplate(PREMADE_TEMPLATES[kind])

@@ -105,10 +105,8 @@ function outlineIcon(block: Block): SlashIcon {
     // `list` reads closest to a quiet list of entries.
     case 'toc':
       return ICON.list
-    // KAN-480: a stand-in until the `/toggle` row item adds its own hand-drawn
-    // mark (`ICON.toggle`) — `list` reads closest to a foldable line of entries.
     case 'toggle':
-      return ICON.list
+      return ICON.toggle
   }
 }
 

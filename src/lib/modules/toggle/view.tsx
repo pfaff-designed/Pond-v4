@@ -94,7 +94,14 @@ export function ToggleView({ data, editable, onChange, autofocus }: ModuleViewPr
 
   useEffect(() => {
     if (focusBodyToken === 0) return
-    editorForBlock(fieldIds.body)?.commands.focus('start')
+    // On a FOLDED toggle, this effect fires in the SAME commit the body first
+    // mounts in — `immediatelyRender: false` (`editor.tsx`) defers the body's
+    // own tiptap editor to a later effect, so it may not be registered yet.
+    // One retry on the next frame, as `focusTextBlockSoon` (`BlockCanvas.tsx`).
+    const focusBody = () => Boolean(editorForBlock(fieldIds.body)?.commands.focus('start'))
+    if (focusBody()) return
+    const frame = requestAnimationFrame(focusBody)
+    return () => cancelAnimationFrame(frame)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fires once per token, not per id
   }, [focusBodyToken])
 
@@ -102,14 +109,14 @@ export function ToggleView({ data, editable, onChange, autofocus }: ModuleViewPr
     selected: false,
     stepOut: (patch, content, where = 'below') => {
       if (where === 'above') {
-        const summary = patch as TextBlock | undefined
+        const summary = patch?.type === 'text' ? patch : undefined
         outerStepOut(summary ? { ...data, content: summary.content } : undefined, content, where)
         return
       }
-      const summary = patch as TextBlock
+      if (patch?.type !== 'text') return
       onChange?.({
         ...data,
-        content: summary.content,
+        content: patch.content,
         body: joinBody(content ?? '', data.body),
         folded: false,
       })
@@ -123,6 +130,7 @@ export function ToggleView({ data, editable, onChange, autofocus }: ModuleViewPr
         <button
           type="button"
           aria-expanded={!folded}
+          aria-label={folded ? 'unfold' : 'fold'}
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => commit({ ...data, folded: !folded })}
           className="mt-[0.3em] grid w-[9px] flex-none place-items-center text-mn-text-secondary"
