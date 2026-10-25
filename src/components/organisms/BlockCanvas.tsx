@@ -3152,14 +3152,19 @@ function useBlockEmptyState(
  * Return on the block itself — not on anything inside it — opens a line after a
  * block that is not text. A text block's Return is its editor's.
  *
- * A click on the handle — a press that ends in pointerup within
- * `HANDLE_PRESS_MOVE_THRESHOLD_PX` of where it started — or ⌘/ (Ctrl+/ off
- * Apple) anywhere in the block, opens the block menu (`PondMenu` kind
- * `block`), and the block wears the open ring while it is open. Base UI's own
- * trigger opens on pointerdown; `handlePointerOpenChange` below drops that and
- * any open that arrives after the press has moved past the threshold, so a
- * press that becomes a drag never opens it (KAN-440 comment 1) — ⌘/ is never
- * gated by this, so a stuck press state from an earlier drag can't block it.
+ * The handle is drag-only on desktop (KAN-485): a press that ends in
+ * pointerup within `HANDLE_PRESS_MOVE_THRESHOLD_PX` of where it started, or
+ * Enter/Space on the focused handle, selects the row — it never opens the
+ * menu. A press that moves past the threshold still drags, unchanged. The
+ * menu opens from right-click on the block, ⌘/ (Ctrl+/ off Apple) anywhere in
+ * it, or ⇧F10/the ContextMenu key on a selected row, and the block wears the
+ * open ring while it is open. Phone (`size="mobile"`) keeps the old
+ * tap-opens-the-menu path on the handle itself — iOS Safari fires no
+ * `contextmenu` on a long-press. Base UI's own trigger opens on pointerdown;
+ * `handlePointerOpenChange` below drops that and any open that arrives after
+ * the press has moved past the threshold, so a press that becomes a drag
+ * never opens it (KAN-440 comment 1) — ⌘/ is never gated by this, so a stuck
+ * press state from an earlier drag can't block it.
  */
 const HANDLE_PRESS_MOVE_THRESHOLD_PX = 4
 function BlockEditor({
@@ -3699,12 +3704,17 @@ function BlockEditor({
     onMenuOpenChange?.(open)
   }
 
-  // The gate (see `pressRef` above): a POINTER-originated open — Base UI's own
-  // pointerdown-driven request (routed here via `PondMenu`'s `onOpenChange`)
-  // and the handle's own click below — is dropped while the press is still
-  // down or has moved past the drag threshold, so only a genuine click opens
-  // the menu from the handle and a drag never does.
+  // Every open request the TRIGGER itself makes — Base UI opens it on
+  // pointerdown and on a keyboard Enter/Space keydown, neither of which
+  // touches `pressRef` — arrives here, never `handleMenuOpenChange` directly.
+  // Desktop (KAN-485): the trigger never opens the menu, full stop — the
+  // handle only drags, so every `open` request from it is dropped regardless
+  // of how it was made; a close (Escape, outside click, picking an item)
+  // still passes through. Phone keeps the tap-opens-the-menu path, gated the
+  // old way: dropped while the press is still down or has moved past the
+  // drag threshold, so a drag never opens it.
   function handlePointerOpenChange(open: boolean) {
+    if (open && menuSize !== 'mobile') return
     if (open && (pressRef.current.down || pressRef.current.moved)) return
     handleMenuOpenChange(open)
   }
@@ -3759,8 +3769,12 @@ function BlockEditor({
     }
   }
   function handleTriggerPointerUp() {
+    const noMove = !pressRef.current.moved
     pressRef.current.down = false
     setDragArmed(false)
+    // Desktop: a no-move release selects the row instead of opening the menu
+    // (KAN-485). Phone keeps the tap-opens-the-menu path below instead.
+    if (menuSize !== 'mobile' && noMove) selectRow()
   }
   // An HTML5 drag never fires `pointerup` on the handle — it ends in
   // `pointercancel` (here) or the row's `dragend` below — so without this,
@@ -3772,14 +3786,24 @@ function BlockEditor({
     pressRef.current.moved = false
     setDragArmed(false)
   }
-  // The click that ends an unmoved press. Toggle against the open state the
-  // PRESS saw at pointerdown, not the live prop: Base UI's own trigger closes
-  // an already-open menu on this same press's mousedown (before this click
-  // fires), so a click that started on an open menu is that close's trailing
-  // click, not a new open request, and must not reopen it.
+  // Phone (KAN-485) keeps the old click-opens-the-menu path: toggle against
+  // the open state the PRESS saw at pointerdown, not the live prop — Base
+  // UI's own trigger closes an already-open menu on this same press's
+  // mousedown (before this click fires), so a click that started on an open
+  // menu is that close's trailing click, not a new open request, and must
+  // not reopen it. Desktop drops that path entirely (the handle only drags);
+  // its own click — from a mouse release `handleTriggerPointerUp` above
+  // already selected, or from Enter/Space, which never sets `pressRef` at
+  // all — selects the row instead, unless a drag past the threshold is what
+  // produced this click.
   function handleTriggerClick() {
-    if (pressRef.current.openAtDown) return
-    handlePointerOpenChange(true)
+    if (menuSize === 'mobile') {
+      if (pressRef.current.openAtDown) return
+      handlePointerOpenChange(true)
+      return
+    }
+    if (pressRef.current.moved) return
+    selectRow()
   }
 
   // ⌥↑/⌥↓ on the handle reorder the block: the menu's trigger would otherwise
@@ -3999,8 +4023,9 @@ function BlockEditor({
           (KAN-259) sits INSIDE the card at `right 2 · top 2 · 44x44` — a touch
           target can't float off-card or wait on a hover that never fires — so
           it is always visible there; PondBlock's head row reserves the 40px
-          this takes (`size="mobile"`, below). Press-and-drag reorders, a click
-          opens the block menu, which is where `delete` lives. Inside the card
+          this takes (`size="mobile"`, below). Press-and-drag reorders; a
+          no-move release selects the row. Phone keeps a tap opening the
+          block menu (KAN-485), which is where `delete` lives. Inside the card
           it must stack ABOVE the body that follows it in the DOM (the card's
           paper, a text block's editor) or taps land on the body: `z-[1]`, the
           lowest lift that does it, under every floating surface (z ≥ 4). */}
