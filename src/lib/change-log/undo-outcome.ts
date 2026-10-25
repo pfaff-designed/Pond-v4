@@ -104,13 +104,19 @@ export function applyUndoOutcome(
         const linkParentId = resolveLinkParentId(snapshot.parentId, homeId)
         if (linkParentId) void queryClient.invalidateQueries({ queryKey: ['page', linkParentId] })
       }
-      // A `duplicate_page` undo/redo record's own `after` carries the SAME
-      // link info the original record did (`change_log_step` copies it
-      // through unchanged) — already an absolute page id, unlike a move's
-      // `parentId`, so no `resolveLinkParentId` is needed here.
-      const duplicate = readDuplicatePageSnapshot(record.after)
-      if (duplicate?.linkParentId) {
-        void queryClient.invalidateQueries({ queryKey: ['page', duplicate.linkParentId] })
+      // A real ⌘Z's undo record carries the duplicate's link info on its OWN
+      // `before` (`change_log_step`, 0030, swaps before/after: the undo
+      // record's `before` is the original's `after`, `after` is the
+      // original's `before`, which is always null here) — so both sides are
+      // tried, same as the move loop above. Already an absolute page id,
+      // unlike a move's `parentId`, so no `resolveLinkParentId` is needed.
+      for (const snapshot of [
+        readDuplicatePageSnapshot(record.before),
+        readDuplicatePageSnapshot(record.after),
+      ]) {
+        if (snapshot?.linkParentId) {
+          void queryClient.invalidateQueries({ queryKey: ['page', snapshot.linkParentId] })
+        }
       }
     }
     // `result.records` are the NEW undo/redo records the RPC just logged, never

@@ -173,11 +173,15 @@ export interface MoveSnapshot {
 /**
  * A `duplicate_page` record's `after` (KAN-468, migration 0032): the copy's
  * root id, and — when the (unchanged) parent gained a page-link for it —
- * that block's id and the row it landed on. `before` is always null, so
- * there is nothing to snapshot on that side. An undo/redo record's own
- * `after` carries this same shape (`change_log_step` copies it through
- * unchanged), so `readDuplicatePageSnapshot` (next to `readMoveSnapshot`)
- * reads either one the same way.
+ * that block's id and the row it landed on. `before` is always null on the
+ * original record, so there is nothing to snapshot on that side there.
+ * `change_log_step` (0030) undoes by swapping before/after, so the undo
+ * record it logs carries this same shape on its OWN `before` (the original's
+ * `after`), with `after` null (the original's `before`) — `readDuplicatePageSnapshot`
+ * (next to `readMoveSnapshot`) must be tried against both sides, same as a
+ * move's. Redo of a `page`-kind record (which `duplicate_page` reuses) is
+ * refused outright by `change_log_set_back` when `before` is null (0030, part
+ * 2b), so a redo never reaches this snapshot at all.
  */
 export interface DuplicatePageSnapshot {
   pageId: string

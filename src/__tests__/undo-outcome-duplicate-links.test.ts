@@ -1,9 +1,17 @@
 /**
- * KAN-468 follow-up: undoing or redoing a duplicate must invalidate the
- * link parent's own `['page', id]` key too, not just the copy's. Without it,
- * that parent's open draft never rebases onto the appended (or, on undo,
- * removed) link row, and the next keystroke's debounced save writes the
- * stale draft back over it.
+ * KAN-468 follow-up: undoing a duplicate must invalidate the link parent's
+ * own `['page', id]` key too, not just the copy's. Without it, that parent's
+ * open draft never rebases onto the removed link row, and the next
+ * keystroke's debounced save writes the stale draft (still linking the
+ * trashed copy) back over it.
+ *
+ * `change_log_step` (0030) undoes by swapping before/after, so the undo
+ * record this applies to carries the duplicate's snapshot on its OWN
+ * `before` (the original record's `after`), with `after` null (the
+ * original's `before`) — these fixtures use that real shape, not the
+ * original record's own before/after. Redo is not exercised here: a
+ * `page`-kind record (which `duplicate_page` reuses) refuses redo outright
+ * when `before` is null (0030, part 2b), so a redo never reaches this code.
  */
 
 import { QueryClient } from '@tanstack/react-query'
@@ -45,7 +53,7 @@ const pageInvalidations = (invalidateQueries: jest.SpyInstance): unknown[] =>
     .filter((key): key is readonly unknown[] => Array.isArray(key) && key[0] === 'page')
     .map((key) => key[1])
 
-describe('applyUndoOutcome — undo/redo of a duplicate invalidates its link parent', () => {
+describe('applyUndoOutcome — undoing a duplicate invalidates its link parent', () => {
   it('invalidates the link parent for an undo record', () => {
     const queryClient = new QueryClient()
     const invalidateQueries = jest.spyOn(queryClient, 'invalidateQueries')
@@ -58,32 +66,8 @@ describe('applyUndoOutcome — undo/redo of a duplicate invalidates its link par
           record({
             action: 'undo',
             targetPageId: 'copy-1',
-            before: null,
-            after: duplicateSnapshot({ appendedLinkId: 'link-1', linkParentId: 'kitchen-1' }),
-          }),
-        ],
-        step,
-      },
-      queryClient
-    )
-
-    expect(pageInvalidations(invalidateQueries)).toContain('kitchen-1')
-  })
-
-  it('invalidates the link parent for a redo record', () => {
-    const queryClient = new QueryClient()
-    const invalidateQueries = jest.spyOn(queryClient, 'invalidateQueries')
-
-    applyUndoOutcome(
-      'redo',
-      {
-        outcome: 'done',
-        records: [
-          record({
-            action: 'redo',
-            targetPageId: 'copy-1',
-            before: null,
-            after: duplicateSnapshot({ appendedLinkId: 'link-1', linkParentId: 'kitchen-1' }),
+            before: duplicateSnapshot({ appendedLinkId: 'link-1', linkParentId: 'kitchen-1' }),
+            after: null,
           }),
         ],
         step,
@@ -106,8 +90,8 @@ describe('applyUndoOutcome — undo/redo of a duplicate invalidates its link par
           record({
             action: 'undo',
             targetPageId: 'copy-1',
-            before: null,
-            after: duplicateSnapshot(),
+            before: duplicateSnapshot(),
+            after: null,
           }),
         ],
         step,
