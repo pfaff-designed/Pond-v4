@@ -156,7 +156,10 @@ export interface SessionUndoOptions {
   timeoutMs?: number
 }
 
-const withTimeout = <T>(promise: Promise<T>, timeoutMs: number): Promise<T> =>
+/** Races `promise` against `timeoutMs`, rejecting with {@link SessionUndoTimeoutError}
+ *  on expiry. Exported for callers outside this module (KAN-557's template
+ *  apply) whose own `onUndone`/`onRedone` need the same bound. */
+export const withTimeout = <T>(promise: Promise<T>, timeoutMs: number): Promise<T> =>
   new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => reject(new SessionUndoTimeoutError()), timeoutMs)
     promise.then(

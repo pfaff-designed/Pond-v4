@@ -136,7 +136,12 @@ import {
   type Landing,
   type SlashTarget,
 } from '@/components/organisms/use-slash-pick'
-import { sessionUndo, type UndoHandle } from '@/lib/change-log/session-undo'
+import {
+  sessionUndo,
+  withTimeout,
+  STEP_TIMEOUT_MS,
+  type UndoHandle,
+} from '@/lib/change-log/session-undo'
 import { applyUndoOutcome } from '@/lib/change-log/undo-outcome'
 import { blockName as changeBlockName } from '@/lib/change-log/summary'
 import { appendOwnEdit, listRecords } from '@/lib/change-log/store'
@@ -2321,31 +2326,117 @@ export function BlockCanvas({
     // mount — before this ever ran. A failed write discards the blocks, so
     // stale ids left in the set are harmless.
     for (const block of applied.blocks) markInserted(block.id)
-    if (!(await persistBlocksAsOwnEdit(applied.blocks, { discardOnFailure: true }))) return
-    // KAN-138: applying a `yours` template retires its "just saved" lead — but
-    // only once the blocks write above actually landed; a failed apply keeps
-    // the lead so the person's retry still sees it first.
-    if (pick.origin === 'yours' && pondId) justSaved.clear(pondId, pick.id)
-    if (applied.schema) {
+    // The schema (board 8e's reserved `_schema` key) lives inside `props`.
+    // `priorProps` is this run's (apply or redo's) snapshot of what the page
+    // carried right before it wrote — `null` means the snapshot read itself
+    // failed, not "no props": `revertTemplateSchemaProps` tells the two apart
+    // (full replace vs. remove-only-the-added-keys) so a failed read can
+    // never wipe props this apply never saw.
+    let priorProps: Record<string, unknown> | null = null
+    // One home for the saveProps + query-cache pair, shared by apply, redo
+    // and revert alike.
+    const writePageProps = async (next: Record<string, unknown>) => {
       try {
-        await defineSchema(supabase, pageId, applied.schema)
+        await saveProps(supabase, pageId, next)
+        queryClient.setQueryData<PondPage | null>(['page', pageId], (prev) =>
+          prev ? { ...prev, props: next } : prev
+        )
       } catch (err) {
-        console.error('Failed to define the template schema', err)
+        console.error('Failed to write the template props', err)
       }
     }
-    // Read-modify-write against whatever this page's props already carry (a
-    // glyph, an area role, …) rather than overwriting them with just the
-    // kind/stamp the template adds.
-    try {
-      const current = await getPage(supabase, pageId)
-      const nextProps = { ...(current?.props ?? {}), ...applied.props }
-      await saveProps(supabase, pageId, nextProps)
-      queryClient.setQueryData<PondPage | null>(['page', pageId], (prev) =>
-        prev ? { ...prev, props: nextProps } : prev
-      )
-    } catch (err) {
-      console.error('Failed to write the template props', err)
+    // Applies the template's schema (if it has one) and props on top of
+    // whatever the page carries right now — shared by the first apply and
+    // ⇧⌘Z's redo, which both run against a page that may have changed
+    // underneath (undo put `priorProps` back first, or someone else edited
+    // it) — so this reads fresh every time it runs, never a stale snapshot
+    // from an earlier call. Read ONCE, at this call's own start — after the
+    // blocks write already landed via `persistBlocksAsOwnEdit`, so this
+    // network hop never gates the apply's own first-line focus (KAN-499).
+    const applyTemplateSchemaProps = async () => {
+      const current = await getPage(supabase, pageId).catch(() => null)
+      // A missing page (the read failed, or the page itself is gone) is the
+      // only "unknown" case — a page that was read fine but simply has no
+      // `props` yet is a known, empty prior, not an unknown one.
+      priorProps = current ? current.props ?? {} : null
+      // No separate `defineSchema` call here: `base` below already merges
+      // `applied.schema` into `priorProps` via `withSchema`, and the
+      // `writePageProps` write right after this would overwrite whatever
+      // `defineSchema`'s own read-modify-write had just saved — a second,
+      // wasted round-trip to the same row.
+      // An unknown prior (the snapshot read failed or returned null) must
+      // never feed a full-replace `saveProps` — that would stomp whatever
+      // props the page actually carries (glyph, area, made-from) with just
+      // the template's own. No write is safer than a lossy one; the revert
+      // side already tells "unknown" apart from "no props" the same way.
+      if (priorProps === null) {
+        console.error('Template apply: skipping the props write — the prior snapshot is unknown')
+        return
+      }
+      const base = applied.schema ? withSchema(priorProps, applied.schema) : priorProps
+      await writePageProps({ ...base, ...applied.props })
     }
+    // ⌘Z's half. A known `priorProps` is a full replace — a page with no
+    // schema before must have none after, which `defineSchema`'s own
+    // read-modify-write (it only adds/replaces `_schema`, never removes it)
+    // can't do. An unknown `priorProps` (the snapshot read failed or
+    // returned null) means `applyTemplateSchemaProps` itself skipped its
+    // write — the template's keys were never set, so the page's current
+    // props are entirely its own. There is nothing to revert: write nothing.
+    const revertTemplateSchemaProps = async () => {
+      if (priorProps === null) return
+      await writePageProps(priorProps)
+    }
+    // A fast ⌘Z/⇧⌘Z can fire before the step it is undoing/redoing has
+    // actually landed — `onUndone`/`onRedone` always await whatever is still
+    // in flight first, so they act on the step that just finished, never on
+    // a `priorProps` that hasn't been set yet. `pending` starts as a
+    // deferred gate created BEFORE `persistBlocksAsOwnEdit` is even called:
+    // the undo step it logs becomes available to the queue (`rememberPending`,
+    // inside `onStructuralWrite`) as soon as that write lands internally,
+    // which can be well before `persistBlocksAsOwnEdit` itself resolves (it
+    // may still be waiting on a page refetch) — so a fast ⌘Z/⇧⌘Z firing in
+    // that window must find a gate that's genuinely still open, never one
+    // that reads as already-settled. The gate resolves once this run's own
+    // schema/props write settles, or right away if the blocks write failed.
+    // Bounded by the same `STEP_TIMEOUT_MS` session-undo itself uses for its
+    // own RPCs — a hung write logs and lets ⌘Z act on whatever is known
+    // rather than hanging the queue.
+    let resolvePending!: () => void
+    let pending: Promise<void> = new Promise((resolve) => {
+      resolvePending = resolve
+    })
+    const onUndone = async () => {
+      await withTimeout(pending, STEP_TIMEOUT_MS).catch((err) => {
+        console.error('Template apply: timed out waiting for its own write before reverting', err)
+      })
+      pending = revertTemplateSchemaProps()
+      await pending
+    }
+    const onRedone = async () => {
+      await withTimeout(pending, STEP_TIMEOUT_MS).catch((err) => {
+        console.error('Template apply: timed out waiting for its own write before redoing', err)
+      })
+      pending = applyTemplateSchemaProps()
+      await pending
+    }
+    let blocksWritten = false
+    try {
+      blocksWritten = await persistBlocksAsOwnEdit(applied.blocks, {
+        discardOnFailure: true,
+        onUndone,
+        onRedone,
+      })
+      if (!blocksWritten) return
+      // KAN-138: applying a `yours` template retires its "just saved" lead — but
+      // only once the blocks write above actually landed; a failed apply keeps
+      // the lead so the person's retry still sees it first.
+      if (pick.origin === 'yours' && pondId) justSaved.clear(pondId, pick.id)
+      await applyTemplateSchemaProps()
+    } finally {
+      resolvePending()
+    }
+    if (!blocksWritten) return
     // `onStructuralWrite`/`onChange` already ran inside `persistBlocksAsOwnEdit`,
     // ahead of the schema/props writes above — this apply's own blocks are
     // already the caller's baseline by the time those (independent) writes land.
