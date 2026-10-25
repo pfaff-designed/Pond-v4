@@ -578,7 +578,9 @@ export function PondCommand({
                         id={rowId(index)}
                         entry={entry}
                         selected={index === active}
-                        onHover={() => select(index)}
+                        onHover={() => {
+                          if (index !== active) select(index)
+                        }}
                         onPick={() => onSelect(entry.item)}
                         style={enter(i)}
                       />

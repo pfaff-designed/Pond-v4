@@ -35,6 +35,7 @@ import { SiblingBlocksProvider } from '@/lib/modules/sibling-context'
 import { BlockRowProvider } from '@/lib/modules/block-row-context'
 import { blockDomId, focusPageTitle, scrollToBlock } from '@/lib/modules/block-dom'
 import { requestTitleFocus } from '@/lib/pages/title-focus'
+import { requestBlockMovePick } from '@/lib/terminal-focus'
 import { blockLinkUrl, useBlockLinkArrival } from '@/lib/modules/block-link'
 import { ModuleView } from '@/lib/modules/renderers'
 import {
@@ -1663,6 +1664,16 @@ export function BlockCanvas({
     }
   }
 
+  // The block menu's `move to…` row (KAN-479 slice 1): asks `ShellCommands`
+  // to open its one palette in block-pick mode.
+  const onMoveTo = (block: Block) => {
+    requestBlockMovePick({
+      blockId: block.id,
+      sourcePageId: pageId,
+      label: blockFrame(block)?.heading ?? block.type,
+    })
+  }
+
   const handleMenuOpenChange = (index: number, open: boolean) => {
     setPreviewWidth(null)
     setMenuOpenAt((current) => {
@@ -1689,6 +1700,7 @@ export function BlockCanvas({
         convertBlock(block, conversion)
       },
       'move-into-new-page': () => void moveBlockIntoNewPage(index, MOVED_INTO_A_NEW_PAGE),
+      'move-to': ({ block: moved }) => onMoveTo(moved),
       'copy-link': () => void copyBlockLink(block.id),
       delete: () => requestDelete(index),
       'set-width': ({ width }) => setBlockWidth(block, width),
