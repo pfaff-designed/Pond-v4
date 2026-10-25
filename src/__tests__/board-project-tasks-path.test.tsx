@@ -19,6 +19,7 @@ import { TASKS_ROLE } from '@/lib/pages/tasks-database'
 import type { PageRow } from '@/lib/pages/tree'
 import { findTextBlock, writeInTextBlock } from './helpers/text-block'
 import { makeFakeSupabase } from './helpers/fake-supabase'
+import { rowByLabel } from './helpers/slash-menu'
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
@@ -111,13 +112,6 @@ async function openBoardSource() {
   fireEvent.click(within(menu).getByRole('option', { name: 'board' }))
   return screen.findByRole('listbox', { name: '/board' })
 }
-
-// A slash row's hit highlight can substring-match another row's full label
-// (`table` inside `table of contents`) — pick the row by its exact label.
-const rowByLabel = (menu: HTMLElement, label: string) =>
-  within(menu)
-    .getAllByRole('option')
-    .find((row) => row.querySelector('[data-part="label"]')!.textContent === label)!
 
 async function openTableSource() {
   const menu = await openBlockMenu('/table')

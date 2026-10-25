@@ -57,6 +57,18 @@ describe('toc schema + registry facets', () => {
     expect(tocDescriptor.serialize(toc)).toMatch(/no page in reach/)
   })
 
+  it('skips a malformed sibling rather than throwing, and still lists the valid headings', () => {
+    const siblings: readonly unknown[] = [
+      { id: 'h1', type: 'text', content: '# one' },
+      { type: 'text' },
+      42,
+      null,
+      toc,
+    ]
+    expect(() => tocDescriptor.serialize(toc, siblings)).not.toThrow()
+    expect(tocDescriptor.serialize(toc, siblings)).toBe('Table of contents:\n- one')
+  })
+
   it('is AI-composable id-less (moduleDataSchema + createPageBlockSchema)', () => {
     const data = { type: 'toc' }
     const r = moduleDataSchema.safeParse(data)

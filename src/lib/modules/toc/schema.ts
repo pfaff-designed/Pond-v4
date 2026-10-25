@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { ModuleDescriptor } from '../types'
+import { textSchema } from '../text/schema'
 import { getHeadings } from './headings'
 
 /**
@@ -34,7 +35,16 @@ export const tocDescriptor: ModuleDescriptor<TocBlock> = {
   // the page's blocks, so the model and the person see the same headings.
   serialize: (_data, siblings) => {
     if (siblings === undefined) return 'Table of contents (no page in reach to read headings from)'
-    const headings = getHeadings(siblings as Parameters<typeof getHeadings>[0])
+    // Siblings arrive as `readonly unknown[]` (types.ts) from contexts that assemble
+    // a page's blocks for the model — a malformed one (a stray number, a text block
+    // with no content) must not throw inside serialize. `getHeadings` only ever
+    // reads text blocks, so narrow each sibling against `textSchema` and skip
+    // whatever fails, rather than casting.
+    const textBlocks = siblings.flatMap((sibling) => {
+      const parsed = textSchema.safeParse(sibling)
+      return parsed.success ? [parsed.data] : []
+    })
+    const headings = getHeadings(textBlocks)
     if (headings.length === 0) return `Table of contents: (${TOC_EMPTY_LINE})`
     return [
       'Table of contents:',

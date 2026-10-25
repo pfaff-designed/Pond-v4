@@ -25,6 +25,7 @@ import { PondContext } from '@/lib/pond/context'
 import type { Block } from '@/lib/documents/types'
 import { withPathProbe } from './helpers/command-path-probe'
 import { findTextBlock, writeInTextBlock } from './helpers/text-block'
+import { rowByLabel } from './helpers/slash-menu'
 
 // Which page the URL names — null is the root, Life.
 let currentNodeId: string | null = null
@@ -98,13 +99,6 @@ function renderPanel() {
     </QueryClientProvider>
   )
 }
-
-// A slash row's hit highlight can substring-match another row's full label
-// (`table` inside `table of contents`) — pick the row by its exact label.
-const rowByLabel = (menu: HTMLElement, label: string) =>
-  within(menu)
-    .getAllByRole('option')
-    .find((row) => row.querySelector('[data-part="label"]')!.textContent === label)!
 
 beforeEach(() => {
   jest.clearAllMocks()
