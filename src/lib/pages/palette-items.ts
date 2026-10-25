@@ -18,14 +18,39 @@
  */
 
 import type { PaletteItem, PaletteScope } from '@/components/molecules/palette-entries'
+import { subtreeIdsFromRows } from '@/lib/deletion/blast-radius'
 import { ancestorPath, crumbTrail } from '@/lib/pages/crumbs'
 import { isDuplicablePageRow } from '@/lib/pages/databases-root'
-import { markIndex, resolveMark } from '@/lib/pages/mark'
+import { markIndex, type MarkSource, resolveMark } from '@/lib/pages/mark'
 import { RECENT_SHOWN } from '@/lib/pages/recent-pages'
 import type { PageRow } from '@/lib/pages/tree'
 import type { Pond } from '@/lib/pond/client'
 import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
+import { LIFE_ID } from '@/lib/rail/tree'
 import { formatChord } from '@/lib/shell-commands'
+
+/**
+ * One page row as a palette row — the shared fact behind both the full list
+ * (`paletteItems`) and the move picker's candidate list (`movePickItems`), so
+ * a page's kind/sub/glyph/path is computed once, not twice (AGENTS.md DRY).
+ */
+function pageRowItem(
+  rows: PageRow[],
+  byId: Map<string, PageRow>,
+  index: Map<string, MarkSource>,
+  r: PageRow
+): PaletteItem {
+  const path = ancestorPath(rows, r.id, byId)
+  const { root } = crumbTrail(rows, r.id, byId)
+  return {
+    id: r.id,
+    label: r.title || 'Untitled',
+    kind: root && root.id !== r.id ? 'database' : 'page',
+    sub: path[0]?.title,
+    glyph: resolveMark(r.id, index).glyph ?? undefined,
+    path: path.map((c) => c.id),
+  }
+}
 
 /** The shell's two standing actions, in Pond's words; `action` is the job the host reads. */
 export const NEW_PAGE_ACTION: PaletteItem = {
@@ -128,18 +153,7 @@ export function paletteItems(
   const all = [...rows]
   const index = markIndex(all)
   const byId = new Map(all.map((r) => [r.id, r]))
-  const item = (r: PageRow): PaletteItem => {
-    const path = ancestorPath(all, r.id, byId)
-    const { root } = crumbTrail(all, r.id, byId)
-    return {
-      id: r.id,
-      label: r.title || 'Untitled',
-      kind: root && root.id !== r.id ? 'database' : 'page',
-      sub: path[0]?.title,
-      glyph: resolveMark(r.id, index).glyph ?? undefined,
-      path: path.map((c) => c.id),
-    }
-  }
+  const item = (r: PageRow): PaletteItem => pageRowItem(all, byId, index, r)
   // Capped after the existence filter above, so a trashed page in the newest
   // slots doesn't shrink the visible group below RECENT_SHOWN.
   const recent = recentIds.flatMap((id) => byId.get(id) ?? []).slice(0, RECENT_SHOWN)
@@ -158,6 +172,30 @@ export function paletteItems(
     DEEP_RESEARCH_ACTION,
     ...(openPageId ? [SAVE_AS_TEMPLATE_ACTION] : []),
     ...(openPage && isDuplicablePageRow(openPage) ? [DUPLICATE_PAGE_ACTION, MOVE_PAGE_ACTION] : []),
+  ]
+}
+
+/**
+ * `move page to…`'s candidate list: every page/database row except the one
+ * moving and its own descendants (a move there is refused by the RPC anyway,
+ * so the picker doesn't offer it), plus one synthetic row standing for the
+ * pond's root — `computeMove`/`moveParent` already resolve `LIFE_ID` with zone
+ * `'into'` to `newParentId: null`, so no new move-resolution logic is needed,
+ * only this one extra entry.
+ */
+export function movePickItems(
+  rows: readonly PageRow[],
+  movingId: string,
+  rootLabel: string
+): PaletteItem[] {
+  const all = [...rows]
+  const excluded = subtreeIdsFromRows(all, movingId)
+  const index = markIndex(all)
+  const byId = new Map(all.map((r) => [r.id, r]))
+  const rootRow: PaletteItem = { id: LIFE_ID, label: rootLabel, kind: 'page' }
+  return [
+    rootRow,
+    ...all.filter((r) => !excluded.has(r.id)).map((r) => pageRowItem(all, byId, index, r)),
   ]
 }
 

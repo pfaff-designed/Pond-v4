@@ -12,11 +12,13 @@ import {
   IMPORT_A_PAGE_ACTION,
   modeItems,
   MOVE_PAGE_ACTION,
+  movePickItems,
   paletteItems,
   REPORT_A_PROBLEM_ACTION,
   SAVE_AS_TEMPLATE_ACTION,
   ZEN_ACTION,
 } from '@/lib/pages/palette-items'
+import { LIFE_ID } from '@/lib/rail/tree'
 
 const onPlatform = (platform: string) =>
   jest.spyOn(window.navigator, 'platform', 'get').mockReturnValue(platform)
@@ -171,6 +173,35 @@ describe('paletteItems — move page', () => {
     const withNoOpenPage = paletteItems([ordinaryPage], [])
 
     expect(withNoOpenPage).not.toContainEqual(MOVE_PAGE_ACTION)
+  })
+})
+
+describe('movePickItems — the move picker’s candidate list', () => {
+  const roof = { ...ordinaryPage, id: 'roof', title: 'roof' }
+  const windowPage = { ...ordinaryPage, id: 'window', parent_id: 'roof', title: 'window' }
+  const house = { ...ordinaryPage, id: 'house', title: 'house' }
+  const rows = [roof, windowPage, house]
+
+  it('excludes the moving page and its descendants, keeps unrelated pages', () => {
+    const items = movePickItems(rows, 'roof', 'life')
+
+    expect(items.map((i) => i.id)).not.toContain('roof')
+    expect(items.map((i) => i.id)).not.toContain('window')
+    expect(items.find((i) => i.id === 'house')).toMatchObject({ id: 'house', label: 'house', kind: 'page' })
+  })
+
+  it('includes the synthetic root row exactly once', () => {
+    const items = movePickItems(rows, 'roof', 'life')
+
+    const rootRows = items.filter((i) => i.id === LIFE_ID)
+    expect(rootRows).toHaveLength(1)
+    expect(rootRows[0]).toMatchObject({ id: LIFE_ID, label: 'life', kind: 'page' })
+  })
+
+  it('excludes only the moving subtree when moving a leaf — everything else, including the root, stays', () => {
+    const items = movePickItems(rows, 'window', 'life')
+
+    expect(items.map((i) => i.id).sort()).toEqual([LIFE_ID, 'house', 'roof'].sort())
   })
 })
 
