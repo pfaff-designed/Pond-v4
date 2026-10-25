@@ -3338,6 +3338,19 @@ function BlockEditor({
   // open path, which keeps the handle's own anchor (`rootRef`). Cleared on
   // close so a later handle-opened menu never inherits a stale point.
   const [contextPoint, setContextPoint] = useState<{ x: number; y: number } | null>(null)
+  // macOS Chrome/Safari select the word under the pointer as the right
+  // button's own default action, which runs after bubbling listeners but
+  // before `contextmenu` fires — so a `window.getSelection()` read inside
+  // `handleContextMenu` itself sees a selection the right-press just made,
+  // not one that predates it, and the native-menu check below it is true on
+  // almost every right-click on prose. Recorded here, on the row's own
+  // `pointerdown`, before that default action runs.
+  const rightPressSelectionRef = useRef(false)
+  // Set when ⇧F10/ContextMenu (`handleKeyDown` below) opens this row's menu
+  // from the keyboard; Windows then fires a trailing native `contextmenu` for
+  // the same key press. Cleared by the next real pointerdown, so a stale
+  // `true` never swallows a later genuine right-click.
+  const keyboardMenuOpenRef = useRef(false)
   const wasMenuOpenRef = useRef(menuOpen)
   useEffect(() => {
     if (wasMenuOpenRef.current && !menuOpen && contextPoint) {
@@ -3599,6 +3612,9 @@ function BlockEditor({
     // `contextPoint` stays null, so the menu opens at the row's own anchor.
     if (isContextMenuKey(e.nativeEvent) && e.target === e.currentTarget) {
       e.preventDefault()
+      // Windows follows this keydown with a native `contextmenu` for the same
+      // key press (`handleContextMenu` below swallows it).
+      keyboardMenuOpenRef.current = true
       handleMenuOpenChange(true)
       return
     }
@@ -3859,6 +3875,24 @@ function BlockEditor({
     rootRef.current?.focus()
   }
 
+  // Right-button press (KAN-485): record whether a non-collapsed selection
+  // inside the row already existed, before the browser's own right-click
+  // word-select (its `pointerdown` default action, which runs after this
+  // bubbling listener) can create one. `handleContextMenu` reads this
+  // recorded fact instead of the live selection.
+  function handleRowPointerDown(e: React.PointerEvent) {
+    if (e.button !== 2) return
+    if (!e.currentTarget.contains(e.target as Node)) return
+    const sel = window.getSelection()
+    rightPressSelectionRef.current = !!(
+      sel &&
+      !sel.isCollapsed &&
+      sel.rangeCount > 0 &&
+      rootRef.current?.contains(sel.anchorNode)
+    )
+    keyboardMenuOpenRef.current = false
+  }
+
   // Right-click opens the block menu at the pointer (KAN-485), replacing the
   // browser's own menu. `chrome=false` (zen) leaves the native menu, same as
   // the hidden handle. `isContextMenuField` is narrower than the plain-click
@@ -3866,17 +3900,20 @@ function BlockEditor({
   // `td`/`role="button"` card, not just a field) — a right-click only needs
   // to leave the native menu for an actual text field (a table cell's input,
   // a todo item's own field), so a page-link card, a highlight passage or a
-  // table cell itself still open the block menu. A non-collapsed window
-  // selection inside the row is a copy/paste in progress: the native menu
-  // stays for that, whatever the block type.
+  // table cell itself still open the block menu. A non-collapsed selection
+  // that already existed at the right-button press is a copy/paste in
+  // progress: the native menu stays for that, whatever the block type.
   function handleContextMenu(e: React.MouseEvent) {
     if (!e.currentTarget.contains(e.target as Node)) return
     if (!chrome) return
     if (isContextMenuField(e.target)) return
-    const sel = window.getSelection()
-    if (sel && !sel.isCollapsed && sel.rangeCount > 0 && rootRef.current?.contains(sel.anchorNode)) {
+    if (keyboardMenuOpenRef.current) {
+      keyboardMenuOpenRef.current = false
+      e.preventDefault()
+      e.stopPropagation()
       return
     }
+    if (rightPressSelectionRef.current) return
     e.preventDefault()
     e.stopPropagation()
     setContextPoint({ x: e.clientX, y: e.clientY })
@@ -4007,6 +4044,7 @@ function BlockEditor({
       onFocus={handleFocus}
       onBlur={handleBlur}
       onClick={handleClick}
+      onPointerDown={handleRowPointerDown}
       onContextMenu={handleContextMenu}
     >
       {/* The drop line (6x `PondBlock.dc.html`'s `dropBar`): beside is a 2px bar

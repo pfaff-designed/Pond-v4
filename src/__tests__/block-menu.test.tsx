@@ -18,7 +18,7 @@ import { BlockCanvas } from '@/components/organisms/BlockCanvas'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import type { Block } from '@/lib/documents/types'
 import { blockWidthStyle } from '@/lib/modules/layout-rows'
-import { selectText } from './helpers/selection'
+import { selectText, selectWord } from './helpers/selection'
 import { textEditorOf } from './helpers/text-block'
 
 jest.mock('next/navigation', () => ({
@@ -289,10 +289,11 @@ describe('right-click opens the block menu at the pointer (KAN-485)', () => {
     expect(await screen.findByRole('menu', { name: /block menu/i })).toBeInTheDocument()
   })
 
-  it('does not open, and leaves the native menu, with a text selection inside the row', () => {
+  it('does not open, and leaves the native menu, when the selection already existed at the right-button press', () => {
     renderCanvas([line])
     const field = screen.getByRole('textbox', { name: 'text block' })
     selectText(field)
+    fireEvent.pointerDown(field, { button: 2 })
     const row = document.getElementById('block-b-line')!
     let event: Event | undefined
     const capture = (e: Event) => {
@@ -304,6 +305,22 @@ describe('right-click opens the block menu at the pointer (KAN-485)', () => {
 
     expect(event?.defaultPrevented).toBe(false)
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+  })
+
+  it('opens the block menu when macOS selects the word under the pointer AFTER the right-button press (KAN-485)', async () => {
+    renderCanvas([line])
+    const field = screen.getByRole('textbox', { name: 'text block' })
+    // Nothing selected yet when the right button goes down — this is what
+    // `handleRowPointerDown` records.
+    fireEvent.pointerDown(field, { button: 2 })
+    // macOS Chrome/Safari select the word under the pointer as the right
+    // button's own default action, which lands between `pointerdown` and
+    // `contextmenu` — a selection the right-press itself made, not one that
+    // predates it.
+    selectWord(field, 'hello')
+    fireEvent.contextMenu(field, { clientX: 10, clientY: 10 })
+
+    expect(await screen.findByRole('menu', { name: /block menu/i })).toBeInTheDocument()
   })
 
   it('does not open inside a table-cell input', () => {
@@ -348,6 +365,41 @@ describe('⇧F10 / the ContextMenu key opens the menu on a selected row (KAN-485
     })
     fireEvent.keyDown(row, { key: 'ContextMenu' })
     expect(await screen.findByRole('menu', { name: /block menu/i })).toBeInTheDocument()
+  })
+
+  it('ignores a trailing native contextmenu after the ContextMenu key (Windows) — stays anchored at the row', async () => {
+    renderCanvas([heading, shopping])
+    const row = document.getElementById('block-b-shop')!
+    act(() => {
+      row.focus()
+    })
+    fireEvent.keyDown(row, { key: 'ContextMenu' })
+    const menu = await screen.findByRole('menu', { name: /block menu/i })
+    const positioner = menu.parentElement as HTMLElement
+    await waitFor(() => expect(positioner.style.transform).not.toBe(''))
+    const rowAnchoredTransform = positioner.style.transform
+
+    let event: Event | undefined
+    const capture = (e: Event) => {
+      event = e
+    }
+    row.addEventListener('contextmenu', capture)
+    fireEvent.contextMenu(row, { clientX: 500, clientY: 500 })
+    row.removeEventListener('contextmenu', capture)
+    // Flush floating-ui's own async `computePosition` — a re-anchor to (500,
+    // 500) would otherwise not have landed on `positioner.style` yet, making
+    // the assertion below pass by timing accident rather than by the fix.
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(event?.defaultPrevented).toBe(true)
+    expect(screen.getByRole('menu', { name: /block menu/i })).toBeInTheDocument()
+    // Still anchored at the row (`MENU_PLACEMENT`), not re-anchored to (500, 500)
+    // (`POINT_MENU_PLACEMENT`) — the two placements' different offsets would
+    // otherwise move the computed transform even with jsdom's zero-sized rects.
+    expect(positioner.style.transform).toBe(rowAnchoredTransform)
   })
 })
 
