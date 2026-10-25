@@ -405,6 +405,7 @@ const PROVIDER_VALUE: PondContextValue = {
   reload: () => {},
   addPond: () => {},
   patchPond: () => {},
+  removePond: () => {},
 }
 
 /** Pond proposes "change alpha to apple" against the one seeded block, `b0`. */

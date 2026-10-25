@@ -162,6 +162,7 @@ function RailWithPonds({ dark }: { dark: boolean }) {
           reload: () => {},
           addPond: () => {},
           patchPond: () => {},
+          removePond: () => {},
         }}
       >
         <RailView

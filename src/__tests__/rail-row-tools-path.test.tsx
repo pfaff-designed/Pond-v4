@@ -79,6 +79,7 @@ const PROVIDER_VALUE: PondContextValue = {
   reload: () => {},
   addPond: () => {},
   patchPond: () => {},
+  removePond: () => {},
 }
 
 function mount() {

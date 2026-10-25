@@ -147,10 +147,11 @@ export const Expanded: Story = {
     await expect(canvas.queryByText('Recipes')).not.toBeInTheDocument()
 
     // life + 4 top-level + Health's 2 + Personal's 2 = 9 visible rows, plus the
-    // foot's databases row and its own trash row (KAN-504).
+    // foot's databases row, its own trash row (KAN-504) and its own settings
+    // row (KAN-493).
     const items = canvas.getAllByRole('treeitem')
     const rows = [...canvasElement.querySelectorAll<HTMLElement>('[data-kind="list-row"]')]
-    await expect(items).toHaveLength(11)
+    await expect(items).toHaveLength(12)
     await expect(rows).toHaveLength(items.length)
     for (const [i, row] of rows.entries()) {
       await expect(row.closest('[role="treeitem"]')).toBe(items[i])
@@ -1033,17 +1034,16 @@ export const PaperCardHead: Story = {
 
 /**
  * The foot is the databases root and `settings`, and nothing else — no
- * "＋ new page". `settings` has no surface yet, so it is plain text with a gear:
- * not a button, not a tab stop.
+ * "＋ new page". `settings` (KAN-493) is a real, focusable treeitem with a
+ * gear leading mark, not a button and not a page link.
  */
 export const FootSettings: Story = {
   tags: ['!dev'],
-  play: async ({ canvas, canvasElement }) => {
+  play: async ({ canvas }) => {
     await expect(canvas.queryByRole('button', { name: 'New page' })).not.toBeInTheDocument()
-    const settings = canvasElement.querySelector<HTMLElement>('[data-part="settings"]')!
-    await expect(settings).toHaveTextContent('settings')
-    await expect(settings.tagName).toBe('DIV')
-    await expect(settings.querySelector('button, a, [tabindex]')).toBeNull()
+    const settings = canvas.getByRole('treeitem', { name: 'settings' })
+    await expect(settings).toHaveAttribute('tabindex')
+    await expect(settings.querySelector('a')).toBeNull()
     await expect(canvas.queryByRole('button', { name: 'settings' })).not.toBeInTheDocument()
   },
 }
@@ -1981,10 +1981,11 @@ export const FootBand: Story = {
       await expect(css.rowGap).toBe('2px')
       await expect(css.padding).toBe('10px 8px 0px')
 
-      // databases tree, then trash's own tree (KAN-504), then settings — in ONE element
+      // databases tree, then trash's own tree (KAN-504), then settings' own
+      // tree (KAN-493) — in ONE element
       const tree = canvas.getByRole('tree', { name: 'Databases' })
       const trash = scope.querySelector<HTMLElement>('[role="tree"][aria-label="Trash"]')!
-      const settings = scope.querySelector<HTMLElement>('[data-part="settings"]')!
+      const settings = scope.querySelector<HTMLElement>('[role="tree"][aria-label="Settings"]')!
       await expect([...foot.children]).toEqual([tree, trash, settings])
       // KAN-486: the max-height / scroll clipping lives on the inner scroller
       // now, not the outer tree — the heading sits after it, outside the clip,

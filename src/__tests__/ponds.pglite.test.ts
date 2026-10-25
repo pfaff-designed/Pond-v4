@@ -17,6 +17,19 @@ import { applyMigration, makeDb, seedUser } from './helpers/pglite-harness'
 
 const USER = '11111111-1111-1111-1111-111111111111'
 const SOLO = '22222222-2222-2222-2222-222222222222'
+const OTHER = '33333333-3333-3333-3333-333333333333'
+
+/** Supabase's grants and auth.uid(), which the harness's owner connection lacks
+ *  (same shim as `page-trash.pglite.test.ts`'s `actAs`). */
+async function actAs(db: PGlite, userId: string): Promise<void> {
+  await db.exec(`
+    grant usage on schema public to authenticated;
+    grant select, insert, update, delete on all tables in schema public to authenticated;
+    create or replace function auth.uid() returns uuid language sql stable as
+      $fn$ select nullif(current_setting('test.uid', true), '')::uuid $fn$;
+  `)
+  await db.exec(`set test.uid = '${userId}'; set role authenticated;`)
+}
 
 /** A db one migration short of 0018, with rows in both workspaces. */
 async function dbBefore(opts: { sandbox: boolean } = { sandbox: true }): Promise<PGlite> {
@@ -253,6 +266,77 @@ describe('0018_ponds — last_page_id (KAN-16)', () => {
       [pond]
     )
     expect(res.rows[0].last_page_id).toBeNull()
+    await db.close()
+  })
+})
+
+describe('0036_pond_deleted_at — soft delete (KAN-493)', () => {
+  it('defaults to null and lets the owner set/clear it with a plain UPDATE', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pond = (
+      await db.query<{ id: string; deleted_at: string | null }>(
+        'select id, deleted_at from public.ponds where user_id = $1 order by "order" limit 1',
+        [USER]
+      )
+    ).rows[0]
+    expect(pond.deleted_at).toBeNull()
+
+    await db.query('update public.ponds set deleted_at = now() where id = $1', [pond.id])
+    const deleted = await db.query<{ deleted_at: string | null }>(
+      'select deleted_at from public.ponds where id = $1',
+      [pond.id]
+    )
+    expect(deleted.rows[0].deleted_at).not.toBeNull()
+
+    await db.query('update public.ponds set deleted_at = null where id = $1', [pond.id])
+    const restored = await db.query<{ deleted_at: string | null }>(
+      'select deleted_at from public.ponds where id = $1',
+      [pond.id]
+    )
+    expect(restored.rows[0].deleted_at).toBeNull()
+    await db.close()
+  })
+
+  it('updates 0 rows when another authenticated user sets or clears deleted_at on it (RLS)', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    await seedUser(db, OTHER)
+    const pond = (
+      await db.query<{ id: string }>(
+        'select id from public.ponds where user_id = $1 order by "order" limit 1',
+        [USER]
+      )
+    ).rows[0].id
+
+    await actAs(db, OTHER)
+    const setRes = await db.query('update public.ponds set deleted_at = now() where id = $1', [
+      pond,
+    ])
+    expect(setRes.affectedRows ?? 0).toBe(0)
+    await db.exec('reset role;')
+
+    const stillLive = await db.query<{ deleted_at: string | null }>(
+      'select deleted_at from public.ponds where id = $1',
+      [pond]
+    )
+    expect(stillLive.rows[0].deleted_at).toBeNull()
+
+    // The owner deletes it for real, then the other user tries to clear it back.
+    await db.query('update public.ponds set deleted_at = now() where id = $1', [pond])
+
+    await actAs(db, OTHER)
+    const clearRes = await db.query('update public.ponds set deleted_at = null where id = $1', [
+      pond,
+    ])
+    expect(clearRes.affectedRows ?? 0).toBe(0)
+    await db.exec('reset role;')
+
+    const stillDeleted = await db.query<{ deleted_at: string | null }>(
+      'select deleted_at from public.ponds where id = $1',
+      [pond]
+    )
+    expect(stillDeleted.rows[0].deleted_at).not.toBeNull()
     await db.close()
   })
 })

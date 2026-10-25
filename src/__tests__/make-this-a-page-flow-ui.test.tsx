@@ -230,6 +230,7 @@ function terminalTreeForPond(qc: QueryClient, pondId: string) {
           reload: () => {},
           addPond: () => {},
           patchPond: () => {},
+          removePond: () => {},
         }}
       >
         <AITerminal />

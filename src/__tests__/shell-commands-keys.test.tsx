@@ -135,6 +135,7 @@ describe('ShellCommands — ⌘K while a pond is being made', () => {
             reload: jest.fn(),
             addPond: jest.fn(),
             patchPond: jest.fn(),
+            removePond: jest.fn(),
           }}
         >
           <DeletionUndoProvider>

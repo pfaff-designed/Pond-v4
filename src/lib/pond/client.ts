@@ -14,6 +14,7 @@
 import { createClient } from '@/lib/supabase/client'
 import { pushRecentGlyph } from '@/lib/rail/glyph-library'
 import { clampPondName } from './name-cap'
+import { liveOnly } from './first'
 import type { PondTheme } from '@/lib/supabase/types'
 
 export interface Pond {
@@ -69,7 +70,10 @@ function mapPondRow(row: PondRow): Pond {
   }
 }
 
-/** Every pond the signed-in person owns, in switcher order. */
+/** Every pond the signed-in person owns, in switcher order — a soft-deleted
+ *  pond (0036's `deleted_at`) is filtered here, the one place every live-pond
+ *  reader (switcher, ⌘K rows, `?pond=` resolution) reads from, so none of
+ *  them needs its own filter. */
 export async function listPonds(): Promise<Pond[]> {
   const supabase = createClient()
   const {
@@ -77,11 +81,9 @@ export async function listPonds(): Promise<Pond[]> {
   } = await supabase.auth.getUser()
   if (!user) return []
 
-  const { data, error } = await supabase
-    .from('ponds')
-    .select(COLUMNS)
-    .eq('user_id', user.id)
-    .order('order')
+  const { data, error } = await liveOnly(
+    supabase.from('ponds').select(COLUMNS).eq('user_id', user.id)
+  ).order('order')
 
   // The table arrives with migration 0018. Until it is applied, PostgREST answers
   // PGRST205 ("Could not find the table") — the rail then shows its name with no
@@ -91,6 +93,81 @@ export async function listPonds(): Promise<Pond[]> {
     throw error
   }
   return ((data ?? []) as unknown as PondRow[]).map(mapPondRow)
+}
+
+/** The full `Pond` shape (KAN-493's `restore` hands it straight to `addPond`,
+ *  which takes nothing less) plus the one extra fact the deleted list needs. */
+export interface DeletedPond extends Pond {
+  deletedAt: string
+}
+
+type DeletedPondRow = PondRow & { deleted_at: string | null }
+
+/** Soft-delete a pond (KAN-493): `s6m7`'s `delete…`, after its typed-name
+ *  confirm. Owner-scoped by RLS (0018's "ponds: update own" policy) — an
+ *  update RLS filters out touches zero rows and reports no error, so (like
+ *  `updatePond`) this reads the row back with `.select('id').single()` and
+ *  throws when none comes back, rather than the caller reporting success
+ *  for a write that never happened. */
+export async function softDeletePond(pondId: string): Promise<void> {
+  const supabase = createClient()
+  // Cast as `createPond` does above: `Database` can't infer an Update shape
+  // for a quoted-identifier table either.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('ponds')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', pondId)
+    .select('id')
+    .single()
+  if (error) throw error
+  if (!data) throw new Error('softDeletePond: no row changed')
+}
+
+/** Clear a pond's `deleted_at` (KAN-493): settings › ponds › deleted's
+ *  `restore`. Keeps `order`, unchanged by the soft delete, so the pond
+ *  reappears in the switcher at its old position. Same zero-rows-changed
+ *  check as `softDeletePond`, above. */
+export async function restorePond(pondId: string): Promise<void> {
+  const supabase = createClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('ponds')
+    .update({ deleted_at: null })
+    .eq('id', pondId)
+    .select('id')
+    .single()
+  if (error) throw error
+  if (!data) throw new Error('restorePond: no row changed')
+}
+
+/** Every soft-deleted pond the signed-in person owns, newest-deleted first —
+ *  settings › ponds › deleted's own list, same `PGRST205` tolerance as
+ *  `listPonds` for a database short of migration 0036. */
+export async function listDeletedPonds(): Promise<DeletedPond[]> {
+  const supabase = createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return []
+
+  const { data, error } = await supabase
+    .from('ponds')
+    .select(`${COLUMNS}, deleted_at`)
+    .eq('user_id', user.id)
+    .not('deleted_at', 'is', null)
+    .order('deleted_at', { ascending: false })
+
+  if (error) {
+    if (error.code === 'PGRST205') return []
+    throw error
+  }
+  return ((data ?? []) as unknown as DeletedPondRow[]).map((row) => ({
+    ...mapPondRow(row),
+    // Non-null by the `not(...).is(null)` filter above — the cast only
+    // narrows a type PostgREST's own `select` leaves as nullable.
+    deletedAt: row.deleted_at as string,
+  }))
 }
 
 export interface CreatePondOptions {
@@ -119,7 +196,19 @@ export async function createPond(name: string, options?: CreatePondOptions): Pro
   } = await supabase.auth.getUser()
   if (!user) throw new Error('not signed in')
 
-  const existing = await listPonds()
+  // ALL the user's ponds, deleted included — a soft-deleted pond keeps its
+  // `order` (so a restore lands back where it was, KAN-493), and a new pond
+  // must not collide with one still waiting out its 30 days. `existing.length`
+  // over LIVE ponds only would reuse a deleted row's order the moment it was
+  // the only pond deleted.
+  const { data: orderRows, error: orderError } = await supabase
+    .from('ponds')
+    .select('"order"')
+    .eq('user_id', user.id)
+    .order('order', { ascending: false })
+    .limit(1)
+  if (orderError) throw orderError
+  const nextOrder = ((orderRows?.[0] as { order: number } | undefined)?.order ?? -1) + 1
 
   // Cast as the rest of the repo does for writes (see templates/client.ts:162):
   // `Database` is hand-authored, and supabase-js cannot infer an Insert shape from
@@ -130,7 +219,7 @@ export async function createPond(name: string, options?: CreatePondOptions): Pro
     .insert({
       user_id: user.id,
       name: trimmed,
-      order: existing.length,
+      order: nextOrder,
       ...(options?.glyph !== undefined ? { glyph: options.glyph } : {}),
       ...(options?.theme !== undefined ? { theme: options.theme } : {}),
     })

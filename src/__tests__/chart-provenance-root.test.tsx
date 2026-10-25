@@ -40,6 +40,7 @@ const wrapperWith = (client: QueryClient) => {
           reload: () => {},
           addPond: () => {},
           patchPond: () => {},
+          removePond: () => {},
         }}
       >
         {children}
