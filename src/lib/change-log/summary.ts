@@ -16,7 +16,7 @@ import { descriptorFor } from '@/lib/modules/registry'
 import { blockLabel } from '@/lib/modules/types'
 import type { TableBlock } from '@/lib/modules/table/schema'
 import { jsonEqual } from '@/lib/json-equal'
-import { OPENS_ON_A_HEADING } from '@/lib/templates/summary'
+import { HEADING_LINE } from '@/lib/modules/text/heading-line'
 import { propertySchemaSchema, type PropertySchema } from '@/lib/properties/schema'
 import { readBlockSnapshot } from './revert-plan'
 import type { RowSnapshot, TrashSnapshot } from './types'
@@ -35,8 +35,8 @@ const paragraphsOf = (blocks: Block[]): { headings: string[]; paragraphs: string
       .filter((line) => line.length > 0)
   })
   return {
-    headings: lines.filter((line) => OPENS_ON_A_HEADING.test(line)),
-    paragraphs: lines.filter((line) => !OPENS_ON_A_HEADING.test(line)),
+    headings: lines.filter((line) => HEADING_LINE.test(line)),
+    paragraphs: lines.filter((line) => !HEADING_LINE.test(line)),
   }
 }
 

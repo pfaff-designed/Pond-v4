@@ -34,6 +34,7 @@ import type { Block } from '@/lib/modules/content'
 import { blockFrame } from '@/lib/modules/block-frame'
 import type { PondBlockKind } from '@/lib/modules/block-frame'
 import { viewKind } from '@/lib/modules/view/kinds'
+import { HEADING_LINE } from '@/lib/modules/text/heading-line'
 
 /**
  * The two frame kinds whose slug is not how the board says it. Everything else in
@@ -45,8 +46,12 @@ const KIND_WORD: Partial<Record<PondBlockKind, string>> = {
   log: 'entry log',
 }
 
-/** A markdown heading at any level — `#` through `######`, per `HEADING_PREFIX`. */
-export const OPENS_ON_A_HEADING = /^\s*#{1,6}\s+\S/
+/**
+ * A markdown heading at any level — `#` through `######`, per `HEADING_PREFIX`.
+ * The one matcher `toc/headings.ts` and `change-log/summary.ts` also read, so a
+ * heading can't count on one page and not the other (KAN-482).
+ */
+export const OPENS_ON_A_HEADING = HEADING_LINE
 
 /** What one block is called in the summary line. */
 export function blockWord(block: Block): string {

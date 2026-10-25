@@ -40,6 +40,22 @@ describe('getHeadings', () => {
     ])
   })
 
+  it('counts an indented heading, same as the change log does', () => {
+    expect(getHeadings([text('a', '  ## two')])).toEqual([{ id: 'a', level: 2, text: 'two' }])
+  })
+
+  it('keeps an intraword underscore intact rather than stripping it as emphasis', () => {
+    expect(getHeadings([text('a', '# my_var_name')])).toEqual([
+      { id: 'a', level: 1, text: 'my_var_name' },
+    ])
+  })
+
+  it('reads marks through the markdown engine, not a hand-rolled strip', () => {
+    expect(getHeadings([text('a', '# **bold** and `code`')])).toEqual([
+      { id: 'a', level: 1, text: 'bold and code' },
+    ])
+  })
+
   it('ignores non-text blocks', () => {
     const blocks: Block[] = [
       text('a', '# kept'),
