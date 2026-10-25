@@ -110,7 +110,7 @@ import {
 } from '@/lib/modules/block-resize'
 import { SlashLineContext, type SlashLineAt } from '@/lib/modules/text/slash-line'
 import { useSlashLine } from '@/components/organisms/use-slash-line'
-import { focusTextBlock, hasTextBeforeCaret } from '@/lib/modules/text/focus'
+import { focusTextBlock, focusTextBlockAt, hasTextBeforeCaret } from '@/lib/modules/text/focus'
 import { HOVER_GHOST_CLASS, UNTOUCHED_HINT_CLASS } from '@/lib/modules/text/prose'
 import { useAcceptMarks } from '@/lib/change-log/accept-marks'
 import { markTarget } from '@/lib/change-log/accept-marks-diff'
@@ -350,6 +350,30 @@ function selectBlockAt(blocks: Block[], index: number) {
   const target = blocks[index]
   if (!target) return
   document.getElementById(blockDomId(target.id))?.focus()
+}
+
+/**
+ * ↑/↓ leaving a text block's own editor at its first/last visual line
+ * (KAN-367): lands in the neighbour's own editable field, at column `x` — a
+ * text neighbour's editor (nearest the caret's column), a checklist's last
+ * (↑) / first (↓) item, or (any other card, which has no field of its own)
+ * its row, selected. Only wired where a neighbour exists; block 0's own
+ * ArrowUp goes to the page title instead (`renderBlockEditor`), never here.
+ */
+function leaveTextBlockEdge(blocks: Block[], index: number, dir: 'up' | 'down', x: number) {
+  const neighbour = blocks[dir === 'up' ? index - 1 : index + 1]
+  if (!neighbour) return
+  const element = document.getElementById(blockDomId(neighbour.id))
+  if (neighbour.type === 'text') {
+    focusTextBlockAt(element, x, dir === 'up' ? 'bottom' : 'top')
+    return
+  }
+  if (neighbour.type === 'todo' && neighbour.items.length > 0) {
+    const item = dir === 'up' ? neighbour.items[neighbour.items.length - 1] : neighbour.items[0]
+    focusTodoItem(neighbour.id, item.id)
+    return
+  }
+  if (element instanceof HTMLElement) element.focus()
 }
 
 /**
@@ -2385,7 +2409,12 @@ export function BlockCanvas({
         onExitEmpty={() => removeEmptyOnExit(block.id)}
         onDeleteBlock={() => requestDelete(i)}
         onReturn={(patch, content, where) => insertLineAfter(i, patch, content, where)}
-        onLeaveUp={i === 0 ? () => focusPageTitle('end') : undefined}
+        onLeaveUp={
+          i === 0 ? () => focusPageTitle('end') : (x) => leaveTextBlockEdge(blocks, i, 'up', x)
+        }
+        onLeaveDown={
+          i === blocks.length - 1 ? undefined : (x) => leaveTextBlockEdge(blocks, i, 'down', x)
+        }
         onSelectPrev={i === 0 ? () => focusPageTitle('end') : () => selectBlockAt(blocks, i - 1)}
         onSelectNext={i === blocks.length - 1 ? undefined : () => selectBlockAt(blocks, i + 1)}
         onMoveUp={() => moveBlockAt(i, 'up')}
@@ -3122,6 +3151,7 @@ function BlockEditor({
   onDeleteBlock,
   onReturn,
   onLeaveUp,
+  onLeaveDown,
   onSelectPrev,
   onSelectNext,
   onMoveUp,
@@ -3189,8 +3219,12 @@ function BlockEditor({
    *  (default) is today's "after this block"; `'above'` is Enter at the start
    *  of a non-empty block. */
   onReturn: (patch?: Block, content?: string, where?: 'above' | 'below') => void
-  /** ↑ on this block's first visual line, text blocks only — only block 0's wiring is ever set. */
-  onLeaveUp?: () => void
+  /** ↑ on this block's first visual line, text blocks only (KAN-367): lands in the
+   *  previous block's own field at the caret's column, or (block 0) the page title. */
+  onLeaveUp?: (x: number) => void
+  /** ↓ on this block's last visual line, text blocks only (KAN-367): lands in the
+   *  next block's own field at the caret's column. Undefined on the LAST block. */
+  onLeaveDown?: (x: number) => void
   /** ↑ on this block's row while SELECTED (KAN-367): selects the previous block's row, or
    *  (block 0) the page title. Always set — unlike `onLeaveUp`, every row can be selected. */
   onSelectPrev?: () => void
@@ -3465,6 +3499,7 @@ function BlockEditor({
         stepOut: onReturn,
         commitStep,
         leaveUp: onLeaveUp,
+        leaveDown: onLeaveDown,
         select: selectRow,
       }}
     >

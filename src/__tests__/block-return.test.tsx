@@ -9,6 +9,7 @@
 import React from 'react'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { EditorView } from '@tiptap/pm/view'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
@@ -457,6 +458,70 @@ describe('pointer selection draws PondBlock’s own `selected` state (07.05)', (
 
     expect(group).not.toHaveFocus()
     expect(document.querySelector('[data-part="record-peek"]')).not.toBeNull()
+  })
+})
+
+describe('↑/↓ out of an editor land in the neighbouring block (KAN-367)', () => {
+  const alpha: Block = { id: 'b-alpha', type: 'text', content: 'alpha' }
+  const omega: Block = { id: 'b-omega', type: 'text', content: 'omega' }
+
+  it('↑ from text into text above lands the caret in it', async () => {
+    // jsdom has no layout: `posAtCoords` (the landing) needs a real one, same
+    // caveat `view.test.tsx:~404` stubs around for the press landing.
+    const posAtCoords = jest.spyOn(EditorView.prototype, 'posAtCoords').mockReturnValue({
+      pos: 3,
+      inside: -1,
+    })
+    renderCanvas([alpha, omega])
+    const lower = await textBlockIn('b-omega')
+    act(() => {
+      textEditorOf(lower).commands.focus('start')
+    })
+    await waitFor(() => expect(lower).toHaveFocus())
+    // jsdom has no layout, so `endOfTextblock` is stubbed true — same as `next-block.test.ts`.
+    textEditorOf(lower).view.endOfTextblock = () => true
+
+    fireEvent.keyDown(lower, { key: 'ArrowUp' })
+
+    const upper = await textBlockIn('b-alpha')
+    await waitFor(() => expect(upper).toHaveFocus())
+    expect(textEditorOf(upper).state.selection.from).toBe(3)
+    posAtCoords.mockRestore()
+  })
+
+  it('↓ from text into text below', async () => {
+    const posAtCoords = jest.spyOn(EditorView.prototype, 'posAtCoords').mockReturnValue({
+      pos: 1,
+      inside: -1,
+    })
+    renderCanvas([alpha, omega])
+    const upper = await textBlockIn('b-alpha')
+    act(() => {
+      textEditorOf(upper).commands.focus('end')
+    })
+    await waitFor(() => expect(upper).toHaveFocus())
+    textEditorOf(upper).view.endOfTextblock = () => true
+
+    fireEvent.keyDown(upper, { key: 'ArrowDown' })
+
+    const lower = await textBlockIn('b-omega')
+    await waitFor(() => expect(lower).toHaveFocus())
+    posAtCoords.mockRestore()
+  })
+
+  it('↑ into an image card selects it, instead of landing in a field', async () => {
+    const line: Block = { id: 'b-line', type: 'text', content: 'simmer' }
+    renderCanvas([image, line])
+    const field = await textBlockIn('b-line')
+    act(() => {
+      textEditorOf(field).commands.focus('start')
+    })
+    await waitFor(() => expect(field).toHaveFocus())
+    textEditorOf(field).view.endOfTextblock = () => true
+
+    fireEvent.keyDown(field, { key: 'ArrowUp' })
+
+    await waitFor(() => expect(blockRoot('b-image')).toHaveFocus())
   })
 })
 
