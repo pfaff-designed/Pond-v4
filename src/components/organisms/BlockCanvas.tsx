@@ -34,6 +34,7 @@ import { createPortal } from 'react-dom'
 import { SiblingBlocksProvider } from '@/lib/modules/sibling-context'
 import { BlockRowProvider } from '@/lib/modules/block-row-context'
 import { blockDomId, focusPageTitle, scrollToBlock } from '@/lib/modules/block-dom'
+import { requestTitleFocus } from '@/lib/pages/title-focus'
 import { blockLinkUrl, useBlockLinkArrival } from '@/lib/modules/block-link'
 import { ModuleView } from '@/lib/modules/renderers'
 import {
@@ -489,6 +490,13 @@ export interface BlockCanvasProps {
   /** The block list's own layout, where a host spaces blocks its way. */
   listStyle?: CSSProperties
   /**
+   * KAN-369: the host's handle to Return/↓ leaving the title — assigned
+   * `enterFromTitle` in an effect, so a host with a title (DocumentPanel)
+   * can call it without BlockCanvas reaching up into title DOM/state. A
+   * host with no title (Storybook, the blank-page harness) omits it.
+   */
+  titleExitRef?: RefObject<(() => void) | null>
+  /**
    * The previewed template's name (6f frame 3) — the premade kind label or a
    * `yours` template's own name — so the host's title-row eyebrow can read
    * `preview — {name}` in place of its own. Called with `null` once the
@@ -515,6 +523,7 @@ export function BlockCanvas({
   untouched = false,
   openTemplatesFor = null,
   listStyle,
+  titleExitRef,
   onPreviewNameChange,
 }: BlockCanvasProps) {
   const { stageUndo, notify } = useDeletionUndo()
@@ -564,8 +573,11 @@ export function BlockCanvas({
     onChange,
     markInserted,
     openSourcePicker,
+    // The bare `/page` row is not a user template — its "untitled" is a stand-in
+    // name, never meant to land in the title field (KAN-464). Blank it so the
+    // opened page shows its placeholder instead of "untitledwhatever you type".
     makePageFromRow: (placement, target) =>
-      void makePage(instantiateTemplate(PREMADE_TEMPLATES.page), placement, target),
+      void makePage({ ...instantiateTemplate(PREMADE_TEMPLATES.page), title: '' }, placement, target),
     makePageFromTemplate: (pick, target, index) => void makePageFromTemplate(pick, target, index),
     // Only `todo` (list/checklist) has no editor of its own to keep focus in
     // (KAN-355) — every other landed type keeps today's behaviour.
@@ -1311,14 +1323,30 @@ export function BlockCanvas({
 
   /**
    * Backspace in an empty text block takes the line away and leaves focus on the
-   * block before it, at the end of its text — or on the block after it when it
-   * was the first. An unlabelled empty line holds nothing to undo, so removing it
-   * is not a deletion; the page's only block stays.
+   * block before it, at the end of its text — or, when it was the first block,
+   * at the end of the title (KAN-369). An unlabelled empty line holds nothing
+   * to undo, so removing it is not a deletion; the page's only block stays,
+   * and Backspace there still returns focus to the title.
    */
   function removeEmptyLineAt(index: number) {
     const line = blocks[index]
     const neighbour = blocks[index - 1] ?? blocks[index + 1]
-    if (!line || !neighbour) return
+    if (!line) return
+    if (index === 0) {
+      if (neighbour && line.type === 'text' && !line.label) {
+        commitStructuralBlocks(detachKeepingRows(blocks, index).blocks)
+      } else if (neighbour) {
+        // Not `requestDelete`: it defaults `focusNeighbour` to true, and
+        // `focusBlockNeighbour`'s own `setTimeout(0)` would steal focus from
+        // the title a tick after this. An empty block never holds content
+        // (`blockHoldsContent`), so this never needed the confirm dialog
+        // `requestDelete` would open for a block that does.
+        removeBlockAt(index, false)
+      }
+      focusPageTitle('end')
+      return
+    }
+    if (!neighbour) return
     if (line.type === 'text' && !line.label) {
       // Via `detachKeepingRows` (KAN-440): an empty line can carry `rowStart`
       // the same as any other block, so taking it out must hand that off to
@@ -1667,10 +1695,10 @@ export function BlockCanvas({
   //
   // `child` (the `/ nested page` row and `makePageFromTemplate`'s child path alike —
   // both read as "does the same with nothing to move" under KAN-122's board) swaps
-  // the `/` line for a page-link block at the same index and stays on the parent;
-  // the made page is stamped nested-under-this-page once, read later by the rail's
-  // `new` row note and the link row's own chip. `sibling` keeps the pre-KAN-122
-  // behaviour: the `/` line is dropped and the person is taken to the new page.
+  // the `/` line for a page-link block at the same index; the made page is stamped
+  // nested-under-this-page once, read later by the rail's `new` row note and the
+  // link row's own chip. Both placements then open the made page with the caret
+  // in its title (KAN-464, superseding KAN-122's "stays on the parent" for `child`).
   // Read against the blocks as they are then, since the awaits below outlive any
   // snapshot. A failure leaves the `/` line. Returns whether the page actually got
   // made — KAN-138's nested-page apply path needs this to know its write landed
@@ -1722,14 +1750,17 @@ export function BlockCanvas({
         pondId
       )
       void queryClient.invalidateQueries({ queryKey: pagesKey() })
-      if (placement === 'sibling') {
-        pageLinks.navigateToPage({
-          id: created.id,
-          title: created.title,
-          type: created.type,
-          isNew: false,
-        })
-      }
+      // KAN-464 (superseding KAN-122's "stays on the parent" for `child`):
+      // every new-page path opens the made page with the caret in its
+      // title, `/page`/`/nested page` included — the link above is still
+      // left in the parent either way.
+      requestTitleFocus(created.id)
+      pageLinks.navigateToPage({
+        id: created.id,
+        title: created.title,
+        type: created.type,
+        isNew: false,
+      })
       return true
     } catch (err) {
       console.error('Failed to make the page', err)
@@ -1894,6 +1925,30 @@ export function BlockCanvas({
     markInserted(nb.id)
     onChange([...blocks, nb])
   }
+
+  // KAN-369: Return/↓ leaving the title lands on the page's first block — its
+  // own start when that block is already text, or a fresh empty line above
+  // whatever it is otherwise (a card gets a line to type above it, never
+  // text forced into its own fields). The fresh line's autofocus-on-mount
+  // (rule 2, `markInserted`) is what actually puts the caret there.
+  function enterFromTitle() {
+    if (blocks[0]?.type === 'text') {
+      focusTextBlockSoon(blocks[0].id, 'start')
+      return
+    }
+    const nb = emptyBlockForType('text')
+    if (!nb) return
+    markInserted(nb.id)
+    onChange([nb, ...blocks])
+  }
+
+  useEffect(() => {
+    if (!titleExitRef) return
+    titleExitRef.current = enterFromTitle
+    return () => {
+      titleExitRef.current = null
+    }
+  })
 
   // Rule 3's trailing gap (KAN-345): `focusEmptyLineOrInsert`'s shared G9 guard
   // — a fresh block's autofocus (above) covers the add branch; only the
@@ -2186,6 +2241,7 @@ export function BlockCanvas({
         onExitEmpty={() => removeEmptyOnExit(block.id)}
         onDeleteBlock={() => requestDelete(i)}
         onReturn={(patch, content, where) => insertLineAfter(i, patch, content, where)}
+        onLeaveUp={i === 0 ? () => focusPageTitle('end') : undefined}
         onMoveUp={() => moveBlockAt(i, 'up')}
         onMoveDown={() => moveBlockAt(i, 'down')}
         onSlashKey={() => openSlashMenuAt(i)}
@@ -2908,6 +2964,7 @@ function BlockEditor({
   onExitEmpty,
   onDeleteBlock,
   onReturn,
+  onLeaveUp,
   onMoveUp,
   onMoveDown,
   onSlashKey,
@@ -2973,6 +3030,8 @@ function BlockEditor({
    *  (default) is today's "after this block"; `'above'` is Enter at the start
    *  of a non-empty block. */
   onReturn: (patch?: Block, content?: string, where?: 'above' | 'below') => void
+  /** ↑ on this block's first visual line, text blocks only — only block 0's wiring is ever set. */
+  onLeaveUp?: () => void
   onMoveUp?: () => void
   onMoveDown?: () => void
   onSlashKey?: () => void
@@ -3235,7 +3294,9 @@ function BlockEditor({
   }
 
   const view = (
-    <BlockRowProvider value={{ selected: state === 'selected', stepOut: onReturn, commitStep }}>
+    <BlockRowProvider
+      value={{ selected: state === 'selected', stepOut: onReturn, commitStep, leaveUp: onLeaveUp }}
+    >
       <SlashLineContext.Provider value={slash.handleSlashLine}>
         <ActiveViewSelectionContext.Provider value={setActiveViewId}>
           <SavedViewHostContext.Provider value={savedViewHost}>

@@ -459,10 +459,33 @@ describe('deletePage', () => {
 
 // ── movePage ─────────────────────────────────────────────────────────────────
 
+function moveChangeLogRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'record-1',
+    user_id: 'user-1',
+    pond_id: 'pond-1',
+    status: 'accepted',
+    action: 'move',
+    actor: 'you',
+    target_page_id: 'x',
+    target_block_id: null,
+    before: { parentId: 'old-parent', parentTitle: 'Old parent', siblingOrder: ['x'] },
+    after: { parentId: 'health', parentTitle: 'Health', siblingOrder: ['a', 'x', 'b'] },
+    source_thread_id: null,
+    tool_call_id: null,
+    read: null,
+    links: {},
+    transitions: [],
+    created_at: '2026-10-20T00:00:00.000Z',
+    status_at: '2026-10-20T00:00:00.000Z',
+    ...overrides,
+  }
+}
+
 describe('movePage', () => {
-  it('sets parent_id on the moved row then reindexes the sibling group order', async () => {
-    const chain = makeChain({ eq: jest.fn().mockResolvedValue({ data: null, error: null }) })
-    const sb = makeSupabase(chain)
+  it('calls the move_page RPC with the reparent and the full sibling order', async () => {
+    const rpc = jest.fn().mockResolvedValue({ data: moveChangeLogRow(), error: null })
+    const sb = { rpc }
 
     await movePage(sb as never, {
       id: 'x',
@@ -470,36 +493,70 @@ describe('movePage', () => {
       siblingOrder: ['a', 'x', 'b'],
     })
 
-    // first update = the moved row's parent
-    const parentUpdate = chain.update.mock.calls[0][0]
-    expect(parentUpdate.parent_id).toBe('health')
-    expect(typeof parentUpdate.updated_at).toBe('string')
-    expect(chain.eq).toHaveBeenCalledWith('id', 'x')
-
-    // then one order update per id, dense 0..N-1
-    const orderUpdates = chain.update.mock.calls.slice(1).map((c) => c[0])
-    expect(orderUpdates).toEqual([{ order: 0 }, { order: 1 }, { order: 2 }])
-    expect(chain.eq).toHaveBeenCalledWith('id', 'a')
-    expect(chain.eq).toHaveBeenCalledWith('id', 'b')
+    expect(rpc).toHaveBeenCalledWith('move_page', {
+      p_page_id: 'x',
+      p_new_parent_id: 'health',
+      p_sibling_order: ['a', 'x', 'b'],
+    })
   })
 
-  it('moves a page to top-level with a null parent_id', async () => {
-    const chain = makeChain({ eq: jest.fn().mockResolvedValue({ data: null, error: null }) })
-    const sb = makeSupabase(chain)
+  it('moves a page to top-level with a null parent id', async () => {
+    const rpc = jest
+      .fn()
+      .mockResolvedValue({ data: moveChangeLogRow({ target_page_id: 'x' }), error: null })
+    const sb = { rpc }
 
     await movePage(sb as never, { id: 'x', newParentId: null, siblingOrder: ['x'] })
 
-    expect(chain.update.mock.calls[0][0].parent_id).toBeNull()
+    expect(rpc).toHaveBeenCalledWith('move_page', {
+      p_page_id: 'x',
+      p_new_parent_id: null,
+      p_sibling_order: ['x'],
+    })
   })
 
-  it('throws when the parent update fails', async () => {
-    const chain = makeChain({
-      eq: jest.fn().mockResolvedValue({ data: null, error: { message: 'move boom' } }),
+  it('returns the RPC row mapped through mapChangeLogRow', async () => {
+    const sb = { rpc: jest.fn().mockResolvedValue({ data: moveChangeLogRow(), error: null }) }
+
+    const record = await movePage(sb as never, {
+      id: 'x',
+      newParentId: 'health',
+      siblingOrder: ['a', 'x', 'b'],
     })
-    const sb = makeSupabase(chain)
+
+    expect(record).toEqual({
+      id: 'record-1',
+      userId: 'user-1',
+      pondId: 'pond-1',
+      status: 'accepted',
+      action: 'move',
+      actor: 'you',
+      targetPageId: 'x',
+      targetBlockId: null,
+      before: { parentId: 'old-parent', parentTitle: 'Old parent', siblingOrder: ['x'] },
+      after: { parentId: 'health', parentTitle: 'Health', siblingOrder: ['a', 'x', 'b'] },
+      sourceThreadId: null,
+      toolCallId: null,
+      read: null,
+      links: {},
+      transitions: [],
+      createdAt: '2026-10-20T00:00:00.000Z',
+      statusAt: '2026-10-20T00:00:00.000Z',
+    })
+  })
+
+  it('throws when the RPC errors', async () => {
+    const sb = { rpc: jest.fn().mockResolvedValue({ data: null, error: { message: 'move boom' } }) }
     await expect(
       movePage(sb as never, { id: 'x', newParentId: null, siblingOrder: ['x'] })
     ).rejects.toThrow(/move boom/)
+  })
+
+  it('throws when the RPC returns no record', async () => {
+    const sb = { rpc: jest.fn().mockResolvedValue({ data: null, error: null }) }
+    await expect(
+      movePage(sb as never, { id: 'x', newParentId: null, siblingOrder: ['x'] })
+    ).rejects.toThrow(/no record/)
   })
 })
 

@@ -66,7 +66,9 @@ import { setPageGlyph, setAreaRole } from '@/lib/pages/mark-client'
 import { appendOwnEdit } from '@/lib/change-log/store'
 import { changeLogKey } from '@/lib/change-log/keys'
 import { sessionUndo } from '@/lib/change-log/session-undo'
+import { applyUndoOutcome } from '@/lib/change-log/undo-outcome'
 import { TrashRefusedError } from '@/lib/change-log/errors'
+import { readMoveSnapshot, moveParentLabel } from '@/lib/change-log/page-changes'
 import { jsonEqual } from '@/lib/json-equal'
 import { homeQueryKey, pagesKey } from '@/lib/pages/keys'
 import { appendChildLinkUnder, trashPageUnlinked } from '@/lib/pages/child-links'
@@ -75,6 +77,7 @@ import { useHomePage } from '@/lib/pages/use-home-page'
 import { pushRecentGlyphToPond } from '@/lib/pond/client'
 import { PondSwitcher } from './PondSwitcher'
 import { openWorkspaceUrl, workspaceUrl } from '@/lib/pages/nav'
+import { requestTitleFocus } from '@/lib/pages/title-focus'
 import { withTemplatesParam } from '@/lib/pages/templates-param'
 import { markIndex, resolveMark, type MarkSource, type PageMark } from '@/lib/pages/mark'
 import { isNewNestedPage } from '@/lib/pages/nested-page'
@@ -1651,7 +1654,7 @@ export function Rail() {
   const [busyId, setBusyId] = useState<string | null>(null)
   // The subtree-delete confirm (blast-radius modal); null when closed.
   const [confirmTarget, setConfirmTarget] = useState<RailNode | null>(null)
-  const { stageDeletion, notify } = useDeletionUndo()
+  const { stageDeletion, stageUndo, notify } = useDeletionUndo()
 
   const {
     data: pages = [],
@@ -2023,6 +2026,7 @@ export function Rail() {
           },
           pondId
         )
+        requestTitleFocus(created.id)
         navigateTo(
           { id: created.id, type: 'page', title: created.title },
           { openTemplates: action === 'template' }
@@ -2501,10 +2505,8 @@ export function Rail() {
     const move = computeMove(pages, draggedId, targetId, zone)
     if (!move) return
 
-    // A re-parent (not a same-parent reorder) gets a link on its new parent;
-    // the old parent's link, if any, is left for the person to remove.
     const draggedRow = pages.find((r) => r.id === draggedId)
-    const isReparent = (draggedRow?.parent_id ?? null) !== move.newParentId
+    const title = draggedRow?.title || 'Untitled'
 
     const snapshot = applyMoveOptimistic(
       queryClient,
@@ -2522,26 +2524,35 @@ export function Rail() {
       else setExpanded((prev) => new Set(prev).add(targetId))
     }
 
-    // KAN-415: a failed link append is not a failed move — fired alongside it.
-    if (isReparent) {
-      void appendChildLinkUnder(
-        createClient(),
-        queryClient,
-        move.newParentId,
-        draggedId,
-        pondId,
-        pondName
-      )
-    }
+    // KAN-477: a reparent writes no link block of its own — the new parent's
+    // child links are derived at read time, so the move stays one undo step.
 
     try {
-      await withUser((sb) =>
+      const record = await withUser((sb) =>
         movePage(sb, {
           id: draggedId,
           newParentId: move.newParentId,
           siblingOrder: move.siblingOrder,
         })
       )
+      const after = record ? readMoveSnapshot(record.after) : null
+      if (pondId && record && draggedRow && after) {
+        const handle = sessionUndo.rememberPending({
+          pondId,
+          recordIds: Promise.resolve([record.id]),
+        })
+        queryClient.invalidateQueries({ queryKey: changeLogKey() })
+        stageUndo({
+          message: `moved ${title} to ${moveParentLabel(after.parentTitle, home?.title ?? pondName)} ·`,
+          undoLabel: 'undo',
+          undo: () =>
+            sessionUndo
+              .undoHandle(pondId, handle)
+              .then((outcome) => applyUndoOutcome('undo', outcome, queryClient)),
+          action: () => navigateTo(draggedRow),
+          actionLabel: 'open',
+        })
+      }
     } catch {
       if (snapshot) queryClient.setQueryData<PageRow[]>(pagesKey(pondId), snapshot)
       notify(`Couldn't move "${nodeById.get(draggedId)?.title || 'Untitled'}"`)

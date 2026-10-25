@@ -67,6 +67,7 @@ import { setRailMinimized, toggleRail, useRailMinimized } from '@/lib/layout/rai
 import { PLACEMENT } from '@/lib/layout/shell-placement'
 import { useZenCommands } from '@/lib/layout/use-zen-commands'
 import { openWorkspaceUrl, workspaceUrl } from '@/lib/pages/nav'
+import { requestTitleFocus } from '@/lib/pages/title-focus'
 import { flushPendingPageSave } from '@/lib/pages/page-flush'
 import { newPageParent, paletteItems, paletteScope, pondItems, railItems } from '@/lib/pages/palette-items'
 import { prefetchPageIfAbsent } from '@/lib/pages/use-page-prefetch'
@@ -99,7 +100,7 @@ const isEditable = (el: Element | null): boolean =>
   !el.closest(`[${SESSION_UNDO_SCOPE_ATTR}]`)
 
 const isEmptyPageTitleInput = (el: Element): boolean =>
-  el.hasAttribute('data-pond-page-title') && (el as HTMLInputElement).value === ''
+  el.hasAttribute('data-pond-page-title') && el instanceof HTMLTextAreaElement && el.value === ''
 
 export function ShellCommands() {
   const searchParams = useSearchParams()
@@ -427,6 +428,7 @@ export function ShellCommands() {
           pondId
         )
         writeRecent({ id: created.id, type: 'page', title: created.title }, pondId)
+        requestTitleFocus(created.id)
         openWorkspaceUrl(workspaceUrl({ id: created.id, type: 'page', title: created.title }), router)
         void queryClient.invalidateQueries({ queryKey: pagesKey(pondId) })
         // KAN-415: a failed link append is not a failed page creation — the

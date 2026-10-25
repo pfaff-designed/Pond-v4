@@ -141,9 +141,55 @@ export function makeFakeSupabase(
     }
     return builder
   }
+  /**
+   * `move_page` (migration 0030): reparent, densely reindex the destination
+   * sibling group, and hand back the `move` change_log row the real RPC
+   * inserts in the same statement — movePage (src/lib/pages/client.ts) maps
+   * it straight through `mapChangeLogRow`.
+   */
+  const rpc = (fn: string, params: Record<string, unknown>) => {
+    if (fn !== 'move_page') {
+      throw new Error(`fake-supabase: unmodelled rpc '${fn}'`)
+    }
+    const pageId = params.p_page_id as string
+    const newParentId = (params.p_new_parent_id as string | null) ?? null
+    const siblingOrder = params.p_sibling_order as string[]
+    const page = pages.get(pageId)
+    if (!page) {
+      return Promise.resolve({ data: null, error: { message: `page ${pageId} not found` } })
+    }
+    const oldParentId = page.parent_id
+    page.parent_id = newParentId
+    siblingOrder.forEach((id, index) => {
+      const row = pages.get(id)
+      if (row) row.order = index
+    })
+    const now = new Date().toISOString()
+    const record = {
+      id: `move-${++seq}`,
+      user_id: page.user_id,
+      pond_id: page.pond_id ?? null,
+      status: 'accepted',
+      action: 'move',
+      actor: 'you',
+      target_page_id: pageId,
+      target_block_id: null,
+      before: { parentId: oldParentId, parentTitle: '', siblingOrder: [] },
+      after: { parentId: newParentId, parentTitle: '', siblingOrder },
+      source_thread_id: null,
+      tool_call_id: null,
+      read: null,
+      links: {},
+      transitions: [],
+      created_at: now,
+      status_at: now,
+    }
+    return Promise.resolve({ data: record, error: null })
+  }
   return {
     auth: { getUser: jest.fn().mockResolvedValue({ data: { user: { id: 'user-1' } } }) },
     from: jest.fn(from),
+    rpc: jest.fn(rpc),
     _pages: pages,
     get _inserts() {
       return inserts

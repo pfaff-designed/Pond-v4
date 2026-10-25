@@ -197,11 +197,23 @@ describe('DeletionUndoProvider wiring', () => {
 
 // ── 3b. stageUndo — a change already applied, with nothing deferred ──────────
 
-function UndoHarness({ undo, scope }: { undo: () => void; scope?: string }) {
+function UndoHarness({
+  undo,
+  scope,
+  action,
+  actionLabel,
+}: {
+  undo: () => void
+  scope?: string
+  action?: () => void
+  actionLabel?: string
+}) {
   const { stageUndo, flushScope } = useDeletionUndo()
   return (
     <>
-      <button onClick={() => stageUndo({ message: 'Turned into a list', undo, scope })}>
+      <button
+        onClick={() => stageUndo({ message: 'Turned into a list', undo, scope, action, actionLabel })}
+      >
         stage
       </button>
       <button onClick={() => flushScope('block')}>flush-block</button>
@@ -246,6 +258,24 @@ describe('stageUndo', () => {
     fireEvent.click(screen.getByText('flush-block'))
     expect(screen.queryByText('Turned into a list')).not.toBeInTheDocument()
     expect(undo).not.toHaveBeenCalled()
+  })
+
+  it('renders Undo and a secondary action together, each firing only its own callback', () => {
+    const undo = jest.fn()
+    const action = jest.fn()
+    renderUndo({ undo, action, actionLabel: 'open' })
+    fireEvent.click(screen.getByText('stage'))
+
+    const openButton = screen.getByRole('button', { name: 'open' })
+    fireEvent.click(openButton)
+    expect(action).toHaveBeenCalledTimes(1)
+    expect(undo).not.toHaveBeenCalled()
+    // The action button does not close the toast — Undo is still there.
+    expect(screen.getByText('Turned into a list')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    expect(undo).toHaveBeenCalledTimes(1)
+    expect(action).toHaveBeenCalledTimes(1)
   })
 })
 
