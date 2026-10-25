@@ -19,6 +19,11 @@
  * the list → database writer in `list-to-table.ts`, which reads a text block of
  * list lines. A `todo` list is handed over as exactly those lines.
  *
+ * `heading-1`/`heading-2`/`heading-3`/`quote`/`code` are a single-node text
+ * block retyped by `retype.ts` (text ⇄ heading ⇄ quote ⇄ code). They are
+ * offered only when the block is one of those shapes — a multi-line or list
+ * text block gets none of the five, same as it gets no table.
+ *
  * Only targets that keep the content are offered: a checklist has no table (its
  * checked state has no column to go to), prose has no table (its lines are not a
  * list), and a block with nothing in it has nothing to keep.
@@ -36,11 +41,50 @@ import {
 } from '@/lib/pages/list-to-table'
 import type { Block } from './content'
 import type { TextBlock } from './text/schema'
+import { retypeText, textKindOf, type TextKind } from './text/retype'
 import { todoMarker, type TodoBlock, type TodoItem } from './todo/schema'
 
 /** In the menu's order. */
-export const CONVERSION_TARGETS = ['table', 'list', 'checklist', 'text'] as const
+export const CONVERSION_TARGETS = [
+  'table',
+  'heading-1',
+  'heading-2',
+  'heading-3',
+  'quote',
+  'code',
+  'list',
+  'checklist',
+  'text',
+] as const
 export type ConversionTarget = (typeof CONVERSION_TARGETS)[number]
+
+/** `conversions.ts`'s target ids are dashed (`heading-1`); `retype.ts`'s `TextKind` isn't (`heading1`) — this is their one map. */
+const TEXT_KIND_OF_TARGET: Partial<Record<ConversionTarget, TextKind>> = {
+  text: 'text',
+  'heading-1': 'heading1',
+  'heading-2': 'heading2',
+  'heading-3': 'heading3',
+  quote: 'quote',
+  code: 'code',
+}
+
+const TARGET_OF_TEXT_KIND: Record<TextKind, LineTarget> = {
+  text: 'text',
+  heading1: 'heading-1',
+  heading2: 'heading-2',
+  heading3: 'heading-3',
+  quote: 'quote',
+  code: 'code',
+}
+
+/** Offered only for a single-node text block (never for a multi-node one, and never for a list/table). */
+const RETYPE_ONLY_TARGETS = new Set<ConversionTarget>([
+  'heading-1',
+  'heading-2',
+  'heading-3',
+  'quote',
+  'code',
+])
 
 type LineTarget = Exclude<ConversionTarget, 'table'>
 
@@ -78,7 +122,7 @@ interface Line {
 }
 
 const kindOf = (block: Block): LineTarget | null => {
-  if (block.type === 'text') return 'text'
+  if (block.type === 'text') return TARGET_OF_TEXT_KIND[textKindOf(block.content) ?? 'text']
   if (block.type === 'todo') return todoMarker(block) === 'check' ? 'checklist' : 'list'
   return null
 }
@@ -155,6 +199,10 @@ const lineConversion = (
   mintId: () => string
 ): LineConversion => {
   const line = (apply: () => Block): LineConversion => ({ target, preview: null, apply })
+  const kind = TEXT_KIND_OF_TARGET[target]
+  if (block.type === 'text' && kind) {
+    return line(() => ({ ...block, content: retypeText(block.content, kind) }))
+  }
   if (block.type === 'text') {
     return line(() => toTodo(block, target === 'checklist' ? 'check' : 'dot', mintId))
   }
@@ -176,12 +224,15 @@ export const conversionsFor = (
   if (block.type === 'text' && linesOf(block.content).length === 0) return []
   if (block.type === 'todo' && block.items.length === 0) return []
 
+  const singleNode = block.type === 'text' && textKindOf(block.content) !== null
+
   return CONVERSION_TARGETS.flatMap((target): Conversion[] => {
     if (target === kind) return []
     if (target === 'table') {
       const table = tableConversion(block)
       return table ? [table] : []
     }
+    if (RETYPE_ONLY_TARGETS.has(target) && !singleNode) return []
     return [lineConversion(block, target, mintId)]
   })
 }
