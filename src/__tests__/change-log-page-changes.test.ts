@@ -187,6 +187,19 @@ describe('readMoveSnapshot', () => {
     expect(readMoveSnapshot(null)).toBeNull()
     expect(readMoveSnapshot({ parentId: 'page-b' })).toBeNull()
   })
+
+  it('parses a renamed move\'s title (KAN-470), and still parses without one', () => {
+    const after = {
+      parentId: 'page-b',
+      parentTitle: 'Page B',
+      siblingOrder: ['page-1'],
+      title: 'Notes 2',
+    }
+    expect(readMoveSnapshot(after)).toEqual(after)
+
+    const unrenamed = { parentId: 'page-b', parentTitle: 'Page B', siblingOrder: ['page-1'] }
+    expect(readMoveSnapshot(unrenamed)).toEqual(unrenamed)
+  })
 })
 
 describe('platformShortcutLabel', () => {
