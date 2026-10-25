@@ -838,6 +838,86 @@ export function BlockCanvas({
       el.removeEventListener('focusout', handleFocusOut)
     }
   }, [])
+  // The range selection (KAN-373): ids, not indices, so an edit elsewhere
+  // can't shift it. `null` is "no range" — a single selected block is still
+  // just that row's own `rowSelected`, unaffected by this.
+  const [selection, setSelection] = useState<{ anchorId: string; focusId: string } | null>(null)
+  // The id of whichever row currently holds raw row-level focus (the same
+  // `e.target === e.currentTarget` fact each row's own `rowSelected` reads) —
+  // the anchor a ⇧-click needs when no range exists yet. A ⇧↑/⇧↓ never needs
+  // this: the row firing that key IS the focused row already.
+  const [focusedBlockId, setFocusedBlockId] = useState<string | null>(null)
+  // Set around a range-extend step's own `selectBlockAt` call, so the
+  // focusin it fires reads as "we just moved this focus on purpose" rather
+  // than the plain click/arrow-nav that clears the range below.
+  const extendingSelectionRef = useRef(false)
+  useEffect(() => {
+    const el = canvasRef.current
+    if (!el) return
+    const rowIdOf = (node: EventTarget | null) =>
+      node instanceof Element && node.hasAttribute('data-block-id')
+        ? node.getAttribute('data-block-id')
+        : null
+    const handleFocusIn = (e: FocusEvent) => {
+      const id = rowIdOf(e.target)
+      if (id === null) return
+      setFocusedBlockId(id)
+      if (extendingSelectionRef.current) {
+        extendingSelectionRef.current = false
+        return
+      }
+      setSelection(null)
+    }
+    const handleFocusOut = (e: FocusEvent) => {
+      if (rowIdOf(e.relatedTarget) !== null) return
+      setFocusedBlockId(null)
+    }
+    el.addEventListener('focusin', handleFocusIn)
+    el.addEventListener('focusout', handleFocusOut)
+    return () => {
+      el.removeEventListener('focusin', handleFocusIn)
+      el.removeEventListener('focusout', handleFocusOut)
+    }
+  }, [])
+  // The range, derived every render: every block whose index lies between
+  // anchor and focus, inclusive, in array order (not sorted ids — a block
+  // between them that moved out of the array is simply no longer "between").
+  const rangeIds = useMemo(() => {
+    if (!selection) return new Set<string>()
+    const anchorIndex = blocks.findIndex((b) => b.id === selection.anchorId)
+    const focusIndex = blocks.findIndex((b) => b.id === selection.focusId)
+    if (anchorIndex === -1 || focusIndex === -1) return new Set<string>()
+    const [start, end] =
+      anchorIndex <= focusIndex ? [anchorIndex, focusIndex] : [focusIndex, anchorIndex]
+    return new Set(blocks.slice(start, end + 1).map((b) => b.id))
+  }, [selection, blocks])
+  // ⇧↓/⇧↑ on the focused row (KAN-373): starts the range at this row if none
+  // exists yet, then moves the FOCUS end one block — a second press fires
+  // from there, never back from `i`. Out of bounds (⇧↑ at block 0) is a
+  // no-op: no range started, no focus moved.
+  function extendRangeStep(i: number, dir: 'up' | 'down') {
+    const block = blocks[i]
+    if (!block) return
+    const focusIndex = selection ? blocks.findIndex((b) => b.id === selection.focusId) : i
+    const nextIndex = dir === 'up' ? focusIndex - 1 : focusIndex + 1
+    const next = blocks[nextIndex]
+    if (!next) return
+    setSelection({ anchorId: selection?.anchorId ?? block.id, focusId: next.id })
+    extendingSelectionRef.current = true
+    selectBlockAt(blocks, nextIndex)
+  }
+  // ⇧-click on a row's chrome (KAN-373): the anchor is the existing range's,
+  // or whichever row is plainly selected right now — ⇧-click does nothing
+  // with no block selected at all, per the spec.
+  function extendRangeTo(i: number) {
+    const block = blocks[i]
+    if (!block) return
+    const anchorId = selection?.anchorId ?? focusedBlockId
+    if (!anchorId) return
+    setSelection({ anchorId, focusId: block.id })
+    extendingSelectionRef.current = true
+    selectBlockAt(blocks, i)
+  }
   // While previewing, `canvasRef` collapses to zero height (6f frame 3's
   // outline swap, `hiddenCanvasListStyle` above) rather than going
   // `display:none` — so its own rect, and every block's inside it, is a real
@@ -2830,6 +2910,11 @@ export function BlockCanvas({
         onMoveDown={() => moveBlockAt(i, 'down')}
         onSwapLeft={() => swapInRowAt(i, 'left')}
         onSwapRight={() => swapInRowAt(i, 'right')}
+        inRange={rangeIds.has(block.id)}
+        onExtendUp={() => extendRangeStep(i, 'up')}
+        onExtendDown={() => extendRangeStep(i, 'down')}
+        onShiftClick={() => extendRangeTo(i)}
+        onEscapeRange={() => setSelection(null)}
         onSlashKey={() => openSlashMenuAt(i)}
         slashMenuOpen={slashMenuOpenAt === i}
         blank={blank}
@@ -3723,6 +3808,11 @@ function BlockEditor({
   onMoveDown,
   onSwapLeft,
   onSwapRight,
+  inRange = false,
+  onExtendUp,
+  onExtendDown,
+  onShiftClick,
+  onEscapeRange,
   onSlashKey,
   onSlashPickTemplate,
   onPreviewTemplate,
@@ -3806,6 +3896,21 @@ function BlockEditor({
    *  where ⌥←/→ jump words (KAN-376). */
   onSwapLeft?: () => void
   onSwapRight?: () => void
+  /** This block is in the canvas-level range (KAN-373) — rings the same way
+   *  `rowSelected` does, through the same `BlockRowProvider.selected` a chart
+   *  card or page-link already reads to ring itself. */
+  inRange?: boolean
+  /** ⇧↑ on the focused row — extends the range up one block, or (block 0, no
+   *  range yet) does nothing. */
+  onExtendUp?: () => void
+  /** ⇧↓ on the focused row — extends the range down one block. */
+  onExtendDown?: () => void
+  /** ⇧-click on this row's own chrome, with another block selected — sets
+   *  the range's focus end to this block. */
+  onShiftClick?: () => void
+  /** Esc while this row is part of a range (`inRange`) — clears the range
+   *  instead of blurring the row. */
+  onEscapeRange?: () => void
   onSlashKey?: () => void
   slashMenuOpen?: boolean
   /** A page with nothing on it yet besides this block (6f): `/` leads with templates. */
@@ -4028,7 +4133,7 @@ function BlockEditor({
     observer.observe(node)
     return () => observer.disconnect()
   }, [constrained])
-  const state = rowSelected && baseState === 'rest' ? 'selected' : baseState
+  const state = (rowSelected || inRange) && baseState === 'rest' ? 'selected' : baseState
 
   // `frame`'s CARD kind never flips for an existing block (it reads the persisted,
   // never-changing `block.mode`, not the active saved view's — the ruling above).
@@ -4230,6 +4335,20 @@ function BlockEditor({
       }
       return
     }
+    // ⇧↑/⇧↓ on the focused row (KAN-373) extend the range — only from the row
+    // itself (`e.target === e.currentTarget`, the same guard ⌥←/⌥→ use below):
+    // inside a text editor, ⇧↑/⇧↓ extends the TEXT selection and must keep
+    // doing so, never the block range.
+    if (e.key === 'ArrowUp' && e.target === e.currentTarget && e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey) {
+      e.preventDefault()
+      onExtendUp?.()
+      return
+    }
+    if (e.key === 'ArrowDown' && e.target === e.currentTarget && e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey) {
+      e.preventDefault()
+      onExtendDown?.()
+      return
+    }
     if (e.altKey && e.key === 'ArrowUp') {
       e.preventDefault()
       onMoveUp?.()
@@ -4250,8 +4369,14 @@ function BlockEditor({
     }
     // Esc clears the pointer-selected row (07.05) — the row itself does not blur
     // on Escape by default, so this blurs it explicitly; `handleBlur` below then
-    // drops `rowSelected`.
+    // drops `rowSelected`. With a range (KAN-373), Esc clears the range first
+    // and keeps this row — the range's own focus end — selected instead.
     if (e.key === 'Escape' && e.target === e.currentTarget) {
+      if (inRange) {
+        e.preventDefault()
+        onEscapeRange?.()
+        return
+      }
       rootRef.current?.blur()
     }
     // Delete on the selected row removes the block. The key a Mac labels
@@ -4455,6 +4580,12 @@ function BlockEditor({
     if (block.type === 'text') return
     if (!e.currentTarget.contains(e.target as Node)) return
     if (!shouldSelectCardFromClick(e.target)) return
+    // ⇧-click (KAN-373) sets the range's focus end instead of plainly
+    // selecting this row — `extendRangeTo` moves the row's own focus itself.
+    if (e.shiftKey) {
+      onShiftClick?.()
+      return
+    }
     rootRef.current?.focus()
   }
 
