@@ -433,7 +433,7 @@ describe('PATH_STEPS: the block menu, a page-making move, and a chart card’s o
       within(blockGroup)
         .getAllByRole('menuitem')
         .map((item) => item.textContent)
-    ).toEqual(['move into a new page', 'copy link to block'])
+    ).toEqual(['move into a new page', 'move to…', 'copy link to block'])
 
     await user.click(within(blockGroup).getByRole('menuitem', { name: 'move into a new page' }))
 
