@@ -519,7 +519,7 @@ export function ShellCommands() {
   )
 
   const handlePaletteSelect = useCallback(
-    (item: PaletteItem) => {
+    (item: PaletteItem, options?: { newTab?: boolean }) => {
       // Pick mode (KAN-469): any picked row — including the synthetic root
       // row — is the move's target. Runs before every other branch below,
       // including the generic page-open fallback at the bottom.
@@ -626,7 +626,9 @@ export function ShellCommands() {
       const page = pages.find((p) => p.id === item.id)
       if (page) {
         writeRecent({ id: page.id, type: page.type, title: page.title }, pondId)
-        openWorkspaceUrl(workspaceUrl({ id: page.id, type: page.type, title: page.title }), router)
+        const url = workspaceUrl({ id: page.id, type: page.type, title: page.title })
+        if (options?.newTab) window.open(url, '_blank', 'noopener')
+        else openWorkspaceUrl(url, router)
       }
     },
     [
@@ -683,6 +685,7 @@ export function ShellCommands() {
         scope={movePick ? null : scope}
         pondName={pondName}
         parentTitle={parent.title}
+        pondId={pondId}
         onSelect={handlePaletteSelect}
         onNavigate={(to) =>
           openWorkspaceUrl(workspaceUrl(to.kind === 'page' ? to.node : null), router)

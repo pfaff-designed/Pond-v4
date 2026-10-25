@@ -22,7 +22,7 @@ import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
 import { PondContext, type PondContextValue } from '@/lib/pond/context'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { pagesKey } from '@/lib/pages/keys'
-import { workspaceHref, WORKSPACE_PATH } from '@/lib/pages/nav'
+import { workspaceUrl, WORKSPACE_PATH } from '@/lib/pages/nav'
 import type { Pond } from '@/lib/pond/client'
 import type { ChangeLogRecord } from '@/lib/change-log/types'
 import { withPathProbe } from './helpers/command-path-probe'
@@ -240,7 +240,7 @@ describe('PATH_STEPS 5 — the composer opens the change log', () => {
       expect(pushStateSpy).toHaveBeenCalledWith(
         null,
         '',
-        workspaceHref({ id: CHANGE_LOG_NODE_ID, type: 'page', title: 'change log' })
+        workspaceUrl({ id: CHANGE_LOG_NODE_ID, type: 'page', title: 'change log' })
       )
     )
     const push = (jest.requireMock('next/navigation') as { __push: jest.Mock }).__push

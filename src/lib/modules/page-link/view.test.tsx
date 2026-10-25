@@ -14,6 +14,8 @@ import { pagesKey } from '@/lib/pages/keys'
 import type { PageRow } from '@/lib/pages/tree'
 import { BlockRowProvider } from '../block-row-context'
 import { POND_BLOCK_SELECTED_RING } from '@/components/organisms/PondBlock'
+import { PondContext, type PondContextValue } from '@/lib/pond/context'
+import type { Pond } from '@/lib/pond/client'
 
 // The real hook talks to Supabase through react-query; mocked here (mirrors
 // `view/view.test.tsx`'s `use-collection-rows` mock) so this file can assert
@@ -61,8 +63,49 @@ describe('PageLinkView — resolved', () => {
     expect(screen.getByText('›')).toBeInTheDocument()
     expect(screen.queryByText('page in trash')).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open cabinets' }))
+    fireEvent.click(screen.getByRole('link', { name: 'Open cabinets' }))
     expect(caps.navigateToPage).toHaveBeenCalledWith(ref)
+  })
+
+  it('leaves a ⌘-click unprevented for the browser\'s own new-tab handling', () => {
+    const caps = capabilities(ref)
+    render(
+      <PageLinkProvider value={caps}>
+        <PageLinkView data={block} />
+      </PageLinkProvider>
+    )
+    const notPrevented = fireEvent.click(screen.getByRole('link', { name: 'Open cabinets' }), {
+      metaKey: true,
+    })
+    expect(notPrevented).toBe(true)
+    expect(caps.navigateToPage).not.toHaveBeenCalled()
+  })
+
+  it('leaves a Ctrl-click unprevented for the browser\'s own new-tab handling', () => {
+    const caps = capabilities(ref)
+    render(
+      <PageLinkProvider value={caps}>
+        <PageLinkView data={block} />
+      </PageLinkProvider>
+    )
+    const notPrevented = fireEvent.click(screen.getByRole('link', { name: 'Open cabinets' }), {
+      ctrlKey: true,
+    })
+    expect(notPrevented).toBe(true)
+    expect(caps.navigateToPage).not.toHaveBeenCalled()
+  })
+
+  it('is not natively draggable, so a dragstart on the row never reaches the block canvas\'s reorder handler', () => {
+    const caps = capabilities(ref)
+    render(
+      <PageLinkProvider value={caps}>
+        <PageLinkView data={block} />
+      </PageLinkProvider>
+    )
+    const row = screen.getByRole('link', { name: 'Open cabinets' })
+    expect(row).toHaveAttribute('draggable', 'false')
+    const notPrevented = fireEvent.dragStart(row)
+    expect(notPrevented).toBe(false)
   })
 
   it('opens the page on Enter', () => {
@@ -72,7 +115,7 @@ describe('PageLinkView — resolved', () => {
         <PageLinkView data={block} />
       </PageLinkProvider>
     )
-    fireEvent.keyDown(screen.getByRole('button', { name: 'Open cabinets' }), { key: 'Enter' })
+    fireEvent.keyDown(screen.getByRole('link', { name: 'Open cabinets' }), { key: 'Enter' })
     expect(caps.navigateToPage).toHaveBeenCalledWith(ref)
   })
 
@@ -150,7 +193,7 @@ describe('PageLinkView — selected', () => {
         </BlockRowProvider>
       </PageLinkProvider>
     )
-    const row = screen.getByRole('button', { name: 'Open cabinets' })
+    const row = screen.getByRole('link', { name: 'Open cabinets' })
     for (const cls of ringClasses) expect(row).toHaveClass(cls)
   })
 
@@ -163,7 +206,7 @@ describe('PageLinkView — selected', () => {
         </BlockRowProvider>
       </PageLinkProvider>
     )
-    const row = screen.getByRole('button', { name: 'Open cabinets' })
+    const row = screen.getByRole('link', { name: 'Open cabinets' })
     for (const cls of ringClasses) expect(row).not.toHaveClass(cls)
   })
 })
@@ -189,7 +232,7 @@ describe('PageLinkView — hover prefetch (KAN-388)', () => {
       </QueryClientProvider>
     )
 
-    fireEvent.pointerEnter(screen.getByRole('button', { name: 'Open cabinets' }))
+    fireEvent.pointerEnter(screen.getByRole('link', { name: 'Open cabinets' }))
     jest.advanceTimersByTime(60)
 
     expect(prefetchSpy).toHaveBeenCalledTimes(1)
@@ -208,13 +251,52 @@ describe('PageLinkView — hover prefetch (KAN-388)', () => {
       </QueryClientProvider>
     )
 
-    const row = screen.getByRole('button', { name: 'Open cabinets' })
+    const row = screen.getByRole('link', { name: 'Open cabinets' })
     fireEvent.pointerEnter(row)
     jest.advanceTimersByTime(20)
     fireEvent.pointerLeave(row)
     jest.advanceTimersByTime(1000)
 
     expect(prefetchSpy).not.toHaveBeenCalled()
+  })
+})
+
+describe('PageLinkView — href never read from window during render, even while the pond context is unresolved (KAN-474 follow-up)', () => {
+  const pondContextValue = (pond: Pond | null): PondContextValue => ({
+    pond,
+    ponds: pond ? [pond] : [],
+    loading: pond === null,
+    reload: jest.fn(),
+    addPond: jest.fn(),
+    patchPond: jest.fn(),
+  })
+
+  it('a window URL carrying ?pond=p2 is ignored while the pond context is still unresolved, then the href updates once the pond resolves', () => {
+    // Simulates the real cold-load condition the bug needed: the address
+    // already carries `?pond=p2` (e.g. a direct link into a second pond),
+    // but `usePondId()` hasn't resolved it yet — `null`, same as the server.
+    window.history.replaceState({}, '', '/workspace?pond=p2')
+    const caps = capabilities(ref)
+    const { rerender } = render(
+      <PondContext.Provider value={pondContextValue(null)}>
+        <PageLinkProvider value={caps}>
+          <PageLinkView data={block} />
+        </PageLinkProvider>
+      </PondContext.Provider>
+    )
+    const row = screen.getByRole('link', { name: 'Open cabinets' })
+    expect(row.getAttribute('href')).not.toContain('pond=')
+
+    rerender(
+      <PondContext.Provider
+        value={pondContextValue({ id: 'p2', name: 'p2', glyph: null, theme: 'default', order: 0 })}
+      >
+        <PageLinkProvider value={caps}>
+          <PageLinkView data={block} />
+        </PageLinkProvider>
+      </PondContext.Provider>
+    )
+    expect(row.getAttribute('href')).toContain('pond=p2')
   })
 })
 
