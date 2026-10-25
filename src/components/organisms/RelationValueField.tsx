@@ -13,7 +13,7 @@
 import { useRouter } from 'next/navigation'
 import { RelationValue } from '@/components/molecules/RelationValue'
 import { useRelationTitles } from '@/lib/modules/view/use-relation-titles'
-import { openWorkspaceUrl, workspaceHref } from '@/lib/pages/nav'
+import { openWorkspaceUrl, workspaceUrl } from '@/lib/pages/nav'
 import type { PropertyDef } from '@/lib/properties/schema'
 
 export interface RelationValueFieldProps {
@@ -33,7 +33,7 @@ export function RelationValueField({ def, value, editable, onChange }: RelationV
   // ?nodeId, so a `type: 'page'` hint in the href is harmless (rail/breadcrumb
   // only). Title falls back to the id when unresolved.
   function onOpen(id: string) {
-    openWorkspaceUrl(workspaceHref({ id, type: 'page', title: titles.get(id) ?? id }), router)
+    openWorkspaceUrl(workspaceUrl({ id, type: 'page', title: titles.get(id) ?? id }), router)
   }
 
   return (

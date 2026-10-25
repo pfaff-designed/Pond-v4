@@ -127,6 +127,9 @@ export const ICON = {
   },
   code: { d: 'M5.3 3.8 2.3 7l3 3.2M8.7 3.8 11.7 7l-3 3.2' },
   divider: { d: 'M2.5 7h9' },
+  // KAN-480: the row's own mark, not the view's `Caret` atom — a right-pointing
+  // fold triangle beside two lines standing for the summary and body it holds.
+  toggle: { d: 'M4 4.2 6.6 7 4 9.8M8 4.6h3.5M8 9.4h3.5' },
 } as const satisfies Record<string, SlashIcon>
 
 const PAGE_ICON: SlashIcon = ICON.page

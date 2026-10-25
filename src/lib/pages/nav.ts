@@ -38,18 +38,26 @@ export function currentPondId(): string | null {
 
 /**
  * The workspace href for a node — or the workspace root when `node` is null.
+ * NEVER reads `window` — the one builder safe to call during render, where the
+ * server and the first client pass must agree byte-for-byte. Used ONLY for an
+ * href computed during render (the rail rows, the page-link row, the
+ * breadcrumb's ancestor segments) — a click-time caller wants `workspaceUrl`,
+ * which carries the live address's `?pond=` as a fallback.
  *
- * Carries `?pond=` so a click stays in the pond you are in. Without this, every
- * rail row, breadcrumb crumb and children-grid card navigated to a pond-less URL,
- * which resolved to the FIRST pond — so opening anything inside a second pond
- * dropped you back into `life`.
- *
- * `pondId` overrides the ambient one, for the caller that is deliberately moving
- * you to a different pond.
+ * Carries `?pond=` so a click stays in the pond you are in, but only the
+ * `pondId` handed in: no ambient fallback. A render-time caller that passes
+ * `null` (pond not resolved yet) gets a pond-less href on every pass — server
+ * and client alike — rather than one that depends on whichever `window.location`
+ * happens to read at the moment a particular pass runs (KAN-474: `usePondId()`
+ * is null on the server AND the first client render, so a fallback to
+ * `window.location` there disagreed between the two whenever the address bar
+ * already carried a `?pond=`, which React's hydration never patches up).
  */
-export function workspaceUrl(node: WorkspaceNodeRef | null, pondId?: string | null): string {
-  const pond = pondId ?? currentPondId()
-  if (!node) return pond ? `${WORKSPACE_PATH}?pond=${encodeURIComponent(pond)}` : WORKSPACE_PATH
+export function workspaceRenderHref(
+  node: WorkspaceNodeRef | null,
+  pondId: string | null = null
+): string {
+  if (!node) return pondId ? `${WORKSPACE_PATH}?pond=${encodeURIComponent(pondId)}` : WORKSPACE_PATH
   const params = new URLSearchParams({
     nodeType: node.type,
     nodeId: node.id,
@@ -57,13 +65,46 @@ export function workspaceUrl(node: WorkspaceNodeRef | null, pondId?: string | nu
   })
   // Appended last so the page params keep their historical order — several tests
   // assert the href string, and `?pond=` is additive rather than a reshuffle.
-  if (pond) params.set('pond', pond)
+  if (pondId) params.set('pond', pondId)
   return `${WORKSPACE_PATH}?${params.toString()}`
 }
 
-/** Ticket-26 alias for the same URL; new call sites should use workspaceUrl. */
-export const workspaceHref = (node: WorkspaceNodeRef, pondId?: string | null): string =>
-  workspaceUrl(node, pondId)
+/**
+ * The workspace href for a node, falling back to the live address's `?pond=`
+ * when no `pondId` is given — safe only at click time (a `useCallback`/event
+ * handler), never during render (see `workspaceRenderHref`, which this
+ * delegates to). Every pre-existing caller (AITerminal, RelationValueField,
+ * BacklinksPanel, `usePageLinkCapabilities`) wants this one, not the render-safe
+ * builder — they build a URL at the moment of a click or an accepted diff, not
+ * during a render pass.
+ */
+export function workspaceUrl(node: WorkspaceNodeRef | null, pondId?: string | null): string {
+  return workspaceRenderHref(node, pondId ?? currentPondId())
+}
+
+/** The click-event fields `isNewTabClick` reads — matches a React MouseEvent of any target. */
+export interface NewTabClickEvent {
+  metaKey: boolean
+  ctrlKey: boolean
+  shiftKey: boolean
+  button: number
+}
+
+/**
+ * Whether a click on an `<a href>` should be left to the browser's own
+ * new-tab/window handling (⌘/Ctrl-click, ⇧-click, or a non-primary button —
+ * i.e. middle-click) rather than intercepted for in-app navigation (KAN-474).
+ *
+ * The rail row, the page-link row and the breadcrumb crumb each used to carry
+ * their own copy of this predicate, which let them drift (KAN-396) — one home.
+ *
+ * Alt/⌥-click is deliberately NOT included: it downloads the link's target in
+ * Chrome (Win/Linux) and Safari, which the spec never asks for, so an
+ * Alt-click falls through to plain in-app navigation instead.
+ */
+export function isNewTabClick(e: NewTabClickEvent): boolean {
+  return e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0
+}
 
 /** The subset of `useRouter()` a page open needs — just enough to mock in tests. */
 export interface WorkspaceNavRouter {

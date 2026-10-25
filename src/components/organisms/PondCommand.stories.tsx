@@ -3,8 +3,12 @@ import type { Meta, StoryObj } from '@storybook/nextjs-vite'
 import { expect, fn, userEvent, waitFor } from 'storybook/test'
 
 import { PondCommand, type PondCommandProps } from './PondCommand'
-import { formatChord, isPaletteChord } from '@/lib/shell-commands'
-import { PALETTE_FOOT, PALETTE_FOOT_MOBILE } from '@/components/molecules/palette-entries'
+import { formatChord, formatChordMachine, isPaletteChord } from '@/lib/shell-commands'
+import {
+  PALETTE_FOOT,
+  PALETTE_FOOT_ENTER,
+  PALETTE_FOOT_MOBILE,
+} from '@/components/molecules/palette-entries'
 import {
   PALETTE_ITEMS,
   PALETTE_SUGGESTED,
@@ -389,7 +393,22 @@ async function assertChrome(root: HTMLElement, p: Palette, m: Metrics = DESKTOP)
   const shown = [...foot.children]
     .filter((c) => getComputedStyle(c).display !== 'none')
     .map((c) => c.textContent)
-  await expect(shown).toEqual([...m.foot])
+  // Notion's own "⌘↵ open in new tab" hint (KAN-474): shown beside `↵ open`
+  // whenever a page row is actually on screen to open, same gate as the
+  // component's own `showNewTabHint`.
+  const hasPageRow = [...box.querySelectorAll('[role="option"]')].some(
+    (row) => row.getAttribute('data-kind') === 'page'
+  )
+  const enterIndex = m.foot.indexOf(PALETTE_FOOT_ENTER)
+  const expectedFoot =
+    m === DESKTOP && hasPageRow
+      ? [
+          ...m.foot.slice(0, enterIndex + 1),
+          `${formatChordMachine('mod+enter')} new tab`,
+          ...m.foot.slice(enterIndex + 1),
+        ]
+      : [...m.foot]
+  await expect(shown).toEqual(expectedFoot)
   await expect(f.flexWrap).toBe('wrap')
   await expect(f.columnGap).toBe('14px')
   await expect(f.padding).toBe('10px 22px 14px')

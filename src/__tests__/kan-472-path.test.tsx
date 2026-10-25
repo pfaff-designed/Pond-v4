@@ -129,7 +129,10 @@ describe('KAN-472 path test — ancestor crumbs navigate, the current crumb open
     await ready()
 
     const houseLink = await screen.findByRole('link', { name: 'house' })
-    expect(houseLink).toHaveAttribute('href', workspaceUrl({ id: 'house', type: 'page', title: 'house' }))
+    expect(houseLink).toHaveAttribute(
+      'href',
+      workspaceUrl({ id: 'house', type: 'page', title: 'house' }, POND_ID)
+    )
 
     // Clicking an ancestor navigates and must not also open the palette.
     await user.click(houseLink)

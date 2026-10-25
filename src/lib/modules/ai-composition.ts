@@ -28,6 +28,7 @@ import { highlightSchema } from './highlight/schema'
 import { entriesSchema, entrySchema } from './entries/schema'
 import { pageLinkSchema } from './page-link/schema'
 import { tocSchema } from './toc/schema'
+import { toggleSchema } from './toggle/schema'
 import { isMarkdownPipeTable, PIPE_TABLE_IN_TEXT_MESSAGE } from './authoring-lint'
 
 /**
@@ -110,6 +111,10 @@ const pageLinkData = pageLinkSchema.omit({ id: true })
 // KAN-482: a table of contents carries no fields of its own — a flat top-level id
 // strip is the whole omit-chain, like page-link's.
 const tocData = tocSchema.omit({ id: true })
+// KAN-480: the summary and body are the content the AI may compose. `folded` is the
+// person's own fold state (set only by the ▸ click), so it is stripped like an id
+// rather than carried through — the model never writes it, same intent as `width`.
+const toggleData = toggleSchema.omit({ id: true, folded: true })
 
 export const moduleDataSchema = z.discriminatedUnion('type', [
   textData,
@@ -121,6 +126,7 @@ export const moduleDataSchema = z.discriminatedUnion('type', [
   entriesData,
   pageLinkData,
   tocData,
+  toggleData,
 ])
 export type ModuleData = z.infer<typeof moduleDataSchema>
 
@@ -201,6 +207,9 @@ export const createPageBlockSchema = z.discriminatedUnion('type', [
   // KAN-482: a page can be created WITH a table of contents. Nothing binds to it —
   // parity with the persisted union.
   tocData.extend({ bindKey }),
+  // KAN-480: a page can be created WITH a toggle. Nothing binds to it — parity
+  // with the persisted union.
+  toggleData.extend({ bindKey }),
 ])
 export type CreatePageBlock = z.infer<typeof createPageBlockSchema>
 

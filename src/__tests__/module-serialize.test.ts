@@ -68,6 +68,9 @@ const samples: Record<string, Block> = {
   // KAN-482: no siblings passed here (bare serialize(block) call below), so
   // serialize says it has no page in reach rather than guessing a heading list.
   toc: { id: 'b1', type: 'toc' },
+  // KAN-480: serializes with a `Toggle:` marker, body included, so a wholesale
+  // re-emit never flattens it back into a plain text block.
+  toggle: { id: 'b1', type: 'toggle', content: 'Packing list', body: 'Passport' },
 }
 
 function serialize(block: Block): string {
@@ -101,6 +104,10 @@ describe('descriptor.serialize (full-fidelity body)', () => {
 
   it('highlight: the passage behind a Highlight: marker, so it is never mistaken for prose', () => {
     expect(serialize(samples.highlight)).toBe('Highlight: Three books at once is one too many.')
+  })
+
+  it('toggle: the summary behind a Toggle: marker, with the body on the next line', () => {
+    expect(serialize(samples.toggle)).toBe('Toggle: Packing list\nPassport')
   })
 
   it('entries: every row, date then prose, behind an Entries: marker', () => {

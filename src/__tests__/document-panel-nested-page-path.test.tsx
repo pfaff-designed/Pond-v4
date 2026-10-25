@@ -163,7 +163,7 @@ describe('`/ nested page` on the real page-hosting surface (KAN-122 path test)',
     // the link is still left in the parent (KAN-122's own rule holds).
     expect(document.getElementById('block-b-slash')).not.toBeInTheDocument()
 
-    const row = await screen.findByRole('button', { name: 'Open untitled' })
+    const row = await screen.findByRole('link', { name: 'Open untitled' })
     const blockEls = [...document.querySelectorAll('[id^="block-"]')]
     expect(blockEls[1]).toContainElement(row)
 

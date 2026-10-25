@@ -145,6 +145,17 @@ export const formatChord = (chord: string, apple: boolean = onApplePlatform()) =
 }
 
 /**
+ * `formatChord`, for the machine surface (the palette, a diff card, a provenance chip):
+ * lowercase everywhere (PROJECT_RULES — mono, lowercase). A Mac's glyphs (`⌘↵`) have no
+ * case to lower; off Apple the key legend (`Ctrl Enter`) is lowered to `ctrl enter`.
+ *
+ * `apple` defaults to a live read; see `formatChord`'s doc comment for why a render-time
+ * caller should pass `useApplePlatform()`'s value instead.
+ */
+export const formatChordMachine = (chord: string, apple: boolean = onApplePlatform()) =>
+  apple ? formatChord(chord, true) : formatChord(chord, false).toLowerCase()
+
+/**
  * The same chord as a WAI-ARIA `aria-keyshortcuts` value: `+`-joined, modifiers first, one
  * platform only — the other platform's modifier does nothing on this one, so listing it is
  * not a valid alternative, it's dead weight.

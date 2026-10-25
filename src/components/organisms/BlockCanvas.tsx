@@ -61,6 +61,7 @@ import { CHART_EMPTY_LINE } from '@/lib/modules/chart/card'
 import { addTodoItem } from '@/lib/modules/todo/view'
 import { addTableRow } from '@/lib/modules/table/view'
 import { addEntryFocused } from '@/lib/modules/entries/view'
+import { TOGGLE_FOLD_ROW_PX } from '@/lib/modules/toggle/view'
 import { PondBlock, POND_BLOCK_SELECTED_RING_ROUNDED } from '@/components/organisms/PondBlock'
 import {
   SlashMenu,
@@ -2879,6 +2880,13 @@ export function BlockCanvas({
                           valueNow={
                             resizing ? resizing.percent : drawnWidthPercent(columnWidth, item.width)
                           }
+                          // A toggle's own fold button sits in this edge's gutter (its
+                          // first 28px row) and is lifted above this strip by z-index
+                          // (KAN-480, bounded round-3 fix) — clip the strip's own top
+                          // short of that row so the two never contest the same
+                          // pointer-down; every other block type's left edge is
+                          // untouched (prop left unset, full height).
+                          topInsetPx={blocks[i]?.type === 'toggle' ? TOGGLE_FOLD_ROW_PX : undefined}
                           onPointerDown={(e) => handleEdgeResizePointerDown(e, i, 'left')}
                           onPointerMove={handleEdgeResizePointerMove}
                           onPointerUp={handleEdgeResizePointerUp}

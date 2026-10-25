@@ -919,6 +919,26 @@ describe('TextView — the text block edits in place as rendered prose', () => {
       expect(stepOut).not.toHaveBeenCalled()
     })
 
+    it('`ownEnter` (KAN-480) keeps Enter inside the block — stepOut is never called', async () => {
+      const stepOut = jest.fn()
+      render(
+        <BlockRowProvider value={{ selected: false, stepOut, ownEnter: true }}>
+          <TextEditor
+            data={{ id: 't', type: 'text', content: 'hello' }}
+            standIn={null}
+            pressRef={{ current: null }}
+          />
+        </BlockRowProvider>
+      )
+      const field = await findField()
+      act(() => {
+        editorOf(field).commands.focus('end')
+      })
+      fireEvent.keyDown(field, { key: 'Enter' })
+      expect(stepOut).not.toHaveBeenCalled()
+      expect(field.querySelectorAll('p')).toHaveLength(2)
+    })
+
     it('a rule then an empty quote: Return keeps the rule, stepping out instead of lifting the whole doc (KAN-462)', async () => {
       const stepOut = jest.fn()
       render(

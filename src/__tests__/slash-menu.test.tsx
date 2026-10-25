@@ -67,6 +67,9 @@ const ALLOWED = new Set([
   // KAN-482: Notion's own row (Mobbin b8778e0e) — the board draws no row for
   // this type either.
   'table of contents',
+  // KAN-480: Notion's own row (Mobbin 8cbe99a8, b8778e0e) — the board draws no
+  // row for this type either.
+  'toggle',
 ])
 
 function renderMenu(overrides: Partial<React.ComponentProps<typeof SlashMenu>> = {}) {
@@ -189,6 +192,16 @@ describe('a row is a preset, and every registered type reaches the menu', () => 
     expect(mintPreset('nope')).toBeNull()
   })
 
+  // KAN-480: lands with an empty summary and no `body`/`folded` keys at all.
+  it('`/toggle` mints a toggle with an empty summary', () => {
+    expect(mintPreset('toggle')).toEqual({ id: expect.any(String), type: 'toggle', content: '' })
+    expect(slashRows.find((r) => r.id === 'toggle')).toMatchObject({
+      type: 'toggle',
+      group: 'text',
+      key: undefined,
+    })
+  })
+
   // #281: `heading` is a face of `text`, not a ninth block kind — the one of the
   // board's five factory-less rows that needed no new type. It opens the block on
   // the second markdown level, which `Markdown.tsx` already typesets.
@@ -257,6 +270,7 @@ describe('a row is a preset, and every registered type reaches the menu', () => 
       'text/code',
       'text/divider',
       'text/numbered list',
+      'text/toggle',
       'text/embed / file',
       'blocks/list',
       'blocks/checklist',
@@ -499,13 +513,14 @@ describe('mobile', () => {
       'text',
       'blocks',
     ])
-    // KAN-462 pushed four more rows into the `text` group, so the mobile cap of
-    // 12 (group heads counted) now runs out inside `blocks` one row sooner.
+    // KAN-462 pushed four more rows into the `text` group and KAN-480 a fifth
+    // (`toggle`), so the mobile cap of 12 (group heads counted) now runs out
+    // inside `blocks` two rows sooner than its original `checklist`.
     expect(
       options()
         .map((o) => labelOf(o as HTMLElement))
         .at(-1)
-    ).toBe('checklist')
+    ).toBe('list')
   })
 
   it('does not cap a query', () => {

@@ -62,6 +62,14 @@ export interface BlockRowValue {
    * back to its own blur.
    */
   select?: () => void
+  /**
+   * Plain Enter stays inside this field as ProseMirror's own Enter (a new
+   * paragraph), rather than splitting through `stepOut` (KAN-480): a
+   * toggle's body is one hosted `TextEditor` whose Enter adds a body line,
+   * never a new page block. Absent is today's behaviour — every other row's
+   * Enter still splits.
+   */
+  ownEnter?: boolean
 }
 
 const BlockRowContext = createContext<BlockRowValue>({

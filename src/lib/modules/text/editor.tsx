@@ -64,6 +64,7 @@ interface LatestForSplit {
   leaveUp?: BlockRowValue['leaveUp']
   leaveDown?: BlockRowValue['leaveDown']
   select?: BlockRowValue['select']
+  ownEnter?: BlockRowValue['ownEnter']
 }
 
 /**
@@ -71,6 +72,11 @@ interface LatestForSplit {
  * StarterKit's own Enter (a new paragraph INSIDE this block) — priority above
  * StarterKit's default (100) puts this plugin's `handleKeyDown` first, so a
  * split never also runs ProseMirror's default handling for the same key.
+ *
+ * `ownEnter` (KAN-480) opts a row OUT of the split entirely: returning `false`
+ * here, before `enterSplit` even runs, hands the key straight to StarterKit's
+ * own Enter — a toggle's body field wants a new paragraph inside itself, not
+ * a sibling page block.
  */
 const createSplitOnEnter = (latest: RefObject<LatestForSplit>) =>
   Extension.create({
@@ -90,6 +96,7 @@ const createSplitOnEnter = (latest: RefObject<LatestForSplit>) =>
               view.composing
             )
               return false
+            if (latest.current.ownEnter) return false
             const split = enterSplit(view.state)
             if (split === 'own') return false
             if (split === 'stay') return true
@@ -347,10 +354,19 @@ const TextEditor = ({
   pressRef: RefObject<Press | null>
 }) => {
   const onSlashLine = useContext(SlashLineContext)
-  const { stepOut, leaveUp, leaveDown, select } = useBlockRow()
-  const latest = useRef({ data, onChange, onSlashLine, stepOut, leaveUp, leaveDown, select })
+  const { stepOut, leaveUp, leaveDown, select, ownEnter } = useBlockRow()
+  const latest = useRef({
+    data,
+    onChange,
+    onSlashLine,
+    stepOut,
+    leaveUp,
+    leaveDown,
+    select,
+    ownEnter,
+  })
   useEffect(() => {
-    latest.current = { data, onChange, onSlashLine, stepOut, leaveUp, leaveDown, select }
+    latest.current = { data, onChange, onSlashLine, stepOut, leaveUp, leaveDown, select, ownEnter }
   })
 
   // Options must be the same values on every render: any change makes `useEditor`
