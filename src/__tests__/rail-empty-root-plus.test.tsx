@@ -14,11 +14,17 @@ jest.mock('next/navigation', () => ({
   useSearchParams: () => ({ get: () => null }),
 }))
 
-function renderRail(tree: RailNode[], isEmpty: boolean, selectedId: string | null = null) {
+function renderRail(
+  tree: RailNode[],
+  isEmpty: boolean,
+  selectedId: string | null = null,
+  showHomeRoot = true
+) {
   return render(
     <RailView
       tree={tree}
       pondName="life"
+      showHomeRoot={showHomeRoot}
       selectedId={selectedId}
       expanded={new Set()}
       lifeExpanded
@@ -73,6 +79,13 @@ describe('rail — the root row\'s ＋ while the pond has no pages (KAN-471)', (
   it('names the now-visible ＋ in the "no pages yet" hint', () => {
     renderRail([], true)
 
-    expect(screen.getByRole('status')).toHaveTextContent('no pages yet. ＋ beside the pond name makes one.')
+    expect(screen.getByRole('status')).toHaveTextContent('no pages yet. the ＋ above makes one')
+  })
+
+  it('hides the hint while the root row (and its ＋) is hidden, e.g. mid delete-undo', () => {
+    renderRail([], true, null, false)
+
+    expect(screen.queryByRole('treeitem', { name: 'life' })).toBeNull()
+    expect(screen.queryByRole('status')).toBeNull()
   })
 })

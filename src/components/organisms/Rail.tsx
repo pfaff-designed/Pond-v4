@@ -241,9 +241,10 @@ const NO_CAPABILITIES: RowCapabilities = {
 
 /**
  * The pond root is a drop target and the one row a page is added under when the
- * pond is empty — but not while it is, since an empty pond's root draws no ＋. The
- * placeholder is no page at all. The databases root is a foot row: it can be moved
- * and dropped on, never added to, deleted or renamed.
+ * pond is empty — and while it is, its ＋ is visible at rest (KAN-471): the hover
+ * rule returns once a first page exists. The placeholder is no page at all. The
+ * databases root is a foot row: it can be moved and dropped on, never added to,
+ * deleted or renamed.
  */
 const rowCapabilities = (id: string, node: RailNode): RowCapabilities => {
   // KAN-491: the home root renames and deletes like any other row. It still
@@ -1300,8 +1301,9 @@ export function RailView({
         depth={0}
         isFolder={isFolder}
         isExpanded={lifeExpanded}
-        // `PondRail` `empty`: the lone root is not selected, so it draws no resting ＋;
-        // hovered, it shows its tools like any row (`hasTools: hov`).
+        // `PondRail` `empty`: the lone root is not selected, so it draws no `isSelected`
+        // wash; but its ＋ shows at rest while the pond is empty (KAN-471, below), then
+        // goes back to hover-only (`hasTools: hov`) once a first page exists.
         isSelected={selectedId === null && !isEmpty}
         isFocused={rovingId === id}
         isBusy={false}
@@ -1494,12 +1496,12 @@ export function RailView({
                 </div>
               </div>
             )}
-            {!isLoading && isEmpty && (
+            {isEmpty && showHomeRoot && (
               <p
                 className="mt-2 mr-2 ml-[26px] text-[12.5px] leading-[1.5] text-pretty text-mn-text-secondary"
                 role="status"
               >
-                no pages yet. ＋ beside the pond name makes one.
+                no pages yet. the ＋ above makes one, or ask pond to start one.
               </p>
             )}
           </div>
