@@ -6,6 +6,7 @@
 import { screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { appendChildLinkUnder } from '@/lib/pages/child-links'
 import { movePage } from '@/lib/pages/client'
+import { flushPendingPageSave } from '@/lib/pages/page-flush'
 import { changeLogKey } from '@/lib/change-log/keys'
 import { homeQueryKey } from '@/lib/pages/keys'
 import { mountRail } from './helpers/rail-sweep-fixture'
@@ -32,6 +33,8 @@ jest.mock('@/lib/pages/client', () => ({
   }),
   updateTitle: jest.fn().mockResolvedValue(undefined),
 }))
+
+jest.mock('@/lib/pages/page-flush', () => ({ flushPendingPageSave: jest.fn() }))
 
 jest.mock('@/lib/pages/mark-client', () => ({
   setPageGlyph: jest.fn().mockResolvedValue(undefined),
@@ -196,4 +199,42 @@ it("invalidates the old and new link-parents' own page caches, resolving a top-l
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['page', 'home-1'] })
   )
   expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['page', 'page-b'] })
+})
+
+it("flushes the old and new link-parents' own pending saves before calling movePage", async () => {
+  const client = mountRail(ROOT_ROWS)
+  // Page A's parent_id is null — its old link-parent resolves to home, so
+  // wait for the mocked home row before dragging, same as the test above.
+  await waitFor(() =>
+    expect(client.getQueryData(homeQueryKey('pond-1'))).toEqual({
+      id: 'home-1',
+      title: 'life',
+      blocks: [],
+    })
+  )
+
+  const order: string[] = []
+  jest.mocked(flushPendingPageSave).mockImplementation((id) => {
+    order.push(`flush:${id}`)
+    return undefined
+  })
+  jest.mocked(movePage).mockImplementationOnce(async () => {
+    order.push('movePage')
+    return {
+      id: 'record-1',
+      after: { parentId: 'page-b', parentTitle: 'Page B', siblingOrder: [] },
+    } as ChangeLogRecord
+  })
+
+  const dragged = screen.getByRole('treeitem', { name: 'Page A' })
+  const target = screen.getByRole('treeitem', { name: 'Page B' })
+
+  fireEvent(dragged, dragStartEvent())
+  fireEvent(target, dropEvent(0))
+
+  await waitFor(() => expect(order).toContain('movePage'))
+  expect(order.indexOf('flush:home-1')).toBeGreaterThanOrEqual(0)
+  expect(order.indexOf('flush:home-1')).toBeLessThan(order.indexOf('movePage'))
+  expect(order.indexOf('flush:page-b')).toBeGreaterThanOrEqual(0)
+  expect(order.indexOf('flush:page-b')).toBeLessThan(order.indexOf('movePage'))
 })

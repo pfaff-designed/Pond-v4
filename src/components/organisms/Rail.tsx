@@ -72,6 +72,7 @@ import { readMoveSnapshot, moveParentLabel } from '@/lib/change-log/page-changes
 import { jsonEqual } from '@/lib/json-equal'
 import { homeQueryKey, pagesKey, resolveLinkParentId } from '@/lib/pages/keys'
 import { appendChildLinkUnder, trashPageUnlinked } from '@/lib/pages/child-links'
+import { flushPendingPageSave } from '@/lib/pages/page-flush'
 import { usePondId, usePond } from '@/lib/pond/context'
 import { useHomePage } from '@/lib/pages/use-home-page'
 import { pushRecentGlyphToPond } from '@/lib/pond/client'
@@ -2508,6 +2509,11 @@ export function Rail() {
     const draggedRow = pages.find((r) => r.id === draggedId)
     const title = draggedRow?.title || 'Untitled'
 
+    // Resolved before the move so both sides can be flushed ahead of the RPC
+    // (below) and reused for the invalidate after it — one resolve, no drift.
+    const oldLinkParentId = draggedRow ? resolveLinkParentId(draggedRow.parent_id, home?.id) : undefined
+    const newLinkParentId = resolveLinkParentId(move.newParentId, home?.id)
+
     const snapshot = applyMoveOptimistic(
       queryClient,
       {
@@ -2525,6 +2531,11 @@ export function Rail() {
     }
 
     try {
+      // The move's own RPC reads and rewrites both link-parents' `blocks` —
+      // flush either side's own debounced save first, or a save already in
+      // flight lands after the RPC and overwrites its edit with stale blocks
+      // (the same race `child-links.ts`'s own write seams guard against).
+      await Promise.all([flushPendingPageSave(oldLinkParentId), flushPendingPageSave(newLinkParentId)])
       const record = await withUser((sb) =>
         movePage(sb, {
           id: draggedId,
@@ -2542,8 +2553,6 @@ export function Rail() {
         // The move's own RPC edits the old and new link-parents' `blocks` —
         // rebase an open draft of either onto that write instead of waiting
         // for a reload.
-        const oldLinkParentId = resolveLinkParentId(draggedRow.parent_id, home?.id)
-        const newLinkParentId = resolveLinkParentId(move.newParentId, home?.id)
         if (oldLinkParentId) queryClient.invalidateQueries({ queryKey: ['page', oldLinkParentId] })
         if (newLinkParentId) queryClient.invalidateQueries({ queryKey: ['page', newLinkParentId] })
         stageUndo({
