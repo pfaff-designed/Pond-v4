@@ -89,4 +89,25 @@ describe('rail row click — shallow nav on /workspace (KAN-449)', () => {
     expect(push).not.toHaveBeenCalled()
     pushStateSpy.mockRestore()
   })
+
+  it('is a real <a href> to its own workspace URL (KAN-474)', () => {
+    renderRail()
+    const tree = screen.getByRole('tree', { name: 'Workspace' })
+    const row = within(tree).getByRole('treeitem', { name: 'Health' })
+    expect(row.tagName).toBe('A')
+    expect(row).toHaveAttribute('href', workspaceUrl({ id: 'health', type: 'page', title: 'Health' }))
+  })
+
+  it('a metaKey click leaves the native new-tab behaviour unprevented and never pushes history', () => {
+    renderRail()
+    const pushStateSpy = jest.spyOn(window.history, 'pushState')
+    const tree = screen.getByRole('tree', { name: 'Workspace' })
+    const row = within(tree).getByRole('treeitem', { name: 'Health' })
+    const notPrevented = fireEvent.click(row, { metaKey: true })
+
+    expect(notPrevented).toBe(true) // preventDefault() was NOT called — the browser opens its own tab
+    expect(pushStateSpy).not.toHaveBeenCalled()
+    expect(push).not.toHaveBeenCalled()
+    pushStateSpy.mockRestore()
+  })
 })
