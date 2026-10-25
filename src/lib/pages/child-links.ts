@@ -25,6 +25,7 @@ import {
 } from './client'
 import { commitBlocks } from './commit'
 import { restorePage, trashPage } from '@/lib/change-log/trash'
+import { sessionUndo } from '@/lib/change-log/session-undo'
 import type { PageRow } from './tree'
 import { withoutDatabasesRoot } from './databases-root'
 import { flushPendingPageSave } from './page-flush'
@@ -332,13 +333,21 @@ export async function findPagesLinkingTo(
  * before the flush and may already be stale), write only if the fresh read
  * still has the link, invalidate.
  *
- * Each parent's removal is append-merged onto `rootPageId`'s own
+ * Each parent's removal is recorded onto `rootPageId`'s own
  * `props.unlinkedLinks` BEFORE that parent is committed, not collected and
  * written once at the end — so an earlier parent's already-landed removal is
  * never lost if a LATER parent's commit (or the root write itself) throws.
  * `restoreLinks` already refuses to double-apply an entry whose link is
  * still present, so recording a parent that then fails to commit is
  * harmless over-recording, not a correctness bug.
+ *
+ * The write REPLACES `unlinkedLinks` with exactly this call's own removals —
+ * it never merges onto whatever a PRIOR trash of this same subtree left
+ * there (KAN-497). A stale entry (a link that's since moved to a different
+ * parent, or that the person deliberately removed before trashing again)
+ * must not outlive the trash that actually produced it, or a later restore
+ * replays it unasked. When this call finds nothing to unlink at all, any
+ * stale entry left by an earlier trash is cleared for the same reason.
  *
  * Never throws: a failed unlink must not fail the trash it rides with
  * (`appendChildLinkUnder`'s rule) — log and return.
@@ -357,6 +366,14 @@ export async function unlinkTrashedSubtree(
       (parent) => !subtreeIds.has(parent.id)
     )
 
+    // Accumulated across this call only — REPLACES whatever a PRIOR trash
+    // left in `props.unlinkedLinks`, never merged onto it, so a stale entry
+    // (a link that's since moved to a different parent, or that the person
+    // deliberately removed) can't outlive the trash that actually produced
+    // it and replay on a later restore (KAN-497).
+    const allRemoved: RemovedLink[] = []
+    let wroteThisCall = false
+
     for (const parent of parents) {
       await flushPendingPageSave(parent.id)
       const fresh = await getPage(supabase, parent.id)
@@ -370,10 +387,12 @@ export async function unlinkTrashedSubtree(
       if (nextBlocks === fresh.blocks) continue
 
       if (parentRemoved.length > 0) {
+        allRemoved.push(...parentRemoved)
         await readMergeWriteProps(supabase, rootPageId, (props) => ({
           ...props,
-          unlinkedLinks: [...parseUnlinkedLinks(props.unlinkedLinks), ...parentRemoved],
+          unlinkedLinks: [...allRemoved],
         }))
+        wroteThisCall = true
       }
 
       await commitBlocks(supabase, queryClient, parent.id, nextBlocks, {
@@ -382,6 +401,18 @@ export async function unlinkTrashedSubtree(
         pondId,
       })
       await queryClient.invalidateQueries({ queryKey: ['page', parent.id] })
+    }
+
+    // No parent needed unlinking this time, so the loop above never wrote —
+    // but a PRIOR trash may have left an entry here that no longer applies
+    // (its link already moved, or was removed by the person on purpose).
+    // Clear it so a restore can't replay it; skip the write when there's
+    // nothing to clear.
+    if (!wroteThisCall) {
+      const props = await readPageProps(supabase, rootPageId)
+      if (parseUnlinkedLinks(props.unlinkedLinks).length > 0) {
+        await saveProps(supabase, rootPageId, { ...props, unlinkedLinks: [] })
+      }
     }
   } catch (err) {
     console.error('[page-link] trashed subtree not unlinked', rootPageId, err)
@@ -403,23 +434,34 @@ export async function unlinkTrashedSubtree(
  * restoring onto the same page commit once, in their original relative
  * order, not twice.
  *
- * `props.unlinkedLinks` is cleared once every entry has been attempted,
- * success or not — a parent that's since vanished or already carries the
- * link is as "done" as one that was freshly restored, and leaving the field
- * behind would replay it again next restore.
+ * `props.unlinkedLinks` is deliberately NEVER cleared here (KAN-497) — a
+ * restore that is later undone (⌘Z re-trashes the page) must still find
+ * these entries so a LATER manual restore can relink again; `appendChildLink`
+ * already refuses a second link to the same child, so replaying an entry
+ * whose link already landed is a no-op, not a duplicate. The next trash of
+ * this subtree (`unlinkTrashedSubtree`) appends the parent's current link
+ * removal onto whatever is already here.
+ *
+ * Each commit is made WITHOUT its own session-undo step: the caller
+ * (`restorePageRelinked`) folds this relink's record id(s) into the SAME
+ * step as the restore, via `commitBlocks`'s `onPending` seam, so ⌘Z undoes
+ * both the link and the restore in one press. Resolves to every record id a
+ * commit actually logged, in commit order, for the caller to fold in —
+ * empty when there was nothing to relink.
  *
  * Never throws: a failed relink must not fail the restore it rides with
- * (`unlinkTrashedSubtree`'s rule) — log and return.
+ * (`unlinkTrashedSubtree`'s rule) — log and return whatever was logged so far.
  */
 export async function relinkRestoredSubtree(
   supabase: SupabaseClient<Database>,
   queryClient: QueryClient,
   { pondId, rootPageId }: { pondId: string | null; rootPageId: string }
-): Promise<void> {
+): Promise<readonly string[]> {
+  const relinkedRecordIds: string[] = []
   try {
     const props = await readPageProps(supabase, rootPageId)
     const removed = parseUnlinkedLinks(props.unlinkedLinks)
-    if (removed.length === 0) return
+    if (removed.length === 0) return relinkedRecordIds
 
     const byParent = new Map<string, RemovedLink[]>()
     for (const entry of removed) {
@@ -436,19 +478,25 @@ export async function relinkRestoredSubtree(
       const nextBlocks = restoreLinks(parent.blocks, entries)
       if (nextBlocks === parent.blocks) continue
 
-      await commitBlocks(supabase, queryClient, parentId, nextBlocks, {
+      const committedIds: string[] = []
+      const { remembered } = await commitBlocks(supabase, queryClient, parentId, nextBlocks, {
         ownEdit: true,
         before: parent.blocks,
         pondId,
+        onPending: (ids) => {
+          if (ids) committedIds.push(...ids)
+        },
       })
+      await remembered
+      relinkedRecordIds.push(...committedIds)
+
       await queryClient.invalidateQueries({ queryKey: ['page', parentId] })
     }
 
-    const restProps = { ...props }
-    delete restProps.unlinkedLinks
-    await saveProps(supabase, rootPageId, restProps)
+    return relinkedRecordIds
   } catch (err) {
     console.error('[page-link] restored subtree not relinked', rootPageId, err)
+    return relinkedRecordIds
   }
 }
 
@@ -490,16 +538,45 @@ export async function trashPageUnlinked(
  * had drifted once already (TrashPage shipped without the relink step).
  * `rootPageId` is `null` when the restored record never had a target page;
  * relink is then a no-op rather than a call with nothing to relink.
+ *
+ * Remembers ONE session-undo step for both (KAN-497) — the restore record's
+ * id plus every record the relink actually logged — rather than letting
+ * `relinkRestoredSubtree`'s own `commitBlocks` call push a second step: a
+ * ⌘Z must take back the link and the restore together (undo order: blocks
+ * first, removing the parent's link, then the SQL restore-undo re-trashes;
+ * redo order: restore again, then the link back — the same reverse/forward
+ * order `change_log_set_back`'s own multi-step kinds already rely on).
+ *
+ * The step is pushed via `sessionUndo.rememberPending` the INSTANT
+ * `restorePage` resolves, not after the relink's own flush/commit as well —
+ * the relink's `getPage`/`commitBlocks` round trip is another await, and a
+ * ⌘Z pressed in that window must already find this step on top (mirrors
+ * `move.ts`'s `moveAndStageUndo`, the same `rememberPending`-before-the-rest-
+ * of-the-write shape). Its `recordIds` resolves once the relink settles.
+ *
+ * Skipped entirely when `pondId` is `null` (`HistoryStep.pondId` isn't
+ * nullable — the same guard `move.ts` uses) or when `restorePage` itself
+ * resolved to `null` (an invalid id in production — never pushed); the
+ * relink still runs in that case, just with no undo step remembered for it.
  */
 export async function restorePageRelinked(
   supabase: SupabaseClient<Database>,
   queryClient: QueryClient,
   { pondId, recordId, rootPageId }: { pondId: string | null; recordId: string; rootPageId: string | null }
 ): Promise<void> {
-  await restorePage(supabase, recordId)
-  if (rootPageId) {
-    await relinkRestoredSubtree(supabase, queryClient, { pondId, rootPageId })
+  const restoreRecordId = await restorePage(supabase, recordId)
+  const relinked = rootPageId
+    ? relinkRestoredSubtree(supabase, queryClient, { pondId, rootPageId })
+    : Promise.resolve<readonly string[]>([])
+
+  if (pondId && restoreRecordId) {
+    sessionUndo.rememberPending({
+      pondId,
+      recordIds: relinked.then((relinkRecordIds) => [restoreRecordId, ...relinkRecordIds]),
+    })
   }
+
+  await relinked
 }
 
 /**

@@ -118,6 +118,7 @@ describe('undoStep', () => {
     ['P0002', 'not-found'],
     ['P0002', 'page-gone'],
     ['0A000', 'not-undoable'],
+    ['P0002', 'already-restored'],
   ])('reports a %s %s as refused', async (code, reason) => {
     const { client } = fakeSupabase({ error: { code, details: reason, message: 'record 3a…' } })
 
