@@ -7,6 +7,7 @@
  */
 import React from 'react'
 import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { RailView, type RailNode } from '@/components/organisms/Rail'
 
 jest.mock('next/navigation', () => ({
@@ -49,6 +50,10 @@ function renderRail(
 function plusWrapperClassName(rootRow: HTMLElement): string {
   const plusButton = within(rootRow).getByRole('button', { name: /Add sub-page/ })
   return plusButton.parentElement!.className
+}
+
+function labelWrapClasses(rootRow: HTMLElement): string[] {
+  return rootRow.querySelector('[data-kind="list-row"]')!.className.split(/\s+/)
 }
 
 describe('rail — the root row\'s ＋ while the pond has no pages (KAN-471)', () => {
@@ -98,5 +103,28 @@ describe('rail — the root row\'s ＋ while the pond has no pages (KAN-471)', (
 
     expect(screen.queryByRole('treeitem', { name: 'life' })).toBeNull()
     expect(screen.queryByRole('status')).toBeNull()
+  })
+
+  it('narrows the label for the resting ＋ the same way it narrows for a hovered one', async () => {
+    renderRail([], true)
+
+    const rootRow = screen.getByRole('treeitem', { name: 'life' })
+    // The unconditional `group-focus-within:pr-[39px]` token is excluded by the
+    // exact-match check below — the plain `pr-[39px]` token must be present on
+    // its own, carried by `toolsPad`, not just by the keyboard-focus class.
+    expect(labelWrapClasses(rootRow)).toContain('pr-[39px]')
+
+    await userEvent.hover(rootRow)
+    expect(labelWrapClasses(rootRow)).toContain('pr-[39px]')
+  })
+
+  it('does not open the rename textbox on a double-click of the resting ＋', async () => {
+    renderRail([], true)
+
+    const rootRow = screen.getByRole('treeitem', { name: 'life' })
+    const plusButton = within(rootRow).getByRole('button', { name: /Add sub-page/ })
+    await userEvent.dblClick(plusButton)
+
+    expect(screen.queryByRole('textbox')).toBeNull()
   })
 })

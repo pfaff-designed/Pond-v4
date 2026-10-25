@@ -425,7 +425,12 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
   // the width it would overlap: the row's own 7px gap plus ＋ alone (7+12=19),
   // or plus ＋ · gap 8 · × together (7+12+8+12=39). `group-focus-within` covers
   // the keyboard case, where both draw regardless of `hovered`/`showPlus`.
-  const toolsPad = hovered ? 'pr-[39px]' : showPlus ? 'pr-[19px]' : ''
+  // Whenever ＋ carries the `mr-5` shift that clears ×'s slot (`hovered` or
+  // `plusVisibleAtRest`), it sits 20px further from the edge than the ＋-alone
+  // math above assumes — the label needs the same 39px it gives a hovered row,
+  // even though × itself isn't drawn yet.
+  const toolsPad =
+    hovered || plusVisibleAtRest ? 'pr-[39px]' : showPlus ? 'pr-[19px]' : ''
 
   return (
     <div
@@ -620,6 +625,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
                             aria-label={`Add sub-page to ${label}`}
                             disabled={isBusy}
                             onClick={(e) => e.stopPropagation()}
+                            onDoubleClick={(e) => e.stopPropagation()}
                           >
                             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
                               <path
