@@ -487,13 +487,16 @@ export async function movePage(
  * {@link createPage} uses, so the RPC (migration 0032) never has to read
  * siblings itself — it just commits the copy atomically with the title this
  * call already resolved, mirroring `movePage`'s own client-computes/RPC-
- * commits split.
+ * commits split. The resolved title rides along on the return value (AUDIT
+ * G9) so a caller can navigate to the copy by its OWN title ("Recipes 2"),
+ * not the source's — the RPC's own change-log `after` only carries the new
+ * root's id, never its title.
  */
 export async function duplicatePage(
   supabase: SupabaseClient<Database>,
   userId: string,
   id: string
-): Promise<ChangeLogRecord> {
+): Promise<ChangeLogRecord & { title: string }> {
   // KAN-273: see createPage's comment — the sibling read just below must not
   // see a row that is mid-delete.
   await flushStagedDeletes()
@@ -521,7 +524,7 @@ export async function duplicatePage(
 
   const row = Array.isArray(data) ? data[0] : data
   if (!row) throw new Error(`duplicate_page: duplicating page ${id} returned no record`)
-  return mapChangeLogRow(row as ChangeLogRow)
+  return { ...mapChangeLogRow(row as ChangeLogRow), title }
 }
 
 /**

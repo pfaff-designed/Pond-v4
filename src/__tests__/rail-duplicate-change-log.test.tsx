@@ -107,6 +107,18 @@ it('invalidates pagesKey(pondId) after a ⌘D duplicate, so the copy shows in th
   )
 })
 
+it('a fast double ⌘D makes only one duplicatePage call (AUDIT G9)', async () => {
+  ;(duplicatePage as jest.Mock).mockResolvedValue({ id: 'record-1', targetPageId: 'health-2' })
+  mount()
+
+  const row = screen.getByRole('treeitem', { name: /Health/ })
+  fireEvent.keyDown(row, { key: 'd', metaKey: true })
+  fireEvent.keyDown(row, { key: 'd', metaKey: true })
+
+  await waitFor(() => expect(mockRemember).toHaveBeenCalledTimes(1))
+  expect(duplicatePage).toHaveBeenCalledTimes(1)
+})
+
 it('never remembers an undo step when duplicatePage fails', async () => {
   ;(duplicatePage as jest.Mock).mockRejectedValue(new Error('boom'))
   mount()

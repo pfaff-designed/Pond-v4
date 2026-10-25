@@ -326,7 +326,14 @@ export function treeKeyCommand(
   key: string,
   id: string,
   flat: readonly FlatRow[],
-  opts: { expanded: ReadonlySet<string>; lifeExpanded: boolean; metaOrCtrl?: boolean }
+  opts: {
+    expanded: ReadonlySet<string>
+    lifeExpanded: boolean
+    metaOrCtrl?: boolean
+    /** AUDIT G9: a held ⌘D auto-repeats `keydown` — ignored so it can't fire
+     *  more than one duplicate. */
+    repeat?: boolean
+  }
 ): TreeKeyCommand | null {
   const idx = flat.findIndex((f) => f.id === id)
   if (idx === -1) return null
@@ -371,7 +378,7 @@ export function treeKeyCommand(
       return { kind: 'rename', id }
     case 'd':
     case 'D':
-      return opts.metaOrCtrl ? { kind: 'duplicate', id } : null
+      return opts.metaOrCtrl && !opts.repeat ? { kind: 'duplicate', id } : null
     default:
       return null
   }

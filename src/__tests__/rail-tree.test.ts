@@ -301,6 +301,12 @@ describe('treeKeyCommand', () => {
     expect(treeKeyCommand('d', 'trips', flat, { ...opts, metaOrCtrl: false })).toBeNull()
   })
 
+  it('a repeat ⌘D keydown (held key) is ignored — AUDIT G9', () => {
+    expect(
+      treeKeyCommand('d', 'trips', flat, { ...opts, metaOrCtrl: true, repeat: true })
+    ).toBeNull()
+  })
+
   it('unknown keys and stale ids return null (no focus jump)', () => {
     expect(key('a', 'health')).toBeNull()
     expect(key('ArrowDown', 'deleted-row')).toBeNull()

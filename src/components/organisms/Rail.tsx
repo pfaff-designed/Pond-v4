@@ -51,7 +51,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { usePagePrefetchHandlers } from '@/lib/pages/use-page-prefetch'
-import { createPage, duplicatePage, movePage, updateTitle } from '@/lib/pages/client'
+import { createPage, movePage, updateTitle } from '@/lib/pages/client'
 import { DuplicateTitleError, nextAvailableTitle } from '@/lib/pages/dedupe-title'
 import {
   fetchPages,
@@ -60,7 +60,7 @@ import {
   applyRenameOptimistic,
   applyGlyphOptimistic,
   applyAreaRoleOptimistic,
-  afterDuplicate,
+  duplicateAndOpen,
   type PageRow,
 } from '@/lib/pages/tree'
 import { setPageGlyph, setAreaRole } from '@/lib/pages/mark-client'
@@ -1190,6 +1190,7 @@ export function RailView({
       expanded,
       lifeExpanded,
       metaOrCtrl: e.metaKey || e.ctrlKey,
+      repeat: e.repeat,
     })
     if (!cmd || !allowsCommand(capabilitiesOf(id), cmd.kind)) return
     e.preventDefault()
@@ -2318,22 +2319,22 @@ export function Rail() {
     })
   }
 
-  /** ⌘D/Ctrl+D on a focused row (KAN-468): the same duplicate-and-open flow
-   *  ⌘K's "duplicate page" palette entry runs, off the FOCUSED row's id rather
-   *  than the open page's. `duplicatePage` owns the dedup/copy/undo-record;
-   *  this only navigates to the id it hands back. */
+  /** ⌘D/Ctrl+D on a focused row (KAN-468): the same `duplicateAndOpen` flow
+   *  ⌘K's "duplicate page" palette entry runs (AUDIT G9), off the FOCUSED
+   *  row's id rather than the open page's. */
   async function handleDuplicate(id: string) {
     const node = nodeById.get(id)
     if (!node) return
     setBusyId(id)
     try {
-      const record = await withUser((sb, uid) => duplicatePage(sb, uid, id))
-      if (!record) return
-      const copyId = record.targetPageId
-      if (copyId) navigateTo({ id: copyId, type: node.type, title: node.title })
-      afterDuplicate(queryClient, record, pondId)
-    } catch {
-      notify("Couldn't duplicate the page")
+      await duplicateAndOpen(
+        queryClient,
+        router,
+        pondId,
+        id,
+        { type: node.type, title: node.title },
+        notify
+      )
     } finally {
       setBusyId(null)
     }

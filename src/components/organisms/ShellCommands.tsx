@@ -73,8 +73,8 @@ import { newPageParent, paletteItems, paletteScope, pondItems, railItems } from 
 import { prefetchPageIfAbsent } from '@/lib/pages/use-page-prefetch'
 import { readRecentPageIds, writeRecent } from '@/lib/pages/recent-pages'
 import { usePaletteRecords } from '@/lib/pages/use-palette-records'
-import { createPage, duplicatePage } from '@/lib/pages/client'
-import { insertPageOptimistic, afterDuplicate } from '@/lib/pages/tree'
+import { createPage } from '@/lib/pages/client'
+import { insertPageOptimistic, duplicateAndOpen } from '@/lib/pages/tree'
 import { pagesKey } from '@/lib/pages/keys'
 import { appendChildLinkUnder } from '@/lib/pages/child-links'
 import { usePagesRows } from '@/lib/pages/use-pages'
@@ -441,31 +441,19 @@ export function ShellCommands() {
     [parent.id, pondId, pondName, queryClient, router]
   )
 
-  // ⌘K "duplicate page" (KAN-468): the open page's own copy, mirroring
-  // `handleCreatePage`'s shape. `duplicatePage` only hands back the copy's id
-  // (`targetPageId`) — the copy's actual title lands in the invalidated
-  // `['pages']` cache; the open page's own title/type stand in for the URL
-  // in the meantime, same as `handleCreatePage`'s pre-write values do.
+  // ⌘K "duplicate page" (KAN-468): the open page's own copy, through the
+  // same `duplicateAndOpen` flow ⌘D on a focused rail row runs (AUDIT G9).
   const handleDuplicatePage = useCallback(async () => {
     if (!currentNodeId) return
     const page = pages.find((p) => p.id === currentNodeId)
-    try {
-      const supabase = createClient()
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) return
-      const record = await duplicatePage(supabase, user.id, currentNodeId)
-      const copyId = record.targetPageId
-      if (!copyId) return
-      afterDuplicate(queryClient, record, pondId)
-      openWorkspaceUrl(
-        workspaceUrl({ id: copyId, type: page?.type ?? 'page', title: page?.title ?? '' }),
-        router
-      )
-    } catch {
-      requestComposerNotice("can't duplicate the page — try again.")
-    }
+    await duplicateAndOpen(
+      queryClient,
+      router,
+      pondId,
+      currentNodeId,
+      { type: page?.type ?? 'page', title: page?.title ?? '' },
+      requestComposerNotice
+    )
   }, [currentNodeId, pages, pondId, queryClient, router])
 
   const handlePaletteSelect = useCallback(
