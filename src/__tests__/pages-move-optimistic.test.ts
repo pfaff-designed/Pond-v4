@@ -106,6 +106,35 @@ describe('applyMoveOptimistic', () => {
     expect(byId(get(qc), 'scratch').area_role).toBeNull()
   })
 
+  it('KAN-470: a newTitle renames the moved row in the same optimistic write', () => {
+    const { qc } = seed()
+    applyMoveOptimistic(
+      qc,
+      {
+        movedId: 'scratch',
+        newParentId: 'health',
+        siblingOrder: ['sleep', 'marathon', 'scratch'],
+        newTitle: 'scratch 2',
+      },
+      null
+    )
+    expect(byId(get(qc), 'scratch').title).toBe('scratch 2')
+  })
+
+  it('omitting newTitle leaves the moved row title untouched', () => {
+    const { qc } = seed()
+    applyMoveOptimistic(
+      qc,
+      {
+        movedId: 'scratch',
+        newParentId: 'health',
+        siblingOrder: ['sleep', 'marathon', 'scratch'],
+      },
+      null
+    )
+    expect(byId(get(qc), 'scratch').title).toBe('scratch')
+  })
+
   it('reordering an area among the top level keeps its role', () => {
     const { qc } = seed()
     qc.setQueryData<PageRow[]>(['pages'], (rows) =>

@@ -161,6 +161,11 @@ export interface TrashSnapshot {
  * and either can be absent on its own side when that side had nothing to
  * edit (no stored link to remove on the old parent, or the new parent
  * already carried a link and `apply_page_move` wrote no duplicate).
+ *
+ * `title` (KAN-470) is the moved page's title on that side, present only
+ * when the move renamed it to dodge a sibling-title clash: `before.title`
+ * is the title going in, `after.title` the suffixed one it became. Absent
+ * on a pre-KAN-470 record and on every move that didn't clash.
  */
 export interface MoveSnapshot {
   parentId: string | null
@@ -168,6 +173,7 @@ export interface MoveSnapshot {
   siblingOrder: string[]
   removedLinks?: { block: Block; index: number }[]
   appendedLinkId?: string
+  title?: string
 }
 
 /**

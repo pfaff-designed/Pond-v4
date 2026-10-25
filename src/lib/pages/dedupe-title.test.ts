@@ -4,7 +4,7 @@
  * pages-client).
  */
 
-import { nextAvailableTitle, normalizeTitle, DuplicateTitleError } from './dedupe-title'
+import { nextAvailableTitle, normalizeTitle, moveTitle, DuplicateTitleError } from './dedupe-title'
 
 describe('normalizeTitle', () => {
   it('trims and lowercases', () => {
@@ -33,6 +33,28 @@ describe('nextAvailableTitle', () => {
   it('falls back to "Untitled" (then suffixes) for an empty desired title', () => {
     expect(nextAvailableTitle('', [])).toBe('Untitled')
     expect(nextAvailableTitle('   ', ['Untitled'])).toBe('Untitled 2')
+  })
+})
+
+describe('moveTitle', () => {
+  it('returns undefined when the dragged title has no clash with the destination', () => {
+    expect(moveTitle('Notes', ['Health', 'Finances'])).toBeUndefined()
+  })
+
+  it('returns undefined for a leading/trailing-space title with no clash', () => {
+    expect(moveTitle('Notes ', ['Health', 'Finances'])).toBeUndefined()
+  })
+
+  it('suffixes on a case-only clash', () => {
+    expect(moveTitle('notes', ['Notes'])).toBe('notes 2')
+  })
+
+  it('fills the next gap when " 2" is also taken', () => {
+    expect(moveTitle('Notes', ['Notes', 'Notes 2'])).toBe('Notes 3')
+  })
+
+  it('returns undefined for a blank title', () => {
+    expect(moveTitle('   ', ['Untitled'])).toBeUndefined()
   })
 })
 
