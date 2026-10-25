@@ -456,6 +456,30 @@ describe('the block menu opens with no ring on the block, and offers moving it i
     await waitFor(() =>
       expect(lastBlocks(onChange)[1]).toMatchObject({ type: 'page-link', pageId: 'child-page-1' })
     )
+    expect(await screen.findByText('Moved into a new page')).toBeInTheDocument()
+  })
+
+  it('moving a ½ block out of a side-by-side row leaves a ½ page-link with its rowStart, the row-mate untouched', async () => {
+    const user = userEvent.setup()
+    const left: Block = { ...list, width: '1/2', rowStart: true }
+    const right: Block = { ...note, width: '1/2' }
+    const { onChange } = renderCanvas([left, right])
+    openMenuOf('b-list')
+    const block = within(await screen.findByRole('menu', { name: /block menu/i })).getByRole(
+      'group',
+      { name: 'block' }
+    )
+    await user.click(within(block).getByRole('menuitem', { name: 'move into a new page' }))
+
+    await waitFor(() => expect(mockCreatePage).toHaveBeenCalledTimes(1))
+    await waitFor(() =>
+      expect(lastBlocks(onChange)[0]).toMatchObject({
+        type: 'page-link',
+        width: '1/2',
+        rowStart: true,
+      })
+    )
+    expect(lastBlocks(onChange)[1]).toEqual(right)
   })
 
   it('offers nothing to move for a page-link — it has nothing of its own', async () => {

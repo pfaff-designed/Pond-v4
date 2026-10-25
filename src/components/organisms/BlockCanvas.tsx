@@ -212,6 +212,10 @@ const TURNED_INTO: Record<Exclude<ConversionTarget, 'table'>, string> = {
   page: 'Turned into a page',
 }
 
+/** The block menu's own `move into a new page` row — distinct from `turn
+ * into: page`'s `TURNED_INTO.page`, which names a conversion, not a move. */
+const MOVED_INTO_A_NEW_PAGE = 'Moved into a new page'
+
 const MENU_PLACEMENT: Record<PondMenuSize, Omit<PondMenuPlacement, 'anchor'>> = {
   desktop: { align: 'start', top: 40, alignOffset: -8 },
   mobile: { align: 'end', top: 48, alignOffset: 0 },
@@ -628,9 +632,10 @@ export function BlockCanvas({
   // once is fine, only the same one twice (before `createPage` resolves) is
   // the double-submit.
   const makePageInFlightRef = useRef<Set<string>>(new Set())
-  // G9: guards `turnIntoPage` against a double pick on the same block, keyed
-  // by the block's id — the same guard shape as `makePageInFlightRef` above.
-  const turnIntoPageInFlightRef = useRef<Set<string>>(new Set())
+  // G9: guards `moveBlockIntoNewPage` against a double pick on the same
+  // block, keyed by the block's id — the same guard shape as
+  // `makePageInFlightRef` above.
+  const moveInFlightRef = useRef<Set<string>>(new Set())
   // Rule 2's fix (KAN-345): ids `markInserted` has minted THIS session, so a
   // fresh empty line autofocuses on mount while one that merely arrived with
   // the page never does — BlockCanvas is the one place that knows which ids
@@ -1088,15 +1093,17 @@ export function BlockCanvas({
    * before anyone could reach it. Undo puts the block back and removes the
    * page it made, as `turnIntoTable`'s undo removes the database it made.
    * Guarded against a second pick on the same block while the first is still
-   * in flight (G9).
+   * in flight (G9). `message` is the undo toast's copy: the menu's own "move
+   * into a new page" row and "turn into › page" read differently, even
+   * though they share this one engine.
    */
-  const moveBlockIntoNewPage = async (index: number) => {
+  const moveBlockIntoNewPage = async (index: number, message: string) => {
     const block = blocks[index]
     if (!block) return
     const prepared = moveIntoPagePrep(block, pageId)
     if (!prepared) return
-    if (turnIntoPageInFlightRef.current.has(block.id)) return
-    turnIntoPageInFlightRef.current.add(block.id)
+    if (moveInFlightRef.current.has(block.id)) return
+    moveInFlightRef.current.add(block.id)
     try {
       const supabase = getSupabase()
       const {
@@ -1111,7 +1118,16 @@ export function BlockCanvas({
         blocks: [prepared.block],
         props: stampNestedPage({}, pageId),
       })
-      const pageLink: Block = { id: crypto.randomUUID(), type: 'page-link', pageId: created.id }
+      // The link takes the moved block's own width and rowStart (dropped from
+      // `prepared.block`, which draws inside the new page, not this row) so a
+      // ½ block moved out of a side-by-side row leaves a ½ link in its place.
+      const pageLink: Block = {
+        id: crypto.randomUUID(),
+        type: 'page-link',
+        pageId: created.id,
+        width: block.width,
+        rowStart: block.rowStart,
+      }
       onChange(blocksRef.current.map((b) => (b.id === block.id ? pageLink : b)))
       insertPageOptimistic(
         queryClient,
@@ -1126,7 +1142,7 @@ export function BlockCanvas({
       )
       queryClient.invalidateQueries({ queryKey: pagesKey() })
       stageUndo({
-        message: TURNED_INTO.page,
+        message,
         scope: 'block',
         undo: async () => {
           onChange(blocksRef.current.map((b) => (b.id === pageLink.id ? block : b)))
@@ -1143,14 +1159,9 @@ export function BlockCanvas({
       console.error('Failed to move the block into a page', err)
       notify("Couldn't move the block into a page")
     } finally {
-      turnIntoPageInFlightRef.current.delete(block.id)
+      moveInFlightRef.current.delete(block.id)
     }
   }
-
-  /** The block menu's "turn into › page": a text line is the one block kind
-   * `conversionsFor` offers this target for, so it goes through the same
-   * engine as the menu's own "move into a new page" row. */
-  const turnIntoPage = (index: number) => moveBlockIntoNewPage(index)
 
   /**
    * list ⇄ checklist ⇄ text: the same block, drawn another way. It keeps its id,
@@ -1574,12 +1585,12 @@ export function BlockCanvas({
           return
         }
         if (conversion.target === 'page') {
-          void turnIntoPage(index)
+          void moveBlockIntoNewPage(index, TURNED_INTO.page)
           return
         }
         convertBlock(block, conversion)
       },
-      'move-into-new-page': () => void moveBlockIntoNewPage(index),
+      'move-into-new-page': () => void moveBlockIntoNewPage(index, MOVED_INTO_A_NEW_PAGE),
       'copy-link': () => void copyBlockLink(block.id),
       delete: () => requestDelete(index),
       'set-width': ({ width }) => setBlockWidth(block, width),
