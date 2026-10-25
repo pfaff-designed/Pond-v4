@@ -117,10 +117,13 @@ describe('0030_move_page — move_page()', () => {
       parentTitle: 'parent a',
       siblingOrder: [roof, a, b],
     })
+    // parentB's `blocks` carries no link to `roof` yet, so the move (0031
+    // part B) appends one and records its id here.
     expect(records[0].after).toEqual({
       parentId: parentB,
       parentTitle: 'parent b',
       siblingOrder: [x, roof, y],
+      appendedLinkId: expect.any(String),
     })
     await db.close()
   })
