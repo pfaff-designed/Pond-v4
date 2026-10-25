@@ -342,6 +342,17 @@ function focusBlockNeighbour(blocks: Block[], index: number) {
 }
 
 /**
+ * ↑/↓ on a SELECTED block (KAN-367): moves the selection to the block at
+ * `index`, by focusing its row directly — selection never enters a field,
+ * only Return does that.
+ */
+function selectBlockAt(blocks: Block[], index: number) {
+  const target = blocks[index]
+  if (!target) return
+  document.getElementById(blockDomId(target.id))?.focus()
+}
+
+/**
  * Focus a todo block's item field after it lands (KAN-355 fix): a `/list`/
  * `/checklist` pick mints the block and lands it via `onChange` alone — a text
  * landing keeps the host editor's focus, but a todo block has no editor of its
@@ -2375,6 +2386,8 @@ export function BlockCanvas({
         onDeleteBlock={() => requestDelete(i)}
         onReturn={(patch, content, where) => insertLineAfter(i, patch, content, where)}
         onLeaveUp={i === 0 ? () => focusPageTitle('end') : undefined}
+        onSelectPrev={i === 0 ? () => focusPageTitle('end') : () => selectBlockAt(blocks, i - 1)}
+        onSelectNext={i === blocks.length - 1 ? undefined : () => selectBlockAt(blocks, i + 1)}
         onMoveUp={() => moveBlockAt(i, 'up')}
         onMoveDown={() => moveBlockAt(i, 'down')}
         onSlashKey={() => openSlashMenuAt(i)}
@@ -3109,6 +3122,8 @@ function BlockEditor({
   onDeleteBlock,
   onReturn,
   onLeaveUp,
+  onSelectPrev,
+  onSelectNext,
   onMoveUp,
   onMoveDown,
   onSlashKey,
@@ -3176,6 +3191,12 @@ function BlockEditor({
   onReturn: (patch?: Block, content?: string, where?: 'above' | 'below') => void
   /** ↑ on this block's first visual line, text blocks only — only block 0's wiring is ever set. */
   onLeaveUp?: () => void
+  /** ↑ on this block's row while SELECTED (KAN-367): selects the previous block's row, or
+   *  (block 0) the page title. Always set — unlike `onLeaveUp`, every row can be selected. */
+  onSelectPrev?: () => void
+  /** ↓ on this block's row while SELECTED (KAN-367): selects the next block's row. Undefined
+   *  on the last block — its row handler falls back to KAN-344's step-out instead. */
+  onSelectNext?: () => void
   onMoveUp?: () => void
   onMoveDown?: () => void
   onSlashKey?: () => void
@@ -3493,37 +3514,54 @@ function BlockEditor({
       handleMenuOpenChange(true)
       return
     }
+    // Return on a selected row (KAN-367/KAN-344): a text row goes back into
+    // editing, caret at the end; any other kind opens a line below it.
     if (
       e.key === 'Enter' &&
       e.target === e.currentTarget &&
-      block.type !== 'text' &&
       !e.shiftKey &&
       !e.altKey &&
       !e.metaKey &&
       !e.ctrlKey
     ) {
       e.preventDefault()
-      onReturn()
+      if (block.type === 'text') {
+        focusTextBlockSoon(block.id, 'end')
+      } else {
+        onReturn()
+      }
       return
     }
-    // ↓ steps out of a selected row the same as Return (KAN-344) — but only for
-    // kinds with no in-field meaning for ↓. `table` and `todo` read it inside
-    // their own last-cell / empty-last-item rules instead (BlockRowContext's
-    // `stepOut`, wired at the module level); this generic branch would otherwise
-    // race theirs.
+    // ↑/↓ on a selected row (KAN-367) move the selection, in array order —
+    // `onSelectPrev` always lands somewhere (the previous row, or block 0's
+    // title); `onSelectNext` is only unset on the LAST block, where ↓ instead
+    // keeps KAN-344's step-out (opens a line below it).
+    if (
+      e.key === 'ArrowUp' &&
+      e.target === e.currentTarget &&
+      !e.shiftKey &&
+      !e.altKey &&
+      !e.metaKey &&
+      !e.ctrlKey
+    ) {
+      e.preventDefault()
+      onSelectPrev?.()
+      return
+    }
     if (
       e.key === 'ArrowDown' &&
       e.target === e.currentTarget &&
-      block.type !== 'text' &&
-      block.type !== 'table' &&
-      block.type !== 'todo' &&
       !e.shiftKey &&
       !e.altKey &&
       !e.metaKey &&
       !e.ctrlKey
     ) {
       e.preventDefault()
-      onReturn()
+      if (onSelectNext) {
+        onSelectNext()
+      } else {
+        onReturn()
+      }
       return
     }
     if (e.altKey && e.key === 'ArrowUp') {

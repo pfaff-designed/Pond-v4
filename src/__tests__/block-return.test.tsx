@@ -493,28 +493,57 @@ describe('Esc in a text block selects its row (KAN-367)', () => {
   })
 })
 
-describe('↓ on a selected row steps out, same as Return (KAN-344)', () => {
-  it('↓ on a focused image block opens a new line after it', async () => {
+describe('↑/↓ on a selected row move the selection across blocks (KAN-367)', () => {
+  it('↓ on a selected non-last card selects the next block', async () => {
     const user = userEvent.setup()
     const { onChange } = renderCanvas([image, note])
     blockRoot('b-image').focus()
     await user.keyboard('{ArrowDown}')
 
+    await waitFor(() => expect(blockRoot('b-note')).toHaveFocus())
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('↓ on the last block still opens a line, same as Return (KAN-344)', async () => {
+    const user = userEvent.setup()
+    const { onChange } = renderCanvas([image])
+    blockRoot('b-image').focus()
+    await user.keyboard('{ArrowDown}')
+
     const opened = lastBlocks(onChange)
-    expect(opened.map((b) => b.id)).toEqual(['b-image', expect.any(String), 'b-note'])
+    expect(opened.map((b) => b.id)).toEqual(['b-image', expect.any(String)])
     expect(opened[1]).toMatchObject({ type: 'text', content: '' })
   })
 
-  it('↓ on a focused table row does nothing: the table reads ↓ itself', async () => {
-    const { onChange } = renderCanvas([table, note])
-    fireEvent.keyDown(blockRoot('b-table'), { key: 'ArrowDown' })
-    expect(onChange).not.toHaveBeenCalled()
-  })
+  it('↑ from a selected second block selects the first', async () => {
+    const user = userEvent.setup()
+    renderCanvas([image, note])
+    blockRoot('b-note').focus()
+    await waitFor(() => expect(blockRoot('b-note')).toHaveFocus())
 
-  it('↓ on a focused checklist row does nothing: the checklist reads ↓ itself', async () => {
-    const { onChange } = renderCanvas([checklist, note])
-    fireEvent.keyDown(blockRoot('b-checklist'), { key: 'ArrowDown' })
-    expect(onChange).not.toHaveBeenCalled()
+    await user.keyboard('{ArrowUp}')
+
+    await waitFor(() => expect(blockRoot('b-image')).toHaveFocus())
+  })
+})
+
+describe('Return on a selected row (KAN-367/KAN-344)', () => {
+  it('Return on a selected text row puts the caret at its end', async () => {
+    const user = userEvent.setup()
+    renderCanvas([note, table])
+    const line = await textBlockIn('b-note')
+    act(() => {
+      textEditorOf(line).commands.focus('end')
+    })
+    await waitFor(() => expect(line).toHaveFocus())
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(blockRoot('b-note')).toHaveFocus())
+
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => expect(line).toHaveFocus())
+    const { state } = textEditorOf(line)
+    expect(state.selection.from).toBe(state.doc.content.size - 1)
   })
 })
 
