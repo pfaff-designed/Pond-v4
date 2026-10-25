@@ -216,6 +216,27 @@ const MENU_PLACEMENT: Record<PondMenuSize, Omit<PondMenuPlacement, 'anchor'>> = 
   mobile: { align: 'end', top: 48, alignOffset: 0 },
 }
 
+/** A right-click's point as a zero-size anchor rect (KAN-485): `align: 'start'`
+ *  and `top: 0` line the popup's top-left up with it, and PondMenu's own
+ *  `sideOffset` math copes with the zero height (plain subtraction). */
+const pointAnchorRect = (point: { x: number; y: number }): DOMRect =>
+  ({
+    x: point.x,
+    y: point.y,
+    width: 0,
+    height: 0,
+    top: point.y,
+    left: point.x,
+    right: point.x,
+    bottom: point.y,
+    toJSON: () => ({}),
+  }) as DOMRect
+const POINT_MENU_PLACEMENT: Omit<PondMenuPlacement, 'anchor'> = {
+  align: 'start',
+  top: 0,
+  alignOffset: 0,
+}
+
 /** The page a `/` pick makes: a template's shape, or a person's own copied whole. */
 type NewPage = InstantiatedTemplate & { props?: Record<string, unknown> }
 
@@ -3308,6 +3329,18 @@ function BlockEditor({
   const pressEndCleanupRef = useRef<(() => void) | null>(null)
   useEffect(() => () => pressEndCleanupRef.current?.(), [])
   const rootRef = useRef<HTMLDivElement>(null)
+  // Set by a right-click that opens the menu (below); null for every other
+  // open path, which keeps the handle's own anchor (`rootRef`). Cleared on
+  // close so a later handle-opened menu never inherits a stale point.
+  const [contextPoint, setContextPoint] = useState<{ x: number; y: number } | null>(null)
+  const wasMenuOpenRef = useRef(menuOpen)
+  useEffect(() => {
+    if (wasMenuOpenRef.current && !menuOpen && contextPoint) {
+      setContextPoint(null)
+      rootRef.current?.focus()
+    }
+    wasMenuOpenRef.current = menuOpen
+  }, [menuOpen, contextPoint])
   // Read in the exit timeout, which runs after the render that opened a menu
   // or a template preview. A `/` menu and the block menu portal outside this
   // row, so their focus looks like leaving.
@@ -3794,6 +3827,28 @@ function BlockEditor({
     rootRef.current?.focus()
   }
 
+  // Right-click opens the block menu at the pointer (KAN-485), replacing the
+  // browser's own menu. `chrome=false` (zen) leaves the native menu, same as
+  // the hidden handle. A text block's own prose is `[contenteditable]`, which
+  // `shouldSelectCardFromClick` (built for card fields, not prose) would
+  // treat as interactive — so that guard only applies to every OTHER kind's
+  // own fields (a table cell, a todo item's input). A non-collapsed window
+  // selection inside the row is a copy/paste in progress: the native menu
+  // stays for that, whatever the block type.
+  function handleContextMenu(e: React.MouseEvent) {
+    if (!e.currentTarget.contains(e.target as Node)) return
+    if (!chrome) return
+    if (block.type !== 'text' && !shouldSelectCardFromClick(e.target)) return
+    const sel = window.getSelection()
+    if (sel && !sel.isCollapsed && sel.rangeCount > 0 && rootRef.current?.contains(sel.anchorNode)) {
+      return
+    }
+    e.preventDefault()
+    e.stopPropagation()
+    setContextPoint({ x: e.clientX, y: e.clientY })
+    handleMenuOpenChange(true)
+  }
+
   // Esc inside a text editor (KAN-367): focusing the row's own element is
   // what `handleFocus` above already reads `rowSelected` off, same as a
   // card's own click-to-select.
@@ -3914,6 +3969,7 @@ function BlockEditor({
       onFocus={handleFocus}
       onBlur={handleBlur}
       onClick={handleClick}
+      onContextMenu={handleContextMenu}
     >
       {/* The drop line (6x `PondBlock.dc.html`'s `dropBar`): beside is a 2px bar
           9px into the gap off this block's near edge; above/below is a 2px bar
@@ -3972,7 +4028,11 @@ function BlockEditor({
           open={menuOpen ?? false}
           onOpenChange={handlePointerOpenChange}
           onSelect={onMenuSelect ?? (() => {})}
-          placement={{ anchor: rootRef, ...MENU_PLACEMENT[menuSize] }}
+          placement={
+            contextPoint
+              ? { anchor: { getBoundingClientRect: () => pointAnchorRect(contextPoint) }, ...POINT_MENU_PLACEMENT }
+              : { anchor: rootRef, ...MENU_PLACEMENT[menuSize] }
+          }
           trigger={
             <button
               type="button"

@@ -18,6 +18,7 @@ import { BlockCanvas } from '@/components/organisms/BlockCanvas'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import type { Block } from '@/lib/documents/types'
 import { blockWidthStyle } from '@/lib/modules/layout-rows'
+import { selectText } from './helpers/selection'
 import { textEditorOf } from './helpers/text-block'
 
 jest.mock('next/navigation', () => ({
@@ -423,6 +424,47 @@ describe('the block menu opens from the handle', () => {
     await user.click(await screen.findByRole('menuitem', { name: 'delete' }))
     await confirmFilledBlockDelete(user)
     expect(lastBlocks(onChange)).toEqual([a, { ...y, rowStart: true }])
+  })
+})
+
+describe('right-click opens the block menu at the pointer (KAN-485)', () => {
+  it('opens at the click point and suppresses the browser menu', async () => {
+    renderCanvas([heading, shopping])
+    const row = document.getElementById('block-b-shop')!
+    let event: Event | undefined
+    const capture = (e: Event) => {
+      event = e
+    }
+    row.addEventListener('contextmenu', capture)
+    fireEvent.contextMenu(row, { clientX: 120, clientY: 240 })
+    row.removeEventListener('contextmenu', capture)
+
+    expect(event?.defaultPrevented).toBe(true)
+    expect(await screen.findByRole('menu', { name: /block menu/i })).toBeInTheDocument()
+  })
+
+  it('does not open, and leaves the native menu, with a text selection inside the row', () => {
+    renderCanvas([line])
+    const field = screen.getByRole('textbox', { name: 'text block' })
+    selectText(field)
+    const row = document.getElementById('block-b-line')!
+    let event: Event | undefined
+    const capture = (e: Event) => {
+      event = e
+    }
+    row.addEventListener('contextmenu', capture)
+    fireEvent.contextMenu(field, { clientX: 10, clientY: 10 })
+    row.removeEventListener('contextmenu', capture)
+
+    expect(event?.defaultPrevented).toBe(false)
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+  })
+
+  it('does not open inside a table-cell input', () => {
+    renderCanvas([table])
+    const cell = screen.getByRole('textbox', { name: 'Tool, row 1' })
+    fireEvent.contextMenu(cell, { clientX: 10, clientY: 10 })
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 })
 
