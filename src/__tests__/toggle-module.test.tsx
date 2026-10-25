@@ -208,3 +208,30 @@ describe('ToggleView — Enter (KAN-480 build item 5)', () => {
     expect(outerStepOut).not.toHaveBeenCalled()
   })
 })
+
+describe('ToggleView — fold (KAN-480 build item 6)', () => {
+  it('click writes folded true through commitStep — the todo pattern, its own change-log record', async () => {
+    const commitStep = jest.fn()
+    render(
+      <BlockRowProvider value={{ selected: false, stepOut: () => {}, commitStep }}>
+        <ToggleView data={{ ...full, folded: false }} editable onChange={() => {}} />
+      </BlockRowProvider>
+    )
+    fireEvent.click(screen.getByRole('button'))
+    expect(commitStep).toHaveBeenCalledWith({ ...full, folded: true })
+  })
+
+  it('falls back to onChange when no commitStep is provided — outside a BlockCanvas host', () => {
+    const onChange = jest.fn()
+    render(<ToggleView data={{ ...full, folded: false }} editable onChange={onChange} />)
+    fireEvent.click(screen.getByRole('button'))
+    expect(onChange).toHaveBeenCalledWith({ ...full, folded: true })
+  })
+
+  it('folded editable does not mount the body editor', async () => {
+    render(<ToggleView data={{ ...full, folded: true }} editable onChange={() => {}} />)
+    const fields = await findAllTextBlocks()
+    expect(fields).toHaveLength(1)
+    expect(screen.queryByText('Passport')).not.toBeInTheDocument()
+  })
+})

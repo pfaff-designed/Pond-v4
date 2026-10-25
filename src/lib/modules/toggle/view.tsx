@@ -84,7 +84,11 @@ function ToggleField({
  */
 export function ToggleView({ data, editable, onChange, autofocus }: ModuleViewProps<ToggleBlock>) {
   const folded = data.folded ?? false
-  const { stepOut: outerStepOut } = useBlockRow()
+  const { stepOut: outerStepOut, commitStep } = useBlockRow()
+  // No `BlockRowProvider` above this view (page/view.tsx, a Storybook host) —
+  // KAN-355's save-flush has nothing to flush, so the fold falls back to the
+  // view's own `onChange` rather than the context's absent default.
+  const commit = (patch: ToggleBlock) => (commitStep ?? onChange)?.(patch)
   const [focusBodyToken, setFocusBodyToken] = useState(0)
 
   useEffect(() => {
@@ -118,6 +122,8 @@ export function ToggleView({ data, editable, onChange, autofocus }: ModuleViewPr
         <button
           type="button"
           aria-expanded={!folded}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => commit({ ...data, folded: !folded })}
           className="mt-[0.3em] grid w-[9px] flex-none place-items-center text-mn-text-secondary"
         >
           <Caret className={cn(!folded && 'rotate-90')} />
