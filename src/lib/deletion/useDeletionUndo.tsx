@@ -86,6 +86,10 @@ export interface StageUndoInput {
   undo: () => void | Promise<void>
   /** Undo button copy (default "Undo") — lowercase `undo` for Pond's own build words (e.g. `deleted text ·`). */
   undoLabel?: string
+  /** Optional secondary action shown alongside Undo (e.g. "open" to navigate to the target). */
+  action?: () => void
+  /** Button label for the secondary action (default: "Open"). */
+  actionLabel?: string
   /** Group tag for {@link DeletionUndoContextValue.flushScope}. */
   scope?: string
 }
@@ -215,8 +219,8 @@ export function DeletionUndoProvider({ children }: { children: React.ReactNode }
   )
 
   const stageUndo = useCallback(
-    ({ message, undo, undoLabel, scope }: StageUndoInput): string =>
-      stage({ message, undo, undoLabel, scope }),
+    ({ message, undo, undoLabel, action, actionLabel, scope }: StageUndoInput): string =>
+      stage({ message, undo, undoLabel, action, actionLabel, scope }),
     [stage]
   )
 

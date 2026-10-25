@@ -24,6 +24,8 @@ import type { Database, NodeType } from '@/lib/supabase/types'
 import type { Block } from '@/lib/documents/types'
 import { inPond, resolvePond } from '@/lib/pond/scope'
 import { flushStagedDeletes } from '@/lib/deletion/staged-ids'
+import { mapChangeLogRow } from '@/lib/change-log/store'
+import type { ChangeLogRecord, ChangeLogRow } from '@/lib/change-log/types'
 import {
   ROW_TYPE,
   withSchema,
@@ -450,35 +452,37 @@ export async function deletePage(supabase: SupabaseClient<Database>, id: string)
 }
 
 /**
- * Move a page in the tree (F25): set its `parent_id` (null = top-level), then
- * densely reindex the target sibling group so `order` is `0..N-1` in the new
- * visual order — which also repairs the legacy all-zeros `order` state on first
- * touch. `siblingOrder` is the full ordered list of the target group's child ids
- * AFTER the move (including the moved node); the caller (computeMove) builds it.
- * Id-scoped like the other by-id writes (id is the PK).
+ * Move a page in the tree (F25, KAN-466): set its `parent_id` (null =
+ * top-level) and densely reindex the target sibling group so `order` is
+ * `0..N-1` in the new visual order — which also repairs the legacy
+ * all-zeros `order` state on first touch. `siblingOrder` is the full
+ * ordered list of the target group's child ids AFTER the move (including
+ * the moved node); the caller (computeMove) builds it. One round trip
+ * through the `move_page` RPC (migration 0030) rather than a parent update
+ * plus a `Promise.all` of per-row order updates: the reparent and the
+ * reindex commit atomically, and the RPC's own `move` change_log record
+ * comes back mapped, so the caller never has to write a second record for
+ * what it just did.
  */
 export async function movePage(
   supabase: SupabaseClient<Database>,
   input: { id: string; newParentId: string | null; siblingOrder: string[] }
-): Promise<void> {
+): Promise<ChangeLogRecord> {
   // KAN-273: see createPage's comment — the caller's computed `siblingOrder`
   // must not include a row that is mid-delete.
   await flushStagedDeletes()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error: parentErr } = await (supabase as any)
-    .from('pages')
-    .update({ parent_id: input.newParentId, updated_at: new Date().toISOString() })
-    .eq('id', input.id)
+  const { data, error } = await (supabase as any).rpc('move_page', {
+    p_page_id: input.id,
+    p_new_parent_id: input.newParentId,
+    p_sibling_order: input.siblingOrder,
+  })
 
-  if (parentErr) throw new Error(parentErr.message)
+  if (error) throw new Error(error.message)
 
-  await Promise.all(
-    input.siblingOrder.map(async (id, index) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error } = await (supabase as any).from('pages').update({ order: index }).eq('id', id)
-      if (error) throw new Error(error.message)
-    })
-  )
+  const row = Array.isArray(data) ? data[0] : data
+  if (!row) throw new Error(`move_page: moving page ${input.id} returned no record`)
+  return mapChangeLogRow(row as ChangeLogRow)
 }
 
 /**

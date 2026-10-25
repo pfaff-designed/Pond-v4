@@ -1,12 +1,15 @@
 /**
- * KAN-415: dragging a row to a new parent (drag-to-reparent) appends a
- * page-link block to that new parent, the same seam the rail's ＋ uses — a
- * same-parent reorder (sibling order only) must not.
+ * KAN-466/KAN-477: dragging a row to a new parent (drag-to-reparent) writes
+ * no page-link block of its own — the new parent's child links are derived
+ * at read time, so the move stays the session-undo stack's only new step.
  */
-import { screen, fireEvent, waitFor } from '@testing-library/react'
+import { screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { appendChildLinkUnder } from '@/lib/pages/child-links'
+import { movePage } from '@/lib/pages/client'
+import { changeLogKey } from '@/lib/change-log/keys'
 import { mountRail } from './helpers/rail-sweep-fixture'
 import type { PageRow } from '@/lib/pages/tree'
+import type { ChangeLogRecord } from '@/lib/change-log/types'
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
@@ -22,7 +25,10 @@ jest.mock('@/lib/supabase/client', () => ({
 jest.mock('@/lib/pages/client', () => ({
   createPage: jest.fn().mockResolvedValue({ id: 'new-page', title: '' }),
   deletePage: jest.fn().mockResolvedValue(undefined),
-  movePage: jest.fn().mockResolvedValue(undefined),
+  movePage: jest.fn().mockResolvedValue({
+    id: 'record-1',
+    after: { parentId: 'page-b', parentTitle: 'Page B', siblingOrder: [] },
+  }),
   updateTitle: jest.fn().mockResolvedValue(undefined),
 }))
 
@@ -70,7 +76,7 @@ function dropEvent(clientY: number) {
   return event
 }
 
-it('dropping a row into a new parent gives that parent a link', async () => {
+it('dropping a row into a new parent writes no link block of its own', async () => {
   mountRail(ROOT_ROWS)
 
   const dragged = screen.getByRole('treeitem', { name: 'Page A' })
@@ -79,18 +85,11 @@ it('dropping a row into a new parent gives that parent a link', async () => {
   fireEvent(dragged, dragStartEvent())
   fireEvent(target, dropEvent(0))
 
-  await waitFor(() => expect(appendChildLinkUnder).toHaveBeenCalledTimes(1))
-  expect(appendChildLinkUnder).toHaveBeenCalledWith(
-    expect.anything(),
-    expect.anything(),
-    'page-b',
-    'page-a',
-    'pond-1',
-    'life'
-  )
+  await waitFor(() => expect(screen.getByText('moved Page A to Page B ·')).toBeInTheDocument())
+  expect(appendChildLinkUnder).not.toHaveBeenCalled()
 })
 
-it('a same-parent reorder does not append a second link', async () => {
+it('a same-parent reorder does not append a link either', async () => {
   mountRail(ROOT_ROWS)
 
   const dragged = screen.getByRole('treeitem', { name: 'Page A' })
@@ -102,4 +101,67 @@ it('a same-parent reorder does not append a second link', async () => {
   fireEvent(target, dropEvent(1000))
 
   expect(appendChildLinkUnder).not.toHaveBeenCalled()
+})
+
+it('dropping a row into a new parent shows an undo toast naming both titles', async () => {
+  mountRail(ROOT_ROWS)
+
+  const dragged = screen.getByRole('treeitem', { name: 'Page A' })
+  const target = screen.getByRole('treeitem', { name: 'Page B' })
+
+  fireEvent(dragged, dragStartEvent())
+  fireEvent(target, dropEvent(0))
+
+  await waitFor(() => expect(screen.getByText('moved Page A to Page B ·')).toBeInTheDocument())
+  expect(screen.getByRole('button', { name: 'open' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'undo' })).toBeInTheDocument()
+})
+
+it('reads exactly "moved Page A to Page B · open · undo" with open before undo', async () => {
+  mountRail(ROOT_ROWS)
+
+  const dragged = screen.getByRole('treeitem', { name: 'Page A' })
+  const target = screen.getByRole('treeitem', { name: 'Page B' })
+
+  fireEvent(dragged, dragStartEvent())
+  fireEvent(target, dropEvent(0))
+
+  const toast = await screen.findByRole('status')
+  await waitFor(() => expect(toast).toHaveTextContent('moved Page A to Page B ·openundo'))
+  const buttons = within(toast).getAllByRole('button').map((b) => b.textContent)
+  expect(buttons).toEqual(['open', 'undo', '✕'])
+})
+
+it('a move to the top level in a pond with no home row names the pond, not null or blank', async () => {
+  // ROOT_ROWS carries no `type: 'home'` row — the fixture's own "no home row"
+  // case — so `parentId: null, parentTitle: null` is what the real RPC would
+  // actually resolve for a top-level drop here, not a contrived input.
+  jest.mocked(movePage).mockResolvedValueOnce({
+    id: 'record-2',
+    after: { parentId: null, parentTitle: null, siblingOrder: [] },
+  } as ChangeLogRecord)
+  mountRail(ROOT_ROWS)
+
+  const dragged = screen.getByRole('treeitem', { name: 'Page A' })
+  const target = screen.getByRole('treeitem', { name: 'Page B' })
+
+  fireEvent(dragged, dragStartEvent())
+  fireEvent(target, dropEvent(0))
+
+  await waitFor(() => expect(screen.getByText('moved Page A to life ·')).toBeInTheDocument())
+})
+
+it('invalidates the change log after a successful move', async () => {
+  const client = mountRail(ROOT_ROWS)
+  const invalidateSpy = jest.spyOn(client, 'invalidateQueries')
+
+  const dragged = screen.getByRole('treeitem', { name: 'Page A' })
+  const target = screen.getByRole('treeitem', { name: 'Page B' })
+
+  fireEvent(dragged, dragStartEvent())
+  fireEvent(target, dropEvent(0))
+
+  await waitFor(() =>
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: changeLogKey() })
+  )
 })

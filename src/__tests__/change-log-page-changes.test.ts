@@ -102,6 +102,34 @@ describe('describeChange', () => {
       'restored'
     )
   })
+
+  it('names a move from its move snapshot\'s parent title', () => {
+    const snapshot = { parentId: 'page-b', parentTitle: 'Page B', siblingOrder: ['page-1'] }
+    expect(describeChange(record({ action: 'move', before: null, after: snapshot }), null)).toBe(
+      'moved to Page B'
+    )
+  })
+
+  it('falls back to the bare verb when a move carries no usable snapshot', () => {
+    expect(describeChange(record({ action: 'move', before: null, after: null }), null)).toBe(
+      'moved'
+    )
+    expect(
+      describeChange(record({ action: 'move', before: null, after: { parentId: 'page-b' } }), null)
+    ).toBe('moved')
+  })
+
+  it('never reads "moved to " bare — a null or untitled parent falls back to Untitled', () => {
+    const noHomeRow = { parentId: null, parentTitle: null, siblingOrder: [] }
+    expect(
+      describeChange(record({ action: 'move', before: null, after: noHomeRow }), null)
+    ).toBe('moved to Untitled')
+
+    const untitledParent = { parentId: 'page-b', parentTitle: '', siblingOrder: [] }
+    expect(
+      describeChange(record({ action: 'move', before: null, after: untitledParent }), null)
+    ).toBe('moved to Untitled')
+  })
 })
 
 describe('platformShortcutLabel', () => {

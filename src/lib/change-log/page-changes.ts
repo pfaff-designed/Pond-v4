@@ -22,7 +22,7 @@ import {
   summarizeSchemaEdit,
   summarizeTrash,
 } from './summary'
-import type { ChangeLogRecord } from './types'
+import type { ChangeLogRecord, MoveSnapshot } from './types'
 
 /** `09:31` for a raw ISO timestamp — split out from {@link clockTime} so a
  *  surface naming a moment that isn't a record's own `createdAt` (a
@@ -61,6 +61,40 @@ const areaRoleChange = (role: unknown): string => {
   if (!isAreaRole(role)) return 'changed the colour'
   const label = AREA_COLOUR_SWATCHES.find((s) => s.role === role)?.label
   return label === undefined ? 'changed the colour' : `colour → ${label}`
+}
+
+/** A `move` record's `after`, typed — or `null` for a pre-KAN-466 record (no
+ *  `MoveSnapshot` yet) or a malformed one. Exported so a caller that needs the
+ *  structured snapshot itself (the Rail toast) reads it the same checked way,
+ *  rather than an unchecked `as MoveSnapshot` cast of its own. */
+export const readMoveSnapshot = (value: unknown): MoveSnapshot | null => {
+  if (typeof value !== 'object' || value === null) return null
+  const { parentId, parentTitle, siblingOrder } = value as Record<string, unknown>
+  if (typeof parentId !== 'string' && parentId !== null) return null
+  if (typeof parentTitle !== 'string' && parentTitle !== null) return null
+  if (!Array.isArray(siblingOrder) || !siblingOrder.every((id) => typeof id === 'string')) {
+    return null
+  }
+  return { parentId, parentTitle, siblingOrder }
+}
+
+/**
+ * A `MoveSnapshot.parentTitle` is never rendered bare — `null` (no home row to
+ * name the top level) falls back to `rootFallback` (the caller's own root
+ * label; the change log has none, so its default is `'Untitled'` same as the
+ * other case), and `''` (a live but untitled parent) always falls back to
+ * `'Untitled'`, matching the dragged title's own 'Untitled' fallback.
+ */
+export const moveParentLabel = (parentTitle: string | null, rootFallback = 'Untitled'): string => {
+  if (parentTitle === null) return rootFallback
+  return parentTitle === '' ? 'Untitled' : parentTitle
+}
+
+/** `moved to <parent title>`, or the bare `moved` when `after` isn't a
+ *  `MoveSnapshot` (a pre-KAN-466 record, or malformed). */
+const moveTarget = (after: unknown): string => {
+  const snapshot = readMoveSnapshot(after)
+  return snapshot === null ? 'moved' : `moved to ${moveParentLabel(snapshot.parentTitle)}`
 }
 
 /**
@@ -142,7 +176,7 @@ export function describeChange(
     case 'restore':
       return summarizeTrash(record.after, 'restored')
     case 'move':
-      return 'moved'
+      return moveTarget(record.after)
     case 'undo': {
       const original = resolveUndoRedoTarget(record, byId)
       return original === undefined ? 'undo' : `undo · ${describeChange(original, null, byId)}`
