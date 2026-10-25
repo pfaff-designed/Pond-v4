@@ -25,6 +25,15 @@ import type { MarkSource } from '@/lib/pages/mark'
 import { isNewTabClick, workspaceRenderHref } from '@/lib/pages/nav'
 import { markAccent } from '@/lib/rail/glyph-library'
 import { markGlyph, rowMark } from '@/lib/rail/row-mark'
+import {
+  ROW_FOCUS_RING,
+  ROW_GAP_PY_PR,
+  ROW_HOVER_FILL,
+  ROW_LABEL_HOVER_INK_CSS,
+  ROW_LABEL_INK_NOT_FULL,
+  ROW_LABEL_SIZE_NOT_EMPHASISED,
+  ROW_SELECTED_FILL,
+} from '@/lib/rail/row-recipe'
 import { isAreaRow, type RailNode } from '@/lib/rail/tree'
 
 export interface RailFavouritesBandProps {
@@ -85,8 +94,8 @@ export function RailFavouritesBand({
             data-favourite-row={node.id}
             aria-current={isSelected ? 'true' : undefined}
             onClick={handleClick}
-            className={`group relative mx-2 flex w-[calc(100%-16px)] items-center gap-[7px] rounded-mn-row py-[5px] pr-2 pl-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-mn-text/50 ${
-              isSelected ? 'bg-mn-hover-fill' : 'hover:bg-mn-rail-hover'
+            className={`group relative mx-2 flex w-[calc(100%-16px)] items-center rounded-mn-row ${ROW_GAP_PY_PR} pl-1 text-left outline-none ${ROW_FOCUS_RING} ${
+              isSelected ? ROW_SELECTED_FILL : `hover:${ROW_HOVER_FILL}`
             }`}
           >
             <span className="w-[9px] flex-shrink-0" aria-hidden />
@@ -101,7 +110,9 @@ export function RailFavouritesBand({
               emphasis={isEmphasised}
               leading={markGlyph(mark, accent, isSelected)}
               className={`min-h-0 w-full min-w-0 flex-1 gap-[7px] bg-transparent p-0${
-                isEmphasised ? '' : ' text-[13px] text-mn-text-secondary group-hover:text-mn-text'
+                isEmphasised
+                  ? ''
+                  : ` ${ROW_LABEL_SIZE_NOT_EMPHASISED} ${ROW_LABEL_INK_NOT_FULL} ${ROW_LABEL_HOVER_INK_CSS}`
               } leading-[normal]`}
             />
           </a>

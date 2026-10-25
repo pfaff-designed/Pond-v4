@@ -78,6 +78,14 @@ import { pushRecentGlyphToPond } from '@/lib/pond/client'
 import { PondSwitcher } from './PondSwitcher'
 import { RailFavouritesBand } from './RailFavouritesBand'
 import { rowMark, markGlyph } from '@/lib/rail/row-mark'
+import {
+  ROW_FOCUS_RING,
+  ROW_GAP_PY_PR,
+  ROW_HOVER_FILL,
+  ROW_LABEL_INK_NOT_FULL,
+  ROW_LABEL_SIZE_NOT_EMPHASISED,
+  ROW_SELECTED_FILL,
+} from '@/lib/rail/row-recipe'
 import { isNewTabClick, openWorkspaceUrl, workspaceRenderHref, workspaceUrl } from '@/lib/pages/nav'
 import { requestTitleFocus } from '@/lib/pages/title-focus'
 import { withTemplatesParam } from '@/lib/pages/templates-param'
@@ -563,10 +571,10 @@ const RailRow = forwardRef<HTMLElement, RailRowProps>(function RailRow(
         if (e.target === e.currentTarget) onKeyDown(id, e)
       }}
       className={`group relative flex items-center rounded-mn-row outline-none
-        ${isDbRoot ? 'gap-[9px] px-2 py-[6px]' : 'gap-[7px] py-[5px] pr-2'}
-        focus-visible:ring-2 focus-visible:ring-mn-text/50 focus-visible:ring-offset-0
+        ${isDbRoot ? 'gap-[9px] px-2 py-[6px]' : ROW_GAP_PY_PR}
+        ${ROW_FOCUS_RING} focus-visible:ring-offset-0
         ${isArea && !isDbRoot && !noTopMargin ? 'mt-1' : ''}
-        ${isSelected ? 'bg-mn-hover-fill' : hovered ? 'bg-mn-rail-hover' : ''}
+        ${isSelected ? ROW_SELECTED_FILL : hovered ? ROW_HOVER_FILL : ''}
         ${isDropRejected ? 'cursor-not-allowed' : 'cursor-pointer'}
         ${isDragging ? 'opacity-[.35]' : ''}
         ${dropZone === 'into' ? 'ring-2 ring-inset ring-mn-text/50 ' : ''}${settleOnMount && !settled ? 'motion-settle-in ' : ''}`}
@@ -765,8 +773,8 @@ const RailRow = forwardRef<HTMLElement, RailRowProps>(function RailRow(
         // to the row's own 8px right padding, per the board.
         className={`min-h-0 w-full min-w-0 flex-1 bg-transparent ${isDbRoot ? 'gap-[9px]' : 'gap-[7px]'} p-0${
           toolsPad ? ` ${toolsPad}` : ''
-        } group-focus-within:pr-[39px]${isAreaRow ? '' : ' text-[13px]'}${
-          isFullInk ? '' : ' text-mn-text-secondary'
+        } group-focus-within:pr-[39px]${isAreaRow ? '' : ` ${ROW_LABEL_SIZE_NOT_EMPHASISED}`}${
+          isFullInk ? '' : ` ${ROW_LABEL_INK_NOT_FULL}`
         } leading-[normal]`}
       />
     </Tag>
