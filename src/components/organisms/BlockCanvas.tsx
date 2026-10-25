@@ -3309,25 +3309,28 @@ function BlockEditor({
   onDrop?: (e: React.DragEvent) => void
 }) {
   const [dragArmed, setDragArmed] = useState(false)
-  // Gate for the handle's menu (KAN-440 comment 1): Base UI's `Menu.Trigger`
-  // opens on native `mousedown`, before a press is known to be a click or the
-  // start of a drag. `pressRef` tracks whether the handle's press is still
-  // down, whether it has moved past the drag threshold since `onPointerDown`,
-  // and (for the toggle-click fix below) whether the menu was already open
-  // when this press started. `handlePointerOpenChange` drops any
-  // `open === true` while `down` or `moved` is true, so only a genuine click
-  // (pointerup with no movement past the threshold) opens the menu from the
-  // handle — a drag never does. An HTML5 drag ends in `pointercancel`/the
-  // row's `dragend`, never `pointerup`, so both reset `pressRef` too —
-  // otherwise `down` stays true forever and blocks every later open from
-  // this handle, ⌘/ and Enter included.
+  // Gate for the handle's menu — PHONE ONLY (KAN-440 comment 1; desktop drops
+  // this trigger-open path entirely, KAN-485, `handlePointerOpenChange`
+  // below): Base UI's `Menu.Trigger` opens on native `mousedown`, before a
+  // press is known to be a click or the start of a drag. `pressRef` tracks
+  // whether the handle's press is still down, whether it has moved past the
+  // drag threshold since `onPointerDown`, and (for the toggle-click fix
+  // below) whether the menu was already open when this press started. On
+  // phone, `handlePointerOpenChange` drops any `open === true` while `down`
+  // or `moved` is true, so only a genuine click (pointerup with no movement
+  // past the threshold) opens the menu from the handle — a drag never does.
+  // An HTML5 drag ends in `pointercancel`/the row's `dragend`, never
+  // `pointerup`, so both reset `pressRef` too — otherwise `down` stays true
+  // forever and blocks every later open from this handle (phone) or select
+  // (desktop, Enter/Space included); ⌘/ is never gated by this either way.
   const pressRef = useRef({ down: false, moved: false, startX: 0, startY: 0, openAtDown: false })
   // A press that drifts off the handle before releasing never fires the
   // handle's own `pointerup` — without `setPointerCapture`, the browser
   // delivers `pointerup` to whatever element is under the pointer at release,
   // not the one that started the press (KAN-440). `down` then stays stuck
-  // true forever, which blocks a later Enter/Space open the same way a stuck
-  // drag does. A document-level listener, armed on this handle's own
+  // true forever, which blocks a later Enter/Space OPEN on phone the same way
+  // a stuck drag does (desktop's Enter/Space only reads `moved`, so it still
+  // selects the row). A document-level listener, armed on this handle's own
   // `pointerdown`, catches the release wherever it lands. Torn down on the
   // next `pointerdown` (so only one is ever live) and on unmount (AGENTS.md
   // "finish what you start").
@@ -3802,9 +3805,10 @@ function BlockEditor({
   }
   // An HTML5 drag never fires `pointerup` on the handle — it ends in
   // `pointercancel` (here) or the row's `dragend` below — so without this,
-  // `down` stays true forever and every later open from this handle (the
-  // click, ⌘/'s own gate-free path never minds, but the trigger's click does)
-  // stays blocked.
+  // `down`/`moved` stay stuck true forever: on phone that blocks every later
+  // open from this handle (`handlePointerOpenChange` gates the trigger's
+  // click on both; ⌘/'s own gate-free path never minds), on desktop a stuck
+  // `moved` blocks the trigger's click from selecting the row instead.
   function handleTriggerPointerCancel() {
     pressRef.current.down = false
     pressRef.current.moved = false

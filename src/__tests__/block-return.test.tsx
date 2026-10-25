@@ -461,6 +461,39 @@ describe('pointer selection draws PondBlock’s own `selected` state (07.05)', (
     expect(group).not.toHaveFocus()
     expect(document.querySelector('[data-part="record-peek"]')).not.toBeNull()
   })
+
+  it('a right-click inside RecordPeek — portaled outside the row’s own DOM — does not open this row’s menu (KAN-485)', async () => {
+    const user = userEvent.setup()
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <DeletionUndoProvider>
+          <PageCanvas>
+            <Harness initial={[board]} onChange={jest.fn()} />
+          </PageCanvas>
+        </DeletionUndoProvider>
+      </QueryClientProvider>
+    )
+    const group = blockRoot('b-board')
+
+    screen.getByRole('article', { name: 'Trim the rim' }).focus()
+    await user.keyboard('{Enter}')
+    const peek = document.querySelector('[data-part="record-peek"]') as HTMLElement
+    expect(group.contains(peek)).toBe(false)
+
+    const statusField = within(peek).getByText('status')
+    let event: Event | undefined
+    const capture = (e: Event) => {
+      event = e
+    }
+    peek.addEventListener('contextmenu', capture)
+    fireEvent.contextMenu(statusField, { clientX: 10, clientY: 10 })
+    peek.removeEventListener('contextmenu', capture)
+
+    expect(event?.defaultPrevented).toBe(false)
+    expect(screen.queryByRole('menu', { name: /block menu/i })).not.toBeInTheDocument()
+  })
 })
 
 describe('↑/↓ out of an editor land in the neighbouring block (KAN-367)', () => {

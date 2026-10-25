@@ -112,13 +112,17 @@ const table: Block = {
 }
 const pageLink: Block = { id: 'b-link', type: 'page-link', pageId: 'child-brioche' }
 
+/** Ink at .18 in light, paper at .18 in dark — one value that flips with the theme. */
+const OPEN_RING = '[box-shadow:0_0_0_2px_rgb(from_var(--mn-text)_r_g_b/0.18)]'
+
 interface HarnessProps {
   initial: Block[]
   onChange: jest.Mock
   onMoveIntoNewPage?: (block: Block) => void
+  chrome?: boolean
 }
 
-function Harness({ initial, onChange, onMoveIntoNewPage }: HarnessProps) {
+function Harness({ initial, onChange, onMoveIntoNewPage, chrome }: HarnessProps) {
   const [blocks, setBlocks] = React.useState(initial)
   return (
     <BlockCanvas
@@ -130,17 +134,27 @@ function Harness({ initial, onChange, onMoveIntoNewPage }: HarnessProps) {
         setBlocks(next)
       }}
       onMoveIntoNewPage={onMoveIntoNewPage}
+      chrome={chrome}
     />
   )
 }
 
-function renderCanvas(initial: Block[], onMoveIntoNewPage?: (block: Block) => void) {
+function renderCanvas(
+  initial: Block[],
+  onMoveIntoNewPage?: (block: Block) => void,
+  chrome?: boolean
+) {
   const onChange = jest.fn()
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={client}>
       <DeletionUndoProvider>
-        <Harness initial={initial} onChange={onChange} onMoveIntoNewPage={onMoveIntoNewPage} />
+        <Harness
+          initial={initial}
+          onChange={onChange}
+          onMoveIntoNewPage={onMoveIntoNewPage}
+          chrome={chrome}
+        />
       </DeletionUndoProvider>
     </QueryClientProvider>
   )
@@ -344,6 +358,82 @@ describe('right-click opens the block menu at the pointer (KAN-485)', () => {
     fireEvent.contextMenu(title, { clientX: 10, clientY: 10 })
     expect(await screen.findByRole('menu', { name: /block menu/i })).toBeInTheDocument()
   })
+
+  it('chrome=false (zen) opens nothing, and leaves the native menu', () => {
+    renderCanvas([heading], undefined, false)
+    const row = document.getElementById('block-b-heading')!
+    let event: Event | undefined
+    const capture = (e: Event) => {
+      event = e
+    }
+    row.addEventListener('contextmenu', capture)
+    fireEvent.contextMenu(row, { clientX: 10, clientY: 10 })
+    row.removeEventListener('contextmenu', capture)
+
+    expect(event?.defaultPrevented).toBe(false)
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+  })
+})
+
+describe('closing a right-click-opened menu focuses the row (KAN-485)', () => {
+  it('Escape closes it and focuses the row', async () => {
+    const user = userEvent.setup()
+    renderCanvas([heading, list])
+    const row = document.getElementById('block-b-list')!
+    openMenuOf('b-list')
+    await screen.findByRole('menu', { name: /block menu/i })
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+    expect(row).toHaveFocus()
+  })
+
+  it('picking an item closes it and focuses the row', async () => {
+    const user = userEvent.setup()
+    renderCanvas([heading, list])
+    const row = document.getElementById('block-b-list')!
+    openMenuOf('b-list')
+    const menu = await screen.findByRole('menu', { name: /block menu/i })
+    await user.click(within(menu).getByRole('menuitem', { name: '½' }))
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+    expect(row).toHaveFocus()
+  })
+})
+
+describe('the block menu rings the block while open, and offers moving it into a page (KAN-485)', () => {
+  it('rings the block while the menu is open, and drops the ring when it closes', async () => {
+    const user = userEvent.setup()
+    renderCanvas([heading, list])
+    const root = document.getElementById('block-b-list')!
+    expect(root.className).not.toContain(OPEN_RING)
+
+    openMenuOf('b-list')
+    await screen.findByRole('menu', { name: /block menu/i })
+    expect(root.className).toContain(OPEN_RING)
+    expect(root.className).toContain('rounded-[20px]')
+    expect(root.className).not.toMatch(/dark:/)
+
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+    expect(root.className).not.toContain(OPEN_RING)
+  })
+
+  it('offers `move into a new page` only where the canvas can do it, and hands it the block', async () => {
+    const user = userEvent.setup()
+    const onMoveIntoNewPage = jest.fn()
+    renderCanvas([heading, list], onMoveIntoNewPage)
+    openMenuOf('b-list')
+    const block = within(await screen.findByRole('menu', { name: /block menu/i })).getByRole(
+      'group',
+      { name: 'block' }
+    )
+    expect(
+      within(block)
+        .getAllByRole('menuitem')
+        .map((i) => i.textContent)
+    ).toEqual(['move into a new page', 'copy link to block', 'delete'])
+    await user.click(within(block).getByRole('menuitem', { name: 'move into a new page' }))
+    expect(onMoveIntoNewPage).toHaveBeenCalledWith(list)
+  })
 })
 
 describe('⇧F10 / the ContextMenu key opens the menu on a selected row (KAN-485)', () => {
@@ -461,6 +551,40 @@ describe('phone: tapping a block reveals the handle and opens the same menu (fra
 
     await user.click(handleOf('b-table'))
     expect(await screen.findByRole('menu', { name: /block menu/i })).toBeInTheDocument()
+  })
+
+  it('a bare press opens nothing until release (KAN-440)', () => {
+    renderCanvas([heading, table])
+    const handle = handleOf('b-table')
+
+    fireEvent.pointerDown(handle, { clientX: 10, clientY: 10 })
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    fireEvent.pointerUp(handle)
+    fireEvent.click(handle)
+    expect(screen.getByRole('menu', { name: /block menu/i })).toBeInTheDocument()
+  })
+
+  it('a drag past the threshold never opens the menu, even once a click still lands (KAN-440)', () => {
+    renderCanvas([heading, table])
+    const handle = handleOf('b-table')
+
+    fireEvent.pointerDown(handle, { clientX: 10, clientY: 10 })
+    fireEvent.pointerMove(handle, { clientX: 10, clientY: 40 })
+    fireEvent.pointerUp(handle)
+    fireEvent.click(handle)
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+  })
+
+  it('a tap on the handle while its menu is open closes it, and does not reopen it (KAN-440)', async () => {
+    const user = userEvent.setup()
+    renderCanvas([heading, table])
+    const handle = handleOf('b-table')
+
+    await user.click(handle)
+    await screen.findByRole('menu', { name: /block menu/i })
+
+    await user.click(handle)
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
   })
 })
 
