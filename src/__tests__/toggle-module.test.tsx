@@ -1,13 +1,17 @@
 /**
- * The `toggle` block (KAN-480 slice 1, build items 1 and 3) — registration: schema
- * round trip (absent `body`/`folded` read as today's behaviour), both halves of the
- * two-map contract, serialize, AI-composability (without `folded`), and
- * `blockHoldsContent`; plus `ToggleView`'s read-only render (fold hides the body,
- * `aria-expanded` tracks `folded`). The ▸ click, the hosted editors and the path
- * test land in later build items of this ticket.
+ * The `toggle` block (KAN-480 slice 1, build items 1, 3 and 4) — registration:
+ * schema round trip (absent `body`/`folded` read as today's behaviour), both
+ * halves of the two-map contract, serialize, AI-composability (without
+ * `folded`), and `blockHoldsContent`; `ToggleView`'s read-only render (fold
+ * hides the body, `aria-expanded` tracks `folded`); and its editable render —
+ * two hosted text editors whose own `onChange` maps back into `content`/`body`,
+ * isolated from the canvas row they sit inside. The ▸ click's own behaviour,
+ * Enter's split/continue wiring and the path test land in later build items of
+ * this ticket.
  */
 
-import { render, screen } from '@testing-library/react'
+import { useState } from 'react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { toggleSchema, toggleDescriptor, type ToggleBlock } from '@/lib/modules/toggle/schema'
 import { ToggleView } from '@/lib/modules/toggle/view'
 import { blockSchema } from '@/lib/modules/content'
@@ -16,6 +20,12 @@ import { moduleRenderers } from '@/lib/modules/renderers'
 import { moduleDataSchema, createPageBlockSchema } from '@/lib/modules/ai-composition'
 import { blockFrame } from '@/lib/modules/block-frame'
 import { blockHoldsContent } from '@/lib/modules/block-holds-content'
+import { BlockRowProvider } from '@/lib/modules/block-row-context'
+import {
+  findAllTextBlocks,
+  textEditorOf,
+  writeInTextBlock,
+} from '@/__tests__/helpers/text-block'
 
 const bare: ToggleBlock = { id: 't1', type: 'toggle', content: 'Packing list' }
 const full: ToggleBlock = {
@@ -106,5 +116,58 @@ describe('ToggleView', () => {
   it('reads an absent folded as unfolded', () => {
     render(<ToggleView data={bare} />)
     expect(screen.getByRole('button')).toHaveAttribute('aria-expanded', 'true')
+  })
+})
+
+describe('ToggleView — editable: summary and body as two hosted text editors', () => {
+  /** A host that keeps the block's state, as the page does. */
+  const StatefulToggle = ({ data }: { data: ToggleBlock }) => {
+    const [state, setState] = useState(data)
+    return <ToggleView data={state} editable onChange={setState} />
+  }
+
+  it('typing in the summary updates content', async () => {
+    render(<StatefulToggle data={{ ...full, folded: false }} />)
+    const [summary] = await findAllTextBlocks()
+    writeInTextBlock(summary, 'Packing list, revised')
+    await waitFor(() => expect(screen.getByText('Packing list, revised')).toBeInTheDocument())
+    expect(screen.getByText('Passport')).toBeInTheDocument()
+  })
+
+  it('typing in the body updates body', async () => {
+    render(<StatefulToggle data={{ ...full, folded: false }} />)
+    const [, body] = await findAllTextBlocks()
+    writeInTextBlock(body, 'Passport, revised')
+    await waitFor(() => expect(screen.getByText('Passport, revised')).toBeInTheDocument())
+    expect(screen.getByText('Packing list')).toBeInTheDocument()
+  })
+
+  it('neither field’s stepOut reaches the canvas row it is nested inside', async () => {
+    const outerStepOut = jest.fn()
+    render(
+      <BlockRowProvider value={{ selected: false, stepOut: outerStepOut }}>
+        <ToggleView data={{ ...full, folded: false }} editable onChange={() => {}} />
+      </BlockRowProvider>
+    )
+    const fields = await findAllTextBlocks()
+    expect(fields).toHaveLength(2)
+    for (const field of fields) {
+      act(() => {
+        textEditorOf(field).commands.focus('end')
+      })
+      fireEvent.keyDown(field, { key: 'Enter' })
+    }
+    expect(outerStepOut).not.toHaveBeenCalled()
+  })
+
+  it('autofocus passes through to the summary only', async () => {
+    // Both fields are unwritten (empty), the one condition `TextEditor` itself
+    // autofocuses under — isolating this to the `autofocus` PROP, which the
+    // body's own field is never given regardless of its content.
+    const empty: ToggleBlock = { id: 't1', type: 'toggle', content: '' }
+    render(<ToggleView data={empty} editable onChange={() => {}} autofocus />)
+    const [summary, body] = await findAllTextBlocks()
+    await waitFor(() => expect(textEditorOf(summary).isFocused).toBe(true))
+    expect(textEditorOf(body).isFocused).toBe(false)
   })
 })
