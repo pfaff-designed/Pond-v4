@@ -14,7 +14,7 @@ import { useBlockRow, type BlockRowValue } from '../block-row-context'
 import { registerTextEditor } from './active-editor'
 import { proseExtensions } from './extensions'
 import { parseMarkdown, serializeMarkdown } from './markdown'
-import { enterSplit } from './next-block'
+import { enterSplit, leavesUpToTitle } from './next-block'
 import { TEXT_PROSE_CLASS, textPlaceholderFor } from './prose'
 import { markdownHandlePaste } from './paste'
 import { ReferenceHighlight } from './reference-highlight'
@@ -39,10 +39,11 @@ const isUnwritten = (content: string): boolean => content.replace(/^#{1,6}\s*/, 
 // keystrokes not yet read — this must stay a stable, module-level reference.
 const ENABLED_PASTE_RULES = ['link']
 
-/** What the split-on-Enter plugin reads at the moment a key is actually pressed. */
+/** What the split-on-Enter and leave-up-to-title plugins read at the moment a key is actually pressed. */
 interface LatestForSplit {
   data: TextBlock
   stepOut?: BlockRowValue['stepOut']
+  leaveUp?: BlockRowValue['leaveUp']
 }
 
 /**
@@ -92,6 +93,42 @@ const createSplitOnEnter = (latest: RefObject<LatestForSplit>) =>
     ],
   })
 
+/**
+ * Bare ArrowUp at block 0's first visual line hands focus to the page title
+ * (KAN-464) instead of running ProseMirror's own ArrowUp — which, at the very
+ * top of the doc, would otherwise just leave the caret where it is. Only
+ * block 0's row ever has a `leaveUp` (wired in `BlockCanvas`), so every other
+ * block falls through to ProseMirror's default here.
+ */
+const createLeaveUpToTitle = (latest: RefObject<LatestForSplit>) =>
+  Extension.create({
+    name: 'leaveUpToTitle',
+    priority: 1000,
+    addProseMirrorPlugins: () => [
+      new Plugin({
+        props: {
+          handleKeyDown: (view, event) => {
+            const { leaveUp } = latest.current
+            if (!leaveUp) return false
+            if (
+              event.key !== 'ArrowUp' ||
+              event.shiftKey ||
+              event.altKey ||
+              event.metaKey ||
+              event.ctrlKey ||
+              event.isComposing ||
+              view.composing
+            )
+              return false
+            if (!leavesUpToTitle(view)) return false
+            leaveUp()
+            return true
+          },
+        },
+      }),
+    ],
+  })
+
 /** The block's own placeholder and id, fixed at mount — neither is ever typed over. */
 const buildExtensions = (
   placeholder: string | undefined,
@@ -104,6 +141,7 @@ const buildExtensions = (
   }),
   ReferenceHighlight.configure({ blockId }),
   createSplitOnEnter(latest),
+  createLeaveUpToTitle(latest),
 ]
 
 /** A bare Tab over a selection — Shift-Tab and chorded Tab keep their meaning. */
@@ -239,10 +277,10 @@ const TextEditor = ({
   pressRef: RefObject<Press | null>
 }) => {
   const onSlashLine = useContext(SlashLineContext)
-  const { stepOut } = useBlockRow()
-  const latest = useRef({ data, onChange, onSlashLine, stepOut })
+  const { stepOut, leaveUp } = useBlockRow()
+  const latest = useRef({ data, onChange, onSlashLine, stepOut, leaveUp })
   useEffect(() => {
-    latest.current = { data, onChange, onSlashLine, stepOut }
+    latest.current = { data, onChange, onSlashLine, stepOut, leaveUp }
   })
 
   // Options must be the same values on every render: any change makes `useEditor`
