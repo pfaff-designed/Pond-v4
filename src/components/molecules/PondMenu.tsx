@@ -58,8 +58,13 @@ export interface PondMenuGroup<Action> {
   content?: ReactNode
 }
 
+/** A fixed point to anchor against (a right-click's pointer position) — no element behind it. */
+export interface PondMenuVirtualAnchor {
+  getBoundingClientRect: () => DOMRect
+}
+
 export interface PondMenuPlacement {
-  anchor: RefObject<Element | null>
+  anchor: RefObject<Element | null> | PondMenuVirtualAnchor
   /** Which of the anchor's edges the popup lines up with. */
   align: 'start' | 'end'
   /** From the anchor's top edge to the popup's top edge, while it opens downward. */

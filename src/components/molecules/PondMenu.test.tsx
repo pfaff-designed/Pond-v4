@@ -7,8 +7,11 @@
  */
 
 import { useRef, useState } from 'react'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import { PondMenu, type PondMenuGroup } from '@/components/molecules/PondMenu'
+
+const pointRect = (x: number, y: number): DOMRect =>
+  ({ x, y, width: 0, height: 0, top: y, left: x, right: x, bottom: y, toJSON: () => ({}) }) as DOMRect
 
 type ModeAction = 'ask' | 'deep-research'
 
@@ -117,5 +120,48 @@ describe('PondMenu kind="mode" selection changes', () => {
     ;[askRow, deepResearchRow] = items()
     expect(askRow.className).not.toContain('bg-mn-text/[0.07]')
     expect(deepResearchRow.className).toContain('bg-mn-text/[0.07]')
+  })
+})
+
+describe('PondMenu placement.anchor accepts a point (a right-click, with no element behind it)', () => {
+  it('opens at a virtual anchor with no click on the trigger, and the positioner measures that anchor', async () => {
+    const getBoundingClientRect = jest.fn(() => pointRect(120, 240))
+
+    render(
+      <PondMenu
+        kind="block"
+        label="block menu"
+        groups={[{ id: 'g', label: 'g', items: [{ id: 'delete', label: 'delete', action: 'delete' }] }]}
+        open
+        onOpenChange={jest.fn()}
+        onSelect={jest.fn()}
+        trigger={<button type="button">block menu trigger</button>}
+        placement={{ anchor: { getBoundingClientRect }, align: 'start', top: 0, alignOffset: 0 }}
+      />,
+    )
+
+    expect(screen.getByRole('menu', { name: 'block menu' })).toBeInTheDocument()
+    await waitFor(() => expect(getBoundingClientRect).toHaveBeenCalled())
+  })
+
+  it('still copes with a zero-height anchor through the sideOffset math', async () => {
+    const getBoundingClientRect = jest.fn(() => pointRect(10, 20))
+
+    render(
+      <PondMenu
+        kind="block"
+        label="block menu"
+        groups={[{ id: 'g', label: 'g', items: [{ id: 'delete', label: 'delete', action: 'delete' }] }]}
+        open
+        onOpenChange={jest.fn()}
+        onSelect={jest.fn()}
+        trigger={<button type="button">block menu trigger</button>}
+        placement={{ anchor: { getBoundingClientRect }, align: 'start', top: 6, alignOffset: 0 }}
+      />,
+    )
+
+    const positioner = screen.getByRole('menu', { name: 'block menu' }).parentElement as HTMLElement
+    await waitFor(() => expect(positioner.style.transform).not.toBe(''))
+    expect(positioner.style.transform).not.toMatch(/NaN/)
   })
 })
