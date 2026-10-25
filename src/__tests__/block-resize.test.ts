@@ -4,9 +4,11 @@
  * from the lock).
  */
 import {
+  commitSharedEdgeWidths,
   handOffRowStartOnResize,
   KEY_WIDTHS,
   resizeAlone,
+  resizeSharedEdge,
   roundFreePercent,
   snapPercent,
 } from '@/lib/modules/block-resize'
@@ -15,6 +17,8 @@ import {
   percentToRenderedPx,
   renderedPxToPercent,
   rowHolds,
+  widthPercent,
+  widthTenths,
 } from '@/lib/modules/layout-rows'
 import type { BlockWidth } from '@/lib/modules/content'
 
@@ -212,6 +216,140 @@ describe('snapPercent on a column too narrow for the lock zones to stay separate
     [45, 50], // between ⅓ and ½, closer to ½
   ])('rawPercent %s locks onto %s', (rawPercent, expectedKey) => {
     expect(snapPercent(rawPercent, NARROW_COLUMN_PX, null)).toEqual({ percent: expectedKey, locked: true })
+  })
+})
+
+describe('resizeSharedEdge', () => {
+  // Wide enough that even a ¼ (25%) side clears the 240px floor (at the
+  // file's usual 800px column, 25% itself renders under the floor, so a
+  // ¾+¼ split could never legitimately exist there to be dragged to).
+  const WIDE_COLUMN_PX = 1200
+
+  const renderedDelta = (fromPercent: number, toPercent: number) =>
+    percentToRenderedPx(WIDE_COLUMN_PX, toPercent) - percentToRenderedPx(WIDE_COLUMN_PX, fromPercent)
+
+  it.each<[string, number, number, number]>([
+    ['snaps ½+½ to ⅔+⅓ dragging right', renderedDelta(50, 66.7), 66.7, 33.3],
+    ['snaps ½+½ to ¾+¼ dragging right further', renderedDelta(50, 75), 75, 25],
+    ['snaps ½+½ to ⅓+⅔ dragging left', renderedDelta(50, 33.3), 33.3, 66.7],
+    ['snaps ½+½ to ¼+¾ dragging left further', renderedDelta(50, 25), 25, 75],
+  ])('%s', (_description, deltaPx, expectedLeft, expectedRight) => {
+    const result = resizeSharedEdge(WIDE_COLUMN_PX, 50, 100, deltaPx, null)
+    expect(result.locked).toBe(true)
+    expect(result.left).toBeCloseTo(expectedLeft, 4)
+    expect(result.right).toBeCloseTo(expectedRight, 4)
+    expect(result.left + result.right).toBeCloseTo(100, 9)
+  })
+
+  it('a free drag (no snap nearby) keeps the exact sum', () => {
+    const result = resizeSharedEdge(WIDE_COLUMN_PX, 50, 100, renderedDelta(50, 58), null)
+    expect(result.locked).toBe(false)
+    expect(result.left).toBeCloseTo(58, 4)
+    expect(result.left + result.right).toBe(100)
+  })
+
+  it('clamps the right side at its 240px floor dragging the left edge far right', () => {
+    const minPercent = renderedPxToPercent(WIDE_COLUMN_PX, MIN_BLOCK_WIDTH_PX)
+    const result = resizeSharedEdge(WIDE_COLUMN_PX, 50, 100, 1_000_000, null)
+    expect(result.locked).toBe(false)
+    expect(result.right).toBeCloseTo(minPercent, 3)
+    expect(rowHolds(WIDE_COLUMN_PX, [result.left, result.right])).toBe(true)
+  })
+
+  it('clamps the left side at its 240px floor dragging the left edge far left', () => {
+    const minPercent = renderedPxToPercent(WIDE_COLUMN_PX, MIN_BLOCK_WIDTH_PX)
+    const result = resizeSharedEdge(WIDE_COLUMN_PX, 50, 100, -1_000_000, null)
+    expect(result.locked).toBe(false)
+    expect(result.left).toBeCloseTo(minPercent, 3)
+    expect(rowHolds(WIDE_COLUMN_PX, [result.left, result.right])).toBe(true)
+  })
+
+  it('holds a lock within the 16px release zone (hysteresis)', () => {
+    expect(resizeSharedEdge(WIDE_COLUMN_PX, 66.7, 100, 8, 66.7)).toEqual({
+      left: 66.7,
+      right: 33.3,
+      locked: true,
+    })
+  })
+
+  it('breaks out of a lock past the release zone and tracks freely', () => {
+    const result = resizeSharedEdge(WIDE_COLUMN_PX, 66.7, 100, renderedDelta(66.7, 69.7), 66.7)
+    expect(result.locked).toBe(false)
+    expect(result.left).toBeCloseTo(69.7, 4)
+    expect(result.right).toBeCloseTo(30.3, 4)
+  })
+
+  it("a ⅓+⅓+⅓ row's middle boundary only moves its two neighbours", () => {
+    interface Row {
+      id: string
+      width: BlockWidth | number
+    }
+    const row: Row[] = [
+      { id: 'a', width: '1/3' },
+      { id: 'b', width: '1/3' },
+      { id: 'c', width: '1/3' },
+    ]
+    const pairSum = widthPercent('1/3') + widthPercent('1/3')
+    const result = resizeSharedEdge(
+      WIDE_COLUMN_PX,
+      widthPercent('1/3'),
+      pairSum,
+      renderedDelta(33.3, 25),
+      null
+    )
+    const { left, right } = commitSharedEdgeWidths(WIDE_COLUMN_PX, pairSum, result)
+    const resized = row.map((block, i) => {
+      if (i === 1) return { ...block, width: left }
+      if (i === 2) return { ...block, width: right }
+      return block
+    })
+    expect(resized[0]).toEqual({ id: 'a', width: '1/3' })
+    expect(widthTenths(resized[1].width) + widthTenths(resized[2].width)).toBe(Math.round(pairSum * 10))
+  })
+})
+
+describe('commitSharedEdgeWidths', () => {
+  it('commits named widths when both sides land on a key, locked', () => {
+    expect(commitSharedEdgeWidths(COLUMN_PX, 100, { left: 66.7, right: 33.3, locked: true })).toEqual({
+      left: '2/3',
+      right: '1/3',
+    })
+  })
+
+  it('does not commit named widths when locked is false, even at key positions', () => {
+    expect(commitSharedEdgeWidths(COLUMN_PX, 100, { left: 50, right: 50, locked: false })).toEqual({
+      left: 50,
+      right: 50,
+    })
+  })
+
+  it('commits free numbers summing exactly to the pair sum (tenths) when unlocked', () => {
+    const result = commitSharedEdgeWidths(COLUMN_PX, 100, { left: 58.34, right: 41.66, locked: false })
+    expect(widthTenths(result.left) + widthTenths(result.right)).toBe(1000)
+  })
+
+  it('commits free numbers summing exactly to a non-100 pair sum (a third row-mate takes the rest)', () => {
+    const pairSum = widthPercent('1/3') + widthPercent('1/3')
+    const result = commitSharedEdgeWidths(COLUMN_PX, pairSum, { left: 25, right: pairSum - 25, locked: false })
+    expect(widthTenths(result.left) + widthTenths(result.right)).toBe(Math.round(pairSum * 10))
+  })
+
+  it('moves a tenth back to the side a floor-safe rounding on the other side would push under 240px', () => {
+    const NARROW_COLUMN_PX = 900
+    const rightFloorPercent = renderedPxToPercent(NARROW_COLUMN_PX, MIN_BLOCK_WIDTH_PX)
+    const pairSum = 30 + rightFloorPercent
+    const result = commitSharedEdgeWidths(NARROW_COLUMN_PX, pairSum, {
+      left: 30,
+      right: rightFloorPercent,
+      locked: false,
+    })
+    expect(percentToRenderedPx(NARROW_COLUMN_PX, Number(result.left))).toBeGreaterThanOrEqual(
+      MIN_BLOCK_WIDTH_PX
+    )
+    expect(percentToRenderedPx(NARROW_COLUMN_PX, Number(result.right))).toBeGreaterThanOrEqual(
+      MIN_BLOCK_WIDTH_PX
+    )
+    expect(widthTenths(result.left) + widthTenths(result.right)).toBe(Math.round(pairSum * 10))
   })
 })
 

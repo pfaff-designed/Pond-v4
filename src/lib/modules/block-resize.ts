@@ -137,6 +137,88 @@ export function resizeAlone(
   return snapped
 }
 
+export interface SharedEdgeResult {
+  left: number
+  right: number
+  locked: boolean
+}
+
+/**
+ * Resizes the edge shared by two row-mates: dragging the boundary grows one
+ * side by exactly what the other shrinks, so `left + right` always equals
+ * `pairSumPercent` — the pair's own total share of the row is never touched,
+ * which is what keeps a ⅓+⅓+⅓ row's middle boundary from moving its outer
+ * block (the caller passes only the dragged pair's own sum, never the row's).
+ * Follows `resizeAlone`'s own math for the left edge (a real pointer-pixel
+ * delta via `percentToRenderedPx`/`renderedPxToPercent`, then `snapPercent`
+ * for the same lock/release hysteresis), but the floor clamp is two-sided:
+ * `left` is clamped to `[minPercent, pairSumPercent - minPercent]` so BOTH
+ * sides, not just the dragged one, keep their rendered width at or above
+ * `MIN_BLOCK_WIDTH_PX`. As with `resizeAlone`, a clamp that actually moved
+ * the value away from the snap reports `locked: false` — there is no
+ * shared-edge equivalent of `resizeAlone`'s single "100 is the full key"
+ * special case, since neither clamp bound is itself a `KEY_WIDTHS` position.
+ */
+export function resizeSharedEdge(
+  columnPx: number,
+  startLeftPercent: number,
+  pairSumPercent: number,
+  deltaPx: number,
+  lockedPercent: number | null
+): SharedEdgeResult {
+  const rawLeftPercent = renderedPxToPercent(
+    columnPx,
+    percentToRenderedPx(columnPx, startLeftPercent) + deltaPx
+  )
+  const snapped = snapPercent(rawLeftPercent, columnPx, lockedPercent)
+  const minPercent = renderedPxToPercent(columnPx, MIN_BLOCK_WIDTH_PX) + FLOOR_EPSILON_PERCENT
+  const clampedLeft = Math.min(pairSumPercent - minPercent, Math.max(minPercent, snapped.percent))
+  const locked = clampedLeft === snapped.percent && snapped.locked
+  return { left: clampedLeft, right: pairSumPercent - clampedLeft, locked }
+}
+
+/** Tolerance for matching a `resizeSharedEdge` result's `right` against a
+ *  `KEY_WIDTHS` percent: `right` is `pairSumPercent - left`, a float
+ *  subtraction that can land a few `1e-13`s off an exact tenth even when
+ *  `left` itself is the exact key value `snapPercent` produced. */
+const KEY_PERCENT_EPSILON = 1e-6
+
+/**
+ * Turns a `resizeSharedEdge` result into the two persisted `BlockWidth`s: a
+ * locked result whose BOTH sides land on a `KEY_WIDTHS` position commits the
+ * named forms (½+½ releasing onto ⅔ commits `'2/3'`/`'1/3'`, not
+ * `66.7`/`33.3`); everything else commits free numbers whose tenths sum
+ * EXACTLY to `pairSumPercent`'s own tenths. `roundFreePercent` only
+ * guarantees `left`'s own floor, so `right` is `pairSumTenths - leftTenths`
+ * rather than independently rounded — and if that alone would render `right`
+ * under `MIN_BLOCK_WIDTH_PX`, one tenth moves back from `left` to `right`.
+ * `resizeSharedEdge`'s own clamp already keeps both sides at or above the
+ * (unrounded) floor before this rounds, with room to spare on at least one
+ * side, so that single tenth never has to move again the other way.
+ */
+export function commitSharedEdgeWidths(
+  columnPx: number,
+  pairSumPercent: number,
+  result: SharedEdgeResult
+): { left: BlockWidth | number; right: BlockWidth | number } {
+  if (result.locked) {
+    const leftKey = KEY_WIDTHS.find((k) => Math.abs(k.percent - result.left) <= KEY_PERCENT_EPSILON)
+    const rightKey = KEY_WIDTHS.find((k) => Math.abs(k.percent - result.right) <= KEY_PERCENT_EPSILON)
+    if (leftKey && rightKey) return { left: leftKey.width, right: rightKey.width }
+  }
+
+  const pairSumTenths = Math.round(pairSumPercent * 10)
+  let leftTenths = Math.round(roundFreePercent(result.left, columnPx) * 10)
+  let rightTenths = pairSumTenths - leftTenths
+
+  if (percentToRenderedPx(columnPx, rightTenths / 10) < MIN_BLOCK_WIDTH_PX) {
+    leftTenths -= 1
+    rightTenths = pairSumTenths - leftTenths
+  }
+
+  return { left: leftTenths / 10, right: rightTenths / 10 }
+}
+
 /**
  * Rounds a free (unlocked) percent to one decimal place for commit — the one
  * home for "a committed tenth never renders under the floor" (AGENTS.md DRY).
