@@ -1125,9 +1125,11 @@ export const Empty: Story = {
     // KAN-471: an empty pond's root ＋ is visible at rest, not only on hover
     await expect(getComputedStyle(add.parentElement!).opacity).toBe('1')
     await userEvent.hover(root)
-    await waitFor(() => expect(getComputedStyle(add.parentElement!).opacity).toBe('1'))
+    // the ＋ already shows at rest, so wait on × — the one tool hover adds
+    const del = within(root).getByRole('button', { name: /^Delete/ })
+    await waitFor(() => expect(getComputedStyle(del.parentElement!).opacity).toBe('1'))
     await expect(add).toBeVisible()
-    await expect(within(root).getByRole('button', { name: /^Delete/ })).toBeVisible()
+    await expect(del).toBeVisible()
   },
 }
 
