@@ -165,8 +165,8 @@ describe('PATH_STEPS D — rail keys move focus; Delete/Backspace never touch th
     fireEvent.keyDown(row('recipes'), { key: 'ArrowUp' })
     expect(row('books')).toHaveFocus()
     fireEvent.keyDown(row('books'), { key: 'End' })
-    expect(row('trash')).toHaveFocus()
-    fireEvent.keyDown(row('trash'), { key: 'Home' })
+    expect(row('settings')).toHaveFocus()
+    fireEvent.keyDown(row('settings'), { key: 'Home' })
     expect(row('life')).toHaveFocus()
 
     fireEvent.keyDown(row('books'), { key: 'Enter' })

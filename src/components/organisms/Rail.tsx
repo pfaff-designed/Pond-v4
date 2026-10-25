@@ -109,7 +109,7 @@ import {
 } from '@/lib/pages/databases-root'
 import { usePondName } from '@/lib/pond/name'
 import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
-import { TRASH_NODE_ID } from '@/lib/change-log/trash-view'
+import { TRASH_NODE_ID, SETTINGS_NODE_ID } from '@/lib/change-log/trash-view'
 import { RailToggle } from '@/components/organisms/RailToggle'
 import { setRailMinimized } from '@/lib/layout/rail-chrome'
 import { RAIL_WIDTH_PX } from '@/lib/layout/rail-width'
@@ -228,6 +228,43 @@ const TRASH_ROW: FlatRow = {
   setSize: 1,
 }
 
+/** The rail foot's last row (KAN-493): a real, keyboard-reachable control —
+ *  same reserved-virtual shape as `TRASH_ROW`, no `pages` row, no migration. */
+const SETTINGS_ROW: FlatRow = {
+  id: SETTINGS_NODE_ID,
+  node: {
+    id: SETTINGS_NODE_ID,
+    parentId: null,
+    type: 'page',
+    title: 'settings',
+    order: 0,
+    children: [],
+  },
+  depth: 0,
+  isFolder: false,
+  posInSet: 1,
+  setSize: 1,
+}
+
+/** The gear glyph settings carries instead of a mark — same leading-icon
+ *  shape as `DATABASES_MARK`, no page behind it to colour. */
+const SETTINGS_MARK = (
+  <span className="inline-flex flex-none items-center" aria-hidden>
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 14 14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+    >
+      <circle cx="7" cy="7" r="2.2" />
+      <path d="M7 1.4v1.8M7 10.8v1.8M1.4 7h1.8M10.8 7h1.8M3 3l1.3 1.3M9.7 9.7 11 11M3 11l1.3-1.3M9.7 4.3 11 3" />
+    </svg>
+  </span>
+)
+
 /** Px of extra left-pad per depth level — the guides land on these gridlines. */
 /** What the rail lets a row do, derived once per row so no site re-derives it. */
 interface RowCapabilities {
@@ -266,7 +303,12 @@ const rowCapabilities = (id: string, node: RailNode): RowCapabilities => {
   // does not drag — it is the workspace root, not a page you reparent.
   if (id === LIFE_ID)
     return { ...NO_CAPABILITIES, droppable: true, addable: true, deletable: true, renameable: true }
-  if (id === DATABASES_PLACEHOLDER_ID || id === CHANGE_LOG_NODE_ID || id === TRASH_NODE_ID)
+  if (
+    id === DATABASES_PLACEHOLDER_ID ||
+    id === CHANGE_LOG_NODE_ID ||
+    id === TRASH_NODE_ID ||
+    id === SETTINGS_NODE_ID
+  )
     return NO_CAPABILITIES
   if (isDatabasesRoot(node)) return { ...NO_CAPABILITIES, draggable: true, droppable: true }
   // KAN-490/491: an extra root never drags — a drop must not leave `props.root`
@@ -1156,6 +1198,7 @@ export function RailView({
         ...extraRootsFlat,
         ...databasesFlat,
         TRASH_ROW,
+        SETTINGS_ROW,
       ].filter((f) => !isStaged(f.id)), // KAN-300: a refetch mid-undo-toast can't resurrect a staged row
     [lifeChildren, expanded, lifeExpanded, extraRootsFlat, databasesFlat, rootLabel, showHomeRoot]
   )
@@ -1174,7 +1217,10 @@ export function RailView({
 
   // The same rows the tree below renders (databases/trash excluded).
   const treeRows = useMemo(
-    () => flat.filter((f) => !databasesIds.has(f.id) && f.id !== TRASH_NODE_ID),
+    () =>
+      flat.filter(
+        (f) => !databasesIds.has(f.id) && f.id !== TRASH_NODE_ID && f.id !== SETTINGS_NODE_ID
+      ),
     [flat, databasesIds]
   )
 
@@ -1579,10 +1625,10 @@ export function RailView({
         isSelected={id === selectedId}
         isFocused={rovingId === id}
         isBusy={id === busyId}
-        // KAN-504: trash's own node carries `parentId: null` for the keyboard
-        // tree/ArrowLeft only — it never reads as an area's bigger label and
-        // full ink the way a real top-level page does.
-        isArea={isAreaRow(node) && id !== TRASH_NODE_ID}
+        // KAN-504/KAN-493: trash's and settings' own nodes carry `parentId:
+        // null` for the keyboard tree/ArrowLeft only — neither reads as an
+        // area's bigger label and full ink the way a real top-level page does.
+        isArea={isAreaRow(node) && id !== TRASH_NODE_ID && id !== SETTINGS_NODE_ID}
         noTopMargin={hasFavouritesBand}
         isDbRoot={isDatabasesRoot(node)}
         posInSet={posInSet}
@@ -1593,6 +1639,8 @@ export function RailView({
         leading={
           isDatabasesRoot(node) ? (
             DATABASES_MARK
+          ) : id === SETTINGS_NODE_ID ? (
+            SETTINGS_MARK
           ) : id === CHANGE_LOG_NODE_ID || id === TRASH_NODE_ID ? (
             // Reserved virtual row: no page behind it to write a mark to, so the
             // glyph picker never opens here (KAN-94/KAN-451). KAN-504: trash's
@@ -1798,29 +1846,8 @@ export function RailView({
           <div role="tree" aria-label="Trash" aria-multiselectable={false}>
             {renderRow(TRASH_ROW)}
           </div>
-          {/* Not interactive until a settings surface exists: a dead button is worse
-            than none. */}
-          <div
-            data-part="settings"
-            className="px-2 py-[6px] text-[12.5px] leading-[normal] text-mn-text-secondary"
-          >
-            <span className="inline-flex items-center gap-2">
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 14 14"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.4"
-                strokeLinecap="round"
-                aria-hidden
-                className="flex-none"
-              >
-                <circle cx="7" cy="7" r="2.2" />
-                <path d="M7 1.4v1.8M7 10.8v1.8M1.4 7h1.8M10.8 7h1.8M3 3l1.3 1.3M9.7 9.7 11 11M3 11l1.3-1.3M9.7 4.3 11 3" />
-              </svg>
-              settings
-            </span>
+          <div role="tree" aria-label="Settings" aria-multiselectable={false}>
+            {renderRow(SETTINGS_ROW)}
           </div>
         </div>
       </aside>
@@ -2793,6 +2820,13 @@ export function Rail() {
     }
     if (id === TRASH_NODE_ID) {
       openWorkspaceUrl(workspaceUrl({ id: TRASH_NODE_ID, type: 'page', title: 'trash' }), router)
+      return
+    }
+    if (id === SETTINGS_NODE_ID) {
+      openWorkspaceUrl(
+        workspaceUrl({ id: SETTINGS_NODE_ID, type: 'page', title: 'settings' }),
+        router
+      )
       return
     }
     const node = nodeById.get(id)

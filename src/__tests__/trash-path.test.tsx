@@ -349,8 +349,7 @@ describe('KAN-504 regression — trash is its own top-level foot row, not a data
     const databasesTree = screen.getByRole('tree', { name: 'Databases' })
     const databasesHeading = within(databasesTree).getByRole('treeitem', { name: 'databases' })
     const trashRow = screen.getByRole('treeitem', { name: 'trash' })
-    const settings = document.querySelector('[data-part="settings"]')
-    if (!settings) throw new Error('no settings row')
+    const settings = screen.getByRole('treeitem', { name: 'settings' })
 
     // Collapsed: databases heading · trash · settings, top to bottom.
     expect(
