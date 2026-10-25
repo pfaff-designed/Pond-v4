@@ -32,7 +32,7 @@ Quirks, learned the hard way:
 5. **Try to break it.** After the path passes, spend a bounded pass (beat it as `verify: try to break`) trying to make the feature fail with real input, on the scratch page only. Try double clicks and double Enter, fast repeated keys, Esc halfway through, ⌘Z then ⇧⌘Z after each step, empty and very long text, a reload in the middle of an action, and every `verify:` suspicion the reviewers left. Anything that leaves the page wrong, loses data, or leaves the person stuck with no way out but Pond or a reload is a **fail**. Report the exact sequence.
    A failure is reported as cause plus evidence, never as a guess. Before you write it up, find the smallest check that separates our code from the tool: the element's computed style, the event that fired or didn't, the request that was or wasn't sent. "select" isn't broken: suspect the app before Playwright (AGENTS.md).
 6. **Ink.** Switch to dark with the mode toggle in the breadcrumb pill, repeat the screenshots and the colour measurements. Dark is ground `#1B1D14`, cards `#30312A`. Switch back to light when done.
-7. **Clean up.** Write `RESULT` — the verdict and every other field — first, before touching the scratch page. Then delete the scratch page through the UI in one bounded attempt (`timeout 120`-equivalent: one try, not a retry loop). If it is not gone within 2 minutes, stop trying and set `RESULT`'s `scratch:` field to the page's title plus `NOT DELETED (cleanup timed out)`, so the next verifier or the conductor can clean it up by hand. Release the tab.
+7. **Clean up.** Beat `verify: cleanup`. Write `RESULT` in full first, with `scratch: <title> — delete pending`. Then delete the scratch page through the UI, once, not in a retry loop. If it is gone from the rail within 2 minutes, change that line to `created and deleted`; if not, stop trying and change it to `<title> NOT DELETED (cleanup timed out)`. Change only the `scratch:` line: the verdict is final once written. Release the tab.
 
 ## Return
 
@@ -44,7 +44,7 @@ keyboard:     <pass | fail | not in spec — what happened>
 break:        <each attempt → held | BROKE — the exact sequence>
 ink:          <what matched and what did not>
 screenshots:  <paths: board frames, app light, app dark>
-scratch:      <created and deleted | not created | its title + NOT DELETED (cleanup timed out)>
+scratch:      <created and deleted | not created | <title> — delete pending | <title> NOT DELETED (cleanup timed out)>
 ```
 
 `pass` means every step of the path worked by real input, every measured value matched, and nothing in the break pass broke. Anything else is `fail`, with the first thing that broke stated first.
