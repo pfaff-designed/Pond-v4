@@ -19,7 +19,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { EDIT_PAUSE_MS } from '@/lib/change-log/pause'
 import { sessionUndo, type PendingHistoryStep, type UndoHandle } from '@/lib/change-log/session-undo'
 import type { Block } from '@/lib/documents/types'
-import { closeBlockHistory } from '@/lib/modules/text/active-editor'
+import { closeHistoryForBlock } from '@/lib/modules/close-history-for-block'
 import { withoutRowStart } from '@/lib/modules/layout-rows'
 import { setProperty, type PondPage } from '@/lib/pages/client'
 import {
@@ -741,9 +741,7 @@ export function usePageDraft({
       // durable. A structural edit flushes this save and moves focus; ⌘Z
       // right after must fall through to the session step. The slot above
       // was reserved in the same turn, so the shell has something to take.
-      for (const block of p.blocks) {
-        if ('content' in block) closeBlockHistory(block.id, block.content)
-      }
+      for (const block of p.blocks) closeHistoryForBlock(block)
     }
     if (!id) return undefined
     return queueFor(id, { title: viewTitle, blocks: viewBlocks }).drained()
@@ -890,9 +888,7 @@ export function usePageDraft({
     // The slot is already on the stack. Close these fields now so a ⌘Z in
     // the same turn falls through to it instead of the editor's own history
     // (KAN-368). The record still fills the slot when the write lands.
-    for (const block of next) {
-      if ('content' in block) closeBlockHistory(block.id, block.content)
-    }
+    for (const block of next) closeHistoryForBlock(block)
     const queue = queueFor(id, { title: viewTitle, blocks: next })
     rebaseDerivedLinksBeforeEnqueue(id, queue)
     // The cache is what a return trip reads. Write the in-flight blocks now,

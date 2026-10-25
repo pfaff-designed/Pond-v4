@@ -72,6 +72,8 @@ function outlineKind(block: Block): string {
       return 'page link'
     case 'toc':
       return 'contents'
+    case 'toggle':
+      return 'toggle'
   }
 }
 
@@ -103,6 +105,8 @@ function outlineIcon(block: Block): SlashIcon {
     // `list` reads closest to a quiet list of entries.
     case 'toc':
       return ICON.list
+    case 'toggle':
+      return ICON.toggle
   }
 }
 

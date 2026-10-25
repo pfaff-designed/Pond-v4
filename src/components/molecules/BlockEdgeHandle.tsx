@@ -22,6 +22,16 @@ export interface BlockEdgeHandleProps {
   side: 'left' | 'right'
   /** Chrome off (zen/read-only) or another block mid-drag (KAN-440) — renders nothing. */
   hidden?: boolean
+  /**
+   * Starts the strip this many px down instead of the block's own top
+   * (KAN-480): a toggle's own fold button sits in that gutter on its left
+   * edge, lifted above this strip by z-index for its own 28px-tall row —
+   * this keeps the strip out of that row entirely so the two never fight
+   * over the same pointer-down, while the rest of the block's true left
+   * edge still starts a resize. Every other call site leaves this unset and
+   * keeps the strip's full height.
+   */
+  topInsetPx?: number
   /** A resize is in progress from this edge: pill goes ink 100, readout shows. */
   dragging?: boolean
   /** The live value while dragging: a key glyph (`½`) when snapped, a free percent (`47%`) otherwise. */
@@ -40,6 +50,7 @@ export function BlockEdgeHandle({
   dragging = false,
   readout,
   valueNow,
+  topInsetPx,
   onPointerDown,
   onPointerMove,
   onPointerUp,
@@ -57,9 +68,11 @@ export function BlockEdgeHandle({
       data-side={side}
       data-dragging={dragging || undefined}
       className={cn(
-        'group absolute inset-y-0 z-[1] flex w-2 cursor-ew-resize touch-none items-center justify-center',
+        'group absolute bottom-0 z-[1] flex w-2 cursor-ew-resize touch-none items-center justify-center',
+        topInsetPx === undefined ? 'top-0' : undefined,
         side === 'left' ? '-left-1' : '-right-1'
       )}
+      style={topInsetPx === undefined ? undefined : { top: topInsetPx }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}

@@ -53,6 +53,10 @@ const ROW_CHROME: Partial<
   // this block is, and the registry's `highlight`/`quote` pair already shares
   // one mark across two rows, so a second type sharing it is not new.
   toc: { group: 'blocks', icon: ICON.list },
+  // KAN-480: app-over-board, grouped with the other text-markup rows (KAN-462)
+  // since a toggle starts as one line of prose. No key in this slice — `> `
+  // (Notion's own key) is slice 2's, once the quote row's own `>` hint is gone.
+  toggle: { group: 'text', icon: ICON.toggle },
 }
 
 /**
@@ -169,6 +173,9 @@ export const BOARD_ORDER: readonly string[] = [
   'code',
   'divider',
   'numbered-list',
+  // KAN-480: the ticket's own order (app-over-board, no board position), right
+  // after `numbered-list` — the last of the text-markup rows before the block rows.
+  'toggle',
   'embed-file',
   'bulleted-list',
   'checklist',
@@ -293,6 +300,10 @@ export function emptyBlockForType(type: string): Block | null {
     // live from the page's own blocks, never minted into the block itself.
     case 'toc':
       return { id, type: 'toc' }
+    // KAN-480: lands with an empty summary and no body/folded keys at all —
+    // absent means unfolded, empty body, same as a page written before this type.
+    case 'toggle':
+      return { id, type: 'toggle', content: '' }
     default:
       return null
   }
