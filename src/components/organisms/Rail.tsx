@@ -475,11 +475,19 @@ const RailRow = forwardRef<HTMLElement, RailRowProps>(function RailRow(
   // click anywhere inside an `<a href>` navigates unless something calls
   // `preventDefault`. Capture phase runs before those descendants' own bubble
   // handlers, so this is the one place that can disarm it for all of them at once.
-  const handleRowClickCapture = (e: MouseEvent<HTMLElement>) => {
+  // `auxclick` (middle-click) fires the same native navigation the anchor would
+  // otherwise open in a new tab, so it needs the identical guard.
+  const targetsInteractiveDescendant = (e: MouseEvent<HTMLElement>) => {
     const interactive = (e.target as HTMLElement).closest(
       'button, input, textarea, select, [role="menuitem"], [contenteditable]'
     )
-    if (interactive && e.currentTarget.contains(interactive)) e.preventDefault()
+    return Boolean(interactive && e.currentTarget.contains(interactive))
+  }
+  const handleRowClickCapture = (e: MouseEvent<HTMLElement>) => {
+    if (targetsInteractiveDescendant(e)) e.preventDefault()
+  }
+  const handleRowAuxClickCapture = (e: MouseEvent<HTMLElement>) => {
+    if (targetsInteractiveDescendant(e)) e.preventDefault()
   }
   // A plain callback (not the forwarded ref object/callback itself) so its type
   // — `(el: HTMLElement | null) => void` — fits both `<a>`'s and `<div>`'s own
@@ -523,6 +531,7 @@ const RailRow = forwardRef<HTMLElement, RailRowProps>(function RailRow(
       // The whole row opens the page (the caret and ＋/× stop propagation) —
       // strictly navigation; expansion belongs to the caret alone.
       onClickCapture={handleRowClickCapture}
+      onAuxClickCapture={handleRowAuxClickCapture}
       onClick={handleRowClick}
       onDoubleClick={onRenameStart ? () => onRenameStart(id) : undefined}
       onFocus={(e) => {

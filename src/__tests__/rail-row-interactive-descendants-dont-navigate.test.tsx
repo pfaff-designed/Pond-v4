@@ -105,4 +105,74 @@ describe('rail row — interactive descendants never navigate the anchor (KAN-47
     expect(onSelect).toHaveBeenCalledTimes(1)
     expect(onSelect).toHaveBeenCalledWith('health')
   })
+
+  it('middle-clicking the caret is prevented (no new-tab navigation to the row URL)', () => {
+    const { onToggle } = renderTree()
+    const row = screen.getByRole('treeitem', { name: 'Health' })
+    const caret = within(row).getAllByRole('button', { hidden: true })[0]
+
+    const notPrevented = fireEvent(
+      caret,
+      new MouseEvent('auxclick', { bubbles: true, cancelable: true, button: 1 })
+    )
+
+    expect(notPrevented).toBe(false)
+    expect(onToggle).not.toHaveBeenCalled()
+  })
+
+  it('middle-clicking ＋ is prevented', () => {
+    renderTree()
+    const row = screen.getByRole('treeitem', { name: 'Health' })
+    const plus = within(row).getByRole('button', { name: /Add sub-page/ })
+
+    const notPrevented = fireEvent(
+      plus,
+      new MouseEvent('auxclick', { bubbles: true, cancelable: true, button: 1 })
+    )
+
+    expect(notPrevented).toBe(false)
+  })
+
+  it('middle-clicking × is prevented', () => {
+    const { onDelete } = renderTree()
+    const row = screen.getByRole('treeitem', { name: 'Health' })
+    const deleteButton = within(row).getByRole('button', { name: /Delete/ })
+
+    const notPrevented = fireEvent(
+      deleteButton,
+      new MouseEvent('auxclick', { bubbles: true, cancelable: true, button: 1 })
+    )
+
+    expect(notPrevented).toBe(false)
+    expect(onDelete).not.toHaveBeenCalled()
+  })
+
+  it('middle-clicking the mark button is prevented', () => {
+    const { onSelect } = renderTree()
+    const row = screen.getByRole('treeitem', { name: 'Health' })
+    const markButton = within(row).getByRole('button', { name: /change icon/ })
+
+    const notPrevented = fireEvent(
+      markButton,
+      new MouseEvent('auxclick', { bubbles: true, cancelable: true, button: 1 })
+    )
+
+    expect(notPrevented).toBe(false)
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it('a click inside the rename input is prevented (no navigation) and the input still takes focus and typing', () => {
+    renderTree()
+    const row = screen.getByRole('treeitem', { name: 'Health' })
+    fireEvent.doubleClick(row)
+    const input = screen.getByRole('textbox', { name: 'rename Health' })
+
+    const notPrevented = fireEvent.click(input)
+    input.focus()
+    fireEvent.change(input, { target: { value: 'Health 2' } })
+
+    expect(notPrevented).toBe(false)
+    expect(input).toHaveFocus()
+    expect(input).toHaveValue('Health 2')
+  })
 })
