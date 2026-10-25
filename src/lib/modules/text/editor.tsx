@@ -9,6 +9,7 @@ import { Plugin } from '@tiptap/pm/state'
 import type { EditorView } from '@tiptap/pm/view'
 import { COMPOSER_TOP_CLEARANCE, composerClearanceMarginPx } from '@/lib/layout/composer-clearance'
 import { isRedoChord, isUndoChord } from '@/lib/shell-commands'
+import { TEXT_MARKUP } from '../palette'
 import type { ModuleViewProps } from '../types'
 import { useBlockRow, type BlockRowValue } from '../block-row-context'
 import { registerTextEditor } from './active-editor'
@@ -27,12 +28,29 @@ export interface Press {
   top: number
 }
 
+const TEXT_MARKUP_VALUES = new Set(Object.values(TEXT_MARKUP))
+
 /**
  * Has nothing been written here yet? Blank, or only markdown scaffolding the row
- * that minted the block typed for you — today a heading's `#` run. Both open with
- * the caret in them.
+ * that minted the block typed for you — a heading's `#` run, or one of
+ * `TEXT_MARKUP`'s exact strings. All open with the caret in them.
  */
-const isUnwritten = (content: string): boolean => content.replace(/^#{1,6}\s*/, '').trim() === ''
+const isUnwritten = (content: string): boolean =>
+  TEXT_MARKUP_VALUES.has(content) || content.replace(/^#{1,6}\s*/, '').trim() === ''
+
+/**
+ * The divider row's markdown parses to a bare `horizontalRule` — CommonMark has no
+ * empty-paragraph syntax, so there is no node after it for the caret to open on.
+ * An empty paragraph is appended to the opening document only (never written back:
+ * the stored markdown stays `TEXT_MARKUP.divider`), so `autofocus: 'end'` below has
+ * somewhere real to land.
+ */
+const openingDocFor = (content: string): ReturnType<typeof parseMarkdown> => {
+  const doc = parseMarkdown(content)
+  if (content !== TEXT_MARKUP.divider) return doc
+  const { schema } = doc.type
+  return schema.nodes.doc.create(null, [...doc.content.content, schema.nodes.paragraph.create()])
+}
 
 // A fresh array literal in `useEditor`'s options changes identity every render,
 // which (per the comment on `opening` below) makes `useEditor` re-apply it over
@@ -289,7 +307,7 @@ const TextEditor = ({
   // never during render.
   // eslint-disable-next-line react-hooks/refs -- latest-ref idiom, see comment above
   const [opening] = useState(() => ({
-    content: parseMarkdown(data.content).toJSON(),
+    content: openingDocFor(data.content).toJSON(),
     autofocus: autofocus && isUnwritten(data.content) ? ('end' as const) : false,
     extensions: buildExtensions(data.placeholder, data.id, latest),
   }))

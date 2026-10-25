@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { EditorView } from '@tiptap/pm/view'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { HEADING_PREFIX } from '@/lib/modules/palette'
+import { HEADING_PREFIX, TEXT_MARKUP } from '@/lib/modules/palette'
 import { COMPOSER_CLEARANCE_VAR } from '@/lib/layout/composer-clearance'
 import {
   findTextBlock as findField,
@@ -462,6 +462,79 @@ describe('TextView — the text block edits in place as rendered prose', () => {
       editorOf(field).commands.insertContent('warm-up')
     })
     expect(handleChange).toHaveBeenLastCalledWith({ id: 't', type: 'text', content: '## warm-up' })
+  })
+
+  it('a minted quote opens focused on an empty quote, and typing fills it', async () => {
+    const handleChange = jest.fn()
+    render(
+      <StatefulText data={{ id: 't', type: 'text', content: TEXT_MARKUP.quote }} onChange={handleChange} />
+    )
+    const field = await findField()
+    await waitFor(() => expect(field).toHaveFocus())
+    expect(field.querySelector('blockquote')).toBeInTheDocument()
+    expect(field.textContent).toBe('')
+    act(() => {
+      editorOf(field).commands.insertContent('words')
+    })
+    expect(handleChange).toHaveBeenLastCalledWith({ id: 't', type: 'text', content: '> words' })
+  })
+
+  it('a minted numbered list opens focused on an empty item, and typing fills it', async () => {
+    const handleChange = jest.fn()
+    render(
+      <StatefulText
+        data={{ id: 't', type: 'text', content: TEXT_MARKUP['numbered-list'] }}
+        onChange={handleChange}
+      />
+    )
+    const field = await findField()
+    await waitFor(() => expect(field).toHaveFocus())
+    expect(field.querySelector('ol > li')).toBeInTheDocument()
+    expect(field.textContent).toBe('')
+    act(() => {
+      editorOf(field).commands.insertContent('words')
+    })
+    expect(handleChange).toHaveBeenLastCalledWith({ id: 't', type: 'text', content: '1. words' })
+  })
+
+  it('a minted code block opens focused on an empty block, and typing fills it', async () => {
+    const handleChange = jest.fn()
+    render(
+      <StatefulText data={{ id: 't', type: 'text', content: TEXT_MARKUP.code }} onChange={handleChange} />
+    )
+    const field = await findField()
+    await waitFor(() => expect(field).toHaveFocus())
+    expect(field.querySelector('pre')).toBeInTheDocument()
+    expect(field.textContent).toBe('')
+    act(() => {
+      editorOf(field).commands.insertContent('const x = 1')
+    })
+    expect(handleChange).toHaveBeenLastCalledWith({
+      id: 't',
+      type: 'text',
+      content: '```\nconst x = 1\n```',
+    })
+  })
+
+  it('a minted divider opens focused on the empty line after the rule, and typing fills that line', async () => {
+    const handleChange = jest.fn()
+    render(
+      <StatefulText
+        data={{ id: 't', type: 'text', content: TEXT_MARKUP.divider }}
+        onChange={handleChange}
+      />
+    )
+    const field = await findField()
+    await waitFor(() => expect(field).toHaveFocus())
+    expect(field.querySelector('hr')).toBeInTheDocument()
+    const editor = editorOf(field)
+    const { $from } = editor.state.selection
+    expect($from.parent.type.name).toBe('paragraph')
+    expect($from.parent.textContent).toBe('')
+    act(() => {
+      editor.commands.insertContent('words')
+    })
+    expect(handleChange).toHaveBeenLastCalledWith({ id: 't', type: 'text', content: '---\n\nwords' })
   })
 
   it('a written block does not take focus on its own', async () => {
