@@ -1,10 +1,11 @@
 /**
- * The `toc` block (KAN-482 item 2) — `/table of contents`'s registration: schema,
- * both halves of the two-map contract, serialize (off siblings, never the block
- * itself), and AI-composability. The live view (siblings → rows → scroll) lands in
- * the next build item; `TocView` here is still the item-2 stub.
+ * The `toc` block (KAN-482) — `/table of contents`'s registration: schema, both
+ * halves of the two-map contract, serialize (off siblings, never the block
+ * itself), AI-composability, and the live view (siblings → rows → scroll).
  */
 
+import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { tocSchema, tocDescriptor, TOC_EMPTY_LINE, type TocBlock } from '@/lib/modules/toc/schema'
 import { TocView } from '@/lib/modules/toc/view'
 import { blockSchema } from '@/lib/modules/content'
@@ -14,6 +15,8 @@ import { moduleDataSchema, createPageBlockSchema } from '@/lib/modules/ai-compos
 import { blockFrame } from '@/lib/modules/block-frame'
 import { blockHoldsContent } from '@/lib/modules/block-holds-content'
 import { emptyBlockForType, mintPreset } from '@/lib/modules/palette'
+import { blockDomId } from '@/lib/modules/block-dom'
+import { SiblingBlocksProvider } from '@/lib/modules/sibling-context'
 import type { Block } from '@/lib/modules/content'
 
 const toc: TocBlock = { id: 'c1', type: 'toc' }
@@ -78,5 +81,81 @@ describe('toc schema + registry facets', () => {
     expect(block).toMatchObject({ type: 'toc' })
     expect(typeof (block as TocBlock).id).toBe('string')
     expect(mintPreset('table-of-contents')).toMatchObject({ type: 'toc' })
+  })
+})
+
+describe('TocView', () => {
+  const threeHeadings: Block[] = [
+    { id: 'h1', type: 'text', content: '# one' },
+    { id: 'p1', type: 'text', content: 'some prose' },
+    { id: 'h2', type: 'text', content: '## two' },
+    { id: 'h3', type: 'text', content: '### three' },
+  ]
+
+  it('lists the headings in order, indented 14px per level below the shallowest', () => {
+    render(
+      <SiblingBlocksProvider value={{ blocks: threeHeadings }}>
+        <TocView />
+      </SiblingBlocksProvider>
+    )
+    const rows = screen.getAllByRole('button')
+    expect(rows.map((row) => row.textContent)).toEqual(['one', 'two', 'three'])
+    expect(rows[0].style.paddingLeft).toBe('0px')
+    expect(rows[1].style.paddingLeft).toBe('14px')
+    expect(rows[2].style.paddingLeft).toBe('28px')
+  })
+
+  it('updates live when the siblings rerender with changed blocks', () => {
+    const { rerender } = render(
+      <SiblingBlocksProvider value={{ blocks: threeHeadings }}>
+        <TocView />
+      </SiblingBlocksProvider>
+    )
+    expect(screen.getAllByRole('button').map((row) => row.textContent)).toEqual([
+      'one',
+      'two',
+      'three',
+    ])
+
+    const renamed: Block[] = [
+      { id: 'h1', type: 'text', content: '# one' },
+      { id: 'h2', type: 'text', content: '## second' },
+    ]
+    rerender(
+      <SiblingBlocksProvider value={{ blocks: renamed }}>
+        <TocView />
+      </SiblingBlocksProvider>
+    )
+    expect(screen.getAllByRole('button').map((row) => row.textContent)).toEqual([
+      'one',
+      'second',
+    ])
+  })
+
+  it('renders "no headings yet" when the page has none', () => {
+    render(
+      <SiblingBlocksProvider value={{ blocks: [] }}>
+        <TocView />
+      </SiblingBlocksProvider>
+    )
+    expect(screen.getByText(TOC_EMPTY_LINE)).toBeInTheDocument()
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it("a click scrolls its heading to 'start', clear of the composer, with no highlight", async () => {
+    const target = document.createElement('div')
+    target.id = blockDomId('h3')
+    target.scrollIntoView = jest.fn()
+    document.body.appendChild(target)
+
+    render(
+      <SiblingBlocksProvider value={{ blocks: threeHeadings }}>
+        <TocView />
+      </SiblingBlocksProvider>
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'three' }))
+    expect(target.scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' })
+    expect(target.classList.contains('ring-2')).toBe(false)
+    target.remove()
   })
 })
