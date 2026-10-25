@@ -93,13 +93,51 @@ describe('enterSplit — what a plain Enter does to a text block’s doc at the 
     expect(enterSplit(stateAt(doc, inside(doc, 0)))).toBe('stay')
   })
 
-  it('a doc with only one empty list item: `stay`, nothing on either side', () => {
+  it('a doc with only one empty bullet item: `lift`, back to plain prose', () => {
     const doc = proseSchema.node('doc', null, [
       proseSchema.node('bulletList', { tight: true, bullet: '-' }, [
         proseSchema.node('listItem', null, [proseSchema.node('paragraph', null, [])]),
       ]),
     ])
-    expect(enterSplit(stateAtEnd(doc))).toBe('stay')
+    expect(enterSplit(stateAtEnd(doc))).toBe('lift')
+  })
+
+  it('a doc with only one empty ordered item: `lift`, back to plain prose', () => {
+    const doc = proseSchema.node('doc', null, [
+      proseSchema.node('orderedList', { tight: true, start: 1 }, [
+        proseSchema.node('listItem', null, [proseSchema.node('paragraph', null, [])]),
+      ]),
+    ])
+    expect(enterSplit(stateAtEnd(doc))).toBe('lift')
+  })
+
+  it('an empty blockquote: `lift`, back to plain prose', () => {
+    const doc = parseMarkdown('> ')
+    expect(enterSplit(stateAt(doc, 2))).toBe('lift')
+  })
+
+  it('a rule then an empty blockquote: the rule is not the lift’s doc, split instead', () => {
+    const doc = parseMarkdown('---\n\n> ')
+    expect(enterSplit(stateAtEnd(doc))).toEqual({
+      before: '---',
+      after: '',
+    })
+  })
+
+  it('a rule then a lone empty ordered item: the rule is not the lift’s doc, split instead', () => {
+    const doc = parseMarkdown('---\n\n1. ')
+    expect(enterSplit(stateAtEnd(doc))).toEqual({
+      before: '---',
+      after: '',
+    })
+  })
+
+  it('a rule then a lone empty bullet item: the rule is not the lift’s doc, split instead', () => {
+    const doc = parseMarkdown('---\n\n- ')
+    expect(enterSplit(stateAtEnd(doc))).toEqual({
+      before: '---',
+      after: '',
+    })
   })
 
   it('two paragraphs, caret at the end of the first: after is the second paragraph', () => {
