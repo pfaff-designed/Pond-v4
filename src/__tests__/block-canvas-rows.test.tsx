@@ -305,10 +305,11 @@ describe('rows in BlockCanvas', () => {
         </QueryClientProvider>
       )
 
-      // b-b, in blockRows[0] = [a, b], moves down into blockRows[1] = [c, d]'s
-      // place (a swap with b-c) — exercising a block regrouping to a new row.
-      // The move writes through `persistBlocksAsOwnEdit` (KAN-368), so `onChange`
-      // only fires once that direct write's round trip resolves.
+      // b-b, in blockRows[0] = [a, b], leaves that row onto its own full-width
+      // line directly below it (KAN-376), landing between b-a and blockRows[1]
+      // = [c, d], which stays one row — exercising a block regrouping to a new
+      // row. The move writes through `persistBlocksAsOwnEdit` (KAN-368), so
+      // `onChange` only fires once that direct write's round trip resolves.
       const beforeB = blockRoot('b-b')
       act(() => {
         beforeB.dispatchEvent(
@@ -317,7 +318,7 @@ describe('rows in BlockCanvas', () => {
       })
       await waitFor(() => expect(onChange).toHaveBeenCalled())
       const next = onChange.mock.calls.at(-1)![0] as Block[]
-      expect(next.map((block) => block.id)).toEqual(['b-a', 'b-c', 'b-b', 'b-d'])
+      expect(next.map((block) => block.id)).toEqual(['b-a', 'b-b', 'b-c', 'b-d'])
 
       rerender(
         <QueryClientProvider client={client}>
