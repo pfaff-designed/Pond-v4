@@ -19,6 +19,7 @@ import { highlightDescriptor } from './highlight/schema'
 import { entriesDescriptor } from './entries/schema'
 import { pageLinkDescriptor } from './page-link/schema'
 import { tocDescriptor } from './toc/schema'
+import { toggleDescriptor } from './toggle/schema'
 
 export const moduleDescriptors = {
   text: textDescriptor,
@@ -39,6 +40,8 @@ export const moduleDescriptors = {
   // KAN-482: a live list of the page's own headings. Stores nothing — the list is
   // derived from siblings at read time.
   toc: tocDescriptor,
+  // KAN-480: a summary line that folds/unfolds one body of child text under it.
+  toggle: toggleDescriptor,
 } satisfies Record<string, ModuleDescriptor>
 
 export type DescriptorType = keyof typeof moduleDescriptors

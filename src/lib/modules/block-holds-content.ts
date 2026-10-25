@@ -29,6 +29,10 @@ export function blockHoldsContent(block: Block): boolean {
     // never "empty" the way a blank line or an unfilled table is.
     case 'toc':
       return true
+    // KAN-480: a summary with no body yet still holds something once either
+    // line is written.
+    case 'toggle':
+      return written(block.content) || written(block.body)
     default: {
       const unreachable: never = block
       return unreachable

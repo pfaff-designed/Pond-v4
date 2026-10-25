@@ -63,4 +63,19 @@ describe('BlockEdgeHandle', () => {
     expect(handle).toHaveAttribute('aria-orientation', 'vertical')
     expect(handle).toHaveAttribute('aria-valuenow', '46')
   })
+
+  it('with no topInsetPx, spans the block\'s full height from its own top', () => {
+    render(<BlockEdgeHandle side="left" />)
+    const handle = screen.getByTestId('block-edge-handle')
+    expect(handle).toHaveClass('top-0', 'bottom-0')
+    expect(handle.style.top).toBe('')
+  })
+
+  it('a topInsetPx (KAN-480) starts the strip short of the block\'s own top, not the full height', () => {
+    render(<BlockEdgeHandle side="left" topInsetPx={28} />)
+    const handle = screen.getByTestId('block-edge-handle')
+    expect(handle).not.toHaveClass('top-0')
+    expect(handle).toHaveClass('bottom-0')
+    expect(handle.style.top).toBe('28px')
+  })
 })

@@ -75,6 +75,9 @@ const samples: Record<string, ModuleData> = {
   'page-link': { type: 'page-link', pageId: 'page-1' },
   // KAN-482: carries no fields of its own — no nested id-bearing collections.
   toc: { type: 'toc' },
+  // KAN-480: a summary + body, both plain strings — no nested id-bearing
+  // collections. `folded` is omitted: the AI never emits it.
+  toggle: { type: 'toggle', content: 'Packing list', body: 'Passport' },
 }
 
 /**

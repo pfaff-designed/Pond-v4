@@ -22,6 +22,7 @@ import { highlightSchema } from './highlight/schema'
 import { entriesSchema } from './entries/schema'
 import { pageLinkSchema } from './page-link/schema'
 import { tocSchema } from './toc/schema'
+import { toggleSchema } from './toggle/schema'
 
 /**
  * A block's width (6x), set from its handle. `'1/4' | '1/3' | '1/2' | '2/3' | '3/4'
@@ -88,6 +89,8 @@ export const blockSchema = z.discriminatedUnion('type', [
   pageLinkSchema.extend(blockWidthFields),
   // KAN-482: the page's own headings, derived live — nothing persisted beyond id/type.
   tocSchema.extend(blockWidthFields),
+  // KAN-480: a summary line that folds/unfolds one body of child text under it.
+  toggleSchema.extend(blockWidthFields),
 ])
 
 /** A content module persisted in a page's `blocks` array. */
