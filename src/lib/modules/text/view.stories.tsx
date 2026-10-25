@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type CSSProperties } from 'react'
 import type { Decorator, Meta, StoryObj } from '@storybook/nextjs-vite'
 import type { TiptapEditorHTMLElement } from '@tiptap/core'
 import { expect, fn, userEvent, within, waitFor } from 'storybook/test'
@@ -11,6 +11,7 @@ import { pageEyebrowClass } from '@/components/atoms/kicker'
 import { blockFrame } from '@/lib/modules/block-frame'
 import { HEADING_PREFIX } from '@/lib/modules/palette'
 import { onApplePlatform } from '@/lib/shell-commands'
+import { ZEN_BODY_PX, ZEN_PROSE_CLASS } from '@/lib/layout/zen'
 
 /**
  * The `text` content block — its markdown typeset and edited in place, with no
@@ -250,6 +251,105 @@ export const EmptyStartsEditing: Story = {
     await userEvent.click(line)
     await expect(field).toHaveFocus()
     await expect(getComputedStyle(line, '::before').content).toBe('"type, or / for blocks"')
+  },
+}
+
+/**
+ * Two empty lines on a real page: the hint draws on at most one — the focused
+ * line — and the hint's `::before` shares the prose line's own line box
+ * (KAN-535 rule 1 and the line-box fix, `prose.ts`'s `--prose-line`).
+ */
+export const TwoEmptyLinesOneHint: Story = {
+  args: { data: { id: 'txt-4', type: 'text', content: '' } as TextBlock },
+  render: () => (
+    <>
+      <StatefulText data={{ id: 'txt-4', type: 'text', content: '' } as TextBlock} />
+      <StatefulText data={{ id: 'txt-5', type: 'text', content: '' } as TextBlock} />
+    </>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const fields = await canvas.findAllByRole('textbox', { name: 'text block' }, { timeout: 5000 })
+    await waitFor(() => expect(fields).toHaveLength(2))
+    const [firstField, secondField] = fields
+    const firstP = firstField.querySelector<HTMLElement>('p')!
+    const secondP = secondField.querySelector<HTMLElement>('p')!
+
+    await userEvent.click(firstP)
+    await waitFor(() => expect(firstField).toHaveFocus())
+    await expect(getComputedStyle(firstP, '::before').content).toBe('"type, or / for blocks"')
+    await expect(getComputedStyle(secondP, '::before').content).toBe('none')
+    await expect(parseFloat(getComputedStyle(firstP, '::before').lineHeight)).toBe(
+      parseFloat(getComputedStyle(firstP).lineHeight)
+    )
+
+    await userEvent.click(secondP)
+    await waitFor(() => expect(secondField).toHaveFocus())
+    await expect(getComputedStyle(secondP, '::before').content).toBe('"type, or / for blocks"')
+    await expect(getComputedStyle(firstP, '::before').content).toBe('none')
+    await expect(parseFloat(getComputedStyle(secondP, '::before').lineHeight)).toBe(
+      parseFloat(getComputedStyle(secondP).lineHeight)
+    )
+  },
+}
+
+/**
+ * The hint's line box must track whatever line it's actually on, not the
+ * plain-prose box `TwoEmptyLinesOneHint` already covers: a quote's taller
+ * line (19×1.6) and zen's own scaled one (`--zen-prose`×1.7) — the line-box
+ * fix's `--prose-line` (`prose.ts`, `zen.tsx`'s `ZEN_PROSE_CLASS`).
+ */
+export const EmptyQuoteAndZenLineHints: Story = {
+  args: { data: { id: 'txt-6', type: 'text', content: '' } as TextBlock },
+  render: () => (
+    <>
+      <StatefulText data={{ id: 'txt-6', type: 'text', content: '' } as TextBlock} />
+      <div
+        className={ZEN_PROSE_CLASS}
+        style={{ '--zen-prose': `${ZEN_BODY_PX}px` } as CSSProperties}
+      >
+        <StatefulText data={{ id: 'txt-7', type: 'text', content: '' } as TextBlock} />
+      </div>
+    </>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const fields = await canvas.findAllByRole('textbox', { name: 'text block' }, { timeout: 5000 })
+    await waitFor(() => expect(fields).toHaveLength(2))
+    const [quoteField, zenField] = fields
+
+    // "> " turns the empty line into an empty quote — same input rule the
+    // editor's own markdown shortcuts use (`view.test.tsx`). Tiptap's
+    // Placeholder extension defaults to `includeChildren: false`
+    // (`editor.tsx`'s `buildExtensions`), so a paragraph nested inside a
+    // blockquote never gets `is-empty`/`data-placeholder` at all — no hint
+    // ever draws there, focused or not. That gap is pre-existing and outside
+    // this fix (it's `editor.tsx`'s extension config, not the line-box
+    // plumbing), so this story checks the blockquote's `--prose-line` value
+    // itself rather than a hint that can't appear.
+    await userEvent.click(quoteField)
+    await waitFor(() => expect(quoteField).toHaveFocus())
+    await userEvent.type(quoteField, '> ')
+    const quoteBlock = await waitFor(() => {
+      const el = quoteField.querySelector<HTMLElement>('blockquote')
+      if (!el) throw new Error('blockquote not yet in the document')
+      return el
+    })
+    // A custom property's computed value is its specified text, unparsed —
+    // the browser only resolves `calc()` where a `var()` reference actually
+    // uses it, so this checks the same expression `prose.ts` sets, not a
+    // px number the browser doesn't compute until something reads it.
+    await expect(getComputedStyle(quoteBlock).getPropertyValue('--prose-line').trim()).toBe(
+      'calc(19px * 1.6)'
+    )
+
+    const zenLine = zenField.querySelector<HTMLElement>('p')!
+    await userEvent.click(zenLine)
+    await waitFor(() => expect(zenField).toHaveFocus())
+    await expect(getComputedStyle(zenLine, '::before').content).toBe('"type, or / for blocks"')
+    await expect(parseFloat(getComputedStyle(zenLine, '::before').lineHeight)).toBe(
+      parseFloat(getComputedStyle(zenLine).lineHeight)
+    )
   },
 }
 
