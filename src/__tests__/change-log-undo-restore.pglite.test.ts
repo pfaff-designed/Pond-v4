@@ -205,3 +205,131 @@ describe('0037_undo_restore part b — change_log_set_back re-trashes on undo of
     await db.close()
   })
 })
+
+// Schema tests for supabase/migrations/0037_undo_restore.sql part c (KAN-497).
+//
+// `change_log_set_back`'s `restore` branch, redo direction: calls
+// `public.restore_page` on the `deleteRecordId` the matching undo's own
+// `restore` branch (part b) found and folded onto the undo record's
+// `before.position` — reusing `restore_page`'s own title-collision
+// suffixing rather than a hand-rolled restore.
+
+const undo = (db: PGlite, recordId: string, pondId: string) =>
+  db.query(`select * from public.undo_change_log_record($1::uuid[], $2, 'you')`, [[recordId], pondId])
+
+const redo = (db: PGlite, recordId: string, pondId: string) =>
+  db.query(`select * from public.redo_change_log_record($1::uuid[], $2, 'you')`, [[recordId], pondId])
+
+describe('0037_undo_restore part c — change_log_set_back restores again on redo of a restore', () => {
+  it('brings the page back at the title/parent the ORIGINAL restore produced, not the original trash', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pondId = await pondOf(db)
+    const house = await addPage(db, pondId, 'house')
+    const pageId = await addPage(db, pondId, 'roof', house)
+
+    await actAs(db, USER)
+    await db.query('select public.trash_page($1)', [pageId])
+    const firstDelete = await db.query<{ id: string }>(
+      `select id from public.change_log where action = 'delete' and target_page_id = $1
+       order by created_at desc limit 1`,
+      [pageId]
+    )
+
+    // A second "roof" under the same parent — the first restore_page call
+    // below collides with it and suffixes the title to "roof (restored)",
+    // which is the title this test expects redo to reproduce.
+    await db.exec('reset role;')
+    await addPage(db, pondId, 'roof', house)
+    await actAs(db, USER)
+
+    await db.query('select public.restore_page($1)', [firstDelete.rows[0].id])
+    const restoreRecord = await db.query<{ id: string }>(
+      `select id from public.change_log where action = 'restore' and target_page_id = $1
+       order by created_at desc limit 1`,
+      [pageId]
+    )
+    const restoreRecordId = restoreRecord.rows[0].id
+
+    await undo(db, restoreRecordId, pondId)
+    await redo(db, restoreRecordId, pondId)
+
+    await db.exec('reset role;')
+    const row = await db.query<{ title: string; parent_id: string | null; deleted_at: string | null }>(
+      'select title, parent_id, deleted_at from public.pages where id = $1',
+      [pageId]
+    )
+    expect(row.rows[0].deleted_at).toBeNull()
+    expect(row.rows[0].title).toBe('roof (restored)')
+    expect(row.rows[0].parent_id).toBe(house)
+    await db.close()
+  })
+
+  it("propagates restore_page's own already-restored failure unchanged", async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pondId = await pondOf(db)
+    const pageId = await addPage(db, pondId, 'roof')
+
+    await actAs(db, USER)
+    await db.query('select public.trash_page($1)', [pageId])
+    const firstDelete = await db.query<{ id: string }>(
+      `select id from public.change_log where action = 'delete' and target_page_id = $1
+       order by created_at desc limit 1`,
+      [pageId]
+    )
+    await db.query('select public.restore_page($1)', [firstDelete.rows[0].id])
+    const restoreRecord = await db.query<{ id: string }>(
+      `select id from public.change_log where action = 'restore' and target_page_id = $1
+       order by created_at desc limit 1`,
+      [pageId]
+    )
+    const restoreRecordId = restoreRecord.rows[0].id
+
+    await undo(db, restoreRecordId, pondId)
+    const secondDelete = await db.query<{ id: string }>(
+      `select id from public.change_log where action = 'delete' and target_page_id = $1
+       order by created_at desc limit 1`,
+      [pageId]
+    )
+    // Something else restores the page in between: the redo below finds
+    // its own deleteRecordId already restored.
+    await db.query('select public.restore_page($1)', [secondDelete.rows[0].id])
+
+    await expect(redo(db, restoreRecordId, pondId)).rejects.toMatchObject({
+      code: '22023',
+      detail: 'already-restored',
+    })
+    await db.close()
+  })
+
+  it('raises not-undoable when the undo record carries no deleteRecordId', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pondId = await pondOf(db)
+    const pageId = await addPage(db, pondId)
+    const restoreRecordId = await addRecord(db, pondId, pageId, 'restore')
+    await db.query(
+      `insert into public.change_log
+         (user_id, pond_id, status, action, actor, target_page_id, "before", "after", links, transitions)
+       values ($1, $2, 'accepted', 'undo', 'you', $3, '{}'::jsonb, '{}'::jsonb,
+         jsonb_build_object('undo_of', $4::text), jsonb_build_array(jsonb_build_object('status', 'accepted', 'at', now(), 'actor', 'you')))`,
+      [USER, pondId, pageId, restoreRecordId]
+    )
+    await db.query(
+      `update public.change_log
+         set status = 'undone',
+             transitions = transitions
+               || jsonb_build_array(jsonb_build_object('status', 'undone', 'at', now(), 'actor', 'you'))
+       where id = $1`,
+      [restoreRecordId]
+    )
+
+    await actAs(db, USER)
+    await expect(redo(db, restoreRecordId, pondId)).rejects.toMatchObject({
+      code: '0A000',
+      detail: 'not-undoable',
+    })
+    await db.close()
+  })
+})
