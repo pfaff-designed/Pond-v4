@@ -47,6 +47,14 @@ export interface BlockRowValue {
    * handling, so absent is "not the first block", not "not yet supported".
    */
   leaveUp?: () => void
+  /**
+   * Esc in a text editor selects this row instead of blurring to the page
+   * body (KAN-367) — focuses the row's own element, the same focus
+   * `handleFocus`/`handleBlur` already read `selected` off. Absent outside a
+   * `BlockCanvas` host (Storybook, the AI terminal reference): a view falls
+   * back to its own blur.
+   */
+  select?: () => void
 }
 
 const BlockRowContext = createContext<BlockRowValue>({

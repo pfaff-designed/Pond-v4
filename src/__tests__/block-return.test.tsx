@@ -460,6 +460,22 @@ describe('pointer selection draws PondBlock’s own `selected` state (07.05)', (
   })
 })
 
+describe('Esc in a text block selects its row (KAN-367)', () => {
+  it('Esc with the caret in text focuses the row, selected', async () => {
+    const user = userEvent.setup()
+    renderCanvas([note, table])
+    const line = await textBlockIn('b-note')
+    act(() => {
+      textEditorOf(line).commands.focus('end')
+    })
+    await waitFor(() => expect(line).toHaveFocus())
+
+    await user.keyboard('{Escape}')
+
+    await waitFor(() => expect(blockRoot('b-note')).toHaveFocus())
+  })
+})
+
 describe('↓ on a selected row steps out, same as Return (KAN-344)', () => {
   it('↓ on a focused image block opens a new line after it', async () => {
     const user = userEvent.setup()

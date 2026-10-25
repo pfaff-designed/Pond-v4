@@ -62,6 +62,7 @@ interface LatestForSplit {
   data: TextBlock
   stepOut?: BlockRowValue['stepOut']
   leaveUp?: BlockRowValue['leaveUp']
+  select?: BlockRowValue['select']
 }
 
 /**
@@ -157,6 +158,37 @@ const createLeaveUpToTitle = (latest: RefObject<LatestForSplit>) =>
     ],
   })
 
+/**
+ * Esc selects this block's row (KAN-367) instead of blurring to the page
+ * body — read via `latest`, the same idiom as `leaveUp`. A plugin, not the
+ * shared `handleKeyDown` below: that object is one reference used by every
+ * text block's editor, with no per-block `latest` to read `select` off. With
+ * no row to select (a standalone `TextEditor` outside a `BlockCanvas` host),
+ * falls back to the editor's own blur — unchanged from today. The selection
+ * bar claims an Esc pressed while it is up (`defaultPrevented`, the editor
+ * keeps focus).
+ */
+const createEscapeSelectsRow = (latest: RefObject<LatestForSplit>) =>
+  Extension.create({
+    name: 'escapeSelectsRow',
+    priority: 1000,
+    addProseMirrorPlugins: () => [
+      new Plugin({
+        props: {
+          handleKeyDown: (view, event) => {
+            if (event.key !== 'Escape' || event.isComposing || view.composing) return false
+            if (!event.defaultPrevented) {
+              const { select } = latest.current
+              if (select) select()
+              else view.dom.blur()
+            }
+            return true
+          },
+        },
+      }),
+    ],
+  })
+
 /** The block's own placeholder and id, fixed at mount — neither is ever typed over. */
 const buildExtensions = (
   placeholder: string | undefined,
@@ -170,6 +202,7 @@ const buildExtensions = (
   ReferenceHighlight.configure({ blockId }),
   createSplitOnEnter(latest),
   createLeaveUpToTitle(latest),
+  createEscapeSelectsRow(latest),
 ]
 
 /** A bare Tab over a selection — Shift-Tab and chorded Tab keep their meaning. */
@@ -205,13 +238,14 @@ const focusSelectionBar = (): boolean => {
  * native undo from ever seeing the key, whether or not there was anything to do
  * — also true of `@tiptap/extensions`' own `Mod-y`/`Mod-я`/`Shift-Mod-я` undo
  * keymap bindings, which this predicate matches too (KAN-268).
+ *
+ * Escape is NOT handled here: this object is shared, by reference, across
+ * every text block's editor (`editorProps` below), so it has no per-block
+ * `latest` to read a row's `select` off. `createEscapeSelectsRow` (above)
+ * owns Escape instead, as a plugin built per-instance alongside
+ * `createLeaveUpToTitle`.
  */
 const handleKeyDown = (view: EditorView, event: KeyboardEvent): boolean => {
-  if (event.key === 'Escape') {
-    // The selection bar claims an Esc pressed while it is up (it is dismissed, the editor keeps focus).
-    if (!event.defaultPrevented) view.dom.blur()
-    return true
-  }
   if (isTabIntoSelectionBar(view, event)) return focusSelectionBar()
   if (isUndoChord(event)) {
     undo(view.state, (tr) => view.dispatch(tr))
@@ -305,10 +339,10 @@ const TextEditor = ({
   pressRef: RefObject<Press | null>
 }) => {
   const onSlashLine = useContext(SlashLineContext)
-  const { stepOut, leaveUp } = useBlockRow()
-  const latest = useRef({ data, onChange, onSlashLine, stepOut, leaveUp })
+  const { stepOut, leaveUp, select } = useBlockRow()
+  const latest = useRef({ data, onChange, onSlashLine, stepOut, leaveUp, select })
   useEffect(() => {
-    latest.current = { data, onChange, onSlashLine, stepOut, leaveUp }
+    latest.current = { data, onChange, onSlashLine, stepOut, leaveUp, select }
   })
 
   // Options must be the same values on every render: any change makes `useEditor`

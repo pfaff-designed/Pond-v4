@@ -3439,7 +3439,13 @@ function BlockEditor({
 
   const view = (
     <BlockRowProvider
-      value={{ selected: state === 'selected', stepOut: onReturn, commitStep, leaveUp: onLeaveUp }}
+      value={{
+        selected: state === 'selected',
+        stepOut: onReturn,
+        commitStep,
+        leaveUp: onLeaveUp,
+        select: selectRow,
+      }}
     >
       <SlashLineContext.Provider value={slash.handleSlashLine}>
         <ActiveViewSelectionContext.Provider value={setActiveViewId}>
@@ -3705,6 +3711,13 @@ function BlockEditor({
     if (block.type === 'text') return
     if (!e.currentTarget.contains(e.target as Node)) return
     if (!shouldSelectCardFromClick(e.target)) return
+    rootRef.current?.focus()
+  }
+
+  // Esc inside a text editor (KAN-367): focusing the row's own element is
+  // what `handleFocus` above already reads `rowSelected` off, same as a
+  // card's own click-to-select.
+  function selectRow() {
     rootRef.current?.focus()
   }
 
