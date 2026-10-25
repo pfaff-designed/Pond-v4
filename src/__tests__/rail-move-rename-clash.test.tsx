@@ -12,8 +12,9 @@ import { pagesKey } from '@/lib/pages/keys'
 import { mountRail } from './helpers/rail-sweep-fixture'
 import type { PageRow } from '@/lib/pages/tree'
 
+const routerPush = jest.fn()
 jest.mock('next/navigation', () => ({
-  useRouter: () => ({ push: jest.fn() }),
+  useRouter: () => ({ push: routerPush }),
   useSearchParams: () => ({ get: () => null }),
 }))
 
@@ -77,7 +78,13 @@ const NO_CLASH_ROWS: PageRow[] = [
   { id: 'notes-top', parent_id: null, type: 'page', title: 'Notes', order: 1, updated_at: AT },
 ]
 
-afterEach(() => jest.clearAllMocks())
+afterEach(() => {
+  jest.clearAllMocks()
+  // Expand state is localStorage, not the query cache — an into-drop in one
+  // test expands "house", which would otherwise leak into the next test and
+  // make its originally-hidden "notes-child" row match `getByRole('Notes')`.
+  window.localStorage.clear()
+})
 
 // jsdom's DragEvent carries no real DataTransfer and doesn't forward
 // clientY from its init dict — same workaround as rail-move-link.test.tsx.
@@ -134,4 +141,24 @@ it('a non-clashing drop calls movePage with no newTitle and leaves the title unt
     newParentId: 'house',
     siblingOrder: expect.arrayContaining(['notes-top', 'roof-child']),
   })
+  await screen.findByText('moved Notes to house ·')
+})
+
+// KAN-470: the toast and its "open" action read the RENAMED title back off
+// the RPC's own record (`after.title`), not the pre-move `draggedRow.title`
+// — so they match what the move actually did, not what the client hoped.
+it('a clashing drop\'s toast names the suffixed title and "open" navigates to it', async () => {
+  jest.mocked(movePage).mockResolvedValueOnce({
+    id: 'record-1',
+    after: { parentId: 'house', parentTitle: 'house', siblingOrder: [], title: 'Notes 2' },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } as any)
+  mountRail(CLASH_ROWS)
+
+  dragNotesOntoHouse()
+
+  await screen.findByText('moved Notes to house as "Notes 2" ·')
+
+  fireEvent.click(screen.getByRole('button', { name: 'open' }))
+  expect(routerPush).toHaveBeenCalledWith(expect.stringContaining('nodeName=Notes+2'))
 })

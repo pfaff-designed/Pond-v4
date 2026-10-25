@@ -2586,8 +2586,17 @@ export function Rail() {
         // for a reload.
         if (oldLinkParentId) queryClient.invalidateQueries({ queryKey: ['page', oldLinkParentId] })
         if (newLinkParentId) queryClient.invalidateQueries({ queryKey: ['page', newLinkParentId] })
+        // KAN-470: `after.title` is only present on the RPC's own record when
+        // the move clashed and the RPC actually renamed it — the toast and
+        // the "open" action read that back rather than trusting the
+        // pre-move `draggedRow.title`, so both match what the move really
+        // did, not what the client hoped it would.
+        const destinationLabel = moveParentLabel(after.parentTitle, home?.title ?? pondName)
+        const message = after.title
+          ? `moved ${title} to ${destinationLabel} as "${after.title}" ·`
+          : `moved ${title} to ${destinationLabel} ·`
         stageUndo({
-          message: `moved ${title} to ${moveParentLabel(after.parentTitle, home?.title ?? pondName)} ·`,
+          message,
           undoLabel: 'undo',
           undo: () =>
             // The undo RPC rewrites both link-parents' `blocks` just like the
@@ -2597,7 +2606,7 @@ export function Rail() {
             Promise.all([flushPendingPageSave(oldLinkParentId), flushPendingPageSave(newLinkParentId)])
               .then(() => sessionUndo.undoHandle(pondId, handle))
               .then((outcome) => applyUndoOutcome('undo', outcome, queryClient)),
-          action: () => navigateTo(draggedRow),
+          action: () => navigateTo(after.title ? { ...draggedRow, title: after.title } : draggedRow),
           actionLabel: 'open',
         })
       }
