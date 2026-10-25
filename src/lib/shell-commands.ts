@@ -125,6 +125,17 @@ export const isEditableField = (el: Element | null): boolean => {
   return value === '' || value === 'true'
 }
 
+/** Whether a modal dialog or alertdialog — a confirm dialog (`ConfirmDialog`), the
+ *  new-pond sheet, the report-problem box, or anything else built on base-ui's
+ *  `Dialog`/`AlertDialog` — is open anywhere in the document. `⌘K`'s own palette
+ *  carries no `role="dialog"` (it's a combobox/listbox, not a base-ui `Dialog`), so
+ *  a caller also checks the palette's own open state; this covers every OTHER
+ *  overlay without threading its open state in from wherever it actually lives
+ *  (`BlockCanvas`, `Rail`), which a chord that fires globally or navigates must not
+ *  act underneath. */
+export const isOverlayOpen = (): boolean =>
+  document.querySelector('[role="dialog"], [role="alertdialog"]') !== null
+
 /**
  * ⌘⇧\ on a Mac, Ctrl+Shift+\ everywhere else: focus the open page's row in the rail.
  * Global, including inside the editor — that is the chord's whole point. Shares its

@@ -53,6 +53,8 @@ const renderShell = () =>
 const pressGoToParent = (target: Document | Element = document) =>
   fireEvent.keyDown(target, { key: 'ArrowUp', metaKey: true, shiftKey: true })
 
+const pressPaletteChord = () => fireEvent.keyDown(document, { key: 'k', metaKey: true })
+
 beforeEach(() => {
   jest.clearAllMocks()
   jest.spyOn(window.navigator, 'platform', 'get').mockReturnValue('MacIntel')
@@ -116,5 +118,25 @@ describe('KAN-476 path test — ⌘⇧↑ opens the open page’s parent', () =>
 
     expect(push).not.toHaveBeenCalled()
     document.body.removeChild(input)
+  })
+
+  it('with the palette open, ⌘⇧↑ does not navigate (KAN-476 fix)', () => {
+    mockPath.mockReturnValue({
+      glyph: 'ramp',
+      trail: [{ title: 'house', to: { kind: 'page', node: { id: 'house', type: 'page', title: 'house' } } }],
+      current: 'roof',
+      role: null,
+    })
+    renderShell()
+    pressPaletteChord()
+    // The palette's own input keeps DOM focus while it's open (the listbox
+    // pattern — `aria-activedescendant`, not focus-per-row), which already
+    // blocks ⌘⇧↑ via `isEditableField` regardless of this fix. Blur it so
+    // this test exercises the overlay gate itself, not that coincidence.
+    ;(document.activeElement as HTMLElement | null)?.blur()
+
+    pressGoToParent()
+
+    expect(push).not.toHaveBeenCalled()
   })
 })

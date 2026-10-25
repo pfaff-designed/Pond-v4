@@ -49,6 +49,8 @@ const renderShell = () =>
 const pressRailFocus = (target: Document | Element = document) =>
   fireEvent.keyDown(target, { key: '|', code: 'Backslash', metaKey: true, shiftKey: true })
 
+const pressPaletteChord = () => fireEvent.keyDown(document, { key: 'k', metaKey: true })
+
 beforeEach(() => {
   jest.spyOn(window.navigator, 'platform', 'get').mockReturnValue('MacIntel')
 })
@@ -87,6 +89,18 @@ describe('KAN-476 — ⌘⇧\\ asks the rail to focus the open row', () => {
   it('does nothing while the rail is minimized', () => {
     setRailMinimized(true)
     renderShell()
+    const listener = jest.fn()
+    window.addEventListener(FOCUS_RAIL_ROW_EVENT, listener)
+
+    pressRailFocus()
+
+    expect(listener).not.toHaveBeenCalled()
+    window.removeEventListener(FOCUS_RAIL_ROW_EVENT, listener)
+  })
+
+  it('does nothing while the palette is open (KAN-476 fix)', () => {
+    renderShell()
+    pressPaletteChord()
     const listener = jest.fn()
     window.addEventListener(FOCUS_RAIL_ROW_EVENT, listener)
 

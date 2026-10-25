@@ -54,6 +54,7 @@ import {
   isGoToParentChord,
   isMinimizeRailChord,
   isMovePageChord,
+  isOverlayOpen,
   isRailFocusChord,
   isRedoChord,
   isUndoChord,
@@ -301,6 +302,10 @@ export function ShellCommands() {
   // open then, so a toggle would raise it behind the sheet). Capture phase on the
   // document, so it fires before a focused editor/input can swallow it.
   const pondSheetOpen = naming !== null
+  // The palette dialog's own open state (KAN-476's `shellKeysLive` reads this
+  // directly — PondCommand is a combobox/listbox, not a base-ui `Dialog`, so it
+  // carries no `role="dialog"` for `isOverlayOpen` to find).
+  const commandOpen = paletteOpen || templateSheetOpen
   const zenCommands = useZenCommands({
     blocked: templateSheetOpen || pondSheetOpen || reportOpen,
     onEnter: closePalette,
@@ -372,11 +377,19 @@ export function ShellCommands() {
         }
         return
       }
+      // Shared gate for the two chords below (KAN-476): a chord that fires
+      // globally (the rail-focus key) or navigates (⌘⇧↑) must do nothing while
+      // a modal owns focus, or it acts behind that modal's own focus trap
+      // instead of inside it. `commandOpen` covers the palette/template-sheet
+      // dialog (no `role="dialog"` for `isOverlayOpen` to find); `isOverlayOpen`
+      // covers everything else (a confirm dialog, the new-pond sheet, the
+      // report box) without threading each one's open state in here.
+      const shellKeysLive = !commandOpen && !isOverlayOpen()
       // ⌘⇧↑ opens the open page's parent (KAN-476), the same ancestor crumb
       // the breadcrumb's own last link navigates to. Left alone inside an
       // editable field — there the key keeps its native "select to
       // paragraph start" meaning, as in Linear and Notion.
-      if (isGoToParentChord(e)) {
+      if (isGoToParentChord(e) && shellKeysLive) {
         const targetEl = e.target instanceof Element ? e.target : null
         if (!isEditableField(targetEl) && !isEditableField(document.activeElement)) {
           const parent = path.trail[path.trail.length - 1]
@@ -406,8 +419,9 @@ export function ShellCommands() {
       }
       // ⌘⇧\ moves focus into the rail (KAN-476) — from anywhere, the editor
       // included, that's the chord's whole point, so no `isEditableField` guard.
-      // No-op while the rail is minimized: there is no row to focus.
-      if (isRailFocusChord(e) && !railMinimized) {
+      // No-op while the rail is minimized: there is no row to focus. Gated by
+      // `shellKeysLive` too — it must not steal focus from behind a modal.
+      if (isRailFocusChord(e) && !railMinimized && shellKeysLive) {
         e.preventDefault()
         e.stopPropagation()
         if (!e.repeat) requestRailRowFocus()
@@ -456,6 +470,7 @@ export function ShellCommands() {
     templateSheetOpen,
     pondSheetOpen,
     reportOpen,
+    commandOpen,
     closeTemplateSheet,
     closeNewPondSheet,
     closeReport,
@@ -683,8 +698,6 @@ export function ShellCommands() {
       navigateTo,
     ]
   )
-
-  const commandOpen = paletteOpen || templateSheetOpen
 
   return (
     <>
