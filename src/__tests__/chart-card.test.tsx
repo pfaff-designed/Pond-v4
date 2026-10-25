@@ -548,6 +548,6 @@ describe('BlockCanvas — a click on the chart card’s own padding selects it, 
     await user.click(group)
     expect(card.dataset.chartState).toBe('selected')
     expect(card.className).toContain(POND_BLOCK_SELECTED_RING)
-    expect(group.className).not.toContain('ring-2')
+    expect(group.className).not.toContain(POND_BLOCK_SELECTED_RING)
   })
 })

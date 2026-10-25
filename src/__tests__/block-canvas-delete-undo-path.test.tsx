@@ -457,7 +457,7 @@ describe('PATH_STEPS: the block menu, a page-making move, and a chart card’s o
     await user.click(chartRow)
     await waitFor(() => expect(chartRow).toHaveFocus())
     expect(card.className).toContain(POND_BLOCK_SELECTED_RING)
-    expect(chartRow.className).not.toContain('ring-2')
+    expect(chartRow.className).not.toContain(POND_BLOCK_SELECTED_RING)
 
     await user.keyboard('{Meta>}{Backspace}{/Meta}')
     await user.click(await screen.findByRole('button', { name: 'Delete' }))

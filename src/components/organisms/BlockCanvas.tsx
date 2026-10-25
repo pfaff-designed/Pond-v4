@@ -4427,8 +4427,9 @@ function BlockEditor({
         // A board draws its own lanes and has no card, so the same ring goes
         // on the row itself — otherwise a click selects it and nothing shows.
         // A chart card and a page-link draw no `frame` either, but each rings
-        // ITS OWN card via `useBlockRow().selected` (`chart/card.tsx`,
-        // `page-link/view.tsx`), so the row excludes both here too.
+        // ITS OWN card via `useBlockRow().selected`
+        // (`src/lib/modules/chart/card.tsx`, `src/lib/modules/page-link/view.tsx`),
+        // so the row excludes both here too.
         state === 'selected' &&
           !frame &&
           block.type !== 'text' &&

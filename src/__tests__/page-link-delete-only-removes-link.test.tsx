@@ -158,11 +158,11 @@ describe('removing a page-link block removes only the link (KAN-415)', () => {
     renderCanvas()
     const link = await screen.findByRole('link', { name: 'Open professional' })
     const root = document.getElementById('block-b-link')!
-    expect(root.className).not.toContain('ring-2')
+    expect(root.className).not.toContain(POND_BLOCK_SELECTED_RING)
 
     root.focus()
     await waitFor(() => expect(root).toHaveFocus())
-    expect(root.className).not.toContain('ring-2')
+    expect(root.className).not.toContain(POND_BLOCK_SELECTED_RING)
     expect(link.className).toContain(POND_BLOCK_SELECTED_RING)
   })
 })
