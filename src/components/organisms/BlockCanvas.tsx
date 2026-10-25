@@ -143,12 +143,8 @@ import {
 import { BlockHeightHandles } from '@/components/organisms/BlockHeightHandles'
 import { BlockHeightProvider } from '@/components/organisms/block-height-context'
 import { blockAcceptsHeight, blockWithoutHeight } from '@/lib/modules/block-height'
-import type {
-  ConversionTarget,
-  LineConversion,
-  PageConversion,
-  TableConversion,
-} from '@/lib/modules/conversions'
+import type { ConversionTarget, LineConversion, TableConversion } from '@/lib/modules/conversions'
+import { moveIntoPagePrep } from '@/lib/modules/conversions'
 import { isBlockMenuChord, isContextMenuKey, isDeleteBlockChord, useApplePlatform } from '@/lib/shell-commands'
 import { slashRows, emptyBlockForType } from '@/lib/modules/palette'
 import { descriptorFor } from '@/lib/modules/registry'
@@ -1086,18 +1082,22 @@ export function BlockCanvas({
   }
 
   /**
-   * The block menu's "turn into › page": moves the line into a new CHILD page
+   * The engine under both "turn into › page" and the block menu's "move into
+   * a new page": moves `moveIntoPagePrep`'s prepared copy of the block (ANY
+   * type but a page-link, which has nothing to move) into a new CHILD page
    * (as `/page` does in `makePage`, above) and leaves a page-link row in its
-   * place, swapped in by id rather than landed at a slash target — and with NO
-   * navigation, since leaving the page would blow past the undo toast before
-   * anyone could reach it. Undo puts the block back and removes the page it
-   * made, as `turnIntoTable`'s undo removes the database it made. Guarded
-   * against a second pick on the same block while the first is still in
-   * flight (G9).
+   * place, swapped in by id rather than landed at a slash target — and with
+   * NO navigation, since leaving the page would blow past the undo toast
+   * before anyone could reach it. Undo puts the block back and removes the
+   * page it made, as `turnIntoTable`'s undo removes the database it made.
+   * Guarded against a second pick on the same block while the first is still
+   * in flight (G9).
    */
-  const turnIntoPage = async (index: number, conversion: PageConversion) => {
+  const moveBlockIntoNewPage = async (index: number) => {
     const block = blocks[index]
     if (!block) return
+    const prepared = moveIntoPagePrep(block, pageId)
+    if (!prepared) return
     if (turnIntoPageInFlightRef.current.has(block.id)) return
     turnIntoPageInFlightRef.current.add(block.id)
     try {
@@ -1106,10 +1106,12 @@ export function BlockCanvas({
         data: { user },
       } = await supabase.auth.getUser()
       if (!user) return
-      const created = await conversion.apply(supabase, {
-        userId: user.id,
+      const created = await createPage(supabase, user.id, {
         parentId: pageId,
         pondId,
+        type: 'page',
+        title: prepared.title,
+        blocks: [prepared.block],
         props: stampNestedPage({}, pageId),
       })
       const pageLink: Block = { id: crypto.randomUUID(), type: 'page-link', pageId: created.id }
@@ -1141,12 +1143,17 @@ export function BlockCanvas({
         },
       })
     } catch (err) {
-      console.error('Failed to turn the block into a page', err)
-      notify("Couldn't turn the block into a page")
+      console.error('Failed to move the block into a page', err)
+      notify("Couldn't move the block into a page")
     } finally {
       turnIntoPageInFlightRef.current.delete(block.id)
     }
   }
+
+  /** The block menu's "turn into › page": a text line is the one block kind
+   * `conversionsFor` offers this target for, so it goes through the same
+   * engine as the menu's own "move into a new page" row. */
+  const turnIntoPage = (index: number) => moveBlockIntoNewPage(index)
 
   /**
    * list ⇄ checklist ⇄ text: the same block, drawn another way. It keeps its id,
@@ -1570,7 +1577,7 @@ export function BlockCanvas({
           return
         }
         if (conversion.target === 'page') {
-          void turnIntoPage(index, conversion)
+          void turnIntoPage(index)
           return
         }
         convertBlock(block, conversion)

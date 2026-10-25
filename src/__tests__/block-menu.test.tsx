@@ -916,7 +916,7 @@ describe('turn into — page', () => {
     openMenuOf('b-note')
     await user.click(await screen.findByRole('menuitem', { name: 'page' }))
 
-    expect(await screen.findByText("Couldn't turn the block into a page")).toBeInTheDocument()
+    expect(await screen.findByText("Couldn't move the block into a page")).toBeInTheDocument()
     expect(onChange).not.toHaveBeenCalled()
     expect(document.getElementById('block-b-note')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /undo/i })).not.toBeInTheDocument()

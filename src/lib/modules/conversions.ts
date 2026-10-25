@@ -44,6 +44,7 @@ import type { Block } from './content'
 import type { TextBlock } from './text/schema'
 import { retypeText, textKindOf, type TextKind } from './text/retype'
 import { todoMarker, type TodoBlock, type TodoItem } from './todo/schema'
+import { blockLabel, trimmedOrNone } from './types'
 
 /** In the menu's order. */
 export const CONVERSION_TARGETS = [
@@ -226,7 +227,7 @@ const tableConversion = (block: Block): TableConversion | null => {
 }
 
 /** `block`'s content, read as the plain single line a new page would be titled from. */
-const pageTitleOf = (block: TextBlock): string =>
+export const pageTitleOf = (block: TextBlock): string =>
   plainLine(retypeText(block.content, 'text').split('\n')[0] ?? '')
 
 const pageConversion = (block: TextBlock): PageConversion => {
@@ -244,6 +245,40 @@ const pageConversion = (block: TextBlock): PageConversion => {
         pondId,
       }),
   }
+}
+
+/** `block` plus the title its page gets, as `moveIntoPagePrep` moves it. */
+export interface MovedBlock {
+  block: Block
+  title: string
+}
+
+/**
+ * `block` as it would move into a new child page — via the menu's `move into
+ * a new page`, or `turn into: page` for a text line — leaving `hostPageId`.
+ * `null` for a page-link: there is nothing left to move.
+ *
+ * A view with no `collectionId` of its own is drawing `hostPageId`'s rows, so
+ * the moved copy is stamped with it to keep drawing the same ones; `rowStart`
+ * named a row on the page being left, so the moved copy drops it (it keeps
+ * its width). The title is a text block's first plain line, a table's own
+ * title, or another block's label — '' when none apply, which the app then
+ * shows as "untitled".
+ */
+export function moveIntoPagePrep(block: Block, hostPageId: string): MovedBlock | null {
+  if (block.type === 'page-link') return null
+  const { rowStart: _rowStart, ...rest } = block
+  const moved: Block =
+    rest.type === 'view' && rest.collectionId === undefined
+      ? { ...rest, collectionId: hostPageId }
+      : rest
+  const title =
+    moved.type === 'text'
+      ? pageTitleOf(moved)
+      : moved.type === 'table'
+        ? trimmedOrNone(moved.title) ?? ''
+        : blockLabel(moved) ?? ''
+  return { block: moved, title }
 }
 
 const lineConversion = (
