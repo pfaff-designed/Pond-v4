@@ -9,10 +9,11 @@
  */
 
 import React from 'react'
-import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react'
+import { act, cleanup, render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DocumentPanel } from '@/components/organisms/DocumentPanel'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
+import { resetPageWriteRegistry } from '@/lib/pages/page-flush'
 import type { Block } from '@/lib/documents/types'
 import { justSaved } from '@/lib/templates/just-saved'
 import {
@@ -127,6 +128,16 @@ beforeEach(() => {
   mockCreatePage.mockResolvedValue({ id: 'made-1', type: 'page', title: 'untitled' })
   mockSaveBlocks.mockResolvedValue(undefined)
   mockSaveProps.mockResolvedValue(undefined)
+})
+
+// KAN-550: the page-write registry is module-level and outlives any one
+// test's render. Under parallel load, an earlier test's still-pending queued
+// write to `page-1` (e.g. the `/page` tests' page-link flush) landed inside a
+// later test's `commitBlocks` calls for the same page id. Clear it only after
+// `cleanup()` unmounts this test's own panel, so nothing it started outlives it.
+afterEach(() => {
+  cleanup()
+  resetPageWriteRegistry()
 })
 
 describe('DocumentPanel block rendering (via the module registry)', () => {
