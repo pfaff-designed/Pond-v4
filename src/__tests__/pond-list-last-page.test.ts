@@ -17,6 +17,7 @@ function makeChain(data: unknown[]) {
   return {
     select: jest.fn().mockReturnThis(),
     eq: jest.fn().mockReturnThis(),
+    is: jest.fn().mockReturnThis(),
     order: jest.fn().mockResolvedValue({ data, error: null }),
   }
 }

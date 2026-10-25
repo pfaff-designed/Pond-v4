@@ -69,7 +69,10 @@ function mapPondRow(row: PondRow): Pond {
   }
 }
 
-/** Every pond the signed-in person owns, in switcher order. */
+/** Every pond the signed-in person owns, in switcher order — a soft-deleted
+ *  pond (0036's `deleted_at`) is filtered here, the one place every live-pond
+ *  reader (switcher, ⌘K rows, `?pond=` resolution) reads from, so none of
+ *  them needs its own filter. */
 export async function listPonds(): Promise<Pond[]> {
   const supabase = createClient()
   const {
@@ -81,6 +84,7 @@ export async function listPonds(): Promise<Pond[]> {
     .from('ponds')
     .select(COLUMNS)
     .eq('user_id', user.id)
+    .is('deleted_at', null)
     .order('order')
 
   // The table arrives with migration 0018. Until it is applied, PostgREST answers
@@ -91,6 +95,78 @@ export async function listPonds(): Promise<Pond[]> {
     throw error
   }
   return ((data ?? []) as unknown as PondRow[]).map(mapPondRow)
+}
+
+export interface DeletedPond {
+  id: string
+  name: string
+  glyph: string | null
+  deletedAt: string
+}
+
+interface DeletedPondRow {
+  id: string
+  name: string
+  glyph: string | null
+  deleted_at: string | null
+}
+
+/** Soft-delete a pond (KAN-493): `s6m7`'s `delete…`, after its typed-name
+ *  confirm. Owner-scoped by RLS (0018's "ponds: update own" policy). */
+export async function softDeletePond(pondId: string): Promise<void> {
+  const supabase = createClient()
+  // Cast as `createPond` does above: `Database` can't infer an Update shape
+  // for a quoted-identifier table either.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any)
+    .from('ponds')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', pondId)
+  if (error) throw error
+}
+
+/** Clear a pond's `deleted_at` (KAN-493): settings › ponds › deleted's
+ *  `restore`. Keeps `order`, unchanged by the soft delete, so the pond
+ *  reappears in the switcher at its old position. */
+export async function restorePond(pondId: string): Promise<void> {
+  const supabase = createClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any)
+    .from('ponds')
+    .update({ deleted_at: null })
+    .eq('id', pondId)
+  if (error) throw error
+}
+
+/** Every soft-deleted pond the signed-in person owns, newest-deleted first —
+ *  settings › ponds › deleted's own list, same `PGRST205` tolerance as
+ *  `listPonds` for a database short of migration 0036. */
+export async function listDeletedPonds(): Promise<DeletedPond[]> {
+  const supabase = createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return []
+
+  const { data, error } = await supabase
+    .from('ponds')
+    .select('id, name, glyph, deleted_at')
+    .eq('user_id', user.id)
+    .not('deleted_at', 'is', null)
+    .order('deleted_at', { ascending: false })
+
+  if (error) {
+    if (error.code === 'PGRST205') return []
+    throw error
+  }
+  return ((data ?? []) as unknown as DeletedPondRow[]).map((row) => ({
+    id: row.id,
+    name: row.name,
+    glyph: row.glyph,
+    // Non-null by the `not(...).is(null)` filter above — the cast only
+    // narrows a type PostgREST's own `select` leaves as nullable.
+    deletedAt: row.deleted_at as string,
+  }))
 }
 
 export interface CreatePondOptions {

@@ -38,6 +38,7 @@ describe('createPond — the name contract', () => {
       select: jest.fn().mockReturnThis(),
       insert: jest.fn().mockReturnThis(),
       eq: jest.fn().mockReturnThis(),
+      is: jest.fn().mockReturnThis(),
       // `listPonds` (called internally for the new row's `order`) awaits `.order(...)`
       // directly; the insert path awaits `.single()` instead — both share this chain.
       order: jest.fn().mockResolvedValue({ data: [], error: null }),
@@ -73,6 +74,7 @@ describe('createPond — the name contract', () => {
       select: jest.fn().mockReturnThis(),
       insert: jest.fn().mockReturnThis(),
       eq: jest.fn().mockReturnThis(),
+      is: jest.fn().mockReturnThis(),
       order: jest.fn().mockResolvedValue({ data: [], error: null }),
       single: jest.fn().mockResolvedValue({ data: insertedRow, error: null }),
     }
