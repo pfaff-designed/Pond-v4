@@ -288,6 +288,25 @@ describe('treeKeyCommand', () => {
     expect(key('F2', LIFE_ID)).toEqual({ kind: 'rename', id: LIFE_ID })
   })
 
+  it('⌘D/Ctrl+D duplicates the row — bare d does nothing', () => {
+    expect(treeKeyCommand('d', 'trips', flat, { ...opts, metaOrCtrl: true })).toEqual({
+      kind: 'duplicate',
+      id: 'trips',
+    })
+    expect(treeKeyCommand('D', 'trips', flat, { ...opts, metaOrCtrl: true })).toEqual({
+      kind: 'duplicate',
+      id: 'trips',
+    })
+    expect(key('d', 'trips')).toBeNull() // no modifier: opts.metaOrCtrl is undefined
+    expect(treeKeyCommand('d', 'trips', flat, { ...opts, metaOrCtrl: false })).toBeNull()
+  })
+
+  it('a repeat ⌘D keydown (held key) is ignored — AUDIT G9', () => {
+    expect(
+      treeKeyCommand('d', 'trips', flat, { ...opts, metaOrCtrl: true, repeat: true })
+    ).toBeNull()
+  })
+
   it('unknown keys and stale ids return null (no focus jump)', () => {
     expect(key('a', 'health')).toBeNull()
     expect(key('ArrowDown', 'deleted-row')).toBeNull()

@@ -169,6 +169,13 @@ describe('the trailing gap below the last block (KAN-345 rule 3)', () => {
     expect(gap.style.paddingTop).toBe(`${BLOCK_ROW_GAP_PX + TEXT_BLOCK_TOP_INSET_PX}px`)
   })
 
+  it('on a blank page, drops the lead gap so its ghost row lands where the first real line lands (marginTop: 0)', async () => {
+    renderHarness([])
+
+    const gap = await waitFor(() => screen.getByTestId('trailing-block-gap'))
+    expect(gap.style.paddingTop).toBe(`${TEXT_BLOCK_TOP_INSET_PX}px`)
+  })
+
   it("clicking while the last empty line's editor is still a stand-in neither throws nor adds a second block", async () => {
     const empty: Block = { id: 'b-empty', type: 'text', content: '' }
     renderHarness([empty])

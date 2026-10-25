@@ -75,6 +75,7 @@ import { readRecentPageIds, writeRecent } from '@/lib/pages/recent-pages'
 import { usePaletteRecords } from '@/lib/pages/use-palette-records'
 import { createPage } from '@/lib/pages/client'
 import { insertPageOptimistic } from '@/lib/pages/tree'
+import { duplicateAndOpen } from '@/lib/pages/duplicate'
 import { pagesKey } from '@/lib/pages/keys'
 import { appendChildLinkUnder } from '@/lib/pages/child-links'
 import { usePagesRows } from '@/lib/pages/use-pages'
@@ -441,6 +442,22 @@ export function ShellCommands() {
     [parent.id, pondId, pondName, queryClient, router]
   )
 
+  // ⌘K "duplicate page" (KAN-468): the open page's own copy, through the
+  // same `duplicateAndOpen` flow ⌘D on a focused rail row runs (AUDIT G9).
+  const handleDuplicatePage = useCallback(async () => {
+    if (!currentNodeId) return
+    const page = pages.find((p) => p.id === currentNodeId)
+    await duplicateAndOpen(
+      queryClient,
+      router,
+      pondId,
+      currentNodeId,
+      page?.parent_id ?? null,
+      { type: page?.type ?? 'page', title: page?.title ?? '' },
+      requestComposerNotice
+    )
+  }, [currentNodeId, pages, pondId, queryClient, router])
+
   const handlePaletteSelect = useCallback(
     (item: PaletteItem) => {
       if (item.action === 'save-as-template') {
@@ -464,6 +481,10 @@ export function ShellCommands() {
       if (handleModeSelect(item.action)) return
       if (item.action === 'new-page') {
         void handleCreatePage(item.query)
+        return
+      }
+      if (item.action === 'duplicate-page') {
+        void handleDuplicatePage()
         return
       }
       if (item.action === 'new-pond') {
@@ -503,7 +524,16 @@ export function ShellCommands() {
         openWorkspaceUrl(workspaceUrl({ id: page.id, type: page.type, title: page.title }), router)
       }
     },
-    [pages, ponds, router, currentNodeId, handleModeSelect, startTemplateSheet, handleCreatePage]
+    [
+      pages,
+      ponds,
+      router,
+      currentNodeId,
+      handleModeSelect,
+      startTemplateSheet,
+      handleCreatePage,
+      handleDuplicatePage,
+    ]
   )
 
   const commandOpen = paletteOpen || templateSheetOpen

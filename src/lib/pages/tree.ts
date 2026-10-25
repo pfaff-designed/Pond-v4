@@ -15,6 +15,10 @@ import { pagesKey } from './keys'
 import { HOME_TYPE } from '@/lib/pages/home'
 import { ROW_TYPE } from '@/lib/properties/schema'
 import type { AreaRole } from '@/lib/rail/glyph-library'
+import { changeLogKey } from '@/lib/change-log/keys'
+import { sessionUndo } from '@/lib/change-log/session-undo'
+import { readDuplicatePageSnapshot } from '@/lib/change-log/page-changes'
+import type { ChangeLogRecord } from '@/lib/change-log/types'
 
 export interface PageRow {
   id: string
@@ -142,6 +146,29 @@ export function insertPageOptimistic(
       },
     ]
   })
+}
+
+/**
+ * KAN-468: the one place both duplicate entry points (⌘K and ⌘D) land after
+ * `duplicatePage` resolves — invalidates the pages tree so the copy shows in
+ * the rail, remembers the step for ⌘Z, invalidates the change log, and (KAN-468
+ * follow-up) invalidates the link parent's own `['page', id]` key when the RPC
+ * appended a page-link block to it, so that page's open draft redraws with the
+ * new link instead of missing it until an unrelated refetch. Kept here rather
+ * than in `client.ts` since it only touches the query cache/undo stack, never
+ * the RPC; kept here rather than in `duplicate.ts` since `duplicateAndOpen`
+ * (the RPC-calling flow) is the one caller, not the one doing cache work.
+ */
+export function afterDuplicate(
+  queryClient: QueryClient,
+  record: ChangeLogRecord,
+  pondId: string | null
+): void {
+  void queryClient.invalidateQueries({ queryKey: pagesKey(pondId) })
+  if (pondId) sessionUndo.remember({ pondId, recordIds: [record.id] })
+  void queryClient.invalidateQueries({ queryKey: changeLogKey() })
+  const linkParentId = readDuplicatePageSnapshot(record.after)?.linkParentId
+  if (linkParentId) void queryClient.invalidateQueries({ queryKey: ['page', linkParentId] })
 }
 
 /**
