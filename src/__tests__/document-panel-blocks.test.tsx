@@ -314,6 +314,31 @@ describe('the / menu on an empty page makes pages', () => {
     mockUsePondId.mockReturnValue('pond-1')
     justSaved.set('pond-1', 't1')
     renderWith({ id: 'page-1', parentId: null, type: 'page', title: 'Health', blocks: [] })
+
+    // KAN-550: nothing on this path is on a timer (`writeStructural`'s own
+    // flush runs synchronously), so the apply's real-time risk is pure CPU
+    // contention outrunning `waitFor`'s own poll budget, not a logic race —
+    // signal from inside the mocks themselves instead, so the test waits
+    // exactly as long as the apply actually takes, with no deadline to miss.
+    let resolveApplyCommitted: () => void
+    const applyCommitted = new Promise<void>((resolve) => {
+      resolveApplyCommitted = resolve
+    })
+    mockCommitBlocks.mockImplementation(async (...args: unknown[]) => {
+      const pageId = args[2] as string
+      const applied = args[3] as Block[]
+      if (pageId === 'page-1' && contentOf(applied[0]) !== '/') resolveApplyCommitted()
+      return undefined
+    })
+    let resolveSaveProps: () => void
+    const savePropsCalled = new Promise<void>((resolve) => {
+      resolveSaveProps = resolve
+    })
+    mockSaveProps.mockImplementation(async () => {
+      resolveSaveProps()
+      return undefined
+    })
+
     const { editor } = await openSlash('')
     expect(editor).toBeInTheDocument()
     fireEvent.click(await screen.findByText('weeknight recipe'))
@@ -324,13 +349,9 @@ describe('the / menu on an empty page makes pages', () => {
     // direct `saveBlocks` call — and `writeStructural`'s own flush lands the
     // pending typed save of the stale `/` content first, so the apply itself
     // is the LAST commit for this page, not necessarily the first.
-    await waitFor(() =>
-      expect(
-        mockCommitBlocks.mock.calls.some(
-          (c) => c[2] === 'page-1' && contentOf((c[3] as Block[])[0]) !== '/'
-        )
-      ).toBe(true)
-    )
+    await act(async () => {
+      await applyCommitted
+    })
     expect(mockCreatePage).not.toHaveBeenCalled()
     const appliedBlocks = mockCommitBlocks.mock.calls
       .filter((c) => c[2] === 'page-1')
@@ -339,11 +360,17 @@ describe('the / menu on an empty page makes pages', () => {
     expect(appliedBlocks).toEqual([
       { id: expect.not.stringMatching(/^old-1$/), type: 'text', content: 'chickpeas, harissa' },
     ])
-    await waitFor(() => expect(mockSaveProps).toHaveBeenCalled())
+    await act(async () => {
+      await savePropsCalled
+    })
     expect(mockSaveProps.mock.calls[0][2]).toMatchObject({
       madeFromTemplate: { templateId: 't1', name: 'weeknight recipe' },
     })
     expect(justSaved.get('pond-1')).toBeNull()
+    // Hand `commitBlocks` back to its plain default — the next test (a failed
+    // apply) sets its own implementation, but a test added after it shouldn't
+    // inherit this one's resolve-signalling wrapper.
+    mockCommitBlocks.mockResolvedValue(undefined)
   })
 
   it('a failed in-place apply leaves `yours · just saved` in place for a retry', async () => {

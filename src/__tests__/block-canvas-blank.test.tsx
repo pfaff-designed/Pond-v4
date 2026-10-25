@@ -661,7 +661,14 @@ describe('a template pick on a blank page applies in place (KAN-124)', () => {
     )
     expect(document.getElementById('block-b-empty')).not.toBeInTheDocument()
 
-    await waitFor(() => expect(screen.getByLabelText('title')).toHaveFocus())
+    // `focusPageTitle()` and the applied text line's own mount-time autofocus
+    // (rule 2, KAN-345) both land on a promise/effect tick rather than a real
+    // timer — `waitFor`'s real-time polling could observe either mid-flight
+    // under load. One flushed animation frame settles the race before
+    // asserting: the applied, still-unwritten text line ends up with the
+    // caret, same as test 488's "rule 2" case.
+    await act(() => new Promise(requestAnimationFrame))
+    expect(await findTextBlock()).toHaveFocus()
 
     expect(insertPageOptimistic).not.toHaveBeenCalled()
     expect(mockSaveProps).toHaveBeenCalledTimes(1)
@@ -1138,7 +1145,12 @@ describe('→ on a template row previews it, writing nothing (KAN-131)', () => {
     const appliedBlocks = mockSaveBlocks.mock.calls[0][2] as Block[]
     expect(appliedBlocks).toHaveLength(5)
     expect(document.getElementById('block-b-empty')).not.toBeInTheDocument()
-    await waitFor(() => expect(screen.getByLabelText('title')).toHaveFocus())
+    // Same rule-2 race as the premade-template path test above: one flushed
+    // animation frame settles `focusPageTitle()` vs. the applied `notes`
+    // line's own mount-time autofocus before asserting, instead of
+    // `waitFor` polling real time against whichever lands first.
+    await act(() => new Promise(requestAnimationFrame))
+    expect(await findTextBlock()).toHaveFocus()
     expect(insertPageOptimistic).not.toHaveBeenCalled()
   })
 
