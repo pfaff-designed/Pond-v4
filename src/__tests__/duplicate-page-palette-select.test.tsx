@@ -12,6 +12,13 @@ import { duplicatePage } from '@/lib/pages/client'
 import { ShellCommands } from '@/components/organisms/ShellCommands'
 import { requestComposerNotice } from '@/lib/terminal-focus'
 import { workspaceUrl } from '@/lib/pages/nav'
+import { PondContext, type PondContextValue } from '@/lib/pond/context'
+import type { Pond } from '@/lib/pond/client'
+
+const mockRemember = jest.fn()
+jest.mock('@/lib/change-log/session-undo', () => ({
+  sessionUndo: { remember: (...args: unknown[]) => mockRemember(...args) },
+}))
 
 const mockPush = jest.fn()
 jest.mock('next/navigation', () => ({
@@ -56,6 +63,27 @@ const renderShell = () =>
     </QueryClientProvider>
   )
 
+const POND: Pond = { id: 'pond-1', name: 'life', glyph: null, theme: 'light', order: 0, recentGlyphs: [] }
+const PROVIDER_VALUE: PondContextValue = {
+  pond: POND,
+  ponds: [POND],
+  loading: false,
+  reload: () => {},
+  addPond: () => {},
+  patchPond: () => {},
+}
+
+const renderShellWithPond = () =>
+  render(
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      <PondContext.Provider value={PROVIDER_VALUE}>
+        <ShellCommands />
+      </PondContext.Provider>
+    </QueryClientProvider>
+  )
+
 afterEach(() => jest.clearAllMocks())
 
 const openPaletteAndSelectDuplicate = async (user: ReturnType<typeof userEvent.setup>) => {
@@ -92,4 +120,15 @@ it('a rejecting duplicatePage shows the notice instead of leaving the palette si
   await waitFor(() =>
     expect(requestComposerNotice).toHaveBeenCalledWith("can't duplicate the page — try again.")
   )
+})
+
+it('remembers the duplicate as one undo step, keyed off the returned record id (KAN-468)', async () => {
+  ;(duplicatePage as jest.Mock).mockResolvedValue({ id: 'record-1', targetPageId: 'recipes-2' })
+  const user = userEvent.setup()
+  renderShellWithPond()
+
+  await openPaletteAndSelectDuplicate(user)
+
+  await waitFor(() => expect(mockRemember).toHaveBeenCalledTimes(1))
+  expect(mockRemember).toHaveBeenCalledWith({ pondId: 'pond-1', recordIds: ['record-1'] })
 })

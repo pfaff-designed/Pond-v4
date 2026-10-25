@@ -75,6 +75,7 @@ import { readRecentPageIds, writeRecent } from '@/lib/pages/recent-pages'
 import { usePaletteRecords } from '@/lib/pages/use-palette-records'
 import { createPage, duplicatePage } from '@/lib/pages/client'
 import { insertPageOptimistic } from '@/lib/pages/tree'
+import { changeLogKey } from '@/lib/change-log/keys'
 import { pagesKey } from '@/lib/pages/keys'
 import { appendChildLinkUnder } from '@/lib/pages/child-links'
 import { usePagesRows } from '@/lib/pages/use-pages'
@@ -459,6 +460,8 @@ export function ShellCommands() {
       const copyId = record.targetPageId
       if (!copyId) return
       void queryClient.invalidateQueries({ queryKey: pagesKey(pondId) })
+      if (pondId) sessionUndo.remember({ pondId, recordIds: [record.id] })
+      void queryClient.invalidateQueries({ queryKey: changeLogKey() })
       openWorkspaceUrl(
         workspaceUrl({ id: copyId, type: page?.type ?? 'page', title: page?.title ?? '' }),
         router

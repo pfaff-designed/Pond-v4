@@ -2327,8 +2327,11 @@ export function Rail() {
     setBusyId(id)
     try {
       const record = await withUser((sb, uid) => duplicatePage(sb, uid, id))
-      const copyId = record?.targetPageId
+      if (!record) return
+      const copyId = record.targetPageId
       if (copyId) navigateTo({ id: copyId, type: node.type, title: node.title })
+      if (pondId) sessionUndo.remember({ pondId, recordIds: [record.id] })
+      await queryClient.invalidateQueries({ queryKey: changeLogKey() })
     } catch {
       notify("Couldn't duplicate the page")
     } finally {
