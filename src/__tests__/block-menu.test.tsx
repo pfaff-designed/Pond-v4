@@ -1,13 +1,13 @@
 /**
  * The block menu on the page: the handle — or ⌘/ (Ctrl+/ off Apple) on a
  * focused block — opens `PondMenu` kind `block`, which offers the conversions
- * that keep the content, `copy link to block` and `delete`. While it is open the
- * block wears the open ring; closing it puts focus back where the person was —
- * on the handle, or inside the block for ⌘/. Every conversion is
- * the person's own edit: it applies in place at once, with an undo. Turning a
- * list into a table writes a real database (mocked here; the pure list helpers
- * stay real so the preview count is genuine). Arriving at a block's link
- * scrolls to and focuses that block.
+ * that keep the content, `copy link to block` and `delete`. While it is open
+ * the handle itself shows its open fill — no ring on the block; closing it
+ * puts focus back where the person was — on the handle, or inside the block
+ * for ⌘/. Every conversion is the person's own edit: it applies in place at
+ * once, with an undo. Turning a list into a table writes a real database
+ * (mocked here; the pure list helpers stay real so the preview count is
+ * genuine). Arriving at a block's link scrolls to and focuses that block.
  */
 
 import React from 'react'
@@ -415,22 +415,24 @@ describe('closing a right-click-opened menu focuses the row (KAN-485)', () => {
   })
 })
 
-describe('the block menu rings the block while open, and offers moving it into a page (KAN-485)', () => {
-  it('rings the block while the menu is open, and drops the ring when it closes', async () => {
+describe('the block menu opens with no ring on the block, and offers moving it into a page (KAN-485)', () => {
+  it('draws no ring on the block while the menu is open — the handle shows its open fill instead', async () => {
     const user = userEvent.setup()
     renderCanvas([heading, list])
     const root = document.getElementById('block-b-list')!
+    const handle = handleOf('b-list')
     expect(root.className).not.toContain(OPEN_RING)
+    expect(handle.className).not.toContain('bg-mn-hover-fill')
 
     openMenuOf('b-list')
     await screen.findByRole('menu', { name: /block menu/i })
-    expect(root.className).toContain(OPEN_RING)
-    expect(root.className).toContain('rounded-[20px]')
-    expect(root.className).not.toMatch(/dark:/)
+    expect(root.className).not.toContain(OPEN_RING)
+    expect(root.className).not.toMatch(/box-shadow/)
+    expect(handle.className).toContain('bg-mn-hover-fill')
 
     await user.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
-    expect(root.className).not.toContain(OPEN_RING)
+    expect(handle.className).not.toContain('bg-mn-hover-fill')
   })
 
   it('offers `move into a new page`, and picking it moves the block into one', async () => {

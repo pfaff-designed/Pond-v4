@@ -55,7 +55,7 @@ import {
   SavedViewHostContext,
 } from '@/lib/modules/view/active-view-context'
 import { SavedViewBar } from '@/lib/modules/view/saved-view-bar'
-import { compactChartMark } from '@/lib/modules/view/chart-compact'
+import { compactChartMark, isChartCard } from '@/lib/modules/view/chart-compact'
 import type { PropertySchema } from '@/lib/properties/schema'
 import { CHART_EMPTY_LINE } from '@/lib/modules/chart/card'
 import { addTodoItem } from '@/lib/modules/todo/view'
@@ -3495,8 +3495,9 @@ function useBlockEmptyState(
  * Enter/Space on the focused handle, selects the row — it never opens the
  * menu. A press that moves past the threshold still drags, unchanged. The
  * menu opens from right-click on the block, ⌘/ (Ctrl+/ off Apple) anywhere in
- * it, or ⇧F10/the ContextMenu key on a selected row, and the block wears the
- * open ring while it is open. Phone (`size="mobile"`) keeps the old
+ * it, or ⇧F10/the ContextMenu key on a selected row; the handle itself shows
+ * its own open fill (`PondBlock.dc.html`), no ring on the block. Phone
+ * (`size="mobile"`) keeps the old
  * tap-opens-the-menu path on the handle itself — iOS Safari fires no
  * `contextmenu` on a long-press. Base UI's own trigger opens on pointerdown;
  * `handlePointerOpenChange` below drops that and any open that arrives after
@@ -4414,14 +4415,21 @@ function BlockEditor({
         // A calendar sits in a card, so selecting it draws the card's ring.
         // A board draws its own lanes and has no card, so the same ring goes
         // on the row itself — otherwise a click selects it and nothing shows.
-        state === 'selected' && !frame && block.type !== 'text' && POND_BLOCK_SELECTED_RING_ROUNDED,
+        // A chart card and a page-link draw no `frame` either, but each rings
+        // ITS OWN card via `useBlockRow().selected` (`chart/card.tsx`,
+        // `page-link/view.tsx`), so the row excludes both here too.
+        state === 'selected' &&
+          !frame &&
+          block.type !== 'text' &&
+          block.type !== 'page-link' &&
+          !(block.type === 'view' && isChartCard(block)) &&
+          POND_BLOCK_SELECTED_RING_ROUNDED,
         settleOnMount && 'motion-settle-in',
         // `origin` (old place) from `PondBlock.dc.html` is opacity .4 ONLY — the
         // tilt and stepped-up shadow belong to the separate `lifted` copy, built
         // where the drag preview is drawn (not this node).
         isDragging &&
-          'opacity-40 transition-opacity duration-[var(--motion-quick)] ease-[var(--ease-mn)] motion-reduce:transition-none',
-        menuOpen && 'rounded-[20px] [box-shadow:0_0_0_2px_rgb(from_var(--mn-text)_r_g_b/0.18)]'
+          'opacity-40 transition-opacity duration-[var(--motion-quick)] ease-[var(--ease-mn)] motion-reduce:transition-none'
       )}
       id={blockDomId(block.id)}
       data-block-id={block.id}

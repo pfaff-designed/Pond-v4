@@ -11,6 +11,7 @@ import React, { useState } from 'react'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
+import { POND_BLOCK_SELECTED_RING } from '@/components/organisms/PondBlock'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { pagesKey } from '@/lib/pages/keys'
 import type { PageRow } from '@/lib/pages/tree'
@@ -151,5 +152,17 @@ describe('removing a page-link block removes only the link (KAN-415)', () => {
     expect(mockMovePage).not.toHaveBeenCalled()
     const rows = client.getQueryData<PageRow[]>(pagesKey(null))
     expect(rows?.some((r) => r.id === 'child-professional')).toBe(true)
+  })
+
+  it('selecting the row rings the link itself, not the block wrapper (KAN-361)', async () => {
+    renderCanvas()
+    const link = await screen.findByRole('link', { name: 'Open professional' })
+    const root = document.getElementById('block-b-link')!
+    expect(root.className).not.toContain('ring-2')
+
+    root.focus()
+    await waitFor(() => expect(root).toHaveFocus())
+    expect(root.className).not.toContain('ring-2')
+    expect(link.className).toContain(POND_BLOCK_SELECTED_RING)
   })
 })
