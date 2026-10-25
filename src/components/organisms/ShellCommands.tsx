@@ -39,6 +39,7 @@ import { PondCommand } from '@/components/organisms/PondCommand'
 import { ReportProblemBox, type ReportProblemStatus } from '@/components/organisms/ReportProblemBox'
 import { UndoNotice } from '@/components/molecules/UndoNotice'
 import {
+  BLOCK_MOVE_PICK_EVENT,
   clearUndoNotice,
   isComposerToggleKey,
   requestComposerNotice,
@@ -47,6 +48,7 @@ import {
   requestTerminalFocus,
   requestUndoNotice,
   useUndoNotice,
+  type BlockMovePickDetail,
 } from '@/lib/terminal-focus'
 import {
   isPaletteChord,
@@ -79,6 +81,7 @@ import { moveAndStageUndo } from '@/lib/pages/move'
 import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import { useFavouritePage } from '@/lib/pond/use-favourite-page'
 import {
+  blockMovePickItems,
   movePickItems,
   newPageParent,
   paletteItems,
@@ -130,6 +133,9 @@ export function ShellCommands() {
   // `move page to…`'s pick mode (KAN-469): set while picking, cleared on close
   // so a reopen always starts fresh — the same rule scope/query already follow.
   const [movePick, setMovePick] = useState<{ id: string; title: string } | null>(null)
+  // The block menu's `move to…` pick mode (KAN-479): set while picking a
+  // target page for one block, cleared on close like `movePick`.
+  const [blockMovePick, setBlockMovePick] = useState<BlockMovePickDetail | null>(null)
   const [query, setQuery] = useState('')
   // `new pond “q”`: the sheet is open, holding the name the palette handed over.
   const [naming, setNaming] = useState<string | null>(null)
@@ -325,6 +331,7 @@ export function ShellCommands() {
   const items = useMemo(() => {
     if (!paletteOpen) return []
     if (movePick) return movePickItems(pages, movePick.id, home?.title ?? pondName)
+    if (blockMovePick) return blockMovePickItems(pages, blockMovePick.sourcePageId)
     return [
       ...paletteItems(pages, recentPageIds, currentNodeId, pond?.favouritePageIds, pond != null),
       ...zenCommands.items,
@@ -343,10 +350,23 @@ export function ShellCommands() {
     records,
     recentPageIds,
     movePick,
+    blockMovePick,
     home,
     pondName,
   ])
   const scope = useMemo(() => paletteScope(pages, currentNodeId), [pages, currentNodeId])
+
+  // The block menu's `move to…` asks (`requestBlockMovePick`); this is the
+  // only mounted `PondCommand`, so it answers by opening pick mode — the
+  // same decoupling as `requestComposerToggle`/`AITerminal`.
+  useEffect(() => {
+    function onBlockMovePick(e: Event) {
+      setBlockMovePick((e as CustomEvent<BlockMovePickDetail>).detail)
+      setPaletteOpen(true)
+    }
+    window.addEventListener(BLOCK_MOVE_PICK_EVENT, onBlockMovePick)
+    return () => window.removeEventListener(BLOCK_MOVE_PICK_EVENT, onBlockMovePick)
+  }, [])
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -362,7 +382,10 @@ export function ShellCommands() {
         else if (reportOpen) closeReport()
         else
           setPaletteOpen((prev) => {
-            if (prev) setMovePick(null)
+            if (prev) {
+              setMovePick(null)
+              setBlockMovePick(null)
+            }
             return !prev
           })
         return
@@ -492,6 +515,7 @@ export function ShellCommands() {
       if (next) setPaletteOpen(true)
       else {
         setMovePick(null)
+        setBlockMovePick(null)
         if (templateSheetOpen) closeTemplateSheet()
         else setPaletteOpen(false)
       }
@@ -605,6 +629,14 @@ export function ShellCommands() {
         )
         return
       }
+      // Block `move to…` pick mode (KAN-479 slice 1): a later pass replaces
+      // this stub with the write + toast (`moveBlockToPage`). For now the
+      // picker closes with no write — selection isn't wired yet.
+      if (blockMovePick) {
+        setBlockMovePick(null)
+        setPaletteOpen(false)
+        return
+      }
       if (item.action === 'save-as-template') {
         // The row lists only with a page open, so `currentNodeId` is set here.
         if (!currentNodeId) return
@@ -697,6 +729,7 @@ export function ShellCommands() {
       handleDuplicatePage,
       toggleFavouritePage,
       movePick,
+      blockMovePick,
       queryClient,
       pondId,
       home,
@@ -733,10 +766,11 @@ export function ShellCommands() {
         open={commandOpen}
         onOpenChange={handleOpenChange}
         items={items}
-        // Pick mode is its own filter on the list (`movePickItems` already
-        // swapped `items` above) — the rail-scope filter would otherwise
-        // apply on top of it, against a page `scope` no longer describes.
-        scope={movePick ? null : scope}
+        // Pick mode is its own filter on the list (`movePickItems`/
+        // `blockMovePickItems` already swapped `items` above) — the
+        // rail-scope filter would otherwise apply on top of it, against a
+        // page `scope` no longer describes.
+        scope={movePick || blockMovePick ? null : scope}
         pondName={pondName}
         parentTitle={parent.title}
         pondId={pondId}
@@ -745,11 +779,17 @@ export function ShellCommands() {
           openWorkspaceUrl(workspaceUrl(to.kind === 'page' ? to.node : null), router)
         }
         onActiveItemChange={handleActiveItemChange}
-        ask={movePick ? false : !inZen}
-        pickMode={!!movePick}
-        placeholder={movePick ? `move ${movePick.title || 'Untitled'} to…` : undefined}
-        enterHint={movePick ? '↵ move' : undefined}
-        resetOn={movePick?.id ?? null}
+        ask={movePick || blockMovePick ? false : !inZen}
+        pickMode={!!movePick || !!blockMovePick}
+        placeholder={
+          movePick
+            ? `move ${movePick.title || 'Untitled'} to…`
+            : blockMovePick
+              ? `move ${blockMovePick.label} to…`
+              : undefined
+        }
+        enterHint={movePick || blockMovePick ? '↵ move' : undefined}
+        resetOn={movePick?.id ?? blockMovePick?.blockId ?? null}
         visits={recentPageIds}
         onQueryChange={setQuery}
         sheet={templateSheet.sheet}

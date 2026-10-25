@@ -35,6 +35,7 @@ import { SiblingBlocksProvider } from '@/lib/modules/sibling-context'
 import { BlockRowProvider } from '@/lib/modules/block-row-context'
 import { blockDomId, focusPageTitle, scrollToBlock } from '@/lib/modules/block-dom'
 import { requestTitleFocus } from '@/lib/pages/title-focus'
+import { requestBlockMovePick } from '@/lib/terminal-focus'
 import { blockLinkUrl, useBlockLinkArrival } from '@/lib/modules/block-link'
 import { ModuleView } from '@/lib/modules/renderers'
 import {
@@ -1664,10 +1665,15 @@ export function BlockCanvas({
     }
   }
 
-  // Stub (KAN-479 slice 1): the pick request channel lands in a later pass,
-  // which replaces this body with a call to it.
+  // The block menu's `move to…` row (KAN-479 slice 1): asks `ShellCommands`
+  // to open its one palette in block-pick mode — the write itself lands in
+  // a later pass, once the picker's select branch is wired.
   const onMoveTo = (block: Block) => {
-    void block
+    requestBlockMovePick({
+      blockId: block.id,
+      sourcePageId: pageId,
+      label: blockFrame(block)?.heading ?? block.type,
+    })
   }
 
   const handleMenuOpenChange = (index: number, open: boolean) => {

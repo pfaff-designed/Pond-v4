@@ -20,7 +20,11 @@
 import type { PaletteItem, PaletteScope } from '@/components/molecules/palette-entries'
 import { subtreeIdsFromRows } from '@/lib/deletion/blast-radius'
 import { ancestorPath, crumbTrail } from '@/lib/pages/crumbs'
-import { isDuplicablePageRow, isMovablePageRow } from '@/lib/pages/databases-root'
+import {
+  isDuplicablePageRow,
+  isMovablePageRow,
+  withoutDatabasesRoot,
+} from '@/lib/pages/databases-root'
 import { markIndex, type MarkSource, resolveMark } from '@/lib/pages/mark'
 import { RECENT_SHOWN } from '@/lib/pages/recent-pages'
 import type { PageRow } from '@/lib/pages/tree'
@@ -236,6 +240,22 @@ export function movePickItems(
     rootRow,
     ...all.filter((r) => !excluded.has(r.id)).map((r) => pageRowItem(all, byId, index, r)),
   ]
+}
+
+/**
+ * The block menu's `move to…` candidate list (KAN-479): every editable page
+ * except the block's own source page — no databases root or its subtree
+ * (`withoutDatabasesRoot`), and no synthetic root row either, unlike
+ * `movePickItems`: a block moves onto a real page's own block list, and the
+ * pond's root has none to append to.
+ */
+export function blockMovePickItems(rows: readonly PageRow[], sourcePageId: string): PaletteItem[] {
+  const all = withoutDatabasesRoot(rows)
+  const index = markIndex(all)
+  const byId = new Map(all.map((r) => [r.id, r]))
+  return all
+    .filter((r) => r.id !== sourcePageId)
+    .map((r) => pageRowItem(all, byId, index, r))
 }
 
 /**
