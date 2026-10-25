@@ -1248,8 +1248,15 @@ export function RailView({
     if (!focusRequest || handledFocusTokenRef.current === focusRequest.token) return
     if (!visibleIds.has(focusRequest.id)) return
     handledFocusTokenRef.current = focusRequest.token
-    preRailFocusRef.current =
-      document.activeElement instanceof HTMLElement ? document.activeElement : null
+    // Only capture when focus is currently OUTSIDE the rail — a repeat press
+    // of the chord while a row already holds focus must not overwrite the
+    // remembered target with the row itself, or Esc would "restore" focus to
+    // where it already is instead of back to the editor.
+    const active = document.activeElement
+    const activeIsOutsideRail = !(active instanceof Node) || !bodyRef.current?.contains(active)
+    if (activeIsOutsideRail) {
+      preRailFocusRef.current = active instanceof HTMLElement ? active : null
+    }
     // Responds to an external request (the rail-focus key), not a derived
     // value — same justification as the reveal effects above.
     /* eslint-disable react-hooks/set-state-in-effect */
@@ -1321,11 +1328,17 @@ export function RailView({
         !picker &&
         preRailFocusRef.current
       ) {
-        e.preventDefault()
-        e.stopPropagation()
         const target = preRailFocusRef.current
         preRailFocusRef.current = null
-        target.focus()
+        // A ↵-navigation since the chord can unmount the remembered element
+        // without DOM focus ever leaving the row — fall back to doing
+        // nothing (Esc keeps its normal, unhandled meaning) rather than
+        // swallowing the keystroke on a target that can no longer take focus.
+        if (target.isConnected) {
+          e.preventDefault()
+          e.stopPropagation()
+          target.focus()
+        }
       }
       return
     }
@@ -1378,11 +1391,17 @@ export function RailView({
   // `focusInRailRef`'s other half: the rail stops owning focus the instant it
   // moves to anything outside this body (the ⌘K palette's own input, the page
   // editor) — capture phase, so it sees the move before a handler further down
-  // could stop the event.
+  // could stop the event. The KAN-476 chord's remembered pre-focus target is
+  // only meaningful while that stretch holds, so a real Tab/click move out of
+  // the rail (unlike a ↵-navigation that leaves DOM focus on the row itself)
+  // clears it too — otherwise a later, unrelated click straight into a row
+  // would inherit a stale Esc target that was never this visit's own.
   useEffect(() => {
     const onFocusIn = (e: FocusEvent) => {
-      if (!(e.target instanceof Node) || !bodyRef.current?.contains(e.target))
+      if (!(e.target instanceof Node) || !bodyRef.current?.contains(e.target)) {
         focusInRailRef.current = false
+        preRailFocusRef.current = null
+      }
     }
     document.addEventListener('focusin', onFocusIn, { capture: true })
     return () => document.removeEventListener('focusin', onFocusIn, { capture: true })
@@ -1985,6 +2004,35 @@ export function Rail() {
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [pondId, isSuccess, pages, setExpanded])
 
+  // The databases root is excluded from any ancestor chain: it is a
+  // disclosure the person toggles themselves (KAN-486), not one a folder
+  // navigation should force open.
+  const ancestorIdsFor = useCallback(
+    (nodeId: string) =>
+      ancestorPath(pages, nodeId)
+        .map((c) => c.id)
+        .filter((id) => id !== databasesRootId),
+    [pages, databasesRootId]
+  )
+  // One home for "expand Life and every ancestor folder of `nodeId`" — the
+  // ticket-25 reveal effect and the KAN-476 rail-focus key both want exactly
+  // this, differing only in whether a once-per-selection gate guards the call.
+  const revealAncestors = useCallback(
+    (nodeId: string) => {
+      const ancestors = ancestorIdsFor(nodeId)
+      setLifeExpanded(true)
+      if (ancestors.length > 0) {
+        setExpanded((prev) => {
+          const next = new Set(prev)
+          for (const id of ancestors) next.add(id)
+          return next
+        })
+      }
+      return ancestors
+    },
+    [ancestorIdsFor]
+  )
+
   // ── Rail follows you (ticket-25) ────────────────────────────────────────────
   // When the selection changes — via a rail click, a children-grid card, the
   // breadcrumb, or a page created through chat / ＋ — auto-expand every folder on
@@ -2000,11 +2048,7 @@ export function Rail() {
     }
     // Wait until the node itself is present so its ancestor chain is resolvable.
     if (!pages.some((r) => r.id === selectedNodeId)) return
-    // The databases root is excluded: it is a disclosure the person toggles
-    // themselves (KAN-486), not a folder navigation should force open.
-    const ancestors = ancestorPath(pages, selectedNodeId)
-      .map((c) => c.id)
-      .filter((id) => id !== databasesRootId)
+    const ancestors = ancestorIdsFor(selectedNodeId)
     // KAN-469: keyed on the resolved ancestor chain, not just the id — a
     // reparent of the already-open node (⌘K's "move page to…", which has no
     // drop target of its own to expand, unlike a drag) changes that chain
@@ -2013,19 +2057,11 @@ export function Rail() {
     const revealKey = `${selectedNodeId}:${ancestors.join(',')}`
     if (revealKey === revealedForRef.current) return
     revealedForRef.current = revealKey
-    // The two reveals below respond to an external navigation (URL ?nodeId, incl.
-    // chat/＋ creation) — open Life and every ancestor folder so the current node
-    // shows. Guarded to fire once per selection; not a derived-state computation.
-    /* eslint-disable react-hooks/set-state-in-effect */
-    setLifeExpanded(true)
-    if (ancestors.length === 0) return
-    setExpanded((prev) => {
-      const next = new Set(prev)
-      for (const id of ancestors) next.add(id)
-      return next
-    })
-    /* eslint-enable react-hooks/set-state-in-effect */
-  }, [selectedNodeId, pages, databasesRootId])
+    // Responds to an external navigation (URL ?nodeId, incl. chat/＋ creation)
+    // — open Life and every ancestor folder so the current node shows.
+    // Guarded to fire once per selection; not a derived-state computation.
+    revealAncestors(selectedNodeId)
+  }, [selectedNodeId, pages, databasesRootId, ancestorIdsFor, revealAncestors])
 
   // ── Rail-focus key (KAN-476) ────────────────────────────────────────────────
   // `requestRailRowFocus` (⌘⇧\) asks the rail to reveal and focus the open
@@ -2038,22 +2074,12 @@ export function Rail() {
     const handleFocusRequest = () => {
       if (!selectedNodeId) return
       if (!pages.some((r) => r.id === selectedNodeId)) return
-      const ancestors = ancestorPath(pages, selectedNodeId)
-        .map((c) => c.id)
-        .filter((id) => id !== databasesRootId)
-      setLifeExpanded(true)
-      if (ancestors.length > 0) {
-        setExpanded((prev) => {
-          const next = new Set(prev)
-          for (const id of ancestors) next.add(id)
-          return next
-        })
-      }
+      revealAncestors(selectedNodeId)
       setFocusRequest((prev) => ({ id: selectedNodeId, token: (prev?.token ?? 0) + 1 }))
     }
     window.addEventListener(FOCUS_RAIL_ROW_EVENT, handleFocusRequest)
     return () => window.removeEventListener(FOCUS_RAIL_ROW_EVENT, handleFocusRequest)
-  }, [selectedNodeId, pages, databasesRootId])
+  }, [selectedNodeId, pages, revealAncestors])
 
   // ── Rail reveals a new child without leaving the parent (KAN-122) ──────────
   // The `/ nested page` swap stays on the parent, so selection never changes

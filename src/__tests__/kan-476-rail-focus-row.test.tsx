@@ -7,7 +7,7 @@
  * glyph picker) already owns Esc, where existing behaviour is unchanged.
  */
 import React from 'react'
-import { act, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Rail } from '@/components/organisms/Rail'
@@ -168,5 +168,75 @@ describe('KAN-476 — the rail-focus key focuses the open row', () => {
 
     expect(editor).not.toHaveFocus()
     expect(mark).toHaveFocus()
+  })
+
+  it('a repeat chord press does not overwrite the remembered target with the rail row itself', async () => {
+    nodeId = 'desk'
+    const editor = mountRailWithEditor(ALL_ROWS)
+    editor.focus()
+
+    act(() => requestRailRowFocus())
+    const row = screen.getByRole('treeitem', { name: 'Desk' })
+    expect(row).toHaveFocus()
+
+    // A second press while the row already has focus must not re-capture
+    // `document.activeElement` (now the row) over the original editor.
+    act(() => requestRailRowFocus())
+    expect(row).toHaveFocus()
+
+    await userEvent.keyboard('{Escape}')
+    expect(editor).toHaveFocus()
+  })
+
+  it('falls back to doing nothing on Esc when the remembered target is no longer connected (↵-navigation unmounted it)', async () => {
+    nodeId = 'desk'
+    mountRail(ALL_ROWS)
+    // A plain DOM node (not React-managed), standing in for the open page's
+    // editor — created and torn down directly so removing it mid-test can't
+    // fight React's own unmount bookkeeping on cleanup.
+    const editor = document.createElement('input')
+    document.body.appendChild(editor)
+    editor.focus()
+
+    act(() => requestRailRowFocus())
+    const row = screen.getByRole('treeitem', { name: 'Desk' })
+    expect(row).toHaveFocus()
+
+    // A ↵-navigation to another page can unmount the editor the chord
+    // remembered without DOM focus ever leaving the row itself.
+    editor.remove()
+    expect(editor.isConnected).toBe(false)
+
+    const notPrevented = fireEvent.keyDown(row, { key: 'Escape' })
+    expect(notPrevented).toBe(true)
+    expect(row).toHaveFocus()
+  })
+
+  it('clears the remembered target when focus leaves the rail by click, so a later plain click into the row does not inherit a stale Esc target', async () => {
+    nodeId = 'desk'
+    const editor = mountRailWithEditor(ALL_ROWS)
+    editor.focus()
+
+    act(() => requestRailRowFocus())
+    const row = screen.getByRole('treeitem', { name: 'Desk' })
+    expect(row).toHaveFocus()
+
+    // Leave the rail for something else entirely (not the remembered editor)
+    // — the real-world trigger for the KAN-469 focusInRailRef listener.
+    const elsewhere = document.createElement('button')
+    document.body.appendChild(elsewhere)
+    elsewhere.focus()
+
+    // A later, unrelated click straight into the row (not through the chord)
+    // must not inherit the earlier chord's remembered target.
+    await userEvent.click(row)
+    expect(row).toHaveFocus()
+
+    const notPrevented = fireEvent.keyDown(row, { key: 'Escape' })
+    expect(notPrevented).toBe(true)
+    expect(row).toHaveFocus()
+    expect(editor).not.toHaveFocus()
+
+    elsewhere.remove()
   })
 })
