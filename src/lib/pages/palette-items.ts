@@ -87,6 +87,18 @@ export const SAVE_AS_TEMPLATE_ACTION: PaletteItem = {
   action: 'save-as-template',
 }
 
+/**
+ * KAN-468: no board draws this — "No board draws it; the app's flow applies"
+ * (Notion's page-menu Duplicate, ⌘D). A page action like `save-as-template`
+ * just above, so it lists only when there is a page open to duplicate.
+ */
+export const DUPLICATE_PAGE_ACTION: PaletteItem = {
+  id: 'action:duplicate-page',
+  label: 'duplicate page',
+  kind: 'action',
+  action: 'duplicate-page',
+}
+
 export function paletteItems(
   rows: readonly PageRow[],
   /** Newest first, up to the store's own 20-entry cap — not pre-sliced by the caller. */
@@ -124,7 +136,7 @@ export function paletteItems(
     NEW_PAGE_ACTION,
     { ...ASK_POND_ACTION, key: formatChord('mod+j') },
     DEEP_RESEARCH_ACTION,
-    ...(openPageId ? [SAVE_AS_TEMPLATE_ACTION] : []),
+    ...(openPageId ? [SAVE_AS_TEMPLATE_ACTION, DUPLICATE_PAGE_ACTION] : []),
   ]
 }
 

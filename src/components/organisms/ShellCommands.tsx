@@ -73,7 +73,7 @@ import { newPageParent, paletteItems, paletteScope, pondItems, railItems } from 
 import { prefetchPageIfAbsent } from '@/lib/pages/use-page-prefetch'
 import { readRecentPageIds, writeRecent } from '@/lib/pages/recent-pages'
 import { usePaletteRecords } from '@/lib/pages/use-palette-records'
-import { createPage } from '@/lib/pages/client'
+import { createPage, duplicatePage } from '@/lib/pages/client'
 import { insertPageOptimistic } from '@/lib/pages/tree'
 import { pagesKey } from '@/lib/pages/keys'
 import { appendChildLinkUnder } from '@/lib/pages/child-links'
@@ -441,6 +441,33 @@ export function ShellCommands() {
     [parent.id, pondId, pondName, queryClient, router]
   )
 
+  // ⌘K "duplicate page" (KAN-468): the open page's own copy, mirroring
+  // `handleCreatePage`'s shape. `duplicatePage` only hands back the copy's id
+  // (`targetPageId`) — the copy's actual title lands in the invalidated
+  // `['pages']` cache; the open page's own title/type stand in for the URL
+  // in the meantime, same as `handleCreatePage`'s pre-write values do.
+  const handleDuplicatePage = useCallback(async () => {
+    if (!currentNodeId) return
+    const page = pages.find((p) => p.id === currentNodeId)
+    try {
+      const supabase = createClient()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) return
+      const record = await duplicatePage(supabase, user.id, currentNodeId)
+      const copyId = record.targetPageId
+      if (!copyId) return
+      void queryClient.invalidateQueries({ queryKey: pagesKey(pondId) })
+      openWorkspaceUrl(
+        workspaceUrl({ id: copyId, type: page?.type ?? 'page', title: page?.title ?? '' }),
+        router
+      )
+    } catch {
+      requestComposerNotice("can't duplicate the page — try again.")
+    }
+  }, [currentNodeId, pages, pondId, queryClient, router])
+
   const handlePaletteSelect = useCallback(
     (item: PaletteItem) => {
       if (item.action === 'save-as-template') {
@@ -464,6 +491,10 @@ export function ShellCommands() {
       if (handleModeSelect(item.action)) return
       if (item.action === 'new-page') {
         void handleCreatePage(item.query)
+        return
+      }
+      if (item.action === 'duplicate-page') {
+        void handleDuplicatePage()
         return
       }
       if (item.action === 'new-pond') {
@@ -503,7 +534,16 @@ export function ShellCommands() {
         openWorkspaceUrl(workspaceUrl({ id: page.id, type: page.type, title: page.title }), router)
       }
     },
-    [pages, ponds, router, currentNodeId, handleModeSelect, startTemplateSheet, handleCreatePage]
+    [
+      pages,
+      ponds,
+      router,
+      currentNodeId,
+      handleModeSelect,
+      startTemplateSheet,
+      handleCreatePage,
+      handleDuplicatePage,
+    ]
   )
 
   const commandOpen = paletteOpen || templateSheetOpen

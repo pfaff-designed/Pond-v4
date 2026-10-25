@@ -8,10 +8,12 @@ import { paletteEntries } from '@/components/molecules/palette-entries'
 import {
   ASK_POND_ACTION,
   DEEP_RESEARCH_ACTION,
+  DUPLICATE_PAGE_ACTION,
   IMPORT_A_PAGE_ACTION,
   modeItems,
   paletteItems,
   REPORT_A_PROBLEM_ACTION,
+  SAVE_AS_TEMPLATE_ACTION,
   ZEN_ACTION,
 } from '@/lib/pages/palette-items'
 
@@ -64,6 +66,29 @@ describe('paletteItems — report a problem', () => {
     for (const items of [withoutOpenPage, withOpenPage]) {
       expect(items).toContainEqual(REPORT_A_PROBLEM_ACTION)
     }
+  })
+})
+
+describe('DUPLICATE_PAGE_ACTION', () => {
+  it('is an action row in Pond’s own words', () => {
+    expect(DUPLICATE_PAGE_ACTION).toMatchObject({
+      id: 'action:duplicate-page',
+      label: 'duplicate page',
+      kind: 'action',
+      action: 'duplicate-page',
+    })
+  })
+})
+
+describe('paletteItems — duplicate page', () => {
+  it('lists only when a page is open, like save page as template', () => {
+    const withoutOpenPage = paletteItems([], [])
+    const withOpenPage = paletteItems([], [], 'some-page')
+
+    expect(withoutOpenPage).not.toContainEqual(DUPLICATE_PAGE_ACTION)
+    expect(withoutOpenPage).not.toContainEqual(SAVE_AS_TEMPLATE_ACTION)
+    expect(withOpenPage).toContainEqual(DUPLICATE_PAGE_ACTION)
+    expect(withOpenPage).toContainEqual(SAVE_AS_TEMPLATE_ACTION)
   })
 })
 
