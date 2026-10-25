@@ -68,4 +68,10 @@ describe('ConfirmDialog requiredText', () => {
     await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
     expect(onConfirm).not.toHaveBeenCalled()
   })
+
+  it("uses the card surface token, not the ground token (dark splits the two)", () => {
+    render(<Harness title="Delete this?" onConfirm={jest.fn()} />)
+    expect(screen.getByRole('alertdialog').className).toContain('bg-mn-card')
+    expect(screen.getByRole('alertdialog').className).not.toContain('bg-mn-surface')
+  })
 })

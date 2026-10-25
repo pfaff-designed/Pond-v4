@@ -65,6 +65,13 @@ function rowFor(name: string): HTMLElement {
   return row
 }
 
+// The deleted row for the same pond also carries its name (as a sibling of
+// the countdown span), so a plain `getByText(name)` is ambiguous once a pond
+// is deleted — query the LIVE list specifically.
+function queryLiveRow(name: string): HTMLElement | undefined {
+  return screen.queryAllByTestId('settings-pond-row').find((r) => r.textContent?.includes(name))
+}
+
 beforeEach(() => {
   mockSearch = ''
   push.mockClear()
@@ -98,6 +105,17 @@ describe('PondSettingsPage', () => {
     expect(deletedLabel.className).toContain('font-mono')
     expect(deletedLabel.className).toContain('lowercase')
     expect(deletedLabel.textContent).toBe('deleted')
+
+    const countdown = within(deletedRow).getByTestId('settings-deleted-countdown')
+    expect(countdown.className).toContain('font-mono')
+    expect(countdown.className).toContain('text-[10.5px]')
+    expect(countdown.className).toContain('lowercase')
+    expect(countdown.className).toContain('text-mn-text-secondary')
+    expect(countdown.textContent).toBe(`· ${pondGoesLabel(ARCHIVE.deletedAt, new Date())}`)
+    const nameSpan = within(deletedRow).getByText(/Archive/)
+    expect(nameSpan.className).toContain('text-[15px]')
+    expect(nameSpan.className).toContain('font-medium')
+    expect(nameSpan.className).not.toContain('font-mono')
   })
 
   it('opens the typed-name dialog and keeps confirm disabled until it matches', async () => {
@@ -129,7 +147,7 @@ describe('PondSettingsPage', () => {
     await user.click(screen.getByRole('button', { name: 'Delete' }))
 
     await waitFor(() => expect(softDeletePond).toHaveBeenCalledWith('p-studio'))
-    await waitFor(() => expect(screen.queryByText('Studio')).not.toBeInTheDocument())
+    await waitFor(() => expect(queryLiveRow('Studio')).toBeUndefined())
     expect(push).not.toHaveBeenCalled()
   })
 
@@ -173,7 +191,8 @@ describe('PondSettingsPage', () => {
 
     const row = await screen.findByTestId('settings-deleted-row')
     const label = pondGoesLabel(ARCHIVE.deletedAt, new Date())
-    expect(within(row).getByText(`Archive · ${label}`)).toBeInTheDocument()
+    expect(within(row).getByText('Archive')).toBeInTheDocument()
+    expect(within(row).getByTestId('settings-deleted-countdown').textContent).toBe(`· ${label}`)
     expect(within(row).getByRole('button', { name: 'restore' })).toBeInTheDocument()
   })
 
@@ -191,7 +210,7 @@ describe('PondSettingsPage', () => {
     fireEvent.click(confirm)
     fireEvent.click(confirm)
 
-    await waitFor(() => expect(screen.queryByText('Studio')).not.toBeInTheDocument())
+    await waitFor(() => expect(queryLiveRow('Studio')).toBeUndefined())
     expect(softDeletePond).toHaveBeenCalledTimes(1)
   })
 
