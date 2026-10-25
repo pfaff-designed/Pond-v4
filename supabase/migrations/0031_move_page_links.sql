@@ -31,10 +31,20 @@
 -- itself, before any write, so a concurrent move or edit of that same parent
 -- can't race this one's read-modify-write of its `blocks`.
 --
+-- Part B adds the other half of the same move: the moved page's `page-link`
+-- block is appended onto the NEW parent's (or home row's) `blocks`, unless
+-- one is already there — the same no-duplicate rule `appendChildLink` (TS)
+-- already enforces client-side, mirrored here so the two paths can't drift.
+-- The appended block's `id` is a fresh `gen_random_uuid()`, never the
+-- `derived-link:${childId}` convention `child-links.ts` reserves for the
+-- ephemeral, never-persisted derive-at-read block. The new block's id alone
+-- is recorded on the `move` record's `after.appendedLinkId` — enough for
+-- undo to remove it by id.
+--
 -- Down (manual):
 --   drop function if exists private.page_link_parent_id(uuid, uuid, uuid);
 --   -- then re-run 0030's `create or replace function
---   private.apply_page_move` to drop the link-removal step.
+--   private.apply_page_move` to drop the link-removal/append steps.
 
 begin;
 
@@ -94,6 +104,9 @@ declare
   v_removed_block jsonb;
   v_removed_index integer;
   v_removed_link jsonb;
+  v_new_link_parent_id uuid;
+  v_new_link_blocks jsonb;
+  v_appended_link_id uuid;
 begin
   select * into v_page from public.pages
     where id = p_page_id and user_id = auth.uid() and deleted_at is null
@@ -147,9 +160,20 @@ begin
   -- parent, or the home row for a top-level page) before this page's own
   -- `parent_id` changes below. Locked with the rest of this transaction's
   -- reads, ahead of any write.
+  --
+  -- Resolved against BOTH the old and the new parent up front: a same-parent
+  -- reorder (Rail.tsx's `computeMove` calls `move_page` with an unchanged
+  -- `p_new_parent_id` when a drag only reorders siblings) resolves both to
+  -- the same row, and must change no link rows at all — ticket's own rule
+  -- ("a same-parent reorder changes no link rows"). Without this guard, the
+  -- link would be removed here and (part B) re-appended at the end of the
+  -- same row's `blocks`, silently relocating it on every pure reorder.
   v_old_link_parent_id :=
     private.page_link_parent_id(v_old_parent_id, v_page.pond_id, v_page.user_id);
-  if v_old_link_parent_id is not null then
+  v_new_link_parent_id :=
+    private.page_link_parent_id(p_new_parent_id, v_page.pond_id, v_page.user_id);
+  if v_old_link_parent_id is not null
+     and v_old_link_parent_id is distinct from v_new_link_parent_id then
     select blocks into v_old_link_blocks from public.pages
       where id = v_old_link_parent_id and user_id = v_page.user_id and deleted_at is null
       for update;
@@ -196,6 +220,32 @@ begin
   v_new_parent_title :=
     private.page_move_parent_title(p_new_parent_id, v_page.pond_id, v_page.user_id);
 
+  -- Append the moved page's link onto the new parent's (or home row's)
+  -- `blocks`, mirroring `appendChildLink` (TS)'s own no-duplicate rule so the
+  -- two paths can't drift. Skipped for the same-parent-reorder case the
+  -- removal guard above already explains, and when the new row already
+  -- carries the link (an unstamped parent that derive-at-read would have
+  -- shown it under anyway — appending again would duplicate it).
+  if v_new_link_parent_id is not null
+     and v_new_link_parent_id is distinct from v_old_link_parent_id then
+    select blocks into v_new_link_blocks from public.pages
+      where id = v_new_link_parent_id and user_id = v_page.user_id and deleted_at is null
+      for update;
+
+    if found and not exists (
+      select 1 from jsonb_array_elements(v_new_link_blocks) as elem
+       where elem ->> 'type' = 'page-link' and elem ->> 'pageId' = p_page_id::text
+    ) then
+      v_appended_link_id := gen_random_uuid();
+      update public.pages
+         set blocks = v_new_link_blocks || jsonb_build_array(
+               jsonb_build_object('id', v_appended_link_id, 'type', 'page-link', 'pageId', p_page_id)
+             ),
+             updated_at = v_now
+       where id = v_new_link_parent_id;
+    end if;
+  end if;
+
   insert into public.change_log
     (user_id, pond_id, status, action, actor, target_page_id,
      "before", "after", transitions, created_at, status_at)
@@ -213,7 +263,10 @@ begin
       'parentId', p_new_parent_id,
       'parentTitle', v_new_parent_title,
       'siblingOrder', to_jsonb(p_sibling_order)
-    ),
+    ) || case when v_appended_link_id is not null
+           then jsonb_build_object('appendedLinkId', v_appended_link_id)
+           else '{}'::jsonb
+         end,
     jsonb_build_array(jsonb_build_object('status', 'accepted', 'at', v_now, 'actor', p_actor)),
     v_now, v_now
   )
