@@ -29,7 +29,7 @@ const NOISE = { id: 'p-noise', name: 'make noise', glyph: null, theme: 'ink', or
 let capturedPatchPond: PondContextValue['patchPond'] | null = null
 
 function Probe() {
-  const { pond, ponds, patchPond } = usePond()
+  const { pond, ponds, patchPond, removePond } = usePond()
   useEffect(() => {
     capturedPatchPond = patchPond
   }, [patchPond])
@@ -38,11 +38,13 @@ function Probe() {
     <div>
       <div data-testid="active">{pond ? `${pond.name}:${pond.glyph ?? ''}` : 'none'}</div>
       <div data-testid="other">{other ? `${other.name}:${other.glyph ?? ''}` : 'none'}</div>
+      <div data-testid="count">{ponds.length}</div>
       <button
         onClick={() => pond && patchPond(pond.id, { name: 'Studio', glyph: 'studio-01' })}
       >
         patch
       </button>
+      <button onClick={() => other && removePond(other.id)}>remove</button>
     </div>
   )
 }
@@ -83,5 +85,21 @@ describe('PondProvider patchPond', () => {
       'patchPond: a pond needs a name'
     )
     expect(screen.getByTestId('active')).toHaveTextContent('life:waves-02')
+  })
+
+  it('removePond drops exactly that id and leaves the rest of the list untouched (KAN-493)', async () => {
+    render(
+      <PondProvider>
+        <Probe />
+      </PondProvider>
+    )
+    await waitFor(() => expect(screen.getByTestId('count')).toHaveTextContent('2'))
+    expect(screen.getByTestId('other')).toHaveTextContent('make noise:')
+
+    fireEvent.click(screen.getByText('remove'))
+
+    await waitFor(() => expect(screen.getByTestId('count')).toHaveTextContent('1'))
+    expect(screen.getByTestId('active')).toHaveTextContent('life:waves-02')
+    expect(screen.getByTestId('other')).toHaveTextContent('none')
   })
 })

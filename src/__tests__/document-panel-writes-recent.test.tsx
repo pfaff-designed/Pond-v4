@@ -76,6 +76,7 @@ function mount() {
           reload: () => {},
           addPond: () => {},
           patchPond: () => {},
+          removePond: () => {},
         }}
       >
         <DeletionUndoProvider>

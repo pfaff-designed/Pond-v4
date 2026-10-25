@@ -1038,6 +1038,7 @@ describe('AITerminal — the @ mention picker opens, narrows and closes (KAN-99)
             reload: () => {},
             addPond: () => {},
             patchPond: () => {},
+            removePond: () => {},
           }}
         >
           <AITerminal />
@@ -1128,6 +1129,7 @@ describe('AITerminal — the @ mention picker opens, narrows and closes (KAN-99)
             reload: () => {},
             addPond: () => {},
             patchPond: () => {},
+            removePond: () => {},
           }}
         >
           <AITerminal />

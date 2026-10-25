@@ -203,6 +203,7 @@ const PICK_PROVIDER_VALUE: PondContextValue = {
   reload: () => {},
   addPond: () => {},
   patchPond: () => {},
+  removePond: () => {},
 }
 
 function mountRailAndShell() {
