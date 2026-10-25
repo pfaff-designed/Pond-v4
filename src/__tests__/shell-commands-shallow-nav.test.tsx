@@ -12,6 +12,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ShellCommands } from '@/components/organisms/ShellCommands'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { workspaceUrl, WORKSPACE_PATH } from '@/lib/pages/nav'
+import { pondHref } from '@/lib/pond/active'
 import { sessionUndo } from '@/lib/change-log/session-undo'
 import { createPage } from '@/lib/pages/client'
 import { searchRecords } from '@/lib/pages/palette-records'
@@ -55,9 +56,10 @@ jest.mock('@/lib/pages/palette-records', () => ({
   ]),
 }))
 const POND = { id: 'pond-1', name: 'life', glyph: 'waves-02', theme: 'paper', order: 0 }
+const OTHER_POND = { id: 'pond-2', name: 'studio', glyph: 'waves-03', theme: 'ink', order: 1, lastPageId: 'studio-home' }
 jest.mock('@/lib/pond/context', () => ({
   usePondId: () => 'pond-1',
-  usePond: () => ({ pond: POND, ponds: [POND], addPond: jest.fn() }),
+  usePond: () => ({ pond: POND, ponds: [POND, OTHER_POND], addPond: jest.fn() }),
 }))
 jest.mock('@/lib/terminal-focus', () => ({
   ...jest.requireActual('@/lib/terminal-focus'),
@@ -137,6 +139,18 @@ describe('ShellCommands — shallow nav on /workspace (KAN-449)', () => {
         workspaceUrl({ id: 'health', type: 'page', title: 'Health' })
       )
     )
+    expect(push).not.toHaveBeenCalled()
+    pushStateSpy.mockRestore()
+  })
+
+  it('⌘K ↵ on a pond row opens it with pushState, never router.push', async () => {
+    const pushStateSpy = jest.spyOn(window.history, 'pushState')
+    renderShell()
+    const input = await openAndType('studio')
+    await screen.findByRole('option', { name: /^studio pond · switch/ })
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    expect(pushStateSpy).toHaveBeenCalledWith(null, '', pondHref(OTHER_POND.id, OTHER_POND.lastPageId))
     expect(push).not.toHaveBeenCalled()
     pushStateSpy.mockRestore()
   })

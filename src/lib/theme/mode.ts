@@ -174,6 +174,41 @@ export const setMode = (mode: Mode): void => {
   notify()
 }
 
+/**
+ * Maps an explicit pond theme to the mode it implies; `null` when the theme
+ * isn't explicit (`'paper'`, the column default, or one of the five other
+ * pills `PondControl` still disables, which have no mapping to reuse). One
+ * home for the theme→mode fact — both creation (`NewPondFlow`) and an
+ * in-session switch (`applyPondTheme`) read it instead of each inlining
+ * `theme === 'ink' ? 'dark' : …` their own way.
+ */
+export const pondThemeMode = (theme: string): Mode | null => (theme === 'ink' ? 'dark' : null)
+
+/** The person's stored choice, with `system` resolved through the same matchMedia check `mode-boot`'s inline script uses. */
+const resolveStoredMode = (): Mode => {
+  const stored = readStoredMode()
+  if (stored !== 'system') return stored
+  try {
+    return typeof window.matchMedia === 'function' && window.matchMedia(MEDIA_QUERY).matches
+      ? 'dark'
+      : 'light'
+  } catch {
+    return 'light'
+  }
+}
+
+/**
+ * Applies a pond's theme on an in-session switch (KAN-503), through the same
+ * session-only `setMode` the new-pond sheet uses at creation — never writes
+ * `localStorage` itself. An explicit theme (`'ink'`) sets the mode it maps
+ * to; a pond with no chosen theme restores the person's own stored mode
+ * (resolving `system`) instead of leaving whatever an earlier switch forced —
+ * one visit to an ink pond must not leave every other pond dark.
+ */
+export const applyPondTheme = (theme: string): void => {
+  setMode(pondThemeMode(theme) ?? resolveStoredMode())
+}
+
 export function useMode(): { mode: Mode; toggleMode: () => void } {
   const mode = useSyncExternalStore<Mode>(subscribe, readMode, () => 'light')
   const toggleMode = useCallback(() => {
