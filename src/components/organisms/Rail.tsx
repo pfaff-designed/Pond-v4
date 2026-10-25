@@ -76,6 +76,7 @@ import { usePondId, usePond } from '@/lib/pond/context'
 import { useHomePage } from '@/lib/pages/use-home-page'
 import { pushRecentGlyphToPond } from '@/lib/pond/client'
 import { PondSwitcher } from './PondSwitcher'
+import { RailFavouritesBand } from './RailFavouritesBand'
 import { isNewTabClick, openWorkspaceUrl, workspaceRenderHref, workspaceUrl } from '@/lib/pages/nav'
 import { requestTitleFocus } from '@/lib/pages/title-focus'
 import { withTemplatesParam } from '@/lib/pages/templates-param'
@@ -108,6 +109,7 @@ import {
   flattenVisible,
   isAreaRow,
   isExtraRootNode,
+  nodeIndex,
   splitExtraRoots,
   treeKeyCommand,
   focusFallback,
@@ -316,6 +318,12 @@ interface RailRowProps {
   /** An area row — the raised label voice + its accent dot. The caller decides
    *  with `isAreaRow` (a top-level page). */
   isArea?: boolean
+  /** KAN-475: the favourites band already closes the gap above the tree with
+   *  its own bottom shadow/padding, so the first area row's usual top margin
+   *  would double it — the caller passes this only for that one row, only
+   *  while the band is showing (`PondRail.dc.html`'s
+   *  `marginTop: d === 1 && i > 0 && !pinned.length ? 4 : 0`). */
+  noTopMargin?: boolean
   /** The databases root: the foot band's LAST row (KAN-486: it never moves —
    *  its own rows render above it), caret up when open, right when closed. */
   isDbRoot?: boolean
@@ -385,6 +393,7 @@ const RailRow = forwardRef<HTMLElement, RailRowProps>(function RailRow(
     isBusy,
     isRoot = false,
     isArea = false,
+    noTopMargin = false,
     isDbRoot = false,
     posInSet,
     setSize,
@@ -555,7 +564,7 @@ const RailRow = forwardRef<HTMLElement, RailRowProps>(function RailRow(
       className={`group relative flex items-center rounded-mn-row outline-none
         ${isDbRoot ? 'gap-[9px] px-2 py-[6px]' : 'gap-[7px] py-[5px] pr-2'}
         focus-visible:ring-2 focus-visible:ring-mn-text/50 focus-visible:ring-offset-0
-        ${isArea && !isDbRoot ? 'mt-1' : ''}
+        ${isArea && !isDbRoot && !noTopMargin ? 'mt-1' : ''}
         ${isSelected ? 'bg-mn-hover-fill' : hovered ? 'bg-mn-rail-hover' : ''}
         ${isDropRejected ? 'cursor-not-allowed' : 'cursor-pointer'}
         ${isDragging ? 'opacity-[.35]' : ''}
@@ -807,6 +816,11 @@ export interface RailViewProps {
    * before a mark could be chosen.
    */
   marks?: ReadonlyMap<string, MarkSource>
+  /** KAN-475: the open page's favourite ids, in order — a band above the tree
+   *  renders the ones that still resolve to a live page in this pond; absent
+   *  or every id dead draws no band at all. Omit in Storybook/older call
+   *  sites and the rail draws exactly as it did before favourites existed. */
+  favouritePageIds?: readonly string[]
   selectedId: string | null
   expanded: Set<string>
   /** Whether the Life root is expanded (reveals the whole tree). */
@@ -995,6 +1009,7 @@ export function RailView({
   pondGlyph = LIFE_GLYPH,
   recentGlyphs = [],
   marks,
+  favouritePageIds = [],
   selectedId,
   expanded,
   lifeExpanded,
@@ -1154,6 +1169,32 @@ export function RailView({
     [lifeChildren, expanded, lifeExpanded, extraRootsFlat, databasesFlat, rootLabel, showHomeRoot]
   )
   const visibleIds = useMemo(() => new Set(flat.map((f) => f.id)), [flat])
+
+  // KAN-475: every node by id, so a favourite resolves without walking the
+  // tree again — the same lookup `Rail()`'s own CRUD handlers use.
+  const nodeById = useMemo(() => nodeIndex(tree), [tree])
+  // Dropped at read, never rewritten back to the pond: a trashed/moved page's
+  // id simply stops resolving.
+  const liveFavouriteIds = useMemo(
+    () => favouritePageIds.filter((id) => nodeById.has(id)),
+    [favouritePageIds, nodeById]
+  )
+  const hasFavouritesBand = liveFavouriteIds.length > 0
+
+  // The same rows the tree below renders (databases/trash excluded) — shared
+  // so the "first area row" the band's top margin defers to is the one
+  // actually drawn first, not just the first in the combined keyboard order.
+  const treeRows = useMemo(
+    () => flat.filter((f) => !databasesIds.has(f.id) && f.id !== TRASH_NODE_ID),
+    [flat, databasesIds]
+  )
+  // `PondRail.dc.html`'s shared row recipe drops a depth-1 row's own top gap
+  // while a pinned band sits above it; only the FIRST area row ever carries
+  // that gap in the first place, so only it needs the override.
+  const firstAreaRowId = useMemo(
+    () => treeRows.find((f) => isAreaRow(f.node))?.id ?? null,
+    [treeRows]
+  )
 
   const openAddChildMenu = useCallback(
     (id: string) => {
@@ -1497,6 +1538,7 @@ export function RailView({
         // tree/ArrowLeft only — it never reads as an area's bigger label and
         // full ink the way a real top-level page does.
         isArea={isAreaRow(node) && id !== TRASH_NODE_ID}
+        noTopMargin={hasFavouritesBand && id === firstAreaRowId}
         isDbRoot={isDatabasesRoot(node)}
         posInSet={posInSet}
         setSize={setSize}
@@ -1591,12 +1633,23 @@ export function RailView({
           onDragOver={handleBodyDragOver}
           className="relative flex min-h-0 flex-1 flex-col"
         >
+          {/* KAN-475: outside the scroller below (no horizontal padding here),
+            same as `PondRail.dc.html`'s `pinned`/`list` siblings — its own
+            `mx-2` rows then land at the same inset the tree rows get from the
+            scroller's `px-2` plus their own left padding. Never shown loading
+            or empty: `liveFavouriteIds` is empty until `pages` has loaded. */}
+          {!isLoading && hasFavouritesBand && (
+            <RailFavouritesBand
+              ids={liveFavouriteIds}
+              nodeById={nodeById}
+              marks={markMap}
+              selectedId={selectedId}
+              onSelect={onSelect}
+            />
+          )}
           <div className="min-h-0 flex-1 overflow-y-auto px-2">
             <div role="tree" aria-label="Workspace" aria-multiselectable={false}>
-              {!isLoading &&
-                flat
-                  .filter((f) => !databasesIds.has(f.id) && f.id !== TRASH_NODE_ID)
-                  .map(renderRow)}
+              {!isLoading && treeRows.map(renderRow)}
             </div>
 
             {/* KAN-490: a real `<button>`, not a treeitem — `role="tree"` only
@@ -1829,16 +1882,7 @@ export function Rail() {
   // #134: the same rows the tree is built from, indexed for mark resolution — so
   // the rail agrees with the breadcrumb and the kicker about every page.
   const marks = useMemo(() => markIndex(pages), [pages])
-  const nodeById = useMemo(() => {
-    const map = new Map<string, RailNode>()
-    const walk = (nodes: RailNode[]) =>
-      nodes.forEach((n) => {
-        map.set(n.id, n)
-        walk(n.children)
-      })
-    walk(tree)
-    return map
-  }, [tree])
+  const nodeById = useMemo(() => nodeIndex(tree), [tree])
   const databasesRootId = useMemo(() => tree.find(isDatabasesRoot)?.id ?? null, [tree])
   const selectedNodeId = searchParams.get('nodeId')
 
@@ -2729,6 +2773,7 @@ export function Rail() {
         pondGlyph={pondGlyph}
         recentGlyphs={recentGlyphs}
         marks={marks}
+        favouritePageIds={pond?.favouritePageIds}
         selectedId={selectedNodeId}
         expanded={expanded}
         lifeExpanded={lifeExpanded}
