@@ -464,7 +464,7 @@ function PageSwitchableHarness({ pageId }: { pageId: string }) {
 }
 
 describe('a template pick on a blank page applies in place (KAN-124)', () => {
-  it("replaces the page's blocks with the template's stack, makes no page, and focuses the title", async () => {
+  it("replaces the page's blocks with the template's stack, makes no page, and focuses the template's first line (KAN-499)", async () => {
     const user = userEvent.setup()
     renderBlankPageHarness()
 
@@ -480,12 +480,14 @@ describe('a template pick on a blank page applies in place (KAN-124)', () => {
     )
     // The blank page's own block is gone — replaced, not added alongside.
     expect(document.getElementById('block-b-empty')).not.toBeInTheDocument()
-    await waitFor(() => expect(screen.getByLabelText('title')).toHaveFocus())
+    const field = await findTextBlock()
+    await waitFor(() => expect(field).toHaveFocus())
+    expect(screen.getByLabelText('title')).not.toHaveFocus()
 
     expect(insertPageOptimistic).not.toHaveBeenCalled()
   })
 
-  it("rule 2 (KAN-345): the applied template's own unwritten line ends up with the caret, same as any other session insert — `focusPageTitle` lands first, then the new line's own mount-time autofocus takes over, since the apply marked its ids inserted", async () => {
+  it("rule 2 (KAN-345): the applied template's own unwritten line ends up with the caret, same as any other session insert — the apply's own first-line focus (KAN-499) and the line's mount-time autofocus both land on it, since the apply marked its ids inserted", async () => {
     const user = userEvent.setup()
     renderBlankPageHarness()
 
@@ -524,6 +526,34 @@ describe('a template pick on a blank page applies in place (KAN-124)', () => {
 
     resolveSave?.()
     await waitFor(() => expect(mockAppendOwnEdit).toHaveBeenCalledTimes(1))
+  })
+
+  it("KAN-499 regression: the applied line keeps the caret even while the template's props read/write (getPage/saveProps) is still in flight", async () => {
+    const user = userEvent.setup()
+    let resolveGetPage: (() => void) | undefined
+    mockGetPage.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveGetPage = () => resolve(null)
+        })
+    )
+    renderBlankPageHarness()
+
+    writeInTextBlock(await findTextBlock(), '/')
+    await screen.findByRole('listbox', { name: 'blocks' })
+    // The blank list leads with `notes`. The premade page shape stays in the templates pane.
+    await user.keyboard('{Enter}')
+
+    // The applied line's own mount-time autofocus already has the caret —
+    // `getPage` (held pending above) hasn't resolved yet, so `saveProps`
+    // hasn't run.
+    const field = await findTextBlock()
+    await waitFor(() => expect(field).toHaveFocus())
+    expect(mockSaveProps).not.toHaveBeenCalled()
+
+    resolveGetPage?.()
+    await waitFor(() => expect(mockSaveProps).toHaveBeenCalledTimes(1))
+    expect(field).toHaveFocus()
   })
 
   it("writes the kind label and provenance stamp onto the page, preserving its existing props, and reflects them in the ['page', id] cache", async () => {
@@ -661,12 +691,12 @@ describe('a template pick on a blank page applies in place (KAN-124)', () => {
     )
     expect(document.getElementById('block-b-empty')).not.toBeInTheDocument()
 
-    // `focusPageTitle()` and the applied text line's own mount-time autofocus
-    // (rule 2, KAN-345) both land on a promise/effect tick rather than a real
-    // timer — `waitFor`'s real-time polling could observe either mid-flight
-    // under load. One flushed animation frame settles the race before
-    // asserting: the applied, still-unwritten text line ends up with the
-    // caret, same as test 488's "rule 2" case.
+    // The apply's own first-line focus (KAN-499) and the applied text line's
+    // mount-time autofocus (rule 2, KAN-345) both land on a promise/effect
+    // tick rather than a real timer — `waitFor`'s real-time polling could
+    // observe either mid-flight under load. One flushed animation frame
+    // settles both before asserting: the applied, still-unwritten text line
+    // ends up with the caret, same as test 490's "rule 2" case.
     await act(() => new Promise(requestAnimationFrame))
     expect(await findTextBlock()).toHaveFocus()
 
@@ -720,7 +750,12 @@ describe('a template pick on a blank page applies in place (KAN-124)', () => {
     await waitFor(() => expect(mockSaveProps).toHaveBeenCalledTimes(1))
     expect(mockSaveProps.mock.calls[0][2].kind).toBe('weekly review')
 
-    await waitFor(() => expect(screen.getByLabelText('title')).toHaveFocus())
+    // The first line ("already written") is not itself unwritten, so only the
+    // apply's own first-line focus (KAN-499) puts the caret there — rule 1's
+    // mount-time autofocus never fires for it.
+    const field = await findTextBlock()
+    await waitFor(() => expect(field).toHaveFocus())
+    expect(screen.getByLabelText('title')).not.toHaveFocus()
     expect(insertPageOptimistic).not.toHaveBeenCalled()
   })
 })
@@ -1146,9 +1181,10 @@ describe('→ on a template row previews it, writing nothing (KAN-131)', () => {
     expect(appliedBlocks).toHaveLength(5)
     expect(document.getElementById('block-b-empty')).not.toBeInTheDocument()
     // Same rule-2 race as the premade-template path test above: one flushed
-    // animation frame settles `focusPageTitle()` vs. the applied `notes`
-    // line's own mount-time autofocus before asserting, instead of
-    // `waitFor` polling real time against whichever lands first.
+    // animation frame settles the apply's own first-line focus (KAN-499)
+    // against the applied `notes` line's own mount-time autofocus before
+    // asserting, instead of `waitFor` polling real time against whichever
+    // lands first.
     await act(() => new Promise(requestAnimationFrame))
     expect(await findTextBlock()).toHaveFocus()
     expect(insertPageOptimistic).not.toHaveBeenCalled()

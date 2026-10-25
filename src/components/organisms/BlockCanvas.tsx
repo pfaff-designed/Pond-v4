@@ -1900,7 +1900,16 @@ export function BlockCanvas({
     // `onStructuralWrite`/`onChange` already ran inside `persistBlocksAsOwnEdit`,
     // ahead of the schema/props writes above — this apply's own blocks are
     // already the caller's baseline by the time those (independent) writes land.
-    focusPageTitle()
+    // The caret belongs in the template's first line, not the title (KAN-499) —
+    // `focusTextBlockSoon` for text, else the same direct-focus fallback
+    // `focusBlockNeighbour` uses for a non-text neighbour.
+    const first = applied.blocks[0]
+    if (!first) return
+    if (first.type === 'text') {
+      focusTextBlockSoon(first.id, 'start')
+      return
+    }
+    document.getElementById(blockDomId(first.id))?.focus()
   }
 
   const makePageFromTemplate = async (pick: TemplatePick, target: SlashTarget, index: number) => {
