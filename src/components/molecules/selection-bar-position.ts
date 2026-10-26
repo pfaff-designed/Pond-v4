@@ -2,8 +2,10 @@
 
 /**
  * Where the selection bar sits vertically: above the selection, 4px off its
- * rect; just above the composer when that box would overlap it (the bar is
- * z-5, the composer z-30); below the selection when there is no room above;
+ * rect; just above the composer when that box would overlap it (#574 raised
+ * the bar's own z-index above every modal, so this clamp is the only thing
+ * keeping it off the composer — there is no z-index relationship to fall
+ * back on); below the selection when there is no room above;
  * and when below would run under the composer, above again, held to the
  * viewport's top margin. Tracked across
  * scroll and resize as `useAnchoredBox` is, but re-reading the selection's

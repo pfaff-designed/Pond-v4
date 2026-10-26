@@ -675,7 +675,7 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
       aria-label="selection"
       aria-orientation="horizontal"
       onKeyDown={handleToolbarKeyDown}
-      className="mn-glass fixed z-[5] box-border flex items-center gap-[2px] rounded-[14px] p-[4px]"
+      className="mn-glass fixed z-[100] box-border flex items-center gap-[2px] rounded-[14px] p-[4px]"
       style={style}
     >
       {linkMode ? (
