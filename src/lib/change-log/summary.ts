@@ -59,7 +59,8 @@ export const blockName = (block: Block): string => {
   return label ? `${label} ${kind}` : kind
 }
 
-const blocksPhrase = (verb: string, blocks: Block[]): string | null => {
+/** `deleted schedule table`, or `deleted 3 blocks` for more than one. */
+export const blocksPhrase = (verb: string, blocks: Block[]): string | null => {
   if (blocks.length === 0) return null
   if (blocks.length === 1) return `${verb} ${blockName(blocks[0])}`
   return `${verb} ${count(blocks.length, 'block')}`
@@ -163,8 +164,14 @@ const emptyTextPhrases = (before: Block[], after: Block[]): string[] => {
   const beforeIds = idsOf(before)
   const afterIds = idsOf(after)
   return [
-    blocksPhrase('added', texts(after).filter((block) => !beforeIds.has(block.id))),
-    blocksPhrase('removed', texts(before).filter((block) => !afterIds.has(block.id))),
+    blocksPhrase(
+      'added',
+      texts(after).filter((block) => !beforeIds.has(block.id))
+    ),
+    blocksPhrase(
+      'removed',
+      texts(before).filter((block) => !afterIds.has(block.id))
+    ),
   ].filter((phrase): phrase is string => phrase !== null)
 }
 

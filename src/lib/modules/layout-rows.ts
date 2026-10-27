@@ -265,6 +265,54 @@ export function detachKeepingRows<
 }
 
 /**
+ * Removes every block whose id is in `ids` in one pass (KAN-373, deleting a
+ * multi-block range) rather than looping `detachKeepingRows` over shifting
+ * indices. Each maximal run of removed blocks has at most one survivor that
+ * can inherit `rowStart`: the nearest surviving block after the run. Scanning
+ * that run from the removed block closest to the survivor back to its start,
+ * the first one that carries `rowStart: true` AND lands in the survivor's
+ * row — checked on `blocks` with only the run's blocks *closer to the
+ * survivor* than it stripped out, mirroring `detachKeepingRows` applied last
+ * block first — wins the hand-off; once a survivor's `rowStart` is true, a
+ * block further back in the run can never also share its row (the survivor
+ * itself would force a break), so at most one hand-off per run ever lands,
+ * same as calling `detachKeepingRows` once per removed block from last to
+ * first. A run with no surviving block after it (removed blocks run to the
+ * end of `blocks`) hands off to nothing, as `detachKeepingRows` does for the
+ * last block.
+ */
+export function detachRangeKeepingRows<
+  T extends { id: string; width?: BlockWidth | number; rowStart?: boolean },
+>(blocks: readonly T[], ids: ReadonlySet<string>): T[] {
+  const handedOverIds = new Set<string>()
+  let runStart: number | null = null
+
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i]
+    if (ids.has(block.id)) {
+      if (runStart === null) runStart = i
+      continue
+    }
+    if (runStart !== null) {
+      for (let p = i - 1; p >= runStart; p--) {
+        const candidate = blocks[p]
+        if (candidate.rowStart !== true) continue
+        const testRows = layoutRows([...blocks.slice(0, p + 1), block])
+        if (testRows[testRows.length - 1].includes(candidate)) {
+          handedOverIds.add(block.id)
+          break
+        }
+      }
+      runStart = null
+    }
+  }
+
+  return blocks
+    .filter((b) => !ids.has(b.id))
+    .map((b) => (handedOverIds.has(b.id) ? { ...b, rowStart: true } : b))
+}
+
+/**
  * An own-line drop. The dragged block becomes `full` with `rowStart`. A single
  * former row-mate left alone is widened to `full`. A target row that is drawn
  * stacked — several stored widths, each rendered on its own line because one

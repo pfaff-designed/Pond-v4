@@ -92,6 +92,7 @@ import {
   blockWidthStyle,
   classifyDropZone,
   detachKeepingRows,
+  detachRangeKeepingRows,
   isWithinPaddedZone,
   layoutRows,
   drawnWidthPercent,
@@ -143,7 +144,7 @@ import {
   type UndoHandle,
 } from '@/lib/change-log/session-undo'
 import { applyUndoOutcome } from '@/lib/change-log/undo-outcome'
-import { blockName as changeBlockName } from '@/lib/change-log/summary'
+import { blocksPhrase } from '@/lib/change-log/summary'
 import { appendOwnEdit, listRecords } from '@/lib/change-log/store'
 import { changeLogKey } from '@/lib/change-log/keys'
 import { restorePage, trashPage } from '@/lib/change-log/trash'
@@ -338,9 +339,15 @@ function dropBarGeometry(dropZone: {
 }
 
 /**
- * Focus the neighbour of a removed block — the one before, else the one
- * after — the same way across every delete path. With no neighbour left (the
- * page's only block was removed), focus falls to the page title.
+ * Focus the neighbour of a removed block or block range (KAN-373) — a single
+ * delete (`order: 'before'`, the default, `lastIndex` defaulting to
+ * `firstIndex`) looks before itself, else after; a range delete
+ * (`order: 'after'`) looks after itself, else before — the range's own
+ * entry point, the block after it, is still visible at the same spot the
+ * range vacated, so landing there reads as "the range is gone, here's
+ * what's next" rather than jumping up to what was already above it. With no
+ * neighbour left (the page's only block(s) were removed), focus falls to
+ * the page title.
  *
  * Deferred a tick: a handle-menu delete removes the trigger along with its
  * block, and the open menu's own close-focus (Base UI, back to the trigger)
@@ -348,15 +355,23 @@ function dropBarGeometry(dropZone: {
  * same-tick `.focus()` here would be the one it then overrides. A macrotask
  * runs after any microtask, settling this one last.
  */
-function focusBlockNeighbour(blocks: Block[], index: number) {
-  const neighbour = blocks[index - 1] ?? blocks[index + 1]
+function focusBlockNeighbour(
+  blocks: Block[],
+  firstIndex: number,
+  lastIndex: number = firstIndex,
+  order: 'before' | 'after' = 'before'
+) {
+  const before = blocks[firstIndex - 1]
+  const after = blocks[lastIndex + 1]
+  const neighbour = order === 'before' ? (before ?? after) : (after ?? before)
   setTimeout(() => {
     if (!neighbour) {
       focusPageTitle()
       return
     }
     const element = document.getElementById(blockDomId(neighbour.id))
-    if (neighbour.type === 'text' && focusTextBlock(element, index === 0 ? 'start' : 'end')) return
+    if (neighbour.type === 'text' && focusTextBlock(element, neighbour === after ? 'start' : 'end'))
+      return
     if (element instanceof HTMLElement) element.focus()
   }, 0)
 }
@@ -682,7 +697,9 @@ export function BlockCanvas({
   // (react-hooks/refs), and `renderBlockEditor` reads this set every render
   // to compute each block's `autofocus` prop.
   const [autofocusIds, setAutofocusIds] = useState<Set<string>>(() => new Set())
-  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
+  // A delete (single block or a KAN-373 range) whose blocks hold content:
+  // confirms once, for every id here together, rather than once per block.
+  const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<string> | null>(null)
   // F27: link capabilities for card→page links, parented at THIS page. Provided to
   // every module view below via context — modules that don't link (all but kanban
   // today) simply never read it.
@@ -838,6 +855,116 @@ export function BlockCanvas({
       el.removeEventListener('focusout', handleFocusOut)
     }
   }, [])
+  // The range selection (KAN-373): ids, not indices, so an edit elsewhere
+  // can't shift it. `null` is "no range" — a single selected block is still
+  // just that row's own `rowSelected`, unaffected by this.
+  const [selection, setSelection] = useState<{ anchorId: string; focusId: string } | null>(null)
+  // The id of whichever row currently holds raw row-level focus (the same
+  // `e.target === e.currentTarget` fact each row's own `rowSelected` reads) —
+  // the anchor a ⇧-click needs when no range exists yet. A ⇧↑/⇧↓ never needs
+  // this: the row firing that key IS the focused row already.
+  const [focusedBlockId, setFocusedBlockId] = useState<string | null>(null)
+  // Set around a range-extend step's own `selectBlockAt` call, so the
+  // focusin it fires reads as "we just moved this focus on purpose" rather
+  // than the plain click/arrow-nav that clears the range below.
+  const extendingSelectionRef = useRef(false)
+  useEffect(() => {
+    const el = canvasRef.current
+    if (!el) return
+    const rowIdOf = (node: EventTarget | null) =>
+      node instanceof Element && node.hasAttribute('data-block-id')
+        ? node.getAttribute('data-block-id')
+        : null
+    const handleFocusIn = (e: FocusEvent) => {
+      const id = rowIdOf(e.target)
+      if (id !== null) setFocusedBlockId(id)
+      // ANY focusin inside the canvas clears the range unless it's this
+      // extend step's own — an editor, a cell, the drag handle or a plain
+      // click into a different row all count (KAN-373 fix): `rowIdOf` only
+      // tells us whether the target is a ROW, which used to gate this off
+      // entirely and leave a stale range once focus left row chrome.
+      if (extendingSelectionRef.current) {
+        extendingSelectionRef.current = false
+        return
+      }
+      setSelection(null)
+    }
+    const handleFocusOut = (e: FocusEvent) => {
+      if (rowIdOf(e.relatedTarget) !== null) return
+      setFocusedBlockId(null)
+      // Focus leaving the canvas entirely (relatedTarget outside it, or
+      // null) fires no focusin here to clear the range itself.
+      if (!(e.relatedTarget instanceof Element && el.contains(e.relatedTarget))) {
+        setSelection(null)
+      }
+    }
+    el.addEventListener('focusin', handleFocusIn)
+    el.addEventListener('focusout', handleFocusOut)
+    return () => {
+      el.removeEventListener('focusin', handleFocusIn)
+      el.removeEventListener('focusout', handleFocusOut)
+    }
+  }, [])
+  // The range, derived every render: every block whose index lies between
+  // anchor and focus, inclusive, in array order (not sorted ids — a block
+  // between them that moved out of the array is simply no longer "between").
+  const rangeIds = useMemo(() => {
+    if (!selection) return new Set<string>()
+    const anchorIndex = blocks.findIndex((b) => b.id === selection.anchorId)
+    const focusIndex = blocks.findIndex((b) => b.id === selection.focusId)
+    if (anchorIndex === -1 || focusIndex === -1) return new Set<string>()
+    const [start, end] =
+      anchorIndex <= focusIndex ? [anchorIndex, focusIndex] : [focusIndex, anchorIndex]
+    return new Set(blocks.slice(start, end + 1).map((b) => b.id))
+  }, [selection, blocks])
+  // Marks the upcoming `selectBlockAt` focus as an extend step, so the
+  // canvas's own `focusin` listener (above) leaves the range alone instead
+  // of clearing it. Focusing a row that already holds focus (the mate of a
+  // ½+½ row sharing DOM order with no actual focus move, or any other
+  // no-op focus call) fires no `focusin` at all, so nothing would ever flip
+  // this back — queued to run after the current task either way, so a real
+  // `focusin` consumes it first and this is a no-op, or none arrives and
+  // this is what consumes it. It can never stick at `true`.
+  function markExtendingSelection() {
+    extendingSelectionRef.current = true
+    queueMicrotask(() => {
+      extendingSelectionRef.current = false
+    })
+  }
+  // ⇧↓/⇧↑ on the focused row (KAN-373): starts the range at this row if none
+  // exists yet, then moves the FOCUS end one block — a second press fires
+  // from there, never back from `i`. Out of bounds (⇧↑ at block 0) is a
+  // no-op: no range started, no focus moved. If the range's own focus block
+  // no longer exists (edited away elsewhere), there is nothing to step from
+  // — clear the stale range rather than resolving its missing index to -1
+  // and stepping off block 0.
+  function extendRangeStep(i: number, dir: 'up' | 'down') {
+    const block = blocks[i]
+    if (!block) return
+    const focusIndex = selection ? blocks.findIndex((b) => b.id === selection.focusId) : i
+    if (selection && focusIndex === -1) {
+      setSelection(null)
+      return
+    }
+    const nextIndex = dir === 'up' ? focusIndex - 1 : focusIndex + 1
+    const next = blocks[nextIndex]
+    if (!next) return
+    setSelection({ anchorId: selection?.anchorId ?? block.id, focusId: next.id })
+    markExtendingSelection()
+    selectBlockAt(blocks, nextIndex)
+  }
+  // ⇧-click on a row's chrome (KAN-373): the anchor is the existing range's,
+  // or whichever row is plainly selected right now — ⇧-click does nothing
+  // with no block selected at all, per the spec.
+  function extendRangeTo(i: number) {
+    const block = blocks[i]
+    if (!block) return
+    const anchorId = selection?.anchorId ?? focusedBlockId
+    if (!anchorId) return
+    setSelection({ anchorId, focusId: block.id })
+    markExtendingSelection()
+    selectBlockAt(blocks, i)
+  }
   // While previewing, `canvasRef` collapses to zero height (6f frame 3's
   // outline swap, `hiddenCanvasListStyle` above) rather than going
   // `display:none` — so its own rect, and every block's inside it, is a real
@@ -1757,28 +1884,70 @@ export function BlockCanvas({
     [onChange]
   )
 
-  function requestDelete(index: number) {
+  function requestDelete(index: number, fromRow = true) {
     const block = blocks[index]
     if (!block) return
-    if (blockHoldsContent(block)) {
-      setPendingDeleteId(block.id)
+    // ⌫/⌘⌫ on a focused row that is part of a multi-block range (KAN-373)
+    // deletes the whole range, not just this row — `rangeIds` always
+    // includes the focused row itself, so a size of 1 is really no range.
+    // `fromRow` gates this on top: a caret-start ⌘⌫ fired from this same
+    // block's own EDITOR, not its row, must only ever delete this one block
+    // — the range belongs to the row, not to whatever text field it hosts.
+    requestRemoval(
+      fromRow && rangeIds.size > 1 && rangeIds.has(block.id) ? rangeIds : new Set([block.id])
+    )
+  }
+
+  function requestRemoval(ids: Set<string>) {
+    const toRemove = blocks.filter((block) => ids.has(block.id))
+    if (toRemove.length === 0) return
+    if (toRemove.some((block) => blockHoldsContent(block))) {
+      setPendingDeleteIds(ids)
       return
     }
-    removeBlockAt(index)
+    removeBlocks(ids)
   }
 
   function confirmDelete() {
-    const id = pendingDeleteId
-    if (!id) return
-    const index = blocks.findIndex((block) => block.id === id)
-    setPendingDeleteId(null)
-    if (index !== -1) removeBlockAt(index)
+    const ids = pendingDeleteIds
+    if (!ids) return
+    setPendingDeleteIds(null)
+    removeBlocks(ids)
   }
 
-  function removeBlockAt(index: number, focusNeighbour = true) {
-    const removed = blocks[index]
-    if (!removed) return
-    const { blocks: after } = detachKeepingRows(blocks, index)
+  /**
+   * Deletes every block in `ids` as ONE structural write (KAN-373/KAN-368) —
+   * one `commitStructuralBlocks` call, so one ⌘Z step and one change-log
+   * record, via `detachRangeKeepingRows` rather than looping a single-block
+   * detach. `detachRangeKeepingRows` holds for a set of one id exactly as it
+   * does for a range, so a plain single delete and a range delete share this
+   * one write and undo-staging path. A RANGE (more than one id) that covers
+   * every block on the page keeps one fresh, unlabelled text line instead of
+   * leaving zero — the page always keeps one when a range empties it. A
+   * single-block delete of the page's only block leaves zero and focuses the
+   * title instead (KAN-275; `focusBlockNeighbour` already does that with no
+   * neighbour), the behaviour this merge must not change. `focus: false`
+   * (used only by `removeEmptyLineAt`, which restores focus itself) skips
+   * the neighbour-focus step below.
+   */
+  function removeBlocks(ids: ReadonlySet<string>, opts: { focus?: boolean } = {}) {
+    const { focus = true } = opts
+    const indices: number[] = []
+    const removed: Block[] = []
+    blocks.forEach((block, i) => {
+      if (!ids.has(block.id)) return
+      indices.push(i)
+      removed.push(block)
+    })
+    if (removed.length === 0) return
+    const firstIndex = indices[0]
+    const lastIndex = indices[indices.length - 1]
+    const detached = detachRangeKeepingRows(blocks, ids)
+    const emptiedPage = detached.length === 0 && removed.length > 1
+    const after: Block[] = emptiedPage
+      ? [{ id: crypto.randomUUID(), type: 'text', content: '' }]
+      : detached
+
     // The ONE structural entry point (KAN-495): `onStructuralWrite` updates
     // the caller's local state AND enqueues this delete as its own structural
     // op, so no second (typed) write of `after` ever queues up behind it.
@@ -1790,9 +1959,18 @@ export function BlockCanvas({
         handle = next
       },
     })
-    if (focusNeighbour) focusBlockNeighbour(blocks, index)
+    setSelection(null)
+    if (focus) {
+      if (emptiedPage) {
+        focusTextBlockSoon(after[0].id, 'start')
+      } else if (removed.length > 1) {
+        focusBlockNeighbour(blocks, firstIndex, lastIndex, 'after')
+      } else {
+        focusBlockNeighbour(blocks, firstIndex)
+      }
+    }
     stageUndo({
-      message: `deleted ${changeBlockName(removed)} ·`,
+      message: `${blocksPhrase('deleted', removed) ?? ''} ·`,
       undoLabel: 'undo',
       scope: 'block',
       undo: () => {
@@ -1819,12 +1997,12 @@ export function BlockCanvas({
       if (neighbour && line.type === 'text' && !line.label) {
         commitStructuralBlocks(detachKeepingRows(blocks, index).blocks)
       } else if (neighbour) {
-        // Not `requestDelete`: it defaults `focusNeighbour` to true, and
+        // Not `requestDelete`: it defaults `focus` to true, and
         // `focusBlockNeighbour`'s own `setTimeout(0)` would steal focus from
         // the title a tick after this. An empty block never holds content
         // (`blockHoldsContent`), so this never needed the confirm dialog
         // `requestDelete` would open for a block that does.
-        removeBlockAt(index, false)
+        removeBlocks(new Set([line.id]), { focus: false })
       }
       focusPageTitle('end')
       return
@@ -2358,7 +2536,7 @@ export function BlockCanvas({
       // A missing page (the read failed, or the page itself is gone) is the
       // only "unknown" case — a page that was read fine but simply has no
       // `props` yet is a known, empty prior, not an unknown one.
-      priorProps = current ? current.props ?? {} : null
+      priorProps = current ? (current.props ?? {}) : null
       // No separate `defineSchema` call here: `base` below already merges
       // `applied.schema` into `priorProps` via `withSchema`, and the
       // `writePageProps` write right after this would overwrite whatever
@@ -2816,7 +2994,7 @@ export function BlockCanvas({
         writeBlock={writeBlock}
         onRemoveEmpty={() => removeEmptyLineAt(i)}
         onExitEmpty={() => removeEmptyOnExit(block.id)}
-        onDeleteBlock={() => requestDelete(i)}
+        onDeleteBlock={(fromRow) => requestDelete(i, fromRow)}
         onReturn={(patch, content, where) => insertLineAfter(i, patch, content, where)}
         onLeaveUp={
           i === 0 ? () => focusPageTitle('end') : (x) => leaveBlockEdge(blocks, i, 'up', x)
@@ -2830,6 +3008,12 @@ export function BlockCanvas({
         onMoveDown={() => moveBlockAt(i, 'down')}
         onSwapLeft={() => swapInRowAt(i, 'left')}
         onSwapRight={() => swapInRowAt(i, 'right')}
+        inRange={rangeIds.has(block.id)}
+        canExtendRange={selection != null || focusedBlockId != null}
+        onExtendUp={() => extendRangeStep(i, 'up')}
+        onExtendDown={() => extendRangeStep(i, 'down')}
+        onShiftClick={() => extendRangeTo(i)}
+        onEscapeRange={() => setSelection(null)}
         onSlashKey={() => openSlashMenuAt(i)}
         slashMenuOpen={slashMenuOpenAt === i}
         blank={blank}
@@ -2988,12 +3172,18 @@ export function BlockCanvas({
   return (
     <PageLinkProvider value={pageLinks}>
       <ConfirmDialog
-        open={pendingDeleteId !== null}
+        open={pendingDeleteIds !== null}
         onOpenChange={(open) => {
-          if (!open) setPendingDeleteId(null)
+          if (!open) setPendingDeleteIds(null)
         }}
-        title="Delete this block?"
-        consequence="It has something in it."
+        title={
+          pendingDeleteIds?.size === 1
+            ? 'Delete this block?'
+            : `Delete ${pendingDeleteIds?.size ?? 0} blocks?`
+        }
+        consequence={
+          pendingDeleteIds?.size === 1 ? 'It has something in it.' : 'They have something in them.'
+        }
         confirmLabel="Delete"
         onConfirm={confirmDelete}
       />
@@ -3723,6 +3913,12 @@ function BlockEditor({
   onMoveDown,
   onSwapLeft,
   onSwapRight,
+  inRange = false,
+  canExtendRange = false,
+  onExtendUp,
+  onExtendDown,
+  onShiftClick,
+  onEscapeRange,
   onSlashKey,
   onSlashPickTemplate,
   onPreviewTemplate,
@@ -3776,8 +3972,10 @@ function BlockEditor({
   onRemoveEmpty: () => void
   /** Focus left this block. The canvas removes it when the block is empty. */
   onExitEmpty?: () => void
-  /** ⌘⌫ / Ctrl+⌫ on the focused block. */
-  onDeleteBlock: () => void
+  /** ⌘⌫ / Ctrl+⌫ on the focused block. `fromRow` is false when the chord
+   *  fired from this block's own editor rather than its row (KAN-373): only
+   *  a row-originated delete may act on a multi-block range. */
+  onDeleteBlock: (fromRow?: boolean) => void
   /** Return on a focused block that is not text. An optional `patch` replaces
    *  this block in the same call (KAN-344: the checklist's "remove the empty
    *  last item, then step out" is one `onChange`, never two). An optional
@@ -3806,6 +4004,27 @@ function BlockEditor({
    *  where ⌥←/→ jump words (KAN-376). */
   onSwapLeft?: () => void
   onSwapRight?: () => void
+  /** This block is in the canvas-level range (KAN-373) — rings the same way
+   *  `rowSelected` does, through the same `BlockRowProvider.selected` a chart
+   *  card or page-link already reads to ring itself. */
+  inRange?: boolean
+  /** A block is selected or a range already exists (KAN-373) — the fact a
+   *  ⇧-click's `pointerdown` handler needs to decide whether to intercept
+   *  the press at all. False means there is no anchor to extend from, so a
+   *  ⇧-click falls through to its ordinary default (text keeps extending
+   *  its own selection; a row takes the plain click it would anyway). */
+  canExtendRange?: boolean
+  /** ⇧↑ on the focused row — extends the range up one block, or (block 0, no
+   *  range yet) does nothing. */
+  onExtendUp?: () => void
+  /** ⇧↓ on the focused row — extends the range down one block. */
+  onExtendDown?: () => void
+  /** ⇧-click on this row's own chrome, with another block selected — sets
+   *  the range's focus end to this block. */
+  onShiftClick?: () => void
+  /** Esc while this row is part of a range (`inRange`) — clears the range
+   *  instead of blurring the row. */
+  onEscapeRange?: () => void
   onSlashKey?: () => void
   slashMenuOpen?: boolean
   /** A page with nothing on it yet besides this block (6f): `/` leads with templates. */
@@ -4028,7 +4247,7 @@ function BlockEditor({
     observer.observe(node)
     return () => observer.disconnect()
   }, [constrained])
-  const state = rowSelected && baseState === 'rest' ? 'selected' : baseState
+  const state = (rowSelected || inRange) && baseState === 'rest' ? 'selected' : baseState
 
   // `frame`'s CARD kind never flips for an existing block (it reads the persisted,
   // never-changing `block.mode`, not the active saved view's — the ruling above).
@@ -4160,7 +4379,11 @@ function BlockEditor({
     if (!rowFocused && !(inOwnEditor && !hasTextBeforeCaret(rootRef.current))) return
     e.preventDefault()
     e.stopPropagation()
-    onDeleteBlock()
+    // `rowFocused` tells `requestDelete` whether a multi-block range may act
+    // here — the caret-at-start path (`inOwnEditor`) fires from this block's
+    // own editor, never the row, so it must only ever delete this one block
+    // even while a stale range still names it (KAN-373 fix).
+    onDeleteBlock(rowFocused)
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -4230,6 +4453,34 @@ function BlockEditor({
       }
       return
     }
+    // ⇧↑/⇧↓ on the focused row (KAN-373) extend the range — only from the row
+    // itself (`e.target === e.currentTarget`, the same guard ⌥←/⌥→ use below):
+    // inside a text editor, ⇧↑/⇧↓ extends the TEXT selection and must keep
+    // doing so, never the block range.
+    if (
+      e.key === 'ArrowUp' &&
+      e.target === e.currentTarget &&
+      e.shiftKey &&
+      !e.altKey &&
+      !e.metaKey &&
+      !e.ctrlKey
+    ) {
+      e.preventDefault()
+      onExtendUp?.()
+      return
+    }
+    if (
+      e.key === 'ArrowDown' &&
+      e.target === e.currentTarget &&
+      e.shiftKey &&
+      !e.altKey &&
+      !e.metaKey &&
+      !e.ctrlKey
+    ) {
+      e.preventDefault()
+      onExtendDown?.()
+      return
+    }
     if (e.altKey && e.key === 'ArrowUp') {
       e.preventDefault()
       onMoveUp?.()
@@ -4250,8 +4501,14 @@ function BlockEditor({
     }
     // Esc clears the pointer-selected row (07.05) — the row itself does not blur
     // on Escape by default, so this blurs it explicitly; `handleBlur` below then
-    // drops `rowSelected`.
+    // drops `rowSelected`. With a range (KAN-373), Esc clears the range first
+    // and keeps this row — the range's own focus end — selected instead.
     if (e.key === 'Escape' && e.target === e.currentTarget) {
+      if (inRange) {
+        e.preventDefault()
+        onEscapeRange?.()
+        return
+      }
       rootRef.current?.blur()
     }
     // Delete on the selected row removes the block. The key a Mac labels
@@ -4455,6 +4712,13 @@ function BlockEditor({
     if (block.type === 'text') return
     if (!e.currentTarget.contains(e.target as Node)) return
     if (!shouldSelectCardFromClick(e.target)) return
+    // ⇧-click (KAN-373) is handled at `pointerdown`, above — `click` always
+    // fires after it regardless of whether that handler called
+    // `preventDefault()`, so this only needs to stay out of its way: either
+    // the row is already exactly where that handler put it, or nothing was
+    // selected to extend from and the row's own mousedown default already
+    // focused it.
+    if (e.shiftKey) return
     rootRef.current?.focus()
   }
 
@@ -4473,6 +4737,29 @@ function BlockEditor({
   // ctrl+click's own `contextmenu` arrives.
   function handleRowPointerDown(e: React.PointerEvent) {
     if (!e.currentTarget.contains(e.target as Node)) return
+    // ⇧-click (KAN-373) is caught HERE, not at `click` (below): a real browser
+    // focuses a focusable row's own element on mousedown's own default
+    // action, before a click ever fires. That default action steals the
+    // anchor (a focusin running ahead of the shift check) and clears the
+    // range — jsdom never does this, so the old click-time check only ever
+    // worked in a test. `canExtendRange` reads `selection`/`focusedBlockId`
+    // as they stood BEFORE this press, since this handler runs ahead of the
+    // browser's own default action — preventing that default (rather than
+    // letting a click-time check run too late) is what keeps the anchor.
+    // Text's own row never goes through `shouldSelectCardFromClick` (its
+    // whole surface is the `[role="textbox"]` editor, which that guard
+    // excludes on purpose for a plain click) — the block's own type is the
+    // text-specific carve-out instead.
+    if (
+      e.shiftKey &&
+      e.button === 0 &&
+      canExtendRange &&
+      (shouldSelectCardFromClick(e.target) || block.type === 'text')
+    ) {
+      e.preventDefault()
+      onShiftClick?.()
+      return
+    }
     if (e.button === 2 || (e.button === 0 && e.ctrlKey)) {
       const sel = window.getSelection()
       rightPressSelectionRef.current = !!(
