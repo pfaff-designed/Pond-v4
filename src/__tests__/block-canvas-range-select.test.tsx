@@ -70,6 +70,15 @@ const table = (id: string, name: string): Block => ({
 
 const text = (id: string, content: string): Block => ({ id, type: 'text', content })
 
+const checklist = (id: string, label: string): Block =>
+  ({
+    id,
+    type: 'todo',
+    marker: 'check',
+    label,
+    items: [{ id: `${id}-i1`, label: 'one', checked: false }],
+  }) as Block
+
 function Harness({ initial }: { initial: Block[] }) {
   const [blocks, setBlocks] = React.useState(initial)
   return <BlockCanvas blocks={blocks} pageId="page-1" pageTitle="range" onChange={setBlocks} />
@@ -96,6 +105,39 @@ const textBlockIn = (id: string) =>
 // the same ring).
 const proseSelected = (id: string) =>
   blockRoot(id).querySelector('[data-part="prose"]')?.classList.contains('ring-mn-text') ?? false
+const headOf = (id: string) => blockRoot(id).querySelector('[data-part="block-head"]')!
+
+/**
+ * Models a real browser's mousedown → focus-steal → click sequence, which
+ * jsdom never produces on its own (`fireEvent.click` alone never moves
+ * `document.activeElement`). `pointerdown`'s return value is `dispatchEvent`'s
+ * own — `false` once a handler calls `preventDefault()` — so this only
+ * applies the focus browsers give for free (the row's default action on an
+ * unprevented mousedown) when BlockCanvas's own handler actually left it
+ * alone, exactly the fact KAN-373's pointerdown fix turns on.
+ */
+function pointerThenClick(
+  target: Element,
+  opts: { shiftKey?: boolean; focusTarget?: Element } = {}
+) {
+  const shiftKey = opts.shiftKey ?? false
+  const notPrevented = fireEvent.pointerDown(target, { shiftKey, button: 0 })
+  if (notPrevented) act(() => (opts.focusTarget as HTMLElement | undefined)?.focus())
+  fireEvent.click(target, { shiftKey })
+}
+
+/** Every selected index must sit next to the last one — KAN-373's "never two
+ *  non-adjacent rings" guarantee, checked generically rather than against one
+ *  hand-picked pair. */
+function assertRingsContiguous(blocks: Block[]) {
+  const selected = blocks
+    .map((b, i) => ({ i, on: b.type === 'text' ? proseSelected(b.id) : stateOf(b.id) === 'selected' }))
+    .filter((entry) => entry.on)
+    .map((entry) => entry.i)
+  for (let k = 1; k < selected.length; k++) {
+    expect(selected[k]).toBe(selected[k - 1] + 1)
+  }
+}
 
 beforeEach(() => jest.clearAllMocks())
 
@@ -132,13 +174,80 @@ describe('⇧↑/⇧↓ and ⇧-click extend a block range (KAN-373)', () => {
     const blocks = [table('b-0', 'a'), table('b-1', 'b'), table('b-2', 'c'), table('b-3', 'd')]
     renderCanvas(blocks)
 
-    fireEvent.click(blockRoot('b-1'))
-    fireEvent.click(blockRoot('b-3'), { shiftKey: true })
+    pointerThenClick(blockRoot('b-1'), { focusTarget: blockRoot('b-1') })
+    pointerThenClick(blockRoot('b-3'), { shiftKey: true, focusTarget: blockRoot('b-3') })
 
     expect(stateOf('b-0')).toBe('rest')
     expect(stateOf('b-1')).toBe('selected')
     expect(stateOf('b-2')).toBe('selected')
     expect(stateOf('b-3')).toBe('selected')
+  })
+
+  it('a real browser focuses the clicked row on pointerdown, before click — select block 1 then ⇧-click block 3 (text) selects 1–3', async () => {
+    const blocks = [table('b-1', 'a'), text('b-2', 'two'), text('b-3', 'three')]
+    renderCanvas(blocks)
+
+    pointerThenClick(blockRoot('b-1'), { focusTarget: blockRoot('b-1') })
+    expect(stateOf('b-1')).toBe('selected')
+
+    const field3 = await textBlockIn('b-3')
+    pointerThenClick(field3, { shiftKey: true, focusTarget: field3 })
+
+    expect(stateOf('b-1')).toBe('selected')
+    expect(proseSelected('b-2')).toBe(true)
+    expect(proseSelected('b-3')).toBe(true)
+  })
+
+  it('select a text block, then ⇧-click a checklist header — the range spans them', async () => {
+    const blocks = [text('b-1', 'one'), table('b-2', 'mid'), checklist('b-3', 'actions')]
+    renderCanvas(blocks)
+
+    const field1 = await textBlockIn('b-1')
+    field1.focus()
+    fireEvent.keyDown(field1, { key: 'Escape' })
+    expect(blockRoot('b-1')).toHaveFocus()
+
+    pointerThenClick(headOf('b-3'), { shiftKey: true, focusTarget: blockRoot('b-3') })
+
+    expect(proseSelected('b-1')).toBe(true)
+    expect(stateOf('b-2')).toBe('selected')
+    expect(stateOf('b-3')).toBe('selected')
+  })
+
+  it('⇧-click with nothing selected does not build a range', () => {
+    const blocks = [table('b-1', 'a'), table('b-2', 'b')]
+    renderCanvas(blocks)
+
+    pointerThenClick(blockRoot('b-2'), { shiftKey: true, focusTarget: blockRoot('b-2') })
+
+    expect(stateOf('b-1')).toBe('rest')
+  })
+
+  it("the verifier's sequence — alpha, Esc, ⇧-click checklist, click alpha, Esc — never leaves two non-adjacent rings", async () => {
+    const blocks = [text('alpha', 'alpha'), table('mid', 'middle'), checklist('checklist', 'actions')]
+    renderCanvas(blocks)
+
+    const field = await textBlockIn('alpha')
+    field.focus()
+    fireEvent.keyDown(field, { key: 'Escape' })
+    expect(blockRoot('alpha')).toHaveFocus()
+    assertRingsContiguous(blocks)
+
+    pointerThenClick(headOf('checklist'), { shiftKey: true, focusTarget: blockRoot('checklist') })
+    expect(proseSelected('alpha')).toBe(true)
+    expect(stateOf('mid')).toBe('selected')
+    expect(stateOf('checklist')).toBe('selected')
+    assertRingsContiguous(blocks)
+
+    pointerThenClick(field, { focusTarget: field })
+    expect(stateOf('mid')).toBe('rest')
+    expect(stateOf('checklist')).toBe('rest')
+    assertRingsContiguous(blocks)
+
+    fireEvent.keyDown(field, { key: 'Escape' })
+    expect(stateOf('mid')).toBe('rest')
+    expect(stateOf('checklist')).toBe('rest')
+    assertRingsContiguous(blocks)
   })
 
   it('Esc clears the range and keeps the focus end selected', () => {

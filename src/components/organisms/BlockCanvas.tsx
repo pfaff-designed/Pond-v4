@@ -3044,6 +3044,7 @@ export function BlockCanvas({
         onSwapLeft={() => swapInRowAt(i, 'left')}
         onSwapRight={() => swapInRowAt(i, 'right')}
         inRange={rangeIds.has(block.id)}
+        canExtendRange={selection != null || focusedBlockId != null}
         onExtendUp={() => extendRangeStep(i, 'up')}
         onExtendDown={() => extendRangeStep(i, 'down')}
         onShiftClick={() => extendRangeTo(i)}
@@ -3952,6 +3953,7 @@ function BlockEditor({
   onSwapLeft,
   onSwapRight,
   inRange = false,
+  canExtendRange = false,
   onExtendUp,
   onExtendDown,
   onShiftClick,
@@ -4045,6 +4047,12 @@ function BlockEditor({
    *  `rowSelected` does, through the same `BlockRowProvider.selected` a chart
    *  card or page-link already reads to ring itself. */
   inRange?: boolean
+  /** A block is selected or a range already exists (KAN-373) — the fact a
+   *  ⇧-click's `pointerdown` handler needs to decide whether to intercept
+   *  the press at all. False means there is no anchor to extend from, so a
+   *  ⇧-click falls through to its ordinary default (text keeps extending
+   *  its own selection; a row takes the plain click it would anyway). */
+  canExtendRange?: boolean
   /** ⇧↑ on the focused row — extends the range up one block, or (block 0, no
    *  range yet) does nothing. */
   onExtendUp?: () => void
@@ -4729,12 +4737,13 @@ function BlockEditor({
     if (block.type === 'text') return
     if (!e.currentTarget.contains(e.target as Node)) return
     if (!shouldSelectCardFromClick(e.target)) return
-    // ⇧-click (KAN-373) sets the range's focus end instead of plainly
-    // selecting this row — `extendRangeTo` moves the row's own focus itself.
-    if (e.shiftKey) {
-      onShiftClick?.()
-      return
-    }
+    // ⇧-click (KAN-373) is handled at `pointerdown`, above — `click` always
+    // fires after it regardless of whether that handler called
+    // `preventDefault()`, so this only needs to stay out of its way: either
+    // the row is already exactly where that handler put it, or nothing was
+    // selected to extend from and the row's own mousedown default already
+    // focused it.
+    if (e.shiftKey) return
     rootRef.current?.focus()
   }
 
@@ -4753,6 +4762,29 @@ function BlockEditor({
   // ctrl+click's own `contextmenu` arrives.
   function handleRowPointerDown(e: React.PointerEvent) {
     if (!e.currentTarget.contains(e.target as Node)) return
+    // ⇧-click (KAN-373) is caught HERE, not at `click` (below): a real browser
+    // focuses a focusable row's own element on mousedown's own default
+    // action, before a click ever fires. That default action steals the
+    // anchor (a focusin running ahead of the shift check) and clears the
+    // range — jsdom never does this, so the old click-time check only ever
+    // worked in a test. `canExtendRange` reads `selection`/`focusedBlockId`
+    // as they stood BEFORE this press, since this handler runs ahead of the
+    // browser's own default action — preventing that default (rather than
+    // letting a click-time check run too late) is what keeps the anchor.
+    // Text's own row never goes through `shouldSelectCardFromClick` (its
+    // whole surface is the `[role="textbox"]` editor, which that guard
+    // excludes on purpose for a plain click) — the block's own type is the
+    // text-specific carve-out instead.
+    if (
+      e.shiftKey &&
+      e.button === 0 &&
+      canExtendRange &&
+      (shouldSelectCardFromClick(e.target) || block.type === 'text')
+    ) {
+      e.preventDefault()
+      onShiftClick?.()
+      return
+    }
     if (e.button === 2 || (e.button === 0 && e.ctrlKey)) {
       const sel = window.getSelection()
       rightPressSelectionRef.current = !!(
