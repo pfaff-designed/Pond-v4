@@ -144,7 +144,7 @@ import {
   type UndoHandle,
 } from '@/lib/change-log/session-undo'
 import { applyUndoOutcome } from '@/lib/change-log/undo-outcome'
-import { blockName as changeBlockName } from '@/lib/change-log/summary'
+import { blocksPhrase } from '@/lib/change-log/summary'
 import { appendOwnEdit, listRecords } from '@/lib/change-log/store'
 import { changeLogKey } from '@/lib/change-log/keys'
 import { restorePage, trashPage } from '@/lib/change-log/trash'
@@ -339,9 +339,15 @@ function dropBarGeometry(dropZone: {
 }
 
 /**
- * Focus the neighbour of a removed block — the one before, else the one
- * after — the same way across every delete path. With no neighbour left (the
- * page's only block was removed), focus falls to the page title.
+ * Focus the neighbour of a removed block or block range (KAN-373) — a single
+ * delete (`order: 'before'`, the default, `lastIndex` defaulting to
+ * `firstIndex`) looks before itself, else after; a range delete
+ * (`order: 'after'`) looks after itself, else before — the range's own
+ * entry point, the block after it, is still visible at the same spot the
+ * range vacated, so landing there reads as "the range is gone, here's
+ * what's next" rather than jumping up to what was already above it. With no
+ * neighbour left (the page's only block(s) were removed), focus falls to
+ * the page title.
  *
  * Deferred a tick: a handle-menu delete removes the trigger along with its
  * block, and the open menu's own close-focus (Base UI, back to the trigger)
@@ -349,38 +355,23 @@ function dropBarGeometry(dropZone: {
  * same-tick `.focus()` here would be the one it then overrides. A macrotask
  * runs after any microtask, settling this one last.
  */
-function focusBlockNeighbour(blocks: Block[], index: number) {
-  const neighbour = blocks[index - 1] ?? blocks[index + 1]
-  setTimeout(() => {
-    if (!neighbour) {
-      focusPageTitle()
-      return
-    }
-    const element = document.getElementById(blockDomId(neighbour.id))
-    if (neighbour.type === 'text' && focusTextBlock(element, index === 0 ? 'start' : 'end')) return
-    if (element instanceof HTMLElement) element.focus()
-  }, 0)
-}
-
-/**
- * Focus the neighbour of a removed block RANGE (KAN-373) — the one after
- * it, else the one before (the reverse of `focusBlockNeighbour`'s single-
- * block order): a range delete's own entry point, the block after it, is
- * still visible at the same spot the range vacated, so landing there reads
- * as "the range is gone, here's what's next" rather than jumping up to what
- * was already above it. Deferred a tick for the same reason as
- * `focusBlockNeighbour`.
- */
-function focusBlockRangeNeighbour(blocks: Block[], firstIndex: number, lastIndex: number) {
+function focusBlockNeighbour(
+  blocks: Block[],
+  firstIndex: number,
+  lastIndex: number = firstIndex,
+  order: 'before' | 'after' = 'before'
+) {
+  const before = blocks[firstIndex - 1]
   const after = blocks[lastIndex + 1]
-  const neighbour = after ?? blocks[firstIndex - 1]
+  const neighbour = order === 'before' ? (before ?? after) : (after ?? before)
   setTimeout(() => {
     if (!neighbour) {
       focusPageTitle()
       return
     }
     const element = document.getElementById(blockDomId(neighbour.id))
-    if (neighbour.type === 'text' && focusTextBlock(element, after ? 'start' : 'end')) return
+    if (neighbour.type === 'text' && focusTextBlock(element, neighbour === after ? 'start' : 'end'))
+      return
     if (element instanceof HTMLElement) element.focus()
   }, 0)
 }
@@ -706,10 +697,9 @@ export function BlockCanvas({
   // (react-hooks/refs), and `renderBlockEditor` reads this set every render
   // to compute each block's `autofocus` prop.
   const [autofocusIds, setAutofocusIds] = useState<Set<string>>(() => new Set())
-  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
-  // A range delete (KAN-373) whose blocks hold content: confirms once, for
-  // the whole range, rather than once per block.
-  const [pendingDeleteRangeIds, setPendingDeleteRangeIds] = useState<Set<string> | null>(null)
+  // A delete (single block or a KAN-373 range) whose blocks hold content:
+  // confirms once, for every id here together, rather than once per block.
+  const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<string> | null>(null)
   // F27: link capabilities for card→page links, parented at THIS page. Provided to
   // every module view below via context — modules that don't link (all but kanban
   // today) simply never read it.
@@ -1903,29 +1893,61 @@ export function BlockCanvas({
     // `fromRow` gates this on top: a caret-start ⌘⌫ fired from this same
     // block's own EDITOR, not its row, must only ever delete this one block
     // — the range belongs to the row, not to whatever text field it hosts.
-    if (fromRow && rangeIds.size > 1 && rangeIds.has(block.id)) {
-      requestDeleteRange(rangeIds)
+    requestRemoval(
+      fromRow && rangeIds.size > 1 && rangeIds.has(block.id) ? rangeIds : new Set([block.id])
+    )
+  }
+
+  function requestRemoval(ids: Set<string>) {
+    const toRemove = blocks.filter((block) => ids.has(block.id))
+    if (toRemove.length === 0) return
+    if (toRemove.some((block) => blockHoldsContent(block))) {
+      setPendingDeleteIds(ids)
       return
     }
-    if (blockHoldsContent(block)) {
-      setPendingDeleteId(block.id)
-      return
-    }
-    removeBlockAt(index)
+    removeBlocks(ids)
   }
 
   function confirmDelete() {
-    const id = pendingDeleteId
-    if (!id) return
-    const index = blocks.findIndex((block) => block.id === id)
-    setPendingDeleteId(null)
-    if (index !== -1) removeBlockAt(index)
+    const ids = pendingDeleteIds
+    if (!ids) return
+    setPendingDeleteIds(null)
+    removeBlocks(ids)
   }
 
-  function removeBlockAt(index: number, focusNeighbour = true) {
-    const removed = blocks[index]
-    if (!removed) return
-    const { blocks: after } = detachKeepingRows(blocks, index)
+  /**
+   * Deletes every block in `ids` as ONE structural write (KAN-373/KAN-368) —
+   * one `commitStructuralBlocks` call, so one ⌘Z step and one change-log
+   * record, via `detachRangeKeepingRows` rather than looping a single-block
+   * detach. `detachRangeKeepingRows` holds for a set of one id exactly as it
+   * does for a range, so a plain single delete and a range delete share this
+   * one write and undo-staging path. A RANGE (more than one id) that covers
+   * every block on the page keeps one fresh, unlabelled text line instead of
+   * leaving zero — the page always keeps one when a range empties it. A
+   * single-block delete of the page's only block leaves zero and focuses the
+   * title instead (KAN-275; `focusBlockNeighbour` already does that with no
+   * neighbour), the behaviour this merge must not change. `focus: false`
+   * (used only by `removeEmptyLineAt`, which restores focus itself) skips
+   * the neighbour-focus step below.
+   */
+  function removeBlocks(ids: ReadonlySet<string>, opts: { focus?: boolean } = {}) {
+    const { focus = true } = opts
+    const indices: number[] = []
+    const removed: Block[] = []
+    blocks.forEach((block, i) => {
+      if (!ids.has(block.id)) return
+      indices.push(i)
+      removed.push(block)
+    })
+    if (removed.length === 0) return
+    const firstIndex = indices[0]
+    const lastIndex = indices[indices.length - 1]
+    const detached = detachRangeKeepingRows(blocks, ids)
+    const emptiedPage = detached.length === 0 && removed.length > 1
+    const after: Block[] = emptiedPage
+      ? [{ id: crypto.randomUUID(), type: 'text', content: '' }]
+      : detached
+
     // The ONE structural entry point (KAN-495): `onStructuralWrite` updates
     // the caller's local state AND enqueues this delete as its own structural
     // op, so no second (typed) write of `after` ever queues up behind it.
@@ -1937,75 +1959,18 @@ export function BlockCanvas({
         handle = next
       },
     })
-    if (focusNeighbour) focusBlockNeighbour(blocks, index)
-    stageUndo({
-      message: `deleted ${changeBlockName(removed)} ·`,
-      undoLabel: 'undo',
-      scope: 'block',
-      undo: () => {
-        if (!pondId || !handle) return
-        return sessionUndo
-          .undoHandle(pondId, handle)
-          .then((result) => applyUndoOutcome('undo', result, queryClient))
-      },
-    })
-  }
-
-  function requestDeleteRange(ids: Set<string>) {
-    const rangeBlocks = blocks.filter((block) => ids.has(block.id))
-    if (rangeBlocks.some((block) => blockHoldsContent(block))) {
-      setPendingDeleteRangeIds(ids)
-      return
-    }
-    removeRange(ids)
-  }
-
-  function confirmDeleteRange() {
-    const ids = pendingDeleteRangeIds
-    if (!ids) return
-    setPendingDeleteRangeIds(null)
-    removeRange(ids)
-  }
-
-  /**
-   * Deletes every block in `ids` as ONE structural write (KAN-373) — one
-   * `commitStructuralBlocks` call, so one ⌘Z step and one change-log record,
-   * via `detachRangeKeepingRows` rather than looping `removeBlockAt`. `ids`
-   * is always array-contiguous (it comes from `rangeIds`), so its first and
-   * last indices bound the whole range. An empty result (the range was every
-   * block on the page) keeps one fresh, unlabelled text line — the page
-   * always keeps one, the same fact `removeEmptyLineAt` holds for its own
-   * last-block case.
-   */
-  function removeRange(ids: Set<string>) {
-    const indices = blocks.reduce<number[]>(
-      (acc, block, i) => (ids.has(block.id) ? [...acc, i] : acc),
-      []
-    )
-    if (indices.length === 0) return
-    const removedBlocks = indices.map((i) => blocks[i])
-    const firstIndex = indices[0]
-    const lastIndex = indices[indices.length - 1]
-    const detached = detachRangeKeepingRows(blocks, ids)
-    const emptiedPage = detached.length === 0
-    const after: Block[] = emptiedPage
-      ? [{ id: crypto.randomUUID(), type: 'text', content: '' }]
-      : detached
-
-    let handle: UndoHandle | undefined
-    commitStructuralBlocks(after, {
-      onUndoHandle: (next) => {
-        handle = next
-      },
-    })
     setSelection(null)
-    if (emptiedPage) {
-      focusTextBlockSoon(after[0].id, 'start')
-    } else {
-      focusBlockRangeNeighbour(blocks, firstIndex, lastIndex)
+    if (focus) {
+      if (emptiedPage) {
+        focusTextBlockSoon(after[0].id, 'start')
+      } else if (removed.length > 1) {
+        focusBlockNeighbour(blocks, firstIndex, lastIndex, 'after')
+      } else {
+        focusBlockNeighbour(blocks, firstIndex)
+      }
     }
     stageUndo({
-      message: `deleted ${removedBlocks.length} blocks ·`,
+      message: `${blocksPhrase('deleted', removed) ?? ''} ·`,
       undoLabel: 'undo',
       scope: 'block',
       undo: () => {
@@ -2032,12 +1997,12 @@ export function BlockCanvas({
       if (neighbour && line.type === 'text' && !line.label) {
         commitStructuralBlocks(detachKeepingRows(blocks, index).blocks)
       } else if (neighbour) {
-        // Not `requestDelete`: it defaults `focusNeighbour` to true, and
+        // Not `requestDelete`: it defaults `focus` to true, and
         // `focusBlockNeighbour`'s own `setTimeout(0)` would steal focus from
         // the title a tick after this. An empty block never holds content
         // (`blockHoldsContent`), so this never needed the confirm dialog
         // `requestDelete` would open for a block that does.
-        removeBlockAt(index, false)
+        removeBlocks(new Set([line.id]), { focus: false })
       }
       focusPageTitle('end')
       return
@@ -2571,7 +2536,7 @@ export function BlockCanvas({
       // A missing page (the read failed, or the page itself is gone) is the
       // only "unknown" case — a page that was read fine but simply has no
       // `props` yet is a known, empty prior, not an unknown one.
-      priorProps = current ? current.props ?? {} : null
+      priorProps = current ? (current.props ?? {}) : null
       // No separate `defineSchema` call here: `base` below already merges
       // `applied.schema` into `priorProps` via `withSchema`, and the
       // `writePageProps` write right after this would overwrite whatever
@@ -3207,24 +3172,20 @@ export function BlockCanvas({
   return (
     <PageLinkProvider value={pageLinks}>
       <ConfirmDialog
-        open={pendingDeleteId !== null}
+        open={pendingDeleteIds !== null}
         onOpenChange={(open) => {
-          if (!open) setPendingDeleteId(null)
+          if (!open) setPendingDeleteIds(null)
         }}
-        title="Delete this block?"
-        consequence="It has something in it."
+        title={
+          pendingDeleteIds?.size === 1
+            ? 'Delete this block?'
+            : `Delete ${pendingDeleteIds?.size ?? 0} blocks?`
+        }
+        consequence={
+          pendingDeleteIds?.size === 1 ? 'It has something in it.' : 'They have something in them.'
+        }
         confirmLabel="Delete"
         onConfirm={confirmDelete}
-      />
-      <ConfirmDialog
-        open={pendingDeleteRangeIds !== null}
-        onOpenChange={(open) => {
-          if (!open) setPendingDeleteRangeIds(null)
-        }}
-        title={`Delete ${pendingDeleteRangeIds?.size ?? 0} blocks?`}
-        consequence="They have something in them."
-        confirmLabel="Delete"
-        onConfirm={confirmDeleteRange}
       />
       {draggingIndex !== null &&
         blocks[draggingIndex] &&
@@ -4496,12 +4457,26 @@ function BlockEditor({
     // itself (`e.target === e.currentTarget`, the same guard ⌥←/⌥→ use below):
     // inside a text editor, ⇧↑/⇧↓ extends the TEXT selection and must keep
     // doing so, never the block range.
-    if (e.key === 'ArrowUp' && e.target === e.currentTarget && e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey) {
+    if (
+      e.key === 'ArrowUp' &&
+      e.target === e.currentTarget &&
+      e.shiftKey &&
+      !e.altKey &&
+      !e.metaKey &&
+      !e.ctrlKey
+    ) {
       e.preventDefault()
       onExtendUp?.()
       return
     }
-    if (e.key === 'ArrowDown' && e.target === e.currentTarget && e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey) {
+    if (
+      e.key === 'ArrowDown' &&
+      e.target === e.currentTarget &&
+      e.shiftKey &&
+      !e.altKey &&
+      !e.metaKey &&
+      !e.ctrlKey
+    ) {
       e.preventDefault()
       onExtendDown?.()
       return
