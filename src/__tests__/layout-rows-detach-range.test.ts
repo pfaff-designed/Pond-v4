@@ -7,11 +7,11 @@ import type { BlockWidth } from '@/lib/modules/content'
 
 interface Block {
   id: string
-  width?: BlockWidth
+  width?: BlockWidth | number
   rowStart?: boolean
 }
 
-function blk(id: string, width?: BlockWidth, rowStart?: boolean): Block {
+function blk(id: string, width?: BlockWidth | number, rowStart?: boolean): Block {
   return rowStart ? { id, width, rowStart: true } : { id, width }
 }
 
@@ -82,25 +82,56 @@ describe('detachRangeKeepingRows', () => {
     ])
   })
 
-  it('a range that ends at a row’s first member — the already-rowStart leader blocks any hand-off', () => {
-    const ids = idsOf(FIXTURE, 0, 1)
-    const result = detachRangeKeepingRows(FIXTURE, ids)
-    expect(result[0]).toEqual(FIXTURE.find((b) => b.id === 'c'))
-    expect(result[0].rowStart).toBe(true)
-  })
-
   it('every block leaves nothing', () => {
     const ids = idsOf(FIXTURE, 0, FIXTURE.length - 1)
     expect(detachRangeKeepingRows(FIXTURE, ids)).toEqual([])
   })
 
-  it('equals detachKeepingRows applied last-to-first, over every contiguous range of the fixture', () => {
-    for (let start = 0; start < FIXTURE.length; start++) {
-      for (let end = start; end < FIXTURE.length; end++) {
-        const ids = idsOf(FIXTURE, start, end)
-        const expected = applySequentially(FIXTURE, ids)
-        const actual = detachRangeKeepingRows(FIXTURE, ids)
-        expect(actual).toEqual(expected)
+  const WIDTHS: readonly (BlockWidth | number)[] = ['full', '1/2', '1/3', '2/3', 0.25]
+
+  /** `widths^n × rowStart^n` (5^n × 2^n) is far too large to enumerate for n up
+   *  to 5 — this samples SEEDS.length layouts per block count instead, each
+   *  varying every position's width and rowStart deterministically off the
+   *  seed, so the sample sees every width and both rowStart states at every
+   *  position without fixing either to the fixture's own choices. The id
+   *  subsets of each sampled layout, in contrast, ARE checked exhaustively:
+   *  2^n ≤ 32 for n ≤ 5, cheap enough that sampling them would only lose
+   *  coverage for free. Total checks: SEEDS.length × Σ(2^n, n=1..5) =
+   *  12 × 62 = 744 — well under the ~5s budget. */
+  const SEEDS = Array.from({ length: 12 }, (_, i) => i)
+
+  function layoutFor(n: number, seed: number): Block[] {
+    return Array.from({ length: n }, (_, i) => {
+      const width = WIDTHS[(seed + i * 3) % WIDTHS.length]
+      const rowStart = (seed + i * 5) % 2 === 0
+      return blk(`b${i}`, width, rowStart)
+    })
+  }
+
+  /** Every non-empty id subset of `blocks` — contiguous and non-contiguous
+   *  alike, since a subset is a subset regardless of which indices it holds. */
+  function everySubset(blocks: readonly Block[]): Set<string>[] {
+    const n = blocks.length
+    const subsets: Set<string>[] = []
+    for (let mask = 1; mask < 1 << n; mask++) {
+      const ids = new Set<string>()
+      for (let i = 0; i < n; i++) {
+        if (mask & (1 << i)) ids.add(blocks[i].id)
+      }
+      subsets.push(ids)
+    }
+    return subsets
+  }
+
+  it('equals detachKeepingRows applied last-to-first, over a deterministic sample of every layout of 1–5 blocks × widths × rowStart, for every id subset of each', () => {
+    for (let n = 1; n <= 5; n++) {
+      for (const seed of SEEDS) {
+        const blocks = layoutFor(n, seed)
+        for (const ids of everySubset(blocks)) {
+          const expected = applySequentially(blocks, ids)
+          const actual = detachRangeKeepingRows(blocks, ids)
+          expect(actual).toEqual(expected)
+        }
       }
     }
   })
