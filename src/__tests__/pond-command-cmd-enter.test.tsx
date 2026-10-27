@@ -11,7 +11,7 @@ import React from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
 
 import { PondCommand, type PondCommandProps } from '@/components/organisms/PondCommand'
-import { PALETTE_ITEMS } from './helpers/palette-fixture'
+import { PALETTE_ITEMS, paletteItemsFor } from './helpers/palette-fixture'
 
 const PATH = {
   glyph: 'ramp',
@@ -60,6 +60,15 @@ describe('⌘K: ⌘↵/Ctrl+↵ on a page row asks the host to open it in a new 
     fireEvent.keyDown(input(), { key: 'Enter' })
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 'kitchen' }))
     expect(onSelect.mock.calls[0]).toHaveLength(1)
+  })
+
+  it('metaKey+Enter on an in-pages block row also calls onSelect with { newTab: true } (KAN-474)', () => {
+    const { onSelect } = renderPalette({ items: paletteItemsFor('second fix') })
+    fireEvent.change(input(), { target: { value: 'second fix' } })
+    fireEvent.keyDown(input(), { key: 'Enter', metaKey: true })
+    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ kind: 'block' }), {
+      newTab: true,
+    })
   })
 
   it('metaKey+Enter on an action row is ignored, same as plain Enter', () => {

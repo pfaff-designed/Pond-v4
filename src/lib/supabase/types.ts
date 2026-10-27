@@ -295,6 +295,11 @@ export interface Database {
         Args: Record<string, never>
         Returns: void
       }
+      // Migration 0038: ⌘K's `in pages` group — one row per matching page.
+      search_page_blocks: {
+        Args: { p_pond_id: string; p_query: string; p_limit?: number }
+        Returns: { page_id: string; block_id: string; snippet: string }[]
+      }
     }
   }
 }

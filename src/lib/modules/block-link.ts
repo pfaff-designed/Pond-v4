@@ -38,7 +38,13 @@ export const useBlockLinkArrival = (blocks: readonly Block[]) => {
 
   useEffect(() => {
     const hash = window.location.hash
-    if (hash === '' || landedOn.current === hash) return
+    if (hash === '') {
+      // A cross-page `pushState` nav drops the hash without firing
+      // `hashchange` (nav.ts), so this is the only place that sees it.
+      landedOn.current = null
+      return
+    }
+    if (landedOn.current === hash) return
     const target = blocks.find((b) => `#${blockDomId(b.id)}` === hash)
     const el = target ? document.getElementById(blockDomId(target.id)) : null
     if (!target || !el) return

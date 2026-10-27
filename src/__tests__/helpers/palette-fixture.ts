@@ -96,10 +96,28 @@ export const PALETTE_RECORDS: Readonly<Record<string, readonly PaletteItem[]>> =
   ],
 }
 
-/** The fixture list as the shell would hand it for `query`: pages and actions, plus its records. */
+/**
+ * What `usePaletteBlocks` (KAN-473) hands over for a query: one row per page,
+ * its label the page path (`ancestorPathLabel`'s `a › b`) and its sub the
+ * server-built snippet — never re-filtered or re-matched on the label, the
+ * same "handed over as-is" shape as `PALETTE_RECORDS` above.
+ */
+export const PALETTE_BLOCKS: Readonly<Record<string, readonly PaletteItem[]>> = {
+  'second fix': [
+    {
+      id: 'electrician#b1',
+      label: 'kitchen › electrician',
+      kind: 'block',
+      sub: 'call the electrician for the second fix',
+    },
+  ],
+}
+
+/** The fixture list as the shell would hand it for `query`: pages and actions, plus its records and blocks. */
 export const paletteItemsFor = (query: string): readonly PaletteItem[] => [
   ...PALETTE_ITEMS,
   ...(PALETTE_RECORDS[query] ?? []),
+  ...(PALETTE_BLOCKS[query] ?? []),
 ]
 
 /**

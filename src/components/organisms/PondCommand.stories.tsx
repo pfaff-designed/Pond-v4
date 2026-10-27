@@ -2,12 +2,13 @@ import { useEffect, useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/nextjs-vite'
 import { expect, fn, userEvent, waitFor } from 'storybook/test'
 
-import { PondCommand, type PondCommandProps } from './PondCommand'
+import { opensInNewTab, PondCommand, type PondCommandProps } from './PondCommand'
 import { formatChord, formatChordMachine, isPaletteChord } from '@/lib/shell-commands'
 import {
   PALETTE_FOOT,
   PALETTE_FOOT_ENTER,
   PALETTE_FOOT_MOBILE,
+  type PaletteItem,
 } from '@/components/molecules/palette-entries'
 import {
   PALETTE_ITEMS,
@@ -394,14 +395,14 @@ async function assertChrome(root: HTMLElement, p: Palette, m: Metrics = DESKTOP)
     .filter((c) => getComputedStyle(c).display !== 'none')
     .map((c) => c.textContent)
   // Notion's own "⌘↵ open in new tab" hint (KAN-474): shown beside `↵ open`
-  // whenever a page row is actually on screen to open, same gate as the
-  // component's own `showNewTabHint`.
-  const hasPageRow = [...box.querySelectorAll('[role="option"]')].some(
-    (row) => row.getAttribute('data-kind') === 'page'
+  // whenever a row that opens in a new tab is actually on screen, same gate
+  // as the component's own `showNewTabHint`.
+  const hasNewTabRow = [...box.querySelectorAll('[role="option"]')].some((row) =>
+    opensInNewTab(row.getAttribute('data-kind') as PaletteItem['kind'])
   )
   const enterIndex = m.foot.indexOf(PALETTE_FOOT_ENTER)
   const expectedFoot =
-    m === DESKTOP && hasPageRow
+    m === DESKTOP && hasNewTabRow
       ? [
           ...m.foot.slice(0, enterIndex + 1),
           `${formatChordMachine('mod+enter')} new tab`,
@@ -597,6 +598,52 @@ export const RecordInk: Story = {
   name: 'record · ink',
   args: { open: true, defaultQuery: 'adobe', items: paletteItemsFor('adobe'), ink: true },
   play: async ({ canvasElement }) => assertRecord(canvasElement, INK),
+}
+
+// ── in pages (KAN-473) ─────────────────────────────────────────────────────────
+
+/**
+ * A body-text match: `in pages`, below the title groups (none here — the
+ * query lives only in the block). The row's label is the page path, never
+ * underlined itself; the snippet beside it carries the hit, at the sub's own
+ * 12.5px/68%-ink (asserted generically by `assertChrome`'s row loop).
+ */
+async function assertBlock(root: HTMLElement, p: Palette) {
+  await assertChrome(root, p)
+  await expect(groups(root)).toEqual(['in pages', 'actions'])
+  const row = boxOf(root).querySelector<HTMLElement>('[data-kind="block"]')!
+  await expect(row.querySelector('[data-part="label"]')!.textContent).toBe(
+    'kitchen › electrician'
+  )
+  const sub = row.querySelector<HTMLElement>('[data-part="sub"]')!
+  await expect(sub.textContent).toBe('call the electrician for the second fix')
+  const hit = sub.querySelector<HTMLElement>('[data-part="hit"]')!
+  await expect(hit.textContent).toBe('second fix')
+  const s = getComputedStyle(hit)
+  await expect(s.textDecorationLine).toBe('underline')
+  await expect(s.textUnderlineOffset).toBe('3px')
+  await expect(s.textDecorationThickness).toBe('1px')
+}
+
+/** `second fix`: a block's own body text, matched and underlined in its snippet, grouped under `in pages`. */
+export const Block: Story = {
+  name: 'in pages',
+  args: {
+    open: true,
+    defaultQuery: 'second fix',
+    items: paletteItemsFor('second fix'),
+  },
+  play: async ({ canvasElement }) => assertBlock(canvasElement, PAPER),
+}
+export const BlockInk: Story = {
+  name: 'in pages · ink',
+  args: {
+    open: true,
+    defaultQuery: 'second fix',
+    items: paletteItemsFor('second fix'),
+    ink: true,
+  },
+  play: async ({ canvasElement }) => assertBlock(canvasElement, INK),
 }
 
 // ── empty ──────────────────────────────────────────────────────────────────────

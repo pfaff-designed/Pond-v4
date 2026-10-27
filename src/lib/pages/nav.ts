@@ -125,12 +125,35 @@ export interface WorkspaceNavRouter {
  * resolves against the current href and replaces instead of pushing), so
  * without this guard clicking the open page again pushed a duplicate entry
  * and the first browser-back press did nothing.
+ *
+ * A same-page open that carries a different block hash (KAN-473: an ⌘K "in
+ * pages" row for a block on the page you're already on) is not that no-op —
+ * it still needs to land on the block. `pushState` never fires `hashchange`
+ * on its own, so setting `location.hash` directly is what re-triggers
+ * `useBlockLinkArrival`.
+ *
+ * Same hash too (KAN-473: Esc/click-away cleared the selection but the hash
+ * never moved, then ⌘K ↵ the same row): assigning the identical hash is
+ * itself a no-op, and `landedOn` already consumed it, so neither fires.
+ * Clearing the hash first forces the drop-then-restore `useBlockLinkArrival`
+ * already handles for a cross-page `pushState` (`block-link.ts`), landing
+ * again instead of leaving the selection cleared.
  */
 export function openWorkspaceUrl(url: string, router: WorkspaceNavRouter): void {
   if (window.location.pathname === WORKSPACE_PATH) {
     const target = new URL(url, window.location.href)
     const current = `${window.location.pathname}${window.location.search}`
-    if (`${target.pathname}${target.search}` === current) return
+    if (`${target.pathname}${target.search}` === current) {
+      if (target.hash) {
+        if (target.hash !== window.location.hash) {
+          window.location.hash = target.hash
+        } else {
+          window.location.hash = ''
+          window.location.hash = target.hash
+        }
+      }
+      return
+    }
     window.history.pushState(null, '', url)
     return
   }

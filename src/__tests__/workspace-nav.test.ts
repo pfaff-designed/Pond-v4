@@ -142,4 +142,23 @@ describe('openWorkspaceUrl', () => {
     expect(push).not.toHaveBeenCalled()
     pushStateSpy.mockRestore()
   })
+
+  it('re-opening the same block hash on the same page still fires hashchange, so a cleared selection re-lands', async () => {
+    // KAN-473: ⌘K ↵ lands and selects → Esc clears the selection while the
+    // hash stays put → ⌘K ↵ the same row again. A plain same-hash assignment
+    // is itself a no-op, so this must clear the hash first to force the drop.
+    // jsdom (like real browsers) dispatches `hashchange` as a queued task,
+    // not synchronously — so this awaits a tick before reading `seen`.
+    addressIs('?nodeId=electrician#block-b1')
+    const push = jest.fn()
+    let fired = 0
+    window.addEventListener('hashchange', () => fired++)
+
+    openWorkspaceUrl(`${WORKSPACE_PATH}?nodeId=electrician#block-b1`, { push })
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(push).not.toHaveBeenCalled()
+    expect(fired).toBe(2)
+    expect(window.location.hash).toBe('#block-b1')
+  })
 })

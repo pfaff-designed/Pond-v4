@@ -8,10 +8,11 @@
  *            and the page you are on". That inference does not exist yet (#285),
  *            so the shell passes none and the group draws nothing: offered when
  *            true, never faked (`PROJECT_RULES.md`; the #239 precedent).
- *   typing   `pages`, then `records`, then `mode` (zen, `Pond 06.17` 6q frame 1),
- *            then `actions` (the matched ones, then `ask pond about “q”` unless the
- *            host cannot ask); `ponds` lead when one matches (6m), and
- *            `new pond “q”` joins the actions.
+ *   typing   `pages`, then `records`, then `in pages` (body-text matches, KAN-473:
+ *            the page path and a snippet underlined at every hit, capped at 6), then
+ *            `mode` (zen, `Pond 06.17` 6q frame 1), then `actions` (the matched ones,
+ *            then `ask pond about “q”` unless the host cannot ask); `ponds` lead when
+ *            one matches (6m), and `new pond “q”` joins the actions.
  *   actions  a leading `>` drops pages and records.
  *   empty    no dead end: a note, ask pond, make the page, then `did you mean`.
  *   scoped   a page and its children, with the kind under each name.
@@ -21,9 +22,11 @@
  */
 
 import type { ZenAction } from '@/lib/layout/use-zen-commands'
+import { snippetRuns } from '@/lib/pages/palette-blocks'
+
 import { fold, type MatchRun, matchRuns, normalizeQuery, subsequenceMatch } from './slash-entries'
 
-export type PaletteKind = 'page' | 'database' | 'record' | 'action' | 'pond'
+export type PaletteKind = 'page' | 'database' | 'record' | 'action' | 'pond' | 'block'
 
 /**
  * What the host does when an `action` row is picked. The shell's standing row
@@ -72,6 +75,10 @@ export interface PaletteItem {
   query?: string
   /** An action that lists under its own group rather than `actions` — zen's `mode` (6q frame 1). */
   group?: 'mode'
+  /** A `block` row's own page and block, read straight by the open handler — `id` carries no fact
+   * but a stable unique key (AGENTS.md: never encode two facts in one field). */
+  pageId?: string
+  blockId?: string
 }
 
 export interface PaletteScope {
@@ -79,10 +86,13 @@ export interface PaletteScope {
   label: string
 }
 
+// A `block` row's `subRuns` underlines every occurrence of the query in its
+// snippet (`snippetRuns`, not `matchRuns`'s single contiguous span).
+type Runs = readonly MatchRun[]
 export type PaletteEntry =
   | { kind: 'group'; label: string }
   | { kind: 'note'; text: string }
-  | { kind: 'row'; item: PaletteItem; runs: readonly MatchRun[]; sub?: string }
+  | { kind: 'row'; item: PaletteItem; runs: Runs; sub?: string; subRuns?: Runs }
 
 export interface PaletteOptions {
   scope?: PaletteScope | null
@@ -143,6 +153,10 @@ export const PALETTE_FOOT_MOBILE: readonly string[] = [PALETTE_FOOT_ENTER, '> ac
 /** How many close spellings `did you mean` offers. */
 const DID_YOU_MEAN_MAX = 3
 
+/** The `in pages` group's fixed row cap (KAN-473) — one home, read by the
+ * group's own slice below and by whatever asks `usePaletteBlocks` for rows. */
+export const BLOCK_GROUP_CAP = 6
+
 const EXACT_SCORE = 100
 const PREFIX_SCORE = 80
 const WORD_START_SCORE = 60
@@ -168,9 +182,7 @@ const SUBSEQUENCE_SPAN_FACTOR = 2
 function isCloseSpelling(label: string, q: string): boolean {
   const folded = fold(label)
   const foldedQuery = fold(q)
-  return [folded, ...folded.split(/[^\p{L}\p{N}]+/u)].some(
-    (w) => editDistance(w, foldedQuery) <= 2
-  )
+  return [folded, ...folded.split(/[^\p{L}\p{N}]+/u)].some((w) => editDistance(w, foldedQuery) <= 2)
 }
 
 function matchTier(item: PaletteItem, foldedQuery: string, q: string): number {
@@ -280,19 +292,18 @@ export function paletteEntries(
   // Ranked, not filtered by substring (KAN-390): exact/prefix/word-start/substring/
   // subsequence tiers, the visit boost and the depth tiebreak decide both order and
   // membership (a zero-score label is dropped the same as a missed `.includes`).
-  const pages = rankPages(
-    pool.filter((i) => i.kind === 'page' || i.kind === 'database'),
-    q,
-    visits
-  )
+  const pagePool = pool.filter((i) => i.kind === 'page' || i.kind === 'database')
+  const pages = rankPages(pagePool, q, visits)
   // A record is searched by the host (title or field value), so it is not
   // filtered on its label again here — a field match would never survive that.
   const records = pool.filter((i) => i.kind === 'record')
-  const matched = rankPages(
-    items.filter((i) => i.kind === 'action'),
-    q,
-    visits
-  )
+  // A block is already the host's own body-text match (the RPC), never the
+  // page's title — so it's grouped by kind alone, the same as records, and a
+  // page that matched only by title never appears here under a different id.
+  // Capped at 6, no "more in pages…" row — split to a child ticket.
+  const blocks = pool.filter((i) => i.kind === 'block').slice(0, BLOCK_GROUP_CAP)
+  const actionPool = items.filter((i) => i.kind === 'action')
+  const matched = rankPages(actionPool, q, visits)
   const modes = matched.filter((i) => i.group === 'mode')
   const actions = matched.filter((i) => i.group !== 'mode')
   const ask: PaletteEntry[] = canAsk
@@ -311,7 +322,7 @@ export function paletteEntries(
     : []
 
   // A query that matches only an action is not empty: the `typing` frame lists it.
-  if (!ponds.length && !pages.length && !records.length && !matched.length) {
+  if (!ponds.length && !pages.length && !records.length && !blocks.length && !matched.length) {
     if (pickMode) return [{ kind: 'note', text: `no page matches “${q}”` }]
     const make: PaletteItem = {
       id: NEW_PAGE_ID,
@@ -337,6 +348,7 @@ export function paletteEntries(
       ...pages.map((i) => row(i, q, subOf(i)))
     )
   if (records.length) out.push(group('records'), ...records.map((i) => row(i, q, subOf(i))))
+  if (blocks.length) out.push(group('in pages'), ...blocks.map((i) => row(i, q)))
   if (modes.length) out.push(group('mode'), ...modes.map((i) => row(i, q)))
   // `ponds` state: `new pond “q”` stands where the person is looking at ponds.
   const newPond: PaletteItem = {
@@ -358,8 +370,7 @@ export function paletteEntries(
 /** Pages and records whose name, or a word of it, is within two edits of the query. */
 export function didYouMean(items: readonly PaletteItem[], q: string): PaletteItem[] {
   return items
-    .filter((i) => i.kind !== 'action' && i.kind !== 'pond')
-    .filter((i) => isCloseSpelling(i.label, q))
+    .filter((i) => i.kind !== 'action' && i.kind !== 'pond' && isCloseSpelling(i.label, q))
     .slice(0, DID_YOU_MEAN_MAX)
 }
 
@@ -367,8 +378,13 @@ function group(label: string): PaletteEntry {
   return { kind: 'group', label }
 }
 
+// A `block` row's label is the page path, not the matched text — it still
+// draws in full, just with no hit underline; only its snippet (`subRuns`)
+// underlines a hit.
 function row(item: PaletteItem, q: string, sub = item.sub): PaletteEntry {
-  return { kind: 'row', item, runs: matchRuns(item.label, q), sub }
+  const subRuns = item.kind === 'block' && sub ? snippetRuns(sub, q) : undefined
+  const runs = item.kind === 'block' ? matchRuns(item.label, '') : matchRuns(item.label, q)
+  return { kind: 'row', item, runs, sub, ...(subRuns && { subRuns }) }
 }
 
 /** Levenshtein, small strings only — the palette compares a word to a query. */

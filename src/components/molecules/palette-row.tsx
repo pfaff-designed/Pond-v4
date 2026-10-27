@@ -105,7 +105,17 @@ export function PaletteRow({
       </span>
       {entry.sub && (
         <span data-part="sub" className={SUB}>
-          {entry.sub}
+          {entry.subRuns
+            ? entry.subRuns.map((run, i) => (
+                <span
+                  key={i}
+                  data-part={run.hit ? 'hit' : 'pre'}
+                  className={run.hit ? MATCH : undefined}
+                >
+                  {run.text}
+                </span>
+              ))
+            : entry.sub}
         </span>
       )}
       <span className="flex-1" />
