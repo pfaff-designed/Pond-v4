@@ -10,7 +10,7 @@ import React from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
 
 import { PondCommand, type PondCommandProps } from '@/components/organisms/PondCommand'
-import { PALETTE_ITEMS } from './helpers/palette-fixture'
+import { PALETTE_ITEMS, paletteItemsFor } from './helpers/palette-fixture'
 
 const PATH = {
   glyph: 'ramp',
@@ -54,6 +54,13 @@ describe('⌘K footer: the `new tab` hint', () => {
     onPlatform('Win32')
     renderPalette()
     expect(foot().textContent).toContain('ctrl enter new tab')
+  })
+
+  it('reads ⌘↵ new tab with an in-pages block row on screen, same as a page row (KAN-474)', () => {
+    onPlatform('MacIntel')
+    renderPalette({ items: paletteItemsFor('second fix') })
+    fireEvent.change(input(), { target: { value: 'second fix' } })
+    expect(foot().textContent).toContain('⌘↵ new tab')
   })
 
   it('is absent in actions-only `>` mode — no page row ever lists there', () => {

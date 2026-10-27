@@ -211,3 +211,82 @@ describe('paletteEntries end-to-end diacritics (KAN-390)', () => {
     expect(rows).not.toContain('b')
   })
 })
+
+const block = (id: string, label: string, sub: string): PaletteItem => ({
+  id,
+  label,
+  kind: 'block',
+  sub,
+})
+
+describe('paletteEntries "in pages" group (KAN-473)', () => {
+  it('places "in pages" after pages/records and before mode/actions', () => {
+    const items = [
+      page('p', 'projects'),
+      { id: 'r', label: 'record', kind: 'record' } satisfies PaletteItem,
+      block('b', 'area › projects', 'the pro bono work'),
+      { id: 'new-page', label: 'new page', kind: 'action' } satisfies PaletteItem,
+    ]
+    const entries = paletteEntries(items, 'pro')
+    const groups = entries.flatMap((e) => (e.kind === 'group' ? [e.label] : []))
+    expect(groups).toEqual(['pages', 'records', 'in pages', 'actions'])
+  })
+
+  it('draws no "in pages" group when there are no block hits', () => {
+    const items = [page('p', 'projects')]
+    const entries = paletteEntries(items, 'pro')
+    const groups = entries.flatMap((e) => (e.kind === 'group' ? [e.label] : []))
+    expect(groups).not.toContain('in pages')
+  })
+
+  it('caps "in pages" at 6 rows', () => {
+    const items = Array.from({ length: 9 }, (_, i) => block(`b${i}`, `area › page ${i}`, 'pro bono work'))
+    const entries = paletteEntries(items, 'pro')
+    const group = entries.indexOf(entries.find((e) => e.kind === 'group' && e.label === 'in pages')!)
+    const rows = entries
+      .slice(group + 1)
+      .filter((e) => e.kind === 'row' && e.item.kind === 'block')
+    expect(rows).toHaveLength(6)
+  })
+
+  it('does not list a page that matched only by title under "in pages"', () => {
+    const items = [page('p', 'pro bono')]
+    const entries = paletteEntries(items, 'pro')
+    const groups = entries.flatMap((e) => (e.kind === 'group' ? [e.label] : []))
+    expect(groups).not.toContain('in pages')
+    const pagesRows = entries.flatMap((e) => (e.kind === 'row' ? [e.item.id] : []))
+    expect(pagesRows).toContain('p')
+  })
+
+  it('underlines every occurrence of the query in a block row\'s snippet, via subRuns', () => {
+    const items = [block('b', 'area › projects', 'the pro bono work, pro bono indeed')]
+    const entries = paletteEntries(items, 'pro')
+    const row = entries.find((e) => e.kind === 'row' && e.item.id === 'b')
+    expect(row?.kind).toBe('row')
+    const subRuns = row && row.kind === 'row' ? row.subRuns : undefined
+    expect(subRuns?.filter((r) => r.hit).map((r) => r.text)).toEqual(['pro', 'pro'])
+  })
+
+  it('underlines no hit in a block row\'s label even when the label contains the query, only in subRuns', () => {
+    const items = [block('b', 'kitchen', 'call the electrician for the kit')]
+    const entries = paletteEntries(items, 'kit')
+    const row = entries.find((e) => e.kind === 'row' && e.item.id === 'b')
+    expect(row?.kind).toBe('row')
+    if (row?.kind === 'row') {
+      // The label still draws in full — only unhit, never dropped.
+      expect(row.runs).toEqual([{ text: 'kitchen', hit: false }])
+      expect(row.subRuns?.filter((r) => r.hit)).toHaveLength(1)
+    }
+  })
+
+  it('leaves a non-block row\'s sub untouched, with no subRuns', () => {
+    const items = [{ id: 'r', label: 'record', kind: 'record', sub: 'pro forma' } satisfies PaletteItem]
+    const entries = paletteEntries(items, 'pro')
+    const row = entries.find((e) => e.kind === 'row' && e.item.id === 'r')
+    expect(row?.kind).toBe('row')
+    if (row?.kind === 'row') {
+      expect(row.sub).toBe('pro forma')
+      expect(row.subRuns).toBeUndefined()
+    }
+  })
+})

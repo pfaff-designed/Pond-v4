@@ -32,7 +32,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQueryClient } from '@tanstack/react-query'
-import type { PaletteItem } from '@/components/molecules/palette-entries'
+import { BLOCK_GROUP_CAP, type PaletteItem } from '@/components/molecules/palette-entries'
 import { normalizeQuery } from '@/components/molecules/slash-entries'
 import { NewPondFlow } from '@/components/organisms/NewPondFlow'
 import { PondCommand } from '@/components/organisms/PondCommand'
@@ -64,6 +64,7 @@ import {
   SESSION_UNDO_SCOPE_ATTR,
 } from '@/lib/shell-commands'
 import { sessionUndo } from '@/lib/change-log/session-undo'
+import { blockLinkUrl } from '@/lib/modules/block-link'
 import { editorHistoryEmptyFor } from '@/lib/modules/text/active-editor'
 import { applyUndoOutcome } from '@/lib/change-log/undo-outcome'
 import { describeChange, describeUndoneEffect } from '@/lib/change-log/page-changes'
@@ -94,6 +95,8 @@ import { isMovablePageRow } from '@/lib/pages/databases-root'
 import { prefetchPageIfAbsent } from '@/lib/pages/use-page-prefetch'
 import { readRecentPageIds, writeRecent } from '@/lib/pages/recent-pages'
 import { useHomePage } from '@/lib/pages/use-home-page'
+import { usePaletteBlocks } from '@/lib/pages/use-palette-blocks'
+import type { ParentPageRow } from '@/lib/pages/palette-blocks'
 import { usePaletteRecords } from '@/lib/pages/use-palette-records'
 import { createPage } from '@/lib/pages/client'
 import { insertPageOptimistic } from '@/lib/pages/tree'
@@ -156,6 +159,21 @@ export function ShellCommands() {
   // The move picker's root row (same source Rail reads for its own root label).
   const { data: home } = useHomePage(pondId, pondName, !pondLoading)
   const records = usePaletteRecords(normalizeQuery(query))
+  // `usePaletteBlocks` wants `parentId` (camelCase, `ancestorPathLabel`'s own
+  // shape); `pages` is `tree.ts`'s `PageRow`, snake_case like the row it came
+  // from — mapped here rather than at `tree.ts`, which has callers of its own
+  // that want `parent_id` as-is.
+  const parentPages = useMemo<ParentPageRow[]>(
+    () =>
+      pages.map((p) => ({
+        id: p.id,
+        parentId: p.parent_id,
+        type: p.type as ParentPageRow['type'],
+        title: p.title,
+      })),
+    [pages]
+  )
+  const blocks = usePaletteBlocks(normalizeQuery(query), parentPages, BLOCK_GROUP_CAP)
   const undoNotice = useUndoNotice()
   // `move page to…`'s own commit (KAN-469) — the same `stageUndo`/`notify` the
   // rail's drag-move already stages through; ShellCommands sits inside the
@@ -339,6 +357,7 @@ export function ShellCommands() {
       ...railItems(railMinimized),
       ...pondItems(ponds, pond?.id ?? null),
       ...records,
+      ...blocks,
     ]
   }, [
     pages,
@@ -349,6 +368,7 @@ export function ShellCommands() {
     ponds,
     pond,
     records,
+    blocks,
     recentPageIds,
     movePick,
     blockMovePick,
@@ -721,6 +741,30 @@ export function ShellCommands() {
       }
       if (item.kind === 'record') {
         openWorkspaceUrl(workspaceUrl({ id: item.id, type: ROW_TYPE, title: item.label }), router)
+        return
+      }
+      if (item.kind === 'block') {
+        const blockPage = pages.find((p) => p.id === item.pageId)
+        if (!blockPage || !item.blockId) return
+        const blockId = item.blockId
+        // `blockLinkUrl` requires an absolute href (it calls `new URL(href)` with
+        // no base) — `workspaceUrl` is deliberately origin-less (KAN-474, so server
+        // and client agree byte-for-byte), so the origin is added here and
+        // stripped back off before handing the url to `openWorkspaceUrl`/`window.open`,
+        // which (like every other branch here) take the same relative shape `workspaceUrl` returns.
+        const target = new URL(
+          blockLinkUrl(
+            `${window.location.origin}${workspaceUrl({
+              id: blockPage.id,
+              type: blockPage.type,
+              title: blockPage.title,
+            })}`,
+            blockId
+          )
+        )
+        const url = `${target.pathname}${target.search}${target.hash}`
+        if (options?.newTab) window.open(url, '_blank', 'noopener')
+        else openWorkspaceUrl(url, router)
         return
       }
       const page = pages.find((p) => p.id === item.id)

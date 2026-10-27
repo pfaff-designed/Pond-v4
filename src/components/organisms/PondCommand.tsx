@@ -195,6 +195,9 @@ const NOTE = 'px-[12px] py-[10px] font-mono text-[13px] text-mn-text-meta md:tex
 const FOOT =
   'mt-[6px] flex flex-wrap gap-[14px] border-t border-mn-text/[0.09] px-[22px] pt-[10px] pb-[14px] font-mono text-[10.5px] text-mn-text-secondary'
 
+// ⌘↵ opens in a new tab on a page row or an in-pages block row (KAN-474) — same target shape, both land on a page.
+export const opensInNewTab = (kind: PaletteItem['kind']) => kind === 'page' || kind === 'block'
+
 export function PondCommand({
   path,
   open,
@@ -392,7 +395,7 @@ export function PondCommand({
     else if (e.key === 'Enter') {
       const row = rows[active]
       if (row) {
-        if ((e.metaKey || e.ctrlKey) && row.item.kind === 'page') onSelect(row.item, { newTab: true })
+        if ((e.metaKey || e.ctrlKey) && opensInNewTab(row.item.kind)) onSelect(row.item, { newTab: true })
         else onSelect(row.item)
       }
     } else if (e.key === 'Backspace' && query === '' && scope) setScope(null)
@@ -405,7 +408,7 @@ export function PondCommand({
   // Notion's footer reads "↵ Open · ⌘↵ Open in new tab" — shown only where a page
   // row is actually on screen to open; `enterHint` overriding `↵ open` (the move
   // picker's `↵ move`) means ⏎ no longer opens anything, so the hint is wrong there.
-  const showNewTabHint = !enterHint && rows.some((r) => r.item.kind === 'page')
+  const showNewTabHint = !enterHint && rows.some((r) => opensInNewTab(r.item.kind))
   const newTabHint = `${formatChordMachine('mod+enter', apple)} new tab`
   return (
     <div className={`${className} ${live ? 'z-[100]' : 'z-20'}`}>
