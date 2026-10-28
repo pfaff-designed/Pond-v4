@@ -7,9 +7,12 @@ let pond: { id: string; favouritePageIds?: string[] } | null = {
   favouritePageIds: ['a', 'b'],
 }
 
+const rememberReorder = jest.fn()
+
 jest.mock('./context', () => ({ usePond: () => ({ pond, patchPond }) }))
 jest.mock('./client', () => ({ setPondFavourites: jest.fn() }))
 jest.mock('@/lib/deletion/notify-bridge', () => ({ requestNotify: (...args: unknown[]) => requestNotify(...args) }))
+jest.mock('./favourites-undo', () => ({ rememberReorder: (...args: unknown[]) => rememberReorder(...args) }))
 
 import { setPondFavourites } from './client'
 import { useFavouritePage } from './use-favourite-page'
@@ -19,6 +22,7 @@ const setFavourites = setPondFavourites as jest.Mock
 beforeEach(() => {
   patchPond.mockClear()
   requestNotify.mockClear()
+  rememberReorder.mockClear()
   setFavourites.mockReset()
   pond = { id: 'p-life', favouritePageIds: ['a', 'b'] }
 })
@@ -81,5 +85,32 @@ describe('useFavouritePage', () => {
     expect(setFavourites).toHaveBeenNthCalledWith(2, 'p-life', ['a', 'b'])
     expect(patchPond).toHaveBeenCalledTimes(2)
     expect(requestNotify).not.toHaveBeenCalled()
+  })
+
+  it('applies a reordered list optimistically, writes it, and stashes the pre-reorder order', async () => {
+    setFavourites.mockResolvedValueOnce(undefined)
+    const { result } = renderHook(() => useFavouritePage())
+
+    await act(async () => {
+      await result.current.reorder(['b', 'a'])
+    })
+
+    expect(patchPond).toHaveBeenCalledWith('p-life', { favouritePageIds: ['b', 'a'] })
+    expect(setFavourites).toHaveBeenCalledWith('p-life', ['b', 'a'])
+    expect(rememberReorder).toHaveBeenCalledWith('p-life', ['a', 'b'])
+    expect(requestNotify).not.toHaveBeenCalled()
+  })
+
+  it('rolls back a rejected reorder to the pre-reorder ids and toasts', async () => {
+    setFavourites.mockRejectedValueOnce(new Error('network down'))
+    const { result } = renderHook(() => useFavouritePage())
+
+    await act(async () => {
+      await result.current.reorder(['b', 'a'])
+    })
+
+    expect(patchPond).toHaveBeenNthCalledWith(1, 'p-life', { favouritePageIds: ['b', 'a'] })
+    expect(patchPond).toHaveBeenNthCalledWith(2, 'p-life', { favouritePageIds: ['a', 'b'] })
+    expect(requestNotify).toHaveBeenCalledWith({ message: 'Could not update favourites' })
   })
 })

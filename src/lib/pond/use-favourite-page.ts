@@ -4,6 +4,7 @@ import { useRef } from 'react'
 import { requestNotify } from '@/lib/deletion/notify-bridge'
 import { setPondFavourites } from './client'
 import { usePond } from './context'
+import { rememberReorder } from './favourites-undo'
 import { toggleFavouritePageId } from './favourites'
 
 /**
@@ -60,5 +61,17 @@ export function useFavouritePage() {
     await flush()
   }
 
-  return { toggle }
+  const reorder = async (next: readonly string[]): Promise<void> => {
+    if (!pond) return
+    const before = desired.current ?? pond.favouritePageIds
+    if (!desired.current) rollback.current = pond.favouritePageIds
+    rememberReorder(pond.id, before ?? [])
+    const nextIds = [...next]
+    patchPond(pond.id, { favouritePageIds: nextIds })
+    desired.current = nextIds
+    pondId.current = pond.id
+    await flush()
+  }
+
+  return { toggle, reorder }
 }
