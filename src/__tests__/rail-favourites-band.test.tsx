@@ -2,6 +2,9 @@
  * KAN-475 — the favourites band's own row rendering: mark + title, in the
  * favourite ids' order, and a dead/unresolved id simply drops out rather
  * than drawing an empty-looking row.
+ *
+ * KAN-569 — the band's own drag-to-reorder: a 2-zone (before/after)
+ * hit-test, no `'into'` zone, since the band is flat.
  */
 import React from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
@@ -115,5 +118,184 @@ describe('RailFavouritesBand', () => {
     const plainClickCanceled = fireEvent.click(row)
     expect(plainClickCanceled).toBe(false)
     expect(onSelect).toHaveBeenCalledWith('groceries')
+  })
+
+  // jsdom has no real `DragEvent`/`DataTransfer` (testing-library falls back to
+  // a plain `Event` and silently drops unknown init properties — jsdom/jsdom#1568),
+  // so `clientY` and `dataTransfer` are defined directly on a plain `Event`,
+  // the same workaround `rail-move-undo-path.test.tsx`'s own drag tests use.
+  function dragStartEvent() {
+    const event = new Event('dragstart', { bubbles: true, cancelable: true })
+    Object.defineProperty(event, 'dataTransfer', {
+      value: { effectAllowed: '', dropEffect: '', setData: jest.fn() },
+    })
+    return event
+  }
+  function dragOverEvent(clientY: number) {
+    const event = new Event('dragover', { bubbles: true, cancelable: true })
+    Object.defineProperty(event, 'clientY', { value: clientY })
+    Object.defineProperty(event, 'dataTransfer', { value: { dropEffect: '' } })
+    return event
+  }
+  function dropEvent(clientY: number) {
+    const event = new Event('drop', { bubbles: true, cancelable: true })
+    Object.defineProperty(event, 'clientY', { value: clientY })
+    return event
+  }
+  /** A 20px-tall row, so `clientY: 2` lands in the top half ("before") and
+   *  `clientY: 18` in the bottom half ("after") — jsdom's own
+   *  `getBoundingClientRect` otherwise always returns an all-zero rect. */
+  function stubRowHeight(row: HTMLElement) {
+    jest.spyOn(row, 'getBoundingClientRect').mockReturnValue({
+      top: 0,
+      bottom: 20,
+      height: 20,
+      left: 0,
+      right: 0,
+      width: 0,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    })
+  }
+
+  it('dragging one row onto another calls onReorder with the resulting order', () => {
+    const nodeById = new Map([
+      ['groceries', node('groceries', 'groceries')],
+      ['house', node('house', 'house')],
+      ['roof', node('roof', 'roof')],
+    ])
+    const onReorder = jest.fn()
+    render(
+      <RailFavouritesBand
+        ids={['groceries', 'house', 'roof']}
+        nodeById={nodeById}
+        marks={NO_MARKS}
+        onReorder={onReorder}
+      />
+    )
+    const [groceriesRow, , roofRow] = screen.getAllByRole('listitem')
+    stubRowHeight(groceriesRow)
+
+    fireEvent(roofRow, dragStartEvent())
+    // Top half of the groceries row — a "before" drop.
+    fireEvent(groceriesRow, dragOverEvent(2))
+    fireEvent(groceriesRow, dropEvent(2))
+
+    expect(onReorder).toHaveBeenCalledTimes(1)
+    expect(onReorder).toHaveBeenCalledWith(['roof', 'groceries', 'house'])
+  })
+
+  it('dragging a row over itself calls nothing', () => {
+    const nodeById = new Map([
+      ['groceries', node('groceries', 'groceries')],
+      ['house', node('house', 'house')],
+    ])
+    const onReorder = jest.fn()
+    render(
+      <RailFavouritesBand
+        ids={['groceries', 'house']}
+        nodeById={nodeById}
+        marks={NO_MARKS}
+        onReorder={onReorder}
+      />
+    )
+    const [groceriesRow] = screen.getAllByRole('listitem')
+    stubRowHeight(groceriesRow)
+
+    fireEvent(groceriesRow, dragStartEvent())
+    fireEvent(groceriesRow, dragOverEvent(2))
+    fireEvent(groceriesRow, dropEvent(2))
+
+    expect(onReorder).not.toHaveBeenCalled()
+  })
+
+  it('⌥↓ on a focused row swaps it with the row below, same as dragging it there', () => {
+    const nodeById = new Map([
+      ['groceries', node('groceries', 'groceries')],
+      ['house', node('house', 'house')],
+      ['roof', node('roof', 'roof')],
+    ])
+    const onReorder = jest.fn()
+    render(
+      <RailFavouritesBand
+        ids={['groceries', 'house', 'roof']}
+        nodeById={nodeById}
+        marks={NO_MARKS}
+        onReorder={onReorder}
+      />
+    )
+    const [groceriesRow] = screen.getAllByRole('listitem')
+
+    fireEvent.keyDown(groceriesRow, { key: 'ArrowDown', altKey: true })
+
+    expect(onReorder).toHaveBeenCalledTimes(1)
+    expect(onReorder).toHaveBeenCalledWith(['house', 'groceries', 'roof'])
+  })
+
+  it('⌥↑ on a focused row swaps it with the row above, same as dragging it there', () => {
+    const nodeById = new Map([
+      ['groceries', node('groceries', 'groceries')],
+      ['house', node('house', 'house')],
+      ['roof', node('roof', 'roof')],
+    ])
+    const onReorder = jest.fn()
+    render(
+      <RailFavouritesBand
+        ids={['groceries', 'house', 'roof']}
+        nodeById={nodeById}
+        marks={NO_MARKS}
+        onReorder={onReorder}
+      />
+    )
+    const [, , roofRow] = screen.getAllByRole('listitem')
+
+    fireEvent.keyDown(roofRow, { key: 'ArrowUp', altKey: true })
+
+    expect(onReorder).toHaveBeenCalledTimes(1)
+    expect(onReorder).toHaveBeenCalledWith(['groceries', 'roof', 'house'])
+  })
+
+  it('⌥↑ on the top row and ⌥↓ on the bottom row call nothing (no sibling to swap with)', () => {
+    const nodeById = new Map([
+      ['groceries', node('groceries', 'groceries')],
+      ['house', node('house', 'house')],
+    ])
+    const onReorder = jest.fn()
+    render(
+      <RailFavouritesBand
+        ids={['groceries', 'house']}
+        nodeById={nodeById}
+        marks={NO_MARKS}
+        onReorder={onReorder}
+      />
+    )
+    const [groceriesRow, houseRow] = screen.getAllByRole('listitem')
+
+    fireEvent.keyDown(groceriesRow, { key: 'ArrowUp', altKey: true })
+    fireEvent.keyDown(houseRow, { key: 'ArrowDown', altKey: true })
+
+    expect(onReorder).not.toHaveBeenCalled()
+  })
+
+  it('ArrowDown without altKey calls nothing (not the same key the band listens for)', () => {
+    const nodeById = new Map([
+      ['groceries', node('groceries', 'groceries')],
+      ['house', node('house', 'house')],
+    ])
+    const onReorder = jest.fn()
+    render(
+      <RailFavouritesBand
+        ids={['groceries', 'house']}
+        nodeById={nodeById}
+        marks={NO_MARKS}
+        onReorder={onReorder}
+      />
+    )
+    const [groceriesRow] = screen.getAllByRole('listitem')
+
+    fireEvent.keyDown(groceriesRow, { key: 'ArrowDown' })
+
+    expect(onReorder).not.toHaveBeenCalled()
   })
 })

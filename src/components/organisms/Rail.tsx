@@ -75,6 +75,7 @@ import { appendChildLinkUnder, trashPageUnlinked } from '@/lib/pages/child-links
 import { usePondId, usePond } from '@/lib/pond/context'
 import { useHomePage } from '@/lib/pages/use-home-page'
 import { pushRecentGlyphToPond } from '@/lib/pond/client'
+import { useFavouritePage } from '@/lib/pond/use-favourite-page'
 import { PondSwitcher } from './PondSwitcher'
 import { RailFavouritesBand } from './RailFavouritesBand'
 import { rowMark, markGlyph } from '@/lib/rail/row-mark'
@@ -873,6 +874,11 @@ export interface RailViewProps {
    *  or every id dead draws no band at all. Omit in Storybook/older call
    *  sites and the rail draws exactly as it did before favourites existed. */
   favouritePageIds?: readonly string[]
+  /** Drag a favourite row to reorder it, or ⌥↑/⌥↓ on a focused one (KAN-569).
+   *  Optional so existing `RailView` call sites (stories, unit tests predating
+   *  this ticket) keep compiling untouched; omit it and the band draws rows
+   *  that are not `draggable`. */
+  onReorderFavourite?: (next: readonly string[]) => void
   selectedId: string | null
   expanded: Set<string>
   /** Whether the Life root is expanded (reveals the whole tree). */
@@ -1043,6 +1049,7 @@ export function RailView({
   recentGlyphs = [],
   marks,
   favouritePageIds = [],
+  onReorderFavourite,
   selectedId,
   expanded,
   lifeExpanded,
@@ -1740,6 +1747,7 @@ export function RailView({
               pondId={pondId}
               selectedId={selectedId}
               onSelect={onSelect}
+              onReorder={onReorderFavourite}
             />
           )}
           <div className="min-h-0 flex-1 overflow-y-auto px-2">
@@ -1912,6 +1920,7 @@ export function Rail() {
   const pondName = usePondName()
   const pondGlyph = usePondGlyph()
   const { pond, loading: pondLoading } = usePond()
+  const { reorder: reorderFavourite } = useFavouritePage()
   // KAN-490: the root row reads the home row's OWN title (the data model point
   // that the home row IS the first root), not the pond's name — `rootLabel`
   // (in RailView) falls back to `pondName` only while this is still loading.
@@ -2903,6 +2912,7 @@ export function Rail() {
         recentGlyphs={recentGlyphs}
         marks={marks}
         favouritePageIds={pond?.favouritePageIds}
+        onReorderFavourite={reorderFavourite}
         selectedId={selectedNodeId}
         expanded={expanded}
         lifeExpanded={lifeExpanded}

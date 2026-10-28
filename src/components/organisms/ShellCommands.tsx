@@ -85,6 +85,7 @@ import { deletePageAndStageUndo } from '@/lib/pages/delete'
 import { moveBlockAndStageUndo } from '@/lib/pages/move-block'
 import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import { useFavouritePage } from '@/lib/pond/use-favourite-page'
+import { rememberReorder, takePendingReorder } from '@/lib/pond/favourites-undo'
 import {
   blockMovePickItems,
   movePickItems,
@@ -189,7 +190,7 @@ export function ShellCommands() {
   // rail's drag-move already stages through; ShellCommands sits inside the
   // one `DeletionUndoProvider` the workspace shell mounts.
   const { stageUndo, stageDeletion, notify } = useDeletionUndo()
-  const { toggle: toggleFavouritePage } = useFavouritePage()
+  const { toggle: toggleFavouritePage, reorder: reorderFavouritePage } = useFavouritePage()
 
   // A step's notice is only good for AS LONG AS NOTHING ELSE HAPPENED — a
   // key/click (via `clearShownNotice`) or a second step (via `runUndoStep`)
@@ -513,6 +514,21 @@ export function ShellCommands() {
       }
       if (isUndoChord(e)) {
         e.preventDefault()
+        // A favourites reorder has no `target_page_id` for the change-log's own
+        // undo kind (KAN-569 `choices`), so it rides this small pending-reorder
+        // slot instead of `sessionUndo` — checked first, and consumed, so the
+        // session-undo RPC step underneath it is left untouched.
+        const pendingReorder = takePendingReorder(pondId)
+        if (pendingReorder) {
+          // `recordUndo: false`: this revert is not itself a new undoable
+          // reorder (see `useFavouritePage`). On a rejected write, re-stash
+          // the same pre-reorder order so the next ⌘Z can retry it instead
+          // of falling through to `sessionUndo` with nothing to revert.
+          void reorderFavouritePage(pendingReorder, { recordUndo: false }).then((ok) => {
+            if (!ok) rememberReorder(pondId, pendingReorder)
+          })
+          return
+        }
         runUndoStep('undo')
         return
       }
@@ -543,6 +559,7 @@ export function ShellCommands() {
     closeReport,
     pondId,
     runUndoStep,
+    reorderFavouritePage,
     clearShownNotice,
     paletteOpen,
     pages,
