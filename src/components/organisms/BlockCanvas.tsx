@@ -2250,7 +2250,16 @@ export function BlockCanvas({
           mode: 'board',
           collectionId: tasksId,
           ...(statusField ? { groupBy: statusField.id } : {}),
-          ...(optionId ? { filter: { property: projectField.id, op: 'eq', value: optionId } } : {}),
+          ...(optionId
+            ? {
+                filter: {
+                  property: projectField.id,
+                  op: 'eq',
+                  value: optionId,
+                  valueLabel: pick.project.label,
+                },
+              }
+            : {}),
         }
         const landing = placeView(view, open.target)
         queryClient.invalidateQueries({ queryKey: pagesKey() })
