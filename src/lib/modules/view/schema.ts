@@ -67,6 +67,11 @@ export const viewFilterSchema = z.object({
   property: z.string(),
   op: filterOpSchema,
   value: z.string(),
+  /**
+   * The option's label at the moment this filter was written (KAN-554). Absent
+   * means today's behaviour: no "value went missing" line is ever drawn.
+   */
+  valueLabel: z.string().optional(),
 })
 export type ViewFilter = z.infer<typeof viewFilterSchema>
 

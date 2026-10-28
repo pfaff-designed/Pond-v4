@@ -8,6 +8,7 @@ import {
   activeSavedView,
   applyConfigPatch,
   resolveActiveView,
+  viewFilterSchema,
   viewSchema,
   type ViewBlock,
   type ViewMode,
@@ -551,5 +552,19 @@ describe('span (KAN-455)', () => {
     expect(resolveActiveView(saved).config.span ?? 'month').toBe('day')
     expect(activeSavedView(saved).span).toBe('day')
     expect(activeSavedView(saved).mode).toBe('calendar')
+  })
+})
+
+describe('viewFilterSchema valueLabel (KAN-554)', () => {
+  it('round-trips a filter with valueLabel set', () => {
+    const filter = { property: 'p-project', op: 'eq' as const, value: 'opt-1', valueLabel: 'Home Reno' }
+    expect(viewFilterSchema.parse(filter)).toEqual(filter)
+  })
+
+  it('parses a filter with no valueLabel as valid, with the key absent', () => {
+    const filter = { property: 'p-project', op: 'eq' as const, value: 'opt-1' }
+    const parsed = viewFilterSchema.parse(filter)
+    expect(parsed).toEqual(filter)
+    expect(parsed).not.toHaveProperty('valueLabel')
   })
 })
