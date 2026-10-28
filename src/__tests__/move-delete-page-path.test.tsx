@@ -317,4 +317,24 @@ describe('⌘K\'s "delete page" row deletes the open page and stages undo (KAN-5
     await screen.findByRole('treeitem', { name: 'Roof' })
     expect(mockPush.mock.calls.at(-1)?.[0]).toContain('nodeId=roof')
   })
+
+  // Regression: `deletePageAndStageUndo` only `removeRow`s the open page
+  // itself — picking this row on a page with a child would leaf-stage the
+  // parent while the child stays in cache, orphaned once the subtree is
+  // actually trashed. The row must not even be offered, so there is nothing
+  // for ⌘K to pick.
+  it('does not offer "delete page" at all once Roof has a child (would leaf-stage a parent)', async () => {
+    table.push({ id: 'attic', parent_id: 'roof', type: 'page', title: 'Attic', order: 0, updated_at: AT })
+
+    const user = userEvent.setup()
+    renderPath()
+
+    await screen.findByRole('treeitem', { name: 'Roof' })
+
+    await user.keyboard('{Meta>}k{/Meta}')
+    const input = await screen.findByRole('combobox', { name: 'command palette' })
+    await user.type(input, 'delete')
+
+    expect(screen.queryByRole('option', { name: /delete page/ })).toBeNull()
+  })
 })

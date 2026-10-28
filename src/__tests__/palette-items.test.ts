@@ -241,6 +241,19 @@ describe('paletteItems — delete page', () => {
     expect(withExtraRootOpen).not.toContainEqual(DELETE_PAGE_ACTION)
     expect(withExtraRootOpen).toContainEqual(DUPLICATE_PAGE_ACTION)
   })
+
+  // Regression: `deletePageAndStageUndo` only `removeRow`s the one page —
+  // Rail's own leaf-only shortcut (`Rail.tsx`'s `needsConfirm`/
+  // `countDescendants`). A parent must not list this row at all, or picking
+  // it would leaf-stage the parent while its child stays in the `['pages']`
+  // cache, orphaned once the parent's subtree is actually trashed server-side.
+  it('does not list for a page with a child, even though move page still does', () => {
+    const child = { ...ordinaryPage, id: 'child-page', parent_id: 'some-page', title: 'Attic' }
+    const withChildren = paletteItems([ordinaryPage, child], [], 'some-page')
+
+    expect(withChildren).not.toContainEqual(DELETE_PAGE_ACTION)
+    expect(withChildren).toContainEqual(MOVE_PAGE_ACTION)
+  })
 })
 
 describe('FAVOURITE_PAGE_ACTION / UNFAVOURITE_PAGE_ACTION', () => {
