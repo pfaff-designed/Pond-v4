@@ -5,6 +5,8 @@ import type { Level } from '@tiptap/extension-heading'
 export interface ActiveMarks {
   bold: boolean
   italic: boolean
+  strike: boolean
+  code: boolean
 }
 
 /** The selection bar's text-style menu: a plain paragraph or one of the six heading levels. */
@@ -27,9 +29,19 @@ export const toggleBulletList = (editor: Editor): void => {
   editor.chain().focus().toggleBulletList().run()
 }
 
+export const toggleStrike = (editor: Editor): void => {
+  editor.chain().focus().toggleStrike().run()
+}
+
+export const toggleCode = (editor: Editor): void => {
+  editor.chain().focus().toggleCode().run()
+}
+
 export const activeMarks = (editor: FormatReader): ActiveMarks => ({
   bold: editor.isActive('bold'),
   italic: editor.isActive('italic'),
+  strike: editor.isActive('strike'),
+  code: editor.isActive('code'),
 })
 
 export const setTextStyle = (editor: Editor, level: Level | null): void => {

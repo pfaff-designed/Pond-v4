@@ -285,6 +285,37 @@ export function raiseRecordCard(recordId: string) {
 }
 
 /**
+ * "Open the selection bar's link field from ⌘K" (KAN-465). `ShellCommands`
+ * asks when ⌘K fires over a live text selection; `SelectionBar` owns the
+ * only mounted link field and answers — the same decoupling as
+ * `requestComposerToggle`, so `ShellCommands` never imports `SelectionBar`.
+ */
+export const SELECTION_LINK_EVENT = 'pond:selection-link'
+
+export function requestSelectionLink() {
+  window.dispatchEvent(new CustomEvent(SELECTION_LINK_EVENT))
+}
+
+/**
+ * Whether the selection bar's link field is open right now (KAN-465) —
+ * `SelectionBar` sets this as it opens/closes the field. `ShellCommands`'s
+ * ⌘K handler reads it synchronously, not through a React subscription,
+ * because focusing the link field clears the browser's own text selection:
+ * `hasEditableTextSelection()` alone can't tell "the field is already open"
+ * apart from "there's nothing selected", so a second ⌘K would otherwise fall
+ * through to opening the palette on top of the field.
+ */
+let selectionLinkActive = false
+
+export function setSelectionLinkActive(active: boolean) {
+  selectionLinkActive = active
+}
+
+export function isSelectionLinkActive(): boolean {
+  return selectionLinkActive
+}
+
+/**
  * "Open the pages picker for one block's `move to…`" (KAN-479). The block
  * menu's row asks; `ShellCommands` owns the only mounted `PondCommand` and
  * answers by opening it in block-pick mode — the same decoupling as

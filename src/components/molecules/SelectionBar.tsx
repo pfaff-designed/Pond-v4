@@ -20,15 +20,19 @@ import {
   setTextStyle,
   toggleBold,
   toggleBulletList,
+  toggleCode,
   toggleItalic,
+  toggleStrike,
   setLink,
   unsetLink,
   type ActiveMarks,
   type FormatReader,
   type TextStyle,
 } from '@/lib/modules/text/format'
+import { SELECTION_LINK_EVENT, setSelectionLinkActive } from '@/lib/terminal-focus'
 
 import { GLASS, SLASH_SIZES } from './picker-chrome'
+import { ICON } from './slash-entries'
 import { useSelectionBarBox, type SelectionBox } from './selection-bar-position'
 import { useAnchoredBox } from './use-anchored-box'
 
@@ -72,6 +76,8 @@ export type SelectionBarItemId =
   | 'text-style'
   | 'bold'
   | 'italic'
+  | 'strike'
+  | 'code'
   | 'link'
   | 'list'
   | 'highlight'
@@ -90,11 +96,17 @@ export interface SelectionBarItem {
   dividerAfter?: true
 }
 
-/** The ten items, in the board's own order. */
+/**
+ * The board's ten items, in its own order, plus `strike` and `code` — two
+ * marks the board draws no row for (same standing as KAN-462's `/code`),
+ * grouped with the other inline-mark toggles right after `italic`.
+ */
 export const SELECTION_BAR_ITEMS: readonly SelectionBarItem[] = [
   { id: 'text-style', label: 'text', enabled: true, dividerAfter: true },
   { id: 'bold', label: 'bold', enabled: true },
   { id: 'italic', label: 'italic', enabled: true },
+  { id: 'strike', label: 'strike', enabled: true },
+  { id: 'code', label: 'code', enabled: true },
   { id: 'link', label: 'link', enabled: true },
   { id: 'list', label: 'list', enabled: true, dividerAfter: true },
   { id: 'highlight', label: 'highlight', enabled: false },
@@ -162,6 +174,14 @@ const Mark = ({ item, textStyle }: { item: SelectionBarItem; textStyle: TextStyl
       return <span className="text-[14px] font-bold">B</span>
     case 'italic':
       return <span className="font-serif text-[17px] font-extralight italic">I</span>
+    case 'strike':
+      return <span className="text-[14px] line-through">S</span>
+    case 'code':
+      return (
+        <svg {...ICON_14} aria-hidden>
+          <path d={ICON.code.d} />
+        </svg>
+      )
     case 'link':
       return (
         <svg {...ICON_14} aria-hidden>
@@ -227,7 +247,7 @@ const Mark = ({ item, textStyle }: { item: SelectionBarItem; textStyle: TextStyl
   }
 }
 
-const NO_MARKS: ActiveMarks = { bold: false, italic: false }
+const NO_MARKS: ActiveMarks = { bold: false, italic: false, strike: false, code: false }
 
 /** The first enabled item — the toolbar's tab stop until focus moves within it. */
 const FIRST_ITEM_ID: SelectionBarItemId = 'text-style'
@@ -241,6 +261,17 @@ const selectionKey = (editor: Editor, sel: Selection): string => {
   const anchor = editor.view.posAtDOM(sel.anchorNode!, sel.anchorOffset)
   const head = editor.view.posAtDOM(sel.focusNode!, sel.focusOffset)
   return `${anchor}-${head}`
+}
+
+/** The block a selection sits within, read off its anchor — shared by
+ *  `onSelectionChange` and `openLinkMode`'s re-show case (KAN-465). */
+const blockIdForSelection = (sel: Selection): string | undefined => {
+  const anchor = sel.anchorNode
+  const blockEl =
+    anchor instanceof Element
+      ? anchor.closest('[data-block-id]')
+      : anchor?.parentElement?.closest('[data-block-id]')
+  return blockEl?.getAttribute('data-block-id') ?? undefined
 }
 
 /**
@@ -381,12 +412,7 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
         return
       }
 
-      const anchor = sel.anchorNode
-      const blockEl =
-        anchor instanceof Element
-          ? anchor.closest('[data-block-id]')
-          : anchor?.parentElement?.closest('[data-block-id]')
-      const blockId = blockEl?.getAttribute('data-block-id') ?? undefined
+      const blockId = blockIdForSelection(sel)
 
       const r = range.getBoundingClientRect()
       rangeRef.current = range.cloneRange()
@@ -505,20 +531,59 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
     setLinkActive(editor.isActive('link'))
   }
 
+  const openLinkMode = useCallback(() => {
+    const sel = window.getSelection()
+    const editor = sel && editableEditorForSelection(sel)
+    if (!editor || !sel) return
+    syncEditorSelection(editor, sel)
+    const { from, to } = editor.state.selection
+    linkTargetRef.current = { editor, from, to }
+    // Esc dismisses the bar but leaves the selection standing (KAN-465) — ⌘K
+    // still answers by re-showing it, the same context `onSelectionChange`
+    // would have set, so the link field it opens has a bar to render into.
+    if (!ctx) {
+      if (!sel.rangeCount) return
+      const text = sel.toString().trim()
+      if (!text) return
+      const range = sel.getRangeAt(0)
+      const r = range.getBoundingClientRect()
+      rangeRef.current = range.cloneRange()
+      dismissedKeyRef.current = null
+      shownSelectionRef.current = { key: selectionKey(editor, sel), editor }
+      setCtx({ text, blockId: blockIdForSelection(sel), from, to })
+      setRect({ top: r.top, bottom: r.bottom, left: r.left, width: r.width })
+    }
+    setLinkHref('')
+    setLinkMode(true)
+  }, [ctx])
+
   const handleLinkClick = () => {
     if (linkActive) {
       applyMark(unsetLink)()
       return
     }
-    const sel = window.getSelection()
-    const editor = sel && editableEditorForSelection(sel)
-    if (!editor) return
-    syncEditorSelection(editor, sel)
-    const { from, to } = editor.state.selection
-    linkTargetRef.current = { editor, from, to }
-    setLinkHref('')
-    setLinkMode(true)
+    openLinkMode()
   }
+
+  // ⌘K over a live selection (`ShellCommands`'s keydown handler) opens the
+  // link field the same as the bar's own button — a no-op with nothing shown.
+  // Listens even while the bar itself is hidden (Esc dismissed it but the
+  // selection still stands, KAN-465): `openLinkMode` re-derives everything it
+  // needs from `window.getSelection()` and no-ops without an editable one.
+  useEffect(() => {
+    if (disabled) return
+    window.addEventListener(SELECTION_LINK_EVENT, openLinkMode)
+    return () => window.removeEventListener(SELECTION_LINK_EVENT, openLinkMode)
+  }, [disabled, openLinkMode])
+
+  // `ShellCommands`'s ⌘K handler reads this synchronously (KAN-465): while the
+  // link field is open, focusing it has already cleared the browser selection,
+  // so the bare selection read alone can't stop a second ⌘K from raising the
+  // palette on top of the field.
+  useEffect(() => {
+    setSelectionLinkActive(linkMode)
+  }, [linkMode])
+  useEffect(() => () => setSelectionLinkActive(false), [])
 
   // Returns the caret to the text the link was opened on.
   const closeLinkField = (apply: boolean) => {
@@ -657,6 +722,8 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
   const pressedById: Partial<Record<SelectionBarItemId, boolean>> = {
     bold: marks.bold,
     italic: marks.italic,
+    strike: marks.strike,
+    code: marks.code,
     list: listActive,
     link: linkActive,
   }
@@ -715,15 +782,19 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
                     ? applyMark(toggleBold)
                     : item.id === 'italic'
                       ? applyMark(toggleItalic)
-                      : item.id === 'list'
-                        ? applyMark(toggleBulletList)
-                        : item.id === 'text-style'
-                          ? () => setStyleMenuOpen((open) => !open)
-                          : item.id === 'link'
-                            ? handleLinkClick
-                            : item.id === 'copy'
-                              ? handleCopy
-                              : undefined
+                      : item.id === 'strike'
+                        ? applyMark(toggleStrike)
+                        : item.id === 'code'
+                          ? applyMark(toggleCode)
+                          : item.id === 'list'
+                            ? applyMark(toggleBulletList)
+                            : item.id === 'text-style'
+                              ? () => setStyleMenuOpen((open) => !open)
+                              : item.id === 'link'
+                                ? handleLinkClick
+                                : item.id === 'copy'
+                                  ? handleCopy
+                                  : undefined
               }
               // A selection button isn't where the caret belongs — stop the
               // browser from collapsing the selection onto it before `onClick` runs.

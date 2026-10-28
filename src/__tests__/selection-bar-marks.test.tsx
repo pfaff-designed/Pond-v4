@@ -12,6 +12,7 @@ import { SelectionBar, type SelectionContext } from '@/components/molecules/Sele
 import { registerTextEditor } from '@/lib/modules/text/active-editor'
 import { proseExtensions } from '@/lib/modules/text/extensions'
 import { serializeMarkdown } from '@/lib/modules/text/markdown'
+import { requestSelectionLink } from '@/lib/terminal-focus'
 import { clearSelection, selectWord } from './helpers/selection'
 
 function Host({
@@ -81,6 +82,28 @@ describe('SelectionBar bold/italic', () => {
 
     expect(serializeMarkdown(editor!.state.doc)).toBe('soak *overnight*')
     expect(screen.getByRole('button', { name: 'italic' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('strikes the selected word and reads the button as pressed', () => {
+    let editor: Editor | null = null
+    render(<Host onAsk={jest.fn()} onEditor={(e) => (editor = e)} />)
+
+    selectWord(screen.getByText('soak overnight'), 'overnight')
+    fireEvent.click(screen.getByRole('button', { name: 'strike' }))
+
+    expect(serializeMarkdown(editor!.state.doc)).toBe('soak ~~overnight~~')
+    expect(screen.getByRole('button', { name: 'strike' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('marks the selected word as code and reads the button as pressed', () => {
+    let editor: Editor | null = null
+    render(<Host onAsk={jest.fn()} onEditor={(e) => (editor = e)} />)
+
+    selectWord(screen.getByText('soak overnight'), 'overnight')
+    fireEvent.click(screen.getByRole('button', { name: 'code' }))
+
+    expect(serializeMarkdown(editor!.state.doc)).toBe('soak `overnight`')
+    expect(screen.getByRole('button', { name: 'code' })).toHaveAttribute('aria-pressed', 'true')
   })
 })
 
@@ -304,5 +327,23 @@ describe('SelectionBar link', () => {
 
     expect(serializeMarkdown(editor!.state.doc)).toBe('soak overnight')
     expect(screen.getByRole('button', { name: 'link' })).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('opens the link field, focused, when SELECTION_LINK_EVENT fires over a shown selection', () => {
+    render(<Host onAsk={jest.fn()} onEditor={() => {}} />)
+
+    selectWord(screen.getByText('soak overnight'), 'overnight')
+    act(() => requestSelectionLink())
+
+    const field = screen.getByRole('textbox', { name: 'link address' })
+    expect(field).toHaveFocus()
+  })
+
+  it('does nothing when SELECTION_LINK_EVENT fires with no selection shown', () => {
+    render(<Host onAsk={jest.fn()} onEditor={() => {}} />)
+
+    act(() => requestSelectionLink())
+
+    expect(screen.queryByRole('textbox', { name: 'link address' })).not.toBeInTheDocument()
   })
 })

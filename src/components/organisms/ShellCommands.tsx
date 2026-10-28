@@ -42,9 +42,11 @@ import {
   BLOCK_MOVE_PICK_EVENT,
   clearUndoNotice,
   isComposerToggleKey,
+  isSelectionLinkActive,
   requestComposerNotice,
   requestComposerToggle,
   requestHtmlImportPicker,
+  requestSelectionLink,
   requestTerminalFocus,
   requestUndoNotice,
   useUndoNotice,
@@ -65,7 +67,7 @@ import {
 } from '@/lib/shell-commands'
 import { sessionUndo } from '@/lib/change-log/session-undo'
 import { blockLinkUrl } from '@/lib/modules/block-link'
-import { editorHistoryEmptyFor } from '@/lib/modules/text/active-editor'
+import { editorHistoryEmptyFor, hasEditableTextSelection } from '@/lib/modules/text/active-editor'
 import { applyUndoOutcome } from '@/lib/change-log/undo-outcome'
 import { describeChange, describeUndoneEffect } from '@/lib/change-log/page-changes'
 import { getRecord } from '@/lib/change-log/store'
@@ -399,9 +401,20 @@ export function ShellCommands() {
       if (isPaletteChord(e)) {
         e.preventDefault()
         e.stopPropagation()
+        // A held key repeats keydown (same hazard as ⌘J's `requestComposerToggle`) —
+        // it must not flap the palette or the link field open and shut.
+        if (e.repeat) return
         if (templateSheetOpen) closeTemplateSheet()
         else if (pondSheetOpen) closeNewPondSheet()
         else if (reportOpen) closeReport()
+        // A live text selection answers ⌘K with a link field, not the palette
+        // (KAN-465, following Notion/Linear over the board's "⌘K is the
+        // palette") — `SelectionBar` owns the only mounted link field and
+        // answers; this file never imports it. `isSelectionLinkActive()`
+        // catches the field already being open too: focusing it clears the
+        // browser's own selection, so `hasEditableTextSelection()` alone
+        // would read false and let a second ⌘K raise the palette on top of it.
+        else if (hasEditableTextSelection() || isSelectionLinkActive()) requestSelectionLink()
         else
           setPaletteOpen((prev) => {
             if (prev) {

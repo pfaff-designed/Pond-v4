@@ -1,5 +1,11 @@
 import { Editor } from '@tiptap/core'
-import { editableEditorForSelection, editorForSelection, registerTextEditor } from './active-editor'
+import { clearSelection, selectWord } from '@/__tests__/helpers/selection'
+import {
+  editableEditorForSelection,
+  editorForSelection,
+  hasEditableTextSelection,
+  registerTextEditor,
+} from './active-editor'
 import { proseExtensions } from './extensions'
 
 /** A real Tiptap editor, mounted into a detached element so `view.dom` exists. */
@@ -124,5 +130,68 @@ describe('editableEditorForSelection', () => {
 
     unregister()
     editor.destroy()
+  })
+})
+
+/** A real Tiptap editor mounted into the document — `window.getSelection()` needs an attached node. */
+const mountAttachedEditor = (content: string): { editor: Editor; container: HTMLDivElement } => {
+  const container = document.createElement('div')
+  document.body.appendChild(container)
+  return { editor: new Editor({ element: container, extensions: proseExtensions, content }), container }
+}
+
+describe('hasEditableTextSelection', () => {
+  afterEach(() => clearSelection())
+
+  it('is true over a real selected word in a mounted, registered editor', () => {
+    const { editor, container } = mountAttachedEditor('<p>soak overnight</p>')
+    const unregister = registerTextEditor(editor)
+
+    selectWord(editor.view.dom.querySelector('p') as HTMLElement, 'overnight')
+
+    expect(hasEditableTextSelection()).toBe(true)
+
+    unregister()
+    editor.destroy()
+    container.remove()
+  })
+
+  it('is false with no selection', () => {
+    const { editor, container } = mountAttachedEditor('<p>soak overnight</p>')
+    const unregister = registerTextEditor(editor)
+
+    expect(hasEditableTextSelection()).toBe(false)
+
+    unregister()
+    editor.destroy()
+    container.remove()
+  })
+
+  it('is false with a collapsed caret', () => {
+    const { editor, container } = mountAttachedEditor('<p>soak overnight</p>')
+    const unregister = registerTextEditor(editor)
+
+    selectWord(editor.view.dom.querySelector('p') as HTMLElement, 'overnight')
+    clearSelection()
+
+    expect(hasEditableTextSelection()).toBe(false)
+
+    unregister()
+    editor.destroy()
+    container.remove()
+  })
+
+  it('is false when the selection sits in a non-editable editor', () => {
+    const { editor, container } = mountAttachedEditor('<p>soak overnight</p>')
+    const unregister = registerTextEditor(editor)
+    editor.setEditable(false)
+
+    selectWord(editor.view.dom.querySelector('p') as HTMLElement, 'overnight')
+
+    expect(hasEditableTextSelection()).toBe(false)
+
+    unregister()
+    editor.destroy()
+    container.remove()
   })
 })

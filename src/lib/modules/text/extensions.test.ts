@@ -69,3 +69,67 @@ describe('Heading shortcuts bound from HEADING_CHORDS', () => {
     editor.destroy()
   })
 })
+
+describe('Strike bound to ⌘⇧X, not StarterKit\'s own default', () => {
+  const platform = Object.getOwnPropertyDescriptor(window.navigator, 'platform')
+
+  afterEach(() => {
+    if (platform) Object.defineProperty(window.navigator, 'platform', platform)
+    else delete (window.navigator as { platform?: string }).platform
+  })
+
+  const mountPinnedToMac = (content: string): EditorType => {
+    jest.resetModules()
+    Object.defineProperty(window.navigator, 'platform', { value: 'MacIntel', configurable: true })
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { Editor } = require('@tiptap/core') as typeof import('@tiptap/core')
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { proseExtensions } = require('./extensions') as {
+      proseExtensions: typeof proseExtensionsType
+    }
+    const element = document.createElement('div')
+    return new Editor({ element, extensions: proseExtensions, content })
+  }
+
+  const selectAll = (editor: EditorType) => editor.commands.selectAll()
+
+  /**
+   * On Mac, `metaKey + shiftKey` makes prosemirror-keymap's `w3c-keyname`
+   * ignore `event.key` and resolve the chord from `event.keyCode` instead
+   * (mac ignores `.key`'s shift effect for Cmd+Shift combos) — jsdom's
+   * `KeyboardEvent` constructor doesn't accept `keyCode`, so it has to be
+   * defined on the dispatched event directly, the way a real browser event
+   * carries it.
+   */
+  const dispatchChord = (editor: EditorType, key: string, keyCode: number) => {
+    const event = new KeyboardEvent('keydown', {
+      key,
+      shiftKey: true,
+      metaKey: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    Object.defineProperty(event, 'keyCode', { get: () => keyCode })
+    editor.view.dom.dispatchEvent(event)
+  }
+
+  it('⌘⇧X, pinned to Mac, toggles strike on the selection', () => {
+    const editor = mountPinnedToMac('<p>hello</p>')
+    selectAll(editor)
+
+    dispatchChord(editor, 'X', 88)
+
+    expect(editor.isActive('strike')).toBe(true)
+    editor.destroy()
+  })
+
+  it("⌘⇧S, pinned to Mac, does not toggle strike (StarterKit's old default is dropped)", () => {
+    const editor = mountPinnedToMac('<p>hello</p>')
+    selectAll(editor)
+
+    dispatchChord(editor, 'S', 83)
+
+    expect(editor.isActive('strike')).toBe(false)
+    editor.destroy()
+  })
+})
