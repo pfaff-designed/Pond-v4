@@ -29,7 +29,7 @@ import {
   type FormatReader,
   type TextStyle,
 } from '@/lib/modules/text/format'
-import { SELECTION_LINK_EVENT } from '@/lib/terminal-focus'
+import { SELECTION_LINK_EVENT, setSelectionLinkActive } from '@/lib/terminal-focus'
 
 import { GLASS, SLASH_SIZES } from './picker-chrome'
 import { ICON } from './slash-entries'
@@ -263,6 +263,17 @@ const selectionKey = (editor: Editor, sel: Selection): string => {
   return `${anchor}-${head}`
 }
 
+/** The block a selection sits within, read off its anchor — shared by
+ *  `onSelectionChange` and `openLinkMode`'s re-show case (KAN-465). */
+const blockIdForSelection = (sel: Selection): string | undefined => {
+  const anchor = sel.anchorNode
+  const blockEl =
+    anchor instanceof Element
+      ? anchor.closest('[data-block-id]')
+      : anchor?.parentElement?.closest('[data-block-id]')
+  return blockEl?.getAttribute('data-block-id') ?? undefined
+}
+
 /**
  * The editor selection that `sel` lays out, in the editor's own positions. A
  * select-all DOM range has both endpoints on the editor root (`view.dom`),
@@ -401,12 +412,7 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
         return
       }
 
-      const anchor = sel.anchorNode
-      const blockEl =
-        anchor instanceof Element
-          ? anchor.closest('[data-block-id]')
-          : anchor?.parentElement?.closest('[data-block-id]')
-      const blockId = blockEl?.getAttribute('data-block-id') ?? undefined
+      const blockId = blockIdForSelection(sel)
 
       const r = range.getBoundingClientRect()
       rangeRef.current = range.cloneRange()
@@ -528,13 +534,28 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
   const openLinkMode = useCallback(() => {
     const sel = window.getSelection()
     const editor = sel && editableEditorForSelection(sel)
-    if (!editor) return
+    if (!editor || !sel) return
     syncEditorSelection(editor, sel)
     const { from, to } = editor.state.selection
     linkTargetRef.current = { editor, from, to }
+    // Esc dismisses the bar but leaves the selection standing (KAN-465) — ⌘K
+    // still answers by re-showing it, the same context `onSelectionChange`
+    // would have set, so the link field it opens has a bar to render into.
+    if (!ctx) {
+      if (!sel.rangeCount) return
+      const text = sel.toString().trim()
+      if (!text) return
+      const range = sel.getRangeAt(0)
+      const r = range.getBoundingClientRect()
+      rangeRef.current = range.cloneRange()
+      dismissedKeyRef.current = null
+      shownSelectionRef.current = { key: selectionKey(editor, sel), editor }
+      setCtx({ text, blockId: blockIdForSelection(sel), from, to })
+      setRect({ top: r.top, bottom: r.bottom, left: r.left, width: r.width })
+    }
     setLinkHref('')
     setLinkMode(true)
-  }, [])
+  }, [ctx])
 
   const handleLinkClick = () => {
     if (linkActive) {
@@ -546,11 +567,23 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
 
   // ⌘K over a live selection (`ShellCommands`'s keydown handler) opens the
   // link field the same as the bar's own button — a no-op with nothing shown.
+  // Listens even while the bar itself is hidden (Esc dismissed it but the
+  // selection still stands, KAN-465): `openLinkMode` re-derives everything it
+  // needs from `window.getSelection()` and no-ops without an editable one.
   useEffect(() => {
-    if (!ctx) return
+    if (disabled) return
     window.addEventListener(SELECTION_LINK_EVENT, openLinkMode)
     return () => window.removeEventListener(SELECTION_LINK_EVENT, openLinkMode)
-  }, [ctx, openLinkMode])
+  }, [disabled, openLinkMode])
+
+  // `ShellCommands`'s ⌘K handler reads this synchronously (KAN-465): while the
+  // link field is open, focusing it has already cleared the browser selection,
+  // so the bare selection read alone can't stop a second ⌘K from raising the
+  // palette on top of the field.
+  useEffect(() => {
+    setSelectionLinkActive(linkMode)
+  }, [linkMode])
+  useEffect(() => () => setSelectionLinkActive(false), [])
 
   // Returns the caret to the text the link was opened on.
   const closeLinkField = (apply: boolean) => {

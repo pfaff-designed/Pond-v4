@@ -297,6 +297,25 @@ export function requestSelectionLink() {
 }
 
 /**
+ * Whether the selection bar's link field is open right now (KAN-465) —
+ * `SelectionBar` sets this as it opens/closes the field. `ShellCommands`'s
+ * ⌘K handler reads it synchronously, not through a React subscription,
+ * because focusing the link field clears the browser's own text selection:
+ * `hasEditableTextSelection()` alone can't tell "the field is already open"
+ * apart from "there's nothing selected", so a second ⌘K would otherwise fall
+ * through to opening the palette on top of the field.
+ */
+let selectionLinkActive = false
+
+export function setSelectionLinkActive(active: boolean) {
+  selectionLinkActive = active
+}
+
+export function isSelectionLinkActive(): boolean {
+  return selectionLinkActive
+}
+
+/**
  * "Open the pages picker for one block's `move to…`" (KAN-479). The block
  * menu's row asks; `ShellCommands` owns the only mounted `PondCommand` and
  * answers by opening it in block-pick mode — the same decoupling as

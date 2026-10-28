@@ -101,4 +101,34 @@ describe('ShellCommands — ⌘K over a live text selection', () => {
     expect(await screen.findByRole('textbox', { name: 'link address' })).toBeInTheDocument()
     expect(screen.queryByRole('combobox', LIST)).toBeNull()
   })
+
+  it('a second ⌘K while the link field is already open never raises the palette', async () => {
+    render(<Host />)
+
+    selectWord(screen.getByText('soak overnight'), 'overnight')
+    act(() => press())
+    const field = await screen.findByRole('textbox', { name: 'link address' })
+
+    // Focusing the field has already cleared the browser's own selection —
+    // the same effect a real press would have, confirmed before the second
+    // ⌘K is what's actually under test.
+    expect(field).toHaveFocus()
+    act(() => press())
+
+    expect(screen.queryByRole('combobox', LIST)).toBeNull()
+    expect(screen.getByRole('textbox', { name: 'link address' })).toHaveFocus()
+  })
+
+  it('⌘K still opens the link field after Esc dismissed the bar but left the selection standing', async () => {
+    render(<Host />)
+
+    selectWord(screen.getByText('soak overnight'), 'overnight')
+    act(() => fireEvent.keyDown(document, { key: 'Escape' }))
+    expect(screen.queryByRole('toolbar', { name: 'selection' })).not.toBeInTheDocument()
+
+    act(() => press())
+
+    expect(await screen.findByRole('textbox', { name: 'link address' })).toBeInTheDocument()
+    expect(screen.queryByRole('combobox', LIST)).toBeNull()
+  })
 })

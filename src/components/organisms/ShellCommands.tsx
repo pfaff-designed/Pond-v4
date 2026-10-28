@@ -42,6 +42,7 @@ import {
   BLOCK_MOVE_PICK_EVENT,
   clearUndoNotice,
   isComposerToggleKey,
+  isSelectionLinkActive,
   requestComposerNotice,
   requestComposerToggle,
   requestHtmlImportPicker,
@@ -400,14 +401,20 @@ export function ShellCommands() {
       if (isPaletteChord(e)) {
         e.preventDefault()
         e.stopPropagation()
+        // A held key repeats keydown (same hazard as ⌘J's `requestComposerToggle`) —
+        // it must not flap the palette or the link field open and shut.
+        if (e.repeat) return
         if (templateSheetOpen) closeTemplateSheet()
         else if (pondSheetOpen) closeNewPondSheet()
         else if (reportOpen) closeReport()
         // A live text selection answers ⌘K with a link field, not the palette
         // (KAN-465, following Notion/Linear over the board's "⌘K is the
         // palette") — `SelectionBar` owns the only mounted link field and
-        // answers; this file never imports it.
-        else if (hasEditableTextSelection()) requestSelectionLink()
+        // answers; this file never imports it. `isSelectionLinkActive()`
+        // catches the field already being open too: focusing it clears the
+        // browser's own selection, so `hasEditableTextSelection()` alone
+        // would read false and let a second ⌘K raise the palette on top of it.
+        else if (hasEditableTextSelection() || isSelectionLinkActive()) requestSelectionLink()
         else
           setPaletteOpen((prev) => {
             if (prev) {
