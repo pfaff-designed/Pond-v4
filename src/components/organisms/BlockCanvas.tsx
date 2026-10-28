@@ -230,6 +230,7 @@ const TURNED_INTO: Record<Exclude<ConversionTarget, 'table'>, string> = {
   'heading-1': 'Turned into heading 1',
   'heading-2': 'Turned into heading 2',
   'heading-3': 'Turned into heading 3',
+  'toggle-heading': 'Turned into a toggle heading',
   quote: 'Turned into a quote',
   code: 'Turned into code',
   list: 'Turned into a list',

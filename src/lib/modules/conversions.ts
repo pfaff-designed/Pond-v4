@@ -24,6 +24,14 @@
  * offered only when the block is one of those shapes — a multi-line or list
  * text block gets none of the five, same as it gets no table.
  *
+ * `toggle-heading` (KAN-515) doesn't retype the node at all — it is any
+ * single-node heading (level 1-6) with `toggle: true` set. It is offered
+ * only on a heading, and excluded once the block already is one (`kindOf`
+ * reports `'toggle-heading'` for it, so `heading-1/2/3` stop excluding
+ * themselves and read as "turn this back into a heading" instead). Every
+ * other retype target strips `toggle`/`folded` on its way out — none of them
+ * can host a chevron.
+ *
  * Only targets that keep the content are offered: a checklist has no table (its
  * checked state has no column to go to), prose has no table (its lines are not a
  * list), and a block with nothing in it has nothing to keep.
@@ -52,6 +60,7 @@ export const CONVERSION_TARGETS = [
   'heading-1',
   'heading-2',
   'heading-3',
+  'toggle-heading',
   'quote',
   'code',
   'page',
@@ -147,7 +156,10 @@ interface Line {
 }
 
 const kindOf = (block: Block): LineTarget | null => {
-  if (block.type === 'text') return TARGET_OF_TEXT_KIND[textKindOf(block.content) ?? 'text'] ?? null
+  if (block.type === 'text') {
+    if (block.toggle) return 'toggle-heading'
+    return TARGET_OF_TEXT_KIND[textKindOf(block.content) ?? 'text'] ?? null
+  }
   if (block.type === 'todo') return todoMarker(block) === 'check' ? 'checklist' : 'list'
   return null
 }
@@ -172,6 +184,12 @@ const listText = (items: readonly TodoItem[]) =>
   items.map((item) => `- ${item.label}${item.meta ? ` · ${item.meta}` : ''}`).join('\n')
 
 const labelled = (label: string | undefined) => (label === undefined ? {} : { label })
+
+/** None of `heading-1/2/3`, `quote`, `code` or `text` can host a chevron — every retype away from a toggle heading drops it, along with whatever it was folded to. */
+const stripToggle = (block: TextBlock): TextBlock => {
+  const { toggle: _toggle, folded: _folded, ...rest } = block
+  return rest
+}
 
 const plural = (n: number, word: string) => `${n} ${n === 1 ? word : `${word}s`}`
 
@@ -251,8 +269,8 @@ export function moveIntoPagePrep(block: Block, hostPageId: string): MovedBlock |
     moved.type === 'text'
       ? pageTitleOf(moved)
       : moved.type === 'table'
-        ? trimmedOrNone(moved.title) ?? ''
-        : blockLabel(moved) ?? ''
+        ? (trimmedOrNone(moved.title) ?? '')
+        : (blockLabel(moved) ?? '')
   return { block: moved, title }
 }
 
@@ -262,9 +280,12 @@ const lineConversion = (
   mintId: () => string
 ): LineConversion => {
   const line = (apply: () => Block): LineConversion => ({ target, preview: null, apply })
+  if (target === 'toggle-heading' && block.type === 'text') {
+    return line(() => ({ ...block, toggle: true }))
+  }
   const kind = TEXT_KIND_OF_TARGET[target]
   if (block.type === 'text' && kind) {
-    return line(() => ({ ...block, content: retypeText(block.content, kind) }))
+    return line(() => stripToggle({ ...block, content: retypeText(block.content, kind) }))
   }
   if (block.type === 'text') {
     return line(() => toTodo(block, target === 'checklist' ? 'check' : 'dot', mintId))
@@ -302,6 +323,11 @@ export const conversionsFor = (
     }
     if (target === 'page') {
       return singleNode && block.type === 'text' ? [PAGE_CONVERSION] : []
+    }
+    if (target === 'toggle-heading') {
+      const isHeading =
+        block.type === 'text' && (textKindOf(block.content) ?? '').startsWith('heading')
+      return isHeading ? [lineConversion(block, target, mintId)] : []
     }
     if (RETYPE_ONLY_TARGETS.has(target) && !singleNode) return []
     return [lineConversion(block, target, mintId)]
