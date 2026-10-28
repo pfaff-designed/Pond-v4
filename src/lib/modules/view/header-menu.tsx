@@ -1,32 +1,45 @@
 'use client'
 
 /**
- * FieldHeaderMenu (KAN-380) — the table header's rename/delete menu: a
- * `PondMenu` (`kind: 'block'`) whose first group is the name row and whose
- * second ("delete field") is drawn only when `canDelete`.
+ * HeaderMenu (KAN-380, #521) — the rename/delete menu shared by the table's
+ * field header and the board's column (lane) header: a `PondMenu` (`kind:
+ * 'block'`) whose first group is the name row and whose second ("delete
+ * <entityLabel>") is drawn only when `canDelete`. `entityLabel` ("field" /
+ * "column") words every copy-bearing bit — the aria labels, the collision
+ * note, the delete row — so the one menu serves both headers without either
+ * host repeating its validation or its keyboard handling.
  *
- * Validation (empty/whitespace, a collision per `isFieldNameTaken`) is owned
- * here, not by the caller: an invalid commit shows a one-line note and keeps
- * the menu open, writing nothing. A valid, changed commit calls `onRename`
- * and — only when it came from Enter — closes the menu; the wiring host owns
- * the actual schema write. `lastCommitBlockedRef` is read by the wrapper's
- * own Enter handler, which runs AFTER `DraftInput`'s own keydown → blur →
- * onCommit chain (same native event, still synchronous, so the ref is never
- * stale by the time Enter decides whether to close).
+ * Validation (empty/whitespace, a collision per the caller's own `clash`) is
+ * owned here, not by the caller: an invalid commit shows a one-line note and
+ * keeps the menu open, writing nothing. A valid, changed commit calls
+ * `onRename` and — only when it came from Enter — closes the menu; the
+ * wiring host owns the actual schema write. `lastCommitBlockedRef` is read by
+ * the wrapper's own Enter handler, which runs AFTER `DraftInput`'s own
+ * keydown → blur → onCommit chain (same native event, still synchronous, so
+ * the ref is never stale by the time Enter decides whether to close).
  */
 
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactElement } from 'react'
 import type { Menu } from '@base-ui/react/menu'
 import { DraftInput } from '@/components/atoms/draft-input'
 import { PondMenu, type PondMenuGroup, type PondMenuPlacement } from '@/components/molecules/PondMenu'
-import { fieldNameClash, type PropertyDef, type PropertySchema } from '@/lib/properties/schema'
 
-type FieldHeaderMenuAction = { type: 'delete' }
+type HeaderMenuAction = { type: 'delete' }
 
-export interface FieldHeaderMenuProps {
-  field: PropertyDef
-  schema: PropertySchema
-  /** Hidden for the title column — the title is never a `PropertyDef` here (view.tsx owns that). */
+export interface HeaderMenuProps {
+  /** The current name/label being edited. */
+  name: string
+  /** What this entity is called in copy — "field" for a table column header,
+   *  "column" for a board lane header. Words the aria labels, the delete
+   *  row, and the collision note. */
+  entityLabel: string
+  /** The rename row's collision guard: the existing name/label `candidate`
+   *  collides with, or `null` when it's free — `fieldNameClash`/
+   *  `optionNameClash`, already scoped to the right sibling set by the
+   *  caller. */
+  clash: (candidate: string) => string | null
+  /** Hidden for the title column / the "No <name>" lane — neither is a real
+   *  field/option the caller owns deleting. */
   canDelete: boolean
   onRename: (name: string) => void
   onDelete: () => void
@@ -37,9 +50,10 @@ export interface FieldHeaderMenuProps {
   container?: Menu.Portal.Props['container']
 }
 
-export function FieldHeaderMenu({
-  field,
-  schema,
+export function HeaderMenu({
+  name,
+  entityLabel,
+  clash,
   canDelete,
   onRename,
   onDelete,
@@ -48,7 +62,7 @@ export function FieldHeaderMenu({
   trigger,
   placement,
   container,
-}: FieldHeaderMenuProps) {
+}: HeaderMenuProps) {
   const [note, setNote] = useState<string | null>(null)
   const lastCommitBlockedRef = useRef(false)
   const wrapperRef = useRef<HTMLDivElement>(null)
@@ -67,10 +81,10 @@ export function FieldHeaderMenu({
       setNote(null)
       lastCommitBlockedRef.current = false
       // Base UI's own composite-list navigation focuses the menu's first
-      // item ("delete field") whenever the menu opens from a key press on
-      // the trigger, overriding this row's own autofocus into the name
-      // input — right for an all-items menu, wrong here, where the first
-      // row is text, not an item. The steal itself runs from a Base UI
+      // item ("delete <entityLabel>") whenever the menu opens from a key
+      // press on the trigger, overriding this row's own autofocus into the
+      // name input — right for an all-items menu, wrong here, where the
+      // first row is text, not an item. The steal itself runs from a Base UI
       // effect whose timing (this render vs. a later one, once the popup
       // actually mounts) isn't something to guess at: listen for the real
       // focus move and redirect it, once, back to the input. Attached here
@@ -94,7 +108,7 @@ export function FieldHeaderMenu({
 
   // The listener above is removed as soon as it fires or the menu closes —
   // this only catches the case where the component itself unmounts while
-  // still open (e.g. the field it belongs to is deleted mid-menu).
+  // still open (e.g. the field/column it belongs to is deleted mid-menu).
   useEffect(() => () => stopFocusStealRef.current?.(), [])
 
   const handleCommit = (raw: string) => {
@@ -106,21 +120,21 @@ export function FieldHeaderMenu({
       setNote(null)
       return
     }
-    const clash = fieldNameClash(schema, trimmed, field.id)
-    lastCommitBlockedRef.current = clash !== null
-    if (clash) {
-      // The note names the EXISTING field's own-cased name, not the
+    const clashed = clash(trimmed)
+    lastCommitBlockedRef.current = clashed !== null
+    if (clashed) {
+      // The note names the EXISTING field/option's own-cased name, not the
       // candidate's casing — a collision is case-insensitive, but the note
       // should read like a fact about the schema, not an echo of the typo.
-      setNote(`a field is already called ${clash}`)
+      setNote(`a ${entityLabel} is already called ${clashed}`)
       // DraftInput's own Enter handler already blurred the input to reach
       // this commit; a refusal shouldn't also cost the person their place in
-      // the field — refocus it (the input's own `onFocus` reselects).
+      // the field/column — refocus it (the input's own `onFocus` reselects).
       wrapperRef.current?.querySelector('input')?.focus()
       return
     }
     setNote(null)
-    if (trimmed !== field.name) onRename(trimmed)
+    if (trimmed !== name) onRename(trimmed)
   }
 
   const handleWrapperKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -142,7 +156,7 @@ export function FieldHeaderMenu({
     }
   }
 
-  const groups: PondMenuGroup<FieldHeaderMenuAction>[] = [
+  const groups: PondMenuGroup<HeaderMenuAction>[] = [
     {
       id: 'name',
       label: 'name',
@@ -152,11 +166,11 @@ export function FieldHeaderMenu({
         // this row draws no new chrome, just a different row content.
         <div ref={wrapperRef} onKeyDown={handleWrapperKeyDown} className="px-[10px] py-[7px]">
           <DraftInput
-            value={field.name}
+            value={name}
             onCommit={handleCommit}
             autoFocus
             onFocus={(e) => e.currentTarget.select()}
-            aria-label="field name"
+            aria-label={`${entityLabel} name`}
             className="w-full rounded-[8px] bg-transparent text-[13px] text-mn-text outline-none"
           />
           {note && (
@@ -167,9 +181,15 @@ export function FieldHeaderMenu({
     },
     {
       id: 'delete',
-      label: 'field',
+      label: entityLabel,
       items: canDelete
-        ? [{ id: 'delete-field', label: 'delete field', action: { type: 'delete' } }]
+        ? [
+            {
+              id: `delete-${entityLabel}`,
+              label: `delete ${entityLabel}`,
+              action: { type: 'delete' },
+            },
+          ]
         : [],
     },
   ]
@@ -177,7 +197,7 @@ export function FieldHeaderMenu({
   return (
     <PondMenu
       kind="block"
-      label={`${field.name} field menu`}
+      label={`${name} ${entityLabel} menu`}
       groups={groups}
       open={open}
       onOpenChange={handleOpenChange}

@@ -1,14 +1,15 @@
 /**
- * `FieldHeaderMenu` (KAN-380) in isolation: the name row's commit/revert/
- * collision paths and the `delete field` row's presence, independent of the
- * table header that will host it.
+ * `HeaderMenu` (KAN-380, #521) in isolation: the name row's commit/revert/
+ * collision paths and the `delete <entityLabel>` row's presence, independent
+ * of either host that mounts it (the table's field header, the board's
+ * column header).
  */
 
 import { useRef, useState } from 'react'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { FieldHeaderMenu } from './field-header-menu'
-import type { PropertyDef, PropertySchema } from '@/lib/properties/schema'
+import { HeaderMenu } from './header-menu'
+import { fieldNameClash, type PropertyDef, type PropertySchema } from '@/lib/properties/schema'
 
 const field2: PropertyDef = { id: 'p-2', name: 'field 2', type: 'text' }
 const schema: PropertySchema = [{ id: 'p-1', name: 'field 1', type: 'text' }, field2]
@@ -26,9 +27,10 @@ const Harness = ({
   const anchorRef = useRef<HTMLDivElement>(null)
   return (
     <div ref={anchorRef}>
-      <FieldHeaderMenu
-        field={field2}
-        schema={schema}
+      <HeaderMenu
+        name={field2.name}
+        entityLabel="field"
+        clash={(candidate) => fieldNameClash(schema, candidate, field2.id)}
         canDelete={canDelete}
         onRename={onRename}
         onDelete={onDelete}
@@ -46,7 +48,7 @@ const openMenu = async (user: ReturnType<typeof userEvent.setup>) => {
   return screen.findByRole('menu', { name: 'field 2 field menu' })
 }
 
-describe('FieldHeaderMenu — open/close', () => {
+describe('HeaderMenu — open/close', () => {
   it('opens on a trigger click, with the name input focused and its text selected', async () => {
     const user = userEvent.setup()
     render(<Harness />)
@@ -73,7 +75,7 @@ describe('FieldHeaderMenu — open/close', () => {
   })
 })
 
-describe('FieldHeaderMenu — commit', () => {
+describe('HeaderMenu — commit', () => {
   it('Enter commits the trimmed name and closes', async () => {
     const user = userEvent.setup()
     const onRename = jest.fn()
@@ -101,7 +103,7 @@ describe('FieldHeaderMenu — commit', () => {
   })
 })
 
-describe('FieldHeaderMenu — invalid commits', () => {
+describe('HeaderMenu — invalid commits', () => {
   it('an empty name on Enter reverts and closes, writing nothing', async () => {
     const user = userEvent.setup()
     const onRename = jest.fn()
@@ -179,7 +181,7 @@ describe('FieldHeaderMenu — invalid commits', () => {
   })
 })
 
-describe('FieldHeaderMenu — delete row', () => {
+describe('HeaderMenu — delete row', () => {
   it('renders `delete field` when canDelete, and calls onDelete when clicked', async () => {
     const user = userEvent.setup()
     const onDelete = jest.fn()
@@ -196,5 +198,77 @@ describe('FieldHeaderMenu — delete row', () => {
     const menu = await openMenu(user)
 
     expect(within(menu).queryByRole('menuitem', { name: 'delete field' })).not.toBeInTheDocument()
+  })
+})
+
+describe('HeaderMenu — a different entityLabel words the menu for its own host (#521)', () => {
+  const ColumnHarness = ({
+    onRename = jest.fn(),
+    onDelete = jest.fn(),
+  }: {
+    onRename?: (name: string) => void
+    onDelete?: () => void
+  }) => {
+    const [open, setOpen] = useState(false)
+    const anchorRef = useRef<HTMLDivElement>(null)
+    const options = [
+      { id: 'o-1', label: 'to do' },
+      { id: 'o-2', label: 'done' },
+    ]
+    return (
+      <div ref={anchorRef}>
+        <HeaderMenu
+          name="done"
+          entityLabel="column"
+          clash={(candidate) =>
+            options.find(
+              (o) => o.id !== 'o-2' && o.label.trim().toLowerCase() === candidate.trim().toLowerCase()
+            )?.label ?? null
+          }
+          canDelete
+          onRename={onRename}
+          onDelete={onDelete}
+          open={open}
+          onOpenChange={setOpen}
+          trigger={<button type="button">done</button>}
+          placement={{ anchor: anchorRef, align: 'start', top: 32, alignOffset: 0 }}
+        />
+      </div>
+    )
+  }
+
+  it('opens as "<name> column menu", with a "column name" input and a "delete column" row', async () => {
+    const user = userEvent.setup()
+    render(<ColumnHarness />)
+    await user.click(screen.getByRole('button', { name: 'done' }))
+    const menu = await screen.findByRole('menu', { name: 'done column menu' })
+
+    expect(within(menu).getByLabelText('column name')).toBeInTheDocument()
+    expect(within(menu).getByRole('menuitem', { name: 'delete column' })).toBeInTheDocument()
+  })
+
+  it('a collision reads as "a column is already called …" and refuses the commit', async () => {
+    const user = userEvent.setup()
+    const onRename = jest.fn()
+    render(<ColumnHarness onRename={onRename} />)
+    await user.click(screen.getByRole('button', { name: 'done' }))
+    const menu = await screen.findByRole('menu', { name: 'done column menu' })
+    const input = within(menu).getByLabelText('column name')
+    await user.clear(input)
+    await user.keyboard('to do{Enter}')
+
+    expect(onRename).not.toHaveBeenCalled()
+    expect(await within(menu).findByText('a column is already called to do')).toBeInTheDocument()
+  })
+
+  it('`delete column` calls onDelete', async () => {
+    const user = userEvent.setup()
+    const onDelete = jest.fn()
+    render(<ColumnHarness onDelete={onDelete} />)
+    await user.click(screen.getByRole('button', { name: 'done' }))
+    const menu = await screen.findByRole('menu', { name: 'done column menu' })
+    await user.click(within(menu).getByRole('menuitem', { name: 'delete column' }))
+
+    expect(onDelete).toHaveBeenCalledTimes(1)
   })
 })
