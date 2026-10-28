@@ -46,6 +46,7 @@ export type PaletteAction =
   | 'save-as-template'
   | 'duplicate-page'
   | 'move-page'
+  | 'delete-page'
   | 'favourite-page'
   | 'unfavourite-page'
   | 'import-a-page'
