@@ -79,6 +79,7 @@ import { openWorkspaceUrl, workspaceUrl } from '@/lib/pages/nav'
 import { requestTitleFocus } from '@/lib/pages/title-focus'
 import { flushPendingPageSave } from '@/lib/pages/page-flush'
 import { moveAndStageUndo } from '@/lib/pages/move'
+import { deletePageAndStageUndo } from '@/lib/pages/delete'
 import { moveBlockAndStageUndo } from '@/lib/pages/move-block'
 import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import { useFavouritePage } from '@/lib/pond/use-favourite-page'
@@ -178,7 +179,7 @@ export function ShellCommands() {
   // `move page to…`'s own commit (KAN-469) — the same `stageUndo`/`notify` the
   // rail's drag-move already stages through; ShellCommands sits inside the
   // one `DeletionUndoProvider` the workspace shell mounts.
-  const { stageUndo, notify } = useDeletionUndo()
+  const { stageUndo, stageDeletion, notify } = useDeletionUndo()
   const { toggle: toggleFavouritePage } = useFavouritePage()
 
   // A step's notice is only good for AS LONG AS NOTHING ELSE HAPPENED — a
@@ -707,6 +708,21 @@ export function ShellCommands() {
         void handleDuplicatePage()
         return
       }
+      if (item.action === 'delete-page') {
+        // The row lists only with a page open, so `currentNodeId` is set here.
+        if (!currentNodeId) return
+        deletePageAndStageUndo(
+          queryClient,
+          router,
+          pondId,
+          pages,
+          currentNodeId,
+          home,
+          stageDeletion,
+          notify
+        )
+        return
+      }
       if (item.action === 'favourite-page' || item.action === 'unfavourite-page') {
         if (!currentNodeId) return
         void toggleFavouritePage(currentNodeId)
@@ -792,6 +808,7 @@ export function ShellCommands() {
       home,
       pondName,
       stageUndo,
+      stageDeletion,
       notify,
       navigateTo,
     ]

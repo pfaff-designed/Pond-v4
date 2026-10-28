@@ -8,6 +8,7 @@ import { paletteEntries } from '@/components/molecules/palette-entries'
 import {
   ASK_POND_ACTION,
   DEEP_RESEARCH_ACTION,
+  DELETE_PAGE_ACTION,
   DUPLICATE_PAGE_ACTION,
   FAVOURITE_PAGE_ACTION,
   IMPORT_A_PAGE_ACTION,
@@ -185,6 +186,73 @@ describe('paletteItems — move page', () => {
 
     expect(withExtraRootOpen).not.toContainEqual(MOVE_PAGE_ACTION)
     expect(withExtraRootOpen).toContainEqual(DUPLICATE_PAGE_ACTION)
+  })
+})
+
+describe('DELETE_PAGE_ACTION', () => {
+  it('is an action row in Pond’s own words, no chord', () => {
+    expect(DELETE_PAGE_ACTION).toMatchObject({
+      id: 'action:delete-page',
+      label: 'delete page',
+      kind: 'action',
+      action: 'delete-page',
+    })
+    expect(DELETE_PAGE_ACTION.key).toBeUndefined()
+  })
+})
+
+describe('paletteItems — delete page', () => {
+  it('lists only when a page is open, like move page, and sits right beside it', () => {
+    const withoutOpenPage = paletteItems([], [])
+    const withOpenPage = paletteItems([ordinaryPage], [], 'some-page')
+
+    expect(withoutOpenPage).not.toContainEqual(DELETE_PAGE_ACTION)
+    expect(withOpenPage).toContainEqual(DELETE_PAGE_ACTION)
+
+    const moveIndex = withOpenPage.findIndex((i) => i === MOVE_PAGE_ACTION)
+    const deleteIndex = withOpenPage.findIndex((i) => i === DELETE_PAGE_ACTION)
+    expect(deleteIndex).toBe(moveIndex + 1)
+  })
+
+  it('does not list for the home page', () => {
+    const home = { ...ordinaryPage, id: 'home-id', type: 'home', title: 'life' }
+    const withHomeOpen = paletteItems([home], [], 'home-id')
+
+    expect(withHomeOpen).not.toContainEqual(DELETE_PAGE_ACTION)
+  })
+
+  it('does not list for the databases root', () => {
+    const databasesRoot = { ...ordinaryPage, id: 'databases-id', title: 'databases' }
+    const withDatabasesRootOpen = paletteItems([databasesRoot], [], 'databases-id')
+
+    expect(withDatabasesRootOpen).not.toContainEqual(DELETE_PAGE_ACTION)
+  })
+
+  it('does not list when no page is open at all', () => {
+    const withNoOpenPage = paletteItems([ordinaryPage], [])
+
+    expect(withNoOpenPage).not.toContainEqual(DELETE_PAGE_ACTION)
+  })
+
+  it('does not list for an extra root, even though duplicate page still does', () => {
+    const extraRoot = { ...ordinaryPage, id: 'extra-root', title: 'Work', props: { root: true } }
+    const withExtraRootOpen = paletteItems([extraRoot], [], 'extra-root')
+
+    expect(withExtraRootOpen).not.toContainEqual(DELETE_PAGE_ACTION)
+    expect(withExtraRootOpen).toContainEqual(DUPLICATE_PAGE_ACTION)
+  })
+
+  // Regression: `deletePageAndStageUndo` only `removeRow`s the one page —
+  // Rail's own leaf-only shortcut (`Rail.tsx`'s `needsConfirm`/
+  // `countDescendants`). A parent must not list this row at all, or picking
+  // it would leaf-stage the parent while its child stays in the `['pages']`
+  // cache, orphaned once the parent's subtree is actually trashed server-side.
+  it('does not list for a page with a child, even though move page still does', () => {
+    const child = { ...ordinaryPage, id: 'child-page', parent_id: 'some-page', title: 'Attic' }
+    const withChildren = paletteItems([ordinaryPage, child], [], 'some-page')
+
+    expect(withChildren).not.toContainEqual(DELETE_PAGE_ACTION)
+    expect(withChildren).toContainEqual(MOVE_PAGE_ACTION)
   })
 })
 

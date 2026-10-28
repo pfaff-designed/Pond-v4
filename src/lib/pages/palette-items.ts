@@ -148,6 +148,23 @@ export const MOVE_PAGE_ACTION: PaletteItem = {
 }
 
 /**
+ * KAN-567: the ⌘K half of KAN-469's split — "delete page" for the open page,
+ * sending it to trash with the rail's own undo toast. Gated like
+ * `MOVE_PAGE_ACTION`, the same `isMovablePageRow` rule (refuses home, the
+ * databases root, and an extra root) — PLUS zero descendants: this row only
+ * runs the leaf-stage toast flow (`deletePageAndStageUndo`'s single
+ * `removeRow`), never Rail's blast-radius confirm, so a page with children
+ * must not list it (Rail's own `needsConfirm`/`countDescendants` gate). No
+ * chord — ⌘K is the only door.
+ */
+export const DELETE_PAGE_ACTION: PaletteItem = {
+  id: 'action:delete-page',
+  label: 'delete page',
+  kind: 'action',
+  action: 'delete-page',
+}
+
+/**
  * KAN-475: one row never both — "favourite this page" when the open page isn't
  * in the pond's favourites, "unfavourite this page" when it is. Gated like
  * `SAVE_AS_TEMPLATE_ACTION`/`DUPLICATE_PAGE_ACTION`: `isDuplicablePageRow`
@@ -212,6 +229,9 @@ export function paletteItems(
     ...(openPageId ? [SAVE_AS_TEMPLATE_ACTION] : []),
     ...(openPage && isDuplicablePageRow(openPage) ? [DUPLICATE_PAGE_ACTION] : []),
     ...(openPage && isMovablePageRow(openPage) ? [MOVE_PAGE_ACTION] : []),
+    ...(openPage && isMovablePageRow(openPage) && subtreeIdsFromRows(all, openPage.id).size === 1
+      ? [DELETE_PAGE_ACTION]
+      : []),
     ...(openPage && isDuplicablePageRow(openPage) && pondResolved
       ? [favouritePageIds?.includes(openPage.id) ? UNFAVOURITE_PAGE_ACTION : FAVOURITE_PAGE_ACTION]
       : []),
