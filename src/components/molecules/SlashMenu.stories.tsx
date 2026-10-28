@@ -529,7 +529,7 @@ export const KeyEdges: Story = {
     }
 
     await userEvent.keyboard('{ArrowDown>30/}')
-    await expect(selectedLabel(canvasElement)).toBe('page')
+    await expect(selectedLabel(canvasElement)).toBe('link to page')
   },
 }
 
@@ -626,17 +626,17 @@ export const PickYoursTemplate: Story = {
   },
 }
 
-/** The `pages` group closes the open list: one row, `page`, with the page mark. */
+/** The `pages` group closes the open list: `page` then `link to page` (KAN-463). */
 export const PagesGroup: Story = {
   tags: ['!dev'],
   play: async ({ canvasElement }) => {
     const glass = glassOf(canvasElement)
     const groups = [...glass.querySelectorAll('[data-part="group"]')]
     await expect(groups.at(-1)!.textContent).toBe('pages')
-    await expect(labels(canvasElement).slice(-1)).toEqual(['page'])
-    const page = [...glass.querySelectorAll<HTMLElement>('[role="option"]')].at(-1)!
-    await expect(page.querySelector('svg path')!.getAttribute('d')).toBe(ICON.page.d)
-    await expect(page.querySelector('[data-part="hint"]')).toBeNull()
+    await expect(labels(canvasElement).slice(-2)).toEqual(['page', 'link to page'])
+    const linkToPage = [...glass.querySelectorAll<HTMLElement>('[role="option"]')].at(-1)!
+    await expect(linkToPage.querySelector('svg path')!.getAttribute('d')).toBe(ICON.link.d)
+    await expect(linkToPage.querySelector('[data-part="hint"]')).toBeNull()
   },
 }
 
