@@ -1372,3 +1372,46 @@ describe('a toggle heading folds the blocks under it (KAN-515)', () => {
     expect(document.getElementById('block-b-child-2')).toBeInTheDocument()
   })
 })
+
+describe('PATH_STEPS: turn into toggle heading, fold, unfold, turn back into a heading (KAN-515)', () => {
+  const foldButtonIn = (row: HTMLElement) =>
+    within(row).getByRole('button', { name: /^(fold|unfold)$/ })
+
+  it('walks the whole path on a plain heading with two sibling blocks', async () => {
+    const user = userEvent.setup()
+    const childOne: Block = { id: 'b-child-1', type: 'text', content: 'flour' }
+    const childTwo: Block = { id: 'b-child-2', type: 'text', content: 'water' }
+    renderCanvas([heading, childOne, childTwo])
+
+    openMenuOf('b-heading')
+    await user.click(await screen.findByRole('menuitem', { name: 'toggle heading' }))
+
+    // The heading gains a chevron, open; its siblings remain.
+    expect(foldButtonIn(rowOf('b-heading'))).toHaveAttribute('aria-expanded', 'true')
+    expect(document.getElementById('block-b-child-1')).toBeInTheDocument()
+    expect(document.getElementById('block-b-child-2')).toBeInTheDocument()
+    expect(await screen.findByText(/turned into a toggle heading/i)).toBeInTheDocument()
+
+    // Clicking the chevron hides the siblings.
+    await user.click(foldButtonIn(rowOf('b-heading')))
+    expect(foldButtonIn(rowOf('b-heading'))).toHaveAttribute('aria-expanded', 'false')
+    expect(document.getElementById('block-b-child-1')).not.toBeInTheDocument()
+    expect(document.getElementById('block-b-child-2')).not.toBeInTheDocument()
+
+    // Clicking it again restores them.
+    await user.click(foldButtonIn(rowOf('b-heading')))
+    expect(foldButtonIn(rowOf('b-heading'))).toHaveAttribute('aria-expanded', 'true')
+    expect(document.getElementById('block-b-child-1')).toBeInTheDocument()
+    expect(document.getElementById('block-b-child-2')).toBeInTheDocument()
+
+    // Turn into heading 2 (same level): chevron gone, siblings untouched.
+    openMenuOf('b-heading')
+    await user.click(await screen.findByRole('menuitem', { name: /^heading 2/ }))
+
+    expect(
+      within(rowOf('b-heading')).queryByRole('button', { name: /^(fold|unfold)$/ })
+    ).not.toBeInTheDocument()
+    expect(document.getElementById('block-b-child-1')).toBeInTheDocument()
+    expect(document.getElementById('block-b-child-2')).toBeInTheDocument()
+  })
+})
