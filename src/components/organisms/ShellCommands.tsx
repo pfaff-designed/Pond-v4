@@ -77,7 +77,7 @@ import { setRailMinimized, toggleRail, useRailMinimized } from '@/lib/layout/rai
 import { requestRailRowFocus } from '@/lib/layout/rail-focus'
 import { PLACEMENT } from '@/lib/layout/shell-placement'
 import { useZenCommands } from '@/lib/layout/use-zen-commands'
-import { openWorkspaceUrl, workspaceUrl } from '@/lib/pages/nav'
+import { openWorkspaceUrl, workspaceUrl, type WorkspaceNodeRef } from '@/lib/pages/nav'
 import { requestTitleFocus } from '@/lib/pages/title-focus'
 import { flushPendingPageSave } from '@/lib/pages/page-flush'
 import { moveAndStageUndo } from '@/lib/pages/move'
@@ -97,6 +97,13 @@ import {
 import { isMovablePageRow } from '@/lib/pages/databases-root'
 import { prefetchPageIfAbsent } from '@/lib/pages/use-page-prefetch'
 import { readRecentPageIds, writeRecent } from '@/lib/pages/recent-pages'
+import {
+  initHistory,
+  recordVisit,
+  stepBack,
+  stepForward,
+  type SessionHistoryState,
+} from '@/lib/pages/session-history'
 import { useHomePage } from '@/lib/pages/use-home-page'
 import { usePaletteBlocks } from '@/lib/pages/use-palette-blocks'
 import type { ParentPageRow } from '@/lib/pages/palette-blocks'
@@ -627,6 +634,59 @@ export function ShellCommands() {
     [router]
   )
 
+  // KAN-568's own back/forward stack (`lib/pages/session-history.ts`), seeded
+  // from whatever page is open at mount. A ref, not state: stepping it must
+  // never itself cause a render, only the navigation it triggers does.
+  // `LIFE_ID` stands in for the home page (`currentNodeId === null`), which
+  // has no id of its own to push onto the stack.
+  const sessionHistoryRef = useRef(initHistory(currentNodeId ?? LIFE_ID))
+  // Set right before `goBack`/`goForward`'s own `openWorkspaceUrl` call, so
+  // the effect below can tell their navigation apart from every other one
+  // and skip recording it a second time (it already moved the cursor itself).
+  const ownNavRef = useRef(false)
+  useEffect(() => {
+    if (ownNavRef.current) {
+      ownNavRef.current = false
+      return
+    }
+    sessionHistoryRef.current = recordVisit(sessionHistoryRef.current, currentNodeId ?? LIFE_ID)
+  }, [currentNodeId])
+
+  // Resolves a history-stack id back to a navigable target — `LIFE_ID` to the
+  // home page, a real id to the matching `pages` row. `null` when the row has
+  // since been deleted (AGENTS.md: a legitimate no-op, not an impossible state).
+  const resolveHistoryTarget = useCallback(
+    (id: string): WorkspaceNodeRef | null => {
+      if (id === LIFE_ID) return null
+      const page = pages.find((p) => p.id === id)
+      return page ? { id: page.id, type: page.type, title: page.title } : null
+    },
+    [pages]
+  )
+
+  // Shared by `goBack`/`goForward` below: both land the stepped-to id the
+  // same way, the only difference being which direction stepped there.
+  const navigateHistoryStep = useCallback(
+    (step: { state: SessionHistoryState; id: string }) => {
+      sessionHistoryRef.current = step.state
+      const target = step.id === LIFE_ID ? null : resolveHistoryTarget(step.id)
+      if (step.id !== LIFE_ID && !target) return
+      ownNavRef.current = true
+      openWorkspaceUrl(workspaceUrl(target), router)
+    },
+    [resolveHistoryTarget, router]
+  )
+
+  const goBack = useCallback(() => {
+    const step = stepBack(sessionHistoryRef.current)
+    if (step) navigateHistoryStep(step)
+  }, [navigateHistoryStep])
+
+  const goForward = useCallback(() => {
+    const step = stepForward(sessionHistoryRef.current)
+    if (step) navigateHistoryStep(step)
+  }, [navigateHistoryStep])
+
   const handlePaletteSelect = useCallback(
     (item: PaletteItem, options?: { newTab?: boolean }) => {
       // Pick mode (KAN-469): any picked row — including the synthetic root
@@ -710,6 +770,14 @@ export function ShellCommands() {
       }
       if (item.action === 'show-rail') {
         setRailMinimized(false)
+        return
+      }
+      if (item.action === 'go-back') {
+        goBack()
+        return
+      }
+      if (item.action === 'go-forward') {
+        goForward()
         return
       }
       if (handleModeSelect(item.action)) return
@@ -824,6 +892,8 @@ export function ShellCommands() {
       stageDeletion,
       notify,
       navigateTo,
+      goBack,
+      goForward,
     ]
   )
 
