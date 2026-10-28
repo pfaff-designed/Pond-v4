@@ -140,4 +140,39 @@ describe('useFavouritePage', () => {
     expect(rememberReorder).not.toHaveBeenCalled()
     expect(resolved).toBe(false)
   })
+
+  it('serializes a reorder from one mount and an undo reorder from another, so the undo write is never fired concurrently', async () => {
+    let resolveDrag: () => void = () => {}
+    setFavourites.mockImplementationOnce(() => new Promise<void>((resolve) => (resolveDrag = resolve)))
+    setFavourites.mockImplementationOnce(() => Promise.resolve())
+
+    // Rail's mount drags roof to the top; ShellCommands' mount is a separate
+    // component instance, the same way the real tree splits them.
+    const rail = renderHook(() => useFavouritePage())
+    const shellCommands = renderHook(() => useFavouritePage())
+
+    let dragDone: Promise<boolean> = Promise.resolve(true)
+    act(() => {
+      dragDone = rail.result.current.reorder(['b', 'a'])
+    })
+
+    let undoDone: Promise<boolean> = Promise.resolve(true)
+    act(() => {
+      undoDone = shellCommands.result.current.reorder(['a', 'b'], { recordUndo: false })
+    })
+
+    // The undo's write must queue behind the drag's in-flight write, not
+    // fire a second concurrent request whose own response order would decide
+    // what lands last on the server.
+    expect(setFavourites).toHaveBeenCalledTimes(1)
+
+    resolveDrag()
+    await act(async () => {
+      await Promise.all([dragDone, undoDone])
+    })
+
+    expect(setFavourites).toHaveBeenCalledTimes(2)
+    expect(setFavourites).toHaveBeenNthCalledWith(1, 'p-life', ['b', 'a'])
+    expect(setFavourites).toHaveBeenNthCalledWith(2, 'p-life', ['a', 'b'])
+  })
 })
