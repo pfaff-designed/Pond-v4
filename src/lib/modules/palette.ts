@@ -156,6 +156,9 @@ export const WITHHELD = {
     "minted only by `makePage`'s `/ nested page` swap (KAN-122), never picked from the menu directly",
 } as const satisfies Partial<Record<DescriptorType, string>>
 
+/** The `link to page` row's id — shared with `use-slash-pick.ts`'s own routing check, so the two never drift apart. */
+export const LINK_TO_PAGE_ROW_ID = 'link-to-page'
+
 /**
  * The board's row order. A row not placed here (a new type's) still lists — last,
  * in the `blocks` group, with the fallback mark — but `slash-menu.test.tsx` asserts
@@ -194,6 +197,8 @@ export const BOARD_ORDER: readonly string[] = [
   'table-of-contents',
   'page-from-template',
   'page',
+  // KAN-463: app-over-board, right after `page` — no board draws this row.
+  LINK_TO_PAGE_ROW_ID,
 ]
 const GROUP_ORDER: readonly SlashGroup[] = ['text', 'blocks', 'templates', 'pages']
 
@@ -229,11 +234,13 @@ const templateRow: SlashRow = {
 }
 
 /**
- * One page. It is a page on this page: a link where you typed, and the new page
- * under this one. The blank page shape stays in the templates pane.
+ * The `pages` group: `page` makes a new one under this page; `link to page`
+ * (KAN-463) opens the pages picker instead of minting a block — no `type`, no
+ * `placement`, routed by `LINK_TO_PAGE_ROW_ID` in `use-slash-pick.ts`.
  */
 const PAGE_ROWS: readonly SlashRow[] = [
   { id: 'page', group: 'pages', label: 'page', icon: ICON.page, placement: 'child' },
+  { id: LINK_TO_PAGE_ROW_ID, group: 'pages', label: 'link to page', icon: ICON.link },
 ]
 
 const rank = (row: SlashRow) => {

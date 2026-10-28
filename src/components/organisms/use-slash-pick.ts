@@ -4,7 +4,7 @@ import { useState } from 'react'
 import type { SlashRow, TemplatePick } from '@/components/molecules/SlashMenu'
 import { sourceBlockOf, type SourceBlock } from '@/components/molecules/source-entries'
 import type { Block } from '@/lib/documents/types'
-import { mintPreset } from '@/lib/modules/palette'
+import { LINK_TO_PAGE_ROW_ID, mintPreset } from '@/lib/modules/palette'
 import { HEADING_PREFIX } from '@/lib/modules/text/markup'
 import type { TextBlock } from '@/lib/modules/text/schema'
 import { splitAtSlashLine, type SlashLine, type SlashLineAt } from '@/lib/modules/text/slash-line'
@@ -122,6 +122,8 @@ interface SlashPickOptions {
     at: number,
     anchor: Element | null
   ) => void
+  /** Opens the pages picker (KAN-463); the page changes only when it picks. */
+  openPagesPicker: (target: SlashTarget, anchor: Element | null) => void
   /** Makes a page; the page changes only once it is made. */
   makePageFromRow: (placement: 'sibling' | 'child', target: SlashTarget) => void
   /** `index` is the picked block's position — a blank page applies in place instead (KAN-124). */
@@ -145,6 +147,7 @@ export const useSlashPick = ({
   onChange,
   markInserted,
   openSourcePicker,
+  openPagesPicker,
   makePageFromRow,
   makePageFromTemplate,
   onLanded,
@@ -166,6 +169,10 @@ export const useSlashPick = ({
     const source = sourceBlockOf(row.id)
     if (source) {
       openSourcePicker(source, target, index, at?.element ?? null)
+      return
+    }
+    if (row.id === LINK_TO_PAGE_ROW_ID) {
+      openPagesPicker(target, at?.element ?? null)
       return
     }
     if (row.placement) {

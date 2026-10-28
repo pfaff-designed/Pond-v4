@@ -74,6 +74,7 @@ import type { PickerSize } from '@/components/molecules/picker-chrome'
 import type { PickerAnchorBox, PickerSide } from '@/components/molecules/use-anchored-box'
 import { SourcePicker, type SourcePick } from '@/components/molecules/SourcePicker'
 import { sourcePickerHeight, type SourceBlock } from '@/components/molecules/source-entries'
+import { PagesPicker, type PageMentionItem } from '@/components/molecules/PagesPicker'
 import { caretRect, roomTowardSide, sideTowardFreeSpace } from '@/lib/layout/caret-anchor'
 import { composerBottomBound } from '@/lib/layout/composer-clearance'
 import {
@@ -167,6 +168,10 @@ import {
   useApplePlatform,
 } from '@/lib/shell-commands'
 import { slashRows, emptyBlockForType } from '@/lib/modules/palette'
+import { markIndex, resolveMark } from '@/lib/pages/mark'
+import { markAccent } from '@/lib/rail/glyph-library'
+import { areaOf } from '@/lib/pages/crumbs'
+import { orderMentionPages } from '@/lib/pages/mention-pages'
 import { descriptorFor } from '@/lib/modules/registry'
 import { useBelowMd } from '@/lib/layout/use-below-md'
 import { pageEyebrowClass } from '@/components/atoms/kicker'
@@ -689,6 +694,17 @@ export function BlockCanvas({
   // block, keyed by the block's id — the same guard shape as
   // `makePageInFlightRef` above.
   const moveInFlightRef = useRef<Set<string>>(new Set())
+  // G9: guards `onPagesPick` against a double ↵ on the same row —
+  // `SourcePicker.tsx`'s own `pickedRef` (its `project` step): `onPagesPick`
+  // closes the glass synchronously, but `PagesPicker`'s capture-phase
+  // listener isn't torn down until the effect cleanup after that render
+  // commits, so a second `Enter` dispatched before then still reaches it.
+  const pagesPickedRef = useRef(false)
+  // The element `openPagesPicker` blurred (below) — null while the picker is
+  // closed. Escape/click-outside gives it back so typing can resume; a
+  // successful pick replaces or unmounts the host instead, so `onPagesPick`
+  // never needs it.
+  const pagesPickerBlurredRef = useRef<HTMLElement | null>(null)
   // Rule 2's fix (KAN-345): ids `markInserted` has minted THIS session, so a
   // fresh empty line autofocuses on mount while one that merely arrived with
   // the page never does — BlockCanvas is the one place that knows which ids
@@ -717,6 +733,7 @@ export function BlockCanvas({
     onChange,
     markInserted,
     openSourcePicker,
+    openPagesPicker,
     // The bare `/page` row is not a user template — its "untitled" is a stand-in
     // name, never meant to land in the title field (KAN-464). Blank it so the
     // opened page shows its placeholder instead of "untitledwhatever you type".
@@ -823,6 +840,41 @@ export function BlockCanvas({
     side: PickerSide
     maxHeight: number
   } | null>(null)
+  // `link to page` (KAN-463): no source/mode step, just the pond's other
+  // pages — the picker opens straight off the `/` line's own anchor.
+  const [pagesPicker, setPagesPicker] = useState<{
+    target: SlashTarget
+    anchor: Element | null
+  } | null>(null)
+  const [pagesPickerIndex, setPagesPickerIndex] = useState(0)
+  // The picker's own typeahead (KAN-463) — no `<input>`, built from the
+  // document listener below the same way `SourcePicker.tsx`'s `project` step
+  // builds its own query. It lives here, not in `PagesPicker`, because that
+  // component is also the composer's `@` picker (`AITerminal.tsx`), whose
+  // query comes from the editor's own text instead.
+  const [pagesPickerQuery, setPagesPickerQuery] = useState('')
+  useEffect(() => {
+    if (!pagesPicker) return
+    function onKey(e: KeyboardEvent) {
+      let handled = true
+      // Arrow/Escape/Enter are `PagesPicker`'s own capture listener's keys —
+      // this one claims only the keys that build the query, so the two never
+      // fight over the same key.
+      if (e.key === 'Backspace') {
+        setPagesPickerQuery((q) => q.slice(0, -1))
+        setPagesPickerIndex(0)
+      } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        setPagesPickerQuery((q) => q + e.key)
+        setPagesPickerIndex(0)
+      } else handled = false
+      if (handled) {
+        e.preventDefault()
+        e.stopPropagation()
+      }
+    }
+    document.addEventListener('keydown', onKey, true)
+    return () => document.removeEventListener('keydown', onKey, true)
+  }, [pagesPicker])
   const canvasRef = useRef<HTMLDivElement>(null)
   // Whether a text editor inside this canvas has focus (KAN-535) — gates both
   // hover ghosts (`hoverGhost` below, `TrailingBlockGap`'s own ghost row) so
@@ -1011,7 +1063,7 @@ export function BlockCanvas({
   // opened before pageRows has ever loaded would rank off a `null` parentId
   // (the pond's ROOT pages) and flash the wrong order once pageRows lands.
   const { data: pageRows, isSuccess: pageRowsLoaded } = usePagesRows(pondId, {
-    enabled: sourcePicker !== null || blankMenuOpen,
+    enabled: sourcePicker !== null || blankMenuOpen || pagesPicker !== null,
   })
   const { data: recordCounts } = useQuery({
     queryKey: ['record-counts', pondId],
@@ -1029,6 +1081,33 @@ export function BlockCanvas({
     () => sourceDatabases(pageRows, recordCounts ?? new Map()),
     [pageRows, recordCounts]
   )
+
+  /**
+   * `link to page`'s own rows: every other page in the pond, in `pages`' own
+   * order (no recent/linked ranking — KAN-99's refinement is a different
+   * surface's ticket). `markIndex`/`resolveMark` read `pageRows` directly
+   * (same shape); `areaOf` wants `parentId` camelCase, so the rows are
+   * adapted just for that one read.
+   */
+  const pagesPickerItems = useMemo<PageMentionItem[]>(() => {
+    if (!pagesPicker) return []
+    const marks = markIndex(pageRows)
+    const areaRows = pageRows.map((r) => ({ id: r.id, parentId: r.parent_id, title: r.title }))
+    return orderMentionPages(
+      pageRows,
+      { recentIds: [], linkedIds: [], excludeIds: [pageId] },
+      pagesPickerQuery
+    ).map((p) => {
+      const mark = resolveMark(p.id, marks)
+      return {
+        id: p.id,
+        glyph: mark.glyph,
+        color: markAccent(mark.role),
+        label: p.title,
+        sub: areaOf(areaRows, p.id) ?? '',
+      }
+    })
+  }, [pagesPicker, pageRows, pageId, pagesPickerQuery])
 
   /**
    * The board's `project` step (KAN-536) offers the shared tasks database's
@@ -2125,6 +2204,56 @@ export function BlockCanvas({
     )
     const maxHeight = Math.max(0, roomTowardSide(caret, bound, side))
     setSourcePicker({ block, target, at, anchor, side, maxHeight })
+  }
+
+  /**
+   * `link to page` (KAN-463): the same anchor `openSourcePicker` hangs off —
+   * the `/` line, or the block it was typed in — but no side/height step;
+   * `PagesPicker` measures its own room against that anchor's rect.
+   */
+  function openPagesPicker(target: SlashTarget, line: Element | null) {
+    const anchor = line ?? document.getElementById(blockDomId(target.hostId)) ?? canvasRef.current
+    setPagesPicker({ target, anchor })
+    setPagesPickerIndex(0)
+    setPagesPickerQuery('')
+    pagesPickedRef.current = false
+    // The `/` row's own `onMouseDown` preventDefault (SlashMenu.tsx) keeps the
+    // editor focused through the pick on purpose — other picks mint straight
+    // back into it. This one opens a second glass instead, and a capture-phase
+    // `keydown.preventDefault()`/`stopPropagation()` alone doesn't stop a real
+    // browser from still routing a still-focused contenteditable's own
+    // `beforeinput` for a typed filter letter: the letter landed in the editor
+    // ANYWAY, drifting its content from the snapshotted `SlashTarget`, so
+    // `landAtSlash` kept the drifted host whole and appended the page-link
+    // beside it instead of replacing the `/` line. Blurring removes the
+    // editor as a native-typing target altogether, so the filter can only
+    // ever reach `pagesPickerQuery` below.
+    const active = document.activeElement
+    pagesPickerBlurredRef.current = active instanceof HTMLElement ? active : null
+    pagesPickerBlurredRef.current?.blur()
+  }
+
+  /**
+   * `link to page`'s own pick (KAN-463): lands a `page-link` block at the `/`
+   * line, pointed at the PICKED page's existing id — unlike `/page`/`/nested
+   * page` (`makePage`, below), nothing is created and the picked page's own
+   * parent is never touched. Same synchronous mint-and-land shape as
+   * `useSlashPick`'s own freeText/preset branch: `landAtSlash` then
+   * `onChange` alone, no `persistBlocksAsOwnEdit` detour. `pagesPickedRef`
+   * guards against a double ↵ landing two page-links (AUDIT G9).
+   */
+  function onPagesPick(item: PageMentionItem) {
+    if (pagesPickedRef.current) return
+    pagesPickedRef.current = true
+    const target = pagesPicker?.target
+    setPagesPicker(null)
+    setPagesPickerQuery('')
+    if (!target) return
+    const pageLink: Block = { id: crypto.randomUUID(), type: 'page-link', pageId: item.id }
+    const landing = landAtSlash(blocksRef.current, target, pageLink)
+    if (!landing?.landed) return
+    markInserted(landing.landed.id)
+    onChange(landing.next)
   }
 
   function nearestSource(at: number): string | null {
@@ -3807,6 +3936,24 @@ export function BlockCanvas({
           maxHeight={sourcePicker.maxHeight}
           onPick={(pick) => void onSourcePick(pick)}
           onClose={() => setSourcePicker(null)}
+        />
+      )}
+
+      {/* The pages picker, hung off the `/` line `link to page` opened it from. */}
+      {pagesPicker && (
+        <PagesPicker
+          items={pagesPickerItems}
+          activeIndex={pagesPickerIndex}
+          onHover={setPagesPickerIndex}
+          onPick={onPagesPick}
+          onClose={() => {
+            setPagesPicker(null)
+            setPagesPickerQuery('')
+            // Cancelling (Escape/click-outside) leaves the host block as it
+            // was — give the blur back so typing can resume there.
+            pagesPickerBlurredRef.current?.focus()
+          }}
+          anchor={pagesPicker.anchor}
         />
       )}
     </PageLinkProvider>

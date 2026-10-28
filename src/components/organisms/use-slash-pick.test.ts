@@ -134,6 +134,7 @@ describe('useSlashPick · handleSlashSelect with a free-text row', () => {
         onChange,
         markInserted,
         openSourcePicker: jest.fn(),
+        openPagesPicker: jest.fn(),
         makePageFromRow: jest.fn(),
         makePageFromTemplate: jest.fn(),
       })
