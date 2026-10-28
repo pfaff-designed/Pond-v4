@@ -61,16 +61,23 @@ export function useFavouritePage() {
     await flush()
   }
 
-  const reorder = async (next: readonly string[]): Promise<void> => {
-    if (!pond) return
+  const reorder = async (
+    next: readonly string[],
+    opts?: { recordUndo?: boolean }
+  ): Promise<boolean> => {
+    if (!pond) return false
     const before = desired.current ?? pond.favouritePageIds
     if (!desired.current) rollback.current = pond.favouritePageIds
-    rememberReorder(pond.id, before ?? [])
+    // `recordUndo: false` is the ⌘Z-driven revert itself (ShellCommands) — it
+    // must not stash its own "before" (the just-undone order), or a second
+    // ⌘Z would revert the revert instead of reaching `sessionUndo`.
+    if (opts?.recordUndo ?? true) rememberReorder(pond.id, before ?? [])
     const nextIds = [...next]
     patchPond(pond.id, { favouritePageIds: nextIds })
     desired.current = nextIds
     pondId.current = pond.id
     await flush()
+    return rollback.current === nextIds
   }
 
   return { toggle, reorder }

@@ -42,7 +42,7 @@ jest.mock('@/lib/change-log/store', () => ({
   getRecord: jest.fn(),
 }))
 jest.mock('@/lib/change-log/session-undo', () => ({
-  sessionUndo: { undo: jest.fn(), redo: jest.fn() },
+  sessionUndo: { undo: jest.fn().mockResolvedValue({ outcome: 'empty' }), redo: jest.fn() },
 }))
 jest.mock('@/lib/pages/tree', () => ({
   ...jest.requireActual('@/lib/pages/tree'),
@@ -167,5 +167,79 @@ describe('⌘Z reverts a favourites reorder before it reaches sessionUndo (KAN-5
     ])
     expect(sessionUndo.undo).not.toHaveBeenCalled()
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+
+  it('a second ⌘Z reaches sessionUndo instead of reverting the reorder again', async () => {
+    const { container } = renderPath()
+    const band = () => favouritesBand(container) as HTMLElement
+
+    await waitFor(() => expect(band()).not.toBeNull())
+    const groceriesRow = within(band()).getByRole('listitem', { name: 'groceries' })
+    const roofRow = within(band()).getByRole('listitem', { name: 'roof' })
+    groceriesRow.getBoundingClientRect = jest.fn(
+      () => ({ top: 0, height: 40, bottom: 40, left: 0, right: 0, width: 0, x: 0, y: 0 }) as DOMRect
+    )
+    fireEvent(roofRow, dragStartEvent())
+    fireEvent(groceriesRow, dropEvent(5))
+
+    await waitFor(() =>
+      expect(setPondFavourites).toHaveBeenCalledWith(POND_ID, [ROOF_ID, GROCERIES_ID, HOUSE_ID])
+    )
+
+    fireEvent.keyDown(document, { key: 'z', metaKey: true })
+    await waitFor(() =>
+      expect(setPondFavourites).toHaveBeenCalledWith(POND_ID, [GROCERIES_ID, HOUSE_ID, ROOF_ID])
+    )
+
+    const callsAfterFirstUndo = jest.mocked(setPondFavourites).mock.calls.length
+
+    fireEvent.keyDown(document, { key: 'z', metaKey: true })
+    await waitFor(() => expect(sessionUndo.undo).toHaveBeenCalledWith(POND_ID))
+
+    // The ⌘Z revert itself must not have re-armed the pending-reorder slot —
+    // nothing calls `setPondFavourites` with the reordered list again.
+    expect(jest.mocked(setPondFavourites).mock.calls.length).toBe(callsAfterFirstUndo)
+  })
+
+  it('restores the pending reorder on a rejected undo so the next ⌘Z can retry it', async () => {
+    const { container } = renderPath()
+    const band = () => favouritesBand(container) as HTMLElement
+
+    await waitFor(() => expect(band()).not.toBeNull())
+    const groceriesRow = within(band()).getByRole('listitem', { name: 'groceries' })
+    const roofRow = within(band()).getByRole('listitem', { name: 'roof' })
+    groceriesRow.getBoundingClientRect = jest.fn(
+      () => ({ top: 0, height: 40, bottom: 40, left: 0, right: 0, width: 0, x: 0, y: 0 }) as DOMRect
+    )
+    fireEvent(roofRow, dragStartEvent())
+    fireEvent(groceriesRow, dropEvent(5))
+
+    await waitFor(() =>
+      expect(setPondFavourites).toHaveBeenCalledWith(POND_ID, [ROOF_ID, GROCERIES_ID, HOUSE_ID])
+    )
+
+    jest.mocked(setPondFavourites).mockRejectedValueOnce(new Error('offline'))
+    fireEvent.keyDown(document, { key: 'z', metaKey: true })
+    await waitFor(() =>
+      expect(setPondFavourites).toHaveBeenCalledWith(POND_ID, [GROCERIES_ID, HOUSE_ID, ROOF_ID])
+    )
+    // The rejected revert leaves the band on the reordered order, rolled back.
+    expect(within(band()).getAllByRole('listitem').map((r) => r.textContent)).toEqual([
+      'roof',
+      'groceries',
+      'house',
+    ])
+
+    jest.mocked(setPondFavourites).mockResolvedValueOnce(undefined)
+    fireEvent.keyDown(document, { key: 'z', metaKey: true })
+
+    await waitFor(() =>
+      expect(within(band()).getAllByRole('listitem').map((r) => r.textContent)).toEqual([
+        'groceries',
+        'house',
+        'roof',
+      ])
+    )
+    expect(sessionUndo.undo).not.toHaveBeenCalled()
   })
 })

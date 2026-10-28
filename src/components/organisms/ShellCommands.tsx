@@ -85,7 +85,7 @@ import { deletePageAndStageUndo } from '@/lib/pages/delete'
 import { moveBlockAndStageUndo } from '@/lib/pages/move-block'
 import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import { useFavouritePage } from '@/lib/pond/use-favourite-page'
-import { takePendingReorder } from '@/lib/pond/favourites-undo'
+import { rememberReorder, takePendingReorder } from '@/lib/pond/favourites-undo'
 import {
   blockMovePickItems,
   movePickItems,
@@ -520,7 +520,13 @@ export function ShellCommands() {
         // session-undo RPC step underneath it is left untouched.
         const pendingReorder = takePendingReorder(pondId)
         if (pendingReorder) {
-          void reorderFavouritePage(pendingReorder)
+          // `recordUndo: false`: this revert is not itself a new undoable
+          // reorder (see `useFavouritePage`). On a rejected write, re-stash
+          // the same pre-reorder order so the next ⌘Z can retry it instead
+          // of falling through to `sessionUndo` with nothing to revert.
+          void reorderFavouritePage(pendingReorder, { recordUndo: false }).then((ok) => {
+            if (!ok) rememberReorder(pondId, pendingReorder)
+          })
           return
         }
         runUndoStep('undo')

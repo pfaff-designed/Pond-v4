@@ -113,4 +113,31 @@ describe('useFavouritePage', () => {
     expect(patchPond).toHaveBeenNthCalledWith(2, 'p-life', { favouritePageIds: ['a', 'b'] })
     expect(requestNotify).toHaveBeenCalledWith({ message: 'Could not update favourites' })
   })
+
+  it('does not stash a pending reorder when recordUndo is false, and resolves true on success', async () => {
+    setFavourites.mockResolvedValueOnce(undefined)
+    const { result } = renderHook(() => useFavouritePage())
+
+    let resolved: boolean = false
+    await act(async () => {
+      resolved = await result.current.reorder(['b', 'a'], { recordUndo: false })
+    })
+
+    expect(setFavourites).toHaveBeenCalledWith('p-life', ['b', 'a'])
+    expect(rememberReorder).not.toHaveBeenCalled()
+    expect(resolved).toBe(true)
+  })
+
+  it('resolves false on a rejected recordUndo: false reorder, so the caller can re-stash it', async () => {
+    setFavourites.mockRejectedValueOnce(new Error('network down'))
+    const { result } = renderHook(() => useFavouritePage())
+
+    let resolved: boolean = true
+    await act(async () => {
+      resolved = await result.current.reorder(['b', 'a'], { recordUndo: false })
+    })
+
+    expect(rememberReorder).not.toHaveBeenCalled()
+    expect(resolved).toBe(false)
+  })
 })
