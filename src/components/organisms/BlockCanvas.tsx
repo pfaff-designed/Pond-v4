@@ -63,6 +63,8 @@ import { addTodoItem } from '@/lib/modules/todo/view'
 import { addTableRow } from '@/lib/modules/table/view'
 import { addEntryFocused } from '@/lib/modules/entries/view'
 import { TOGGLE_FOLD_ROW_PX } from '@/lib/modules/toggle/view'
+import { Caret } from '@/components/atoms/Caret'
+import { hiddenBlockIds } from '@/lib/modules/text/heading-fold'
 import { PondBlock, POND_BLOCK_SELECTED_RING_ROUNDED } from '@/components/organisms/PondBlock'
 import {
   SlashMenu,
@@ -2950,16 +2952,19 @@ export function BlockCanvas({
   // block (looked up by id, see `renderList` below) to `renderBlockEditor`, so
   // the previewed block's own content and its width row's filled cell are
   // never touched by the preview.
-  const blocksForLayout = useMemo(
-    () =>
-      previewWidth
-        ? blocks.map((b) => {
-            const preview = previewWidth.find((p) => p.blockId === b.id)
-            return preview ? { ...b, width: preview.width } : b
-          })
-        : blocks,
-    [blocks, previewWidth]
-  )
+  // A folded toggle heading's own siblings get no row at all (KAN-515): hidden
+  // here, before layout, so they never reach `renderList`/`blockRows` rather
+  // than rendering and being hidden with CSS.
+  const blocksForLayout = useMemo(() => {
+    const hidden = hiddenBlockIds(blocks)
+    const visible = hidden.size > 0 ? blocks.filter((b) => !hidden.has(b.id)) : blocks
+    return previewWidth
+      ? visible.map((b) => {
+          const preview = previewWidth.find((p) => p.blockId === b.id)
+          return preview ? { ...b, width: preview.width } : b
+        })
+      : visible
+  }, [blocks, previewWidth])
 
   // One entry per block, in page order, at the width it already has. A drag
   // does not preview the landing by rearranging or cloning the block: the
@@ -5094,7 +5099,23 @@ function BlockEditor({
           </span>
         </div>
       )}
-      {view}
+      {block.toggle ? (
+        <div className="flex items-start gap-1.5">
+          <button
+            type="button"
+            aria-expanded={!block.folded}
+            aria-label={block.folded ? 'unfold' : 'fold'}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => commitStep({ ...block, folded: !block.folded })}
+            className="relative z-[2] -ml-[1px] -mr-[6px] grid h-[var(--prose-line,calc(17.5px*1.6))] flex-none place-items-center pl-[1px] pr-[6px] text-mn-text-secondary"
+          >
+            <Caret className={cn(!block.folded && 'rotate-90')} />
+          </button>
+          <div className="min-w-0 flex-1">{view}</div>
+        </div>
+      ) : (
+        view
+      )}
       {changedMark}
     </div>
   ) : (

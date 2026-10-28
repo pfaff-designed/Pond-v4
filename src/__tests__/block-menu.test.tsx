@@ -1340,3 +1340,35 @@ describe('⌘⌫ deletes the focused block (`Pond 08 Edges` 8e)', () => {
     expect(onChange).not.toHaveBeenCalled()
   })
 })
+
+describe('a toggle heading folds the blocks under it (KAN-515)', () => {
+  const toggleHeading: Block = { id: 'b-toggle', type: 'text', content: '## ingredients', toggle: true }
+  const childOne: Block = { id: 'b-child-1', type: 'text', content: 'flour' }
+  const childTwo: Block = { id: 'b-child-2', type: 'text', content: 'water' }
+
+  const foldButtonIn = (row: HTMLElement) =>
+    within(row).getByRole('button', { name: /^(fold|unfold)$/ })
+
+  it('starts open; clicking the chevron hides the siblings, clicking again restores them', async () => {
+    const user = userEvent.setup()
+    renderCanvas([toggleHeading, childOne, childTwo])
+
+    const headingRow = rowOf('b-toggle')
+    const chevron = foldButtonIn(headingRow)
+    expect(chevron).toHaveAttribute('aria-expanded', 'true')
+    expect(document.getElementById('block-b-child-1')).toBeInTheDocument()
+    expect(document.getElementById('block-b-child-2')).toBeInTheDocument()
+
+    await user.click(chevron)
+
+    expect(foldButtonIn(rowOf('b-toggle'))).toHaveAttribute('aria-expanded', 'false')
+    expect(document.getElementById('block-b-child-1')).not.toBeInTheDocument()
+    expect(document.getElementById('block-b-child-2')).not.toBeInTheDocument()
+
+    await user.click(foldButtonIn(rowOf('b-toggle')))
+
+    expect(foldButtonIn(rowOf('b-toggle'))).toHaveAttribute('aria-expanded', 'true')
+    expect(document.getElementById('block-b-child-1')).toBeInTheDocument()
+    expect(document.getElementById('block-b-child-2')).toBeInTheDocument()
+  })
+})
