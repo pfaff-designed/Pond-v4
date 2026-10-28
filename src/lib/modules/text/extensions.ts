@@ -1,6 +1,7 @@
 import { Extension, type Extensions } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
 import { Heading } from '@tiptap/extension-heading'
+import { Strike } from '@tiptap/extension-strike'
 import { HEADING_CHORDS } from './markup'
 
 /** What the autolinker may turn into a link — the same shapes the markdown parser links. */
@@ -39,6 +40,16 @@ const HeadingWithChords = Heading.extend({
  * is tight (no blank line between items) and which bullet it was written with.
  * Kept on the node so an edit elsewhere in the block doesn't rewrite the list.
  */
+/**
+ * Strike bound to ⌘⇧X (the spec's chord) only — StarterKit's own default
+ * (`Mod-Shift-s`) is dropped outright, not kept alongside it.
+ */
+const StrikeWithChord = Strike.extend({
+  addKeyboardShortcuts() {
+    return { 'Mod-Shift-x': () => this.editor.commands.toggleStrike() }
+  },
+})
+
 const MarkdownListAttributes = Extension.create({
   name: 'markdownListAttributes',
   addGlobalAttributes: () => [
@@ -63,6 +74,7 @@ const MarkdownListAttributes = Extension.create({
 export const proseExtensions: Extensions = [
   StarterKit.configure({
     heading: false,
+    strike: false,
     underline: false,
     trailingNode: false,
     link: {
@@ -74,5 +86,6 @@ export const proseExtensions: Extensions = [
     },
   }),
   HeadingWithChords,
+  StrikeWithChord,
   MarkdownListAttributes,
 ]
