@@ -77,12 +77,7 @@ import { setRailMinimized, toggleRail, useRailMinimized } from '@/lib/layout/rai
 import { requestRailRowFocus } from '@/lib/layout/rail-focus'
 import { PLACEMENT } from '@/lib/layout/shell-placement'
 import { useZenCommands } from '@/lib/layout/use-zen-commands'
-import {
-  openWorkspaceUrl,
-  opensSameWorkspaceLocation,
-  workspaceUrl,
-  type WorkspaceNodeRef,
-} from '@/lib/pages/nav'
+import { openWorkspaceUrl, workspaceUrl, type WorkspaceNodeRef } from '@/lib/pages/nav'
 import { requestTitleFocus } from '@/lib/pages/title-focus'
 import { flushPendingPageSave } from '@/lib/pages/page-flush'
 import { moveAndStageUndo } from '@/lib/pages/move'
@@ -677,17 +672,17 @@ export function ShellCommands() {
       const target = step.id === LIFE_ID ? null : resolveHistoryTarget(step.id)
       if (step.id !== LIFE_ID && !target) return
       const url = workspaceUrl(target)
-      // A step that lands back on the URL already open (e.g. forward back
-      // onto the current page after a no-op back across a deleted mid-stack
-      // entry) makes `openWorkspaceUrl` itself no-op — no `currentNodeId`
-      // change ever follows to flip `ownNavRef` back off. Skip setting it
-      // before the call, not after, so a later real visit's `recordVisit`
-      // is never swallowed by a flag stuck from a navigation that never happened.
-      if (opensSameWorkspaceLocation(url)) return
-      ownNavRef.current = true
+      // Whether this step moves `currentNodeId` depends on the id, not the
+      // URL: a rename leaves the URL's `nodeName` stale while the id stays
+      // put, so a stepped-to id equal to the one already open still pushes a
+      // URL (to refresh the stale name) but must never set `ownNavRef` — the
+      // effect below only re-runs when `currentNodeId` itself changes, so a
+      // same-id step would never run again to clear a flag set here, and it
+      // would stick through the next real visit (dropping its `recordVisit`).
+      if (step.id !== (currentNodeId ?? LIFE_ID)) ownNavRef.current = true
       openWorkspaceUrl(url, router)
     },
-    [resolveHistoryTarget, router]
+    [currentNodeId, resolveHistoryTarget, router]
   )
 
   const goBack = useCallback(() => {

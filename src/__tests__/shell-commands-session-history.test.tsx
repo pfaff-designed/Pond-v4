@@ -155,4 +155,51 @@ describe('ShellCommands — ⌘K back/forward steps the session-history stack (K
 
     pushStateSpy.mockRestore()
   })
+
+  it('still records a real visit after a rename leaves the URL name stale through a forward step', async () => {
+    const pushStateSpy = jest.spyOn(window.history, 'pushState')
+    const { rerender } = render(shell())
+
+    // Open A (seeds the stack), B, then C.
+    nodeId = 'page-b'
+    window.history.replaceState({}, '', workspaceUrl({ id: 'page-b', type: 'page', title: 'Beta' }))
+    rerender(shell())
+    nodeId = 'page-c'
+    window.history.replaceState({}, '', workspaceUrl({ id: 'page-c', type: 'page', title: 'Gamma' }))
+    rerender(shell())
+
+    // C is renamed (e.g. from another device) without a navigation of its
+    // own — `window.location`'s `nodeName` stays the old title, same as this
+    // app leaves it since nothing re-opens the current page on a title edit.
+    pagesData = pagesData.map((p) => (p.id === 'page-c' ? { ...p, title: 'Gamma II' } : p))
+    rerender(shell())
+
+    // B is removed mid-stack while still on C.
+    pagesData = pagesData.filter((p) => p.id !== 'page-b')
+    rerender(shell())
+
+    // Back steps onto the now-gone B — a no-op, the cursor still moves.
+    await selectFromPalette(rerender, 'back', /^>\s*back\s/)
+    // Forward steps back onto C — same id as `currentNodeId`, but the URL's
+    // stale name makes `openWorkspaceUrl` push anyway; `ownNavRef` must not
+    // stick from it.
+    await selectFromPalette(rerender, 'forward', /^>\s*forward\s/)
+
+    // A real external visit to a new page, D.
+    nodeId = 'page-d'
+    window.history.replaceState({}, '', workspaceUrl({ id: 'page-d', type: 'page', title: 'Delta' }))
+    rerender(shell())
+
+    const callsBeforeBack = pushStateSpy.mock.calls.length
+    await selectFromPalette(rerender, 'back', /^>\s*back\s/)
+    // If D's visit was recorded, back from D reaches C.
+    expect(pushStateSpy.mock.calls.length).toBeGreaterThan(callsBeforeBack)
+    expect(pushStateSpy).toHaveBeenLastCalledWith(
+      null,
+      '',
+      workspaceUrl({ id: 'page-c', type: 'page', title: 'Gamma II' })
+    )
+
+    pushStateSpy.mockRestore()
+  })
 })
