@@ -188,8 +188,21 @@ async function openBoardSource(): Promise<HTMLElement> {
   await screen.findByRole('listbox', { name: 'blocks' })
   writeInTextBlock(editor, '/board')
   const menu = await screen.findByRole('listbox', { name: 'blocks' })
-  fireEvent.click(within(menu).getByRole('option', { name: 'board' }))
+  // `rowByLabel`, not a raw `getByRole` name match: a row's accessible name
+  // picks up its own sibling "↵" hint once the row is the active one (KAN-554
+  // surfaced this calling `openBoardSource` twice in one test — the second
+  // call's row is pre-selected and so its full name is "board ↵").
+  fireEvent.click(rowByLabel(menu, 'board'))
   return screen.findByRole('listbox', { name: '/board' })
+}
+
+/** Types into the `project` step's own typeahead (no `<input>` — the glass
+ *  reads printable keys off `document`, per `SourcePicker.tsx`), so a second
+ *  `/board` on the same page can mint a DIFFERENTLY-named option than the
+ *  page title's preselected row (KAN-554's cross-contamination case needs
+ *  two distinct options on one page). */
+function typeProjectQuery(text: string) {
+  for (const key of text) fireEvent.keyDown(document, { key })
 }
 
 /** Files a card into `lane` by title (KAN-536's own helper, mirrored here so
@@ -346,5 +359,50 @@ describe('a view insert writes one ⌘Z step whose side effects match its databa
     const schemaAfterUndo = readSchema(database!.props)!
     const projectFieldAfterUndo = schemaAfterUndo.find((f) => f.name === 'project')!
     expect(projectFieldAfterUndo.options!.some((o) => o.id === option.id)).toBe(true)
+  })
+
+  it('undoing the FIRST of two sequential new-project boards drops only its own option, never the later one (KAN-554)', async () => {
+    const sb = makeFakeSupabase([])
+    mockCreateClient.mockReturnValue(sb)
+    const rememberSpy = jest.spyOn(sessionUndo, 'rememberPending')
+
+    renderCanvas([])
+
+    // Garden — minted first.
+    const gardenSource = await openBoardSource()
+    fireEvent.click(within(gardenSource).getByRole('option', { name: /^tasks/ }))
+    const gardenStep = await screen.findByRole('listbox', { name: '/board — tasks' })
+    typeProjectQuery('garden')
+    fireEvent.click(within(gardenStep).getByText('new project — garden'))
+    expect(await screen.findByText('tasks · garden')).toBeInTheDocument()
+    await waitFor(() => expect(rememberSpy).toHaveBeenCalledTimes(1))
+
+    // Kitchen — minted second, onto the schema Garden's own option already sits in.
+    const kitchenSource = await openBoardSource()
+    fireEvent.click(within(kitchenSource).getByRole('option', { name: /^tasks/ }))
+    const kitchenStep = await screen.findByRole('listbox', { name: '/board — tasks' })
+    typeProjectQuery('kitchen')
+    fireEvent.click(within(kitchenStep).getByText('new project — kitchen'))
+    expect(await screen.findByText('tasks · kitchen')).toBeInTheDocument()
+    await waitFor(() => expect(rememberSpy).toHaveBeenCalledTimes(2))
+
+    const database = [...sb._pages.values()].find((p) => p.props._role === 'tasks')!
+    const projectField = readSchema(database.props)!.find((f) => f.name === 'project')!
+    const gardenOption = projectField.options!.find((o) => o.label === 'garden')!
+    const kitchenOption = projectField.options!.find((o) => o.label === 'kitchen')!
+    expect(gardenOption).toBeDefined()
+    expect(kitchenOption).toBeDefined()
+
+    // The FIRST insert's own `onUndone` — called directly, the same way a ⌘Z
+    // that actually reached the stack's bottom step would, without needing to
+    // first pop Kitchen's still-live step off the top (session-undo is LIFO;
+    // this reaches past that to the one callback the fix touches).
+    const gardenOnUndone = rememberSpy.mock.calls[0][0].onUndone!
+    await gardenOnUndone()
+
+    const schemaAfterUndo = readSchema(database.props)!
+    const projectFieldAfterUndo = schemaAfterUndo.find((f) => f.name === 'project')!
+    expect(projectFieldAfterUndo.options!.some((o) => o.id === gardenOption.id)).toBe(false)
+    expect(projectFieldAfterUndo.options!.some((o) => o.id === kitchenOption.id)).toBe(true)
   })
 })

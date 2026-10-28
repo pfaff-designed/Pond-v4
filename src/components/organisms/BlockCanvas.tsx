@@ -203,7 +203,7 @@ import { insertPageOptimistic } from '@/lib/pages/tree'
 import { pagesKey } from '@/lib/pages/keys'
 import { usePagesRows } from '@/lib/pages/use-pages'
 import { flushPendingPageSave } from '@/lib/pages/page-flush'
-import { addOption, readSchema, readValues, withSchema } from '@/lib/properties/schema'
+import { addOption, readSchema, readValues, removeOption, withSchema } from '@/lib/properties/schema'
 import type { ViewBlock } from '@/lib/modules/view/schema'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { usePondId } from '@/lib/pond/context'
@@ -2288,9 +2288,17 @@ export function BlockCanvas({
                       (r) => readValues(r.props)[projectField.id] === mintedOptionId
                     )
                     if (stillUsed) return
-                    await defineSchema(supabase, tasksId, schema)
+                    // Read the LIVE schema, not the pre-mint `schema` this closure
+                    // captured: a later `/board` could have added its own option
+                    // (or any other schema edit) since this gesture ran, and
+                    // `defineSchema`-ing back to the snapshot would wipe that too.
+                    // Only `mintedOptionId` itself ever comes off.
+                    const page = await getPage(supabase, tasksId)
+                    const currentSchema = page ? readSchema(page.props) ?? [] : []
+                    const nextSchema = removeOption(currentSchema, projectField.id, mintedOptionId)
+                    await defineSchema(supabase, tasksId, nextSchema)
                     queryClient.setQueryData<PondPage | null>(['page', tasksId], (prev) =>
-                      prev ? { ...prev, props: withSchema(prev.props, schema) } : prev
+                      prev ? { ...prev, props: withSchema(prev.props, nextSchema) } : prev
                     )
                   } catch (err) {
                     console.error('Failed to remove the unused project option', tasksId, err)
