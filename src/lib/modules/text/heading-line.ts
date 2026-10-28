@@ -24,3 +24,14 @@ export function opensOnAHeading(content: string): boolean {
   const firstLine = content.split('\n', 1)[0] ?? ''
   return HEADING_LINE.test(firstLine)
 }
+
+/**
+ * The heading level (1-6) a block's prose opens on, or `null` if it doesn't
+ * (KAN-515's `heading-fold.ts` is the one caller: it needs the level, not just
+ * the yes/no `opensOnAHeading` gives).
+ */
+export function headingLevelOfLine(content: string): number | null {
+  const firstLine = content.split('\n', 1)[0] ?? ''
+  const match = HEADING_LINE.exec(firstLine)
+  return match ? match[1].length : null
+}
