@@ -285,6 +285,18 @@ export function raiseRecordCard(recordId: string) {
 }
 
 /**
+ * "Open the selection bar's link field from ⌘K" (KAN-465). `ShellCommands`
+ * asks when ⌘K fires over a live text selection; `SelectionBar` owns the
+ * only mounted link field and answers — the same decoupling as
+ * `requestComposerToggle`, so `ShellCommands` never imports `SelectionBar`.
+ */
+export const SELECTION_LINK_EVENT = 'pond:selection-link'
+
+export function requestSelectionLink() {
+  window.dispatchEvent(new CustomEvent(SELECTION_LINK_EVENT))
+}
+
+/**
  * "Open the pages picker for one block's `move to…`" (KAN-479). The block
  * menu's row asks; `ShellCommands` owns the only mounted `PondCommand` and
  * answers by opening it in block-pick mode — the same decoupling as

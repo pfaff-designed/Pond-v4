@@ -29,6 +29,7 @@ import {
   type FormatReader,
   type TextStyle,
 } from '@/lib/modules/text/format'
+import { SELECTION_LINK_EVENT } from '@/lib/terminal-focus'
 
 import { GLASS, SLASH_SIZES } from './picker-chrome'
 import { ICON } from './slash-entries'
@@ -524,11 +525,7 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
     setLinkActive(editor.isActive('link'))
   }
 
-  const handleLinkClick = () => {
-    if (linkActive) {
-      applyMark(unsetLink)()
-      return
-    }
+  const openLinkMode = useCallback(() => {
     const sel = window.getSelection()
     const editor = sel && editableEditorForSelection(sel)
     if (!editor) return
@@ -537,7 +534,23 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
     linkTargetRef.current = { editor, from, to }
     setLinkHref('')
     setLinkMode(true)
+  }, [])
+
+  const handleLinkClick = () => {
+    if (linkActive) {
+      applyMark(unsetLink)()
+      return
+    }
+    openLinkMode()
   }
+
+  // ⌘K over a live selection (`ShellCommands`'s keydown handler) opens the
+  // link field the same as the bar's own button — a no-op with nothing shown.
+  useEffect(() => {
+    if (!ctx) return
+    window.addEventListener(SELECTION_LINK_EVENT, openLinkMode)
+    return () => window.removeEventListener(SELECTION_LINK_EVENT, openLinkMode)
+  }, [ctx, openLinkMode])
 
   // Returns the caret to the text the link was opened on.
   const closeLinkField = (apply: boolean) => {

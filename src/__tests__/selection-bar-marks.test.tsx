@@ -12,6 +12,7 @@ import { SelectionBar, type SelectionContext } from '@/components/molecules/Sele
 import { registerTextEditor } from '@/lib/modules/text/active-editor'
 import { proseExtensions } from '@/lib/modules/text/extensions'
 import { serializeMarkdown } from '@/lib/modules/text/markdown'
+import { requestSelectionLink } from '@/lib/terminal-focus'
 import { clearSelection, selectWord } from './helpers/selection'
 
 function Host({
@@ -326,5 +327,23 @@ describe('SelectionBar link', () => {
 
     expect(serializeMarkdown(editor!.state.doc)).toBe('soak overnight')
     expect(screen.getByRole('button', { name: 'link' })).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('opens the link field, focused, when SELECTION_LINK_EVENT fires over a shown selection', () => {
+    render(<Host onAsk={jest.fn()} onEditor={() => {}} />)
+
+    selectWord(screen.getByText('soak overnight'), 'overnight')
+    act(() => requestSelectionLink())
+
+    const field = screen.getByRole('textbox', { name: 'link address' })
+    expect(field).toHaveFocus()
+  })
+
+  it('does nothing when SELECTION_LINK_EVENT fires with no selection shown', () => {
+    render(<Host onAsk={jest.fn()} onEditor={() => {}} />)
+
+    act(() => requestSelectionLink())
+
+    expect(screen.queryByRole('textbox', { name: 'link address' })).not.toBeInTheDocument()
   })
 })
