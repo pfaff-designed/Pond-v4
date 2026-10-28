@@ -7,10 +7,12 @@
 import { paletteEntries } from '@/components/molecules/palette-entries'
 import {
   ASK_POND_ACTION,
+  BACK_ACTION,
   DEEP_RESEARCH_ACTION,
   DELETE_PAGE_ACTION,
   DUPLICATE_PAGE_ACTION,
   FAVOURITE_PAGE_ACTION,
+  FORWARD_ACTION,
   IMPORT_A_PAGE_ACTION,
   modeItems,
   MOVE_PAGE_ACTION,
@@ -408,5 +410,21 @@ describe('paletteItems — ask pond’s key matches the composer’s own ⌘J', 
     onPlatform('Win32')
     const askPond = paletteItems([], []).find((item) => item.id === ASK_POND_ACTION.id)
     expect(askPond?.key).toBe('Ctrl J')
+  })
+})
+
+describe('paletteItems — back/forward’s keys match ⌘[ / ⌘]', () => {
+  it('shows the Apple glyphs on a Mac', () => {
+    onPlatform('MacIntel')
+    const items = paletteItems([], [])
+    expect(items.find((item) => item.id === BACK_ACTION.id)?.key).toBe('⌘[')
+    expect(items.find((item) => item.id === FORWARD_ACTION.id)?.key).toBe('⌘]')
+  })
+
+  it('shows the Ctrl words off a Mac', () => {
+    onPlatform('Win32')
+    const items = paletteItems([], [])
+    expect(items.find((item) => item.id === BACK_ACTION.id)?.key).toBe('Ctrl [')
+    expect(items.find((item) => item.id === FORWARD_ACTION.id)?.key).toBe('Ctrl ]')
   })
 })

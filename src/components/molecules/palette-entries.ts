@@ -53,6 +53,8 @@ export type PaletteAction =
   | 'report-a-problem'
   | 'minimize-rail'
   | 'show-rail'
+  | 'go-back'
+  | 'go-forward'
   | ZenAction
 
 export interface PaletteItem {

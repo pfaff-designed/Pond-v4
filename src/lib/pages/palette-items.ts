@@ -79,6 +79,29 @@ export const DEEP_RESEARCH_ACTION: PaletteItem = {
 }
 
 /**
+ * KAN-568: the session's own back/forward stack (`lib/pages/session-history.ts`),
+ * not `window.history` — a standing pair beside the shell's other actions, listed
+ * unconditionally like `DEEP_RESEARCH_ACTION` just above: a press with nothing to
+ * step to is a legitimate no-op, not an impossible state to gate out.
+ *
+ * No `key` baked in here — like `ASK_POND_ACTION`, `paletteItems()` spreads a
+ * live `formatChord` read onto the row at call time, so the chord's glyph
+ * tracks the platform rather than whatever it was at module load.
+ */
+export const BACK_ACTION: PaletteItem = {
+  id: 'action:back',
+  label: 'back',
+  kind: 'action',
+  action: 'go-back',
+}
+export const FORWARD_ACTION: PaletteItem = {
+  id: 'action:forward',
+  label: 'forward',
+  kind: 'action',
+  action: 'go-forward',
+}
+
+/**
  * 6z's fourth door into the composer's html attach — board `Pond 06.25 Import
  * a page.dc.html` frame 1. Stands beside the shell's other two actions
  * unconditionally; the host opens the file chooser filtered to `.html`/`.htm`.
@@ -226,6 +249,8 @@ export function paletteItems(
     NEW_PAGE_ACTION,
     { ...ASK_POND_ACTION, key: formatChord('mod+j') },
     DEEP_RESEARCH_ACTION,
+    { ...BACK_ACTION, key: formatChord('mod+[') },
+    { ...FORWARD_ACTION, key: formatChord('mod+]') },
     ...(openPageId ? [SAVE_AS_TEMPLATE_ACTION] : []),
     ...(openPage && isDuplicablePageRow(openPage) ? [DUPLICATE_PAGE_ACTION] : []),
     ...(openPage && isMovablePageRow(openPage) ? [MOVE_PAGE_ACTION] : []),

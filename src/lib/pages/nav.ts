@@ -139,11 +139,25 @@ export interface WorkspaceNavRouter {
  * already handles for a cross-page `pushState` (`block-link.ts`), landing
  * again instead of leaving the selection cleared.
  */
+/**
+ * Whether opening `url` from here would be the no-op `openWorkspaceUrl` below
+ * takes (same pathname+search, so it never calls `pushState`) — exposed so a
+ * caller that sets a flag ahead of the call (ShellCommands' `ownNavRef`,
+ * KAN-568) can tell whether the navigation it is about to trigger will
+ * actually move `currentNodeId`, rather than keeping its own copy of this
+ * check.
+ */
+export function opensSameWorkspaceLocation(url: string): boolean {
+  if (window.location.pathname !== WORKSPACE_PATH) return false
+  const target = new URL(url, window.location.href)
+  const current = `${window.location.pathname}${window.location.search}`
+  return `${target.pathname}${target.search}` === current
+}
+
 export function openWorkspaceUrl(url: string, router: WorkspaceNavRouter): void {
   if (window.location.pathname === WORKSPACE_PATH) {
     const target = new URL(url, window.location.href)
-    const current = `${window.location.pathname}${window.location.search}`
-    if (`${target.pathname}${target.search}` === current) {
+    if (opensSameWorkspaceLocation(url)) {
       if (target.hash) {
         if (target.hash !== window.location.hash) {
           window.location.hash = target.hash

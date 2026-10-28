@@ -359,10 +359,12 @@ describe('paletteItems — every value from the owner that already derives it', 
     expect(by.tx).toMatchObject({ kind: 'database', sub: DATABASES_ROOT_TITLE })
     expect(by.dbs.kind).toBe('page')
     expect(by.loose).toMatchObject({ label: 'Untitled', sub: undefined, path: [] })
-    expect(items.slice(-3).map((i) => [i.label, i.action])).toEqual([
+    expect(items.slice(-5).map((i) => [i.label, i.action])).toEqual([
       ['new page', 'new-page'],
       ['ask pond', 'ask-pond'],
       ['deep research', 'deep-research'],
+      ['back', 'go-back'],
+      ['forward', 'go-forward'],
     ])
   })
 
