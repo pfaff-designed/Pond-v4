@@ -10,8 +10,14 @@
  * `duplicate-page-path.test.tsx` — only the RPC boundary (`movePage`,
  * `undoStep`) is faked.
  *
- * SCOPE CUT (orchestrator split): the delete-page walk is a different
- * ticket's path and is not walked here.
+ * KAN-567 adds the delete-page walk below: ⌘K's "delete page" row, with
+ * "roof" nested under "house" (not a sibling) so "the parent" PATH_STEPS
+ * opens is a real page, not home. Same "fake the table, not the cache"
+ * shape — `trashPageUnlinked`'s underlying RPC (`@/lib/change-log/trash`'s
+ * `trashPage`) is faked at that boundary rather than mocking
+ * `trashPageUnlinked` itself, but it never actually fires here: undo is
+ * clicked well inside the 6s grace window, so the deferred commit is
+ * cancelled before it would call it (same as `rail-staged-ids.test.tsx`).
  */
 
 import React from 'react'
@@ -29,9 +35,19 @@ import { undoStep } from '@/lib/change-log/undo'
 import type { MoveSnapshot } from '@/lib/change-log/types'
 import type { Pond } from '@/lib/pond/client'
 
+// `mock`-prefixed so jest's out-of-scope check lets the factory below close
+// over it — a stable fn, not a fresh `jest.fn()` per `useRouter()` call, so
+// the delete-page test can read which url the open page's own delete pushed.
+const mockPush = jest.fn()
+
 jest.mock('next/navigation', () => ({
-  useRouter: () => ({ push: jest.fn() }),
+  useRouter: () => ({ push: mockPush }),
   useSearchParams: () => ({ get: (key: string) => (key === 'nodeId' ? 'roof' : null) }),
+}))
+
+jest.mock('@/lib/change-log/trash', () => ({
+  ...jest.requireActual('@/lib/change-log/trash'),
+  trashPage: jest.fn().mockResolvedValue(undefined),
 }))
 
 jest.mock('@/lib/supabase/client', () => ({
@@ -261,5 +277,44 @@ describe('⌘K\'s "move page to…" row opens the identical picker (KAN-469)', (
 
     expect(await screen.findByRole('option', { name: /^House$/ })).toBeInTheDocument()
     expect(screen.queryByRole('option', { name: /^Roof$/ })).toBeNull()
+  })
+})
+
+describe('⌘K\'s "delete page" row deletes the open page and stages undo (KAN-567)', () => {
+  beforeEach(() => {
+    // "roof" nested under "house" — a real page, not home, is the parent
+    // PATH_STEPS opens.
+    table = [
+      { id: 'house', parent_id: null, type: 'page', title: 'House', order: 0, updated_at: AT },
+      { id: 'roof', parent_id: 'house', type: 'page', title: 'Roof', order: 0, updated_at: AT },
+    ]
+  })
+
+  it('walks PATH_STEPS: ⌘K, delete page, ↵, toast + nav to the parent, rail removal, undo restores + reopens', async () => {
+    const user = userEvent.setup()
+    renderPath()
+
+    await screen.findByRole('treeitem', { name: 'Roof' })
+
+    await user.keyboard('{Meta>}k{/Meta}')
+    const input = await screen.findByRole('combobox', { name: 'command palette' })
+    await user.type(input, 'delete')
+    await screen.findByRole('option', { name: /delete page/ })
+    await user.keyboard('{Enter}')
+
+    expect(await screen.findByText('deleted Roof ·')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'undo' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'open' })).not.toBeInTheDocument()
+
+    await waitFor(() => expect(mockPush).toHaveBeenCalled())
+    expect(mockPush.mock.calls.at(-1)?.[0]).toContain('nodeId=house')
+
+    expect(screen.queryByRole('treeitem', { name: 'Roof' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'undo' }))
+
+    expect(screen.queryByText('deleted Roof ·')).not.toBeInTheDocument()
+    await screen.findByRole('treeitem', { name: 'Roof' })
+    expect(mockPush.mock.calls.at(-1)?.[0]).toContain('nodeId=roof')
   })
 })
