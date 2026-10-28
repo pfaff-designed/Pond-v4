@@ -70,6 +70,9 @@ const ALLOWED = new Set([
   // KAN-480: Notion's own row (Mobbin 8cbe99a8, b8778e0e) — the board draws no
   // row for this type either.
   'toggle',
+  // KAN-463: Notion's own row (Mobbin 3c855d1d) — the board draws no row for
+  // linking an existing page either.
+  'link to page',
 ])
 
 function renderMenu(overrides: Partial<React.ComponentProps<typeof SlashMenu>> = {}) {
@@ -228,6 +231,24 @@ describe('a row is a preset, and every registered type reaches the menu', () => 
     expect(slashRows.map((r) => r.label)).not.toContain('nested page')
   })
 
+  // KAN-463: the row lists and ranks beside `page`, but mints nothing yet —
+  // `use-slash-pick`'s `mintPreset`/`placement` branches both fall through on a
+  // row with neither, so a pick today is a no-op.
+  it('`link to page` lists right after `page`, is matched by `/link`, and is not wired to any action yet', () => {
+    const row = slashRows.find((r) => r.id === 'link-to-page')
+    expect(row).toMatchObject({ group: 'pages', label: 'link to page' })
+    expect(row?.type).toBeUndefined()
+    expect(row?.placement).toBeUndefined()
+    const pagesIds = slashRows.filter((r) => r.group === 'pages').map((r) => r.id)
+    expect(pagesIds).toEqual(['page', 'link-to-page'])
+    expect(BOARD_ORDER.indexOf('link-to-page')).toBe(BOARD_ORDER.indexOf('page') + 1)
+
+    renderMenu({ query: 'link' })
+    expect(options().map((o) => labelOf(o as HTMLElement))).toEqual(['link to page'])
+
+    expect(mintPreset('link-to-page')).toBeNull()
+  })
+
   it('leaves out the two rows nothing can serve: `page link` and `pond — update`', () => {
     const labels = slashRows.map((r) => r.label)
     expect(labels).not.toContain('page link')
@@ -287,6 +308,7 @@ describe('a row is a preset, and every registered type reaches the menu', () => 
       'blocks/table of contents',
       'templates/page from template',
       'pages/page',
+      'pages/link to page',
     ])
   })
 
@@ -812,7 +834,7 @@ describe('keys arrive from the field the person is typing in', () => {
     fireEvent.keyDown(anchor, { key: 'ArrowUp' })
     expect(labelOf(selected())).toBe('text')
     for (let i = 0; i < 30; i++) fireEvent.keyDown(anchor, { key: 'ArrowDown' })
-    expect(labelOf(selected())).toBe('page')
+    expect(labelOf(selected())).toBe('link to page')
   })
 
   it('esc keeps the typed text: it closes the menu and does not touch the field', () => {
