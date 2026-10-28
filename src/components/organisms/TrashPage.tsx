@@ -195,6 +195,13 @@ export function TrashPage() {
   // paginated client-side, below.
   const { data: trashData, isLoading: recordsLoading } = useQuery({
     queryKey: trashKey(pondId),
+    // Another tab can trash/restore the same pond's pages with no shared
+    // `QueryClient` to learn from, so this table's only signal is its own
+    // open/focus — the app-wide 30s `staleTime` (`providers.tsx`) would
+    // silently swallow both for the first 30 seconds after any mount.
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: 'always',
     queryFn: async (): Promise<TrashRecords> => {
       const supabase = getSupabase()
       const {

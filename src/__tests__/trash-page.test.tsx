@@ -99,6 +99,17 @@ function renderPage() {
   )
 }
 
+/** The app's own `QueryClient` (`providers.tsx`) — a 30s `staleTime` default,
+ *  which is exactly what would swallow a remount/focus refetch under 30s old
+ *  if `TrashPage`'s own query didn't override it. */
+function renderPageWithAppDefaults(client: QueryClient) {
+  return render(
+    <QueryClientProvider client={client}>
+      <TrashPage />
+    </QueryClientProvider>
+  )
+}
+
 beforeEach(() => {
   jest.clearAllMocks()
   mockExistingPageIds.mockImplementation(async (_supabase, ids: string[]) => new Set(ids))
@@ -428,5 +439,43 @@ describe('TrashPage', () => {
 
     expect(await screen.findByTestId('trash-empty')).toBeInTheDocument()
     expect(screen.getByText('trash')).toHaveFocus()
+  })
+
+  it('refetches on remount within the global 30s staleTime (KAN-565)', async () => {
+    mockListRecords.mockResolvedValue([record()])
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: 30 * 1000 } },
+    })
+
+    const { unmount } = renderPageWithAppDefaults(client)
+    await screen.findAllByTestId('trash-row')
+    expect(mockListRecords).toHaveBeenCalledTimes(1)
+
+    unmount()
+    renderPageWithAppDefaults(client)
+    await screen.findAllByTestId('trash-row')
+
+    expect(mockListRecords).toHaveBeenCalledTimes(2)
+  })
+
+  it('refetches on window focus within the global 30s staleTime (KAN-565)', async () => {
+    mockListRecords.mockResolvedValue([record()])
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: 30 * 1000 } },
+    })
+
+    renderPageWithAppDefaults(client)
+    await screen.findAllByTestId('trash-row')
+    expect(mockListRecords).toHaveBeenCalledTimes(1)
+
+    // react-query's own focus manager listens for `visibilitychange`, not a
+    // `focus` event — this is the actual signal a tab regaining focus fires.
+    await act(async () => {
+      fireEvent(window, new Event('visibilitychange'))
+    })
+
+    await waitFor(() => {
+      expect(mockListRecords).toHaveBeenCalledTimes(2)
+    })
   })
 })
