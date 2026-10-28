@@ -58,6 +58,20 @@ export const editableEditorForSelection = (sel: Selection): Editor | null => {
   return null
 }
 
+/**
+ * True when `window.getSelection()` is a non-collapsed, non-empty text
+ * selection owned end-to-end by one registered, editable text-block editor —
+ * the same read `SelectionBar`'s own `onSelectionChange` already does. The
+ * one fact `ShellCommands` (⌘K link-vs-palette) and `SelectionBar` both need,
+ * read from here instead of each re-deriving it.
+ */
+export const hasEditableTextSelection = (): boolean => {
+  const sel = window.getSelection()
+  if (!sel || sel.isCollapsed || !sel.rangeCount) return false
+  if (!sel.toString().trim()) return false
+  return editableEditorForSelection(sel) !== null
+}
+
 /** The registered editor for a given block id, or null if that block isn't mounted. */
 export const editorForBlock = (blockId: string): Editor | null => {
   for (const [editor, id] of editors) {
