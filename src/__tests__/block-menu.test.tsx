@@ -1371,6 +1371,29 @@ describe('a toggle heading folds the blocks under it (KAN-515)', () => {
     expect(document.getElementById('block-b-child-1')).toBeInTheDocument()
     expect(document.getElementById('block-b-child-2')).toBeInTheDocument()
   })
+
+  it('ArrowDown from a folded toggle heading skips its hidden siblings and selects the next visible row', () => {
+    const foldedHeading: Block = {
+      id: 'b-toggle',
+      type: 'text',
+      content: '## ingredients',
+      toggle: true,
+      folded: true,
+    }
+    const hiddenOne: Block = { id: 'b-hidden-1', type: 'text', content: 'flour' }
+    const hiddenTwo: Block = { id: 'b-hidden-2', type: 'text', content: 'water' }
+    const nextHeading: Block = { id: 'b-next', type: 'text', content: '## method' }
+    renderCanvas([foldedHeading, hiddenOne, hiddenTwo, nextHeading])
+
+    expect(document.getElementById('block-b-hidden-1')).not.toBeInTheDocument()
+    expect(document.getElementById('block-b-hidden-2')).not.toBeInTheDocument()
+
+    const headingRow = rowOf('b-toggle')
+    act(() => headingRow.focus())
+    fireEvent.keyDown(headingRow, { key: 'ArrowDown' })
+
+    expect(rowOf('b-next')).toHaveFocus()
+  })
 })
 
 describe('PATH_STEPS: turn into toggle heading, fold, unfold, turn back into a heading (KAN-515)', () => {
