@@ -209,4 +209,93 @@ describe('RailFavouritesBand', () => {
 
     expect(onReorder).not.toHaveBeenCalled()
   })
+
+  it('⌥↓ on a focused row swaps it with the row below, same as dragging it there', () => {
+    const nodeById = new Map([
+      ['groceries', node('groceries', 'groceries')],
+      ['house', node('house', 'house')],
+      ['roof', node('roof', 'roof')],
+    ])
+    const onReorder = jest.fn()
+    render(
+      <RailFavouritesBand
+        ids={['groceries', 'house', 'roof']}
+        nodeById={nodeById}
+        marks={NO_MARKS}
+        onReorder={onReorder}
+      />
+    )
+    const [groceriesRow] = screen.getAllByRole('listitem')
+
+    fireEvent.keyDown(groceriesRow, { key: 'ArrowDown', altKey: true })
+
+    expect(onReorder).toHaveBeenCalledTimes(1)
+    expect(onReorder).toHaveBeenCalledWith(['house', 'groceries', 'roof'])
+  })
+
+  it('⌥↑ on a focused row swaps it with the row above, same as dragging it there', () => {
+    const nodeById = new Map([
+      ['groceries', node('groceries', 'groceries')],
+      ['house', node('house', 'house')],
+      ['roof', node('roof', 'roof')],
+    ])
+    const onReorder = jest.fn()
+    render(
+      <RailFavouritesBand
+        ids={['groceries', 'house', 'roof']}
+        nodeById={nodeById}
+        marks={NO_MARKS}
+        onReorder={onReorder}
+      />
+    )
+    const [, , roofRow] = screen.getAllByRole('listitem')
+
+    fireEvent.keyDown(roofRow, { key: 'ArrowUp', altKey: true })
+
+    expect(onReorder).toHaveBeenCalledTimes(1)
+    expect(onReorder).toHaveBeenCalledWith(['groceries', 'roof', 'house'])
+  })
+
+  it('⌥↑ on the top row and ⌥↓ on the bottom row call nothing (no sibling to swap with)', () => {
+    const nodeById = new Map([
+      ['groceries', node('groceries', 'groceries')],
+      ['house', node('house', 'house')],
+    ])
+    const onReorder = jest.fn()
+    render(
+      <RailFavouritesBand
+        ids={['groceries', 'house']}
+        nodeById={nodeById}
+        marks={NO_MARKS}
+        onReorder={onReorder}
+      />
+    )
+    const [groceriesRow, houseRow] = screen.getAllByRole('listitem')
+
+    fireEvent.keyDown(groceriesRow, { key: 'ArrowUp', altKey: true })
+    fireEvent.keyDown(houseRow, { key: 'ArrowDown', altKey: true })
+
+    expect(onReorder).not.toHaveBeenCalled()
+  })
+
+  it('ArrowDown without altKey calls nothing (not the same key the band listens for)', () => {
+    const nodeById = new Map([
+      ['groceries', node('groceries', 'groceries')],
+      ['house', node('house', 'house')],
+    ])
+    const onReorder = jest.fn()
+    render(
+      <RailFavouritesBand
+        ids={['groceries', 'house']}
+        nodeById={nodeById}
+        marks={NO_MARKS}
+        onReorder={onReorder}
+      />
+    )
+    const [groceriesRow] = screen.getAllByRole('listitem')
+
+    fireEvent.keyDown(groceriesRow, { key: 'ArrowDown' })
+
+    expect(onReorder).not.toHaveBeenCalled()
+  })
 })

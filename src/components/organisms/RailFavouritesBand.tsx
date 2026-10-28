@@ -19,7 +19,7 @@
  * a plain `<button>`.
  */
 
-import type { DragEvent, MouseEvent } from 'react'
+import type { DragEvent, KeyboardEvent, MouseEvent } from 'react'
 import { useState } from 'react'
 import { PondMolecule } from '@/components/molecules/PondMolecule'
 import type { MarkSource } from '@/lib/pages/mark'
@@ -119,6 +119,19 @@ export function RailFavouritesBand({
     setDropTarget(null)
   }
 
+  /** ⌥↑/⌥↓ on a focused row — the same adjacent-swap a one-row drag onto the
+   *  row above/below produces, against the live (rendered) sibling rather
+   *  than a raw id that may be a dead/unresolved entry. */
+  const handleKeyDown = (id: string, e: KeyboardEvent<HTMLAnchorElement>) => {
+    if (!onReorder || !e.altKey) return
+    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
+    e.preventDefault()
+    const index = rows.findIndex((node) => node.id === id)
+    const sibling = rows[e.key === 'ArrowUp' ? index - 1 : index + 1]
+    if (!sibling) return
+    onReorder(reorderFavouriteIds(ids, id, sibling.id, e.key === 'ArrowUp' ? 'before' : 'after'))
+  }
+
   if (rows.length === 0) return null
 
   return (
@@ -162,6 +175,7 @@ export function RailFavouritesBand({
             onDragLeave={onReorder ? (e) => handleDragLeave(node.id, e) : undefined}
             onDrop={onReorder ? (e) => handleDrop(node.id, e) : undefined}
             onDragEnd={onReorder ? handleDragEnd : undefined}
+            onKeyDown={onReorder ? (e) => handleKeyDown(node.id, e) : undefined}
             className={`group relative mx-2 flex w-[calc(100%-16px)] items-center rounded-mn-row ${ROW_GAP_PY_PR} pl-1 text-left outline-none ${ROW_FOCUS_RING} ${
               isSelected ? ROW_SELECTED_FILL : ROW_HOVER_FILL_ON_HOVER
             } ${isDragging ? 'opacity-[.35]' : ''}`}
