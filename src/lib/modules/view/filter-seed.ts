@@ -64,3 +64,21 @@ export function filterHead(name: string, schema: PropertySchema, filter?: ViewFi
   const label = filterOptionLabel(schema, filter)
   return label ? `${name} · ${label}` : name
 }
+
+/** `project` is the literal fallback name: `valueLabel` only ever comes from the
+ *  tasks database's project filter (KAN-554), so it's the only field this applies to. */
+const FALLBACK_FIELD_NAME = 'project'
+
+/** The named empty line when a filter's `valueLabel` no longer resolves to a live
+ *  option (option deleted, or the field itself gone) — or undefined otherwise,
+ *  including every filter written before `valueLabel` existed. */
+export function missingFilterLine(schema: PropertySchema, filter?: ViewFilter): string | undefined {
+  if (!filter?.valueLabel) return undefined
+  const def = defById(schema, filter.property)
+  if (!def) return `no ${FALLBACK_FIELD_NAME} “${filter.valueLabel}” any more`
+  if (def.type !== 'select' && def.type !== 'status') return undefined
+  const optionId = resolveOptionValue(def, filter.value)
+  const option = (def.options ?? []).find((o) => o.id === optionId)
+  if (option) return undefined
+  return `no ${def.name} “${filter.valueLabel}” any more`
+}

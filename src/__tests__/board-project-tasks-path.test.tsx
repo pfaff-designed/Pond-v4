@@ -14,6 +14,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import type { Block } from '@/lib/documents/types'
+import type { ViewBlock } from '@/lib/modules/view/schema'
 import { readSchema, ROW_TYPE } from '@/lib/properties/schema'
 import { TASKS_ROLE } from '@/lib/pages/tasks-database'
 import type { PageRow } from '@/lib/pages/tree'
@@ -51,27 +52,56 @@ const sb = makeFakeSupabase([])
 
 /** `BlockCanvas` is controlled — a harness re-renders it with `onChange`'s
  *  next array, the same way the KAN-351 precedent's does. `pageTitle` is a
- *  parameter so a later `it` in this file can walk a second page. */
-function Harness({ initial, pageTitle }: { initial: Block[]; pageTitle: string }) {
+ *  parameter so a later `it` in this file can walk a second page.
+ *  `onBlocksChange` (optional) mirrors every `onChange` call out to the
+ *  caller — `persistBlocksAsOwnEdit` never reaches `sb` for this harness (no
+ *  `onStructuralWrite`), so the inserted view block's `filter.valueLabel`
+ *  can only be read back this way. */
+function Harness({
+  initial,
+  pageTitle,
+  onBlocksChange,
+}: {
+  initial: Block[]
+  pageTitle: string
+  onBlocksChange?: (next: Block[]) => void
+}) {
   const [blocks, setBlocks] = React.useState(initial)
   return (
-    <BlockCanvas blocks={blocks} pageId="page-1" pageTitle={pageTitle} onChange={setBlocks} />
+    <BlockCanvas
+      blocks={blocks}
+      pageId="page-1"
+      pageTitle={pageTitle}
+      onChange={(next) => {
+        setBlocks(next)
+        onBlocksChange?.(next)
+      }}
+    />
   )
 }
 
-function renderCanvasWithClient(client: QueryClient, pageTitle: string, blocks: Block[] = []) {
+function renderCanvasWithClient(
+  client: QueryClient,
+  pageTitle: string,
+  blocks: Block[] = [],
+  onBlocksChange?: (next: Block[]) => void
+) {
   return render(
     <QueryClientProvider client={client}>
       <DeletionUndoProvider>
-        <Harness initial={blocks} pageTitle={pageTitle} />
+        <Harness initial={blocks} pageTitle={pageTitle} onBlocksChange={onBlocksChange} />
       </DeletionUndoProvider>
     </QueryClientProvider>
   )
 }
 
-function renderCanvas(pageTitle: string, blocks: Block[] = []) {
+function renderCanvas(
+  pageTitle: string,
+  blocks: Block[] = [],
+  onBlocksChange?: (next: Block[]) => void
+) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return renderCanvasWithClient(client, pageTitle, blocks)
+  return renderCanvasWithClient(client, pageTitle, blocks, onBlocksChange)
 }
 
 beforeEach(() => {
@@ -132,7 +162,10 @@ async function addTaskInLane(lane: HTMLElement, title: string) {
 
 describe('a board over the shared tasks database, filtered to its project (KAN-536)', () => {
   it('/board → tasks → new project lands a board whose added card carries the project', async () => {
-    const { container } = renderCanvas('Home Reno')
+    let latestBlocks: Block[] = []
+    const { container } = renderCanvas('Home Reno', [], (next) => {
+      latestBlocks = next
+    })
 
     fireEvent.click(await screen.findByTestId('trailing-block-gap'))
     const editor = await findTextBlock()
@@ -177,6 +210,9 @@ describe('a board over the shared tasks database, filtered to its project (KAN-5
       (p) => p.type === ROW_TYPE && p.parent_id === database.id
     )!
     expect((record.props as Record<string, unknown>)[projectField.id]).toBe(option.id)
+
+    const view = latestBlocks.find((b) => b.type === 'view') as ViewBlock
+    expect(view.filter?.valueLabel).toBe('Home Reno')
   })
 
   it('a second project board is its own empty view; the first keeps only its own card; /table over the existing database shows both', async () => {

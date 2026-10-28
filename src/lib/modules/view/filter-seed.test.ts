@@ -1,4 +1,4 @@
-import { filterHead, seedFromFilter } from './filter-seed'
+import { filterHead, missingFilterLine, seedFromFilter } from './filter-seed'
 import type { ViewFilter } from './schema'
 import type { PropertySchema } from '@/lib/properties/schema'
 
@@ -166,5 +166,38 @@ describe('filterHead', () => {
     ],
   ])('%s', (_label, filter, expected) => {
     expect(filterHead('tasks', schema, filter)).toBe(expected)
+  })
+})
+
+describe('missingFilterLine', () => {
+  it.each<[string, ViewFilter | undefined, string | undefined]>([
+    ['no filter → undefined', undefined, undefined],
+    [
+      'no valueLabel (legacy filter) → undefined',
+      { property: 'p-project', op: 'eq', value: 'o-reno' },
+      undefined,
+    ],
+    [
+      'field present, option present → undefined',
+      { property: 'p-project', op: 'eq', value: 'o-reno', valueLabel: 'Home Reno' },
+      undefined,
+    ],
+    [
+      'field present, option gone → the named line using def.name',
+      { property: 'p-project', op: 'eq', value: 'o-gone', valueLabel: 'Home Reno' },
+      'no project “Home Reno” any more',
+    ],
+    [
+      'field gone entirely → the named line using the literal fallback "project"',
+      { property: 'p-missing', op: 'eq', value: 'o-reno', valueLabel: 'Home Reno' },
+      'no project “Home Reno” any more',
+    ],
+    [
+      'non-choice field type → undefined',
+      { property: 'p-done', op: 'eq', value: 'true', valueLabel: 'Home Reno' },
+      undefined,
+    ],
+  ])('%s', (_label, filter, expected) => {
+    expect(missingFilterLine(schema, filter)).toBe(expected)
   })
 })

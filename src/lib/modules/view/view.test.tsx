@@ -13,7 +13,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { SiblingBlocksProvider } from '@/lib/modules/sibling-context'
 import { BlockRowProvider } from '@/lib/modules/block-row-context'
-import { ViewView } from './view'
+import { CollectionView, ViewView } from './view'
 import { BOARD_EMPTY_LINE, CALENDAR_EMPTY_LINE, LAYOUT_MENU_MODES, VIEW_KINDS } from './kinds'
 import { ActiveViewSelectionContext } from './active-view-context'
 import type { Block } from '@/lib/documents/types'
@@ -160,6 +160,71 @@ beforeEach(() => {
   applyRowValue = () => {}
   initialRows = []
   initialSchema = dateless
+})
+
+describe('CollectionView — a filter whose option (or field) is gone names the empty line (KAN-554)', () => {
+  const projectSchema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    {
+      id: 'p-status',
+      name: 'Status',
+      type: 'status',
+      options: [{ id: 'o-todo', label: 'Todo' }],
+    },
+    {
+      id: 'p-project',
+      name: 'project',
+      type: 'select',
+      options: [{ id: 'o-web', label: 'Web design' }],
+    },
+  ]
+  const rows: CollectionRow[] = [
+    {
+      id: 'r1',
+      title: 'Paint the fence',
+      values: { 'p-status': 'o-todo', 'p-project': 'o-web' },
+    },
+  ]
+  const board: ViewBlock = {
+    id: 'v-board',
+    type: 'view',
+    mode: 'board',
+    groupBy: 'p-status',
+  }
+
+  it('draws the named line instead of the board, when the filter names a deleted option', () => {
+    render(
+      <CollectionView
+        config={{
+          ...board,
+          filter: { property: 'p-project', op: 'eq', value: 'o-gone', valueLabel: 'Home Reno' },
+        }}
+        schema={projectSchema}
+        rows={rows}
+      />
+    )
+
+    expect(screen.getByText('no project “Home Reno” any more')).toBeInTheDocument()
+    expect(screen.queryByText('Paint the fence')).not.toBeInTheDocument()
+    expect(screen.queryByText('Todo')).not.toBeInTheDocument()
+  })
+
+  it('draws the same line when the filter names a field gone entirely', () => {
+    render(
+      <CollectionView
+        config={{
+          ...board,
+          filter: { property: 'p-missing', op: 'eq', value: 'o-gone', valueLabel: 'Home Reno' },
+        }}
+        schema={projectSchema}
+        rows={rows}
+      />
+    )
+
+    expect(screen.getByText('no project “Home Reno” any more')).toBeInTheDocument()
+    expect(screen.queryByText('Paint the fence')).not.toBeInTheDocument()
+    expect(screen.queryByText('Todo')).not.toBeInTheDocument()
+  })
 })
 
 describe('ViewView — the "add a date field" remedy reaches the page (KAN-292)', () => {

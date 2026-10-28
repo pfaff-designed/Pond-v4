@@ -34,6 +34,35 @@ function tasksRow(
   }
 }
 
+/**
+ * `getOrCreateTasksDatabase`'s own select has no `deleted_at` filter — in
+ * production a trashed row is invisible to it because Postgres RLS hides
+ * trashed rows from a plain select, transparently to the application code.
+ * The shared fake doesn't model RLS, so this wraps one client's `pages`
+ * reads only, confined to this test file, to prove a seeded trashed row
+ * really is invisible to the query rather than just absent from the seed.
+ */
+function hidingTrashedPagesFromSelect(
+  sb: ReturnType<typeof makeFakeSupabase>
+): ReturnType<typeof makeFakeSupabase> {
+  const realFrom = sb.from
+  sb.from = jest.fn((table?: string) => {
+    const builder = realFrom(table)
+    if (table !== 'pages') return builder
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const anyBuilder = builder as any
+    const realThen = anyBuilder.then.bind(anyBuilder)
+    anyBuilder.then = (resolve: (v: { data: Row[] | null; error: null }) => unknown) =>
+      realThen((result: { data: Row[] | null; error: null }) =>
+        resolve(
+          result.data ? { ...result, data: result.data.filter((r) => !r.deleted_at) } : result
+        )
+      )
+    return anyBuilder
+  }) as typeof sb.from
+  return sb
+}
+
 describe('TASKS_FIELDS', () => {
   it('is the board defaults plus a project tag field, in order', () => {
     expect(TASKS_FIELDS.map((f) => f.name)).toEqual([
@@ -146,6 +175,34 @@ describe('getOrCreateTasksDatabase', () => {
       spy.mockRestore()
       setNodeEnv(prev)
     }
+  })
+
+  it('makes a new tasks database when the existing role row is invisible to the query (RLS-trashed)', async () => {
+    const trashedRole = tasksRow('trashed-role', '2020-01-01T00:00:00.000Z')
+    trashedRole.deleted_at = '2026-10-20T00:00:00.000Z'
+    const sb = hidingTrashedPagesFromSelect(makeFakeSupabase([existingRoot, trashedRole]))
+
+    const made = await getOrCreateTasksDatabase(sb as never, null)
+
+    expect(made.id).not.toBe('trashed-role')
+    expect(sb._pages.get(made.id)!.props._role).toBe('tasks')
+    // The trashed row is untouched — never reused, never removed by this call.
+    expect(sb._pages.has('trashed-role')).toBe(true)
+  })
+
+  it('two different ponds each get their own tasks database', async () => {
+    const sb = makeFakeSupabase([existingRoot])
+
+    const pondA = await getOrCreateTasksDatabase(sb as never, 'pond-a')
+    const pondB = await getOrCreateTasksDatabase(sb as never, 'pond-b')
+
+    expect(pondA.id).not.toBe(pondB.id)
+    expect(sb._pages.get(pondA.id)!.pond_id).toBe('pond-a')
+    expect(sb._pages.get(pondB.id)!.pond_id).toBe('pond-b')
+
+    // Calling again for pond A reuses its own, never pond B's.
+    const pondAAgain = await getOrCreateTasksDatabase(sb as never, 'pond-a')
+    expect(pondAAgain.id).toBe(pondA.id)
   })
 
   it('adds the project field, as an own edit, when the found role database lacks one', async () => {

@@ -187,6 +187,7 @@ import {
   createPage,
   defineSchema,
   deletePage,
+  getCollectionRows,
   getPage,
   saveProps,
   type PondPage,
@@ -202,7 +203,7 @@ import { insertPageOptimistic } from '@/lib/pages/tree'
 import { pagesKey } from '@/lib/pages/keys'
 import { usePagesRows } from '@/lib/pages/use-pages'
 import { flushPendingPageSave } from '@/lib/pages/page-flush'
-import { addOption, readSchema, withSchema } from '@/lib/properties/schema'
+import { addOption, readSchema, readValues, removeOption, withSchema } from '@/lib/properties/schema'
 import type { ViewBlock } from '@/lib/modules/view/schema'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { usePondId } from '@/lib/pond/context'
@@ -2203,6 +2204,10 @@ export function BlockCanvas({
         // guarantees a real one.
         const projectField = projectFieldOf(schema)
         if (!projectField) throw new Error('The tasks database has no project field')
+        // Captured before `optionId` is reassigned below: only a pick that mints a
+        // brand-new option gets undone back out of the schema (never one that
+        // already existed before this gesture).
+        const mintedOption = !pick.project.id
         let optionId = pick.project.id ?? null
         let finalSchema = schema
         if (!optionId) {
@@ -2250,11 +2255,88 @@ export function BlockCanvas({
           mode: 'board',
           collectionId: tasksId,
           ...(statusField ? { groupBy: statusField.id } : {}),
-          ...(optionId ? { filter: { property: projectField.id, op: 'eq', value: optionId } } : {}),
+          ...(optionId
+            ? {
+                filter: {
+                  property: projectField.id,
+                  op: 'eq',
+                  value: optionId,
+                  valueLabel: pick.project.label,
+                },
+              }
+            : {}),
         }
         const landing = placeView(view, open.target)
         queryClient.invalidateQueries({ queryKey: pagesKey() })
-        void persistBlocksAsOwnEdit(landing.next)
+        // Only a minted option gets `onUndone`/`onRedone` — an existing option
+        // (and the shared database either way) is never touched by this
+        // block's undo/redo.
+        const mintedOptionId = optionId
+        void persistBlocksAsOwnEdit(landing.next, {
+          ...(mintedOption && mintedOptionId
+            ? {
+                onUndone: async () => {
+                  try {
+                    const supabase = getSupabase()
+                    const {
+                      data: { user },
+                    } = await supabase.auth.getUser()
+                    if (!user) return
+                    const rows = await getCollectionRows(supabase, user.id, tasksId)
+                    const stillUsed = rows.some(
+                      (r) => readValues(r.props)[projectField.id] === mintedOptionId
+                    )
+                    if (stillUsed) return
+                    // Read the LIVE schema, not the pre-mint `schema` this closure
+                    // captured: a later `/board` could have added its own option
+                    // (or any other schema edit) since this gesture ran, and
+                    // `defineSchema`-ing back to the snapshot would wipe that too.
+                    // Only `mintedOptionId` itself ever comes off.
+                    const page = await getPage(supabase, tasksId)
+                    const currentSchema = page ? readSchema(page.props) ?? [] : []
+                    const nextSchema = removeOption(currentSchema, projectField.id, mintedOptionId)
+                    await defineSchema(supabase, tasksId, nextSchema)
+                    queryClient.setQueryData<PondPage | null>(['page', tasksId], (prev) =>
+                      prev ? { ...prev, props: withSchema(prev.props, nextSchema) } : prev
+                    )
+                  } catch (err) {
+                    console.error('Failed to remove the unused project option', tasksId, err)
+                  }
+                },
+                // Mirror of `onUndone`: a redo that brought the block back
+                // without its option would otherwise leave the board on the
+                // "no project … any more" notice forever, since nothing else
+                // ever re-adds the option. Re-mints it under the SAME id/label
+                // so the filter (already carrying `mintedOptionId`) resolves
+                // again — only when the id is still missing, since a record
+                // added after the undo (and so never removed) means it's
+                // already there.
+                onRedone: async () => {
+                  try {
+                    const supabase = getSupabase()
+                    const page = await getPage(supabase, tasksId)
+                    const currentSchema = page ? readSchema(page.props) ?? [] : []
+                    const field = currentSchema.find((d) => d.id === projectField.id)
+                    const alreadyThere = field?.options?.some((o) => o.id === mintedOptionId)
+                    if (alreadyThere) return
+                    const restored = addOption(
+                      currentSchema,
+                      projectField.id,
+                      pick.project.label,
+                      () => mintedOptionId
+                    )
+                    if (!restored.optionId) return
+                    await defineSchema(supabase, tasksId, restored.schema)
+                    queryClient.setQueryData<PondPage | null>(['page', tasksId], (prev) =>
+                      prev ? { ...prev, props: withSchema(prev.props, restored.schema) } : prev
+                    )
+                  } catch (err) {
+                    console.error('Failed to restore the project option', tasksId, err)
+                  }
+                },
+              }
+            : {}),
+        })
       } catch (err) {
         console.error('Failed to make the tasks board', err)
         notify("Couldn't make the tasks board")

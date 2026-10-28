@@ -365,6 +365,23 @@ export function addOption(
 }
 
 /**
+ * Drop one option, by id, off a `select`/`status` field (KAN-554: undoing the
+ * `/board` project mint when no task still carries it). A field whose id
+ * doesn't match (or isn't `select`/`status`) returns the schema unchanged.
+ */
+export function removeOption(
+  schema: PropertySchema,
+  fieldId: string,
+  optionId: string
+): PropertySchema {
+  return schema.map((d) =>
+    d.id === fieldId && (d.type === 'select' || d.type === 'status')
+      ? { ...d, options: (d.options ?? []).filter((o) => o.id !== optionId) }
+      : d
+  )
+}
+
+/**
  * Rename one property by id (KAN-380: the table header's rename row). A missing
  * `id` leaves `schema` unchanged — the caller checks {@link isFieldNameTaken}
  * before writing, so this never needs to refuse a collision itself.

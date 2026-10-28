@@ -38,7 +38,7 @@ import { useCollectionRows } from './use-collection-rows'
 import { useStruckRows } from '@/lib/change-log/undo-strike'
 import { DIFF_REMOVAL_TEXT_CLASSNAME, PondMolecule } from '@/components/molecules/PondMolecule'
 import { activeSavedView, applyConfigPatch } from './schema'
-import { seedFromFilter, filterHead } from './filter-seed'
+import { seedFromFilter, filterHead, missingFilterLine } from './filter-seed'
 import { ActiveViewSelectionContext, SavedViewHostContext } from './active-view-context'
 import { SavedViewBar } from './saved-view-bar'
 import {
@@ -664,6 +664,27 @@ export function CollectionView({
       />
     ) : (
       <ViewNotice>{line}</ViewNotice>
+    )
+  }
+
+  // KAN-554: the filter named an option that no longer exists (or a field that's
+  // gone entirely) — draw that named line instead of any mode component, the same
+  // preemption as the "collection unavailable" notice above. Never falls back to
+  // showing every record: that would silently widen the view past what it was
+  // scoped to.
+  const missingLine = missingFilterLine(schema, activeConfig.filter)
+  if (missingLine) {
+    return chartCard ? (
+      <CollectionChart
+        config={activeConfig}
+        schema={null}
+        rows={[]}
+        totalRows={0}
+        errorLine={missingLine}
+        provenance={chartProvenance}
+      />
+    ) : (
+      <ViewNotice>{missingLine}</ViewNotice>
     )
   }
 
