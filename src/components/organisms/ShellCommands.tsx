@@ -77,7 +77,12 @@ import { setRailMinimized, toggleRail, useRailMinimized } from '@/lib/layout/rai
 import { requestRailRowFocus } from '@/lib/layout/rail-focus'
 import { PLACEMENT } from '@/lib/layout/shell-placement'
 import { useZenCommands } from '@/lib/layout/use-zen-commands'
-import { openWorkspaceUrl, workspaceUrl, type WorkspaceNodeRef } from '@/lib/pages/nav'
+import {
+  openWorkspaceUrl,
+  opensSameWorkspaceLocation,
+  workspaceUrl,
+  type WorkspaceNodeRef,
+} from '@/lib/pages/nav'
 import { requestTitleFocus } from '@/lib/pages/title-focus'
 import { flushPendingPageSave } from '@/lib/pages/page-flush'
 import { moveAndStageUndo } from '@/lib/pages/move'
@@ -671,8 +676,16 @@ export function ShellCommands() {
       sessionHistoryRef.current = step.state
       const target = step.id === LIFE_ID ? null : resolveHistoryTarget(step.id)
       if (step.id !== LIFE_ID && !target) return
+      const url = workspaceUrl(target)
+      // A step that lands back on the URL already open (e.g. forward back
+      // onto the current page after a no-op back across a deleted mid-stack
+      // entry) makes `openWorkspaceUrl` itself no-op — no `currentNodeId`
+      // change ever follows to flip `ownNavRef` back off. Skip setting it
+      // before the call, not after, so a later real visit's `recordVisit`
+      // is never swallowed by a flag stuck from a navigation that never happened.
+      if (opensSameWorkspaceLocation(url)) return
       ownNavRef.current = true
-      openWorkspaceUrl(workspaceUrl(target), router)
+      openWorkspaceUrl(url, router)
     },
     [resolveHistoryTarget, router]
   )
