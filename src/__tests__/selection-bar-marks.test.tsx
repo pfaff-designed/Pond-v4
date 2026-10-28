@@ -82,6 +82,28 @@ describe('SelectionBar bold/italic', () => {
     expect(serializeMarkdown(editor!.state.doc)).toBe('soak *overnight*')
     expect(screen.getByRole('button', { name: 'italic' })).toHaveAttribute('aria-pressed', 'true')
   })
+
+  it('strikes the selected word and reads the button as pressed', () => {
+    let editor: Editor | null = null
+    render(<Host onAsk={jest.fn()} onEditor={(e) => (editor = e)} />)
+
+    selectWord(screen.getByText('soak overnight'), 'overnight')
+    fireEvent.click(screen.getByRole('button', { name: 'strike' }))
+
+    expect(serializeMarkdown(editor!.state.doc)).toBe('soak ~~overnight~~')
+    expect(screen.getByRole('button', { name: 'strike' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('marks the selected word as code and reads the button as pressed', () => {
+    let editor: Editor | null = null
+    render(<Host onAsk={jest.fn()} onEditor={(e) => (editor = e)} />)
+
+    selectWord(screen.getByText('soak overnight'), 'overnight')
+    fireEvent.click(screen.getByRole('button', { name: 'code' }))
+
+    expect(serializeMarkdown(editor!.state.doc)).toBe('soak `overnight`')
+    expect(screen.getByRole('button', { name: 'code' })).toHaveAttribute('aria-pressed', 'true')
+  })
 })
 
 describe('SelectionBar list', () => {

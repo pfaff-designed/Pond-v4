@@ -20,7 +20,9 @@ import {
   setTextStyle,
   toggleBold,
   toggleBulletList,
+  toggleCode,
   toggleItalic,
+  toggleStrike,
   setLink,
   unsetLink,
   type ActiveMarks,
@@ -29,6 +31,7 @@ import {
 } from '@/lib/modules/text/format'
 
 import { GLASS, SLASH_SIZES } from './picker-chrome'
+import { ICON } from './slash-entries'
 import { useSelectionBarBox, type SelectionBox } from './selection-bar-position'
 import { useAnchoredBox } from './use-anchored-box'
 
@@ -72,6 +75,8 @@ export type SelectionBarItemId =
   | 'text-style'
   | 'bold'
   | 'italic'
+  | 'strike'
+  | 'code'
   | 'link'
   | 'list'
   | 'highlight'
@@ -90,11 +95,17 @@ export interface SelectionBarItem {
   dividerAfter?: true
 }
 
-/** The ten items, in the board's own order. */
+/**
+ * The board's ten items, in its own order, plus `strike` and `code` — two
+ * marks the board draws no row for (same standing as KAN-462's `/code`),
+ * grouped with the other inline-mark toggles right after `italic`.
+ */
 export const SELECTION_BAR_ITEMS: readonly SelectionBarItem[] = [
   { id: 'text-style', label: 'text', enabled: true, dividerAfter: true },
   { id: 'bold', label: 'bold', enabled: true },
   { id: 'italic', label: 'italic', enabled: true },
+  { id: 'strike', label: 'strike', enabled: true },
+  { id: 'code', label: 'code', enabled: true },
   { id: 'link', label: 'link', enabled: true },
   { id: 'list', label: 'list', enabled: true, dividerAfter: true },
   { id: 'highlight', label: 'highlight', enabled: false },
@@ -162,6 +173,14 @@ const Mark = ({ item, textStyle }: { item: SelectionBarItem; textStyle: TextStyl
       return <span className="text-[14px] font-bold">B</span>
     case 'italic':
       return <span className="font-serif text-[17px] font-extralight italic">I</span>
+    case 'strike':
+      return <span className="text-[14px] line-through">S</span>
+    case 'code':
+      return (
+        <svg {...ICON_14} aria-hidden>
+          <path d={ICON.code.d} />
+        </svg>
+      )
     case 'link':
       return (
         <svg {...ICON_14} aria-hidden>
@@ -227,7 +246,7 @@ const Mark = ({ item, textStyle }: { item: SelectionBarItem; textStyle: TextStyl
   }
 }
 
-const NO_MARKS: ActiveMarks = { bold: false, italic: false }
+const NO_MARKS: ActiveMarks = { bold: false, italic: false, strike: false, code: false }
 
 /** The first enabled item — the toolbar's tab stop until focus moves within it. */
 const FIRST_ITEM_ID: SelectionBarItemId = 'text-style'
@@ -657,6 +676,8 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
   const pressedById: Partial<Record<SelectionBarItemId, boolean>> = {
     bold: marks.bold,
     italic: marks.italic,
+    strike: marks.strike,
+    code: marks.code,
     list: listActive,
     link: linkActive,
   }
@@ -715,15 +736,19 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
                     ? applyMark(toggleBold)
                     : item.id === 'italic'
                       ? applyMark(toggleItalic)
-                      : item.id === 'list'
-                        ? applyMark(toggleBulletList)
-                        : item.id === 'text-style'
-                          ? () => setStyleMenuOpen((open) => !open)
-                          : item.id === 'link'
-                            ? handleLinkClick
-                            : item.id === 'copy'
-                              ? handleCopy
-                              : undefined
+                      : item.id === 'strike'
+                        ? applyMark(toggleStrike)
+                        : item.id === 'code'
+                          ? applyMark(toggleCode)
+                          : item.id === 'list'
+                            ? applyMark(toggleBulletList)
+                            : item.id === 'text-style'
+                              ? () => setStyleMenuOpen((open) => !open)
+                              : item.id === 'link'
+                                ? handleLinkClick
+                                : item.id === 'copy'
+                                  ? handleCopy
+                                  : undefined
               }
               // A selection button isn't where the caret belongs — stop the
               // browser from collapsing the selection onto it before `onClick` runs.

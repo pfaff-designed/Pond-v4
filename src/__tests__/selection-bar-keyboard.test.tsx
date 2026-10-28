@@ -13,7 +13,7 @@ import { proseExtensions } from '@/lib/modules/text/extensions'
 import { escLeavesZen } from '@/lib/layout/zen'
 import { clearSelection, selectWord } from './helpers/selection'
 
-const ENABLED = ['text', 'bold', 'italic', 'link', 'list', 'ask pond', 'copy']
+const ENABLED = ['text', 'bold', 'italic', 'strike', 'code', 'link', 'list', 'ask pond', 'copy']
 
 const renderBar = () => {
   render(<Host onEditor={() => undefined} />)

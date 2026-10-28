@@ -1,7 +1,8 @@
 /**
  * KAN-95 path test: a person opens a page with a text block, drags across
- * some words, sees the selection bar with its ten items in the board's order,
- * and clicks bold — the words are bold in the block's own saved markdown.
+ * some words, sees the selection bar with its twelve items in order (the
+ * board's ten, plus strike and code), and clicks bold — the words are bold
+ * in the block's own saved markdown.
  *
  * Renders the real `DocumentPanel` (the page, its live Tiptap block and its
  * debounced save) with `SelectionBar` mounted beside it exactly as `AITerminal`
@@ -86,7 +87,7 @@ describe('selecting words on a page shows the bar and bold writes to the block',
   })
   afterEach(() => clearSelection())
 
-  it('drags over a word, shows ten items in order, and B saves it as **bold**', async () => {
+  it('drags over a word, shows twelve items in order, and B saves it as **bold**', async () => {
     const user = userEvent.setup()
     renderPage()
     const field = await findTextBlock()
@@ -97,7 +98,7 @@ describe('selecting words on a page shows the bar and bold writes to the block',
     const toolbar = await screen.findByRole('toolbar', { name: 'selection' })
     const buttons = within(toolbar).getAllByRole('button')
     expect(buttons.map(nameOf)).toEqual(SELECTION_BAR_ITEMS.map((item) => item.label))
-    expect(buttons).toHaveLength(10)
+    expect(buttons).toHaveLength(12)
 
     await user.click(within(toolbar).getByRole('button', { name: 'bold' }))
 

@@ -71,11 +71,13 @@ describe('the board draws the ten items in this order (2t)', () => {
     expect(positions).toEqual([...positions].sort((a, b) => a - b))
   })
 
-  it('SELECTION_BAR_ITEMS carries the same ten ids in the same order', () => {
+  it('SELECTION_BAR_ITEMS carries the board’s ten ids, plus strike and code, in order', () => {
     expect(SELECTION_BAR_ITEMS.map((item) => item.id)).toEqual([
       'text-style',
       'bold',
       'italic',
+      'strike',
+      'code',
       'link',
       'list',
       'highlight',
@@ -92,7 +94,7 @@ describe('the board draws the ten items in this order (2t)', () => {
   })
 })
 
-describe('SelectionBar renders the ten items in order', () => {
+describe('SelectionBar renders the twelve items in order', () => {
   afterEach(() => clearSelection())
 
   it('buttons appear in board order, by accessible name', () => {
@@ -104,6 +106,8 @@ describe('SelectionBar renders the ten items in order', () => {
       'text',
       'bold',
       'italic',
+      'strike',
+      'code',
       'link',
       'list',
       'highlight',
