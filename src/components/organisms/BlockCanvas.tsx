@@ -187,6 +187,7 @@ import {
   createPage,
   defineSchema,
   deletePage,
+  getCollectionRows,
   getPage,
   saveProps,
   type PondPage,
@@ -202,7 +203,7 @@ import { insertPageOptimistic } from '@/lib/pages/tree'
 import { pagesKey } from '@/lib/pages/keys'
 import { usePagesRows } from '@/lib/pages/use-pages'
 import { flushPendingPageSave } from '@/lib/pages/page-flush'
-import { addOption, readSchema, withSchema } from '@/lib/properties/schema'
+import { addOption, readSchema, readValues, withSchema } from '@/lib/properties/schema'
 import type { ViewBlock } from '@/lib/modules/view/schema'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { usePondId } from '@/lib/pond/context'
@@ -2203,6 +2204,10 @@ export function BlockCanvas({
         // guarantees a real one.
         const projectField = projectFieldOf(schema)
         if (!projectField) throw new Error('The tasks database has no project field')
+        // Captured before `optionId` is reassigned below: only a pick that mints a
+        // brand-new option gets undone back out of the schema (never one that
+        // already existed before this gesture).
+        const mintedOption = !pick.project.id
         let optionId = pick.project.id ?? null
         let finalSchema = schema
         if (!optionId) {
@@ -2263,7 +2268,37 @@ export function BlockCanvas({
         }
         const landing = placeView(view, open.target)
         queryClient.invalidateQueries({ queryKey: pagesKey() })
-        void persistBlocksAsOwnEdit(landing.next)
+        // Only a minted option gets an `onUndone` — an existing option (and the
+        // shared database either way) is never touched by this block's undo.
+        // No `onRedone`: a redo that leaves the option gone just lands on the
+        // "no project … any more" notice, which is the correct, truthful state.
+        const mintedOptionId = optionId
+        void persistBlocksAsOwnEdit(landing.next, {
+          ...(mintedOption && mintedOptionId
+            ? {
+                onUndone: async () => {
+                  try {
+                    const supabase = getSupabase()
+                    const {
+                      data: { user },
+                    } = await supabase.auth.getUser()
+                    if (!user) return
+                    const rows = await getCollectionRows(supabase, user.id, tasksId)
+                    const stillUsed = rows.some(
+                      (r) => readValues(r.props)[projectField.id] === mintedOptionId
+                    )
+                    if (stillUsed) return
+                    await defineSchema(supabase, tasksId, schema)
+                    queryClient.setQueryData<PondPage | null>(['page', tasksId], (prev) =>
+                      prev ? { ...prev, props: withSchema(prev.props, schema) } : prev
+                    )
+                  } catch (err) {
+                    console.error('Failed to remove the unused project option', tasksId, err)
+                  }
+                },
+              }
+            : {}),
+        })
       } catch (err) {
         console.error('Failed to make the tasks board', err)
         notify("Couldn't make the tasks board")

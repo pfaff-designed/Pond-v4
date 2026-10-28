@@ -27,6 +27,7 @@ import type { Block } from '@/lib/documents/types'
 import { createPageWriter, type PageWriteState } from '@/lib/pages/commit'
 import { createPageWriteQueue } from '@/lib/pages/page-write-queue'
 import type { PageRow } from '@/lib/pages/tree'
+import { readSchema } from '@/lib/properties/schema'
 import { findTextBlock, writeInTextBlock } from './helpers/text-block'
 import { makeFakeSupabase } from './helpers/fake-supabase'
 import { rowByLabel } from './helpers/slash-menu'
@@ -191,6 +192,20 @@ async function openBoardSource(): Promise<HTMLElement> {
   return screen.findByRole('listbox', { name: '/board' })
 }
 
+/** Files a card into `lane` by title (KAN-536's own helper, mirrored here so
+ *  the sibling undo case can put a record on the minted project BEFORE
+ *  undoing, same as `board-project-tasks-path.test.tsx`'s `addTaskInLane`). */
+async function addTaskInLane(lane: HTMLElement, title: string) {
+  fireEvent.click(within(lane).getByRole('button', { name: '＋ task' }))
+  const page = await screen.findByLabelText('Record: Untitled')
+  const titleInput = within(page).getByRole('textbox', { name: 'Record title' })
+  fireEvent.change(titleInput, { target: { value: title } })
+  fireEvent.keyDown(titleInput, { key: 'Enter' })
+  await waitFor(() => {
+    expect(within(lane).getByRole('textbox', { name: 'Card title' })).toHaveValue(title)
+  })
+}
+
 describe('a view insert writes one ⌘Z step whose side effects match its database (KAN-368)', () => {
   it('undoing a view onto a NEW database trashes that database', async () => {
     const sb = makeFakeSupabase([])
@@ -280,11 +295,53 @@ describe('a view insert writes one ⌘Z step whose side effects match its databa
     await waitFor(() => expect(mockAppendOwnEdit).toHaveBeenCalled())
     const database = [...sb._pages.values()].find((p) => p.props._role === 'tasks')
     expect(database).toBeDefined()
+    const projectField = readSchema(database!.props)!.find((f) => f.name === 'project')!
+    const option = projectField.options!.find((o) => o.label === 'trip planning')!
+    expect(option).toBeDefined()
 
     await sessionUndo.undo('pond-1')
 
     await waitFor(() => expect(undoStep).toHaveBeenCalledTimes(1))
     expect(trashPage).not.toHaveBeenCalled()
     expect(restorePage).not.toHaveBeenCalled()
+
+    // KAN-554: no record uses the option this pick minted — undo takes it
+    // back out of the shared database's schema (never the database itself).
+    const schemaAfterUndo = readSchema(database!.props)!
+    const projectFieldAfterUndo = schemaAfterUndo.find((f) => f.name === 'project')!
+    expect((projectFieldAfterUndo.options ?? []).some((o) => o.id === option.id)).toBe(false)
+  })
+
+  it('undoing a view onto the shared TASKS database keeps the minted option when a task already uses it (KAN-554)', async () => {
+    const sb = makeFakeSupabase([])
+    mockCreateClient.mockReturnValue(sb)
+
+    const { container } = renderCanvas([])
+    const source = await openBoardSource()
+    fireEvent.click(within(source).getByRole('option', { name: /^tasks/ }))
+    const projectStep = await screen.findByRole('listbox', { name: '/board — tasks' })
+    fireEvent.click(within(projectStep).getByText('new project — trip planning'))
+
+    await waitFor(() => expect(mockAppendOwnEdit).toHaveBeenCalled())
+    const database = [...sb._pages.values()].find((p) => p.props._role === 'tasks')
+    expect(database).toBeDefined()
+    const projectField = readSchema(database!.props)!.find((f) => f.name === 'project')!
+    const option = projectField.options!.find((o) => o.label === 'trip planning')!
+    expect(option).toBeDefined()
+
+    expect(await screen.findByText('tasks · trip planning')).toBeInTheDocument()
+    const toDoLane = container.querySelector<HTMLElement>('[data-lane="to do"]')!
+    await addTaskInLane(toDoLane, 'pack bags')
+
+    await sessionUndo.undo('pond-1')
+
+    await waitFor(() => expect(undoStep).toHaveBeenCalledTimes(1))
+    expect(trashPage).not.toHaveBeenCalled()
+    expect(restorePage).not.toHaveBeenCalled()
+
+    // A record still carries the minted option — undo must leave it alone.
+    const schemaAfterUndo = readSchema(database!.props)!
+    const projectFieldAfterUndo = schemaAfterUndo.find((f) => f.name === 'project')!
+    expect(projectFieldAfterUndo.options!.some((o) => o.id === option.id)).toBe(true)
   })
 })
