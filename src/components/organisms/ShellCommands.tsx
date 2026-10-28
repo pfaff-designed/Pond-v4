@@ -45,6 +45,7 @@ import {
   requestComposerNotice,
   requestComposerToggle,
   requestHtmlImportPicker,
+  requestSelectionLink,
   requestTerminalFocus,
   requestUndoNotice,
   useUndoNotice,
@@ -65,7 +66,7 @@ import {
 } from '@/lib/shell-commands'
 import { sessionUndo } from '@/lib/change-log/session-undo'
 import { blockLinkUrl } from '@/lib/modules/block-link'
-import { editorHistoryEmptyFor } from '@/lib/modules/text/active-editor'
+import { editorHistoryEmptyFor, hasEditableTextSelection } from '@/lib/modules/text/active-editor'
 import { applyUndoOutcome } from '@/lib/change-log/undo-outcome'
 import { describeChange, describeUndoneEffect } from '@/lib/change-log/page-changes'
 import { getRecord } from '@/lib/change-log/store'
@@ -402,6 +403,11 @@ export function ShellCommands() {
         if (templateSheetOpen) closeTemplateSheet()
         else if (pondSheetOpen) closeNewPondSheet()
         else if (reportOpen) closeReport()
+        // A live text selection answers ⌘K with a link field, not the palette
+        // (KAN-465, following Notion/Linear over the board's "⌘K is the
+        // palette") — `SelectionBar` owns the only mounted link field and
+        // answers; this file never imports it.
+        else if (hasEditableTextSelection()) requestSelectionLink()
         else
           setPaletteOpen((prev) => {
             if (prev) {
