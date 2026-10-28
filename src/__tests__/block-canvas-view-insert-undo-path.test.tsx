@@ -328,6 +328,41 @@ describe('a view insert writes one ⌘Z step whose side effects match its databa
     expect((projectFieldAfterUndo.options ?? []).some((o) => o.id === option.id)).toBe(false)
   })
 
+  it('redoing a view onto the shared TASKS database restores the minted option (KAN-554)', async () => {
+    const sb = makeFakeSupabase([])
+    mockCreateClient.mockReturnValue(sb)
+
+    renderCanvas([])
+    const source = await openBoardSource()
+    fireEvent.click(within(source).getByRole('option', { name: /^tasks/ }))
+    const projectStep = await screen.findByRole('listbox', { name: '/board — tasks' })
+    fireEvent.click(within(projectStep).getByText('new project — trip planning'))
+
+    await waitFor(() => expect(mockAppendOwnEdit).toHaveBeenCalled())
+    expect(await screen.findByText('tasks · trip planning')).toBeInTheDocument()
+    const database = [...sb._pages.values()].find((p) => p.props._role === 'tasks')!
+    const projectField = readSchema(database.props)!.find((f) => f.name === 'project')!
+    const option = projectField.options!.find((o) => o.label === 'trip planning')!
+
+    await sessionUndo.undo('pond-1')
+    await waitFor(() => expect(screen.queryByText('tasks · trip planning')).not.toBeInTheDocument())
+    const schemaAfterUndo = readSchema(database.props)!
+    expect(
+      schemaAfterUndo.find((f) => f.name === 'project')!.options!.some((o) => o.id === option.id)
+    ).toBe(false)
+
+    await sessionUndo.redo('pond-1')
+
+    expect(await screen.findByText('tasks · trip planning')).toBeInTheDocument()
+    const schemaAfterRedo = readSchema(database.props)!
+    expect(
+      schemaAfterRedo.find((f) => f.name === 'project')!.options!.some((o) => o.id === option.id)
+    ).toBe(true)
+    // The option exists again, so the board shows its (empty) lanes rather
+    // than the missing-project notice.
+    await waitFor(() => expect(screen.queryByText(/no project/)).not.toBeInTheDocument())
+  })
+
   it('undoing a view onto the shared TASKS database keeps the minted option when a task already uses it (KAN-554)', async () => {
     const sb = makeFakeSupabase([])
     mockCreateClient.mockReturnValue(sb)

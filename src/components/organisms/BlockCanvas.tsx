@@ -2268,10 +2268,9 @@ export function BlockCanvas({
         }
         const landing = placeView(view, open.target)
         queryClient.invalidateQueries({ queryKey: pagesKey() })
-        // Only a minted option gets an `onUndone` — an existing option (and the
-        // shared database either way) is never touched by this block's undo.
-        // No `onRedone`: a redo that leaves the option gone just lands on the
-        // "no project … any more" notice, which is the correct, truthful state.
+        // Only a minted option gets `onUndone`/`onRedone` — an existing option
+        // (and the shared database either way) is never touched by this
+        // block's undo/redo.
         const mintedOptionId = optionId
         void persistBlocksAsOwnEdit(landing.next, {
           ...(mintedOption && mintedOptionId
@@ -2302,6 +2301,37 @@ export function BlockCanvas({
                     )
                   } catch (err) {
                     console.error('Failed to remove the unused project option', tasksId, err)
+                  }
+                },
+                // Mirror of `onUndone`: a redo that brought the block back
+                // without its option would otherwise leave the board on the
+                // "no project … any more" notice forever, since nothing else
+                // ever re-adds the option. Re-mints it under the SAME id/label
+                // so the filter (already carrying `mintedOptionId`) resolves
+                // again — only when the id is still missing, since a record
+                // added after the undo (and so never removed) means it's
+                // already there.
+                onRedone: async () => {
+                  try {
+                    const supabase = getSupabase()
+                    const page = await getPage(supabase, tasksId)
+                    const currentSchema = page ? readSchema(page.props) ?? [] : []
+                    const field = currentSchema.find((d) => d.id === projectField.id)
+                    const alreadyThere = field?.options?.some((o) => o.id === mintedOptionId)
+                    if (alreadyThere) return
+                    const restored = addOption(
+                      currentSchema,
+                      projectField.id,
+                      pick.project.label,
+                      () => mintedOptionId
+                    )
+                    if (!restored.optionId) return
+                    await defineSchema(supabase, tasksId, restored.schema)
+                    queryClient.setQueryData<PondPage | null>(['page', tasksId], (prev) =>
+                      prev ? { ...prev, props: withSchema(prev.props, restored.schema) } : prev
+                    )
+                  } catch (err) {
+                    console.error('Failed to restore the project option', tasksId, err)
                   }
                 },
               }
