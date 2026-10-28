@@ -29,6 +29,7 @@ import {
   useSessionUndo,
 } from '@/lib/change-log/session-undo'
 import type { ChangeLogRow } from '@/lib/change-log/types'
+import { clearPendingReorder, rememberReorder, takePendingReorder } from '@/lib/pond/favourites-undo'
 
 const POND = 'pond-1'
 const OTHER_POND = 'pond-2'
@@ -252,6 +253,53 @@ describe('createSessionUndo', () => {
     store.remember({ pondId: POND, recordIds: [] })
 
     expect(store.getSnapshot(POND).canUndo).toBe(false)
+  })
+
+  // KAN-569: a favourites reorder never rides this stack (no `target_page_id`
+  // to key against) — it keeps its own pending-undo slot in `favourites-undo.ts`.
+  // A later REAL step for the same pond must still clear that slot, so an
+  // intervening page edit doesn't leave a stale reorder for the next ⌘Z.
+  describe('clears a pond’s pending favourites reorder', () => {
+    afterEach(() => {
+      clearPendingReorder(POND)
+      clearPendingReorder(OTHER_POND)
+    })
+
+    it('on remember', () => {
+      const { store } = makeStore()
+      rememberReorder(POND, ['a', 'b'])
+
+      store.remember(STEP)
+
+      expect(takePendingReorder(POND)).toBeNull()
+    })
+
+    it('on rememberPending', () => {
+      const { store } = makeStore()
+      rememberReorder(POND, ['a', 'b'])
+
+      store.rememberPending({ pondId: POND, recordIds: new Promise(() => {}) })
+
+      expect(takePendingReorder(POND)).toBeNull()
+    })
+
+    it('leaves another pond’s slot alone', () => {
+      const { store } = makeStore()
+      rememberReorder(OTHER_POND, ['a', 'b'])
+
+      store.remember(STEP)
+
+      expect(takePendingReorder(OTHER_POND)).toEqual(['a', 'b'])
+    })
+
+    it('leaves the slot when the step is ignored (no records)', () => {
+      const { store } = makeStore()
+      rememberReorder(POND, ['a', 'b'])
+
+      store.remember({ pondId: POND, recordIds: [] })
+
+      expect(takePendingReorder(POND)).toEqual(['a', 'b'])
+    })
   })
 
   it('stops notifying once unsubscribed', () => {

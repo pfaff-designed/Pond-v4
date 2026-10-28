@@ -16,6 +16,7 @@
 
 import { useSyncExternalStore } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { clearPendingReorder } from '@/lib/pond/favourites-undo'
 import { redoStep, undoStep, type HistoryStep, type StepResult } from './undo'
 
 export interface SessionUndoSnapshot {
@@ -339,6 +340,11 @@ export const createSessionUndo = (
     history.undo.push(step)
     history.redo.length = 0
     history.generation += 1
+    // A later step for this pond (a page edit, say) must not leave a stale
+    // favourites reorder sitting underneath it for the next ⌘Z to revert to
+    // (KAN-569) — favourites reorders never go through `remember` themselves,
+    // so this only ever clears someone else's pending slot.
+    clearPendingReorder(step.pondId)
     notify(history)
   }
 
