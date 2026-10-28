@@ -19,10 +19,12 @@
  * a plain `<button>`.
  */
 
-import type { MouseEvent } from 'react'
+import type { DragEvent, MouseEvent } from 'react'
+import { useState } from 'react'
 import { PondMolecule } from '@/components/molecules/PondMolecule'
 import type { MarkSource } from '@/lib/pages/mark'
 import { isNewTabClick, workspaceRenderHref } from '@/lib/pages/nav'
+import { reorderFavouriteIds } from '@/lib/pond/favourites'
 import { markAccent } from '@/lib/rail/glyph-library'
 import { markGlyph, rowMark } from '@/lib/rail/row-mark'
 import {
@@ -35,6 +37,9 @@ import {
   ROW_SELECTED_FILL,
 } from '@/lib/rail/row-recipe'
 import { isAreaRow, type RailNode } from '@/lib/rail/tree'
+
+/** Before/after only — the band is flat, so there is no `'into'` zone (KAN-569 `choices`). */
+type FavouriteDropZone = 'before' | 'after'
 
 export interface RailFavouritesBandProps {
   /** Favourite ids in the order they should render (KAN-475: adding appends to the end). */
@@ -49,6 +54,9 @@ export interface RailFavouritesBandProps {
   /** The open page, so its band row reads selected like a tree row. */
   selectedId?: string | null
   onSelect?: (id: string) => void
+  /** Called with the reordered id list on a drop that actually moves a row
+   *  (KAN-569) — absent, or a drop on the dragged row itself, calls nothing. */
+  onReorder?: (next: readonly string[]) => void
 }
 
 /** Absent once every id is dead/unresolved — no empty-looking band renders. */
@@ -59,10 +67,57 @@ export function RailFavouritesBand({
   pondId = null,
   selectedId = null,
   onSelect,
+  onReorder,
 }: RailFavouritesBandProps) {
   const rows = ids
     .map((id) => nodeById.get(id))
     .filter((node): node is RailNode => node !== undefined)
+
+  // Drag-to-reorder (KAN-569) — local to the band, unlike the tree's host-owned
+  // state, because a favourite never reparents and has no ghost-chip/cycle logic.
+  const [draggingId, setDraggingId] = useState<string | null>(null)
+  const [dropTarget, setDropTarget] = useState<{ id: string; zone: FavouriteDropZone } | null>(
+    null
+  )
+
+  /** Two-zone hit-test from the pointer's Y within the row — the tree's
+   *  middle ("into") zone has no meaning on a flat band. */
+  function zoneFor(e: DragEvent<HTMLElement>): FavouriteDropZone {
+    const rect = e.currentTarget.getBoundingClientRect()
+    return (e.clientY - rect.top) / rect.height < 0.5 ? 'before' : 'after'
+  }
+
+  const handleDragStart = (id: string, e: DragEvent<HTMLAnchorElement>) => {
+    setDraggingId(id)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', id) // Firefox requires data to start a drag.
+  }
+
+  const handleDragOver = (id: string, e: DragEvent<HTMLAnchorElement>) => {
+    if (!draggingId || draggingId === id) return // no indicator over the dragged row itself
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    setDropTarget({ id, zone: zoneFor(e) })
+  }
+
+  const handleDragLeave = (id: string, e: DragEvent<HTMLAnchorElement>) => {
+    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return
+    setDropTarget((prev) => (prev?.id === id ? null : prev))
+  }
+
+  const handleDrop = (id: string, e: DragEvent<HTMLAnchorElement>) => {
+    e.preventDefault()
+    const dragged = draggingId
+    const zone = dropTarget?.id === id ? dropTarget.zone : zoneFor(e)
+    setDraggingId(null)
+    setDropTarget(null)
+    if (dragged && dragged !== id) onReorder?.(reorderFavouriteIds(ids, dragged, id, zone))
+  }
+
+  const handleDragEnd = () => {
+    setDraggingId(null)
+    setDropTarget(null)
+  }
 
   if (rows.length === 0) return null
 
@@ -85,6 +140,8 @@ export function RailFavouritesBand({
         const accent = markAccent(mark.role)
         const label = node.title || 'Untitled'
         const href = workspaceRenderHref(node, pondId)
+        const isDragging = draggingId === node.id
+        const zone = dropTarget?.id === node.id ? dropTarget.zone : null
         const handleClick = (e: MouseEvent<HTMLAnchorElement>) => {
           if (isNewTabClick(e)) return
           e.preventDefault()
@@ -98,11 +155,28 @@ export function RailFavouritesBand({
             aria-label={label}
             data-favourite-row={node.id}
             aria-current={isSelected ? 'true' : undefined}
+            draggable={Boolean(onReorder)}
             onClick={handleClick}
+            onDragStart={onReorder ? (e) => handleDragStart(node.id, e) : undefined}
+            onDragOver={onReorder ? (e) => handleDragOver(node.id, e) : undefined}
+            onDragLeave={onReorder ? (e) => handleDragLeave(node.id, e) : undefined}
+            onDrop={onReorder ? (e) => handleDrop(node.id, e) : undefined}
+            onDragEnd={onReorder ? handleDragEnd : undefined}
             className={`group relative mx-2 flex w-[calc(100%-16px)] items-center rounded-mn-row ${ROW_GAP_PY_PR} pl-1 text-left outline-none ${ROW_FOCUS_RING} ${
               isSelected ? ROW_SELECTED_FILL : ROW_HOVER_FILL_ON_HOVER
-            }`}
+            } ${isDragging ? 'opacity-[.35]' : ''}`}
           >
+            {/* Reuses the tree's own drop-line (Rail.tsx) — same inset, same
+                part name — for the band's flat before/after reorder. */}
+            {zone && (
+              <span
+                aria-hidden
+                data-part="drop-line"
+                className={`pointer-events-none absolute right-2 left-[50px] h-0.5 rounded-mn-hair bg-mn-text ${
+                  zone === 'before' ? '-top-px' : '-bottom-px'
+                }`}
+              />
+            )}
             <span className="w-[9px] flex-shrink-0" aria-hidden />
             <PondMolecule
               kind="list-row"
