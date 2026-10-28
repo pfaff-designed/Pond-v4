@@ -293,6 +293,7 @@ describe('a view insert writes one ⌘Z step whose side effects match its databa
     fireEvent.click(within(projectStep).getByText('new project — trip planning'))
 
     await waitFor(() => expect(mockAppendOwnEdit).toHaveBeenCalled())
+    expect(await screen.findByText('tasks · trip planning')).toBeInTheDocument()
     const database = [...sb._pages.values()].find((p) => p.props._role === 'tasks')
     expect(database).toBeDefined()
     const projectField = readSchema(database!.props)!.find((f) => f.name === 'project')!
@@ -305,8 +306,10 @@ describe('a view insert writes one ⌘Z step whose side effects match its databa
     expect(trashPage).not.toHaveBeenCalled()
     expect(restorePage).not.toHaveBeenCalled()
 
-    // KAN-554: no record uses the option this pick minted — undo takes it
-    // back out of the shared database's schema (never the database itself).
+    // PATH_STEP 2 (KAN-554): the view block itself is gone, the minted option
+    // is gone from the schema, and the shared tasks database page is untouched.
+    await waitFor(() => expect(screen.queryByText('tasks · trip planning')).not.toBeInTheDocument())
+    expect(sb._pages.has(database!.id)).toBe(true)
     const schemaAfterUndo = readSchema(database!.props)!
     const projectFieldAfterUndo = schemaAfterUndo.find((f) => f.name === 'project')!
     expect((projectFieldAfterUndo.options ?? []).some((o) => o.id === option.id)).toBe(false)
