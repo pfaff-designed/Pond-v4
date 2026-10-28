@@ -7,7 +7,9 @@ import {
   setTextStyle,
   toggleBold,
   toggleBulletList,
+  toggleCode,
   toggleItalic,
+  toggleStrike,
   unsetLink,
 } from './format'
 import { proseExtensions } from './extensions'
@@ -60,6 +62,44 @@ describe('toggleItalic', () => {
 
     expect(serializeMarkdown(editor.state.doc)).toBe('soak overnight')
     expect(activeMarks(editor).italic).toBe(false)
+
+    editor.destroy()
+  })
+})
+
+describe('toggleStrike', () => {
+  it('strikes a selected range and reports it active, then reverts it off', () => {
+    const editor = mountEditor('<p>soak overnight</p>')
+    selectWord(editor, 'overnight')
+
+    toggleStrike(editor)
+
+    expect(serializeMarkdown(editor.state.doc)).toBe('soak ~~overnight~~')
+    expect(activeMarks(editor).strike).toBe(true)
+
+    toggleStrike(editor)
+
+    expect(serializeMarkdown(editor.state.doc)).toBe('soak overnight')
+    expect(activeMarks(editor).strike).toBe(false)
+
+    editor.destroy()
+  })
+})
+
+describe('toggleCode', () => {
+  it('marks a selected range as code and reports it active, then reverts it off', () => {
+    const editor = mountEditor('<p>soak overnight</p>')
+    selectWord(editor, 'overnight')
+
+    toggleCode(editor)
+
+    expect(serializeMarkdown(editor.state.doc)).toBe('soak `overnight`')
+    expect(activeMarks(editor).code).toBe(true)
+
+    toggleCode(editor)
+
+    expect(serializeMarkdown(editor.state.doc)).toBe('soak overnight')
+    expect(activeMarks(editor).code).toBe(false)
 
     editor.destroy()
   })
