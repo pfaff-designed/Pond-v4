@@ -175,4 +175,60 @@ describe('useFavouritePage', () => {
     expect(setFavourites).toHaveBeenNthCalledWith(1, 'p-life', ['b', 'a'])
     expect(setFavourites).toHaveBeenNthCalledWith(2, 'p-life', ['a', 'b'])
   })
+
+  it('does not resolve a queued reorder until its own write settles, and resolves false on rejection so the slot can be restored', async () => {
+    let resolveDrag: () => void = () => {}
+    setFavourites.mockImplementationOnce(() => new Promise<void>((resolve) => (resolveDrag = resolve)))
+    let rejectUndo: (err: Error) => void = () => {}
+    setFavourites.mockImplementationOnce(() => new Promise<void>((_resolve, reject) => (rejectUndo = reject)))
+
+    const rail = renderHook(() => useFavouritePage())
+    const shellCommands = renderHook(() => useFavouritePage())
+
+    let dragDone: Promise<boolean> = Promise.resolve(true)
+    act(() => {
+      dragDone = rail.result.current.reorder(['b', 'a'])
+    })
+
+    let undoDone: Promise<boolean> = Promise.resolve(true)
+    let undoSettled = false
+    act(() => {
+      undoDone = shellCommands.result.current.reorder(['a', 'b'], { recordUndo: false })
+      undoDone.then(() => {
+        undoSettled = true
+      })
+    })
+
+    // The undo's request is still queued behind the drag's in-flight write —
+    // its own promise must not have resolved yet, however many microtasks
+    // pass, until a real response for its own intent comes back.
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(undoSettled).toBe(false)
+
+    resolveDrag()
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    // The drag's write has now settled, but the undo write it queued behind
+    // is still outstanding — still not resolved.
+    expect(undoSettled).toBe(false)
+
+    rejectUndo(new Error('network down'))
+    let dragOk = false
+    let undoOk = true
+    await act(async () => {
+      ;[dragOk, undoOk] = await Promise.all([dragDone, undoDone])
+    })
+
+    expect(setFavourites).toHaveBeenCalledTimes(2)
+    expect(setFavourites).toHaveBeenNthCalledWith(1, 'p-life', ['b', 'a'])
+    expect(setFavourites).toHaveBeenNthCalledWith(2, 'p-life', ['a', 'b'])
+    expect(dragOk).toBe(true)
+    expect(undoOk).toBe(false)
+  })
 })

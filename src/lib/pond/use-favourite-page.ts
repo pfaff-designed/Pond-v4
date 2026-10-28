@@ -31,12 +31,12 @@ type PatchPond = (id: string, patch: { favouritePageIds?: string[] }) => void
  */
 let desired: string[] | null = null
 let writing = false
+let flushPromise: Promise<void> | null = null
 let rollback: string[] | undefined = undefined
 let pondId: string | null = null
 let patchPondFn: PatchPond | null = null
 
-const flush = async () => {
-  if (writing) return
+const runFlushLoop = async () => {
   writing = true
   try {
     while (desired) {
@@ -49,13 +49,26 @@ const flush = async () => {
       } catch (err) {
         console.error(err)
         patchPondFn?.(id, { favouritePageIds: rollback })
-        desired = null
+        // Only clear what this attempt actually sent — a reorder that
+        // landed in `desired` while this write was in flight (a mid-flight
+        // undo) must still go out, not be dropped by this failure.
+        if (desired === toSend) desired = null
         requestNotify({ message: 'Could not update favourites' })
       }
     }
   } finally {
     writing = false
+    flushPromise = null
   }
+}
+
+// A caller that finds `writing` already true awaits the SAME loop instead
+// of resolving immediately — otherwise its own `reorder`/`toggle` call could
+// report done before the write it just queued (`desired`) ever ran.
+const flush = (): Promise<void> => {
+  if (writing && flushPromise) return flushPromise
+  flushPromise = runFlushLoop()
+  return flushPromise
 }
 
 export function useFavouritePage() {
