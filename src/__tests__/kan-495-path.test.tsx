@@ -762,51 +762,61 @@ describe('KAN-495 path test', () => {
   // PATH_STEPS' acceptance walk, kept last: the real `DocumentPanel` (which
   // renders `BlockCanvas`) plus `ShellCommands`, driven with userEvent/fireEvent.
   it("person's path: type in A, ⌘⌫ on B within the pause, ⌘Z/⌘Z/⇧⌘Z/⇧⌘Z replay in order", async () => {
-    // Its own page id: the earlier tests in this file leave `page-1`'s
-    // module-level queue (`page-flush.ts`) halted or mid-sequence, and a
-    // fresh `it()` must not inherit that (same reasoning as the reload
-    // test's `page-reload` above).
-    activeNodeId = 'page-acceptance'
-    const a: Block = { id: 'b-a', type: 'text', content: 'A text' }
-    const b: Block = { id: 'b-b', type: 'text', content: 'B text' }
-    fakePage.id = 'page-acceptance'
-    renderPath([a, b])
-    await screen.findByLabelText('Page title')
+    // Fake timers so the 600ms EDIT_PAUSE_MS debounce (use-page-draft.ts)
+    // never fires on its own under load — same reasoning as the (b) test
+    // above, needed here because this walk's own ⌘⌫ depends on landing
+    // inside that pause, which real wall-clock drift can miss.
+    jest.useFakeTimers()
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    try {
+      // Its own page id: the earlier tests in this file leave `page-1`'s
+      // module-level queue (`page-flush.ts`) halted or mid-sequence, and a
+      // fresh `it()` must not inherit that (same reasoning as the reload
+      // test's `page-reload` above).
+      activeNodeId = 'page-acceptance'
+      const a: Block = { id: 'b-a', type: 'text', content: 'A text' }
+      const b: Block = { id: 'b-b', type: 'text', content: 'B text' }
+      fakePage.id = 'page-acceptance'
+      renderPath([a, b])
+      await screen.findByLabelText('Page title')
 
-    const fieldA = await textBlockIn('b-a')
-    act(() => {
-      textEditorOf(fieldA).commands.focus('end')
-    })
-    await waitFor(() => expect(fieldA).toHaveFocus())
-    await userEvent.type(fieldA, ' alpha', { skipClick: true })
-    await waitFor(() => expect(fieldA.textContent).toBe('A text alpha'))
+      const fieldA = await textBlockIn('b-a')
+      act(() => {
+        textEditorOf(fieldA).commands.focus('end')
+      })
+      await waitFor(() => expect(fieldA).toHaveFocus())
+      await user.type(fieldA, ' alpha', { skipClick: true })
+      await waitFor(() => expect(fieldA.textContent).toBe('A text alpha'))
 
-    // ⌘⌫ on B lands within the typing's own 600ms pause.
-    const fieldB = await textBlockIn('b-b')
-    fieldB.focus()
-    await waitFor(() => expect(fieldB).toHaveFocus())
-    fireEvent.keyDown(fieldB, { key: 'Backspace', metaKey: true })
-    await confirmBlockDelete()
-    await waitFor(() => expect(screen.queryByText('B text')).not.toBeInTheDocument())
-    await waitFor(() => expect(fakeChangeLog.length).toBe(2))
+      // ⌘⌫ on B lands within the typing's own 600ms pause.
+      const fieldB = await textBlockIn('b-b')
+      fieldB.focus()
+      await waitFor(() => expect(fieldB).toHaveFocus())
+      fireEvent.keyDown(fieldB, { key: 'Backspace', metaKey: true })
+      await confirmBlockDelete()
+      await waitFor(() => expect(screen.queryByText('B text')).not.toBeInTheDocument())
+      await waitFor(() => expect(fakeChangeLog.length).toBe(2))
 
-    // ⌘Z at once undoes exactly the delete: B comes back, A's word stays.
-    fireEvent.keyDown(document.body, { key: 'z', metaKey: true })
-    await waitFor(() => expect(screen.getByText('B text')).toBeInTheDocument())
-    expect(screen.getByText('A text alpha')).toBeInTheDocument()
+      // ⌘Z at once undoes exactly the delete: B comes back, A's word stays.
+      fireEvent.keyDown(document.body, { key: 'z', metaKey: true })
+      await waitFor(() => expect(screen.getByText('B text')).toBeInTheDocument())
+      expect(screen.getByText('A text alpha')).toBeInTheDocument()
 
-    // ⌘Z again undoes the typing step: A's word goes.
-    fireEvent.keyDown(document.body, { key: 'z', metaKey: true })
-    await waitFor(() => expect(screen.queryByText('A text alpha')).not.toBeInTheDocument())
-    expect(screen.getByText('A text')).toBeInTheDocument()
+      // ⌘Z again undoes the typing step: A's word goes.
+      fireEvent.keyDown(document.body, { key: 'z', metaKey: true })
+      await waitFor(() => expect(screen.queryByText('A text alpha')).not.toBeInTheDocument())
+      expect(screen.getByText('A text')).toBeInTheDocument()
 
-    // ⇧⌘Z redoes the typing step: A's word is back.
-    fireEvent.keyDown(document.body, { key: 'z', metaKey: true, shiftKey: true })
-    await waitFor(() => expect(screen.getByText('A text alpha')).toBeInTheDocument())
+      // ⇧⌘Z redoes the typing step: A's word is back.
+      fireEvent.keyDown(document.body, { key: 'z', metaKey: true, shiftKey: true })
+      await waitFor(() => expect(screen.getByText('A text alpha')).toBeInTheDocument())
 
-    // A second ⇧⌘Z redoes the delete step: B is gone again, in order.
-    fireEvent.keyDown(document.body, { key: 'z', metaKey: true, shiftKey: true })
-    await waitFor(() => expect(screen.queryByText('B text')).not.toBeInTheDocument())
-    expect(screen.getByText('A text alpha')).toBeInTheDocument()
+      // A second ⇧⌘Z redoes the delete step: B is gone again, in order.
+      fireEvent.keyDown(document.body, { key: 'z', metaKey: true, shiftKey: true })
+      await waitFor(() => expect(screen.queryByText('B text')).not.toBeInTheDocument())
+      expect(screen.getByText('A text alpha')).toBeInTheDocument()
+    } finally {
+      jest.useRealTimers()
+    }
   })
 })
