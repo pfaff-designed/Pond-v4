@@ -3662,13 +3662,13 @@ export function BlockCanvas({
              */}
             {blockRows
               .flatMap((slots, rowIndex) => {
-                // Flattened back to one entry per block (KAN-570): every slot is
-                // single-member until a column is actually set (next item renders
-                // a multi-member slot's members stacked instead of flattened).
-                const row = slots.flatMap((slot) => slot.members)
-                const widths = row.map((item) => item.width)
+                // A slot's width (KAN-570) is its own, whether it holds one
+                // block or a column's several — `layoutSlotRows` already
+                // packed the row by slot, so the edge/strip geometry below
+                // reads slots, never the blocks inside them.
+                const widths = slots.map((slot) => slot.width ?? 'full')
                 // Widths and rows are kept, not shown: a row that stacks renders
-                // each of its blocks' sizing divs at 100% width, which — because
+                // each of its slots' sizing divs at 100% width, which — because
                 // the list itself wraps — puts each on its own line, in reading
                 // order. That IS the stack; no row-level wrapper is rendered at
                 // all, so a block shifting from one row to another regroups
@@ -3688,28 +3688,28 @@ export function BlockCanvas({
                 // very first block, and (within row 0, non-stacking) the rest of
                 // that one shared line: those stay at the top with no gap above
                 // them, every other sizing div gets one `rowGapValue` of
-                // `marginTop`. A stacking row puts each of its own members on
-                // their own line too, so only its first member (if that's also
+                // `marginTop`. A stacking row puts each of its own slots on
+                // their own line too, so only its first slot (if that's also
                 // the page's first block) is spared.
-                const entries = row.map((item, itemIndex) => ({
-                  item,
+                const entries = slots.map((slot, slotIndex) => ({
+                  slot,
                   stacks,
-                  // A row of MULTIPLE members that stacks (each wraps to its
+                  // A row of MULTIPLE slots that stacks (each wraps to its
                   // own line, too narrow to hold side by side) draws no strip
-                  // at all — there is no row left to resize against. A block
-                  // alone on its line (row.length === 1) is never gated on
+                  // at all — there is no row left to resize against. A slot
+                  // alone on its line (slots.length === 1) is never gated on
                   // `stacks`: `stacks` there only means ITS OWN stored width
                   // underflows the floor and is drawn full (KAN-441, the
                   // "narrower than the stack floor" case) — both its edges
-                  // still resize it. Else: the row's first member gets its
+                  // still resize it. Else: the row's first slot gets its
                   // own left edge, the row's last gets its own right edge,
-                  // and every boundary between members (KAN-505) gets ONE
-                  // shared strip, carried by the boundary's LEFT member so a
-                  // 2-block row renders exactly 3 strips, not 4 (its own
-                  // right edge and the next block's left edge would
+                  // and every boundary between slots (KAN-505) gets ONE
+                  // shared strip, carried by the boundary's LEFT slot so a
+                  // 2-slot row renders exactly 3 strips, not 4 (its own
+                  // right edge and the next slot's left edge would
                   // otherwise double up the same boundary).
-                  showLeftEdge: itemIndex === 0 && (row.length === 1 || !stacks),
-                  showSharedEdge: row.length > 1 && !stacks && itemIndex < row.length - 1,
+                  showLeftEdge: slotIndex === 0 && (slots.length === 1 || !stacks),
+                  showSharedEdge: slots.length > 1 && !stacks && slotIndex < slots.length - 1,
                   // The shared strip's drag needs its row-mate's own `blocks`
                   // id (resolved to an index once, on press) — carried here
                   // rather than recomputed from `i + 1` below, since a ghost
@@ -3717,35 +3717,38 @@ export function BlockCanvas({
                   // throw that index off; chrome hides every strip during
                   // that drag anyway (`draggingIndex !== null`), so this id
                   // is only ever read while it's actually safe to use.
-                  sharedRightId: itemIndex < row.length - 1 ? row[itemIndex + 1].id : undefined,
-                  showRightEdge: itemIndex === row.length - 1 && (row.length === 1 || !stacks),
+                  sharedRightId:
+                    slotIndex < slots.length - 1 ? slots[slotIndex + 1].members[0].id : undefined,
+                  showRightEdge: slotIndex === slots.length - 1 && (slots.length === 1 || !stacks),
                   sharedOffsetPx,
-                  // The right member of every boundary (KAN-505): its own sizing
+                  // The right slot of every boundary (KAN-505): its own sizing
                   // div — NOT the card inside it — needs an explicit z-index
                   // above the shared strip's `z-[1]` (carried by the LEFT
-                  // member), because the card can gain its own stacking context
+                  // slot), because the card can gain its own stacking context
                   // mid-session (`motion-settle-in`'s transform, left `both`)
                   // that would otherwise trap any z-index set inside it. This
                   // wrapper sits outside any card transform, so it stacks the
                   // whole subtree — grip included — above the strip regardless.
-                  liftAboveSharedStrip: itemIndex > 0 && row.length > 1 && !stacks,
-                  // A row-sharing block's outer edge (KAN-505) resizes only
+                  liftAboveSharedStrip: slotIndex > 0 && slots.length > 1 && !stacks,
+                  // A row-sharing slot's outer edge (KAN-505) resizes only
                   // itself — its row-mates never move — so growing it is
-                  // capped at `100 - sum(the row's other members)`: the
+                  // capped at `100 - sum(the row's other slots)`: the
                   // complement of whatever share they already hold, which is
                   // exactly how far this one can grow before the row's total
-                  // would pass 100 and split. An alone block has no row-mates
+                  // would pass 100 and split. An alone slot has no row-mates
                   // to cap against, so its own edges keep the default (100).
                   outerMaxPercent:
-                    row.length > 1 && !stacks
+                    slots.length > 1 && !stacks
                       ? 100 -
                         (widths.reduce<number>((sum, w) => sum + widthPercent(w), 0) -
-                          widthPercent(item.width))
+                          widthPercent(slot.width))
                       : 100,
                   marginTop:
-                    rowIndex === 0 && (!stacks || itemIndex === 0) ? 0 : rowGapValue(listStyle),
+                    rowIndex === 0 && (!stacks || slotIndex === 0) ? 0 : rowGapValue(listStyle),
                 }))
-                return rowIndex === 0 ? entries : [{ rowBreakBeforeId: row[0].id }, ...entries]
+                return rowIndex === 0
+                  ? entries
+                  : [{ rowBreakBeforeId: slots[0].members[0].id }, ...entries]
               })
               .map((entry) => {
                 if ('rowBreakBeforeId' in entry) {
@@ -3758,7 +3761,7 @@ export function BlockCanvas({
                   )
                 }
                 const {
-                  item,
+                  slot,
                   stacks,
                   showLeftEdge,
                   showSharedEdge,
@@ -3769,6 +3772,11 @@ export function BlockCanvas({
                   liftAboveSharedStrip,
                   marginTop,
                 } = entry
+                // Edge resizing and live preview key off the slot's first
+                // member (`groupColumns`'s own convention: width and
+                // `rowStart` live there) — a single-member slot reads
+                // exactly the ids it always has.
+                const item = slot.members[0]
                 // A live edge drag previews this block's width locally — never
                 // written to `blocks` until release — so it overrides the
                 // committed width here rather than going through `stacks`.
@@ -3791,9 +3799,9 @@ export function BlockCanvas({
                   ? blockWidthStyle(resizing.percent)
                   : sharedResizing
                     ? blockWidthStyle(sharedResizing.percent)
-                    : stacks || item.width === 'full'
+                    : stacks || slot.width === 'full'
                       ? '100%'
-                      : blockWidthStyle(item.width)
+                      : blockWidthStyle(slot.width)
                 const i = blocks.findIndex((b) => b.id === item.id)
                 // Measured by `itemSizingRefs` (above) so the row-boundary
                 // line below — rendered once per ROW, not here — can anchor
@@ -3801,17 +3809,45 @@ export function BlockCanvas({
                 return (
                   <div
                     key={item.id}
-                    ref={(node) => {
-                      if (node) itemSizingRefs.current.set(item.id, node)
-                      else itemSizingRefs.current.delete(item.id)
-                    }}
+                    ref={
+                      slot.members.length === 1
+                        ? (node) => {
+                            if (node) itemSizingRefs.current.set(item.id, node)
+                            else itemSizingRefs.current.delete(item.id)
+                          }
+                        : undefined
+                    }
                     className={cn(
                       'relative min-w-0 transition-[width] duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none',
                       liftAboveSharedStrip && 'z-[2]'
                     )}
                     style={{ width: sizingWidth, marginTop }}
                   >
-                    {renderBlockEditor(blocks[i], i)}
+                    {slot.members.length > 1 ? (
+                      // A column (KAN-570): its members stack full width,
+                      // one per line — each still its own measured box in
+                      // `itemSizingRefs` (keyed by its own id, read above),
+                      // so the row-boundary line anchors to the column's
+                      // actual bottom rather than its first member's alone.
+                      <div className="flex flex-col" style={{ gap: BLOCK_ROW_GAP_PX }}>
+                        {slot.members.map((member) => {
+                          const memberIndex = blocks.findIndex((b) => b.id === member.id)
+                          return (
+                            <div
+                              key={member.id}
+                              ref={(node) => {
+                                if (node) itemSizingRefs.current.set(member.id, node)
+                                else itemSizingRefs.current.delete(member.id)
+                              }}
+                            >
+                              {renderBlockEditor(blocks[memberIndex], memberIndex)}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    ) : (
+                      renderBlockEditor(blocks[i], i)
+                    )}
                     {showLeftEdge && (
                       <BlockEdgeHandle
                         side="left"

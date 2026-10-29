@@ -14,7 +14,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import type { Block } from '@/lib/documents/types'
-import { blockWidthStyle } from '@/lib/modules/layout-rows'
+import { BLOCK_ROW_GAP_PX, blockWidthStyle } from '@/lib/modules/layout-rows'
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
@@ -431,6 +431,73 @@ describe('rows in BlockCanvas', () => {
         // only a (the page's very first block) is spared the marginTop.
         expect(blockRoot('b-a').parentElement!.style.marginTop).toBe('0px')
         expect(blockRoot('b-b').parentElement!.style.marginTop).toBe('16px')
+      } finally {
+        ro.restore()
+      }
+    })
+  })
+
+  // KAN-570: a column is a slot of several blocks sharing a `column` id,
+  // stacked vertically inside the one row position `layoutSlotRows` packs
+  // for it (unit-tested directly on `groupColumns`/`layoutSlotRows` in
+  // layout-rows.test.ts) — this pins that the canvas actually draws that
+  // stack, rather than flattening it back into the row beside its neighbour.
+  describe('a column renders its members stacked in one slot', () => {
+    it('two same-column ½ blocks share one slot, beside an unrelated ½ neighbour', () => {
+      const top: Block = { id: 'b-1', type: 'text', content: 'top', width: '1/2', column: 'col-1' }
+      const bottom: Block = {
+        id: 'b-2',
+        type: 'text',
+        content: 'bottom',
+        width: '1/2',
+        column: 'col-1',
+      }
+      const neighbour: Block = { id: 'b-3', type: 'text', content: 'right', width: '1/2' }
+      renderCanvas([top, bottom, neighbour])
+
+      const stack = blockRoot('b-1').parentElement!.parentElement!
+      const slotA = stack.parentElement!
+      const slotB = blockRoot('b-2').parentElement!.parentElement!.parentElement!
+      expect(slotB).toBe(slotA)
+
+      expect(stack.className).toContain('flex')
+      expect(stack.className).toContain('flex-col')
+      expect(stack.style.gap).toBe(`${BLOCK_ROW_GAP_PX}px`)
+
+      expect(normalizedWidth(slotA.style.width)).toBe(normalizedWidth(blockWidthStyle('1/2')))
+      // The neighbour is its own (single-member) slot, unaffected.
+      expect(normalizedWidth(blockRoot('b-3').parentElement!.style.width)).toBe(
+        normalizedWidth(blockWidthStyle('1/2'))
+      )
+    })
+
+    it('a column narrower than 240px stacks full-width, like a plain row does today', () => {
+      const ro = mockResizeObserver()
+      try {
+        const top: Block = {
+          id: 'b-1',
+          type: 'text',
+          content: 'top',
+          width: '1/2',
+          column: 'col-1',
+        }
+        const bottom: Block = {
+          id: 'b-2',
+          type: 'text',
+          content: 'bottom',
+          width: '1/2',
+          column: 'col-1',
+        }
+        const neighbour: Block = { id: 'b-3', type: 'text', content: 'right', width: '1/2' }
+        renderCanvas([top, bottom, neighbour])
+
+        const slotA = blockRoot('b-1').parentElement!.parentElement!.parentElement!
+        const canvas = slotA.parentElement! as HTMLElement
+        jest.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ width: 300 } as DOMRect)
+        ro.fire()
+
+        expect(slotA.style.width).toBe('100%')
+        expect(blockRoot('b-3').parentElement!.style.width).toBe('100%')
       } finally {
         ro.restore()
       }
