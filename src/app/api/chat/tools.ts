@@ -17,6 +17,7 @@ import {
 import { isTitleEchoHeading, TITLE_ECHO_MESSAGE } from '@/lib/modules/authoring-lint'
 import { askQuestionSchema, suggestFollowupsSchema } from '@/lib/conversation/parts'
 import { aiPropertyDefSchema } from '@/lib/properties/schema'
+import { SUMMARY_MAX_CHARS } from '@/lib/feedback/build-issue'
 import {
   viewModeSchema,
   filterOpSchema,
@@ -569,4 +570,43 @@ export const openChangeLogTool = {
   description:
     'Open the change log — the page listing every proposed, accepted, rejected and reverted change across the pond, newest first. Use this when the user asks to see, open or go to the change log, their changes, recent edits, or what is waiting on them. Carries no arguments. Client-resolved (no execute): calling it navigates the user there immediately.',
   inputSchema: z.object({}),
+} as const
+
+/**
+ * file_report input schema (KAN-572). A drafted report about Pond ITSELF: a
+ * one-line `summary` (the ticket's title) and `text`, what the person described.
+ * Both land in a card the person can edit before anything is filed. The summary
+ * cap is `report a problem`'s own.
+ */
+export const fileReportInput = z.object({
+  summary: z
+    .string()
+    .trim()
+    .min(1)
+    .max(SUMMARY_MAX_CHARS)
+    .describe(
+      `A one-line summary of the problem or the missing feature in Pond itself, lowercase, at most ${SUMMARY_MAX_CHARS} characters — e.g. "calendar opens on the wrong month".`
+    ),
+  text: z
+    .string()
+    .trim()
+    .min(1)
+    .describe(
+      "What the person described, in their own words where possible: what they did, what they expected, what happened instead. Do not invent steps they didn't give."
+    ),
+})
+
+/**
+ * file_report (KAN-572) — draft a report about how Pond ITSELF works, for the
+ * person to file as a ticket. Client-resolved (no execute), like add_row: the
+ * call renders a card with the drafted summary and text, both editable, and
+ * nothing is filed until the person presses **file it** — which POSTs to the
+ * same `/api/feedback` route `report a problem` uses (KAN-335). Distinct from
+ * every content tool: a change to the person's OWN content is a diff, never a
+ * report.
+ */
+export const fileReportTool = {
+  description:
+    'Draft a report about POND ITSELF — something in how the app works is broken, wrong or missing (e.g. "the calendar opens on the wrong month", "the rail forgets which pages I collapsed", "I wish I could drag blocks between pages"). Give a one-line `summary` and the `text` the person described. Client-resolved (no execute): the person reviews and edits the drafted report on a card and files it themselves with **file it** — nothing is filed until they press it; do NOT re-ask for confirmation. Use this ONLY for Pond the product. A change to the person\'s OWN content — their pages, blocks, templates, databases, fields, rows, views, agents or skills (e.g. "add a status field to my reading list", "make my journal template shorter") — is NEVER a report: use propose_changes, create_page, define_schema, add_row, configure_view or link_records for those. One report per card.',
+  inputSchema: fileReportInput,
 } as const

@@ -74,6 +74,8 @@ import { pageEyebrowClass, chipBaseClass } from '@/components/atoms/kicker'
 import { ReadChips } from '@/components/molecules/ReadChips'
 import { AnswerActions } from '@/components/molecules/AnswerActions'
 import { PageProposalCard } from '@/components/molecules/PageProposalCard'
+import { ReportProposalCard } from '@/components/molecules/ReportProposalCard'
+import { createReportFiler } from '@/lib/feedback/file-report'
 import { MadePageActions } from '@/components/molecules/MadePageActions'
 import { toParentOptions, ancestorPathLabel } from '@/lib/pages/parent-options'
 import { openWorkspaceUrl, workspaceUrl } from '@/lib/pages/nav'
@@ -194,6 +196,8 @@ import {
   isAskQuestionPart,
   isSuggestFollowupsPart,
   isOpenChangeLogPart,
+  isFileReportPart,
+  fileReportInputIsVisible,
   createPageInputIsVisible,
   defineSchemaInputIsVisible,
   addRowInputIsVisible,
@@ -636,6 +640,7 @@ export function AITerminal() {
     pageProposalErrors,
     changeNotes,
     revisions,
+    reports,
   } = proposals
   // The propose-page route's background fill (below) reads this at reply time,
   // not at call time — `pageProposals` itself is a value closed over once when
@@ -792,6 +797,65 @@ export function AITerminal() {
   // (opens the new-page menu, KAN-198), not this terminal.
   const { messages, sendMessage, regenerate, setMessages, status, stop, error, clearError } =
     useChat()
+  // ── file_report (KAN-572) ───────────────────────────────────────────────────
+  // **file it** POSTs the card's draft to /api/feedback — the route `report a
+  // problem` files through — with the open page's id and title. The filer hands
+  // a double press the same in-flight request, and the tool call id rides as the
+  // route's idempotency key, so one card files one ticket (G9). The outcome
+  // rides the resolutions envelope; filing/error are session-scoped. A filing
+  // that lands after the person opened another thread settles nothing there:
+  // the card is no longer among `messages`, and its own thread keeps the
+  // server's idempotency key, so pressing file it again there files nothing new.
+  const [fileReportRequest] = useState(() => createReportFiler())
+  const [reportFiling, setReportFiling] = useState<Record<string, boolean>>({})
+  const [reportErrors, setReportErrors] = useState<Record<string, string>>({})
+  const messagesRef = useRef(messages)
+  useEffect(() => {
+    messagesRef.current = messages
+  }, [messages])
+  const fileReport = useCallback(
+    (
+      toolCallId: string,
+      draft: { summary: string; text: string },
+      page: { id: string | null; title?: string }
+    ) => {
+      setReportFiling((m) => ({ ...m, [toolCallId]: true }))
+      setReportErrors(({ [toolCallId]: _drop, ...rest }) => (void _drop, rest))
+      fileReportRequest({
+        toolCallId,
+        summary: draft.summary,
+        // The route requires text; a summary-only draft files its summary as the text.
+        text: draft.text || draft.summary,
+        pageId: page.id,
+        pageTitle: page.title,
+        url: window.location.href,
+      })
+        .then(({ key, url }) => {
+          const stillOpen = messagesRef.current.some((m) =>
+            m.parts.some((p) => 'toolCallId' in p && p.toolCallId === toolCallId)
+          )
+          if (!stillOpen) return
+          dispatch({
+            kind: 'settleReport',
+            id: toolCallId,
+            resolution: { status: 'filed', key, url },
+          })
+        })
+        .catch((err: unknown) => {
+          // The route's own words (a rate limit says so), never a second copy of them.
+          const reason = err instanceof Error ? err.message : String(err)
+          setReportErrors((m) => ({ ...m, [toolCallId]: reason }))
+        })
+        .finally(() => {
+          setReportFiling(({ [toolCallId]: _drop, ...rest }) => (void _drop, rest))
+        })
+    },
+    [fileReportRequest]
+  )
+  const cancelReport = useCallback((toolCallId: string) => {
+    dispatch({ kind: 'settleReport', id: toolCallId, resolution: { status: 'cancelled' } })
+  }, [])
+
   const [input, setInput] = useState('')
   // `/bug` files outside the model. The ref closes the send gate for the
   // whole request; the state only disables the line.
@@ -893,7 +957,7 @@ export function AITerminal() {
   useEffect(() => {
     // KAN-341: resets the per-visit dismissal on a real pageId change (opening
     // another page) — a cause, not a derived-state computation.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+
     setDismissedCurrentRefNodeId(null)
   }, [pageId])
   useEffect(() => {
@@ -902,7 +966,7 @@ export function AITerminal() {
     // dependency array, so this never cascades) — not a derived-state
     // computation, so `react-hooks/set-state-in-effect` is disabled here, same
     // as Rail.tsx's own "reveal the selection" effect.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+
     setReferences((prev) => {
       const withoutStaleCurrent = prev.filter(
         (ref) => !ref.id.startsWith('current:') || ref.id === currentRefId
@@ -3710,6 +3774,7 @@ export function AITerminal() {
     const canMakePage = !hasQualifyingProposalPart && !!text && !hasOpenCard && !hasMadeCard
     const questionParts = (message.parts as Array<{ type: string }>).filter(isAskQuestionPart)
     const followupParts = (message.parts as Array<{ type: string }>).filter(isSuggestFollowupsPart)
+    const reportParts = (message.parts as Array<{ type: string }>).filter(isFileReportPart)
     // The route streams a `source-url` part per cited result.
     const sources: Source[] = (
       message.parts as Array<{
@@ -4268,6 +4333,39 @@ export function AITerminal() {
               branch={q.branch}
               answer={questionAnswers[part.toolCallId]?.answer}
               onAnswer={(answer, via) => answerQuestion(part.toolCallId, answer, via)}
+            />
+          )
+        })}
+        {/* file_report (KAN-572): file it files through /api/feedback; the outcome
+            rides the resolutions envelope, so a filed card keeps its key. */}
+        {reportParts.map((part) => {
+          // Streaming is partial; output-error is a draft the contract refused.
+          if (part.state === 'input-streaming' || part.state === 'output-error') return null
+          const input = part.input
+          if (!fileReportInputIsVisible(input)) return null
+          const resolution = reports[part.toolCallId]
+          const status =
+            resolution?.status === 'filed'
+              ? 'filed'
+              : resolution?.status === 'cancelled'
+                ? 'cancelled'
+                : reportFiling[part.toolCallId]
+                  ? 'filing'
+                  : 'proposed'
+          return (
+            <ReportProposalCard
+              key={part.toolCallId}
+              className="mn-arrive"
+              summary={input.summary ?? ''}
+              text={input.text ?? ''}
+              status={status}
+              filedKey={resolution?.status === 'filed' ? resolution.key : undefined}
+              filedUrl={resolution?.status === 'filed' ? resolution.url : undefined}
+              error={reportErrors[part.toolCallId]}
+              onFile={(draft) =>
+                fileReport(part.toolCallId, draft, { id: pageId, title: currentPage?.title })
+              }
+              onCancel={() => cancelReport(part.toolCallId)}
             />
           )
         })}

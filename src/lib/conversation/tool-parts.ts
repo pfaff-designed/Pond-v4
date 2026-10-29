@@ -85,9 +85,12 @@ export function isDefineSchemaPart(part: { type: string }): part is DefineSchema
 }
 
 /** The same guard `DefineSchemaProposalCard`'s render branch applies. */
-export function defineSchemaInputIsVisible(
-  input: DefineSchemaPart['input']
-): input is NonNullable<DefineSchemaPart['input']> & { pageId: string; properties: AiPropertyDef[] } {
+export function defineSchemaInputIsVisible(input: DefineSchemaPart['input']): input is NonNullable<
+  DefineSchemaPart['input']
+> & {
+  pageId: string
+  properties: AiPropertyDef[]
+} {
   return !!input?.pageId && (input?.properties?.length ?? 0) > 0
 }
 
@@ -191,9 +194,9 @@ export function isLinkRecordsPart(part: { type: string }): part is LinkRecordsPa
 }
 
 /** The same guard `LinkRecordsProposalCard`'s render branch applies. */
-export function linkRecordsInputIsVisible(
-  input: LinkRecordsPart['input']
-): input is NonNullable<LinkRecordsPart['input']> & {
+export function linkRecordsInputIsVisible(input: LinkRecordsPart['input']): input is NonNullable<
+  LinkRecordsPart['input']
+> & {
   fromRow: string
   relation: string
   toRows: string[]
@@ -334,6 +337,12 @@ function isVisiblePart(part: AssistantPart): boolean {
       return askQuestionInputIsVisible(typed.input as AskQuestionPart['input'])
     case SUGGEST_FOLLOWUPS_TYPE:
       return suggestFollowupsInputIsVisible(typed.input as SuggestFollowupsPart['input'])
+    case FILE_REPORT_TYPE:
+      // A draft the tool's contract refused never draws a card.
+      return (
+        typed.state !== 'output-error' &&
+        fileReportInputIsVisible(typed.input as FileReportPart['input'])
+      )
     case PROPOSE_CHANGES_TYPE:
       // diffCards pushes one card per non-streaming propose_changes part
       // regardless of how many changes it carries (AITerminal.tsx ~3224).
@@ -341,4 +350,31 @@ function isVisiblePart(part: AssistantPart): boolean {
     default:
       return false
   }
+}
+
+/** The file_report tool's part type (KAN-572) — not a proposal (it lives
+ *  outside proposals.ts's TYPE list): a report changes no page, so it never
+ *  counts toward the unresolved-proposal derivations or the change log. */
+export const FILE_REPORT_TYPE = 'tool-file_report'
+
+/** A file_report tool part — a drafted report about Pond itself. Client-
+ *  resolved (no execute): the card shows the draft, and nothing is filed until
+ *  the person presses **file it**. */
+export interface FileReportPart {
+  type: typeof FILE_REPORT_TYPE
+  toolCallId: string
+  state: string
+  input?: { summary?: string; text?: string }
+}
+
+export function isFileReportPart(part: { type: string }): part is FileReportPart {
+  return part.type === FILE_REPORT_TYPE
+}
+
+/** The same guard the report card's render branch applies: a draft with
+ *  neither a summary nor a description has nothing to file. */
+export function fileReportInputIsVisible(
+  input: FileReportPart['input']
+): input is NonNullable<FileReportPart['input']> {
+  return !!(input?.summary?.trim() || input?.text?.trim())
 }

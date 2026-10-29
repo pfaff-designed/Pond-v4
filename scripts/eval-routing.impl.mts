@@ -29,6 +29,7 @@ import {
   defineSchemaTool,
   addRowTool,
   suggestFollowupsTool,
+  fileReportTool,
 } from '../src/app/api/chat/tools.ts'
 // The SAME heuristics the emit-time gate enforces (ticket-21) — imported, not
 // re-implemented, so the eval's tells and the gate can't drift.
@@ -59,6 +60,8 @@ const tools = {
   // KAN-132: the unclear→chip rule routes through suggest_followups instead of
   // propose_changes, so the eval needs the real chip tool registered to observe it.
   suggest_followups: tool(suggestFollowupsTool),
+  // KAN-572: a report about Pond itself vs a change to the person's own content.
+  file_report: tool(fileReportTool),
 }
 
 /** Expected outcome: a specific tool name, or null = the model must call NO tool. */
@@ -368,6 +371,20 @@ const ALL_SCENARIOS: Scenario[] = [
     ctx: 'Current page "Reading List". Blocks: [text id=b1 "- Dune\\n- The Hobbit\\n- Project Hail Mary"].',
     text: 'track my reading list with status and rating',
     note: '#28: a list of records to track defaults to a collection (define_schema), not a freeform table — even without the word "database".',
+  },
+  {
+    name: 'KAN-572 a bug in Pond itself "the calendar opens on the wrong month" → file_report',
+    expect: 'file_report',
+    ctx: 'Current page "Kitchen Reno". Blocks: [text id=b1 "plan for the kitchen"].',
+    text: 'the calendar opens on the wrong month.',
+    note: 'KAN-572: something about how Pond itself works is wrong → a drafted report, never a diff.',
+  },
+  {
+    name: 'KAN-572 a content change "add a status field to my reading list" → define_schema, not file_report',
+    expect: 'define_schema',
+    ctx: 'Current page "Reading List". Blocks: [text id=b1 "- Dune\\n- The Hobbit"].',
+    text: 'add a status field to my reading list',
+    note: "KAN-572: a change to the person's own content is a diff, never a report.",
   },
   {
     name: '#28 record-like "track my workouts here — date, exercise, weight" → define_schema',

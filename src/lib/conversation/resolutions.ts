@@ -45,6 +45,7 @@ import { parseQuestionResolutions, type QuestionResolutions } from './parts'
 import { parseLifecycle, isLifecycleActive, type LifecycleState } from './lifecycle'
 import { parsePageProposals, type PageProposals } from './page-proposals'
 import { isChangeLogStatus, type ChangeLogStatus } from '@/lib/change-log/types'
+import { parseReportResolutions, type ReportResolutions } from './reports'
 
 /**
  * A card's settled decision — every change-log status except `proposed`, which
@@ -127,6 +128,11 @@ export interface ConversationResolutions {
    * revised card is labelled as one across reload. Additive & optional.
    */
   revisions?: Record<string, string>
+  /**
+   * KAN-572 — file_report outcomes (filed with its key, or cancelled), by
+   * toolCallId. Additive & optional: absent ⇒ none.
+   */
+  reports?: ReportResolutions
 }
 
 export function emptyResolutions(): ConversationResolutions {
@@ -179,6 +185,7 @@ export function parseResolutions(value: unknown): ConversationResolutions {
   // #98 — notes + revision links, carried only when non-empty for the same reason.
   const changeNotes = pick('changeNotes', isString)
   const revisions = pick('revisions', isString)
+  const reports = parseReportResolutions(v.reports)
   return {
     changes: pick('changes', isDecision),
     creates: pick('creates', isDecision),
@@ -200,6 +207,7 @@ export function parseResolutions(value: unknown): ConversationResolutions {
     ...(Object.keys(pageProposals).length > 0 ? { pageProposals } : {}),
     ...(Object.keys(changeNotes).length > 0 ? { changeNotes } : {}),
     ...(Object.keys(revisions).length > 0 ? { revisions } : {}),
+    ...(Object.keys(reports).length > 0 ? { reports } : {}),
   }
 }
 
@@ -302,7 +310,8 @@ export function applyResolutions(
     Object.keys(resolutions.promotions).length === 0 &&
     Object.keys(resolutions.views).length === 0 &&
     Object.keys(resolutions.links).length === 0 &&
-    Object.keys(resolutions.questions).length === 0
+    Object.keys(resolutions.questions).length === 0 &&
+    Object.keys(resolutions.reports ?? {}).length === 0
   ) {
     return messages
   }
@@ -345,6 +354,25 @@ function resolvePart(part: ToolPartLike, resolutions: ConversationResolutions): 
         via: answer.via,
         note: 'The user answered this question. Apply this branch and do not ask it again.',
       },
+    } as ToolPartLike
+  }
+
+  if (part.type === 'tool-file_report') {
+    const report = resolutions.reports?.[part.toolCallId]
+    if (!report) return part
+    return {
+      ...part,
+      state: 'output-available',
+      output:
+        report.status === 'filed'
+          ? {
+              filed: report.key,
+              note: `The user filed this report as ${report.key}. Do not draft it again.`,
+            }
+          : {
+              filed: null,
+              note: 'The user cancelled this report; nothing was filed. Do not draft it again unless asked.',
+            },
     } as ToolPartLike
   }
 
