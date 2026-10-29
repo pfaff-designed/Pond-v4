@@ -63,6 +63,8 @@ import { addTodoItem } from '@/lib/modules/todo/view'
 import { addTableRow } from '@/lib/modules/table/view'
 import { addEntryFocused } from '@/lib/modules/entries/view'
 import { TOGGLE_FOLD_ROW_PX } from '@/lib/modules/toggle/view'
+import { Caret } from '@/components/atoms/Caret'
+import { hiddenBlockIds } from '@/lib/modules/text/heading-fold'
 import { PondBlock, POND_BLOCK_SELECTED_RING_ROUNDED } from '@/components/organisms/PondBlock'
 import {
   SlashMenu,
@@ -230,6 +232,7 @@ const TURNED_INTO: Record<Exclude<ConversionTarget, 'table'>, string> = {
   'heading-1': 'Turned into heading 1',
   'heading-2': 'Turned into heading 2',
   'heading-3': 'Turned into heading 3',
+  'toggle-heading': 'Turned into a toggle heading',
   quote: 'Turned into a quote',
   code: 'Turned into code',
   list: 'Turned into a list',
@@ -382,13 +385,28 @@ function focusBlockNeighbour(
   }, 0)
 }
 
+/** `selectBlockAt`'s default `hidden` — shared so its no-skip callers never allocate a Set. */
+const EMPTY_HIDDEN_IDS = new Set<string>()
+
 /**
- * ↑/↓ on a SELECTED block (KAN-367): moves the selection to the block at
- * `index`, by focusing its row directly — selection never enters a field,
- * only Return does that.
+ * ↑/↓ on a SELECTED block (KAN-367): moves the selection to the nearest
+ * visible block from `index` in direction `dir`, by focusing its row
+ * directly — selection never enters a field, only Return does that. Ids a
+ * fold hides (KAN-515) have no DOM node, so they are skipped rather than
+ * targeted. `dir`/`hidden` default to a no-skip move for the range-select
+ * callers (KAN-373), which step by one already-visible index and never meet
+ * a hidden id.
  */
-function selectBlockAt(blocks: Block[], index: number) {
-  const target = blocks[index]
+function selectBlockAt(
+  blocks: Block[],
+  index: number,
+  dir: 'up' | 'down' = 'down',
+  hidden: Set<string> = EMPTY_HIDDEN_IDS,
+) {
+  const step = dir === 'up' ? -1 : 1
+  let i = index
+  while (blocks[i] && hidden.has(blocks[i].id)) i += step
+  const target = blocks[i]
   if (!target) return
   document.getElementById(blockDomId(target.id))?.focus()
 }
@@ -400,10 +418,19 @@ function selectBlockAt(blocks: Block[], index: number) {
  * checklist's last (↑) / first (↓) item, or (any other card, which has no field of
  * its own) its row, selected via `selectBlockAt`. Only wired where a neighbour
  * exists; block 0's own ArrowUp goes to the page title instead (`renderBlockEditor`),
- * never here.
+ * never here. Ids a fold hides (KAN-515) are skipped over, in the same direction,
+ * since they have no DOM node to land in.
  */
-function leaveBlockEdge(blocks: Block[], index: number, dir: 'up' | 'down', x: number) {
-  const neighbourIndex = dir === 'up' ? index - 1 : index + 1
+function leaveBlockEdge(
+  blocks: Block[],
+  index: number,
+  dir: 'up' | 'down',
+  x: number,
+  hidden: Set<string>,
+) {
+  const step = dir === 'up' ? -1 : 1
+  let neighbourIndex = index + step
+  while (blocks[neighbourIndex] && hidden.has(blocks[neighbourIndex].id)) neighbourIndex += step
   const neighbour = blocks[neighbourIndex]
   if (!neighbour) return
   if (neighbour.type === 'text') {
@@ -416,7 +443,7 @@ function leaveBlockEdge(blocks: Block[], index: number, dir: 'up' | 'down', x: n
     focusTodoItem(neighbour.id, dir === 'up' ? 'end' : 'start', item.id)
     return
   }
-  selectBlockAt(blocks, neighbourIndex)
+  selectBlockAt(blocks, neighbourIndex, dir, hidden)
 }
 
 /**
@@ -2949,16 +2976,20 @@ export function BlockCanvas({
   // block (looked up by id, see `renderList` below) to `renderBlockEditor`, so
   // the previewed block's own content and its width row's filled cell are
   // never touched by the preview.
-  const blocksForLayout = useMemo(
-    () =>
-      previewWidth
-        ? blocks.map((b) => {
-            const preview = previewWidth.find((p) => p.blockId === b.id)
-            return preview ? { ...b, width: preview.width } : b
-          })
-        : blocks,
-    [blocks, previewWidth]
-  )
+  // A folded toggle heading's own siblings get no row at all (KAN-515): hidden
+  // here, before layout, so they never reach `renderList`/`blockRows` rather
+  // than rendering and being hidden with CSS. Shared with ↑/↓ navigation below,
+  // which must skip these same ids rather than target a block with no DOM node.
+  const hiddenIds = useMemo(() => hiddenBlockIds(blocks), [blocks])
+  const blocksForLayout = useMemo(() => {
+    const visible = hiddenIds.size > 0 ? blocks.filter((b) => !hiddenIds.has(b.id)) : blocks
+    return previewWidth
+      ? visible.map((b) => {
+          const preview = previewWidth.find((p) => p.blockId === b.id)
+          return preview ? { ...b, width: preview.width } : b
+        })
+      : visible
+  }, [blocks, hiddenIds, previewWidth])
 
   // One entry per block, in page order, at the width it already has. A drag
   // does not preview the landing by rearranging or cloning the block: the
@@ -3208,13 +3239,25 @@ export function BlockCanvas({
         onDeleteBlock={(fromRow) => requestDelete(i, fromRow)}
         onReturn={(patch, content, where) => insertLineAfter(i, patch, content, where)}
         onLeaveUp={
-          i === 0 ? () => focusPageTitle('end') : (x) => leaveBlockEdge(blocks, i, 'up', x)
+          i === 0
+            ? () => focusPageTitle('end')
+            : (x) => leaveBlockEdge(blocks, i, 'up', x, hiddenIds)
         }
         onLeaveDown={
-          i === blocks.length - 1 ? undefined : (x) => leaveBlockEdge(blocks, i, 'down', x)
+          i === blocks.length - 1
+            ? undefined
+            : (x) => leaveBlockEdge(blocks, i, 'down', x, hiddenIds)
         }
-        onSelectPrev={i === 0 ? () => focusPageTitle('end') : () => selectBlockAt(blocks, i - 1)}
-        onSelectNext={i === blocks.length - 1 ? undefined : () => selectBlockAt(blocks, i + 1)}
+        onSelectPrev={
+          i === 0
+            ? () => focusPageTitle('end')
+            : () => selectBlockAt(blocks, i - 1, 'up', hiddenIds)
+        }
+        onSelectNext={
+          i === blocks.length - 1
+            ? undefined
+            : () => selectBlockAt(blocks, i + 1, 'down', hiddenIds)
+        }
         onMoveUp={() => moveBlockAt(i, 'up')}
         onMoveDown={() => moveBlockAt(i, 'down')}
         onSwapLeft={() => swapInRowAt(i, 'left')}
@@ -5093,7 +5136,23 @@ function BlockEditor({
           </span>
         </div>
       )}
-      {view}
+      {block.toggle ? (
+        <div className="flex items-start gap-1.5">
+          <button
+            type="button"
+            aria-expanded={!block.folded}
+            aria-label={block.folded ? 'unfold' : 'fold'}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => commitStep({ ...block, folded: !block.folded })}
+            className="relative z-[2] -ml-[1px] -mr-[6px] grid h-[var(--prose-line,calc(17.5px*1.6))] flex-none place-items-center pl-[1px] pr-[6px] text-mn-text-secondary"
+          >
+            <Caret className={cn(!block.folded && 'rotate-90')} />
+          </button>
+          <div className="min-w-0 flex-1">{view}</div>
+        </div>
+      ) : (
+        view
+      )}
       {changedMark}
     </div>
   ) : (

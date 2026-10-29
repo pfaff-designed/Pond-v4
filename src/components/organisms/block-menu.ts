@@ -65,6 +65,7 @@ const CONVERSION_LABELS: Record<ConversionTarget, string> = {
   'heading-1': 'heading 1',
   'heading-2': 'heading 2',
   'heading-3': 'heading 3',
+  'toggle-heading': 'toggle heading',
   quote: 'quote',
   code: 'code',
   page: 'page',

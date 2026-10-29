@@ -225,6 +225,7 @@ describe('heading, quote, code', () => {
     expect(targets(heading)).toEqual([
       'heading-1',
       'heading-3',
+      'toggle-heading',
       'quote',
       'code',
       'page',
@@ -234,9 +235,25 @@ describe('heading, quote, code', () => {
     ])
   })
 
-  it('a heading past level 3 offers text, heading 1-3, quote, code and page, same as a heading 1-3 — it has no target of its own to exclude', () => {
+  it('a heading past level 3 offers text, heading 1-3, toggle heading, quote, code and page, same as a heading 1-3 — it has no target of its own to exclude', () => {
     const h5: TextBlock = { id: 'b-h5', type: 'text', content: '##### too deep' }
     expect(targets(h5)).toEqual([
+      'heading-1',
+      'heading-2',
+      'heading-3',
+      'toggle-heading',
+      'quote',
+      'code',
+      'page',
+      'list',
+      'checklist',
+      'text',
+    ])
+  })
+
+  it('a toggle heading offers heading-N back, never toggle-heading again', () => {
+    const toggled: TextBlock = { ...heading, toggle: true, folded: true }
+    expect(targets(toggled)).toEqual([
       'heading-1',
       'heading-2',
       'heading-3',
@@ -247,6 +264,40 @@ describe('heading, quote, code', () => {
       'checklist',
       'text',
     ])
+  })
+
+  it('a quote, code or plain-line block never offers toggle-heading', () => {
+    expect(targets(quote)).not.toContain('toggle-heading')
+    expect(targets(code)).not.toContain('toggle-heading')
+    expect(targets(line)).not.toContain('toggle-heading')
+  })
+
+  it('turning a toggle heading into a heading, quote, code or text strips toggle and folded', () => {
+    const toggled: TextBlock = { ...heading, toggle: true, folded: true }
+    expect(pick(toggled, 'heading-1').apply()).toEqual({
+      id: 'b-heading',
+      type: 'text',
+      content: '# ingredients',
+    })
+    expect(pick(toggled, 'quote').apply()).toEqual({
+      id: 'b-heading',
+      type: 'text',
+      content: '> ingredients',
+    })
+    expect(pick(toggled, 'code').apply()).toEqual({
+      id: 'b-heading',
+      type: 'text',
+      content: '```\ningredients\n```',
+    })
+    expect(pick(toggled, 'text').apply()).toEqual({
+      id: 'b-heading',
+      type: 'text',
+      content: 'ingredients',
+    })
+  })
+
+  it('turning a heading into a toggle heading sets toggle, keeping content and level', () => {
+    expect(pick(heading, 'toggle-heading').apply()).toEqual({ ...heading, toggle: true })
   })
 
   it('a quote offers every heading level, code and text — never itself, and never list/checklist/table (its lines are markdown, not list items)', () => {
@@ -254,14 +305,7 @@ describe('heading, quote, code', () => {
   })
 
   it('a code block offers every heading level, quote and text — never itself, and never list/checklist/table (its lines are markdown, not list items)', () => {
-    expect(targets(code)).toEqual([
-      'heading-1',
-      'heading-2',
-      'heading-3',
-      'quote',
-      'page',
-      'text',
-    ])
+    expect(targets(code)).toEqual(['heading-1', 'heading-2', 'heading-3', 'quote', 'page', 'text'])
   })
 
   it('a single-line text block, being one node, now offers heading, quote and code too', () => {

@@ -27,6 +27,14 @@ export const textSchema = z
       .describe(
         'ISO timestamp, present only on the prose block a made page is born with (6a frame 5). Set once at make-page time; nothing else ever sets or clears it.'
       ),
+    /**
+     * KAN-515: whether this block is a toggle heading — a heading with a chevron
+     * that folds the blocks under it. Absent means an ordinary heading, so a page
+     * that predates this ticket reads unchanged.
+     */
+    toggle: z.boolean().optional(),
+    /** Whether a toggle heading's following blocks are hidden. Absent = unfolded. */
+    folded: z.boolean().optional(),
   })
   .extend(labelledBlockFields)
 
