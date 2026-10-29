@@ -71,6 +71,16 @@ const blockWidthFields = {
     .positive()
     .optional()
     .describe("Never set by the AI. Reserved for the person's own layout choice."),
+  /**
+   * The column a block belongs to within its row slot (KAN-570). Same value on
+   * adjacent blocks groups them into one vertical stack inside that slot. Absent
+   * means today's one-block-per-slot layout, so an existing page reads unchanged.
+   * Set by Enter inside a column, never by the AI.
+   */
+  column: z
+    .string()
+    .optional()
+    .describe("Never set by the AI. Reserved for the person's own layout choice."),
 }
 
 export const blockSchema = z.discriminatedUnion('type', [
