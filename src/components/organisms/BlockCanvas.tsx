@@ -97,7 +97,7 @@ import {
   detachKeepingRows,
   detachRangeKeepingRows,
   isWithinPaddedZone,
-  layoutRows,
+  layoutSlotRows,
   drawnWidthPercent,
   planBesideDrop,
   planOwnLineDrop,
@@ -2155,15 +2155,17 @@ export function BlockCanvas({
     atIndex: number,
     where: 'above' | 'below'
   ): { insertAt: number; inRow: boolean } {
-    const row = layoutRows(base).find((member) =>
-      member.some((block) => block.id === base[atIndex].id)
+    const row = layoutSlotRows(base).find((slots) =>
+      slots.some((slot) => slot.members.some((block) => block.id === base[atIndex].id))
     )
     if (!row || row.length < 2)
       return { insertAt: where === 'above' ? atIndex : atIndex + 1, inRow: false }
+    const firstSlot = row[0]
+    const lastSlot = row[row.length - 1]
     const insertAt =
       where === 'above'
-        ? base.findIndex((b) => b.id === row[0].id)
-        : base.findIndex((b) => b.id === row[row.length - 1].id) + 1
+        ? base.findIndex((b) => b.id === firstSlot.members[0].id)
+        : base.findIndex((b) => b.id === lastSlot.members[lastSlot.members.length - 1].id) + 1
     return { insertAt, inRow: true }
   }
 
@@ -2996,7 +2998,13 @@ export function BlockCanvas({
   // drop bar is the only mark of where it will land, and the widths apply
   // on release.
   const renderList = useMemo<
-    { id: string; width: BlockWidth | number; ghost: boolean; rowStart?: boolean }[]
+    {
+      id: string
+      width: BlockWidth | number
+      ghost: boolean
+      rowStart?: boolean
+      column?: string
+    }[]
   >(
     () =>
       blocksForLayout.map((b) => ({
@@ -3004,11 +3012,12 @@ export function BlockCanvas({
         width: b.width ?? 'full',
         ghost: false,
         rowStart: b.rowStart,
+        column: b.column,
       })),
     [blocksForLayout]
   )
 
-  const blockRows = useMemo(() => layoutRows(renderList), [renderList])
+  const blockRows = useMemo(() => layoutSlotRows(renderList), [renderList])
 
   // Rule 3's fix (KAN-345): feeds the hover-ghost placement, which needs this
   // read before `handleTrailingGapClick` is defined.
@@ -3038,7 +3047,8 @@ export function BlockCanvas({
   // `focusEmptyLineOrInsert` G9 guard as `handleTrailingGapClick`.
   function insertAfterRow(rowIndex: number) {
     const row = blockRows[rowIndex]
-    const last = row[row.length - 1]
+    const lastSlot = row[row.length - 1]
+    const last = lastSlot.members[lastSlot.members.length - 1]
     const index = blocks.findIndex((b) => b.id === last.id)
     if (index === -1) return
     focusEmptyLineOrInsert(blocks[index + 1], () => insertLineAfter(index))
@@ -3066,11 +3076,13 @@ export function BlockCanvas({
    * drawn lines when the row is only stored as one row and drawn stacked.
    */
   function drawsStacked(blockId: string): boolean {
-    const row = layoutRows(blocks).find((member) => member.some((block) => block.id === blockId))
+    const row = layoutSlotRows(blocks).find((slots) =>
+      slots.some((slot) => slot.members.some((block) => block.id === blockId))
+    )
     if (!row || row.length < 2) return false
     return rowStacks(
       columnWidth,
-      row.map((block) => block.width ?? 'full')
+      row.map((slot) => slot.width ?? 'full')
     )
   }
 
@@ -3177,8 +3189,11 @@ export function BlockCanvas({
         .map(
           (row) =>
             Math.max(
-              ...row.map(
-                (item) => itemSizingRefs.current.get(item.id)?.getBoundingClientRect().bottom ?? 0
+              ...row.flatMap((slot) =>
+                slot.members.map(
+                  (member) =>
+                    itemSizingRefs.current.get(member.id)?.getBoundingClientRect().bottom ?? 0
+                )
               )
             ) - containerRect.top
         )
@@ -3204,14 +3219,18 @@ export function BlockCanvas({
 
   /** The other blocks in this block's row, named the way the height readout reads them. */
   function heightNeighbours(blockId: string): { id: string; label: string }[] {
-    const row = blockRows.find((items) => items.some((item) => item.id === blockId && !item.ghost))
+    const row = blockRows.find((slots) =>
+      slots.some((slot) => slot.members.some((item) => item.id === blockId && !item.ghost))
+    )
     if (!row) return []
-    return row.flatMap((item) => {
-      if (item.ghost || item.id === blockId) return []
-      const mate = blocks.find((candidate) => candidate.id === item.id)
-      if (!mate) return []
-      return [{ id: mate.id, label: blockName(mate, blockFrame(mate)) }]
-    })
+    return row.flatMap((slot) =>
+      slot.members.flatMap((item) => {
+        if (item.ghost || item.id === blockId) return []
+        const mate = blocks.find((candidate) => candidate.id === item.id)
+        if (!mate) return []
+        return [{ id: mate.id, label: blockName(mate, blockFrame(mate)) }]
+      })
+    )
   }
 
   function renderBlockEditor(block: Block, i: number) {
@@ -3370,7 +3389,8 @@ export function BlockCanvas({
           // Row 0's own-line band overrides a held beside zone (KAN-548): a
           // short first block's sticky left/right would otherwise survive
           // into its top corner, where the drop line shown is `above`.
-          const isRowZero = blockRows[0]?.some((b) => b.id === block.id) ?? false
+          const isRowZero =
+            blockRows[0]?.some((slot) => slot.members.some((m) => m.id === block.id)) ?? false
           const zone =
             rowZeroZone(rect, point, isRowZero) ??
             zoneWhenDrawnStacked(
@@ -3572,7 +3592,7 @@ export function BlockCanvas({
               // event). Shows the same `above` indicator row 0's first block
               // would show for a point at its own top edge, so a release
               // there still lands the drag first.
-              const firstRowFirst = blockRows[0]?.[0]
+              const firstRowFirst = blockRows[0]?.[0]?.members[0]
               if (!firstRowFirst) return
               const firstIndex = blocks.findIndex((b) => b.id === firstRowFirst.id)
               if (firstIndex === -1) return
@@ -3641,7 +3661,11 @@ export function BlockCanvas({
              * the gap lives entirely on each row's sizing divs, below.
              */}
             {blockRows
-              .flatMap((row, rowIndex) => {
+              .flatMap((slots, rowIndex) => {
+                // Flattened back to one entry per block (KAN-570): every slot is
+                // single-member until a column is actually set (next item renders
+                // a multi-member slot's members stacked instead of flattened).
+                const row = slots.flatMap((slot) => slot.members)
                 const widths = row.map((item) => item.width)
                 // Widths and rows are kept, not shown: a row that stacks renders
                 // each of its blocks' sizing divs at 100% width, which — because
