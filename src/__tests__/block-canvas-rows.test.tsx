@@ -9,12 +9,14 @@
  */
 
 import React from 'react'
-import { act, render, waitFor } from '@testing-library/react'
+import { act, render, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import type { Block } from '@/lib/documents/types'
-import { blockWidthStyle } from '@/lib/modules/layout-rows'
+import { BLOCK_ROW_GAP_PX, blockWidthStyle } from '@/lib/modules/layout-rows'
+import { textEditorOf } from './helpers/text-block'
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
@@ -434,6 +436,206 @@ describe('rows in BlockCanvas', () => {
       } finally {
         ro.restore()
       }
+    })
+  })
+
+  // KAN-570: a column is a slot of several blocks sharing a `column` id,
+  // stacked vertically inside the one row position `layoutSlotRows` packs
+  // for it (unit-tested directly on `groupColumns`/`layoutSlotRows` in
+  // layout-rows.test.ts) — this pins that the canvas actually draws that
+  // stack, rather than flattening it back into the row beside its neighbour.
+  describe('a column renders its members stacked in one slot', () => {
+    it('two same-column ½ blocks share one slot, beside an unrelated ½ neighbour', () => {
+      const top: Block = { id: 'b-1', type: 'text', content: 'top', width: '1/2', column: 'col-1' }
+      const bottom: Block = {
+        id: 'b-2',
+        type: 'text',
+        content: 'bottom',
+        width: '1/2',
+        column: 'col-1',
+      }
+      const neighbour: Block = { id: 'b-3', type: 'text', content: 'right', width: '1/2' }
+      renderCanvas([top, bottom, neighbour])
+
+      const stack = blockRoot('b-1').parentElement!.parentElement!
+      const slotA = stack.parentElement!
+      const slotB = blockRoot('b-2').parentElement!.parentElement!.parentElement!
+      expect(slotB).toBe(slotA)
+
+      expect(stack.className).toContain('flex')
+      expect(stack.className).toContain('flex-col')
+      expect(stack.style.gap).toBe(`${BLOCK_ROW_GAP_PX}px`)
+
+      expect(normalizedWidth(slotA.style.width)).toBe(normalizedWidth(blockWidthStyle('1/2')))
+      // The neighbour is its own (single-member) slot, unaffected.
+      expect(normalizedWidth(blockRoot('b-3').parentElement!.style.width)).toBe(
+        normalizedWidth(blockWidthStyle('1/2'))
+      )
+    })
+
+    it('a column narrower than 240px stacks full-width, like a plain row does today', () => {
+      const ro = mockResizeObserver()
+      try {
+        const top: Block = {
+          id: 'b-1',
+          type: 'text',
+          content: 'top',
+          width: '1/2',
+          column: 'col-1',
+        }
+        const bottom: Block = {
+          id: 'b-2',
+          type: 'text',
+          content: 'bottom',
+          width: '1/2',
+          column: 'col-1',
+        }
+        const neighbour: Block = { id: 'b-3', type: 'text', content: 'right', width: '1/2' }
+        renderCanvas([top, bottom, neighbour])
+
+        const slotA = blockRoot('b-1').parentElement!.parentElement!.parentElement!
+        const canvas = slotA.parentElement! as HTMLElement
+        jest.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ width: 300 } as DOMRect)
+        ro.fire()
+
+        expect(slotA.style.width).toBe('100%')
+        expect(blockRoot('b-3').parentElement!.style.width).toBe('100%')
+      } finally {
+        ro.restore()
+      }
+    })
+  })
+
+  // KAN-570: Enter ('below') beside another block never redirects out of the
+  // row (KAN-506's own rule for a side-by-side row) — it keeps the new block
+  // in the column it was pressed in.
+  describe('Enter (where: below) beside another block', () => {
+    it('Enter at the end of the RIGHT of two ½ blocks inserts under it, sharing a column; the left block is untouched', async () => {
+      const left: Block = { id: 'b-left', type: 'text', content: 'left', width: '1/2' }
+      const right: Block = { id: 'b-right', type: 'text', content: 'right', width: '1/2' }
+      const onChange = jest.fn()
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      render(
+        <QueryClientProvider client={client}>
+          <DeletionUndoProvider>
+            <BlockCanvas
+              blocks={[left, right]}
+              pageId="page-1"
+              pageTitle="sourdough, 78%"
+              onChange={onChange}
+            />
+          </DeletionUndoProvider>
+        </QueryClientProvider>
+      )
+
+      const rightField = await within(blockRoot('b-right')).findByRole('textbox', {
+        name: 'text block',
+      })
+      act(() => {
+        textEditorOf(rightField).commands.focus('end')
+      })
+      await waitFor(() => expect(rightField).toHaveFocus())
+
+      const user = userEvent.setup()
+      await user.keyboard('{Enter}')
+
+      await waitFor(() => expect(onChange).toHaveBeenCalled())
+      const next = onChange.mock.calls.at(-1)![0] as Block[]
+      expect(next.map((b) => b.id)).toEqual(['b-left', 'b-right', expect.any(String)])
+
+      const [nextLeft, nextRight, nextNew] = next
+      expect(nextLeft).toEqual(left)
+      expect(nextRight.column).toBeDefined()
+      expect(nextNew.column).toBe(nextRight.column)
+      expect(nextNew.width).toBeUndefined()
+    })
+  })
+
+  // KAN-570: Enter ('above') beside another block gets the same in-column
+  // treatment as 'below' — it never redirects out to before the whole row
+  // (KAN-506's own rule), only ever above the member it was pressed in.
+  describe('Enter (where: above) beside another block', () => {
+    it('Enter at the start of the RIGHT of two ½ blocks inserts above it, sharing a column; the left block is untouched', async () => {
+      const left: Block = { id: 'b-left', type: 'text', content: 'left', width: '1/2' }
+      const right: Block = { id: 'b-right', type: 'text', content: 'right', width: '1/2' }
+      const onChange = jest.fn()
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      render(
+        <QueryClientProvider client={client}>
+          <DeletionUndoProvider>
+            <BlockCanvas
+              blocks={[left, right]}
+              pageId="page-1"
+              pageTitle="sourdough, 78%"
+              onChange={onChange}
+            />
+          </DeletionUndoProvider>
+        </QueryClientProvider>
+      )
+
+      const rightField = await within(blockRoot('b-right')).findByRole('textbox', {
+        name: 'text block',
+      })
+      act(() => {
+        textEditorOf(rightField).commands.focus('start')
+      })
+      await waitFor(() => expect(rightField).toHaveFocus())
+
+      const user = userEvent.setup()
+      await user.keyboard('{Enter}')
+
+      await waitFor(() => expect(onChange).toHaveBeenCalled())
+      const next = onChange.mock.calls.at(-1)![0] as Block[]
+      expect(next.map((b) => b.id)).toEqual(['b-left', expect.any(String), 'b-right'])
+
+      const [nextLeft, nextNew, nextRight] = next
+      expect(nextLeft).toEqual(left)
+      expect(nextNew.column).toBeDefined()
+      expect(nextRight.column).toBe(nextNew.column)
+      expect(nextNew.width).toBe('1/2')
+    })
+
+    it('Enter at the start of the LEFT of two ½ blocks inserts above it, sharing a column; the right block is never touched', async () => {
+      const left: Block = { id: 'b-left', type: 'text', content: 'left', width: '1/2', rowStart: true }
+      const right: Block = { id: 'b-right', type: 'text', content: 'right', width: '1/2' }
+      const onChange = jest.fn()
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      render(
+        <QueryClientProvider client={client}>
+          <DeletionUndoProvider>
+            <BlockCanvas
+              blocks={[left, right]}
+              pageId="page-1"
+              pageTitle="sourdough, 78%"
+              onChange={onChange}
+            />
+          </DeletionUndoProvider>
+        </QueryClientProvider>
+      )
+
+      const leftField = await within(blockRoot('b-left')).findByRole('textbox', {
+        name: 'text block',
+      })
+      act(() => {
+        textEditorOf(leftField).commands.focus('start')
+      })
+      await waitFor(() => expect(leftField).toHaveFocus())
+
+      const user = userEvent.setup()
+      await user.keyboard('{Enter}')
+
+      await waitFor(() => expect(onChange).toHaveBeenCalled())
+      const next = onChange.mock.calls.at(-1)![0] as Block[]
+      expect(next.map((b) => b.id)).toEqual([expect.any(String), 'b-left', 'b-right'])
+
+      const [nextNew, nextLeft, nextRight] = next
+      expect(nextRight).toEqual(right)
+      expect(nextNew.column).toBeDefined()
+      expect(nextLeft.column).toBe(nextNew.column)
+      // The new block, now first in the slot, takes over the width/rowStart
+      // `layoutRows` packs by — the same `left` the person pressed Enter in.
+      expect(nextNew.width).toBe('1/2')
+      expect(nextNew.rowStart).toBe(true)
     })
   })
 })

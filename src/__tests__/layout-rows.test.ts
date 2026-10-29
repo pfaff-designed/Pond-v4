@@ -9,13 +9,16 @@ import {
   detachKeepingRows,
   drawnWidthPercent,
   EDGE_FRACTION,
+  groupColumns,
   isWithinPaddedZone,
   layoutRows,
+  layoutSlotRows,
   planBesideDrop,
   planOwnLineDrop,
   rowHolds,
   rowStacks,
   rowZeroZone,
+  shedLoneColumns,
   widthPercent,
   widthsForDropBeside,
   withoutRowStart,
@@ -128,6 +131,88 @@ describe('layoutRows', () => {
       const c = { id: 'c', width: 20.1 }
       expect(layoutRows([a, b, c])).toEqual([[a, b], [c]])
     })
+  })
+})
+
+// `groupColumns`/`layoutSlotRows` (KAN-570): a column is a run of CONSECUTIVE
+// blocks sharing the same `column` id, stacked vertically inside one row slot.
+describe('groupColumns / layoutSlotRows (KAN-570)', () => {
+  it('no column anywhere: layoutSlotRows\' row grouping is identical to layoutRows, one member per slot', () => {
+    const [a, b] = blocks('1/2', '1/2')
+    expect(layoutSlotRows([a, b])).toEqual([
+      [
+        { members: [a], width: '1/2' },
+        { members: [b], width: '1/2' },
+      ],
+    ])
+    expect(layoutRows([a, b])).toEqual([[a, b]])
+  })
+
+  it('a 2-member ½-width column packs as ONE ½ slot beside another ½ block', () => {
+    const a = { id: 'a', width: '1/2' as BlockWidth, column: 'c1' }
+    const b = { id: 'b', width: '1/2' as BlockWidth, column: 'c1' }
+    const c = { id: 'c', width: '1/2' as BlockWidth }
+    expect(layoutSlotRows([a, b, c])).toEqual([
+      [
+        { members: [a, b], width: '1/2' },
+        { members: [c], width: '1/2' },
+      ],
+    ])
+  })
+
+  it('a 3-member column packs as ONE slot at its own width', () => {
+    const a = { id: 'a', width: '1/3' as BlockWidth, column: 'c1' }
+    const b = { id: 'b', width: '1/3' as BlockWidth, column: 'c1' }
+    const c = { id: 'c', width: '1/3' as BlockWidth, column: 'c1' }
+    const d = { id: 'd', width: '2/3' as BlockWidth }
+    expect(layoutSlotRows([a, b, c, d])).toEqual([
+      [
+        { members: [a, b, c], width: '1/3' },
+        { members: [d], width: '2/3' },
+      ],
+    ])
+  })
+
+  it('the same column id on non-adjacent blocks never merges across the gap: two single-member slots', () => {
+    const a = { id: 'a', width: '1/4' as BlockWidth, column: 'c1' }
+    const b = { id: 'b', width: '1/4' as BlockWidth, column: 'c2' }
+    const c = { id: 'c', width: '1/4' as BlockWidth, column: 'c1' }
+    expect(groupColumns([a, b, c])).toEqual([
+      { members: [a], width: '1/4' },
+      { members: [b], width: '1/4' },
+      { members: [c], width: '1/4' },
+    ])
+  })
+})
+
+// `shedLoneColumns` (KAN-570): removing a column's other member leaves the
+// survivor grouped with nobody, so its `column` id is stripped.
+describe('shedLoneColumns', () => {
+  it('a 2-member column with one member removed: the survivor sheds `column`', () => {
+    const a = { id: 'a', width: '1/2' as BlockWidth, column: 'c1' }
+    const c = { id: 'c', width: '1/2' as BlockWidth }
+    expect(shedLoneColumns([a, c])).toEqual([{ id: 'a', width: '1/2' }, c])
+  })
+
+  it('a 3-member column with one member removed: the two survivors stay grouped, untouched', () => {
+    const a = { id: 'a', width: '1/3' as BlockWidth, column: 'c1' }
+    const b = { id: 'b', width: '1/3' as BlockWidth, column: 'c1' }
+    expect(shedLoneColumns([a, b])).toEqual([a, b])
+  })
+
+  it('no column anywhere is a no-op, same references', () => {
+    const a = { id: 'a', width: '1/2' as BlockWidth }
+    const b = { id: 'b', width: '1/2' as BlockWidth }
+    expect(shedLoneColumns([a, b])).toEqual([a, b])
+    expect(shedLoneColumns([a, b])[0]).toBe(a)
+  })
+
+  it('a lone column survivor at the far end, beside an unrelated full block, sheds `column` without touching the other block', () => {
+    const a = { id: 'a', width: '1/2' as BlockWidth, column: 'c1' }
+    const d = { id: 'd', width: 'full' as BlockWidth }
+    const result = shedLoneColumns([a, d])
+    expect(result).toEqual([{ id: 'a', width: '1/2' }, d])
+    expect(result[1]).toBe(d)
   })
 })
 
