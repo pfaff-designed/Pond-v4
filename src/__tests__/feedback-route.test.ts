@@ -231,6 +231,23 @@ describe('POST /api/feedback', () => {
       expect(mockCreateJiraIssue).toHaveBeenCalledTimes(2)
     })
 
+    it('requests waiting on a failed filing retry it once, not once each', async () => {
+      let fail: (e: Error) => void = () => {}
+      mockCreateJiraIssue.mockImplementationOnce(
+        () => new Promise((_resolve, reject) => (fail = reject))
+      )
+      const first = post(body)
+      // Let the first request register its filing before the others arrive.
+      await new Promise((r) => setTimeout(r, 0))
+      const waiters = [post(body), post(body)]
+      await new Promise((r) => setTimeout(r, 0))
+      fail(new Error('jira down'))
+      expect((await first).status).toBe(502)
+      const answers = await Promise.all(waiters)
+      expect(answers.map((r) => r.status)).toEqual([200, 200])
+      expect(mockCreateJiraIssue).toHaveBeenCalledTimes(2)
+    })
+
     it('a failed filing is forgotten, so a retry with the same key files', async () => {
       mockCreateJiraIssue.mockRejectedValueOnce(new Error('jira down'))
       expect((await post(body)).status).toBe(502)

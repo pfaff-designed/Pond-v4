@@ -3,6 +3,7 @@ import { buildFeedbackIssue } from '@/lib/feedback/build-issue'
 import { addIssueComment, createJiraIssue, rankFirstInNowQueue } from '@/lib/feedback/jira-client'
 import { buildOwnerEmailFields, sendOwnerEmail } from '@/lib/feedback/owner-email'
 import { checkFeedbackRateLimit } from '@/lib/feedback/rate-limit'
+import { FILING_FAILED } from '@/lib/feedback/file-report'
 import {
   filingKey,
   priorFiling,
@@ -74,14 +75,18 @@ export async function POST(req: Request) {
   }
 
   if (missingEnv()) {
-    return Response.json({ error: "can't file reports right now" }, { status: 503 })
+    return Response.json({ error: FILING_FAILED }, { status: 503 })
   }
 
   const dedupeKey = parsed.idempotencyKey ? filingKey(user.id, parsed.idempotencyKey) : null
-  const prior = dedupeKey ? priorFiling(dedupeKey) : undefined
-  if (prior) {
-    const filed = await prior
-    if (filed) return Response.json(filed)
+  // Wait on an earlier filing under the key. If it failed, look again: another
+  // request waiting on it may already have started the retry, and this one
+  // must wait on that rather than file a second issue.
+  if (dedupeKey) {
+    for (let prior = priorFiling(dedupeKey); prior; prior = priorFiling(dedupeKey)) {
+      const filed = await prior
+      if (filed) return Response.json(filed)
+    }
   }
 
   if (!checkFeedbackRateLimit(user.id)) {
@@ -131,7 +136,7 @@ async function fileIssue(
   try {
     created = await createJiraIssue({ ...issue, labels })
   } catch {
-    return { status: 502, body: { error: "can't file reports right now" } }
+    return { status: 502, body: { error: FILING_FAILED } }
   }
   if (!isOwner) {
     const fields = buildOwnerEmailFields({

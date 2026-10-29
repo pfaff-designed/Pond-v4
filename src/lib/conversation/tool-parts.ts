@@ -85,9 +85,9 @@ export function isDefineSchemaPart(part: { type: string }): part is DefineSchema
 }
 
 /** The same guard `DefineSchemaProposalCard`'s render branch applies. */
-export function defineSchemaInputIsVisible(
-  input: DefineSchemaPart['input']
-): input is NonNullable<DefineSchemaPart['input']> & {
+export function defineSchemaInputIsVisible(input: DefineSchemaPart['input']): input is NonNullable<
+  DefineSchemaPart['input']
+> & {
   pageId: string
   properties: AiPropertyDef[]
 } {
@@ -338,7 +338,11 @@ function isVisiblePart(part: AssistantPart): boolean {
     case SUGGEST_FOLLOWUPS_TYPE:
       return suggestFollowupsInputIsVisible(typed.input as SuggestFollowupsPart['input'])
     case FILE_REPORT_TYPE:
-      return fileReportInputIsVisible(typed.input as FileReportPart['input'])
+      // A draft the tool's contract refused never draws a card.
+      return (
+        typed.state !== 'output-error' &&
+        fileReportInputIsVisible(typed.input as FileReportPart['input'])
+      )
     case PROPOSE_CHANGES_TYPE:
       // diffCards pushes one card per non-streaming propose_changes part
       // regardless of how many changes it carries (AITerminal.tsx ~3224).

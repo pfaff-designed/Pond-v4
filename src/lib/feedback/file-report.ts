@@ -25,6 +25,9 @@ export interface FiledTicket {
   url: string
 }
 
+/** What the card says when the route gave no reason of its own. */
+export const FILING_FAILED = "can't file reports right now"
+
 type Fetch = (input: string, init: RequestInit) => Promise<Response>
 
 export function createReportFiler(fetchImpl: Fetch = (input, init) => fetch(input, init)) {
@@ -45,10 +48,12 @@ export function createReportFiler(fetchImpl: Fetch = (input, init) => fetch(inpu
         idempotencyKey: draft.toolCallId,
       }),
     }).then(async (res) => {
-      if (!res.ok) throw new Error(`feedback ${res.status}`)
-      const data = (await res.json()) as Partial<FiledTicket>
-      if (typeof data.key !== 'string' || typeof data.url !== 'string') {
-        throw new Error('feedback answered without a key')
+      const data = (await res.json().catch(() => ({}))) as Partial<FiledTicket> & {
+        error?: unknown
+      }
+      if (!res.ok || typeof data.key !== 'string' || typeof data.url !== 'string') {
+        // The route's own words when it gave any — a rate limit says so.
+        throw new Error(typeof data.error === 'string' ? data.error : FILING_FAILED)
       }
       return { key: data.key, url: data.url }
     })

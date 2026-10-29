@@ -17,6 +17,7 @@ import {
 import { isTitleEchoHeading, TITLE_ECHO_MESSAGE } from '@/lib/modules/authoring-lint'
 import { askQuestionSchema, suggestFollowupsSchema } from '@/lib/conversation/parts'
 import { aiPropertyDefSchema } from '@/lib/properties/schema'
+import { SUMMARY_MAX_CHARS } from '@/lib/feedback/build-issue'
 import {
   viewModeSchema,
   filterOpSchema,
@@ -575,16 +576,16 @@ export const openChangeLogTool = {
  * file_report input schema (KAN-572). A drafted report about Pond ITSELF: a
  * one-line `summary` (the ticket's title) and `text`, what the person described.
  * Both land in a card the person can edit before anything is filed. The summary
- * cap matches `report a problem`'s own (build-issue.ts's SUMMARY_MAX_CHARS).
+ * cap is `report a problem`'s own.
  */
 export const fileReportInput = z.object({
   summary: z
     .string()
     .trim()
     .min(1)
-    .max(80)
+    .max(SUMMARY_MAX_CHARS)
     .describe(
-      'A one-line summary of the problem or the missing feature in Pond itself, lowercase, at most 80 characters — e.g. "calendar opens on the wrong month".'
+      `A one-line summary of the problem or the missing feature in Pond itself, lowercase, at most ${SUMMARY_MAX_CHARS} characters — e.g. "calendar opens on the wrong month".`
     ),
   text: z
     .string()

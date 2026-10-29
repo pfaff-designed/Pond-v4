@@ -56,6 +56,9 @@ export function rememberFiling(
   result: Promise<FiledReport | null>,
   now = Date.now()
 ): void {
+  // Prune on write: a filed key is rarely asked for again, so expiry on read
+  // alone would let the map grow for the life of the process.
+  for (const [k, f] of filings) if (now - f.at > TTL_MS) filings.delete(k)
   const filing: Filing = { at: now, result }
   filings.set(key, filing)
   void result.then((filed) => {

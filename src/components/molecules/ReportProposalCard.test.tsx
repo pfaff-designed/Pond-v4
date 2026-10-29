@@ -65,9 +65,10 @@ describe('ReportProposalCard', () => {
     expect(screen.queryByRole('button', { name: 'file it' })).toBeNull()
   })
 
-  it('cancelled renders nothing', () => {
-    const { container } = setup('cancelled')
-    expect(container).toBeEmptyDOMElement()
+  it('cancelled folds to a quiet line with no controls', () => {
+    setup('cancelled')
+    expect(screen.getByText('report — cancelled · nothing filed')).toBeInTheDocument()
+    expect(screen.queryByRole('button')).toBeNull()
   })
 
   it('a failed filing shows why and keeps file it live for a retry', () => {

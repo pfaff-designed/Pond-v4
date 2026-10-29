@@ -4,7 +4,8 @@
  * unit-testable without a server or a real Jira call.
  */
 
-const SUMMARY_MAX_CHARS = 80
+/** A Jira summary's cap — the composer card and the file_report tool read it too. */
+export const SUMMARY_MAX_CHARS = 80
 
 export interface BuildFeedbackIssueInput {
   text: string

@@ -67,6 +67,16 @@ describe('a report card is visible content', () => {
   it('draws nothing for an empty draft', () => {
     expect(hasVisibleAssistantContent([part({ summary: ' ', text: '' })])).toBe(false)
   })
+
+  it('draws nothing for a draft the contract refused', () => {
+    const refused = {
+      type: FILE_REPORT_TYPE,
+      toolCallId: 'r1',
+      state: 'output-error',
+      input: { summary: 'a'.repeat(81), text: 'x' },
+    } as never
+    expect(hasVisibleAssistantContent([refused])).toBe(false)
+  })
 })
 
 describe('report outcomes ride the resolutions envelope', () => {
@@ -182,6 +192,14 @@ describe('createReportFiler', () => {
     release(ok())
     await Promise.all([first, second])
     expect(fetchImpl).toHaveBeenCalledTimes(1)
+  })
+
+  it("a refused filing carries the route's own reason", async () => {
+    const fetchImpl = jest.fn(async () =>
+      response(429, { error: 'Too many reports — try again later' })
+    )
+    const file = createReportFiler(fetchImpl)
+    await expect(file(draft)).rejects.toThrow('Too many reports — try again later')
   })
 
   it('a failed filing can be retried', async () => {

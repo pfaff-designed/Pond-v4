@@ -674,52 +674,6 @@ export function AITerminal() {
     []
   )
 
-  // ── file_report (KAN-572) ───────────────────────────────────────────────────
-  // **file it** POSTs the card's draft to /api/feedback — the route `report a
-  // problem` files through — with the open page's id and title. The filer hands
-  // a double press the same in-flight request, and the tool call id rides as the
-  // route's idempotency key, so one card files one ticket (G9). The outcome
-  // rides the resolutions envelope; filing/error are session-scoped.
-  const [fileReportRequest] = useState(() => createReportFiler())
-  const [reportFiling, setReportFiling] = useState<Record<string, boolean>>({})
-  const [reportErrors, setReportErrors] = useState<Record<string, string>>({})
-  const fileReport = useCallback(
-    (
-      toolCallId: string,
-      draft: { summary: string; text: string },
-      page: { id: string | null; title?: string }
-    ) => {
-      setReportFiling((m) => ({ ...m, [toolCallId]: true }))
-      setReportErrors(({ [toolCallId]: _drop, ...rest }) => (void _drop, rest))
-      fileReportRequest({
-        toolCallId,
-        summary: draft.summary,
-        // The route requires text; a summary-only draft files its summary as the text.
-        text: draft.text || draft.summary,
-        pageId: page.id,
-        pageTitle: page.title,
-        url: window.location.href,
-      })
-        .then(({ key, url }) => {
-          dispatch({
-            kind: 'settleReport',
-            id: toolCallId,
-            resolution: { status: 'filed', key, url },
-          })
-        })
-        .catch(() => {
-          setReportErrors((m) => ({ ...m, [toolCallId]: "can't file reports right now" }))
-        })
-        .finally(() => {
-          setReportFiling(({ [toolCallId]: _drop, ...rest }) => (void _drop, rest))
-        })
-    },
-    [fileReportRequest]
-  )
-  const cancelReport = useCallback((toolCallId: string) => {
-    dispatch({ kind: 'settleReport', id: toolCallId, resolution: { status: 'cancelled' } })
-  }, [])
-
   // Current page blocks — the source of the "before" text in a diff card, and
   // the array we rewrite when a proposal is accepted. Shares the ['page', pageId]
   // cache with DocumentPanel. A reserved virtual node (change log, trash) has no
@@ -843,6 +797,65 @@ export function AITerminal() {
   // (opens the new-page menu, KAN-198), not this terminal.
   const { messages, sendMessage, regenerate, setMessages, status, stop, error, clearError } =
     useChat()
+  // ── file_report (KAN-572) ───────────────────────────────────────────────────
+  // **file it** POSTs the card's draft to /api/feedback — the route `report a
+  // problem` files through — with the open page's id and title. The filer hands
+  // a double press the same in-flight request, and the tool call id rides as the
+  // route's idempotency key, so one card files one ticket (G9). The outcome
+  // rides the resolutions envelope; filing/error are session-scoped. A filing
+  // that lands after the person opened another thread settles nothing there:
+  // the card is no longer among `messages`, and its own thread keeps the
+  // server's idempotency key, so pressing file it again there files nothing new.
+  const [fileReportRequest] = useState(() => createReportFiler())
+  const [reportFiling, setReportFiling] = useState<Record<string, boolean>>({})
+  const [reportErrors, setReportErrors] = useState<Record<string, string>>({})
+  const messagesRef = useRef(messages)
+  useEffect(() => {
+    messagesRef.current = messages
+  }, [messages])
+  const fileReport = useCallback(
+    (
+      toolCallId: string,
+      draft: { summary: string; text: string },
+      page: { id: string | null; title?: string }
+    ) => {
+      setReportFiling((m) => ({ ...m, [toolCallId]: true }))
+      setReportErrors(({ [toolCallId]: _drop, ...rest }) => (void _drop, rest))
+      fileReportRequest({
+        toolCallId,
+        summary: draft.summary,
+        // The route requires text; a summary-only draft files its summary as the text.
+        text: draft.text || draft.summary,
+        pageId: page.id,
+        pageTitle: page.title,
+        url: window.location.href,
+      })
+        .then(({ key, url }) => {
+          const stillOpen = messagesRef.current.some((m) =>
+            m.parts.some((p) => 'toolCallId' in p && p.toolCallId === toolCallId)
+          )
+          if (!stillOpen) return
+          dispatch({
+            kind: 'settleReport',
+            id: toolCallId,
+            resolution: { status: 'filed', key, url },
+          })
+        })
+        .catch((err: unknown) => {
+          // The route's own words (a rate limit says so), never a second copy of them.
+          const reason = err instanceof Error ? err.message : String(err)
+          setReportErrors((m) => ({ ...m, [toolCallId]: reason }))
+        })
+        .finally(() => {
+          setReportFiling(({ [toolCallId]: _drop, ...rest }) => (void _drop, rest))
+        })
+    },
+    [fileReportRequest]
+  )
+  const cancelReport = useCallback((toolCallId: string) => {
+    dispatch({ kind: 'settleReport', id: toolCallId, resolution: { status: 'cancelled' } })
+  }, [])
+
   const [input, setInput] = useState('')
   // `/bug` files outside the model. The ref closes the send gate for the
   // whole request; the state only disables the line.
@@ -4326,7 +4339,8 @@ export function AITerminal() {
         {/* file_report (KAN-572): file it files through /api/feedback; the outcome
             rides the resolutions envelope, so a filed card keeps its key. */}
         {reportParts.map((part) => {
-          if (part.state === 'input-streaming') return null
+          // Streaming is partial; output-error is a draft the contract refused.
+          if (part.state === 'input-streaming' || part.state === 'output-error') return null
           const input = part.input
           if (!fileReportInputIsVisible(input)) return null
           const resolution = reports[part.toolCallId]

@@ -5,8 +5,8 @@
  * composer thread: a drafted report about Pond itself, a one-line summary and
  * what the person described, both editable in place. Two controls: **file it**
  * and **cancel**. Nothing is filed until file it; filed, the card shows the
- * ticket's key as a link; cancelled, it renders nothing (like a cancelled
- * `new page — proposed` card).
+ * ticket's key as a link; cancelled, it folds to its eyebrow, so the turn it
+ * came in never reads as an empty answer.
  *
  * No board draws this card — the ticket is an explicit user request. It is
  * built as `PageProposalCard`'s sibling, from the same parts and values: the
@@ -24,11 +24,9 @@ import { PondControl } from '@/components/atoms/PondControl'
 import { pageEyebrowClass } from '@/components/atoms/kicker'
 import { cn } from '@/lib/utils'
 import { placeRowClass, placeLabelClass, placeFieldClass } from '@/components/molecules/place-row'
+import { SUMMARY_MAX_CHARS } from '@/lib/feedback/build-issue'
 
 export type ReportProposalStatus = 'proposed' | 'filing' | 'filed' | 'cancelled'
-
-/** The route's summary cap (build-issue.ts's SUMMARY_MAX_CHARS). */
-const SUMMARY_MAX = 80
 
 export interface ReportProposalCardProps {
   /** The drafted one-line summary. */
@@ -62,7 +60,22 @@ export function ReportProposalCard({
   const [draftSummary, setDraftSummary] = useState(summary)
   const [draftText, setDraftText] = useState(text)
 
-  if (status === 'cancelled') return null
+  if (status === 'cancelled') {
+    return (
+      <div
+        role="group"
+        aria-label="report — cancelled"
+        data-part="report-proposal"
+        data-status="cancelled"
+        className={cn(
+          'mn-proposal rounded-mn-inner px-[13px] py-3 font-mono lowercase tracking-[0.02em] opacity-70',
+          className
+        )}
+      >
+        <span className={pageEyebrowClass}>report — cancelled · nothing filed</span>
+      </div>
+    )
+  }
 
   const filing = status === 'filing'
   const canFile = !filing && (draftSummary.trim() !== '' || draftText.trim() !== '')
@@ -102,7 +115,7 @@ export function ReportProposalCard({
               id={`${ids}-summary`}
               aria-label="summary"
               value={draftSummary}
-              maxLength={SUMMARY_MAX}
+              maxLength={SUMMARY_MAX_CHARS}
               disabled={filing}
               onChange={(e) => setDraftSummary(e.target.value)}
               className={placeFieldClass}
