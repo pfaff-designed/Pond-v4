@@ -66,3 +66,19 @@ describe('buildFeedbackIssue', () => {
     expect(labels).toEqual(['feedback', 'from-owner'])
   })
 })
+
+describe('buildFeedbackIssue with an explicit summary (KAN-572)', () => {
+  it("uses the composer card's summary over the text's first line", () => {
+    const { summary } = buildFeedbackIssue({
+      ...BASE,
+      summary: ' calendar opens on the wrong month ',
+      text: 'i opened it in october\nit showed june',
+    })
+    expect(summary).toBe('calendar opens on the wrong month')
+  })
+
+  it('falls back to the first line when the summary is blank', () => {
+    const { summary } = buildFeedbackIssue({ ...BASE, summary: '  ', text: 'first\nsecond' })
+    expect(summary).toBe('first')
+  })
+})

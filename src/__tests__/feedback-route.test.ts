@@ -7,7 +7,10 @@
  * `now`/`size-S` and an attempted rank. `jira-client` is mocked — no network.
  */
 
-let mockUser: { id: string; email: string } | null = { id: 'user-1', email: 'blank-slate-test@pond.local' }
+let mockUser: { id: string; email: string } | null = {
+  id: 'user-1',
+  email: 'blank-slate-test@pond.local',
+}
 jest.mock('@/lib/supabase/server', () => ({
   createClient: jest.fn(async () => ({
     auth: { getUser: async () => ({ data: { user: mockUser } }) },
@@ -31,6 +34,7 @@ jest.mock('@/lib/feedback/owner-email', () => ({
 }))
 
 import { POST } from '@/app/api/feedback/route'
+import { resetFilings } from '@/lib/feedback/idempotency'
 
 const ENV_VARS = ['JIRA_BASE_URL', 'JIRA_EMAIL', 'JIRA_API_KEY', 'OWNER_EMAIL'] as const
 
@@ -47,13 +51,19 @@ function post(body: unknown) {
 beforeEach(() => {
   mockUser = { id: 'user-1', email: 'blank-slate-test@pond.local' }
   mockCreateJiraIssue.mockReset()
-  mockCreateJiraIssue.mockResolvedValue({ key: 'KAN-900', url: 'https://pfaff-team.atlassian.net/browse/KAN-900' })
+  mockCreateJiraIssue.mockResolvedValue({
+    key: 'KAN-900',
+    url: 'https://pfaff-team.atlassian.net/browse/KAN-900',
+  })
   mockRankFirstInNowQueue.mockReset()
   mockRankFirstInNowQueue.mockResolvedValue(true)
   mockAddIssueComment.mockReset()
   mockAddIssueComment.mockResolvedValue(true)
   mockBuildOwnerEmailFields.mockReset()
-  mockBuildOwnerEmailFields.mockReturnValue({ subject: 'pond · problem reported: the save button does nothing', html: '<p></p>' })
+  mockBuildOwnerEmailFields.mockReturnValue({
+    subject: 'pond · problem reported: the save button does nothing',
+    html: '<p></p>',
+  })
   mockSendOwnerEmail.mockReset()
   mockSendOwnerEmail.mockResolvedValue({ id: 'email-1' })
   process.env.JIRA_BASE_URL = 'https://pfaff-team.atlassian.net'
@@ -127,7 +137,9 @@ describe('POST /api/feedback', () => {
   it("a non-owner report's labels are exactly feedback/from-user, and rank is never attempted", async () => {
     const res = await post({ text: 'the save button does nothing', url: 'https://pond.local/p' })
     expect(res.status).toBe(200)
-    expect(mockCreateJiraIssue).toHaveBeenCalledWith(expect.objectContaining({ labels: ['feedback', 'from-user'] }))
+    expect(mockCreateJiraIssue).toHaveBeenCalledWith(
+      expect.objectContaining({ labels: ['feedback', 'from-user'] })
+    )
     expect(mockRankFirstInNowQueue).not.toHaveBeenCalled()
     expect(await res.json()).toEqual({
       key: 'KAN-900',
@@ -165,6 +177,65 @@ describe('POST /api/feedback', () => {
       url: 'https://pfaff-team.atlassian.net/browse/KAN-900',
       emailFailed: true,
     })
-    expect(mockAddIssueComment).toHaveBeenCalledWith('KAN-900', 'owner email failed: RESEND_API_KEY is missing')
+    expect(mockAddIssueComment).toHaveBeenCalledWith(
+      'KAN-900',
+      'owner email failed: RESEND_API_KEY is missing'
+    )
+  })
+
+  // KAN-572: the composer's report card files through this route with an
+  // edited summary and its tool call id as an idempotency key.
+  describe('from the composer report card', () => {
+    beforeEach(() => {
+      resetFilings()
+      mockUser = { id: 'composer-1', email: 'CMP7CC@gmail.com' }
+    })
+
+    const body = {
+      summary: 'calendar opens on the wrong month',
+      text: 'i opened the calendar in october and it showed june',
+      pageId: 'page-1',
+      pageTitle: 'kitchen reno',
+      url: 'https://pond.local/p',
+      idempotencyKey: 'call-1',
+    }
+
+    it("titles the issue with the card's summary and files it with now", async () => {
+      const res = await post(body)
+      expect(res.status).toBe(200)
+      expect(mockCreateJiraIssue).toHaveBeenCalledWith(
+        expect.objectContaining({
+          summary: 'calendar opens on the wrong month',
+          labels: expect.arrayContaining(['now', 'size-S']),
+        })
+      )
+    })
+
+    it('a second request with the same key files once and answers with the same ticket', async () => {
+      const first = await post(body)
+      const second = await post(body)
+      expect(mockCreateJiraIssue).toHaveBeenCalledTimes(1)
+      expect(await second.json()).toEqual(await first.json())
+    })
+
+    it('two requests in flight together with one key file once', async () => {
+      const [a, b] = await Promise.all([post(body), post(body)])
+      expect(mockCreateJiraIssue).toHaveBeenCalledTimes(1)
+      expect((await a.json()).key).toBe('KAN-900')
+      expect((await b.json()).key).toBe('KAN-900')
+    })
+
+    it('a different key files a second ticket', async () => {
+      await post(body)
+      await post({ ...body, idempotencyKey: 'call-2' })
+      expect(mockCreateJiraIssue).toHaveBeenCalledTimes(2)
+    })
+
+    it('a failed filing is forgotten, so a retry with the same key files', async () => {
+      mockCreateJiraIssue.mockRejectedValueOnce(new Error('jira down'))
+      expect((await post(body)).status).toBe(502)
+      expect((await post(body)).status).toBe(200)
+      expect(mockCreateJiraIssue).toHaveBeenCalledTimes(2)
+    })
   })
 })

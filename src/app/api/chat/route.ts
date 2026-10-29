@@ -21,6 +21,7 @@ import {
   askQuestionTool,
   suggestFollowupsTool,
   openChangeLogTool,
+  fileReportTool,
 } from './tools'
 import { stepBudgetForPhase } from './step-budget'
 import { scopingContextNote } from './scoping'
@@ -141,14 +142,17 @@ export async function POST(req: Request) {
         wholePageData.set(pageId, await fetchNodeContext(supabase, user.id, pageId, pond))
       })
     )
-    const wholePageTitles = [...wholePageData.values()].flatMap((data) => (data ? [data.title] : []))
+    const wholePageTitles = [...wholePageData.values()].flatMap((data) =>
+      data ? [data.title] : []
+    )
     const userTextForMentions =
       wholePageTitles.length > 0 ? stripWholePageMentions(userText, wholePageTitles) : userText
 
     // KAN-99: a dismissed current-page chip withholds the open page from the
     // model entirely — neither its context block nor KAN-309's "open page now"
     // part may carry it.
-    openPageData = nodeId && openPageContext ? await fetchNodeContext(supabase, user.id, nodeId, pond) : null
+    openPageData =
+      nodeId && openPageContext ? await fetchNodeContext(supabase, user.id, nodeId, pond) : null
 
     const context = await buildChatContext(supabase, user.id, {
       nodeId,
@@ -234,7 +238,11 @@ export async function POST(req: Request) {
         ).filter((record) => record.status === 'rejected')
         if (rejectedRecords.length > 0) {
           const rejectedPageIds = [
-            ...new Set(rejectedRecords.flatMap((record) => (record.targetPageId ? [record.targetPageId] : []))),
+            ...new Set(
+              rejectedRecords.flatMap((record) =>
+                record.targetPageId ? [record.targetPageId] : []
+              )
+            ),
           ]
           const rejectedTitles = new Map<string, string>()
           await Promise.all(
@@ -356,6 +364,7 @@ export async function POST(req: Request) {
     ask_question: tool(askQuestionTool),
     suggest_followups: tool(suggestFollowupsTool),
     open_change_log: tool(openChangeLogTool),
+    file_report: tool(fileReportTool),
   }
 
   const result = streamText({

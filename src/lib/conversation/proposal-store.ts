@@ -23,6 +23,7 @@
 import type { ProposalDecision, ProposalTarget, ConversationResolutions } from './resolutions'
 import type { QuestionResolution, QuestionResolutions } from './parts'
 import type { PageProposal, PageProposalPatch, PageProposals } from './page-proposals'
+import type { ReportResolution, ReportResolutions } from './reports'
 import { idleLifecycle, isLifecycleActive, type LifecycleState } from './lifecycle'
 
 /** A card's settled decision, or `'pending'` — the reducer stores this; only
@@ -131,6 +132,8 @@ export interface ProposalState {
   /** #98 — revised batch → the batch it answers, by toolCallId (write-once).
    *  Projected only when non-empty. */
   revisions: Record<string, string>
+  /** KAN-572 — file_report outcomes, by toolCallId. Projected only when non-empty. */
+  reports: ReportResolutions
 
   // ── session-scoped aux (NEVER projected) ────────────────────────────────────
   /** Failed make-page reasons, by proposal id (e.g. the parent was deleted). */
@@ -220,6 +223,10 @@ export type ProposalAction =
    *  `rejected` — the same terminal status cancel leaves it in — so the answer
    *  it came from offers **make this a page** again, not a stale draft. */
   | { kind: 'undoMadePage'; id: string }
+  /** KAN-572 — a report card settled: filed (with its Jira key) or cancelled.
+   *  Write-once: a settled report never changes again, so a late second
+   *  response can't relabel a filed card or un-cancel a cancelled one. */
+  | { kind: 'settleReport'; id: string; resolution: ReportResolution }
   | { kind: 'reseed'; resolutions: ConversationResolutions }
   | { kind: 'reset' }
 
@@ -243,6 +250,7 @@ export function initialProposalState(): ProposalState {
     pageProposals: {},
     changeNotes: {},
     revisions: {},
+    reports: {},
     pageProposalErrors: {},
     skipReasons: {},
     linkErrors: {},
@@ -496,6 +504,11 @@ export function proposalReducer(state: ProposalState, action: ProposalAction): P
       }
     }
 
+    case 'settleReport': {
+      if (state.reports[action.id]) return state
+      return { ...state, reports: { ...state.reports, [action.id]: action.resolution } }
+    }
+
     case 'reseed': {
       // Restore the persisted-derived fields from a loaded envelope (mirrors the
       // terminal's mount re-seed, AITerminal.tsx 840–855). Session-scoped aux is
@@ -521,6 +534,7 @@ export function proposalReducer(state: ProposalState, action: ProposalAction): P
         pageProposals: r.pageProposals ?? {},
         changeNotes: r.changeNotes ?? {},
         revisions: r.revisions ?? {},
+        reports: r.reports ?? {},
       }
     }
 
@@ -568,5 +582,7 @@ export function projectResolutions(state: ProposalState): ConversationResolution
     // #98 — notes + revision links, only when any.
     ...(Object.keys(state.changeNotes).length > 0 ? { changeNotes: state.changeNotes } : {}),
     ...(Object.keys(state.revisions).length > 0 ? { revisions: state.revisions } : {}),
+    // KAN-572 — report outcomes, only when any.
+    ...(Object.keys(state.reports).length > 0 ? { reports: state.reports } : {}),
   }
 }
