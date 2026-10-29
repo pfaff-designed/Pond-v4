@@ -9,12 +9,14 @@
  */
 
 import React from 'react'
-import { act, render, waitFor } from '@testing-library/react'
+import { act, render, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import type { Block } from '@/lib/documents/types'
 import { BLOCK_ROW_GAP_PX, blockWidthStyle } from '@/lib/modules/layout-rows'
+import { textEditorOf } from './helpers/text-block'
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
@@ -501,6 +503,51 @@ describe('rows in BlockCanvas', () => {
       } finally {
         ro.restore()
       }
+    })
+  })
+
+  // KAN-570: Enter ('below') beside another block never redirects out of the
+  // row (KAN-506's own rule for a side-by-side row) — it keeps the new block
+  // in the column it was pressed in.
+  describe('Enter (where: below) beside another block', () => {
+    it('Enter at the end of the RIGHT of two ½ blocks inserts under it, sharing a column; the left block is untouched', async () => {
+      const left: Block = { id: 'b-left', type: 'text', content: 'left', width: '1/2' }
+      const right: Block = { id: 'b-right', type: 'text', content: 'right', width: '1/2' }
+      const onChange = jest.fn()
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      render(
+        <QueryClientProvider client={client}>
+          <DeletionUndoProvider>
+            <BlockCanvas
+              blocks={[left, right]}
+              pageId="page-1"
+              pageTitle="sourdough, 78%"
+              onChange={onChange}
+            />
+          </DeletionUndoProvider>
+        </QueryClientProvider>
+      )
+
+      const rightField = await within(blockRoot('b-right')).findByRole('textbox', {
+        name: 'text block',
+      })
+      act(() => {
+        textEditorOf(rightField).commands.focus('end')
+      })
+      await waitFor(() => expect(rightField).toHaveFocus())
+
+      const user = userEvent.setup()
+      await user.keyboard('{Enter}')
+
+      await waitFor(() => expect(onChange).toHaveBeenCalled())
+      const next = onChange.mock.calls.at(-1)![0] as Block[]
+      expect(next.map((b) => b.id)).toEqual(['b-left', 'b-right', expect.any(String)])
+
+      const [nextLeft, nextRight, nextNew] = next
+      expect(nextLeft).toEqual(left)
+      expect(nextRight.column).toBeDefined()
+      expect(nextNew.column).toBe(nextRight.column)
+      expect(nextNew.width).toBeUndefined()
     })
   })
 })
