@@ -104,6 +104,7 @@ import {
   planRowSwap,
   planStepMove,
   rowZeroZone,
+  shedLoneColumns,
   zoneWhenDrawnStacked,
   rowStacks,
   widthPercent,
@@ -2102,7 +2103,7 @@ export function BlockCanvas({
     if (!line) return
     if (index === 0) {
       if (neighbour && line.type === 'text' && !line.label) {
-        commitStructuralBlocks(detachKeepingRows(blocks, index).blocks)
+        commitStructuralBlocks(shedLoneColumns(detachKeepingRows(blocks, index).blocks))
       } else if (neighbour) {
         // Not `requestDelete`: it defaults `focus` to true, and
         // `focusBlockNeighbour`'s own `setTimeout(0)` would steal focus from
@@ -2120,7 +2121,7 @@ export function BlockCanvas({
       // the same as any other block, so taking it out must hand that off to
       // its row-mate the same way a real delete does, or the row-mate silently
       // re-packs beside whatever came before.
-      commitStructuralBlocks(detachKeepingRows(blocks, index).blocks)
+      commitStructuralBlocks(shedLoneColumns(detachKeepingRows(blocks, index).blocks))
       focusBlockNeighbour(blocks, index)
     } else {
       requestDelete(index)
@@ -2138,7 +2139,7 @@ export function BlockCanvas({
     const index = current.findIndex((block) => block.id === id)
     const block = current[index]
     if (!block || !removedOnExit(block)) return
-    commitStructuralBlocks(detachKeepingRows(current, index).blocks)
+    commitStructuralBlocks(shedLoneColumns(detachKeepingRows(current, index).blocks))
   }
 
   // A column is never split by landing a new block ABOVE one of its members

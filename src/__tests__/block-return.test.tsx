@@ -1075,6 +1075,35 @@ describe('Enter in a text block makes the next block', () => {
     expect(saved[2]).toEqual(tableHalf)
   })
 
+  it('Backspace on the fresh empty block Enter made in a column removes it and the mate sheds `column` (KAN-570)', async () => {
+    const user = userEvent.setup()
+    const textHalf: Block = { id: 'b-text', type: 'text', content: 'gamma', width: '1/2', rowStart: true }
+    const tableHalf: Block = { ...table, width: '1/2' }
+    const { onChange } = renderCanvas([textHalf, tableHalf])
+    const field = await textBlockIn('b-text')
+    act(() => {
+      textEditorOf(field).commands.focus('end')
+    })
+    await waitFor(() => expect(field).toHaveFocus())
+
+    await user.keyboard('{Enter}')
+    const afterEnter = lastBlocks(onChange)
+    expect(afterEnter[0].column).toBeDefined()
+    const newId = afterEnter[1].id
+    const newField = await textBlockIn(newId)
+    await waitFor(() => expect(newField).toHaveFocus())
+
+    await user.keyboard('{Backspace}')
+
+    await waitFor(() => {
+      const saved = lastBlocks(onChange)
+      expect(saved.map((b) => b.id)).toEqual(['b-text', 'b-table'])
+    })
+    const saved = lastBlocks(onChange)
+    expect(saved[0].column).toBeUndefined()
+    expect(saved[1]).toEqual(tableHalf)
+  })
+
   it('in a side-by-side row, caret at the start of the FIRST member: the new block goes above it, sharing a column, taking over its width/rowStart — the other member is untouched (KAN-570)', async () => {
     const user = userEvent.setup()
     const textHalf: Block = { id: 'b-text', type: 'text', content: 'gamma', width: '1/2', rowStart: true }

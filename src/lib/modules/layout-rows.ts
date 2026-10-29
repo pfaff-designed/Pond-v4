@@ -147,6 +147,33 @@ export function layoutSlotRows<
   return layoutRows(groupColumns(blocks))
 }
 
+/** Omits `column` from a block — `withoutRowStart`'s own "absent means today's
+ *  layout" convention, used by `shedLoneColumns` to strip a column id that no
+ *  longer groups anything. */
+function withoutColumn<T extends { column?: string }>(block: T): T {
+  if (block.column === undefined) return block
+  const next = { ...block }
+  delete (next as { column?: string }).column
+  return next
+}
+
+/**
+ * Strips `column` from any block left as the sole member of its column
+ * (KAN-570): removing its one row-mate — Backspace on an empty member, or
+ * any other detach — leaves the survivor grouped with nobody, and a
+ * `column` id that groups nobody means nothing (`groupColumns`'s own
+ * adjacency rule decides what still shares a column, so this reads
+ * `groupColumns`'s slots rather than re-deriving the grouping). A
+ * multi-member slot's blocks are returned untouched, same references.
+ */
+export function shedLoneColumns<
+  T extends { column?: string; width?: BlockWidth | number; rowStart?: boolean },
+>(blocks: readonly T[]): T[] {
+  return groupColumns(blocks).flatMap((slot) =>
+    slot.members.length === 1 ? [withoutColumn(slot.members[0])] : slot.members
+  )
+}
+
 /** Twelfths sorted ascending, so the widest fit for a given room is the last one that's `<= room`. */
 const TWELFTHS_ASCENDING = Object.entries(TWELFTHS).sort(([, a], [, b]) => a - b) as [
   BlockWidth,

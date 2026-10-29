@@ -18,6 +18,7 @@ import {
   rowHolds,
   rowStacks,
   rowZeroZone,
+  shedLoneColumns,
   widthPercent,
   widthsForDropBeside,
   withoutRowStart,
@@ -181,6 +182,37 @@ describe('groupColumns / layoutSlotRows (KAN-570)', () => {
       { members: [b], width: '1/4' },
       { members: [c], width: '1/4' },
     ])
+  })
+})
+
+// `shedLoneColumns` (KAN-570): removing a column's other member leaves the
+// survivor grouped with nobody, so its `column` id is stripped.
+describe('shedLoneColumns', () => {
+  it('a 2-member column with one member removed: the survivor sheds `column`', () => {
+    const a = { id: 'a', width: '1/2' as BlockWidth, column: 'c1' }
+    const c = { id: 'c', width: '1/2' as BlockWidth }
+    expect(shedLoneColumns([a, c])).toEqual([{ id: 'a', width: '1/2' }, c])
+  })
+
+  it('a 3-member column with one member removed: the two survivors stay grouped, untouched', () => {
+    const a = { id: 'a', width: '1/3' as BlockWidth, column: 'c1' }
+    const b = { id: 'b', width: '1/3' as BlockWidth, column: 'c1' }
+    expect(shedLoneColumns([a, b])).toEqual([a, b])
+  })
+
+  it('no column anywhere is a no-op, same references', () => {
+    const a = { id: 'a', width: '1/2' as BlockWidth }
+    const b = { id: 'b', width: '1/2' as BlockWidth }
+    expect(shedLoneColumns([a, b])).toEqual([a, b])
+    expect(shedLoneColumns([a, b])[0]).toBe(a)
+  })
+
+  it('a lone column survivor at the far end, beside an unrelated full block, sheds `column` without touching the other block', () => {
+    const a = { id: 'a', width: '1/2' as BlockWidth, column: 'c1' }
+    const d = { id: 'd', width: 'full' as BlockWidth }
+    const result = shedLoneColumns([a, d])
+    expect(result).toEqual([{ id: 'a', width: '1/2' }, d])
+    expect(result[1]).toBe(d)
   })
 })
 
