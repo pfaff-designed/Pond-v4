@@ -550,4 +550,92 @@ describe('rows in BlockCanvas', () => {
       expect(nextNew.width).toBeUndefined()
     })
   })
+
+  // KAN-570: Enter ('above') beside another block gets the same in-column
+  // treatment as 'below' — it never redirects out to before the whole row
+  // (KAN-506's own rule), only ever above the member it was pressed in.
+  describe('Enter (where: above) beside another block', () => {
+    it('Enter at the start of the RIGHT of two ½ blocks inserts above it, sharing a column; the left block is untouched', async () => {
+      const left: Block = { id: 'b-left', type: 'text', content: 'left', width: '1/2' }
+      const right: Block = { id: 'b-right', type: 'text', content: 'right', width: '1/2' }
+      const onChange = jest.fn()
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      render(
+        <QueryClientProvider client={client}>
+          <DeletionUndoProvider>
+            <BlockCanvas
+              blocks={[left, right]}
+              pageId="page-1"
+              pageTitle="sourdough, 78%"
+              onChange={onChange}
+            />
+          </DeletionUndoProvider>
+        </QueryClientProvider>
+      )
+
+      const rightField = await within(blockRoot('b-right')).findByRole('textbox', {
+        name: 'text block',
+      })
+      act(() => {
+        textEditorOf(rightField).commands.focus('start')
+      })
+      await waitFor(() => expect(rightField).toHaveFocus())
+
+      const user = userEvent.setup()
+      await user.keyboard('{Enter}')
+
+      await waitFor(() => expect(onChange).toHaveBeenCalled())
+      const next = onChange.mock.calls.at(-1)![0] as Block[]
+      expect(next.map((b) => b.id)).toEqual(['b-left', expect.any(String), 'b-right'])
+
+      const [nextLeft, nextNew, nextRight] = next
+      expect(nextLeft).toEqual(left)
+      expect(nextNew.column).toBeDefined()
+      expect(nextRight.column).toBe(nextNew.column)
+      expect(nextNew.width).toBe('1/2')
+    })
+
+    it('Enter at the start of the LEFT of two ½ blocks inserts above it, sharing a column; the right block is never touched', async () => {
+      const left: Block = { id: 'b-left', type: 'text', content: 'left', width: '1/2', rowStart: true }
+      const right: Block = { id: 'b-right', type: 'text', content: 'right', width: '1/2' }
+      const onChange = jest.fn()
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      render(
+        <QueryClientProvider client={client}>
+          <DeletionUndoProvider>
+            <BlockCanvas
+              blocks={[left, right]}
+              pageId="page-1"
+              pageTitle="sourdough, 78%"
+              onChange={onChange}
+            />
+          </DeletionUndoProvider>
+        </QueryClientProvider>
+      )
+
+      const leftField = await within(blockRoot('b-left')).findByRole('textbox', {
+        name: 'text block',
+      })
+      act(() => {
+        textEditorOf(leftField).commands.focus('start')
+      })
+      await waitFor(() => expect(leftField).toHaveFocus())
+
+      const user = userEvent.setup()
+      await user.keyboard('{Enter}')
+
+      await waitFor(() => expect(onChange).toHaveBeenCalled())
+      const next = onChange.mock.calls.at(-1)![0] as Block[]
+      expect(next.map((b) => b.id)).toEqual([expect.any(String), 'b-left', 'b-right'])
+
+      const [nextNew, nextLeft, nextRight] = next
+      expect(nextRight).toEqual(right)
+      expect(nextNew.column).toBeDefined()
+      expect(nextLeft.column).toBe(nextNew.column)
+      // The new block, now first in the slot, takes over the width/rowStart
+      // `layoutRows` packs by — the same `left` the person pressed Enter in.
+      expect(nextNew.width).toBe('1/2')
+      expect(nextNew.rowStart).toBe(true)
+    })
+  })
 })

@@ -15,7 +15,6 @@ import { BlockCanvas } from '@/components/organisms/BlockCanvas'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { PageCanvas } from '@/lib/modules/page-canvas'
 import type { Block } from '@/lib/documents/types'
-import { layoutRows } from '@/lib/modules/layout-rows'
 import { textEditorOf, writeInTextBlock } from './helpers/text-block'
 
 jest.mock('next/navigation', () => ({
@@ -1055,7 +1054,7 @@ describe('Enter in a text block makes the next block', () => {
     expect(field).toHaveFocus()
   })
 
-  it('in a side-by-side row: the new block goes after the row, full width, and the row stays together', async () => {
+  it('in a side-by-side row: Enter at the end of the FIRST member inserts under it, sharing a column — the other member is untouched (KAN-570)', async () => {
     const user = userEvent.setup()
     const textHalf: Block = { id: 'b-text', type: 'text', content: 'gamma', width: '1/2', rowStart: true }
     const tableHalf: Block = { ...table, width: '1/2' }
@@ -1069,15 +1068,14 @@ describe('Enter in a text block makes the next block', () => {
     await user.keyboard('{Enter}')
 
     const saved = lastBlocks(onChange)
-    expect(saved.map((b) => b.id)).toEqual(['b-text', 'b-table', expect.any(String)])
-    expect(saved[2]).toMatchObject({ type: 'text', content: '', width: 'full' })
-    expect(layoutRows(saved).map((row) => row.map((b) => b.id))).toEqual([
-      ['b-text', 'b-table'],
-      [saved[2].id],
-    ])
+    expect(saved.map((b) => b.id)).toEqual(['b-text', expect.any(String), 'b-table'])
+    expect(saved[1]).toMatchObject({ type: 'text', content: '' })
+    expect(saved[0].column).toBeDefined()
+    expect(saved[1].column).toBe(saved[0].column)
+    expect(saved[2]).toEqual(tableHalf)
   })
 
-  it('in a side-by-side row, caret at the start of the FIRST member: the new block goes before the row, the row stays together', async () => {
+  it('in a side-by-side row, caret at the start of the FIRST member: the new block goes above it, sharing a column, taking over its width/rowStart — the other member is untouched (KAN-570)', async () => {
     const user = userEvent.setup()
     const textHalf: Block = { id: 'b-text', type: 'text', content: 'gamma', width: '1/2', rowStart: true }
     const tableHalf: Block = { ...table, width: '1/2' }
@@ -1092,14 +1090,13 @@ describe('Enter in a text block makes the next block', () => {
 
     const saved = lastBlocks(onChange)
     expect(saved.map((b) => b.id)).toEqual([expect.any(String), 'b-text', 'b-table'])
-    expect(saved[0]).toMatchObject({ type: 'text', content: '', width: 'full' })
-    expect(layoutRows(saved).map((row) => row.map((b) => b.id))).toEqual([
-      [saved[0].id],
-      ['b-text', 'b-table'],
-    ])
+    expect(saved[0]).toMatchObject({ type: 'text', content: '', width: '1/2', rowStart: true })
+    expect(saved[1].column).toBeDefined()
+    expect(saved[0].column).toBe(saved[1].column)
+    expect(saved[2]).toEqual(tableHalf)
   })
 
-  it('in a side-by-side row, caret at the start of the SECOND member: the new block goes before the row, not between its members', async () => {
+  it('in a side-by-side row, caret at the start of the SECOND member: the new block goes above it, sharing a column with it alone — the LEFT member is never touched (KAN-570)', async () => {
     const user = userEvent.setup()
     const textFirst: Block = { id: 'b-first', type: 'text', content: 'gamma', width: '1/2', rowStart: true }
     const textSecond: Block = { id: 'b-second', type: 'text', content: 'delta', width: '1/2' }
@@ -1113,12 +1110,12 @@ describe('Enter in a text block makes the next block', () => {
     await user.keyboard('{Enter}')
 
     const saved = lastBlocks(onChange)
-    expect(saved.map((b) => b.id)).toEqual([expect.any(String), 'b-first', 'b-second'])
-    expect(saved[0]).toMatchObject({ type: 'text', content: '', width: 'full' })
-    expect(layoutRows(saved).map((row) => row.map((b) => b.id))).toEqual([
-      [saved[0].id],
-      ['b-first', 'b-second'],
-    ])
+    expect(saved.map((b) => b.id)).toEqual(['b-first', expect.any(String), 'b-second'])
+    expect(saved[0]).toEqual(textFirst)
+    expect(saved[1]).toMatchObject({ type: 'text', content: '', width: '1/2' })
+    expect(saved[1].rowStart).toBeUndefined()
+    expect(saved[2].column).toBeDefined()
+    expect(saved[1].column).toBe(saved[2].column)
   })
 
   it('Enter on an empty FIRST list item: the list keeps the rest, a new empty block goes above, focused', async () => {

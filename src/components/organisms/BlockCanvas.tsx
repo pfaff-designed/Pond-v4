@@ -2141,34 +2141,55 @@ export function BlockCanvas({
     commitStructuralBlocks(detachKeepingRows(current, index).blocks)
   }
 
-  // A row is never split by landing a new block ABOVE one of its members
-  // (KAN-506): when `base[atIndex]` is stored as part of a multi-member row,
-  // Enter at its START redirects the insert point to just before the row's
-  // first member, so the empty block opens before the whole row rather than
-  // between two of its members. `rowStart` is never set on the redirected
-  // block: it is always full width, and a full-width block already overflows
-  // any row ahead of it by itself (`layoutRows`'s own `used + width > 1000`
-  // check), so `rowStart` would only ever repeat what the width already
-  // forces. Enter at a block's END or a mid-text remainder ('below') is
-  // `belowRowInsert`'s job below, and never redirects out of the row at all
-  // (KAN-570): a block beside another keeps the new block in its own column.
-  function rowRedirectedIndex(base: Block[], atIndex: number): { insertAt: number; inRow: boolean } {
+  // A column is never split by landing a new block ABOVE one of its members
+  // (KAN-570, overriding KAN-506's whole-row redirect): when `base[atIndex]`
+  // shares a row with another slot, Enter at its START inserts the new block
+  // directly above it, in `atIndex`'s own column — mirroring
+  // `belowRowInsert` below, never redirected out past the whole row. Alone
+  // in its row (fewer than 2 slots), this is exactly `atIndex`, unchanged.
+  // The new block takes over the SLOT's `width`/`rowStart` only when
+  // `atIndex` was the slot's first member — the one `groupColumns`/
+  // `layoutRows` reads to decide how the slot packs — since the new block
+  // takes that member's array position; any other member's own width never
+  // mattered for packing and still doesn't.
+  function aboveRowInsert(
+    base: Block[],
+    atIndex: number
+  ): {
+    insertAt: number
+    base: Block[]
+    column?: string
+    width?: BlockWidth | number
+    rowStart?: boolean
+  } {
+    const target = base[atIndex]
     const row = layoutSlotRows(base).find((slots) =>
-      slots.some((slot) => slot.members.some((block) => block.id === base[atIndex].id))
+      slots.some((slot) => slot.members.some((block) => block.id === target.id))
     )
-    if (!row || row.length < 2) return { insertAt: atIndex, inRow: false }
-    const firstSlot = row[0]
-    const insertAt = base.findIndex((b) => b.id === firstSlot.members[0].id)
-    return { insertAt, inRow: true }
+    if (!row || row.length < 2) return { insertAt: atIndex, base }
+
+    const slot = row.find((s) => s.members.some((b) => b.id === target.id))!
+    const takesSlotLead = slot.members[0]?.id === target.id
+    const width = takesSlotLead ? slot.width : undefined
+    const rowStart = takesSlotLead ? slot.rowStart : undefined
+
+    if (target.column !== undefined) {
+      return { insertAt: atIndex, base, column: target.column, width, rowStart }
+    }
+
+    const column = crypto.randomUUID()
+    const patched = base.map((b, i) => (i === atIndex ? { ...b, column } : b))
+    return { insertAt: atIndex, base: patched, column, width, rowStart }
   }
 
   // Enter at a block's END or a mid-text remainder ('below', KAN-570): the
   // new block lands directly after `atIndex`, in `atIndex`'s own column —
-  // never redirected to after the whole row the way `rowRedirectedIndex`
-  // redirects 'above'. Alone in its row (fewer than 2 slots), this is
-  // exactly `atIndex + 1` with no column, same as before KAN-570. Beside
-  // another slot, the new block shares `base[atIndex]`'s `column` if it has
-  // one already, or a freshly minted one otherwise — in which case
+  // never redirected to after the whole row, the same as `aboveRowInsert`
+  // above never redirects out past it. Alone in its row (fewer than 2
+  // slots), this is exactly `atIndex + 1` with no column, same as before
+  // KAN-570. Beside another slot, the new block shares `base[atIndex]`'s
+  // `column` if it has one already, or a freshly minted one otherwise — in
+  // which case
   // `base[atIndex]` itself is patched to carry that id too, in the same
   // commit, so the pair is grouped from the moment the column exists.
   function belowRowInsert(
@@ -2209,9 +2230,15 @@ export function BlockCanvas({
     const base = patch ? blocks.map((b, i) => (i === index ? patch : b)) : blocks
 
     if (where === 'above') {
-      const { insertAt, inRow } = rowRedirectedIndex(base, index)
-      const nbPlaced = { ...nb, content, ...(inRow ? { width: 'full' as BlockWidth } : {}) }
-      commitStructuralBlocks([...base.slice(0, insertAt), nbPlaced, ...base.slice(insertAt)])
+      const { insertAt, base: withColumn, column, width, rowStart } = aboveRowInsert(base, index)
+      const nbPlaced = {
+        ...nb,
+        content,
+        ...(column !== undefined ? { column } : {}),
+        ...(width !== undefined ? { width } : {}),
+        ...(rowStart !== undefined ? { rowStart } : {}),
+      }
+      commitStructuralBlocks([...withColumn.slice(0, insertAt), nbPlaced, ...withColumn.slice(insertAt)])
       // `patch` only exists here when the caret's own line was removed (the
       // empty FIRST list item case, "- \n- two": the list block keeps its id
       // but loses that item) — its editor's content just moved out from under
